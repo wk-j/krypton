@@ -12,6 +12,7 @@ pub fn run() {
         .manage(pty_manager)
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
+            commands::get_pty_cwd,
             commands::write_to_pty,
             commands::resize_pty,
         ])

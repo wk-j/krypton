@@ -8,8 +8,17 @@ pub fn spawn_pty(
     pty_manager: State<'_, Arc<PtyManager>>,
     cols: u16,
     rows: u16,
+    cwd: Option<String>,
 ) -> Result<u32, String> {
-    pty_manager.spawn(&app_handle, cols, rows)
+    pty_manager.spawn(&app_handle, cols, rows, cwd)
+}
+
+#[tauri::command]
+pub fn get_pty_cwd(
+    pty_manager: State<'_, Arc<PtyManager>>,
+    session_id: u32,
+) -> Result<Option<String>, String> {
+    pty_manager.get_cwd(session_id)
 }
 
 #[tauri::command]

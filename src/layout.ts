@@ -1,5 +1,6 @@
-// Krypton — Grid Layout Engine
+// Krypton — Layout Engine
 // Resolves grid slots to pixel coordinates within the workspace.
+// Supports Grid (auto-tile) and Focus (main + stack) layout modes.
 
 import { GridSlot, WindowBounds } from './types';
 
@@ -115,4 +116,54 @@ export function autoTile(count: number): { slots: GridSlot[]; gridCols: number; 
   }
 
   return { slots, gridCols, gridRows };
+}
+
+/**
+ * Focus layout: the focused window takes the left column at full height,
+ * remaining windows stack vertically on the right column.
+ *
+ * @param count - Total number of windows
+ * @param focusIndex - Index of the focused window (0-based, in window creation order)
+ * @returns Grid slots where index 0 is the focused (left) window, rest are stacked right
+ */
+export function focusTile(
+  count: number,
+  focusIndex: number,
+): { slots: GridSlot[]; gridCols: number; gridRows: number; order: number[] } {
+  if (count <= 0) {
+    return { slots: [], gridCols: 1, gridRows: 1, order: [] };
+  }
+
+  if (count === 1) {
+    return {
+      slots: [{ col: 0, row: 0, colSpan: 1, rowSpan: 1 }],
+      gridCols: 1,
+      gridRows: 1,
+      order: [0],
+    };
+  }
+
+  const stackCount = count - 1;
+  const gridRows = stackCount;
+  const gridCols = 2;
+
+  // Build the order: focused window first (gets the left column), then the rest
+  const order: number[] = [focusIndex];
+  for (let i = 0; i < count; i++) {
+    if (i !== focusIndex) {
+      order.push(i);
+    }
+  }
+
+  const slots: GridSlot[] = [];
+
+  // Focused window: left column, full height
+  slots.push({ col: 0, row: 0, colSpan: 1, rowSpan: gridRows });
+
+  // Stack: right column, one row each
+  for (let i = 0; i < stackCount; i++) {
+    slots.push({ col: 1, row: i, colSpan: 1, rowSpan: 1 });
+  }
+
+  return { slots, gridCols, gridRows, order };
 }

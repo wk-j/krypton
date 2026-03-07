@@ -8,8 +8,8 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 
-import { WindowId, WindowBounds, KryptonWindow } from './types';
-import { autoTile, resolveGridSlot } from './layout';
+import { WindowId, WindowBounds, KryptonWindow, LayoutMode } from './types';
+import { autoTile, focusTile, resolveGridSlot } from './layout';
 
 /** Custom key event handler for xterm.js — set by InputRouter */
 type CustomKeyHandler = (e: KeyboardEvent) => boolean;
@@ -65,6 +65,7 @@ export class Compositor {
   private workspace: HTMLElement;
   private onFocusChangeCallbacks: Array<(id: WindowId | null) => void> = [];
   private customKeyHandler: CustomKeyHandler | null = null;
+  private layoutMode: LayoutMode = LayoutMode.Grid;
 
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
@@ -100,8 +101,25 @@ export class Compositor {
     }
   }
 
+  /** Get the cwd of the focused window's shell, if available */
+  private async getFocusedCwd(): Promise<string | null> {
+    if (!this.focusedWindowId) return null;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win || win.sessionId === null) return null;
+    try {
+      const cwd = await invoke<string | null>('get_pty_cwd', {
+        sessionId: win.sessionId,
+      });
+      return cwd;
+    } catch {
+      return null;
+    }
+  }
+
   /** Create a new terminal window, spawn a PTY, and add it to the layout */
   async createWindow(): Promise<WindowId> {
+    // Inherit cwd from the focused window
+    const cwd = await this.getFocusedCwd();
     const id = nextWindowId();
 
     // Build DOM structure
@@ -195,6 +213,7 @@ export class Compositor {
       const sessionId = await invoke<number>('spawn_pty', {
         cols: terminal.cols,
         rows: terminal.rows,
+        cwd,
       });
       win.sessionId = sessionId;
       label.textContent = `terminal ${sessionId}`;
@@ -368,6 +387,20 @@ export class Compositor {
     }
   }
 
+  /** Get the current layout mode */
+  get currentLayoutMode(): LayoutMode {
+    return this.layoutMode;
+  }
+
+  /** Toggle between Grid and Focus layout modes, then relayout */
+  async toggleFocusLayout(): Promise<void> {
+    this.layoutMode =
+      this.layoutMode === LayoutMode.Grid ? LayoutMode.Focus : LayoutMode.Grid;
+    this.relayout();
+    await this.nextFrame();
+    this.fitAll();
+  }
+
   // ─── Resize & Move ───────────────────────────────────────────────
 
   /** Resize the focused window by a directional step */
@@ -441,7 +474,7 @@ export class Compositor {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Single window: centered at a comfortable default size
+    // Single window: centered at a comfortable default size (same for both modes)
     if (count === 1) {
       const win = this.windows.values().next().value;
       if (!win) return;
@@ -458,7 +491,15 @@ export class Compositor {
       return;
     }
 
-    // Multiple windows: tile within a centered region
+    if (this.layoutMode === LayoutMode.Focus) {
+      this.relayoutFocus(vw, vh, count);
+    } else {
+      this.relayoutGrid(vw, vh, count);
+    }
+  }
+
+  /** Grid layout: tile windows in a balanced grid within a centered region */
+  private relayoutGrid(vw: number, vh: number, count: number): void {
     const { slots, gridCols, gridRows } = autoTile(count);
 
     const totalW = Math.round(vw * Compositor.MULTI_WIDTH_RATIO);
@@ -485,6 +526,44 @@ export class Compositor {
       this.applyBounds(win);
 
       i++;
+    }
+  }
+
+  /** Focus layout: focused window on left (full height), rest stacked on right */
+  private relayoutFocus(vw: number, vh: number, count: number): void {
+    const ids = this.windowIds;
+    const focusIndex = this.focusedWindowId
+      ? ids.indexOf(this.focusedWindowId)
+      : 0;
+
+    const { slots, gridCols, gridRows, order } = focusTile(
+      count,
+      Math.max(0, focusIndex),
+    );
+
+    const totalW = Math.round(vw * Compositor.MULTI_WIDTH_RATIO);
+    const totalH = Math.round(vh * Compositor.MULTI_HEIGHT_RATIO);
+    const offsetX = Math.round((vw - totalW) / 2);
+    const offsetY = Math.round((vh - totalH) / 2);
+    const gap = Compositor.WINDOW_GAP;
+
+    const cellW = (totalW - gap * (gridCols - 1)) / gridCols;
+    const cellH = (totalH - gap * (gridRows - 1)) / gridRows;
+
+    for (let i = 0; i < order.length; i++) {
+      const winId = ids[order[i]];
+      const win = this.windows.get(winId);
+      if (!win || i >= slots.length) continue;
+
+      const slot = slots[i];
+      win.gridSlot = slot;
+      win.bounds = {
+        x: Math.round(offsetX + slot.col * (cellW + gap)),
+        y: Math.round(offsetY + slot.row * (cellH + gap)),
+        width: Math.round(cellW * slot.colSpan + gap * (slot.colSpan - 1)),
+        height: Math.round(cellH * slot.rowSpan + gap * (slot.rowSpan - 1)),
+      };
+      this.applyBounds(win);
     }
   }
 

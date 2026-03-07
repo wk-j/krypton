@@ -123,7 +123,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
 1. **Workspace rendering** — display the active workspace; show/hide windows when switching workspaces
 2. **Window rendering** — create/destroy window DOM containers, each hosting an xterm.js instance with custom chrome
-3. **Layout engine** — compute window positions from grid definitions relative to the workspace (full screen)
+3. **Layout engine** — compute window positions from grid definitions relative to the workspace (full screen). Supports multiple layout modes: **Grid** (balanced auto-tile) and **Focus** (focused window on left at full height, remaining windows stacked on right)
 4. **Input routing & mode management** — manage keyboard modes (normal, compositor, resize, move) and route keys accordingly
 5. **Focus management** — track which window is focused; route keyboard events to the focused window's PTY in normal mode
 6. **Keyboard-driven window control** — handle window move, resize, swap, maximize, and focus cycling via keybindings
@@ -218,7 +218,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 | Mode | Activated by | Behavior | Exit |
 |------|-------------|----------|------|
 | **Normal** | Default | Keypresses forwarded to focused window's PTY | Enter another mode via leader key |
-| **Compositor** | Leader key (e.g., `Ctrl+Space`) | Keypresses interpreted as compositor commands (focus window, switch workspace, open command palette) | Auto-exits after one action, or `Escape` to cancel |
+| **Compositor** | Leader key (`Cmd+P`) | Keypresses interpreted as compositor commands (focus window, toggle layout, switch workspace, open command palette) | Auto-exits after one action, or `Escape` to cancel |
 | **Resize** | `Leader` then `R` | Arrow keys resize the focused window; step size configurable | `Escape` or `Enter` to confirm |
 | **Move** | `Leader` then `M` | Arrow keys reposition the focused window | `Escape` or `Enter` to confirm |
 | **Command Palette** | `CmdOrCtrl+Shift+P` | Text input filters the action list; Enter executes; Escape closes | `Escape` or action execution |
@@ -248,7 +248,7 @@ Keypress
 
 The command palette is a fuzzy-searchable overlay listing **every action** in Krypton:
 
-- Window actions: new, close, focus next/prev, focus by index, maximize, restore, swap, reset layout
+- Window actions: new, close, focus next/prev, focus by index, maximize, restore, swap, reset layout, toggle focus layout
 - Tab actions: new, close, next/prev, move to window
 - Workspace actions: switch by name, next/prev workspace
 - Pane actions: split horizontal/vertical, close, navigate

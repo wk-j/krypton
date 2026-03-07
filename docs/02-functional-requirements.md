@@ -90,6 +90,7 @@
 | FR-INP-034 | The system shall support **maximizing** the focused window (expand to fill workspace) and restoring via keybinding. | Must |
 | FR-INP-035 | The system shall support **swapping** two windows' positions via keybinding (e.g., `Leader+S` then select target window). | Should |
 | FR-INP-036 | The system shall support resetting the current workspace to its default layout via keybinding. | Should |
+| FR-INP-037 | The system shall support toggling a **focus layout** (`Leader+F`) where the focused window occupies the left column at full height and remaining windows stack vertically on the right. Toggling again returns to the default grid layout. | Should |
 
 ### 3.5.5 Tab Navigation (Keyboard)
 

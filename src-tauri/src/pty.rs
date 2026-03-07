@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter};
 struct PtySession {
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
+    child_pid: Option<u32>,
 }
 
 /// Manages all active PTY sessions, keyed by session ID.
@@ -25,9 +26,15 @@ impl PtyManager {
         }
     }
 
-    /// Spawn a new PTY session. Returns the session ID.
-    /// Starts a background thread that reads PTY output and emits Tauri events.
-    pub fn spawn(&self, app_handle: &AppHandle, cols: u16, rows: u16) -> Result<u32, String> {
+    /// Spawn a new PTY session, optionally in a given working directory.
+    /// Returns the session ID.
+    pub fn spawn(
+        &self,
+        app_handle: &AppHandle,
+        cols: u16,
+        rows: u16,
+        cwd: Option<String>,
+    ) -> Result<u32, String> {
         let pty_system = native_pty_system();
 
         let size = PtySize {
@@ -47,9 +54,21 @@ impl PtyManager {
         let mut cmd = CommandBuilder::new(&shell);
         cmd.arg("--login");
 
-        pair.slave
+        // Set working directory if provided
+        if let Some(ref dir) = cwd {
+            let path = std::path::Path::new(dir);
+            if path.is_dir() {
+                cmd.cwd(path);
+            }
+        }
+
+        let child = pair
+            .slave
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn shell: {e}"))?;
+
+        // Get the child PID
+        let child_pid = child.process_id();
 
         // We no longer need the slave side
         drop(pair.slave);
@@ -80,6 +99,7 @@ impl PtyManager {
                 PtySession {
                     writer,
                     master: pair.master,
+                    child_pid,
                 },
             );
         }
@@ -92,12 +112,10 @@ impl PtyManager {
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
-                        // PTY closed
                         let _ = handle.emit("pty-exit", sid);
                         break;
                     }
                     Ok(n) => {
-                        // Send raw bytes as a Vec<u8> to the frontend
                         let data = buf[..n].to_vec();
                         let _ = handle.emit("pty-output", (sid, data));
                     }
@@ -110,8 +128,21 @@ impl PtyManager {
             }
         });
 
-        log::info!("Spawned PTY session {session_id} with shell: {shell}");
+        log::info!("Spawned PTY session {session_id} with shell: {shell}, cwd: {cwd:?}");
         Ok(session_id)
+    }
+
+    /// Get the current working directory of a PTY session's shell process.
+    pub fn get_cwd(&self, session_id: u32) -> Result<Option<String>, String> {
+        let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("Session {session_id} not found"))?;
+
+        match session.child_pid {
+            Some(pid) => Ok(read_process_cwd(pid)),
+            None => Ok(None),
+        }
     }
 
     /// Write data to a PTY session.
@@ -148,4 +179,37 @@ impl PtyManager {
             .map_err(|e| format!("Resize failed: {e}"))?;
         Ok(())
     }
+}
+
+/// Read the current working directory of a process by PID.
+#[cfg(target_os = "macos")]
+fn read_process_cwd(pid: u32) -> Option<String> {
+    use std::process::Command;
+    // On macOS, use lsof to get the cwd of the process
+    let output = Command::new("lsof")
+        .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // lsof output: lines starting with 'n' contain the path
+    for line in stdout.lines() {
+        if let Some(path) = line.strip_prefix('n') {
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn read_process_cwd(pid: u32) -> Option<String> {
+    std::fs::read_link(format!("/proc/{pid}/cwd"))
+        .ok()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn read_process_cwd(_pid: u32) -> Option<String> {
+    None
 }

@@ -14,6 +14,14 @@ export enum Mode {
   Move = 'Move',
 }
 
+/** Layout strategy for tiling windows */
+export enum LayoutMode {
+  /** Auto-tile in a balanced grid */
+  Grid = 'Grid',
+  /** Focused window on left (full height), remaining windows stacked on right */
+  Focus = 'Focus',
+}
+
 /** A slot in the grid layout */
 export interface GridSlot {
   col: number;

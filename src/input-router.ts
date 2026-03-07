@@ -170,6 +170,11 @@ export class InputRouter {
         break;
       }
 
+      // Toggle focus layout
+      case 'f':
+        this.compositor.toggleFocusLayout().then(() => this.toNormal());
+        break;
+
       // Enter Resize mode
       case 'r':
         this.setMode(Mode.Resize);

@@ -19,6 +19,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: 'k', label: 'focus up' },
   { key: 'l', label: 'focus right' },
   { key: '1-9', label: 'focus by index' },
+  { key: 'f', label: 'focus layout' },
   { key: 'r', label: 'resize mode' },
   { key: 'm', label: 'move mode' },
 ];

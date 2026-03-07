@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-07
+> Last updated: 2026-03-07 (Focus Layout feature added)
 
 ## Overview
 
@@ -9,7 +9,7 @@
 | M0 — Scaffold | Complete | 5/5 |
 | M1 — Single Session | Complete | 6/6 |
 | M2 — xterm.js Integration | Complete | 5/5 |
-| M3 — Compositor & Windows | In Progress | 6/10 |
+| M3 — Compositor & Windows | In Progress | 7/10 |
 | M4 — Keyboard System & Workspaces | In Progress | 3/13 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
 | M6 — Config, Theming & Custom Themes | Not Started | 0/9 |
@@ -53,7 +53,7 @@
 - [x] Keyboard-driven window focus: directional (H/J/K/L) and by index
 - [x] Window creation/close via keyboard
 - [ ] Focus indicator (visual border/glow on active window) — enhanced version with animation
-- [ ] Ship built-in workspace presets
+- [x] Ship built-in workspace presets — Focus Layout: focused window left (full height), remaining stacked right; toggle via `Leader f`
 - [ ] Responsive recalculation on screen resolution change — basic version done, needs testing
 
 ## M4 — Keyboard System & Workspaces (Week 12-15)
