@@ -65,7 +65,7 @@ export class Compositor {
   private workspace: HTMLElement;
   private onFocusChangeCallbacks: Array<(id: WindowId | null) => void> = [];
   private customKeyHandler: CustomKeyHandler | null = null;
-  private layoutMode: LayoutMode = LayoutMode.Grid;
+  private layoutMode: LayoutMode = LayoutMode.Focus;
 
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
@@ -203,6 +203,10 @@ export class Compositor {
 
     this.terminals.set(id, { terminal, fitAddon });
 
+    // Focus the new window BEFORE relayout so that Focus layout
+    // places it on the left (main) column immediately.
+    this.focusWindowQuiet(id);
+
     // Relayout all windows, then fit all terminals (including existing ones that resized)
     this.relayout();
     await this.nextFrame();
@@ -237,9 +241,6 @@ export class Compositor {
     el.addEventListener('mousedown', () => {
       this.focusWindow(id);
     });
-
-    // Focus this new window
-    this.focusWindow(id);
 
     return id;
   }
@@ -276,8 +277,11 @@ export class Compositor {
     this.fitAll();
   }
 
-  /** Focus a window by ID */
-  focusWindow(id: WindowId): void {
+  /**
+   * Set focus state (CSS class, terminal focus, callbacks) without triggering
+   * a relayout. Used internally when a relayout will follow immediately after.
+   */
+  private focusWindowQuiet(id: WindowId): void {
     if (!this.windows.has(id)) return;
 
     if (this.focusedWindowId) {
@@ -299,6 +303,22 @@ export class Compositor {
     }
 
     this.notifyFocusChange();
+  }
+
+  /** Focus a window by ID */
+  focusWindow(id: WindowId): void {
+    if (!this.windows.has(id)) return;
+    const previousId = this.focusedWindowId;
+
+    this.focusWindowQuiet(id);
+
+    // In Focus layout, the focused window is always the left (main) panel.
+    // Relayout so the newly focused window swaps to the left and the
+    // previously focused window moves into the right stack.
+    if (this.layoutMode === LayoutMode.Focus && previousId !== id && this.windows.size > 1) {
+      this.relayout();
+      this.fitAll();
+    }
   }
 
   /** Focus window by direction relative to current focused window */
