@@ -9,7 +9,7 @@
 | M0 — Scaffold | Complete | 5/5 |
 | M1 — Single Session | Complete | 6/6 |
 | M2 — xterm.js Integration | Complete | 5/5 |
-| M3 — Compositor & Windows | In Progress | 7/10 |
+| M3 — Compositor & Windows | In Progress | 8/10 |
 | M4 — Keyboard System & Workspaces | In Progress | 3/13 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
 | M6 — Config, Theming & Custom Themes | Not Started | 0/9 |
@@ -46,13 +46,13 @@
 ## M3 — Compositor & Windows (Week 8-11)
 
 - [x] Build compositor layer: workspace as transparent fullscreen virtual desktop
-- [x] Window DOM structure: chrome, title bar, tab bar, xterm.js body
-- [x] Custom window chrome rendering (border, shadow, control buttons)
+- [x] Window DOM structure: cyberpunk chrome with titlebar (session label + status dot + PTY status), content area (xterm.js body + sidebar decoration), bottom bar
+- [x] Custom window chrome rendering — sci-fi style with glowing cyan borders, telemetry sidebar, bottom bar decorations
 - [x] Grid layout engine: resolve `{ col, row, col_span, row_span }` to screen coordinates
 - [ ] Support absolute position overrides
 - [x] Keyboard-driven window focus: directional (H/J/K/L) and by index
 - [x] Window creation/close via keyboard
-- [ ] Focus indicator (visual border/glow on active window) — enhanced version with animation
+- [x] Focus indicator — cyan border glow + box-shadow on focused window, dimmed borders on unfocused
 - [x] Ship built-in workspace presets — Focus Layout: focused window left (full height), remaining stacked right; toggle via `Leader f`
 - [ ] Responsive recalculation on screen resolution change — basic version done, needs testing
 

@@ -6,7 +6,6 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebglAddon } from '@xterm/addon-webgl';
 
 import { WindowId, WindowBounds, KryptonWindow, LayoutMode } from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
@@ -20,27 +19,29 @@ interface TerminalInstance {
   fitAddon: FitAddon;
 }
 
-/** xterm.js theme (Ocean Dark) */
+/** xterm.js theme (Krypton Cyber — transparent) */
 const TERMINAL_THEME = {
-  background: '#1b2b34',
-  foreground: '#c0c5ce',
-  cursor: '#c0c5ce',
-  selectionBackground: '#4f5b66',
-  black: '#1b2b34',
-  red: '#ec5f67',
-  green: '#99c794',
-  yellow: '#fac863',
-  blue: '#6699cc',
-  magenta: '#c594c5',
-  cyan: '#5fb3b3',
-  white: '#c0c5ce',
-  brightBlack: '#65737e',
-  brightRed: '#ec5f67',
-  brightGreen: '#99c794',
-  brightYellow: '#fac863',
-  brightBlue: '#6699cc',
-  brightMagenta: '#c594c5',
-  brightCyan: '#5fb3b3',
+  background: 'rgba(10, 10, 15, 0.5)',
+  foreground: '#b0c4d8',
+  cursor: '#0cf',
+  cursorAccent: '#0a0a0f',
+  selectionBackground: 'rgba(26, 58, 92, 0.6)',
+  selectionForeground: '#ffffff',
+  black: '#0a0a0f',
+  red: '#ff3a5c',
+  green: '#0cf',
+  yellow: '#e8c547',
+  blue: '#4a9eff',
+  magenta: '#c77dff',
+  cyan: '#0cf',
+  white: '#b0c4d8',
+  brightBlack: '#2a4a6c',
+  brightRed: '#ff5c7a',
+  brightGreen: '#33ddff',
+  brightYellow: '#ffd866',
+  brightBlue: '#6ab4ff',
+  brightMagenta: '#d9a0ff',
+  brightCyan: '#33ddff',
   brightWhite: '#ffffff',
 };
 
@@ -122,11 +123,14 @@ export class Compositor {
     const cwd = await this.getFocusedCwd();
     const id = nextWindowId();
 
-    // Build DOM structure
+    // Build DOM structure — cyberpunk chrome
     const el = document.createElement('div');
     el.id = id;
     el.className = 'krypton-window';
     el.dataset.windowId = id;
+
+    // Session counter for display
+    const sessionNum = String(windowIdCounter).padStart(2, '0');
 
     const chrome = document.createElement('div');
     chrome.className = 'krypton-window__chrome';
@@ -134,28 +138,71 @@ export class Compositor {
     const titlebar = document.createElement('div');
     titlebar.className = 'krypton-window__titlebar';
 
+    // Left side: status dot + session label
+    const labelGroup = document.createElement('div');
+    labelGroup.className = 'krypton-window__label-group';
+
+    const statusDot = document.createElement('div');
+    statusDot.className = 'krypton-window__status-dot';
+
     const label = document.createElement('span');
     label.className = 'krypton-window__label';
-    label.textContent = 'terminal';
+    label.textContent = `session_${sessionNum}`;
 
-    const controls = document.createElement('div');
-    controls.className = 'krypton-window__controls';
+    labelGroup.appendChild(statusDot);
+    labelGroup.appendChild(label);
 
-    for (const type of ['close', 'minimize', 'maximize']) {
-      const btn = document.createElement('button');
-      btn.className = `krypton-window__ctrl krypton-window__ctrl--${type}`;
-      controls.appendChild(btn);
-    }
+    // Right side: PTY status
+    const ptyStatus = document.createElement('span');
+    ptyStatus.className = 'krypton-window__pty-status';
+    ptyStatus.textContent = 'pty_streams // active';
 
-    titlebar.appendChild(label);
-    titlebar.appendChild(controls);
+    titlebar.appendChild(labelGroup);
+    titlebar.appendChild(ptyStatus);
     chrome.appendChild(titlebar);
+
+    // Content area: body + sidebar
+    const content = document.createElement('div');
+    content.className = 'krypton-window__content';
 
     const body = document.createElement('div');
     body.className = 'krypton-window__body';
 
+    // Right sidebar decoration
+    const sidebar = document.createElement('div');
+    sidebar.className = 'krypton-window__sidebar';
+
+    for (let d = 0; d < 2; d++) {
+      const dot = document.createElement('div');
+      dot.className = 'krypton-window__sidebar-dot';
+      sidebar.appendChild(dot);
+    }
+
+    const sidebarText = document.createElement('div');
+    sidebarText.className = 'krypton-window__sidebar-text';
+    sidebarText.textContent = 'telemetry_data';
+    sidebar.appendChild(sidebarText);
+
+    content.appendChild(body);
+    content.appendChild(sidebar);
+
+    // Bottom bar decoration
+    const bottombar = document.createElement('div');
+    bottombar.className = 'krypton-window__bottombar';
+
+    const bottomDeco = document.createElement('div');
+    bottomDeco.className = 'krypton-window__bottom-decoration';
+
+    for (let d = 0; d < 2; d++) {
+      const line = document.createElement('div');
+      line.className = 'krypton-window__bottom-line';
+      bottomDeco.appendChild(line);
+    }
+    bottombar.appendChild(bottomDeco);
+
     el.appendChild(chrome);
-    el.appendChild(body);
+    el.appendChild(content);
+    el.appendChild(bottombar);
     this.workspace.appendChild(el);
 
     // Create window record
@@ -185,16 +232,9 @@ export class Compositor {
     terminal.loadAddon(fitAddon);
     terminal.open(body);
 
-    // Load WebGL addon
-    try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-      });
-      terminal.loadAddon(webglAddon);
-    } catch {
-      // Canvas fallback
-    }
+    // Note: WebGL addon is NOT loaded because it does not support
+    // transparent backgrounds. The default canvas renderer is used
+    // instead, which respects allowTransparency + rgba backgrounds.
 
     // Attach custom key handler so InputRouter can intercept keys
     if (this.customKeyHandler) {
@@ -220,7 +260,7 @@ export class Compositor {
         cwd,
       });
       win.sessionId = sessionId;
-      label.textContent = `terminal ${sessionId}`;
+      label.textContent = `session_${String(sessionId).padStart(2, '0')}`;
     } catch (e) {
       console.error(`Failed to spawn PTY for window ${id}:`, e);
       terminal.write('\r\n\x1b[31mFailed to spawn shell.\x1b[0m\r\n');

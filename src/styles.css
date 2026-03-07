@@ -1,4 +1,5 @@
 /* Krypton — Global Styles */
+/* Cyberpunk / sci-fi terminal aesthetic */
 
 *, *::before, *::after {
   margin: 0;
@@ -11,7 +12,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: transparent;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
 
 /* ─── Workspace ─── */
@@ -29,15 +30,20 @@ html, body {
   position: absolute;
   display: flex;
   flex-direction: column;
-  background: var(--krypton-window-bg, #1b2b34);
+  background: rgba(10, 10, 15, 0.5);
+  border: 1px solid #1a3a5c;
   overflow: hidden;
 }
 
 .krypton-window--focused {
-  /* Subtle left accent bar on focused window */
+  border-color: #0cf;
+  box-shadow:
+    0 0 6px rgba(0, 204, 255, 0.25),
+    0 0 20px rgba(0, 204, 255, 0.08),
+    inset 0 0 6px rgba(0, 204, 255, 0.05);
 }
 
-/* Chrome — title bar */
+/* ─── Chrome — title bar ─── */
 .krypton-window__chrome {
   flex-shrink: 0;
 }
@@ -46,56 +52,153 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--krypton-titlebar-height, 32px);
-  padding: 0 12px;
-  background: var(--krypton-titlebar-bg, #0d1f2d);
+  height: 28px;
+  padding: 0 10px;
+  background: rgba(10, 14, 23, 0.6);
   -webkit-user-select: none;
   user-select: none;
+}
+
+.krypton-window__label-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.krypton-window__status-dot {
+  width: 6px;
+  height: 6px;
+  background: #1a3a5c;
+}
+
+.krypton-window--focused .krypton-window__status-dot {
+  background: #0cf;
+  box-shadow: 0 0 4px rgba(0, 204, 255, 0.6);
 }
 
 .krypton-window__label {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 11px;
-  color: var(--krypton-titlebar-text-color, #65737e);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1a3a5c;
+}
+
+.krypton-window--focused .krypton-window__label {
+  color: #0cf;
+}
+
+.krypton-window__pty-status {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 10px;
   font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #1a3a5c;
 }
 
-.krypton-window__controls {
+.krypton-window--focused .krypton-window__pty-status {
+  color: #2a6a8c;
+}
+
+/* ─── Window content area (body + sidebar) ─── */
+.krypton-window__content {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  gap: 8px;
+  flex-direction: row;
+  background: transparent;
 }
 
-.krypton-window__ctrl {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  opacity: 0.6;
-}
-
-.krypton-window__ctrl:hover {
-  opacity: 1;
-}
-
-.krypton-window__ctrl--close { background: #ec5f67; }
-.krypton-window__ctrl--minimize { background: #fac863; }
-.krypton-window__ctrl--maximize { background: #99c794; }
-
-/* Window body — xterm.js */
+/* ─── Window body — xterm.js ─── */
 .krypton-window__body {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   position: relative;
+  background: transparent;
 }
 
 .krypton-window__body .xterm {
   height: 100%;
-  padding: 2px;
+  padding: 4px 6px;
+  background: transparent !important;
 }
 
 .krypton-window__body .xterm-viewport {
   overflow-y: auto !important;
+  background: transparent !important;
+}
+
+.krypton-window__body .xterm-screen {
+  background: transparent !important;
+}
+
+/* ─── Right sidebar decoration ─── */
+.krypton-window__sidebar {
+  width: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 0;
+  gap: 6px;
+  background: rgba(10, 14, 23, 0.6);
+  flex-shrink: 0;
+}
+
+.krypton-window__sidebar-dot {
+  width: 4px;
+  height: 4px;
+  background: #1a3a5c;
+}
+
+.krypton-window--focused .krypton-window__sidebar-dot {
+  background: #0cf;
+  box-shadow: 0 0 3px rgba(0, 204, 255, 0.5);
+}
+
+.krypton-window__sidebar-text {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #1a3a5c;
+  margin-top: 4px;
+}
+
+.krypton-window--focused .krypton-window__sidebar-text {
+  color: #15405c;
+}
+
+/* ─── Bottom bar decoration ─── */
+.krypton-window__bottombar {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 8px;
+  background: rgba(10, 14, 23, 0.6);
+}
+
+.krypton-window__bottom-decoration {
+  display: flex;
+  gap: 3px;
+}
+
+.krypton-window__bottom-line {
+  width: 12px;
+  height: 2px;
+  background: #1a3a5c;
+}
+
+.krypton-window--focused .krypton-window__bottom-line {
+  background: #0cf;
+  box-shadow: 0 0 3px rgba(0, 204, 255, 0.4);
 }
 
 /* ─── Which-Key Popup ─── */
@@ -118,9 +221,11 @@ html, body {
 }
 
 .krypton-whichkey__popup {
-  background: #0d1f2d;
+  background: rgba(10, 14, 23, 0.6);
+  border: 1px solid #0cf;
   padding: 10px 14px;
   min-width: 240px;
+  box-shadow: 0 0 12px rgba(0, 204, 255, 0.15);
 }
 
 .krypton-whichkey__title {
@@ -129,10 +234,10 @@ html, body {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #fac863;
+  color: #0cf;
   margin-bottom: 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid #343d46;
+  border-bottom: 1px solid #1a3a5c;
 }
 
 .krypton-whichkey__keys {
@@ -152,7 +257,7 @@ html, body {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
   font-weight: 600;
-  color: #6699cc;
+  color: #0cf;
   min-width: 28px;
   text-align: center;
 }
@@ -160,5 +265,5 @@ html, body {
 .krypton-whichkey__label {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
-  color: #65737e;
+  color: #2a6a8c;
 }

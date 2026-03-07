@@ -52,9 +52,8 @@
 Krypton uses **one native Tauri shell** that is always **fullscreen, borderless, and fully transparent**. The webview background is `transparent` — the OS desktop wallpaper shows through. The active **workspace** fills this surface as a virtual desktop. Terminal **windows** are DOM elements floating on the workspace with their own opaque (or semi-transparent) backgrounds, chrome, and shadows.
 
 Each window has:
-- Custom-drawn **chrome** (title bar, border, shadow, control buttons)
+- Cyberpunk/sci-fi **chrome** — titlebar with session label, status dot, PTY status text; right sidebar with telemetry decoration; bottom bar with line indicators; glowing cyan border on focused window
 - Its own **xterm.js instance** for terminal rendering
-- A **tab bar** for multiple sessions within the window
 - **Keyboard-driven move and resize** as the primary interaction, with optional mouse as secondary
 
 This model enables:
@@ -130,45 +129,52 @@ The compositor is a TypeScript module running in the webview that manages worksp
 7. **Command palette** — overlay for fuzzy-searching and executing all available actions by name
 8. **Animation engine** — orchestrate workspace transition animations (slide, crossfade, morph) and window entrance/exit effects
 9. **Z-order** — manage window stacking within a workspace; focused window rises to top
-10. **Chrome rendering** — draw title bars, borders, shadows, and control buttons per theme config
+10. **Chrome rendering** — cyberpunk/sci-fi window chrome with glowing cyan borders, session label with status dot, PTY status indicator, right sidebar with telemetry decoration, and bottom bar
 11. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
 
 ### Window DOM Structure
 
+Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with session label and PTY status, a content area with the terminal body and a right sidebar decoration, and a bottom bar.
+
 ```html
 <html style="background: transparent">
 <body style="background: transparent">
-  <div class="krypton-workspace"                     <!-- active workspace = virtual desktop -->
+  <div class="krypton-workspace"
        style="background: transparent; width: 100vw; height: 100vh;">
 
-    <div class="krypton-window focused" id="win-0"   <!-- terminal window with chrome -->
-         style="position: absolute; /* themed bg, border, shadow */">
-      <div class="window-chrome">
-        <div class="window-titlebar">
-          <span class="window-label">editor</span>
-          <div class="window-controls">
-            <button class="ctrl-close"></button>
-            <button class="ctrl-minimize"></button>
-            <button class="ctrl-maximize"></button>
+    <div class="krypton-window krypton-window--focused" id="win-0"
+         style="position: absolute;">
+      <div class="krypton-window__chrome">
+        <div class="krypton-window__titlebar">
+          <div class="krypton-window__label-group">
+            <div class="krypton-window__status-dot"></div>
+            <span class="krypton-window__label">SESSION_01</span>
           </div>
-        </div>
-        <div class="window-tabbar">
-          <div class="tab active">Tab 1</div>
-          <div class="tab">Tab 2</div>
+          <span class="krypton-window__pty-status">PTY_STREAMS // ACTIVE</span>
         </div>
       </div>
-      <div class="window-body">
-        <!-- xterm.js mounts here -->
+      <div class="krypton-window__content">
+        <div class="krypton-window__body">
+          <!-- xterm.js mounts here -->
+        </div>
+        <div class="krypton-window__sidebar">
+          <div class="krypton-window__sidebar-dot"></div>
+          <div class="krypton-window__sidebar-dot"></div>
+          <div class="krypton-window__sidebar-text">TELEMETRY_DATA</div>
+        </div>
+      </div>
+      <div class="krypton-window__bottombar">
+        <div class="krypton-window__bottom-decoration">
+          <div class="krypton-window__bottom-line"></div>
+          <div class="krypton-window__bottom-line"></div>
+        </div>
       </div>
     </div>
 
     <!-- More windows... -->
 
-    <!-- Mode indicator (shown during compositor/resize/move modes) -->
-    <div class="mode-indicator">COMPOSITOR</div>
-
-    <!-- Command palette overlay -->
-    <div class="command-palette hidden">...</div>
+    <!-- Which-key popup (shown during compositor/resize/move modes) -->
+    <div class="krypton-whichkey">...</div>
   </div>
 </body>
 </html>
