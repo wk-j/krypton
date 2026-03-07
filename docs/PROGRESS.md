@@ -6,11 +6,11 @@
 
 | Milestone | Status | Progress |
 |-----------|--------|----------|
-| M0 — Scaffold | In Progress | 2/5 |
-| M1 — Single Session | Not Started | 0/6 |
-| M2 — xterm.js Integration | Not Started | 0/5 |
-| M3 — Compositor & Windows | Not Started | 0/10 |
-| M4 — Keyboard System & Workspaces | Not Started | 0/13 |
+| M0 — Scaffold | Complete | 5/5 |
+| M1 — Single Session | Complete | 6/6 |
+| M2 — xterm.js Integration | Complete | 5/5 |
+| M3 — Compositor & Windows | In Progress | 6/10 |
+| M4 — Keyboard System & Workspaces | In Progress | 3/13 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
 | M6 — Config, Theming & Custom Themes | Not Started | 0/9 |
 | M7 — Polish | Not Started | 0/6 |
@@ -22,44 +22,44 @@
 
 - [x] Initialize Tauri v2 project with TypeScript frontend
 - [x] Install xterm.js and addons as frontend dependencies
-- [ ] Configure Tauri window: fullscreen, borderless, transparent
-- [ ] Set up frontend build pipeline (Vite + TypeScript, transparent HTML/CSS shell)
-- [ ] Verify transparent window renders correctly on macOS
+- [x] Configure Tauri window: fullscreen, borderless, transparent
+- [x] Set up frontend build pipeline (Vite + TypeScript, transparent HTML/CSS shell)
+- [x] Verify transparent window renders correctly on macOS
 
 ## M1 — Single Session (Week 3-4)
 
-- [ ] Implement PTY spawn via `portable-pty` in Rust backend
-- [ ] Create Tauri commands: `spawn_pty`, `write_to_pty`, `resize_pty`
-- [ ] Wire xterm.js `onData` -> IPC -> PTY write path
-- [ ] Wire PTY read -> Tauri event -> `xterm.write()` path
-- [ ] Render a single terminal window on the transparent workspace
-- [ ] Verify interactive shell works (typing, output, ctrl+c)
+- [x] Implement PTY spawn via `portable-pty` in Rust backend
+- [x] Create Tauri commands: `spawn_pty`, `write_to_pty`, `resize_pty`
+- [x] Wire xterm.js `onData` -> IPC -> PTY write path
+- [x] Wire PTY read -> Tauri event -> `xterm.write()` path
+- [x] Render a single terminal window on the transparent workspace
+- [x] Verify interactive shell works (typing, output, ctrl+c)
 
 ## M2 — xterm.js Integration (Week 5-7)
 
-- [ ] Enable `@xterm/addon-webgl` with canvas fallback
-- [ ] Integrate `@xterm/addon-fit` for automatic resize
-- [ ] Validate SGR rendering (colors, bold, italic, etc.)
-- [ ] Test alternate screen buffer (vim, htop, less)
-- [ ] Test truecolor output
+- [x] Enable `@xterm/addon-webgl` with canvas fallback
+- [x] Integrate `@xterm/addon-fit` for automatic resize
+- [x] Validate SGR rendering (colors, bold, italic, etc.)
+- [x] Test alternate screen buffer (vim, htop, less)
+- [x] Test truecolor output
 
 ## M3 — Compositor & Windows (Week 8-11)
 
-- [ ] Build compositor layer: workspace as transparent fullscreen virtual desktop
-- [ ] Window DOM structure: chrome, title bar, tab bar, xterm.js body
-- [ ] Custom window chrome rendering (border, shadow, control buttons)
-- [ ] Grid layout engine: resolve `{ col, row, col_span, row_span }` to screen coordinates
+- [x] Build compositor layer: workspace as transparent fullscreen virtual desktop
+- [x] Window DOM structure: chrome, title bar, tab bar, xterm.js body
+- [x] Custom window chrome rendering (border, shadow, control buttons)
+- [x] Grid layout engine: resolve `{ col, row, col_span, row_span }` to screen coordinates
 - [ ] Support absolute position overrides
-- [ ] Keyboard-driven window focus: directional (H/J/K/L) and by index
-- [ ] Window creation/close via keyboard
-- [ ] Focus indicator (visual border/glow on active window)
+- [x] Keyboard-driven window focus: directional (H/J/K/L) and by index
+- [x] Window creation/close via keyboard
+- [ ] Focus indicator (visual border/glow on active window) — enhanced version with animation
 - [ ] Ship built-in workspace presets
-- [ ] Responsive recalculation on screen resolution change
+- [ ] Responsive recalculation on screen resolution change — basic version done, needs testing
 
 ## M4 — Keyboard System & Workspaces (Week 12-15)
 
-- [ ] Implement Input Router with mode system (Normal, Compositor, Resize, Move)
-- [ ] Leader key activation and single-action compositor mode
+- [x] Implement Input Router with mode system (Normal, Compositor, Resize, Move)
+- [x] Leader key activation and single-action compositor mode
 - [ ] Resize mode: arrow keys resize focused window, step size configurable
 - [ ] Move mode: arrow keys reposition focused window
 - [ ] Window swap via keyboard
@@ -70,7 +70,7 @@
 - [ ] Configurable animation style, duration, easing
 - [ ] Keyboard input buffering during transitions
 - [ ] Session pool: preserve PTY sessions across workspace switches
-- [ ] Mode indicator UI
+- [x] Mode indicator UI
 
 ## M5 — Tabs & Panes (Week 16-18)
 

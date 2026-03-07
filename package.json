@@ -1,30 +1,14 @@
 {
   "name": "krypton",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/wk-j/krypton.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/wk-j/krypton/issues"
-  },
-  "homepage": "https://github.com/wk-j/krypton#readme",
-  "devDependencies": {
-    "@tauri-apps/cli": "^2.10.1",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
@@ -34,5 +18,10 @@
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
   }
 }
