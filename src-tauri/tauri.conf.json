@@ -10,13 +10,14 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "krypton",
-        "fullscreen": true,
+        "fullscreen": false,
         "decorations": false,
         "transparent": true,
-        "resizable": false,
+        "resizable": true,
         "alwaysOnTop": false,
         "skipTaskbar": false
       }

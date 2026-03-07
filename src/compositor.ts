@@ -3,6 +3,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -184,10 +185,10 @@ export class Compositor {
 
     this.terminals.set(id, { terminal, fitAddon });
 
-    // Relayout all windows, then fit
+    // Relayout all windows, then fit all terminals (including existing ones that resized)
     this.relayout();
     await this.nextFrame();
-    fitAddon.fit();
+    this.fitAll();
 
     // Spawn PTY
     try {
@@ -245,6 +246,9 @@ export class Compositor {
       } else {
         this.focusedWindowId = null;
         this.notifyFocusChange();
+        // Last window closed — quit the app
+        getCurrentWindow().close();
+        return;
       }
     }
 
@@ -421,22 +425,63 @@ export class Compositor {
 
   // ─── Layout ──────────────────────────────────────────────────────
 
+  /** Default window size as fraction of viewport */
+  private static readonly DEFAULT_WIDTH_RATIO = 0.5;
+  private static readonly DEFAULT_HEIGHT_RATIO = 0.6;
+  /** Multi-window: total area used as fraction of viewport */
+  private static readonly MULTI_WIDTH_RATIO = 0.85;
+  private static readonly MULTI_HEIGHT_RATIO = 0.75;
+  private static readonly WINDOW_GAP = 6;
+
   /** Recalculate grid layout and apply positions to all windows */
   relayout(): void {
     const count = this.windows.size;
     if (count === 0) return;
 
-    const { slots, gridCols, gridRows } = autoTile(count);
     const vw = window.innerWidth;
     const vh = window.innerHeight;
+
+    // Single window: centered at a comfortable default size
+    if (count === 1) {
+      const win = this.windows.values().next().value;
+      if (!win) return;
+      const w = Math.round(vw * Compositor.DEFAULT_WIDTH_RATIO);
+      const h = Math.round(vh * Compositor.DEFAULT_HEIGHT_RATIO);
+      win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
+      win.bounds = {
+        x: Math.round((vw - w) / 2),
+        y: Math.round((vh - h) / 2),
+        width: w,
+        height: h,
+      };
+      this.applyBounds(win);
+      return;
+    }
+
+    // Multiple windows: tile within a centered region
+    const { slots, gridCols, gridRows } = autoTile(count);
+
+    const totalW = Math.round(vw * Compositor.MULTI_WIDTH_RATIO);
+    const totalH = Math.round(vh * Compositor.MULTI_HEIGHT_RATIO);
+    const offsetX = Math.round((vw - totalW) / 2);
+    const offsetY = Math.round((vh - totalH) / 2);
+    const gap = Compositor.WINDOW_GAP;
+
+    const cellW = (totalW - gap * (gridCols - 1)) / gridCols;
+    const cellH = (totalH - gap * (gridRows - 1)) / gridRows;
 
     let i = 0;
     for (const [, win] of this.windows) {
       if (i >= slots.length) break;
-      win.gridSlot = slots[i];
+      const slot = slots[i];
+      win.gridSlot = slot;
 
-      const bounds = resolveGridSlot(slots[i], gridCols, gridRows, vw, vh);
-      win.bounds = bounds;
+      win.bounds = {
+        x: Math.round(offsetX + slot.col * (cellW + gap)),
+        y: Math.round(offsetY + slot.row * (cellH + gap)),
+        width: Math.round(cellW * slot.colSpan + gap * (slot.colSpan - 1)),
+        height: Math.round(cellH * slot.rowSpan + gap * (slot.rowSpan - 1)),
+      };
       this.applyBounds(win);
 
       i++;
@@ -499,11 +544,8 @@ export class Compositor {
       const sid = event.payload;
       for (const [wid, win] of this.windows) {
         if (win.sessionId === sid) {
-          const termInfo = this.terminals.get(wid);
-          if (termInfo) {
-            termInfo.terminal.write('\r\n\x1b[33m[Shell exited]\x1b[0m\r\n');
-          }
           win.sessionId = null;
+          this.closeWindow(wid);
           break;
         }
       }

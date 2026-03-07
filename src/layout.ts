@@ -12,8 +12,8 @@ export interface LayoutConfig {
 }
 
 const DEFAULT_CONFIG: LayoutConfig = {
-  workspacePadding: 40,
-  windowGap: 10,
+  workspacePadding: 0,
+  windowGap: 6,
 };
 
 /**

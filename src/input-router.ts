@@ -46,29 +46,15 @@ export class InputRouter {
     };
   }
 
-  /** Check if a key event is the leader key combo (Ctrl+Space or Ctrl+`) */
+  /** Check if a key event is the leader key combo (Cmd+P) */
   static isLeaderKey(e: KeyboardEvent): boolean {
-    // Ctrl+Space
-    if (
-      (e.key === ' ' || e.code === 'Space') &&
-      e.ctrlKey &&
+    return (
+      (e.key === 'p' || e.key === 'P' || e.code === 'KeyP') &&
+      e.metaKey &&
+      !e.ctrlKey &&
       !e.altKey &&
-      !e.metaKey &&
       !e.shiftKey
-    ) {
-      return true;
-    }
-    // Fallback: Ctrl+` (backtick) — works on macOS where Ctrl+Space is often taken by OS
-    if (
-      (e.key === '`' || e.code === 'Backquote') &&
-      e.ctrlKey &&
-      !e.altKey &&
-      !e.metaKey &&
-      !e.shiftKey
-    ) {
-      return true;
-    }
-    return false;
+    );
   }
 
   private setMode(mode: Mode): void {
@@ -90,7 +76,7 @@ export class InputRouter {
         console.log(`[InputRouter] mode=${this.mode} key="${e.key}" code="${e.code}" ctrl=${e.ctrlKey} meta=${e.metaKey} alt=${e.altKey}`);
       }
 
-      // Leader key: Ctrl+Space or Ctrl+`
+      // Leader key: Cmd+P
       if (InputRouter.isLeaderKey(e)) {
         e.preventDefault();
         e.stopPropagation();

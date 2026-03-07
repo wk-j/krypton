@@ -30,18 +30,11 @@ html, body {
   display: flex;
   flex-direction: column;
   background: var(--krypton-window-bg, #1b2b34);
-  border: 1px solid var(--krypton-window-border-color, #4f5b66);
-  border-radius: var(--krypton-window-border-radius, 8px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   overflow: hidden;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .krypton-window--focused {
-  border-color: var(--krypton-window-focus-border-color, #6699cc);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.6),
-    0 0 0 1px var(--krypton-window-focus-border-color, #6699cc);
+  /* Subtle left accent bar on focused window */
 }
 
 /* Chrome — title bar */
@@ -53,17 +46,17 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--krypton-titlebar-height, 36px);
+  height: var(--krypton-titlebar-height, 32px);
   padding: 0 12px;
-  background: var(--krypton-titlebar-bg, #1b2b34);
-  border-bottom: 1px solid var(--krypton-window-border-color, #343d46);
+  background: var(--krypton-titlebar-bg, #0d1f2d);
   -webkit-user-select: none;
   user-select: none;
 }
 
 .krypton-window__label {
-  font-size: 12px;
-  color: var(--krypton-titlebar-text-color, #a7adba);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--krypton-titlebar-text-color, #65737e);
   font-weight: 500;
 }
 
@@ -78,6 +71,11 @@ html, body {
   border-radius: 50%;
   border: none;
   cursor: pointer;
+  opacity: 0.6;
+}
+
+.krypton-window__ctrl:hover {
+  opacity: 1;
 }
 
 .krypton-window__ctrl--close { background: #ec5f67; }
@@ -93,7 +91,7 @@ html, body {
 
 .krypton-window__body .xterm {
   height: 100%;
-  padding: 4px;
+  padding: 2px;
 }
 
 .krypton-window__body .xterm-viewport {
@@ -120,15 +118,9 @@ html, body {
 }
 
 .krypton-whichkey__popup {
-  background: rgba(21, 35, 43, 0.96);
-  border: 1px solid #4f5b66;
-  border-radius: 8px;
-  padding: 12px 16px;
-  min-width: 260px;
-  max-width: 400px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: #0d1f2d;
+  padding: 10px 14px;
+  min-width: 240px;
 }
 
 .krypton-whichkey__title {
@@ -138,7 +130,7 @@ html, body {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #fac863;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   padding-bottom: 6px;
   border-bottom: 1px solid #343d46;
 }
@@ -146,14 +138,14 @@ html, body {
 .krypton-whichkey__keys {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .krypton-whichkey__entry {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 3px 0;
+  gap: 10px;
+  padding: 2px 0;
 }
 
 .krypton-whichkey__key {
@@ -161,10 +153,6 @@ html, body {
   font-size: 12px;
   font-weight: 600;
   color: #6699cc;
-  background: rgba(79, 91, 102, 0.3);
-  border: 1px solid #4f5b66;
-  border-radius: 3px;
-  padding: 1px 6px;
   min-width: 28px;
   text-align: center;
 }
@@ -172,5 +160,5 @@ html, body {
 .krypton-whichkey__label {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
-  color: #a7adba;
+  color: #65737e;
 }
