@@ -19,3 +19,4 @@
 | 7 | [Milestones](./07-milestones.md) | Development phases and timeline |
 | 8 | [Open Questions](./08-open-questions.md) | Unresolved design decisions |
 | 9 | [Glossary](./09-glossary.md) | Terms and definitions |
+| 10 | [Theme Specification](./10-theme-specification.md) | Custom theme file format for external developers |

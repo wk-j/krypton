@@ -265,7 +265,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 |----|-------------|----------|
 | FR-THM-001 | The system shall support a **theme file format** (TOML) that defines all visual properties of the application. | Must |
 | FR-THM-002 | Themes shall be loadable from: (a) built-in presets, (b) user's themes directory (`~/.config/krypton/themes/*.toml`), or (c) inline in the main config. | Must |
-| FR-THM-003 | The system shall ship with at least 3 built-in themes: `krypton-dark`, `krypton-light`, `solarized`. | Must |
+| FR-THM-003 | The system shall ship with at least 4 built-in themes: `krypton-dark`, `krypton-light`, `solarized`, `legacy-radiance`. | Must |
 | FR-THM-004 | Hot-reloading of themes shall be supported — changes to theme files apply immediately without restart. | Should |
 | FR-THM-005 | The command palette shall list all available themes and allow switching at runtime via keyboard. | Must |
 

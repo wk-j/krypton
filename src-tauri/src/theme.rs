@@ -15,7 +15,7 @@ const BUILTIN_LEGACY_RADIANCE: &str = include_str!("../themes/legacy-radiance.to
 // This mirrors the TOML structure of theme files and is sent to the
 // frontend in full so it can set CSS custom properties.
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FullTheme {
     pub meta: ThemeMeta,
@@ -229,21 +229,9 @@ pub struct UiQuickTerminal {
 // ─── Defaults ─────────────────────────────────────────────────────
 // These match the krypton-dark built-in theme values.
 
-impl Default for FullTheme {
-    fn default() -> Self {
-        // Construct directly from sub-struct defaults (krypton-dark values).
-        // Do NOT call toml::from_str() here — FullTheme uses #[serde(default)]
-        // which would call this method again, causing infinite recursion.
-        Self {
-            meta: ThemeMeta::default(),
-            colors: ThemeColors::default(),
-            chrome: ChromeConfig::default(),
-            focused: FocusedConfig::default(),
-            workspace: WorkspaceConfig::default(),
-            ui: UiConfig::default(),
-        }
-    }
-}
+// NOTE: FullTheme derives Default, which delegates to each sub-struct's Default impl.
+// Do NOT replace this with a manual impl that calls toml::from_str() — FullTheme
+// uses #[serde(default)] which would cause infinite recursion.
 
 impl Default for ThemeMeta {
     fn default() -> Self {

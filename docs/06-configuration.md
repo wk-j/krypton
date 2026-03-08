@@ -37,6 +37,7 @@ cursor_blink = true
 name = "krypton-dark"        # built-in or custom theme name
 # Custom themes: place .toml files in ~/.config/krypton/themes/
 # e.g., ~/.config/krypton/themes/my-custom.toml -> name = "my-custom"
+# See docs/10-theme-specification.md for the full theme file format.
 
 # Inline overrides (applied on top of the named theme):
 [theme.colors]
@@ -285,7 +286,7 @@ name = "custom-fixed"
 | `[terminal]` | `scrollback_lines` | int | `10000` | Scrollback buffer size |
 | `[terminal]` | `cursor_style` | string | `"block"` | `block`, `underline`, or `bar` |
 | `[terminal]` | `cursor_blink` | bool | `true` | Enable cursor blinking |
-| `[theme]` | `name` | string | `"krypton-dark"` | Built-in or custom theme name |
+| `[theme]` | `name` | string | `"krypton-dark"` | Built-in or custom theme name (see [Theme Specification](./10-theme-specification.md)) |
 | `[theme.colors]` | *(various)* | string | — | Hex color overrides (applied on top of named theme) |
 | `[keybindings]` | `leader` | string | `"Ctrl+Space"` | Leader key to enter compositor mode |
 | `[keybindings]` | `command_palette` | string | `"CmdOrCtrl+Shift+P"` | Open command palette |

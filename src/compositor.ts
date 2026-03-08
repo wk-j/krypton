@@ -598,12 +598,20 @@ export class Compositor {
     }
   }
 
-  /** Focus window by index (1-based) */
+  /**
+   * Focus window by index (1-based), relative to the currently focused window.
+   * Index 1 = current window (no-op), 2 = next window, 3 = two ahead, etc.
+   * The order wraps around so all windows are always reachable.
+   */
   focusByIndex(index: number): void {
     const ids = this.windowIds;
-    if (index >= 1 && index <= ids.length) {
-      this.focusWindow(ids[index - 1]);
-    }
+    if (ids.length === 0 || index < 1 || index > ids.length) return;
+
+    // Rotate the list so the focused window is at position 0
+    const focusIdx = this.focusedWindowId ? ids.indexOf(this.focusedWindowId) : 0;
+    const rotated = [...ids.slice(focusIdx), ...ids.slice(0, focusIdx)];
+
+    this.focusWindow(rotated[index - 1]);
   }
 
   /**
