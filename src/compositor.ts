@@ -566,6 +566,21 @@ export class Compositor {
     }
   }
 
+  /** Scroll the focused terminal by the given number of pages (negative = up) */
+  scrollPages(pages: number): void {
+    // If Quick Terminal is visible, scroll it instead
+    if (this.qtVisible && this.qtTerminal) {
+      this.qtTerminal.terminal.scrollPages(pages);
+      return;
+    }
+    if (this.focusedWindowId) {
+      const termInfo = this.terminals.get(this.focusedWindowId);
+      if (termInfo) {
+        termInfo.terminal.scrollPages(pages);
+      }
+    }
+  }
+
   /** Get the current layout mode */
   get currentLayoutMode(): LayoutMode {
     return this.layoutMode;

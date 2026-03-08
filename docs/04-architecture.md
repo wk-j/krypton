@@ -254,6 +254,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 **Global hotkeys that work from any mode:**
 - `Cmd+I` — Toggle Quick Terminal (show/hide centered overlay terminal)
 - `Cmd+Shift+<` / `Cmd+Shift+>` — Cycle focus through windows
+- `Ctrl+Shift+U` / `Ctrl+Shift+D` — Scroll terminal buffer up/down by one page
 
 ### Key routing flow
 

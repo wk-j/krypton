@@ -47,6 +47,10 @@ export class InputRouter {
       if (InputRouter.isQuickTerminalKey(e)) {
         return false;
       }
+      // Prevent xterm from consuming Ctrl+Shift+U/D (scroll shortcuts)
+      if (e.ctrlKey && e.shiftKey && (e.code === 'KeyU' || e.code === 'KeyD')) {
+        return false;
+      }
       // Prevent xterm from consuming Escape when Quick Terminal is focused
       // (so input-router can hide it)
       if (e.key === 'Escape' && this.compositor.isQuickTerminalFocused && this.mode === Mode.Normal) {
@@ -154,6 +158,14 @@ export class InputRouter {
         e.preventDefault();
         e.stopPropagation();
         this.compositor.toggleQuickTerminal();
+        return;
+      }
+
+      // Ctrl+Shift+U/D — scroll terminal buffer up/down by one page
+      if (e.ctrlKey && e.shiftKey && (e.code === 'KeyU' || e.code === 'KeyD')) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.compositor.scrollPages(e.code === 'KeyU' ? -1 : 1);
         return;
       }
 

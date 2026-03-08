@@ -34,6 +34,7 @@
 | FR-RND-004 | The system shall render ligatures if the selected font supports them. | Should |
 | FR-RND-005 | The system shall provide a configurable scrollback buffer (default: 10,000 lines). | Must |
 | FR-RND-006 | The system shall support cursor styles: block, underline, bar (blinking and steady variants). | Must |
+| FR-RND-007 | The system shall support keyboard scrolling of the scrollback buffer via `Ctrl+Shift+U` (page up) and `Ctrl+Shift+D` (page down). `Shift+PageUp`/`Shift+PageDown` shall also work as built-in defaults. | Must |
 
 ## 3.4 Tabs & Panes
 

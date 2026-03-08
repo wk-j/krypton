@@ -125,6 +125,10 @@ paste = "CmdOrCtrl+V"
 # Quick Terminal
 quick_terminal = "Cmd+I"
 
+# Scrollback
+scroll_page_up = "Ctrl+Shift+U"
+scroll_page_down = "Ctrl+Shift+D"
+
 # Search
 search = "CmdOrCtrl+F"
 search_next = "CmdOrCtrl+G"
@@ -261,6 +265,8 @@ name = "custom-fixed"
 | `[keybindings]` | `leader` | string | `"Ctrl+Space"` | Leader key to enter compositor mode |
 | `[keybindings]` | `command_palette` | string | `"CmdOrCtrl+Shift+P"` | Open command palette |
 | `[keybindings]` | `quick_terminal` | string | `"Cmd+I"` | Toggle Quick Terminal overlay |
+| `[keybindings]` | `scroll_page_up` | string | `"Ctrl+Shift+U"` | Scroll terminal buffer up one page |
+| `[keybindings]` | `scroll_page_down` | string | `"Ctrl+Shift+D"` | Scroll terminal buffer down one page |
 | `[keybindings]` | *(various)* | string | — | See full keybinding reference in TOML example above |
 | `[keybindings.resize_mode]` | *(various)* | string | — | Keys active in resize mode |
 | `[keybindings.move_mode]` | *(various)* | string | — | Keys active in move mode |
