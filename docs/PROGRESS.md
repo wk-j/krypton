@@ -13,7 +13,7 @@
 | M4 — Keyboard System & Workspaces | In Progress | 11/14 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 2/9 |
-| M7 — Sound Effects | In Progress | 11/12 |
+| M7 — Sound Effects | In Progress | 13/14 |
 | M8 — Polish | Not Started | 0/6 |
 | M9 — Release | Not Started | 0/4 |
 
@@ -108,6 +108,7 @@
 - [x] Built-in `krypton-cyber` sound pack: patches for all action events
 - [x] Integration: compositor + input-router call `SoundEngine.play()` at each action point
 - [x] Configuration: `[sound]` TOML section applied via `applyConfig()`
+- [x] Keypress sounds: 6 keyboard types (cherry-mx-blue, cherry-mx-red, cherry-mx-brown, topre, buckling-spring, membrane) with press/release phases, amplitude/filter randomization, configurable via `keyboard_type` and `keyboard_volume`
 - [ ] Custom sound pack loading from `~/.config/krypton/sounds/*.toml`
 - [x] Graceful degradation when Web Audio API is unavailable
 

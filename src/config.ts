@@ -73,6 +73,8 @@ export interface SoundConfig {
   enabled: boolean;
   volume: number;
   pack: string;
+  keyboard_type: string;
+  keyboard_volume: number;
   events: Record<string, boolean | number>;
 }
 

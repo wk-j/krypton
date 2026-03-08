@@ -104,6 +104,12 @@ pub struct SoundConfig {
     pub enabled: bool,
     pub volume: f64,
     pub pack: String,
+    /// Keyboard type for keypress sounds.
+    /// Options: "cherry-mx-blue", "cherry-mx-red", "cherry-mx-brown",
+    /// "topre", "buckling-spring", "membrane", "none"
+    pub keyboard_type: String,
+    /// Volume multiplier for keypress sounds (0.0–1.0)
+    pub keyboard_volume: f64,
     /// Per-event overrides. Values can be:
     /// - boolean (true = use master volume, false = disabled)
     /// - float (0.0–1.0 = custom volume for this event)
@@ -118,6 +124,8 @@ impl Default for SoundConfig {
             enabled: true,
             volume: 0.5,
             pack: "krypton-cyber".to_string(),
+            keyboard_type: "cherry-mx-brown".to_string(),
+            keyboard_volume: 1.0,
             events: std::collections::HashMap::new(),
         }
     }

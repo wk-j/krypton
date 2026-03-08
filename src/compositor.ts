@@ -389,6 +389,9 @@ export class Compositor {
           data: Array.from(encoder.encode(data)),
         }).catch((e) => console.error('Write to PTY failed:', e));
       }
+      // Keypress sound: press on input, release after short delay
+      this.sound.playKeypress('press');
+      setTimeout(() => this.sound.playKeypress('release'), 30 + Math.random() * 40);
     });
 
     // Click to focus
@@ -1020,6 +1023,9 @@ export class Compositor {
           data: Array.from(encoder.encode(data)),
         }).catch((e) => console.error('QT write to PTY failed:', e));
       }
+      // Keypress sound: press on input, release after short delay
+      this.sound.playKeypress('press');
+      setTimeout(() => this.sound.playKeypress('release'), 30 + Math.random() * 40);
     });
 
     this.qtInitialized = true;
@@ -1323,9 +1329,27 @@ export class Compositor {
     listen<[number, number[]]>('pty-output', (event) => {
       const [sid, data] = event.payload;
 
-      // Detect BEL character (\x07) for terminal bell sound
-      if (data.includes(7)) {
-        this.sound.play('terminal.bell');
+      // Detect standalone BEL character (\x07) for terminal bell sound.
+      // Skip BEL when it appears as an OSC sequence terminator (e.g. \x1b]0;title\x07)
+      // by checking that \x07 is not preceded by an active OSC/escape context.
+      for (let i = 0; i < data.length; i++) {
+        if (data[i] === 7) {
+          // Look backwards for an ESC ] (OSC start) without a closing ST (\x1b\\)
+          let inOsc = false;
+          for (let j = i - 1; j >= 0; j--) {
+            // Found ESC (0x1b) followed by ] (0x5d) = OSC start
+            if (data[j] === 0x5d && j > 0 && data[j - 1] === 0x1b) {
+              inOsc = true;
+              break;
+            }
+            // Found another ESC or standalone BEL before finding OSC — stop looking
+            if (data[j] === 0x1b || data[j] === 7) break;
+          }
+          if (!inOsc) {
+            this.sound.play('terminal.bell');
+            break; // One bell per output chunk is enough
+          }
+        }
       }
 
       // Check Quick Terminal first

@@ -336,29 +336,44 @@ Each user action in Krypton triggers a corresponding sound event. The mapping is
 | FR-SFX-015 | The system shall play a sound effect on the following workspace events: workspace switch. | Must |
 | FR-SFX-016 | The system shall play a sound effect on the following terminal events: shell exit (Ctrl+D), bell character (BEL / `\x07`). | Should |
 | FR-SFX-017 | The system shall play a sound effect on application startup (a short boot/power-on sequence). | Should |
+| FR-SFX-018 | The system shall play synthesized keypress sounds (key-down press + key-up release) on each keystroke sent to the terminal PTY. Sounds are randomized slightly per-keypress for a natural feel. | Should |
+| FR-SFX-019 | The system shall support configurable keyboard types: `cherry-mx-blue` (loud tactile click), `cherry-mx-red` (linear smooth), `cherry-mx-brown` (tactile bump, default), `topre` (deep soft thock), `buckling-spring` (metallic ping + spring rattle), `membrane` (soft dampened), `none` (disabled). | Should |
 
 ### 3.14.3 Built-in Sound Patches
 
-The system ships a default sound pack — the **Krypton Cyber** sound set — designed to match the cyberpunk aesthetic. All patches use additive + subtractive synthesis.
+The system ships a default sound pack — the **Krypton Cyber** sound set — with all action sounds modeled after mechanical keyboard clicks (filtered noise bursts + low sine thumps). Keypress sounds are separate, with 6 keyboard types.
 
 | Sound Event | Patch Character | Synthesis Approach |
 |---|---|---|
-| `window.create` | Short rising digital chirp | Additive: two detuned sawtooths + sub-sine. Subtractive: bandpass sweep opening. Fast attack, short decay. |
-| `window.close` | Descending power-down tone | Additive: square + sine octave below. Subtractive: lowpass sweep closing. Pitch envelope down. Medium release. |
-| `window.focus` | Soft click/tick | Noise burst (white) through tight bandpass at ~4kHz. Very short envelope (5ms attack, 30ms decay). Subtle. |
-| `window.maximize` | Expanding whoosh | Additive: sawtooth chord (root + fifth). Subtractive: highpass opening up. Pitch envelope slight rise. |
-| `window.restore` | Contracting inverse whoosh | Reverse of maximize — highpass closing, pitch slight drop. |
-| `mode.enter` | Crisp activation beep | Sine at ~880Hz + harmonic at ~1760Hz. Sharp attack (2ms), short decay (80ms). |
-| `mode.exit` | Soft deactivation tone | Same frequencies as enter but lower amplitude, slightly longer release, lowpass filtered. |
-| `quick_terminal.show` | Slide-in digital sweep | Additive: two detuned sines sweeping up. Subtractive: bandpass widening. Synced to animation duration. |
-| `quick_terminal.hide` | Slide-out reverse sweep | Reverse of show — frequencies sweep down, bandpass narrowing. |
-| `workspace.switch` | Spatial transition whoosh | Sawtooth + noise through bandpass. Stereo pan from left-to-right or right-to-left based on switch direction. |
-| `command_palette.open` | Soft digital chime | Three sine partials (root, major third, fifth) with staggered attacks (0ms, 15ms, 30ms). Gentle. |
-| `command_palette.execute` | Confirmation ping | Single sine at ~1047Hz (C6), fast attack, medium decay. Slight reverb tail. |
-| `terminal.bell` | Classic terminal bell (synthesized) | Additive: sine at ~1000Hz + inharmonic partial at ~2513Hz for bell-like timbre. FM synthesis for metallic quality. Fast decay. |
-| `startup` | Boot sequence (150-300ms) | Multi-stage: noise burst -> rising sine sweep -> chord resolution (root + fifth + octave). Subtractive: filters open progressively. |
-| `resize.step` | Subtle tick per step | Filtered noise impulse, very short (10ms). Minimal volume so it doesn't annoy during repeated steps. |
-| `swap.complete` | Spatial crossover tone | Two tones panning in opposite directions (left-to-right and right-to-left simultaneously). |
+| `window.create` | Firm keypress click + thock | White noise (bandpass ~3.5kHz) + sine (120Hz). 1ms attack, 15ms decay. |
+| `window.close` | Deeper bottom-out thock | White noise (bandpass ~2.5kHz) + sine (80Hz). 1ms attack, 18ms decay. |
+| `window.focus` | Light tap | White noise only (bandpass ~4kHz, Q=2). Ultra-short 8ms decay. |
+| `window.maximize` | Double-click tap | White noise (bandpass ~3.2kHz) + sine (100Hz). 12ms decay. |
+| `window.restore` | Softer click | White noise (bandpass ~3kHz) + sine (90Hz). 12ms decay. |
+| `mode.enter` | Crisp tactile click | White noise (bandpass ~4.5kHz) + sine (150Hz). 10ms decay. |
+| `mode.exit` | Soft key release / upstroke | White noise only (highpass ~3kHz). 8ms decay. |
+| `quick_terminal.show` | Firm press with body | White noise (bandpass ~3kHz) + sine (110Hz). 20ms decay. |
+| `quick_terminal.hide` | Light release click | White noise only (bandpass ~3.8kHz). 10ms decay. |
+| `workspace.switch` | Spacebar thock — deeper | White noise (bandpass ~2.2kHz) + sine (70Hz). 25ms decay. |
+| `command_palette.open` | Modifier key press | White noise (bandpass ~3.2kHz) + sine (130Hz). 15ms decay. |
+| `command_palette.execute` | Enter key — firm thock | White noise (bandpass ~2.8kHz) + sine (90Hz). 20ms decay. |
+| `terminal.bell` | Firm click with body | White noise (bandpass ~3kHz) + sine (140Hz). 20ms decay. |
+| `startup` | Spacebar thock — deepest | White noise (bandpass ~2kHz) + sine (60Hz). 30ms decay. |
+| `resize.step` | Tiny keycap edge tap | White noise only (bandpass ~5kHz, Q=2.5). 5ms decay. |
+| `swap.complete` | Rapid click | White noise (bandpass ~3.5kHz) + sine (100Hz). 10ms decay. |
+
+#### Keyboard Type Patches
+
+Each keyboard type provides a **press** (key-down) and **release** (key-up) sound. Release fires ~30-70ms after press for natural feel. Amplitude and filter cutoff are randomized +/-8% per keystroke.
+
+| Keyboard Type | Press Character | Release Character |
+|---|---|---|
+| `cherry-mx-blue` | Loud tactile click — sharp high-frequency noise burst + 180Hz body | Lighter high click — high bandpass noise |
+| `cherry-mx-red` | Linear smooth — soft thock, low bandpass noise + 100Hz body | Very quiet upstroke — highpass noise whisp |
+| `cherry-mx-brown` | Tactile bump — moderate click, mid bandpass noise + 130Hz body | Gentle upstroke click |
+| `topre` | Deep soft thock — lowpass filtered noise + 80Hz body | Muted return — soft bandpass noise |
+| `buckling-spring` | Loud metallic ping — wide bandpass noise + 220Hz + 440Hz harmonics | Spring rattle — noise + 300Hz partial |
+| `membrane` | Soft mushy press — lowpass dampened noise + 70Hz body | Very quiet dampened return |
 
 ### 3.14.4 Sound Configuration
 
@@ -369,6 +384,8 @@ The system ships a default sound pack — the **Krypton Cyber** sound set — de
 | FR-SFX-022 | The system shall support a global `volume` control (`sound.volume`, 0.0 to 1.0). Default: `0.5`. | Must |
 | FR-SFX-023 | The system shall support per-event volume overrides or disabling individual sound events (`sound.events.<event_name> = false` or `sound.events.<event_name> = 0.3`). | Should |
 | FR-SFX-024 | The system shall support a `sound.pack` setting to select a named sound pack. Default: `"krypton-cyber"`. | Should |
+| FR-SFX-028 | The system shall support a `sound.keyboard_type` setting to select the keyboard sound profile. Default: `"cherry-mx-brown"`. Set to `"none"` to disable keypress sounds. | Should |
+| FR-SFX-029 | The system shall support a `sound.keyboard_volume` setting (0.0–1.0) to independently control keypress sound volume. Default: `1.0`. Multiplied with master volume. | Should |
 | FR-SFX-025 | The system shall support custom sound packs defined as TOML files in `~/.config/krypton/sounds/`. Each file defines a set of patches keyed by event name. | Could |
 | FR-SFX-026 | Sound configuration changes shall take effect immediately via hot-reload (no restart required). | Should |
 | FR-SFX-027 | The sound engine shall respect the system audio output device and volume. | Must |

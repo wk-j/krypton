@@ -76,11 +76,29 @@ export type SoundEvent =
   | 'terminal.exit'
   | 'startup';
 
+/** Keyboard type for keypress sounds */
+export type KeyboardType =
+  | 'cherry-mx-blue'
+  | 'cherry-mx-red'
+  | 'cherry-mx-brown'
+  | 'topre'
+  | 'buckling-spring'
+  | 'membrane'
+  | 'none';
+
+/** A keypress sound set: press (key down) and release (key up) patches */
+interface KeypressPatchSet {
+  press: SoundPatch;
+  release: SoundPatch;
+}
+
 /** Sound configuration (mirrors TOML [sound] section) */
 export interface SoundConfig {
   enabled: boolean;
   volume: number;
   pack: string;
+  keyboard_type: string;
+  keyboard_volume: number;
   events: Record<string, boolean | number>;
 }
 
@@ -89,248 +107,338 @@ export const DEFAULT_SOUND_CONFIG: SoundConfig = {
   enabled: true,
   volume: 0.15,
   pack: 'krypton-cyber',
+  keyboard_type: 'cherry-mx-brown',
+  keyboard_volume: 1.0,
   events: {},
 };
 
 // ─── Built-in Krypton Cyber Sound Pack ───────────────────────────
 
 const KRYPTON_CYBER: Record<SoundEvent, SoundPatch> = {
-  // ─── All sounds modeled after mechanical keyboard clicks ──────
-  // Core recipe: filtered noise burst (the "click") + low sine thump (the "thock")
-  // Envelopes are ultra-short (2-15ms decay). Everything is quiet and tactile.
+  // ─── Action event sounds — tonal cues (distinct from keypress clicks) ──
+  // These use sine/triangle tones, not noise bursts. Quiet, short, musical.
+  // Keypress sounds are handled separately by the keyboard type system.
 
-  // Window create: firm keypress — click + thock
+  // Window create: rising two-note blip
   'window.create': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.12 },
-      { waveform: 'sine', frequency: 120, amplitude: 0.06 },
+      { waveform: 'sine', frequency: 220, amplitude: 0.08,
+        pitchEnvelope: { start: 180, end: 260, duration: 0.04 } },
     ],
-    filter: {
-      type: 'bandpass', cutoff: 3500, Q: 1.2,
-    },
-    envelope: { attack: 0.001, decay: 0.015, sustain: 0.0, release: 0.008 },
+    filter: { type: 'lowpass', cutoff: 800, Q: 0.7 },
+    envelope: { attack: 0.002, decay: 0.04, sustain: 0.0, release: 0.02 },
   },
 
-  // Window close: slightly deeper thock — like bottoming out a key
+  // Window close: falling tone
   'window.close': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
-      { waveform: 'sine', frequency: 80, amplitude: 0.07 },
+      { waveform: 'sine', frequency: 200, amplitude: 0.07,
+        pitchEnvelope: { start: 240, end: 140, duration: 0.05 } },
     ],
-    filter: {
-      type: 'bandpass', cutoff: 2500, Q: 1.0,
-    },
-    envelope: { attack: 0.001, decay: 0.018, sustain: 0.0, release: 0.01 },
+    filter: { type: 'lowpass', cutoff: 700, Q: 0.7 },
+    envelope: { attack: 0.002, decay: 0.05, sustain: 0.0, release: 0.025 },
   },
 
-  // Window focus: light tap — like brushing a keycap
+  // Window focus: tiny soft ping
   'window.focus': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.06 },
+      { waveform: 'triangle', frequency: 400, amplitude: 0.04 },
     ],
-    filter: {
-      type: 'bandpass', cutoff: 4000, Q: 2.0,
-    },
-    envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
-  },
-
-  // Window maximize: double-click — two rapid taps
-  'window.maximize': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
-      { waveform: 'sine', frequency: 100, amplitude: 0.05 },
-    ],
-    filter: {
-      type: 'bandpass', cutoff: 3200, Q: 1.2,
-    },
-    envelope: { attack: 0.001, decay: 0.012, sustain: 0.0, release: 0.006 },
-  },
-
-  // Window restore: softer click
-  'window.restore': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.08 },
-      { waveform: 'sine', frequency: 90, amplitude: 0.04 },
-    ],
-    filter: {
-      type: 'bandpass', cutoff: 3000, Q: 1.0,
-    },
-    envelope: { attack: 0.001, decay: 0.012, sustain: 0.0, release: 0.006 },
-  },
-
-  // Mode enter: crisp click — like actuating a tactile switch
-  'mode.enter': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
-      { waveform: 'sine', frequency: 150, amplitude: 0.04 },
-    ],
-    filter: {
-      type: 'bandpass', cutoff: 4500, Q: 1.5,
-    },
-    envelope: { attack: 0.001, decay: 0.01, sustain: 0.0, release: 0.005 },
-  },
-
-  // Mode exit: soft key release — upstroke sound
-  'mode.exit': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.06 },
-    ],
-    filter: {
-      type: 'highpass', cutoff: 3000, Q: 0.8,
-    },
-    envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
-  },
-
-  // Quick Terminal show: firm press with slightly longer body
-  'quick_terminal.show': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
-      { waveform: 'sine', frequency: 110, amplitude: 0.06 },
-    ],
-    filter: {
-      type: 'bandpass', cutoff: 3000, Q: 1.0,
-    },
+    filter: { type: 'lowpass', cutoff: 1000, Q: 0.5 },
     envelope: { attack: 0.001, decay: 0.02, sustain: 0.0, release: 0.01 },
   },
 
-  // Quick Terminal hide: light release click
-  'quick_terminal.hide': {
+  // Window maximize: rising fifth interval
+  'window.maximize': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.07 },
+      { waveform: 'sine', frequency: 200, amplitude: 0.06 },
+      { waveform: 'sine', frequency: 300, amplitude: 0.04 },
     ],
-    filter: {
-      type: 'bandpass', cutoff: 3800, Q: 1.2,
-    },
-    envelope: { attack: 0.001, decay: 0.01, sustain: 0.0, release: 0.005 },
+    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
+    envelope: { attack: 0.003, decay: 0.05, sustain: 0.0, release: 0.025 },
   },
 
-  // Workspace switch: spacebar thock — deeper, slightly longer
-  'workspace.switch': {
+  // Window restore: falling fourth interval
+  'window.restore': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
-      { waveform: 'sine', frequency: 70, amplitude: 0.08 },
+      { waveform: 'sine', frequency: 300, amplitude: 0.05 },
+      { waveform: 'sine', frequency: 200, amplitude: 0.04 },
     ],
-    filter: {
-      type: 'bandpass', cutoff: 2200, Q: 0.8,
-    },
+    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
+    envelope: { attack: 0.003, decay: 0.05, sustain: 0.0, release: 0.025 },
+  },
+
+  // Mode enter: short high blip
+  'mode.enter': {
+    oscillators: [
+      { waveform: 'sine', frequency: 500, amplitude: 0.06 },
+    ],
+    filter: { type: 'lowpass', cutoff: 1200, Q: 0.7 },
     envelope: { attack: 0.001, decay: 0.025, sustain: 0.0, release: 0.012 },
   },
 
-  // Command palette open: modifier key press
-  'command_palette.open': {
+  // Mode exit: lower blip
+  'mode.exit': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.08 },
-      { waveform: 'sine', frequency: 130, amplitude: 0.04 },
+      { waveform: 'sine', frequency: 350, amplitude: 0.04 },
     ],
-    filter: {
-      type: 'bandpass', cutoff: 3200, Q: 1.0,
-    },
-    envelope: { attack: 0.001, decay: 0.015, sustain: 0.0, release: 0.008 },
+    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
+    envelope: { attack: 0.002, decay: 0.025, sustain: 0.0, release: 0.012 },
   },
 
-  // Command palette close: modifier key release
+  // Quick Terminal show: warm rising tone
+  'quick_terminal.show': {
+    oscillators: [
+      { waveform: 'sine', frequency: 250, amplitude: 0.07,
+        pitchEnvelope: { start: 200, end: 300, duration: 0.06 } },
+    ],
+    filter: { type: 'lowpass', cutoff: 800, Q: 0.7 },
+    envelope: { attack: 0.003, decay: 0.06, sustain: 0.0, release: 0.03 },
+  },
+
+  // Quick Terminal hide: warm falling tone
+  'quick_terminal.hide': {
+    oscillators: [
+      { waveform: 'sine', frequency: 280, amplitude: 0.05,
+        pitchEnvelope: { start: 300, end: 200, duration: 0.06 } },
+    ],
+    filter: { type: 'lowpass', cutoff: 800, Q: 0.7 },
+    envelope: { attack: 0.003, decay: 0.06, sustain: 0.0, release: 0.03 },
+  },
+
+  // Workspace switch: gentle whoosh (noise + tone)
+  'workspace.switch': {
+    oscillators: [
+      { waveform: 'sine', frequency: 180, amplitude: 0.05,
+        pitchEnvelope: { start: 150, end: 220, duration: 0.08 } },
+    ],
+    filter: { type: 'lowpass', cutoff: 700, Q: 0.7 },
+    envelope: { attack: 0.005, decay: 0.07, sustain: 0.0, release: 0.035 },
+    pan: 0.3,
+  },
+
+  // Command palette open: two-note ascending
+  'command_palette.open': {
+    oscillators: [
+      { waveform: 'triangle', frequency: 300, amplitude: 0.05 },
+      { waveform: 'triangle', frequency: 400, amplitude: 0.03 },
+    ],
+    filter: { type: 'lowpass', cutoff: 1000, Q: 0.5 },
+    envelope: { attack: 0.002, decay: 0.04, sustain: 0.0, release: 0.02 },
+  },
+
+  // Command palette close: single descending note
   'command_palette.close': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.05 },
+      { waveform: 'triangle', frequency: 350, amplitude: 0.03,
+        pitchEnvelope: { start: 380, end: 280, duration: 0.03 } },
     ],
-    filter: {
-      type: 'highpass', cutoff: 3500, Q: 0.8,
-    },
+    filter: { type: 'lowpass', cutoff: 800, Q: 0.5 },
+    envelope: { attack: 0.002, decay: 0.03, sustain: 0.0, release: 0.015 },
+  },
+
+  // Command palette execute: confirmation ping
+  'command_palette.execute': {
+    oscillators: [
+      { waveform: 'sine', frequency: 440, amplitude: 0.06 },
+    ],
+    filter: { type: 'lowpass', cutoff: 1200, Q: 0.7 },
+    envelope: { attack: 0.001, decay: 0.04, sustain: 0.0, release: 0.02 },
+  },
+
+  // Layout toggle: quick two-note flip
+  'layout.toggle': {
+    oscillators: [
+      { waveform: 'sine', frequency: 250, amplitude: 0.05 },
+      { waveform: 'sine', frequency: 330, amplitude: 0.03 },
+    ],
+    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
+    envelope: { attack: 0.002, decay: 0.035, sustain: 0.0, release: 0.018 },
+  },
+
+  // Swap complete: crossing tones
+  'swap.complete': {
+    oscillators: [
+      { waveform: 'sine', frequency: 250, amplitude: 0.04,
+        pitchEnvelope: { start: 220, end: 300, duration: 0.04 } },
+      { waveform: 'sine', frequency: 350, amplitude: 0.03,
+        pitchEnvelope: { start: 380, end: 280, duration: 0.04 } },
+    ],
+    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
+    envelope: { attack: 0.002, decay: 0.04, sustain: 0.0, release: 0.02 },
+  },
+
+  // Resize step: tiny triangle pip
+  'resize.step': {
+    oscillators: [
+      { waveform: 'triangle', frequency: 600, amplitude: 0.03 },
+    ],
     envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
   },
 
-  // Command palette execute: enter key — firm thock
-  'command_palette.execute': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.12 },
-      { waveform: 'sine', frequency: 90, amplitude: 0.06 },
-    ],
-    filter: {
-      type: 'bandpass', cutoff: 2800, Q: 1.0,
-    },
-    envelope: { attack: 0.001, decay: 0.02, sustain: 0.0, release: 0.01 },
-  },
-
-  // Layout toggle: standard keypress
-  'layout.toggle': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.09 },
-      { waveform: 'sine', frequency: 110, amplitude: 0.04 },
-    ],
-    filter: {
-      type: 'bandpass', cutoff: 3500, Q: 1.2,
-    },
-    envelope: { attack: 0.001, decay: 0.012, sustain: 0.0, release: 0.006 },
-  },
-
-  // Swap complete: two rapid clicks
-  'swap.complete': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.09 },
-      { waveform: 'sine', frequency: 100, amplitude: 0.04 },
-    ],
-    filter: {
-      type: 'bandpass', cutoff: 3500, Q: 1.2,
-    },
-    envelope: { attack: 0.001, decay: 0.01, sustain: 0.0, release: 0.005 },
-  },
-
-  // Resize step: tiny tick — like tapping the edge of a keycap
-  'resize.step': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.05 },
-    ],
-    filter: {
-      type: 'bandpass', cutoff: 5000, Q: 2.5,
-    },
-    envelope: { attack: 0.001, decay: 0.005, sustain: 0.0, release: 0.002 },
-  },
-
-  // Move step: tiny tick — slightly softer variant
+  // Move step: slightly lower pip
   'move.step': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.04 },
+      { waveform: 'triangle', frequency: 500, amplitude: 0.025 },
     ],
-    filter: {
-      type: 'bandpass', cutoff: 4500, Q: 2.0,
-    },
-    envelope: { attack: 0.001, decay: 0.005, sustain: 0.0, release: 0.002 },
+    envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
   },
 
-  // Terminal bell: firm click with a bit more body
+  // Terminal bell: metallic ping (FM synthesis)
   'terminal.bell': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.12 },
-      { waveform: 'sine', frequency: 140, amplitude: 0.05 },
+      { waveform: 'sine', frequency: 600, amplitude: 0.08,
+        fm: { modulatorIndex: 1, depth: 80 } },
+      { waveform: 'sine', frequency: 1500, amplitude: 0.03 },
     ],
-    filter: {
-      type: 'bandpass', cutoff: 3000, Q: 1.0,
-    },
-    envelope: { attack: 0.001, decay: 0.02, sustain: 0.0, release: 0.01 },
+    filter: { type: 'lowpass', cutoff: 2000, Q: 1.0 },
+    envelope: { attack: 0.001, decay: 0.06, sustain: 0.0, release: 0.03 },
   },
 
-  // Terminal exit: key release — soft upstroke
+  // Terminal exit: descending fade
   'terminal.exit': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.06 },
-      { waveform: 'sine', frequency: 80, amplitude: 0.03 },
+      { waveform: 'sine', frequency: 180, amplitude: 0.06,
+        pitchEnvelope: { start: 200, end: 100, duration: 0.1 } },
     ],
-    filter: {
-      type: 'bandpass', cutoff: 2800, Q: 1.0,
-    },
-    envelope: { attack: 0.001, decay: 0.015, sustain: 0.0, release: 0.008 },
+    filter: { type: 'lowpass', cutoff: 600, Q: 0.7 },
+    envelope: { attack: 0.003, decay: 0.08, sustain: 0.0, release: 0.04 },
   },
 
-  // Startup: spacebar press — the deepest thock
+  // Startup: low warm hum rising
   'startup': {
     oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
-      { waveform: 'sine', frequency: 60, amplitude: 0.08 },
+      { waveform: 'sine', frequency: 120, amplitude: 0.07,
+        pitchEnvelope: { start: 80, end: 160, duration: 0.1 } },
+      { waveform: 'sine', frequency: 240, amplitude: 0.04 },
     ],
     filter: {
-      type: 'bandpass', cutoff: 2000, Q: 0.8,
+      type: 'lowpass', cutoff: 500, Q: 0.7,
+      envelope: { start: 300, end: 700, duration: 0.12 },
     },
-    envelope: { attack: 0.001, decay: 0.03, sustain: 0.0, release: 0.015 },
+    envelope: { attack: 0.005, decay: 0.1, sustain: 0.02, release: 0.05 },
+  },
+};
+
+// ─── Keyboard Type Sound Patches ─────────────────────────────────
+// Each keyboard type has a press (key-down) and release (key-up) patch.
+// All are noise-based with subtle tonal body — modeled after real switch acoustics.
+
+const KEYBOARD_PATCHES: Record<Exclude<KeyboardType, 'none'>, KeypressPatchSet> = {
+  // Cherry MX Blue: loud tactile click — sharp high click on press, lighter click on release
+  'cherry-mx-blue': {
+    press: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.14 },
+        { waveform: 'sine', frequency: 180, amplitude: 0.05 },
+      ],
+      filter: { type: 'bandpass', cutoff: 4500, Q: 1.8 },
+      envelope: { attack: 0.001, decay: 0.018, sustain: 0.0, release: 0.008 },
+    },
+    release: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.08 },
+      ],
+      filter: { type: 'bandpass', cutoff: 5500, Q: 2.0 },
+      envelope: { attack: 0.001, decay: 0.01, sustain: 0.0, release: 0.005 },
+    },
+  },
+
+  // Cherry MX Red: linear smooth — soft thock on bottom-out, very quiet upstroke
+  'cherry-mx-red': {
+    press: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.07 },
+        { waveform: 'sine', frequency: 100, amplitude: 0.04 },
+      ],
+      filter: { type: 'bandpass', cutoff: 2800, Q: 1.0 },
+      envelope: { attack: 0.001, decay: 0.012, sustain: 0.0, release: 0.006 },
+    },
+    release: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.03 },
+      ],
+      filter: { type: 'highpass', cutoff: 4000, Q: 0.8 },
+      envelope: { attack: 0.001, decay: 0.006, sustain: 0.0, release: 0.003 },
+    },
+  },
+
+  // Cherry MX Brown: tactile bump — gentle bump click, moderate thock
+  'cherry-mx-brown': {
+    press: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
+        { waveform: 'sine', frequency: 130, amplitude: 0.04 },
+      ],
+      filter: { type: 'bandpass', cutoff: 3500, Q: 1.3 },
+      envelope: { attack: 0.001, decay: 0.014, sustain: 0.0, release: 0.007 },
+    },
+    release: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.05 },
+      ],
+      filter: { type: 'highpass', cutoff: 3500, Q: 1.0 },
+      envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
+    },
+  },
+
+  // Topre: rubber dome + capacitive — deep soft thock, very muted
+  'topre': {
+    press: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.06 },
+        { waveform: 'sine', frequency: 80, amplitude: 0.05 },
+      ],
+      filter: { type: 'lowpass', cutoff: 2000, Q: 0.8 },
+      envelope: { attack: 0.001, decay: 0.02, sustain: 0.0, release: 0.01 },
+    },
+    release: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.03 },
+      ],
+      filter: { type: 'bandpass', cutoff: 2500, Q: 1.0 },
+      envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
+    },
+  },
+
+  // Buckling Spring (IBM Model M): loud metallic ping + spring rattle
+  'buckling-spring': {
+    press: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.15 },
+        { waveform: 'sine', frequency: 220, amplitude: 0.06 },
+        { waveform: 'sine', frequency: 440, amplitude: 0.03 },
+      ],
+      filter: { type: 'bandpass', cutoff: 5000, Q: 2.0 },
+      envelope: { attack: 0.001, decay: 0.022, sustain: 0.0, release: 0.012 },
+    },
+    release: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
+        { waveform: 'sine', frequency: 300, amplitude: 0.03 },
+      ],
+      filter: { type: 'bandpass', cutoff: 4500, Q: 1.5 },
+      envelope: { attack: 0.001, decay: 0.015, sustain: 0.0, release: 0.008 },
+    },
+  },
+
+  // Membrane: soft mushy press — very quiet, dampened
+  'membrane': {
+    press: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.04 },
+        { waveform: 'sine', frequency: 70, amplitude: 0.02 },
+      ],
+      filter: { type: 'lowpass', cutoff: 1500, Q: 0.6 },
+      envelope: { attack: 0.002, decay: 0.015, sustain: 0.0, release: 0.008 },
+    },
+    release: {
+      oscillators: [
+        { waveform: 'white-noise', frequency: 0, amplitude: 0.02 },
+      ],
+      filter: { type: 'lowpass', cutoff: 1200, Q: 0.5 },
+      envelope: { attack: 0.002, decay: 0.01, sustain: 0.0, release: 0.005 },
+    },
   },
 };
 
@@ -342,6 +450,21 @@ export class SoundEngine {
   private compressor: DynamicsCompressorNode | null = null;
   private config: SoundConfig = { ...DEFAULT_SOUND_CONFIG };
   private patches: Record<string, SoundPatch> = { ...KRYPTON_CYBER };
+
+  // ─── Sound queue / overlap management ─────────────────────────
+  /** Max concurrent synthesized sounds. Beyond this, new sounds are dropped. */
+  private static readonly MAX_CONCURRENT = 8;
+  /** Minimum interval (ms) between keypress sounds to avoid stacking during fast typing */
+  private static readonly KEYPRESS_THROTTLE_MS = 25;
+  /** Per-event cooldown (ms) — same action event won't re-fire within this window */
+  private static readonly EVENT_COOLDOWN_MS = 50;
+
+  /** Number of sounds currently playing */
+  private activeSounds = 0;
+  /** Timestamp of the last keypress sound (press phase) */
+  private lastKeypressTime = 0;
+  /** Last fire time per action event for dedup */
+  private lastEventTime: Map<string, number> = new Map();
 
   /**
    * Apply sound configuration. Call after loading config from backend.
@@ -355,8 +478,68 @@ export class SoundEngine {
   }
 
   /**
+   * Play a keypress sound (press or release).
+   * Uses the configured keyboard_type to select the patch set.
+   * Adds subtle randomization to pitch and amplitude for a natural feel.
+   * Throttled: skips if previous press is still within throttle window.
+   */
+  playKeypress(phase: 'press' | 'release'): void {
+    if (!this.config.enabled) return;
+    const kbType = this.config.keyboard_type;
+    if (kbType === 'none') return;
+
+    // Check per-event override for keypress
+    const eventConfig = this.config.events['keypress'];
+    if (eventConfig === false) return;
+
+    // Throttle: skip if too soon after last press
+    const now = performance.now();
+    if (phase === 'press') {
+      if (now - this.lastKeypressTime < SoundEngine.KEYPRESS_THROTTLE_MS) return;
+      this.lastKeypressTime = now;
+    }
+
+    // Max concurrent check
+    if (this.activeSounds >= SoundEngine.MAX_CONCURRENT) return;
+
+    // Validate keyboard type is a known key
+    if (!(kbType in KEYBOARD_PATCHES)) return;
+    const patchSet = KEYBOARD_PATCHES[kbType as Exclude<KeyboardType, 'none'>];
+
+    const basePatch = phase === 'press' ? patchSet.press : patchSet.release;
+
+    // Determine volume: keyboard_volume * per-event override
+    let volume = this.config.keyboard_volume;
+    if (typeof eventConfig === 'number') {
+      volume *= Math.max(0, Math.min(1, eventConfig));
+    }
+
+    // Add subtle randomization for natural feel:
+    // +/-8% amplitude variation, +/-3% filter cutoff variation
+    const ampJitter = 0.92 + Math.random() * 0.16;    // 0.92 – 1.08
+    const cutoffJitter = 0.97 + Math.random() * 0.06;  // 0.97 – 1.03
+
+    const patch: SoundPatch = {
+      ...basePatch,
+      oscillators: basePatch.oscillators.map((osc) => ({
+        ...osc,
+        amplitude: osc.amplitude * ampJitter,
+      })),
+      filter: basePatch.filter
+        ? { ...basePatch.filter, cutoff: basePatch.filter.cutoff * cutoffJitter }
+        : undefined,
+    };
+
+    this.ensureContext();
+    if (!this.ctx || !this.masterGain) return;
+
+    this.synthesize(patch, volume);
+  }
+
+  /**
    * Play a sound event. Non-blocking — schedules audio via Web Audio API timing.
    * Gracefully no-ops if sound is disabled, event is disabled, or AudioContext unavailable.
+   * Deduplicates: skips if the same event fired within the cooldown window.
    */
   play(event: SoundEvent): void {
     if (!this.config.enabled) return;
@@ -364,6 +547,15 @@ export class SoundEngine {
     // Check per-event override
     const eventConfig = this.config.events[event];
     if (eventConfig === false) return;
+
+    // Cooldown dedup: skip if same event fired too recently
+    const now = performance.now();
+    const lastTime = this.lastEventTime.get(event) ?? 0;
+    if (now - lastTime < SoundEngine.EVENT_COOLDOWN_MS) return;
+    this.lastEventTime.set(event, now);
+
+    // Max concurrent check
+    if (this.activeSounds >= SoundEngine.MAX_CONCURRENT) return;
 
     const patch = this.patches[event];
     if (!patch) return;
@@ -422,6 +614,9 @@ export class SoundEngine {
     const env = patch.envelope;
     const totalDuration = env.attack + env.decay + env.sustain * 0.1 + env.release + 0.05;
     const endTime = now + totalDuration;
+
+    // Track active sound count
+    this.activeSounds++;
 
     // ─── Build oscillator sources ───
 
@@ -586,8 +781,9 @@ export class SoundEngine {
       source.stop(endTime);
     }
 
-    // Clean up nodes after completion (allow GC)
+    // Clean up nodes after completion (allow GC) and decrement active count
     setTimeout(() => {
+      this.activeSounds = Math.max(0, this.activeSounds - 1);
       for (const source of oscNodes) {
         try { source.disconnect(); } catch { /* already disconnected */ }
       }

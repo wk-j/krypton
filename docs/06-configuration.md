@@ -157,6 +157,10 @@ cancel = "Escape"
 enabled = true                 # master toggle for all sound effects
 volume = 0.5                   # master volume (0.0 to 1.0)
 pack = "krypton-cyber"         # sound pack name (built-in or custom)
+keyboard_type = "cherry-mx-brown"  # keypress sound: "cherry-mx-blue", "cherry-mx-red",
+                                   # "cherry-mx-brown", "topre", "buckling-spring",
+                                   # "membrane", "none" (disable keypress sounds)
+keyboard_volume = 1.0          # volume multiplier for keypress sounds (0.0 to 1.0)
 # Custom sound packs: place .toml files in ~/.config/krypton/sounds/
 
 # Per-event overrides: set to false to disable, or a float (0.0-1.0) for volume
@@ -173,6 +177,7 @@ pack = "krypton-cyber"         # sound pack name (built-in or custom)
 # resize.step = 0.15            # very quiet for repeated steps
 # command_palette.open = true
 # command_palette.execute = true
+# keypress = true               # toggle/adjust keypress sounds separately
 
 # --- Quick Terminal ---
 # A persistent overlay terminal toggled via Cmd+I, centered on screen.
@@ -298,9 +303,11 @@ name = "custom-fixed"
 | `[sound]` | `enabled` | bool | `true` | Master toggle — enables/disables all sound effects |
 | `[sound]` | `volume` | float | `0.5` | Master volume (0.0 = silent, 1.0 = full) |
 | `[sound]` | `pack` | string | `"krypton-cyber"` | Sound pack name (built-in or custom from `~/.config/krypton/sounds/`) |
+| `[sound]` | `keyboard_type` | string | `"cherry-mx-brown"` | Keyboard type for keypress sounds. Options: `"cherry-mx-blue"`, `"cherry-mx-red"`, `"cherry-mx-brown"`, `"topre"`, `"buckling-spring"`, `"membrane"`, `"none"` |
+| `[sound]` | `keyboard_volume` | float | `1.0` | Volume multiplier for keypress sounds (0.0 = silent, 1.0 = full). Multiplied with master volume. |
 | `[sound.events]` | `<event_name>` | bool \| float | `true` | Per-event toggle or volume override. `false` disables, `true` uses master volume, float (0.0–1.0) sets individual volume. |
 
-Valid event names: `window.create`, `window.close`, `window.focus`, `window.maximize`, `window.restore`, `mode.enter`, `mode.exit`, `quick_terminal.show`, `quick_terminal.hide`, `workspace.switch`, `command_palette.open`, `command_palette.close`, `command_palette.execute`, `layout.toggle`, `swap.complete`, `resize.step`, `move.step`, `terminal.bell`, `terminal.exit`, `startup`.
+Valid event names: `window.create`, `window.close`, `window.focus`, `window.maximize`, `window.restore`, `mode.enter`, `mode.exit`, `quick_terminal.show`, `quick_terminal.hide`, `workspace.switch`, `command_palette.open`, `command_palette.close`, `command_palette.execute`, `layout.toggle`, `swap.complete`, `resize.step`, `move.step`, `terminal.bell`, `terminal.exit`, `startup`, `keypress`.
 
 ### Quick Terminal Configuration
 

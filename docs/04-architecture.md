@@ -403,6 +403,12 @@ interface SoundPatch {
 }
 ```
 
+### Keyboard Type Patch Sets
+
+Keypress sounds are separate from action sounds. Each keyboard type defines a **press** (key-down) and **release** (key-up) `SoundPatch`. The engine adds per-keystroke randomization (+/-8% amplitude, +/-3% filter cutoff) for a natural feel. The release sound fires 30-70ms (randomized) after the press.
+
+Six keyboard types are built in: `cherry-mx-blue`, `cherry-mx-red`, `cherry-mx-brown` (default), `topre`, `buckling-spring`, `membrane`. Set to `none` to disable.
+
 ### Integration Points
 
 The Sound Engine is called by the compositor and input router at the moment each action occurs:
@@ -421,3 +427,4 @@ The Sound Engine is called by the compositor and input router at the moment each
 | `main.ts` (startup) | After first window rendered | `startup` |
 | PTY event listener | On BEL character | `terminal.bell` |
 | PTY event listener | On shell exit | `terminal.exit` |
+| `terminal.onData()` (both regular + QT) | On each keystroke to PTY | `keypress` (press + release via `playKeypress()`) |
