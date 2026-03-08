@@ -34,6 +34,8 @@ html, body {
   border: 1px solid rgba(0, 200, 255, 0.3);
   overflow: visible;
   box-shadow: 0 0 15px rgba(0, 200, 255, 0.07);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
 .krypton-window--focused {
@@ -260,6 +262,8 @@ html, body {
   border: 1px solid rgba(0, 200, 255, 0.4);
   padding: 10px 14px;
   min-width: 240px;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
 }
 
 .krypton-whichkey__title {
