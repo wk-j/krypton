@@ -55,10 +55,36 @@
 3. **Backend resizes PTY** -> `TIOCSWINSZ` ioctl (POSIX) / `ResizePseudoConsole` (Windows)
 4. **Shell redraws** -> Shell receives `SIGWINCH`, redraws output
 
+## Config Loading Flow (on app startup)
+
+```
+1. Rust backend starts, calls config::load_config()
+2. load_config() resolves path: ~/.config/krypton/krypton.toml
+3. If file doesn't exist:
+   a. Create directory ~/.config/krypton/
+   b. Serialize KryptonConfig::default() to TOML
+   c. Write default config file to disk
+   d. Return default config
+4. If file exists:
+   a. Read file contents
+   b. Parse TOML into KryptonConfig (missing fields filled by #[serde(default)])
+   c. If parse fails, log error and return defaults
+5. Config stored as Arc<KryptonConfig> in Tauri managed state
+6. Frontend calls invoke("get_config") during initialization
+7. Compositor.applyConfig() applies settings:
+   - Font family, size, line height
+   - Terminal scrollback, cursor style, cursor blink
+   - Theme color overrides (merged on top of built-in theme)
+   - Quick Terminal width/height ratio, backdrop blur
+   - Workspace gap, resize/move step sizes
+8. First terminal window created with config-backed settings
+9. PTY spawned with config shell program and args
+```
+
 ## Compositor Mode Flow (e.g., user presses Leader key)
 
 ```
-1. User presses Leader key (Ctrl+Space)
+1. User presses Leader key (Cmd+P)
 2. Input Router enters Compositor mode
 3. UI shows mode indicator (e.g., "COMPOSITOR" badge)
 4. User presses next key:

@@ -242,9 +242,24 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-ANI-009 | Window close shall animate with a configurable exit effect (e.g., `fade-out`, `scale-down`, `slide-out`). | Should |
 | FR-ANI-010 | The system shall maintain 60 FPS during all transition animations. | Must |
 
-## 3.11 Custom Themes
+## 3.11 Configuration
 
-### 3.11.1 Theme System
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-CFG-001 | The system shall read configuration from a TOML file at `~/.config/krypton/krypton.toml`. | Must |
+| FR-CFG-002 | If the config file does not exist on startup, the system shall create the directory and write a default config file. | Must |
+| FR-CFG-003 | Missing config fields shall fall back to built-in defaults (partial configs are valid). | Must |
+| FR-CFG-004 | If the config file fails to parse, the system shall log a warning and start with defaults. | Must |
+| FR-CFG-005 | The config shall support the following sections: `[shell]`, `[font]`, `[terminal]`, `[theme]`, `[quick_terminal]`, `[workspaces]`. | Must |
+| FR-CFG-006 | Shell program and arguments shall be configurable and used when spawning PTY sessions. | Must |
+| FR-CFG-007 | Font family, size, and line height shall be configurable and applied to all terminal instances. | Must |
+| FR-CFG-008 | Terminal scrollback lines, cursor style, and cursor blink shall be configurable. | Must |
+| FR-CFG-009 | Theme color overrides (ANSI 16 colors, foreground, background, cursor, selection) shall be configurable inline under `[theme.colors]`. | Must |
+| FR-CFG-010 | Quick Terminal width ratio, height ratio, and backdrop blur shall be configurable under `[quick_terminal]`. | Should |
+
+## 3.12 Custom Themes
+
+### 3.12.1 Theme System
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -254,7 +269,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-004 | Hot-reloading of themes shall be supported — changes to theme files apply immediately without restart. | Should |
 | FR-THM-005 | The command palette shall list all available themes and allow switching at runtime via keyboard. | Must |
 
-### 3.11.2 Theme Scope — Terminal Colors
+### 3.12.2 Theme Scope — Terminal Colors
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -262,7 +277,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-011 | A theme shall define the full ANSI 16-color palette (black, red, green, yellow, blue, magenta, cyan, white, and their bright variants). | Must |
 | FR-THM-012 | A theme may optionally define the 256-color palette overrides. | Could |
 
-### 3.11.3 Theme Scope — Window Chrome
+### 3.12.3 Theme Scope — Window Chrome
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -272,7 +287,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-023 | A theme shall define distinct styles for **focused** vs. **unfocused** window chrome (e.g., brighter border, stronger shadow for focused). | Must |
 | FR-THM-024 | A theme shall define the tab bar style: background, active tab color, inactive tab color, tab height, tab font. | Must |
 
-### 3.11.4 Theme Scope — Workspace Background
+### 3.12.4 Theme Scope — Workspace Background
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -280,7 +295,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-031 | A theme may optionally define a workspace background color or image with configurable opacity (overlay on the transparent surface). | Should |
 | FR-THM-032 | A theme may define a workspace-level blur effect (vibrancy/frosted glass) applied to the transparent background behind windows. | Could |
 
-### 3.11.5 Theme Scope — UI Elements
+### 3.12.5 Theme Scope — UI Elements
 
 | ID | Requirement | Priority |
 |----|-------------|----------|

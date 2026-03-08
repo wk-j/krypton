@@ -83,17 +83,20 @@ tauri::Builder::default()
 
 The webview's `<html>` and `<body>` have `background: transparent`. Windows are the only visible elements — they float on the invisible workspace surface with their own chrome and shadows.
 
-## 5.1 Key Rust Crates (Planned)
+## 5.1 Key Rust Crates
 
-| Crate | Purpose |
-|-------|---------|
-| `tauri` | Application framework, fullscreen transparent borderless shell, IPC |
-| `portable-pty` | Cross-platform PTY allocation and management |
-| `vte` | VT escape sequence parser (backend validation/processing) |
-| `serde` / `toml` | Configuration deserialization (workspaces, themes, keybindings) |
-| `notify` | Filesystem watcher for config hot-reload |
-| `unicode-width` | Character width calculation for CJK / emoji |
-| `display-info` | Query monitor geometry for fullscreen dimensions |
+| Crate | Purpose | Status |
+|-------|---------|--------|
+| `tauri` | Application framework, fullscreen transparent borderless shell, IPC | Implemented |
+| `portable-pty` | Cross-platform PTY allocation and management | Implemented |
+| `serde` / `serde_json` | Serialization framework for IPC and config | Implemented |
+| `toml` | TOML config file parsing | Implemented |
+| `dirs` | Cross-platform home directory resolution for config path | Implemented |
+| `log` / `tauri-plugin-log` | Logging framework | Implemented |
+| `vte` | VT escape sequence parser (backend validation/processing) | Planned |
+| `notify` | Filesystem watcher for config hot-reload | Planned |
+| `unicode-width` | Character width calculation for CJK / emoji | Planned |
+| `display-info` | Query monitor geometry for fullscreen dimensions | Planned |
 
 ## 5.2 Key Frontend Packages (npm)
 
@@ -214,7 +217,20 @@ When switching workspaces:
 - Windows only in target: **create** with entrance animation, assign idle session or spawn new shell
 - Windows only in current: **hide** with exit animation (DOM hidden, PTY kept alive in session pool)
 
-## 5.5 Workspace Manager (Backend)
+## 5.5 Config Manager (Backend)
+
+The Config Manager (`src-tauri/src/config.rs`) handles loading and serving the TOML configuration:
+
+- **Serde structs**: `KryptonConfig` with subsections `ShellConfig`, `FontConfig`, `TerminalConfig`, `ThemeConfig` (with `ThemeColors`), `QuickTerminalConfig`, `WorkspacesConfig`. All derive `Default` and use `#[serde(default)]` so missing fields fall back to built-in defaults.
+- **Config path**: `~/.config/krypton/krypton.toml` on all platforms (resolved via `dirs::home_dir()`).
+- **First-run behavior**: If the config file doesn't exist, the directory is created and a default config is written.
+- **Parse errors**: Logged and silently fall back to defaults (app still starts).
+- **IPC**: `get_config` Tauri command returns the full `KryptonConfig` to the frontend on startup.
+- **Shell config**: `spawn_pty` command accepts optional `shell`/`shell_args` params from the frontend, falling back to config values, then `$SHELL`.
+
+Frontend counterpart: `src/config.ts` defines matching TypeScript interfaces and a `loadConfig()` function. The compositor's `applyConfig()` method applies settings (font, terminal, theme colors, Quick Terminal sizing, workspace gap/step sizes) before the first window is created.
+
+## 5.6 Workspace Manager (Backend)
 
 The Workspace Manager lives in Rust and handles the data/logic side:
 
