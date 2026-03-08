@@ -1,5 +1,5 @@
 /* Krypton — Global Styles */
-/* Cyberpunk / sci-fi terminal aesthetic */
+/* Sci-fi HUD panel aesthetic */
 
 *, *::before, *::after {
   margin: 0;
@@ -30,17 +30,119 @@ html, body {
   position: absolute;
   display: flex;
   flex-direction: column;
-  background: rgba(10, 10, 15, 0.5);
-  border: 1px solid #1a3a5c;
-  overflow: hidden;
+  background: rgba(6, 10, 18, 0.5);
+  border: 1px solid rgba(0, 200, 255, 0.3);
+  overflow: visible;
+  box-shadow: 0 0 15px rgba(0, 200, 255, 0.07);
 }
 
 .krypton-window--focused {
-  border-color: #0cf;
-  box-shadow:
-    0 0 6px rgba(0, 204, 255, 0.25),
-    0 0 20px rgba(0, 204, 255, 0.08),
-    inset 0 0 6px rgba(0, 204, 255, 0.05);
+  border-color: rgba(0, 200, 255, 0.5);
+  box-shadow: 0 0 20px rgba(0, 200, 255, 0.12);
+}
+
+/* ─── Corner accents ─── */
+/* Small glowing L-shapes at each corner */
+.krypton-window__corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.krypton-window__corner::before,
+.krypton-window__corner::after {
+  content: '';
+  position: absolute;
+  background: rgba(0, 200, 255, 0.4);
+}
+
+.krypton-window--focused .krypton-window__corner::before,
+.krypton-window--focused .krypton-window__corner::after {
+  background: #0cf;
+  box-shadow: 0 0 6px rgba(0, 204, 255, 0.6);
+}
+
+/* Top-left corner */
+.krypton-window__corner--tl {
+  top: -1px;
+  left: -1px;
+}
+.krypton-window__corner--tl::before {
+  top: 0; left: 0;
+  width: 14px; height: 2px;
+}
+.krypton-window__corner--tl::after {
+  top: 0; left: 0;
+  width: 2px; height: 14px;
+}
+
+/* Top-right corner */
+.krypton-window__corner--tr {
+  top: -1px;
+  right: -1px;
+}
+.krypton-window__corner--tr::before {
+  top: 0; right: 0;
+  width: 14px; height: 2px;
+}
+.krypton-window__corner--tr::after {
+  top: 0; right: 0;
+  width: 2px; height: 14px;
+}
+
+/* Bottom-left corner */
+.krypton-window__corner--bl {
+  bottom: -1px;
+  left: -1px;
+}
+.krypton-window__corner--bl::before {
+  bottom: 0; left: 0;
+  width: 14px; height: 2px;
+}
+.krypton-window__corner--bl::after {
+  bottom: 0; left: 0;
+  width: 2px; height: 14px;
+}
+
+/* Bottom-right corner */
+.krypton-window__corner--br {
+  bottom: -1px;
+  right: -1px;
+}
+.krypton-window__corner--br::before {
+  bottom: 0; right: 0;
+  width: 14px; height: 2px;
+}
+.krypton-window__corner--br::after {
+  bottom: 0; right: 0;
+  width: 2px; height: 14px;
+}
+
+/* ─── Header accent bar ─── */
+/* Decorative striped bar below the titlebar */
+.krypton-window__header-accent {
+  height: 6px;
+  margin: 0 20px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(0, 200, 255, 0.15) 0px,
+    rgba(0, 200, 255, 0.15) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  flex-shrink: 0;
+}
+
+.krypton-window--focused .krypton-window__header-accent {
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(0, 200, 255, 0.35) 0px,
+    rgba(0, 200, 255, 0.35) 1px,
+    transparent 1px,
+    transparent 3px
+  );
 }
 
 /* ─── Chrome — title bar ─── */
@@ -53,8 +155,8 @@ html, body {
   align-items: center;
   justify-content: space-between;
   height: 28px;
-  padding: 0 10px;
-  background: rgba(10, 14, 23, 0.6);
+  padding: 0 12px;
+  background: transparent;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -68,12 +170,11 @@ html, body {
 .krypton-window__status-dot {
   width: 6px;
   height: 6px;
-  background: #1a3a5c;
+  background: rgba(0, 200, 255, 0.25);
 }
 
 .krypton-window--focused .krypton-window__status-dot {
   background: #0cf;
-  box-shadow: 0 0 4px rgba(0, 204, 255, 0.6);
 }
 
 .krypton-window__label {
@@ -82,7 +183,7 @@ html, body {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #1a3a5c;
+  color: rgba(0, 200, 255, 0.3);
 }
 
 .krypton-window--focused .krypton-window__label {
@@ -95,11 +196,11 @@ html, body {
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #1a3a5c;
+  color: rgba(0, 200, 255, 0.2);
 }
 
 .krypton-window--focused .krypton-window__pty-status {
-  color: #2a6a8c;
+  color: rgba(0, 200, 255, 0.4);
 }
 
 /* ─── Window content area (body + sidebar) ─── */
@@ -135,72 +236,6 @@ html, body {
   background: transparent !important;
 }
 
-/* ─── Right sidebar decoration ─── */
-.krypton-window__sidebar {
-  width: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 10px 0;
-  gap: 6px;
-  background: rgba(10, 14, 23, 0.6);
-  flex-shrink: 0;
-}
-
-.krypton-window__sidebar-dot {
-  width: 4px;
-  height: 4px;
-  background: #1a3a5c;
-}
-
-.krypton-window--focused .krypton-window__sidebar-dot {
-  background: #0cf;
-  box-shadow: 0 0 3px rgba(0, 204, 255, 0.5);
-}
-
-.krypton-window__sidebar-text {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: #1a3a5c;
-  margin-top: 4px;
-}
-
-.krypton-window--focused .krypton-window__sidebar-text {
-  color: #15405c;
-}
-
-/* ─── Bottom bar decoration ─── */
-.krypton-window__bottombar {
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 8px;
-  background: rgba(10, 14, 23, 0.6);
-}
-
-.krypton-window__bottom-decoration {
-  display: flex;
-  gap: 3px;
-}
-
-.krypton-window__bottom-line {
-  width: 12px;
-  height: 2px;
-  background: #1a3a5c;
-}
-
-.krypton-window--focused .krypton-window__bottom-line {
-  background: #0cf;
-  box-shadow: 0 0 3px rgba(0, 204, 255, 0.4);
-}
-
 /* ─── Which-Key Popup ─── */
 .krypton-whichkey {
   position: fixed;
@@ -221,11 +256,10 @@ html, body {
 }
 
 .krypton-whichkey__popup {
-  background: rgba(10, 14, 23, 0.6);
-  border: 1px solid #0cf;
+  background: rgba(6, 10, 18, 0.85);
+  border: 1px solid rgba(0, 200, 255, 0.4);
   padding: 10px 14px;
   min-width: 240px;
-  box-shadow: 0 0 12px rgba(0, 204, 255, 0.15);
 }
 
 .krypton-whichkey__title {
@@ -237,7 +271,7 @@ html, body {
   color: #0cf;
   margin-bottom: 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid #1a3a5c;
+  border-bottom: 1px solid rgba(0, 200, 255, 0.2);
 }
 
 .krypton-whichkey__keys {
@@ -265,5 +299,5 @@ html, body {
 .krypton-whichkey__label {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
-  color: #2a6a8c;
+  color: rgba(0, 200, 255, 0.4);
 }

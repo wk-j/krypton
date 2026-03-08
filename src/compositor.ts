@@ -161,48 +161,29 @@ export class Compositor {
     titlebar.appendChild(ptyStatus);
     chrome.appendChild(titlebar);
 
-    // Content area: body + sidebar
+    // Content area
     const content = document.createElement('div');
     content.className = 'krypton-window__content';
 
     const body = document.createElement('div');
     body.className = 'krypton-window__body';
 
-    // Right sidebar decoration
-    const sidebar = document.createElement('div');
-    sidebar.className = 'krypton-window__sidebar';
-
-    for (let d = 0; d < 2; d++) {
-      const dot = document.createElement('div');
-      dot.className = 'krypton-window__sidebar-dot';
-      sidebar.appendChild(dot);
-    }
-
-    const sidebarText = document.createElement('div');
-    sidebarText.className = 'krypton-window__sidebar-text';
-    sidebarText.textContent = 'telemetry_data';
-    sidebar.appendChild(sidebarText);
-
     content.appendChild(body);
-    content.appendChild(sidebar);
 
-    // Bottom bar decoration
-    const bottombar = document.createElement('div');
-    bottombar.className = 'krypton-window__bottombar';
-
-    const bottomDeco = document.createElement('div');
-    bottomDeco.className = 'krypton-window__bottom-decoration';
-
-    for (let d = 0; d < 2; d++) {
-      const line = document.createElement('div');
-      line.className = 'krypton-window__bottom-line';
-      bottomDeco.appendChild(line);
+    // Corner accent elements
+    for (const pos of ['tl', 'tr', 'bl', 'br']) {
+      const corner = document.createElement('div');
+      corner.className = `krypton-window__corner krypton-window__corner--${pos}`;
+      el.appendChild(corner);
     }
-    bottombar.appendChild(bottomDeco);
+
+    // Header accent bar (striped decoration below titlebar)
+    const headerAccent = document.createElement('div');
+    headerAccent.className = 'krypton-window__header-accent';
+    chrome.appendChild(headerAccent);
 
     el.appendChild(chrome);
     el.appendChild(content);
-    el.appendChild(bottombar);
     this.workspace.appendChild(el);
 
     // Create window record
