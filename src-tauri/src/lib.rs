@@ -29,6 +29,7 @@ pub fn run() {
             commands::get_theme,
             commands::list_themes,
             commands::reload_config,
+            commands::open_url,
         ])
         .setup(move |app| {
             if cfg!(debug_assertions) {

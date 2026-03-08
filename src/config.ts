@@ -78,6 +78,18 @@ export interface SoundConfig {
   events: Record<string, boolean | number>;
 }
 
+export interface HintRule {
+  name: string;
+  regex: string;
+  action: 'Copy' | 'Open' | 'Paste';
+  enabled: boolean;
+}
+
+export interface HintsConfig {
+  alphabet: string;
+  rules: HintRule[];
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -86,6 +98,7 @@ export interface KryptonConfig {
   quick_terminal: QuickTerminalConfig;
   workspaces: WorkspacesConfig;
   sound: SoundConfig;
+  hints: HintsConfig;
 }
 
 /** Load configuration from the Rust backend */

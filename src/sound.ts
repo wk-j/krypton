@@ -68,6 +68,9 @@ export type SoundEvent =
   | 'command_palette.open'
   | 'command_palette.close'
   | 'command_palette.execute'
+  | 'hint.activate'
+  | 'hint.select'
+  | 'hint.cancel'
   | 'layout.toggle'
   | 'swap.complete'
   | 'resize.step'
@@ -244,6 +247,36 @@ const KRYPTON_CYBER: Record<SoundEvent, SoundPatch> = {
     ],
     filter: { type: 'lowpass', cutoff: 1200, Q: 0.7 },
     envelope: { attack: 0.001, decay: 0.04, sustain: 0.0, release: 0.02 },
+  },
+
+  // Hint activate: scanning sweep (rising shimmer)
+  'hint.activate': {
+    oscillators: [
+      { waveform: 'triangle', frequency: 350, amplitude: 0.05,
+        pitchEnvelope: { start: 300, end: 450, duration: 0.05 } },
+    ],
+    filter: { type: 'lowpass', cutoff: 1100, Q: 0.6 },
+    envelope: { attack: 0.002, decay: 0.04, sustain: 0.0, release: 0.02 },
+  },
+
+  // Hint select: confirmation click (short, decisive)
+  'hint.select': {
+    oscillators: [
+      { waveform: 'sine', frequency: 480, amplitude: 0.06 },
+      { waveform: 'sine', frequency: 600, amplitude: 0.03 },
+    ],
+    filter: { type: 'lowpass', cutoff: 1400, Q: 0.7 },
+    envelope: { attack: 0.001, decay: 0.03, sustain: 0.0, release: 0.015 },
+  },
+
+  // Hint cancel: soft descending blip
+  'hint.cancel': {
+    oscillators: [
+      { waveform: 'triangle', frequency: 320, amplitude: 0.03,
+        pitchEnvelope: { start: 350, end: 250, duration: 0.03 } },
+    ],
+    filter: { type: 'lowpass', cutoff: 800, Q: 0.5 },
+    envelope: { attack: 0.002, decay: 0.03, sustain: 0.0, release: 0.015 },
   },
 
   // Layout toggle: quick two-note flip

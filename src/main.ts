@@ -51,6 +51,11 @@ async function main(): Promise<void> {
   // Initialize input router
   const inputRouter = new InputRouter(compositor);
 
+  // Apply hints config if loaded
+  if (config) {
+    inputRouter.hintController.applyConfig(config.hints);
+  }
+
   // Wire the custom key handler so xterm.js yields control to InputRouter
   compositor.setCustomKeyHandler(inputRouter.customKeyHandler);
 

@@ -178,6 +178,14 @@ pub struct UiConfig {
     pub mode_indicator: UiModeIndicator,
     pub which_key: UiWhichKey,
     pub quick_terminal: UiQuickTerminal,
+    pub hints: UiHints,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiHints {
+    pub background: String,
+    pub foreground: String,
+    pub matched_foreground: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -460,6 +468,16 @@ impl Default for UiQuickTerminal {
             background: "rgba(6, 10, 18, 0.6)".to_string(),
             shadow_color: "rgba(0, 200, 255, 0.1)".to_string(),
             shadow_blur: 30,
+        }
+    }
+}
+
+impl Default for UiHints {
+    fn default() -> Self {
+        Self {
+            background: "#f4bf75".to_string(),
+            foreground: "#181818".to_string(),
+            matched_foreground: "#8a7444".to_string(),
         }
     }
 }

@@ -15,9 +15,11 @@
 
 1. **User presses a key** -> webview captures `keydown` event
 2. **Input Router checks mode**:
-   - **Global hotkey?** (e.g., `CmdOrCtrl+1`) -> execute immediately (e.g., switch workspace)
+   - **Global hotkey?** (e.g., `Cmd+I`, `Cmd+Shift+H`) -> execute immediately (toggle Quick Terminal, enter hint mode, etc.)
    - **Normal mode?** -> forward to focused window's xterm.js -> xterm.js encodes and emits `onData`
-   - **Compositor/Resize/Move mode?** -> execute compositor command (focus, resize, move, etc.)
+   - **Compositor/Resize/Move/Swap mode?** -> execute compositor command (focus, resize, move, etc.)
+   - **Selection mode?** -> navigate virtual cursor, expand/toggle selection, yank
+   - **Hint mode?** -> filter/match labels, execute action on match (open/copy/paste)
    - **Command palette / Search mode?** -> route to overlay's text input handler
 3. **If forwarded to PTY**: Tauri `invoke("write_to_pty", { window_id, data })` via IPC
 4. **Rust backend writes** -> Raw bytes written to PTY file descriptor

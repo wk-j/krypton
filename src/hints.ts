@@ -1,0 +1,423 @@
+// Krypton — Hint Mode Controller
+// Scans the visible terminal buffer for configurable regex patterns,
+// overlays keyboard labels on matches, and executes actions when a label
+// is selected. Inspired by Rio Terminal hints.
+
+import { invoke } from '@tauri-apps/api/core';
+import type { Terminal } from '@xterm/xterm';
+import type { HintsConfig, HintRule } from './config';
+
+// ─── Types ────────────────────────────────────────────────────────
+
+/** A single match found in the terminal buffer */
+interface HintMatch {
+  /** Row in the buffer (absolute, not viewport-relative) */
+  row: number;
+  /** Column offset within the row */
+  col: number;
+  /** Length of the matched text in characters */
+  length: number;
+  /** The matched text content */
+  text: string;
+  /** Which rule produced this match */
+  rule: HintRule;
+  /** The assigned keyboard label */
+  label: string;
+}
+
+/** Default hints config used when no config is loaded */
+const DEFAULT_HINTS_CONFIG: HintsConfig = {
+  alphabet: 'asdfghjklqweruiop',
+  rules: [
+    {
+      name: 'url',
+      regex: '(https?://|ftp://)[^\\x00-\\x1F\\x7F-\\x9F<>"\\s{}\\^⟨⟩`\\\\]+',
+      action: 'Open',
+      enabled: true,
+    },
+    {
+      name: 'filepath',
+      regex: '~?/?(?:[\\w@.\\-]+/)+[\\w@.\\-]+',
+      action: 'Copy',
+      enabled: true,
+    },
+    {
+      name: 'email',
+      regex: '[\\w.+\\-]+@[\\w.\\-]+\\.[a-zA-Z]{2,}',
+      action: 'Copy',
+      enabled: true,
+    },
+  ],
+};
+
+// ─── Label Generator ──────────────────────────────────────────────
+
+/**
+ * Generate prefix-free labels from an alphabet.
+ * If count <= alphabet.length, returns single-character labels.
+ * Otherwise, generates two-character labels as needed.
+ */
+function generateLabels(alphabet: string, count: number): string[] {
+  const chars = [...alphabet];
+  const labels: string[] = [];
+
+  if (count <= chars.length) {
+    // Single-character labels
+    for (let i = 0; i < count; i++) {
+      labels.push(chars[i]);
+    }
+  } else {
+    // Need multi-character labels. Use a prefix-free scheme:
+    // Reserve some chars as single-char labels, use the rest as prefixes.
+    // Simple approach: all labels are two characters.
+    for (let i = 0; i < chars.length && labels.length < count; i++) {
+      for (let j = 0; j < chars.length && labels.length < count; j++) {
+        labels.push(chars[i] + chars[j]);
+      }
+    }
+  }
+
+  return labels;
+}
+
+// ─── Hint Controller ──────────────────────────────────────────────
+
+export class HintController {
+  private config: HintsConfig = DEFAULT_HINTS_CONFIG;
+  private active = false;
+  private matches: HintMatch[] = [];
+  private typedChars = '';
+  private overlayEl: HTMLElement | null = null;
+  private toastEl: HTMLElement | null = null;
+  private toastTimeout: ReturnType<typeof setTimeout> | null = null;
+  private terminal: Terminal | null = null;
+  private terminalContainer: HTMLElement | null = null;
+
+  /** Callbacks for when hint mode should exit */
+  private exitCallbacks: Array<() => void> = [];
+
+  /** Register callback for hint mode exit (so InputRouter returns to Normal) */
+  onExit(cb: () => void): void {
+    this.exitCallbacks.push(cb);
+  }
+
+  /** Update config (called when config loads or hot-reloads) */
+  applyConfig(config: HintsConfig): void {
+    this.config = config;
+  }
+
+  /** Whether hint mode is currently active */
+  get isActive(): boolean {
+    return this.active;
+  }
+
+  /**
+   * Enter hint mode: scan the visible buffer and show overlays.
+   * Returns true if hints were found, false if no matches.
+   */
+  enter(terminal: Terminal): boolean {
+    if (this.active) return false;
+
+    this.terminal = terminal;
+    this.typedChars = '';
+
+    // Find the terminal container (.krypton-window__body) for overlay positioning
+    const xtermEl = terminal.element;
+    console.log('[HintController] enter: xtermEl =', xtermEl);
+    if (!xtermEl) return false;
+    this.terminalContainer = xtermEl.closest('.krypton-window__body') as HTMLElement | null;
+    console.log('[HintController] enter: terminalContainer =', this.terminalContainer);
+    if (!this.terminalContainer) return false;
+
+    // Scan visible buffer for matches
+    this.matches = this.scanBuffer(terminal);
+    console.log('[HintController] enter: found', this.matches.length, 'matches');
+
+    if (this.matches.length === 0) {
+      this.showToast('No hints found');
+      return false;
+    }
+
+    // Generate labels
+    const labels = generateLabels(this.config.alphabet, this.matches.length);
+    for (let i = 0; i < this.matches.length; i++) {
+      this.matches[i].label = labels[i];
+    }
+    console.log('[HintController] enter: labels assigned, rendering overlay');
+
+    // Render overlays
+    this.renderOverlay(terminal);
+    this.active = true;
+    return true;
+  }
+
+  /** Exit hint mode and clean up */
+  exit(): void {
+    this.active = false;
+    this.matches = [];
+    this.typedChars = '';
+    this.terminal = null;
+    this.terminalContainer = null;
+    this.removeOverlay();
+  }
+
+  /**
+   * Handle a key event while in hint mode.
+   * Returns: 'continue' to stay in mode, 'exit' to leave, or 'selected' when an action fires.
+   */
+  handleKey(e: KeyboardEvent): 'continue' | 'exit' | 'selected' {
+    if (!this.active) return 'exit';
+
+    if (e.key === 'Escape') {
+      this.exit();
+      return 'exit';
+    }
+
+    if (e.key === 'Backspace') {
+      if (this.typedChars.length > 0) {
+        this.typedChars = this.typedChars.slice(0, -1);
+        this.updateOverlay();
+      }
+      return 'continue';
+    }
+
+    // Only accept characters that are in the alphabet
+    const ch = e.key.toLowerCase();
+    if (ch.length !== 1 || !this.config.alphabet.includes(ch)) {
+      return 'continue';
+    }
+
+    this.typedChars += ch;
+    this.updateOverlay();
+
+    // Check for exact match
+    const exactMatch = this.matches.find((m) => m.label === this.typedChars);
+    if (exactMatch) {
+      this.executeAction(exactMatch);
+      this.exit();
+      return 'selected';
+    }
+
+    // Check if any labels still match the prefix
+    const hasPrefix = this.matches.some((m) => m.label.startsWith(this.typedChars));
+    if (!hasPrefix) {
+      // No labels match — exit
+      this.exit();
+      return 'exit';
+    }
+
+    return 'continue';
+  }
+
+  // ─── Buffer Scanning ──────────────────────────────────────────
+
+  private scanBuffer(terminal: Terminal): HintMatch[] {
+    const matches: HintMatch[] = [];
+    const buffer = terminal.buffer.active;
+    const startRow = buffer.viewportY;
+    const endRow = startRow + terminal.rows;
+
+    const enabledRules = this.config.rules.filter((r) => r.enabled);
+
+    for (let row = startRow; row < endRow; row++) {
+      const line = buffer.getLine(row);
+      if (!line) continue;
+      const text = line.translateToString(false);
+
+      for (const rule of enabledRules) {
+        let regex: RegExp;
+        try {
+          regex = new RegExp(rule.regex, 'g');
+        } catch {
+          console.warn(`[HintController] Invalid regex for rule "${rule.name}": ${rule.regex}`);
+          continue;
+        }
+
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(text)) !== null) {
+          // Avoid zero-length matches
+          if (match[0].length === 0) {
+            regex.lastIndex++;
+            continue;
+          }
+
+          matches.push({
+            row,
+            col: match.index,
+            length: match[0].length,
+            text: match[0],
+            rule,
+            label: '', // assigned later
+          });
+        }
+      }
+    }
+
+    // Deduplicate overlapping matches (keep the longer one)
+    return this.deduplicateMatches(matches);
+  }
+
+  private deduplicateMatches(matches: HintMatch[]): HintMatch[] {
+    // Sort by row, then col
+    matches.sort((a, b) => a.row - b.row || a.col - b.col);
+
+    const result: HintMatch[] = [];
+    for (const m of matches) {
+      const last = result[result.length - 1];
+      if (last && last.row === m.row && last.col + last.length > m.col) {
+        // Overlapping — keep the longer one
+        if (m.length > last.length) {
+          result[result.length - 1] = m;
+        }
+      } else {
+        result.push(m);
+      }
+    }
+    return result;
+  }
+
+  // ─── Overlay Rendering ────────────────────────────────────────
+
+  private renderOverlay(terminal: Terminal): void {
+    this.removeOverlay();
+
+    const container = this.terminalContainer;
+    if (!container) return;
+
+    this.overlayEl = document.createElement('div');
+    this.overlayEl.className = 'krypton-hint-overlay';
+
+    // Compute cell dimensions from the xterm screen element
+    const screenEl = container.querySelector('.xterm-screen') as HTMLElement | null;
+    if (!screenEl) return;
+    const rect = screenEl.getBoundingClientRect();
+    const cellWidth = rect.width / terminal.cols;
+    const cellHeight = rect.height / terminal.rows;
+    const viewportY = terminal.buffer.active.viewportY;
+
+    for (const m of this.matches) {
+      const hintEl = document.createElement('div');
+      hintEl.className = 'krypton-hint';
+
+      const x = m.col * cellWidth;
+      const y = (m.row - viewportY) * cellHeight;
+      hintEl.style.left = `${x}px`;
+      hintEl.style.top = `${y}px`;
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'krypton-hint__label';
+      labelEl.textContent = m.label;
+      hintEl.appendChild(labelEl);
+
+      hintEl.dataset.label = m.label;
+      this.overlayEl.appendChild(hintEl);
+    }
+
+    container.appendChild(this.overlayEl);
+  }
+
+  private updateOverlay(): void {
+    if (!this.overlayEl) return;
+
+    const hints = this.overlayEl.querySelectorAll('.krypton-hint');
+    for (const hint of hints) {
+      const hintEl = hint as HTMLElement;
+      const label = hintEl.dataset.label ?? '';
+      const labelSpan = hintEl.querySelector('.krypton-hint__label') as HTMLElement | null;
+      if (!labelSpan) continue;
+
+      if (this.typedChars.length > 0 && !label.startsWith(this.typedChars)) {
+        // This hint doesn't match — dim it
+        hintEl.classList.add('krypton-hint--dimmed');
+      } else {
+        hintEl.classList.remove('krypton-hint--dimmed');
+
+        // Render with matched/unmatched character styling
+        labelSpan.innerHTML = '';
+        for (let i = 0; i < label.length; i++) {
+          const span = document.createElement('span');
+          span.textContent = label[i];
+          if (i < this.typedChars.length) {
+            span.className = 'krypton-hint__label-matched';
+          }
+          labelSpan.appendChild(span);
+        }
+      }
+    }
+  }
+
+  private removeOverlay(): void {
+    if (this.overlayEl) {
+      this.overlayEl.remove();
+      this.overlayEl = null;
+    }
+  }
+
+  // ─── Action Execution ─────────────────────────────────────────
+
+  private executeAction(match: HintMatch): void {
+    const text = match.text;
+    const action = match.rule.action;
+
+    switch (action) {
+      case 'Copy':
+        navigator.clipboard.writeText(text).catch((err) => {
+          console.error('[HintController] Failed to copy to clipboard:', err);
+        });
+        break;
+
+      case 'Open':
+        invoke('open_url', { url: text }).catch((err) => {
+          console.error('[HintController] Failed to open URL:', err);
+        });
+        break;
+
+      case 'Paste':
+        // Write the matched text to the terminal's PTY input
+        if (this.terminal) {
+          // The terminal's onData handler writes to PTY, but we need the session ID.
+          // Instead, use the clipboard -> paste approach or direct write.
+          // For now, use the xterm paste API which triggers onData.
+          this.terminal.paste(text);
+        }
+        break;
+    }
+  }
+
+  // ─── Toast Notification ───────────────────────────────────────
+
+  private showToast(message: string): void {
+    this.removeToast();
+
+    this.toastEl = document.createElement('div');
+    this.toastEl.className = 'krypton-hint-toast';
+    this.toastEl.textContent = message;
+    document.body.appendChild(this.toastEl);
+
+    // Trigger reflow then show
+    requestAnimationFrame(() => {
+      if (this.toastEl) {
+        this.toastEl.classList.add('krypton-hint-toast--visible');
+      }
+    });
+
+    this.toastTimeout = setTimeout(() => {
+      this.removeToast();
+      // Also notify exit since we never entered active mode
+      for (const cb of this.exitCallbacks) {
+        cb();
+      }
+    }, 1000);
+  }
+
+  private removeToast(): void {
+    if (this.toastTimeout) {
+      clearTimeout(this.toastTimeout);
+      this.toastTimeout = null;
+    }
+    if (this.toastEl) {
+      this.toastEl.remove();
+      this.toastEl = null;
+    }
+  }
+}

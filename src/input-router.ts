@@ -7,6 +7,7 @@
 import { Mode } from './types';
 import { Compositor } from './compositor';
 import { SelectionController } from './selection';
+import { HintController } from './hints';
 
 /** Callback for mode changes */
 type ModeChangeCallback = (mode: Mode) => void;
@@ -16,10 +17,19 @@ export class InputRouter {
   private compositor: Compositor;
   private modeChangeCallbacks: ModeChangeCallback[] = [];
   private selection: SelectionController = new SelectionController();
+  private hints: HintController = new HintController();
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
+    this.hints.onExit(() => {
+      this.toNormal();
+    });
     this.setupKeyHandler();
+  }
+
+  /** Get the hint controller (for config updates) */
+  get hintController(): HintController {
+    return this.hints;
   }
 
   /** Get current mode */
@@ -53,6 +63,10 @@ export class InputRouter {
       if (e.ctrlKey && e.shiftKey && (e.code === 'KeyU' || e.code === 'KeyD')) {
         return false;
       }
+      // Prevent xterm from consuming Cmd+Shift+H (hint mode)
+      if (InputRouter.isHintKey(e)) {
+        return false;
+      }
       // Prevent xterm from consuming Escape when Quick Terminal is focused
       // (so input-router can hide it)
       if (e.key === 'Escape' && this.compositor.isQuickTerminalFocused && this.mode === Mode.Normal) {
@@ -84,6 +98,17 @@ export class InputRouter {
       !e.ctrlKey &&
       !e.altKey &&
       !e.shiftKey
+    );
+  }
+
+  /** Check if a key event is the Hint mode shortcut (Cmd+Shift+H) */
+  static isHintKey(e: KeyboardEvent): boolean {
+    return (
+      e.code === 'KeyH' &&
+      e.metaKey &&
+      e.shiftKey &&
+      !e.ctrlKey &&
+      !e.altKey
     );
   }
 
@@ -162,6 +187,10 @@ export class InputRouter {
         e.stopPropagation();
         if (this.mode === Mode.Selection) {
           this.exitSelectionMode();
+        } else if (this.mode === Mode.Hint) {
+          this.compositor.soundEngine.play('hint.cancel');
+          this.hints.exit();
+          this.toNormal();
         } else {
           this.toNormal();
         }
@@ -181,6 +210,14 @@ export class InputRouter {
         e.preventDefault();
         e.stopPropagation();
         this.compositor.scrollPages(e.code === 'KeyU' ? -1 : 1);
+        return;
+      }
+
+      // Global: Cmd+Shift+H — enter hint mode (works from Normal mode)
+      if (InputRouter.isHintKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.enterHintMode();
         return;
       }
 
@@ -209,6 +246,9 @@ export class InputRouter {
         case Mode.Selection:
           this.handleSelectionKey(e);
           break;
+        case Mode.Hint:
+          this.handleHintKey(e);
+          break;
       }
     }, true);
   }
@@ -216,13 +256,25 @@ export class InputRouter {
   // ─── Compositor Mode ─────────────────────────────────────────────
 
   private handleCompositorKey(e: KeyboardEvent): void {
+    // Ignore modifier-only keypresses (Shift, Ctrl, Alt, Meta) — these are
+    // pressed as part of key combos like Shift+H or Shift+V and should not
+    // trigger the default "exit compositor" behavior.
+    if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') {
+      return;
+    }
+
     const key = e.key.toLowerCase();
 
     switch (key) {
-      // Focus directional
+      // Focus directional / Hint mode
       case 'h':
-        this.compositor.focusDirection('left');
-        this.toNormal();
+        if (e.shiftKey) {
+          // Shift+H: enter hint mode
+          this.enterHintMode();
+        } else {
+          this.compositor.focusDirection('left');
+          this.toNormal();
+        }
         break;
       case 'j':
         this.compositor.focusDirection('down');
@@ -412,6 +464,44 @@ export class InputRouter {
         break;
       default:
         this.toNormal();
+        break;
+    }
+  }
+
+  // ─── Hint Mode ─────────────────────────────────────────────────
+
+  private enterHintMode(): void {
+    console.log('[InputRouter] enterHintMode called');
+    const terminal = this.compositor.getActiveTerminal();
+    console.log('[InputRouter] active terminal:', terminal ? 'found' : 'null');
+    if (!terminal) {
+      this.toNormal();
+      return;
+    }
+    this.compositor.soundEngine.play('hint.activate');
+    const found = this.hints.enter(terminal);
+    console.log('[InputRouter] hint mode entered:', found);
+    if (found) {
+      this.setMode(Mode.Hint);
+    } else {
+      // No matches — toast shown by HintController, stay/return to Normal
+      this.toNormal();
+    }
+  }
+
+  private handleHintKey(e: KeyboardEvent): void {
+    const result = this.hints.handleKey(e);
+    switch (result) {
+      case 'selected':
+        this.compositor.soundEngine.play('hint.select');
+        this.toNormal();
+        break;
+      case 'exit':
+        this.compositor.soundEngine.play('hint.cancel');
+        this.toNormal();
+        break;
+      case 'continue':
+        // Stay in hint mode
         break;
     }
   }

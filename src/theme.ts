@@ -166,12 +166,19 @@ export interface UiQuickTerminal {
   shadow_blur: number;
 }
 
+export interface UiHints {
+  background: string;
+  foreground: string;
+  matched_foreground: string;
+}
+
 export interface UiConfig {
   command_palette: UiCommandPalette;
   search: UiSearch;
   mode_indicator: UiModeIndicator;
   which_key: UiWhichKey;
   quick_terminal: UiQuickTerminal;
+  hints: UiHints;
 }
 
 export interface FullTheme {
@@ -362,5 +369,10 @@ export class FrontendThemeEngine {
     // UI: Mode indicator
     s('--krypton-mode-bg', theme.ui.mode_indicator.background);
     s('--krypton-mode-text', theme.ui.mode_indicator.text_color);
+
+    // UI: Hints
+    s('--krypton-hint-bg', theme.ui.hints.background);
+    s('--krypton-hint-fg', theme.ui.hints.foreground);
+    s('--krypton-hint-matched-fg', theme.ui.hints.matched_foreground);
   }
 }

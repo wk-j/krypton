@@ -95,6 +95,7 @@ The webview's `<html>` and `<body>` have `background: transparent`. Windows are 
 | `log` / `tauri-plugin-log` | Logging framework | Implemented |
 | `vte` | VT escape sequence parser (backend validation/processing) | Planned |
 | `notify` | Filesystem watcher for config/theme hot-reload | Implemented |
+| `open` | Open URLs/files with system default handler (hint mode) | Implemented |
 | `unicode-width` | Character width calculation for CJK / emoji | Planned |
 | `display-info` | Query monitor geometry for fullscreen dimensions | Planned |
 
@@ -286,6 +287,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 | **Resize** | `Leader` then `R` | Arrow keys resize the focused window; step size configurable | `Escape` or `Enter` to confirm |
 | **Move** | `Leader` then `M` | Arrow keys reposition the focused window | `Escape` or `Enter` to confirm |
 | **Selection** | `Leader` then `v` or `V` | Vim-like keyboard text selection — virtual cursor navigates buffer with h/j/k/l/w/b/e/0/$, `v` toggles char-wise selection, `V` toggles line-wise, `y` yanks to clipboard | `Escape` to cancel, `y` to yank and exit |
+| **Hint** | `Leader` then `Shift+H` or `Cmd+Shift+H` (global) | Scans visible buffer for regex patterns (URLs, paths, emails), overlays keyboard labels on matches. Type a label to act (open/copy/paste). | `Escape` to cancel, or selecting a label |
 | **Command Palette** | `CmdOrCtrl+Shift+P` | Text input filters the action list; Enter executes; Escape closes | `Escape` or action execution |
 | **Search** | `CmdOrCtrl+F` | Text input searches scrollback in the focused window | `Escape` to close |
 
@@ -293,6 +295,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 - `Cmd+I` — Toggle Quick Terminal (show/hide centered overlay terminal)
 - `Cmd+Shift+<` / `Cmd+Shift+>` — Cycle focus through windows
 - `Ctrl+Shift+U` / `Ctrl+Shift+D` — Scroll terminal buffer up/down by one page
+- `Cmd+Shift+H` — Enter hint mode (scan terminal for URLs/paths/emails, overlay labels)
 
 ### Key routing flow
 
@@ -314,6 +317,8 @@ Keypress
   +-- Compositor ----> Interpret as compositor command
   +-- Resize --------> Adjust focused window size
   +-- Move ----------> Adjust focused window position
+  +-- Selection -----> Navigate virtual cursor / expand selection
+  +-- Hint ----------> Filter/select hint labels -> execute action
   +-- Cmd Palette ---> Filter/select action list
   +-- Search --------> Update search query
 ```

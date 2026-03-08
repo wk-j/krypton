@@ -14,6 +14,7 @@ export enum Mode {
   Move = 'Move',
   Swap = 'Swap',
   Selection = 'Selection',
+  Hint = 'Hint',
 }
 
 /** Layout strategy for tiling windows */

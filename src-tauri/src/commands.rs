@@ -118,3 +118,9 @@ pub fn reload_config(
     log::info!("Config reloaded, theme-changed event emitted");
     Ok(())
 }
+
+/// Open a URL or file path using the system default handler.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    open::that(&url).map_err(|e| format!("Failed to open '{url}': {e}"))
+}

@@ -322,6 +322,68 @@ html, body {
   color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
 }
 
+/* ─── Hint Mode Overlay ─── */
+.krypton-hint-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+}
+
+.krypton-hint {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.krypton-hint__label {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 2px;
+  background: var(--krypton-hint-bg, #f4bf75);
+  color: var(--krypton-hint-fg, #181818);
+  white-space: nowrap;
+  transition: opacity 0.08s ease;
+}
+
+.krypton-hint--dimmed .krypton-hint__label {
+  opacity: 0.15;
+}
+
+.krypton-hint__label-matched {
+  color: var(--krypton-hint-matched-fg, #8a7444);
+}
+
+/* "No hints found" toast */
+.krypton-hint-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--krypton-whichkey-title, #0cf);
+  background: var(--krypton-whichkey-bg, rgba(6, 10, 18, 0.85));
+  border: 1px solid var(--krypton-whichkey-border, rgba(0, 200, 255, 0.4));
+  padding: 6px 14px;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.krypton-hint-toast--visible {
+  opacity: 1;
+}
+
 /* ─── Quick Terminal Overlay ─── */
 .krypton-quick-terminal {
   z-index: 5000;

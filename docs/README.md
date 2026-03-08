@@ -20,3 +20,5 @@
 | 8 | [Open Questions](./08-open-questions.md) | Unresolved design decisions |
 | 9 | [Glossary](./09-glossary.md) | Terms and definitions |
 | 10 | [Theme Specification](./10-theme-specification.md) | Custom theme file format for external developers |
+| 11 | [Selection Mode](./11-selection-mode.md) | Vim-like keyboard text selection spec |
+| 12 | [Hint Mode](./12-hint-mode.md) | Rio-style terminal hint mode with keyboard labels |

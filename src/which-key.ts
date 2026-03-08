@@ -26,6 +26,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: 'z', label: 'maximize' },
   { key: 'v', label: 'select mode' },
   { key: 'V', label: 'select lines' },
+  { key: 'H', label: 'hint mode' },
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [
@@ -49,6 +50,12 @@ const SWAP_KEYS: KeyEntry[] = [
   { key: 'l/\u2192', label: 'swap right' },
   { key: 'k/\u2191', label: 'swap up' },
   { key: 'j/\u2193', label: 'swap down' },
+];
+
+const HINT_KEYS: KeyEntry[] = [
+  { key: 'a-z', label: 'type label' },
+  { key: 'Bksp', label: 'undo char' },
+  { key: 'Esc', label: 'cancel' },
 ];
 
 const SELECTION_KEYS: KeyEntry[] = [
@@ -122,6 +129,10 @@ export class WhichKey {
       case Mode.Selection:
         entries = SELECTION_KEYS;
         titleText = 'Selection';
+        break;
+      case Mode.Hint:
+        entries = HINT_KEYS;
+        titleText = 'Hint';
         break;
       default:
         this.hide();

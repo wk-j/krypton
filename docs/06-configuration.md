@@ -297,6 +297,18 @@ name = "custom-fixed"
 | `[keybindings.resize_mode]` | *(various)* | string | — | Keys active in resize mode |
 | `[keybindings.move_mode]` | *(various)* | string | — | Keys active in move mode |
 
+### Hints Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[hints]` | `alphabet` | string | `"asdfghjklqweruiop"` | Characters used for hint label generation (should be easy to type) |
+| `[[hints.rules]]` | `name` | string | — | Unique identifier for the rule |
+| `[[hints.rules]]` | `regex` | string | — | Regular expression pattern to match in terminal content |
+| `[[hints.rules]]` | `action` | string | `"Copy"` | Action on selection: `"Copy"`, `"Open"`, or `"Paste"` |
+| `[[hints.rules]]` | `enabled` | bool | `true` | Whether this rule is active |
+
+Built-in rules (active by default): `url` (Open), `filepath` (Copy), `email` (Copy).
+
 ### Sound Configuration
 
 | Section | Key | Type | Default | Description |

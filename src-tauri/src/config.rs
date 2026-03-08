@@ -17,6 +17,7 @@ pub struct KryptonConfig {
     pub quick_terminal: QuickTerminalConfig,
     pub workspaces: WorkspacesConfig,
     pub sound: SoundConfig,
+    pub hints: HintsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +128,63 @@ impl Default for SoundConfig {
             keyboard_type: "cherry-mx-brown".to_string(),
             keyboard_volume: 1.0,
             events: std::collections::HashMap::new(),
+        }
+    }
+}
+
+// ─── Hints ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HintsConfig {
+    pub alphabet: String,
+    pub rules: Vec<HintRule>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HintRule {
+    pub name: String,
+    pub regex: String,
+    pub action: HintAction,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum HintAction {
+    Copy,
+    Open,
+    Paste,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for HintsConfig {
+    fn default() -> Self {
+        Self {
+            alphabet: "asdfghjklqweruiop".to_string(),
+            rules: vec![
+                HintRule {
+                    name: "url".to_string(),
+                    regex: r"(https?://|ftp://)[^\x00-\x1F\x7F-\x9F<>\x22\s{}\^⟨⟩`\\]+".to_string(),
+                    action: HintAction::Open,
+                    enabled: true,
+                },
+                HintRule {
+                    name: "filepath".to_string(),
+                    regex: r"~?/?(?:[\w@.\-]+/)+[\w@.\-]+".to_string(),
+                    action: HintAction::Copy,
+                    enabled: true,
+                },
+                HintRule {
+                    name: "email".to_string(),
+                    regex: r"[\w.+\-]+@[\w.\-]+\.[a-zA-Z]{2,}".to_string(),
+                    action: HintAction::Copy,
+                    enabled: true,
+                },
+            ],
         }
     }
 }

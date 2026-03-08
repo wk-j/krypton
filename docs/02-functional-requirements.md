@@ -69,8 +69,9 @@
 | FR-INP-012 | The system shall support clipboard copy/paste (Cmd+C/Cmd+V on macOS, Ctrl+Shift+C/V on Linux/Windows). | Must |
 | FR-INP-013 | The system shall support text selection via keyboard (Shift+Arrow, Shift+Home/End, Shift+Ctrl+Arrow for word selection). | Must |
 | FR-INP-014 | The system shall optionally support text selection via mouse click-drag as a secondary input method. | Should |
-| FR-INP-015 | The system shall support URL detection and opening links via keyboard (select URL + keybinding to open). | Must |
+| FR-INP-015 | The system shall support URL detection and opening links via keyboard hint mode — activate with `Cmd+Shift+H` or `Leader Shift+H`, scan visible buffer for regex patterns, overlay keyboard labels, type label to act. | Must |
 | FR-INP-016 | The system shall optionally support Cmd/Ctrl+Click to open links as a secondary mouse input method. | Should |
+| FR-INP-017 | Hint mode shall support configurable regex patterns with per-rule actions (Copy, Open, Paste) and a configurable label alphabet. Built-in patterns: URLs, file paths, emails. | Must |
 
 ### 3.5.3 Window Navigation (Keyboard)
 
