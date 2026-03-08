@@ -659,19 +659,29 @@ export class Compositor {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Single window: centered at a comfortable default size (same for both modes)
+    // Single window
     if (count === 1) {
       const win = this.windows.values().next().value;
       if (!win) return;
-      const w = Math.round(vw * Compositor.DEFAULT_WIDTH_RATIO);
-      const h = Math.round(vh * Compositor.DEFAULT_HEIGHT_RATIO);
-      win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
-      win.bounds = {
-        x: Math.round((vw - w) / 2),
-        y: Math.round((vh - h) / 2),
-        width: w,
-        height: h,
-      };
+
+      if (this.layoutMode === LayoutMode.Focus) {
+        // Focus mode: full height, 65% width, left-aligned
+        const w = Math.round(vw * Compositor.FOCUS_MAIN_RATIO);
+        win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
+        win.bounds = { x: 0, y: 0, width: w, height: vh };
+      } else {
+        // Grid mode: centered at a comfortable default size
+        const w = Math.round(vw * Compositor.DEFAULT_WIDTH_RATIO);
+        const h = Math.round(vh * Compositor.DEFAULT_HEIGHT_RATIO);
+        win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
+        win.bounds = {
+          x: Math.round((vw - w) / 2),
+          y: Math.round((vh - h) / 2),
+          width: w,
+          height: h,
+        };
+      }
+
       this.applyBounds(win);
       return;
     }
@@ -714,26 +724,23 @@ export class Compositor {
     }
   }
 
-  /** Focus layout: focused window on left (full height), rest stacked on right */
+  /** Ratio of screen width the focused window occupies in Focus layout */
+  private static readonly FOCUS_MAIN_RATIO = 0.65;
+
+  /** Focus layout: focused window on left (full height, 65% width), rest fill remaining area */
   private relayoutFocus(vw: number, vh: number, count: number): void {
     const ids = this.windowIds;
     const focusIndex = this.focusedWindowId
       ? ids.indexOf(this.focusedWindowId)
       : 0;
 
-    const { slots, gridCols, gridRows, order } = focusTile(
-      count,
-      Math.max(0, focusIndex),
-    );
+    const { order } = focusTile(count, Math.max(0, focusIndex));
 
-    const totalW = Math.round(vw * Compositor.MULTI_WIDTH_RATIO);
-    const totalH = Math.round(vh * Compositor.MULTI_HEIGHT_RATIO);
-    const offsetX = Math.round((vw - totalW) / 2);
-    const offsetY = Math.round((vh - totalH) / 2);
     const gap = Compositor.WINDOW_GAP;
-
-    const cellW = (totalW - gap * (gridCols - 1)) / gridCols;
-    const cellH = (totalH - gap * (gridRows - 1)) / gridRows;
+    const mainW = Math.round(vw * Compositor.FOCUS_MAIN_RATIO);
+    const stackW = vw - mainW - gap;
+    const stackCount = count - 1;
+    const stackCellH = (vh - gap * (stackCount - 1)) / stackCount;
 
     // Build the visual order (window IDs in layout position order)
     // and apply bounds for each window.
@@ -741,17 +748,26 @@ export class Compositor {
     for (let i = 0; i < order.length; i++) {
       const winId = ids[order[i]];
       const win = this.windows.get(winId);
-      if (!win || i >= slots.length) continue;
+      if (!win) continue;
 
       this.focusVisualOrder.push(winId);
-      const slot = slots[i];
-      win.gridSlot = slot;
-      win.bounds = {
-        x: Math.round(offsetX + slot.col * (cellW + gap)),
-        y: Math.round(offsetY + slot.row * (cellH + gap)),
-        width: Math.round(cellW * slot.colSpan + gap * (slot.colSpan - 1)),
-        height: Math.round(cellH * slot.rowSpan + gap * (slot.rowSpan - 1)),
-      };
+
+      if (i === 0) {
+        // Focused window: left side, full height, 65% width
+        win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: stackCount };
+        win.bounds = { x: 0, y: 0, width: mainW, height: vh };
+      } else {
+        // Stack windows: right side, fill remaining width, split height evenly
+        const stackIdx = i - 1;
+        win.gridSlot = { col: 1, row: stackIdx, colSpan: 1, rowSpan: 1 };
+        win.bounds = {
+          x: mainW + gap,
+          y: Math.round(stackIdx * (stackCellH + gap)),
+          width: stackW,
+          height: Math.round(stackCellH),
+        };
+      }
+
       this.applyBounds(win);
     }
   }
