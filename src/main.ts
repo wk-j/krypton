@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { Compositor } from './compositor';
 import { InputRouter } from './input-router';
 import { WhichKey } from './which-key';
+import { loadConfig } from './config';
 
 async function main(): Promise<void> {
   const workspace = document.getElementById('krypton-workspace');
@@ -16,8 +17,22 @@ async function main(): Promise<void> {
   // Clear any static HTML windows (we'll create them dynamically)
   workspace.innerHTML = '';
 
+  // Load configuration from backend
+  let config;
+  try {
+    config = await loadConfig();
+    console.log('[Krypton] Config loaded:', config);
+  } catch (e) {
+    console.error('[Krypton] Failed to load config, using defaults:', e);
+  }
+
   // Initialize compositor
   const compositor = new Compositor(workspace);
+
+  // Apply config if loaded
+  if (config) {
+    compositor.applyConfig(config);
+  }
 
   // Initialize input router
   const inputRouter = new InputRouter(compositor);

@@ -1,4 +1,5 @@
 mod commands;
+mod config;
 mod pty;
 
 use std::sync::Arc;
@@ -8,13 +9,18 @@ use tauri::Manager;
 pub fn run() {
     let pty_manager = Arc::new(pty::PtyManager::new());
 
+    // Load configuration from disk (creates default file if missing)
+    let krypton_config = Arc::new(config::load_config());
+
     tauri::Builder::default()
         .manage(pty_manager)
+        .manage(krypton_config)
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
             commands::get_pty_cwd,
             commands::write_to_pty,
             commands::resize_pty,
+            commands::get_config,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

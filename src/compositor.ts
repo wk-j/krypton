@@ -18,6 +18,7 @@ import {
 } from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
 import { AnimationEngine, BoundsSnapshot } from './animation';
+import type { KryptonConfig } from './config';
 
 /** Custom key event handler for xterm.js — set by InputRouter */
 type CustomKeyHandler = (e: KeyboardEvent) => boolean;
@@ -28,8 +29,8 @@ interface TerminalInstance {
   fitAddon: FitAddon;
 }
 
-/** xterm.js theme (Krypton Cyber — transparent) */
-const TERMINAL_THEME = {
+/** xterm.js built-in theme (Krypton Cyber — transparent) */
+const DEFAULT_TERMINAL_THEME = {
   background: 'rgba(10, 10, 15, 0.5)',
   foreground: '#b0c4d8',
   cursor: '#0cf',
@@ -58,9 +59,6 @@ const TERMINAL_THEME = {
 const MIN_WIDTH = 200;
 const MIN_HEIGHT = 120;
 
-/** Pixels per arrow key step in resize/move mode */
-const STEP_SIZE = 20;
-
 /** Counter for unique window IDs */
 let windowIdCounter = 0;
 
@@ -84,6 +82,26 @@ export class Compositor {
   /** Animation engine for layout transitions and window effects */
   private animation: AnimationEngine = new AnimationEngine();
 
+  // ─── Config-backed settings ──────────────────────────────────────
+  /** xterm.js theme — built-in default, overridable by config theme.colors */
+  private terminalTheme: Record<string, string> = { ...DEFAULT_TERMINAL_THEME };
+  /** Font family for terminals */
+  private fontFamily = "'Mononoki Nerd Font Mono', 'JetBrains Mono', 'Fira Code', monospace";
+  /** Font size for terminals */
+  private fontSize = 14;
+  /** Line height for terminals */
+  private lineHeight = 1.2;
+  /** Scrollback lines */
+  private scrollbackLines = 10000;
+  /** Cursor style */
+  private cursorStyle: 'block' | 'underline' | 'bar' = 'block';
+  /** Cursor blink */
+  private cursorBlink = true;
+  /** Pixels per arrow key step in resize/move mode */
+  private stepSize = 20;
+  /** Window gap in pixels */
+  private windowGap = 6;
+
   // ─── Quick Terminal State ─────────────────────────────────────────
   private qtConfig: QuickTerminalConfig = { ...DEFAULT_QUICK_TERMINAL_CONFIG };
   /** The Quick Terminal DOM element (null until first show) */
@@ -103,6 +121,56 @@ export class Compositor {
     this.workspace = workspace;
     this.setupResizeHandler();
     this.setupPtyListeners();
+  }
+
+  /** Apply loaded config to compositor settings. Call before creating windows. */
+  applyConfig(config: KryptonConfig): void {
+    // Font
+    this.fontFamily = `'${config.font.family}', 'Fira Code', 'Cascadia Code', monospace`;
+    this.fontSize = config.font.size;
+    this.lineHeight = config.font.line_height;
+
+    // Terminal
+    this.scrollbackLines = config.terminal.scrollback_lines;
+    this.cursorStyle = config.terminal.cursor_style;
+    this.cursorBlink = config.terminal.cursor_blink;
+
+    // Theme color overrides (merge on top of built-in theme)
+    const c = config.theme.colors;
+    const theme: Record<string, string> = { ...DEFAULT_TERMINAL_THEME };
+    if (c.foreground) theme.foreground = c.foreground;
+    if (c.background) theme.background = c.background;
+    if (c.cursor) theme.cursor = c.cursor;
+    if (c.selection) theme.selectionBackground = c.selection;
+    if (c.black) theme.black = c.black;
+    if (c.red) theme.red = c.red;
+    if (c.green) theme.green = c.green;
+    if (c.yellow) theme.yellow = c.yellow;
+    if (c.blue) theme.blue = c.blue;
+    if (c.magenta) theme.magenta = c.magenta;
+    if (c.cyan) theme.cyan = c.cyan;
+    if (c.white) theme.white = c.white;
+    if (c.bright_black) theme.brightBlack = c.bright_black;
+    if (c.bright_red) theme.brightRed = c.bright_red;
+    if (c.bright_green) theme.brightGreen = c.bright_green;
+    if (c.bright_yellow) theme.brightYellow = c.bright_yellow;
+    if (c.bright_blue) theme.brightBlue = c.bright_blue;
+    if (c.bright_magenta) theme.brightMagenta = c.bright_magenta;
+    if (c.bright_cyan) theme.brightCyan = c.bright_cyan;
+    if (c.bright_white) theme.brightWhite = c.bright_white;
+    this.terminalTheme = theme;
+
+    // Quick Terminal
+    this.qtConfig = {
+      widthRatio: config.quick_terminal.width_ratio,
+      heightRatio: config.quick_terminal.height_ratio,
+      backdropBlur: config.quick_terminal.backdrop_blur,
+      animationDuration: 200, // not yet in TOML, keep default
+    };
+
+    // Workspaces
+    this.windowGap = config.workspaces.gap;
+    this.stepSize = config.workspaces.resize_step;
   }
 
   /** Get the currently focused window ID */
@@ -243,16 +311,16 @@ export class Compositor {
     };
     this.windows.set(id, win);
 
-    // Create xterm.js terminal
+    // Create xterm.js terminal with config-backed settings
     const terminal = new Terminal({
-      cursorBlink: true,
-      cursorStyle: 'block',
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      lineHeight: 1.2,
-      scrollback: 10000,
+      cursorBlink: this.cursorBlink,
+      cursorStyle: this.cursorStyle,
+      fontSize: this.fontSize,
+      fontFamily: this.fontFamily,
+      lineHeight: this.lineHeight,
+      scrollback: this.scrollbackLines,
       allowTransparency: true,
-      theme: TERMINAL_THEME,
+      theme: this.terminalTheme,
     });
 
     const fitAddon = new FitAddon();
@@ -879,16 +947,16 @@ export class Compositor {
     this.workspace.appendChild(el);
     this.qtElement = el;
 
-    // Create xterm.js terminal
+    // Create xterm.js terminal with config-backed settings
     const terminal = new Terminal({
-      cursorBlink: true,
-      cursorStyle: 'block',
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      lineHeight: 1.2,
-      scrollback: 10000,
+      cursorBlink: this.cursorBlink,
+      cursorStyle: this.cursorStyle,
+      fontSize: this.fontSize,
+      fontFamily: this.fontFamily,
+      lineHeight: this.lineHeight,
+      scrollback: this.scrollbackLines,
       allowTransparency: true,
-      theme: TERMINAL_THEME,
+      theme: this.terminalTheme,
     });
 
     const fitAddon = new FitAddon();
@@ -957,16 +1025,16 @@ export class Compositor {
 
     switch (direction) {
       case 'right':
-        b.width = Math.max(MIN_WIDTH, b.width + STEP_SIZE);
+        b.width = Math.max(MIN_WIDTH, b.width + this.stepSize);
         break;
       case 'left':
-        b.width = Math.max(MIN_WIDTH, b.width - STEP_SIZE);
+        b.width = Math.max(MIN_WIDTH, b.width - this.stepSize);
         break;
       case 'down':
-        b.height = Math.max(MIN_HEIGHT, b.height + STEP_SIZE);
+        b.height = Math.max(MIN_HEIGHT, b.height + this.stepSize);
         break;
       case 'up':
-        b.height = Math.max(MIN_HEIGHT, b.height - STEP_SIZE);
+        b.height = Math.max(MIN_HEIGHT, b.height - this.stepSize);
         break;
     }
 
@@ -984,16 +1052,16 @@ export class Compositor {
 
     switch (direction) {
       case 'left':
-        b.x = Math.max(0, b.x - STEP_SIZE);
+        b.x = Math.max(0, b.x - this.stepSize);
         break;
       case 'right':
-        b.x = Math.min(window.innerWidth - MIN_WIDTH, b.x + STEP_SIZE);
+        b.x = Math.min(window.innerWidth - MIN_WIDTH, b.x + this.stepSize);
         break;
       case 'up':
-        b.y = Math.max(0, b.y - STEP_SIZE);
+        b.y = Math.max(0, b.y - this.stepSize);
         break;
       case 'down':
-        b.y = Math.min(window.innerHeight - MIN_HEIGHT, b.y + STEP_SIZE);
+        b.y = Math.min(window.innerHeight - MIN_HEIGHT, b.y + this.stepSize);
         break;
     }
 
@@ -1114,7 +1182,7 @@ export class Compositor {
     const totalH = Math.round(vh * Compositor.MULTI_HEIGHT_RATIO);
     const offsetX = Math.round((vw - totalW) / 2);
     const offsetY = Math.round((vh - totalH) / 2);
-    const gap = Compositor.WINDOW_GAP;
+    const gap = this.windowGap;
 
     const cellW = (totalW - gap * (gridCols - 1)) / gridCols;
     const cellH = (totalH - gap * (gridRows - 1)) / gridRows;
@@ -1149,7 +1217,7 @@ export class Compositor {
 
     const { order } = focusTile(count, Math.max(0, focusIndex));
 
-    const gap = Compositor.WINDOW_GAP;
+    const gap = this.windowGap;
     const mainW = Math.round(vw * Compositor.FOCUS_MAIN_RATIO);
     const stackW = vw - mainW - gap;
     const stackCount = count - 1;

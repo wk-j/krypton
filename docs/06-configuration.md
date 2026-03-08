@@ -1,12 +1,6 @@
 # 7. Configuration File Format
 
-Configuration is read from a TOML file at a platform-appropriate path:
-
-| Platform | Path |
-|----------|------|
-| macOS | `~/.config/krypton/krypton.toml` |
-| Linux | `~/.config/krypton/krypton.toml` (or `$XDG_CONFIG_HOME/krypton/krypton.toml`) |
-| Windows | `%APPDATA%\krypton\krypton.toml` |
+Configuration is read from a TOML file at `~/.config/krypton/krypton.toml` on all platforms. The file is created with defaults on first launch if it doesn't exist.
 
 Custom themes are stored as separate TOML files:
 
@@ -28,7 +22,7 @@ program = "/bin/zsh"
 args = ["--login"]
 
 [font]
-family = "JetBrains Mono"
+family = "Mononoki Nerd Font Mono"
 size = 14.0
 line_height = 1.2
 ligatures = true
@@ -253,7 +247,7 @@ name = "custom-fixed"
 |---------|-----|------|---------|-------------|
 | `[shell]` | `program` | string | System default | Shell binary path |
 | `[shell]` | `args` | string[] | `[]` | Arguments passed to shell |
-| `[font]` | `family` | string | `"monospace"` | Font family name |
+| `[font]` | `family` | string | `"Mononoki Nerd Font Mono"` | Font family name |
 | `[font]` | `size` | float | `14.0` | Font size in points |
 | `[font]` | `line_height` | float | `1.2` | Line height multiplier |
 | `[font]` | `ligatures` | bool | `true` | Enable font ligatures |

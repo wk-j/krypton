@@ -26,7 +26,7 @@ impl PtyManager {
         }
     }
 
-    /// Spawn a new PTY session, optionally in a given working directory.
+    /// Spawn a new PTY session with a given shell, args, and optional working directory.
     /// Returns the session ID.
     pub fn spawn(
         &self,
@@ -34,6 +34,8 @@ impl PtyManager {
         cols: u16,
         rows: u16,
         cwd: Option<String>,
+        shell: &str,
+        args: &[String],
     ) -> Result<u32, String> {
         let pty_system = native_pty_system();
 
@@ -48,11 +50,10 @@ impl PtyManager {
             .openpty(size)
             .map_err(|e| format!("Failed to open PTY: {e}"))?;
 
-        // Detect the user's default shell
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-
-        let mut cmd = CommandBuilder::new(&shell);
-        cmd.arg("--login");
+        let mut cmd = CommandBuilder::new(shell);
+        for arg in args {
+            cmd.arg(arg);
+        }
 
         // Set working directory if provided
         if let Some(ref dir) = cwd {
@@ -128,7 +129,7 @@ impl PtyManager {
             }
         });
 
-        log::info!("Spawned PTY session {session_id} with shell: {shell}, cwd: {cwd:?}");
+        log::info!("Spawned PTY session {session_id} with shell: {shell} {args:?}, cwd: {cwd:?}");
         Ok(session_id)
     }
 

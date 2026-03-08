@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-08 (Quick Terminal)
+> Last updated: 2026-03-08 (Configuration system)
 
 ## Overview
 
@@ -12,7 +12,7 @@
 | M3 — Compositor & Windows | In Progress | 8/10 |
 | M4 — Keyboard System & Workspaces | In Progress | 11/14 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
-| M6 — Config, Theming & Custom Themes | Not Started | 0/9 |
+| M6 — Config, Theming & Custom Themes | In Progress | 2/9 |
 | M7 — Polish | Not Started | 0/6 |
 | M8 — Release | Not Started | 0/4 |
 
@@ -84,7 +84,8 @@
 
 ## M6 — Config, Theming & Custom Themes (Week 19-21)
 
-- [ ] TOML config parser with `serde` (keybindings, workspaces)
+- [x] TOML config parser with `serde` — loads `~/.config/krypton/krypton.toml`, creates default on first run, merges with defaults for missing fields
+- [x] Config applied to frontend: shell program/args, font (family/size/line_height), terminal (scrollback/cursor_style/cursor_blink), theme color overrides, Quick Terminal sizing, workspace gap/step sizes
 - [ ] Theme engine: load built-in themes + custom `.toml` files from themes directory
 - [ ] Theme scope: terminal colors, window chrome, workspace background, UI elements
 - [ ] Apply theme as CSS custom properties (instant update across all windows)

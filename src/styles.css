@@ -12,7 +12,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: transparent;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 /* ─── Workspace ─── */
@@ -183,7 +183,7 @@ html, body {
 }
 
 .krypton-window__label {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -196,7 +196,7 @@ html, body {
 }
 
 .krypton-window__pty-status {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.1em;
@@ -270,7 +270,7 @@ html, body {
 }
 
 .krypton-whichkey__title {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -295,7 +295,7 @@ html, body {
 }
 
 .krypton-whichkey__key {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-size: 12px;
   font-weight: 600;
   color: #0cf;
@@ -304,7 +304,7 @@ html, body {
 }
 
 .krypton-whichkey__label {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-size: 12px;
   color: rgba(0, 200, 255, 0.4);
 }
