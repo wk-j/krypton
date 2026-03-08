@@ -1098,12 +1098,13 @@ export class Compositor {
 
     this.qtTerminal = { terminal, fitAddon };
 
-    // Spawn PTY for Quick Terminal
+    // Spawn PTY for Quick Terminal — inherit CWD from focused window
+    const inheritedCwd = await this.getFocusedCwd();
     try {
       const sessionId = await invoke<number>('spawn_pty', {
         cols: terminal.cols,
         rows: terminal.rows,
-        cwd: null,
+        cwd: inheritedCwd,
       });
       this.qtSessionId = sessionId;
       qtPtyStatus.textContent = 'pty // active';
