@@ -209,6 +209,59 @@ html, body {
   color: var(--krypton-focused-titlebar-text, rgba(0, 200, 255, 0.4));
 }
 
+/* ─── Tab Bar ─── */
+.krypton-window__tabbar {
+  display: none;
+  flex-shrink: 0;
+  height: var(--krypton-tab-height, 24px);
+  padding: 0 8px;
+  gap: 1px;
+  align-items: stretch;
+  background: var(--krypton-tab-background, rgba(0, 200, 255, 0.03));
+  overflow: hidden;
+}
+
+.krypton-window__tabbar--visible {
+  display: flex;
+}
+
+.krypton-tab {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+}
+
+.krypton-tab__title {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: var(--krypton-tab-font-size, 10px);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--krypton-tab-inactive-color, rgba(0, 200, 255, 0.25));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-tab--active .krypton-tab__title {
+  color: var(--krypton-tab-active-color, rgba(0, 200, 255, 0.8));
+  font-weight: 600;
+}
+
+.krypton-tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 4px;
+  right: 4px;
+  height: 1px;
+  background: var(--krypton-tab-active-color, rgba(0, 200, 255, 0.8));
+}
+
 /* ─── Window content area (body + sidebar) ─── */
 .krypton-window__content {
   flex: 1;
@@ -218,7 +271,50 @@ html, body {
   background: transparent;
 }
 
-/* ─── Window body — xterm.js ─── */
+/* ─── Pane containers ─── */
+.krypton-pane {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  background: transparent;
+}
+
+.krypton-pane--focused {
+  box-shadow: inset 0 0 0 1px rgba(0, 200, 255, 0.2);
+}
+
+.krypton-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.krypton-split--vertical {
+  flex-direction: row;
+}
+
+.krypton-split--horizontal {
+  flex-direction: column;
+}
+
+.krypton-split__divider {
+  flex-shrink: 0;
+  background: var(--krypton-border-color, rgba(0, 200, 255, 0.15));
+}
+
+.krypton-split--vertical > .krypton-split__divider {
+  width: 1px;
+  cursor: col-resize;
+}
+
+.krypton-split--horizontal > .krypton-split__divider {
+  height: 1px;
+  cursor: row-resize;
+}
+
+/* ─── Window body — xterm.js (legacy compat, used by Quick Terminal) ─── */
 .krypton-window__body {
   flex: 1;
   min-height: 0;
@@ -239,18 +335,21 @@ html, body {
   transition: transform 50ms ease;
 }
 
-.krypton-window__body .xterm {
+.krypton-window__body .xterm,
+.krypton-pane .xterm {
   height: 100%;
   padding: 4px 6px;
   background: transparent !important;
 }
 
-.krypton-window__body .xterm-viewport {
+.krypton-window__body .xterm-viewport,
+.krypton-pane .xterm-viewport {
   overflow-y: auto !important;
   background: transparent !important;
 }
 
-.krypton-window__body .xterm-screen {
+.krypton-window__body .xterm-screen,
+.krypton-pane .xterm-screen {
   background: transparent !important;
 }
 

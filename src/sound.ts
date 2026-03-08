@@ -77,6 +77,13 @@ export type SoundEvent =
   | 'move.step'
   | 'terminal.bell'
   | 'terminal.exit'
+  | 'tab.create'
+  | 'tab.close'
+  | 'tab.switch'
+  | 'tab.move'
+  | 'pane.split'
+  | 'pane.close'
+  | 'pane.focus'
   | 'startup';
 
 /** Keyboard type for keypress sounds */
@@ -339,6 +346,60 @@ const KRYPTON_CYBER: Record<SoundEvent, SoundPatch> = {
   },
 
   // Startup: low warm hum rising
+  // ─── Tab/Pane events ──────────────────────────────────
+  'tab.create': {
+    oscillators: [
+      { waveform: 'white-noise', frequency: 0, amplitude: 0.06 },
+      { waveform: 'sine', frequency: 140, amplitude: 0.04 },
+    ],
+    filter: { type: 'bandpass', cutoff: 4000, Q: 1.5 },
+    envelope: { attack: 0.001, decay: 0.012, sustain: 0.0, release: 0.006 },
+  },
+  'tab.close': {
+    oscillators: [
+      { waveform: 'white-noise', frequency: 0, amplitude: 0.05 },
+    ],
+    filter: { type: 'highpass', cutoff: 3000, Q: 1.2 },
+    envelope: { attack: 0.001, decay: 0.01, sustain: 0.0, release: 0.005 },
+  },
+  'tab.switch': {
+    oscillators: [
+      { waveform: 'white-noise', frequency: 0, amplitude: 0.04 },
+    ],
+    filter: { type: 'bandpass', cutoff: 4200, Q: 2.0 },
+    envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
+  },
+  'tab.move': {
+    oscillators: [
+      { waveform: 'white-noise', frequency: 0, amplitude: 0.06 },
+      { waveform: 'sine', frequency: 100, amplitude: 0.03 },
+    ],
+    filter: { type: 'bandpass', cutoff: 3500, Q: 1.5 },
+    envelope: { attack: 0.001, decay: 0.012, sustain: 0.0, release: 0.005 },
+  },
+  'pane.split': {
+    oscillators: [
+      { waveform: 'white-noise', frequency: 0, amplitude: 0.07 },
+      { waveform: 'sine', frequency: 160, amplitude: 0.03 },
+    ],
+    filter: { type: 'bandpass', cutoff: 3800, Q: 1.4 },
+    envelope: { attack: 0.001, decay: 0.015, sustain: 0.0, release: 0.006 },
+  },
+  'pane.close': {
+    oscillators: [
+      { waveform: 'white-noise', frequency: 0, amplitude: 0.04 },
+    ],
+    filter: { type: 'highpass', cutoff: 3200, Q: 1.0 },
+    envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
+  },
+  'pane.focus': {
+    oscillators: [
+      { waveform: 'white-noise', frequency: 0, amplitude: 0.03 },
+    ],
+    filter: { type: 'bandpass', cutoff: 4500, Q: 2.2 },
+    envelope: { attack: 0.001, decay: 0.006, sustain: 0.0, release: 0.003 },
+  },
+
   'startup': {
     oscillators: [
       { waveform: 'sine', frequency: 120, amplitude: 0.07,

@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-08 (Hint mode: Rio-style pattern matching with keyboard labels)
+> Last updated: 2026-03-09 (M5: Tabs & Panes — tab bar, pane splits, keyboard navigation)
 
 ## Overview
 
@@ -11,7 +11,7 @@
 | M2 — xterm.js Integration | Complete | 5/5 |
 | M3 — Compositor & Windows | In Progress | 8/10 |
 | M4 — Keyboard System & Workspaces | In Progress | 11/14 |
-| M5 — Tabs & Panes | Not Started | 0/6 |
+| M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 6/9 |
 | M7 — Sound Effects | In Progress | 13/14 |
 | M8 — Polish | In Progress | 2/7 |
@@ -76,12 +76,12 @@
 
 ## M5 — Tabs & Panes (Week 16-18)
 
-- [ ] Tab bar UI within each window (keyboard-navigable)
-- [ ] Create/close/switch tabs via keyboard
-- [ ] Move tab to another window via keybinding (`Leader T` then window index)
-- [ ] Horizontal/vertical pane splits within a window
-- [ ] Keyboard navigation between panes
-- [ ] Session manager: track multiple PTY instances per window
+- [x] Tab bar UI within each window (keyboard-navigable) — `.krypton-window__tabbar` with tab elements, active indicator, auto-show when >1 tab (configurable via `always_show_tabbar`)
+- [x] Create/close/switch tabs via keyboard — `Leader t` (create), `Leader w` (close), `Leader [/]` (prev/next)
+- [x] Move tab to another window via keybinding (`Leader T` then window index) — enters TabMove mode, press 1-9 to select target window
+- [x] Horizontal/vertical pane splits within a window — `Leader \` (vertical), `Leader -` (horizontal); binary tree of splits with configurable default direction
+- [x] Keyboard navigation between panes — `Leader Alt+h/j/k/l` (directional), `Leader Alt+x` (close pane); spatial nearest-neighbor search
+- [x] Session manager: track multiple PTY instances per window — `sessionMap: Map<SessionId, {windowId, tabId, paneId}>` for O(1) PTY output routing; each pane owns its own PTY session
 
 ## M6 — Config, Theming & Custom Themes (Week 19-21)
 

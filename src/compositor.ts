@@ -9,26 +9,39 @@ import { FitAddon } from '@xterm/addon-fit';
 
 import {
   WindowId,
+  SessionId,
+  TabId,
+  PaneId,
   WindowBounds,
   KryptonWindow,
   LayoutMode,
-  AnimationConfig,
   QuickTerminalConfig,
   DEFAULT_QUICK_TERMINAL_CONFIG,
+  Tab,
+  Pane,
+  PaneNode,
+  SplitDirection,
 } from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
 import { AnimationEngine, BoundsSnapshot } from './animation';
 import { SoundEngine } from './sound';
-import type { KryptonConfig } from './config';
+import type { KryptonConfig, TabsConfig } from './config';
 import type { FrontendThemeEngine } from './theme';
 
 /** Custom key event handler for xterm.js — set by InputRouter */
 type CustomKeyHandler = (e: KeyboardEvent) => boolean;
 
-/** Terminal + addons for a window */
+/** Terminal + addons for Quick Terminal (which has no tab/pane structure) */
 interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
+}
+
+/** Reverse lookup: session ID -> where it lives */
+interface SessionLocation {
+  windowId: WindowId;
+  tabId: TabId;
+  paneId: PaneId;
 }
 
 /**
@@ -87,16 +100,26 @@ const DEFAULT_TERMINAL_THEME: Record<string, string> = {
 const MIN_WIDTH = 200;
 const MIN_HEIGHT = 120;
 
-/** Counter for unique window IDs */
+/** Counters for unique IDs */
 let windowIdCounter = 0;
+let tabIdCounter = 0;
+let paneIdCounter = 0;
 
 function nextWindowId(): WindowId {
   return `win-${windowIdCounter++}`;
 }
 
+function nextTabId(): TabId {
+  return `tab-${tabIdCounter++}`;
+}
+
+function nextPaneId(): PaneId {
+  return `pane-${paneIdCounter++}`;
+}
+
 export class Compositor {
   private windows: Map<WindowId, KryptonWindow> = new Map();
-  private terminals: Map<WindowId, TerminalInstance> = new Map();
+  private sessionMap: Map<SessionId, SessionLocation> = new Map();
   private focusedWindowId: WindowId | null = null;
   private workspace: HTMLElement;
   private onFocusChangeCallbacks: Array<(id: WindowId | null) => void> = [];
@@ -135,6 +158,13 @@ export class Compositor {
   private stepSize = 20;
   /** Window gap in pixels */
   private windowGap = 6;
+
+  // ─── Tabs Config ─────────────────────────────────────────────────
+  private tabsConfig: TabsConfig = {
+    always_show_tabbar: false,
+    default_split: 'vertical',
+    close_window_on_last_tab: true,
+  };
 
   // ─── Quick Terminal State ─────────────────────────────────────────
   private qtConfig: QuickTerminalConfig = { ...DEFAULT_QUICK_TERMINAL_CONFIG };
@@ -214,6 +244,198 @@ export class Compositor {
 
     // Sound
     this.sound.applyConfig(config.sound);
+
+    // Tabs
+    if (config.tabs) {
+      this.tabsConfig = config.tabs;
+    }
+  }
+
+  // ─── Pane Tree Helpers ──────────────────────────────────────────
+
+  /** Create a terminal instance and return a Pane */
+  private createPane(container: HTMLElement): Pane {
+    const paneId = nextPaneId();
+    const el = document.createElement('div');
+    el.className = 'krypton-pane';
+    el.dataset.paneId = paneId;
+    container.appendChild(el);
+
+    const terminal = new Terminal({
+      cursorBlink: this.cursorBlink,
+      cursorStyle: this.cursorStyle,
+      fontSize: this.fontSize,
+      fontFamily: this.fontFamily,
+      lineHeight: this.lineHeight,
+      scrollback: this.scrollbackLines,
+      allowTransparency: true,
+      theme: this.terminalTheme,
+    });
+
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.open(el);
+
+    if (this.customKeyHandler) {
+      terminal.attachCustomKeyEventHandler(this.customKeyHandler);
+    }
+
+    return { id: paneId, sessionId: null, terminal, fitAddon, element: el };
+  }
+
+  /** Wire a pane's terminal to a PTY session */
+  private wirePaneInput(pane: Pane): void {
+    pane.terminal.onData((data: string) => {
+      if (pane.sessionId !== null) {
+        const encoder = new TextEncoder();
+        invoke('write_to_pty', {
+          sessionId: pane.sessionId,
+          data: Array.from(encoder.encode(data)),
+        }).catch((e: unknown) => console.error('Write to PTY failed:', e));
+      }
+      this.sound.playKeypress('press');
+      setTimeout(() => this.sound.playKeypress('release'), 30 + Math.random() * 40);
+    });
+  }
+
+  /** Spawn a PTY for a pane and register it in the session map */
+  private async spawnPaneSession(
+    pane: Pane,
+    windowId: WindowId,
+    tabId: TabId,
+    cwd: string | null,
+  ): Promise<void> {
+    try {
+      const sessionId = await invoke<number>('spawn_pty', {
+        cols: pane.terminal.cols,
+        rows: pane.terminal.rows,
+        cwd,
+      });
+      pane.sessionId = sessionId;
+      this.sessionMap.set(sessionId, { windowId, tabId, paneId: pane.id });
+    } catch (e) {
+      console.error(`Failed to spawn PTY for pane ${pane.id}:`, e);
+      pane.terminal.write('\r\n\x1b[31mFailed to spawn shell.\x1b[0m\r\n');
+    }
+  }
+
+  /** Find a pane by ID within a pane tree */
+  private findPaneInTree(node: PaneNode, paneId: PaneId): Pane | null {
+    if (node.type === 'leaf') {
+      return node.pane.id === paneId ? node.pane : null;
+    }
+    return this.findPaneInTree(node.first, paneId) ?? this.findPaneInTree(node.second, paneId);
+  }
+
+  /** Get the focused pane of the focused window's active tab */
+  private getFocusedPane(): Pane | null {
+    if (!this.focusedWindowId) return null;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win || win.tabs.length === 0) return null;
+    const tab = win.tabs[win.activeTabIndex];
+    return this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
+  }
+
+  /** Get the active tab of the focused window */
+  private getActiveTab(): Tab | null {
+    if (!this.focusedWindowId) return null;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win || win.tabs.length === 0) return null;
+    return win.tabs[win.activeTabIndex];
+  }
+
+  /** Collect all panes from a pane tree */
+  private collectPanes(node: PaneNode): Pane[] {
+    if (node.type === 'leaf') return [node.pane];
+    return [...this.collectPanes(node.first), ...this.collectPanes(node.second)];
+  }
+
+  /** Dispose all terminals in a pane tree and remove from session map */
+  private disposePaneTree(node: PaneNode): void {
+    if (node.type === 'leaf') {
+      node.pane.terminal.dispose();
+      if (node.pane.sessionId !== null) {
+        this.sessionMap.delete(node.pane.sessionId);
+      }
+      node.pane.element.remove();
+    } else {
+      this.disposePaneTree(node.first);
+      this.disposePaneTree(node.second);
+      node.element.remove();
+    }
+  }
+
+  /** Fit all visible panes in a pane tree and resize their PTYs */
+  private fitPaneTree(node: PaneNode): void {
+    if (node.type === 'leaf') {
+      const pane = node.pane;
+      pane.fitAddon.fit();
+      if (pane.sessionId !== null) {
+        invoke('resize_pty', {
+          sessionId: pane.sessionId,
+          cols: pane.terminal.cols,
+          rows: pane.terminal.rows,
+        }).catch((e: unknown) => console.error('Resize PTY failed:', e));
+      }
+    } else {
+      this.fitPaneTree(node.first);
+      this.fitPaneTree(node.second);
+    }
+  }
+
+  /** Build the pane tree DOM inside a container */
+  private buildPaneTreeDom(node: PaneNode, container: HTMLElement): void {
+    if (node.type === 'leaf') {
+      container.appendChild(node.pane.element);
+    } else {
+      container.appendChild(node.element);
+    }
+  }
+
+  /** Update the tab bar visibility and active state for a window */
+  private updateTabBar(win: KryptonWindow): void {
+    const shouldShow = this.tabsConfig.always_show_tabbar || win.tabs.length > 1;
+    win.tabBarElement.classList.toggle('krypton-window__tabbar--visible', shouldShow);
+
+    // Update active indicators
+    const tabEls = win.tabBarElement.querySelectorAll('.krypton-tab');
+    tabEls.forEach((el, i) => {
+      el.classList.toggle('krypton-tab--active', i === win.activeTabIndex);
+    });
+  }
+
+  /** Rebuild the tab bar DOM for a window */
+  private rebuildTabBar(win: KryptonWindow): void {
+    win.tabBarElement.innerHTML = '';
+    for (let i = 0; i < win.tabs.length; i++) {
+      const tab = win.tabs[i];
+      const tabEl = document.createElement('div');
+      tabEl.className = 'krypton-tab';
+      tabEl.dataset.tabId = tab.id;
+
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'krypton-tab__title';
+      titleSpan.textContent = tab.title;
+      tabEl.appendChild(titleSpan);
+
+      tab.element = tabEl;
+      win.tabBarElement.appendChild(tabEl);
+    }
+    this.updateTabBar(win);
+  }
+
+  /** Switch the visible tab content for a window */
+  private showActiveTab(win: KryptonWindow): void {
+    // Clear content area
+    while (win.contentElement.firstChild) {
+      win.contentElement.removeChild(win.contentElement.firstChild);
+    }
+
+    const tab = win.tabs[win.activeTabIndex];
+    if (!tab) return;
+
+    // Mount the active tab's pane tree
+    this.buildPaneTreeDom(tab.paneTree, win.contentElement);
   }
 
   /**
@@ -245,9 +467,13 @@ export class Compositor {
     const xtermTheme = this.themeEngine.buildXtermTheme();
     this.terminalTheme = xtermTheme;
 
-    // Update all workspace terminals
-    for (const [, termInfo] of this.terminals) {
-      termInfo.terminal.options.theme = xtermTheme;
+    // Update all workspace terminals (all panes in all tabs in all windows)
+    for (const [, win] of this.windows) {
+      for (const tab of win.tabs) {
+        for (const pane of this.collectPanes(tab.paneTree)) {
+          pane.terminal.options.theme = xtermTheme;
+        }
+      }
     }
 
     // Update Quick Terminal if it exists
@@ -289,8 +515,13 @@ export class Compositor {
   /** Set custom key event handler for all terminals (called by InputRouter) */
   setCustomKeyHandler(handler: CustomKeyHandler): void {
     this.customKeyHandler = handler;
-    for (const [, termInfo] of this.terminals) {
-      termInfo.terminal.attachCustomKeyEventHandler(handler);
+    // Attach to all panes in all tabs in all windows
+    for (const [, win] of this.windows) {
+      for (const tab of win.tabs) {
+        for (const pane of this.collectPanes(tab.paneTree)) {
+          pane.terminal.attachCustomKeyEventHandler(handler);
+        }
+      }
     }
     // Also attach to Quick Terminal if it exists
     if (this.qtTerminal) {
@@ -298,14 +529,13 @@ export class Compositor {
     }
   }
 
-  /** Get the cwd of the focused window's shell, if available */
+  /** Get the cwd of the focused pane's shell, if available */
   private async getFocusedCwd(): Promise<string | null> {
-    if (!this.focusedWindowId) return null;
-    const win = this.windows.get(this.focusedWindowId);
-    if (!win || win.sessionId === null) return null;
+    const pane = this.getFocusedPane();
+    if (!pane || pane.sessionId === null) return null;
     try {
       const cwd = await invoke<string | null>('get_pty_cwd', {
-        sessionId: win.sessionId,
+        sessionId: pane.sessionId,
       });
       return cwd;
     } catch {
@@ -363,14 +593,18 @@ export class Compositor {
     titlebar.appendChild(ptyStatus);
     chrome.appendChild(titlebar);
 
+    // Header accent bar (striped decoration below titlebar)
+    const headerAccent = document.createElement('div');
+    headerAccent.className = 'krypton-window__header-accent';
+    chrome.appendChild(headerAccent);
+
+    // Tab bar
+    const tabBar = document.createElement('div');
+    tabBar.className = 'krypton-window__tabbar';
+
     // Content area
     const content = document.createElement('div');
     content.className = 'krypton-window__content';
-
-    const body = document.createElement('div');
-    body.className = 'krypton-window__body';
-
-    content.appendChild(body);
 
     // Corner accent elements
     for (const pos of ['tl', 'tr', 'bl', 'br']) {
@@ -379,52 +613,44 @@ export class Compositor {
       el.appendChild(corner);
     }
 
-    // Header accent bar (striped decoration below titlebar)
-    const headerAccent = document.createElement('div');
-    headerAccent.className = 'krypton-window__header-accent';
-    chrome.appendChild(headerAccent);
-
     el.appendChild(chrome);
+    el.appendChild(tabBar);
     el.appendChild(content);
     this.workspace.appendChild(el);
+
+    // Create first tab with a single pane
+    const pane = this.createPane(content);
+    const tabId = nextTabId();
+    const tabEl = document.createElement('div');
+    tabEl.className = 'krypton-tab krypton-tab--active';
+    tabEl.dataset.tabId = tabId;
+    const tabTitle = document.createElement('span');
+    tabTitle.className = 'krypton-tab__title';
+    tabTitle.textContent = `Shell 1`;
+    tabEl.appendChild(tabTitle);
+    tabBar.appendChild(tabEl);
+
+    const tab: Tab = {
+      id: tabId,
+      title: 'Shell 1',
+      paneTree: { type: 'leaf', pane },
+      focusedPaneId: pane.id,
+      element: tabEl,
+    };
 
     // Create window record
     const win: KryptonWindow = {
       id,
-      sessionId: null,
+      tabs: [tab],
+      activeTabIndex: 0,
       gridSlot: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
       bounds: { x: 0, y: 0, width: 0, height: 0 },
       element: el,
-      terminalContainer: body,
+      tabBarElement: tabBar,
+      contentElement: content,
     };
     this.windows.set(id, win);
-
-    // Create xterm.js terminal with config-backed settings
-    const terminal = new Terminal({
-      cursorBlink: this.cursorBlink,
-      cursorStyle: this.cursorStyle,
-      fontSize: this.fontSize,
-      fontFamily: this.fontFamily,
-      lineHeight: this.lineHeight,
-      scrollback: this.scrollbackLines,
-      allowTransparency: true,
-      theme: this.terminalTheme,
-    });
-
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.open(body);
-
-    // Note: WebGL addon is NOT loaded because it does not support
-    // transparent backgrounds. The default canvas renderer is used
-    // instead, which respects allowTransparency + rgba backgrounds.
-
-    // Attach custom key handler so InputRouter can intercept keys
-    if (this.customKeyHandler) {
-      terminal.attachCustomKeyEventHandler(this.customKeyHandler);
-    }
-
-    this.terminals.set(id, { terminal, fitAddon });
+    this.updateTabBar(win);
 
     // Focus the new window BEFORE relayout so that Focus layout
     // places it on the left (main) column immediately.
@@ -443,46 +669,27 @@ export class Compositor {
     // Sound: window create
     this.sound.play('window.create');
 
-    // Listen for shell title changes (OSC 0/2 sequences).
-    // Most shells set this to "command" or "user@host:cwd".
-    terminal.onTitleChange((title: string) => {
+    // Listen for shell title changes (OSC 0/2 sequences)
+    pane.terminal.onTitleChange((title: string) => {
       if (title) {
         label.textContent = title;
+        // Also update the tab title
+        tab.title = title;
+        tabTitle.textContent = title;
       }
     });
 
-    // Spawn PTY
-    try {
-      const sessionId = await invoke<number>('spawn_pty', {
-        cols: terminal.cols,
-        rows: terminal.rows,
-        cwd,
-      });
-      win.sessionId = sessionId;
-      label.textContent = `session_${String(sessionId).padStart(2, '0')}`;
-      ptyStatus.textContent = 'pty // active';
+    // Spawn PTY for the first pane
+    await this.spawnPaneSession(pane, id, tabId, cwd);
+    this.wirePaneInput(pane);
 
-      // Fetch initial CWD and update the status area
-      this.updateWindowCwd(win.sessionId, ptyStatus);
-    } catch (e) {
-      console.error(`Failed to spawn PTY for window ${id}:`, e);
-      terminal.write('\r\n\x1b[31mFailed to spawn shell.\x1b[0m\r\n');
+    if (pane.sessionId !== null) {
+      label.textContent = `session_${String(pane.sessionId).padStart(2, '0')}`;
+      ptyStatus.textContent = 'pty // active';
+      this.updateWindowCwd(pane.sessionId, ptyStatus);
+    } else {
       ptyStatus.textContent = 'pty // failed';
     }
-
-    // Wire input: xterm -> PTY
-    terminal.onData((data: string) => {
-      if (win.sessionId !== null) {
-        const encoder = new TextEncoder();
-        invoke('write_to_pty', {
-          sessionId: win.sessionId,
-          data: Array.from(encoder.encode(data)),
-        }).catch((e) => console.error('Write to PTY failed:', e));
-      }
-      // Keypress sound: press on input, release after short delay
-      this.sound.playKeypress('press');
-      setTimeout(() => this.sound.playKeypress('release'), 30 + Math.random() * 40);
-    });
 
     // Click to focus
     el.addEventListener('mousedown', () => {
@@ -492,7 +699,7 @@ export class Compositor {
     return id;
   }
 
-  /** Close a window and destroy its PTY */
+  /** Close a window and destroy all its tabs/panes */
   async closeWindow(id: WindowId): Promise<void> {
     const win = this.windows.get(id);
     if (!win) return;
@@ -503,10 +710,9 @@ export class Compositor {
       this.showAllWindows();
     }
 
-    const termInfo = this.terminals.get(id);
-    if (termInfo) {
-      termInfo.terminal.dispose();
-      this.terminals.delete(id);
+    // Dispose all tabs and their pane trees
+    for (const tab of win.tabs) {
+      this.disposePaneTree(tab.paneTree);
     }
 
     // Sound: window close
@@ -557,11 +763,14 @@ export class Compositor {
     const win = this.windows.get(id);
     if (win) {
       win.element.classList.add('krypton-window--focused');
-    }
-
-    const termInfo = this.terminals.get(id);
-    if (termInfo) {
-      termInfo.terminal.focus();
+      // Focus the active tab's focused pane terminal
+      if (win.tabs.length > 0) {
+        const tab = win.tabs[win.activeTabIndex];
+        const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
+        if (pane) {
+          pane.terminal.focus();
+        }
+      }
     }
 
     this.notifyFocusChange();
@@ -755,20 +964,15 @@ export class Compositor {
     if (this.qtVisible && this.qtTerminal) {
       return this.qtTerminal.terminal;
     }
-    if (this.focusedWindowId) {
-      const termInfo = this.terminals.get(this.focusedWindowId);
-      if (termInfo) return termInfo.terminal;
-    }
-    return null;
+    const pane = this.getFocusedPane();
+    return pane ? pane.terminal : null;
   }
 
-  /** Refocus the terminal of the currently focused window */
+  /** Refocus the terminal of the currently focused pane */
   refocusTerminal(): void {
-    if (this.focusedWindowId) {
-      const termInfo = this.terminals.get(this.focusedWindowId);
-      if (termInfo) {
-        termInfo.terminal.focus();
-      }
+    const pane = this.getFocusedPane();
+    if (pane) {
+      pane.terminal.focus();
     }
   }
 
@@ -779,11 +983,9 @@ export class Compositor {
       this.qtTerminal.terminal.scrollPages(pages);
       return;
     }
-    if (this.focusedWindowId) {
-      const termInfo = this.terminals.get(this.focusedWindowId);
-      if (termInfo) {
-        termInfo.terminal.scrollPages(pages);
-      }
+    const pane = this.getFocusedPane();
+    if (pane) {
+      pane.terminal.scrollPages(pages);
     }
   }
 
@@ -868,6 +1070,406 @@ export class Compositor {
   private showAllWindows(): void {
     for (const [, win] of this.windows) {
       win.element.style.display = '';
+    }
+  }
+
+  // ─── Tab / Pane Public API ─────────────────────────────────────
+
+  /** Create a new tab in the focused window */
+  async createTab(): Promise<void> {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win) return;
+
+    const cwd = await this.getFocusedCwd();
+    const tabId = nextTabId();
+
+    // Detach current tab's pane tree from DOM
+    while (win.contentElement.firstChild) {
+      win.contentElement.removeChild(win.contentElement.firstChild);
+    }
+
+    // Create the new pane
+    const pane = this.createPane(win.contentElement);
+
+    const tabEl = document.createElement('div');
+    tabEl.className = 'krypton-tab';
+    tabEl.dataset.tabId = tabId;
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'krypton-tab__title';
+    const tabNum = win.tabs.length + 1;
+    titleSpan.textContent = `Shell ${tabNum}`;
+    tabEl.appendChild(titleSpan);
+
+    const tab: Tab = {
+      id: tabId,
+      title: `Shell ${tabNum}`,
+      paneTree: { type: 'leaf', pane },
+      focusedPaneId: pane.id,
+      element: tabEl,
+    };
+
+    win.tabs.push(tab);
+    win.activeTabIndex = win.tabs.length - 1;
+    this.rebuildTabBar(win);
+    this.showActiveTab(win);
+
+    await this.nextFrame();
+    this.fitWindow(win.id);
+
+    // Spawn PTY and wire input
+    await this.spawnPaneSession(pane, win.id, tabId, cwd);
+    this.wirePaneInput(pane);
+
+    // Title change listener
+    pane.terminal.onTitleChange((title: string) => {
+      if (title) {
+        tab.title = title;
+        titleSpan.textContent = title;
+      }
+    });
+
+    pane.terminal.focus();
+    this.sound.play('tab.create');
+  }
+
+  /** Close the active tab in the focused window */
+  async closeTab(): Promise<void> {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win || win.tabs.length === 0) return;
+
+    if (win.tabs.length === 1) {
+      // Last tab — close the window
+      if (this.tabsConfig.close_window_on_last_tab) {
+        await this.closeWindow(win.id);
+      }
+      return;
+    }
+
+    this.closeTabByIndex(win, win.activeTabIndex);
+    this.sound.play('tab.close');
+  }
+
+  /** Internal: close a specific tab by index */
+  private closeTabByIndex(win: KryptonWindow, tabIndex: number): void {
+    const tab = win.tabs[tabIndex];
+    this.disposePaneTree(tab.paneTree);
+    win.tabs.splice(tabIndex, 1);
+
+    // Adjust active tab index
+    if (win.activeTabIndex >= win.tabs.length) {
+      win.activeTabIndex = win.tabs.length - 1;
+    }
+
+    this.rebuildTabBar(win);
+    this.showActiveTab(win);
+    this.fitWindow(win.id);
+
+    // Focus the new active tab's pane
+    if (win.tabs.length > 0) {
+      const newTab = win.tabs[win.activeTabIndex];
+      const pane = this.findPaneInTree(newTab.paneTree, newTab.focusedPaneId);
+      if (pane) pane.terminal.focus();
+    }
+  }
+
+  /** Switch to the previous or next tab in the focused window */
+  switchTab(direction: -1 | 1): void {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win || win.tabs.length <= 1) return;
+
+    // Detach current pane tree from DOM
+    while (win.contentElement.firstChild) {
+      win.contentElement.removeChild(win.contentElement.firstChild);
+    }
+
+    win.activeTabIndex = (win.activeTabIndex + direction + win.tabs.length) % win.tabs.length;
+    this.updateTabBar(win);
+    this.showActiveTab(win);
+    this.fitWindow(win.id);
+
+    const tab = win.tabs[win.activeTabIndex];
+    const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
+    if (pane) pane.terminal.focus();
+
+    this.sound.play('tab.switch');
+  }
+
+  /** Move the active tab from the focused window to another window by index */
+  moveTabToWindow(targetIndex: number): void {
+    if (!this.focusedWindowId) return;
+    const srcWin = this.windows.get(this.focusedWindowId);
+    if (!srcWin || srcWin.tabs.length === 0) return;
+
+    // Get target window by index (1-based, relative to window order)
+    const ids = this.windowIds;
+    if (targetIndex < 1 || targetIndex > ids.length) return;
+    const focusIdx = ids.indexOf(this.focusedWindowId);
+    const rotated = [...ids.slice(focusIdx), ...ids.slice(0, focusIdx)];
+    const targetId = rotated[targetIndex - 1];
+    if (targetId === this.focusedWindowId) return; // No-op: same window
+
+    const targetWin = this.windows.get(targetId);
+    if (!targetWin) return;
+
+    // Detach the tab from source
+    const tab = srcWin.tabs[srcWin.activeTabIndex];
+
+    // Remove pane tree from source window's DOM
+    while (srcWin.contentElement.firstChild) {
+      srcWin.contentElement.removeChild(srcWin.contentElement.firstChild);
+    }
+
+    srcWin.tabs.splice(srcWin.activeTabIndex, 1);
+
+    // Update session map for all panes in the moved tab
+    for (const pane of this.collectPanes(tab.paneTree)) {
+      if (pane.sessionId !== null) {
+        this.sessionMap.set(pane.sessionId, {
+          windowId: targetId,
+          tabId: tab.id,
+          paneId: pane.id,
+        });
+      }
+    }
+
+    // Attach to target window
+    targetWin.tabs.push(tab);
+    targetWin.activeTabIndex = targetWin.tabs.length - 1;
+
+    // Update source window
+    if (srcWin.tabs.length === 0) {
+      this.closeWindow(srcWin.id);
+    } else {
+      if (srcWin.activeTabIndex >= srcWin.tabs.length) {
+        srcWin.activeTabIndex = srcWin.tabs.length - 1;
+      }
+      this.rebuildTabBar(srcWin);
+      this.showActiveTab(srcWin);
+      this.fitWindow(srcWin.id);
+    }
+
+    // Update target window
+    this.rebuildTabBar(targetWin);
+    // Detach current content and show new tab
+    while (targetWin.contentElement.firstChild) {
+      targetWin.contentElement.removeChild(targetWin.contentElement.firstChild);
+    }
+    this.showActiveTab(targetWin);
+    this.fitWindow(targetWin.id);
+
+    this.sound.play('tab.move');
+  }
+
+  /** Split the focused pane */
+  async splitPane(direction?: SplitDirection): Promise<void> {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win || win.tabs.length === 0) return;
+
+    const tab = win.tabs[win.activeTabIndex];
+    const splitDir = direction ?? (this.tabsConfig.default_split as SplitDirection);
+    const cwd = await this.getFocusedCwd();
+
+    // Find the focused pane's parent in the tree and replace it with a split
+    const replaceInTree = (node: PaneNode): PaneNode => {
+      if (node.type === 'leaf' && node.pane.id === tab.focusedPaneId) {
+        // Create split container element
+        const splitEl = document.createElement('div');
+        splitEl.className = `krypton-split krypton-split--${splitDir}`;
+
+        const divider = document.createElement('div');
+        divider.className = 'krypton-split__divider';
+
+        // Reparent old pane into the split
+        node.pane.element.remove();
+        splitEl.appendChild(node.pane.element);
+        splitEl.appendChild(divider);
+
+        // Create new pane inside the split
+        const newPane = this.createPane(splitEl);
+
+        return {
+          type: 'split',
+          direction: splitDir,
+          ratio: 0.5,
+          first: node,
+          second: { type: 'leaf', pane: newPane },
+          element: splitEl,
+        };
+      }
+      if (node.type === 'split') {
+        return {
+          ...node,
+          first: replaceInTree(node.first),
+          second: replaceInTree(node.second),
+        };
+      }
+      return node;
+    };
+
+    tab.paneTree = replaceInTree(tab.paneTree);
+
+    // Rebuild the content DOM
+    while (win.contentElement.firstChild) {
+      win.contentElement.removeChild(win.contentElement.firstChild);
+    }
+    this.buildPaneTreeDom(tab.paneTree, win.contentElement);
+
+    // Find the new pane (it's the one that was just created — last in the tree)
+    const allPanes = this.collectPanes(tab.paneTree);
+    const newPane = allPanes[allPanes.length - 1];
+
+    // Spawn PTY and wire
+    await this.spawnPaneSession(newPane, win.id, tab.id, cwd);
+    this.wirePaneInput(newPane);
+
+    // Title change listener for new pane
+    newPane.terminal.onTitleChange((title: string) => {
+      if (title && tab.focusedPaneId === newPane.id) {
+        tab.title = title;
+      }
+    });
+
+    tab.focusedPaneId = newPane.id;
+
+    await this.nextFrame();
+    this.fitPaneTree(tab.paneTree);
+    newPane.terminal.focus();
+    this.updatePaneFocusIndicator(tab);
+    this.sound.play('pane.split');
+  }
+
+  /** Close the focused pane */
+  async closePane(): Promise<void> {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win || win.tabs.length === 0) return;
+
+    const tab = win.tabs[win.activeTabIndex];
+    const panes = this.collectPanes(tab.paneTree);
+
+    if (panes.length <= 1) {
+      // Only one pane — close the tab instead
+      await this.closeTab();
+      return;
+    }
+
+    this.closePaneInTab(tab, tab.focusedPaneId, win);
+    this.sound.play('pane.close');
+  }
+
+  /** Internal: close a pane within a tab, promote its sibling */
+  private closePaneInTab(tab: Tab, paneId: PaneId, win: KryptonWindow): void {
+    // Find and dispose the pane
+    const pane = this.findPaneInTree(tab.paneTree, paneId);
+    if (pane) {
+      pane.terminal.dispose();
+      if (pane.sessionId !== null) {
+        this.sessionMap.delete(pane.sessionId);
+      }
+      pane.element.remove();
+    }
+
+    // Remove the pane from the tree, promoting the sibling
+    const removeFromTree = (node: PaneNode): PaneNode | null => {
+      if (node.type === 'leaf') {
+        return node.pane.id === paneId ? null : node;
+      }
+      const firstResult = removeFromTree(node.first);
+      const secondResult = removeFromTree(node.second);
+
+      if (!firstResult) {
+        // Remove the split container element
+        node.element.remove();
+        return secondResult;
+      }
+      if (!secondResult) {
+        node.element.remove();
+        return firstResult;
+      }
+      return { ...node, first: firstResult, second: secondResult };
+    };
+
+    const newTree = removeFromTree(tab.paneTree);
+    if (newTree) {
+      tab.paneTree = newTree;
+    }
+
+    // Rebuild DOM
+    while (win.contentElement.firstChild) {
+      win.contentElement.removeChild(win.contentElement.firstChild);
+    }
+    this.buildPaneTreeDom(tab.paneTree, win.contentElement);
+
+    // Focus the first remaining pane
+    const remainingPanes = this.collectPanes(tab.paneTree);
+    if (remainingPanes.length > 0) {
+      tab.focusedPaneId = remainingPanes[0].id;
+      remainingPanes[0].terminal.focus();
+      this.updatePaneFocusIndicator(tab);
+    }
+
+    this.fitPaneTree(tab.paneTree);
+  }
+
+  /** Navigate between panes in a direction */
+  focusPaneDirection(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win || win.tabs.length === 0) return;
+
+    const tab = win.tabs[win.activeTabIndex];
+    const panes = this.collectPanes(tab.paneTree);
+    if (panes.length <= 1) return;
+
+    const currentPane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
+    if (!currentPane) return;
+
+    const curRect = currentPane.element.getBoundingClientRect();
+    const curCx = curRect.left + curRect.width / 2;
+    const curCy = curRect.top + curRect.height / 2;
+
+    let bestPane: Pane | null = null;
+    let bestDist = Infinity;
+
+    for (const p of panes) {
+      if (p.id === tab.focusedPaneId) continue;
+      const rect = p.element.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      let matches = false;
+      let dist = 0;
+
+      switch (direction) {
+        case 'left':  matches = cx < curCx; dist = (curCx - cx) + Math.abs(curCy - cy) * 0.5; break;
+        case 'right': matches = cx > curCx; dist = (cx - curCx) + Math.abs(curCy - cy) * 0.5; break;
+        case 'up':    matches = cy < curCy; dist = (curCy - cy) + Math.abs(curCx - cx) * 0.5; break;
+        case 'down':  matches = cy > curCy; dist = (cy - curCy) + Math.abs(curCx - cx) * 0.5; break;
+      }
+
+      if (matches && dist < bestDist) {
+        bestDist = dist;
+        bestPane = p;
+      }
+    }
+
+    if (bestPane) {
+      tab.focusedPaneId = bestPane.id;
+      bestPane.terminal.focus();
+      this.updatePaneFocusIndicator(tab);
+      this.sound.play('pane.focus');
+    }
+  }
+
+  /** Update the visual pane focus indicator within a tab */
+  private updatePaneFocusIndicator(tab: Tab): void {
+    const panes = this.collectPanes(tab.paneTree);
+    for (const p of panes) {
+      p.element.classList.toggle('krypton-pane--focused', p.id === tab.focusedPaneId);
     }
   }
 
@@ -998,9 +1600,13 @@ export class Compositor {
       win.element.classList.add('krypton-window--focused');
       this.focusedWindowId = restoreId;
 
-      const termInfo = this.terminals.get(restoreId);
-      if (termInfo) {
-        termInfo.terminal.focus();
+      // Refocus the restored window's active pane terminal
+      if (win.tabs.length > 0) {
+        const tab = win.tabs[win.activeTabIndex];
+        const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
+        if (pane) {
+          pane.terminal.focus();
+        }
       }
       this.notifyFocusChange();
     }
@@ -1262,13 +1868,10 @@ export class Compositor {
     const events = this.animation.flushInputBuffer();
     if (events.length === 0) return;
 
-    const termInfo = this.focusedWindowId
-      ? this.terminals.get(this.focusedWindowId)
-      : null;
-
-    if (termInfo) {
+    const pane = this.getFocusedPane();
+    if (pane) {
       // Replay each buffered keydown by re-dispatching to the terminal's textarea
-      const textarea = termInfo.terminal.textarea;
+      const textarea = pane.terminal.textarea;
       if (textarea) {
         for (const event of events) {
           textarea.dispatchEvent(new KeyboardEvent('keydown', {
@@ -1416,26 +2019,18 @@ export class Compositor {
 
   /** Fit all terminals to their containers and resize PTYs */
   fitAll(): void {
-    for (const [id] of this.terminals) {
-      this.fitWindow(id);
+    for (const [, win] of this.windows) {
+      this.fitWindow(win.id);
     }
   }
 
-  /** Fit a single terminal to its container and resize its PTY */
+  /** Fit the active tab's pane tree for a window */
   private fitWindow(id: WindowId): void {
-    const termInfo = this.terminals.get(id);
     const win = this.windows.get(id);
-    if (!termInfo || !win) return;
+    if (!win || win.tabs.length === 0) return;
 
-    termInfo.fitAddon.fit();
-
-    if (win.sessionId !== null) {
-      invoke('resize_pty', {
-        sessionId: win.sessionId,
-        cols: termInfo.terminal.cols,
-        rows: termInfo.terminal.rows,
-      }).catch((e) => console.error('Resize PTY failed:', e));
-    }
+    const tab = win.tabs[win.activeTabIndex];
+    this.fitPaneTree(tab.paneTree);
   }
 
   /** Apply a window's bounds to its DOM element */
@@ -1485,13 +2080,18 @@ export class Compositor {
         return;
       }
 
-      for (const [wid, win] of this.windows) {
-        if (win.sessionId === sid) {
-          const termInfo = this.terminals.get(wid);
-          if (termInfo) {
-            termInfo.terminal.write(new Uint8Array(data));
+      // Look up via session map (O(1) instead of linear scan)
+      const loc = this.sessionMap.get(sid);
+      if (loc) {
+        const win = this.windows.get(loc.windowId);
+        if (win) {
+          const tab = win.tabs.find((t) => t.id === loc.tabId);
+          if (tab) {
+            const pane = this.findPaneInTree(tab.paneTree, loc.paneId);
+            if (pane) {
+              pane.terminal.write(new Uint8Array(data));
+            }
           }
-          break;
         }
       }
     });
@@ -1507,16 +2107,35 @@ export class Compositor {
         return;
       }
 
-      for (const [wid, win] of this.windows) {
-        if (win.sessionId === sid) {
-          win.sessionId = null;
-          // Update status to reflect exit before closing
+      // Look up which pane this session belongs to
+      const loc = this.sessionMap.get(sid);
+      if (!loc) return;
+      this.sessionMap.delete(sid);
+
+      const win = this.windows.get(loc.windowId);
+      if (!win) return;
+
+      this.sound.play('terminal.exit');
+
+      // Find the tab and close the pane
+      const tabIndex = win.tabs.findIndex((t) => t.id === loc.tabId);
+      if (tabIndex < 0) return;
+      const tab = win.tabs[tabIndex];
+      const panes = this.collectPanes(tab.paneTree);
+
+      if (panes.length === 1) {
+        // Last pane in tab — close the tab
+        if (win.tabs.length === 1) {
+          // Last tab in window — close window
           const statusEl = this.findPtyStatus(win.element);
           if (statusEl) statusEl.textContent = 'pty // exited';
-          this.sound.play('terminal.exit');
-          this.closeWindow(wid);
-          break;
+          this.closeWindow(win.id);
+        } else {
+          this.closeTabByIndex(win, tabIndex);
         }
+      } else {
+        // Close just this pane within the tab
+        this.closePaneInTab(tab, loc.paneId, win);
       }
     });
   }

@@ -331,6 +331,13 @@ export class FrontendThemeEngine {
     s('--krypton-corner-size', `${theme.chrome.corner_accents.size}px`);
     s('--krypton-corner-thickness', `${theme.chrome.corner_accents.thickness}px`);
 
+    // Chrome: tabs
+    s('--krypton-tab-height', `${theme.chrome.tabs.height}px`);
+    s('--krypton-tab-background', theme.chrome.tabs.background);
+    s('--krypton-tab-active-color', theme.chrome.tabs.active_color);
+    s('--krypton-tab-inactive-color', theme.chrome.tabs.inactive_color);
+    s('--krypton-tab-font-size', `${theme.chrome.tabs.font_size}px`);
+
     // Focused state
     s('--krypton-focused-border', theme.focused.border_color);
     s('--krypton-focused-shadow', theme.focused.shadow_color);

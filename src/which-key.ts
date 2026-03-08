@@ -27,6 +27,15 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: 'v', label: 'select mode' },
   { key: 'V', label: 'select lines' },
   { key: 'H', label: 'hint mode' },
+  { key: 't', label: 'new tab' },
+  { key: 'w', label: 'close tab' },
+  { key: '[', label: 'prev tab' },
+  { key: ']', label: 'next tab' },
+  { key: 'T', label: 'move tab' },
+  { key: '\\', label: 'split vertical' },
+  { key: '-', label: 'split horizontal' },
+  { key: 'A-hjkl', label: 'focus pane' },
+  { key: 'A-x', label: 'close pane' },
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [
@@ -50,6 +59,11 @@ const SWAP_KEYS: KeyEntry[] = [
   { key: 'l/\u2192', label: 'swap right' },
   { key: 'k/\u2191', label: 'swap up' },
   { key: 'j/\u2193', label: 'swap down' },
+];
+
+const TAB_MOVE_KEYS: KeyEntry[] = [
+  { key: '1-9', label: 'move to window N' },
+  { key: 'Esc', label: 'cancel' },
 ];
 
 const HINT_KEYS: KeyEntry[] = [
@@ -133,6 +147,10 @@ export class WhichKey {
       case Mode.Hint:
         entries = HINT_KEYS;
         titleText = 'Hint';
+        break;
+      case Mode.TabMove:
+        entries = TAB_MOVE_KEYS;
+        titleText = 'Move Tab to Window';
         break;
       default:
         this.hide();

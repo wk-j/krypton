@@ -249,6 +249,9 @@ export class InputRouter {
         case Mode.Hint:
           this.handleHintKey(e);
           break;
+        case Mode.TabMove:
+          this.handleTabMoveKey(e);
+          break;
       }
     }, true);
   }
@@ -346,7 +349,71 @@ export class InputRouter {
         this.enterSelectionMode(e.shiftKey);
         break;
 
+      // ─── Tabs ──────────────────────────────────────────────
+      // t — create new tab
+      case 't':
+        if (e.shiftKey) {
+          // Shift+T: enter tab-move mode (wait for window index 1-9)
+          this.setMode(Mode.TabMove);
+        } else {
+          this.compositor.createTab().then(() => this.toNormal());
+        }
+        break;
+
+      // w — close active tab (or window if last tab)
+      case 'w':
+        this.compositor.closeTab().then(() => this.toNormal());
+        break;
+
+      // [ — previous tab
+      case '[':
+        this.compositor.switchTab(-1);
+        this.toNormal();
+        break;
+
+      // ] — next tab
+      case ']':
+        this.compositor.switchTab(1);
+        this.toNormal();
+        break;
+
+      // ─── Panes ─────────────────────────────────────────────
+      // \ — vertical split
+      case '\\':
+        this.compositor.splitPane('vertical').then(() => this.toNormal());
+        break;
+
+      // - — horizontal split
+      case '-':
+        this.compositor.splitPane('horizontal').then(() => this.toNormal());
+        break;
+
       default:
+        // Alt+h/j/k/l — navigate panes
+        if (e.altKey && !e.shiftKey) {
+          switch (e.code) {
+            case 'KeyH':
+              this.compositor.focusPaneDirection('left');
+              this.toNormal();
+              return;
+            case 'KeyJ':
+              this.compositor.focusPaneDirection('down');
+              this.toNormal();
+              return;
+            case 'KeyK':
+              this.compositor.focusPaneDirection('up');
+              this.toNormal();
+              return;
+            case 'KeyL':
+              this.compositor.focusPaneDirection('right');
+              this.toNormal();
+              return;
+            // Alt+x — close focused pane
+            case 'KeyX':
+              this.compositor.closePane().then(() => this.toNormal());
+              return;
+          }
+        }
         this.toNormal();
         break;
     }
@@ -465,6 +532,21 @@ export class InputRouter {
       default:
         this.toNormal();
         break;
+    }
+  }
+
+  // ─── Tab Move Mode ────────────────────────────────────────────
+  // Entered via Shift+T in compositor mode. Waits for a 1-9 key
+  // to move the active tab to that window index.
+
+  private handleTabMoveKey(e: KeyboardEvent): void {
+    const key = e.key;
+    if (key >= '1' && key <= '9') {
+      this.compositor.moveTabToWindow(parseInt(key, 10));
+      this.toNormal();
+    } else {
+      // Any other key cancels
+      this.toNormal();
     }
   }
 

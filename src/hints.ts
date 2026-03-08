@@ -31,7 +31,7 @@ const DEFAULT_HINTS_CONFIG: HintsConfig = {
   rules: [
     {
       name: 'url',
-      regex: '(https?://|ftp://)[^\\x00-\\x1F\\x7F-\\x9F<>"\\s{}\\^⟨⟩`\\\\]+',
+      regex: 'https?://[^\\s<>"\\x60{}()\\[\\]]+(?:\\([^\\s<>"\\x60{}()\\[\\]]*\\))*[^\\s<>"\\x60{}()\\[\\]]*',
       action: 'Open',
       enabled: true,
     },
@@ -211,19 +211,75 @@ export class HintController {
 
   // ─── Buffer Scanning ──────────────────────────────────────────
 
-  private scanBuffer(terminal: Terminal): HintMatch[] {
-    const matches: HintMatch[] = [];
+  /**
+   * A "logical line" is one or more buffer rows joined together when the
+   * terminal has soft-wrapped a long line. We need this because URLs and
+   * file paths often span multiple visual rows.
+   */
+  private buildLogicalLines(terminal: Terminal): Array<{
+    text: string;
+    /** The first buffer row of this logical line */
+    startRow: number;
+    /** Length (in chars) of each constituent buffer row, in order */
+    rowLengths: number[];
+  }> {
     const buffer = terminal.buffer.active;
     const startRow = buffer.viewportY;
     const endRow = startRow + terminal.rows;
+    const result: Array<{ text: string; startRow: number; rowLengths: number[] }> = [];
 
-    const enabledRules = this.config.rules.filter((r) => r.enabled);
+    let current: { text: string; startRow: number; rowLengths: number[] } | null = null;
 
     for (let row = startRow; row < endRow; row++) {
       const line = buffer.getLine(row);
       if (!line) continue;
+
       const text = line.translateToString(false);
 
+      if (line.isWrapped && current) {
+        // Continuation of the previous logical line
+        current.text += text;
+        current.rowLengths.push(text.length);
+      } else {
+        // Start of a new logical line
+        if (current) result.push(current);
+        current = { text, startRow: row, rowLengths: [text.length] };
+      }
+    }
+    if (current) result.push(current);
+
+    return result;
+  }
+
+  /**
+   * Convert a character offset within a logical line back to a buffer
+   * row + column, accounting for wrapped rows.
+   */
+  private offsetToRowCol(
+    logicalLine: { startRow: number; rowLengths: number[] },
+    offset: number,
+  ): { row: number; col: number } {
+    let remaining = offset;
+    for (let i = 0; i < logicalLine.rowLengths.length; i++) {
+      if (remaining < logicalLine.rowLengths[i]) {
+        return { row: logicalLine.startRow + i, col: remaining };
+      }
+      remaining -= logicalLine.rowLengths[i];
+    }
+    // Fallback: last row
+    const lastIdx = logicalLine.rowLengths.length - 1;
+    return {
+      row: logicalLine.startRow + lastIdx,
+      col: logicalLine.rowLengths[lastIdx] - 1,
+    };
+  }
+
+  private scanBuffer(terminal: Terminal): HintMatch[] {
+    const matches: HintMatch[] = [];
+    const logicalLines = this.buildLogicalLines(terminal);
+    const enabledRules = this.config.rules.filter((r) => r.enabled);
+
+    for (const ll of logicalLines) {
       for (const rule of enabledRules) {
         let regex: RegExp;
         try {
@@ -234,27 +290,62 @@ export class HintController {
         }
 
         let match: RegExpExecArray | null;
-        while ((match = regex.exec(text)) !== null) {
-          // Avoid zero-length matches
+        while ((match = regex.exec(ll.text)) !== null) {
           if (match[0].length === 0) {
             regex.lastIndex++;
             continue;
           }
 
+          // Post-process: strip trailing punctuation that is likely not part
+          // of the match (markdown, prose artifacts)
+          let text = match[0];
+          text = this.stripTrailingPunctuation(text);
+          if (text.length === 0) continue;
+
+          const { row, col } = this.offsetToRowCol(ll, match.index);
+
           matches.push({
             row,
-            col: match.index,
-            length: match[0].length,
-            text: match[0],
+            col,
+            length: text.length,
+            text,
             rule,
-            label: '', // assigned later
+            label: '',
           });
         }
       }
     }
 
-    // Deduplicate overlapping matches (keep the longer one)
     return this.deduplicateMatches(matches);
+  }
+
+  /**
+   * Strip trailing characters that are commonly not part of URLs/paths
+   * but get captured by greedy regexes (markdown syntax, trailing commas, etc.).
+   * Also balances parentheses: if URL has unbalanced closing `)`, strip it
+   * (common in markdown `[text](url)`).
+   */
+  private stripTrailingPunctuation(text: string): string {
+    // Strip common trailing chars that aren't part of URLs
+    let result = text.replace(/[)>\].,;:!?'"]+$/, '');
+
+    // But if there are balanced parens in the URL (e.g., Wikipedia links),
+    // we should keep them. Re-add closing parens if they're balanced.
+    const openCount = (result.match(/\(/g) || []).length;
+    const closeCount = (result.match(/\)/g) || []).length;
+    if (openCount > closeCount) {
+      // Check if the original text had matching closing parens we stripped
+      const stripped = text.slice(result.length);
+      for (const ch of stripped) {
+        if (ch === ')' && openCount > (result.match(/\)/g) || []).length) {
+          result += ch;
+        } else {
+          break;
+        }
+      }
+    }
+
+    return result;
   }
 
   private deduplicateMatches(matches: HintMatch[]): HintMatch[] {

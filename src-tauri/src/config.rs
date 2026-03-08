@@ -18,6 +18,7 @@ pub struct KryptonConfig {
     pub workspaces: WorkspacesConfig,
     pub sound: SoundConfig,
     pub hints: HintsConfig,
+    pub tabs: TabsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,7 +169,7 @@ impl Default for HintsConfig {
             rules: vec![
                 HintRule {
                     name: "url".to_string(),
-                    regex: r"(https?://|ftp://)[^\x00-\x1F\x7F-\x9F<>\x22\s{}\^⟨⟩`\\]+".to_string(),
+                    regex: r#"https?://[^\s<>"\x60{}()\[\]]+(?:\([^\s<>"\x60{}()\[\]]*\))*[^\s<>"\x60{}()\[\]]*"#.to_string(),
                     action: HintAction::Open,
                     enabled: true,
                 },
@@ -185,6 +186,29 @@ impl Default for HintsConfig {
                     enabled: true,
                 },
             ],
+        }
+    }
+}
+
+// ─── Tabs ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TabsConfig {
+    /// Show the tab bar even when there is only one tab
+    pub always_show_tabbar: bool,
+    /// Default direction for pane splits ("vertical" or "horizontal")
+    pub default_split: String,
+    /// Close window when the last tab is closed
+    pub close_window_on_last_tab: bool,
+}
+
+impl Default for TabsConfig {
+    fn default() -> Self {
+        Self {
+            always_show_tabbar: false,
+            default_split: "vertical".to_string(),
+            close_window_on_last_tab: true,
         }
     }
 }

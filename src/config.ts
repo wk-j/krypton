@@ -90,6 +90,12 @@ export interface HintsConfig {
   rules: HintRule[];
 }
 
+export interface TabsConfig {
+  always_show_tabbar: boolean;
+  default_split: 'vertical' | 'horizontal';
+  close_window_on_last_tab: boolean;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -99,6 +105,7 @@ export interface KryptonConfig {
   workspaces: WorkspacesConfig;
   sound: SoundConfig;
   hints: HintsConfig;
+  tabs: TabsConfig;
 }
 
 /** Load configuration from the Rust backend */

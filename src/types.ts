@@ -1,10 +1,22 @@
 // Krypton — Core type definitions
 
+import type { Terminal } from '@xterm/xterm';
+import type { FitAddon } from '@xterm/addon-fit';
+
 /** Unique identifier for a terminal window */
 export type WindowId = string;
 
 /** Unique PTY session identifier (backend-assigned) */
 export type SessionId = number;
+
+/** Unique identifier for a tab within a window */
+export type TabId = string;
+
+/** Unique identifier for a pane within a tab */
+export type PaneId = string;
+
+/** Direction of a pane split */
+export type SplitDirection = 'horizontal' | 'vertical';
 
 /** Input mode for the keyboard router */
 export enum Mode {
@@ -15,6 +27,7 @@ export enum Mode {
   Swap = 'Swap',
   Selection = 'Selection',
   Hint = 'Hint',
+  TabMove = 'TabMove',
 }
 
 /** Layout strategy for tiling windows */
@@ -41,14 +54,39 @@ export interface WindowBounds {
   height: number;
 }
 
+/** A leaf pane — hosts one xterm.js terminal + PTY session */
+export interface Pane {
+  id: PaneId;
+  sessionId: SessionId | null;
+  terminal: Terminal;
+  fitAddon: FitAddon;
+  element: HTMLElement;
+}
+
+/** Binary tree node for pane splits */
+export type PaneNode =
+  | { type: 'leaf'; pane: Pane }
+  | { type: 'split'; direction: SplitDirection; ratio: number; first: PaneNode; second: PaneNode; element: HTMLElement };
+
+/** A tab within a window */
+export interface Tab {
+  id: TabId;
+  title: string;
+  paneTree: PaneNode;
+  focusedPaneId: PaneId;
+  element: HTMLElement;
+}
+
 /** Represents a terminal window's state */
 export interface KryptonWindow {
   id: WindowId;
-  sessionId: SessionId | null;
+  tabs: Tab[];
+  activeTabIndex: number;
   gridSlot: GridSlot;
   bounds: WindowBounds;
   element: HTMLElement;
-  terminalContainer: HTMLElement;
+  tabBarElement: HTMLElement;
+  contentElement: HTMLElement;
 }
 
 // ─── Animation Types ──────────────────────────────────────────

@@ -139,7 +139,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
 ### Window DOM Structure
 
-Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with session label and PTY status, a content area with the terminal body and a right sidebar decoration, and a bottom bar.
+Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with session label and PTY status, a **tab bar** (auto-shown when multiple tabs exist), and a **content area** containing the active tab's pane tree. Pane trees are binary splits — each leaf is a `.krypton-pane` hosting an xterm.js instance, and splits are `.krypton-split` containers with a `.krypton-split__divider` between two children.
 
 ```html
 <html style="background: transparent">
@@ -155,25 +155,47 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
             <div class="krypton-window__status-dot"></div>
             <span class="krypton-window__label">SESSION_01</span>
           </div>
-          <span class="krypton-window__pty-status">PTY_STREAMS // ACTIVE</span>
+          <span class="krypton-window__pty-status">~/projects</span>
+        </div>
+        <div class="krypton-window__header-accent"></div>
+      </div>
+
+      <!-- Tab bar: auto-shown when >1 tab or always_show_tabbar = true -->
+      <div class="krypton-window__tabbar krypton-window__tabbar--visible">
+        <div class="krypton-tab krypton-tab--active" data-tab-id="tab-0">
+          <span class="krypton-tab__title">Shell 1</span>
+        </div>
+        <div class="krypton-tab" data-tab-id="tab-1">
+          <span class="krypton-tab__title">Shell 2</span>
         </div>
       </div>
+
+      <!-- Content area: hosts the active tab's pane tree -->
       <div class="krypton-window__content">
-        <div class="krypton-window__body">
+        <!-- Single pane (leaf node) -->
+        <div class="krypton-pane krypton-pane--focused" data-pane-id="pane-0">
           <!-- xterm.js mounts here -->
         </div>
-        <div class="krypton-window__sidebar">
-          <div class="krypton-window__sidebar-dot"></div>
-          <div class="krypton-window__sidebar-dot"></div>
-          <div class="krypton-window__sidebar-text">TELEMETRY_DATA</div>
+
+        <!-- OR a split with two panes -->
+        <!--
+        <div class="krypton-split krypton-split--vertical">
+          <div class="krypton-pane krypton-pane--focused" data-pane-id="pane-0">
+            xterm.js
+          </div>
+          <div class="krypton-split__divider"></div>
+          <div class="krypton-pane" data-pane-id="pane-1">
+            xterm.js
+          </div>
         </div>
+        -->
       </div>
-      <div class="krypton-window__bottombar">
-        <div class="krypton-window__bottom-decoration">
-          <div class="krypton-window__bottom-line"></div>
-          <div class="krypton-window__bottom-line"></div>
-        </div>
-      </div>
+
+      <!-- Corner accents -->
+      <div class="krypton-window__corner krypton-window__corner--tl"></div>
+      <div class="krypton-window__corner krypton-window__corner--tr"></div>
+      <div class="krypton-window__corner krypton-window__corner--bl"></div>
+      <div class="krypton-window__corner krypton-window__corner--br"></div>
     </div>
 
     <!-- More windows... -->
@@ -181,7 +203,7 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
     <!-- Quick Terminal (overlay, toggled via Cmd+I) -->
     <div class="krypton-quick-terminal" id="quick-terminal"
          style="position: absolute; z-index: 5000; display: none;">
-      <!-- Same chrome structure as regular windows -->
+      <!-- Same chrome structure as regular windows (no tabs/panes) -->
       <div class="krypton-window__chrome">
         <div class="krypton-window__titlebar">
           <div class="krypton-window__label-group">
@@ -193,12 +215,12 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
       </div>
       <div class="krypton-window__content">
         <div class="krypton-window__body">
-          <!-- xterm.js mounts here -->
+          <!-- xterm.js mounts here (single terminal, no tab/pane structure) -->
         </div>
       </div>
     </div>
 
-    <!-- Which-key popup (shown during compositor/resize/move modes) -->
+    <!-- Which-key popup (shown during compositor/resize/move/tab-move modes) -->
     <div class="krypton-whichkey">...</div>
   </div>
 </body>
