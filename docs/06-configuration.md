@@ -2,11 +2,12 @@
 
 Configuration is read from a TOML file at `~/.config/krypton/krypton.toml` on all platforms. The file is created with defaults on first launch if it doesn't exist.
 
-Custom themes are stored as separate TOML files:
+Custom themes and sound packs are stored as separate TOML files:
 
-| Platform | Path |
-|----------|------|
-| All | `~/.config/krypton/themes/*.toml` |
+| Content | Path |
+|---------|------|
+| Custom themes | `~/.config/krypton/themes/*.toml` |
+| Custom sound packs | `~/.config/krypton/sounds/*.toml` |
 
 ## Reference
 
@@ -148,6 +149,31 @@ step_large = "Shift+Arrow"
 confirm = "Enter"
 cancel = "Escape"
 
+# --- Sound Effects ---
+# Procedural sound effects synthesized via Web Audio API.
+# All sounds use additive + subtractive functional synthesis (no audio files).
+
+[sound]
+enabled = true                 # master toggle for all sound effects
+volume = 0.5                   # master volume (0.0 to 1.0)
+pack = "krypton-cyber"         # sound pack name (built-in or custom)
+# Custom sound packs: place .toml files in ~/.config/krypton/sounds/
+
+# Per-event overrides: set to false to disable, or a float (0.0-1.0) for volume
+[sound.events]
+# window.create = true          # use default volume
+# window.close = true
+# window.focus = 0.3            # quieter focus click
+# mode.enter = true
+# mode.exit = true
+# quick_terminal.show = true
+# quick_terminal.hide = true
+# startup = true
+# terminal.bell = true
+# resize.step = 0.15            # very quiet for repeated steps
+# command_palette.open = true
+# command_palette.execute = true
+
 # --- Quick Terminal ---
 # A persistent overlay terminal toggled via Cmd+I, centered on screen.
 
@@ -264,6 +290,17 @@ name = "custom-fixed"
 | `[keybindings]` | *(various)* | string | — | See full keybinding reference in TOML example above |
 | `[keybindings.resize_mode]` | *(various)* | string | — | Keys active in resize mode |
 | `[keybindings.move_mode]` | *(various)* | string | — | Keys active in move mode |
+
+### Sound Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[sound]` | `enabled` | bool | `true` | Master toggle — enables/disables all sound effects |
+| `[sound]` | `volume` | float | `0.5` | Master volume (0.0 = silent, 1.0 = full) |
+| `[sound]` | `pack` | string | `"krypton-cyber"` | Sound pack name (built-in or custom from `~/.config/krypton/sounds/`) |
+| `[sound.events]` | `<event_name>` | bool \| float | `true` | Per-event toggle or volume override. `false` disables, `true` uses master volume, float (0.0–1.0) sets individual volume. |
+
+Valid event names: `window.create`, `window.close`, `window.focus`, `window.maximize`, `window.restore`, `mode.enter`, `mode.exit`, `quick_terminal.show`, `quick_terminal.hide`, `workspace.switch`, `command_palette.open`, `command_palette.close`, `command_palette.execute`, `layout.toggle`, `swap.complete`, `resize.step`, `move.step`, `terminal.bell`, `terminal.exit`, `startup`.
 
 ### Quick Terminal Configuration
 

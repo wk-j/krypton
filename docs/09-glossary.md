@@ -39,3 +39,11 @@
 | Step Size | The number of pixels a window moves or resizes per keypress in move/resize mode |
 | Theme | A TOML file defining all visual properties: terminal colors, window chrome, workspace background, UI elements |
 | Custom Theme | A user-created `.toml` file placed in the themes directory to define a personalized visual style |
+| Sound Engine | The frontend module that synthesizes and plays procedural sound effects for user actions using the Web Audio API. No audio files — all sounds generated at runtime. |
+| Sound Patch | A declarative data structure defining a synthesized sound: oscillators (waveform, frequency, amplitude), filters (type, cutoff, Q), ADSR envelope, and optional effects (reverb, delay, distortion). |
+| Additive Synthesis | Sound synthesis technique that builds complex timbres by summing multiple simple oscillator waveforms (partials) at different frequencies and amplitudes. |
+| Subtractive Synthesis | Sound synthesis technique that shapes a harmonically rich signal by removing frequency bands through filters (lowpass, highpass, bandpass, notch). |
+| ADSR Envelope | Amplitude envelope with four phases: Attack (ramp to peak), Decay (fall to sustain), Sustain (hold level), Release (fade to silence). Controls how a sound's volume evolves over time. |
+| Sound Pack | A named collection of sound patches (one per event) that defines the audio character of the application. The built-in pack is `krypton-cyber`. Custom packs are TOML files in `~/.config/krypton/sounds/`. |
+| FM Synthesis | Frequency Modulation synthesis — one oscillator modulates another's frequency to produce metallic, bell-like, or complex harmonic timbres. |
+| AudioContext | The Web Audio API's central object for creating and managing audio nodes. Krypton uses a single shared instance, lazily initialized on first user interaction. |

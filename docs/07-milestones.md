@@ -9,8 +9,9 @@
 | **M4 — Keyboard System & Workspaces** | Leader key, input router, mode system, command palette, workspace switching with animations, Quick Terminal overlay. | Week 12-15 |
 | **M5 — Tabs & Panes** | Multi-tab per window, pane splits, keyboard tab/pane navigation, move tabs between windows. | Week 16-18 |
 | **M6 — Config, Theming & Custom Themes** | TOML config, keybindings, theme engine, custom theme files, chrome styles, hot-reload. | Week 19-21 |
-| **M7 — Polish** | Search, URL detection, IME, performance profiling, edge cases, bug fixes. | Week 22-25 |
-| **M8 — Release** | Packaging (DMG, AppImage, MSI), documentation, first public release. | Week 26-28 |
+| **M7 — Sound Effects** | Procedural sound engine (Web Audio API, additive + subtractive synthesis), built-in Krypton Cyber sound pack, per-action sounds, configurable volume/toggle/per-event overrides. | Week 22-23 |
+| **M8 — Polish** | Search, URL detection, IME, performance profiling, edge cases, bug fixes. | Week 24-27 |
+| **M9 — Release** | Packaging (DMG, AppImage, MSI), documentation, first public release. | Week 28-30 |
 
 ## Milestone Details
 
@@ -83,16 +84,30 @@
 - Full keybinding customization with conflict detection
 - Command palette theme switching
 
-### M7 — Polish (Week 22-25)
+### M7 — Sound Effects (Week 22-23)
+- Sound engine module (`src/sound.ts`): Web Audio API wrapper with single shared AudioContext
+- Additive synthesis: multi-oscillator patch builder (sine, square, sawtooth, triangle, noise generators)
+- Subtractive synthesis: filter chain (lowpass, highpass, bandpass, notch) with cutoff/Q envelopes
+- ADSR amplitude envelope and pitch envelope automation
+- FM synthesis support (oscillator-to-oscillator frequency modulation)
+- Effects chain: reverb (ConvolverNode), delay (DelayNode), distortion (WaveShaperNode)
+- Master channel: DynamicsCompressorNode limiter + GainNode volume control
+- Built-in `krypton-cyber` sound pack: patches for all events (window create/close/focus, mode enter/exit, QT show/hide, startup, bell, etc.)
+- Integration: compositor + input-router call `SoundEngine.play(eventName)` at each action point
+- Configuration: `[sound]` TOML section (enabled, volume, pack, per-event overrides) applied via `applyConfig()`
+- Custom sound pack loading from `~/.config/krypton/sounds/*.toml`
+- Graceful degradation when Web Audio API is unavailable
+
+### M8 — Polish (Week 24-27)
 - `@xterm/addon-search` integration with keyboard-driven search overlay
 - URL detection with keyboard-driven link opening
 - IME support testing and fixes
-- Performance profiling (latency, animation FPS, transparent rendering overhead)
+- Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)
 - Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - Bug fixes
 
-### M8 — Release (Week 26-28)
+### M9 — Release (Week 28-30)
 - Platform packaging: DMG (macOS), AppImage/deb (Linux), MSI (Windows)
 - Auto-update mechanism (Tauri updater)
-- User documentation (keyboard cheat sheet, workspace config guide, custom theme guide)
+- User documentation (keyboard cheat sheet, workspace config guide, custom theme guide, sound pack authoring guide)
 - First public release

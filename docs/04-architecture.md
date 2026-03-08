@@ -18,7 +18,7 @@
 |  |  (Window 2, Window 3... hidden — belong to other workspaces)      |  |
 |  |                                                                   |  |
 |  |  [ Compositor: z-order, focus, move, resize, animations ]         |  |
-|  |  [ Mode Indicator ]  [ Command Palette ]                          |  |
+|  |  [ Mode Indicator ]  [ Command Palette ]  [ Sound Engine ]        |  |
 |  +-------------------------------------------------------------------+  |
 |                          |  IPC (Tauri Commands & Events)               |
 +--------------------------|----------------------------------------------+
@@ -327,3 +327,97 @@ Implementation options:
 - **requestAnimationFrame loop** — for spring physics or complex choreography
 
 The animation engine must maintain **60 FPS** and avoid layout thrashing (use `transform: translate()` + `width`/`height`, not `top`/`left`).
+
+## 5.8 Sound Engine (Frontend)
+
+A dedicated TypeScript module (`src/sound.ts`) that synthesizes and plays short sound effects for every user action using the Web Audio API. No audio files — all sounds are generated procedurally at runtime via **additive and subtractive functional synthesis**.
+
+### Architecture
+
+```
+Action (compositor/input-router event)
+  |
+  v
+SoundEngine.play('window.create')
+  |
+  v
+[Patch Lookup] — resolve event name to a SoundPatch definition
+  |
+  v
+[Oscillator Graph Construction]
+  |  - Create OscillatorNodes (sine/square/sawtooth/triangle/noise)
+  |  - Set frequencies, detune, amplitudes per partial (ADDITIVE)
+  |  - Connect through BiquadFilterNodes (lowpass/highpass/bandpass) (SUBTRACTIVE)
+  |  - Apply ADSR envelope via GainNode automation (setValueAtTime / linearRampToValueAtTime)
+  |  - Optional: pitch envelope via frequency automation
+  |  - Optional: FM synthesis (oscillator -> gain -> target oscillator.frequency)
+  |  - Optional: effects chain (ConvolverNode for reverb, DelayNode, WaveShaperNode for distortion)
+  |
+  v
+[Master Channel]
+  |  - DynamicsCompressorNode (limiter to prevent clipping on simultaneous sounds)
+  |  - GainNode (master volume from config)
+  |
+  v
+AudioContext.destination (speakers)
+```
+
+### Key Design Decisions
+
+- **Single AudioContext** — lazily created on first user interaction (browser autoplay policy). Reused for all subsequent sounds. Never closed during app lifetime.
+- **Ephemeral nodes** — each `play()` call creates a short-lived subgraph of oscillators, gains, and filters. Nodes are scheduled to stop via `OscillatorNode.stop(endTime)` and auto-disconnect after completion. No persistent audio graph.
+- **Non-blocking** — all scheduling uses `AudioContext.currentTime` offsets. No `setTimeout` or `requestAnimationFrame` for audio timing. The audio thread runs independently from the main thread.
+- **Patch definitions** — each sound is a plain object (or TOML-serializable struct) describing oscillators, filters, envelopes, and effects. This makes them configurable and replaceable via custom sound packs.
+- **Graceful degradation** — if `AudioContext` is unavailable or construction fails, the engine silently becomes a no-op. All `play()` calls are guarded.
+
+### SoundPatch Data Model
+
+```typescript
+interface SoundPatch {
+  oscillators: Array<{
+    waveform: 'sine' | 'square' | 'sawtooth' | 'triangle' | 'white-noise' | 'pink-noise';
+    frequency: number;          // Hz (or relative: 'fundamental', '2x', '3x', etc.)
+    amplitude: number;          // 0.0 - 1.0
+    detune?: number;            // cents
+    pitchEnvelope?: { start: number; end: number; duration: number };
+    fm?: { modulatorIndex: number; depth: number };  // FM synthesis
+  }>;
+  filter?: {
+    type: 'lowpass' | 'highpass' | 'bandpass' | 'notch';
+    cutoff: number;             // Hz
+    Q: number;                  // resonance
+    envelope?: { start: number; end: number; duration: number };  // cutoff sweep
+  };
+  envelope: {
+    attack: number;             // seconds
+    decay: number;              // seconds
+    sustain: number;            // 0.0 - 1.0
+    release: number;            // seconds
+  };
+  effects?: {
+    reverb?: { duration: number; decay: number };
+    delay?: { time: number; feedback: number };
+    distortion?: { amount: number };  // WaveShaperNode curve
+  };
+  pan?: number;                 // -1.0 (left) to 1.0 (right)
+}
+```
+
+### Integration Points
+
+The Sound Engine is called by the compositor and input router at the moment each action occurs:
+
+| Caller | Event | Sound |
+|--------|-------|-------|
+| `compositor.createWindow()` | After window DOM created | `window.create` |
+| `compositor.closeWindow()` | Before exit animation | `window.close` |
+| `compositor.focusWindow()` | On focus change | `window.focus` |
+| `compositor.toggleMaximize()` | On maximize/restore | `window.maximize` / `window.restore` |
+| `compositor.toggleQuickTerminal()` | On show/hide | `quick_terminal.show` / `quick_terminal.hide` |
+| `compositor.toggleFocusLayout()` | On layout toggle | `layout.toggle` |
+| `input-router` (mode change) | On enter/exit mode | `mode.enter` / `mode.exit` |
+| `input-router` (compositor key) | On resize/move step | `resize.step` / `move.step` |
+| `input-router` (swap) | On swap complete | `swap.complete` |
+| `main.ts` (startup) | After first window rendered | `startup` |
+| PTY event listener | On BEL character | `terminal.bell` |
+| PTY event listener | On shell exit | `terminal.exit` |

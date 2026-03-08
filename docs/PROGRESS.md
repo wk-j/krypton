@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-08 (Configuration system)
+> Last updated: 2026-03-08 (Sound Effects spec added)
 
 ## Overview
 
@@ -13,8 +13,9 @@
 | M4 — Keyboard System & Workspaces | In Progress | 11/14 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 2/9 |
-| M7 — Polish | Not Started | 0/6 |
-| M8 — Release | Not Started | 0/4 |
+| M7 — Sound Effects | Not Started | 0/12 |
+| M8 — Polish | Not Started | 0/6 |
+| M9 — Release | Not Started | 0/4 |
 
 ---
 
@@ -95,18 +96,33 @@
 - [ ] Full keybinding customization with conflict detection
 - [ ] Command palette theme switching
 
-## M7 — Polish (Week 22-25)
+## M7 — Sound Effects (Week 22-23)
+
+- [ ] Sound engine module (`src/sound.ts`): Web Audio API wrapper with single shared AudioContext
+- [ ] Additive synthesis: multi-oscillator patch builder (sine, square, sawtooth, triangle, noise generators)
+- [ ] Subtractive synthesis: filter chain (lowpass, highpass, bandpass, notch) with cutoff/Q envelopes
+- [ ] ADSR amplitude envelope and pitch envelope automation
+- [ ] FM synthesis support (oscillator-to-oscillator frequency modulation)
+- [ ] Effects chain: reverb, delay, distortion
+- [ ] Master channel: DynamicsCompressorNode limiter + GainNode volume control
+- [ ] Built-in `krypton-cyber` sound pack: patches for all action events
+- [ ] Integration: compositor + input-router call `SoundEngine.play()` at each action point
+- [ ] Configuration: `[sound]` TOML section applied via `applyConfig()`
+- [ ] Custom sound pack loading from `~/.config/krypton/sounds/*.toml`
+- [ ] Graceful degradation when Web Audio API is unavailable
+
+## M8 — Polish (Week 24-27)
 
 - [ ] `@xterm/addon-search` integration with keyboard-driven search overlay
 - [ ] URL detection with keyboard-driven link opening
 - [ ] IME support testing and fixes
-- [ ] Performance profiling (latency, animation FPS, transparent rendering overhead)
+- [ ] Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 
-## M8 — Release (Week 26-28)
+## M9 — Release (Week 28-30)
 
 - [ ] Platform packaging: DMG (macOS), AppImage/deb (Linux), MSI (Windows)
 - [ ] Auto-update mechanism (Tauri updater)
-- [ ] User documentation (keyboard cheat sheet, workspace config guide, custom theme guide)
+- [ ] User documentation (keyboard cheat sheet, workspace config guide, custom theme guide, sound pack authoring guide)
 - [ ] First public release

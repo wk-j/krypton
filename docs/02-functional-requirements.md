@@ -227,7 +227,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-QT-011 | Pressing `Escape` while the Quick Terminal is focused and in Normal mode shall hide the Quick Terminal (same as pressing `Cmd+I` again). | Should |
 | FR-QT-012 | The Quick Terminal size and position shall be configurable via the TOML config (`[quick_terminal]` section). | Should |
 
-## 3.11 Layout Transition Animations
+## 3.11 Layout Transition Animations (Implemented)
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -242,7 +242,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-ANI-009 | Window close shall animate with a configurable exit effect (e.g., `fade-out`, `scale-down`, `slide-out`). | Should |
 | FR-ANI-010 | The system shall maintain 60 FPS during all transition animations. | Must |
 
-## 3.11 Configuration
+## 3.12 Configuration
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -257,9 +257,9 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-CFG-009 | Theme color overrides (ANSI 16 colors, foreground, background, cursor, selection) shall be configurable inline under `[theme.colors]`. | Must |
 | FR-CFG-010 | Quick Terminal width ratio, height ratio, and backdrop blur shall be configurable under `[quick_terminal]`. | Should |
 
-## 3.12 Custom Themes
+## 3.13 Custom Themes
 
-### 3.12.1 Theme System
+### 3.13.1 Theme System
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -269,7 +269,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-004 | Hot-reloading of themes shall be supported — changes to theme files apply immediately without restart. | Should |
 | FR-THM-005 | The command palette shall list all available themes and allow switching at runtime via keyboard. | Must |
 
-### 3.12.2 Theme Scope — Terminal Colors
+### 3.13.2 Theme Scope — Terminal Colors
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -277,7 +277,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-011 | A theme shall define the full ANSI 16-color palette (black, red, green, yellow, blue, magenta, cyan, white, and their bright variants). | Must |
 | FR-THM-012 | A theme may optionally define the 256-color palette overrides. | Could |
 
-### 3.12.3 Theme Scope — Window Chrome
+### 3.13.3 Theme Scope — Window Chrome
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -287,7 +287,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-023 | A theme shall define distinct styles for **focused** vs. **unfocused** window chrome (e.g., brighter border, stronger shadow for focused). | Must |
 | FR-THM-024 | A theme shall define the tab bar style: background, active tab color, inactive tab color, tab height, tab font. | Must |
 
-### 3.12.4 Theme Scope — Workspace Background
+### 3.13.4 Theme Scope — Workspace Background
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -295,7 +295,7 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-031 | A theme may optionally define a workspace background color or image with configurable opacity (overlay on the transparent surface). | Should |
 | FR-THM-032 | A theme may define a workspace-level blur effect (vibrancy/frosted glass) applied to the transparent background behind windows. | Could |
 
-### 3.12.5 Theme Scope — UI Elements
+### 3.13.5 Theme Scope — UI Elements
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -303,3 +303,82 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-041 | A theme shall define search overlay styles: background, text color, match highlight color. | Must |
 | FR-THM-042 | A theme shall define mode indicator styles: badge background, text color, position. | Must |
 | FR-THM-043 | A theme shall define window shadow properties: color, blur, spread, offset (supports casting shadows on the transparent desktop). | Must |
+
+## 3.14 Sound Effects
+
+Krypton provides a procedural sound effects system inspired by Opera GX's browser sounds. All sounds are synthesized at runtime in the browser using the **Web Audio API** — no audio files are shipped. Sounds are generated via **additive and subtractive functional synthesis**: tones are built by summing sine/square/sawtooth/triangle oscillators at harmonic and inharmonic frequencies (additive), then shaped by filters that remove frequency bands (subtractive), combined with amplitude envelopes (ADSR) and effects (reverb, delay, distortion). This produces short, precise, sci-fi feedback sounds that match the cyberpunk aesthetic.
+
+### 3.14.1 Sound Engine — Synthesis Architecture
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-SFX-001 | The system shall synthesize all sound effects at runtime using the **Web Audio API**. No pre-recorded audio files shall be shipped or required. | Must |
+| FR-SFX-002 | The system shall use **additive synthesis** — building timbres by summing multiple oscillator partials (fundamentals + harmonics) with individually controllable amplitudes, frequencies, and detuning. | Must |
+| FR-SFX-003 | The system shall use **subtractive synthesis** — shaping the additive signal through configurable filters (lowpass, highpass, bandpass, notch) with controllable cutoff frequency, resonance (Q), and time-varying filter envelopes. | Must |
+| FR-SFX-004 | The system shall support the following oscillator waveforms: `sine`, `square`, `sawtooth`, `triangle`. | Must |
+| FR-SFX-005 | Each sound shall be defined as a **patch** — a declarative data structure specifying oscillators (waveform, frequency, amplitude, detune), filters (type, cutoff, Q, envelope), amplitude envelope (ADSR: attack, decay, sustain, release), and optional effects (reverb, delay, distortion, bitcrusher). | Must |
+| FR-SFX-006 | The system shall support **frequency modulation (FM)** between oscillators within a patch — one oscillator's output modulates another's frequency for metallic/bell-like timbres. | Should |
+| FR-SFX-007 | The system shall support **noise generators** (white noise, pink noise) as source oscillators for percussive/transient sounds (clicks, static bursts, impacts). | Must |
+| FR-SFX-008 | The system shall support **pitch envelopes** — time-varying pitch sweeps (e.g., downward sweep for a "drop" effect, upward sweep for "rise"). | Should |
+| FR-SFX-009 | The system shall reuse a single `AudioContext` instance across all sound playback to avoid resource leaks. The context shall be lazily initialized on the first user interaction (to comply with browser autoplay policies). | Must |
+
+### 3.14.2 Sound Events — Action-to-Sound Mapping
+
+Each user action in Krypton triggers a corresponding sound event. The mapping is configurable.
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-SFX-010 | The system shall play a sound effect on the following compositor events: window create, window close, window focus change, window maximize, window restore. | Must |
+| FR-SFX-011 | The system shall play a sound effect on the following mode events: enter compositor mode (leader key), enter resize mode, enter move mode, enter swap mode, exit to normal mode. | Must |
+| FR-SFX-012 | The system shall play a sound effect on the following layout events: toggle focus layout, swap windows, resize step, move step. | Should |
+| FR-SFX-013 | The system shall play a sound effect on the following Quick Terminal events: show, hide. | Must |
+| FR-SFX-014 | The system shall play a sound effect on the following UI events: command palette open, command palette close, command palette execute action, which-key popup shown. | Should |
+| FR-SFX-015 | The system shall play a sound effect on the following workspace events: workspace switch. | Must |
+| FR-SFX-016 | The system shall play a sound effect on the following terminal events: shell exit (Ctrl+D), bell character (BEL / `\x07`). | Should |
+| FR-SFX-017 | The system shall play a sound effect on application startup (a short boot/power-on sequence). | Should |
+
+### 3.14.3 Built-in Sound Patches
+
+The system ships a default sound pack — the **Krypton Cyber** sound set — designed to match the cyberpunk aesthetic. All patches use additive + subtractive synthesis.
+
+| Sound Event | Patch Character | Synthesis Approach |
+|---|---|---|
+| `window.create` | Short rising digital chirp | Additive: two detuned sawtooths + sub-sine. Subtractive: bandpass sweep opening. Fast attack, short decay. |
+| `window.close` | Descending power-down tone | Additive: square + sine octave below. Subtractive: lowpass sweep closing. Pitch envelope down. Medium release. |
+| `window.focus` | Soft click/tick | Noise burst (white) through tight bandpass at ~4kHz. Very short envelope (5ms attack, 30ms decay). Subtle. |
+| `window.maximize` | Expanding whoosh | Additive: sawtooth chord (root + fifth). Subtractive: highpass opening up. Pitch envelope slight rise. |
+| `window.restore` | Contracting inverse whoosh | Reverse of maximize — highpass closing, pitch slight drop. |
+| `mode.enter` | Crisp activation beep | Sine at ~880Hz + harmonic at ~1760Hz. Sharp attack (2ms), short decay (80ms). |
+| `mode.exit` | Soft deactivation tone | Same frequencies as enter but lower amplitude, slightly longer release, lowpass filtered. |
+| `quick_terminal.show` | Slide-in digital sweep | Additive: two detuned sines sweeping up. Subtractive: bandpass widening. Synced to animation duration. |
+| `quick_terminal.hide` | Slide-out reverse sweep | Reverse of show — frequencies sweep down, bandpass narrowing. |
+| `workspace.switch` | Spatial transition whoosh | Sawtooth + noise through bandpass. Stereo pan from left-to-right or right-to-left based on switch direction. |
+| `command_palette.open` | Soft digital chime | Three sine partials (root, major third, fifth) with staggered attacks (0ms, 15ms, 30ms). Gentle. |
+| `command_palette.execute` | Confirmation ping | Single sine at ~1047Hz (C6), fast attack, medium decay. Slight reverb tail. |
+| `terminal.bell` | Classic terminal bell (synthesized) | Additive: sine at ~1000Hz + inharmonic partial at ~2513Hz for bell-like timbre. FM synthesis for metallic quality. Fast decay. |
+| `startup` | Boot sequence (150-300ms) | Multi-stage: noise burst -> rising sine sweep -> chord resolution (root + fifth + octave). Subtractive: filters open progressively. |
+| `resize.step` | Subtle tick per step | Filtered noise impulse, very short (10ms). Minimal volume so it doesn't annoy during repeated steps. |
+| `swap.complete` | Spatial crossover tone | Two tones panning in opposite directions (left-to-right and right-to-left simultaneously). |
+
+### 3.14.4 Sound Configuration
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-SFX-020 | The system shall support a `[sound]` section in the TOML config for controlling the sound engine. | Must |
+| FR-SFX-021 | The system shall support a global `enabled` toggle (`sound.enabled = true/false`) to enable or disable all sound effects. Default: `true`. | Must |
+| FR-SFX-022 | The system shall support a global `volume` control (`sound.volume`, 0.0 to 1.0). Default: `0.5`. | Must |
+| FR-SFX-023 | The system shall support per-event volume overrides or disabling individual sound events (`sound.events.<event_name> = false` or `sound.events.<event_name> = 0.3`). | Should |
+| FR-SFX-024 | The system shall support a `sound.pack` setting to select a named sound pack. Default: `"krypton-cyber"`. | Should |
+| FR-SFX-025 | The system shall support custom sound packs defined as TOML files in `~/.config/krypton/sounds/`. Each file defines a set of patches keyed by event name. | Could |
+| FR-SFX-026 | Sound configuration changes shall take effect immediately via hot-reload (no restart required). | Should |
+| FR-SFX-027 | The sound engine shall respect the system audio output device and volume. | Must |
+
+### 3.14.5 Sound Engine Constraints
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-SFX-030 | Sound playback shall be non-blocking — synthesis and playback must not delay UI rendering or keyboard input processing. All audio scheduling shall use Web Audio API's built-in timing (`AudioContext.currentTime`). | Must |
+| FR-SFX-031 | Sound effects shall be short (< 500ms for action feedback, < 1s for startup sequence). No looping or ambient background audio. | Must |
+| FR-SFX-032 | Simultaneous sound events (e.g., close window triggers both `window.close` and `mode.exit`) shall mix cleanly without clipping. The engine shall apply a limiter/compressor on the master output. | Must |
+| FR-SFX-033 | The sound engine shall dispose of completed audio nodes promptly to prevent memory leaks during long sessions. | Must |
+| FR-SFX-034 | If the Web Audio API is unavailable (e.g., headless environment, no audio device), the sound engine shall silently degrade — no errors, no crashes. | Must |

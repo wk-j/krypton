@@ -55,3 +55,16 @@
 | NFR-PERF-014 | Command palette open-to-ready time | < 50 ms |
 | NFR-PERF-015 | Transparent workspace compositing overhead vs. opaque | < 5% additional GPU usage |
 | NFR-PERF-016 | Theme switch (hot-reload) apply time | < 100 ms |
+
+## 4.7 Sound Engine Performance
+
+| ID | Requirement | Target |
+|----|-------------|--------|
+| NFR-SND-001 | Sound synthesis latency (action trigger to audible output) | < 10 ms |
+| NFR-SND-002 | Sound engine CPU overhead during playback | < 2% additional CPU |
+| NFR-SND-003 | Sound engine idle CPU (no sounds playing) | 0% (no active audio nodes) |
+| NFR-SND-004 | Maximum concurrent sounds without clipping or dropout | >= 4 simultaneous |
+| NFR-SND-005 | Audio node cleanup after sound completion | < 100 ms (disconnect + GC-eligible) |
+| NFR-SND-006 | Sound engine initialization time (AudioContext creation) | < 20 ms |
+| NFR-SND-007 | Memory per active sound (oscillator graph) | < 1 KB |
+| NFR-SND-008 | Graceful degradation when Web Audio API is unavailable | No errors, no crashes, silent no-op |
