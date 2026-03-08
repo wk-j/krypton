@@ -20,6 +20,7 @@ import { autoTile, focusTile, resolveGridSlot } from './layout';
 import { AnimationEngine, BoundsSnapshot } from './animation';
 import { SoundEngine } from './sound';
 import type { KryptonConfig } from './config';
+import type { FrontendThemeEngine } from './theme';
 
 /** Custom key event handler for xterm.js — set by InputRouter */
 type CustomKeyHandler = (e: KeyboardEvent) => boolean;
@@ -30,8 +31,34 @@ interface TerminalInstance {
   fitAddon: FitAddon;
 }
 
-/** xterm.js built-in theme (Krypton Cyber — transparent) */
-const DEFAULT_TERMINAL_THEME = {
+/**
+ * Abbreviate an absolute path for display in the title bar.
+ * - Replaces $HOME with ~
+ * - If deeper than 2 levels, shows .../parent/leaf
+ * - Max length capped at 40 chars
+ */
+function abbreviatePath(fullPath: string): string {
+  let p = fullPath;
+  // Replace home dir with ~ (detect /Users/xxx or /home/xxx prefix)
+  const homeMatch = p.match(/^(\/Users\/[^/]+|\/home\/[^/]+)/);
+  if (homeMatch) {
+    p = '~' + p.slice(homeMatch[1].length);
+  }
+  // If too long, abbreviate middle segments
+  const parts = p.split('/').filter(Boolean);
+  if (parts.length > 3) {
+    const prefix = p.startsWith('~') ? '' : '/';
+    p = `${prefix}${parts[0]}/.../` + parts.slice(-2).join('/');
+  }
+  // Cap length
+  if (p.length > 40) {
+    p = '...' + p.slice(p.length - 37);
+  }
+  return p;
+}
+
+/** xterm.js built-in theme fallback (used when theme engine not yet initialized) */
+const DEFAULT_TERMINAL_THEME: Record<string, string> = {
   background: 'rgba(10, 10, 15, 0.5)',
   foreground: '#b0c4d8',
   cursor: '#0cf',
@@ -84,6 +111,10 @@ export class Compositor {
   private animation: AnimationEngine = new AnimationEngine();
   /** Sound engine for procedural sound effects */
   private sound: SoundEngine = new SoundEngine();
+
+  // ─── Theme Engine ─────────────────────────────────────────────────
+  /** Reference to the frontend theme engine (set via setThemeEngine) */
+  private themeEngine: FrontendThemeEngine | null = null;
 
   // ─── Config-backed settings ──────────────────────────────────────
   /** xterm.js theme — built-in default, overridable by config theme.colors */
@@ -138,30 +169,36 @@ export class Compositor {
     this.cursorStyle = config.terminal.cursor_style;
     this.cursorBlink = config.terminal.cursor_blink;
 
-    // Theme color overrides (merge on top of built-in theme)
-    const c = config.theme.colors;
-    const theme: Record<string, string> = { ...DEFAULT_TERMINAL_THEME };
-    if (c.foreground) theme.foreground = c.foreground;
-    if (c.background) theme.background = c.background;
-    if (c.cursor) theme.cursor = c.cursor;
-    if (c.selection) theme.selectionBackground = c.selection;
-    if (c.black) theme.black = c.black;
-    if (c.red) theme.red = c.red;
-    if (c.green) theme.green = c.green;
-    if (c.yellow) theme.yellow = c.yellow;
-    if (c.blue) theme.blue = c.blue;
-    if (c.magenta) theme.magenta = c.magenta;
-    if (c.cyan) theme.cyan = c.cyan;
-    if (c.white) theme.white = c.white;
-    if (c.bright_black) theme.brightBlack = c.bright_black;
-    if (c.bright_red) theme.brightRed = c.bright_red;
-    if (c.bright_green) theme.brightGreen = c.bright_green;
-    if (c.bright_yellow) theme.brightYellow = c.bright_yellow;
-    if (c.bright_blue) theme.brightBlue = c.bright_blue;
-    if (c.bright_magenta) theme.brightMagenta = c.bright_magenta;
-    if (c.bright_cyan) theme.brightCyan = c.bright_cyan;
-    if (c.bright_white) theme.brightWhite = c.bright_white;
-    this.terminalTheme = theme;
+    // Theme: if the theme engine is connected, use its xterm theme;
+    // otherwise fall back to config-based color overrides.
+    if (this.themeEngine) {
+      this.terminalTheme = this.themeEngine.buildXtermTheme();
+    } else {
+      // Legacy fallback: merge config colors on top of hardcoded default
+      const c = config.theme.colors;
+      const theme: Record<string, string> = { ...DEFAULT_TERMINAL_THEME };
+      if (c.foreground) theme.foreground = c.foreground;
+      if (c.background) theme.background = c.background;
+      if (c.cursor) theme.cursor = c.cursor;
+      if (c.selection) theme.selectionBackground = c.selection;
+      if (c.black) theme.black = c.black;
+      if (c.red) theme.red = c.red;
+      if (c.green) theme.green = c.green;
+      if (c.yellow) theme.yellow = c.yellow;
+      if (c.blue) theme.blue = c.blue;
+      if (c.magenta) theme.magenta = c.magenta;
+      if (c.cyan) theme.cyan = c.cyan;
+      if (c.white) theme.white = c.white;
+      if (c.bright_black) theme.brightBlack = c.bright_black;
+      if (c.bright_red) theme.brightRed = c.bright_red;
+      if (c.bright_green) theme.brightGreen = c.bright_green;
+      if (c.bright_yellow) theme.brightYellow = c.bright_yellow;
+      if (c.bright_blue) theme.brightBlue = c.bright_blue;
+      if (c.bright_magenta) theme.brightMagenta = c.bright_magenta;
+      if (c.bright_cyan) theme.brightCyan = c.bright_cyan;
+      if (c.bright_white) theme.brightWhite = c.bright_white;
+      this.terminalTheme = theme;
+    }
 
     // Quick Terminal
     this.qtConfig = {
@@ -177,6 +214,46 @@ export class Compositor {
 
     // Sound
     this.sound.applyConfig(config.sound);
+  }
+
+  /**
+   * Set the frontend theme engine. The compositor will use it to build the
+   * xterm.js theme and will register for theme change callbacks.
+   */
+  setThemeEngine(engine: FrontendThemeEngine): void {
+    this.themeEngine = engine;
+
+    // Use the theme engine's xterm theme if available
+    const xtermTheme = engine.buildXtermTheme();
+    if (Object.keys(xtermTheme).length > 0) {
+      this.terminalTheme = xtermTheme;
+    }
+
+    // Listen for theme changes — update all existing terminals
+    engine.onChange(() => {
+      this.updateTerminalThemes();
+    });
+  }
+
+  /**
+   * Update all existing terminal instances with the current theme.
+   * Called on theme hot-reload so open terminals reflect the new colors.
+   */
+  private updateTerminalThemes(): void {
+    if (!this.themeEngine) return;
+
+    const xtermTheme = this.themeEngine.buildXtermTheme();
+    this.terminalTheme = xtermTheme;
+
+    // Update all workspace terminals
+    for (const [, termInfo] of this.terminals) {
+      termInfo.terminal.options.theme = xtermTheme;
+    }
+
+    // Update Quick Terminal if it exists
+    if (this.qtTerminal) {
+      this.qtTerminal.terminal.options.theme = xtermTheme;
+    }
   }
 
   /** Get the currently focused window ID */
@@ -277,10 +354,10 @@ export class Compositor {
     labelGroup.appendChild(statusDot);
     labelGroup.appendChild(label);
 
-    // Right side: PTY status
+    // Right side: PTY status (shows CWD once available)
     const ptyStatus = document.createElement('span');
     ptyStatus.className = 'krypton-window__pty-status';
-    ptyStatus.textContent = 'pty_streams // active';
+    ptyStatus.textContent = 'starting...';
 
     titlebar.appendChild(labelGroup);
     titlebar.appendChild(ptyStatus);
@@ -366,6 +443,14 @@ export class Compositor {
     // Sound: window create
     this.sound.play('window.create');
 
+    // Listen for shell title changes (OSC 0/2 sequences).
+    // Most shells set this to "command" or "user@host:cwd".
+    terminal.onTitleChange((title: string) => {
+      if (title) {
+        label.textContent = title;
+      }
+    });
+
     // Spawn PTY
     try {
       const sessionId = await invoke<number>('spawn_pty', {
@@ -375,9 +460,14 @@ export class Compositor {
       });
       win.sessionId = sessionId;
       label.textContent = `session_${String(sessionId).padStart(2, '0')}`;
+      ptyStatus.textContent = 'pty // active';
+
+      // Fetch initial CWD and update the status area
+      this.updateWindowCwd(win.sessionId, ptyStatus);
     } catch (e) {
       console.error(`Failed to spawn PTY for window ${id}:`, e);
       terminal.write('\r\n\x1b[31mFailed to spawn shell.\x1b[0m\r\n');
+      ptyStatus.textContent = 'pty // failed';
     }
 
     // Wire input: xterm -> PTY
@@ -947,12 +1037,12 @@ export class Compositor {
     labelGroup.appendChild(statusDot);
     labelGroup.appendChild(label);
 
-    const ptyStatus = document.createElement('span');
-    ptyStatus.className = 'krypton-window__pty-status';
-    ptyStatus.textContent = 'pty_streams // active';
+    const qtPtyStatus = document.createElement('span');
+    qtPtyStatus.className = 'krypton-window__pty-status';
+    qtPtyStatus.textContent = 'starting...';
 
     titlebar.appendChild(labelGroup);
-    titlebar.appendChild(ptyStatus);
+    titlebar.appendChild(qtPtyStatus);
     chrome.appendChild(titlebar);
 
     const headerAccent = document.createElement('div');
@@ -999,6 +1089,13 @@ export class Compositor {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);
     }
 
+    // Listen for shell title changes (OSC 0/2 sequences)
+    terminal.onTitleChange((title: string) => {
+      if (title) {
+        label.textContent = title;
+      }
+    });
+
     this.qtTerminal = { terminal, fitAddon };
 
     // Spawn PTY for Quick Terminal
@@ -1009,9 +1106,14 @@ export class Compositor {
         cwd: null,
       });
       this.qtSessionId = sessionId;
+      qtPtyStatus.textContent = 'pty // active';
+
+      // Fetch initial CWD for Quick Terminal
+      this.updateWindowCwd(sessionId, qtPtyStatus);
     } catch (e) {
       console.error('Failed to spawn Quick Terminal PTY:', e);
       terminal.write('\r\n\x1b[31mFailed to spawn shell.\x1b[0m\r\n');
+      qtPtyStatus.textContent = 'pty // failed';
     }
 
     // Wire input: xterm -> PTY
@@ -1383,12 +1485,49 @@ export class Compositor {
       for (const [wid, win] of this.windows) {
         if (win.sessionId === sid) {
           win.sessionId = null;
+          // Update status to reflect exit before closing
+          const statusEl = this.findPtyStatus(win.element);
+          if (statusEl) statusEl.textContent = 'pty // exited';
           this.sound.play('terminal.exit');
           this.closeWindow(wid);
           break;
         }
       }
     });
+  }
+
+  // ─── Window Title Helpers ─────────────────────────────────────────
+
+  /**
+   * Fetch the CWD for a PTY session and update the status element.
+   * Called once after spawn and could be called periodically.
+   */
+  private async updateWindowCwd(
+    sessionId: number,
+    statusEl: HTMLElement,
+  ): Promise<void> {
+    try {
+      const cwd = await invoke<string | null>('get_pty_cwd', { sessionId });
+      if (cwd) {
+        statusEl.textContent = abbreviatePath(cwd);
+      }
+    } catch {
+      // Session may have exited — ignore
+    }
+  }
+
+  /**
+   * Find the pty-status element within a window's DOM.
+   */
+  private findPtyStatus(windowEl: HTMLElement): HTMLElement | null {
+    return windowEl.querySelector('.krypton-window__pty-status');
+  }
+
+  /**
+   * Find the label element within a window's DOM.
+   */
+  private findLabel(windowEl: HTMLElement): HTMLElement | null {
+    return windowEl.querySelector('.krypton-window__label');
   }
 
   // ─── Window Resize Handler ───────────────────────────────────────

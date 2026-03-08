@@ -94,7 +94,7 @@ The webview's `<html>` and `<body>` have `background: transparent`. Windows are 
 | `dirs` | Cross-platform home directory resolution for config path | Implemented |
 | `log` / `tauri-plugin-log` | Logging framework | Implemented |
 | `vte` | VT escape sequence parser (backend validation/processing) | Planned |
-| `notify` | Filesystem watcher for config hot-reload | Planned |
+| `notify` | Filesystem watcher for config/theme hot-reload | Implemented |
 | `unicode-width` | Character width calculation for CJK / emoji | Planned |
 | `display-info` | Query monitor geometry for fullscreen dimensions | Planned |
 
@@ -242,15 +242,36 @@ The Workspace Manager lives in Rust and handles the data/logic side:
 
 The actual window positioning and animation is **frontend-driven** (CSS/JS), not Rust-driven, because the compositor operates entirely within the DOM.
 
-### Theme Engine (Backend)
+### Theme Engine (Backend — `src-tauri/src/theme.rs`)
 
-The Theme Engine lives in Rust and manages theme loading:
+The Theme Engine lives in Rust (`theme::ThemeEngine`) and manages theme loading:
 
-- Parse built-in themes embedded in the binary
-- Scan `~/.config/krypton/themes/*.toml` for custom theme files
-- Validate theme structure, fill in defaults for missing properties
-- Serve theme data to the frontend via `invoke("get_theme", { name })` or Tauri event on hot-reload
-- The frontend applies theme values as CSS custom properties (`--window-border-color`, `--titlebar-bg`, etc.) so that all windows update instantly
+- Embeds built-in themes at compile time via `include_str!` (krypton-dark, legacy-radiance)
+- Scans `~/.config/krypton/themes/*.toml` for custom theme files
+- Resolves themes by name (custom themes take precedence over built-in)
+- Applies `[theme.colors]` config overrides on top of the resolved theme
+- Serves full theme data (`FullTheme` struct — meta, colors, chrome, focused, workspace, ui) to the frontend via `invoke("get_theme")`
+- Lists available themes via `invoke("list_themes")`
+- Supports `invoke("reload_config")` for manual reload
+- **Tauri commands**: `get_theme`, `list_themes`, `reload_config`
+- **Tauri events**: `theme-changed`, `config-changed` (emitted on hot-reload)
+
+### Theme Engine (Frontend — `src/theme.ts`)
+
+The Frontend Theme Engine (`FrontendThemeEngine`) receives theme data and applies it:
+
+- Sets 50+ `--krypton-*` CSS custom properties on `document.documentElement`
+- Builds xterm.js theme objects from theme colors for terminal instances
+- Listens for `theme-changed` Tauri event from backend (hot-reload)
+- Notifies the compositor to update all existing terminal instances on theme change
+- `styles.css` uses `var(--krypton-*)` throughout so theme changes cascade instantly
+
+### Config Hot-Reload (Backend — `src-tauri/src/lib.rs`)
+
+- `notify` crate watches `~/.config/krypton/` recursively for `.toml` file changes
+- 300ms debounce prevents rapid-fire reloads
+- On change: re-parses config, resolves theme, emits `theme-changed` and `config-changed` events
+- Config stored as `Arc<RwLock<KryptonConfig>>` for safe concurrent access
 
 ## 5.6 Input Router & Mode System (Frontend)
 

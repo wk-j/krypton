@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-08 (Sound Effects implementation complete)
+> Last updated: 2026-03-08 (Theme engine: hot-reload, CSS custom properties, built-in theme loading)
 
 ## Overview
 
@@ -12,7 +12,7 @@
 | M3 — Compositor & Windows | In Progress | 8/10 |
 | M4 — Keyboard System & Workspaces | In Progress | 11/14 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
-| M6 — Config, Theming & Custom Themes | In Progress | 2/9 |
+| M6 — Config, Theming & Custom Themes | In Progress | 6/9 |
 | M7 — Sound Effects | In Progress | 13/14 |
 | M8 — Polish | Not Started | 0/6 |
 | M9 — Release | Not Started | 0/4 |
@@ -47,7 +47,7 @@
 ## M3 — Compositor & Windows (Week 8-11)
 
 - [x] Build compositor layer: workspace as transparent fullscreen virtual desktop
-- [x] Window DOM structure: cyberpunk chrome with titlebar (session label + status dot + PTY status), content area (xterm.js body + sidebar decoration), bottom bar
+- [x] Window DOM structure: cyberpunk chrome with titlebar (dynamic shell title via OSC + CWD status + status dot), content area (xterm.js body + sidebar decoration), bottom bar
 - [x] Custom window chrome rendering — sci-fi style with glowing cyan borders, telemetry sidebar, bottom bar decorations
 - [x] Grid layout engine: resolve `{ col, row, col_span, row_span }` to screen coordinates
 - [ ] Support absolute position overrides
@@ -87,11 +87,11 @@
 
 - [x] TOML config parser with `serde` — loads `~/.config/krypton/krypton.toml`, creates default on first run, merges with defaults for missing fields
 - [x] Config applied to frontend: shell program/args, font (family/size/line_height), terminal (scrollback/cursor_style/cursor_blink), theme color overrides, Quick Terminal sizing, workspace gap/step sizes
-- [ ] Theme engine: load built-in themes + custom `.toml` files from themes directory
-- [ ] Theme scope: terminal colors, window chrome, workspace background, UI elements
-- [ ] Apply theme as CSS custom properties (instant update across all windows)
-- [ ] Hot-reload via `notify` crate (config + theme files)
-- [ ] Ship 3 built-in terminal themes (dark, light, solarized)
+- [x] Theme engine: load built-in themes + custom `.toml` files from themes directory — `src-tauri/src/theme.rs` embeds built-in themes via `include_str!`, resolves by `theme.name`, supports custom themes from `~/.config/krypton/themes/*.toml`, applies `[theme.colors]` overrides on top
+- [x] Theme scope: terminal colors, window chrome, workspace background, UI elements — full theme TOML structure (meta, colors, chrome, focused, workspace, ui) parsed and sent to frontend as `FullTheme`
+- [x] Apply theme as CSS custom properties (instant update across all windows) — `FrontendThemeEngine` sets 50+ `--krypton-*` CSS custom properties on `document.documentElement`; `styles.css` uses `var()` throughout; existing xterm.js terminals updated via `terminal.options.theme` on change
+- [x] Hot-reload via `notify` crate (config + theme files) — filesystem watcher on `~/.config/krypton/` with 300ms debounce; emits `theme-changed` and `config-changed` Tauri events; frontend listens and applies instantly
+- [ ] Ship built-in terminal themes (dark, light, solarized, legacy-radiance) — krypton-dark and legacy-radiance TOML files created and loaded by engine; krypton-light and solarized not yet created
 - [ ] Ship 3 built-in chrome styles (macos, minimal, none)
 - [ ] Full keybinding customization with conflict detection
 - [ ] Command palette theme switching
@@ -125,5 +125,5 @@
 
 - [ ] Platform packaging: DMG (macOS), AppImage/deb (Linux), MSI (Windows)
 - [ ] Auto-update mechanism (Tauri updater)
-- [ ] User documentation (keyboard cheat sheet, workspace config guide, custom theme guide, sound pack authoring guide)
+- [ ] User documentation (keyboard cheat sheet, workspace config guide, custom theme guide, sound pack authoring guide) — theme specification draft created (`docs/10-theme-specification.md`)
 - [ ] First public release

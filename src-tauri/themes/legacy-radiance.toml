@@ -1,0 +1,173 @@
+# Legacy Radiance — Built-in Krypton Theme
+#
+# Drawn from the physics of CRT phosphor emission. Three phosphor frequencies
+# on void black: P1 green (#00C840), cobalt blue (#2A7EE8), ionized cyan (#00D4C8).
+# The workspace is the specific darkness of a room where the only light is the code.
+#
+# Concept: https://github.com/wk-j/deep-focus-themes/blob/master/legacy-radiance/docs/legacy-radiance-concept.md
+
+[meta]
+display_name = "Legacy Radiance"
+author = "Krypton"
+version = "1.0.0"
+description = "CRT phosphor emission on void black — three frequencies, one terminal"
+license = "MIT"
+
+# ─── Terminal Colors ────────────────────────────────────────────────
+# Mapped from the concept's phosphor frequency system:
+#   Foreground  = Screen Glow (#C8E0D0) — green-shifted white of a screen on for hours
+#   Background  = Void Black (#080808) — the space between self-luminous planes
+#   Cursor      = Ionized Cyan (#00D4C8) — brightest point on the screen
+#   Selection   = Phosphor Ambient (#0E1A10) — lit by nearby phosphor emission
+
+[colors]
+foreground = "#C8E0D0"
+background = "rgba(8, 8, 8, 0.92)"
+cursor = "#00D4C8"
+selection = "#0E1A10"
+
+# ANSI normal (0-7)
+#   black   = Deep Void — panel/sidebar depth
+#   red     = Overload Red — CRT driven past rated voltage
+#   green   = Phosphor Green (P1) — the original green, the worker color
+#   yellow  = Ember — warm warning glow
+#   blue    = Cobalt — cold cathode backlighting, structural
+#   magenta = blended phosphor violet — between cobalt and overload
+#   cyan    = Ionized Cyan — peak-charge emission
+#   white   = Screen Glow — ambient phosphor light through dusty glass
+black = "#040404"
+red = "#E83840"
+green = "#00C840"
+yellow = "#C06020"
+blue = "#2A7EE8"
+magenta = "#7A58C8"
+cyan = "#00D4C8"
+white = "#C8E0D0"
+
+# ANSI bright (8-15)
+#   Bright variants push the phosphor intensity up — higher electron bombardment
+bright_black = "#162018"
+bright_red = "#F05860"
+bright_green = "#00F0A0"
+bright_yellow = "#D8A040"
+bright_blue = "#40A8F0"
+bright_magenta = "#9878E0"
+bright_cyan = "#40F0E0"
+bright_white = "#D8F0E0"
+
+# ─── Window Chrome ─────────────────────────────────────────────────
+# The chrome echoes the concept's "dim screen edge" (#162018) and
+# phosphor ambient tinting. Unfocused = dead phosphor. Focused = live emission.
+
+[chrome]
+style = "cyberpunk"
+
+[chrome.border]
+width = 1
+color = "rgba(0, 200, 72, 0.2)"
+radius = 0
+
+[chrome.shadow]
+color = "rgba(0, 200, 72, 0.05)"
+blur = 15
+spread = 0
+offset_x = 0
+offset_y = 0
+
+[chrome.backdrop]
+color = "rgba(8, 8, 8, 0.65)"
+blur = 10
+
+[chrome.titlebar]
+height = 28
+background = "transparent"
+text_color = "#304838"
+font_size = 11
+font_weight = 600
+letter_spacing = 0.08
+text_transform = "uppercase"
+alignment = "left"
+
+[chrome.status_dot]
+size = 6
+color = "#304838"
+shape = "square"
+
+[chrome.header_accent]
+enabled = true
+height = 6
+color = "rgba(0, 200, 72, 0.10)"
+margin_horizontal = 20
+
+[chrome.corner_accents]
+enabled = true
+size = 14
+thickness = 2
+color = "rgba(0, 200, 72, 0.25)"
+
+[chrome.tabs]
+height = 28
+background = "transparent"
+active_color = "#00C840"
+inactive_color = "#304838"
+font_size = 11
+
+# ─── Focused Window ────────────────────────────────────────────────
+# On focus, the phosphor comes alive — green emission at full intensity.
+
+[focused]
+border_color = "rgba(0, 200, 72, 0.45)"
+shadow_color = "rgba(0, 200, 72, 0.10)"
+shadow_blur = 20
+titlebar_text_color = "#00C840"
+status_dot_color = "#00C840"
+header_accent_color = "rgba(0, 200, 72, 0.25)"
+corner_accent_color = "#00C840"
+corner_accent_glow = "rgba(0, 200, 72, 0.4)"
+label_color = "#00C840"
+
+# ─── Workspace ──────────────────────────────────────────────────────
+# The complete absence of ambient light between self-luminous planes.
+
+[workspace]
+background = "transparent"
+blur = 0
+
+# ─── UI Elements ────────────────────────────────────────────────────
+# All overlays use the void-black + phosphor green language.
+
+[ui.command_palette]
+background = "rgba(4, 4, 4, 0.92)"
+border = "rgba(0, 200, 72, 0.3)"
+text_color = "#C8E0D0"
+highlight_color = "#00C840"
+input_background = "transparent"
+input_text_color = "#C8E0D0"
+backdrop_blur = 16
+
+[ui.search]
+background = "rgba(4, 4, 4, 0.92)"
+text_color = "#C8E0D0"
+match_color = "#00F0A0"
+border = "rgba(0, 200, 72, 0.3)"
+
+[ui.mode_indicator]
+background = "rgba(0, 200, 72, 0.10)"
+text_color = "#00C840"
+font_size = 11
+position = "bottom-center"
+
+[ui.which_key]
+background = "rgba(4, 4, 4, 0.92)"
+border = "rgba(0, 200, 72, 0.3)"
+title_color = "#00C840"
+key_color = "#00D4C8"
+label_color = "#304838"
+separator_color = "rgba(0, 200, 72, 0.15)"
+backdrop_blur = 16
+
+[ui.quick_terminal]
+backdrop_blur = 20
+background = "rgba(4, 4, 4, 0.75)"
+shadow_color = "rgba(0, 200, 72, 0.08)"
+shadow_blur = 30

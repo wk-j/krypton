@@ -122,16 +122,32 @@
 
 ```
 1. Krypton process starts
-2. Config Manager loads krypton.toml (including keybindings, themes)
-3. Workspace Manager reads [[workspaces.layouts]] definitions + built-in presets
-4. Theme Engine loads active theme (built-in or custom)
-5. Tauri creates fullscreen, borderless, transparent native shell
-6. Frontend renders the startup workspace as the active virtual desktop
-7. Compositor computes window positions from grid + screen dimensions
-8. Each window initializes xterm.js with themed chrome
-9. PTY Manager spawns shells per window config
+2. Config Manager loads krypton.toml (including keybindings, themes) into Arc<RwLock<KryptonConfig>>
+3. Theme Engine initializes — embeds built-in themes (krypton-dark, legacy-radiance)
+4. Tauri creates fullscreen, borderless, transparent native shell
+5. Filesystem watcher starts on ~/.config/krypton/ (notify crate, 300ms debounce)
+6. Frontend: FrontendThemeEngine calls invoke("get_theme") — backend resolves theme.name, applies [theme.colors] overrides
+7. Frontend sets 50+ --krypton-* CSS custom properties on document.documentElement
+8. Frontend loads config via invoke("get_config"), applies to compositor
+9. Compositor creates first terminal window with themed xterm.js instance
 10. Input Router initializes in Normal mode, first window focused
-11. User sees all windows tiled on transparent desktop, keyboard-ready
+11. User sees themed windows on transparent desktop, keyboard-ready
+```
+
+### Theme Hot-Reload (user edits a .toml file)
+
+```
+1. notify crate detects .toml file change in ~/.config/krypton/
+2. 300ms debounce timer elapses
+3. Backend: reload_and_emit() re-parses krypton.toml, resolves theme by name
+4. Backend: applies [theme.colors] overrides on top of resolved FullTheme
+5. Backend: updates Arc<RwLock<KryptonConfig>> with new config
+6. Backend: emits "theme-changed" Tauri event (payload: FullTheme)
+7. Backend: emits "config-changed" Tauri event (payload: KryptonConfig)
+8. Frontend: FrontendThemeEngine receives "theme-changed" event
+9. Frontend: sets all --krypton-* CSS custom properties (instant CSS cascade)
+10. Frontend: notifies compositor which updates terminal.options.theme on all open terminals
+11. Result: window chrome + terminal colors update instantly without restart
 ```
 
 ### Workspace Switch (e.g., user presses CmdOrCtrl+2)

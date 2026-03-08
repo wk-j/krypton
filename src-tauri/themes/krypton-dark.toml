@@ -1,0 +1,137 @@
+# Krypton Dark — Default Built-in Theme
+#
+# Cyberpunk sci-fi aesthetic with cyan accents on transparent dark blue-black.
+# This is the default theme applied when no theme is configured.
+
+[meta]
+display_name = "Krypton Dark"
+author = "Krypton"
+version = "1.0.0"
+description = "Default cyberpunk dark theme with cyan accents on transparent black"
+license = "MIT"
+
+[colors]
+foreground = "#b0c4d8"
+background = "rgba(10, 10, 15, 0.5)"
+cursor = "#0cf"
+selection = "rgba(26, 58, 92, 0.6)"
+black = "#0a0a0f"
+red = "#ff3a5c"
+green = "#0cf"
+yellow = "#e8c547"
+blue = "#4a9eff"
+magenta = "#c77dff"
+cyan = "#0cf"
+white = "#b0c4d8"
+bright_black = "#2a4a6c"
+bright_red = "#ff5c7a"
+bright_green = "#33ddff"
+bright_yellow = "#ffd866"
+bright_blue = "#6ab4ff"
+bright_magenta = "#d9a0ff"
+bright_cyan = "#33ddff"
+bright_white = "#ffffff"
+
+[chrome]
+style = "cyberpunk"
+
+[chrome.border]
+width = 1
+color = "rgba(0, 200, 255, 0.3)"
+radius = 0
+
+[chrome.shadow]
+color = "rgba(0, 200, 255, 0.07)"
+blur = 15
+spread = 0
+offset_x = 0
+offset_y = 0
+
+[chrome.backdrop]
+color = "rgba(6, 10, 18, 0.5)"
+blur = 12
+
+[chrome.titlebar]
+height = 28
+background = "transparent"
+text_color = "rgba(0, 200, 255, 0.3)"
+font_size = 11
+font_weight = 600
+letter_spacing = 0.08
+text_transform = "uppercase"
+alignment = "left"
+
+[chrome.status_dot]
+size = 6
+color = "rgba(0, 200, 255, 0.25)"
+shape = "square"
+
+[chrome.header_accent]
+enabled = true
+height = 6
+color = "rgba(0, 200, 255, 0.15)"
+margin_horizontal = 20
+
+[chrome.corner_accents]
+enabled = true
+size = 14
+thickness = 2
+color = "rgba(0, 200, 255, 0.4)"
+
+[chrome.tabs]
+height = 28
+background = "transparent"
+active_color = "#0cf"
+inactive_color = "rgba(0, 200, 255, 0.3)"
+font_size = 11
+
+[focused]
+border_color = "rgba(0, 200, 255, 0.5)"
+shadow_color = "rgba(0, 200, 255, 0.12)"
+shadow_blur = 20
+titlebar_text_color = "#0cf"
+status_dot_color = "#0cf"
+header_accent_color = "rgba(0, 200, 255, 0.35)"
+corner_accent_color = "#0cf"
+corner_accent_glow = "rgba(0, 204, 255, 0.6)"
+label_color = "#0cf"
+
+[workspace]
+background = "transparent"
+blur = 0
+
+[ui.command_palette]
+background = "rgba(6, 10, 18, 0.85)"
+border = "rgba(0, 200, 255, 0.4)"
+text_color = "#c0c5ce"
+highlight_color = "#0cf"
+input_background = "transparent"
+input_text_color = "#c0c5ce"
+backdrop_blur = 16
+
+[ui.search]
+background = "rgba(6, 10, 18, 0.85)"
+text_color = "#c0c5ce"
+match_color = "#ebcb8b"
+border = "rgba(0, 200, 255, 0.4)"
+
+[ui.mode_indicator]
+background = "rgba(0, 200, 255, 0.15)"
+text_color = "#0cf"
+font_size = 11
+position = "bottom-center"
+
+[ui.which_key]
+background = "rgba(6, 10, 18, 0.85)"
+border = "rgba(0, 200, 255, 0.4)"
+title_color = "#0cf"
+key_color = "#0cf"
+label_color = "rgba(0, 200, 255, 0.4)"
+separator_color = "rgba(0, 200, 255, 0.2)"
+backdrop_blur = 16
+
+[ui.quick_terminal]
+backdrop_blur = 20
+background = "rgba(6, 10, 18, 0.6)"
+shadow_color = "rgba(0, 200, 255, 0.1)"
+shadow_blur = 30
