@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "krypton",
+  "productName": "Krypton",
   "version": "0.1.0",
   "identifier": "com.krypton.app",
   "build": {
