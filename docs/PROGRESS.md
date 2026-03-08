@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-08 (Window swap, maximize, focus cycling fix)
+> Last updated: 2026-03-08 (Quick Terminal)
 
 ## Overview
 
@@ -10,7 +10,7 @@
 | M1 — Single Session | Complete | 6/6 |
 | M2 — xterm.js Integration | Complete | 5/5 |
 | M3 — Compositor & Windows | In Progress | 8/10 |
-| M4 — Keyboard System & Workspaces | In Progress | 7/13 |
+| M4 — Keyboard System & Workspaces | In Progress | 11/14 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
 | M6 — Config, Theming & Custom Themes | Not Started | 0/9 |
 | M7 — Polish | Not Started | 0/6 |
@@ -66,11 +66,12 @@
 - [x] Window maximize/restore via keyboard (Leader+z toggle)
 - [ ] Command palette: fuzzy search over all actions, display keybindings
 - [ ] Workspace switching via hotkeys (`CmdOrCtrl+1/2/3`, next/prev)
-- [ ] Animation engine: slide, crossfade, morph workspace transitions
-- [ ] Configurable animation style, duration, easing
-- [ ] Keyboard input buffering during transitions
+- [x] Animation engine: morph (bounds transition), slide (horizontal), crossfade (opacity), window entrance/exit effects
+- [x] Configurable animation style, duration, easing (AnimationConfig with AnimationStyle, AnimationEasing, WindowEffect enums)
+- [x] Keyboard input buffering during transitions (buffered in Normal mode, replayed after animation)
 - [ ] Session pool: preserve PTY sessions across workspace switches
 - [x] Mode indicator UI
+- [x] Quick Terminal: persistent overlay terminal (Cmd+I toggle), centered on screen, own PTY, animated show/hide
 
 ## M5 — Tabs & Panes (Week 16-18)
 

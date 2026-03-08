@@ -26,6 +26,28 @@
 7. **Backend emits event** -> Tauri event `terminal-output` pushes raw bytes to frontend (scoped by window_id)
 8. **xterm.js renders** -> xterm.js parses VT sequences and updates the window's terminal canvas
 
+## Quick Terminal Toggle Flow (e.g., user presses Cmd+I)
+
+```
+1. User presses Cmd+I (global hotkey, works from any mode)
+2. Input Router intercepts the key before any mode-specific handling
+3. If Quick Terminal is hidden:
+   a. Compositor saves the currently focused workspace window ID
+   b. Quick Terminal DOM element becomes visible (display: flex)
+   c. Animation engine plays entrance animation (slide-down + fade-in)
+   d. Quick Terminal's xterm.js instance receives focus
+   e. Input Router stays in / returns to Normal mode
+   f. All keyboard input now routes to the Quick Terminal's PTY
+   g. If Quick Terminal has no PTY session yet, one is spawned on first show
+4. If Quick Terminal is visible:
+   a. Animation engine plays exit animation (slide-up + fade-out)
+   b. Quick Terminal DOM element becomes hidden (display: none)
+   c. Focus returns to the previously saved workspace window
+   d. Input Router stays in / returns to Normal mode
+5. The Quick Terminal's PTY session remains alive across show/hide cycles
+6. Pressing Escape in Normal mode while Quick Terminal is focused also hides it
+```
+
 ## Resize Flow
 
 1. **Window resizes** (layout change, keyboard resize, workspace switch) -> `@xterm/addon-fit` calculates new rows/cols

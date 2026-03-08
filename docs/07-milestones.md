@@ -6,7 +6,7 @@
 | **M1 — Single Session** | PTY spawn, raw I/O forwarded to xterm.js via Tauri IPC, working terminal in a single window. | Week 3-4 |
 | **M2 — xterm.js Integration** | WebGL addon, fit addon, proper resize handling, SGR/truecolor validation, alternate screen buffer. | Week 5-7 |
 | **M3 — Compositor & Windows** | Workspace rendering, window chrome, grid layout engine, keyboard focus navigation. | Week 8-11 |
-| **M4 — Keyboard System & Workspaces** | Leader key, input router, mode system, command palette, workspace switching with animations. | Week 12-15 |
+| **M4 — Keyboard System & Workspaces** | Leader key, input router, mode system, command palette, workspace switching with animations, Quick Terminal overlay. | Week 12-15 |
 | **M5 — Tabs & Panes** | Multi-tab per window, pane splits, keyboard tab/pane navigation, move tabs between windows. | Week 16-18 |
 | **M6 — Config, Theming & Custom Themes** | TOML config, keybindings, theme engine, custom theme files, chrome styles, hot-reload. | Week 19-21 |
 | **M7 — Polish** | Search, URL detection, IME, performance profiling, edge cases, bug fixes. | Week 22-25 |
@@ -62,6 +62,7 @@
 - Keyboard input buffering during transitions
 - Session pool: preserve PTY sessions across workspace switches
 - Mode indicator UI
+- Quick Terminal: persistent overlay terminal toggled via `Cmd+I`, centered on screen, own PTY session, animated show/hide, does not participate in tiling layout
 
 ### M5 — Tabs & Panes (Week 16-18)
 - Tab bar UI within each window (keyboard-navigable)

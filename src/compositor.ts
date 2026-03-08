@@ -7,8 +7,17 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 
-import { WindowId, WindowBounds, KryptonWindow, LayoutMode } from './types';
+import {
+  WindowId,
+  WindowBounds,
+  KryptonWindow,
+  LayoutMode,
+  AnimationConfig,
+  QuickTerminalConfig,
+  DEFAULT_QUICK_TERMINAL_CONFIG,
+} from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
+import { AnimationEngine, BoundsSnapshot } from './animation';
 
 /** Custom key event handler for xterm.js — set by InputRouter */
 type CustomKeyHandler = (e: KeyboardEvent) => boolean;
@@ -72,6 +81,23 @@ export class Compositor {
   private focusVisualOrder: WindowId[] = [];
   /** When a window is maximized, store its ID here. Only one window can be maximized at a time. */
   private maximizedWindowId: WindowId | null = null;
+  /** Animation engine for layout transitions and window effects */
+  private animation: AnimationEngine = new AnimationEngine();
+
+  // ─── Quick Terminal State ─────────────────────────────────────────
+  private qtConfig: QuickTerminalConfig = { ...DEFAULT_QUICK_TERMINAL_CONFIG };
+  /** The Quick Terminal DOM element (null until first show) */
+  private qtElement: HTMLElement | null = null;
+  /** xterm.js terminal instance for Quick Terminal */
+  private qtTerminal: TerminalInstance | null = null;
+  /** PTY session ID for Quick Terminal */
+  private qtSessionId: number | null = null;
+  /** Whether the Quick Terminal is currently visible */
+  private qtVisible = false;
+  /** Previously focused workspace window ID (restored when QT hides) */
+  private qtSavedFocusId: WindowId | null = null;
+  /** Whether the Quick Terminal has been lazily initialized */
+  private qtInitialized = false;
 
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
@@ -94,6 +120,11 @@ export class Compositor {
     return this.windows.size;
   }
 
+  /** Get the animation engine instance */
+  get animationEngine(): AnimationEngine {
+    return this.animation;
+  }
+
   /** Register callback for focus changes */
   onFocusChange(cb: (id: WindowId | null) => void): void {
     this.onFocusChangeCallbacks.push(cb);
@@ -104,6 +135,10 @@ export class Compositor {
     this.customKeyHandler = handler;
     for (const [, termInfo] of this.terminals) {
       termInfo.terminal.attachCustomKeyEventHandler(handler);
+    }
+    // Also attach to Quick Terminal if it exists
+    if (this.qtTerminal) {
+      this.qtTerminal.terminal.attachCustomKeyEventHandler(handler);
     }
   }
 
@@ -239,10 +274,15 @@ export class Compositor {
     // places it on the left (main) column immediately.
     this.focusWindowQuiet(id);
 
-    // Relayout all windows, then fit all terminals (including existing ones that resized)
+    // Snapshot existing window positions, relayout, then animate the transition
+    const snapshots = this.snapshotBounds();
     this.relayout();
     await this.nextFrame();
     this.fitAll();
+
+    // Animate: morph existing windows + entrance effect on new window
+    this.animation.entrance(el);
+    this.animateRelayout(snapshots.filter((s) => s.id !== id));
 
     // Spawn PTY
     try {
@@ -294,8 +334,13 @@ export class Compositor {
       this.terminals.delete(id);
     }
 
+    // Play exit animation, then remove from DOM
+    await this.animation.exit(win.element);
     win.element.remove();
+
+    // Snapshot remaining windows before relayout
     this.windows.delete(id);
+    const snapshots = this.snapshotBounds();
 
     if (this.focusedWindowId === id) {
       const remaining = this.windowIds;
@@ -313,6 +358,7 @@ export class Compositor {
     this.relayout();
     await this.nextFrame();
     this.fitAll();
+    this.animateRelayout(snapshots);
   }
 
   /**
@@ -354,8 +400,10 @@ export class Compositor {
     // Relayout so the newly focused window swaps to the left and the
     // previously focused window moves into the right stack.
     if (this.layoutMode === LayoutMode.Focus && previousId !== id && this.windows.size > 1) {
+      const snapshots = this.snapshotBounds();
       this.relayout();
       this.fitAll();
+      this.animateRelayout(snapshots);
     }
   }
 
@@ -391,6 +439,9 @@ export class Compositor {
     const targetId = this.findWindowInDirection(this.focusedWindowId, direction);
     if (!targetId) return;
 
+    // Snapshot before swap for animation
+    const snapshots = this.snapshotBounds();
+
     // Swap positions in the Map by rebuilding insertion order.
     // This swaps where each window appears in creation-order iteration,
     // which determines their layout slot assignment.
@@ -406,9 +457,10 @@ export class Compositor {
     // Rebuild the map in the new order
     this.windows = new Map(entries);
 
-    // Relayout and refit
+    // Relayout and animate
     this.relayout();
     this.fitAll();
+    this.animateRelayout(snapshots);
   }
 
   /**
@@ -521,6 +573,7 @@ export class Compositor {
 
   /** Toggle between Grid and Focus layout modes, then relayout */
   async toggleFocusLayout(): Promise<void> {
+    const snapshots = this.snapshotBounds();
     this.layoutMode =
       this.layoutMode === LayoutMode.Grid ? LayoutMode.Focus : LayoutMode.Grid;
     // Exit maximize when switching layout
@@ -529,6 +582,7 @@ export class Compositor {
     this.relayout();
     await this.nextFrame();
     this.fitAll();
+    this.animateRelayout(snapshots);
   }
 
   /** Whether a window is currently maximized */
@@ -544,6 +598,8 @@ export class Compositor {
   async toggleMaximize(): Promise<void> {
     if (!this.focusedWindowId) return;
 
+    const snapshots = this.snapshotBounds();
+
     if (this.maximizedWindowId === this.focusedWindowId) {
       // Restore: un-maximize, show all windows, relayout
       this.maximizedWindowId = null;
@@ -551,6 +607,7 @@ export class Compositor {
       this.relayout();
       await this.nextFrame();
       this.fitAll();
+      this.animateRelayout(snapshots);
     } else {
       // Maximize: hide other windows, expand focused to fill workspace area
       this.maximizedWindowId = this.focusedWindowId;
@@ -564,18 +621,20 @@ export class Compositor {
         }
       }
 
-      // Expand to workspace area
+      // Expand to full viewport
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const totalW = Math.round(vw * Compositor.MULTI_WIDTH_RATIO);
-      const totalH = Math.round(vh * Compositor.MULTI_HEIGHT_RATIO);
-      const offsetX = Math.round((vw - totalW) / 2);
-      const offsetY = Math.round((vh - totalH) / 2);
 
-      win.bounds = { x: offsetX, y: offsetY, width: totalW, height: totalH };
+      win.bounds = { x: 0, y: 0, width: vw, height: vh };
       this.applyBounds(win);
       await this.nextFrame();
       this.fitWindow(this.focusedWindowId);
+
+      // Animate the focused window morphing to full size
+      const focusSnap = snapshots.find((s) => s.id === this.focusedWindowId);
+      if (focusSnap) {
+        this.animateRelayout([focusSnap]);
+      }
     }
   }
 
@@ -584,6 +643,291 @@ export class Compositor {
     for (const [, win] of this.windows) {
       win.element.style.display = '';
     }
+  }
+
+  // ─── Quick Terminal ───────────────────────────────────────────────
+
+  /** Whether the Quick Terminal is currently visible */
+  get isQuickTerminalVisible(): boolean {
+    return this.qtVisible;
+  }
+
+  /** Whether the Quick Terminal is currently focused */
+  get isQuickTerminalFocused(): boolean {
+    return this.qtVisible;
+  }
+
+  /** Toggle the Quick Terminal overlay */
+  async toggleQuickTerminal(): Promise<void> {
+    if (this.qtVisible) {
+      await this.hideQuickTerminal();
+    } else {
+      await this.showQuickTerminal();
+    }
+  }
+
+  /** Show the Quick Terminal (lazy-creates PTY on first call) */
+  private async showQuickTerminal(): Promise<void> {
+    if (this.qtVisible) return;
+
+    // Save currently focused workspace window for restoration
+    this.qtSavedFocusId = this.focusedWindowId;
+
+    // Lazy-initialize the Quick Terminal on first show
+    if (!this.qtInitialized) {
+      await this.initQuickTerminal();
+    }
+
+    if (!this.qtElement || !this.qtTerminal) return;
+
+    // Position centered on screen
+    this.positionQuickTerminal();
+
+    // Show the element
+    this.qtElement.classList.add('krypton-quick-terminal--visible');
+    this.qtVisible = true;
+
+    // Unfocus workspace window visually
+    if (this.focusedWindowId) {
+      const prev = this.windows.get(this.focusedWindowId);
+      if (prev) {
+        prev.element.classList.remove('krypton-window--focused');
+      }
+    }
+
+    // Focus the Quick Terminal (add focused styling)
+    this.qtElement.classList.add('krypton-window--focused');
+
+    // Animate slide-down + fade-in
+    const duration = this.qtConfig.animationDuration;
+    const anim = this.qtElement.animate(
+      [
+        { transform: 'translateY(-30px)', opacity: '0' },
+        { transform: 'translateY(0)', opacity: '1' },
+      ],
+      { duration, easing: 'cubic-bezier(0, 0, 0.2, 1)', fill: 'none' },
+    );
+
+    // Fit terminal after visible
+    await this.nextFrame();
+    this.qtTerminal.fitAddon.fit();
+    if (this.qtSessionId !== null) {
+      invoke('resize_pty', {
+        sessionId: this.qtSessionId,
+        cols: this.qtTerminal.terminal.cols,
+        rows: this.qtTerminal.terminal.rows,
+      }).catch((e) => console.error('QT resize PTY failed:', e));
+    }
+
+    // Focus xterm.js
+    this.qtTerminal.terminal.focus();
+
+    try {
+      await anim.finished;
+    } catch {
+      // Animation cancelled
+    }
+  }
+
+  /** Hide the Quick Terminal and restore previous focus */
+  private async hideQuickTerminal(): Promise<void> {
+    if (!this.qtVisible || !this.qtElement) return;
+
+    // Animate slide-up + fade-out
+    const duration = this.qtConfig.animationDuration;
+    const anim = this.qtElement.animate(
+      [
+        { transform: 'translateY(0)', opacity: '1' },
+        { transform: 'translateY(-30px)', opacity: '0' },
+      ],
+      { duration, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' },
+    );
+
+    try {
+      await anim.finished;
+    } catch {
+      // Animation cancelled
+    }
+
+    // Hide element
+    this.qtElement.classList.remove('krypton-quick-terminal--visible');
+    this.qtElement.classList.remove('krypton-window--focused');
+    // Cancel fill-forwards so next show starts clean
+    anim.cancel();
+    this.qtVisible = false;
+
+    // Blur the Quick Terminal's xterm.js so browser focus is released
+    if (this.qtTerminal) {
+      this.qtTerminal.terminal.blur();
+    }
+
+    // Restore focus to the previously focused workspace window.
+    // We need to re-add the focused CSS class (removed during show)
+    // and re-focus the xterm.js terminal so it receives keyboard input.
+    const restoreId = this.qtSavedFocusId ?? (this.windows.size > 0 ? this.windowIds[this.windowIds.length - 1] : null);
+    if (restoreId && this.windows.has(restoreId)) {
+      const win = this.windows.get(restoreId)!;
+      win.element.classList.add('krypton-window--focused');
+      this.focusedWindowId = restoreId;
+
+      const termInfo = this.terminals.get(restoreId);
+      if (termInfo) {
+        termInfo.terminal.focus();
+      }
+      this.notifyFocusChange();
+    }
+    this.qtSavedFocusId = null;
+  }
+
+  /**
+   * Fully destroy the Quick Terminal (DOM + terminal + state).
+   * Called when the QT shell exits (Ctrl+D). Hides first if visible,
+   * then tears down everything so the next toggle recreates from scratch.
+   */
+  private async destroyQuickTerminal(): Promise<void> {
+    // Hide with animation + restore workspace focus if currently visible
+    if (this.qtVisible) {
+      await this.hideQuickTerminal();
+    }
+
+    // Dispose xterm.js terminal
+    if (this.qtTerminal) {
+      this.qtTerminal.terminal.dispose();
+      this.qtTerminal = null;
+    }
+
+    // Remove DOM element
+    if (this.qtElement) {
+      this.qtElement.remove();
+      this.qtElement = null;
+    }
+
+    // Reset state so next toggle lazy-creates everything fresh
+    this.qtSessionId = null;
+    this.qtInitialized = false;
+  }
+
+  /** Lazily initialize the Quick Terminal DOM + PTY */
+  private async initQuickTerminal(): Promise<void> {
+    // Build DOM — same cyberpunk chrome as regular windows
+    const el = document.createElement('div');
+    el.id = 'quick-terminal';
+    el.className = 'krypton-window krypton-quick-terminal';
+
+    const chrome = document.createElement('div');
+    chrome.className = 'krypton-window__chrome';
+
+    const titlebar = document.createElement('div');
+    titlebar.className = 'krypton-window__titlebar';
+
+    const labelGroup = document.createElement('div');
+    labelGroup.className = 'krypton-window__label-group';
+
+    const statusDot = document.createElement('div');
+    statusDot.className = 'krypton-window__status-dot';
+
+    const label = document.createElement('span');
+    label.className = 'krypton-window__label';
+    label.textContent = 'QUICK_TERMINAL';
+
+    labelGroup.appendChild(statusDot);
+    labelGroup.appendChild(label);
+
+    const ptyStatus = document.createElement('span');
+    ptyStatus.className = 'krypton-window__pty-status';
+    ptyStatus.textContent = 'pty_streams // active';
+
+    titlebar.appendChild(labelGroup);
+    titlebar.appendChild(ptyStatus);
+    chrome.appendChild(titlebar);
+
+    const headerAccent = document.createElement('div');
+    headerAccent.className = 'krypton-window__header-accent';
+    chrome.appendChild(headerAccent);
+
+    const content = document.createElement('div');
+    content.className = 'krypton-window__content';
+
+    const body = document.createElement('div');
+    body.className = 'krypton-window__body';
+    content.appendChild(body);
+
+    // Corner accents
+    for (const pos of ['tl', 'tr', 'bl', 'br']) {
+      const corner = document.createElement('div');
+      corner.className = `krypton-window__corner krypton-window__corner--${pos}`;
+      el.appendChild(corner);
+    }
+
+    el.appendChild(chrome);
+    el.appendChild(content);
+    this.workspace.appendChild(el);
+    this.qtElement = el;
+
+    // Create xterm.js terminal
+    const terminal = new Terminal({
+      cursorBlink: true,
+      cursorStyle: 'block',
+      fontSize: 14,
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      lineHeight: 1.2,
+      scrollback: 10000,
+      allowTransparency: true,
+      theme: TERMINAL_THEME,
+    });
+
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.open(body);
+
+    // Attach custom key handler
+    if (this.customKeyHandler) {
+      terminal.attachCustomKeyEventHandler(this.customKeyHandler);
+    }
+
+    this.qtTerminal = { terminal, fitAddon };
+
+    // Spawn PTY for Quick Terminal
+    try {
+      const sessionId = await invoke<number>('spawn_pty', {
+        cols: terminal.cols,
+        rows: terminal.rows,
+        cwd: null,
+      });
+      this.qtSessionId = sessionId;
+    } catch (e) {
+      console.error('Failed to spawn Quick Terminal PTY:', e);
+      terminal.write('\r\n\x1b[31mFailed to spawn shell.\x1b[0m\r\n');
+    }
+
+    // Wire input: xterm -> PTY
+    terminal.onData((data: string) => {
+      if (this.qtSessionId !== null) {
+        const encoder = new TextEncoder();
+        invoke('write_to_pty', {
+          sessionId: this.qtSessionId,
+          data: Array.from(encoder.encode(data)),
+        }).catch((e) => console.error('QT write to PTY failed:', e));
+      }
+    });
+
+    this.qtInitialized = true;
+  }
+
+  /** Position the Quick Terminal centered on the viewport */
+  private positionQuickTerminal(): void {
+    if (!this.qtElement) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const w = Math.round(vw * this.qtConfig.widthRatio);
+    const h = Math.round(vh * this.qtConfig.heightRatio);
+    const x = Math.round((vw - w) / 2);
+    const y = Math.round((vh - h) / 2);
+
+    this.qtElement.style.left = `${x}px`;
+    this.qtElement.style.top = `${y}px`;
+    this.qtElement.style.width = `${w}px`;
+    this.qtElement.style.height = `${h}px`;
   }
 
   // ─── Resize & Move ───────────────────────────────────────────────
@@ -642,6 +986,60 @@ export class Compositor {
   }
 
   // ─── Layout ──────────────────────────────────────────────────────
+
+  /** Capture a snapshot of all windows' current bounds (for animation) */
+  private snapshotBounds(): BoundsSnapshot[] {
+    const snapshots: BoundsSnapshot[] = [];
+    for (const [id, win] of this.windows) {
+      snapshots.push({
+        id,
+        bounds: { ...win.bounds },
+      });
+    }
+    return snapshots;
+  }
+
+  /** Animate layout transition from snapshots to current bounds */
+  private async animateRelayout(snapshots: BoundsSnapshot[]): Promise<void> {
+    await this.animation.animateLayoutTransition(
+      snapshots,
+      (id) => this.windows.get(id)?.bounds ?? null,
+      (id) => this.windows.get(id)?.element ?? null,
+      this.workspace,
+    );
+    this.replayBufferedInput();
+  }
+
+  /**
+   * Replay any keyboard events that were buffered during animation.
+   * The events are dispatched to the focused terminal's xterm.js instance.
+   */
+  private replayBufferedInput(): void {
+    const events = this.animation.flushInputBuffer();
+    if (events.length === 0) return;
+
+    const termInfo = this.focusedWindowId
+      ? this.terminals.get(this.focusedWindowId)
+      : null;
+
+    if (termInfo) {
+      // Replay each buffered keydown by re-dispatching to the terminal's textarea
+      const textarea = termInfo.terminal.textarea;
+      if (textarea) {
+        for (const event of events) {
+          textarea.dispatchEvent(new KeyboardEvent('keydown', {
+            key: event.key,
+            code: event.code,
+            keyCode: event.keyCode,
+            ctrlKey: event.ctrlKey,
+            shiftKey: event.shiftKey,
+            altKey: event.altKey,
+            metaKey: event.metaKey,
+          }));
+        }
+      }
+    }
+  }
 
   /** Default window size as fraction of viewport */
   private static readonly DEFAULT_WIDTH_RATIO = 0.5;
@@ -813,6 +1211,13 @@ export class Compositor {
   private setupPtyListeners(): void {
     listen<[number, number[]]>('pty-output', (event) => {
       const [sid, data] = event.payload;
+
+      // Check Quick Terminal first
+      if (this.qtSessionId === sid && this.qtTerminal) {
+        this.qtTerminal.terminal.write(new Uint8Array(data));
+        return;
+      }
+
       for (const [wid, win] of this.windows) {
         if (win.sessionId === sid) {
           const termInfo = this.terminals.get(wid);
@@ -826,6 +1231,14 @@ export class Compositor {
 
     listen<number>('pty-exit', (event) => {
       const sid = event.payload;
+
+      // Quick Terminal PTY exited — hide, clean up, recreate on next toggle
+      if (this.qtSessionId === sid) {
+        this.qtSessionId = null;
+        this.destroyQuickTerminal();
+        return;
+      }
+
       for (const [wid, win] of this.windows) {
         if (win.sessionId === sid) {
           win.sessionId = null;
@@ -845,6 +1258,18 @@ export class Compositor {
       resizeTimer = setTimeout(() => {
         this.relayout();
         this.fitAll();
+        // Reposition Quick Terminal if visible
+        if (this.qtVisible) {
+          this.positionQuickTerminal();
+          if (this.qtTerminal && this.qtSessionId !== null) {
+            this.qtTerminal.fitAddon.fit();
+            invoke('resize_pty', {
+              sessionId: this.qtSessionId,
+              cols: this.qtTerminal.terminal.cols,
+              rows: this.qtTerminal.terminal.rows,
+            }).catch((e) => console.error('QT resize PTY failed:', e));
+          }
+        }
       }, 50);
     });
   }

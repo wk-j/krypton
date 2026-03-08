@@ -207,7 +207,26 @@
 | FR-CHR-009 | Windows shall support maximize toggle via keybinding (primary) and optionally via double-click on title bar (secondary). | Should |
 | FR-CHR-010 | The tab bar shall be integrated below the title bar within the window chrome. | Must |
 
-## 3.10 Layout Transition Animations
+## 3.10 Quick Terminal
+
+The **Quick Terminal** is a fast-access, overlay terminal window that floats centered on the screen above the current workspace. It is toggled with a single global hotkey (`Cmd+I`) and is designed for running quick commands without disrupting the workspace layout. It is conceptually similar to a dropdown/quake-style terminal but centered rather than anchored to a screen edge.
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-QT-001 | The system shall provide a **Quick Terminal** — a single, persistent terminal window that overlays the active workspace, centered on screen. | Must |
+| FR-QT-002 | The Quick Terminal shall be toggled (shown/hidden) via a global hotkey (default: `Cmd+I`). The hotkey shall work from any input mode (Normal, Compositor, Resize, Move, Swap). | Must |
+| FR-QT-003 | The Quick Terminal shall be centered horizontally and vertically on screen, sized to approximately 60% of screen width and 50% of screen height. Size shall be configurable. | Must |
+| FR-QT-004 | The Quick Terminal shall render above all workspace windows at the highest z-order. It shall use the same cyberpunk chrome style as regular windows, with a distinct label (e.g., `QUICK_TERMINAL`). | Must |
+| FR-QT-005 | When the Quick Terminal is shown, it shall immediately receive keyboard focus. All keyboard input routes to the Quick Terminal's PTY in Normal mode. | Must |
+| FR-QT-006 | When the Quick Terminal is hidden, focus shall return to the previously focused workspace window. The Quick Terminal's PTY session shall remain alive in the background. | Must |
+| FR-QT-007 | The Quick Terminal shall animate on show/hide — slide-down + fade-in on show, slide-up + fade-out on hide (using the animation engine). | Should |
+| FR-QT-008 | The Quick Terminal shall have its own independent PTY session that persists across show/hide cycles and workspace switches. | Must |
+| FR-QT-009 | The Quick Terminal shall not participate in workspace layout (grid/focus tiling). It is always an overlay, never tiled. | Must |
+| FR-QT-010 | The Quick Terminal's backdrop shall have a stronger blur effect than regular windows to visually separate it from the workspace beneath. | Should |
+| FR-QT-011 | Pressing `Escape` while the Quick Terminal is focused and in Normal mode shall hide the Quick Terminal (same as pressing `Cmd+I` again). | Should |
+| FR-QT-012 | The Quick Terminal size and position shall be configurable via the TOML config (`[quick_terminal]` section). | Should |
+
+## 3.11 Layout Transition Animations
 
 | ID | Requirement | Priority |
 |----|-------------|----------|

@@ -48,3 +48,73 @@ export interface KryptonWindow {
   element: HTMLElement;
   terminalContainer: HTMLElement;
 }
+
+// ─── Animation Types ──────────────────────────────────────────
+
+/** Workspace transition animation style */
+export enum AnimationStyle {
+  /** No animation */
+  None = 'none',
+  /** Horizontal slide (like macOS Spaces) */
+  Slide = 'slide',
+  /** Opacity crossfade between workspaces */
+  Crossfade = 'crossfade',
+  /** Each window morphs from current to target position/size */
+  Morph = 'morph',
+}
+
+/** Window entrance/exit effect */
+export enum WindowEffect {
+  None = 'none',
+  FadeIn = 'fade-in',
+  FadeOut = 'fade-out',
+  ScaleUp = 'scale-up',
+  ScaleDown = 'scale-down',
+  SlideIn = 'slide-in',
+  SlideOut = 'slide-out',
+}
+
+/** Easing function for animations */
+export enum AnimationEasing {
+  Linear = 'linear',
+  EaseIn = 'ease-in',
+  EaseOut = 'ease-out',
+  EaseInOut = 'ease-in-out',
+  Spring = 'spring',
+}
+
+/** Full animation configuration */
+export interface AnimationConfig {
+  /** Workspace transition style */
+  style: AnimationStyle;
+  /** Duration in milliseconds */
+  duration: number;
+  /** Easing function */
+  easing: AnimationEasing;
+  /** Window entrance effect */
+  entranceEffect: WindowEffect;
+  /** Window exit effect */
+  exitEffect: WindowEffect;
+}
+
+// ─── Quick Terminal Types ─────────────────────────────────────────
+
+/** Quick Terminal configuration */
+export interface QuickTerminalConfig {
+  /** Width as fraction of viewport (default 0.6) */
+  widthRatio: number;
+  /** Height as fraction of viewport (default 0.5) */
+  heightRatio: number;
+  /** Backdrop blur in px (default 20) */
+  backdropBlur: number;
+  /** Show/hide animation duration in ms (default 200) */
+  animationDuration: number;
+}
+
+/** Default Quick Terminal configuration */
+export const DEFAULT_QUICK_TERMINAL_CONFIG: QuickTerminalConfig = {
+  widthRatio: 0.6,
+  heightRatio: 0.5,
+  backdropBlur: 20,
+  animationDuration: 200,
+};

@@ -43,6 +43,15 @@ export class InputRouter {
       if (e.metaKey && e.shiftKey && (e.code === 'Comma' || e.code === 'Period')) {
         return false;
       }
+      // Prevent xterm from consuming Cmd+I (Quick Terminal toggle)
+      if (InputRouter.isQuickTerminalKey(e)) {
+        return false;
+      }
+      // Prevent xterm from consuming Escape when Quick Terminal is focused
+      // (so input-router can hide it)
+      if (e.key === 'Escape' && this.compositor.isQuickTerminalFocused && this.mode === Mode.Normal) {
+        return false;
+      }
       if (this.mode !== Mode.Normal) {
         return false;
       }
@@ -54,6 +63,17 @@ export class InputRouter {
   static isLeaderKey(e: KeyboardEvent): boolean {
     return (
       (e.key === 'p' || e.key === 'P' || e.code === 'KeyP') &&
+      e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.shiftKey
+    );
+  }
+
+  /** Check if a key event is the Quick Terminal toggle (Cmd+I) */
+  static isQuickTerminalKey(e: KeyboardEvent): boolean {
+    return (
+      (e.key === 'i' || e.key === 'I' || e.code === 'KeyI') &&
       e.metaKey &&
       !e.ctrlKey &&
       !e.altKey &&
@@ -80,13 +100,32 @@ export class InputRouter {
         console.log(`[InputRouter] mode=${this.mode} key="${e.key}" code="${e.code}" ctrl=${e.ctrlKey} meta=${e.metaKey} alt=${e.altKey}`);
       }
 
-      // Global: Cmd+Shift+< cycle focus previous (counterclockwise)
-      // Global: Cmd+Shift+> cycle focus next (clockwise)
+      // Buffer keyboard input during animations (Normal mode only).
+      // Let modifier keys and mode-switching keys through so the user
+      // can still interact with the compositor during transitions.
+      if (this.mode === Mode.Normal && this.compositor.animationEngine.isAnimating) {
+        if (!e.metaKey && !e.ctrlKey && !InputRouter.isLeaderKey(e)) {
+          this.compositor.animationEngine.bufferInput(e);
+          e.preventDefault();
+          return;
+        }
+      }
+
+      // Global: Cmd+I — toggle Quick Terminal (works from any input mode)
+      if (InputRouter.isQuickTerminalKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.compositor.toggleQuickTerminal();
+        return;
+      }
+
+      // Global: Cmd+Shift+< cycle focus next (forward through stack)
+      // Global: Cmd+Shift+> cycle focus previous (backward through stack)
       // Match on code (Comma/Period) since key value varies with Cmd held on macOS
       if (e.metaKey && e.shiftKey && (e.code === 'Comma' || e.code === 'Period')) {
         e.preventDefault();
         e.stopPropagation();
-        this.compositor.focusCycle(e.code === 'Period' ? 1 : -1);
+        this.compositor.focusCycle(e.code === 'Comma' ? 1 : -1);
         return;
       }
 
@@ -107,6 +146,14 @@ export class InputRouter {
         e.preventDefault();
         e.stopPropagation();
         this.toNormal();
+        return;
+      }
+
+      // Escape in Normal mode: hide Quick Terminal if it's focused
+      if (e.key === 'Escape' && this.mode === Mode.Normal && this.compositor.isQuickTerminalFocused) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.compositor.toggleQuickTerminal();
         return;
       }
 

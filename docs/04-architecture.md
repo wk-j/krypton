@@ -128,7 +128,8 @@ The compositor is a TypeScript module running in the webview that manages worksp
 6. **Keyboard-driven window control** — handle window move, resize, swap, maximize, and focus cycling via keybindings
 7. **Command palette** — overlay for fuzzy-searching and executing all available actions by name
 8. **Animation engine** — orchestrate workspace transition animations (slide, crossfade, morph) and window entrance/exit effects
-9. **Z-order** — manage window stacking within a workspace; focused window rises to top
+9. **Quick Terminal** — manage a persistent overlay terminal (toggled via `Cmd+I`) that floats centered on screen above all workspace windows; separate from the tiling layout
+10. **Z-order** — manage window stacking within a workspace; focused window rises to top
 10. **Chrome rendering** — cyberpunk/sci-fi window chrome with glowing cyan borders, session label with status dot, PTY status indicator, right sidebar with telemetry decoration, and bottom bar
 11. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
 
@@ -172,6 +173,26 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
     </div>
 
     <!-- More windows... -->
+
+    <!-- Quick Terminal (overlay, toggled via Cmd+I) -->
+    <div class="krypton-quick-terminal" id="quick-terminal"
+         style="position: absolute; z-index: 5000; display: none;">
+      <!-- Same chrome structure as regular windows -->
+      <div class="krypton-window__chrome">
+        <div class="krypton-window__titlebar">
+          <div class="krypton-window__label-group">
+            <div class="krypton-window__status-dot"></div>
+            <span class="krypton-window__label">QUICK_TERMINAL</span>
+          </div>
+          <span class="krypton-window__pty-status">PTY_STREAMS // ACTIVE</span>
+        </div>
+      </div>
+      <div class="krypton-window__content">
+        <div class="krypton-window__body">
+          <!-- xterm.js mounts here -->
+        </div>
+      </div>
+    </div>
 
     <!-- Which-key popup (shown during compositor/resize/move modes) -->
     <div class="krypton-whichkey">...</div>
@@ -230,11 +251,19 @@ The input router is the central keyboard dispatcher. It determines what happens 
 | **Command Palette** | `CmdOrCtrl+Shift+P` | Text input filters the action list; Enter executes; Escape closes | `Escape` or action execution |
 | **Search** | `CmdOrCtrl+F` | Text input searches scrollback in the focused window | `Escape` to close |
 
+**Global hotkeys that work from any mode:**
+- `Cmd+I` — Toggle Quick Terminal (show/hide centered overlay terminal)
+- `Cmd+Shift+<` / `Cmd+Shift+>` — Cycle focus through windows
+
 ### Key routing flow
 
 ```
 Keypress
   |
+  v
+[Is Quick Terminal toggle?] --yes--> Show/hide Quick Terminal, transfer focus
+  |
+  no
   v
 [Is a global hotkey?] --yes--> Execute global action (workspace switch, command palette, etc.)
   |

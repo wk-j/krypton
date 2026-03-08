@@ -122,6 +122,9 @@ split_vertical = "CmdOrCtrl+Shift+V"
 copy = "CmdOrCtrl+C"
 paste = "CmdOrCtrl+V"
 
+# Quick Terminal
+quick_terminal = "Cmd+I"
+
 # Search
 search = "CmdOrCtrl+F"
 search_next = "CmdOrCtrl+G"
@@ -146,6 +149,17 @@ move_up = "Up"
 step_large = "Shift+Arrow"
 confirm = "Enter"
 cancel = "Escape"
+
+# --- Quick Terminal ---
+# A persistent overlay terminal toggled via Cmd+I, centered on screen.
+
+[quick_terminal]
+width_ratio = 0.6              # fraction of screen width (default: 60%)
+height_ratio = 0.5             # fraction of screen height (default: 50%)
+backdrop_blur = 20             # backdrop-filter blur in pixels (stronger than regular windows)
+animation = "slide"            # entrance/exit animation: "slide", "fade", "none"
+shell = ""                     # shell override (empty = use default [shell] config)
+cwd = ""                       # working directory override (empty = $HOME)
 
 # --- Workspaces ---
 # Each workspace is a virtual desktop containing arranged terminal windows.
@@ -246,9 +260,21 @@ name = "custom-fixed"
 | `[theme.colors]` | *(various)* | string | — | Hex color overrides (applied on top of named theme) |
 | `[keybindings]` | `leader` | string | `"Ctrl+Space"` | Leader key to enter compositor mode |
 | `[keybindings]` | `command_palette` | string | `"CmdOrCtrl+Shift+P"` | Open command palette |
+| `[keybindings]` | `quick_terminal` | string | `"Cmd+I"` | Toggle Quick Terminal overlay |
 | `[keybindings]` | *(various)* | string | — | See full keybinding reference in TOML example above |
 | `[keybindings.resize_mode]` | *(various)* | string | — | Keys active in resize mode |
 | `[keybindings.move_mode]` | *(various)* | string | — | Keys active in move mode |
+
+### Quick Terminal Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[quick_terminal]` | `width_ratio` | float | `0.6` | Width as fraction of screen (0.0–1.0) |
+| `[quick_terminal]` | `height_ratio` | float | `0.5` | Height as fraction of screen (0.0–1.0) |
+| `[quick_terminal]` | `backdrop_blur` | int | `20` | Backdrop blur in pixels (stronger than regular windows) |
+| `[quick_terminal]` | `animation` | string | `"slide"` | Entrance/exit animation: `slide`, `fade`, `none` |
+| `[quick_terminal]` | `shell` | string | `""` | Shell override (empty = use default `[shell]` config) |
+| `[quick_terminal]` | `cwd` | string | `""` | Working directory override (empty = `$HOME`) |
 
 ### Workspace Configuration
 

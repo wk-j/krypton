@@ -35,6 +35,7 @@
 | Move Mode | Input mode where arrow keys reposition the focused window |
 | Command Palette | A keyboard-driven overlay that lists all available actions, filterable by typing |
 | Input Router | The frontend module that dispatches keypresses based on the current mode |
+| Quick Terminal | A persistent overlay terminal window that floats centered on screen above all workspace windows, toggled via `Cmd+I`. It has its own independent PTY session, does not participate in tiling layout, and is designed for quick command execution without disrupting the workspace arrangement. |
 | Step Size | The number of pixels a window moves or resizes per keypress in move/resize mode |
 | Theme | A TOML file defining all visual properties: terminal colors, window chrome, workspace background, UI elements |
 | Custom Theme | A user-created `.toml` file placed in the themes directory to define a personalized visual style |
