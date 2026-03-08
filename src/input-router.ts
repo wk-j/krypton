@@ -86,7 +86,16 @@ export class InputRouter {
   }
 
   private setMode(mode: Mode): void {
+    const prevMode = this.mode;
     this.mode = mode;
+
+    // Play sound on mode transitions
+    if (prevMode === Mode.Normal && mode !== Mode.Normal) {
+      this.compositor.soundEngine.play('mode.enter');
+    } else if (prevMode !== Mode.Normal && mode === Mode.Normal) {
+      this.compositor.soundEngine.play('mode.exit');
+    }
+
     for (const cb of this.modeChangeCallbacks) {
       cb(mode);
     }
@@ -284,18 +293,22 @@ export class InputRouter {
       case 'ArrowLeft':
       case 'h':
         this.compositor.resizeFocused('left');
+        this.compositor.soundEngine.play('resize.step');
         break;
       case 'ArrowRight':
       case 'l':
         this.compositor.resizeFocused('right');
+        this.compositor.soundEngine.play('resize.step');
         break;
       case 'ArrowUp':
       case 'k':
         this.compositor.resizeFocused('up');
+        this.compositor.soundEngine.play('resize.step');
         break;
       case 'ArrowDown':
       case 'j':
         this.compositor.resizeFocused('down');
+        this.compositor.soundEngine.play('resize.step');
         break;
       case 'Enter':
         this.toNormal();
@@ -313,18 +326,22 @@ export class InputRouter {
       case 'ArrowLeft':
       case 'h':
         this.compositor.moveFocused('left');
+        this.compositor.soundEngine.play('move.step');
         break;
       case 'ArrowRight':
       case 'l':
         this.compositor.moveFocused('right');
+        this.compositor.soundEngine.play('move.step');
         break;
       case 'ArrowUp':
       case 'k':
         this.compositor.moveFocused('up');
+        this.compositor.soundEngine.play('move.step');
         break;
       case 'ArrowDown':
       case 'j':
         this.compositor.moveFocused('down');
+        this.compositor.soundEngine.play('move.step');
         break;
       case 'Enter':
         this.toNormal();
@@ -341,21 +358,25 @@ export class InputRouter {
       case 'ArrowLeft':
       case 'h':
         this.compositor.swapInDirection('left');
+        this.compositor.soundEngine.play('swap.complete');
         this.toNormal();
         break;
       case 'ArrowRight':
       case 'l':
         this.compositor.swapInDirection('right');
+        this.compositor.soundEngine.play('swap.complete');
         this.toNormal();
         break;
       case 'ArrowUp':
       case 'k':
         this.compositor.swapInDirection('up');
+        this.compositor.soundEngine.play('swap.complete');
         this.toNormal();
         break;
       case 'ArrowDown':
       case 'j':
         this.compositor.swapInDirection('down');
+        this.compositor.soundEngine.play('swap.complete');
         this.toNormal();
         break;
       default:

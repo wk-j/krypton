@@ -18,6 +18,7 @@ import {
 } from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
 import { AnimationEngine, BoundsSnapshot } from './animation';
+import { SoundEngine } from './sound';
 import type { KryptonConfig } from './config';
 
 /** Custom key event handler for xterm.js — set by InputRouter */
@@ -81,6 +82,8 @@ export class Compositor {
   private maximizedWindowId: WindowId | null = null;
   /** Animation engine for layout transitions and window effects */
   private animation: AnimationEngine = new AnimationEngine();
+  /** Sound engine for procedural sound effects */
+  private sound: SoundEngine = new SoundEngine();
 
   // ─── Config-backed settings ──────────────────────────────────────
   /** xterm.js theme — built-in default, overridable by config theme.colors */
@@ -171,6 +174,9 @@ export class Compositor {
     // Workspaces
     this.windowGap = config.workspaces.gap;
     this.stepSize = config.workspaces.resize_step;
+
+    // Sound
+    this.sound.applyConfig(config.sound);
   }
 
   /** Get the currently focused window ID */
@@ -191,6 +197,11 @@ export class Compositor {
   /** Get the animation engine instance */
   get animationEngine(): AnimationEngine {
     return this.animation;
+  }
+
+  /** Get the sound engine instance */
+  get soundEngine(): SoundEngine {
+    return this.sound;
   }
 
   /** Register callback for focus changes */
@@ -352,6 +363,9 @@ export class Compositor {
     this.animation.entrance(el);
     this.animateRelayout(snapshots.filter((s) => s.id !== id));
 
+    // Sound: window create
+    this.sound.play('window.create');
+
     // Spawn PTY
     try {
       const sessionId = await invoke<number>('spawn_pty', {
@@ -401,6 +415,9 @@ export class Compositor {
       termInfo.terminal.dispose();
       this.terminals.delete(id);
     }
+
+    // Sound: window close
+    this.sound.play('window.close');
 
     // Play exit animation, then remove from DOM
     await this.animation.exit(win.element);
@@ -461,6 +478,10 @@ export class Compositor {
   focusWindow(id: WindowId): void {
     if (!this.windows.has(id)) return;
     const previousId = this.focusedWindowId;
+
+    if (previousId !== id) {
+      this.sound.play('window.focus');
+    }
 
     this.focusWindowQuiet(id);
 
@@ -656,6 +677,7 @@ export class Compositor {
 
   /** Toggle between Grid and Focus layout modes, then relayout */
   async toggleFocusLayout(): Promise<void> {
+    this.sound.play('layout.toggle');
     const snapshots = this.snapshotBounds();
     this.layoutMode =
       this.layoutMode === LayoutMode.Grid ? LayoutMode.Focus : LayoutMode.Grid;
@@ -684,6 +706,8 @@ export class Compositor {
     const snapshots = this.snapshotBounds();
 
     if (this.maximizedWindowId === this.focusedWindowId) {
+      // Sound: window restore
+      this.sound.play('window.restore');
       // Restore: un-maximize, show all windows, relayout
       this.maximizedWindowId = null;
       this.showAllWindows();
@@ -692,6 +716,8 @@ export class Compositor {
       this.fitAll();
       this.animateRelayout(snapshots);
     } else {
+      // Sound: window maximize
+      this.sound.play('window.maximize');
       // Maximize: hide other windows, expand focused to fill workspace area
       this.maximizedWindowId = this.focusedWindowId;
       const win = this.windows.get(this.focusedWindowId);
@@ -752,6 +778,7 @@ export class Compositor {
   /** Show the Quick Terminal (lazy-creates PTY on first call) */
   private async showQuickTerminal(): Promise<void> {
     if (this.qtVisible) return;
+    this.sound.play('quick_terminal.show');
 
     // Save currently focused workspace window for restoration
     this.qtSavedFocusId = this.focusedWindowId;
@@ -815,6 +842,7 @@ export class Compositor {
   /** Hide the Quick Terminal and restore previous focus */
   private async hideQuickTerminal(): Promise<void> {
     if (!this.qtVisible || !this.qtElement) return;
+    this.sound.play('quick_terminal.hide');
 
     // Animate slide-up + fade-out
     const duration = this.qtConfig.animationDuration;
@@ -1295,6 +1323,11 @@ export class Compositor {
     listen<[number, number[]]>('pty-output', (event) => {
       const [sid, data] = event.payload;
 
+      // Detect BEL character (\x07) for terminal bell sound
+      if (data.includes(7)) {
+        this.sound.play('terminal.bell');
+      }
+
       // Check Quick Terminal first
       if (this.qtSessionId === sid && this.qtTerminal) {
         this.qtTerminal.terminal.write(new Uint8Array(data));
@@ -1318,6 +1351,7 @@ export class Compositor {
       // Quick Terminal PTY exited — hide, clean up, recreate on next toggle
       if (this.qtSessionId === sid) {
         this.qtSessionId = null;
+        this.sound.play('terminal.exit');
         this.destroyQuickTerminal();
         return;
       }
@@ -1325,6 +1359,7 @@ export class Compositor {
       for (const [wid, win] of this.windows) {
         if (win.sessionId === sid) {
           win.sessionId = null;
+          this.sound.play('terminal.exit');
           this.closeWindow(wid);
           break;
         }

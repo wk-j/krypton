@@ -69,6 +69,13 @@ export interface WorkspacesConfig {
   move_step_large: number;
 }
 
+export interface SoundConfig {
+  enabled: boolean;
+  volume: number;
+  pack: string;
+  events: Record<string, boolean | number>;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -76,6 +83,7 @@ export interface KryptonConfig {
   theme: ThemeConfig;
   quick_terminal: QuickTerminalConfig;
   workspaces: WorkspacesConfig;
+  sound: SoundConfig;
 }
 
 /** Load configuration from the Rust backend */

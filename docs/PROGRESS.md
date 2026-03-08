@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-08 (Sound Effects spec added)
+> Last updated: 2026-03-08 (Sound Effects implementation complete)
 
 ## Overview
 
@@ -13,7 +13,7 @@
 | M4 — Keyboard System & Workspaces | In Progress | 11/14 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 2/9 |
-| M7 — Sound Effects | Not Started | 0/12 |
+| M7 — Sound Effects | In Progress | 11/12 |
 | M8 — Polish | Not Started | 0/6 |
 | M9 — Release | Not Started | 0/4 |
 
@@ -98,18 +98,18 @@
 
 ## M7 — Sound Effects (Week 22-23)
 
-- [ ] Sound engine module (`src/sound.ts`): Web Audio API wrapper with single shared AudioContext
-- [ ] Additive synthesis: multi-oscillator patch builder (sine, square, sawtooth, triangle, noise generators)
-- [ ] Subtractive synthesis: filter chain (lowpass, highpass, bandpass, notch) with cutoff/Q envelopes
-- [ ] ADSR amplitude envelope and pitch envelope automation
-- [ ] FM synthesis support (oscillator-to-oscillator frequency modulation)
-- [ ] Effects chain: reverb, delay, distortion
-- [ ] Master channel: DynamicsCompressorNode limiter + GainNode volume control
-- [ ] Built-in `krypton-cyber` sound pack: patches for all action events
-- [ ] Integration: compositor + input-router call `SoundEngine.play()` at each action point
-- [ ] Configuration: `[sound]` TOML section applied via `applyConfig()`
+- [x] Sound engine module (`src/sound.ts`): Web Audio API wrapper with single shared AudioContext
+- [x] Additive synthesis: multi-oscillator patch builder (sine, square, sawtooth, triangle, noise generators)
+- [x] Subtractive synthesis: filter chain (lowpass, highpass, bandpass, notch) with cutoff/Q envelopes
+- [x] ADSR amplitude envelope and pitch envelope automation
+- [x] FM synthesis support (oscillator-to-oscillator frequency modulation)
+- [x] Effects chain: reverb, delay, distortion
+- [x] Master channel: DynamicsCompressorNode limiter + GainNode volume control
+- [x] Built-in `krypton-cyber` sound pack: patches for all action events
+- [x] Integration: compositor + input-router call `SoundEngine.play()` at each action point
+- [x] Configuration: `[sound]` TOML section applied via `applyConfig()`
 - [ ] Custom sound pack loading from `~/.config/krypton/sounds/*.toml`
-- [ ] Graceful degradation when Web Audio API is unavailable
+- [x] Graceful degradation when Web Audio API is unavailable
 
 ## M8 — Polish (Week 24-27)
 

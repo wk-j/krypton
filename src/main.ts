@@ -48,6 +48,9 @@ async function main(): Promise<void> {
 
   // Create the first terminal window
   await compositor.createWindow();
+
+  // Play startup sound after first window is ready
+  compositor.soundEngine.play('startup');
 }
 
 main().catch(console.error);

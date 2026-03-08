@@ -16,6 +16,7 @@ pub struct KryptonConfig {
     pub theme: ThemeConfig,
     pub quick_terminal: QuickTerminalConfig,
     pub workspaces: WorkspacesConfig,
+    pub sound: SoundConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +96,31 @@ pub struct WorkspacesConfig {
     pub move_step: u32,
     pub resize_step_large: u32,
     pub move_step_large: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SoundConfig {
+    pub enabled: bool,
+    pub volume: f64,
+    pub pack: String,
+    /// Per-event overrides. Values can be:
+    /// - boolean (true = use master volume, false = disabled)
+    /// - float (0.0–1.0 = custom volume for this event)
+    ///
+    /// Represented as `serde_json::Value` to support both bool and float.
+    pub events: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl Default for SoundConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            volume: 0.5,
+            pack: "krypton-cyber".to_string(),
+            events: std::collections::HashMap::new(),
+        }
+    }
 }
 
 // ─── Defaults ──────────────────────────────────────────────────────
