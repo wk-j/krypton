@@ -13,6 +13,7 @@ export enum Mode {
   Resize = 'Resize',
   Move = 'Move',
   Swap = 'Swap',
+  Selection = 'Selection',
 }
 
 /** Layout strategy for tiling windows */

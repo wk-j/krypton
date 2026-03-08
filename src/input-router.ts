@@ -6,6 +6,7 @@
 
 import { Mode } from './types';
 import { Compositor } from './compositor';
+import { SelectionController } from './selection';
 
 /** Callback for mode changes */
 type ModeChangeCallback = (mode: Mode) => void;
@@ -14,6 +15,7 @@ export class InputRouter {
   private mode: Mode = Mode.Normal;
   private compositor: Compositor;
   private modeChangeCallbacks: ModeChangeCallback[] = [];
+  private selection: SelectionController = new SelectionController();
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
@@ -158,7 +160,11 @@ export class InputRouter {
       if (e.key === 'Escape' && this.mode !== Mode.Normal) {
         e.preventDefault();
         e.stopPropagation();
-        this.toNormal();
+        if (this.mode === Mode.Selection) {
+          this.exitSelectionMode();
+        } else {
+          this.toNormal();
+        }
         return;
       }
 
@@ -199,6 +205,9 @@ export class InputRouter {
           break;
         case Mode.Swap:
           this.handleSwapKey(e);
+          break;
+        case Mode.Selection:
+          this.handleSelectionKey(e);
           break;
       }
     }, true);
@@ -280,10 +289,32 @@ export class InputRouter {
         this.setMode(Mode.Move);
         break;
 
+      // Enter Selection mode (character-wise)
+      case 'v':
+        this.enterSelectionMode(e.shiftKey);
+        break;
+
       default:
         this.toNormal();
         break;
     }
+  }
+
+  /** Enter Selection mode, optionally line-wise (Shift+V) */
+  private enterSelectionMode(lineWise: boolean): void {
+    const terminal = this.compositor.getActiveTerminal();
+    if (!terminal) {
+      this.toNormal();
+      return;
+    }
+    this.selection.enter(terminal, lineWise);
+    this.setMode(Mode.Selection);
+  }
+
+  /** Exit Selection mode and clean up */
+  private exitSelectionMode(): void {
+    this.selection.exit();
+    this.toNormal();
   }
 
   // ─── Resize Mode ─────────────────────────────────────────────────
@@ -381,6 +412,102 @@ export class InputRouter {
         break;
       default:
         this.toNormal();
+        break;
+    }
+  }
+
+  // ─── Selection Mode ────────────────────────────────────────────
+
+  private handleSelectionKey(e: KeyboardEvent): void {
+    const key = e.key;
+
+    // Ctrl+u / Ctrl+d — half page scroll
+    if (e.ctrlKey) {
+      switch (key) {
+        case 'u':
+          this.selection.halfPageUp();
+          return;
+        case 'd':
+          this.selection.halfPageDown();
+          return;
+      }
+    }
+
+    switch (key) {
+      // Movement
+      case 'h':
+      case 'ArrowLeft':
+        this.selection.moveLeft();
+        break;
+      case 'j':
+      case 'ArrowDown':
+        this.selection.moveDown();
+        break;
+      case 'k':
+      case 'ArrowUp':
+        this.selection.moveUp();
+        break;
+      case 'l':
+      case 'ArrowRight':
+        this.selection.moveRight();
+        break;
+
+      // Word motions
+      case 'w':
+        this.selection.wordForward();
+        break;
+      case 'b':
+        this.selection.wordBack();
+        break;
+      case 'e':
+        this.selection.wordEnd();
+        break;
+
+      // Line start/end
+      case '0':
+        this.selection.lineStart();
+        break;
+      case '$':
+        this.selection.lineEnd();
+        break;
+
+      // Buffer top/bottom
+      case 'g':
+        this.selection.handleG();
+        break;
+      case 'G':
+        this.selection.bufferBottom();
+        break;
+
+      // Selection toggles
+      case 'v':
+        if (e.shiftKey) {
+          this.selection.toggleLineSelect();
+        } else {
+          this.selection.toggleCharSelect();
+        }
+        break;
+      case 'V':
+        this.selection.toggleLineSelect();
+        break;
+
+      // Yank (copy)
+      case 'y':
+        this.selection.yank().then((copied) => {
+          if (copied) {
+            this.compositor.soundEngine.play('mode.exit');
+          }
+          this.exitSelectionMode();
+        });
+        break;
+
+      // Escape handled by the main handler above, but just in case:
+      case 'Escape':
+        this.exitSelectionMode();
+        break;
+
+      default:
+        // Unknown keys are ignored — stay in Selection mode
         break;
     }
   }

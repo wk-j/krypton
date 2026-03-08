@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-08 (Theme engine: hot-reload, CSS custom properties, built-in theme loading)
+> Last updated: 2026-03-08 (Selection mode: vim-like keyboard text selection)
 
 ## Overview
 
@@ -14,7 +14,7 @@
 | M5 — Tabs & Panes | Not Started | 0/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 6/9 |
 | M7 — Sound Effects | In Progress | 13/14 |
-| M8 — Polish | Not Started | 0/6 |
+| M8 — Polish | In Progress | 1/7 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -114,6 +114,7 @@
 
 ## M8 — Polish (Week 24-27)
 
+- [x] Vim-like Selection mode (`src/selection.ts`) — keyboard-driven text selection with virtual cursor, h/j/k/l/w/b/e/0/$/gg/G navigation, v (char-wise) and V (line-wise) visual selection, y to yank to clipboard. Enter via `Leader v` or `Leader V`
 - [ ] `@xterm/addon-search` integration with keyboard-driven search overlay
 - [ ] URL detection with keyboard-driven link opening
 - [ ] IME support testing and fixes

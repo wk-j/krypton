@@ -227,6 +227,18 @@ html, body {
   background: transparent;
 }
 
+/* ─── Selection Mode — virtual cursor overlay ─── */
+.krypton-selection-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--krypton-focused-accent, #0cf);
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 3;
+  transition: transform 50ms ease;
+}
+
 .krypton-window__body .xterm {
   height: 100%;
   padding: 4px 6px;

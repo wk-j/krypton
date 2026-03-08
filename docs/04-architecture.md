@@ -285,6 +285,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 | **Compositor** | Leader key (`Cmd+P`) | Keypresses interpreted as compositor commands (focus window, toggle layout, switch workspace, open command palette) | Auto-exits after one action, or `Escape` to cancel |
 | **Resize** | `Leader` then `R` | Arrow keys resize the focused window; step size configurable | `Escape` or `Enter` to confirm |
 | **Move** | `Leader` then `M` | Arrow keys reposition the focused window | `Escape` or `Enter` to confirm |
+| **Selection** | `Leader` then `v` or `V` | Vim-like keyboard text selection — virtual cursor navigates buffer with h/j/k/l/w/b/e/0/$, `v` toggles char-wise selection, `V` toggles line-wise, `y` yanks to clipboard | `Escape` to cancel, `y` to yank and exit |
 | **Command Palette** | `CmdOrCtrl+Shift+P` | Text input filters the action list; Enter executes; Escape closes | `Escape` or action execution |
 | **Search** | `CmdOrCtrl+F` | Text input searches scrollback in the focused window | `Escape` to close |
 

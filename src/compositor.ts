@@ -738,6 +738,22 @@ export class Compositor {
     }
   }
 
+  /**
+   * Get the active (focused) terminal's xterm.js Terminal instance.
+   * Returns the Quick Terminal's instance if it's focused, otherwise
+   * the focused workspace window's terminal. Used by SelectionController.
+   */
+  getActiveTerminal(): Terminal | null {
+    if (this.qtVisible && this.qtTerminal) {
+      return this.qtTerminal.terminal;
+    }
+    if (this.focusedWindowId) {
+      const termInfo = this.terminals.get(this.focusedWindowId);
+      if (termInfo) return termInfo.terminal;
+    }
+    return null;
+  }
+
   /** Refocus the terminal of the currently focused window */
   refocusTerminal(): void {
     if (this.focusedWindowId) {

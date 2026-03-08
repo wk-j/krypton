@@ -24,6 +24,8 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: 'm', label: 'move mode' },
   { key: 's', label: 'swap mode' },
   { key: 'z', label: 'maximize' },
+  { key: 'v', label: 'select mode' },
+  { key: 'V', label: 'select lines' },
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [
@@ -47,6 +49,19 @@ const SWAP_KEYS: KeyEntry[] = [
   { key: 'l/\u2192', label: 'swap right' },
   { key: 'k/\u2191', label: 'swap up' },
   { key: 'j/\u2193', label: 'swap down' },
+];
+
+const SELECTION_KEYS: KeyEntry[] = [
+  { key: 'h/l', label: 'move left/right' },
+  { key: 'j/k', label: 'move down/up' },
+  { key: 'w/b', label: 'word fwd/back' },
+  { key: 'e', label: 'word end' },
+  { key: '0/$', label: 'line start/end' },
+  { key: 'gg/G', label: 'buffer top/bottom' },
+  { key: 'v', label: 'toggle char select' },
+  { key: 'V', label: 'toggle line select' },
+  { key: 'y', label: 'yank to clipboard' },
+  { key: 'Esc', label: 'exit' },
 ];
 
 export class WhichKey {
@@ -103,6 +118,10 @@ export class WhichKey {
       case Mode.Swap:
         entries = SWAP_KEYS;
         titleText = 'Swap';
+        break;
+      case Mode.Selection:
+        entries = SELECTION_KEYS;
+        titleText = 'Selection';
         break;
       default:
         this.hide();

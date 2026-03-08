@@ -119,10 +119,10 @@ krypton/
 
 ### Rust (src-tauri/Cargo.toml)
 - `tauri` — App framework + IPC
-- `portable-pty` — Cross-platform PTY (to be added)
+- `portable-pty` — Cross-platform PTY allocation and management
 - `serde` / `serde_json` / `toml` — Serialization
 - `log` / `tauri-plugin-log` — Logging
-- `notify` — Filesystem watcher for hot-reload (to be added)
+- `notify` — Filesystem watcher for config/theme hot-reload
 
 ### Frontend (package.json)
 - `@xterm/xterm` + addons (`webgl`, `fit`, `search`, `web-links`, `unicode11`) — Terminal rendering
@@ -138,3 +138,20 @@ krypton/
 - `docs/06-configuration.md` — Full TOML config reference with examples
 - `docs/07-milestones.md` — Detailed deliverables per milestone
 - Treat docs as the authoritative spec. If implementation diverges from spec, update the docs
+
+## Design-First Workflow
+
+**Before writing any code** for a new feature or significant improvement, you MUST:
+
+1. **Write an implementation spec** at `docs/<NN>-<feature-name>.md`
+2. **Present it to the user** with a summary of key decisions
+3. **Wait for explicit approval** before writing any code
+4. Only after approval: implement, then update the spec status to "Implemented"
+
+This is enforced by the `design-first` skill in `.agents/skills/design-first/SKILL.md`. Load this skill when starting any new feature work.
+
+**Exceptions** (spec not required):
+- Bug fixes where the fix is obvious
+- One-line changes
+- Documentation-only changes
+- User explicitly says "just do it" or "skip the spec"
