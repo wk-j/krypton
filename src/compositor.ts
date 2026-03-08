@@ -67,6 +67,11 @@ export class Compositor {
   private onFocusChangeCallbacks: Array<(id: WindowId | null) => void> = [];
   private customKeyHandler: CustomKeyHandler | null = null;
   private layoutMode: LayoutMode = LayoutMode.Focus;
+  /** Visual order of window IDs after the last Focus layout relayout.
+   *  Index 0 = left (main) column, 1..N = top-to-bottom right stack. */
+  private focusVisualOrder: WindowId[] = [];
+  /** When a window is maximized, store its ID here. Only one window can be maximized at a time. */
+  private maximizedWindowId: WindowId | null = null;
 
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
@@ -119,6 +124,12 @@ export class Compositor {
 
   /** Create a new terminal window, spawn a PTY, and add it to the layout */
   async createWindow(): Promise<WindowId> {
+    // Exit maximize mode when creating a new window
+    if (this.maximizedWindowId) {
+      this.maximizedWindowId = null;
+      this.showAllWindows();
+    }
+
     // Inherit cwd from the focused window
     const cwd = await this.getFocusedCwd();
     const id = nextWindowId();
@@ -271,6 +282,12 @@ export class Compositor {
     const win = this.windows.get(id);
     if (!win) return;
 
+    // Exit maximize mode if the maximized window is being closed
+    if (this.maximizedWindowId === id) {
+      this.maximizedWindowId = null;
+      this.showAllWindows();
+    }
+
     const termInfo = this.terminals.get(id);
     if (termInfo) {
       termInfo.terminal.dispose();
@@ -344,21 +361,72 @@ export class Compositor {
 
   /** Focus window by direction relative to current focused window */
   focusDirection(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (!this.focusedWindowId || this.windows.size <= 1) return;
+    const bestId = this.findWindowInDirection(this.focusedWindowId, direction);
+    if (bestId) {
+      this.focusWindow(bestId);
+    }
+  }
+
+  /** Focus window by index (1-based) */
+  focusByIndex(index: number): void {
+    const ids = this.windowIds;
+    if (index >= 1 && index <= ids.length) {
+      this.focusWindow(ids[index - 1]);
+    }
+  }
+
+  /**
+   * Swap the focused window with the nearest window in the given direction.
+   * The two windows exchange their positions in the layout. Focus stays on
+   * the originally focused window (now at the target's old position).
+   */
+  swapInDirection(direction: 'left' | 'down' | 'up' | 'right'): void {
     if (!this.focusedWindowId) return;
     const current = this.windows.get(this.focusedWindowId);
     if (!current) return;
+    if (this.windows.size <= 1) return;
+
+    // Find nearest window in the given direction (same algorithm as focusDirection)
+    const targetId = this.findWindowInDirection(this.focusedWindowId, direction);
+    if (!targetId) return;
+
+    // Swap positions in the Map by rebuilding insertion order.
+    // This swaps where each window appears in creation-order iteration,
+    // which determines their layout slot assignment.
+    const entries = Array.from(this.windows.entries());
+    const idxA = entries.findIndex(([id]) => id === this.focusedWindowId);
+    const idxB = entries.findIndex(([id]) => id === targetId);
+
+    // Swap the entries
+    const tmp = entries[idxA];
+    entries[idxA] = entries[idxB];
+    entries[idxB] = tmp;
+
+    // Rebuild the map in the new order
+    this.windows = new Map(entries);
+
+    // Relayout and refit
+    this.relayout();
+    this.fitAll();
+  }
+
+  /**
+   * Find the nearest window in a direction from a given source window.
+   * Returns the window ID or null if none found.
+   */
+  private findWindowInDirection(sourceId: WindowId, direction: 'left' | 'down' | 'up' | 'right'): WindowId | null {
+    const source = this.windows.get(sourceId);
+    if (!source) return null;
 
     const ids = this.windowIds;
-    if (ids.length <= 1) return;
-
-    // Find best candidate using actual pixel bounds (center-to-center)
     let bestId: WindowId | null = null;
     let bestDist = Infinity;
-    const curCx = current.bounds.x + current.bounds.width / 2;
-    const curCy = current.bounds.y + current.bounds.height / 2;
+    const curCx = source.bounds.x + source.bounds.width / 2;
+    const curCy = source.bounds.y + source.bounds.height / 2;
 
     for (const [id, win] of this.windows) {
-      if (id === this.focusedWindowId) continue;
+      if (id === sourceId) continue;
       const cx = win.bounds.x + win.bounds.width / 2;
       const cy = win.bounds.y + win.bounds.height / 2;
 
@@ -392,7 +460,7 @@ export class Compositor {
 
     // Wrap around if nothing found in that direction
     if (!bestId) {
-      const currentIdx = ids.indexOf(this.focusedWindowId);
+      const currentIdx = ids.indexOf(sourceId);
       switch (direction) {
         case 'right':
         case 'down':
@@ -405,16 +473,34 @@ export class Compositor {
       }
     }
 
-    if (bestId) {
-      this.focusWindow(bestId);
-    }
+    return bestId;
   }
 
-  /** Focus window by index (1-based) */
-  focusByIndex(index: number): void {
-    const ids = this.windowIds;
-    if (index >= 1 && index <= ids.length) {
-      this.focusWindow(ids[index - 1]);
+  /**
+   * Cycle focus through windows. direction: 1 = next, -1 = previous.
+   *
+   * In Focus layout, cycling follows the visual stack order:
+   *   index 0 = left (main) column, 1..N = top-to-bottom in the right stack.
+   * Pressing "next" (Cmd+Shift+.) goes: left -> top of right stack -> downward -> wrap to left.
+   * Pressing "prev" (Cmd+Shift+,) goes the opposite direction.
+   *
+   * In Grid layout, cycling follows creation order.
+   */
+  focusCycle(direction: 1 | -1): void {
+    if (this.windows.size <= 1) return;
+
+    if (this.layoutMode === LayoutMode.Focus && this.focusVisualOrder.length > 1) {
+      // Use the visual order captured during the last relayout.
+      const order = this.focusVisualOrder;
+      const currentIdx = this.focusedWindowId ? order.indexOf(this.focusedWindowId) : 0;
+      const nextIdx = (currentIdx + direction + order.length) % order.length;
+      this.focusWindow(order[nextIdx]);
+    } else {
+      // Grid layout: cycle by creation order.
+      const ids = this.windowIds;
+      const currentIdx = this.focusedWindowId ? ids.indexOf(this.focusedWindowId) : 0;
+      const nextIdx = (currentIdx + direction + ids.length) % ids.length;
+      this.focusWindow(ids[nextIdx]);
     }
   }
 
@@ -437,9 +523,67 @@ export class Compositor {
   async toggleFocusLayout(): Promise<void> {
     this.layoutMode =
       this.layoutMode === LayoutMode.Grid ? LayoutMode.Focus : LayoutMode.Grid;
+    // Exit maximize when switching layout
+    this.maximizedWindowId = null;
+    this.showAllWindows();
     this.relayout();
     await this.nextFrame();
     this.fitAll();
+  }
+
+  /** Whether a window is currently maximized */
+  get isMaximized(): boolean {
+    return this.maximizedWindowId !== null;
+  }
+
+  /**
+   * Toggle maximize on the focused window.
+   * When maximized, the window fills the workspace area and all other windows are hidden.
+   * Pressing again restores the normal layout.
+   */
+  async toggleMaximize(): Promise<void> {
+    if (!this.focusedWindowId) return;
+
+    if (this.maximizedWindowId === this.focusedWindowId) {
+      // Restore: un-maximize, show all windows, relayout
+      this.maximizedWindowId = null;
+      this.showAllWindows();
+      this.relayout();
+      await this.nextFrame();
+      this.fitAll();
+    } else {
+      // Maximize: hide other windows, expand focused to fill workspace area
+      this.maximizedWindowId = this.focusedWindowId;
+      const win = this.windows.get(this.focusedWindowId);
+      if (!win) return;
+
+      // Hide all other windows
+      for (const [id, w] of this.windows) {
+        if (id !== this.focusedWindowId) {
+          w.element.style.display = 'none';
+        }
+      }
+
+      // Expand to workspace area
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const totalW = Math.round(vw * Compositor.MULTI_WIDTH_RATIO);
+      const totalH = Math.round(vh * Compositor.MULTI_HEIGHT_RATIO);
+      const offsetX = Math.round((vw - totalW) / 2);
+      const offsetY = Math.round((vh - totalH) / 2);
+
+      win.bounds = { x: offsetX, y: offsetY, width: totalW, height: totalH };
+      this.applyBounds(win);
+      await this.nextFrame();
+      this.fitWindow(this.focusedWindowId);
+    }
+  }
+
+  /** Show all windows (restore display after maximize) */
+  private showAllWindows(): void {
+    for (const [, win] of this.windows) {
+      win.element.style.display = '';
+    }
   }
 
   // ─── Resize & Move ───────────────────────────────────────────────
@@ -591,11 +735,15 @@ export class Compositor {
     const cellW = (totalW - gap * (gridCols - 1)) / gridCols;
     const cellH = (totalH - gap * (gridRows - 1)) / gridRows;
 
+    // Build the visual order (window IDs in layout position order)
+    // and apply bounds for each window.
+    this.focusVisualOrder = [];
     for (let i = 0; i < order.length; i++) {
       const winId = ids[order[i]];
       const win = this.windows.get(winId);
       if (!win || i >= slots.length) continue;
 
+      this.focusVisualOrder.push(winId);
       const slot = slots[i];
       win.gridSlot = slot;
       win.bounds = {

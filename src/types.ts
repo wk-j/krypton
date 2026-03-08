@@ -12,6 +12,7 @@ export enum Mode {
   Compositor = 'Compositor',
   Resize = 'Resize',
   Move = 'Move',
+  Swap = 'Swap',
 }
 
 /** Layout strategy for tiling windows */

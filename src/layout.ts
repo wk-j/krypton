@@ -122,6 +122,14 @@ export function autoTile(count: number): { slots: GridSlot[]; gridCols: number; 
  * Focus layout: the focused window takes the left column at full height,
  * remaining windows stack vertically on the right column.
  *
+ * The right-side stack is ordered so that the windows following the focused
+ * window in creation order appear first (top to bottom), wrapping around.
+ * This means "cycle next" always picks the topmost window in the right stack,
+ * giving a predictable top-to-bottom visual cycling experience.
+ *
+ * Example with 4 windows (0,1,2,3), focus on 1:
+ *   Left: 1 | Right stack top-to-bottom: 2, 3, 0
+ *
  * @param count - Total number of windows
  * @param focusIndex - Index of the focused window (0-based, in window creation order)
  * @returns Grid slots where index 0 is the focused (left) window, rest are stacked right
@@ -147,12 +155,13 @@ export function focusTile(
   const gridRows = stackCount;
   const gridCols = 2;
 
-  // Build the order: focused window first (gets the left column), then the rest
+  // Build the order: focused window first (left column), then the remaining
+  // windows starting from focusIndex+1 and wrapping around. This ensures the
+  // right-side stack matches the forward-cycle order so pressing "next"
+  // always selects the topmost right-stack window.
   const order: number[] = [focusIndex];
-  for (let i = 0; i < count; i++) {
-    if (i !== focusIndex) {
-      order.push(i);
-    }
+  for (let offset = 1; offset < count; offset++) {
+    order.push((focusIndex + offset) % count);
   }
 
   const slots: GridSlot[] = [];

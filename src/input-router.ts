@@ -39,6 +39,10 @@ export class InputRouter {
       if (InputRouter.isLeaderKey(e)) {
         return false;
       }
+      // Prevent xterm from consuming global focus-cycle shortcuts
+      if (e.metaKey && e.shiftKey && (e.code === 'Comma' || e.code === 'Period')) {
+        return false;
+      }
       if (this.mode !== Mode.Normal) {
         return false;
       }
@@ -74,6 +78,16 @@ export class InputRouter {
       // Debug: log all key events when not in Normal mode, or modifier combos
       if (this.mode !== Mode.Normal || e.ctrlKey || e.metaKey) {
         console.log(`[InputRouter] mode=${this.mode} key="${e.key}" code="${e.code}" ctrl=${e.ctrlKey} meta=${e.metaKey} alt=${e.altKey}`);
+      }
+
+      // Global: Cmd+Shift+< cycle focus previous (counterclockwise)
+      // Global: Cmd+Shift+> cycle focus next (clockwise)
+      // Match on code (Comma/Period) since key value varies with Cmd held on macOS
+      if (e.metaKey && e.shiftKey && (e.code === 'Comma' || e.code === 'Period')) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.compositor.focusCycle(e.code === 'Period' ? 1 : -1);
+        return;
       }
 
       // Leader key: Cmd+P
@@ -114,6 +128,9 @@ export class InputRouter {
           break;
         case Mode.Move:
           this.handleMoveKey(e);
+          break;
+        case Mode.Swap:
+          this.handleSwapKey(e);
           break;
       }
     }, true);
@@ -175,9 +192,19 @@ export class InputRouter {
         this.compositor.toggleFocusLayout().then(() => this.toNormal());
         break;
 
+      // Toggle maximize
+      case 'z':
+        this.compositor.toggleMaximize().then(() => this.toNormal());
+        break;
+
       // Enter Resize mode
       case 'r':
         this.setMode(Mode.Resize);
+        break;
+
+      // Enter Swap mode
+      case 's':
+        this.setMode(Mode.Swap);
         break;
 
       // Enter Move mode
@@ -244,6 +271,36 @@ export class InputRouter {
         this.toNormal();
         break;
       default:
+        break;
+    }
+  }
+
+  // ─── Swap Mode ──────────────────────────────────────────────────
+
+  private handleSwapKey(e: KeyboardEvent): void {
+    switch (e.key) {
+      case 'ArrowLeft':
+      case 'h':
+        this.compositor.swapInDirection('left');
+        this.toNormal();
+        break;
+      case 'ArrowRight':
+      case 'l':
+        this.compositor.swapInDirection('right');
+        this.toNormal();
+        break;
+      case 'ArrowUp':
+      case 'k':
+        this.compositor.swapInDirection('up');
+        this.toNormal();
+        break;
+      case 'ArrowDown':
+      case 'j':
+        this.compositor.swapInDirection('down');
+        this.toNormal();
+        break;
+      default:
+        this.toNormal();
         break;
     }
   }

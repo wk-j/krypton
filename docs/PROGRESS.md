@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-07 (Focus Layout feature added)
+> Last updated: 2026-03-08 (Window swap, maximize, focus cycling fix)
 
 ## Overview
 
@@ -10,7 +10,7 @@
 | M1 — Single Session | Complete | 6/6 |
 | M2 — xterm.js Integration | Complete | 5/5 |
 | M3 — Compositor & Windows | In Progress | 8/10 |
-| M4 — Keyboard System & Workspaces | In Progress | 3/13 |
+| M4 — Keyboard System & Workspaces | In Progress | 7/13 |
 | M5 — Tabs & Panes | Not Started | 0/6 |
 | M6 — Config, Theming & Custom Themes | Not Started | 0/9 |
 | M7 — Polish | Not Started | 0/6 |
@@ -58,12 +58,12 @@
 
 ## M4 — Keyboard System & Workspaces (Week 12-15)
 
-- [x] Implement Input Router with mode system (Normal, Compositor, Resize, Move)
+- [x] Implement Input Router with mode system (Normal, Compositor, Resize, Move, Swap)
 - [x] Leader key activation and single-action compositor mode
-- [ ] Resize mode: arrow keys resize focused window, step size configurable
-- [ ] Move mode: arrow keys reposition focused window
-- [ ] Window swap via keyboard
-- [ ] Window maximize/restore via keyboard
+- [x] Resize mode: arrow keys resize focused window, step size configurable
+- [x] Move mode: arrow keys reposition focused window
+- [x] Window swap via keyboard (Leader+s then direction h/j/k/l)
+- [x] Window maximize/restore via keyboard (Leader+z toggle)
 - [ ] Command palette: fuzzy search over all actions, display keybindings
 - [ ] Workspace switching via hotkeys (`CmdOrCtrl+1/2/3`, next/prev)
 - [ ] Animation engine: slide, crossfade, morph workspace transitions

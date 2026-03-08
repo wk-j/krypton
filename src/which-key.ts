@@ -22,6 +22,8 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: 'f', label: 'focus layout' },
   { key: 'r', label: 'resize mode' },
   { key: 'm', label: 'move mode' },
+  { key: 's', label: 'swap mode' },
+  { key: 'z', label: 'maximize' },
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [
@@ -38,6 +40,13 @@ const MOVE_KEYS: KeyEntry[] = [
   { key: '\u2191', label: 'move up' },
   { key: '\u2193', label: 'move down' },
   { key: 'Esc', label: 'done' },
+];
+
+const SWAP_KEYS: KeyEntry[] = [
+  { key: 'h/\u2190', label: 'swap left' },
+  { key: 'l/\u2192', label: 'swap right' },
+  { key: 'k/\u2191', label: 'swap up' },
+  { key: 'j/\u2193', label: 'swap down' },
 ];
 
 export class WhichKey {
@@ -90,6 +99,10 @@ export class WhichKey {
       case Mode.Move:
         entries = MOVE_KEYS;
         titleText = 'Move';
+        break;
+      case Mode.Swap:
+        entries = SWAP_KEYS;
+        titleText = 'Swap';
         break;
       default:
         this.hide();
