@@ -293,6 +293,9 @@ export class Compositor {
           data: Array.from(encoder.encode(data)),
         }).catch((e: unknown) => console.error('Write to PTY failed:', e));
       }
+    });
+    // Keypress sound on actual keyboard input only (not mouse reporting)
+    pane.terminal.onKey(() => {
       this.sound.playKeypress('press');
       setTimeout(() => this.sound.playKeypress('release'), 30 + Math.random() * 40);
     });
@@ -1465,6 +1468,28 @@ export class Compositor {
     }
   }
 
+  /** Cycle pane focus forward (+1) or backward (-1) within the active tab */
+  cyclePaneFocus(direction: -1 | 1): void {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win || win.tabs.length === 0) return;
+
+    const tab = win.tabs[win.activeTabIndex];
+    const panes = this.collectPanes(tab.paneTree);
+    if (panes.length <= 1) return;
+
+    const currentIndex = panes.findIndex(p => p.id === tab.focusedPaneId);
+    if (currentIndex === -1) return;
+
+    const nextIndex = (currentIndex + direction + panes.length) % panes.length;
+    const nextPane = panes[nextIndex];
+
+    tab.focusedPaneId = nextPane.id;
+    nextPane.terminal.focus();
+    this.updatePaneFocusIndicator(tab);
+    this.sound.play('pane.focus');
+  }
+
   /** Update the visual pane focus indicator within a tab */
   private updatePaneFocusIndicator(tab: Tab): void {
     const panes = this.collectPanes(tab.paneTree);
@@ -1756,7 +1781,9 @@ export class Compositor {
           data: Array.from(encoder.encode(data)),
         }).catch((e) => console.error('QT write to PTY failed:', e));
       }
-      // Keypress sound: press on input, release after short delay
+    });
+    // Keypress sound on actual keyboard input only (not mouse reporting)
+    terminal.onKey(() => {
       this.sound.playKeypress('press');
       setTimeout(() => this.sound.playKeypress('release'), 30 + Math.random() * 40);
     });

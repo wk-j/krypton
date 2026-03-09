@@ -67,11 +67,18 @@ export class InputRouter {
       if (InputRouter.isHintKey(e)) {
         return false;
       }
-      // Prevent xterm from consuming Escape when Quick Terminal is focused
-      // (so input-router can hide it)
-      if (e.key === 'Escape' && this.compositor.isQuickTerminalFocused && this.mode === Mode.Normal) {
+      // Prevent xterm from consuming Cmd+Shift+[ / Cmd+Shift+] (tab switching)
+      // and Cmd+[ / Cmd+] (pane cycling)
+      if (e.metaKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
         return false;
       }
+      // Prevent xterm from consuming Cmd+T (new tab) and Cmd+N (new window)
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey &&
+          (e.code === 'KeyT' || e.code === 'KeyN')) {
+        return false;
+      }
+      // Let xterm handle Escape normally in the Quick Terminal
+      // (needed for apps like vim/helix). Use Cmd+I to toggle instead.
       if (this.mode !== Mode.Normal) {
         return false;
       }
@@ -197,19 +204,47 @@ export class InputRouter {
         return;
       }
 
-      // Escape in Normal mode: hide Quick Terminal if it's focused
-      if (e.key === 'Escape' && this.mode === Mode.Normal && this.compositor.isQuickTerminalFocused) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.compositor.toggleQuickTerminal();
-        return;
-      }
+      // Quick Terminal is dismissed via Cmd+I (not Escape), so terminal apps
+      // like vim/helix can use Escape without conflict.
 
       // Ctrl+Shift+U/D — scroll terminal buffer up/down by one page
       if (e.ctrlKey && e.shiftKey && (e.code === 'KeyU' || e.code === 'KeyD')) {
         e.preventDefault();
         e.stopPropagation();
         this.compositor.scrollPages(e.code === 'KeyU' ? -1 : 1);
+        return;
+      }
+
+      // Global: Cmd+Shift+[ — previous tab, Cmd+Shift+] — next tab
+      if (e.metaKey && e.shiftKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.compositor.switchTab(e.code === 'BracketLeft' ? -1 : 1);
+        return;
+      }
+
+      // Global: Cmd+[ — previous pane, Cmd+] — next pane
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey &&
+          (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.compositor.cyclePaneFocus(e.code === 'BracketLeft' ? -1 : 1);
+        return;
+      }
+
+      // Global: Cmd+T — new tab
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.code === 'KeyT') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.compositor.createTab();
+        return;
+      }
+
+      // Global: Cmd+N — new window
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.code === 'KeyN') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.compositor.createWindow();
         return;
       }
 
