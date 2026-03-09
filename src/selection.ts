@@ -48,9 +48,13 @@ export class SelectionController {
     this.anchor = null;
     this.gPending = false;
 
-    // Find the terminal body element (parent of the xterm container)
+    // Find the positioned container that holds the xterm element.
+    // For regular panes this is .krypton-pane (position: relative),
+    // for the quick terminal it's .krypton-window__body.
     const xtermEl = terminal.element;
-    this.terminalBody = xtermEl?.closest('.krypton-window__body') as HTMLElement ?? null;
+    this.terminalBody = xtermEl?.closest('.krypton-pane') as HTMLElement
+      ?? xtermEl?.closest('.krypton-window__body') as HTMLElement
+      ?? null;
 
     // Initialize cursor at the terminal's current cursor position
     const buf = terminal.buffer.active;

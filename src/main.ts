@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { Compositor } from './compositor';
 import { InputRouter } from './input-router';
 import { WhichKey } from './which-key';
+import { CommandPalette } from './command-palette';
 import { loadConfig } from './config';
 import { FrontendThemeEngine } from './theme';
 
@@ -58,6 +59,10 @@ async function main(): Promise<void> {
 
   // Wire the custom key handler so xterm.js yields control to InputRouter
   compositor.setCustomKeyHandler(inputRouter.customKeyHandler);
+
+  // Initialize command palette
+  const commandPalette = new CommandPalette(compositor);
+  inputRouter.setCommandPalette(commandPalette);
 
   // Initialize which-key popup (shows available keys per mode)
   const whichKey = new WhichKey();

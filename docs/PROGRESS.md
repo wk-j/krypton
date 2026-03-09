@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-09 (M5: Tabs & Panes — tab bar, pane splits, keyboard navigation)
+> Last updated: 2026-03-09 (M4: Command palette — fuzzy search, action registry, Cmd+Shift+P)
 
 ## Overview
 
@@ -9,8 +9,8 @@
 | M0 — Scaffold | Complete | 5/5 |
 | M1 — Single Session | Complete | 6/6 |
 | M2 — xterm.js Integration | Complete | 5/5 |
-| M3 — Compositor & Windows | In Progress | 8/10 |
-| M4 — Keyboard System & Workspaces | In Progress | 11/14 |
+| M3 — Compositor & Windows | In Progress | 9/11 |
+| M4 — Keyboard System & Workspaces | In Progress | 12/14 |
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 6/9 |
 | M7 — Sound Effects | In Progress | 13/14 |
@@ -55,17 +55,18 @@
 - [x] Window creation/close via keyboard
 - [x] Focus indicator — cyan border glow + box-shadow on focused window, dimmed borders on unfocused
 - [x] Ship built-in workspace presets — Focus Layout: focused window left (full height), remaining stacked right; toggle via `Leader f`
+- [x] Pin windows — `Leader p` toggles pin on focused window; pinned windows stick to right column in Focus layout, skipped during focus cycling; visual indicator (diamond icon) in title bar; pin/unpin sound effects; CSS class `krypton-window--pinned`
 - [ ] Responsive recalculation on screen resolution change — basic version done, needs testing
 
 ## M4 — Keyboard System & Workspaces (Week 12-15)
 
-- [x] Implement Input Router with mode system (Normal, Compositor, Resize, Move, Swap)
+- [x] Implement Input Router with mode system (Normal, Compositor, Resize, Move, Swap, CommandPalette)
 - [x] Leader key activation and single-action compositor mode
 - [x] Resize mode: arrow keys resize focused window, step size configurable
 - [x] Move mode: arrow keys reposition focused window
 - [x] Window swap via keyboard (Leader+s then direction h/j/k/l)
 - [x] Window maximize/restore via keyboard (Leader+z toggle)
-- [ ] Command palette: fuzzy search over all actions, display keybindings
+- [x] Command palette: fuzzy-searchable overlay (`Cmd+Shift+P`) listing all actions with keybindings, fuzzy subsequence matching with score-based ranking, category tags, highlighted match characters. `src/command-palette.ts` module with action registry for Window/Tab/Pane/Layout/Mode/Terminal categories (~35 actions)
 - [ ] Workspace switching via hotkeys (`CmdOrCtrl+1/2/3`, next/prev)
 - [x] Animation engine: morph (bounds transition), slide (horizontal), crossfade (opacity), window entrance/exit effects
 - [x] Configurable animation style, duration, easing (AnimationConfig with AnimationStyle, AnimationEasing, WindowEffect enums)

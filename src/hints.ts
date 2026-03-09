@@ -121,12 +121,13 @@ export class HintController {
     this.terminal = terminal;
     this.typedChars = '';
 
-    // Find the terminal container (.krypton-window__body) for overlay positioning
+    // Find the positioned container for overlay positioning.
+    // For regular panes this is .krypton-pane, for the quick terminal it's .krypton-window__body.
     const xtermEl = terminal.element;
-    console.log('[HintController] enter: xtermEl =', xtermEl);
     if (!xtermEl) return false;
-    this.terminalContainer = xtermEl.closest('.krypton-window__body') as HTMLElement | null;
-    console.log('[HintController] enter: terminalContainer =', this.terminalContainer);
+    this.terminalContainer = xtermEl.closest('.krypton-pane') as HTMLElement
+      ?? xtermEl.closest('.krypton-window__body') as HTMLElement
+      ?? null;
     if (!this.terminalContainer) return false;
 
     // Scan visible buffer for matches

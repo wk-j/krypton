@@ -368,6 +368,10 @@ export class FrontendThemeEngine {
     s('--krypton-palette-bg', theme.ui.command_palette.background);
     s('--krypton-palette-border', theme.ui.command_palette.border);
     s('--krypton-palette-highlight', theme.ui.command_palette.highlight_color);
+    s('--krypton-palette-text', theme.ui.command_palette.text_color);
+    s('--krypton-palette-input-bg', theme.ui.command_palette.input_background);
+    s('--krypton-palette-input-text', theme.ui.command_palette.input_text_color);
+    s('--krypton-palette-blur', `${theme.ui.command_palette.backdrop_blur}px`);
 
     // UI: Search
     s('--krypton-search-bg', theme.ui.search.background);

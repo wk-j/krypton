@@ -158,6 +158,9 @@
 | FR-WIN-007 | The system shall support closing windows; closing the last window in the last workspace shall terminate the application. | Must |
 | FR-WIN-008 | Windows shall be movable via keyboard (primary) and optionally via mouse drag on title bar (secondary). | Must |
 | FR-WIN-009 | Windows shall be resizable via keyboard (primary) and optionally via mouse drag on edges/corners (secondary). | Must |
+| FR-WIN-010 | The system shall support **pinning** a window via keybinding (`Leader p` toggle). A pinned window sticks to the right column in Focus layout and is skipped during focus cycling (`Cmd+Shift+</>`) but can receive focus via click or directional navigation. | Should |
+| FR-WIN-011 | Pinned windows shall display a visual indicator (icon in title bar) distinguishing them from unpinned windows. | Should |
+| FR-WIN-012 | Pin state shall only affect Focus layout; in Grid layout pinned windows tile normally. | Should |
 
 ### 3.8.3 Layout Positioning
 

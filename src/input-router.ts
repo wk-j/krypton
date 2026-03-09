@@ -8,6 +8,7 @@ import { Mode } from './types';
 import { Compositor } from './compositor';
 import { SelectionController } from './selection';
 import { HintController } from './hints';
+import { CommandPalette } from './command-palette';
 
 /** Callback for mode changes */
 type ModeChangeCallback = (mode: Mode) => void;
@@ -18,6 +19,7 @@ export class InputRouter {
   private modeChangeCallbacks: ModeChangeCallback[] = [];
   private selection: SelectionController = new SelectionController();
   private hints: HintController = new HintController();
+  private commandPalette: CommandPalette | null = null;
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
@@ -63,6 +65,10 @@ export class InputRouter {
       if (e.ctrlKey && e.shiftKey && (e.code === 'KeyU' || e.code === 'KeyD')) {
         return false;
       }
+      // Prevent xterm from consuming Cmd+Shift+P (command palette)
+      if (InputRouter.isCommandPaletteKey(e)) {
+        return false;
+      }
       // Prevent xterm from consuming Cmd+Shift+H (hint mode)
       if (InputRouter.isHintKey(e)) {
         return false;
@@ -105,6 +111,22 @@ export class InputRouter {
       !e.ctrlKey &&
       !e.altKey &&
       !e.shiftKey
+    );
+  }
+
+  /** Set the command palette instance (called after construction) */
+  setCommandPalette(palette: CommandPalette): void {
+    this.commandPalette = palette;
+  }
+
+  /** Check if a key event is the Command Palette shortcut (Cmd+Shift+P) */
+  static isCommandPaletteKey(e: KeyboardEvent): boolean {
+    return (
+      e.code === 'KeyP' &&
+      e.metaKey &&
+      e.shiftKey &&
+      !e.ctrlKey &&
+      !e.altKey
     );
   }
 
@@ -166,6 +188,28 @@ export class InputRouter {
         return;
       }
 
+      // Global: Cmd+Shift+P — toggle Command Palette (works from any mode)
+      if (InputRouter.isCommandPaletteKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.commandPalette) {
+          if (this.commandPalette.isVisible) {
+            this.commandPalette.close();
+            this.toNormal();
+          } else {
+            // Force-exit current mode before opening palette
+            if (this.mode === Mode.Selection) {
+              this.exitSelectionMode();
+            } else if (this.mode === Mode.Hint) {
+              this.hints.exit();
+            }
+            this.commandPalette.open();
+            this.setMode(Mode.CommandPalette);
+          }
+        }
+        return;
+      }
+
       // Global: Cmd+Shift+< cycle focus next (forward through stack)
       // Global: Cmd+Shift+> cycle focus previous (backward through stack)
       // Match on code (Comma/Period) since key value varies with Cmd held on macOS
@@ -197,6 +241,9 @@ export class InputRouter {
         } else if (this.mode === Mode.Hint) {
           this.compositor.soundEngine.play('hint.cancel');
           this.hints.exit();
+          this.toNormal();
+        } else if (this.mode === Mode.CommandPalette) {
+          this.commandPalette?.close();
           this.toNormal();
         } else {
           this.toNormal();
@@ -261,7 +308,14 @@ export class InputRouter {
         return;
       }
 
-      // Dispatch to mode handler
+      // Command Palette mode: let typing flow to the <input>, only
+      // intercept navigation keys (ArrowUp/Down, Enter, Tab, Escape).
+      if (this.mode === Mode.CommandPalette) {
+        this.handleCommandPaletteKey(e);
+        return;
+      }
+
+      // Dispatch to mode handler — prevent default for all other modes
       e.preventDefault();
       e.stopPropagation();
 
@@ -353,6 +407,11 @@ export class InputRouter {
         }
         break;
       }
+
+      // Toggle pin on focused window
+      case 'p':
+        this.compositor.togglePin().then(() => this.toNormal());
+        break;
 
       // Toggle focus layout
       case 'f':
@@ -583,6 +642,30 @@ export class InputRouter {
       // Any other key cancels
       this.toNormal();
     }
+  }
+
+  // ─── Command Palette Mode ──────────────────────────────────────
+  // The palette has its own <input> that receives typing events.
+  // We only intercept navigation keys (ArrowUp/Down, Enter, Tab).
+  // All other keys pass through to the input element.
+
+  private handleCommandPaletteKey(e: KeyboardEvent): void {
+    if (!this.commandPalette) {
+      this.toNormal();
+      return;
+    }
+
+    const consumed = this.commandPalette.handleKey(e);
+    if (consumed) {
+      e.preventDefault();
+      e.stopPropagation();
+      // If the action closed the palette, return to Normal
+      if (!this.commandPalette.isVisible) {
+        this.toNormal();
+      }
+    }
+    // If not consumed (regular typing), do NOT preventDefault —
+    // let the event reach the <input> element naturally.
   }
 
   // ─── Hint Mode ─────────────────────────────────────────────────

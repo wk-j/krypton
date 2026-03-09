@@ -60,6 +60,8 @@ export type SoundEvent =
   | 'window.focus'
   | 'window.maximize'
   | 'window.restore'
+  | 'window.pin'
+  | 'window.unpin'
   | 'mode.enter'
   | 'mode.exit'
   | 'quick_terminal.show'
@@ -176,6 +178,28 @@ const KRYPTON_CYBER: Record<SoundEvent, SoundPatch> = {
     ],
     filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
     envelope: { attack: 0.003, decay: 0.05, sustain: 0.0, release: 0.025 },
+  },
+
+  // Window pin: short rising click (lock into place)
+  'window.pin': {
+    oscillators: [
+      { waveform: 'sine', frequency: 600, amplitude: 0.05,
+        pitchEnvelope: { start: 400, end: 700, duration: 0.04 } },
+      { waveform: 'triangle', frequency: 800, amplitude: 0.03 },
+    ],
+    filter: { type: 'lowpass', cutoff: 1200, Q: 0.8 },
+    envelope: { attack: 0.001, decay: 0.03, sustain: 0.0, release: 0.015 },
+  },
+
+  // Window unpin: short falling click (release)
+  'window.unpin': {
+    oscillators: [
+      { waveform: 'sine', frequency: 500, amplitude: 0.04,
+        pitchEnvelope: { start: 700, end: 350, duration: 0.04 } },
+      { waveform: 'triangle', frequency: 400, amplitude: 0.02 },
+    ],
+    filter: { type: 'lowpass', cutoff: 1000, Q: 0.7 },
+    envelope: { attack: 0.001, decay: 0.03, sustain: 0.0, release: 0.015 },
   },
 
   // Mode enter: short high blip

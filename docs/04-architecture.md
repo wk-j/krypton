@@ -305,7 +305,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 | Mode | Activated by | Behavior | Exit |
 |------|-------------|----------|------|
 | **Normal** | Default | Keypresses forwarded to focused window's PTY | Enter another mode via leader key |
-| **Compositor** | Leader key (`Cmd+P`) | Keypresses interpreted as compositor commands (focus window, toggle layout, switch workspace, open command palette) | Auto-exits after one action, or `Escape` to cancel |
+| **Compositor** | Leader key (`Cmd+P`) | Keypresses interpreted as compositor commands (focus window, toggle layout, pin window, switch workspace) | Auto-exits after one action, or `Escape` to cancel |
 | **Resize** | `Leader` then `R` | Arrow keys resize the focused window; step size configurable | `Escape` or `Enter` to confirm |
 | **Move** | `Leader` then `M` | Arrow keys reposition the focused window | `Escape` or `Enter` to confirm |
 | **Selection** | `Leader` then `v` or `V` | Vim-like keyboard text selection — virtual cursor navigates buffer with h/j/k/l/w/b/e/0/$, `v` toggles char-wise selection, `V` toggles line-wise, `y` yanks to clipboard | `Escape` to cancel, `y` to yank and exit |
@@ -315,6 +315,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 
 **Global hotkeys that work from any mode:**
 - `Cmd+I` — Toggle Quick Terminal (show/hide centered overlay terminal)
+- `Cmd+Shift+P` — Toggle Command Palette (fuzzy-searchable action list)
 - `Cmd+Shift+<` / `Cmd+Shift+>` — Cycle focus through windows
 - `Ctrl+Shift+U` / `Ctrl+Shift+D` — Scroll terminal buffer up/down by one page
 - `Cmd+Shift+H` — Enter hint mode (scan terminal for URLs/paths/emails, overlay labels)
@@ -349,7 +350,7 @@ Keypress
 
 The command palette is a fuzzy-searchable overlay listing **every action** in Krypton:
 
-- Window actions: new, close, focus next/prev, focus by index, maximize, restore, swap, reset layout, toggle focus layout
+- Window actions: new, close, focus next/prev, focus by index, maximize, restore, swap, reset layout, toggle focus layout, toggle pin
 - Tab actions: new, close, next/prev, move to window
 - Workspace actions: switch by name, next/prev workspace
 - Pane actions: split horizontal/vertical, close, navigate

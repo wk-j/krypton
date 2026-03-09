@@ -24,6 +24,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: 'm', label: 'move mode' },
   { key: 's', label: 'swap mode' },
   { key: 'z', label: 'maximize' },
+  { key: 'p', label: 'pin window' },
   { key: 'v', label: 'select mode' },
   { key: 'V', label: 'select lines' },
   { key: 'H', label: 'hint mode' },

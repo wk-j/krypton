@@ -28,6 +28,7 @@ export enum Mode {
   Selection = 'Selection',
   Hint = 'Hint',
   TabMove = 'TabMove',
+  CommandPalette = 'CommandPalette',
 }
 
 /** Layout strategy for tiling windows */
@@ -87,6 +88,8 @@ export interface KryptonWindow {
   element: HTMLElement;
   tabBarElement: HTMLElement;
   contentElement: HTMLElement;
+  /** Whether this window is pinned (sticks to right column in Focus layout, skipped in focus cycle) */
+  pinned: boolean;
 }
 
 // ─── Animation Types ──────────────────────────────────────────

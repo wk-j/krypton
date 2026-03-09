@@ -283,6 +283,18 @@ export class Compositor {
     return { id: paneId, sessionId: null, terminal, fitAddon, element: el };
   }
 
+  /** Copy-on-select: copy terminal selection to clipboard when text is selected */
+  private wireCopyOnSelect(terminal: Terminal): void {
+    terminal.onSelectionChange(() => {
+      const text = terminal.getSelection();
+      if (text) {
+        navigator.clipboard.writeText(text).catch((err) => {
+          console.error('Failed to copy selection to clipboard:', err);
+        });
+      }
+    });
+  }
+
   /** Wire a pane's terminal to a PTY session */
   private wirePaneInput(pane: Pane): void {
     pane.terminal.onData((data: string) => {
@@ -299,6 +311,8 @@ export class Compositor {
       this.sound.playKeypress('press');
       setTimeout(() => this.sound.playKeypress('release'), 30 + Math.random() * 40);
     });
+    // Copy-on-select
+    this.wireCopyOnSelect(pane.terminal);
   }
 
   /** Spawn a PTY for a pane and register it in the session map */
@@ -500,6 +514,19 @@ export class Compositor {
     return this.windows.size;
   }
 
+  /** Get pinned windows with their display labels and IDs */
+  get pinnedWindows(): Array<{ id: WindowId; label: string }> {
+    const result: Array<{ id: WindowId; label: string }> = [];
+    for (const [id, win] of this.windows) {
+      if (win.pinned) {
+        const labelEl = win.element.querySelector('.krypton-window__label');
+        const label = labelEl?.textContent ?? id;
+        result.push({ id, label });
+      }
+    }
+    return result;
+  }
+
   /** Get the animation engine instance */
   get animationEngine(): AnimationEngine {
     return this.animation;
@@ -651,6 +678,7 @@ export class Compositor {
       element: el,
       tabBarElement: tabBar,
       contentElement: content,
+      pinned: false,
     };
     this.windows.set(id, win);
     this.updateTabBar(win);
@@ -944,18 +972,66 @@ export class Compositor {
     if (this.windows.size <= 1) return;
 
     if (this.layoutMode === LayoutMode.Focus && this.focusVisualOrder.length > 1) {
-      // Use the visual order captured during the last relayout.
-      const order = this.focusVisualOrder;
+      // Use the visual order captured during the last relayout,
+      // but skip pinned windows — they don't participate in the cycle.
+      const order = this.focusVisualOrder.filter((id) => {
+        const w = this.windows.get(id);
+        return w && !w.pinned;
+      });
+      if (order.length <= 1) return; // all pinned or only one unpinned
       const currentIdx = this.focusedWindowId ? order.indexOf(this.focusedWindowId) : 0;
-      const nextIdx = (currentIdx + direction + order.length) % order.length;
+      const startIdx = currentIdx === -1 ? 0 : currentIdx;
+      const nextIdx = (startIdx + direction + order.length) % order.length;
       this.focusWindow(order[nextIdx]);
     } else {
-      // Grid layout: cycle by creation order.
+      // Grid layout: cycle by creation order (pinned windows participate normally).
       const ids = this.windowIds;
       const currentIdx = this.focusedWindowId ? ids.indexOf(this.focusedWindowId) : 0;
       const nextIdx = (currentIdx + direction + ids.length) % ids.length;
       this.focusWindow(ids[nextIdx]);
     }
+  }
+
+  /**
+   * Toggle pin state of a window. Pinned windows stick to the right column
+   * in Focus layout and are skipped during focus cycling.
+   * If no windowId is provided, toggles the focused window.
+   */
+  async togglePin(windowId?: WindowId): Promise<void> {
+    const id = windowId ?? this.focusedWindowId;
+    if (!id) return;
+    const win = this.windows.get(id);
+    if (!win) return;
+
+    win.pinned = !win.pinned;
+
+    // Update CSS class for visual indicator
+    if (win.pinned) {
+      win.element.classList.add('krypton-window--pinned');
+      this.sound.play('window.pin');
+    } else {
+      win.element.classList.remove('krypton-window--pinned');
+      this.sound.play('window.unpin');
+    }
+
+    // If we just pinned the currently focused (main) window in Focus layout,
+    // move focus to the next unpinned window so the main column isn't empty.
+    if (win.pinned && this.layoutMode === LayoutMode.Focus && this.focusedWindowId === id) {
+      const unpinnedId = this.windowIds.find((wid) => {
+        const w = this.windows.get(wid);
+        return w && !w.pinned && wid !== id;
+      });
+      if (unpinnedId) {
+        this.focusWindowQuiet(unpinnedId);
+      }
+    }
+
+    // Relayout with animation
+    const snapshots = this.snapshotBounds();
+    this.relayout();
+    await this.nextFrame();
+    this.fitAll();
+    this.animateRelayout(snapshots);
   }
 
   /**
@@ -1787,6 +1863,8 @@ export class Compositor {
       this.sound.playKeypress('press');
       setTimeout(() => this.sound.playKeypress('release'), 30 + Math.random() * 40);
     });
+    // Copy-on-select
+    this.wireCopyOnSelect(terminal);
 
     this.qtInitialized = true;
   }
@@ -1999,48 +2077,108 @@ export class Compositor {
   /** Ratio of screen width the focused window occupies in Focus layout */
   private static readonly FOCUS_MAIN_RATIO = 0.65;
 
-  /** Focus layout: focused window on left (full height, 65% width), rest fill remaining area */
+  /** Focus layout: focused window on left (full height, 65% width), rest fill remaining area.
+   *  Pinned windows are always placed in the right column (below unpinned stack). */
   private relayoutFocus(vw: number, vh: number, count: number): void {
     const ids = this.windowIds;
-    const focusIndex = this.focusedWindowId
-      ? ids.indexOf(this.focusedWindowId)
-      : 0;
-
-    const { order } = focusTile(count, Math.max(0, focusIndex));
-
     const gap = this.windowGap;
     const mainW = Math.round(vw * Compositor.FOCUS_MAIN_RATIO);
     const stackW = vw - mainW - gap;
-    const stackCount = count - 1;
-    const stackCellH = (vh - gap * (stackCount - 1)) / stackCount;
 
-    // Build the visual order (window IDs in layout position order)
-    // and apply bounds for each window.
-    this.focusVisualOrder = [];
-    for (let i = 0; i < order.length; i++) {
-      const winId = ids[order[i]];
+    // Separate windows into unpinned and pinned lists (preserving creation order)
+    const unpinnedIds: WindowId[] = [];
+    const pinnedIds: WindowId[] = [];
+    for (const id of ids) {
+      const w = this.windows.get(id);
+      if (!w) continue;
+      if (w.pinned) {
+        pinnedIds.push(id);
+      } else {
+        unpinnedIds.push(id);
+      }
+    }
+
+    // Determine which window takes the main (left) column.
+    // Must be an unpinned window. If the focused window is pinned (or no
+    // unpinned windows exist), fall back to the first unpinned window,
+    // or the first pinned window as last resort.
+    let mainId: WindowId | null = null;
+    if (unpinnedIds.length > 0) {
+      if (this.focusedWindowId && unpinnedIds.includes(this.focusedWindowId)) {
+        mainId = this.focusedWindowId;
+      } else {
+        mainId = unpinnedIds[0];
+      }
+    } else if (pinnedIds.length > 0) {
+      // All windows are pinned — first pinned window takes main column
+      mainId = this.focusedWindowId && pinnedIds.includes(this.focusedWindowId)
+        ? this.focusedWindowId
+        : pinnedIds[0];
+    }
+
+    if (!mainId) return;
+
+    // Build the right-column stack: unpinned windows (excl. main) in cycle
+    // order, then pinned windows.
+    const mainIdxInUnpinned = unpinnedIds.indexOf(mainId);
+    const unpinnedStack: WindowId[] = [];
+    if (mainIdxInUnpinned !== -1) {
+      // Cycle order starting after the main window
+      for (let offset = 1; offset < unpinnedIds.length; offset++) {
+        unpinnedStack.push(unpinnedIds[(mainIdxInUnpinned + offset) % unpinnedIds.length]);
+      }
+    }
+
+    const rightStack = [...unpinnedStack, ...pinnedIds];
+    // If mainId is a pinned window (all pinned case), remove it from rightStack
+    const mainIdxInRight = rightStack.indexOf(mainId);
+    if (mainIdxInRight !== -1) {
+      rightStack.splice(mainIdxInRight, 1);
+    }
+
+    const stackCount = rightStack.length;
+
+    // Calculate right-column cell heights with a separator between
+    // unpinned and pinned sections (2x gap).
+    const pinSeparatorGap = (unpinnedStack.length > 0 && pinnedIds.length > 0) ? gap : 0;
+    const totalGaps = (stackCount > 1 ? gap * (stackCount - 1) : 0) + pinSeparatorGap;
+    const stackCellH = stackCount > 0 ? (vh - totalGaps) / stackCount : vh;
+
+    // Build visual order and apply bounds
+    this.focusVisualOrder = [mainId];
+
+    // Main window: left column, full height
+    const mainWin = this.windows.get(mainId);
+    if (mainWin) {
+      mainWin.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: Math.max(1, stackCount) };
+      mainWin.bounds = { x: 0, y: 0, width: mainW, height: vh };
+      this.applyBounds(mainWin);
+    }
+
+    // Right-column windows
+    let y = 0;
+    for (let i = 0; i < rightStack.length; i++) {
+      const winId = rightStack[i];
       const win = this.windows.get(winId);
       if (!win) continue;
 
       this.focusVisualOrder.push(winId);
 
-      if (i === 0) {
-        // Focused window: left side, full height, 65% width
-        win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: stackCount };
-        win.bounds = { x: 0, y: 0, width: mainW, height: vh };
-      } else {
-        // Stack windows: right side, fill remaining width, split height evenly
-        const stackIdx = i - 1;
-        win.gridSlot = { col: 1, row: stackIdx, colSpan: 1, rowSpan: 1 };
-        win.bounds = {
-          x: mainW + gap,
-          y: Math.round(stackIdx * (stackCellH + gap)),
-          width: stackW,
-          height: Math.round(stackCellH),
-        };
+      // Add extra separator gap between unpinned and pinned sections
+      if (i === unpinnedStack.length && pinSeparatorGap > 0) {
+        y += pinSeparatorGap;
       }
 
+      win.gridSlot = { col: 1, row: i, colSpan: 1, rowSpan: 1 };
+      win.bounds = {
+        x: mainW + gap,
+        y: Math.round(y),
+        width: stackW,
+        height: Math.round(stackCellH),
+      };
       this.applyBounds(win);
+
+      y += stackCellH + gap;
     }
   }
 
