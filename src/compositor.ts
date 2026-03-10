@@ -774,6 +774,9 @@ export class Compositor {
     await this.nextFrame();
     this.fitAll();
     this.animateRelayout(snapshots);
+
+    // Re-focus the terminal after relayout/fit — the fit cycle can steal focus
+    this.refocusTerminal();
   }
 
   /**

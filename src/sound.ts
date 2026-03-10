@@ -117,7 +117,7 @@ export interface SoundConfig {
 /** Default sound configuration */
 export const DEFAULT_SOUND_CONFIG: SoundConfig = {
   enabled: true,
-  volume: 0.15,
+  volume: 0.5,
   pack: 'krypton-cyber',
   keyboard_type: 'cherry-mx-brown',
   keyboard_volume: 1.0,
@@ -703,7 +703,7 @@ export class SoundEngine {
 
       // Master channel: compressor -> gain -> destination
       this.compressor = this.ctx.createDynamicsCompressor();
-      this.compressor.threshold.value = -6;
+      this.compressor.threshold.value = -3;
       this.compressor.knee.value = 10;
       this.compressor.ratio.value = 8;
       this.compressor.attack.value = 0.003;
