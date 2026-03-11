@@ -134,8 +134,10 @@ The compositor is a TypeScript module running in the webview that manages worksp
 8. **Animation engine** — orchestrate workspace transition animations (slide, crossfade, morph) and window entrance/exit effects
 9. **Quick Terminal** — manage a persistent overlay terminal (toggled via `Cmd+I`) that floats centered on screen above all workspace windows; separate from the tiling layout
 10. **Z-order** — manage window stacking within a workspace; focused window rises to top
-10. **Chrome rendering** — cyberpunk/sci-fi window chrome with glowing cyan borders, session label with status dot, PTY status indicator, right sidebar with telemetry decoration, and bottom bar
-11. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
+11. **Chrome rendering** — cyberpunk/sci-fi window chrome with glowing cyan borders, session label with status dot, PTY status indicator, right sidebar with telemetry decoration, and bottom bar
+12. **Per-window accent colors** — each window gets a unique color from a 10-color cyberpunk palette (cyan, magenta, amber, green, violet, orange, pink, teal, gold, red) applied to chrome, borders, corners, tabs; colors recycled on window close
+13. **Shader engine** — manage per-pane CSS/SVG post-processing effects (CRT, hologram, glitch, bloom, matrix); cycle presets via `Leader g`, toggle globally via `Leader G`
+14. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
 
 ### Window DOM Structure
 
@@ -310,6 +312,13 @@ The input router is the central keyboard dispatcher. It determines what happens 
 | **Move** | `Leader` then `M` | Arrow keys reposition the focused window | `Escape` or `Enter` to confirm |
 | **Selection** | `Leader` then `v` or `V` | Vim-like keyboard text selection — virtual cursor navigates buffer with h/j/k/l/w/b/e/0/$, `v` toggles char-wise selection, `V` toggles line-wise, `y` yanks to clipboard | `Escape` to cancel, `y` to yank and exit |
 | **Hint** | `Leader` then `Shift+H` or `Cmd+Shift+H` (global) | Scans visible buffer for regex patterns (URLs, paths, emails), overlays keyboard labels on matches. Type a label to act (open/copy/paste). | `Escape` to cancel, or selecting a label |
+
+**Compositor single-action keys (in Compositor mode):**
+
+| Key | Action |
+|-----|--------|
+| `g` | Cycle shader preset on focused pane (none → crt → hologram → glitch → bloom → matrix → none) |
+| `G` (Shift+g) | Toggle shaders on/off globally |
 | **Command Palette** | `CmdOrCtrl+Shift+P` | Text input filters the action list; Enter executes; Escape closes | `Escape` or action execution |
 | **Search** | `CmdOrCtrl+F` | Text input searches scrollback in the focused window | `Escape` to close |
 

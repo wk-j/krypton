@@ -180,6 +180,16 @@ keyboard_volume = 1.0          # volume multiplier for keypress sounds (0.0 to 1
 # command_palette.execute = true
 # keypress = true               # toggle/adjust keypress sounds separately
 
+# --- Shader Effects ---
+# Post-processing visual effects applied to terminal panes via CSS/SVG filters.
+
+[shader]
+enabled = false              # Master toggle
+preset = "none"              # Default preset: none, crt, hologram, glitch, bloom, matrix
+intensity = 0.5              # Effect strength 0.0–1.0
+animate = true               # Enable time-based animation (scanline sweep, flicker, etc.)
+fps_cap = 30                 # Max animation FPS (CSS-driven, this is advisory)
+
 # --- Quick Terminal ---
 # A persistent overlay terminal toggled via Cmd+I, centered on screen.
 
@@ -321,6 +331,18 @@ Built-in rules (active by default): `url` (Open), `filepath` (Copy), `email` (Co
 | `[sound.events]` | `<event_name>` | bool \| float | `true` | Per-event toggle or volume override. `false` disables, `true` uses master volume, float (0.0–1.0) sets individual volume. |
 
 Valid event names: `window.create`, `window.close`, `window.focus`, `window.maximize`, `window.restore`, `mode.enter`, `mode.exit`, `quick_terminal.show`, `quick_terminal.hide`, `workspace.switch`, `command_palette.open`, `command_palette.close`, `command_palette.execute`, `layout.toggle`, `swap.complete`, `resize.step`, `move.step`, `terminal.bell`, `terminal.exit`, `startup`, `keypress`.
+
+### Shader Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[shader]` | `enabled` | bool | `false` | Master toggle — enables/disables all shader effects |
+| `[shader]` | `preset` | string | `"none"` | Default preset: `"none"`, `"crt"`, `"hologram"`, `"glitch"`, `"bloom"`, `"matrix"` |
+| `[shader]` | `intensity` | float | `0.5` | Effect strength (0.0–1.0). Controls filter parameters, scanline opacity, displacement, etc. |
+| `[shader]` | `animate` | bool | `true` | Enable time-based CSS animations (scanline sweep, flicker, bloom pulse) |
+| `[shader]` | `fps_cap` | int | `30` | Advisory max FPS for animations (CSS-driven, browser-controlled) |
+
+Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled globally via `Leader G` (Shift+g).
 
 ### Quick Terminal Configuration
 

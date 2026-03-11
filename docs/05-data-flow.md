@@ -79,8 +79,9 @@
    - Theme color overrides (merged on top of built-in theme)
    - Quick Terminal width/height ratio, backdrop blur
    - Workspace gap, resize/move step sizes
-8. First terminal window created with config-backed settings
-9. PTY spawned with config shell program and args
+8. If [shader] enabled, ShaderEngine initialized; shaders attached to each pane after terminal.open()
+9. First terminal window created with config-backed settings
+10. PTY spawned with config shell program and args
 ```
 
 ## Compositor Mode Flow (e.g., user presses Leader key)
@@ -98,6 +99,8 @@
    - M       -> enter Move mode
    - S       -> enter Swap mode (select target window)
    - F       -> maximize/restore focused window
+   - G       -> cycle shader preset on focused pane (none → crt → hologram → ...)
+   - Shift+G -> toggle shaders on/off globally
    - Escape  -> cancel, return to Normal mode
 5. After action executes, Input Router returns to Normal mode
 ```
@@ -149,7 +152,8 @@
 8. Frontend: FrontendThemeEngine receives "theme-changed" event
 9. Frontend: sets all --krypton-* CSS custom properties (instant CSS cascade)
 10. Frontend: notifies compositor which updates terminal.options.theme on all open terminals
-11. Result: window chrome + terminal colors update instantly without restart
+11. Frontend: compositor re-applies shader settings to all active panes (if [shader] changed)
+12. Result: window chrome + terminal colors + shader effects update instantly without restart
 ```
 
 ### Workspace Switch (e.g., user presses CmdOrCtrl+2)

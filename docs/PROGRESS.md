@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-09 (M4: Command palette — fuzzy search, action registry, Cmd+Shift+P)
+> Last updated: 2026-03-12 (M6/M8: Per-window accent colors, terminal shader effects)
 
 ## Overview
 
@@ -12,9 +12,9 @@
 | M3 — Compositor & Windows | In Progress | 9/11 |
 | M4 — Keyboard System & Workspaces | In Progress | 12/14 |
 | M5 — Tabs & Panes | Complete | 6/6 |
-| M6 — Config, Theming & Custom Themes | In Progress | 6/9 |
+| M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 13/14 |
-| M8 — Polish | In Progress | 2/7 |
+| M8 — Polish | In Progress | 4/9 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -92,6 +92,7 @@
 - [x] Theme scope: terminal colors, window chrome, workspace background, UI elements — full theme TOML structure (meta, colors, chrome, focused, workspace, ui) parsed and sent to frontend as `FullTheme`
 - [x] Apply theme as CSS custom properties (instant update across all windows) — `FrontendThemeEngine` sets 50+ `--krypton-*` CSS custom properties on `document.documentElement`; `styles.css` uses `var()` throughout; existing xterm.js terminals updated via `terminal.options.theme` on change
 - [x] Hot-reload via `notify` crate (config + theme files) — filesystem watcher on `~/.config/krypton/` with 300ms debounce; emits `theme-changed` and `config-changed` Tauri events; frontend listens and applies instantly
+- [x] Per-window accent colors — 10-color cyberpunk palette (cyan, magenta, amber, green, violet, orange, pink, teal, gold, red); each window gets a unique color for chrome, borders, corners, tabs; colors recycled on window close
 - [ ] Ship built-in terminal themes (dark, light, solarized, legacy-radiance) — krypton-dark and legacy-radiance TOML files created and loaded by engine; krypton-light and solarized not yet created
 - [ ] Ship 3 built-in chrome styles (macos, minimal, none)
 - [ ] Full keybinding customization with conflict detection
@@ -117,6 +118,7 @@
 
 - [x] Vim-like Selection mode (`src/selection.ts`) — keyboard-driven text selection with virtual cursor, h/j/k/l/w/b/e/0/$/gg/G navigation, v (char-wise) and V (line-wise) visual selection, y to yank to clipboard. Enter via `Leader v` or `Leader V`
 - [x] Hint mode (`src/hints.ts`) — Rio-style pattern matching: `Cmd+Shift+H` or `Leader Shift+H` scans visible buffer for regex patterns (URLs, file paths, emails), overlays keyboard labels on matches, type label to act (Open/Copy/Paste). Configurable alphabet, rules, and per-rule actions via `[hints]` TOML config.
+- [x] Terminal shader effects (`src/shaders.ts`) — CSS/SVG filter-based post-processing: 5 presets (crt, hologram, glitch, bloom, matrix) with scanlines, chromatic aberration, displacement, bloom glow. Per-pane ShaderInstance with overlay div + animated keyframes. Configurable via `[shader]` TOML section; `Leader g` cycles preset, `Leader G` toggles globally.
 - [ ] `@xterm/addon-search` integration with keyboard-driven search overlay
 - [ ] IME support testing and fixes
 - [ ] Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)
