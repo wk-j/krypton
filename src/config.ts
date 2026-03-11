@@ -96,6 +96,24 @@ export interface TabsConfig {
   close_window_on_last_tab: boolean;
 }
 
+export type ShaderPresetName = 'none' | 'crt' | 'hologram' | 'glitch' | 'bloom' | 'matrix';
+
+export interface ShaderConfig {
+  enabled: boolean;
+  preset: ShaderPresetName;
+  intensity: number;
+  animate: boolean;
+  fps_cap: number;
+}
+
+export const DEFAULT_SHADER_CONFIG: ShaderConfig = {
+  enabled: false,
+  preset: 'none',
+  intensity: 0.5,
+  animate: true,
+  fps_cap: 30,
+};
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -106,6 +124,7 @@ export interface KryptonConfig {
   sound: SoundConfig;
   hints: HintsConfig;
   tabs: TabsConfig;
+  shader: ShaderConfig;
 }
 
 /** Load configuration from the Rust backend */

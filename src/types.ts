@@ -2,6 +2,7 @@
 
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
+import type { ShaderInstance } from './shaders';
 
 /** Unique identifier for a terminal window */
 export type WindowId = string;
@@ -62,6 +63,7 @@ export interface Pane {
   terminal: Terminal;
   fitAddon: FitAddon;
   element: HTMLElement;
+  shaderInstance: ShaderInstance | null;
 }
 
 /** Binary tree node for pane splits */

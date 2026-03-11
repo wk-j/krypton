@@ -482,6 +482,16 @@ export class InputRouter {
         this.compositor.splitPane('horizontal').then(() => this.toNormal());
         break;
 
+      // g — cycle shader preset on focused pane / G — toggle shaders globally
+      case 'g':
+        if (e.shiftKey) {
+          this.compositor.toggleShadersGlobally();
+        } else {
+          this.compositor.cycleShaderPreset();
+        }
+        this.toNormal();
+        break;
+
       default:
         // Alt+h/j/k/l — navigate panes
         if (e.altKey && !e.shiftKey) {

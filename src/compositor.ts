@@ -25,7 +25,10 @@ import {
 import { autoTile, focusTile, resolveGridSlot } from './layout';
 import { AnimationEngine, BoundsSnapshot } from './animation';
 import { SoundEngine } from './sound';
-import type { KryptonConfig, TabsConfig } from './config';
+import { ShaderEngine } from './shaders';
+import type { ShaderPreset } from './shaders';
+import type { KryptonConfig, TabsConfig, ShaderConfig } from './config';
+import { DEFAULT_SHADER_CONFIG } from './config';
 import type { FrontendThemeEngine } from './theme';
 
 /** Custom key event handler for xterm.js — set by InputRouter */
@@ -192,6 +195,10 @@ export class Compositor {
     close_window_on_last_tab: true,
   };
 
+  // ─── Shader Engine ──────────────────────────────────────────────
+  private shaderEngine: ShaderEngine = new ShaderEngine();
+  private shaderConfig: ShaderConfig = { ...DEFAULT_SHADER_CONFIG };
+
   // ─── Quick Terminal State ─────────────────────────────────────────
   private qtConfig: QuickTerminalConfig = { ...DEFAULT_QUICK_TERMINAL_CONFIG };
   /** The Quick Terminal DOM element (null until first show) */
@@ -275,6 +282,15 @@ export class Compositor {
     if (config.tabs) {
       this.tabsConfig = config.tabs;
     }
+
+    // Shaders
+    if (config.shader) {
+      this.shaderConfig = config.shader;
+      this.shaderEngine = new ShaderEngine({
+        fps_cap: config.shader.fps_cap,
+        animate: config.shader.animate,
+      });
+    }
   }
 
   // ─── Pane Tree Helpers ──────────────────────────────────────────
@@ -306,7 +322,21 @@ export class Compositor {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);
     }
 
-    return { id: paneId, sessionId: null, terminal, fitAddon, element: el };
+    // Attach shader if enabled — use short delay to let WebGL addon render first frame
+    let shaderInstance = null;
+    if (this.shaderConfig.enabled && this.shaderConfig.preset !== 'none') {
+      console.log('[krypton:shaders] Attaching shader to pane', paneId, 'preset:', this.shaderConfig.preset);
+      shaderInstance = this.shaderEngine.attach(
+        el,
+        this.shaderConfig.preset as ShaderPreset,
+        this.shaderConfig.intensity,
+      );
+      console.log('[krypton:shaders] attach() returned:', shaderInstance);
+    } else {
+      console.log('[krypton:shaders] Shader skipped — enabled:', this.shaderConfig.enabled, 'preset:', this.shaderConfig.preset);
+    }
+
+    return { id: paneId, sessionId: null, terminal, fitAddon, element: el, shaderInstance };
   }
 
   /** Copy-on-select: copy terminal selection to clipboard when text is selected */
@@ -396,6 +426,10 @@ export class Compositor {
   /** Dispose all terminals in a pane tree and remove from session map */
   private disposePaneTree(node: PaneNode): void {
     if (node.type === 'leaf') {
+      if (node.pane.shaderInstance) {
+        this.shaderEngine.detach(node.pane.shaderInstance);
+        node.pane.shaderInstance = null;
+      }
       node.pane.terminal.dispose();
       if (node.pane.sessionId !== null) {
         this.sessionMap.delete(node.pane.sessionId);
@@ -561,6 +595,93 @@ export class Compositor {
   /** Get the sound engine instance */
   get soundEngine(): SoundEngine {
     return this.sound;
+  }
+
+  // ─── Shader Controls ─────────────────────────────────────────────
+
+  /** Cycle shader preset on the focused pane */
+  cycleShaderPreset(): void {
+    const pane = this.getFocusedPane();
+    if (!pane) return;
+
+    if (pane.shaderInstance) {
+      const next = this.shaderEngine.cyclePreset(pane.shaderInstance);
+      console.log(`[krypton:shaders] Cycled to preset: ${next}`);
+    } else {
+      // No shader yet — attach with 'crt' (first real preset)
+      pane.shaderInstance = this.shaderEngine.attach(
+        pane.element,
+        'crt' as ShaderPreset,
+        this.shaderConfig.intensity,
+      );
+    }
+  }
+
+  /** Toggle shaders on/off globally for all panes */
+  toggleShadersGlobally(): void {
+    this.shaderConfig.enabled = !this.shaderConfig.enabled;
+    console.log(`[krypton:shaders] Globally ${this.shaderConfig.enabled ? 'enabled' : 'disabled'}`);
+
+    if (this.shaderConfig.enabled) {
+      // Attach shaders to all panes that don't have one
+      const preset = (this.shaderConfig.preset !== 'none' ? this.shaderConfig.preset : 'crt') as ShaderPreset;
+      this._forEachPane((pane) => {
+        if (!pane.shaderInstance) {
+          pane.shaderInstance = this.shaderEngine.attach(
+            pane.element,
+            preset,
+            this.shaderConfig.intensity,
+          );
+        }
+      });
+    } else {
+      // Detach shaders from all panes
+      this._forEachPane((pane) => {
+        if (pane.shaderInstance) {
+          this.shaderEngine.detach(pane.shaderInstance);
+          pane.shaderInstance = null;
+        }
+      });
+    }
+  }
+
+  /** Re-apply shader settings to all existing panes (for config hot-reload) */
+  reapplyShaderConfig(config: ShaderConfig): void {
+    this.shaderConfig = config;
+    this.shaderEngine = new ShaderEngine({
+      fps_cap: config.fps_cap,
+      animate: config.animate,
+    });
+
+    // Detach all existing shaders
+    this._forEachPane((pane) => {
+      if (pane.shaderInstance) {
+        this.shaderEngine.detach(pane.shaderInstance);
+        pane.shaderInstance = null;
+      }
+    });
+
+    // Re-attach if enabled
+    if (config.enabled && config.preset !== 'none') {
+      this._forEachPane((pane) => {
+        pane.shaderInstance = this.shaderEngine.attach(
+          pane.element,
+          config.preset as ShaderPreset,
+          config.intensity,
+        );
+      });
+    }
+  }
+
+  /** Iterate over every pane in every tab of every window */
+  private _forEachPane(fn: (pane: Pane) => void): void {
+    for (const [, win] of this.windows) {
+      for (const tab of win.tabs) {
+        for (const pane of this.collectPanes(tab.paneTree)) {
+          fn(pane);
+        }
+      }
+    }
   }
 
   /** Register callback for focus changes */
@@ -1904,6 +2025,15 @@ export class Compositor {
     });
 
     this.qtTerminal = { terminal, fitAddon };
+
+    // Attach shader to Quick Terminal if enabled
+    if (this.shaderConfig.enabled && this.shaderConfig.preset !== 'none') {
+      this.shaderEngine.attach(
+        body,
+        this.shaderConfig.preset as ShaderPreset,
+        this.shaderConfig.intensity,
+      );
+    }
 
     // Spawn PTY for Quick Terminal — inherit CWD from focused window
     const inheritedCwd = await this.getFocusedCwd();

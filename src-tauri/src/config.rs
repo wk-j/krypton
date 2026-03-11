@@ -19,6 +19,7 @@ pub struct KryptonConfig {
     pub sound: SoundConfig,
     pub hints: HintsConfig,
     pub tabs: TabsConfig,
+    pub shader: ShaderConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +187,30 @@ impl Default for HintsConfig {
                     enabled: true,
                 },
             ],
+        }
+    }
+}
+
+// ─── Shader ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ShaderConfig {
+    pub enabled: bool,
+    pub preset: String,
+    pub intensity: f64,
+    pub animate: bool,
+    pub fps_cap: u32,
+}
+
+impl Default for ShaderConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            preset: "none".to_string(),
+            intensity: 0.5,
+            animate: true,
+            fps_cap: 30,
         }
     }
 }

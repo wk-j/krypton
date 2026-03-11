@@ -627,3 +627,12 @@ html, body {
   letter-spacing: 0.06em;
   color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
 }
+
+/* ─── Shader Effect Overlay ─── */
+.krypton-shader-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  border-radius: inherit;
+}
