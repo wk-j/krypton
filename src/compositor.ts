@@ -96,6 +96,26 @@ const DEFAULT_TERMINAL_THEME: Record<string, string> = {
   brightWhite: '#ffffff',
 };
 
+/** Cyberpunk accent color palette for per-window coloring */
+interface AccentColor {
+  name: string;
+  hex: string;
+  rgb: string; // "r, g, b" for rgba() usage
+}
+
+const ACCENT_PALETTE: AccentColor[] = [
+  { name: 'cyan',    hex: '#00ccff', rgb: '0, 204, 255' },
+  { name: 'magenta', hex: '#c77dff', rgb: '199, 125, 255' },
+  { name: 'amber',   hex: '#e8c547', rgb: '232, 197, 71' },
+  { name: 'green',   hex: '#39ff7f', rgb: '57, 255, 127' },
+  { name: 'violet',  hex: '#7b61ff', rgb: '123, 97, 255' },
+  { name: 'orange',  hex: '#ff8c42', rgb: '255, 140, 66' },
+  { name: 'pink',    hex: '#ff5c8a', rgb: '255, 92, 138' },
+  { name: 'teal',    hex: '#2dd4bf', rgb: '45, 212, 191' },
+  { name: 'gold',    hex: '#fbbf24', rgb: '251, 191, 36' },
+  { name: 'red',     hex: '#ff3a5c', rgb: '255, 58, 92' },
+];
+
 /** Minimum window dimensions */
 const MIN_WIDTH = 200;
 const MIN_HEIGHT = 120;
@@ -134,6 +154,12 @@ export class Compositor {
   private animation: AnimationEngine = new AnimationEngine();
   /** Sound engine for procedural sound effects */
   private sound: SoundEngine = new SoundEngine();
+
+  // ─── Per-Window Accent Colors ──────────────────────────────────────
+  /** Maps window ID to its assigned palette index */
+  private windowColorIndex: Map<WindowId, number> = new Map();
+  /** Set of palette indices currently in use */
+  private usedColorIndices: Set<number> = new Set();
 
   // ─── Theme Engine ─────────────────────────────────────────────────
   /** Reference to the frontend theme engine (set via setThemeEngine) */
@@ -559,6 +585,43 @@ export class Compositor {
     }
   }
 
+  /** Allocate the next available accent color from the palette */
+  private allocateAccentColor(windowId: WindowId): AccentColor {
+    for (let i = 0; i < ACCENT_PALETTE.length; i++) {
+      if (!this.usedColorIndices.has(i)) {
+        this.usedColorIndices.add(i);
+        this.windowColorIndex.set(windowId, i);
+        return ACCENT_PALETTE[i];
+      }
+    }
+    // All colors in use — wrap around using window count as tiebreaker
+    const idx = this.windowColorIndex.size % ACCENT_PALETTE.length;
+    this.windowColorIndex.set(windowId, idx);
+    return ACCENT_PALETTE[idx];
+  }
+
+  /** Free a window's accent color so it can be reused */
+  private freeAccentColor(windowId: WindowId): void {
+    const idx = this.windowColorIndex.get(windowId);
+    if (idx !== undefined) {
+      this.windowColorIndex.delete(windowId);
+      // Only free the index if no other window is using it
+      let stillUsed = false;
+      for (const otherIdx of this.windowColorIndex.values()) {
+        if (otherIdx === idx) { stillUsed = true; break; }
+      }
+      if (!stillUsed) {
+        this.usedColorIndices.delete(idx);
+      }
+    }
+  }
+
+  /** Apply accent color CSS custom properties to a DOM element */
+  private applyAccentColor(el: HTMLElement, color: AccentColor): void {
+    el.style.setProperty('--krypton-window-accent', color.hex);
+    el.style.setProperty('--krypton-window-accent-rgb', color.rgb);
+  }
+
   /** Get the cwd of the focused pane's shell, if available */
   private async getFocusedCwd(): Promise<string | null> {
     const pane = this.getFocusedPane();
@@ -590,6 +653,10 @@ export class Compositor {
     el.id = id;
     el.className = 'krypton-window';
     el.dataset.windowId = id;
+
+    // Assign unique accent color
+    const accentColor = this.allocateAccentColor(id);
+    this.applyAccentColor(el, accentColor);
 
     // Session counter for display
     const sessionNum = String(windowIdCounter).padStart(2, '0');
@@ -745,6 +812,9 @@ export class Compositor {
     for (const tab of win.tabs) {
       this.disposePaneTree(tab.paneTree);
     }
+
+    // Free accent color for reuse
+    this.freeAccentColor(id);
 
     // Sound: window close
     this.sound.play('window.close');
@@ -1751,6 +1821,9 @@ export class Compositor {
     const el = document.createElement('div');
     el.id = 'quick-terminal';
     el.className = 'krypton-window krypton-quick-terminal';
+
+    // Quick Terminal always uses cyan (first palette color)
+    this.applyAccentColor(el, ACCENT_PALETTE[0]);
 
     const chrome = document.createElement('div');
     chrome.className = 'krypton-window__chrome';

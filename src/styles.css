@@ -31,10 +31,10 @@ html, body {
   display: flex;
   flex-direction: column;
   background: var(--krypton-backdrop-color, rgba(6, 10, 18, 0.5));
-  border: var(--krypton-border-width, 1px) solid var(--krypton-border-color, rgba(0, 200, 255, 0.5));
+  border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
   border-radius: var(--krypton-border-radius, 0px);
   overflow: visible;
-  box-shadow: 0 0 var(--krypton-shadow-blur, 20px) var(--krypton-shadow-color, rgba(0, 200, 255, 0.12));
+  box-shadow: 0 0 var(--krypton-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
   -webkit-backdrop-filter: blur(var(--krypton-backdrop-blur, 12px));
   backdrop-filter: blur(var(--krypton-backdrop-blur, 12px));
   /* GPU-composited layer for smooth animations (transform, opacity) */
@@ -43,8 +43,8 @@ html, body {
 }
 
 .krypton-window--focused {
-  border-color: var(--krypton-focused-border, rgba(0, 200, 255, 0.5));
-  box-shadow: 0 0 var(--krypton-focused-shadow-blur, 20px) var(--krypton-focused-shadow, rgba(0, 200, 255, 0.12));
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  box-shadow: 0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
 }
 
 /* ─── Corner accents ─── */
@@ -61,8 +61,8 @@ html, body {
 .krypton-window__corner::after {
   content: '';
   position: absolute;
-  background: var(--krypton-corner-color, #0cf);
-  box-shadow: 0 0 6px var(--krypton-focused-accent-glow, rgba(0, 204, 255, 0.6));
+  background: var(--krypton-window-accent, var(--krypton-corner-color, #0cf));
+  box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
 }
 
 /* Top-left corner */
@@ -128,8 +128,8 @@ html, body {
   margin: 0 var(--krypton-header-accent-margin, 20px);
   background: repeating-linear-gradient(
     90deg,
-    var(--krypton-header-accent-color, rgba(0, 200, 255, 0.35)) 0px,
-    var(--krypton-header-accent-color, rgba(0, 200, 255, 0.35)) 1px,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 0px,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -161,7 +161,7 @@ html, body {
 .krypton-window__status-dot {
   width: var(--krypton-status-dot-size, 6px);
   height: var(--krypton-status-dot-size, 6px);
-  background: var(--krypton-status-dot-color, #0cf);
+  background: var(--krypton-window-accent, var(--krypton-status-dot-color, #0cf));
 }
 
 .krypton-window__label {
@@ -170,7 +170,7 @@ html, body {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--krypton-titlebar-text, #0cf);
+  color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
 }
 
 .krypton-window__pty-status {
@@ -186,8 +186,8 @@ html, body {
 .krypton-window--pinned .krypton-window__label-group::after {
   content: '\u25C8';  /* Unicode diamond with dot */
   font-size: 10px;
-  color: var(--krypton-pin-color, #0cf);
-  text-shadow: 0 0 6px var(--krypton-focused-accent-glow, rgba(0, 204, 255, 0.5));
+  color: var(--krypton-window-accent, var(--krypton-pin-color, #0cf));
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
   margin-left: 4px;
 }
 
@@ -199,7 +199,7 @@ html, body {
   padding: 0 8px;
   gap: 1px;
   align-items: stretch;
-  background: var(--krypton-tab-background, rgba(0, 200, 255, 0.03));
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
   overflow: hidden;
 }
 
@@ -223,14 +223,14 @@ html, body {
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--krypton-tab-inactive-color, rgba(0, 200, 255, 0.25));
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .krypton-tab--active .krypton-tab__title {
-  color: var(--krypton-tab-active-color, rgba(0, 200, 255, 0.8));
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
   font-weight: 600;
 }
 
@@ -241,7 +241,7 @@ html, body {
   left: 4px;
   right: 4px;
   height: 1px;
-  background: var(--krypton-tab-active-color, rgba(0, 200, 255, 0.8));
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
 }
 
 /* ─── Window content area (body + sidebar) ─── */
@@ -263,7 +263,7 @@ html, body {
 }
 
 .krypton-pane--focused {
-  box-shadow: inset 0 0 0 1px rgba(0, 200, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
 }
 
 .krypton-split {
@@ -283,7 +283,7 @@ html, body {
 
 .krypton-split__divider {
   flex-shrink: 0;
-  background: var(--krypton-border-color, rgba(0, 200, 255, 0.15));
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
 }
 
 .krypton-split--vertical > .krypton-split__divider {
