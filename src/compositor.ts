@@ -363,9 +363,9 @@ export class Compositor {
       }
     });
     // Keypress sound on actual keyboard input only (not mouse reporting)
-    pane.terminal.onKey(() => {
-      this.sound.playKeypress('press');
-      setTimeout(() => this.sound.playKeypress('release'), 30 + Math.random() * 40);
+    pane.terminal.onKey(({ domEvent }) => {
+      this.sound.playKeypress('press', domEvent.key);
+      setTimeout(() => this.sound.playKeypress('release', domEvent.key), 30 + Math.random() * 40);
     });
     // Copy-on-select
     this.wireCopyOnSelect(pane.terminal);

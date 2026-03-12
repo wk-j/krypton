@@ -1,7 +1,10 @@
 // Krypton — Sound Engine
 // Procedural sound effects via Web Audio API.
-// All sounds synthesized at runtime using additive + subtractive functional synthesis.
-// No audio files shipped.
+// Supports two theme types:
+//   1. Patch-based (krypton-cyber) — declarative oscillator/filter/envelope definitions
+//   2. Ghost-signal — function-based themes with fire-and-forget sound functions
+
+import type { GhostSignalTheme } from './sound-themes/types';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -123,6 +126,61 @@ export const DEFAULT_SOUND_CONFIG: SoundConfig = {
   keyboard_volume: 1.0,
   events: {},
 };
+
+// ─── Ghost-signal Event Mapping ──────────────────────────────────
+// Maps Krypton SoundEvent names to ghost-signal sound IDs.
+
+const GHOST_SIGNAL_EVENT_MAP: Record<SoundEvent, string> = {
+  'startup':                'IMPORTANT_CLICK',
+  'window.create':          'TAB_INSERT',
+  'window.close':           'TAB_CLOSE',
+  'window.focus':           'HOVER',
+  'window.maximize':        'FEATURE_SWITCH_ON',
+  'window.restore':         'FEATURE_SWITCH_OFF',
+  'window.pin':             'LIMITER_ON',
+  'window.unpin':           'LIMITER_OFF',
+  'mode.enter':             'CLICK',
+  'mode.exit':              'HOVER_UP',
+  'quick_terminal.show':    'FEATURE_SWITCH_ON',
+  'quick_terminal.hide':    'FEATURE_SWITCH_OFF',
+  'workspace.switch':       'TAB_SLASH',
+  'command_palette.open':   'TAB_SLASH',
+  'command_palette.close':  'HOVER_UP',
+  'command_palette.execute': 'IMPORTANT_CLICK',
+  'hint.activate':          'CLICK',
+  'hint.select':            'IMPORTANT_CLICK',
+  'hint.cancel':            'HOVER_UP',
+  'layout.toggle':          'SWITCH_TOGGLE',
+  'swap.complete':          'CLICK',
+  'resize.step':            'HOVER',
+  'move.step':              'HOVER',
+  'terminal.bell':          'IMPORTANT_CLICK',
+  'terminal.exit':          'TAB_CLOSE',
+  'tab.create':             'TAB_INSERT',
+  'tab.close':              'TAB_CLOSE',
+  'tab.switch':             'CLICK',
+  'tab.move':               'SWITCH_TOGGLE',
+  'pane.split':             'TAB_INSERT',
+  'pane.close':             'TAB_CLOSE',
+  'pane.focus':             'HOVER',
+};
+
+// ─── Ghost-signal Built-in Theme Registry ────────────────────────
+// Lazy-loaded via dynamic import() — only the active theme is loaded.
+
+const GHOST_SIGNAL_THEMES: Record<string, () => Promise<GhostSignalTheme>> = {
+  'ghost-signal':  () => import('./sound-themes/ghost-signal').then(m => m.default),
+  'chill-city-fm': () => import('./sound-themes/chill-city-fm').then(m => m.default),
+  'orbit-deck':    () => import('./sound-themes/orbit-deck').then(m => m.default),
+  'mach-line':     () => import('./sound-themes/mach-line').then(m => m.default),
+};
+
+/**
+ * Resolved sound theme: either patch-based (krypton-native) or function-based (ghost-signal).
+ */
+type ActiveSoundTheme =
+  | { type: 'patches'; patches: Record<string, SoundPatch> }
+  | { type: 'ghost-signal'; sounds: Record<string, () => void>; theme: GhostSignalTheme };
 
 // ─── Built-in Krypton Cyber Sound Pack ───────────────────────────
 
@@ -369,7 +427,6 @@ const KRYPTON_CYBER: Record<SoundEvent, SoundPatch> = {
     envelope: { attack: 0.003, decay: 0.08, sustain: 0.0, release: 0.04 },
   },
 
-  // Startup: low warm hum rising
   // ─── Tab/Pane events ──────────────────────────────────
   'tab.create': {
     oscillators: [
@@ -569,6 +626,12 @@ export class SoundEngine {
   private config: SoundConfig = { ...DEFAULT_SOUND_CONFIG };
   private patches: Record<string, SoundPatch> = { ...KRYPTON_CYBER };
 
+  // ─── Sound theme state ────────────────────────────────────────
+  private activeTheme: ActiveSoundTheme = { type: 'patches', patches: KRYPTON_CYBER };
+  /** Ghost-signal proxy context (wraps real ctx with volume-controlled destination) */
+  private ghostSignalCtx: AudioContext | null = null;
+  private ghostSignalGain: GainNode | null = null;
+
   // ─── Sound queue / overlap management ─────────────────────────
   /** Max concurrent synthesized sounds. Beyond this, new sounds are dropped. */
   private static readonly MAX_CONCURRENT = 8;
@@ -586,25 +649,132 @@ export class SoundEngine {
 
   /**
    * Apply sound configuration. Call after loading config from backend.
+   * If the pack changed, triggers async theme loading.
    */
   applyConfig(config: SoundConfig): void {
+    const oldPack = this.config.pack;
     this.config = { ...DEFAULT_SOUND_CONFIG, ...config };
     // Update master volume if context is live
     if (this.masterGain) {
       this.masterGain.gain.value = this.config.volume;
     }
+    // Update ghost-signal gain if active
+    if (this.ghostSignalGain) {
+      this.ghostSignalGain.gain.value = this.config.volume;
+    }
+    // Reload theme if pack changed
+    if (this.config.pack !== oldPack) {
+      this.loadTheme(this.config.pack);
+    }
+  }
+
+  /**
+   * Load a sound theme by name. Async — resolves built-in or custom themes.
+   * Falls back to krypton-cyber if loading fails.
+   */
+  async loadTheme(packName: string): Promise<void> {
+    // krypton-cyber is the built-in patch-based theme
+    if (packName === 'krypton-cyber') {
+      this.activeTheme = { type: 'patches', patches: KRYPTON_CYBER };
+      this.patches = { ...KRYPTON_CYBER };
+      this.ghostSignalCtx = null;
+      this.ghostSignalGain = null;
+      return;
+    }
+
+    // Try ghost-signal built-in themes
+    const loader = GHOST_SIGNAL_THEMES[packName];
+    if (loader) {
+      try {
+        const theme = await loader();
+        this.activateGhostSignalTheme(theme);
+        return;
+      } catch (err) {
+        console.warn(`Failed to load sound theme "${packName}":`, err);
+      }
+    }
+
+    // Unknown theme — fallback to krypton-cyber
+    console.warn(`Unknown sound pack "${packName}", falling back to krypton-cyber`);
+    this.activeTheme = { type: 'patches', patches: KRYPTON_CYBER };
+    this.patches = { ...KRYPTON_CYBER };
+    this.ghostSignalCtx = null;
+    this.ghostSignalGain = null;
+  }
+
+  /**
+   * Activate a ghost-signal theme: create proxy context and sound functions.
+   */
+  private activateGhostSignalTheme(theme: GhostSignalTheme): void {
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    // Create a master gain node for ghost-signal volume control
+    const gsGain = this.ctx.createGain();
+    gsGain.gain.value = this.config.volume;
+    gsGain.connect(this.ctx.destination);
+    this.ghostSignalGain = gsGain;
+
+    // Create a proxy context where .destination points to our gain node
+    // This gives us volume control without modifying ghost-signal theme code
+    const realCtx = this.ctx;
+    const proxyCtx = new Proxy(realCtx, {
+      get(target: AudioContext, prop: string | symbol): unknown {
+        if (prop === 'destination') return gsGain;
+        const val = Reflect.get(target, prop);
+        return typeof val === 'function' ? (val as Function).bind(target) : val;
+      },
+    }) as AudioContext;
+    this.ghostSignalCtx = proxyCtx;
+
+    // Create noiseBuffer helper for ghost-signal themes
+    const noiseBuffer = (duration = 0.1): AudioBuffer => {
+      const len = realCtx.sampleRate * duration;
+      const buf = realCtx.createBuffer(1, len, realCtx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      return buf;
+    };
+
+    // Initialize the theme's sound functions
+    const sounds = theme.createSounds(proxyCtx, noiseBuffer);
+    this.activeTheme = { type: 'ghost-signal', sounds, theme };
+  }
+
+  /**
+   * Get list of available sound theme names.
+   */
+  getAvailableThemes(): string[] {
+    return ['krypton-cyber', ...Object.keys(GHOST_SIGNAL_THEMES)];
+  }
+
+  /**
+   * Get the display name of a sound theme.
+   */
+  getThemeDisplayName(packName: string): string {
+    if (packName === 'krypton-cyber') return 'Krypton Cyber';
+    if (packName in GHOST_SIGNAL_THEMES) {
+      // Return a formatted version of the pack name
+      return packName.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+    return packName;
+  }
+
+  /**
+   * Get the current active pack name.
+   */
+  getCurrentPack(): string {
+    return this.config.pack;
   }
 
   /**
    * Play a keypress sound (press or release).
-   * Uses the configured keyboard_type to select the patch set.
-   * Adds subtle randomization to pitch and amplitude for a natural feel.
+   * For patch-based themes: uses the configured keyboard_type to select the patch set.
+   * For ghost-signal themes: routes to the appropriate TYPING_* sound based on key.
    * Throttled: skips if previous press is still within throttle window.
    */
-  playKeypress(phase: 'press' | 'release'): void {
+  playKeypress(phase: 'press' | 'release', key?: string): void {
     if (!this.config.enabled) return;
-    const kbType = this.config.keyboard_type;
-    if (kbType === 'none') return;
 
     // Check per-event override for keypress
     const eventConfig = this.config.events['keypress'];
@@ -619,6 +789,39 @@ export class SoundEngine {
 
     // Max concurrent check
     if (this.activeSounds >= SoundEngine.MAX_CONCURRENT) return;
+
+    // ─── Ghost-signal theme: use TYPING_* functions ───
+    if (this.activeTheme.type === 'ghost-signal') {
+      // Ghost-signal themes have no key-release sounds
+      if (phase === 'release') return;
+
+      const sounds = this.activeTheme.sounds;
+      let soundId: string;
+      if (key === 'Backspace') {
+        soundId = 'TYPING_BACKSPACE';
+      } else if (key === 'Enter') {
+        soundId = 'TYPING_ENTER';
+      } else if (key === ' ') {
+        soundId = 'TYPING_SPACE';
+      } else {
+        soundId = 'TYPING_LETTER';
+      }
+
+      const fn = sounds[soundId];
+      if (fn) {
+        this.activeSounds++;
+        fn();
+        // Ghost-signal sounds are very short — decrement after generous timeout
+        setTimeout(() => {
+          this.activeSounds = Math.max(0, this.activeSounds - 1);
+        }, 200);
+      }
+      return;
+    }
+
+    // ─── Patch-based theme: use keyboard_type ───
+    const kbType = this.config.keyboard_type;
+    if (kbType === 'none') return;
 
     // Validate keyboard type is a known key
     if (!(kbType in KEYBOARD_PATCHES)) return;
@@ -675,6 +878,23 @@ export class SoundEngine {
     // Max concurrent check
     if (this.activeSounds >= SoundEngine.MAX_CONCURRENT) return;
 
+    // ─── Ghost-signal theme: use event map ───
+    if (this.activeTheme.type === 'ghost-signal') {
+      const ghostSoundId = GHOST_SIGNAL_EVENT_MAP[event];
+      if (!ghostSoundId) return;
+      const fn = this.activeTheme.sounds[ghostSoundId];
+      if (!fn) return;
+
+      this.activeSounds++;
+      fn();
+      // Ghost-signal sounds are very short — decrement after generous timeout
+      setTimeout(() => {
+        this.activeSounds = Math.max(0, this.activeSounds - 1);
+      }, 300);
+      return;
+    }
+
+    // ─── Patch-based theme: synthesize from patch definition ───
     const patch = this.patches[event];
     if (!patch) return;
 

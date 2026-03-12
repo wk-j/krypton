@@ -389,7 +389,7 @@ The animation engine must maintain **60 FPS** and avoid layout thrashing (use `t
 
 ## 5.8 Sound Engine (Frontend)
 
-A dedicated TypeScript module (`src/sound.ts`) that synthesizes and plays short sound effects for every user action using the Web Audio API. No audio files — all sounds are generated procedurally at runtime via **additive and subtractive functional synthesis**.
+A dedicated TypeScript module (`src/sound.ts`) that synthesizes and plays short sound effects for every user action using the Web Audio API. No audio files — all sounds are generated procedurally at runtime. Supports two synthesis backends: **patch-based** (additive + subtractive functional synthesis via `krypton-cyber`) and **ghost-signal** (function-based themes from the ghost-signal project).
 
 ### Architecture
 
@@ -427,6 +427,10 @@ AudioContext.destination (speakers)
 - **Ephemeral nodes** — each `play()` call creates a short-lived subgraph of oscillators, gains, and filters. Nodes are scheduled to stop via `OscillatorNode.stop(endTime)` and auto-disconnect after completion. No persistent audio graph.
 - **Non-blocking** — all scheduling uses `AudioContext.currentTime` offsets. No `setTimeout` or `requestAnimationFrame` for audio timing. The audio thread runs independently from the main thread.
 - **Patch definitions** — each sound is a plain object (or TOML-serializable struct) describing oscillators, filters, envelopes, and effects. This makes them configurable and replaceable via custom sound packs.
+- **Dual theme system** — `krypton-cyber` uses the patch-based model; ghost-signal themes use a function-based model where `createSounds(ctx, noiseBuffer)` returns fire-and-forget functions. Both coexist via the `ActiveSoundTheme` discriminated union.
+- **Proxy AudioContext** — ghost-signal functions connect to `ctx.destination` directly. A `Proxy` wraps the real `AudioContext`, redirecting `.destination` to a `GainNode` for master volume control without modifying theme code.
+- **Per-key typing sounds** — `playKeypress(phase, key?)` routes Backspace, Enter, Space, and letter keys to distinct ghost-signal typing sounds (`TYPING_BACKSPACE`, `TYPING_ENTER`, `TYPING_SPACE`, `TYPING_LETTER`).
+- **Lazy loading** — ghost-signal themes are loaded via dynamic `import()` so only the active theme's code is bundled into the running app.
 - **Graceful degradation** — if `AudioContext` is unavailable or construction fails, the engine silently becomes a no-op. All `play()` calls are guarded.
 
 ### SoundPatch Data Model
@@ -466,7 +470,7 @@ interface SoundPatch {
 
 Keypress sounds are separate from action sounds. Each keyboard type defines a **press** (key-down) and **release** (key-up) `SoundPatch`. The engine adds per-keystroke randomization (+/-8% amplitude, +/-3% filter cutoff) for a natural feel. The release sound fires 30-70ms (randomized) after the press.
 
-Six keyboard types are built in: `cherry-mx-blue`, `cherry-mx-red`, `cherry-mx-brown` (default), `topre`, `buckling-spring`, `membrane`. Set to `none` to disable.
+Six keyboard types are built in: `cherry-mx-blue`, `cherry-mx-red`, `cherry-mx-brown` (default), `topre`, `buckling-spring`, `membrane`. Set to `none` to disable. When a ghost-signal theme is active, `keyboard_type` is ignored — the theme provides its own typing sounds.
 
 ### Integration Points
 
@@ -486,4 +490,20 @@ The Sound Engine is called by the compositor and input router at the moment each
 | `main.ts` (startup) | After first window rendered | `startup` |
 | PTY event listener | On BEL character | `terminal.bell` |
 | PTY event listener | On shell exit | `terminal.exit` |
-| `terminal.onData()` (both regular + QT) | On each keystroke to PTY | `keypress` (press + release via `playKeypress()`) |
+| `terminal.onData()` (both regular + QT) | On each keystroke to PTY | `keypress` (press + release via `playKeypress(phase, key)`) |
+
+### Sound Themes (`src/sound-themes/`)
+
+Four ghost-signal themes are embedded as TypeScript modules under `src/sound-themes/`:
+
+| File | Theme | Description |
+|------|-------|-------------|
+| `types.ts` | — | `GhostSignalTheme` and `GhostSignalMeta` interfaces |
+| `ghost-signal.ts` | Ghost Signal | Original ghost-signal sound set |
+| `chill-city-fm.ts` | Chill City FM | Lo-fi/ambient aesthetic |
+| `orbit-deck.ts` | Orbit Deck | Space/sci-fi aesthetic |
+| `mach-line.ts` | Mach Line | Industrial/mechanical aesthetic |
+
+Each module exports a `GhostSignalTheme` with `{ meta, createSounds }`. The `createSounds(ctx, noiseBuffer)` function returns an object of 16 fire-and-forget sound functions (e.g., `CLICK`, `HOVER`, `TAB_INSERT`, `TYPING_LETTER`, etc.).
+
+A static `GHOST_SIGNAL_EVENT_MAP` in `src/sound.ts` maps Krypton's 30 `SoundEvent` values to the appropriate ghost-signal sound IDs. The command palette dynamically lists all available sound themes (both `krypton-cyber` and ghost-signal themes) for switching at runtime.

@@ -635,5 +635,19 @@ export class CommandPalette {
         execute: () => c.togglePin(id),
       });
     }
+
+    // Dynamic: sound theme switching
+    const soundEngine = c.soundEngine;
+    const currentPack = soundEngine.getCurrentPack();
+    for (const themeName of soundEngine.getAvailableThemes()) {
+      const displayName = soundEngine.getThemeDisplayName(themeName);
+      const isCurrent = themeName === currentPack;
+      this.actions.push({
+        id: `sound.theme.${themeName}`,
+        label: `${displayName}${isCurrent ? ' (active)' : ''}`,
+        category: 'Sound Theme',
+        execute: () => soundEngine.loadTheme(themeName),
+      });
+    }
   }
 }

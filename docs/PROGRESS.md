@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-12 (M6/M8: Per-window accent colors, terminal shader effects)
+> Last updated: 2026-03-12 (M7: Sound themes — ghost-signal integration)
 
 ## Overview
 
@@ -13,7 +13,7 @@
 | M4 — Keyboard System & Workspaces | In Progress | 12/14 |
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
-| M7 — Sound Effects | In Progress | 13/14 |
+| M7 — Sound Effects | In Progress | 14/15 |
 | M8 — Polish | In Progress | 4/9 |
 | M9 — Release | Not Started | 0/4 |
 
@@ -111,6 +111,7 @@
 - [x] Integration: compositor + input-router call `SoundEngine.play()` at each action point
 - [x] Configuration: `[sound]` TOML section applied via `applyConfig()`
 - [x] Keypress sounds: 6 keyboard types (cherry-mx-blue, cherry-mx-red, cherry-mx-brown, topre, buckling-spring, membrane) with press/release phases, amplitude/filter randomization, configurable via `keyboard_type` and `keyboard_volume`
+- [x] Sound theme system: ghost-signal integration with 4 built-in themes (ghost-signal, chill-city-fm, orbit-deck, mach-line), per-key typing sound routing, command palette switching, proxy AudioContext for volume control
 - [ ] Custom sound pack loading from `~/.config/krypton/sounds/*.toml`
 - [x] Graceful degradation when Web Audio API is unavailable
 

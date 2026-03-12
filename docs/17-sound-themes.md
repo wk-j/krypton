@@ -1,6 +1,6 @@
 # Sound Themes — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-03-12
 > Milestone: M7 — Sound Effects
 
