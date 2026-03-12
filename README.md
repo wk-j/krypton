@@ -4,6 +4,8 @@ A keyboard-driven terminal emulator with a cyberpunk aesthetic. Built with Rust 
 
 Single transparent native window. Multiple terminal windows rendered as DOM elements with custom chrome. Tiling layout engine. Vim-style modal keyboard system.
 
+![](./docs/images/SCR-20260312-maqq.png)
+
 ## Features
 
 - **Transparent workspace** with backdrop blur on macOS
