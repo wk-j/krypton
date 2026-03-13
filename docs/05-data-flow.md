@@ -25,8 +25,10 @@
 4. **Rust backend writes** -> Raw bytes written to PTY file descriptor
 5. **Shell processes input** -> Shell sends output back through PTY
 6. **Rust backend reads PTY** -> Raw bytes read from PTY fd
-7. **Backend emits event** -> Tauri event `terminal-output` pushes raw bytes to frontend (scoped by window_id)
-8. **xterm.js renders** -> xterm.js parses VT sequences and updates the window's terminal canvas
+7. **Backend scans for OSC 9;4** -> Inline state machine detects `ESC ] 9 ; 4 ; <state> [; <progress>] ST` sequences. If found, emits Tauri event `pty-progress` with `{ session_id, state, progress }`. Raw bytes are NOT stripped — xterm.js will ignore the unknown OSC.
+8. **Backend emits event** -> Tauri event `pty-output` pushes raw bytes to frontend (scoped by session_id)
+9. **xterm.js renders** -> xterm.js parses VT sequences and updates the window's terminal canvas
+10. **Progress UI** -> If `pty-progress` was emitted, the compositor updates the target window's status dot arc gauge (SVG radial fill) and titlebar scanline sweep animation
 
 ## Quick Terminal Toggle Flow (e.g., user presses Cmd+I)
 

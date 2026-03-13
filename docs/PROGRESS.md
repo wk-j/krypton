@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-12 (M7: Sound themes — ghost-signal integration)
+> Last updated: 2026-03-13 (M8: Progress bar — OSC 9;4 status dot arc gauge)
 
 ## Overview
 
@@ -14,7 +14,7 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 14/15 |
-| M8 — Polish | In Progress | 4/9 |
+| M8 — Polish | In Progress | 5/9 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -120,6 +120,7 @@
 - [x] Vim-like Selection mode (`src/selection.ts`) — keyboard-driven text selection with virtual cursor, h/j/k/l/w/b/e/0/$/gg/G navigation, v (char-wise) and V (line-wise) visual selection, y to yank to clipboard. Enter via `Leader v` or `Leader V`
 - [x] Hint mode (`src/hints.ts`) — Rio-style pattern matching: `Cmd+Shift+H` or `Leader Shift+H` scans visible buffer for regex patterns (URLs, file paths, emails), overlays keyboard labels on matches, type label to act (Open/Copy/Paste). Configurable alphabet, rules, and per-rule actions via `[hints]` TOML config.
 - [x] Terminal shader effects (`src/shaders.ts`) — CSS/SVG filter-based post-processing: 5 presets (crt, hologram, glitch, bloom, matrix) with scanlines, chromatic aberration, displacement, bloom glow. Per-pane ShaderInstance with overlay div + animated keyframes. Configurable via `[shader]` TOML section; `Leader g` cycles preset, `Leader G` toggles globally.
+- [x] Progress bar via ConEmu `OSC 9;4` — Rust backend inline parser detects progress sequences in PTY output, emits `pty-progress` Tauri event. Frontend renders a radial SVG arc gauge around the window's status dot (fills clockwise for normal progress, orbits for indeterminate, red for error, amber for paused) with a subtle titlebar scanline sweep. Per-window accent color aware. Used by Zig CLI, systemd, Amp, etc.
 - [ ] `@xterm/addon-search` integration with keyboard-driven search overlay
 - [ ] IME support testing and fixes
 - [ ] Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)

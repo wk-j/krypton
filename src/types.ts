@@ -156,6 +156,36 @@ export interface QuickTerminalConfig {
   animationDuration: number;
 }
 
+// ─── Progress Bar Types (OSC 9;4) ─────────────────────────────────
+
+/** Progress state reported by ConEmu OSC 9;4 sequences */
+export enum ProgressState {
+  /** Remove / hide progress indicator */
+  Hidden = 0,
+  /** Normal progress with percentage (0-100) */
+  Normal = 1,
+  /** Error state (red) */
+  Error = 2,
+  /** Indeterminate / pulsing */
+  Indeterminate = 3,
+  /** Paused state (amber) */
+  Paused = 4,
+}
+
+/** Payload from the backend `pty-progress` event */
+export interface ProgressEvent {
+  session_id: number;
+  state: ProgressState;
+  /** 0-100, meaningful for Normal/Error/Paused states */
+  progress: number;
+}
+
+/** Per-pane progress tracking state */
+export interface PaneProgress {
+  state: ProgressState;
+  progress: number;
+}
+
 /** Default Quick Terminal configuration */
 export const DEFAULT_QUICK_TERMINAL_CONFIG: QuickTerminalConfig = {
   widthRatio: 0.6,

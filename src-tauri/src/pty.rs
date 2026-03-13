@@ -5,6 +5,219 @@ use std::sync::Mutex;
 use std::thread;
 use tauri::{AppHandle, Emitter};
 
+// ─── OSC 9;4 Progress Bar Parser ───────────────────────────────────
+
+/// Payload emitted as a `pty-progress` Tauri event.
+#[derive(Clone, serde::Serialize)]
+struct ProgressPayload {
+    session_id: u32,
+    /// 0=remove, 1=normal, 2=error, 3=indeterminate, 4=paused
+    state: u8,
+    /// 0-100, meaningful for state 1/2/4
+    progress: u8,
+}
+
+/// Inline state machine for detecting `ESC ] 9 ; 4 ; <st> [; <pr>] ST` sequences
+/// within raw PTY output. Does NOT consume or strip bytes from the stream.
+///
+/// ST (String Terminator) is either BEL (0x07) or ESC \ (0x1B 0x5C).
+enum OscParseState {
+    /// Default — scanning for ESC (0x1B)
+    Normal,
+    /// Saw ESC (0x1B)
+    Esc,
+    /// Saw ESC ] (OSC start)
+    OscStart,
+    /// Saw ESC ] 9
+    Osc9,
+    /// Saw ESC ] 9 ;
+    Osc9Semi,
+    /// Saw ESC ] 9 ; 4
+    Osc94,
+    /// Saw ESC ] 9 ; 4 ;
+    Osc94Semi,
+    /// Collecting the state digit and optional ;progress until ST
+    CollectArgs,
+    /// Saw ESC inside CollectArgs (potential ESC \ terminator)
+    CollectEsc,
+}
+
+/// Persistent parser context for one PTY session's reader thread.
+struct OscProgressParser {
+    state: OscParseState,
+    /// Accumulated argument bytes (e.g. "1;75" or "3")
+    arg_buf: Vec<u8>,
+}
+
+impl OscProgressParser {
+    fn new() -> Self {
+        Self {
+            state: OscParseState::Normal,
+            arg_buf: Vec::with_capacity(16),
+        }
+    }
+
+    /// Reset to default scanning state.
+    fn reset(&mut self) {
+        self.state = OscParseState::Normal;
+        self.arg_buf.clear();
+    }
+
+    /// Feed a chunk of bytes through the parser. Returns a `ProgressPayload`
+    /// each time a complete `OSC 9;4` sequence is detected.
+    fn feed(&mut self, data: &[u8]) -> Vec<ProgressPayload> {
+        let mut results = Vec::new();
+
+        for &byte in data {
+            match self.state {
+                OscParseState::Normal => {
+                    if byte == 0x1B {
+                        self.state = OscParseState::Esc;
+                    }
+                }
+                OscParseState::Esc => {
+                    if byte == b']' {
+                        self.state = OscParseState::OscStart;
+                    } else {
+                        self.reset();
+                        // Re-check: the unexpected byte itself might be ESC
+                        if byte == 0x1B {
+                            self.state = OscParseState::Esc;
+                        }
+                    }
+                }
+                OscParseState::OscStart => {
+                    if byte == b'9' {
+                        self.state = OscParseState::Osc9;
+                    } else {
+                        self.reset();
+                        if byte == 0x1B {
+                            self.state = OscParseState::Esc;
+                        }
+                    }
+                }
+                OscParseState::Osc9 => {
+                    if byte == b';' {
+                        self.state = OscParseState::Osc9Semi;
+                    } else {
+                        self.reset();
+                        if byte == 0x1B {
+                            self.state = OscParseState::Esc;
+                        }
+                    }
+                }
+                OscParseState::Osc9Semi => {
+                    if byte == b'4' {
+                        self.state = OscParseState::Osc94;
+                    } else {
+                        self.reset();
+                        if byte == 0x1B {
+                            self.state = OscParseState::Esc;
+                        }
+                    }
+                }
+                OscParseState::Osc94 => {
+                    if byte == b';' {
+                        self.state = OscParseState::Osc94Semi;
+                        self.arg_buf.clear();
+                    } else if byte == 0x07 {
+                        // BEL terminates with no args — treat as state=0 (remove)
+                        results.push(ProgressPayload {
+                            session_id: 0, // filled in by caller
+                            state: 0,
+                            progress: 0,
+                        });
+                        self.reset();
+                    } else if byte == 0x1B {
+                        self.state = OscParseState::CollectEsc;
+                        // Might be ESC \ to terminate with no args
+                        self.arg_buf.clear();
+                    } else {
+                        self.reset();
+                    }
+                }
+                OscParseState::Osc94Semi => {
+                    if byte == 0x07 {
+                        // BEL terminates — parse args
+                        if let Some(payload) = self.parse_args() {
+                            results.push(payload);
+                        }
+                        self.reset();
+                    } else if byte == 0x1B {
+                        self.state = OscParseState::CollectEsc;
+                    } else if self.arg_buf.len() < 16 {
+                        self.arg_buf.push(byte);
+                        self.state = OscParseState::CollectArgs;
+                    } else {
+                        // Arg buffer overflow — malformed
+                        self.reset();
+                    }
+                }
+                OscParseState::CollectArgs => {
+                    if byte == 0x07 {
+                        // BEL terminates
+                        if let Some(payload) = self.parse_args() {
+                            results.push(payload);
+                        }
+                        self.reset();
+                    } else if byte == 0x1B {
+                        self.state = OscParseState::CollectEsc;
+                    } else if self.arg_buf.len() < 16 {
+                        self.arg_buf.push(byte);
+                    } else {
+                        self.reset();
+                    }
+                }
+                OscParseState::CollectEsc => {
+                    if byte == b'\\' {
+                        // ESC \ terminates
+                        if let Some(payload) = self.parse_args() {
+                            results.push(payload);
+                        }
+                        self.reset();
+                    } else {
+                        // Not a valid ST — abort this sequence
+                        self.reset();
+                        if byte == 0x1B {
+                            self.state = OscParseState::Esc;
+                        }
+                    }
+                }
+            }
+        }
+
+        results
+    }
+
+    /// Parse the collected arg_buf as `<state>[;<progress>]`.
+    /// Returns None if malformed.
+    fn parse_args(&self) -> Option<ProgressPayload> {
+        let s = std::str::from_utf8(&self.arg_buf).ok()?;
+
+        let mut parts = s.splitn(2, ';');
+        let state_str = parts.next()?;
+        let state: u8 = state_str.parse().ok()?;
+
+        // State must be 0-4
+        if state > 4 {
+            return None;
+        }
+
+        let progress: u8 = if let Some(pr_str) = parts.next() {
+            let raw: u16 = pr_str.parse().ok()?;
+            raw.min(100) as u8
+        } else {
+            0
+        };
+
+        Some(ProgressPayload {
+            session_id: 0, // filled in by caller
+            state,
+            progress,
+        })
+    }
+}
+
 /// Holds a PTY master handle for writing and resizing.
 struct PtySession {
     writer: Box<dyn Write + Send>,
@@ -110,6 +323,7 @@ impl PtyManager {
         let sid = session_id;
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
+            let mut osc_parser = OscProgressParser::new();
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
@@ -118,6 +332,14 @@ impl PtyManager {
                     }
                     Ok(n) => {
                         let data = buf[..n].to_vec();
+
+                        // Scan for OSC 9;4 progress sequences before forwarding
+                        let progress_events = osc_parser.feed(&data);
+                        for mut payload in progress_events {
+                            payload.session_id = sid;
+                            let _ = handle.emit("pty-progress", payload);
+                        }
+
                         let _ = handle.emit("pty-output", (sid, data));
                     }
                     Err(e) => {

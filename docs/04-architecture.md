@@ -137,7 +137,8 @@ The compositor is a TypeScript module running in the webview that manages worksp
 11. **Chrome rendering** — cyberpunk/sci-fi window chrome with glowing cyan borders, session label with status dot, PTY status indicator, right sidebar with telemetry decoration, and bottom bar
 12. **Per-window accent colors** — each window gets a unique color from a 10-color cyberpunk palette (cyan, magenta, amber, green, violet, orange, pink, teal, gold, red) applied to chrome, borders, corners, tabs; colors recycled on window close
 13. **Shader engine** — manage per-pane CSS/SVG post-processing effects (CRT, hologram, glitch, bloom, matrix); cycle presets via `Leader g`, toggle globally via `Leader G`
-14. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
+14. **Progress indicator** — listen for `pty-progress` events (ConEmu `OSC 9;4`); render a radial SVG arc gauge around the window status dot and a titlebar scanline sweep; per-pane state tracking with active-tab display; accent-color-aware theming
+15. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
 
 ### Window DOM Structure
 

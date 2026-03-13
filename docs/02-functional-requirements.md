@@ -23,6 +23,7 @@
 | FR-VT-006 | The system shall support OSC sequences for setting window/tab title. | Should |
 | FR-VT-007 | The system shall support bracketed paste mode. | Should |
 | FR-VT-008 | The system shall support mouse reporting (X10, SGR, UTF-8 modes). | Should |
+| FR-VT-009 | The system shall support ConEmu `OSC 9;4` progress bar sequences (states: remove, normal, error, indeterminate, paused) and display a native GUI progress indicator integrated into the window chrome. | Should |
 
 ## 3.3 Rendering & Display
 
