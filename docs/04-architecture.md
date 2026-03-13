@@ -494,7 +494,7 @@ The Sound Engine is called by the compositor and input router at the moment each
 
 ### Sound Themes (`src/sound-themes/`)
 
-Four ghost-signal themes are embedded as TypeScript modules under `src/sound-themes/`:
+Five ghost-signal themes are embedded as TypeScript modules under `src/sound-themes/`:
 
 | File | Theme | Description |
 |------|-------|-------------|
@@ -503,6 +503,7 @@ Four ghost-signal themes are embedded as TypeScript modules under `src/sound-the
 | `chill-city-fm.ts` | Chill City FM | Lo-fi/ambient aesthetic |
 | `orbit-deck.ts` | Orbit Deck | Space/sci-fi aesthetic |
 | `mach-line.ts` | Mach Line | Industrial/mechanical aesthetic |
+| `deep-glyph.ts` | Deep Glyph | Midnight-code trance aesthetic |
 
 Each module exports a `GhostSignalTheme` with `{ meta, createSounds }`. The `createSounds(ctx, noiseBuffer)` function returns an object of 16 fire-and-forget sound functions (e.g., `CLICK`, `HOVER`, `TAB_INSERT`, `TYPING_LETTER`, etc.).
 

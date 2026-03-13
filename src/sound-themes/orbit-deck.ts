@@ -36,6 +36,7 @@ const meta = {
     TYPING_BACKSPACE: { label: 'Typing Backspace', meta: '30 ms / sine blip',               desc: 'Delete blip' },
     TYPING_ENTER:     { label: 'Typing Enter',    meta: '85 ms / confirm tone',             desc: 'Command confirmed' },
     TYPING_SPACE:     { label: 'Typing Space',    meta: '30 ms / broad tap',                desc: 'Suit casing tap' },
+    APP_START:        { label: 'App Start',       meta: '1.4 s / drone + shimmer + wind',    desc: 'Orbital silence awakening' },
   },
 };
 
@@ -773,6 +774,88 @@ function createSounds(ctx: AudioContext, noiseBuffer: (duration?: number) => Aud
     osc.connect(lp).connect(g).connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.03);
+  };
+
+  // ---------------------------------------------------------------
+  // 17. APP_START — orbital silence awakening, 1.4 s
+  // ---------------------------------------------------------------
+  sounds.APP_START = function() {
+    const now = ctx.currentTime;
+
+    // Deep drone — like hearing your own heartbeat in a spacesuit
+    const drone = ctx.createOscillator();
+    drone.type = 'sine';
+    drone.frequency.value = 110;
+    const dLp = ctx.createBiquadFilter();
+    dLp.type = 'lowpass';
+    dLp.frequency.setValueAtTime(200, now);
+    dLp.frequency.linearRampToValueAtTime(700, now + 0.7);
+    dLp.frequency.exponentialRampToValueAtTime(150, now + 1.4);
+    dLp.Q.value = 2;
+    const dG = ctx.createGain();
+    dG.gain.setValueAtTime(0, now);
+    dG.gain.linearRampToValueAtTime(0.16, now + 0.5);
+    dG.gain.setValueAtTime(0.16, now + 0.8);
+    dG.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+    drone.connect(dLp).connect(dG).connect(ctx.destination);
+    drone.start(now);
+    drone.stop(now + 1.45);
+
+    // Octave shimmer — distant, high, barely there
+    const shimmer = ctx.createOscillator();
+    shimmer.type = 'sine';
+    shimmer.frequency.value = 220;
+    const sLp = ctx.createBiquadFilter();
+    sLp.type = 'lowpass';
+    sLp.frequency.value = 500;
+    sLp.Q.value = 1.5;
+    const sG = ctx.createGain();
+    sG.gain.setValueAtTime(0, now + 0.5);
+    sG.gain.linearRampToValueAtTime(0.06, now + 0.9);
+    sG.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+    shimmer.connect(sLp).connect(sG).connect(ctx.destination);
+    shimmer.start(now + 0.5);
+    shimmer.stop(now + 1.45);
+
+    // Gentle LFO — slow breathing modulation
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 1.5;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 0.03;
+    lfo.connect(lfoG).connect(dG.gain);
+    lfo.start(now);
+    lfo.stop(now + 1.45);
+
+    // Atmospheric whisper — thin, high noise like solar wind
+    const nSrc = ctx.createBufferSource();
+    nSrc.buffer = noiseBuffer(1.3);
+    const nBp = ctx.createBiquadFilter();
+    nBp.type = 'bandpass';
+    nBp.frequency.value = 2000;
+    nBp.Q.value = 1;
+    const nLp = ctx.createBiquadFilter();
+    nLp.type = 'lowpass';
+    nLp.frequency.value = 3000;
+    const nG = ctx.createGain();
+    nG.gain.setValueAtTime(0, now);
+    nG.gain.linearRampToValueAtTime(0.025, now + 0.6);
+    nG.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+    nSrc.connect(nBp).connect(nLp).connect(nG).connect(ctx.destination);
+    nSrc.start(now);
+    nSrc.stop(now + 1.35);
+
+    // Sub rumble — the structure of the station felt through the suit
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.value = 55;
+    const subG = ctx.createGain();
+    subG.gain.setValueAtTime(0, now);
+    subG.gain.linearRampToValueAtTime(0.08, now + 0.4);
+    subG.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
+    sub.connect(subG).connect(ctx.destination);
+    sub.start(now);
+    sub.stop(now + 1.05);
   };
 
   return sounds;

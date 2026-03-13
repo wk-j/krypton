@@ -36,6 +36,7 @@ const meta = {
     TYPING_BACKSPACE: { label: 'Typing Backspace', meta: '28 ms / square pulse',            desc: 'Data erasure' },
     TYPING_ENTER:     { label: 'Typing Enter',    meta: '90 ms / saw + sub',                desc: 'Mission confirm' },
     TYPING_SPACE:     { label: 'Typing Space',    meta: '28 ms / noise puff',               desc: 'Pressure release' },
+    APP_START:        { label: 'App Start',       meta: '1.3 s / drone + dissonance',        desc: 'Stealth signal emerging' },
   },
 };
 
@@ -625,6 +626,79 @@ function createSounds(ctx: AudioContext, noiseBuffer: (duration?: number) => Aud
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.013);
     osc.connect(g).connect(ctx.destination);
     osc.start(now); osc.stop(now + 0.028);
+  };
+
+  // ---------------------------------------------------------------
+  // 17. APP_START — stealth signal emerging, 1.3 s
+  // ---------------------------------------------------------------
+  sounds.APP_START = function() {
+    const now = ctx.currentTime;
+
+    // Primary tone — low sine, slow filter opening
+    const drone = ctx.createOscillator();
+    drone.type = 'sine';
+    drone.frequency.value = 140;
+    const dLp = ctx.createBiquadFilter();
+    dLp.type = 'lowpass';
+    dLp.frequency.setValueAtTime(200, now);
+    dLp.frequency.linearRampToValueAtTime(800, now + 0.7);
+    dLp.frequency.exponentialRampToValueAtTime(180, now + 1.3);
+    dLp.Q.value = 6;
+    const dG = ctx.createGain();
+    dG.gain.setValueAtTime(0, now);
+    dG.gain.linearRampToValueAtTime(0.16, now + 0.4);
+    dG.gain.setValueAtTime(0.16, now + 0.7);
+    dG.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+    drone.connect(dLp).connect(dG).connect(ctx.destination);
+    drone.start(now);
+    drone.stop(now + 1.35);
+
+    // Dissonant minor second — cold, unsettling tension
+    const dis = ctx.createOscillator();
+    dis.type = 'sine';
+    dis.frequency.value = 148;
+    const disLp = ctx.createBiquadFilter();
+    disLp.type = 'lowpass';
+    disLp.frequency.value = 400;
+    disLp.Q.value = 3;
+    const disG = ctx.createGain();
+    disG.gain.setValueAtTime(0, now + 0.4);
+    disG.gain.linearRampToValueAtTime(0.07, now + 0.7);
+    disG.gain.setValueAtTime(0.07, now + 0.85);
+    disG.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+    dis.connect(disLp).connect(disG).connect(ctx.destination);
+    dis.start(now + 0.4);
+    dis.stop(now + 1.35);
+
+    // Sub presence — barely felt
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.value = 45;
+    const sG = ctx.createGain();
+    sG.gain.setValueAtTime(0, now);
+    sG.gain.linearRampToValueAtTime(0.10, now + 0.35);
+    sG.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+    sub.connect(sG).connect(ctx.destination);
+    sub.start(now);
+    sub.stop(now + 0.95);
+
+    // Dark wind noise — very low, filtered tightly
+    const nSrc = ctx.createBufferSource();
+    nSrc.buffer = noiseBuffer(1.2);
+    const nBp = ctx.createBiquadFilter();
+    nBp.type = 'bandpass';
+    nBp.frequency.value = 800;
+    nBp.Q.value = 2;
+    const nLp = ctx.createBiquadFilter();
+    nLp.type = 'lowpass';
+    nLp.frequency.value = 1000;
+    const nG = ctx.createGain();
+    nG.gain.setValueAtTime(0, now);
+    nG.gain.linearRampToValueAtTime(0.03, now + 0.5);
+    nG.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+    nSrc.connect(nBp).connect(nLp).connect(nG).connect(ctx.destination);
+    nSrc.start(now);
+    nSrc.stop(now + 1.25);
   };
 
   return sounds;

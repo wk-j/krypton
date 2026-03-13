@@ -36,6 +36,7 @@ const meta = {
     TYPING_BACKSPACE: { label: 'Typing Backspace', meta: '35 ms / triangle pulse',           desc: 'Carriage pull-back thock' },
     TYPING_ENTER:     { label: 'Typing Enter',    meta: '90 ms / ding + chunk',              desc: 'Carriage return' },
     TYPING_SPACE:     { label: 'Typing Space',    meta: '35 ms / woody thump',               desc: 'Space bar thump' },
+    APP_START:        { label: 'App Start',       meta: '1.3 s / triangle drone + hiss',     desc: 'Late-night signal fading in' },
   },
 };
 
@@ -708,6 +709,89 @@ function createSounds(ctx: AudioContext, noiseBuffer: (duration?: number) => Aud
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
     osc.connect(lp).connect(g).connect(ctx.destination);
     osc.start(now); osc.stop(now + 0.035);
+  };
+
+  // ---------------------------------------------------------------
+  // 17. APP_START — late-night signal fading in, 1.3 s
+  // ---------------------------------------------------------------
+  sounds.APP_START = function() {
+    const now = ctx.currentTime;
+
+    // Warm triangle drone — like a radio carrier wave
+    const drone = ctx.createOscillator();
+    drone.type = 'triangle';
+    drone.frequency.value = 196;
+    const dLp = ctx.createBiquadFilter();
+    dLp.type = 'lowpass';
+    dLp.frequency.setValueAtTime(300, now);
+    dLp.frequency.linearRampToValueAtTime(1200, now + 0.6);
+    dLp.frequency.exponentialRampToValueAtTime(250, now + 1.3);
+    dLp.Q.value = 3;
+    const dG = ctx.createGain();
+    dG.gain.setValueAtTime(0, now);
+    dG.gain.linearRampToValueAtTime(0.14, now + 0.4);
+    dG.gain.setValueAtTime(0.14, now + 0.7);
+    dG.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+    drone.connect(dLp).connect(dG).connect(ctx.destination);
+    drone.start(now);
+    drone.stop(now + 1.35);
+
+    // Minor third — melancholy, distant, like a memory
+    const third = ctx.createOscillator();
+    third.type = 'sine';
+    third.frequency.value = 233;
+    const tLp = ctx.createBiquadFilter();
+    tLp.type = 'lowpass';
+    tLp.frequency.value = 600;
+    tLp.Q.value = 2;
+    const tG = ctx.createGain();
+    tG.gain.setValueAtTime(0, now + 0.35);
+    tG.gain.linearRampToValueAtTime(0.08, now + 0.65);
+    tG.gain.setValueAtTime(0.08, now + 0.8);
+    tG.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+    third.connect(tLp).connect(tG).connect(ctx.destination);
+    third.start(now + 0.35);
+    third.stop(now + 1.35);
+
+    // Slow wobble — tape warble on the drone
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 3;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 3;
+    lfo.connect(lfoG).connect(drone.frequency);
+    lfo.start(now);
+    lfo.stop(now + 1.35);
+
+    // Tape hiss — warm, enveloping
+    const nSrc = ctx.createBufferSource();
+    nSrc.buffer = noiseBuffer(1.2);
+    const nBp = ctx.createBiquadFilter();
+    nBp.type = 'bandpass';
+    nBp.frequency.value = 1000;
+    nBp.Q.value = 0.8;
+    const nLp = ctx.createBiquadFilter();
+    nLp.type = 'lowpass';
+    nLp.frequency.value = 3000;
+    const nG = ctx.createGain();
+    nG.gain.setValueAtTime(0, now);
+    nG.gain.linearRampToValueAtTime(0.04, now + 0.4);
+    nG.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+    nSrc.connect(nBp).connect(nLp).connect(nG).connect(ctx.destination);
+    nSrc.start(now);
+    nSrc.stop(now + 1.25);
+
+    // 60 Hz mains hum — grounding warmth
+    const hum = ctx.createOscillator();
+    hum.type = 'sine';
+    hum.frequency.value = 60;
+    const humG = ctx.createGain();
+    humG.gain.setValueAtTime(0, now);
+    humG.gain.linearRampToValueAtTime(0.05, now + 0.3);
+    humG.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+    hum.connect(humG).connect(ctx.destination);
+    hum.start(now);
+    hum.stop(now + 0.95);
   };
 
   return sounds;

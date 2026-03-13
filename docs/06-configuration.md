@@ -158,7 +158,8 @@ cancel = "Escape"
 enabled = true                 # master toggle for all sound effects
 volume = 0.5                   # master volume (0.0 to 1.0)
 pack = "krypton-cyber"         # sound pack name: "krypton-cyber", "ghost-signal",
-                               # "chill-city-fm", "orbit-deck", "mach-line", or custom
+                               # "chill-city-fm", "orbit-deck", "mach-line",
+                               # "deep-glyph", or custom
 keyboard_type = "cherry-mx-brown"  # keypress sound: "cherry-mx-blue", "cherry-mx-red",
                                    # "cherry-mx-brown", "topre", "buckling-spring",
                                    # "membrane", "none" (disable keypress sounds)
@@ -326,7 +327,7 @@ Built-in rules (active by default): `url` (Open), `filepath` (Copy), `email` (Co
 |---------|-----|------|---------|-------------|
 | `[sound]` | `enabled` | bool | `true` | Master toggle — enables/disables all sound effects |
 | `[sound]` | `volume` | float | `0.5` | Master volume (0.0 = silent, 1.0 = full) |
-| `[sound]` | `pack` | string | `"krypton-cyber"` | Sound pack name. Built-in options: `"krypton-cyber"` (patch-based synthesis), `"ghost-signal"`, `"chill-city-fm"`, `"orbit-deck"`, `"mach-line"` (ghost-signal function-based themes). Custom packs from `~/.config/krypton/sounds/` also supported. |
+| `[sound]` | `pack` | string | `"krypton-cyber"` | Sound pack name. Built-in options: `"krypton-cyber"` (patch-based synthesis), `"ghost-signal"`, `"chill-city-fm"`, `"orbit-deck"`, `"mach-line"`, `"deep-glyph"` (ghost-signal function-based themes). Custom packs from `~/.config/krypton/sounds/` also supported. |
 | `[sound]` | `keyboard_type` | string | `"cherry-mx-brown"` | Keyboard type for keypress sounds. Options: `"cherry-mx-blue"`, `"cherry-mx-red"`, `"cherry-mx-brown"`, `"topre"`, `"buckling-spring"`, `"membrane"`, `"none"`. **Ignored when a ghost-signal theme is active** (the theme provides its own typing sounds with per-key routing: Backspace, Enter, Space, and letters each use distinct sounds). |
 | `[sound]` | `keyboard_volume` | float | `1.0` | Volume multiplier for keypress sounds (0.0 = silent, 1.0 = full). Multiplied with master volume. |
 | `[sound.events]` | `<event_name>` | bool \| float | `true` | Per-event toggle or volume override. `false` disables, `true` uses master volume, float (0.0–1.0) sets individual volume. |

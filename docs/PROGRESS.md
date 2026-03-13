@@ -111,7 +111,7 @@
 - [x] Integration: compositor + input-router call `SoundEngine.play()` at each action point
 - [x] Configuration: `[sound]` TOML section applied via `applyConfig()`
 - [x] Keypress sounds: 6 keyboard types (cherry-mx-blue, cherry-mx-red, cherry-mx-brown, topre, buckling-spring, membrane) with press/release phases, amplitude/filter randomization, configurable via `keyboard_type` and `keyboard_volume`
-- [x] Sound theme system: ghost-signal integration with 4 built-in themes (ghost-signal, chill-city-fm, orbit-deck, mach-line), per-key typing sound routing, command palette switching, proxy AudioContext for volume control
+- [x] Sound theme system: ghost-signal integration with 5 built-in themes (ghost-signal, chill-city-fm, orbit-deck, mach-line, deep-glyph), per-key typing sound routing, command palette switching, proxy AudioContext for volume control
 - [ ] Custom sound pack loading from `~/.config/krypton/sounds/*.toml`
 - [x] Graceful degradation when Web Audio API is unavailable
 

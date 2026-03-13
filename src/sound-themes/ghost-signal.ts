@@ -36,6 +36,7 @@ const meta = {
     TYPING_BACKSPACE: { label: 'Typing Backspace', meta: '30 ms / square pulse',            desc: 'Data retract' },
     TYPING_ENTER:     { label: 'Typing Enter',    meta: '80 ms / saw + sub',                desc: 'Command submit' },
     TYPING_SPACE:     { label: 'Typing Space',    meta: '30 ms / noise puff',               desc: 'Buffer advance' },
+    APP_START:        { label: 'App Start',       meta: '1.2 s / drone + fifth + noise',    desc: 'Ghost frequency awakening' },
   },
 };
 
@@ -620,6 +621,85 @@ function createSounds(ctx: AudioContext, noiseBuffer: (duration?: number) => Aud
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.015);
     osc.connect(g).connect(ctx.destination);
     osc.start(now); osc.stop(now + 0.03);
+  };
+
+  // ---------------------------------------------------------------
+  // 17. APP_START — ghost frequency awakening, 1.2 s
+  // ---------------------------------------------------------------
+  sounds.APP_START = function() {
+    const now = ctx.currentTime;
+
+    // Deep drone — sine slowly fading in, low-passed
+    const drone = ctx.createOscillator();
+    drone.type = 'sine';
+    drone.frequency.value = 165;
+    const dLp = ctx.createBiquadFilter();
+    dLp.type = 'lowpass';
+    dLp.frequency.setValueAtTime(300, now);
+    dLp.frequency.linearRampToValueAtTime(900, now + 0.6);
+    dLp.frequency.exponentialRampToValueAtTime(200, now + 1.2);
+    dLp.Q.value = 4;
+    const dG = ctx.createGain();
+    dG.gain.setValueAtTime(0, now);
+    dG.gain.linearRampToValueAtTime(0.18, now + 0.35);
+    dG.gain.setValueAtTime(0.18, now + 0.6);
+    dG.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+    drone.connect(dLp).connect(dG).connect(ctx.destination);
+    drone.start(now);
+    drone.stop(now + 1.25);
+
+    // Perfect fifth above — enters late, quieter, ethereal
+    const fifth = ctx.createOscillator();
+    fifth.type = 'sine';
+    fifth.frequency.value = 248;
+    const fLp = ctx.createBiquadFilter();
+    fLp.type = 'lowpass';
+    fLp.frequency.value = 600;
+    fLp.Q.value = 2;
+    const fG = ctx.createGain();
+    fG.gain.setValueAtTime(0, now + 0.3);
+    fG.gain.linearRampToValueAtTime(0.10, now + 0.6);
+    fG.gain.setValueAtTime(0.10, now + 0.75);
+    fG.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+    fifth.connect(fLp).connect(fG).connect(ctx.destination);
+    fifth.start(now + 0.3);
+    fifth.stop(now + 1.25);
+
+    // Slow LFO tremolo on drone for breathing feel
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 2.5;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 0.04;
+    lfo.connect(lfoG).connect(dG.gain);
+    lfo.start(now);
+    lfo.stop(now + 1.25);
+
+    // Dark noise wash — low-passed, slow swell
+    const nSrc = ctx.createBufferSource();
+    nSrc.buffer = noiseBuffer(1.1);
+    const nLp = ctx.createBiquadFilter();
+    nLp.type = 'lowpass';
+    nLp.frequency.value = 1200;
+    const nG = ctx.createGain();
+    nG.gain.setValueAtTime(0, now);
+    nG.gain.linearRampToValueAtTime(0.04, now + 0.5);
+    nG.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+    nSrc.connect(nLp).connect(nG).connect(ctx.destination);
+    nSrc.start(now);
+    nSrc.stop(now + 1.15);
+
+    // Sub presence
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.value = 55;
+    const sG = ctx.createGain();
+    sG.gain.setValueAtTime(0, now);
+    sG.gain.linearRampToValueAtTime(0.10, now + 0.3);
+    sG.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    sub.connect(sG).connect(ctx.destination);
+    sub.start(now);
+    sub.stop(now + 0.85);
   };
 
   return sounds;

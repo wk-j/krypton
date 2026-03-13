@@ -131,7 +131,7 @@ export const DEFAULT_SOUND_CONFIG: SoundConfig = {
 // Maps Krypton SoundEvent names to ghost-signal sound IDs.
 
 const GHOST_SIGNAL_EVENT_MAP: Record<SoundEvent, string> = {
-  'startup':                'IMPORTANT_CLICK',
+  'startup':                'APP_START',
   'window.create':          'TAB_INSERT',
   'window.close':           'TAB_CLOSE',
   'window.focus':           'HOVER',
@@ -173,6 +173,7 @@ const GHOST_SIGNAL_THEMES: Record<string, () => Promise<GhostSignalTheme>> = {
   'chill-city-fm': () => import('./sound-themes/chill-city-fm').then(m => m.default),
   'orbit-deck':    () => import('./sound-themes/orbit-deck').then(m => m.default),
   'mach-line':     () => import('./sound-themes/mach-line').then(m => m.default),
+  'deep-glyph':    () => import('./sound-themes/deep-glyph').then(m => m.default),
 };
 
 /**
@@ -887,10 +888,11 @@ export class SoundEngine {
 
       this.activeSounds++;
       fn();
-      // Ghost-signal sounds are very short — decrement after generous timeout
+      // APP_START sounds are 1.2-1.4 s; all others are very short
+      const timeout = ghostSoundId === 'APP_START' ? 1500 : 300;
       setTimeout(() => {
         this.activeSounds = Math.max(0, this.activeSounds - 1);
-      }, 300);
+      }, timeout);
       return;
     }
 

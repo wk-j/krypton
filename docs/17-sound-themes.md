@@ -6,20 +6,20 @@
 
 ## Problem
 
-Sound effects in Krypton are hardcoded as the single `krypton-cyber` pack using a patch-based synthesis model (oscillator definitions + filters + envelopes). Users cannot swap to a different sound aesthetic. Meanwhile, the [ghost-signal](https://github.com/wk-j/ghost-signal) project provides a library of Web Audio API sound themes with a different but compatible architecture: each theme is a JS module exporting `{ meta, createSounds }` where `createSounds(ctx, noiseBuffer)` returns an object of 16 fire-and-forget functions.
+Sound effects in Krypton are hardcoded as the single `krypton-cyber` pack using a patch-based synthesis model (oscillator definitions + filters + envelopes). Users cannot swap to a different sound aesthetic. Meanwhile, the [ghost-signal](https://github.com/wk-j/ghost-signal) project provides a library of Web Audio API sound themes with a different but compatible architecture: each theme is a JS module exporting `{ meta, createSounds }` where `createSounds(ctx, noiseBuffer)` returns an object of 17 fire-and-forget functions.
 
 The goal is to make sound effects customizable like visual themes — users pick a sound theme from built-in options or install custom ones.
 
 ## Solution
 
-Embed the four ghost-signal themes as built-in sound packs alongside `krypton-cyber`. Add a **sound theme adapter** that bridges ghost-signal's function-based sounds to Krypton's `SoundEngine.play(event)` API. Support loading custom sound themes from `~/.config/krypton/sounds/<name>/sounds.js`. The `pack` config key selects the active sound theme; hot-reload applies on change.
+Embed the five ghost-signal themes as built-in sound packs alongside `krypton-cyber`. Add a **sound theme adapter** that bridges ghost-signal's function-based sounds to Krypton's `SoundEngine.play(event)` API. Support loading custom sound themes from `~/.config/krypton/sounds/<name>/sounds.js`. The `pack` config key selects the active sound theme; hot-reload applies on change.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
 | `src/sound.ts` | Add `SoundThemeAdapter` interface, ghost-signal event mapping, `loadSoundTheme()`, refactor `play()`/`playKeypress()` to delegate to active theme |
-| `src/sound-themes/` | New directory: embedded ghost-signal theme modules (4 files) |
+| `src/sound-themes/` | New directory: embedded ghost-signal theme modules (5 files) |
 | `src/config.ts` | Add `sound_theme` to `SoundConfig` type (alias of `pack`), extend `KeyboardType` |
 | `src-tauri/src/config.rs` | No Rust changes — sound themes are frontend-only |
 | `src/compositor.ts` | Update `applyConfig` to trigger sound theme reload on pack change |
@@ -29,11 +29,11 @@ Embed the four ghost-signal themes as built-in sound packs alongside `krypton-cy
 
 ### Sound Event Mapping
 
-Ghost-signal defines 16 sounds. Krypton defines 30 `SoundEvent` values. The adapter maps Krypton events to ghost-signal sound IDs:
+Ghost-signal defines 17 sounds (including `APP_START`). Krypton defines 30 `SoundEvent` values. The adapter maps Krypton events to ghost-signal sound IDs:
 
 | Krypton Event | Ghost-Signal Sound | Rationale |
 |---|---|---|
-| `startup` | `IMPORTANT_CLICK` | System-level confirmation |
+| `startup` | `APP_START` | Application awakening — atmospheric drone |
 | `window.create` | `TAB_INSERT` | New element appearing |
 | `window.close` | `TAB_CLOSE` | Element disappearing |
 | `window.focus` | `HOVER` | Attention/proximity |
@@ -124,7 +124,7 @@ type ActiveSoundTheme =
 
 ### Built-in Theme Registry
 
-The four ghost-signal themes are copied into `src/sound-themes/` as ES modules:
+The five ghost-signal themes are copied into `src/sound-themes/` as ES modules:
 
 ```
 src/sound-themes/
@@ -132,6 +132,7 @@ src/sound-themes/
   chill-city-fm.ts
   orbit-deck.ts
   mach-line.ts
+  deep-glyph.ts
 ```
 
 Each file wraps the original `sounds.js` content into a TypeScript module exporting a `GhostSignalTheme` object. The `meta` and `createSounds` function are preserved verbatim.
@@ -144,6 +145,7 @@ const BUILT_IN_THEMES: Record<string, () => Promise<GhostSignalTheme>> = {
   'chill-city-fm': () => import('./sound-themes/chill-city-fm').then(m => m.default),
   'orbit-deck':    () => import('./sound-themes/orbit-deck').then(m => m.default),
   'mach-line':     () => import('./sound-themes/mach-line').then(m => m.default),
+  'deep-glyph':    () => import('./sound-themes/deep-glyph').then(m => m.default),
 };
 ```
 
@@ -205,7 +207,7 @@ No new config keys needed. Existing `[sound]` config already supports:
 [sound]
 pack = "ghost-signal"       # any built-in or custom theme name
 # "krypton-cyber" = original patch-based
-# "ghost-signal" | "chill-city-fm" | "orbit-deck" | "mach-line" = ghost-signal themes
+# "ghost-signal" | "chill-city-fm" | "orbit-deck" | "mach-line" | "deep-glyph" = ghost-signal themes
 # "<custom-name>" = loads from ~/.config/krypton/sounds/<custom-name>/sounds.js
 ```
 
