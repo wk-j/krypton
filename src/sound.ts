@@ -641,12 +641,17 @@ export class SoundEngine {
   /** Per-event cooldown (ms) — same action event won't re-fire within this window */
   private static readonly EVENT_COOLDOWN_MS = 50;
 
-  /** Number of sounds currently playing */
-  private activeSounds = 0;
+  /** Currently playing sound IDs — use Set for accurate tracking without timer drift */
+  private activeSoundIds: Set<number> = new Set();
+  /** Monotonically increasing ID for each sound instance */
+  private nextSoundId = 0;
   /** Timestamp of the last keypress sound (press phase) */
   private lastKeypressTime = 0;
   /** Last fire time per action event for dedup */
   private lastEventTime: Map<string, number> = new Map();
+
+  /** Flag to prevent play() during async theme loading */
+  private themeLoading = false;
 
   /**
    * Apply sound configuration. Call after loading config from backend.
@@ -665,7 +670,10 @@ export class SoundEngine {
     }
     // Reload theme if pack changed
     if (this.config.pack !== oldPack) {
-      this.loadTheme(this.config.pack);
+      this.themeLoading = true;
+      this.loadTheme(this.config.pack)
+        .catch((err) => console.warn('Sound theme loading failed:', err))
+        .finally(() => { this.themeLoading = false; });
     }
   }
 
@@ -708,12 +716,14 @@ export class SoundEngine {
    */
   private activateGhostSignalTheme(theme: GhostSignalTheme): void {
     this.ensureContext();
-    if (!this.ctx) return;
+    if (!this.ctx || !this.compressor) return;
 
-    // Create a master gain node for ghost-signal volume control
+    // Create a master gain node for ghost-signal volume control.
+    // Route through the compressor for clipping protection and consistent
+    // loudness with patch-based sounds: gsGain -> compressor -> masterGain -> destination
     const gsGain = this.ctx.createGain();
     gsGain.gain.value = this.config.volume;
-    gsGain.connect(this.ctx.destination);
+    gsGain.connect(this.compressor);
     this.ghostSignalGain = gsGain;
 
     // Create a proxy context where .destination points to our gain node
@@ -769,13 +779,36 @@ export class SoundEngine {
   }
 
   /**
+   * Track a new active sound. Returns the sound ID.
+   * For ghost-signal sounds: auto-untrack after fallbackMs (since we can't hook node events).
+   * For patch-based sounds: untrack explicitly via untrackSound() in the 'ended' event listener.
+   */
+  private trackSound(fallbackMs: number): number {
+    const id = this.nextSoundId++;
+    this.activeSoundIds.add(id);
+    // Safety net: always untrack after fallback timeout to prevent counter leaks
+    setTimeout(() => {
+      this.activeSoundIds.delete(id);
+    }, fallbackMs);
+    return id;
+  }
+
+  /**
+   * Explicitly untrack a sound (called from oscillator 'ended' event).
+   * No-op if already removed by the safety-net timeout.
+   */
+  private untrackSound(id: number): void {
+    this.activeSoundIds.delete(id);
+  }
+
+  /**
    * Play a keypress sound (press or release).
    * For patch-based themes: uses the configured keyboard_type to select the patch set.
    * For ghost-signal themes: routes to the appropriate TYPING_* sound based on key.
    * Throttled: skips if previous press is still within throttle window.
    */
   playKeypress(phase: 'press' | 'release', key?: string): void {
-    if (!this.config.enabled) return;
+    if (!this.config.enabled || this.themeLoading) return;
 
     // Check per-event override for keypress
     const eventConfig = this.config.events['keypress'];
@@ -789,7 +822,7 @@ export class SoundEngine {
     }
 
     // Max concurrent check
-    if (this.activeSounds >= SoundEngine.MAX_CONCURRENT) return;
+    if (this.activeSoundIds.size >= SoundEngine.MAX_CONCURRENT) return;
 
     // ─── Ghost-signal theme: use TYPING_* functions ───
     if (this.activeTheme.type === 'ghost-signal') {
@@ -810,12 +843,9 @@ export class SoundEngine {
 
       const fn = sounds[soundId];
       if (fn) {
-        this.activeSounds++;
+        const id = this.trackSound(200);
         fn();
-        // Ghost-signal sounds are very short — decrement after generous timeout
-        setTimeout(() => {
-          this.activeSounds = Math.max(0, this.activeSounds - 1);
-        }, 200);
+        void id; // sound tracked via trackSound timeout
       }
       return;
     }
@@ -864,7 +894,7 @@ export class SoundEngine {
    * Deduplicates: skips if the same event fired within the cooldown window.
    */
   play(event: SoundEvent): void {
-    if (!this.config.enabled) return;
+    if (!this.config.enabled || this.themeLoading) return;
 
     // Check per-event override
     const eventConfig = this.config.events[event];
@@ -877,7 +907,7 @@ export class SoundEngine {
     this.lastEventTime.set(event, now);
 
     // Max concurrent check
-    if (this.activeSounds >= SoundEngine.MAX_CONCURRENT) return;
+    if (this.activeSoundIds.size >= SoundEngine.MAX_CONCURRENT) return;
 
     // ─── Ghost-signal theme: use event map ───
     if (this.activeTheme.type === 'ghost-signal') {
@@ -886,13 +916,10 @@ export class SoundEngine {
       const fn = this.activeTheme.sounds[ghostSoundId];
       if (!fn) return;
 
-      this.activeSounds++;
-      fn();
       // APP_START sounds are 1.2-1.4 s; all others are very short
       const timeout = ghostSoundId === 'APP_START' ? 1500 : 300;
-      setTimeout(() => {
-        this.activeSounds = Math.max(0, this.activeSounds - 1);
-      }, timeout);
+      this.trackSound(timeout);
+      fn();
       return;
     }
 
@@ -918,10 +945,21 @@ export class SoundEngine {
    * Called on first play() to comply with browser autoplay policy.
    */
   private ensureContext(): void {
-    if (this.ctx) return;
+    if (this.ctx) {
+      // Resume if suspended (browser autoplay policy may suspend context)
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => { /* best-effort resume */ });
+      }
+      return;
+    }
 
     try {
       this.ctx = new AudioContext();
+
+      // Resume immediately — some WebViews create contexts in suspended state
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => { /* best-effort resume */ });
+      }
 
       // Master channel: compressor -> gain -> destination
       this.compressor = this.ctx.createDynamicsCompressor();
@@ -955,8 +993,9 @@ export class SoundEngine {
     const totalDuration = env.attack + env.decay + env.sustain * 0.1 + env.release + 0.05;
     const endTime = now + totalDuration;
 
-    // Track active sound count
-    this.activeSounds++;
+    // Track active sound — use 'ended' event on first oscillator for accurate cleanup,
+    // with a safety-net timeout in case the event doesn't fire
+    const soundId = this.trackSound(totalDuration * 1000 + 500);
 
     // ─── Build oscillator sources ───
 
@@ -1114,16 +1153,10 @@ export class SoundEngine {
 
     panOutput.connect(this.compressor!);
 
-    // ─── Start and schedule stop ───
+    // ─── Start, schedule stop, and set up cleanup via 'ended' event ───
 
-    for (const source of oscNodes) {
-      source.start(now);
-      source.stop(endTime);
-    }
-
-    // Clean up nodes after completion (allow GC) and decrement active count
-    setTimeout(() => {
-      this.activeSounds = Math.max(0, this.activeSounds - 1);
+    const cleanupNodes = (): void => {
+      this.untrackSound(soundId);
       for (const source of oscNodes) {
         try { source.disconnect(); } catch { /* already disconnected */ }
       }
@@ -1132,7 +1165,18 @@ export class SoundEngine {
       }
       try { busMerge.disconnect(); } catch { /* ok */ }
       try { envGain.disconnect(); } catch { /* ok */ }
-    }, totalDuration * 1000 + 100);
+    };
+
+    let cleanedUp = false;
+    for (const source of oscNodes) {
+      source.start(now);
+      source.stop(endTime);
+      // Use 'ended' event on the first oscillator for precise cleanup timing
+      if (!cleanedUp) {
+        cleanedUp = true;
+        source.addEventListener('ended', cleanupNodes, { once: true });
+      }
+    }
   }
 
   /**
