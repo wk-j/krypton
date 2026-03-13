@@ -28,7 +28,7 @@
 7. **Backend scans for OSC 9;4** -> Inline state machine detects `ESC ] 9 ; 4 ; <state> [; <progress>] ST` sequences. If found, emits Tauri event `pty-progress` with `{ session_id, state, progress }`. Raw bytes are NOT stripped — xterm.js will ignore the unknown OSC.
 8. **Backend emits event** -> Tauri event `pty-output` pushes raw bytes to frontend (scoped by session_id)
 9. **xterm.js renders** -> xterm.js parses VT sequences and updates the window's terminal canvas
-10. **Progress UI** -> If `pty-progress` was emitted, the compositor updates the target window's status dot arc gauge (SVG radial fill) and titlebar scanline sweep animation
+10. **Progress UI** -> If `pty-progress` was emitted, the compositor updates the target window's content-area gauge (large translucent SVG arc centered behind terminal text) and titlebar scanline sweep animation
 
 ## Quick Terminal Toggle Flow (e.g., user presses Cmd+I)
 
