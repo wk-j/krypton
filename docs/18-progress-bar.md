@@ -155,7 +155,6 @@ The gauge container is `position: absolute; top/left: 50%; transform: translate(
 - Track stroke: `0.06`
 - Percentage text: `0.12`
 - Status label: `0.08`
-- Drop-shadow glow: `0.5` inner, `0.15` outer
 
 **States:**
 - **Normal (1)**: Arc fills clockwise from 12 o'clock. Percentage text (e.g. `75%`) + label `LOADING`.
@@ -164,9 +163,43 @@ The gauge container is `position: absolute; top/left: 50%; transform: translate(
 - **Paused (4)**: Arc frozen at current fill in amber. Label `PAUSED`.
 - **Hidden (0)**: Gauge div removed from DOM.
 
-**Completion**: At 100%, text shows `100%` / `COMPLETE`, the SVG glow flares (`@keyframes krypton-gauge-flare`), then the container fades out over 1.5s and is removed.
+**Completion**: At 100%, text shows `100%` / `COMPLETE`, the SVG glow flares (see below), then the container fades out over 1.5s and is removed.
 
 **Appearance on entry**: The gauge fades in via `opacity: 0` -> `opacity: 1` transition (0.4s) to avoid a jarring pop-in.
+
+#### Glow Effect
+
+The entire SVG gauge has a layered CSS `drop-shadow` glow applied via `filter` on `.krypton-progress-gauge__svg`. The glow uses two concentric layers — a tight inner bloom and a wider ambient halo — giving the gauge a neon HUD feel without overwhelming the terminal text underneath.
+
+**Glow layers (applied to the SVG element):**
+
+| Layer | Radius | Purpose |
+|-------|--------|---------|
+| Inner | `6px` | Tight bloom around the arc strokes |
+| Outer | `20px` | Wide ambient halo for depth |
+
+**Per-state glow colors:**
+
+| State | Inner shadow | Outer shadow |
+|-------|-------------|-------------|
+| Normal | `accent @ 0.50` | `accent @ 0.15` |
+| Error | `#ff3366 @ 0.50` | `#ff3366 @ 0.15` |
+| Paused | `#ffaa00 @ 0.40` | `#ffaa00 @ 0.10` |
+| Indeterminate | Same as Normal (accent) | Same as Normal |
+
+The glow color transitions with the state change via the CSS `filter` property, so switching between normal/error/paused smoothly cross-fades the glow hue.
+
+**Completion flare (`@keyframes krypton-gauge-flare`):**
+
+When progress reaches 100%, a 0.8s flare animation fires before the gauge fades out:
+
+```
+0%   — inner 6px @ 0.50, outer 20px @ 0.15   (resting glow)
+50%  — inner 15px @ 0.90, outer 40px @ 0.40   (peak flare)
+100% — inner 6px @ 0.50, outer 20px @ 0.15   (settle back)
+```
+
+The flare uses `ease-out` timing so the bloom expands quickly and settles gently, creating a brief "pulse of light" that signals completion before the 1.5s fade-out begins.
 
 #### 2. Titlebar Scanline Sweep (secondary cue)
 
