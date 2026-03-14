@@ -1801,7 +1801,7 @@ export class Compositor {
   /** Show the Quick Terminal (lazy-creates PTY on first call) */
   private async showQuickTerminal(): Promise<void> {
     if (this.qtVisible) return;
-    this.sound.play('quick_terminal.show');
+    this.sound.play('tab.create');
 
     // Save currently focused workspace window for restoration
     this.qtSavedFocusId = this.focusedWindowId;
@@ -1865,7 +1865,7 @@ export class Compositor {
   /** Hide the Quick Terminal and restore previous focus */
   private async hideQuickTerminal(): Promise<void> {
     if (!this.qtVisible || !this.qtElement) return;
-    this.sound.play('quick_terminal.hide');
+    this.sound.play('tab.close');
 
     // Animate slide-up + fade-out
     const duration = this.qtConfig.animationDuration;
