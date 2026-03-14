@@ -245,6 +245,17 @@ html, body {
 }
 
 /* ─── Window content area (body + sidebar) ─── */
+/* 3D perspective wrapper — sits between the window and content area.
+   Isolates the 3D context from backdrop-filter on .krypton-window
+   (backdrop-filter flattens preserve-3d in all browsers). */
+.krypton-window__perspective {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  perspective: var(--krypton-perspective, none);
+}
+
 .krypton-window__content {
   flex: 1;
   min-height: 0;
@@ -252,7 +263,8 @@ html, body {
   flex-direction: row;
   background: transparent;
   position: relative;
-  overflow: hidden;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--krypton-perspective-tilt, 0deg));
 }
 
 /* ─── Pane containers ─── */
@@ -262,6 +274,7 @@ html, body {
   min-width: 0;
   position: relative;
   background: transparent;
+  overflow: hidden;
 }
 
 .krypton-pane--focused {
@@ -286,6 +299,7 @@ html, body {
 .krypton-split__divider {
   flex-shrink: 0;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  transform: translateZ(30px);
 }
 
 .krypton-split--vertical > .krypton-split__divider {
@@ -318,6 +332,7 @@ html, body {
   pointer-events: none;
   z-index: 10;
   transition: transform 50ms ease;
+  transform: translateZ(30px);
 }
 
 .krypton-window__body .xterm,
@@ -638,7 +653,7 @@ html, body {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) translateZ(10px);
   width: min(60%, 220px);
   height: min(60%, 220px);
   pointer-events: none;
@@ -831,4 +846,5 @@ html, body {
   pointer-events: none;
   z-index: 10;
   border-radius: inherit;
+  transform: translateZ(20px);
 }

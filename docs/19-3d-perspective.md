@@ -1,6 +1,6 @@
 # 3D Perspective Depth — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-03-15
 > Milestone: M8 — Polish
 
@@ -34,12 +34,14 @@ A new `[visual]` config section controls the effect. When `perspective_depth` is
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VisualConfig {
     pub perspective_depth: u16,  // px, 0 = disabled
+    pub perspective_tilt: f64,   // degrees, 0 = no tilt
 }
 
 impl Default for VisualConfig {
     fn default() -> Self {
         Self {
             perspective_depth: 800,
+            perspective_tilt: 2.0,
         }
     }
 }
@@ -50,6 +52,7 @@ impl Default for VisualConfig {
 ```typescript
 export interface VisualConfig {
   perspective_depth: number; // px, 0 = disabled
+  perspective_tilt: number;  // degrees, 0 = no tilt
 }
 ```
 
@@ -60,18 +63,20 @@ No new commands. The value flows through the existing `get_config` command and c
 ### Data Flow
 
 ```
-1. Config loads with visual.perspective_depth = 800
-2. Compositor reads value, sets CSS custom property on workspace:
+1. Config loads with visual.perspective_depth = 800, perspective_tilt = 2.0
+2. Compositor reads values, sets CSS custom properties on workspace:
    --krypton-perspective: 800px
-3. .krypton-window__content uses perspective: var(--krypton-perspective)
-   and transform-style: preserve-3d
-4. Child layers use translateZ() at fixed offsets:
+   --krypton-perspective-tilt: 2deg
+3. .krypton-window__content uses perspective: var(--krypton-perspective),
+   transform-style: preserve-3d, and transform: rotateX(var(--krypton-perspective-tilt))
+4. The rotateX tilt angles the content plane so Z-axis offsets become visible
+5. Child layers use translateZ() at fixed offsets:
    - Terminal text (xterm):    translateZ(0)      — back layer
    - Progress gauge:           translateZ(10px)   — mid layer
    - Shader overlay:           translateZ(20px)   — effect layer
    - Selection cursor:         translateZ(30px)   — front layer
-5. The perspective foreshortening creates subtle depth separation
-6. If perspective_depth = 0, CSS property is set to "none",
+6. The perspective + tilt creates visible depth separation between layers
+7. If perspective_depth = 0, CSS properties collapse to "none" / "0deg",
    and all translateZ values have no visual effect (flat)
 ```
 
@@ -92,6 +97,9 @@ No new commands. The value flows through the existing `get_config` command and c
 # 3D perspective depth in pixels. Higher values = subtler depth effect.
 # Set to 0 to disable (flat rendering). Default: 800
 perspective_depth = 800
+# Tilt angle in degrees for visible layer separation.
+# 0 = no tilt. Default: 2.0. Recommended range: 1–6
+perspective_tilt = 2.0
 ```
 
 ### UI Changes
@@ -103,6 +111,7 @@ perspective_depth = 800
   /* existing styles unchanged */
   perspective: var(--krypton-perspective, none);
   transform-style: preserve-3d;
+  transform: rotateX(var(--krypton-perspective-tilt, 0deg));
 }
 ```
 
@@ -131,20 +140,24 @@ perspective_depth = 800
 }
 ```
 
-**Quick Terminal:** Same treatment — `.krypton-window__body` also gets `perspective` and `transform-style: preserve-3d`.
+**Quick Terminal:** Same treatment — `.krypton-window__body` also gets `perspective`, `transform-style: preserve-3d`, and `rotateX` tilt.
 
-**Compositor change:** On config load and hot-reload, set the custom property:
+**Compositor change:** On config load and hot-reload, set the custom properties:
 
 ```typescript
 this.workspace.style.setProperty(
   '--krypton-perspective',
   depth > 0 ? `${depth}px` : 'none'
 );
+this.workspace.style.setProperty(
+  '--krypton-perspective-tilt',
+  depth > 0 && tilt > 0 ? `${tilt}deg` : '0deg'
+);
 ```
 
 ## Edge Cases
 
-1. **`perspective_depth = 0`**: CSS `perspective: none` disables all depth — `translateZ` values are ignored, rendering is flat. Zero performance cost.
+1. **`perspective_depth = 0`**: CSS `perspective: none` and tilt `0deg` disables all depth — `translateZ` values are ignored, rendering is flat. Zero performance cost.
 2. **WebGL addon**: xterm.js uses a canvas element. `translateZ` on the canvas's parent (`.xterm-screen`) works in all browsers with hardware acceleration.
 3. **Pane splits**: Split containers don't need `translateZ` — only their leaf children (panes, dividers) do. `preserve-3d` propagates through the flex tree.
 4. **Performance**: CSS `perspective` and `translateZ` are GPU-composited. No repaints, no layout thrashing. The layers already have `will-change` or `position: absolute`.

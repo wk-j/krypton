@@ -20,6 +20,7 @@ pub struct KryptonConfig {
     pub hints: HintsConfig,
     pub tabs: TabsConfig,
     pub shader: ShaderConfig,
+    pub visual: VisualConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -234,6 +235,26 @@ impl Default for TabsConfig {
             always_show_tabbar: false,
             default_split: "vertical".to_string(),
             close_window_on_last_tab: true,
+        }
+    }
+}
+
+// ─── Visual ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VisualConfig {
+    /// 3D perspective depth in pixels. Higher = subtler effect. 0 = disabled.
+    pub perspective_depth: u16,
+    /// Tilt angle in degrees for 3D layer separation. 0 = no tilt.
+    pub perspective_tilt: f64,
+}
+
+impl Default for VisualConfig {
+    fn default() -> Self {
+        Self {
+            perspective_depth: 800,
+            perspective_tilt: 2.0,
         }
     }
 }

@@ -192,6 +192,17 @@ intensity = 0.5              # Effect strength 0.0–1.0
 animate = true               # Enable time-based animation (scanline sweep, flicker, etc.)
 fps_cap = 30                 # Max animation FPS (CSS-driven, this is advisory)
 
+# --- Visual ---
+# Visual effects for the terminal content area.
+
+[visual]
+perspective_depth = 800        # 3D perspective depth in pixels. Higher = subtler.
+                               # 0 = disabled (flat rendering). Default: 800
+                               # Recommended range: 400–1200
+perspective_tilt = 2.0         # Tilt angle in degrees for visible layer separation.
+                               # 0 = no tilt. Default: 2.0
+                               # Recommended range: 1–6
+
 # --- Quick Terminal ---
 # A persistent overlay terminal toggled via Cmd+I, centered on screen.
 

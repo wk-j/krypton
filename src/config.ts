@@ -114,6 +114,11 @@ export const DEFAULT_SHADER_CONFIG: ShaderConfig = {
   fps_cap: 30,
 };
 
+export interface VisualConfig {
+  perspective_depth: number; // px, 0 = disabled
+  perspective_tilt: number;  // degrees, 0 = no tilt
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -125,6 +130,7 @@ export interface KryptonConfig {
   hints: HintsConfig;
   tabs: TabsConfig;
   shader: ShaderConfig;
+  visual: VisualConfig;
 }
 
 /** Load configuration from the Rust backend */

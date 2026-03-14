@@ -840,9 +840,14 @@ export class Compositor {
       el.appendChild(corner);
     }
 
+    // 3D perspective wrapper — isolates the 3D context from backdrop-filter
+    const perspectiveWrap = document.createElement('div');
+    perspectiveWrap.className = 'krypton-window__perspective';
+    perspectiveWrap.appendChild(content);
+
     el.appendChild(chrome);
     el.appendChild(tabBar);
-    el.appendChild(content);
+    el.appendChild(perspectiveWrap);
     this.workspace.appendChild(el);
 
     // Create first tab with a single pane
@@ -1268,6 +1273,31 @@ export class Compositor {
     const pane = this.getFocusedPane();
     if (pane) {
       pane.terminal.scrollPages(pages);
+    }
+  }
+
+  /**
+   * Write raw bytes to the focused terminal's PTY session.
+   * Handles both regular panes and Quick Terminal.
+   * Used by InputRouter for modifier key combinations that xterm.js
+   * doesn't translate correctly (e.g., Shift+Enter).
+   */
+  writeToFocusedPty(data: string): void {
+    const encoder = new TextEncoder();
+    const bytes = Array.from(encoder.encode(data));
+
+    // If Quick Terminal is visible, write to its PTY
+    if (this.qtVisible && this.qtSessionId !== null) {
+      invoke('write_to_pty', { sessionId: this.qtSessionId, data: bytes })
+        .catch((e) => console.error('QT write to PTY failed:', e));
+      return;
+    }
+
+    // Otherwise write to focused pane's PTY
+    const pane = this.getFocusedPane();
+    if (pane && pane.sessionId !== null) {
+      invoke('write_to_pty', { sessionId: pane.sessionId, data: bytes })
+        .catch((e: unknown) => console.error('Write to PTY failed:', e));
     }
   }
 
@@ -2000,8 +2030,13 @@ export class Compositor {
       el.appendChild(corner);
     }
 
+    // 3D perspective wrapper
+    const perspectiveWrap = document.createElement('div');
+    perspectiveWrap.className = 'krypton-window__perspective';
+    perspectiveWrap.appendChild(content);
+
     el.appendChild(chrome);
-    el.appendChild(content);
+    el.appendChild(perspectiveWrap);
     this.workspace.appendChild(el);
     this.qtElement = el;
 
