@@ -686,6 +686,10 @@ export class SoundEngine {
     if (packName === 'krypton-cyber') {
       this.activeTheme = { type: 'patches', patches: KRYPTON_CYBER };
       this.patches = { ...KRYPTON_CYBER };
+      // Disconnect old ghost-signal gain to prevent orphaned nodes
+      if (this.ghostSignalGain) {
+        try { this.ghostSignalGain.disconnect(); } catch { /* ok */ }
+      }
       this.ghostSignalCtx = null;
       this.ghostSignalGain = null;
       return;
@@ -707,16 +711,28 @@ export class SoundEngine {
     console.warn(`Unknown sound pack "${packName}", falling back to krypton-cyber`);
     this.activeTheme = { type: 'patches', patches: KRYPTON_CYBER };
     this.patches = { ...KRYPTON_CYBER };
+    if (this.ghostSignalGain) {
+      try { this.ghostSignalGain.disconnect(); } catch { /* ok */ }
+    }
     this.ghostSignalCtx = null;
     this.ghostSignalGain = null;
   }
 
   /**
    * Activate a ghost-signal theme: create proxy context and sound functions.
+   * The proxy intercepts all node creation to track nodes, and wraps each
+   * sound function to auto-disconnect all created nodes after a timeout.
+   * This prevents the Web Audio graph from accumulating orphaned nodes
+   * that degrade audio quality over time.
    */
   private activateGhostSignalTheme(theme: GhostSignalTheme): void {
     this.ensureContext();
     if (!this.ctx || !this.compressor) return;
+
+    // Disconnect old gsGain if switching themes (prevents orphaned nodes)
+    if (this.ghostSignalGain) {
+      try { this.ghostSignalGain.disconnect(); } catch { /* ok */ }
+    }
 
     // Create a master gain node for ghost-signal volume control.
     // Route through the compressor for clipping protection and consistent
@@ -726,30 +742,82 @@ export class SoundEngine {
     gsGain.connect(this.compressor);
     this.ghostSignalGain = gsGain;
 
-    // Create a proxy context where .destination points to our gain node
-    // This gives us volume control without modifying ghost-signal theme code
+    // Node tracking: during each sound function call, all created nodes
+    // are collected so they can be disconnected after the sound finishes.
+    let activeCollector: AudioNode[] | null = null;
+
+    // Create a proxy context where:
+    // 1. .destination points to our gsGain for volume control
+    // 2. All create*() methods track the returned nodes for cleanup
     const realCtx = this.ctx;
     const proxyCtx = new Proxy(realCtx, {
       get(target: AudioContext, prop: string | symbol): unknown {
         if (prop === 'destination') return gsGain;
         const val = Reflect.get(target, prop);
-        return typeof val === 'function' ? (val as Function).bind(target) : val;
+        if (typeof val !== 'function') return val;
+        const fn = val as Function;
+        const bound = fn.bind(target);
+        // Intercept create* methods to track returned AudioNodes
+        if (typeof prop === 'string' && prop.startsWith('create')) {
+          return (...args: unknown[]) => {
+            const node = bound(...args);
+            if (node instanceof AudioNode && activeCollector) {
+              activeCollector.push(node);
+            }
+            return node;
+          };
+        }
+        return bound;
       },
     }) as AudioContext;
     this.ghostSignalCtx = proxyCtx;
 
-    // Create noiseBuffer helper for ghost-signal themes
+    // Pre-allocate a shared noise buffer (avoids per-invocation GC pressure)
+    const sharedNoiseDuration = 0.15; // covers longest ghost-signal noise usage
+    const sharedNoiseLen = Math.ceil(realCtx.sampleRate * sharedNoiseDuration);
+    const sharedNoiseBuf = realCtx.createBuffer(1, sharedNoiseLen, realCtx.sampleRate);
+    const sharedNoiseData = sharedNoiseBuf.getChannelData(0);
+    for (let i = 0; i < sharedNoiseLen; i++) sharedNoiseData[i] = Math.random() * 2 - 1;
+
     const noiseBuffer = (duration = 0.1): AudioBuffer => {
-      const len = realCtx.sampleRate * duration;
+      // Return shared buffer if requested duration fits, else create a new one
+      if (duration <= sharedNoiseDuration) return sharedNoiseBuf;
+      const len = Math.ceil(realCtx.sampleRate * duration);
       const buf = realCtx.createBuffer(1, len, realCtx.sampleRate);
       const data = buf.getChannelData(0);
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
       return buf;
     };
 
-    // Initialize the theme's sound functions
-    const sounds = theme.createSounds(proxyCtx, noiseBuffer);
-    this.activeTheme = { type: 'ghost-signal', sounds, theme };
+    // Initialize the theme's raw sound functions
+    const rawSounds = theme.createSounds(proxyCtx, noiseBuffer);
+
+    // Wrap each sound function to auto-disconnect all nodes after playback
+    const wrappedSounds: Record<string, () => void> = {};
+    for (const [key, fn] of Object.entries(rawSounds)) {
+      wrappedSounds[key] = () => {
+        // Start collecting nodes created during this call
+        const nodes: AudioNode[] = [];
+        activeCollector = nodes;
+        try {
+          fn();
+        } finally {
+          activeCollector = null;
+        }
+        // Schedule cleanup: disconnect all nodes after the sound decays.
+        // APP_START sounds are 1.2-1.4s; all others are < 0.5s.
+        const cleanupDelay = key === 'APP_START' ? 2000 : 600;
+        if (nodes.length > 0) {
+          setTimeout(() => {
+            for (const node of nodes) {
+              try { node.disconnect(); } catch { /* already disconnected */ }
+            }
+          }, cleanupDelay);
+        }
+      };
+    }
+
+    this.activeTheme = { type: 'ghost-signal', sounds: wrappedSounds, theme };
   }
 
   /**
@@ -1037,6 +1105,7 @@ export class SoundEngine {
 
     // ─── FM synthesis ───
     // Wire FM modulators: modulator output -> gain (depth) -> carrier frequency
+    const fmGains: GainNode[] = [];
     for (let i = 0; i < patch.oscillators.length; i++) {
       const oscDef = patch.oscillators[i];
       if (oscDef.fm && oscDef.fm.modulatorIndex < oscNodes.length) {
@@ -1045,10 +1114,9 @@ export class SoundEngine {
         if (modNode instanceof OscillatorNode && carrier instanceof OscillatorNode) {
           const fmGain = ctx.createGain();
           fmGain.gain.value = oscDef.fm.depth;
-          // Disconnect modulator from its own oscGain for FM routing
-          // (it still plays through its own gain for additive mix)
           modNode.connect(fmGain);
           fmGain.connect(carrier.frequency);
+          fmGains.push(fmGain);
         }
       }
     }
@@ -1101,6 +1169,7 @@ export class SoundEngine {
     // ─── Effects chain ───
 
     let effectsOutput: AudioNode = envGain;
+    const effectNodes: AudioNode[] = [];  // track for cleanup
 
     if (patch.effects) {
       // Delay
@@ -1127,6 +1196,7 @@ export class SoundEngine {
         dryGain.connect(delayMerge);
         wetGain.connect(delayMerge);
         effectsOutput = delayMerge;
+        effectNodes.push(delay, feedbackGain, dryGain, wetGain, delayMerge);
       }
 
       // Distortion
@@ -1136,6 +1206,7 @@ export class SoundEngine {
         shaper.oversample = '2x';
         effectsOutput.connect(shaper);
         effectsOutput = shaper;
+        effectNodes.push(shaper);
       }
     }
 
@@ -1155,16 +1226,21 @@ export class SoundEngine {
 
     // ─── Start, schedule stop, and set up cleanup via 'ended' event ───
 
+    // Collect ALL nodes in the chain for complete disconnection.
+    // Incomplete cleanup leaves orphaned nodes (especially delay feedback
+    // loops) connected to the audio graph, degrading quality over time.
+    const allNodes: AudioNode[] = [
+      ...oscNodes, ...oscGains, ...fmGains, ...effectNodes,
+      busMerge, envGain,
+    ];
+    if (filteredOutput !== busMerge) allNodes.push(filteredOutput); // biquad filter
+    if (panOutput !== effectsOutput) allNodes.push(panOutput);      // stereo panner
+
     const cleanupNodes = (): void => {
       this.untrackSound(soundId);
-      for (const source of oscNodes) {
-        try { source.disconnect(); } catch { /* already disconnected */ }
+      for (const node of allNodes) {
+        try { node.disconnect(); } catch { /* already disconnected */ }
       }
-      for (const g of oscGains) {
-        try { g.disconnect(); } catch { /* already disconnected */ }
-      }
-      try { busMerge.disconnect(); } catch { /* ok */ }
-      try { envGain.disconnect(); } catch { /* ok */ }
     };
 
     let cleanedUp = false;
