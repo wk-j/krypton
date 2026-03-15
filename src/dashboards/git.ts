@@ -1,6 +1,6 @@
 // Krypton — Git Dashboard
 // Read-only overlay showing git status for the focused terminal's CWD.
-// Toggled via Cmd+Shift+G.
+// Toggled via Cmd+Shift+G. Single tab — content fits without scrolling.
 
 import { invoke } from '@tauri-apps/api/core';
 import type { DashboardDefinition } from '../types';
@@ -23,18 +23,10 @@ interface GitStatus {
   renamed: GitFileEntry[];
 }
 
-/**
- * Run a command via the Tauri `run_command` IPC and return stdout.
- */
 async function runGit(args: string[], cwd: string): Promise<string> {
   return invoke('run_command', { program: 'git', args, cwd });
 }
 
-/**
- * Parse `git status --porcelain=v1` output into structured data.
- * Format: XY filename
- * X = index status, Y = work-tree status
- */
 function parseStatus(raw: string): Omit<GitStatus, 'branch'> {
   const staged: GitFileEntry[] = [];
   const modified: GitFileEntry[] = [];
@@ -44,67 +36,39 @@ function parseStatus(raw: string): Omit<GitStatus, 'branch'> {
 
   for (const line of raw.split('\n')) {
     if (line.length < 3) continue;
-
     const indexStatus = line[0];
     const workTreeStatus = line[1];
-    // Handle renames: "R  old -> new"
     const filePath = line.slice(3);
     const entry: GitFileEntry = { indexStatus, workTreeStatus, path: filePath };
 
-    // Untracked
-    if (indexStatus === '?' && workTreeStatus === '?') {
-      untracked.push(entry);
-      continue;
-    }
-
-    // Index changes (staged)
-    if (indexStatus === 'R') {
-      renamed.push(entry);
-    } else if (indexStatus === 'D') {
-      deleted.push(entry);
-    } else if (indexStatus !== ' ' && indexStatus !== '?') {
-      staged.push(entry);
-    }
-
-    // Work-tree changes (unstaged)
-    if (workTreeStatus === 'M') {
-      modified.push(entry);
-    } else if (workTreeStatus === 'D' && indexStatus !== 'D') {
-      deleted.push(entry);
-    }
+    if (indexStatus === '?' && workTreeStatus === '?') { untracked.push(entry); continue; }
+    if (indexStatus === 'R') renamed.push(entry);
+    else if (indexStatus === 'D') deleted.push(entry);
+    else if (indexStatus !== ' ' && indexStatus !== '?') staged.push(entry);
+    if (workTreeStatus === 'M') modified.push(entry);
+    else if (workTreeStatus === 'D' && indexStatus !== 'D') deleted.push(entry);
   }
-
   return { staged, modified, untracked, deleted, renamed };
 }
 
-/**
- * Get the CSS class suffix for a file status indicator.
- */
-function statusClass(indexStatus: string, workTreeStatus: string): string {
-  if (indexStatus === '?' && workTreeStatus === '?') return 'untracked';
-  if (indexStatus === 'R') return 'renamed';
-  if (indexStatus === 'D' || workTreeStatus === 'D') return 'deleted';
-  if (indexStatus !== ' ' && indexStatus !== '?') return 'staged';
-  if (workTreeStatus === 'M') return 'modified';
+function statusClass(ix: string, wt: string): string {
+  if (ix === '?' && wt === '?') return 'untracked';
+  if (ix === 'R') return 'renamed';
+  if (ix === 'D' || wt === 'D') return 'deleted';
+  if (ix !== ' ' && ix !== '?') return 'staged';
   return 'modified';
 }
 
-/**
- * Get a human-readable status label.
- */
-function statusLabel(indexStatus: string, workTreeStatus: string): string {
-  if (indexStatus === '?' && workTreeStatus === '?') return '?';
-  if (indexStatus === 'R') return 'R';
-  if (indexStatus === 'D' || workTreeStatus === 'D') return 'D';
-  if (indexStatus === 'A') return 'A';
-  if (indexStatus === 'M') return 'M';
-  if (workTreeStatus === 'M') return 'M';
-  return indexStatus + workTreeStatus;
+function statusLabel(ix: string, wt: string): string {
+  if (ix === '?' && wt === '?') return '?';
+  if (ix === 'R') return 'R';
+  if (ix === 'D' || wt === 'D') return 'D';
+  if (ix === 'A') return 'A';
+  if (ix === 'M') return 'M';
+  if (wt === 'M') return 'M';
+  return ix + wt;
 }
 
-/**
- * Render the git dashboard content into a container.
- */
 function renderStatus(container: HTMLElement, status: GitStatus): void {
   container.innerHTML = '';
 
@@ -117,33 +81,28 @@ function renderStatus(container: HTMLElement, status: GitStatus): void {
   // Stats summary
   const stats = document.createElement('div');
   stats.className = 'krypton-git__stats';
-
   const statItems = [
     { label: 'Staged', count: status.staged.length + status.renamed.length, cls: 'staged' },
     { label: 'Modified', count: status.modified.length, cls: 'modified' },
     { label: 'Untracked', count: status.untracked.length, cls: 'untracked' },
     { label: 'Deleted', count: status.deleted.length, cls: 'deleted' },
   ];
-
   for (const item of statItems) {
     const stat = document.createElement('div');
     stat.className = `krypton-git__stat krypton-git__stat--${item.cls}`;
-
     const count = document.createElement('span');
     count.className = 'krypton-git__stat-count';
     count.textContent = String(item.count);
-
     const label = document.createElement('span');
     label.className = 'krypton-git__stat-label';
     label.textContent = item.label;
-
     stat.appendChild(count);
     stat.appendChild(label);
     stats.appendChild(stat);
   }
   container.appendChild(stats);
 
-  // File list
+  // File list — fills remaining space
   const allFiles = [
     ...status.staged.map((f) => ({ ...f, group: 'staged' as const })),
     ...status.renamed.map((f) => ({ ...f, group: 'staged' as const })),
@@ -160,6 +119,8 @@ function renderStatus(container: HTMLElement, status: GitStatus): void {
   } else {
     const section = document.createElement('div');
     section.className = 'krypton-dashboard__section';
+    section.style.flex = '1';
+    section.style.overflow = 'hidden';
 
     const sectionTitle = document.createElement('div');
     sectionTitle.className = 'krypton-dashboard__section-title';
@@ -168,93 +129,72 @@ function renderStatus(container: HTMLElement, status: GitStatus): void {
 
     const list = document.createElement('ul');
     list.className = 'krypton-git__file-list';
+    list.style.overflow = 'auto';
+    list.style.flex = '1';
 
     for (const file of allFiles) {
       const li = document.createElement('li');
       li.className = 'krypton-git__file';
-
       const badge = document.createElement('span');
-      const cls = statusClass(file.indexStatus, file.workTreeStatus);
-      badge.className = `krypton-git__file-status krypton-git__file-status--${cls}`;
+      badge.className = `krypton-git__file-status krypton-git__file-status--${statusClass(file.indexStatus, file.workTreeStatus)}`;
       badge.textContent = statusLabel(file.indexStatus, file.workTreeStatus);
-
       const path = document.createElement('span');
       path.className = 'krypton-git__file-path';
       path.textContent = file.path;
-
       li.appendChild(badge);
       li.appendChild(path);
       list.appendChild(li);
     }
-
     section.appendChild(list);
+    section.style.display = 'flex';
+    section.style.flexDirection = 'column';
     container.appendChild(section);
   }
 
-  // Hint
+  // Bottom hint
   const hint = document.createElement('div');
   hint.className = 'krypton-git__hint';
-  hint.textContent = 'Press r to refresh \u00b7 Esc to close';
+  hint.textContent = 'r refresh \u00b7 Esc close';
   container.appendChild(hint);
 }
 
-/**
- * Create a Git Dashboard definition.
- * Requires a Compositor reference to get the focused session's CWD.
- */
 export function createGitDashboard(compositor: Compositor): DashboardDefinition {
-  let currentContainer: HTMLElement | null = null;
-  let currentCwd: string | null = null;
+  let status: GitStatus | null = null;
+  let error: string | null = null;
+  let readyCallback: (() => void) | null = null;
 
-  async function loadAndRender(container: HTMLElement): Promise<void> {
-    container.innerHTML = '';
-
-    // Show loading
-    const loading = document.createElement('div');
-    loading.className = 'krypton-dashboard__loading';
-    loading.textContent = 'Loading git status...';
-    container.appendChild(loading);
-
-    // Get CWD from focused session
+  async function load(): Promise<void> {
     const sessionId = compositor.getFocusedSessionId();
     if (sessionId === null) {
-      container.innerHTML = '';
-      const err = document.createElement('div');
-      err.className = 'krypton-dashboard__empty';
-      err.textContent = 'No active terminal session';
-      container.appendChild(err);
+      error = 'No active terminal session';
+      readyCallback?.();
       return;
     }
-
     try {
       const cwd: string | null = await invoke('get_pty_cwd', { sessionId });
-      if (!cwd) {
-        container.innerHTML = '';
-        const err = document.createElement('div');
-        err.className = 'krypton-dashboard__empty';
-        err.textContent = 'Could not determine terminal working directory';
-        container.appendChild(err);
-        return;
-      }
-      currentCwd = cwd;
-
-      // Run git commands in parallel
+      if (!cwd) { error = 'Could not determine working directory'; readyCallback?.(); return; }
       const [branchRaw, statusRaw] = await Promise.all([
         runGit(['branch', '--show-current'], cwd),
         runGit(['status', '--porcelain=v1'], cwd),
       ]);
+      status = { branch: branchRaw.trim(), ...parseStatus(statusRaw) };
+    } catch (e) {
+      error = `Git error: ${e}`;
+    }
+    readyCallback?.();
+  }
 
-      const branch = branchRaw.trim();
-      const parsed = parseStatus(statusRaw);
-      const status: GitStatus = { branch, ...parsed };
-
+  function renderTab(container: HTMLElement): void {
+    container.innerHTML = '';
+    if (error) {
+      const el = document.createElement('div');
+      el.className = 'krypton-dashboard__error';
+      el.textContent = error;
+      container.appendChild(el);
+      return;
+    }
+    if (status) {
       renderStatus(container, status);
-    } catch (err) {
-      container.innerHTML = '';
-      const errEl = document.createElement('div');
-      errEl.className = 'krypton-dashboard__error';
-      errEl.textContent = `Git error: ${err}`;
-      container.appendChild(errEl);
     }
   }
 
@@ -262,23 +202,29 @@ export function createGitDashboard(compositor: Compositor): DashboardDefinition 
     id: 'git',
     title: 'Git Status',
     shortcut: { key: 'KeyG', meta: true, shift: true },
+    tabs: [{ label: 'Status', render: renderTab }],
 
-    onOpen(container: HTMLElement): void {
-      currentContainer = container;
-      loadAndRender(container);
+    onOpen(ready: () => void): void {
+      status = null;
+      error = null;
+      readyCallback = ready;
+      load();
     },
 
     onClose(): void {
-      currentContainer = null;
-      currentCwd = null;
+      status = null;
+      error = null;
+      readyCallback = null;
     },
 
     onKeyDown(e: KeyboardEvent): boolean {
-      // r — refresh
       if (e.key === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-        if (currentContainer) {
-          loadAndRender(currentContainer);
-        }
+        readyCallback = () => {
+          // re-render after reload
+          const content = document.querySelector('.krypton-dashboard__content') as HTMLElement | null;
+          if (content) renderTab(content);
+        };
+        load();
         return true;
       }
       return false;

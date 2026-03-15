@@ -1,26 +1,22 @@
 // Krypton — OpenCode Dashboard
-// Read-only overlay showing OpenCode session history, token usage,
-// model distribution, and tool usage from the local SQLite database,
-// scoped to the project matching the focused terminal's CWD.
+// Overlay showing OpenCode session history, token usage, model distribution,
+// and tool usage from the local SQLite database, scoped to the focused
+// terminal's project. Organized into keyboard-navigable tabs.
 // Toggled via Cmd+Shift+O.
 
 import { invoke } from '@tauri-apps/api/core';
-import type { DashboardDefinition } from '../types';
+import type { DashboardDefinition, DashboardTab } from '../types';
 import type { Compositor } from '../compositor';
 
 /** Cached resolved path to the OpenCode SQLite database */
 let resolvedDbPath: string | null = null;
 
-/** Resolve the OpenCode DB path by asking the backend for $HOME */
 async function getDbPath(): Promise<string> {
   if (resolvedDbPath) return resolvedDbPath;
   const homeOutput: string = await invoke('run_command', {
-    program: 'sh',
-    args: ['-c', 'echo $HOME'],
-    cwd: null,
+    program: 'sh', args: ['-c', 'echo $HOME'], cwd: null,
   });
-  const home = homeOutput.trim();
-  resolvedDbPath = `${home}/.local/share/opencode/opencode.db`;
+  resolvedDbPath = `${homeOutput.trim()}/.local/share/opencode/opencode.db`;
   return resolvedDbPath;
 }
 
@@ -31,17 +27,12 @@ type SqlRow = Record<string, unknown>;
 interface OcSession {
   id: string;
   title: string;
-  directory: string;
   timeCreated: number;
   timeUpdated: number;
   msgCount: number;
-  userMsgs: number;
-  asstMsgs: number;
   outputTokens: number;
   additions: number;
   deletions: number;
-  files: number;
-  /** Comma-separated agent/model pairs, e.g. "build:opus, explore:opus" */
   agents: string;
 }
 
@@ -65,87 +56,57 @@ interface OcOverview {
   totalCost: number;
 }
 
-// ─── Queries (parameterized by project_id) ─────────────────────
-
-/** Find the project_id for a given worktree directory */
-const QUERY_PROJECT_ID = `
-SELECT id FROM project WHERE worktree = ?1 LIMIT 1
-`;
-
-/** Session IDs subquery scoped to a project (reused in other queries) */
-function sessionScope(projectId: string): string {
-  return `SELECT id FROM session WHERE project_id = '${projectId}'`;
+/** All loaded data for the dashboard */
+interface OcData {
+  cwd: string;
+  overview: OcOverview;
+  sessions: OcSession[];
+  models: OcModelUsage[];
+  tools: OcToolUsage[] | null; // null = still loading
 }
 
-function buildOverviewQuery(projectId: string): string {
-  const scope = sessionScope(projectId);
-  return `
-SELECT
-  (SELECT COUNT(*) FROM session WHERE parent_id IS NULL AND project_id = '${projectId}') as total_sessions,
-  (SELECT COUNT(*) FROM message WHERE session_id IN (${scope})) as total_messages,
-  (SELECT COALESCE(SUM(json_extract(data, '$.tokens.output')), 0) FROM message WHERE session_id IN (${scope}) AND json_extract(data, '$.role') = 'assistant') as total_output,
-  (SELECT COALESCE(SUM(json_extract(data, '$.tokens.cache.read')), 0) FROM message WHERE session_id IN (${scope}) AND json_extract(data, '$.role') = 'assistant') as total_cache_read,
-  (SELECT COALESCE(SUM(json_extract(data, '$.cost')), 0) FROM message WHERE session_id IN (${scope}) AND json_extract(data, '$.role') = 'assistant') as total_cost
-`;
+// ─── Queries ───────────────────────────────────────────────────
+
+const QUERY_PROJECT_ID = `SELECT id FROM project WHERE worktree = ?1 LIMIT 1`;
+
+function scope(pid: string): string { return `SELECT id FROM session WHERE project_id = '${pid}'`; }
+
+function qOverview(pid: string): string {
+  const s = scope(pid);
+  return `SELECT
+    (SELECT COUNT(*) FROM session WHERE parent_id IS NULL AND project_id = '${pid}') as total_sessions,
+    (SELECT COUNT(*) FROM message WHERE session_id IN (${s})) as total_messages,
+    (SELECT COALESCE(SUM(json_extract(data, '$.tokens.output')), 0) FROM message WHERE session_id IN (${s}) AND json_extract(data, '$.role') = 'assistant') as total_output,
+    (SELECT COALESCE(SUM(json_extract(data, '$.tokens.cache.read')), 0) FROM message WHERE session_id IN (${s}) AND json_extract(data, '$.role') = 'assistant') as total_cache_read,
+    (SELECT COALESCE(SUM(json_extract(data, '$.cost')), 0) FROM message WHERE session_id IN (${s}) AND json_extract(data, '$.role') = 'assistant') as total_cost`;
 }
 
-function buildSessionsQuery(projectId: string): string {
-  return `
-SELECT
-  s.id, s.title, s.directory,
-  s.summary_additions, s.summary_deletions, s.summary_files,
-  s.time_created, s.time_updated,
-  (SELECT COUNT(*) FROM message WHERE session_id = s.id) as msg_count,
-  (SELECT COUNT(*) FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'user') as user_msgs,
-  (SELECT COUNT(*) FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'assistant') as asst_msgs,
-  (SELECT COALESCE(SUM(json_extract(data, '$.tokens.output')), 0) FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'assistant') as output_tokens,
-  (SELECT GROUP_CONCAT(agent_model, ', ') FROM (
-    SELECT json_extract(m2.data, '$.agent') || ':' || REPLACE(REPLACE(json_extract(m2.data, '$.modelID'), 'claude-', ''), '-preview', '') as agent_model
-    FROM message m2
-    WHERE m2.session_id IN (s.id, (SELECT id FROM session WHERE parent_id = s.id))
-      AND json_extract(m2.data, '$.role') = 'assistant'
-      AND json_extract(m2.data, '$.agent') IS NOT NULL
-    GROUP BY json_extract(m2.data, '$.agent'), json_extract(m2.data, '$.modelID')
-    ORDER BY COUNT(*) DESC
-  )) as agents
-FROM session s
-WHERE s.parent_id IS NULL AND s.project_id = '${projectId}'
-ORDER BY s.time_updated DESC
-LIMIT 20
-`;
+function qSessions(pid: string): string {
+  return `SELECT s.id, s.title, s.summary_additions, s.summary_deletions, s.time_created, s.time_updated,
+    (SELECT COUNT(*) FROM message WHERE session_id = s.id) as msg_count,
+    (SELECT COALESCE(SUM(json_extract(data, '$.tokens.output')), 0) FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'assistant') as output_tokens,
+    (SELECT GROUP_CONCAT(am, ', ') FROM (
+      SELECT json_extract(m2.data, '$.agent') || ':' || REPLACE(REPLACE(json_extract(m2.data, '$.modelID'), 'claude-', ''), '-preview', '') as am
+      FROM message m2 WHERE m2.session_id IN (s.id, (SELECT id FROM session WHERE parent_id = s.id))
+        AND json_extract(m2.data, '$.role') = 'assistant' AND json_extract(m2.data, '$.agent') IS NOT NULL
+      GROUP BY json_extract(m2.data, '$.agent'), json_extract(m2.data, '$.modelID') ORDER BY COUNT(*) DESC
+    )) as agents
+  FROM session s WHERE s.parent_id IS NULL AND s.project_id = '${pid}' ORDER BY s.time_updated DESC LIMIT 30`;
 }
 
-function buildModelQuery(projectId: string): string {
-  const scope = sessionScope(projectId);
-  return `
-SELECT
-  json_extract(data, '$.modelID') as model,
-  json_extract(data, '$.providerID') as provider,
-  COUNT(*) as cnt,
-  COALESCE(SUM(json_extract(data, '$.tokens.output')), 0) as total_output
-FROM message
-WHERE session_id IN (${scope})
-  AND json_extract(data, '$.role') = 'assistant'
-  AND json_extract(data, '$.modelID') IS NOT NULL
-GROUP BY model, provider
-ORDER BY cnt DESC
-`;
+function qModels(pid: string): string {
+  const s = scope(pid);
+  return `SELECT json_extract(data, '$.modelID') as model, json_extract(data, '$.providerID') as provider,
+    COUNT(*) as cnt, COALESCE(SUM(json_extract(data, '$.tokens.output')), 0) as total_output
+  FROM message WHERE session_id IN (${s}) AND json_extract(data, '$.role') = 'assistant'
+    AND json_extract(data, '$.modelID') IS NOT NULL GROUP BY model, provider ORDER BY cnt DESC`;
 }
 
-function buildToolQuery(projectId: string): string {
-  const scope = sessionScope(projectId);
-  return `
-SELECT
-  json_extract(data, '$.tool') as tool_name,
-  COUNT(*) as cnt
-FROM part
-WHERE session_id IN (${scope})
-  AND json_extract(data, '$.type') = 'tool'
-  AND json_extract(data, '$.tool') IS NOT NULL
-GROUP BY tool_name
-ORDER BY cnt DESC
-LIMIT 15
-`;
+function qTools(pid: string): string {
+  const s = scope(pid);
+  return `SELECT json_extract(data, '$.tool') as tool_name, COUNT(*) as cnt
+  FROM part WHERE session_id IN (${s}) AND json_extract(data, '$.type') = 'tool'
+    AND json_extract(data, '$.tool') IS NOT NULL GROUP BY tool_name ORDER BY cnt DESC LIMIT 15`;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -155,126 +116,149 @@ async function querySqlite(query: string, params: unknown[] = []): Promise<SqlRo
   return invoke('query_sqlite', { dbPath, query, params });
 }
 
-/** Format a number with K/M/B suffix */
-function formatNumber(n: number): string {
-  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B';
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+function fmtNum(n: number): string {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
   return String(n);
 }
 
-/** Format a dollar amount */
-function formatCost(n: number): string {
+function fmtCost(n: number): string {
   if (n >= 1) return '$' + n.toFixed(2);
   if (n >= 0.01) return '$' + n.toFixed(3);
   if (n > 0) return '$' + n.toFixed(4);
   return '$0.00';
 }
 
-/** Relative time string from epoch ms */
-function relativeTime(epochMs: number): string {
-  const now = Date.now();
-  const diff = now - epochMs;
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (days > 30) return Math.floor(days / 30) + 'mo ago';
-  if (days > 0) return days + 'd ago';
-  if (hours > 0) return hours + 'h ago';
-  if (minutes > 0) return minutes + 'm ago';
+function relTime(ms: number): string {
+  const d = Date.now() - ms;
+  const m = Math.floor(d / 60000);
+  const h = Math.floor(m / 60);
+  const dy = Math.floor(h / 24);
+  if (dy > 30) return Math.floor(dy / 30) + 'mo ago';
+  if (dy > 0) return dy + 'd ago';
+  if (h > 0) return h + 'h ago';
+  if (m > 0) return m + 'm ago';
   return 'just now';
 }
 
-/** Duration string from two epoch ms timestamps */
-function durationStr(startMs: number, endMs: number): string {
-  const diff = endMs - startMs;
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(minutes / 60);
-  if (hours > 0) return `${hours}h ${minutes % 60}m`;
-  if (minutes > 0) return `${minutes}m`;
+function duration(s: number, e: number): string {
+  const m = Math.floor((e - s) / 60000);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m`;
+  if (m > 0) return `${m}m`;
   return '<1m';
 }
 
-/** Abbreviate a directory path */
-function abbreviateDir(dir: string): string {
+function abbrDir(dir: string): string {
   let p = dir;
-  const homeMatch = p.match(/^(\/Users\/[^/]+|\/home\/[^/]+)/);
-  if (homeMatch) {
-    p = '~' + p.slice(homeMatch[1].length);
-  }
-  if (p.length > 30) {
-    const parts = p.split('/').filter(Boolean);
-    if (parts.length > 2) {
-      const prefix = p.startsWith('~') ? '' : '/';
-      p = `${prefix}${parts[0]}/.../` + parts.slice(-1).join('/');
-    }
-  }
+  const hm = p.match(/^(\/Users\/[^/]+|\/home\/[^/]+)/);
+  if (hm) p = '~' + p.slice(hm[1].length);
   return p;
 }
 
-// ─── Rendering ─────────────────────────────────────────────────
+// ─── Tab Renderers ─────────────────────────────────────────────
 
-function renderProjectHeader(container: HTMLElement, dir: string): void {
-  const el = document.createElement('div');
-  el.className = 'krypton-oc__project-header';
-  el.textContent = abbreviateDir(dir);
-  container.appendChild(el);
-}
+function renderOverviewTab(container: HTMLElement, data: OcData): void {
+  container.innerHTML = '';
 
-function renderOverview(container: HTMLElement, overview: OcOverview): void {
-  const section = document.createElement('div');
-  section.className = 'krypton-oc__overview';
+  // Project path
+  const projEl = document.createElement('div');
+  projEl.className = 'krypton-oc__project-header';
+  projEl.textContent = abbrDir(data.cwd);
+  container.appendChild(projEl);
 
-  const stats = [
-    { label: 'Sessions', value: formatNumber(overview.totalSessions), cls: 'sessions' },
-    { label: 'Messages', value: formatNumber(overview.totalMessages), cls: 'messages' },
-    { label: 'Output Tokens', value: formatNumber(overview.totalTokensOutput), cls: 'tokens' },
-    { label: 'Cache Read', value: formatNumber(overview.totalCacheRead), cls: 'cache' },
-    { label: 'Cost', value: formatCost(overview.totalCost), cls: 'cost' },
+  // Stat cards
+  const statsEl = document.createElement('div');
+  statsEl.className = 'krypton-oc__overview';
+  const cards = [
+    { label: 'Sessions', value: fmtNum(data.overview.totalSessions), cls: 'sessions' },
+    { label: 'Messages', value: fmtNum(data.overview.totalMessages), cls: 'messages' },
+    { label: 'Output Tokens', value: fmtNum(data.overview.totalTokensOutput), cls: 'tokens' },
+    { label: 'Cache Read', value: fmtNum(data.overview.totalCacheRead), cls: 'cache' },
+    { label: 'Cost', value: fmtCost(data.overview.totalCost), cls: 'cost' },
   ];
-
-  for (const s of stats) {
+  for (const c of cards) {
     const card = document.createElement('div');
-    card.className = `krypton-oc__stat krypton-oc__stat--${s.cls}`;
-
-    const value = document.createElement('div');
-    value.className = 'krypton-oc__stat-value';
-    value.textContent = s.value;
-
-    const label = document.createElement('div');
-    label.className = 'krypton-oc__stat-label';
-    label.textContent = s.label;
-
-    card.appendChild(value);
-    card.appendChild(label);
-    section.appendChild(card);
+    card.className = `krypton-oc__stat krypton-oc__stat--${c.cls}`;
+    const v = document.createElement('div');
+    v.className = 'krypton-oc__stat-value';
+    v.textContent = c.value;
+    const l = document.createElement('div');
+    l.className = 'krypton-oc__stat-label';
+    l.textContent = c.label;
+    card.appendChild(v);
+    card.appendChild(l);
+    statsEl.appendChild(card);
   }
+  container.appendChild(statsEl);
 
-  container.appendChild(section);
+  // Models list — fills remaining space
+  const modelsSection = document.createElement('div');
+  modelsSection.className = 'krypton-dashboard__section';
+  modelsSection.style.flex = '1';
+  modelsSection.style.display = 'flex';
+  modelsSection.style.flexDirection = 'column';
+  modelsSection.style.overflow = 'hidden';
+
+  const modelsTitle = document.createElement('div');
+  modelsTitle.className = 'krypton-dashboard__section-title';
+  modelsTitle.textContent = 'Models';
+  modelsSection.appendChild(modelsTitle);
+
+  const modelsList = document.createElement('div');
+  modelsList.className = 'krypton-oc__usage-list';
+  modelsList.style.flex = '1';
+
+  for (const m of data.models) {
+    const row = document.createElement('div');
+    row.className = 'krypton-oc__usage-row';
+    const name = document.createElement('div');
+    name.className = 'krypton-oc__usage-name';
+    name.textContent = m.model;
+    const prov = document.createElement('div');
+    prov.className = 'krypton-oc__usage-provider';
+    prov.textContent = m.provider;
+    const cnt = document.createElement('div');
+    cnt.className = 'krypton-oc__usage-count';
+    cnt.textContent = fmtNum(m.count) + ' msgs';
+    const tok = document.createElement('div');
+    tok.className = 'krypton-oc__usage-tokens';
+    tok.textContent = fmtNum(m.totalOutput) + ' out';
+    row.appendChild(name);
+    row.appendChild(prov);
+    row.appendChild(cnt);
+    row.appendChild(tok);
+    modelsList.appendChild(row);
+  }
+  modelsSection.appendChild(modelsList);
+  container.appendChild(modelsSection);
+
+  // Bottom hint
+  const hint = document.createElement('div');
+  hint.className = 'krypton-oc__hint';
+  hint.textContent = 'r refresh \u00b7 [/] or 1-3 switch tabs \u00b7 Esc close';
+  container.appendChild(hint);
 }
 
-function renderSessions(container: HTMLElement, sessions: OcSession[]): void {
-  const section = document.createElement('div');
-  section.className = 'krypton-dashboard__section';
+function renderSessionsTab(container: HTMLElement, data: OcData): void {
+  container.innerHTML = '';
 
-  const title = document.createElement('div');
-  title.className = 'krypton-dashboard__section-title';
-  title.textContent = `Recent Sessions (${sessions.length})`;
-  section.appendChild(title);
-
-  if (sessions.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'krypton-dashboard__empty';
-    empty.textContent = 'No sessions for this project';
-    section.appendChild(empty);
-    container.appendChild(section);
+  if (data.sessions.length === 0) {
+    const el = document.createElement('div');
+    el.className = 'krypton-dashboard__empty';
+    el.textContent = 'No sessions for this project';
+    container.appendChild(el);
     return;
   }
 
+  // Table fills entire content area
   const table = document.createElement('div');
   table.className = 'krypton-oc__sessions';
+  table.style.flex = '1';
+  table.style.display = 'flex';
+  table.style.flexDirection = 'column';
+  table.style.overflow = 'hidden';
 
   // Header
   const header = document.createElement('div');
@@ -287,8 +271,13 @@ function renderSessions(container: HTMLElement, sessions: OcSession[]): void {
   }
   table.appendChild(header);
 
-  // Rows
-  for (const s of sessions) {
+  // Rows container with overflow
+  const rows = document.createElement('div');
+  rows.className = 'krypton-oc__session-rows';
+  rows.style.flex = '1';
+  rows.style.overflowY = 'auto';
+
+  for (const s of data.sessions) {
     const row = document.createElement('div');
     row.className = 'krypton-oc__session-row';
 
@@ -297,118 +286,88 @@ function renderSessions(container: HTMLElement, sessions: OcSession[]): void {
     titleCell.textContent = s.title || '(untitled)';
     titleCell.title = s.title;
 
+    const agentsCell = document.createElement('div');
+    agentsCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--agents';
+    agentsCell.textContent = s.agents || '-';
+    agentsCell.title = s.agents;
+
     const msgsCell = document.createElement('div');
     msgsCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--num';
     msgsCell.textContent = String(s.msgCount);
 
     const tokensCell = document.createElement('div');
     tokensCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--num';
-    tokensCell.textContent = formatNumber(s.outputTokens);
+    tokensCell.textContent = fmtNum(s.outputTokens);
 
     const diffCell = document.createElement('div');
     diffCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--diff';
     const adds = s.additions || 0;
     const dels = s.deletions || 0;
     if (adds > 0 || dels > 0) {
-      const addSpan = document.createElement('span');
-      addSpan.className = 'krypton-oc__diff-add';
-      addSpan.textContent = `+${adds}`;
-      const delSpan = document.createElement('span');
-      delSpan.className = 'krypton-oc__diff-del';
-      delSpan.textContent = `-${dels}`;
-      diffCell.appendChild(addSpan);
+      const a = document.createElement('span');
+      a.className = 'krypton-oc__diff-add';
+      a.textContent = `+${adds}`;
+      const d = document.createElement('span');
+      d.className = 'krypton-oc__diff-del';
+      d.textContent = `-${dels}`;
+      diffCell.appendChild(a);
       diffCell.appendChild(document.createTextNode(' '));
-      diffCell.appendChild(delSpan);
+      diffCell.appendChild(d);
     } else {
       diffCell.textContent = '-';
     }
 
-    const durationCell = document.createElement('div');
-    durationCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--num';
-    durationCell.textContent = durationStr(s.timeCreated, s.timeUpdated);
+    const durCell = document.createElement('div');
+    durCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--num';
+    durCell.textContent = duration(s.timeCreated, s.timeUpdated);
 
-    const updatedCell = document.createElement('div');
-    updatedCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--time';
-    updatedCell.textContent = relativeTime(s.timeUpdated);
-
-    const agentsCell = document.createElement('div');
-    agentsCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--agents';
-    agentsCell.textContent = s.agents || '-';
-    agentsCell.title = s.agents;
+    const updCell = document.createElement('div');
+    updCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--time';
+    updCell.textContent = relTime(s.timeUpdated);
 
     row.appendChild(titleCell);
     row.appendChild(agentsCell);
     row.appendChild(msgsCell);
     row.appendChild(tokensCell);
     row.appendChild(diffCell);
-    row.appendChild(durationCell);
-    row.appendChild(updatedCell);
-    table.appendChild(row);
+    row.appendChild(durCell);
+    row.appendChild(updCell);
+    rows.appendChild(row);
   }
+  table.appendChild(rows);
+  container.appendChild(table);
 
-  section.appendChild(table);
-  container.appendChild(section);
+  const hint = document.createElement('div');
+  hint.className = 'krypton-oc__hint';
+  hint.textContent = 'r refresh \u00b7 [/] or 1-3 switch tabs \u00b7 Esc close';
+  container.appendChild(hint);
 }
 
-function renderModelUsage(container: HTMLElement, models: OcModelUsage[]): void {
-  const section = document.createElement('div');
-  section.className = 'krypton-dashboard__section';
+function renderToolsTab(container: HTMLElement, data: OcData): void {
+  container.innerHTML = '';
 
-  const title = document.createElement('div');
-  title.className = 'krypton-dashboard__section-title';
-  title.textContent = 'Models';
-  section.appendChild(title);
+  if (data.tools === null) {
+    const el = document.createElement('div');
+    el.className = 'krypton-dashboard__loading';
+    el.textContent = 'Loading tool stats\u2026';
+    container.appendChild(el);
+    return;
+  }
+
+  if (data.tools.length === 0) {
+    const el = document.createElement('div');
+    el.className = 'krypton-dashboard__empty';
+    el.textContent = 'No tool usage data';
+    container.appendChild(el);
+    return;
+  }
 
   const list = document.createElement('div');
   list.className = 'krypton-oc__usage-list';
+  list.style.flex = '1';
 
-  for (const m of models) {
-    const row = document.createElement('div');
-    row.className = 'krypton-oc__usage-row';
-
-    const name = document.createElement('div');
-    name.className = 'krypton-oc__usage-name';
-    name.textContent = m.model;
-
-    const provider = document.createElement('div');
-    provider.className = 'krypton-oc__usage-provider';
-    provider.textContent = m.provider;
-
-    const count = document.createElement('div');
-    count.className = 'krypton-oc__usage-count';
-    count.textContent = formatNumber(m.count) + ' msgs';
-
-    const tokens = document.createElement('div');
-    tokens.className = 'krypton-oc__usage-tokens';
-    tokens.textContent = formatNumber(m.totalOutput) + ' out';
-
-    row.appendChild(name);
-    row.appendChild(provider);
-    row.appendChild(count);
-    row.appendChild(tokens);
-    list.appendChild(row);
-  }
-
-  section.appendChild(list);
-  container.appendChild(section);
-}
-
-function renderToolUsage(container: HTMLElement, tools: OcToolUsage[]): void {
-  const section = document.createElement('div');
-  section.className = 'krypton-dashboard__section';
-
-  const title = document.createElement('div');
-  title.className = 'krypton-dashboard__section-title';
-  title.textContent = 'Tool Usage (Top 15)';
-  section.appendChild(title);
-
-  const list = document.createElement('div');
-  list.className = 'krypton-oc__usage-list';
-
-  // Find max for bar width calculation
-  const maxCount = tools.length > 0 ? tools[0].count : 1;
-
-  for (const t of tools) {
+  const maxCount = data.tools[0].count;
+  for (const t of data.tools) {
     const row = document.createElement('div');
     row.className = 'krypton-oc__tool-row';
 
@@ -416,189 +375,167 @@ function renderToolUsage(container: HTMLElement, tools: OcToolUsage[]): void {
     name.className = 'krypton-oc__tool-name';
     name.textContent = t.tool;
 
-    const barContainer = document.createElement('div');
-    barContainer.className = 'krypton-oc__tool-bar-container';
-
+    const barC = document.createElement('div');
+    barC.className = 'krypton-oc__tool-bar-container';
     const bar = document.createElement('div');
     bar.className = 'krypton-oc__tool-bar';
     bar.style.width = `${Math.max(2, (t.count / maxCount) * 100)}%`;
-    barContainer.appendChild(bar);
+    barC.appendChild(bar);
 
-    const count = document.createElement('div');
-    count.className = 'krypton-oc__tool-count';
-    count.textContent = formatNumber(t.count);
+    const cnt = document.createElement('div');
+    cnt.className = 'krypton-oc__tool-count';
+    cnt.textContent = fmtNum(t.count);
 
     row.appendChild(name);
-    row.appendChild(barContainer);
-    row.appendChild(count);
+    row.appendChild(barC);
+    row.appendChild(cnt);
     list.appendChild(row);
   }
+  container.appendChild(list);
 
-  section.appendChild(list);
-  container.appendChild(section);
+  const hint = document.createElement('div');
+  hint.className = 'krypton-oc__hint';
+  hint.textContent = 'r refresh \u00b7 [/] or 1-3 switch tabs \u00b7 Esc close';
+  container.appendChild(hint);
 }
 
 // ─── Dashboard Definition ──────────────────────────────────────
 
 export function createOpenCodeDashboard(compositor: Compositor): DashboardDefinition {
-  let currentContainer: HTMLElement | null = null;
+  let data: OcData | null = null;
+  let error: string | null = null;
   let renderGen = 0;
+  let readyCb: (() => void) | null = null;
 
-  async function loadAndRender(container: HTMLElement): Promise<void> {
+  const tabs: DashboardTab[] = [
+    {
+      label: 'Overview',
+      render(container: HTMLElement) {
+        if (error) { renderError(container, error); return; }
+        if (!data) { renderLoading(container); return; }
+        renderOverviewTab(container, data);
+      },
+    },
+    {
+      label: 'Sessions',
+      render(container: HTMLElement) {
+        if (error) { renderError(container, error); return; }
+        if (!data) { renderLoading(container); return; }
+        renderSessionsTab(container, data);
+      },
+    },
+    {
+      label: 'Tools',
+      render(container: HTMLElement) {
+        if (error) { renderError(container, error); return; }
+        if (!data) { renderLoading(container); return; }
+        renderToolsTab(container, data);
+      },
+    },
+  ];
+
+  function renderLoading(c: HTMLElement): void {
+    c.innerHTML = '';
+    const el = document.createElement('div');
+    el.className = 'krypton-dashboard__loading';
+    el.textContent = 'Loading OpenCode data\u2026';
+    c.appendChild(el);
+  }
+
+  function renderError(c: HTMLElement, msg: string): void {
+    c.innerHTML = '';
+    const el = document.createElement('div');
+    el.className = 'krypton-dashboard__error';
+    el.textContent = msg;
+    c.appendChild(el);
+  }
+
+  async function loadData(ready: () => void): Promise<void> {
     const gen = ++renderGen;
-    container.innerHTML = '';
+    data = null;
+    error = null;
 
-    const loading = document.createElement('div');
-    loading.className = 'krypton-dashboard__loading';
-    loading.textContent = 'Loading OpenCode data...';
-    container.appendChild(loading);
+    // Resolve CWD
+    const sessionId = compositor.getFocusedSessionId();
+    if (sessionId === null) { error = 'No active terminal session'; ready(); return; }
 
     try {
-      // Resolve project from focused terminal's CWD
-      const sessionId = compositor.getFocusedSessionId();
-      if (sessionId === null) {
-        container.innerHTML = '';
-        const err = document.createElement('div');
-        err.className = 'krypton-dashboard__empty';
-        err.textContent = 'No active terminal session';
-        container.appendChild(err);
-        return;
-      }
-
       const cwd: string | null = await invoke('get_pty_cwd', { sessionId });
-      if (!cwd) {
-        container.innerHTML = '';
-        const err = document.createElement('div');
-        err.className = 'krypton-dashboard__empty';
-        err.textContent = 'Could not determine terminal working directory';
-        container.appendChild(err);
-        return;
-      }
-
+      if (!cwd) { error = 'Could not determine working directory'; ready(); return; }
       if (gen !== renderGen) return;
 
-      // Look up project_id for this CWD
       const projectRows = await querySqlite(QUERY_PROJECT_ID, [cwd]);
       if (gen !== renderGen) return;
+      if (projectRows.length === 0) { error = `No OpenCode project for ${abbrDir(cwd)}`; ready(); return; }
 
-      if (projectRows.length === 0) {
-        container.innerHTML = '';
-        const err = document.createElement('div');
-        err.className = 'krypton-dashboard__empty';
-        err.textContent = `No OpenCode project found for ${abbreviateDir(cwd)}`;
-        container.appendChild(err);
-        return;
-      }
+      const pid = String(projectRows[0].id);
 
-      const projectId = String(projectRows[0].id);
-
-      // Phase 1: Fast queries in parallel (overview, sessions, models — all <0.5s)
-      const [overviewRows, sessionRows, modelRows] = await Promise.all([
-        querySqlite(buildOverviewQuery(projectId)),
-        querySqlite(buildSessionsQuery(projectId)),
-        querySqlite(buildModelQuery(projectId)),
+      // Phase 1: fast queries
+      const [ovRows, sessRows, modRows] = await Promise.all([
+        querySqlite(qOverview(pid)),
+        querySqlite(qSessions(pid)),
+        querySqlite(qModels(pid)),
       ]);
-
       if (gen !== renderGen) return;
 
-      container.innerHTML = '';
+      const ov = ovRows[0] ?? {};
+      data = {
+        cwd,
+        overview: {
+          totalSessions: Number(ov.total_sessions ?? 0),
+          totalMessages: Number(ov.total_messages ?? 0),
+          totalTokensOutput: Number(ov.total_output ?? 0),
+          totalCacheRead: Number(ov.total_cache_read ?? 0),
+          totalCost: Number(ov.total_cost ?? 0),
+        },
+        sessions: sessRows.map((r) => ({
+          id: String(r.id ?? ''),
+          title: String(r.title ?? ''),
+          timeCreated: Number(r.time_created ?? 0),
+          timeUpdated: Number(r.time_updated ?? 0),
+          msgCount: Number(r.msg_count ?? 0),
+          outputTokens: Number(r.output_tokens ?? 0),
+          additions: Number(r.summary_additions ?? 0),
+          deletions: Number(r.summary_deletions ?? 0),
+          agents: String(r.agents ?? ''),
+        })),
+        models: modRows.map((r) => ({
+          model: String(r.model ?? ''),
+          provider: String(r.provider ?? ''),
+          count: Number(r.cnt ?? 0),
+          totalOutput: Number(r.total_output ?? 0),
+        })),
+        tools: null, // loading async
+      };
 
-      // Project header
-      renderProjectHeader(container, cwd);
+      // Signal ready — tabs can render overview/sessions now
+      ready();
 
-      // Overview stats
-      if (overviewRows.length > 0) {
-        const r = overviewRows[0];
-        renderOverview(container, {
-          totalSessions: Number(r.total_sessions ?? 0),
-          totalMessages: Number(r.total_messages ?? 0),
-          totalTokensOutput: Number(r.total_output ?? 0),
-          totalCacheRead: Number(r.total_cache_read ?? 0),
-          totalCost: Number(r.total_cost ?? 0),
-        });
-      }
-
-      // Sessions table
-      const sessions: OcSession[] = sessionRows.map((r) => ({
-        id: String(r.id ?? ''),
-        title: String(r.title ?? ''),
-        directory: String(r.directory ?? ''),
-        timeCreated: Number(r.time_created ?? 0),
-        timeUpdated: Number(r.time_updated ?? 0),
-        msgCount: Number(r.msg_count ?? 0),
-        userMsgs: Number(r.user_msgs ?? 0),
-        asstMsgs: Number(r.asst_msgs ?? 0),
-        outputTokens: Number(r.output_tokens ?? 0),
-        additions: Number(r.summary_additions ?? 0),
-        deletions: Number(r.summary_deletions ?? 0),
-        files: Number(r.summary_files ?? 0),
-        agents: String(r.agents ?? ''),
-      }));
-      renderSessions(container, sessions);
-
-      // Usage breakdown: two-column layout
-      const breakdown = document.createElement('div');
-      breakdown.className = 'krypton-oc__breakdown';
-
-      const modelsCol = document.createElement('div');
-      modelsCol.className = 'krypton-oc__breakdown-col';
-      const models: OcModelUsage[] = modelRows.map((r) => ({
-        model: String(r.model ?? ''),
-        provider: String(r.provider ?? ''),
-        count: Number(r.cnt ?? 0),
-        totalOutput: Number(r.total_output ?? 0),
-      }));
-      renderModelUsage(modelsCol, models);
-
-      // Tools: show loading placeholder, load async (can be slow for large projects)
-      const toolsCol = document.createElement('div');
-      toolsCol.className = 'krypton-oc__breakdown-col';
-      const toolsPlaceholder = document.createElement('div');
-      toolsPlaceholder.className = 'krypton-dashboard__section';
-      const toolsTitle = document.createElement('div');
-      toolsTitle.className = 'krypton-dashboard__section-title';
-      toolsTitle.textContent = 'Tool Usage (Top 15)';
-      const toolsSpinner = document.createElement('div');
-      toolsSpinner.className = 'krypton-dashboard__loading';
-      toolsSpinner.textContent = 'Loading tool stats\u2026';
-      toolsPlaceholder.appendChild(toolsTitle);
-      toolsPlaceholder.appendChild(toolsSpinner);
-      toolsCol.appendChild(toolsPlaceholder);
-
-      breakdown.appendChild(modelsCol);
-      breakdown.appendChild(toolsCol);
-      container.appendChild(breakdown);
-
-      // Phase 2: Slow tool query in background
-      querySqlite(buildToolQuery(projectId)).then((toolRows) => {
-        if (gen !== renderGen) return;
-        const tools: OcToolUsage[] = toolRows.map((r) => ({
+      // Phase 2: slow tool query in background
+      try {
+        const toolRows = await querySqlite(qTools(pid));
+        if (gen !== renderGen || !data) return;
+        data.tools = toolRows.map((r) => ({
           tool: String(r.tool_name ?? ''),
           count: Number(r.cnt ?? 0),
         }));
-        toolsCol.innerHTML = '';
-        renderToolUsage(toolsCol, tools);
-      }).catch((toolErr) => {
-        if (gen !== renderGen) return;
-        toolsCol.innerHTML = '';
-        const errEl = document.createElement('div');
-        errEl.className = 'krypton-dashboard__error';
-        errEl.textContent = `Tool stats error: ${toolErr}`;
-        toolsCol.appendChild(errEl);
-      });
-
-      // Hint
-      const hint = document.createElement('div');
-      hint.className = 'krypton-oc__hint';
-      hint.textContent = 'Press r to refresh \u00b7 Esc to close';
-      container.appendChild(hint);
+        // Re-render the tools tab if it's currently active
+        const content = document.querySelector('.krypton-dashboard__content') as HTMLElement | null;
+        if (content) {
+          // Find which tab is active — check if Tools tab is showing the loading spinner
+          const loadingEl = content.querySelector('.krypton-dashboard__loading');
+          if (loadingEl) {
+            renderToolsTab(content, data);
+          }
+        }
+      } catch (toolErr) {
+        if (gen !== renderGen || !data) return;
+        data.tools = [];
+      }
     } catch (err) {
       if (gen !== renderGen) return;
-      container.innerHTML = '';
-      const errEl = document.createElement('div');
-      errEl.className = 'krypton-dashboard__error';
-      errEl.textContent = `OpenCode error: ${err}`;
-      container.appendChild(errEl);
+      error = `OpenCode error: ${err}`;
+      ready();
     }
   }
 
@@ -606,21 +543,23 @@ export function createOpenCodeDashboard(compositor: Compositor): DashboardDefini
     id: 'opencode',
     title: 'OpenCode',
     shortcut: { key: 'KeyO', meta: true, shift: true },
+    tabs,
 
-    onOpen(container: HTMLElement): void {
-      currentContainer = container;
-      loadAndRender(container);
+    onOpen(ready: () => void): void {
+      readyCb = ready;
+      loadData(ready);
     },
 
     onClose(): void {
-      currentContainer = null;
+      data = null;
+      error = null;
+      readyCb = null;
     },
 
     onKeyDown(e: KeyboardEvent): boolean {
-      // r — refresh
       if (e.key === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-        if (currentContainer) {
-          loadAndRender(currentContainer);
+        if (readyCb) {
+          loadData(readyCb);
         }
         return true;
       }

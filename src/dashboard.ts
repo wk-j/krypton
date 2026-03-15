@@ -1,6 +1,6 @@
 // Krypton — Dashboard Manager
 // Generic overlay dashboard framework. Manages registration, DOM lifecycle,
-// show/hide transitions, and keyboard routing for overlay dashboards.
+// show/hide transitions, tabbed content, and keyboard routing for overlay dashboards.
 
 import type { DashboardDefinition, DashboardShortcut } from './types';
 
@@ -14,8 +14,14 @@ export class DashboardManager {
   private registry: Map<string, DashboardDefinition> = new Map();
   private activeId: string | null = null;
   private overlay: HTMLElement | null = null;
-  private cleanupFn: (() => void) | null = null;
   private animating = false;
+
+  /** Currently active tab index */
+  private activeTab = 0;
+  /** Tab bar element (null if single tab) */
+  private tabBar: HTMLElement | null = null;
+  /** Tab content container */
+  private tabContent: HTMLElement | null = null;
 
   /** Called when a dashboard opens (true) or closes (false) */
   private modeCallback: ModeCallback | null = null;
@@ -55,7 +61,6 @@ export class DashboardManager {
     if (this.activeId === id) {
       this.close();
     } else {
-      // Close any open dashboard first, then open the new one
       if (this.activeId !== null) {
         this.closeImmediate();
       }
@@ -74,7 +79,6 @@ export class DashboardManager {
       return;
     }
 
-    // Close any currently open dashboard
     if (this.activeId !== null) {
       this.closeImmediate();
     }
@@ -83,20 +87,13 @@ export class DashboardManager {
     this.overlay = this.buildOverlay(definition);
     document.body.appendChild(this.overlay);
 
-    // Find the content container and call onOpen
-    const content = this.overlay.querySelector('.krypton-dashboard__content') as HTMLElement;
-    const result = definition.onOpen(content);
-    if (typeof result === 'function') {
-      this.cleanupFn = result;
-    }
-
     this.activeId = id;
+    this.activeTab = 0;
 
     // Trigger enter animation
     this.animating = true;
     requestAnimationFrame(() => {
       this.overlay?.classList.add('krypton-dashboard--visible');
-      // Animation completes via CSS transition (150ms)
       setTimeout(() => {
         this.animating = false;
       }, 150);
@@ -104,6 +101,17 @@ export class DashboardManager {
 
     // Notify InputRouter to enter Dashboard mode
     this.modeCallback?.(true);
+
+    // Call onOpen — dashboard loads data, then calls ready() to render tabs
+    if (definition.onOpen) {
+      definition.onOpen(() => {
+        if (this.activeId !== id) return; // closed before ready
+        this.renderActiveTab();
+      });
+    } else {
+      // No onOpen, render first tab immediately
+      this.renderActiveTab();
+    }
   }
 
   /** Close the currently active dashboard (no-op if none open). */
@@ -112,19 +120,11 @@ export class DashboardManager {
     if (this.animating) return;
 
     const definition = this.registry.get(this.activeId);
-
-    // Call onClose lifecycle
     definition?.onClose?.();
-    if (this.cleanupFn) {
-      this.cleanupFn();
-      this.cleanupFn = null;
-    }
 
-    // Trigger exit animation
     this.animating = true;
     this.overlay.classList.remove('krypton-dashboard--visible');
 
-    // Remove from DOM after transition
     const overlayRef = this.overlay;
     setTimeout(() => {
       overlayRef.remove();
@@ -132,12 +132,12 @@ export class DashboardManager {
     }, 120);
 
     this.overlay = null;
+    this.tabBar = null;
+    this.tabContent = null;
     this.activeId = null;
+    this.activeTab = 0;
 
-    // Notify InputRouter to exit Dashboard mode
     this.modeCallback?.(false);
-
-    // Restore terminal focus
     this.refocusCallback?.();
   }
 
@@ -154,7 +154,6 @@ export class DashboardManager {
   /**
    * Check if a keyboard event matches any dashboard shortcut.
    * Called by InputRouter from Normal mode.
-   * Returns the dashboard ID if matched, null otherwise.
    */
   matchShortcut(e: KeyboardEvent): string | null {
     for (const [id, def] of this.registry) {
@@ -181,19 +180,74 @@ export class DashboardManager {
       if (consumed) return true;
     }
 
-    // Default: Escape closes the dashboard
+    // Tab switching: [ and ] or 1-9
+    if (definition.tabs.length > 1) {
+      if (e.key === '[' && !e.metaKey && !e.ctrlKey) {
+        this.switchTab(this.activeTab - 1);
+        return true;
+      }
+      if (e.key === ']' && !e.metaKey && !e.ctrlKey) {
+        this.switchTab(this.activeTab + 1);
+        return true;
+      }
+      // 1-9 to switch tabs directly
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= definition.tabs.length && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        this.switchTab(num - 1);
+        return true;
+      }
+    }
+
+    // Escape closes the dashboard
     if (e.key === 'Escape') {
       this.close();
       return true;
     }
 
-    // Default: the dashboard's own toggle shortcut closes it
+    // Dashboard's own toggle shortcut closes it
     if (definition.shortcut && this.shortcutMatches(e, definition.shortcut)) {
       this.close();
       return true;
     }
 
     return false;
+  }
+
+  // ─── Tab Management ──────────────────────────────────────────────
+
+  /** Switch to a tab by index (wraps around) */
+  switchTab(index: number): void {
+    if (this.activeId === null) return;
+    const definition = this.registry.get(this.activeId);
+    if (!definition || definition.tabs.length <= 1) return;
+
+    const count = definition.tabs.length;
+    // Wrap around
+    this.activeTab = ((index % count) + count) % count;
+    this.updateTabBarHighlight();
+    this.renderActiveTab();
+  }
+
+  /** Render the currently active tab into the content area */
+  private renderActiveTab(): void {
+    if (!this.tabContent || this.activeId === null) return;
+    const definition = this.registry.get(this.activeId);
+    if (!definition) return;
+
+    const tab = definition.tabs[this.activeTab];
+    if (!tab) return;
+
+    this.tabContent.innerHTML = '';
+    tab.render(this.tabContent);
+  }
+
+  /** Update the tab bar active indicator */
+  private updateTabBarHighlight(): void {
+    if (!this.tabBar) return;
+    const buttons = this.tabBar.querySelectorAll('.krypton-dashboard__tab');
+    buttons.forEach((btn, i) => {
+      btn.classList.toggle('krypton-dashboard__tab--active', i === this.activeTab);
+    });
   }
 
   // ─── Private ─────────────────────────────────────────────────────
@@ -204,14 +258,13 @@ export class DashboardManager {
 
     const definition = this.registry.get(this.activeId);
     definition?.onClose?.();
-    if (this.cleanupFn) {
-      this.cleanupFn();
-      this.cleanupFn = null;
-    }
 
     this.overlay.remove();
     this.overlay = null;
+    this.tabBar = null;
+    this.tabContent = null;
     this.activeId = null;
+    this.activeTab = 0;
   }
 
   /** Build the overlay DOM structure */
@@ -229,12 +282,52 @@ export class DashboardManager {
     const panel = document.createElement('div');
     panel.className = 'krypton-dashboard__panel';
 
+    // ─── Header ─────────────────────────────────────────────────
     const header = document.createElement('div');
     header.className = 'krypton-dashboard__header';
 
     const title = document.createElement('span');
     title.className = 'krypton-dashboard__title';
     title.textContent = definition.title;
+
+    header.appendChild(title);
+
+    // Tab bar (only if multiple tabs)
+    if (definition.tabs.length > 1) {
+      const tabBarEl = document.createElement('div');
+      tabBarEl.className = 'krypton-dashboard__tabbar';
+
+      definition.tabs.forEach((tab, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'krypton-dashboard__tab';
+        if (i === 0) btn.classList.add('krypton-dashboard__tab--active');
+
+        const keyHint = document.createElement('span');
+        keyHint.className = 'krypton-dashboard__tab-key';
+        keyHint.textContent = tab.key ?? String(i + 1);
+
+        const label = document.createElement('span');
+        label.className = 'krypton-dashboard__tab-label';
+        label.textContent = tab.label;
+
+        btn.appendChild(keyHint);
+        btn.appendChild(label);
+
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          this.switchTab(i);
+        });
+
+        tabBarEl.appendChild(btn);
+      });
+
+      header.appendChild(tabBarEl);
+      this.tabBar = tabBarEl;
+    }
+
+    // Shortcut hint + close button pushed to end
+    const headerEnd = document.createElement('div');
+    headerEnd.className = 'krypton-dashboard__header-end';
 
     const shortcutHint = document.createElement('span');
     shortcutHint.className = 'krypton-dashboard__shortcut-hint';
@@ -250,12 +343,14 @@ export class DashboardManager {
       this.close();
     });
 
-    header.appendChild(title);
-    header.appendChild(shortcutHint);
-    header.appendChild(closeBtn);
+    headerEnd.appendChild(shortcutHint);
+    headerEnd.appendChild(closeBtn);
+    header.appendChild(headerEnd);
 
+    // ─── Content ────────────────────────────────────────────────
     const content = document.createElement('div');
     content.className = 'krypton-dashboard__content';
+    this.tabContent = content;
 
     panel.appendChild(header);
     panel.appendChild(content);
@@ -284,13 +379,8 @@ export class DashboardManager {
     if (shortcut.alt) parts.push('Alt');
     if (shortcut.shift) parts.push('Shift');
     if (shortcut.meta) parts.push('Cmd');
-
-    // Convert code to readable key name
-    const keyName = shortcut.key
-      .replace('Key', '')
-      .replace('Digit', '');
+    const keyName = shortcut.key.replace('Key', '').replace('Digit', '');
     parts.push(keyName);
-
     return parts.join('+');
   }
 }

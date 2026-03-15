@@ -1172,7 +1172,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--krypton-border-color, rgba(0, 200, 255, 0.1));
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.02);
@@ -1180,18 +1180,83 @@ html, body {
 
 .krypton-dashboard__title {
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--krypton-fg, #b0c4d8);
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* Tab bar within the header */
+.krypton-dashboard__tabbar {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.krypton-dashboard__tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  white-space: nowrap;
+}
+
+.krypton-dashboard__tab:hover {
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.krypton-dashboard__tab--active {
+  color: var(--krypton-fg, #b0c4d8);
+  background: rgba(0, 200, 255, 0.08);
+  border-color: rgba(0, 200, 255, 0.15);
+}
+
+.krypton-dashboard__tab-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.krypton-dashboard__tab--active .krypton-dashboard__tab-key {
+  background: rgba(0, 200, 255, 0.15);
+  color: var(--krypton-ansi-cyan, #0cf);
+}
+
+.krypton-dashboard__tab-label {
+  font-weight: 500;
+}
+
+/* Header end section (shortcut hint + close button) */
+.krypton-dashboard__header-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .krypton-dashboard__shortcut-hint {
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
   font-size: 11px;
   color: rgba(255, 255, 255, 0.3);
-  margin-left: auto;
 }
 
 .krypton-dashboard__close {
@@ -1217,32 +1282,17 @@ html, body {
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* Content area: fills remaining space, no scroll */
 .krypton-dashboard__content {
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 16px;
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
   font-size: 13px;
   color: var(--krypton-fg, #b0c4d8);
-  line-height: 1.6;
-}
-
-/* Scrollbar styling for dashboard content */
-.krypton-dashboard__content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.krypton-dashboard__content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.krypton-dashboard__content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-
-.krypton-dashboard__content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ─── Dashboard Common Content Styles ───────────────────────────── */
@@ -1638,8 +1688,27 @@ html, body {
 }
 
 .krypton-oc__hint {
-  margin-top: 16px;
+  margin-top: 8px;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.25);
   text-align: center;
+  flex-shrink: 0;
+}
+
+/* Scrollbar for session rows within tab */
+.krypton-oc__session-rows::-webkit-scrollbar {
+  width: 5px;
+}
+
+.krypton-oc__session-rows::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.krypton-oc__session-rows::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+.krypton-oc__session-rows::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
 }

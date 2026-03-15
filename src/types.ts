@@ -255,6 +255,20 @@ export interface DashboardShortcut {
   alt?: boolean;
 }
 
+/** A single tab within a dashboard */
+export interface DashboardTab {
+  /** Tab label displayed in the tab bar */
+  label: string;
+  /** Keyboard hint shown next to label (e.g., "1", "2") — auto-assigned if omitted */
+  key?: string;
+  /**
+   * Render tab content into the container.
+   * Container fills the entire panel below the header/tab bar.
+   * Content must fit without scrolling — use overflow: hidden.
+   */
+  render(container: HTMLElement): void;
+}
+
 /** Definition for a registerable overlay dashboard */
 export interface DashboardDefinition {
   /** Unique identifier (e.g., 'git', 'system', 'keybindings') */
@@ -264,11 +278,16 @@ export interface DashboardDefinition {
   /** Keyboard shortcut to toggle (e.g., Cmd+Shift+G) */
   shortcut?: DashboardShortcut;
   /**
-   * Called when the dashboard opens.
-   * Receives the content container element to render into.
-   * May return a cleanup function called on close.
+   * Tabs for this dashboard. If only one tab, the tab bar is hidden.
+   * Each tab's render() is called when that tab becomes active.
    */
-  onOpen(container: HTMLElement): void | (() => void);
+  tabs: DashboardTab[];
+  /**
+   * Called when the dashboard opens (before any tab renders).
+   * Use for data loading. When done, call the provided ready() callback
+   * to signal that tabs can be rendered.
+   */
+  onOpen?(ready: () => void): void;
   /**
    * Called when the dashboard closes.
    * The framework removes the container from DOM after this.
@@ -277,7 +296,7 @@ export interface DashboardDefinition {
   /**
    * Optional: handle keyboard events while dashboard is active.
    * Return true if the event was consumed, false to let default handling proceed.
-   * Default handling: Escape closes the dashboard.
+   * Default handling: Escape closes, 1-9/[/] switch tabs.
    */
   onKeyDown?(e: KeyboardEvent): boolean;
 }
