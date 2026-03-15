@@ -201,18 +201,32 @@ pub fn run_command(
 /// Execute a read-only SQL query against a SQLite database and return rows as JSON.
 /// Used by dashboard overlays to read from local databases (e.g., OpenCode).
 /// Opens the database in read-only mode; rejects write statements.
+/// Runs on a blocking thread pool to avoid stalling the Tauri IPC dispatcher.
 #[tauri::command]
-pub fn query_sqlite(
+pub async fn query_sqlite(
     db_path: String,
     query: String,
     params: Vec<serde_json::Value>,
+) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        query_sqlite_blocking(&db_path, &query, &params)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// Synchronous SQLite query implementation (runs on blocking thread pool).
+fn query_sqlite_blocking(
+    db_path: &str,
+    query: &str,
+    params: &[serde_json::Value],
 ) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, String> {
     use rusqlite::types::Value as SqlValue;
     use rusqlite::{Connection, OpenFlags};
     use std::path::Path;
 
     // Validate database file exists
-    if !Path::new(&db_path).exists() {
+    if !Path::new(db_path).exists() {
         return Err(format!("Database not found: {db_path}"));
     }
 
@@ -228,7 +242,7 @@ pub fn query_sqlite(
 
     // Open in read-only mode with busy timeout
     let conn = Connection::open_with_flags(
-        &db_path,
+        db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|e| format!("Failed to open database: {e}"))?;
@@ -238,7 +252,7 @@ pub fn query_sqlite(
 
     // Prepare and execute
     let mut stmt = conn
-        .prepare(&query)
+        .prepare(query)
         .map_err(|e| format!("SQL prepare error: {e}"))?;
 
     // Bind parameters
