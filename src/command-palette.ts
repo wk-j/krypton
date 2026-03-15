@@ -3,6 +3,7 @@
 // Activated by Cmd+Shift+P. Each entry shows the action name and keybinding.
 
 import { Compositor } from './compositor';
+import type { DashboardShortcut } from './types';
 
 /** A single action in the command palette registry */
 interface PaletteAction {
@@ -617,6 +618,18 @@ export class CommandPalette {
     this.staticActions.push(action);
   }
 
+  /** Format a dashboard shortcut for display in the palette */
+  private formatDashboardShortcut(shortcut: DashboardShortcut): string {
+    const parts: string[] = [];
+    if (shortcut.ctrl) parts.push('Ctrl');
+    if (shortcut.alt) parts.push('Alt');
+    if (shortcut.shift) parts.push('Shift');
+    if (shortcut.meta) parts.push('Cmd');
+    const keyName = shortcut.key.replace('Key', '').replace('Digit', '');
+    parts.push(keyName);
+    return parts.join('+');
+  }
+
   /**
    * Rebuild the full action list: static actions + dynamic actions
    * based on current compositor state. Called each time the palette opens.
@@ -633,6 +646,21 @@ export class CommandPalette {
         label: `Unpin: ${label}`,
         category: 'Window',
         execute: () => c.togglePin(id),
+      });
+    }
+
+    // Dynamic: dashboard toggle actions
+    for (const dash of c.dashboardManager.registeredDashboards) {
+      const shortcutLabel = dash.shortcut
+        ? this.formatDashboardShortcut(dash.shortcut)
+        : undefined;
+      const dashId = dash.id;
+      this.actions.push({
+        id: `dashboard.${dashId}`,
+        label: `Toggle ${dash.title}`,
+        category: 'Dashboard',
+        keybinding: shortcutLabel,
+        execute: () => c.dashboardManager.toggle(dashId),
       });
     }
 

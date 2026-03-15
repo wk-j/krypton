@@ -100,6 +100,7 @@ The webview's `<html>` and `<body>` have `background: transparent`. Windows are 
 | `libc` | Unix FFI for `tcgetpgrp()` (foreground process detection) | Implemented |
 | `unicode-width` | Character width calculation for CJK / emoji | Planned |
 | `display-info` | Query monitor geometry for fullscreen dimensions | Planned |
+| `rusqlite` | Read-only SQLite database access for dashboard overlays | Implemented |
 
 ## 5.2 Key Frontend Packages (npm)
 
@@ -141,7 +142,8 @@ The compositor is a TypeScript module running in the webview that manages worksp
 13. **Shader engine** — manage per-pane CSS/SVG post-processing effects (CRT, hologram, glitch, bloom, matrix); cycle presets via `Leader g`, toggle globally via `Leader G`
 14. **Progress indicator** — listen for `pty-progress` events (ConEmu `OSC 9;4`); render a large translucent SVG arc gauge centered in the window's content area (behind terminal text) and a titlebar scanline sweep; per-pane state tracking with active-tab display; accent-color-aware theming
 15. **Context extensions** — `ExtensionManager` listens for `process-changed` Tauri events from a backend poller (500ms, using `tcgetpgrp()` on PTY master fd). When a matching foreground process is detected (e.g., `java`), the corresponding built-in extension activates and renders widget bars (top/bottom horizontal strips inside the pane). Bars are real flex children that push the xterm terminal inward — `addon-fit` recalculates and `resize_pty` fires. First extension: Java Resource Monitor (JVM heap, GC, CPU%, RSS via `jstat` + `ps`).
-16. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
+16. **Overlay dashboards** — `DashboardManager` provides a generic framework for full-screen overlay panels. Modules register dashboards with an ID, title, optional keyboard shortcut, and `onOpen`/`onClose`/`onKeyDown` lifecycle hooks. The manager handles DOM creation (backdrop + panel + header + scrollable content area at z-index 9500), show/hide transitions (CSS opacity + scale), `Mode.Dashboard` integration with the InputRouter, and focus restoration. Built-in dashboards: **Git Status** (`Cmd+Shift+G`) — branch, file counts, changed file list via `run_command`; **OpenCode** (`Cmd+Shift+O`) — session history, token usage, model/tool distribution from local SQLite database via `query_sqlite`.
+17. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
 
 ### Window DOM Structure
 
@@ -226,6 +228,21 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
       </div>
     </div>
 
+    <!-- Dashboard overlay (shown when a dashboard is active, z-index: 9500) -->
+    <div class="krypton-dashboard krypton-dashboard--visible">
+      <div class="krypton-dashboard__backdrop"></div>
+      <div class="krypton-dashboard__panel">
+        <div class="krypton-dashboard__header">
+          <span class="krypton-dashboard__title">Git Status</span>
+          <span class="krypton-dashboard__shortcut-hint">Cmd+Shift+G</span>
+          <button class="krypton-dashboard__close">&times;</button>
+        </div>
+        <div class="krypton-dashboard__content">
+          <!-- Dashboard-specific content rendered by onOpen() -->
+        </div>
+      </div>
+    </div>
+
     <!-- Which-key popup (shown during compositor/resize/move/tab-move modes) -->
     <div class="krypton-whichkey">...</div>
   </div>
@@ -254,7 +271,7 @@ The Config Manager (`src-tauri/src/config.rs`) handles loading and serving the T
 - **Config path**: `~/.config/krypton/krypton.toml` on all platforms (resolved via `dirs::home_dir()`).
 - **First-run behavior**: If the config file doesn't exist, the directory is created and a default config is written.
 - **Parse errors**: Logged and silently fall back to defaults (app still starts).
-- **IPC**: `get_config` Tauri command returns the full `KryptonConfig` to the frontend on startup.
+- **IPC**: `get_config` Tauri command returns the full `KryptonConfig` to the frontend on startup. `run_command` Tauri command runs a short-lived process (non-PTY) and returns stdout, used by overlay dashboards to gather data (e.g., `git status --porcelain`, `git branch --show-current`). `query_sqlite` Tauri command executes read-only SQL queries against a specified SQLite database and returns rows as JSON objects, used by the OpenCode dashboard to read session/message/token data.
 - **Shell config**: `spawn_pty` command accepts optional `shell`/`shell_args` params from the frontend, falling back to config values, then `$SHELL`.
 
 Frontend counterpart: `src/config.ts` defines matching TypeScript interfaces and a `loadConfig()` function. The compositor's `applyConfig()` method applies settings (font, terminal, theme colors, Quick Terminal sizing, workspace gap/step sizes) before the first window is created.
@@ -316,6 +333,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 | **Move** | `Leader` then `M` | Arrow keys reposition the focused window | `Escape` or `Enter` to confirm |
 | **Selection** | `Leader` then `v` or `V` | Vim-like keyboard text selection — virtual cursor navigates buffer with h/j/k/l/w/b/e/0/$, `v` toggles char-wise selection, `V` toggles line-wise, `y` yanks to clipboard | `Escape` to cancel, `y` to yank and exit |
 | **Hint** | `Leader` then `Shift+H` or `Cmd+Shift+H` (global) | Scans visible buffer for regex patterns (URLs, paths, emails), overlays keyboard labels on matches. Type a label to act (open/copy/paste). | `Escape` to cancel, or selecting a label |
+| **Dashboard** | Dashboard shortcut (e.g., `Cmd+Shift+G` for Git) | Displays a full-screen overlay panel. Keys delegated to the active dashboard's `onKeyDown` handler. | `Escape`, or re-pressing the dashboard's toggle shortcut |
 
 **Compositor single-action keys (in Compositor mode):**
 
@@ -332,6 +350,8 @@ The input router is the central keyboard dispatcher. It determines what happens 
 - `Cmd+Shift+<` / `Cmd+Shift+>` — Cycle focus through windows
 - `Ctrl+Shift+U` / `Ctrl+Shift+D` — Scroll terminal buffer up/down by one page
 - `Cmd+Shift+H` — Enter hint mode (scan terminal for URLs/paths/emails, overlay labels)
+- `Cmd+Shift+G` — Toggle Git Dashboard (overlay showing git status for focused terminal's CWD)
+- `Cmd+Shift+O` — Toggle OpenCode Dashboard (session history, token usage, model/tool stats from local SQLite DB)
 
 ### Key routing flow
 
@@ -356,6 +376,7 @@ Keypress
   +-- Selection -----> Navigate virtual cursor / expand selection
   +-- Hint ----------> Filter/select hint labels -> execute action
   +-- Cmd Palette ---> Filter/select action list
+  +-- Dashboard -----> Delegate to active dashboard's onKeyDown handler
   +-- Search --------> Update search query
 ```
 
@@ -371,6 +392,7 @@ The command palette is a fuzzy-searchable overlay listing **every action** in Kr
 - Clipboard: copy, paste
 - Search: open search, next/prev match
 - Config: reload config, open config file
+- Dashboard actions: toggle registered dashboards (Git Status, etc.)
 - Application: quit
 
 Each entry displays the action name and its current keybinding (if any).

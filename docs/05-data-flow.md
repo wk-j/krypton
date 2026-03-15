@@ -20,6 +20,7 @@
    - **Compositor/Resize/Move/Swap mode?** -> execute compositor command (focus, resize, move, etc.)
    - **Selection mode?** -> navigate virtual cursor, expand/toggle selection, yank
    - **Hint mode?** -> filter/match labels, execute action on match (open/copy/paste)
+   - **Dashboard mode?** -> delegate to active dashboard's `onKeyDown()` handler; Escape closes the dashboard
    - **Command palette / Search mode?** -> route to overlay's text input handler
 3. **If forwarded to PTY**: Tauri `invoke("write_to_pty", { window_id, data })` via IPC
 4. **Rust backend writes** -> Raw bytes written to PTY file descriptor
@@ -220,5 +221,57 @@ Sessions live in a shared pool. Windows reference sessions by ID. When a workspa
     d. widget.dispose() clears the stats polling interval
     e. Bar elements removed from DOM
     f. addon-fit recalculates (terminal expands back)
-    g. resize_pty IPC sent (shell receives SIGWINCH)
+     g. resize_pty IPC sent (shell receives SIGWINCH)
+```
+
+## Dashboard Toggle Flow (e.g., user presses Cmd+Shift+G)
+
+```
+1. User presses Cmd+Shift+G (dashboard shortcut)
+2. xterm.js customKeyHandler returns false (InputRouter intercepts)
+3. InputRouter: dashboardManager.matchShortcut(e) returns "git"
+4. InputRouter: dashboardManager.toggle("git")
+5. DashboardManager.open("git"):
+   a. Creates overlay DOM: backdrop + panel + header + content container
+   b. Appends to document.body
+   c. Calls definition.onOpen(contentElement)
+   d. Git Dashboard: invokes get_pty_cwd(sessionId) to get CWD
+   e. Git Dashboard: invokes run_command("git", ["branch","--show-current"], cwd)
+      and run_command("git", ["status","--porcelain=v1"], cwd) in parallel
+   f. Rust backend: std::process::Command spawns git, captures stdout, returns
+   g. Git Dashboard: parses output, renders branch/stats/file list into container
+   h. CSS transition: opacity 0->1, scale 0.96->1 (150ms)
+   i. Calls modeCallback(true) -> InputRouter.setMode(Mode.Dashboard)
+6. User presses keys while dashboard is active:
+   a. InputRouter dispatches to handleDashboardKey(e)
+   b. DashboardManager.handleKey(e) calls definition.onKeyDown(e)
+   c. If "r" pressed: Git Dashboard refreshes (re-runs git commands)
+   d. If Escape pressed: DashboardManager.close()
+7. DashboardManager.close():
+   a. Calls definition.onClose()
+   b. Calls cleanup function returned from onOpen() if any
+   c. CSS transition: opacity 1->0 (120ms)
+   d. Removes overlay DOM after transition
+   e. Calls modeCallback(false) -> InputRouter.toNormal()
+   f. Calls refocusCallback() -> compositor.refocusTerminal()
+```
+
+## OpenCode Dashboard Flow (e.g., user presses Cmd+Shift+O)
+
+```
+1. User presses Cmd+Shift+O (dashboard shortcut)
+2. InputRouter -> DashboardManager.toggle('opencode')
+3. DashboardManager.open('opencode') -> calls onOpen(container)
+4. OpenCode Dashboard resolves DB path via run_command("sh", ["-c", "echo $HOME"])
+5. Fires 4 queries in parallel via invoke('query_sqlite'):
+   a. Overview: total sessions, messages, tokens, cost (aggregate query)
+   b. Recent sessions: top 20 parent sessions with JOIN on message for counts
+   c. Model usage: GROUP BY modelID/providerID with SUM of output tokens
+   d. Tool usage: top 15 tools from part table WHERE type='tool'
+6. Rust backend: rusqlite opens ~/.local/share/opencode/opencode.db read-only
+7. Executes each query, maps rows to JSON objects, returns Vec<Map>
+8. Frontend parses JSON rows into typed structs
+9. Renders: overview stat cards, session table, model list, tool bar chart
+10. User presses 'r' -> refreshes all 4 queries
+11. User presses Escape -> DashboardManager.close() -> restores terminal focus
 ```

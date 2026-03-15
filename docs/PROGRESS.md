@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-15 (M8: Context-aware extensions with Java resource monitor)
+> Last updated: 2026-03-15 (M8: OpenCode Dashboard with query_sqlite command)
 
 ## Overview
 
@@ -14,7 +14,7 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 14/15 |
-| M8 — Polish | In Progress | 7/10 |
+| M8 — Polish | In Progress | 9/12 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -123,6 +123,8 @@
 - [x] Progress bar via ConEmu `OSC 9;4` — Rust backend inline parser detects progress sequences in PTY output, emits `pty-progress` Tauri event. Frontend renders a large translucent SVG arc gauge centered in the window's content area behind terminal text (fills clockwise for normal progress, orbits for indeterminate, red for error, amber for paused) with percentage text, status labels, and a subtle titlebar scanline sweep. Per-window accent color aware. Used by Zig CLI, systemd, Amp, etc.
 - [x] 3D perspective depth — CSS `perspective` on content containers with `translateZ` layering: terminal text at back (0), progress gauge mid (10px), shader overlay (20px), selection cursor/dividers at front (30px). Configurable via `[visual] perspective_depth` (default 800px, 0 = disabled). GPU-composited, hot-reloadable.
 - [x] Context-aware extensions — process detection via `tcgetpgrp()` on PTY master fd (500ms poller), `ExtensionManager` activates built-in extensions when matching foreground processes are detected. First extension: **Java Resource Monitor** — top bar shows `[JAVA] MainClass PID`, bottom bar shows live `HEAP`, `GC`, `CPU%`, `RSS` stats via `jstat -gc` + `ps` (2s poll). Bars are real layout elements (not overlays), terminal resizes via `addon-fit`. Configurable via `[extensions] enabled/poll_interval_ms`.
+- [x] Overlay dashboard infrastructure — `DashboardManager` framework (`src/dashboard.ts`) for registering and displaying full-screen overlay panels. Generic lifecycle (`onOpen`/`onClose`/`onKeyDown`), `Mode.Dashboard` input routing, CSS animated show/hide (z-index 9500), command palette integration. First dashboard: **Git Status** (`Cmd+Shift+G`) — shows current branch, staged/modified/untracked/deleted file counts, and changed file list. Uses new `run_command` Tauri command for non-PTY subprocess execution.
+- [x] OpenCode Dashboard (`Cmd+Shift+O`) — reads OpenCode's local SQLite database (`~/.local/share/opencode/opencode.db`) via new `query_sqlite` Tauri command (`rusqlite`, read-only). Displays: aggregate stats (sessions, messages, output tokens, cache reads, cost), 20 most recent sessions with message counts/tokens/diffs/duration, model usage breakdown (model, provider, count, output tokens), and top 15 tool usage with bar chart. New `query_sqlite` command: generic read-only SQLite query executor with write-statement rejection, 1000-row limit, 5-second busy timeout.
 - [ ] `@xterm/addon-search` integration with keyboard-driven search overlay
 - [ ] IME support testing and fixes
 - [ ] Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)

@@ -168,6 +168,141 @@ pub fn find_java_server_for_session(
     crate::pty::find_java_servers_pid(shell_pid)
 }
 
+/// Run a short-lived command and return its stdout.
+/// Used by dashboard overlays to gather data (e.g., git status) without
+/// creating a PTY session. Capped at 10 MB output limit.
+#[tauri::command]
+pub fn run_command(
+    program: String,
+    args: Vec<String>,
+    cwd: Option<String>,
+) -> Result<String, String> {
+    let mut cmd = std::process::Command::new(&program);
+    cmd.args(&args);
+    if let Some(ref dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    // Capture stdout, discard stderr
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to run '{}': {}", program, e))?;
+
+    // Check we didn't exceed a reasonable output size (10 MB)
+    if output.stdout.len() > 10 * 1024 * 1024 {
+        return Err("Command output exceeded 10 MB limit".to_string());
+    }
+
+    String::from_utf8(output.stdout).map_err(|e| format!("Command output is not valid UTF-8: {e}"))
+}
+
+/// Execute a read-only SQL query against a SQLite database and return rows as JSON.
+/// Used by dashboard overlays to read from local databases (e.g., OpenCode).
+/// Opens the database in read-only mode; rejects write statements.
+#[tauri::command]
+pub fn query_sqlite(
+    db_path: String,
+    query: String,
+    params: Vec<serde_json::Value>,
+) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, String> {
+    use rusqlite::types::Value as SqlValue;
+    use rusqlite::{Connection, OpenFlags};
+    use std::path::Path;
+
+    // Validate database file exists
+    if !Path::new(&db_path).exists() {
+        return Err(format!("Database not found: {db_path}"));
+    }
+
+    // Reject write statements (defense in depth — also opened read-only)
+    let trimmed = query.trim_start().to_uppercase();
+    for forbidden in &[
+        "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "REPLACE",
+    ] {
+        if trimmed.starts_with(forbidden) {
+            return Err(format!("Write statements are not allowed: {forbidden}..."));
+        }
+    }
+
+    // Open in read-only mode with busy timeout
+    let conn = Connection::open_with_flags(
+        &db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| format!("Failed to open database: {e}"))?;
+
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("Failed to set busy timeout: {e}"))?;
+
+    // Prepare and execute
+    let mut stmt = conn
+        .prepare(&query)
+        .map_err(|e| format!("SQL prepare error: {e}"))?;
+
+    // Bind parameters
+    let sql_params: Vec<SqlValue> = params
+        .iter()
+        .map(|v| match v {
+            serde_json::Value::Null => SqlValue::Null,
+            serde_json::Value::Bool(b) => SqlValue::Integer(if *b { 1 } else { 0 }),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    SqlValue::Integer(i)
+                } else if let Some(f) = n.as_f64() {
+                    SqlValue::Real(f)
+                } else {
+                    SqlValue::Null
+                }
+            }
+            serde_json::Value::String(s) => SqlValue::Text(s.clone()),
+            _ => SqlValue::Text(v.to_string()),
+        })
+        .collect();
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = sql_params
+        .iter()
+        .map(|v| v as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+
+    let rows = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            let mut map = serde_json::Map::new();
+            for (i, name) in column_names.iter().enumerate() {
+                let val: SqlValue = row.get(i)?;
+                let json_val = match val {
+                    SqlValue::Null => serde_json::Value::Null,
+                    SqlValue::Integer(n) => serde_json::Value::Number(n.into()),
+                    SqlValue::Real(f) => serde_json::Value::Number(
+                        serde_json::Number::from_f64(f).unwrap_or_else(|| 0.into()),
+                    ),
+                    SqlValue::Text(s) => serde_json::Value::String(s),
+                    SqlValue::Blob(b) => {
+                        serde_json::Value::String(format!("<blob {} bytes>", b.len()))
+                    }
+                };
+                map.insert(name.clone(), json_val);
+            }
+            Ok(map)
+        })
+        .map_err(|e| format!("SQL query error: {e}"))?;
+
+    // Collect up to 1000 rows
+    let mut result = Vec::new();
+    for row in rows {
+        let row = row.map_err(|e| format!("Row read error: {e}"))?;
+        result.push(row);
+        if result.len() >= 1000 {
+            break;
+        }
+    }
+
+    Ok(result)
+}
+
 /// Find the Java server process by matching the terminal's CWD.
 /// Finds all java processes system-wide whose CWD equals the terminal's,
 /// then returns the one with a TCP listening port.

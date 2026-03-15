@@ -37,6 +37,8 @@ pub fn run() {
             commands::find_java_server,
             commands::find_java_server_for_session,
             commands::find_java_server_by_cwd,
+            commands::run_command,
+            commands::query_sqlite,
         ])
         .setup(move |app| {
             if cfg!(debug_assertions) {

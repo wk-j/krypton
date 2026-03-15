@@ -9,6 +9,7 @@ import { Compositor } from './compositor';
 import { SelectionController } from './selection';
 import { HintController } from './hints';
 import { CommandPalette } from './command-palette';
+import { DashboardManager } from './dashboard';
 
 /** Callback for mode changes */
 type ModeChangeCallback = (mode: Mode) => void;
@@ -20,6 +21,7 @@ export class InputRouter {
   private selection: SelectionController = new SelectionController();
   private hints: HintController = new HintController();
   private commandPalette: CommandPalette | null = null;
+  private dashboardManager: DashboardManager | null = null;
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
@@ -73,6 +75,10 @@ export class InputRouter {
       if (InputRouter.isHintKey(e)) {
         return false;
       }
+      // Prevent xterm from consuming dashboard toggle shortcuts
+      if (this.dashboardManager?.matchShortcut(e)) {
+        return false;
+      }
       // Prevent xterm from consuming Cmd+Shift+[ / Cmd+Shift+] (tab switching)
       // and Cmd+[ / Cmd+] (pane cycling)
       if (e.metaKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
@@ -123,6 +129,19 @@ export class InputRouter {
   /** Set the command palette instance (called after construction) */
   setCommandPalette(palette: CommandPalette): void {
     this.commandPalette = palette;
+  }
+
+  /** Set the dashboard manager instance (called after construction) */
+  setDashboardManager(manager: DashboardManager): void {
+    this.dashboardManager = manager;
+    // Wire the mode callback: dashboard open/close -> InputRouter mode change
+    manager.onModeChange((active) => {
+      if (active) {
+        this.setMode(Mode.Dashboard);
+      } else {
+        this.toNormal();
+      }
+    });
   }
 
   /** Check if a key event is the Command Palette shortcut (Cmd+Shift+P) */
@@ -216,6 +235,17 @@ export class InputRouter {
         return;
       }
 
+      // Global: Dashboard toggle shortcuts (works from Normal and Dashboard modes)
+      if (this.dashboardManager) {
+        const dashId = this.dashboardManager.matchShortcut(e);
+        if (dashId) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.dashboardManager.toggle(dashId);
+          return;
+        }
+      }
+
       // Global: Cmd+Shift+< cycle focus next (forward through stack)
       // Global: Cmd+Shift+> cycle focus previous (backward through stack)
       // Match on code (Comma/Period) since key value varies with Cmd held on macOS
@@ -251,6 +281,9 @@ export class InputRouter {
         } else if (this.mode === Mode.CommandPalette) {
           this.commandPalette?.close();
           this.toNormal();
+        } else if (this.mode === Mode.Dashboard) {
+          this.dashboardManager?.close();
+          // DashboardManager.close() triggers modeCallback -> toNormal()
         } else {
           this.toNormal();
         }
@@ -337,6 +370,12 @@ export class InputRouter {
       // intercept navigation keys (ArrowUp/Down, Enter, Tab, Escape).
       if (this.mode === Mode.CommandPalette) {
         this.handleCommandPaletteKey(e);
+        return;
+      }
+
+      // Dashboard mode: delegate to DashboardManager key handler
+      if (this.mode === Mode.Dashboard) {
+        this.handleDashboardKey(e);
         return;
       }
 
@@ -701,6 +740,25 @@ export class InputRouter {
     }
     // If not consumed (regular typing), do NOT preventDefault —
     // let the event reach the <input> element naturally.
+  }
+
+  // ─── Dashboard Mode ────────────────────────────────────────────
+  // The dashboard has its own key handler. We delegate all keys to
+  // DashboardManager, which in turn calls the active dashboard's onKeyDown.
+
+  private handleDashboardKey(e: KeyboardEvent): void {
+    if (!this.dashboardManager) {
+      this.toNormal();
+      return;
+    }
+
+    const consumed = this.dashboardManager.handleKey(e);
+    if (consumed) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // If the dashboard was closed by the key handler, mode is already Normal
+    // (DashboardManager.close() triggers modeCallback -> toNormal)
   }
 
   // ─── Hint Mode ─────────────────────────────────────────────────

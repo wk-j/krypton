@@ -30,6 +30,7 @@ export enum Mode {
   Hint = 'Hint',
   TabMove = 'TabMove',
   CommandPalette = 'CommandPalette',
+  Dashboard = 'Dashboard',
 }
 
 /** Layout strategy for tiling windows */
@@ -241,6 +242,44 @@ export interface ActiveExtension {
   widgets: ExtensionWidget[];
   process: ProcessInfo;
   paneElement: HTMLElement;
+}
+
+// ─── Dashboard Types ─────────────────────────────────────────────
+
+/** Shortcut descriptor for dashboard toggle */
+export interface DashboardShortcut {
+  key: string;         // KeyboardEvent.code value, e.g., 'KeyG'
+  meta?: boolean;      // Cmd on macOS
+  shift?: boolean;
+  ctrl?: boolean;
+  alt?: boolean;
+}
+
+/** Definition for a registerable overlay dashboard */
+export interface DashboardDefinition {
+  /** Unique identifier (e.g., 'git', 'system', 'keybindings') */
+  id: string;
+  /** Display name shown in command palette and title bar */
+  title: string;
+  /** Keyboard shortcut to toggle (e.g., Cmd+Shift+G) */
+  shortcut?: DashboardShortcut;
+  /**
+   * Called when the dashboard opens.
+   * Receives the content container element to render into.
+   * May return a cleanup function called on close.
+   */
+  onOpen(container: HTMLElement): void | (() => void);
+  /**
+   * Called when the dashboard closes.
+   * The framework removes the container from DOM after this.
+   */
+  onClose?(): void;
+  /**
+   * Optional: handle keyboard events while dashboard is active.
+   * Return true if the event was consumed, false to let default handling proceed.
+   * Default handling: Escape closes the dashboard.
+   */
+  onKeyDown?(e: KeyboardEvent): boolean;
 }
 
 /** Java server process with a listening port (from backend find_java_server command) */

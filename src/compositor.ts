@@ -35,6 +35,7 @@ import { DEFAULT_SHADER_CONFIG } from './config';
 import type { FrontendThemeEngine } from './theme';
 import { ExtensionManager } from './extensions';
 import type { ExtensionHost } from './extensions';
+import { DashboardManager } from './dashboard';
 
 /** Custom key event handler for xterm.js — set by InputRouter */
 type CustomKeyHandler = (e: KeyboardEvent) => boolean;
@@ -228,6 +229,9 @@ export class Compositor {
   /** Context extension manager for process-aware widgets */
   private extensions: ExtensionManager;
 
+  /** Dashboard overlay manager */
+  private dashboards: DashboardManager = new DashboardManager();
+
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
     this.setupResizeHandler();
@@ -240,6 +244,9 @@ export class Compositor {
     };
     this.extensions = new ExtensionManager(host);
     this.extensions.start();
+
+    // Wire dashboard manager to restore terminal focus on close
+    this.dashboards.onRefocus(() => this.refocusTerminal());
   }
 
   /** Apply loaded config to compositor settings. Call before creating windows. */
@@ -687,6 +694,11 @@ export class Compositor {
   /** Get the extension manager instance */
   get extensionManager(): ExtensionManager {
     return this.extensions;
+  }
+
+  /** Get the dashboard manager instance */
+  get dashboardManager(): DashboardManager {
+    return this.dashboards;
   }
 
   // ─── Shader Controls ─────────────────────────────────────────────
@@ -1336,6 +1348,15 @@ export class Compositor {
     }
     const pane = this.getFocusedPane();
     return pane ? pane.terminal : null;
+  }
+
+  /** Get the PTY session ID of the focused pane (or Quick Terminal if visible) */
+  getFocusedSessionId(): number | null {
+    if (this.qtVisible && this.qtSessionId !== null) {
+      return this.qtSessionId;
+    }
+    const pane = this.getFocusedPane();
+    return pane?.sessionId ?? null;
   }
 
   /** Refocus the terminal of the currently focused pane */

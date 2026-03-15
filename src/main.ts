@@ -8,6 +8,8 @@ import { WhichKey } from './which-key';
 import { CommandPalette } from './command-palette';
 import { loadConfig } from './config';
 import { FrontendThemeEngine } from './theme';
+import { createGitDashboard } from './dashboards/git';
+import { createOpenCodeDashboard } from './dashboards/opencode';
 
 async function main(): Promise<void> {
   const workspace = document.getElementById('krypton-workspace');
@@ -63,6 +65,12 @@ async function main(): Promise<void> {
   // Initialize command palette
   const commandPalette = new CommandPalette(compositor);
   inputRouter.setCommandPalette(commandPalette);
+
+  // Initialize dashboard manager and register built-in dashboards
+  const dashboardManager = compositor.dashboardManager;
+  inputRouter.setDashboardManager(dashboardManager);
+  dashboardManager.register(createGitDashboard(compositor));
+  dashboardManager.register(createOpenCodeDashboard(compositor));
 
   // Initialize which-key popup (shows available keys per mode)
   const whichKey = new WhichKey();

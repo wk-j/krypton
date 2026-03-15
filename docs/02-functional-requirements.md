@@ -404,3 +404,40 @@ Each keyboard type provides a **press** (key-down) and **release** (key-up) soun
 | FR-SFX-032 | Simultaneous sound events (e.g., close window triggers both `window.close` and `mode.exit`) shall mix cleanly without clipping. The engine shall apply a limiter/compressor on the master output. | Must |
 | FR-SFX-033 | The sound engine shall dispose of completed audio nodes promptly to prevent memory leaks during long sessions. | Must |
 | FR-SFX-034 | If the Web Audio API is unavailable (e.g., headless environment, no audio device), the sound engine shall silently degrade — no errors, no crashes. | Must |
+
+## 3.15 Overlay Dashboards
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-DASH-001 | The app shall provide a `DashboardManager` framework for registering, toggling, and displaying full-screen overlay dashboard panels. | Must |
+| FR-DASH-002 | Each dashboard shall be registered with a unique ID, title, optional keyboard shortcut, and `onOpen`/`onClose`/`onKeyDown` lifecycle hooks. | Must |
+| FR-DASH-003 | Only one dashboard shall be active at a time. Opening a new dashboard shall close the current one first. | Must |
+| FR-DASH-004 | Dashboard overlays shall render at z-index 9500 (above hint overlays, below which-key and command palette). | Must |
+| FR-DASH-005 | Pressing Escape while a dashboard is open shall close it and restore terminal focus. | Must |
+| FR-DASH-006 | Pressing the dashboard's toggle shortcut while it is open shall close it. | Must |
+| FR-DASH-007 | The dashboard overlay shall display with a backdrop blur, themed panel, header with title and shortcut hint, and a scrollable content area. | Should |
+| FR-DASH-008 | Dashboard open/close shall animate with CSS transitions (opacity + scale, 150ms open, 120ms close). | Should |
+| FR-DASH-009 | Dashboards shall be listed as toggle actions in the command palette. | Should |
+| FR-DASH-010 | A `run_command` Tauri command shall be available for dashboards to run short-lived processes and capture stdout without creating PTY sessions. | Must |
+
+### 3.15.1 Git Dashboard
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-GIT-001 | A Git Dashboard shall be toggled via `Cmd+Shift+G`. | Must |
+| FR-GIT-002 | The Git Dashboard shall display the current branch, staged/modified/untracked/deleted file counts, and a list of changed files for the focused terminal's working directory. | Must |
+| FR-GIT-003 | Pressing `r` inside the Git Dashboard shall refresh the git status. | Should |
+| FR-GIT-004 | If no terminal session is focused, the Git Dashboard shall display "No active terminal session". | Must |
+
+### 3.15.2 OpenCode Dashboard
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-OC-001 | An OpenCode Dashboard shall be toggled via `Cmd+Shift+O`. | Must |
+| FR-OC-002 | The OpenCode Dashboard shall display aggregate stats: total sessions, total messages, total output tokens, total cache reads, and total cost. | Must |
+| FR-OC-003 | The OpenCode Dashboard shall display the 20 most recent top-level sessions with title, directory, message count, output tokens, lines added/deleted, duration, and relative time. | Must |
+| FR-OC-004 | The OpenCode Dashboard shall display model usage breakdown (model name, provider, message count, output tokens). | Must |
+| FR-OC-005 | The OpenCode Dashboard shall display the top 15 tool invocations with horizontal bar chart. | Must |
+| FR-OC-006 | A `query_sqlite` Tauri command shall execute read-only SQL queries against any SQLite database and return rows as JSON. It shall open databases with `SQLITE_OPEN_READ_ONLY`, reject write statements, limit results to 1000 rows, and have a 5-second busy timeout. | Must |
+| FR-OC-007 | Pressing `r` inside the OpenCode Dashboard shall refresh all data. | Should |
+| FR-OC-008 | If the OpenCode database is not found, the dashboard shall display an error message with the expected path. | Must |
