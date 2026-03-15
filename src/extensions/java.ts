@@ -1,13 +1,10 @@
 // Krypton — Java Resource Monitor Extension
-// Shows JVM heap, GC stats, CPU, and RSS for a Java server process.
-// Only shows data for the java process that has a TCP listening port
-// in the same working directory as the terminal.
+// Shows JVM heap, GC stats, CPU, and RSS for Java server processes.
+// Uses process tree ownership: only shows java processes that are
+// descendants of the terminal's shell PID.
 
 import { invoke } from '@tauri-apps/api/core';
 import type { ContextExtension, ExtensionWidget, JavaServerInfo, JavaStats, ProcessInfo, SessionId } from '../types';
-
-/** Callback to trigger pane refit when bars change visibility. */
-type RefitCallback = (() => void) | null;
 
 /** Format a number, avoiding NaN display. */
 function fmt(n: number, decimals: number): string {
@@ -55,13 +52,27 @@ function updateStatsBar(panel: HTMLElement, stats: JavaStats): void {
   if (rssText) rssText.textContent = `${fmt(stats.rss_mb, 0)} MB`;
 }
 
+/** Create a server row element for the top bar. */
+function createServerRow(server: JavaServerInfo): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'krypton-extension-bar__server';
+  row.dataset.pid = String(server.pid);
+  row.innerHTML = `
+    <span class="krypton-extension-bar__label">JAVA</span>
+    <span class="krypton-extension-bar__content">${server.main_class}</span>
+    <span class="krypton-extension-bar__stat">PID ${server.pid}</span>
+    <span class="krypton-extension-bar__stat">:${server.port}</span>
+  `;
+  return row;
+}
+
 export const javaExtension: ContextExtension = {
   name: 'java-monitor',
   description: 'JVM resource monitor — heap, GC, CPU, memory',
   processNames: ['java'],
 
   createWidgets(_process: ProcessInfo, sessionId: SessionId): ExtensionWidget[] {
-    // ── Top bar: shows server identity once found ──
+    // ── Top bar: shows server identities once found ──
     const topBar = document.createElement('div');
     topBar.className = 'krypton-extension-bar krypton-extension-bar--accent';
     topBar.innerHTML = `
@@ -69,7 +80,7 @@ export const javaExtension: ContextExtension = {
       <span class="krypton-extension-bar__content" data-field="main-class">Searching for server...</span>
     `;
 
-    // ── Bottom panel: graphical resource stats ──
+    // ── Bottom panel: graphical resource stats (for primary server) ──
     const bottomBar = document.createElement('div');
     bottomBar.className = 'krypton-java-panel';
     bottomBar.innerHTML = `
@@ -105,47 +116,83 @@ export const javaExtension: ContextExtension = {
     let disposed = false;
     let statsPollInterval: ReturnType<typeof setInterval> | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    /** PID of the primary server whose stats are shown in the bottom panel */
+    let primaryPid: number | null = null;
 
-    /** Once the server is found, populate UI and start stats polling. */
-    const onServerFound = (server: JavaServerInfo): void => {
-      // Update top bar
-      const mainClassEl = topBar.querySelector('[data-field="main-class"]');
-      if (mainClassEl) {
-        mainClassEl.textContent = `${server.main_class}  PID ${server.pid}  :${server.port}`;
+    /** Once servers are found, populate top bar and start stats polling. */
+    const onServersFound = (servers: JavaServerInfo[]): void => {
+      // Replace the "Searching..." placeholder with server rows
+      topBar.innerHTML = '';
+      for (const server of servers) {
+        topBar.appendChild(createServerRow(server));
       }
 
-      // Start stats polling
-      invoke<JavaStats>('get_java_stats', { pid: server.pid })
+      // Use the first server as primary for the bottom stats panel
+      primaryPid = servers[0].pid;
+
+      // Initial stats fetch
+      invoke<JavaStats>('get_java_stats', { pid: primaryPid })
         .then((stats) => updateStatsBar(bottomBar, stats))
         .catch(() => {
           const heapText = bottomBar.querySelector('[data-field="heap-text"]');
           if (heapText) heapText.textContent = 'jstat unavailable — install JDK';
         });
 
-      // Poll every 2s
+      // Poll every 2s — stats for primary, re-discover servers periodically
+      let pollCount = 0;
       statsPollInterval = setInterval(async () => {
         if (disposed) return;
-        try {
-          const stats = await invoke<JavaStats>('get_java_stats', { pid: server.pid });
-          updateStatsBar(bottomBar, stats);
-        } catch {
-          // Process may have exited
+        pollCount++;
+
+        // Poll stats for primary server
+        if (primaryPid !== null) {
+          try {
+            const stats = await invoke<JavaStats>('get_java_stats', { pid: primaryPid });
+            updateStatsBar(bottomBar, stats);
+          } catch {
+            // Process may have exited — will be caught by re-discovery below
+          }
+        }
+
+        // Re-discover servers every 5th poll (10s) to catch new/exited servers
+        if (pollCount % 5 === 0) {
+          try {
+            const freshServers = await invoke<JavaServerInfo[]>(
+              'find_java_server_for_session',
+              { sessionId },
+            );
+            if (freshServers.length > 0 && !disposed) {
+              // Update top bar rows
+              topBar.innerHTML = '';
+              for (const server of freshServers) {
+                topBar.appendChild(createServerRow(server));
+              }
+              // Switch primary if the current one is gone
+              const primaryStillAlive = freshServers.some((s) => s.pid === primaryPid);
+              if (!primaryStillAlive) {
+                primaryPid = freshServers[0].pid;
+              }
+            }
+          } catch {
+            // Discovery failed — keep showing current data
+          }
         }
       }, 2000);
     };
 
-    /** Search for a java server with a listening port in the terminal's CWD. */
+    /** Search for java servers in the terminal's process tree. */
     let retryCount = 0;
     const maxRetries = 30;
 
-    const tryFindServer = async (): Promise<void> => {
+    const tryFindServers = async (): Promise<void> => {
       if (disposed) return;
       try {
-        const server = await invoke<JavaServerInfo | null>('find_java_server_by_cwd', {
-          sessionId,
-        });
-        if (server && !disposed) {
-          onServerFound(server);
+        const servers = await invoke<JavaServerInfo[]>(
+          'find_java_server_for_session',
+          { sessionId },
+        );
+        if (servers.length > 0 && !disposed) {
+          onServersFound(servers);
           return;
         }
       } catch {
@@ -155,7 +202,7 @@ export const javaExtension: ContextExtension = {
       // Not found yet — retry
       if (retryCount < maxRetries && !disposed) {
         retryCount++;
-        retryTimer = setTimeout(tryFindServer, 2000);
+        retryTimer = setTimeout(tryFindServers, 2000);
       } else if (!disposed) {
         // Give up — show message
         const mainClassEl = topBar.querySelector('[data-field="main-class"]');
@@ -165,7 +212,7 @@ export const javaExtension: ContextExtension = {
       }
     };
 
-    tryFindServer();
+    tryFindServers();
 
     return [
       { element: topBar, position: 'top' },

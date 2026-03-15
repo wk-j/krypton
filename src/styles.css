@@ -902,6 +902,23 @@ html, body {
 .krypton-extension-bar--accent {
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
   border-bottom-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  /* When hosting multiple server rows, stack them vertically */
+  flex-wrap: wrap;
+}
+
+/* Individual server row inside a multi-server top bar */
+.krypton-extension-bar__server {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+/* Subtle separator between server rows */
+.krypton-extension-bar__server + .krypton-extension-bar__server {
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  padding-top: 4px;
+  margin-top: 2px;
 }
 
 /* Stats bar with monospace numbers */

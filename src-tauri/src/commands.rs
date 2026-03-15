@@ -154,15 +154,18 @@ pub fn find_java_server(root_pid: u32) -> Option<crate::pty::JavaServerInfo> {
     crate::pty::find_java_server_pid(root_pid)
 }
 
-/// Find the Java server process from a PTY session ID.
+/// Find all Java server processes from a PTY session ID.
 /// Searches the entire process tree from the session's shell PID downward.
+/// Returns all java processes with listening ports (not just the first).
 #[tauri::command]
 pub fn find_java_server_for_session(
     pty_manager: State<'_, Arc<PtyManager>>,
     session_id: u32,
-) -> Option<crate::pty::JavaServerInfo> {
-    let shell_pid = pty_manager.get_shell_pid(session_id)?;
-    crate::pty::find_java_server_pid(shell_pid)
+) -> Vec<crate::pty::JavaServerInfo> {
+    let Some(shell_pid) = pty_manager.get_shell_pid(session_id) else {
+        return Vec::new();
+    };
+    crate::pty::find_java_servers_pid(shell_pid)
 }
 
 /// Find the Java server process by matching the terminal's CWD.

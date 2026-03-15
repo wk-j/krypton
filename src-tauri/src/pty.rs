@@ -780,7 +780,8 @@ fn find_child_by_name_recursive(sys: &System, parent: sysinfo::Pid, target: &str
 }
 
 /// Find a Java server from a process tree root.
-pub fn find_java_server_pid(root_pid: u32) -> Option<JavaServerInfo> {
+/// Find all Java server processes (with listening ports) among descendants of a root PID.
+pub fn find_java_servers_pid(root_pid: u32) -> Vec<JavaServerInfo> {
     let mut sys = System::new();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
@@ -794,7 +795,13 @@ pub fn find_java_server_pid(root_pid: u32) -> Option<JavaServerInfo> {
     );
 
     let listening = get_listening_ports();
-    find_server_among(&sys, &java_pids, &listening)
+    find_servers_among(&sys, &java_pids, &listening)
+}
+
+/// Find the first Java server process among descendants of a root PID.
+/// Kept for backward compatibility with `find_java_server` command.
+pub fn find_java_server_pid(root_pid: u32) -> Option<JavaServerInfo> {
+    find_java_servers_pid(root_pid).into_iter().next()
 }
 
 /// Find all Java processes whose CWD is under the terminal's CWD,
@@ -835,15 +842,18 @@ pub fn find_java_server_by_cwd(cwd: &str) -> Option<JavaServerInfo> {
         .collect();
 
     let listening = get_listening_ports();
-    find_server_among(&sys, &matching, &listening)
+    find_servers_among(&sys, &matching, &listening)
+        .into_iter()
+        .next()
 }
 
-/// Among a set of java PIDs, find the one with a listening port.
-fn find_server_among(
+/// Among a set of java PIDs, find all that have a listening port.
+fn find_servers_among(
     sys: &System,
     pids: &[sysinfo::Pid],
     listening: &std::collections::HashMap<u32, u16>,
-) -> Option<JavaServerInfo> {
+) -> Vec<JavaServerInfo> {
+    let mut result = Vec::new();
     for &pid in pids {
         if let Some(&port) = listening.get(&pid.as_u32()) {
             // Get cmdline — try sysinfo first, fall back to CLI
@@ -862,7 +872,7 @@ fn find_server_among(
                 .unwrap_or_default();
 
             let main_class = extract_java_main_class(&cmdline);
-            return Some(JavaServerInfo {
+            result.push(JavaServerInfo {
                 pid: pid.as_u32(),
                 port,
                 main_class,
@@ -870,7 +880,7 @@ fn find_server_among(
             });
         }
     }
-    None
+    result
 }
 
 /// Collect all java PIDs under a root using sysinfo.
