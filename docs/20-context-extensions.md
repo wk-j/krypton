@@ -16,22 +16,22 @@ Add a **process detection** backend service that polls the foreground process of
 
 **Widgets are horizontal bars only** — rendered at the top and/or bottom edge of the terminal window's content area. Bars take real layout space (the terminal resizes via `addon-fit` to accommodate them).
 
-**First built-in extension: Java Resource Monitor** — shows JVM heap usage, GC stats, and OS-level CPU/memory for running Java processes using `jstat` and `ps`.
+**First built-in extension: Java Resource Monitor** — shows JVM heap usage, GC stats, and OS-level CPU/memory for running Java processes using `jstat` and `ps`. Uses **process tree ownership** to correctly identify which Java server belongs to which terminal.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/pty.rs` | Add `get_foreground_process()` using `tcgetpgrp` + process name lookup |
-| `src-tauri/src/commands.rs` | Add `get_foreground_process` and `get_java_stats` Tauri commands |
+| `src-tauri/src/pty.rs` | Add `get_foreground_process()` using `tcgetpgrp`. Add `find_java_servers_pid()` (process tree walk) and `find_servers_among()` returning `Vec<JavaServerInfo>` |
+| `src-tauri/src/commands.rs` | Add `get_foreground_process`, `get_java_stats`, `find_java_server_for_session` (returns `Vec<JavaServerInfo>`) Tauri commands |
 | `src-tauri/src/lib.rs` | Register new commands, add process poll timer emitting `process-changed` events |
 | `src-tauri/src/config.rs` | Add `[extensions]` config section (enabled toggle + poll interval) |
-| `src/extensions.ts` | New file — `ExtensionManager`: registry of built-in extensions, trigger matching, widget lifecycle. Uses `.krypton-pane__terminal` as reference node for insertion. Single rAF refit (no double refit) |
-| `src/extensions/java.ts` | New file — Java Resource Monitor extension. Top bar `position: 'top'`, bottom panel `position: 'bottom'` |
-| `src/compositor.ts` | Create `.krypton-pane__terminal` wrapper inside each pane (xterm.js opens into this wrapper). Pane is always `display: flex; flex-direction: column`. Wire `process-changed` event to `ExtensionManager` |
-| `src/types.ts` | Add `ContextExtension`, `ExtensionWidget`, `ProcessInfo`, `ActiveExtension`, `JavaStats` types |
+| `src/extensions.ts` | `ExtensionManager`: registry of built-in extensions, trigger matching, widget lifecycle. Uses `.krypton-pane__terminal` as reference node for insertion. Single rAF refit |
+| `src/extensions/java.ts` | Java Resource Monitor extension. Calls `find_java_server_for_session` (process tree). Multi-server top bar, bottom stats panel |
+| `src/compositor.ts` | Create `.krypton-pane__terminal` wrapper inside each pane. Pane is always `display: flex; flex-direction: column`. Wire `process-changed` event to `ExtensionManager` |
+| `src/types.ts` | Add `ContextExtension`, `ExtensionWidget`, `ProcessInfo`, `ActiveExtension`, `JavaStats`, `JavaServerInfo` types |
 | `src/config.ts` | Add `ExtensionsConfig` TypeScript interface |
-| `src/styles.css` | Pane: always flex column. `.krypton-pane__terminal`: `flex: 1; min-height: 0; overflow: hidden`. Extension bars: `flex-shrink: 0`. Remove conditional `--has-extension` layout overrides (class kept for styling only). Remove `height: auto !important` and `xterm-screen` overrides |
+| `src/styles.css` | Pane: always flex column. `.krypton-pane__terminal`: `flex: 1; min-height: 0; overflow: hidden`. Extension bars: `flex-shrink: 0`. Multi-server row styling |
 
 ## Design
 
@@ -107,62 +107,99 @@ The poller tracks `last_known: HashMap<u32, Option<String>>` to only emit on act
 
 ### Java Resource Monitoring (Rust Backend)
 
-A dedicated Tauri command provides JVM + OS resource stats by shelling out to `jstat` and `ps`:
+#### Process Tree Ownership
+
+Each terminal's shell PID is the root of its process tree. To find Java servers belonging to a specific terminal, we walk descendants of the shell PID (up to 10 levels deep) and return **all** java processes that have a TCP listening port.
 
 ```rust
-#[derive(Debug, Clone, Serialize)]
-pub struct JavaStats {
-    // JVM heap (from jstat -gc <pid>)
-    pub heap_used_mb: f64,      // Eden + Old used
-    pub heap_max_mb: f64,       // Eden + Old capacity
-    pub heap_percent: f64,      // used / max * 100
-    pub gc_count: u64,          // total GC events (YGC + FGC)
-    pub gc_time_secs: f64,      // total GC time (YGCT + FGCT)
-
-    // OS-level (from ps -p <pid> -o %cpu,rss)
-    pub cpu_percent: f64,       // CPU usage %
-    pub rss_mb: f64,            // resident set size in MB
-
-    // Process info
+pub struct JavaServerInfo {
     pub pid: u32,
-    pub main_class: String,     // extracted from cmdline (last arg without -)
+    pub port: u16,
+    pub main_class: String,
+    pub cmdline: Vec<String>,
+}
+
+/// Find all Java server processes among descendants of a root PID.
+pub fn find_java_servers_pid(root_pid: u32) -> Vec<JavaServerInfo> {
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    let mut java_pids = Vec::new();
+    collect_java_pids_native(&sys, Pid::from_u32(root_pid), &mut java_pids, 0, 10);
+    let listening = get_listening_ports();
+    find_servers_among(&sys, &java_pids, &listening)
+}
+
+/// Among a set of java PIDs, find all that have a listening port.
+fn find_servers_among(sys: &System, pids: &[Pid], listening: &HashMap<u32, u16>) -> Vec<JavaServerInfo> {
+    let mut result = Vec::new();
+    for &pid in pids {
+        if let Some(&port) = listening.get(&pid.as_u32()) {
+            let cmdline = /* sysinfo or ps fallback */;
+            let main_class = extract_java_main_class(&cmdline);
+            result.push(JavaServerInfo { pid: pid.as_u32(), port, main_class, cmdline });
+        }
+    }
+    result
+}
+```
+
+**Why process tree, not CWD match:** CWD-based lookup (`find_java_server_by_cwd`) searches all system java processes and matches by directory. If two terminals share the same CWD, they see each other's services. Process tree ownership is exact — terminal A's shell PID only has terminal A's descendants.
+
+#### `find_java_server_for_session` Command
+
+```rust
+#[tauri::command]
+pub fn find_java_server_for_session(
+    pty_manager: State<'_, Arc<PtyManager>>,
+    session_id: u32,
+) -> Vec<JavaServerInfo> {
+    let Some(shell_pid) = pty_manager.get_shell_pid(session_id) else {
+        return Vec::new();
+    };
+    find_java_servers_pid(shell_pid)
 }
 ```
 
 #### `get_java_stats` Command
 
 ```rust
+#[derive(Debug, Clone, Serialize)]
+pub struct JavaStats {
+    // JVM heap (from jstat -gc <pid>)
+    pub heap_used_mb: f64,
+    pub heap_max_mb: f64,
+    pub heap_percent: f64,
+    pub gc_count: u64,
+    pub gc_time_secs: f64,
+
+    // OS-level (from ps -p <pid> -o %cpu,rss)
+    pub cpu_percent: f64,
+    pub rss_mb: f64,
+
+    // Process info
+    pub pid: u32,
+    pub main_class: String,
+}
+
 #[tauri::command]
 fn get_java_stats(pid: u32) -> Result<JavaStats, String> {
-    // 1. Run: jstat -gc <pid>
-    //    Parse columns: S0C S1C S0U S1U EC EU OC OU MC MU ... YGC YGCT FGC FGCT GCT
-    //    heap_used = S0U + S1U + EU + OU (KB -> MB)
-    //    heap_max  = S0C + S1C + EC + OC (KB -> MB)
-    //    gc_count  = YGC + FGC
-    //    gc_time   = GCT
-    //
-    // 2. Run: ps -p <pid> -o %cpu=,rss=
-    //    Parse CPU% and RSS (KB -> MB)
-    //
-    // 3. Extract main_class from /proc/<pid>/cmdline or ps -o args=
-    //
-    // Return combined JavaStats
+    // 1. Run: jstat -gc <pid>  →  parse heap/GC columns
+    // 2. Run: ps -p <pid> -o %cpu=,rss=  →  parse CPU% and RSS
+    // 3. Return combined JavaStats
 }
 ```
 
-This command is called by the frontend on a **2-second interval** (separate from the 500ms process poll) only while the Java extension is active. It's not part of the general process poller — it's extension-specific.
+Stats are polled by the frontend on a **2-second interval**, only while the Java extension is active.
 
 ### Extension Definition (System-Level TypeScript)
 
 #### Type Definitions
 
 ```typescript
-// src/types.ts
-
 interface ProcessInfo {
   pid: number;
-  name: string;          // process basename, e.g. "java"
-  cmdline: string[];     // full command line split
+  name: string;
+  cmdline: string[];
 }
 
 type WidgetPosition = 'top' | 'bottom';
@@ -170,28 +207,29 @@ type WidgetPosition = 'top' | 'bottom';
 interface ContextExtension {
   name: string;
   description: string;
-  processNames: string[];                    // exact match triggers
-
-  /** Create widget bars on activation. */
-  createWidgets(process: ProcessInfo): ExtensionWidget[];
-
-  /** Update widgets with new data. Called on poll or process info change. */
+  processNames: string[];
+  createWidgets(process: ProcessInfo, sessionId: SessionId): ExtensionWidget[];
   updateWidgets?(widgets: ExtensionWidget[], process: ProcessInfo): void;
-
-  /** Clean up on deactivation. Default: remove elements + call dispose(). */
   destroyWidgets?(widgets: ExtensionWidget[]): void;
 }
 
 interface ExtensionWidget {
   element: HTMLElement;
   position: WidgetPosition;
-  dispose?: () => void;        // cleanup timers, listeners
+  dispose?: () => void;
 }
 
 interface ActiveExtension {
   extension: ContextExtension;
   widgets: ExtensionWidget[];
   process: ProcessInfo;
+}
+
+interface JavaServerInfo {
+  pid: number;
+  port: number;
+  main_class: string;
+  cmdline: string[];
 }
 
 interface JavaStats {
@@ -209,111 +247,46 @@ interface JavaStats {
 
 #### Java Resource Monitor Extension
 
+The java extension discovers servers via process tree ownership (`find_java_server_for_session`) and supports **multiple servers per terminal**.
+
+- **Top bar**: One row per server showing main class, PID, and port
+- **Bottom panel**: Heap gauge + GC/CPU/RSS metrics for the primary (first) server
+- **Re-discovery**: Every 10 seconds, re-queries the process tree to catch new/exited servers
+
 ```typescript
-// src/extensions/java.ts
-
-import { invoke } from '@tauri-apps/api/core';
-
 export const javaExtension: ContextExtension = {
   name: 'java-monitor',
   description: 'JVM resource monitor — heap, GC, CPU, memory',
   processNames: ['java'],
 
-  createWidgets(process) {
-    const mainClass = extractMainClass(process.cmdline);
+  createWidgets(_process, sessionId) {
+    // Top bar: shows "Searching..." then populates with server rows
+    // Bottom panel: heap gauge + GC/CPU/RSS metrics
 
-    // === Top bar: process identity ===
-    const topBar = document.createElement('div');
-    topBar.className = 'krypton-extension-bar krypton-extension-bar--accent';
-    topBar.innerHTML = `
-      <span class="krypton-extension-bar__label">JAVA</span>
-      <span class="krypton-extension-bar__content">${mainClass}</span>
-      <span class="krypton-extension-bar__stat" data-field="pid">PID ${process.pid}</span>
-    `;
-
-    // === Bottom bar: live resource stats ===
-    const bottomBar = document.createElement('div');
-    bottomBar.className = 'krypton-extension-bar krypton-extension-bar--stats';
-    bottomBar.innerHTML = `
-      <span class="krypton-extension-bar__stat" data-field="heap">
-        HEAP: --/-- MB
-      </span>
-      <span class="krypton-extension-bar__stat" data-field="gc">
-        GC: -- (--s)
-      </span>
-      <span class="krypton-extension-bar__stat" data-field="cpu">
-        CPU: --%
-      </span>
-      <span class="krypton-extension-bar__stat" data-field="rss">
-        RSS: -- MB
-      </span>
-    `;
-
-    // Start polling jstat + ps every 2 seconds
-    const pollInterval = setInterval(async () => {
-      try {
-        const stats: JavaStats = await invoke('get_java_stats', { pid: process.pid });
-        updateStatsBar(bottomBar, stats);
-      } catch {
-        // Process may have exited; poller will deactivate extension
-      }
-    }, 2000);
-
-    // Initial fetch
-    invoke('get_java_stats', { pid: process.pid })
-      .then((stats) => updateStatsBar(bottomBar, stats as JavaStats))
-      .catch(() => {});
+    // 1. Call find_java_server_for_session (process tree, returns Vec)
+    // 2. On success: render one row per server in top bar
+    // 3. Start 2s stats poll for primary server
+    // 4. Every 5th poll (10s): re-discover servers to catch changes
 
     return [
-      { element: topBar, position: 'top' },           // inserted before __terminal
-      {
-        element: bottomBar,
-        position: 'bottom',                            // inserted after __terminal
-        dispose: () => clearInterval(pollInterval),
-      },
+      { element: topBar, position: 'top' },
+      { element: bottomBar, position: 'bottom', dispose: () => { /* clear intervals */ } },
     ];
   },
 };
+```
 
-function extractMainClass(cmdline: string[]): string {
-  // Look for -jar <file> or the last non-flag argument
-  const jarIdx = cmdline.indexOf('-jar');
-  if (jarIdx >= 0 && cmdline[jarIdx + 1]) {
-    return cmdline[jarIdx + 1].split('/').pop() || 'unknown';
-  }
-  // Find last arg that doesn't start with -
-  for (let i = cmdline.length - 1; i >= 0; i--) {
-    if (!cmdline[i].startsWith('-')) return cmdline[i].split('.').pop() || cmdline[i];
-  }
-  return 'java';
-}
-
-function updateStatsBar(bar: HTMLElement, stats: JavaStats): void {
-  const heap = bar.querySelector('[data-field="heap"]');
-  const gc = bar.querySelector('[data-field="gc"]');
-  const cpu = bar.querySelector('[data-field="cpu"]');
-  const rss = bar.querySelector('[data-field="rss"]');
-
-  if (heap) {
-    const pct = stats.heap_percent;
-    const warn = pct > 80 ? ' krypton-extension-bar__stat--warn' : '';
-    heap.className = `krypton-extension-bar__stat${warn}`;
-    heap.textContent = `HEAP: ${stats.heap_used_mb.toFixed(0)}/${stats.heap_max_mb.toFixed(0)} MB (${pct.toFixed(0)}%)`;
-  }
-  if (gc) gc.textContent = `GC: ${stats.gc_count} (${stats.gc_time_secs.toFixed(1)}s)`;
-  if (cpu) cpu.textContent = `CPU: ${stats.cpu_percent.toFixed(1)}%`;
-  if (rss) rss.textContent = `RSS: ${stats.rss_mb.toFixed(0)} MB`;
-}
+**Multi-server top bar** (when 2+ servers found):
+```
+[JAVA] TliApiApplication  PID 58558  :9090
+[JAVA] PaymentService     PID 58602  :8080
 ```
 
 #### Extension Registry
 
 ```typescript
-// src/extensions.ts
-
 import { javaExtension } from './extensions/java';
 
-/** All built-in context extensions. Order = priority (first match wins). */
 const EXTENSIONS: ContextExtension[] = [
   javaExtension,
   // Future: sshExtension, vimExtension, etc.
@@ -325,13 +298,14 @@ const EXTENSIONS: ContextExtension[] = [
 ```
 +--Window Chrome (titlebar)--------------------------+
 | +-- Top bar ------------------------------------+ |
-| |  [JAVA]  MyApplication.jar     PID 48291      | |
+| |  [JAVA]  TliApiApplication  PID 58558  :9090   | |
+| |  [JAVA]  PaymentService    PID 58602  :8080   | |
 | +------------------------------------------------+ |
 |                                                     |
 |   xterm.js terminal content                         |
 |   (fills remaining space via flex: 1)               |
 |                                                     |
-| +-- Bottom bar ---------------------------------+ |
+| +-- Bottom panel --------------------------------+ |
 | |  HEAP ██████░░ 67%  342/512 MB                 | |
 | |  GC: 14 (0.8s)  CPU: 12.3%  RSS: 580 MB       | |
 | +------------------------------------------------+ |
@@ -357,16 +331,11 @@ The pane is **always** `display: flex; flex-direction: column`, not just when an
 4. `overflow: hidden` on the terminal container clips xterm if it momentarily oversizes.
 5. When bars are inserted or removed, the flex algorithm instantly recomputes — a single `fitAddon.fit()` in one `requestAnimationFrame` is sufficient.
 
-**Why the old design broke:**
-- The old design used `position: relative` (block layout) normally and switched to `display: flex; flex-direction: column` via `.krypton-pane--has-extension`. During the switch, xterm's parent went from `height: 100%` to `height: auto; flex: 1`, creating a transient frame where FitAddon measured the wrong container height. The "double refit" hack (refit + 50ms setTimeout) was unreliable.
-
 Key behavior:
 - Bars are **inside** the pane, above/below the terminal container
 - When bars appear/disappear, a single `fitAddon.fit()` in one rAF is sufficient
 - Bars take real layout space — they do NOT float over terminal content
-- A pane can have 0, 1, or 2 bars (top only, bottom only, or both)
-- The bottom bar updates every 2s with live stats from `jstat` + `ps`
-- The `.krypton-pane--has-extension` class is still added for styling hooks (e.g., border accents) but does NOT change the layout mode
+- The `.krypton-pane--has-extension` class is still added for styling hooks but does NOT change the layout mode
 
 ### Frontend Architecture
 
@@ -384,14 +353,14 @@ ExtensionManager.onProcessChanged(sessionId, processInfo)
   |
   +-- Match found, extension NOT already active on this pane
   |     -> activateExtension(pane, extension, processInfo)
-  |        -> call extension.createWidgets(process)
+  |        -> call extension.createWidgets(process, sessionId)
   |        -> find .krypton-pane__terminal inside the pane element
   |        -> insert top widgets before __terminal (pane.insertBefore)
   |        -> append bottom widgets after __terminal (pane.appendChild)
   |        -> add .krypton-pane--has-extension class (styling only)
   |        -> single requestAnimationFrame → fitAddon.fit() + resize_pty
   |        -> store in paneExtensions map
-  |        -> (Java ext starts its own 2s stats poll internally)
+  |        -> (Java ext calls find_java_server_for_session, starts stats poll)
   |
   +-- Match found, SAME extension already active
   |     -> call extension.updateWidgets(widgets, processInfo) if defined
@@ -419,31 +388,21 @@ class ExtensionManager {
 
   constructor(host: ExtensionHost);
 
-  /** Called on process-changed event from backend */
   onProcessChanged(sessionId: number, process: ProcessInfo | null): void;
-
-  /** Find matching extension for a process name */
   private findExtension(processName: string): ContextExtension | null;
 
   /**
-   * Activate an extension on a pane.
-   *
    * Uses paneElement.querySelector('.krypton-pane__terminal') as the reference
    * node: top widgets go before it, bottom widgets go after it.
-   * Only a single requestAnimationFrame → refitPane() is needed (no double refit).
+   * Single requestAnimationFrame → refitPane() (no double refit).
    */
   private activateExtension(
     paneId: PaneId, paneElement: HTMLElement,
     ext: ContextExtension, process: ProcessInfo, sessionId: SessionId
   ): void;
 
-  /** Deactivate the active extension from a pane */
   private deactivateExtension(paneId: PaneId): void;
-
-  /** Clean up when a pane is destroyed */
   onPaneDestroyed(paneId: PaneId): void;
-
-  /** Enable/disable all extensions */
   setEnabled(enabled: boolean): void;
 }
 ```
@@ -458,21 +417,18 @@ class ExtensionManager {
 5. Frontend: ExtensionManager receives event, finds pane via sessionMap
 6. Matches process.name against EXTENSIONS registry
 7. On match ("java"): activates Java extension
-   a. createWidgets() builds top bar (identity) + bottom panel (stats)
-   b. Finds .krypton-pane__terminal inside the pane element
-   c. Top bar inserted before __terminal, bottom panel appended after it
-   d. .krypton-pane--has-extension added (styling only, NOT layout)
-   e. Single requestAnimationFrame → fitAddon.fit() + resize_pty
-      (no double refit needed — pane is already flex column)
-   f. Bottom panel starts its own setInterval (2s) calling invoke("get_java_stats")
-   g. get_java_stats shells out to jstat + ps, returns JavaStats
-   h. Bottom panel DOM updated with live heap/GC/CPU/RSS values
+   a. createWidgets() builds top bar + bottom panel
+   b. Bars inserted relative to .krypton-pane__terminal
+   c. Single requestAnimationFrame → fitAddon.fit() + resize_pty
+   d. Extension calls invoke('find_java_server_for_session', { sessionId })
+      — backend walks shell PID's process tree, returns Vec<JavaServerInfo>
+   e. Top bar populated with one row per server
+   f. Stats poll starts for primary server (2s interval via get_java_stats)
+   g. Re-discovery every 10s to catch new/exited servers
 8. On unmatch (java exits): deactivates extension
    a. clearInterval on stats poller
    b. Remove bar elements from DOM
-   c. Remove .krypton-pane--has-extension class
-   d. Single requestAnimationFrame → fitAddon.fit() + resize_pty
-      (terminal expands back to fill full pane)
+   c. Single requestAnimationFrame → fitAddon.fit() + resize_pty
 ```
 
 ### Configuration
@@ -486,7 +442,6 @@ poll_interval_ms = 500    # how often to check foreground process (ms)
 ```
 
 ```rust
-// config.rs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtensionsConfig {
     #[serde(default = "default_true")]
@@ -496,19 +451,11 @@ pub struct ExtensionsConfig {
 }
 ```
 
-```typescript
-// config.ts
-interface ExtensionsConfig {
-  enabled: boolean;
-  poll_interval_ms: number;
-}
-```
-
 ### UI Changes
 
 #### Pane DOM Structure
 
-The `.krypton-pane` is **always** `display: flex; flex-direction: column`. The xterm terminal lives inside a dedicated `.krypton-pane__terminal` wrapper that is the flex-growing child. Extension bars are inserted as siblings before/after this wrapper.
+The `.krypton-pane` is **always** `display: flex; flex-direction: column`. The xterm terminal lives inside a dedicated `.krypton-pane__terminal` wrapper. Extension bars are inserted as siblings before/after this wrapper.
 
 **Normal pane (no extension):**
 ```html
@@ -519,60 +466,62 @@ The `.krypton-pane` is **always** `display: flex; flex-direction: column`. The x
 </div>
 ```
 
-**Pane with extension active:**
+**Pane with Java extension active (2 servers):**
 ```html
 <div class="krypton-pane krypton-pane--has-extension" data-pane-id="pane-0">
-  <!-- TOP bar (inserted by ExtensionManager before __terminal) -->
+  <!-- TOP bar with server rows -->
   <div class="krypton-extension-bar krypton-extension-bar--accent">
-    <span class="krypton-extension-bar__label">JAVA</span>
-    <span class="krypton-extension-bar__content">MyApp.jar  PID 48291  :8080</span>
+    <div class="krypton-extension-bar__server">
+      <span class="krypton-extension-bar__label">JAVA</span>
+      <span class="krypton-extension-bar__content">TliApiApplication</span>
+      <span class="krypton-extension-bar__stat">PID 58558</span>
+      <span class="krypton-extension-bar__stat">:9090</span>
+    </div>
+    <div class="krypton-extension-bar__server">
+      <span class="krypton-extension-bar__label">JAVA</span>
+      <span class="krypton-extension-bar__content">PaymentService</span>
+      <span class="krypton-extension-bar__stat">PID 58602</span>
+      <span class="krypton-extension-bar__stat">:8080</span>
+    </div>
   </div>
 
-  <!-- Terminal wrapper (flex: 1, fills remaining space) -->
+  <!-- Terminal wrapper -->
   <div class="krypton-pane__terminal">
     <div class="xterm"><!-- xterm.js canvas --></div>
   </div>
 
-  <!-- BOTTOM bar (inserted by ExtensionManager after __terminal) -->
+  <!-- BOTTOM panel (stats for primary server) -->
   <div class="krypton-java-panel">
     <!-- heap gauge + GC/CPU/RSS metrics -->
   </div>
 </div>
 ```
 
-**Critical detail:** The compositor must create the `.krypton-pane__terminal` wrapper when building the pane DOM — `terminal.open(terminalContainer)` targets this wrapper, not the pane itself. This gives the ExtensionManager a stable reference node: top widgets are inserted before `.krypton-pane__terminal`, bottom widgets are appended after it.
-
 #### CSS Classes
 
-The key insight: `.krypton-pane` is **always** flex column. No conditional override.
-
 ```css
-/* ── Pane: always flex column ── */
 .krypton-pane {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;           /* clips any transient xterm oversize */
+  overflow: hidden;
 }
 
-/* ── Terminal wrapper: grows to fill space not taken by bars ── */
 .krypton-pane__terminal {
   flex: 1;
-  min-height: 0;              /* CRITICAL: allows shrinking below content size */
+  min-height: 0;
   position: relative;
-  overflow: hidden;           /* double insurance against xterm overflow */
+  overflow: hidden;
 }
 
-/* xterm fills the terminal wrapper — unchanged from normal pane */
 .krypton-pane__terminal .xterm {
   height: 100%;
   width: 100%;
   padding: 4px 6px;
 }
 
-/* ── Extension bar: fixed-height flex child ── */
 .krypton-extension-bar {
   display: flex;
   align-items: center;
@@ -580,53 +529,40 @@ The key insight: `.krypton-pane` is **always** flex column. No conditional overr
   padding: 6px 12px;
   font-family: var(--krypton-font-family);
   font-size: 11px;
-  color: var(--krypton-chrome-text);
   background: rgba(0, 0, 0, 0.5);
-  flex-shrink: 0;             /* never compressed by flex */
-  flex-grow: 0;               /* never grows beyond intrinsic height */
+  flex-shrink: 0;
+  flex-grow: 0;
 }
 
-/* .krypton-pane--has-extension is for styling hooks only, NOT layout changes */
-.krypton-pane--has-extension {
-  /* no display/flex overrides — layout is already correct */
-}
-
-/* Accent style for identity bars (top bar) */
 .krypton-extension-bar--accent {
   background: rgba(var(--krypton-window-accent-rgb), 0.08);
   border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb), 0.3);
+  flex-wrap: wrap;  /* stack multi-server rows vertically */
 }
 
-.krypton-extension-bar__label {
-  font-weight: 700;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(var(--krypton-window-accent-rgb), 1);
-  padding: 1px 6px;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb), 0.3);
-  border-radius: 2px;
+.krypton-extension-bar__server {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
 }
 
-.krypton-extension-bar__content {
-  color: var(--krypton-chrome-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.krypton-extension-bar__server + .krypton-extension-bar__server {
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb), 0.1);
+  padding-top: 4px;
+  margin-top: 2px;
 }
 
-/* Java panel (bottom bar) */
 .krypton-java-panel {
   flex-shrink: 0;
   flex-grow: 0;
-  /* ... remaining styles unchanged ... */
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb), 0.15);
+}
+
+.krypton-pane--has-extension {
+  /* styling hook only — no layout overrides */
 }
 ```
-
-**What was removed:**
-- `.krypton-pane--has-extension { display: flex; flex-direction: column }` — the pane is already flex column.
-- `.krypton-pane--has-extension .xterm { height: auto !important; flex: 1 }` — the xterm no longer needs overrides; it lives in `.krypton-pane__terminal` which handles the flex sizing.
-- `.krypton-pane--has-extension .xterm-screen { height: 100% !important }` — unnecessary with the wrapper approach.
 
 ## Edge Cases
 
@@ -639,13 +575,14 @@ The key insight: `.krypton-pane` is **always** flex column. No conditional overr
 | `tcgetpgrp` fails | Return `None` — "shell idle", deactivate any active extension |
 | Shell is foreground process | No extension matches `zsh`/`bash`/`fish`, no bars shown |
 | `jstat` not installed (no JDK) | `get_java_stats` returns error; bottom bar shows "jstat unavailable — install JDK for metrics" |
-| `jstat` access denied | Same as above — graceful error message in the stats bar |
-| Java process is short-lived | Stats poll may get 1-2 readings before process exits. Extension deactivates cleanly |
-| Multiple Java processes in panes | Each pane has its own `ActiveExtension` with its own stats poll interval, targeting the correct PID |
-| Bar added/removed resizes terminal | Flex layout instantly recomputes; single `fitAddon.fit()` in one `requestAnimationFrame` recalculates rows/cols; `resize_pty` sent to backend; shell receives `SIGWINCH`. No double refit needed because pane is always flex column |
-| Bars consume all vertical space (tiny split pane) | `min-height: 0` on `__terminal` allows it to shrink to zero. FitAddon calculates 0 rows. Acceptable — very small panes are unusable regardless |
+| 1 java server per terminal | Single server row in top bar, stats for that server. Identical to single-server UX |
+| Multiple java servers in one terminal | Top bar shows one row per server; bottom panel shows primary (first found) |
+| Two terminals, same CWD, different java processes | Process tree ownership: each terminal walks its own shell PID's subtree — correct isolation |
+| Server exits while others remain | Re-discovery poll (10s) removes row; stats switches to next server |
+| Server spawned by script (not direct child) | `collect_java_pids_native` walks 10 levels deep — catches most cases |
+| Bar added/removed resizes terminal | Flex layout instantly recomputes; single `fitAddon.fit()` in one rAF is sufficient |
+| Bars consume all vertical space (tiny split pane) | `min-height: 0` on `__terminal` allows it to shrink to zero |
 | Config hot-reload disables extensions | `setEnabled(false)` deactivates all, removes all bars, clears all intervals |
-| Quick Terminal runs Java | QT has its own session; poller includes it. Extension works on QT pane too |
 
 ## Out of Scope
 
@@ -654,4 +591,5 @@ The key insight: `.krypton-pane` is **always** flex column. No conditional overr
 - **JMX/remote monitoring** — Only local process stats via `jstat` and `ps`.
 - **Historical metrics / charts** — Bars show current-moment values only. No time-series.
 - **Windows OS support** — `tcgetpgrp` and `jstat` are Unix. Windows deferred.
-- **Process argument-based triggers** — Triggers match on process basename only.
+- **Per-server bottom panels** — One stats panel per java process would consume too much vertical space.
+- **Multiple listening ports per process** — `HashMap<u32, u16>` stores first port per PID.
