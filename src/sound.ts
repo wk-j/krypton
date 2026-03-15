@@ -641,6 +641,14 @@ export class SoundEngine {
   /** Per-event cooldown (ms) — same action event won't re-fire within this window */
   private static readonly EVENT_COOLDOWN_MS = 50;
 
+  // ─── AudioContext health / recycling ──────────────────────────
+  /** Recycle AudioContext after this many sounds to prevent WebKit degradation */
+  private static readonly CONTEXT_RECYCLE_THRESHOLD = 50_000;
+  /** Number of sounds played on the current AudioContext instance */
+  private contextSoundCount = 0;
+  /** Flag: context resume is in-flight (prevents double-resume) */
+  private resuming = false;
+
   /** Currently playing sound IDs — use Set for accurate tracking without timer drift */
   private activeSoundIds: Set<number> = new Set();
   /** Monotonically increasing ID for each sound instance */
@@ -914,6 +922,7 @@ export class SoundEngine {
         const id = this.trackSound(200);
         fn();
         void id; // sound tracked via trackSound timeout
+        this.maybeRecycleContext();
       }
       return;
     }
@@ -954,6 +963,7 @@ export class SoundEngine {
     if (!this.ctx || !this.masterGain) return;
 
     this.synthesize(patch, volume);
+    this.maybeRecycleContext();
   }
 
   /**
@@ -988,6 +998,7 @@ export class SoundEngine {
       const timeout = ghostSoundId === 'APP_START' ? 1500 : 300;
       this.trackSound(timeout);
       fn();
+      this.maybeRecycleContext();
       return;
     }
 
@@ -1006,27 +1017,60 @@ export class SoundEngine {
     if (!this.ctx || !this.masterGain) return;
 
     this.synthesize(patch, eventVolume);
+    this.maybeRecycleContext();
   }
 
   /**
    * Lazily create AudioContext and master channel.
    * Called on first play() to comply with browser autoplay policy.
+   * Monitors context health via statechange listener — if WebKit closes
+   * the context (e.g., resource pressure), everything is nulled so the
+   * next call recreates it. Suspended contexts are auto-resumed.
    */
   private ensureContext(): void {
     if (this.ctx) {
-      // Resume if suspended (browser autoplay policy may suspend context)
-      if (this.ctx.state === 'suspended') {
-        this.ctx.resume().catch(() => { /* best-effort resume */ });
+      // Resume if suspended (browser autoplay policy or macOS display sleep)
+      if (this.ctx.state === 'suspended' && !this.resuming) {
+        this.resuming = true;
+        this.ctx.resume()
+          .catch(() => { /* best-effort resume */ })
+          .finally(() => { this.resuming = false; });
       }
       return;
     }
 
     try {
       this.ctx = new AudioContext();
+      this.contextSoundCount = 0;
+
+      // ── State health monitor ──
+      // If the context is closed externally (WebKit resource reclaim, etc.),
+      // null everything so the next ensureContext() recreates from scratch.
+      // If suspended (display sleep, background), auto-resume.
+      this.ctx.addEventListener('statechange', () => {
+        if (!this.ctx) return;
+        if (this.ctx.state === 'closed') {
+          this.ctx = null;
+          this.masterGain = null;
+          this.compressor = null;
+          this.ghostSignalCtx = null;
+          this.ghostSignalGain = null;
+          this.contextSoundCount = 0;
+          this.resuming = false;
+        } else if (this.ctx.state === 'suspended' && !this.resuming) {
+          this.resuming = true;
+          this.ctx.resume()
+            .catch(() => { /* best-effort */ })
+            .finally(() => { this.resuming = false; });
+        }
+      });
 
       // Resume immediately — some WebViews create contexts in suspended state
       if (this.ctx.state === 'suspended') {
-        this.ctx.resume().catch(() => { /* best-effort resume */ });
+        this.resuming = true;
+        this.ctx.resume()
+          .catch(() => { /* best-effort resume */ })
+          .finally(() => { this.resuming = false; });
       }
 
       // Master channel: compressor -> gain -> destination
@@ -1047,6 +1091,43 @@ export class SoundEngine {
       this.ctx = null;
       this.masterGain = null;
       this.compressor = null;
+    }
+  }
+
+  /**
+   * Increment sound counter and recycle AudioContext if threshold is reached.
+   * WebKit's WKWebView AudioContext degrades after creating/destroying millions
+   * of AudioNodes (typical over long sessions with keypress sounds). Recycling
+   * the context proactively prevents the degradation from becoming audible.
+   */
+  private maybeRecycleContext(): void {
+    this.contextSoundCount++;
+    if (this.contextSoundCount < SoundEngine.CONTEXT_RECYCLE_THRESHOLD) return;
+
+    const oldCtx = this.ctx;
+
+    // Null out references so ensureContext() creates a fresh context
+    this.ctx = null;
+    this.masterGain = null;
+    this.compressor = null;
+    this.ghostSignalCtx = null;
+    this.ghostSignalGain = null;
+    this.contextSoundCount = 0;
+    this.resuming = false;
+
+    // Close old context after a grace period (let in-flight sounds finish)
+    if (oldCtx) {
+      setTimeout(() => {
+        oldCtx.close().catch(() => { /* already closed */ });
+      }, 3000);
+    }
+
+    // Recreate immediately so the next sound works
+    this.ensureContext();
+
+    // Re-activate ghost-signal theme if one was active
+    if (this.activeTheme.type === 'ghost-signal' && this.activeTheme.theme) {
+      this.activateGhostSignalTheme(this.activeTheme.theme);
     }
   }
 

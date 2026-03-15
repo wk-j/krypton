@@ -135,16 +135,15 @@ export class ExtensionManager {
   ): void {
     const widgets = ext.createWidgets(process, sessionId);
 
-    // Switch pane to flex column layout so bars and xterm share space
+    // Styling hook only — does NOT change layout mode (pane is always flex column)
     paneElement.classList.add('krypton-pane--has-extension');
 
-    // Insert top bars before the xterm container (in order),
-    // bottom bars after xterm.
-    // Collect the xterm element reference before inserting anything.
-    const xtermEl = paneElement.firstChild;
+    // Use .krypton-pane__terminal as the stable reference node:
+    // top widgets go before it, bottom widgets go after it.
+    const terminalWrap = paneElement.querySelector('.krypton-pane__terminal');
     for (const widget of widgets) {
-      if (widget.position === 'top') {
-        paneElement.insertBefore(widget.element, xtermEl);
+      if (widget.position === 'top' && terminalWrap) {
+        paneElement.insertBefore(widget.element, terminalWrap);
       } else {
         paneElement.appendChild(widget.element);
       }
@@ -152,12 +151,11 @@ export class ExtensionManager {
 
     this.paneExtensions.set(paneId, { extension: ext, widgets, process, paneElement });
 
-    // Trigger refit after layout settles — double refit to ensure
-    // the browser has fully calculated the panel's height
+    // Single refit is sufficient — pane is already flex column, so the
+    // browser's flex algorithm instantly recomputes when bars are inserted.
+    // No double refit needed.
     requestAnimationFrame(() => {
       this.host.refitPane(paneId);
-      // Second refit after the first paint to catch any remaining layout shift
-      setTimeout(() => this.host.refitPane(paneId), 50);
     });
   }
 
@@ -176,7 +174,7 @@ export class ExtensionManager {
       }
     }
 
-    // Remove flex column layout override
+    // Remove styling hook class (layout is unchanged — pane stays flex column)
     active.paneElement.classList.remove('krypton-pane--has-extension');
 
     this.paneExtensions.delete(paneId);

@@ -344,6 +344,13 @@ export class Compositor {
     el.dataset.paneId = paneId;
     container.appendChild(el);
 
+    // Terminal wrapper — xterm opens into this, not the pane directly.
+    // The pane is always flex column; this wrapper is the flex-growing child
+    // that shrinks when extension bars are inserted as siblings.
+    const terminalWrap = document.createElement('div');
+    terminalWrap.className = 'krypton-pane__terminal';
+    el.appendChild(terminalWrap);
+
     const terminal = new Terminal({
       cursorBlink: this.cursorBlink,
       cursorStyle: this.cursorStyle,
@@ -357,7 +364,7 @@ export class Compositor {
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-    terminal.open(el);
+    terminal.open(terminalWrap);
 
     if (this.customKeyHandler) {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);

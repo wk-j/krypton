@@ -26,12 +26,12 @@ Add a **process detection** backend service that polls the foreground process of
 | `src-tauri/src/commands.rs` | Add `get_foreground_process` and `get_java_stats` Tauri commands |
 | `src-tauri/src/lib.rs` | Register new commands, add process poll timer emitting `process-changed` events |
 | `src-tauri/src/config.rs` | Add `[extensions]` config section (enabled toggle + poll interval) |
-| `src/extensions.ts` | New file — `ExtensionManager`: registry of built-in extensions, trigger matching, widget lifecycle |
-| `src/extensions/java.ts` | New file — Java Resource Monitor extension |
-| `src/compositor.ts` | Wire `process-changed` event to `ExtensionManager`; ensure pane DOM supports bar insertion |
+| `src/extensions.ts` | New file — `ExtensionManager`: registry of built-in extensions, trigger matching, widget lifecycle. Uses `.krypton-pane__terminal` as reference node for insertion. Single rAF refit (no double refit) |
+| `src/extensions/java.ts` | New file — Java Resource Monitor extension. Top bar `position: 'top'`, bottom panel `position: 'bottom'` |
+| `src/compositor.ts` | Create `.krypton-pane__terminal` wrapper inside each pane (xterm.js opens into this wrapper). Pane is always `display: flex; flex-direction: column`. Wire `process-changed` event to `ExtensionManager` |
 | `src/types.ts` | Add `ContextExtension`, `ExtensionWidget`, `ProcessInfo`, `ActiveExtension`, `JavaStats` types |
 | `src/config.ts` | Add `ExtensionsConfig` TypeScript interface |
-| `src/styles.css` | Add `.krypton-extension-*` classes for widget bar styling |
+| `src/styles.css` | Pane: always flex column. `.krypton-pane__terminal`: `flex: 1; min-height: 0; overflow: hidden`. Extension bars: `flex-shrink: 0`. Remove conditional `--has-extension` layout overrides (class kept for styling only). Remove `height: auto !important` and `xterm-screen` overrides |
 
 ## Design
 
@@ -265,10 +265,10 @@ export const javaExtension: ContextExtension = {
       .catch(() => {});
 
     return [
-      { element: topBar, position: 'top' },
+      { element: topBar, position: 'top' },           // inserted before __terminal
       {
         element: bottomBar,
-        position: 'bottom',
+        position: 'bottom',                            // inserted after __terminal
         dispose: () => clearInterval(pollInterval),
       },
     ];
@@ -329,21 +329,44 @@ const EXTENSIONS: ContextExtension[] = [
 | +------------------------------------------------+ |
 |                                                     |
 |   xterm.js terminal content                         |
-|   (resized via addon-fit to fill between bars)      |
+|   (fills remaining space via flex: 1)               |
 |                                                     |
 | +-- Bottom bar ---------------------------------+ |
-| |  HEAP: 342/512 MB (67%)  GC: 14 (0.8s)        | |
-| |  CPU: 12.3%  RSS: 580 MB                       | |
+| |  HEAP ██████░░ 67%  342/512 MB                 | |
+| |  GC: 14 (0.8s)  CPU: 12.3%  RSS: 580 MB       | |
 | +------------------------------------------------+ |
 +--Window Chrome (bottom bar, corners)----------------+
 ```
 
+#### Layout strategy — always flex column
+
+The pane is **always** `display: flex; flex-direction: column`, not just when an extension is active. This eliminates the layout mode switch that caused terminal overflow:
+
+```
+.krypton-pane              flex-direction: column
+  [extension top bar]      flex-shrink: 0  (only present when active)
+  .krypton-pane__terminal  flex: 1; min-height: 0; overflow: hidden
+    .xterm                 height: 100%; width: 100%  (unchanged)
+  [extension bottom bar]   flex-shrink: 0  (only present when active)
+```
+
+**Why this works:**
+1. The pane is always flex column. No CSS class toggle changes the layout mode.
+2. Bars are `flex-shrink: 0` — they keep their intrinsic height (never compressed).
+3. The terminal container (`.krypton-pane__terminal`) is `flex: 1; min-height: 0` — it fills whatever space remains after bars.
+4. `overflow: hidden` on the terminal container clips xterm if it momentarily oversizes.
+5. When bars are inserted or removed, the flex algorithm instantly recomputes — a single `fitAddon.fit()` in one `requestAnimationFrame` is sufficient.
+
+**Why the old design broke:**
+- The old design used `position: relative` (block layout) normally and switched to `display: flex; flex-direction: column` via `.krypton-pane--has-extension`. During the switch, xterm's parent went from `height: 100%` to `height: auto; flex: 1`, creating a transient frame where FitAddon measured the wrong container height. The "double refit" hack (refit + 50ms setTimeout) was unreliable.
+
 Key behavior:
-- Bars are **inside** the pane content area, above/below the xterm.js terminal
-- When bars appear/disappear, `addon-fit` recalculates and `resize_pty` is called
+- Bars are **inside** the pane, above/below the terminal container
+- When bars appear/disappear, a single `fitAddon.fit()` in one rAF is sufficient
 - Bars take real layout space — they do NOT float over terminal content
 - A pane can have 0, 1, or 2 bars (top only, bottom only, or both)
 - The bottom bar updates every 2s with live stats from `jstat` + `ps`
+- The `.krypton-pane--has-extension` class is still added for styling hooks (e.g., border accents) but does NOT change the layout mode
 
 ### Frontend Architecture
 
@@ -362,9 +385,11 @@ ExtensionManager.onProcessChanged(sessionId, processInfo)
   +-- Match found, extension NOT already active on this pane
   |     -> activateExtension(pane, extension, processInfo)
   |        -> call extension.createWidgets(process)
-  |        -> insert top bar before xterm container
-  |        -> append bottom bar after xterm container
-  |        -> trigger addon-fit recalculation + resize_pty
+  |        -> find .krypton-pane__terminal inside the pane element
+  |        -> insert top widgets before __terminal (pane.insertBefore)
+  |        -> append bottom widgets after __terminal (pane.appendChild)
+  |        -> add .krypton-pane--has-extension class (styling only)
+  |        -> single requestAnimationFrame → fitAddon.fit() + resize_pty
   |        -> store in paneExtensions map
   |        -> (Java ext starts its own 2s stats poll internally)
   |
@@ -379,7 +404,8 @@ ExtensionManager.onProcessChanged(sessionId, processInfo)
         -> deactivateExtension(pane)
            -> call widget.dispose() on each widget (clears intervals)
            -> remove bar elements from DOM
-           -> trigger addon-fit recalculation + resize_pty
+           -> remove .krypton-pane--has-extension class
+           -> single requestAnimationFrame → fitAddon.fit() + resize_pty
            -> remove from paneExtensions map
 ```
 
@@ -388,10 +414,10 @@ ExtensionManager.onProcessChanged(sessionId, processInfo)
 ```typescript
 class ExtensionManager {
   private paneExtensions: Map<PaneId, ActiveExtension> = new Map();
-  private compositor: Compositor;
+  private host: ExtensionHost;
   private enabled: boolean = true;
 
-  constructor(compositor: Compositor);
+  constructor(host: ExtensionHost);
 
   /** Called on process-changed event from backend */
   onProcessChanged(sessionId: number, process: ProcessInfo | null): void;
@@ -399,8 +425,17 @@ class ExtensionManager {
   /** Find matching extension for a process name */
   private findExtension(processName: string): ContextExtension | null;
 
-  /** Activate an extension on a pane */
-  private activateExtension(pane: Pane, ext: ContextExtension, process: ProcessInfo): void;
+  /**
+   * Activate an extension on a pane.
+   *
+   * Uses paneElement.querySelector('.krypton-pane__terminal') as the reference
+   * node: top widgets go before it, bottom widgets go after it.
+   * Only a single requestAnimationFrame → refitPane() is needed (no double refit).
+   */
+  private activateExtension(
+    paneId: PaneId, paneElement: HTMLElement,
+    ext: ContextExtension, process: ProcessInfo, sessionId: SessionId
+  ): void;
 
   /** Deactivate the active extension from a pane */
   private deactivateExtension(paneId: PaneId): void;
@@ -423,15 +458,21 @@ class ExtensionManager {
 5. Frontend: ExtensionManager receives event, finds pane via sessionMap
 6. Matches process.name against EXTENSIONS registry
 7. On match ("java"): activates Java extension
-   a. createWidgets() builds top bar (identity) + bottom bar (stats)
-   b. Bars inserted into pane DOM, addon-fit + resize_pty triggered
-   c. Bottom bar starts its own setInterval (2s) calling invoke("get_java_stats")
-   d. get_java_stats shells out to jstat + ps, returns JavaStats
-   e. Bottom bar DOM updated with live heap/GC/CPU/RSS values
+   a. createWidgets() builds top bar (identity) + bottom panel (stats)
+   b. Finds .krypton-pane__terminal inside the pane element
+   c. Top bar inserted before __terminal, bottom panel appended after it
+   d. .krypton-pane--has-extension added (styling only, NOT layout)
+   e. Single requestAnimationFrame → fitAddon.fit() + resize_pty
+      (no double refit needed — pane is already flex column)
+   f. Bottom panel starts its own setInterval (2s) calling invoke("get_java_stats")
+   g. get_java_stats shells out to jstat + ps, returns JavaStats
+   h. Bottom panel DOM updated with live heap/GC/CPU/RSS values
 8. On unmatch (java exits): deactivates extension
    a. clearInterval on stats poller
    b. Remove bar elements from DOM
-   c. addon-fit + resize_pty triggered (terminal expands back)
+   c. Remove .krypton-pane--has-extension class
+   d. Single requestAnimationFrame → fitAddon.fit() + resize_pty
+      (terminal expands back to fill full pane)
 ```
 
 ### Configuration
@@ -467,73 +508,93 @@ interface ExtensionsConfig {
 
 #### Pane DOM Structure
 
-The `.krypton-pane` uses `display: flex; flex-direction: column;`. Bars are inserted as flex children before/after the terminal container:
+The `.krypton-pane` is **always** `display: flex; flex-direction: column`. The xterm terminal lives inside a dedicated `.krypton-pane__terminal` wrapper that is the flex-growing child. Extension bars are inserted as siblings before/after this wrapper.
 
+**Normal pane (no extension):**
 ```html
 <div class="krypton-pane" data-pane-id="pane-0">
-  <!-- TOP bar (inserted by ExtensionManager) -->
-  <div class="krypton-extension-bar krypton-extension-bar--accent">
-    <span class="krypton-extension-bar__label">JAVA</span>
-    <span class="krypton-extension-bar__content">MyApp.jar</span>
-    <span class="krypton-extension-bar__stat">PID 48291</span>
-  </div>
-
-  <!-- xterm.js container (flex: 1, fills remaining space) -->
   <div class="krypton-pane__terminal">
-    <!-- xterm.js canvas -->
-  </div>
-
-  <!-- BOTTOM bar (inserted by ExtensionManager) -->
-  <div class="krypton-extension-bar krypton-extension-bar--stats">
-    <span class="krypton-extension-bar__stat">HEAP: 342/512 MB (67%)</span>
-    <span class="krypton-extension-bar__stat">GC: 14 (0.8s)</span>
-    <span class="krypton-extension-bar__stat">CPU: 12.3%</span>
-    <span class="krypton-extension-bar__stat">RSS: 580 MB</span>
+    <div class="xterm"><!-- xterm.js canvas --></div>
   </div>
 </div>
 ```
 
+**Pane with extension active:**
+```html
+<div class="krypton-pane krypton-pane--has-extension" data-pane-id="pane-0">
+  <!-- TOP bar (inserted by ExtensionManager before __terminal) -->
+  <div class="krypton-extension-bar krypton-extension-bar--accent">
+    <span class="krypton-extension-bar__label">JAVA</span>
+    <span class="krypton-extension-bar__content">MyApp.jar  PID 48291  :8080</span>
+  </div>
+
+  <!-- Terminal wrapper (flex: 1, fills remaining space) -->
+  <div class="krypton-pane__terminal">
+    <div class="xterm"><!-- xterm.js canvas --></div>
+  </div>
+
+  <!-- BOTTOM bar (inserted by ExtensionManager after __terminal) -->
+  <div class="krypton-java-panel">
+    <!-- heap gauge + GC/CPU/RSS metrics -->
+  </div>
+</div>
+```
+
+**Critical detail:** The compositor must create the `.krypton-pane__terminal` wrapper when building the pane DOM — `terminal.open(terminalContainer)` targets this wrapper, not the pane itself. This gives the ExtensionManager a stable reference node: top widgets are inserted before `.krypton-pane__terminal`, bottom widgets are appended after it.
+
 #### CSS Classes
 
+The key insight: `.krypton-pane` is **always** flex column. No conditional override.
+
 ```css
+/* ── Pane: always flex column ── */
 .krypton-pane {
   display: flex;
   flex-direction: column;
-}
-
-.krypton-pane__terminal {
   flex: 1;
   min-height: 0;
-  position: relative;
+  min-width: 0;
+  overflow: hidden;           /* clips any transient xterm oversize */
 }
 
-/* Extension bar — horizontal strip at top or bottom */
+/* ── Terminal wrapper: grows to fill space not taken by bars ── */
+.krypton-pane__terminal {
+  flex: 1;
+  min-height: 0;              /* CRITICAL: allows shrinking below content size */
+  position: relative;
+  overflow: hidden;           /* double insurance against xterm overflow */
+}
+
+/* xterm fills the terminal wrapper — unchanged from normal pane */
+.krypton-pane__terminal .xterm {
+  height: 100%;
+  width: 100%;
+  padding: 4px 6px;
+}
+
+/* ── Extension bar: fixed-height flex child ── */
 .krypton-extension-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 3px 10px;
+  gap: 12px;
+  padding: 6px 12px;
   font-family: var(--krypton-font-family);
   font-size: 11px;
   color: var(--krypton-chrome-text);
-  background: var(--krypton-chrome-bg-80);
-  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;             /* never compressed by flex */
+  flex-grow: 0;               /* never grows beyond intrinsic height */
 }
 
-/* Top bar: border on bottom */
-.krypton-pane__terminal ~ .krypton-extension-bar {
-  border-top: 1px solid var(--krypton-chrome-border);
+/* .krypton-pane--has-extension is for styling hooks only, NOT layout changes */
+.krypton-pane--has-extension {
+  /* no display/flex overrides — layout is already correct */
 }
 
-/* Accent style for identity bars */
+/* Accent style for identity bars (top bar) */
 .krypton-extension-bar--accent {
-  background: var(--krypton-accent-color-10);
-  border-bottom: 1px solid var(--krypton-accent-color-30);
-}
-
-/* Stats bar with monospace numbers */
-.krypton-extension-bar--stats {
-  font-variant-numeric: tabular-nums;
+  background: rgba(var(--krypton-window-accent-rgb), 0.08);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb), 0.3);
 }
 
 .krypton-extension-bar__label {
@@ -541,9 +602,9 @@ The `.krypton-pane` uses `display: flex; flex-direction: column;`. Bars are inse
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--krypton-accent-color);
+  color: rgba(var(--krypton-window-accent-rgb), 1);
   padding: 1px 6px;
-  border: 1px solid var(--krypton-accent-color-30);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb), 0.3);
   border-radius: 2px;
 }
 
@@ -554,21 +615,18 @@ The `.krypton-pane` uses `display: flex; flex-direction: column;`. Bars are inse
   white-space: nowrap;
 }
 
-.krypton-extension-bar__stat {
-  color: var(--krypton-chrome-text-dim);
-  white-space: nowrap;
-}
-
-/* Warning state: heap > 80% */
-.krypton-extension-bar__stat--warn {
-  color: var(--krypton-color-amber, #fac863);
-}
-
-/* Critical state: heap > 95% */
-.krypton-extension-bar__stat--critical {
-  color: var(--krypton-color-red, #ec5f67);
+/* Java panel (bottom bar) */
+.krypton-java-panel {
+  flex-shrink: 0;
+  flex-grow: 0;
+  /* ... remaining styles unchanged ... */
 }
 ```
+
+**What was removed:**
+- `.krypton-pane--has-extension { display: flex; flex-direction: column }` — the pane is already flex column.
+- `.krypton-pane--has-extension .xterm { height: auto !important; flex: 1 }` — the xterm no longer needs overrides; it lives in `.krypton-pane__terminal` which handles the flex sizing.
+- `.krypton-pane--has-extension .xterm-screen { height: 100% !important }` — unnecessary with the wrapper approach.
 
 ## Edge Cases
 
@@ -584,7 +642,8 @@ The `.krypton-pane` uses `display: flex; flex-direction: column;`. Bars are inse
 | `jstat` access denied | Same as above — graceful error message in the stats bar |
 | Java process is short-lived | Stats poll may get 1-2 readings before process exits. Extension deactivates cleanly |
 | Multiple Java processes in panes | Each pane has its own `ActiveExtension` with its own stats poll interval, targeting the correct PID |
-| Bar added/removed resizes terminal | `addon-fit` recalculates rows/cols; `resize_pty` sent to backend; shell receives `SIGWINCH` |
+| Bar added/removed resizes terminal | Flex layout instantly recomputes; single `fitAddon.fit()` in one `requestAnimationFrame` recalculates rows/cols; `resize_pty` sent to backend; shell receives `SIGWINCH`. No double refit needed because pane is always flex column |
+| Bars consume all vertical space (tiny split pane) | `min-height: 0` on `__terminal` allows it to shrink to zero. FitAddon calculates 0 rows. Acceptable — very small panes are unusable regardless |
 | Config hot-reload disables extensions | `setEnabled(false)` deactivates all, removes all bars, clears all intervals |
 | Quick Terminal runs Java | QT has its own session; poller includes it. Extension works on QT pane too |
 
