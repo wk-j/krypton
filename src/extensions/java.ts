@@ -171,7 +171,7 @@ export const javaExtension: ContextExtension = {
       { element: topBar, position: 'top' },
       {
         element: bottomBar,
-        position: 'bottom',
+        position: 'top',
         dispose: () => {
           disposed = true;
           if (statsPollInterval !== null) clearInterval(statsPollInterval);

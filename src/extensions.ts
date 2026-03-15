@@ -138,11 +138,13 @@ export class ExtensionManager {
     // Switch pane to flex column layout so bars and xterm share space
     paneElement.classList.add('krypton-pane--has-extension');
 
-    // Insert top bars before the first child (xterm container)
-    // Insert bottom bars after the last child
+    // Insert top bars before the xterm container (in order),
+    // bottom bars after xterm.
+    // Collect the xterm element reference before inserting anything.
+    const xtermEl = paneElement.firstChild;
     for (const widget of widgets) {
       if (widget.position === 'top') {
-        paneElement.insertBefore(widget.element, paneElement.firstChild);
+        paneElement.insertBefore(widget.element, xtermEl);
       } else {
         paneElement.appendChild(widget.element);
       }
