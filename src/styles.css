@@ -1476,7 +1476,7 @@ html, body {
 
 .krypton-oc__session-row {
   display: grid;
-  grid-template-columns: 2fr 60px 70px 80px 60px 70px;
+  grid-template-columns: 2fr 1.2fr 50px 60px 70px 55px 60px;
   gap: 8px;
   padding: 6px 8px;
   align-items: center;
@@ -1505,6 +1505,14 @@ html, body {
 .krypton-oc__session-cell--title {
   color: var(--krypton-fg, #b0c4d8);
   font-weight: 500;
+}
+
+.krypton-oc__session-cell--agents {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .krypton-oc__session-cell--num {

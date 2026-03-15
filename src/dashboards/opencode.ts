@@ -41,6 +41,8 @@ interface OcSession {
   additions: number;
   deletions: number;
   files: number;
+  /** Comma-separated agent/model pairs, e.g. "build:opus, explore:opus" */
+  agents: string;
 }
 
 interface OcModelUsage {
@@ -96,7 +98,16 @@ SELECT
   (SELECT COUNT(*) FROM message WHERE session_id = s.id) as msg_count,
   (SELECT COUNT(*) FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'user') as user_msgs,
   (SELECT COUNT(*) FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'assistant') as asst_msgs,
-  (SELECT COALESCE(SUM(json_extract(data, '$.tokens.output')), 0) FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'assistant') as output_tokens
+  (SELECT COALESCE(SUM(json_extract(data, '$.tokens.output')), 0) FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'assistant') as output_tokens,
+  (SELECT GROUP_CONCAT(agent_model, ', ') FROM (
+    SELECT json_extract(m2.data, '$.agent') || ':' || REPLACE(REPLACE(json_extract(m2.data, '$.modelID'), 'claude-', ''), '-preview', '') as agent_model
+    FROM message m2
+    WHERE m2.session_id IN (s.id, (SELECT id FROM session WHERE parent_id = s.id))
+      AND json_extract(m2.data, '$.role') = 'assistant'
+      AND json_extract(m2.data, '$.agent') IS NOT NULL
+    GROUP BY json_extract(m2.data, '$.agent'), json_extract(m2.data, '$.modelID')
+    ORDER BY COUNT(*) DESC
+  )) as agents
 FROM session s
 WHERE s.parent_id IS NULL AND s.project_id = '${projectId}'
 ORDER BY s.time_updated DESC
@@ -268,7 +279,7 @@ function renderSessions(container: HTMLElement, sessions: OcSession[]): void {
   // Header
   const header = document.createElement('div');
   header.className = 'krypton-oc__session-row krypton-oc__session-row--header';
-  for (const col of ['Title', 'Msgs', 'Tokens', '+/-', 'Duration', 'Updated']) {
+  for (const col of ['Title', 'Agent / Model', 'Msgs', 'Tokens', '+/-', 'Duration', 'Updated']) {
     const cell = document.createElement('div');
     cell.className = 'krypton-oc__session-cell';
     cell.textContent = col;
@@ -320,7 +331,13 @@ function renderSessions(container: HTMLElement, sessions: OcSession[]): void {
     updatedCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--time';
     updatedCell.textContent = relativeTime(s.timeUpdated);
 
+    const agentsCell = document.createElement('div');
+    agentsCell.className = 'krypton-oc__session-cell krypton-oc__session-cell--agents';
+    agentsCell.textContent = s.agents || '-';
+    agentsCell.title = s.agents;
+
     row.appendChild(titleCell);
+    row.appendChild(agentsCell);
     row.appendChild(msgsCell);
     row.appendChild(tokensCell);
     row.appendChild(diffCell);
@@ -475,12 +492,11 @@ export function createOpenCodeDashboard(compositor: Compositor): DashboardDefini
 
       const projectId = String(projectRows[0].id);
 
-      // All queries are fast when scoped to a project — run in parallel
-      const [overviewRows, sessionRows, modelRows, toolRows] = await Promise.all([
+      // Phase 1: Fast queries in parallel (overview, sessions, models — all <0.5s)
+      const [overviewRows, sessionRows, modelRows] = await Promise.all([
         querySqlite(buildOverviewQuery(projectId)),
         querySqlite(buildSessionsQuery(projectId)),
         querySqlite(buildModelQuery(projectId)),
-        querySqlite(buildToolQuery(projectId)),
       ]);
 
       if (gen !== renderGen) return;
@@ -516,6 +532,7 @@ export function createOpenCodeDashboard(compositor: Compositor): DashboardDefini
         additions: Number(r.summary_additions ?? 0),
         deletions: Number(r.summary_deletions ?? 0),
         files: Number(r.summary_files ?? 0),
+        agents: String(r.agents ?? ''),
       }));
       renderSessions(container, sessions);
 
@@ -533,17 +550,42 @@ export function createOpenCodeDashboard(compositor: Compositor): DashboardDefini
       }));
       renderModelUsage(modelsCol, models);
 
+      // Tools: show loading placeholder, load async (can be slow for large projects)
       const toolsCol = document.createElement('div');
       toolsCol.className = 'krypton-oc__breakdown-col';
-      const tools: OcToolUsage[] = toolRows.map((r) => ({
-        tool: String(r.tool_name ?? ''),
-        count: Number(r.cnt ?? 0),
-      }));
-      renderToolUsage(toolsCol, tools);
+      const toolsPlaceholder = document.createElement('div');
+      toolsPlaceholder.className = 'krypton-dashboard__section';
+      const toolsTitle = document.createElement('div');
+      toolsTitle.className = 'krypton-dashboard__section-title';
+      toolsTitle.textContent = 'Tool Usage (Top 15)';
+      const toolsSpinner = document.createElement('div');
+      toolsSpinner.className = 'krypton-dashboard__loading';
+      toolsSpinner.textContent = 'Loading tool stats\u2026';
+      toolsPlaceholder.appendChild(toolsTitle);
+      toolsPlaceholder.appendChild(toolsSpinner);
+      toolsCol.appendChild(toolsPlaceholder);
 
       breakdown.appendChild(modelsCol);
       breakdown.appendChild(toolsCol);
       container.appendChild(breakdown);
+
+      // Phase 2: Slow tool query in background
+      querySqlite(buildToolQuery(projectId)).then((toolRows) => {
+        if (gen !== renderGen) return;
+        const tools: OcToolUsage[] = toolRows.map((r) => ({
+          tool: String(r.tool_name ?? ''),
+          count: Number(r.cnt ?? 0),
+        }));
+        toolsCol.innerHTML = '';
+        renderToolUsage(toolsCol, tools);
+      }).catch((toolErr) => {
+        if (gen !== renderGen) return;
+        toolsCol.innerHTML = '';
+        const errEl = document.createElement('div');
+        errEl.className = 'krypton-dashboard__error';
+        errEl.textContent = `Tool stats error: ${toolErr}`;
+        toolsCol.appendChild(errEl);
+      });
 
       // Hint
       const hint = document.createElement('div');
