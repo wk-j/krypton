@@ -119,6 +119,11 @@ export interface VisualConfig {
   perspective_tilt: number;  // degrees, 0 = no tilt
 }
 
+export interface ExtensionsConfig {
+  enabled: boolean;
+  poll_interval_ms: number;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -131,6 +136,7 @@ export interface KryptonConfig {
   tabs: TabsConfig;
   shader: ShaderConfig;
   visual: VisualConfig;
+  extensions: ExtensionsConfig;
 }
 
 /** Load configuration from the Rust backend */

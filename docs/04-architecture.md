@@ -35,10 +35,11 @@
 |  |  presets)     | |            | |           | |                    |  |
 |  +---------------+ +------------+ +-----------+ +--------------------+  |
 |                                                                         |
-|  +---------------+ +------------+                                       |
-|  | Theme         | | VT Parser  |                                       |
-|  | Engine        | | (vte)      |                                       |
-|  +---------------+ +------------+                                       |
+|  +---------------+ +------------+ +-------------------+                  |
+|  | Theme         | | VT Parser  | | Process Poller    |                  |
+|  | Engine        | | (vte)      | | (tcgetpgrp,       |                  |
+|  +---------------+ +------------+ |  process-changed) |                  |
+|                                   +-------------------+                  |
 +-------------------------------------------------------------------------+
               |
               v
@@ -96,6 +97,7 @@ The webview's `<html>` and `<body>` have `background: transparent`. Windows are 
 | `vte` | VT escape sequence parser (backend validation/processing) | Planned |
 | `notify` | Filesystem watcher for config/theme hot-reload | Implemented |
 | `open` | Open URLs/files with system default handler (hint mode) | Implemented |
+| `libc` | Unix FFI for `tcgetpgrp()` (foreground process detection) | Implemented |
 | `unicode-width` | Character width calculation for CJK / emoji | Planned |
 | `display-info` | Query monitor geometry for fullscreen dimensions | Planned |
 
@@ -138,7 +140,8 @@ The compositor is a TypeScript module running in the webview that manages worksp
 12. **Per-window accent colors** — each window gets a unique color from a 10-color cyberpunk palette (cyan, magenta, amber, green, violet, orange, pink, teal, gold, red) applied to chrome, borders, corners, tabs; colors recycled on window close
 13. **Shader engine** — manage per-pane CSS/SVG post-processing effects (CRT, hologram, glitch, bloom, matrix); cycle presets via `Leader g`, toggle globally via `Leader G`
 14. **Progress indicator** — listen for `pty-progress` events (ConEmu `OSC 9;4`); render a large translucent SVG arc gauge centered in the window's content area (behind terminal text) and a titlebar scanline sweep; per-pane state tracking with active-tab display; accent-color-aware theming
-15. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
+15. **Context extensions** — `ExtensionManager` listens for `process-changed` Tauri events from a backend poller (500ms, using `tcgetpgrp()` on PTY master fd). When a matching foreground process is detected (e.g., `java`), the corresponding built-in extension activates and renders widget bars (top/bottom horizontal strips inside the pane). Bars are real flex children that push the xterm terminal inward — `addon-fit` recalculates and `resize_pty` fires. First extension: Java Resource Monitor (JVM heap, GC, CPU%, RSS via `jstat` + `ps`).
+16. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
 
 ### Window DOM Structure
 

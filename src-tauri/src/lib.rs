@@ -9,6 +9,7 @@ use tauri::{Emitter, Manager};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pty_manager = Arc::new(pty::PtyManager::new());
+    let pty_manager_for_poller = pty_manager.clone();
 
     // Load configuration from disk (creates default file if missing)
     let krypton_config = Arc::new(RwLock::new(config::load_config()));
@@ -30,6 +31,12 @@ pub fn run() {
             commands::list_themes,
             commands::reload_config,
             commands::open_url,
+            commands::get_foreground_process,
+            commands::get_java_stats,
+            commands::find_java_pid,
+            commands::find_java_server,
+            commands::find_java_server_for_session,
+            commands::find_java_server_by_cwd,
         ])
         .setup(move |app| {
             if cfg!(debug_assertions) {
@@ -66,6 +73,14 @@ pub fn run() {
             let theme_for_watcher = theme_engine.clone();
             std::thread::spawn(move || {
                 start_config_watcher(app_handle, config_for_watcher, theme_for_watcher);
+            });
+
+            // Start process detection poller for context-aware extensions
+            let poller_handle = app.handle().clone();
+            let poller_config = krypton_config.clone();
+            let poller_pty = pty_manager_for_poller;
+            std::thread::spawn(move || {
+                start_process_poller(poller_handle, poller_config, poller_pty);
             });
 
             Ok(())
@@ -196,4 +211,70 @@ fn reload_and_emit(
     }
 
     log::info!("Config/theme hot-reloaded");
+}
+
+// ─── Process Detection Poller ─────────────────────────────────────
+
+/// Payload emitted as a `process-changed` Tauri event.
+#[derive(Clone, serde::Serialize)]
+struct ProcessChangedPayload {
+    session_id: u32,
+    process: Option<pty::ProcessInfo>,
+    previous: Option<String>,
+}
+
+/// Poll all active PTY sessions for foreground process changes.
+/// Emits `process-changed` events when a session's foreground process changes.
+fn start_process_poller(
+    app_handle: tauri::AppHandle,
+    config: Arc<RwLock<config::KryptonConfig>>,
+    pty_manager: Arc<pty::PtyManager>,
+) {
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    let mut last_known: HashMap<u32, Option<String>> = HashMap::new();
+
+    loop {
+        // Read current config for enabled state and poll interval
+        let (enabled, poll_ms) = match config.read() {
+            Ok(cfg) => (cfg.extensions.enabled, cfg.extensions.poll_interval_ms),
+            Err(_) => (true, 500),
+        };
+
+        if !enabled {
+            // Extensions disabled — sleep longer and clear state
+            last_known.clear();
+            std::thread::sleep(Duration::from_secs(2));
+            continue;
+        }
+
+        // Get all active session IDs
+        let session_ids = pty_manager.active_session_ids();
+
+        // Clean up stale entries
+        last_known.retain(|id, _| session_ids.contains(id));
+
+        // Poll each session
+        for &sid in &session_ids {
+            let current = pty_manager.get_foreground_process(sid);
+            let current_name = current.as_ref().map(|p| p.name.clone());
+
+            let previous = last_known.get(&sid).cloned().flatten();
+
+            // Only emit if the process name actually changed
+            if current_name != last_known.get(&sid).cloned().flatten() {
+                let payload = ProcessChangedPayload {
+                    session_id: sid,
+                    process: current,
+                    previous: previous.clone(),
+                };
+                let _ = app_handle.emit("process-changed", &payload);
+            }
+
+            last_known.insert(sid, current_name);
+        }
+
+        std::thread::sleep(Duration::from_millis(poll_ms));
+    }
 }

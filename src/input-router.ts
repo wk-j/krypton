@@ -83,6 +83,12 @@ export class InputRouter {
           (e.code === 'KeyT' || e.code === 'KeyN')) {
         return false;
       }
+      // Modifier+Enter: xterm.js v6 discards shift/ctrl/alt modifiers on Enter,
+      // sending bare \r for all variants. Intercept so InputRouter can send the
+      // correct escape sequence (CSI 13;{mod} u — kitty keyboard protocol).
+      if (e.code === 'Enter' && (e.shiftKey || e.ctrlKey || e.altKey) && !e.metaKey) {
+        return false;
+      }
       // Let xterm handle Escape normally in the Quick Terminal
       // (needed for apps like vim/helix). Use Cmd+I to toggle instead.
       if (this.mode !== Mode.Normal) {
@@ -300,6 +306,25 @@ export class InputRouter {
         e.preventDefault();
         e.stopPropagation();
         this.enterHintMode();
+        return;
+      }
+
+      // Modifier+Enter: xterm.js discards shift/ctrl/alt modifiers on Enter,
+      // so we intercept and send the correct CSI u escape sequence directly.
+      // This enables Shift+Enter, Ctrl+Enter, Alt+Enter in shells and apps
+      // that understand the kitty keyboard protocol or fixterms encoding.
+      if (this.mode === Mode.Normal && e.code === 'Enter' &&
+          (e.shiftKey || e.ctrlKey || e.altKey) && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        // CSI u modifier encoding: shift=2, alt=3, alt+shift=4, ctrl=5,
+        // ctrl+shift=6, ctrl+alt=7, ctrl+alt+shift=8
+        let mod = 1;
+        if (e.shiftKey) mod += 1;
+        if (e.altKey) mod += 2;
+        if (e.ctrlKey) mod += 4;
+        // Send CSI 13;{mod} u  (Enter keycode = 13)
+        this.compositor.writeToFocusedPty(`\x1b[13;${mod}u`);
         return;
       }
 

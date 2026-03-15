@@ -124,3 +124,55 @@ pub fn reload_config(
 pub fn open_url(url: String) -> Result<(), String> {
     open::that(&url).map_err(|e| format!("Failed to open '{url}': {e}"))
 }
+
+/// Get the foreground process of a PTY session.
+#[tauri::command]
+pub fn get_foreground_process(
+    pty_manager: State<'_, Arc<PtyManager>>,
+    session_id: u32,
+) -> Option<crate::pty::ProcessInfo> {
+    pty_manager.get_foreground_process(session_id)
+}
+
+/// Get JVM + OS resource stats for a Java process.
+#[tauri::command]
+pub fn get_java_stats(pid: u32) -> Result<crate::pty::JavaStats, String> {
+    crate::pty::get_java_stats(pid)
+}
+
+/// Find a descendant process named "java" under a given parent PID.
+/// Useful when Java is launched via mvn, gradle, or a wrapper script.
+#[tauri::command]
+pub fn find_java_pid(parent_pid: u32) -> Option<u32> {
+    crate::pty::find_child_process_by_name(parent_pid, "java")
+}
+
+/// Find the Java server process (the one with a TCP listening port)
+/// among descendants of a given PID. Returns PID, port, and main class.
+#[tauri::command]
+pub fn find_java_server(root_pid: u32) -> Option<crate::pty::JavaServerInfo> {
+    crate::pty::find_java_server_pid(root_pid)
+}
+
+/// Find the Java server process from a PTY session ID.
+/// Searches the entire process tree from the session's shell PID downward.
+#[tauri::command]
+pub fn find_java_server_for_session(
+    pty_manager: State<'_, Arc<PtyManager>>,
+    session_id: u32,
+) -> Option<crate::pty::JavaServerInfo> {
+    let shell_pid = pty_manager.get_shell_pid(session_id)?;
+    crate::pty::find_java_server_pid(shell_pid)
+}
+
+/// Find the Java server process by matching the terminal's CWD.
+/// Finds all java processes system-wide whose CWD equals the terminal's,
+/// then returns the one with a TCP listening port.
+#[tauri::command]
+pub fn find_java_server_by_cwd(
+    pty_manager: State<'_, Arc<PtyManager>>,
+    session_id: u32,
+) -> Option<crate::pty::JavaServerInfo> {
+    let cwd = pty_manager.get_cwd(session_id).ok()??;
+    crate::pty::find_java_server_by_cwd(&cwd)
+}

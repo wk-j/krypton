@@ -848,3 +848,252 @@ html, body {
   border-radius: inherit;
   transform: translateZ(20px);
 }
+
+/* ─── Context Extension: Pane layout override ─── */
+
+/* When an extension is active, the pane becomes a flex column so bars
+   (top/bottom) can share space with the xterm terminal. */
+.krypton-pane--has-extension {
+  display: flex;
+  flex-direction: column;
+}
+
+.krypton-pane--has-extension .xterm {
+  height: auto !important;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.krypton-pane--has-extension .xterm-screen {
+  height: 100% !important;
+}
+
+/* ─── Context Extension Bars ─── */
+
+/* Extension bar — horizontal strip at top or bottom of a pane.
+   Bars are flex children of .krypton-pane, pushing the xterm terminal inward. */
+.krypton-extension-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 11px;
+  color: var(--krypton-chrome-text, #a0a8b7);
+  background: rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+  z-index: 5;
+  position: relative;
+}
+
+/* Top bar: border on bottom */
+.krypton-extension-bar:first-child {
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+}
+
+/* Bottom bar: border on top */
+.krypton-extension-bar:last-child:not(:first-child) {
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+}
+
+/* Accent style for identity bars */
+.krypton-extension-bar--accent {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  border-bottom-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+}
+
+/* Stats bar with monospace numbers */
+.krypton-extension-bar--stats {
+  font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, 0.55);
+  gap: 0;
+}
+
+.krypton-extension-bar--stats .krypton-extension-bar__stat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.krypton-extension-bar--stats .krypton-extension-bar__stat:last-child {
+  border-right: none;
+}
+
+.krypton-extension-bar__label {
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
+  padding: 1px 6px;
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  border-radius: 2px;
+}
+
+.krypton-extension-bar__content {
+  color: var(--krypton-chrome-text, #a0a8b7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.krypton-extension-bar__stat {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.krypton-extension-bar__stat-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.krypton-extension-bar__stat-value {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
+  font-size: 11px;
+}
+
+/* Warning state: heap > 80% */
+.krypton-extension-bar__stat--warn .krypton-extension-bar__stat-value,
+.krypton-extension-bar__stat--warn .krypton-extension-bar__stat-label {
+  color: #fac863;
+}
+
+/* Critical state: heap > 95% */
+.krypton-extension-bar__stat--critical .krypton-extension-bar__stat-value,
+.krypton-extension-bar__stat--critical .krypton-extension-bar__stat-label {
+  color: #ec5f67;
+}
+
+/* ─── Java Resource Monitor Panel ─── */
+
+.krypton-java-panel {
+  display: flex;
+  align-items: stretch;
+  background: rgba(0, 0, 0, 0.6);
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  flex-shrink: 0;
+  flex-grow: 0;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  overflow: hidden;
+  position: relative;
+  z-index: 10;
+}
+
+/* Heap section — takes more space with gauge */
+.krypton-java-panel__heap {
+  flex: 1.2;
+  padding: 10px 16px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.krypton-java-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.krypton-java-panel__label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.krypton-java-panel__value {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
+}
+
+/* Heap gauge bar */
+.krypton-java-panel__gauge {
+  position: relative;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.krypton-java-panel__gauge-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+  transition: width 0.5s ease, background 0.5s ease;
+}
+
+.krypton-java-panel__gauge-pct {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 8px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  line-height: 1;
+}
+
+/* Heap warning/critical states */
+.krypton-java-panel__heap--warn .krypton-java-panel__value {
+  color: #fac863;
+}
+.krypton-java-panel__heap--warn .krypton-java-panel__label {
+  color: #fac863;
+}
+
+.krypton-java-panel__heap--critical .krypton-java-panel__value {
+  color: #ec5f67;
+}
+.krypton-java-panel__heap--critical .krypton-java-panel__label {
+  color: #ec5f67;
+}
+
+/* Right-side metric cards */
+.krypton-java-panel__metrics {
+  display: flex;
+  flex: 1;
+}
+
+.krypton-java-panel__metric {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  gap: 2px;
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.krypton-java-panel__metric:last-child {
+  border-right: none;
+}
+
+.krypton-java-panel__metric-icon {
+  font-size: 10px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  line-height: 1;
+}
+
+.krypton-java-panel__metric .krypton-java-panel__label {
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.krypton-java-panel__metric .krypton-java-panel__value {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
+}

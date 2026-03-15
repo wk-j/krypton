@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-15 (M8: 3D perspective depth for terminal content layers)
+> Last updated: 2026-03-15 (M8: Context-aware extensions with Java resource monitor)
 
 ## Overview
 
@@ -14,7 +14,7 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 14/15 |
-| M8 — Polish | In Progress | 6/10 |
+| M8 — Polish | In Progress | 7/10 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -122,6 +122,7 @@
 - [x] Terminal shader effects (`src/shaders.ts`) — CSS/SVG filter-based post-processing: 5 presets (crt, hologram, glitch, bloom, matrix) with scanlines, chromatic aberration, displacement, bloom glow. Per-pane ShaderInstance with overlay div + animated keyframes. Configurable via `[shader]` TOML section; `Leader g` cycles preset, `Leader G` toggles globally.
 - [x] Progress bar via ConEmu `OSC 9;4` — Rust backend inline parser detects progress sequences in PTY output, emits `pty-progress` Tauri event. Frontend renders a large translucent SVG arc gauge centered in the window's content area behind terminal text (fills clockwise for normal progress, orbits for indeterminate, red for error, amber for paused) with percentage text, status labels, and a subtle titlebar scanline sweep. Per-window accent color aware. Used by Zig CLI, systemd, Amp, etc.
 - [x] 3D perspective depth — CSS `perspective` on content containers with `translateZ` layering: terminal text at back (0), progress gauge mid (10px), shader overlay (20px), selection cursor/dividers at front (30px). Configurable via `[visual] perspective_depth` (default 800px, 0 = disabled). GPU-composited, hot-reloadable.
+- [x] Context-aware extensions — process detection via `tcgetpgrp()` on PTY master fd (500ms poller), `ExtensionManager` activates built-in extensions when matching foreground processes are detected. First extension: **Java Resource Monitor** — top bar shows `[JAVA] MainClass PID`, bottom bar shows live `HEAP`, `GC`, `CPU%`, `RSS` stats via `jstat -gc` + `ps` (2s poll). Bars are real layout elements (not overlays), terminal resizes via `addon-fit`. Configurable via `[extensions] enabled/poll_interval_ms`.
 - [ ] `@xterm/addon-search` integration with keyboard-driven search overlay
 - [ ] IME support testing and fixes
 - [ ] Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)

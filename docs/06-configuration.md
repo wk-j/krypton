@@ -203,6 +203,14 @@ perspective_tilt = 2.0         # Tilt angle in degrees for visible layer separat
                                # 0 = no tilt. Default: 2.0
                                # Recommended range: 1–6
 
+# --- Context Extensions ---
+# Built-in extensions that activate when specific processes are detected
+# running in terminal panes. Currently includes: Java Resource Monitor.
+
+[extensions]
+enabled = true                 # Master toggle for all context extensions
+poll_interval_ms = 500         # How often to poll foreground process (milliseconds)
+
 # --- Quick Terminal ---
 # A persistent overlay terminal toggled via Cmd+I, centered on screen.
 
@@ -356,6 +364,15 @@ Valid event names: `window.create`, `window.close`, `window.focus`, `window.maxi
 | `[shader]` | `fps_cap` | int | `30` | Advisory max FPS for animations (CSS-driven, browser-controlled) |
 
 Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled globally via `Leader G` (Shift+g).
+
+### Extensions Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[extensions]` | `enabled` | bool | `true` | Master toggle — enables/disables all context-aware extensions |
+| `[extensions]` | `poll_interval_ms` | int | `500` | How often the backend polls each PTY session's foreground process (milliseconds). Lower = more responsive, higher = less CPU. Recommended: 300–1000 |
+
+Built-in extensions (system-level, not user-configurable): Java Resource Monitor (triggers on `java` process — shows JVM heap, GC stats, CPU%, RSS).
 
 ### Quick Terminal Configuration
 

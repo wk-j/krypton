@@ -21,6 +21,7 @@ pub struct KryptonConfig {
     pub tabs: TabsConfig,
     pub shader: ShaderConfig,
     pub visual: VisualConfig,
+    pub extensions: ExtensionsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -255,6 +256,26 @@ impl Default for VisualConfig {
         Self {
             perspective_depth: 800,
             perspective_tilt: 2.0,
+        }
+    }
+}
+
+// ─── Extensions ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ExtensionsConfig {
+    /// Master toggle for context-aware extensions
+    pub enabled: bool,
+    /// How often to poll the foreground process of each PTY session (milliseconds)
+    pub poll_interval_ms: u64,
+}
+
+impl Default for ExtensionsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            poll_interval_ms: 500,
         }
     }
 }

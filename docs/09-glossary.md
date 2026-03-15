@@ -47,3 +47,7 @@
 | Sound Pack | A named collection of sound patches (one per event) that defines the audio character of the application. The built-in pack is `krypton-cyber`. Custom packs are TOML files in `~/.config/krypton/sounds/`. |
 | FM Synthesis | Frequency Modulation synthesis — one oscillator modulates another's frequency to produce metallic, bell-like, or complex harmonic timbres. |
 | AudioContext | The Web Audio API's central object for creating and managing audio nodes. Krypton uses a single shared instance, lazily initialized on first user interaction. |
+| Context Extension | A built-in system-level module that activates when a specific process (e.g., `java`) is detected running in a terminal pane. Renders widget bars (top/bottom) with process-specific information. |
+| Extension Bar | A horizontal UI strip rendered at the top or bottom of a pane's content area by a context extension. Takes real layout space — the terminal resizes to accommodate it. |
+| Foreground Process Group | The Unix process group that currently "owns" a terminal — the process receiving keyboard input. Detected via `tcgetpgrp()` on the PTY master fd. |
+| Process Poller | A background Rust thread that polls all active PTY sessions every 500ms (configurable) to detect foreground process changes, emitting `process-changed` Tauri events. |

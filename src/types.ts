@@ -193,3 +193,73 @@ export const DEFAULT_QUICK_TERMINAL_CONFIG: QuickTerminalConfig = {
   backdropBlur: 20,
   animationDuration: 200,
 };
+
+// ─── Context Extension Types ─────────────────────────────────────
+
+/** Information about the foreground process of a PTY session (from backend) */
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  cmdline: string[];
+}
+
+/** Payload from the backend `process-changed` event */
+export interface ProcessChangedEvent {
+  session_id: number;
+  process: ProcessInfo | null;
+  previous: string | null;
+}
+
+/** Widget position: top or bottom bar of the terminal window content area */
+export type WidgetPosition = 'top' | 'bottom';
+
+/** A rendered extension widget (horizontal bar) */
+export interface ExtensionWidget {
+  element: HTMLElement;
+  position: WidgetPosition;
+  /** Optional cleanup callback (clear intervals, listeners) */
+  dispose?: () => void;
+}
+
+/** A built-in context-aware extension definition */
+export interface ContextExtension {
+  name: string;
+  description: string;
+  /** Process names that trigger this extension (exact match on basename) */
+  processNames: string[];
+  /** Create widget bars when the extension activates */
+  createWidgets(process: ProcessInfo, sessionId: SessionId): ExtensionWidget[];
+  /** Update widgets when process info changes (optional) */
+  updateWidgets?(widgets: ExtensionWidget[], process: ProcessInfo): void;
+  /** Custom cleanup on deactivation (optional; default removes elements) */
+  destroyWidgets?(widgets: ExtensionWidget[]): void;
+}
+
+/** Tracks an active extension on a specific pane */
+export interface ActiveExtension {
+  extension: ContextExtension;
+  widgets: ExtensionWidget[];
+  process: ProcessInfo;
+  paneElement: HTMLElement;
+}
+
+/** Java server process with a listening port (from backend find_java_server command) */
+export interface JavaServerInfo {
+  pid: number;
+  port: number;
+  main_class: string;
+  cmdline: string[];
+}
+
+/** Java process resource statistics (from backend get_java_stats command) */
+export interface JavaStats {
+  heap_used_mb: number;
+  heap_max_mb: number;
+  heap_percent: number;
+  gc_count: number;
+  gc_time_secs: number;
+  cpu_percent: number;
+  rss_mb: number;
+  pid: number;
+  main_class: string;
+}

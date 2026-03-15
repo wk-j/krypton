@@ -33,6 +33,8 @@ import type { ShaderPreset } from './shaders';
 import type { KryptonConfig, TabsConfig, ShaderConfig } from './config';
 import { DEFAULT_SHADER_CONFIG } from './config';
 import type { FrontendThemeEngine } from './theme';
+import { ExtensionManager } from './extensions';
+import type { ExtensionHost } from './extensions';
 
 /** Custom key event handler for xterm.js — set by InputRouter */
 type CustomKeyHandler = (e: KeyboardEvent) => boolean;
@@ -223,10 +225,21 @@ export class Compositor {
   /** Whether the Quick Terminal has been lazily initialized */
   private qtInitialized = false;
 
+  /** Context extension manager for process-aware widgets */
+  private extensions: ExtensionManager;
+
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
     this.setupResizeHandler();
     this.setupPtyListeners();
+
+    // Initialize extension manager with host callbacks
+    const host: ExtensionHost = {
+      findPaneBySessionId: (sessionId) => this.findPaneBySessionId(sessionId),
+      refitPane: (paneId) => this.refitPaneById(paneId),
+    };
+    this.extensions = new ExtensionManager(host);
+    this.extensions.start();
   }
 
   /** Apply loaded config to compositor settings. Call before creating windows. */
@@ -299,6 +312,25 @@ export class Compositor {
         fps_cap: config.shader.fps_cap,
         animate: config.shader.animate,
       });
+    }
+
+    // Extensions — enable/disable context extensions
+    if (config.extensions) {
+      this.extensions.setEnabled(config.extensions.enabled);
+    }
+
+    // Visual — 3D perspective depth and tilt
+    if (config.visual) {
+      const depth = config.visual.perspective_depth;
+      const tilt = config.visual.perspective_tilt ?? 0;
+      this.workspace.style.setProperty(
+        '--krypton-perspective',
+        depth > 0 ? `${depth}px` : 'none'
+      );
+      this.workspace.style.setProperty(
+        '--krypton-perspective-tilt',
+        depth > 0 && tilt > 0 ? `${tilt}deg` : '0deg'
+      );
     }
   }
 
@@ -409,6 +441,43 @@ export class Compositor {
     return this.findPaneInTree(node.first, paneId) ?? this.findPaneInTree(node.second, paneId);
   }
 
+  /** Find a pane element + ID by session ID (used by ExtensionManager). */
+  private findPaneBySessionId(sessionId: SessionId): { paneId: PaneId; element: HTMLElement } | null {
+    const loc = this.sessionMap.get(sessionId);
+    if (!loc) return null;
+
+    const win = this.windows.get(loc.windowId);
+    if (!win) return null;
+
+    const tab = win.tabs.find((t) => t.id === loc.tabId);
+    if (!tab) return null;
+
+    const pane = this.findPaneInTree(tab.paneTree, loc.paneId);
+    if (!pane) return null;
+
+    return { paneId: pane.id, element: pane.element };
+  }
+
+  /** Re-fit a single pane by ID (triggers addon-fit + resize_pty). */
+  private refitPaneById(paneId: PaneId): void {
+    for (const win of this.windows.values()) {
+      for (const tab of win.tabs) {
+        const pane = this.findPaneInTree(tab.paneTree, paneId);
+        if (pane) {
+          pane.fitAddon.fit();
+          if (pane.sessionId !== null) {
+            invoke('resize_pty', {
+              sessionId: pane.sessionId,
+              cols: pane.terminal.cols,
+              rows: pane.terminal.rows,
+            }).catch((e: unknown) => console.error('Resize PTY failed:', e));
+          }
+          return;
+        }
+      }
+    }
+  }
+
   /** Get the focused pane of the focused window's active tab */
   private getFocusedPane(): Pane | null {
     if (!this.focusedWindowId) return null;
@@ -435,6 +504,8 @@ export class Compositor {
   /** Dispose all terminals in a pane tree and remove from session map */
   private disposePaneTree(node: PaneNode): void {
     if (node.type === 'leaf') {
+      // Clean up any active extensions on this pane
+      this.extensions.onPaneDestroyed(node.pane.id);
       if (node.pane.shaderInstance) {
         this.shaderEngine.detach(node.pane.shaderInstance);
         node.pane.shaderInstance = null;
@@ -604,6 +675,11 @@ export class Compositor {
   /** Get the sound engine instance */
   get soundEngine(): SoundEngine {
     return this.sound;
+  }
+
+  /** Get the extension manager instance */
+  get extensionManager(): ExtensionManager {
+    return this.extensions;
   }
 
   // ─── Shader Controls ─────────────────────────────────────────────

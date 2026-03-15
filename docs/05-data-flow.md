@@ -193,3 +193,32 @@
 ```
 
 Sessions live in a shared pool. Windows reference sessions by ID. When a workspace switch hides a window, its sessions remain alive in the pool. When the workspace becomes active again, windows reconnect to their sessions.
+
+## Context Extension Flow (e.g., user runs `java -jar app.jar`)
+
+```
+1. Rust process poller thread ticks every 500ms (configurable via [extensions] poll_interval_ms)
+2. For each active PTY session: calls tcgetpgrp(master_fd) to get foreground process group
+3. Resolves PGID to process name via ps (macOS) or /proc/{pid}/comm (Linux)
+4. Compares with last_known process name for that session
+5. If changed: emits Tauri event "process-changed" { session_id, process, previous }
+6. Frontend: ExtensionManager receives event
+7. Looks up pane via compositor.sessionMap.get(session_id)
+8. Matches process.name against built-in EXTENSIONS registry
+9. On match (e.g., "java" -> javaExtension):
+   a. Calls extension.createWidgets(process)
+   b. Top bar and bottom bar elements inserted into pane DOM
+   c. addon-fit recalculates terminal dimensions (terminal shrinks)
+   d. resize_pty IPC sent to backend (shell receives SIGWINCH)
+   e. Java extension starts its own 2s setInterval polling invoke("get_java_stats")
+   f. get_java_stats runs jstat -gc <pid> + ps -p <pid> -o %cpu=,rss=
+   g. Bottom bar DOM updated with live HEAP/GC/CPU/RSS values
+10. When process exits (e.g., user closes java):
+    a. Next poller tick detects shell is foreground (no child process)
+    b. Emits process-changed with process: null
+    c. ExtensionManager calls deactivateExtension(pane)
+    d. widget.dispose() clears the stats polling interval
+    e. Bar elements removed from DOM
+    f. addon-fit recalculates (terminal expands back)
+    g. resize_pty IPC sent (shell receives SIGWINCH)
+```

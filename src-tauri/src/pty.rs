@@ -5,6 +5,39 @@ use std::sync::Mutex;
 use std::thread;
 use tauri::{AppHandle, Emitter};
 
+// ─── Process Detection Types ──────────────────────────────────────
+
+/// Information about the foreground process of a PTY session.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub name: String,
+    pub cmdline: Vec<String>,
+}
+
+/// Java process resource statistics from `jstat` and `ps`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct JavaStats {
+    /// JVM heap used in MB (Eden + Survivor + Old used)
+    pub heap_used_mb: f64,
+    /// JVM heap max capacity in MB (Eden + Survivor + Old capacity)
+    pub heap_max_mb: f64,
+    /// Heap usage percentage
+    pub heap_percent: f64,
+    /// Total GC event count (YGC + FGC)
+    pub gc_count: u64,
+    /// Total GC time in seconds (GCT)
+    pub gc_time_secs: f64,
+    /// OS-level CPU usage percentage
+    pub cpu_percent: f64,
+    /// OS-level resident set size in MB
+    pub rss_mb: f64,
+    /// Process PID
+    pub pid: u32,
+    /// Extracted main class or JAR name
+    pub main_class: String,
+}
+
 // ─── OSC 9;4 Progress Bar Parser ───────────────────────────────────
 
 /// Payload emitted as a `pty-progress` Tauri event.
@@ -402,19 +435,573 @@ impl PtyManager {
             .map_err(|e| format!("Resize failed: {e}"))?;
         Ok(())
     }
+
+    /// Get all active session IDs.
+    pub fn active_session_ids(&self) -> Vec<u32> {
+        match self.sessions.lock() {
+            Ok(sessions) => sessions.keys().copied().collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Get the foreground process of a PTY session.
+    ///
+    /// Uses `tcgetpgrp()` on the PTY master fd to find the foreground process
+    /// group, then resolves the group leader's process name and command line.
+    ///
+    /// When the group leader is a shell interpreter (sh, bash, etc.), we walk
+    /// the process tree to find the deepest non-shell descendant — this handles
+    /// wrapper scripts like `mvn`, `gradle`, or custom `./start.sh` scripts
+    /// that ultimately run a real application (e.g., `java`).
+    #[cfg(unix)]
+    pub fn get_foreground_process(&self, session_id: u32) -> Option<ProcessInfo> {
+        let sessions = self.sessions.lock().ok()?;
+        let session = sessions.get(&session_id)?;
+
+        // Get the master fd and query the foreground process group
+        let fd = session.master.as_raw_fd()?;
+        let pgrp = unsafe { libc::tcgetpgrp(fd) };
+        if pgrp <= 0 {
+            return None;
+        }
+        let pid = pgrp as u32;
+
+        // If the foreground process IS the shell (same as child_pid), return None
+        // to indicate "shell idle" — no interesting foreground process.
+        if session.child_pid == Some(pid) {
+            return None;
+        }
+
+        // Use sysinfo to read process name natively
+        let mut sys = System::new();
+        sys.refresh_processes(
+            sysinfo::ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(pid)]),
+            true,
+        );
+        let proc_info = sys.process(sysinfo::Pid::from_u32(pid))?;
+        let name = proc_info.name().to_string_lossy().to_string();
+
+        // If the group leader is a shell interpreter, look deeper into its
+        // process tree for the real application process.
+        if is_shell_interpreter(&name) {
+            if let Some(descendant) = find_deepest_non_shell_descendant(pid) {
+                return Some(descendant);
+            }
+        }
+
+        // Get cmdline — sysinfo cmd() may be empty on macOS, fall back to CLI
+        let cmdline: Vec<String> = {
+            let cmd: Vec<String> = proc_info
+                .cmd()
+                .iter()
+                .map(|s| s.to_string_lossy().to_string())
+                .collect();
+            if cmd.is_empty() {
+                read_cmdline_cli(pid).unwrap_or_default()
+            } else {
+                cmd
+            }
+        };
+        Some(ProcessInfo { pid, name, cmdline })
+    }
+
+    #[cfg(not(unix))]
+    pub fn get_foreground_process(&self, _session_id: u32) -> Option<ProcessInfo> {
+        None
+    }
+
+    /// Get the shell's child PID for a session (used to search the full process tree).
+    pub fn get_shell_pid(&self, session_id: u32) -> Option<u32> {
+        let sessions = self.sessions.lock().ok()?;
+        let session = sessions.get(&session_id)?;
+        session.child_pid
+    }
 }
 
+// ─── Native Process Inspection (sysinfo + netstat2) ──────────────
+
+use sysinfo::System;
+
+/// Names of common shell interpreters.
+const SHELL_NAMES: &[&str] = &["sh", "bash", "zsh", "dash", "fish", "ksh", "csh", "tcsh"];
+
+fn is_shell_interpreter(name: &str) -> bool {
+    SHELL_NAMES.contains(&name)
+}
+
+/// Get cmdline from a sysinfo Process, falling back to CLI on macOS.
+fn get_proc_cmdline(proc_info: &sysinfo::Process, pid: u32) -> Vec<String> {
+    let cmd: Vec<String> = proc_info
+        .cmd()
+        .iter()
+        .map(|s| s.to_string_lossy().to_string())
+        .collect();
+    if cmd.is_empty() {
+        read_cmdline_cli(pid).unwrap_or_default()
+    } else {
+        cmd
+    }
+}
+
+/// Walk the process tree from `pid` downward using sysinfo, returning
+/// the deepest non-shell descendant.
+fn find_deepest_non_shell_descendant(pid: u32) -> Option<ProcessInfo> {
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    find_deepest_leaf_native(&sys, sysinfo::Pid::from_u32(pid), 0, 10)
+}
+
+fn find_deepest_leaf_native(
+    sys: &System,
+    pid: sysinfo::Pid,
+    depth: u32,
+    max_depth: u32,
+) -> Option<ProcessInfo> {
+    if depth >= max_depth {
+        return None;
+    }
+
+    let children: Vec<sysinfo::Pid> = sys
+        .processes()
+        .values()
+        .filter(|p| p.parent() == Some(pid))
+        .map(|p| p.pid())
+        .collect();
+
+    if children.is_empty() {
+        let proc = sys.process(pid)?;
+        let name = proc.name().to_string_lossy().to_string();
+        if is_shell_interpreter(&name) {
+            return None;
+        }
+        let cmdline = get_proc_cmdline(proc, pid.as_u32());
+        return Some(ProcessInfo {
+            pid: pid.as_u32(),
+            name,
+            cmdline,
+        });
+    }
+
+    let mut best: Option<ProcessInfo> = None;
+    for child_pid in &children {
+        if let Some(descendant) = find_deepest_leaf_native(sys, *child_pid, depth + 1, max_depth) {
+            best = Some(descendant);
+        }
+    }
+
+    if best.is_some() {
+        return best;
+    }
+
+    let proc = sys.process(pid)?;
+    let name = proc.name().to_string_lossy().to_string();
+    if !is_shell_interpreter(&name) {
+        let cmdline = get_proc_cmdline(proc, pid.as_u32());
+        return Some(ProcessInfo {
+            pid: pid.as_u32(),
+            name,
+            cmdline,
+        });
+    }
+
+    None
+}
+
+// ─── Java Stats ──────────────────────────────────────────────────
+
+/// Collect JVM + OS resource stats for a Java process.
+///
+/// JVM metrics: `jstat -gc <pid>` (no native alternative — JVM-specific tool).
+/// OS metrics: native via sysinfo.
+pub fn get_java_stats(pid: u32) -> Result<JavaStats, String> {
+    let mut sys = System::new();
+    let spid = sysinfo::Pid::from_u32(pid);
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[spid]), true);
+
+    // Two refreshes needed for cpu_usage() to be non-zero
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[spid]), true);
+
+    let proc = sys.process(spid);
+
+    // Get main class — sysinfo cmd() may be empty on macOS, fall back to CLI
+    let main_class = proc
+        .and_then(|p| {
+            let cmd: Vec<String> = p
+                .cmd()
+                .iter()
+                .map(|s| s.to_string_lossy().to_string())
+                .collect();
+            if cmd.is_empty() {
+                None
+            } else {
+                Some(extract_java_main_class(&cmd))
+            }
+        })
+        .unwrap_or_else(|| {
+            read_cmdline_cli(pid)
+                .map(|args| extract_java_main_class(&args))
+                .unwrap_or_else(|| "java".to_string())
+        });
+
+    let cpu_percent = proc.map(|p| p.cpu_usage() as f64).unwrap_or(0.0);
+    let rss_mb = proc
+        .map(|p| p.memory() as f64 / (1024.0 * 1024.0))
+        .unwrap_or(0.0);
+
+    // jstat -gc <pid> — no native Rust equivalent, must shell out
+    let jstat_output = std::process::Command::new("jstat")
+        .args(["-gc", &pid.to_string()])
+        .output()
+        .map_err(|e| format!("jstat not available: {e}"))?;
+
+    if !jstat_output.status.success() {
+        return Err(format!(
+            "jstat failed: {}",
+            String::from_utf8_lossy(&jstat_output.stderr).trim()
+        ));
+    }
+
+    let jstat_str = String::from_utf8_lossy(&jstat_output.stdout);
+    let (heap_used_mb, heap_max_mb, gc_count, gc_time_secs) = parse_jstat_gc(&jstat_str)?;
+
+    let heap_percent = if heap_max_mb > 0.0 {
+        (heap_used_mb / heap_max_mb) * 100.0
+    } else {
+        0.0
+    };
+
+    Ok(JavaStats {
+        heap_used_mb,
+        heap_max_mb,
+        heap_percent,
+        gc_count,
+        gc_time_secs,
+        cpu_percent,
+        rss_mb,
+        pid,
+        main_class,
+    })
+}
+
+/// Parse `jstat -gc` output.
+fn parse_jstat_gc(output: &str) -> Result<(f64, f64, u64, f64), String> {
+    let lines: Vec<&str> = output.lines().collect();
+    if lines.len() < 2 {
+        return Err("jstat output too short".to_string());
+    }
+
+    let values: Vec<f64> = lines[1]
+        .split_whitespace()
+        .filter_map(|s| s.parse::<f64>().ok())
+        .collect();
+
+    if values.len() < 17 {
+        return Err(format!(
+            "jstat -gc: expected 17+ columns, got {}",
+            values.len()
+        ));
+    }
+
+    let s0c = values[0];
+    let s1c = values[1];
+    let s0u = values[2];
+    let s1u = values[3];
+    let ec = values[4];
+    let eu = values[5];
+    let oc = values[6];
+    let ou = values[7];
+
+    let used_kb = s0u + s1u + eu + ou;
+    let max_kb = s0c + s1c + ec + oc;
+    let ygc = values[12] as u64;
+    let fgc = values[14] as u64;
+    let gct = values[16];
+
+    Ok((used_kb / 1024.0, max_kb / 1024.0, ygc + fgc, gct))
+}
+
+/// Extract the main class or JAR name from a Java command line.
+fn extract_java_main_class(cmdline: &[String]) -> String {
+    for (i, arg) in cmdline.iter().enumerate() {
+        if arg == "-jar" {
+            if let Some(jar) = cmdline.get(i + 1) {
+                return jar.rsplit('/').next().unwrap_or(jar).to_string();
+            }
+        }
+    }
+    for arg in cmdline.iter().rev() {
+        if !arg.starts_with('-') && !arg.ends_with("java") && !arg.ends_with("java.exe") {
+            return arg.rsplit('.').next().unwrap_or(arg).to_string();
+        }
+    }
+    "java".to_string()
+}
+
+// ─── Java Server Discovery (native) ─────────────────────────────
+
+/// Information about a Java server process with a listening port.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct JavaServerInfo {
+    pub pid: u32,
+    pub port: u16,
+    pub main_class: String,
+    pub cmdline: Vec<String>,
+}
+
+/// Find a descendant process with a given name using sysinfo.
+pub fn find_child_process_by_name(parent_pid: u32, target_name: &str) -> Option<u32> {
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    find_child_by_name_recursive(&sys, sysinfo::Pid::from_u32(parent_pid), target_name)
+}
+
+fn find_child_by_name_recursive(sys: &System, parent: sysinfo::Pid, target: &str) -> Option<u32> {
+    let children: Vec<sysinfo::Pid> = sys
+        .processes()
+        .values()
+        .filter(|p| p.parent() == Some(parent))
+        .map(|p| p.pid())
+        .collect();
+
+    for &child in &children {
+        if let Some(proc) = sys.process(child) {
+            if proc.name().to_string_lossy() == target {
+                return Some(child.as_u32());
+            }
+        }
+    }
+    for &child in &children {
+        if let Some(found) = find_child_by_name_recursive(sys, child, target) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Find a Java server from a process tree root.
+pub fn find_java_server_pid(root_pid: u32) -> Option<JavaServerInfo> {
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    let mut java_pids = Vec::new();
+    collect_java_pids_native(
+        &sys,
+        sysinfo::Pid::from_u32(root_pid),
+        &mut java_pids,
+        0,
+        10,
+    );
+
+    let listening = get_listening_ports();
+    find_server_among(&sys, &java_pids, &listening)
+}
+
+/// Find all Java processes whose CWD is under the terminal's CWD,
+/// then return the one with a TCP listening port.
+///
+/// Uses sysinfo for process enumeration, but falls back to CLI (lsof)
+/// for CWD lookup on macOS where sysinfo can't read cwd without entitlements.
+pub fn find_java_server_by_cwd(cwd: &str) -> Option<JavaServerInfo> {
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    // Find all java processes
+    let java_pids: Vec<sysinfo::Pid> = sys
+        .processes()
+        .values()
+        .filter(|p| p.name().to_string_lossy() == "java")
+        .map(|p| p.pid())
+        .collect();
+
+    // Filter by CWD match — use sysinfo cwd first, fall back to lsof
+    let matching: Vec<sysinfo::Pid> = java_pids
+        .into_iter()
+        .filter(|&pid| {
+            // Try sysinfo cwd first
+            let proc_cwd = sys
+                .process(pid)
+                .and_then(|p| p.cwd())
+                .map(|c| c.to_string_lossy().to_string());
+
+            // Fall back to lsof-based cwd if sysinfo returns None (macOS sandbox)
+            let proc_cwd = proc_cwd.or_else(|| read_process_cwd(pid.as_u32()));
+
+            proc_cwd
+                .as_deref()
+                .map(|java_cwd| java_cwd.starts_with(cwd) || cwd.starts_with(java_cwd))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    let listening = get_listening_ports();
+    find_server_among(&sys, &matching, &listening)
+}
+
+/// Among a set of java PIDs, find the one with a listening port.
+fn find_server_among(
+    sys: &System,
+    pids: &[sysinfo::Pid],
+    listening: &std::collections::HashMap<u32, u16>,
+) -> Option<JavaServerInfo> {
+    for &pid in pids {
+        if let Some(&port) = listening.get(&pid.as_u32()) {
+            // Get cmdline — try sysinfo first, fall back to CLI
+            let cmdline = sys
+                .process(pid)
+                .map(|p| {
+                    let cmd: Vec<String> = p
+                        .cmd()
+                        .iter()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .collect();
+                    cmd
+                })
+                .filter(|cmd| !cmd.is_empty())
+                .or_else(|| read_cmdline_cli(pid.as_u32()))
+                .unwrap_or_default();
+
+            let main_class = extract_java_main_class(&cmdline);
+            return Some(JavaServerInfo {
+                pid: pid.as_u32(),
+                port,
+                main_class,
+                cmdline,
+            });
+        }
+    }
+    None
+}
+
+/// Collect all java PIDs under a root using sysinfo.
+fn collect_java_pids_native(
+    sys: &System,
+    pid: sysinfo::Pid,
+    result: &mut Vec<sysinfo::Pid>,
+    depth: u32,
+    max_depth: u32,
+) {
+    if depth >= max_depth {
+        return;
+    }
+    if let Some(proc) = sys.process(pid) {
+        if proc.name().to_string_lossy() == "java" {
+            result.push(pid);
+        }
+    }
+    let children: Vec<sysinfo::Pid> = sys
+        .processes()
+        .values()
+        .filter(|p| p.parent() == Some(pid))
+        .map(|p| p.pid())
+        .collect();
+    for child in children {
+        collect_java_pids_native(sys, child, result, depth + 1, max_depth);
+    }
+}
+
+/// Get a map of PID -> listening TCP port for all processes.
+/// Uses `lsof` on macOS (netstat2 can't see other processes' sockets).
+/// Uses netstat2 on Linux where it works without restrictions.
+fn get_listening_ports() -> std::collections::HashMap<u32, u16> {
+    #[cfg(target_os = "linux")]
+    {
+        get_listening_ports_native()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        get_listening_ports_lsof()
+    }
+}
+
+/// Native port detection via netstat2 (works on Linux).
+#[cfg(target_os = "linux")]
+fn get_listening_ports_native() -> std::collections::HashMap<u32, u16> {
+    use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo};
+
+    let mut result = std::collections::HashMap::new();
+    let af = AddressFamilyFlags::IPV4 | AddressFamilyFlags::IPV6;
+    let proto = ProtocolFlags::TCP;
+
+    if let Ok(sockets) = get_sockets_info(af, proto) {
+        for socket in sockets {
+            if let ProtocolSocketInfo::Tcp(tcp) = socket.protocol_socket_info {
+                if tcp.state == netstat2::TcpState::Listen {
+                    for pid in &socket.associated_pids {
+                        result.entry(*pid).or_insert(tcp.local_port);
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Fallback: lsof-based port detection (macOS).
+#[cfg(not(target_os = "linux"))]
+fn get_listening_ports_lsof() -> std::collections::HashMap<u32, u16> {
+    let mut result = std::collections::HashMap::new();
+    let output = match std::process::Command::new("lsof")
+        .args(["-iTCP", "-sTCP:LISTEN", "-P", "-n", "-F", "pn"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return result,
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut current_pid: Option<u32> = None;
+
+    // lsof -F pn output format:
+    //   p<pid>       (process ID)
+    //   n<name>      (socket name like "*:9090" or "[::]:8080")
+    for line in stdout.lines() {
+        if let Some(pid_str) = line.strip_prefix('p') {
+            current_pid = pid_str.parse().ok();
+        } else if let Some(name) = line.strip_prefix('n') {
+            if let Some(pid) = current_pid {
+                // Extract port from name like "*:9090" or "[::1]:8080"
+                if let Some(port_str) = name.rsplit(':').next() {
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        result.entry(pid).or_insert(port);
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+// ─── CLI Fallbacks for macOS (sysinfo can't read cmd/cwd without entitlements) ──
+
+/// Read process command line via CLI (ps). Fallback for macOS.
+fn read_cmdline_cli(pid: u32) -> Option<Vec<String>> {
+    let output = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "args="])
+        .output()
+        .ok()?;
+    let args_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if args_str.is_empty() {
+        return None;
+    }
+    Some(args_str.split_whitespace().map(String::from).collect())
+}
+
+// ─── CWD Helper (used by get_pty_cwd, kept for backward compat) ──
+
 /// Read the current working directory of a process by PID.
+/// Used by PtyManager::get_cwd for the shell process.
 #[cfg(target_os = "macos")]
 fn read_process_cwd(pid: u32) -> Option<String> {
-    use std::process::Command;
-    // On macOS, use lsof to get the cwd of the process
-    let output = Command::new("lsof")
+    // sysinfo provides cwd natively, but for the shell's child_pid
+    // we use it via PtyManager::get_cwd → this function.
+    // On macOS, sysinfo's cwd support requires the process to be refreshed,
+    // so we use lsof as a reliable fallback for one-off lookups.
+    let output = std::process::Command::new("lsof")
         .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
         .output()
         .ok()?;
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // lsof output: lines starting with 'n' contain the path
     for line in stdout.lines() {
         if let Some(path) = line.strip_prefix('n') {
             if !path.is_empty() {

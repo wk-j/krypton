@@ -26,3 +26,6 @@ toml = "0.8"
 dirs = "6"
 notify = "7"
 open = "5"
+libc = "0.2"
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
+netstat2 = "0.11"
