@@ -116,7 +116,10 @@ export const DEFAULT_SHADER_CONFIG: ShaderConfig = {
 
 export interface VisualConfig {
   perspective_depth: number; // px, 0 = disabled
-  perspective_tilt: number;  // degrees, 0 = no tilt
+  perspective_tilt_x: number; // degrees, X-axis rotation (top/bottom)
+  perspective_tilt_y: number; // degrees, Y-axis rotation (left/right)
+  opacity: number;           // 0.0–1.0, window backdrop opacity
+  blur: number;              // px, window backdrop blur radius
 }
 
 export interface ExtensionsConfig {

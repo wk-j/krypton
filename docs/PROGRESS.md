@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-15 (M8: OpenCode Dashboard with query_sqlite command)
+> Last updated: 2026-03-16 (M8: backdrop-filter removal — macOS transparency fix)
 
 ## Overview
 
@@ -14,7 +14,7 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 14/15 |
-| M8 — Polish | In Progress | 9/12 |
+| M8 — Polish | In Progress | 10/12 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -128,6 +128,7 @@
 - [ ] `@xterm/addon-search` integration with keyboard-driven search overlay
 - [ ] IME support testing and fixes
 - [ ] Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)
+- [x] Fix macOS transparency freeze — removed `backdrop-filter: blur()` from all elements (`.krypton-window`, Quick Terminal, which-key, command palette, dashboard, hint-toast). On macOS, `backdrop-filter` in a transparent WKWebView causes the compositor to snapshot/freeze the desktop behind terminal windows when focused. Also added `.xterm-scrollable-element` CSS override to fix xterm.js setting opaque inline `backgroundColor`. See `docs/24-backdrop-filter-removal.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 

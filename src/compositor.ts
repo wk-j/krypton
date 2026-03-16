@@ -37,6 +37,16 @@ import { ExtensionManager } from './extensions';
 import type { ExtensionHost } from './extensions';
 import { DashboardManager } from './dashboard';
 
+/** Replace the alpha channel of an rgba() color string.
+ *  e.g. replaceAlpha('rgba(6, 10, 18, 0.5)', 0.8) → 'rgba(6, 10, 18, 0.8)' */
+function replaceAlpha(rgba: string, alpha: number): string {
+  const m = rgba.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (m) {
+    return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
+  }
+  return rgba;
+}
+
 /** Custom key event handler for xterm.js — set by InputRouter */
 type CustomKeyHandler = (e: KeyboardEvent) => boolean;
 
@@ -79,9 +89,17 @@ function abbreviatePath(fullPath: string): string {
   return p;
 }
 
+/** Fully transparent background for xterm.js canvas.
+ *  The visual backdrop (tint + blur) is handled by the .krypton-window CSS
+ *  background and backdrop-filter, which the browser composites every frame.
+ *  Making the canvas background transparent ensures dynamic content behind
+ *  the Tauri window (e.g. video wallpapers) is not frozen by a static
+ *  canvas fill. */
+const XTERM_TRANSPARENT_BG = 'rgba(0, 0, 0, 0)';
+
 /** xterm.js built-in theme fallback (used when theme engine not yet initialized) */
 const DEFAULT_TERMINAL_THEME: Record<string, string> = {
-  background: 'rgba(10, 10, 15, 0.5)',
+  background: XTERM_TRANSPARENT_BG,
   foreground: '#b0c4d8',
   cursor: '#0cf',
   cursorAccent: '#0a0a0f',
@@ -193,6 +211,8 @@ export class Compositor {
   private stepSize = 20;
   /** Window gap in pixels */
   private windowGap = 6;
+  /** Config-driven window backdrop opacity (overrides theme alpha) */
+  private configOpacity: number | null = null;
 
   // ─── Tabs Config ─────────────────────────────────────────────────
   private tabsConfig: TabsConfig = {
@@ -263,14 +283,19 @@ export class Compositor {
 
     // Theme: if the theme engine is connected, use its xterm theme;
     // otherwise fall back to config-based color overrides.
+    // The xterm canvas background is always fully transparent — the visual
+    // backdrop (tint + blur) lives on .krypton-window via CSS, which the
+    // browser composites every frame (required for dynamic wallpapers).
     if (this.themeEngine) {
-      this.terminalTheme = this.themeEngine.buildXtermTheme();
+      const xt = this.themeEngine.buildXtermTheme();
+      xt.background = XTERM_TRANSPARENT_BG;
+      this.terminalTheme = xt;
     } else {
       // Legacy fallback: merge config colors on top of hardcoded default
       const c = config.theme.colors;
       const theme: Record<string, string> = { ...DEFAULT_TERMINAL_THEME };
       if (c.foreground) theme.foreground = c.foreground;
-      if (c.background) theme.background = c.background;
+      // background is always transparent — ignore config c.background for canvas
       if (c.cursor) theme.cursor = c.cursor;
       if (c.selection) theme.selectionBackground = c.selection;
       if (c.black) theme.black = c.black;
@@ -329,15 +354,37 @@ export class Compositor {
     // Visual — 3D perspective depth and tilt
     if (config.visual) {
       const depth = config.visual.perspective_depth;
-      const tilt = config.visual.perspective_tilt ?? 0;
+      const tiltX = config.visual.perspective_tilt_x ?? 0;
+      const tiltY = config.visual.perspective_tilt_y ?? 0;
       this.workspace.style.setProperty(
         '--krypton-perspective',
         depth > 0 ? `${depth}px` : 'none'
       );
       this.workspace.style.setProperty(
-        '--krypton-perspective-tilt',
-        depth > 0 && tilt > 0 ? `${tilt}deg` : '0deg'
+        '--krypton-perspective-tilt-x',
+        depth > 0 && tiltX !== 0 ? `${tiltX}deg` : '0deg'
       );
+      this.workspace.style.setProperty(
+        '--krypton-perspective-tilt-y',
+        depth > 0 && tiltY !== 0 ? `${tiltY}deg` : '0deg'
+      );
+
+      // Transparency — window backdrop opacity and blur from [visual] config.
+      // These override the theme's backdrop values when set.
+      const opacity = Math.max(0, Math.min(1, config.visual.opacity ?? 0.5));
+      const blur = Math.max(0, config.visual.blur ?? 12);
+      this.configOpacity = opacity;
+      const root = document.documentElement.style;
+      root.setProperty('--krypton-window-blur', `${blur}px`);
+
+      // Override the theme's backdrop color alpha with config opacity.
+      // Read the current theme backdrop color and replace its alpha channel.
+      const themeBackdrop = this.themeEngine?.theme?.chrome?.backdrop?.color
+        ?? 'rgba(6, 10, 18, 0.5)';
+      root.setProperty('--krypton-backdrop-color', replaceAlpha(themeBackdrop, opacity));
+
+      // Update existing terminals so their background alpha matches
+      this.updateTerminalThemes();
     }
   }
 
@@ -616,9 +663,11 @@ export class Compositor {
   setThemeEngine(engine: FrontendThemeEngine): void {
     this.themeEngine = engine;
 
-    // Use the theme engine's xterm theme if available
+    // Use the theme engine's xterm theme if available — always force
+    // transparent canvas background (visual backdrop handled by CSS).
     const xtermTheme = engine.buildXtermTheme();
     if (Object.keys(xtermTheme).length > 0) {
+      xtermTheme.background = XTERM_TRANSPARENT_BG;
       this.terminalTheme = xtermTheme;
     }
 
@@ -636,6 +685,9 @@ export class Compositor {
     if (!this.themeEngine) return;
 
     const xtermTheme = this.themeEngine.buildXtermTheme();
+    // Canvas background is always fully transparent — the visual backdrop
+    // lives on .krypton-window via CSS (see XTERM_TRANSPARENT_BG comment).
+    xtermTheme.background = XTERM_TRANSPARENT_BG;
     this.terminalTheme = xtermTheme;
 
     // Update all workspace terminals (all panes in all tabs in all windows)

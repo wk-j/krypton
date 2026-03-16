@@ -35,8 +35,10 @@ html, body {
   border-radius: var(--krypton-border-radius, 0px);
   overflow: visible;
   box-shadow: 0 0 var(--krypton-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
-  -webkit-backdrop-filter: blur(var(--krypton-backdrop-blur, 12px));
-  backdrop-filter: blur(var(--krypton-backdrop-blur, 12px));
+  /* backdrop-filter removed: on macOS, blur() in a transparent WKWebView causes
+     the compositor to snapshot (freeze) the desktop behind the element when the
+     window is focused, breaking live wallpaper / video desktop transparency.
+     The semi-transparent background color alone provides the tinted overlay. */
   /* GPU-composited layer for smooth animations (transform, opacity) */
   will-change: transform, opacity;
   transform-origin: top left;
@@ -264,7 +266,8 @@ html, body {
   background: transparent;
   position: relative;
   transform-style: preserve-3d;
-  transform: rotateX(var(--krypton-perspective-tilt, 0deg));
+  transform: rotateX(var(--krypton-perspective-tilt-x, 0deg))
+             rotateY(var(--krypton-perspective-tilt-y, 0deg));
 }
 
 /* ─── Pane containers ─── */
@@ -358,12 +361,21 @@ html, body {
 .krypton-window__body .xterm-viewport,
 .krypton-pane__terminal .xterm-viewport {
   overflow-y: auto !important;
+  background-color: transparent !important;
   background: transparent !important;
 }
 
 .krypton-window__body .xterm-screen,
 .krypton-pane__terminal .xterm-screen {
   background: transparent !important;
+}
+
+/* xterm.js sets inline style.backgroundColor on the scrollable-element DOM node
+   whenever colors change (falls back to opaque #000000 because its color parser
+   rejects rgba with alpha < 1). Override with !important to keep transparency. */
+.krypton-window__body .xterm-scrollable-element,
+.krypton-pane__terminal .xterm-scrollable-element {
+  background-color: transparent !important;
 }
 
 /* ─── Which-Key Popup ─── */
@@ -390,8 +402,6 @@ html, body {
   border: 1px solid var(--krypton-whichkey-border, rgba(0, 200, 255, 0.4));
   padding: 10px 14px;
   min-width: 240px;
-  -webkit-backdrop-filter: blur(var(--krypton-whichkey-blur, 16px));
-  backdrop-filter: blur(var(--krypton-whichkey-blur, 16px));
 }
 
 .krypton-whichkey__title {
@@ -486,8 +496,6 @@ html, body {
   background: var(--krypton-whichkey-bg, rgba(6, 10, 18, 0.85));
   border: 1px solid var(--krypton-whichkey-border, rgba(0, 200, 255, 0.4));
   padding: 6px 14px;
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -499,8 +507,6 @@ html, body {
 /* ─── Quick Terminal Overlay ─── */
 .krypton-quick-terminal {
   z-index: 5000;
-  -webkit-backdrop-filter: blur(var(--krypton-qt-blur, 20px));
-  backdrop-filter: blur(var(--krypton-qt-blur, 20px));
   /* Slightly stronger background for overlay feel */
   background: var(--krypton-qt-bg, rgba(6, 10, 18, 0.6));
   box-shadow:
@@ -546,8 +552,6 @@ html, body {
   background: var(--krypton-palette-bg, rgba(6, 10, 18, 0.92));
   border: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.4));
   border-radius: 4px;
-  -webkit-backdrop-filter: blur(var(--krypton-palette-blur, 16px));
-  backdrop-filter: blur(var(--krypton-palette-blur, 16px));
   box-shadow:
     0 0 30px rgba(0, 200, 255, 0.08),
     0 8px 32px rgba(0, 0, 0, 0.5);
@@ -1141,8 +1145,6 @@ html, body {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
 }
 
 .krypton-dashboard__panel {

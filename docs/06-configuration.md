@@ -199,9 +199,18 @@ fps_cap = 30                 # Max animation FPS (CSS-driven, this is advisory)
 perspective_depth = 800        # 3D perspective depth in pixels. Higher = subtler.
                                # 0 = disabled (flat rendering). Default: 800
                                # Recommended range: 400–1200
-perspective_tilt = 2.0         # Tilt angle in degrees for visible layer separation.
+perspective_tilt_x = 2.0       # X-axis tilt in degrees (top/bottom lean).
                                # 0 = no tilt. Default: 2.0
-                               # Recommended range: 1–6
+                               # Recommended range: 1–6. Negative reverses direction.
+perspective_tilt_y = 0.0       # Y-axis tilt in degrees (left/right lean).
+                               # 0 = no tilt. Default: 0.0
+                               # Recommended range: 1–6. Negative reverses direction.
+opacity = 0.5                  # Window backdrop opacity (0.0 = fully transparent,
+                               # 1.0 = fully opaque). Controls the alpha channel of
+                               # terminal window backgrounds. Default: 0.5
+blur = 12                      # Window backdrop blur radius in pixels. Controls the
+                               # frosted-glass blur on terminal windows.
+                               # 0 = no blur, higher = stronger blur. Default: 12
 
 # --- Context Extensions ---
 # Built-in extensions that activate when specific processes are detected
@@ -364,6 +373,15 @@ Valid event names: `window.create`, `window.close`, `window.focus`, `window.maxi
 | `[shader]` | `fps_cap` | int | `30` | Advisory max FPS for animations (CSS-driven, browser-controlled) |
 
 Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled globally via `Leader G` (Shift+g).
+
+### Visual Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[visual]` | `perspective_depth` | int | `800` | 3D perspective depth in pixels. Higher = subtler effect. 0 = disabled. Recommended: 400–1200 |
+| `[visual]` | `perspective_tilt` | float | `2.0` | Tilt angle in degrees for 3D layer separation. 0 = no tilt. Recommended: 1–6 |
+| `[visual]` | `opacity` | float | `0.5` | Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque). Overrides the theme's backdrop alpha. |
+| `[visual]` | `blur` | int | `12` | Window backdrop blur radius in pixels. 0 = no blur (sharp see-through), higher = stronger frosted-glass effect. |
 
 ### Extensions Configuration
 

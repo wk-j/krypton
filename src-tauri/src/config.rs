@@ -247,15 +247,27 @@ impl Default for TabsConfig {
 pub struct VisualConfig {
     /// 3D perspective depth in pixels. Higher = subtler effect. 0 = disabled.
     pub perspective_depth: u16,
-    /// Tilt angle in degrees for 3D layer separation. 0 = no tilt.
-    pub perspective_tilt: f64,
+    /// X-axis tilt angle in degrees (top/bottom). 0 = no tilt.
+    #[serde(alias = "perspective_tilt")]
+    pub perspective_tilt_x: f64,
+    /// Y-axis tilt angle in degrees (left/right). 0 = no tilt.
+    pub perspective_tilt_y: f64,
+    /// Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    /// Controls the alpha channel of terminal window backgrounds.
+    pub opacity: f64,
+    /// Window backdrop blur radius in pixels. 0 = no blur.
+    /// Controls the CSS backdrop-filter blur on terminal windows.
+    pub blur: u32,
 }
 
 impl Default for VisualConfig {
     fn default() -> Self {
         Self {
             perspective_depth: 800,
-            perspective_tilt: 2.0,
+            perspective_tilt_x: 2.0,
+            perspective_tilt_y: 0.0,
+            opacity: 0.5,
+            blur: 12,
         }
     }
 }
