@@ -415,28 +415,35 @@ The animation engine must maintain **60 FPS** and avoid layout thrashing (use `t
 
 ## 5.8 Sound Engine (Frontend)
 
-A dedicated TypeScript module (`src/sound.ts`) that synthesizes and plays short sound effects for every user action using the Web Audio API. No audio files — all sounds are generated procedurally at runtime. Supports two synthesis backends: **patch-based** (additive + subtractive functional synthesis via `krypton-cyber`) and **ghost-signal** (function-based themes from the ghost-signal project).
+A dedicated TypeScript module (`src/sound.ts`) that synthesizes and plays short sound effects for every user action using the Web Audio API. No audio files — all sounds are generated procedurally and **pre-rendered into cached `AudioBuffer`s** at theme load time via `OfflineAudioContext`. Supports two synthesis backends: **patch-based** (additive + subtractive functional synthesis via `krypton-cyber`) and **ghost-signal** (function-based themes from the ghost-signal project). Both are pre-rendered; playback uses only 2 Web Audio nodes per sound.
 
 ### Architecture
 
 ```
+Theme load / app start
+  |
+  v
+[warmCache()] — pre-render all sounds via OfflineAudioContext
+  |  - Patch-based: buildSoundGraph() on OfflineAudioContext → AudioBuffer
+  |  - Ghost-signal: invoke sound fn on proxied OfflineAudioContext → AudioBuffer
+  |  - TYPING_LETTER: 8 variants pre-rendered for round-robin variation
+  |
+  v
+bufferCache: Map<string, CachedBuffer>   typingLetterPool: CachedBuffer[]
+
+---
+
 Action (compositor/input-router event)
   |
   v
 SoundEngine.play('window.create')
   |
   v
-[Patch Lookup] — resolve event name to a SoundPatch definition
+[Cache Lookup] — find pre-rendered AudioBuffer by patch key or 'gs:<soundId>'
   |
-  v
-[Oscillator Graph Construction]
-  |  - Create OscillatorNodes (sine/square/sawtooth/triangle/noise)
-  |  - Set frequencies, detune, amplitudes per partial (ADDITIVE)
-  |  - Connect through BiquadFilterNodes (lowpass/highpass/bandpass) (SUBTRACTIVE)
-  |  - Apply ADSR envelope via GainNode automation (setValueAtTime / linearRampToValueAtTime)
-  |  - Optional: pitch envelope via frequency automation
-  |  - Optional: FM synthesis (oscillator -> gain -> target oscillator.frequency)
-  |  - Optional: effects chain (ConvolverNode for reverb, DelayNode, WaveShaperNode for distortion)
+  ├── HIT: playCached() — AudioBufferSourceNode + GainNode (2 nodes)
+  |
+  └── MISS: synthesize() — full node graph (10-18 nodes, fallback while cache warms)
   |
   v
 [Master Channel]
@@ -449,8 +456,8 @@ AudioContext.destination (speakers)
 
 ### Key Design Decisions
 
-- **Single AudioContext** — lazily created on first user interaction (browser autoplay policy). Reused for all subsequent sounds. Never closed during app lifetime.
-- **Ephemeral nodes** — each `play()` call creates a short-lived subgraph of oscillators, gains, and filters. Nodes are scheduled to stop via `OscillatorNode.stop(endTime)` and auto-disconnect after completion. No persistent audio graph.
+- **Single AudioContext** — lazily created on first user interaction (browser autoplay policy). Reused for all subsequent sounds. Proactively recycled every 500,000 sounds (raised from 50k thanks to buffer caching) to prevent WebKit degradation.
+- **Buffer cache** — all sounds are pre-rendered into `AudioBuffer`s via `OfflineAudioContext` at theme load time. Playback creates only 2 nodes (`AudioBufferSourceNode` + `GainNode`) instead of 10-18. Falls back to live synthesis while cache warms or on cache miss. Ghost-signal `TYPING_LETTER` uses a pool of 8 pre-rendered variants cycled round-robin.
 - **Non-blocking** — all scheduling uses `AudioContext.currentTime` offsets. No `setTimeout` or `requestAnimationFrame` for audio timing. The audio thread runs independently from the main thread.
 - **Patch definitions** — each sound is a plain object (or TOML-serializable struct) describing oscillators, filters, envelopes, and effects. This makes them configurable and replaceable via custom sound packs.
 - **Dual theme system** — `krypton-cyber` uses the patch-based model; ghost-signal themes use a function-based model where `createSounds(ctx, noiseBuffer)` returns fire-and-forget functions. Both coexist via the `ActiveSoundTheme` discriminated union.

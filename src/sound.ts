@@ -47,6 +47,13 @@ interface EffectsDef {
   distortion?: { amount: number };
 }
 
+/** Pre-rendered sound buffer for cache playback */
+interface CachedBuffer {
+  buffer: AudioBuffer;
+  /** Duration in seconds */
+  duration: number;
+}
+
 /** Complete sound patch definition */
 export interface SoundPatch {
   oscillators: OscillatorDef[];
@@ -642,12 +649,33 @@ export class SoundEngine {
   private static readonly EVENT_COOLDOWN_MS = 50;
 
   // ─── AudioContext health / recycling ──────────────────────────
-  /** Recycle AudioContext after this many sounds to prevent WebKit degradation */
-  private static readonly CONTEXT_RECYCLE_THRESHOLD = 50_000;
+  /** Recycle AudioContext after this many sounds to prevent WebKit degradation.
+   *  Raised from 50k to 500k — with buffer caching each playback creates only
+   *  2 nodes instead of ~15, so effective node pressure is ~7x lower. */
+  private static readonly CONTEXT_RECYCLE_THRESHOLD = 500_000;
   /** Number of sounds played on the current AudioContext instance */
   private contextSoundCount = 0;
   /** Flag: context resume is in-flight (prevents double-resume) */
   private resuming = false;
+
+  // ─── Sound buffer cache ──────────────────────────────────────
+  /** Pre-rendered AudioBuffers keyed by patch hash or 'gs:<soundKey>' */
+  private bufferCache: Map<string, CachedBuffer> = new Map();
+  /** Pool of TYPING_LETTER variants for ghost-signal themes (round-robin) */
+  private typingLetterPool: CachedBuffer[] = [];
+  /** Round-robin index into typingLetterPool */
+  private typingLetterIndex = 0;
+  /** Number of TYPING_LETTER variants to pre-render per ghost-signal theme */
+  private static readonly TYPING_LETTER_POOL_SIZE = 8;
+  /** Max duration (seconds) for each ghost-signal sound key (conservative upper bounds) */
+  private static readonly GS_SOUND_DURATIONS: Record<string, number> = {
+    HOVER: 0.08, HOVER_UP: 0.07, CLICK: 0.05, IMPORTANT_CLICK: 0.15,
+    FEATURE_SWITCH_ON: 0.30, FEATURE_SWITCH_OFF: 0.30,
+    LIMITER_ON: 0.25, LIMITER_OFF: 0.25,
+    SWITCH_TOGGLE: 0.05, TAB_INSERT: 0.15, TAB_CLOSE: 0.12,
+    TAB_SLASH: 0.20, TYPING_LETTER: 0.04, TYPING_BACKSPACE: 0.05,
+    TYPING_ENTER: 0.10, TYPING_SPACE: 0.05, APP_START: 1.40,
+  };
 
   /** Currently playing sound IDs — use Set for accurate tracking without timer drift */
   private activeSoundIds: Set<number> = new Set();
@@ -745,12 +773,15 @@ export class SoundEngine {
     if (this.ghostSignalGain) {
       this.ghostSignalGain.gain.value = this.config.volume;
     }
-    // Reload theme if pack changed
+    // Reload theme if pack changed, or warm cache on first config application
     if (this.config.pack !== oldPack) {
       this.themeLoading = true;
       this.loadTheme(this.config.pack)
         .catch((err) => console.warn('Sound theme loading failed:', err))
         .finally(() => { this.themeLoading = false; });
+    } else if (this.bufferCache.size === 0) {
+      // First config application with default pack — warm the cache
+      this.warmCache();
     }
   }
 
@@ -769,6 +800,8 @@ export class SoundEngine {
       }
       this.ghostSignalCtx = null;
       this.ghostSignalGain = null;
+      // Warm cache for patch-based sounds
+      this.warmCache();
       return;
     }
 
@@ -778,6 +811,8 @@ export class SoundEngine {
       try {
         const theme = await loader();
         this.activateGhostSignalTheme(theme);
+        // Warm cache for ghost-signal sounds
+        this.warmCache();
         return;
       } catch (err) {
         console.warn(`Failed to load sound theme "${packName}":`, err);
@@ -793,6 +828,7 @@ export class SoundEngine {
     }
     this.ghostSignalCtx = null;
     this.ghostSignalGain = null;
+    this.warmCache();
   }
 
   /**
@@ -994,38 +1030,55 @@ export class SoundEngine {
       this.drop('max_concurrent'); return;
     }
 
+    this.ensureContext();
+    if (!this.ctx || !this.masterGain) { this.drop('no_ctx'); return; }
+
     // ─── Ghost-signal theme: use TYPING_* functions ───
     if (this.activeTheme.type === 'ghost-signal') {
       // Ghost-signal themes have no key-release sounds
       if (phase === 'release') return;
 
-      const sounds = this.activeTheme.sounds;
-      let soundId: string;
+      let gsSoundId: string;
       if (key === 'Backspace') {
-        soundId = 'TYPING_BACKSPACE';
+        gsSoundId = 'TYPING_BACKSPACE';
       } else if (key === 'Enter') {
-        soundId = 'TYPING_ENTER';
+        gsSoundId = 'TYPING_ENTER';
       } else if (key === ' ') {
-        soundId = 'TYPING_SPACE';
+        gsSoundId = 'TYPING_SPACE';
       } else {
-        soundId = 'TYPING_LETTER';
+        gsSoundId = 'TYPING_LETTER';
       }
 
-      const fn = sounds[soundId];
-      if (fn) {
-        const id = this.trackSound(200);
-        try {
-          fn();
-          this.totalSoundsPlayed++;
-        } catch (err) {
-          this.drop('gs_throw');
-          console.error('[SoundEngine:diag] ghost-signal threw:', err);
-        }
-        void id;
-        this.maybeRecycleContext();
+      // Try cached playback: TYPING_LETTER uses round-robin pool, others use bufferCache
+      if (gsSoundId === 'TYPING_LETTER' && this.typingLetterPool.length > 0) {
+        const cached = this.typingLetterPool[this.typingLetterIndex];
+        this.typingLetterIndex = (this.typingLetterIndex + 1) % this.typingLetterPool.length;
+        this.playCached(cached, this.config.volume);
+        this.totalSoundsPlayed++;
       } else {
-        this.drop('no_fn');
+        const cached = this.bufferCache.get(`gs:${gsSoundId}`);
+        if (cached) {
+          this.playCached(cached, this.config.volume);
+          this.totalSoundsPlayed++;
+        } else {
+          // Fallback: live synthesis (cache not ready)
+          const fn = this.activeTheme.sounds[gsSoundId];
+          if (fn) {
+            const id = this.trackSound(200);
+            try {
+              fn();
+              this.totalSoundsPlayed++;
+            } catch (err) {
+              this.drop('gs_throw');
+              console.error('[SoundEngine:diag] ghost-signal threw:', err);
+            }
+            void id;
+          } else {
+            this.drop('no_fn');
+          }
+        }
       }
+      this.maybeRecycleContext();
       return;
     }
 
@@ -1045,26 +1098,29 @@ export class SoundEngine {
       volume *= Math.max(0, Math.min(1, eventConfig));
     }
 
-    // Add subtle randomization for natural feel:
-    // +/-8% amplitude variation, +/-3% filter cutoff variation
+    // Add subtle randomization for natural feel: +/-8% amplitude variation
     const ampJitter = 0.92 + Math.random() * 0.16;    // 0.92 – 1.08
-    const cutoffJitter = 0.97 + Math.random() * 0.06;  // 0.97 – 1.03
 
-    const patch: SoundPatch = {
-      ...basePatch,
-      oscillators: basePatch.oscillators.map((osc) => ({
-        ...osc,
-        amplitude: osc.amplitude * ampJitter,
-      })),
-      filter: basePatch.filter
-        ? { ...basePatch.filter, cutoff: basePatch.filter.cutoff * cutoffJitter }
-        : undefined,
-    };
-
-    this.ensureContext();
-    if (!this.ctx || !this.masterGain) { this.drop('no_ctx_patch'); return; }
-
-    this.synthesize(patch, volume);
+    // Try cached playback (uses base patch key — jitter applied via volume)
+    const cacheKey = SoundEngine.patchCacheKey(basePatch);
+    const cached = this.bufferCache.get(cacheKey);
+    if (cached) {
+      this.playCached(cached, volume * ampJitter);
+    } else {
+      // Fallback: live synthesis with full jitter (amplitude + filter cutoff)
+      const cutoffJitter = 0.97 + Math.random() * 0.06;  // 0.97 – 1.03
+      const patch: SoundPatch = {
+        ...basePatch,
+        oscillators: basePatch.oscillators.map((osc) => ({
+          ...osc,
+          amplitude: osc.amplitude * ampJitter,
+        })),
+        filter: basePatch.filter
+          ? { ...basePatch.filter, cutoff: basePatch.filter.cutoff * cutoffJitter }
+          : undefined,
+      };
+      this.synthesize(patch, volume);
+    }
     this.totalSoundsPlayed++;
     this.maybeRecycleContext();
   }
@@ -1090,22 +1146,32 @@ export class SoundEngine {
     // Max concurrent check
     if (this.activeSoundIds.size >= SoundEngine.MAX_CONCURRENT) return;
 
+    // Lazily initialize AudioContext on first play
+    this.ensureContext();
+    if (!this.ctx || !this.masterGain) return;
+
     // ─── Ghost-signal theme: use event map ───
     if (this.activeTheme.type === 'ghost-signal') {
       const ghostSoundId = GHOST_SIGNAL_EVENT_MAP[event];
       if (!ghostSoundId) return;
-      const fn = this.activeTheme.sounds[ghostSoundId];
-      if (!fn) return;
 
-      // APP_START sounds are 1.2-1.4 s; all others are very short
-      const timeout = ghostSoundId === 'APP_START' ? 1500 : 300;
-      this.trackSound(timeout);
-      fn();
+      // Try cached playback first
+      const cached = this.bufferCache.get(`gs:${ghostSoundId}`);
+      if (cached) {
+        this.playCached(cached, this.config.volume);
+      } else {
+        // Fallback: live synthesis (cache not ready or miss)
+        const fn = this.activeTheme.sounds[ghostSoundId];
+        if (!fn) return;
+        const timeout = ghostSoundId === 'APP_START' ? 1500 : 300;
+        this.trackSound(timeout);
+        fn();
+      }
       this.maybeRecycleContext();
       return;
     }
 
-    // ─── Patch-based theme: synthesize from patch definition ───
+    // ─── Patch-based theme: try cache, fall back to live synthesis ───
     const patch = this.patches[event];
     if (!patch) return;
 
@@ -1115,11 +1181,13 @@ export class SoundEngine {
       eventVolume = Math.max(0, Math.min(1, eventConfig));
     }
 
-    // Lazily initialize AudioContext on first play
-    this.ensureContext();
-    if (!this.ctx || !this.masterGain) return;
-
-    this.synthesize(patch, eventVolume);
+    const cacheKey = SoundEngine.patchCacheKey(patch);
+    const cached = this.bufferCache.get(cacheKey);
+    if (cached) {
+      this.playCached(cached, eventVolume);
+    } else {
+      this.synthesize(patch, eventVolume);
+    }
     this.maybeRecycleContext();
   }
 
@@ -1209,6 +1277,7 @@ export class SoundEngine {
     if (this.contextSoundCount < SoundEngine.CONTEXT_RECYCLE_THRESHOLD) return;
 
     console.log(`[SoundEngine:diag] RECYCLING context at count=${this.contextSoundCount}, ctx.state=${this.ctx?.state}`);
+    const oldSampleRate = this.ctx?.sampleRate;
     const oldCtx = this.ctx;
 
     // Null out references so ensureContext() creates a fresh context
@@ -1234,22 +1303,208 @@ export class SoundEngine {
     if (this.activeTheme.type === 'ghost-signal' && this.activeTheme.theme) {
       this.activateGhostSignalTheme(this.activeTheme.theme);
     }
+
+    // Re-warm buffer cache (async — fallback to live synthesis until ready).
+    // Ghost-signal themes always need re-rendering since they were re-activated
+    // on the new context above. Patch-based buffers survive if sample rate matches.
+    // eslint-disable-next-line -- TS narrows this.ctx to never after the null assignment above,
+    // but ensureContext() re-assigns it. Cast to access the new context.
+    const newSampleRate = (this as unknown as { ctx: AudioContext | null }).ctx?.sampleRate;
+    if (oldSampleRate !== newSampleRate || this.activeTheme.type === 'ghost-signal') {
+      this.warmCache();
+    }
+  }
+
+  // ─── Buffer cache: pre-rendering and playback ─────────────────
+
+  /**
+   * Generate a stable cache key for a SoundPatch.
+   * Uses the base patch definition (before any jitter).
+   */
+  private static patchCacheKey(patch: SoundPatch): string {
+    return JSON.stringify({
+      o: patch.oscillators.map(o => ({
+        w: o.waveform, f: o.frequency, a: o.amplitude,
+        d: o.detune, pe: o.pitchEnvelope, fm: o.fm,
+      })),
+      f: patch.filter ? {
+        t: patch.filter.type, c: patch.filter.cutoff,
+        q: patch.filter.Q, e: patch.filter.envelope,
+      } : null,
+      e: patch.envelope,
+      fx: patch.effects ?? null,
+      p: patch.pan ?? 0,
+    });
   }
 
   /**
-   * Synthesize and play a sound patch.
-   * Creates an ephemeral audio subgraph: oscillators -> filter -> envelope -> effects -> master.
+   * Pre-render a SoundPatch into a cached AudioBuffer via OfflineAudioContext.
    */
-  private synthesize(patch: SoundPatch, eventVolume: number): void {
+  private async prerenderPatch(patch: SoundPatch): Promise<CachedBuffer> {
+    const env = patch.envelope;
+    const duration = env.attack + env.decay + env.sustain * 0.1 + env.release + 0.05;
+    const sampleRate = this.ctx?.sampleRate ?? 44100;
+    const offline = new OfflineAudioContext(1, Math.ceil(sampleRate * duration), sampleRate);
+
+    this.buildSoundGraph(offline, patch, 1.0, offline.destination);
+
+    const rendered = await offline.startRendering();
+    return { buffer: rendered, duration };
+  }
+
+  /**
+   * Pre-render a single ghost-signal sound function into a cached AudioBuffer.
+   * Creates an OfflineAudioContext, builds a proxy that redirects ctx.destination,
+   * invokes the sound function, and renders.
+   */
+  private async prerenderGhostSignalSound(
+    theme: GhostSignalTheme,
+    soundKey: string,
+    duration: number,
+  ): Promise<CachedBuffer> {
+    const sampleRate = this.ctx?.sampleRate ?? 44100;
+    const length = Math.max(1, Math.ceil(sampleRate * duration));
+    const offline = new OfflineAudioContext(1, length, sampleRate);
+
+    // Noise buffer helper for the offline context
+    const noiseBuffer = (dur = 0.1): AudioBuffer => {
+      const len = Math.ceil(sampleRate * dur);
+      const buf = offline.createBuffer(1, len, sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      return buf;
+    };
+
+    // Proxy: redirect .destination to offline.destination, bind methods to offline ctx.
+    // The ghost-signal createSounds() expects an AudioContext but only uses
+    // BaseAudioContext methods (create*, destination, currentTime, sampleRate).
+    const offlineRef = offline;
+    const proxy = new Proxy(offline as unknown as AudioContext, {
+      get(_target: AudioContext, prop: string | symbol): unknown {
+        if (prop === 'destination') return offlineRef.destination;
+        const val = Reflect.get(offlineRef, prop);
+        if (typeof val === 'function') return (val as Function).bind(offlineRef);
+        return val;
+      },
+    });
+
+    // Create all sound functions, invoke only the one we want
+    const allSounds = theme.createSounds(proxy, noiseBuffer);
+    const fn = allSounds[soundKey];
+    if (fn) fn();
+
+    const rendered = await offline.startRendering();
+    return { buffer: rendered, duration };
+  }
+
+  /**
+   * Play a pre-rendered cached buffer. Creates only 2 nodes: source + gain.
+   */
+  private playCached(cached: CachedBuffer, volume: number): void {
     const ctx = this.ctx!;
+    const source = ctx.createBufferSource();
+    source.buffer = cached.buffer;
+
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+
+    source.connect(gain);
+    gain.connect(this.compressor!);
+
+    const soundId = this.trackSound(cached.duration * 1000 + 200);
+    source.addEventListener('ended', () => {
+      this.untrackSound(soundId);
+      try { source.disconnect(); } catch { /* ok */ }
+      try { gain.disconnect(); } catch { /* ok */ }
+    }, { once: true });
+
+    source.start();
+  }
+
+  /**
+   * Pre-render all sounds for the current theme into the buffer cache.
+   * Async and non-blocking — sounds fall back to live synthesis until ready.
+   */
+  private async warmCache(): Promise<void> {
+    this.bufferCache.clear();
+    this.typingLetterPool = [];
+    this.typingLetterIndex = 0;
+
+    try {
+      if (this.activeTheme.type === 'ghost-signal' && this.activeTheme.theme) {
+        const theme = this.activeTheme.theme;
+
+        // Pre-render all ghost-signal sounds (except TYPING_LETTER which gets a pool)
+        for (const [key, dur] of Object.entries(SoundEngine.GS_SOUND_DURATIONS)) {
+          if (key === 'TYPING_LETTER') continue;
+          try {
+            const cached = await this.prerenderGhostSignalSound(theme, key, dur);
+            this.bufferCache.set(`gs:${key}`, cached);
+          } catch {
+            // Skip this sound — live fallback will handle it
+          }
+        }
+
+        // Pre-render TYPING_LETTER pool (each call gets different Math.random() values)
+        for (let i = 0; i < SoundEngine.TYPING_LETTER_POOL_SIZE; i++) {
+          try {
+            this.typingLetterPool.push(
+              await this.prerenderGhostSignalSound(theme, 'TYPING_LETTER', 0.04),
+            );
+          } catch {
+            // Partial pool is fine — live fallback for remaining
+          }
+        }
+
+        console.log(
+          `[SoundEngine] Cache warmed: ${this.bufferCache.size} ghost-signal sounds + ` +
+          `${this.typingLetterPool.length} TYPING_LETTER variants`,
+        );
+      } else {
+        // Patch-based: pre-render all event patches + all keyboard patches
+        for (const [, patch] of Object.entries(this.patches)) {
+          if (!patch) continue;
+          const key = SoundEngine.patchCacheKey(patch);
+          if (!this.bufferCache.has(key)) {
+            try {
+              this.bufferCache.set(key, await this.prerenderPatch(patch));
+            } catch { /* skip — live fallback */ }
+          }
+        }
+        for (const [, patchSet] of Object.entries(KEYBOARD_PATCHES)) {
+          for (const phase of ['press', 'release'] as const) {
+            const patch = patchSet[phase];
+            const key = SoundEngine.patchCacheKey(patch);
+            if (!this.bufferCache.has(key)) {
+              try {
+                this.bufferCache.set(key, await this.prerenderPatch(patch));
+              } catch { /* skip — live fallback */ }
+            }
+          }
+        }
+
+        console.log(`[SoundEngine] Cache warmed: ${this.bufferCache.size} patch-based sounds`);
+      }
+    } catch (err) {
+      console.error('[SoundEngine] Cache warming failed, using live synthesis:', err);
+    }
+  }
+
+  /**
+   * Build a sound graph for a patch on any audio context (live or offline).
+   * Creates oscillators, filter, envelope, effects, pan — connects to destination.
+   * Returns all created nodes for cleanup.
+   */
+  private buildSoundGraph(
+    ctx: BaseAudioContext,
+    patch: SoundPatch,
+    volume: number,
+    destination: AudioNode,
+  ): { nodes: AudioNode[]; oscNodes: Array<OscillatorNode | AudioBufferSourceNode>; duration: number } {
     const now = ctx.currentTime;
     const env = patch.envelope;
     const totalDuration = env.attack + env.decay + env.sustain * 0.1 + env.release + 0.05;
     const endTime = now + totalDuration;
-
-    // Track active sound — use 'ended' event on first oscillator for accurate cleanup,
-    // with a safety-net timeout in case the event doesn't fire
-    const soundId = this.trackSound(totalDuration * 1000 + 500);
 
     // ─── Build oscillator sources ───
 
@@ -1259,11 +1514,11 @@ export class SoundEngine {
     for (const oscDef of patch.oscillators) {
       let source: OscillatorNode | AudioBufferSourceNode;
       const oscGain = ctx.createGain();
-      oscGain.gain.value = oscDef.amplitude * eventVolume;
+      oscGain.gain.value = oscDef.amplitude * volume;
 
       if (oscDef.waveform === 'white-noise' || oscDef.waveform === 'pink-noise') {
         // Noise generator
-        source = this.createNoiseSource(ctx, oscDef.waveform, totalDuration);
+        source = SoundEngine.createNoiseSourceOn(ctx, oscDef.waveform, totalDuration);
       } else {
         // Standard oscillator
         const osc = ctx.createOscillator();
@@ -1406,15 +1661,12 @@ export class SoundEngine {
       panOutput = panner;
     }
 
-    // ─── Connect to master ───
+    // ─── Connect to destination ───
 
-    panOutput.connect(this.compressor!);
+    panOutput.connect(destination);
 
-    // ─── Start, schedule stop, and set up cleanup via 'ended' event ───
+    // ─── Collect all nodes ───
 
-    // Collect ALL nodes in the chain for complete disconnection.
-    // Incomplete cleanup leaves orphaned nodes (especially delay feedback
-    // loops) connected to the audio graph, degrading quality over time.
     const allNodes: AudioNode[] = [
       ...oscNodes, ...oscGains, ...fmGains, ...effectNodes,
       busMerge, envGain,
@@ -1422,30 +1674,48 @@ export class SoundEngine {
     if (filteredOutput !== busMerge) allNodes.push(filteredOutput); // biquad filter
     if (panOutput !== effectsOutput) allNodes.push(panOutput);      // stereo panner
 
+    // ─── Start oscillators ───
+
+    for (const source of oscNodes) {
+      source.start(now);
+      source.stop(endTime);
+    }
+
+    return { nodes: allNodes, oscNodes, duration: totalDuration };
+  }
+
+  /**
+   * Synthesize and play a sound patch (live, non-cached fallback).
+   * Creates an ephemeral audio subgraph: oscillators -> filter -> envelope -> effects -> master.
+   */
+  private synthesize(patch: SoundPatch, eventVolume: number): void {
+    const { nodes, oscNodes, duration } = this.buildSoundGraph(
+      this.ctx!, patch, eventVolume, this.compressor!,
+    );
+
+    // Track active sound — use 'ended' event on first oscillator for accurate cleanup,
+    // with a safety-net timeout in case the event doesn't fire
+    const soundId = this.trackSound(duration * 1000 + 500);
+
     const cleanupNodes = (): void => {
       this.untrackSound(soundId);
-      for (const node of allNodes) {
+      for (const node of nodes) {
         try { node.disconnect(); } catch { /* already disconnected */ }
       }
     };
 
-    let cleanedUp = false;
-    for (const source of oscNodes) {
-      source.start(now);
-      source.stop(endTime);
-      // Use 'ended' event on the first oscillator for precise cleanup timing
-      if (!cleanedUp) {
-        cleanedUp = true;
-        source.addEventListener('ended', cleanupNodes, { once: true });
-      }
+    // Attach cleanup to first oscillator's 'ended' event
+    if (oscNodes.length > 0) {
+      oscNodes[0].addEventListener('ended', cleanupNodes, { once: true });
     }
   }
 
   /**
    * Create a noise source (white or pink noise) as an AudioBufferSourceNode.
+   * Static so it can work with both AudioContext and OfflineAudioContext.
    */
-  private createNoiseSource(
-    ctx: AudioContext,
+  private static createNoiseSourceOn(
+    ctx: BaseAudioContext,
     type: 'white-noise' | 'pink-noise',
     duration: number,
   ): AudioBufferSourceNode {

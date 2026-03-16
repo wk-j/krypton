@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-16 (M8: backdrop-filter removal — macOS transparency fix)
+> Last updated: 2026-03-16 (M8: sound buffer cache — pre-rendered AudioBuffer playback)
 
 ## Overview
 
@@ -14,7 +14,7 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 14/15 |
-| M8 — Polish | In Progress | 10/12 |
+| M8 — Polish | In Progress | 11/12 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -129,6 +129,7 @@
 - [ ] IME support testing and fixes
 - [ ] Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)
 - [x] Fix macOS transparency freeze — removed `backdrop-filter: blur()` from all elements (`.krypton-window`, Quick Terminal, which-key, command palette, dashboard, hint-toast). On macOS, `backdrop-filter` in a transparent WKWebView causes the compositor to snapshot/freeze the desktop behind terminal windows when focused. Also added `.xterm-scrollable-element` CSS override to fix xterm.js setting opaque inline `backgroundColor`. See `docs/24-backdrop-filter-removal.md`.
+- [x] Sound buffer cache — pre-render all sounds (both patch-based and ghost-signal themes) into `AudioBuffer`s via `OfflineAudioContext` at theme load time. Cached playback uses only 2 Web Audio nodes (`AudioBufferSourceNode` + `GainNode`) instead of 10-18 per sound. Ghost-signal `TYPING_LETTER` pre-renders 8 variants in a round-robin pool for natural variation. Context recycle threshold raised from 50k to 500k. Falls back to live synthesis while cache warms. See `docs/25-sound-buffer-cache.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 
