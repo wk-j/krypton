@@ -383,6 +383,17 @@ export class Compositor {
         ?? 'rgba(6, 10, 18, 0.5)';
       root.setProperty('--krypton-backdrop-color', replaceAlpha(themeBackdrop, opacity));
 
+      // Also override quick terminal background alpha with config opacity.
+      const themeQtBg = this.themeEngine?.theme?.ui?.quick_terminal?.background
+        ?? 'rgba(6, 10, 18, 0.6)';
+      root.setProperty('--krypton-qt-bg', replaceAlpha(themeQtBg, opacity));
+
+      // Also override dashboard backdrop and panel alpha with config opacity.
+      root.setProperty('--krypton-dashboard-backdrop', `rgba(0, 0, 0, ${opacity * 0.6})`);
+      const themeBg = this.themeEngine?.theme?.colors?.background
+        ?? 'rgba(10, 10, 15, 0.95)';
+      root.setProperty('--krypton-dashboard-panel-bg', replaceAlpha(themeBg, Math.min(1, opacity + 0.3)));
+
       // Update existing terminals so their background alpha matches
       this.updateTerminalThemes();
     }

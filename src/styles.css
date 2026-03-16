@@ -1144,7 +1144,7 @@ html, body {
 .krypton-dashboard__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--krypton-dashboard-backdrop, rgba(0, 0, 0, 0.5));
 }
 
 .krypton-dashboard__panel {
@@ -1153,7 +1153,7 @@ html, body {
   height: 80vh;
   max-width: 1200px;
   max-height: 900px;
-  background: var(--krypton-bg, rgba(10, 10, 15, 0.95));
+  background: var(--krypton-dashboard-panel-bg, var(--krypton-bg, rgba(10, 10, 15, 0.95)));
   border: 1px solid var(--krypton-border-color, rgba(0, 200, 255, 0.15));
   border-radius: 8px;
   display: flex;
