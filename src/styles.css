@@ -1154,14 +1154,12 @@ html, body {
   max-width: 1200px;
   max-height: 900px;
   background: var(--krypton-dashboard-panel-bg, var(--krypton-bg, rgba(10, 10, 15, 0.95)));
-  border: 1px solid var(--krypton-border-color, rgba(0, 200, 255, 0.15));
-  border-radius: 8px;
+  border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  border-radius: var(--krypton-border-radius, 0px);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  box-shadow:
-    0 0 40px rgba(0, 0, 0, 0.6),
-    0 0 1px rgba(0, 200, 255, 0.2);
+  overflow: visible;
+  box-shadow: 0 0 var(--krypton-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
   transform: scale(0.96);
   transition: transform 0.15s ease;
 }
@@ -1175,7 +1173,6 @@ html, body {
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  border-bottom: 1px solid var(--krypton-border-color, rgba(0, 200, 255, 0.1));
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.02);
 }

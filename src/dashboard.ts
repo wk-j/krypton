@@ -347,12 +347,24 @@ export class DashboardManager {
     headerEnd.appendChild(closeBtn);
     header.appendChild(headerEnd);
 
+    // Header accent bar (match krypton-window chrome)
+    const headerAccent = document.createElement('div');
+    headerAccent.className = 'krypton-window__header-accent';
+
     // ─── Content ────────────────────────────────────────────────
     const content = document.createElement('div');
     content.className = 'krypton-dashboard__content';
     this.tabContent = content;
 
+    // Corner accent elements (match krypton-window chrome)
+    for (const pos of ['tl', 'tr', 'bl', 'br']) {
+      const corner = document.createElement('div');
+      corner.className = `krypton-window__corner krypton-window__corner--${pos}`;
+      panel.appendChild(corner);
+    }
+
     panel.appendChild(header);
+    panel.appendChild(headerAccent);
     panel.appendChild(content);
 
     overlay.appendChild(backdrop);
