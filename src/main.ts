@@ -83,6 +83,9 @@ async function main(): Promise<void> {
 
   // Play startup sound after first window is ready
   compositor.soundEngine.play('startup');
+
+  // Diagnostic logging — remove after root cause is identified
+  compositor.soundEngine.startDiagnostics();
 }
 
 main().catch(console.error);

@@ -661,6 +661,75 @@ export class SoundEngine {
   /** Flag to prevent play() during async theme loading */
   private themeLoading = false;
 
+  // ─── Diagnostics ──────────────────────────────────────────────
+  private totalSoundsAttempted = 0;
+  private totalSoundsPlayed = 0;
+  private dropReasons: Record<string, number> = {};
+  private diagInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** Start periodic diagnostic logging. Call once after init. */
+  startDiagnostics(): void {
+    if (this.diagInterval) return;
+    console.log('[SoundEngine:diag] diagnostics ON, theme=' + this.config.pack);
+    this.diagInterval = setInterval(() => this.logDiag(), 30_000);
+  }
+
+  private logDiag(): void {
+    const ctx = this.ctx;
+    let extraInfo = '';
+
+    // Check if ghost-signal gain node is still connected and has valid gain
+    if (this.ghostSignalGain) {
+      extraInfo += ` gsGain=${this.ghostSignalGain.gain.value.toFixed(3)}`;
+      extraInfo += ` gsGainCtx=${this.ghostSignalGain.context === ctx ? 'same' : 'STALE'}`;
+    }
+    if (this.compressor) {
+      extraInfo += ` compCtx=${this.compressor.context === ctx ? 'same' : 'STALE'}`;
+    }
+    if (this.masterGain) {
+      extraInfo += ` masterGain=${this.masterGain.gain.value.toFixed(3)}`;
+      extraInfo += ` masterCtx=${this.masterGain.context === ctx ? 'same' : 'STALE'}`;
+    }
+
+    // Test if audio graph actually works: create a silent oscillator and check
+    if (ctx && ctx.state === 'running') {
+      try {
+        const testOsc = ctx.createOscillator();
+        const testGain = ctx.createGain();
+        testGain.gain.value = 0; // silent
+        testOsc.connect(testGain).connect(ctx.destination);
+        testOsc.start();
+        testOsc.stop(ctx.currentTime + 0.001);
+        extraInfo += ' testNode=ok';
+        // Clean up
+        setTimeout(() => {
+          try { testOsc.disconnect(); testGain.disconnect(); } catch { /* ok */ }
+        }, 50);
+      } catch (err) {
+        extraInfo += ` testNode=FAIL(${err})`;
+      }
+    }
+
+    // Check ghost-signal proxy: is its destination still the gsGain?
+    if (this.activeTheme.type === 'ghost-signal' && this.ghostSignalCtx) {
+      const proxyDest = this.ghostSignalCtx.destination;
+      extraInfo += ` proxyDest=${(proxyDest as unknown) === this.ghostSignalGain ? 'gsGain' : 'OTHER'}`;
+      extraInfo += ` proxySameCtx=${(this.ghostSignalCtx as unknown as { __target?: AudioContext }).__target === ctx ? 'yes' : 'unknown'}`;
+    }
+
+    console.log(
+      `[SoundEngine:diag] ctx=${ctx?.state ?? 'null'} ` +
+      `active=${this.activeSoundIds.size} ctxSounds=${this.contextSoundCount} ` +
+      `attempted=${this.totalSoundsAttempted} played=${this.totalSoundsPlayed} ` +
+      `resuming=${this.resuming} themeType=${this.activeTheme.type} ` +
+      `drops=${JSON.stringify(this.dropReasons)}${extraInfo}`
+    );
+  }
+
+  private drop(reason: string): void {
+    this.dropReasons[reason] = (this.dropReasons[reason] ?? 0) + 1;
+  }
+
   /**
    * Apply sound configuration. Call after loading config from backend.
    * If the pack changed, triggers async theme loading.
@@ -802,8 +871,14 @@ export class SoundEngine {
 
     // Wrap each sound function to auto-disconnect all nodes after playback
     const wrappedSounds: Record<string, () => void> = {};
+    let totalNodesCreated = 0;
+    let totalNodesDisconnected = 0;
+    let invocationCount = 0;
+
     for (const [key, fn] of Object.entries(rawSounds)) {
       wrappedSounds[key] = () => {
+        invocationCount++;
+        const callNum = invocationCount;
         // Start collecting nodes created during this call
         const nodes: AudioNode[] = [];
         activeCollector = nodes;
@@ -812,14 +887,27 @@ export class SoundEngine {
         } finally {
           activeCollector = null;
         }
+        totalNodesCreated += nodes.length;
+
+        // Log every 100th invocation for ongoing monitoring
+        if (callNum <= 3 || callNum % 100 === 0) {
+          console.log(
+            `[SoundEngine:diag] gs-invoke #${callNum} key=${key} nodes=${nodes.length} ` +
+            `totalNodes=${totalNodesCreated} totalDisconnected=${totalNodesDisconnected} ` +
+            `ctxTime=${realCtx.currentTime.toFixed(3)} ctxState=${realCtx.state}`
+          );
+        }
+
         // Schedule cleanup: disconnect all nodes after the sound decays.
         // APP_START sounds are 1.2-1.4s; all others are < 0.5s.
         const cleanupDelay = key === 'APP_START' ? 2000 : 600;
         if (nodes.length > 0) {
           setTimeout(() => {
+            let disconnected = 0;
             for (const node of nodes) {
-              try { node.disconnect(); } catch { /* already disconnected */ }
+              try { node.disconnect(); disconnected++; } catch { /* already disconnected */ }
             }
+            totalNodesDisconnected += disconnected;
           }, cleanupDelay);
         }
       };
@@ -884,21 +972,27 @@ export class SoundEngine {
    * Throttled: skips if previous press is still within throttle window.
    */
   playKeypress(phase: 'press' | 'release', key?: string): void {
-    if (!this.config.enabled || this.themeLoading) return;
+    if (phase === 'press') this.totalSoundsAttempted++;
+    if (!this.config.enabled) { this.drop('disabled'); return; }
+    if (this.themeLoading) { this.drop('theme_loading'); return; }
 
     // Check per-event override for keypress
     const eventConfig = this.config.events['keypress'];
-    if (eventConfig === false) return;
+    if (eventConfig === false) { this.drop('event_off'); return; }
 
     // Throttle: skip if too soon after last press
     const now = performance.now();
     if (phase === 'press') {
-      if (now - this.lastKeypressTime < SoundEngine.KEYPRESS_THROTTLE_MS) return;
+      if (now - this.lastKeypressTime < SoundEngine.KEYPRESS_THROTTLE_MS) {
+        this.drop('throttle'); return;
+      }
       this.lastKeypressTime = now;
     }
 
     // Max concurrent check
-    if (this.activeSoundIds.size >= SoundEngine.MAX_CONCURRENT) return;
+    if (this.activeSoundIds.size >= SoundEngine.MAX_CONCURRENT) {
+      this.drop('max_concurrent'); return;
+    }
 
     // ─── Ghost-signal theme: use TYPING_* functions ───
     if (this.activeTheme.type === 'ghost-signal') {
@@ -920,9 +1014,17 @@ export class SoundEngine {
       const fn = sounds[soundId];
       if (fn) {
         const id = this.trackSound(200);
-        fn();
-        void id; // sound tracked via trackSound timeout
+        try {
+          fn();
+          this.totalSoundsPlayed++;
+        } catch (err) {
+          this.drop('gs_throw');
+          console.error('[SoundEngine:diag] ghost-signal threw:', err);
+        }
+        void id;
         this.maybeRecycleContext();
+      } else {
+        this.drop('no_fn');
       }
       return;
     }
@@ -960,9 +1062,10 @@ export class SoundEngine {
     };
 
     this.ensureContext();
-    if (!this.ctx || !this.masterGain) return;
+    if (!this.ctx || !this.masterGain) { this.drop('no_ctx_patch'); return; }
 
     this.synthesize(patch, volume);
+    this.totalSoundsPlayed++;
     this.maybeRecycleContext();
   }
 
@@ -1048,6 +1151,7 @@ export class SoundEngine {
       // null everything so the next ensureContext() recreates from scratch.
       // If suspended (display sleep, background), auto-resume.
       this.ctx.addEventListener('statechange', () => {
+        console.log(`[SoundEngine:diag] statechange: ${this.ctx?.state ?? 'null'}`);
         if (!this.ctx) return;
         if (this.ctx.state === 'closed') {
           this.ctx = null;
@@ -1104,6 +1208,7 @@ export class SoundEngine {
     this.contextSoundCount++;
     if (this.contextSoundCount < SoundEngine.CONTEXT_RECYCLE_THRESHOLD) return;
 
+    console.log(`[SoundEngine:diag] RECYCLING context at count=${this.contextSoundCount}, ctx.state=${this.ctx?.state}`);
     const oldCtx = this.ctx;
 
     // Null out references so ensureContext() creates a fresh context
