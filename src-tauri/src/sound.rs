@@ -66,6 +66,10 @@ fn available_packs() -> Vec<SoundPack> {
             id: "mach-line".into(),
             display_name: "Mach Line".into(),
         },
+        SoundPack {
+            id: "holo-dash".into(),
+            display_name: "Holo Dash".into(),
+        },
     ]
 }
 

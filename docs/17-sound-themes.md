@@ -47,6 +47,7 @@ Key properties:
 |------|-----------|-------------|
 | `deep-glyph` (default) | `src-tauri/sounds/deep-glyph/` | Rich, deep UI sounds |
 | `mach-line` | `src-tauri/sounds/mach-line/` | Sharp, mechanical interface tones |
+| `holo-dash` | `src-tauri/sounds/holo-dash/` | Holographic dashboard interface tones |
 
 ### WAV File Convention
 
@@ -73,6 +74,7 @@ fn available_packs() -> Vec<SoundPack> {
     vec![
         SoundPack { id: "deep-glyph".into(), display_name: "Deep Glyph".into() },
         SoundPack { id: "mach-line".into(), display_name: "Mach Line".into() },
+        SoundPack { id: "holo-dash".into(), display_name: "Holo Dash".into() },
     ]
 }
 ```
@@ -237,7 +239,7 @@ When the user switches packs (via command palette or config change):
 [sound]
 enabled = true              # master toggle
 volume = 0.5                # 0.0-1.0
-pack = "deep-glyph"         # "deep-glyph" | "mach-line"
+pack = "deep-glyph"         # "deep-glyph" | "mach-line" | "holo-dash"
 keyboard_type = "cherry-mx-brown"  # reserved for future use
 keyboard_volume = 1.0       # 0.0-1.0 multiplier for typing sounds
 
@@ -299,6 +301,7 @@ The command palette dynamically lists all available packs under the "Sound Theme
 | `src/main.ts` | Startup sound |
 | `src-tauri/sounds/deep-glyph/` | 17 WAV files — Deep Glyph pack (bundled as Tauri resource) |
 | `src-tauri/sounds/mach-line/` | 17 WAV files — Mach Line pack (bundled as Tauri resource) |
+| `src-tauri/sounds/holo-dash/` | 17 WAV files — Holo Dash pack (bundled as Tauri resource) |
 
 ---
 

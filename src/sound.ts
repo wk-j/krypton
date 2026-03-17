@@ -66,6 +66,7 @@ export const DEFAULT_SOUND_CONFIG: SoundConfig = {
 const PACK_DISPLAY_NAMES: Record<string, string> = {
   'deep-glyph': 'Deep Glyph',
   'mach-line': 'Mach Line',
+  'holo-dash': 'Holo Dash',
 };
 
 // ─── Backend response types ──────────────────────────────────────
