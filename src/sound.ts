@@ -1,67 +1,8 @@
-// Krypton — Sound Engine
-// Procedural sound effects via Web Audio API.
-// Supports two theme types:
-//   1. Patch-based (krypton-cyber) — declarative oscillator/filter/envelope definitions
-//   2. Ghost-signal — function-based themes with fire-and-forget sound functions
-
-import type { GhostSignalTheme } from './sound-themes/types';
+// Krypton — Sound Engine (WAV-based)
+// Plays pre-rendered WAV files via Web Audio API.
+// Eliminates real-time synthesis to avoid AudioContext degradation bugs.
 
 // ─── Types ────────────────────────────────────────────────────────
-
-/** Oscillator waveform types including noise generators */
-type Waveform = 'sine' | 'square' | 'sawtooth' | 'triangle' | 'white-noise' | 'pink-noise';
-
-/** A single oscillator partial within a patch */
-interface OscillatorDef {
-  waveform: Waveform;
-  frequency: number;
-  amplitude: number;
-  detune?: number;
-  /** Pitch envelope: sweep frequency from start to end over duration (seconds) */
-  pitchEnvelope?: { start: number; end: number; duration: number };
-  /** FM synthesis: modulate this oscillator's frequency using another oscillator's output */
-  fm?: { modulatorIndex: number; depth: number };
-}
-
-/** Filter definition for subtractive synthesis */
-interface FilterDef {
-  type: BiquadFilterType;
-  cutoff: number;
-  Q: number;
-  /** Filter cutoff envelope: sweep from start to end over duration (seconds) */
-  envelope?: { start: number; end: number; duration: number };
-}
-
-/** ADSR amplitude envelope */
-interface EnvelopeDef {
-  attack: number;
-  decay: number;
-  sustain: number;
-  release: number;
-}
-
-/** Optional effects */
-interface EffectsDef {
-  reverb?: { duration: number; decay: number };
-  delay?: { time: number; feedback: number };
-  distortion?: { amount: number };
-}
-
-/** Pre-rendered sound buffer for cache playback */
-interface CachedBuffer {
-  buffer: AudioBuffer;
-  /** Duration in seconds */
-  duration: number;
-}
-
-/** Complete sound patch definition */
-export interface SoundPatch {
-  oscillators: OscillatorDef[];
-  filter?: FilterDef;
-  envelope: EnvelopeDef;
-  effects?: EffectsDef;
-  pan?: number;
-}
 
 /** Sound event names */
 export type SoundEvent =
@@ -98,22 +39,6 @@ export type SoundEvent =
   | 'pane.focus'
   | 'startup';
 
-/** Keyboard type for keypress sounds */
-export type KeyboardType =
-  | 'cherry-mx-blue'
-  | 'cherry-mx-red'
-  | 'cherry-mx-brown'
-  | 'topre'
-  | 'buckling-spring'
-  | 'membrane'
-  | 'none';
-
-/** A keypress sound set: press (key down) and release (key up) patches */
-interface KeypressPatchSet {
-  press: SoundPatch;
-  release: SoundPatch;
-}
-
 /** Sound configuration (mirrors TOML [sound] section) */
 export interface SoundConfig {
   enabled: boolean;
@@ -128,16 +53,16 @@ export interface SoundConfig {
 export const DEFAULT_SOUND_CONFIG: SoundConfig = {
   enabled: true,
   volume: 0.5,
-  pack: 'krypton-cyber',
+  pack: 'deep-glyph',
   keyboard_type: 'cherry-mx-brown',
   keyboard_volume: 1.0,
   events: {},
 };
 
-// ─── Ghost-signal Event Mapping ──────────────────────────────────
-// Maps Krypton SoundEvent names to ghost-signal sound IDs.
+// ─── WAV Sound ID mapping ────────────────────────────────────────
+// Maps Krypton SoundEvent names to WAV file base names.
 
-const GHOST_SIGNAL_EVENT_MAP: Record<SoundEvent, string> = {
+const EVENT_TO_WAV: Record<SoundEvent, string> = {
   'startup':                'APP_START',
   'window.create':          'TAB_INSERT',
   'window.close':           'TAB_CLOSE',
@@ -172,458 +97,13 @@ const GHOST_SIGNAL_EVENT_MAP: Record<SoundEvent, string> = {
   'pane.focus':             'HOVER',
 };
 
-// ─── Ghost-signal Built-in Theme Registry ────────────────────────
-// Lazy-loaded via dynamic import() — only the active theme is loaded.
-
-const GHOST_SIGNAL_THEMES: Record<string, () => Promise<GhostSignalTheme>> = {
-  'ghost-signal':  () => import('./sound-themes/ghost-signal').then(m => m.default),
-  'chill-city-fm': () => import('./sound-themes/chill-city-fm').then(m => m.default),
-  'orbit-deck':    () => import('./sound-themes/orbit-deck').then(m => m.default),
-  'mach-line':     () => import('./sound-themes/mach-line').then(m => m.default),
-  'deep-glyph':    () => import('./sound-themes/deep-glyph').then(m => m.default),
-};
-
-/**
- * Resolved sound theme: either patch-based (krypton-native) or function-based (ghost-signal).
- */
-type ActiveSoundTheme =
-  | { type: 'patches'; patches: Record<string, SoundPatch> }
-  | { type: 'ghost-signal'; sounds: Record<string, () => void>; theme: GhostSignalTheme };
-
-// ─── Built-in Krypton Cyber Sound Pack ───────────────────────────
-
-const KRYPTON_CYBER: Record<SoundEvent, SoundPatch> = {
-  // ─── Action event sounds — tonal cues (distinct from keypress clicks) ──
-  // These use sine/triangle tones, not noise bursts. Quiet, short, musical.
-  // Keypress sounds are handled separately by the keyboard type system.
-
-  // Window create: rising two-note blip
-  'window.create': {
-    oscillators: [
-      { waveform: 'sine', frequency: 220, amplitude: 0.08,
-        pitchEnvelope: { start: 180, end: 260, duration: 0.04 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 800, Q: 0.7 },
-    envelope: { attack: 0.002, decay: 0.04, sustain: 0.0, release: 0.02 },
-  },
-
-  // Window close: falling tone
-  'window.close': {
-    oscillators: [
-      { waveform: 'sine', frequency: 200, amplitude: 0.07,
-        pitchEnvelope: { start: 240, end: 140, duration: 0.05 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 700, Q: 0.7 },
-    envelope: { attack: 0.002, decay: 0.05, sustain: 0.0, release: 0.025 },
-  },
-
-  // Window focus: tiny soft ping
-  'window.focus': {
-    oscillators: [
-      { waveform: 'triangle', frequency: 400, amplitude: 0.04 },
-    ],
-    filter: { type: 'lowpass', cutoff: 1000, Q: 0.5 },
-    envelope: { attack: 0.001, decay: 0.02, sustain: 0.0, release: 0.01 },
-  },
-
-  // Window maximize: rising fifth interval
-  'window.maximize': {
-    oscillators: [
-      { waveform: 'sine', frequency: 200, amplitude: 0.06 },
-      { waveform: 'sine', frequency: 300, amplitude: 0.04 },
-    ],
-    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
-    envelope: { attack: 0.003, decay: 0.05, sustain: 0.0, release: 0.025 },
-  },
-
-  // Window restore: falling fourth interval
-  'window.restore': {
-    oscillators: [
-      { waveform: 'sine', frequency: 300, amplitude: 0.05 },
-      { waveform: 'sine', frequency: 200, amplitude: 0.04 },
-    ],
-    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
-    envelope: { attack: 0.003, decay: 0.05, sustain: 0.0, release: 0.025 },
-  },
-
-  // Window pin: short rising click (lock into place)
-  'window.pin': {
-    oscillators: [
-      { waveform: 'sine', frequency: 600, amplitude: 0.05,
-        pitchEnvelope: { start: 400, end: 700, duration: 0.04 } },
-      { waveform: 'triangle', frequency: 800, amplitude: 0.03 },
-    ],
-    filter: { type: 'lowpass', cutoff: 1200, Q: 0.8 },
-    envelope: { attack: 0.001, decay: 0.03, sustain: 0.0, release: 0.015 },
-  },
-
-  // Window unpin: short falling click (release)
-  'window.unpin': {
-    oscillators: [
-      { waveform: 'sine', frequency: 500, amplitude: 0.04,
-        pitchEnvelope: { start: 700, end: 350, duration: 0.04 } },
-      { waveform: 'triangle', frequency: 400, amplitude: 0.02 },
-    ],
-    filter: { type: 'lowpass', cutoff: 1000, Q: 0.7 },
-    envelope: { attack: 0.001, decay: 0.03, sustain: 0.0, release: 0.015 },
-  },
-
-  // Mode enter: short high blip
-  'mode.enter': {
-    oscillators: [
-      { waveform: 'sine', frequency: 500, amplitude: 0.06 },
-    ],
-    filter: { type: 'lowpass', cutoff: 1200, Q: 0.7 },
-    envelope: { attack: 0.001, decay: 0.025, sustain: 0.0, release: 0.012 },
-  },
-
-  // Mode exit: lower blip
-  'mode.exit': {
-    oscillators: [
-      { waveform: 'sine', frequency: 350, amplitude: 0.04 },
-    ],
-    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
-    envelope: { attack: 0.002, decay: 0.025, sustain: 0.0, release: 0.012 },
-  },
-
-  // Quick Terminal show: warm rising tone
-  'quick_terminal.show': {
-    oscillators: [
-      { waveform: 'sine', frequency: 250, amplitude: 0.07,
-        pitchEnvelope: { start: 200, end: 300, duration: 0.06 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 800, Q: 0.7 },
-    envelope: { attack: 0.003, decay: 0.06, sustain: 0.0, release: 0.03 },
-  },
-
-  // Quick Terminal hide: warm falling tone
-  'quick_terminal.hide': {
-    oscillators: [
-      { waveform: 'sine', frequency: 280, amplitude: 0.05,
-        pitchEnvelope: { start: 300, end: 200, duration: 0.06 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 800, Q: 0.7 },
-    envelope: { attack: 0.003, decay: 0.06, sustain: 0.0, release: 0.03 },
-  },
-
-  // Workspace switch: gentle whoosh (noise + tone)
-  'workspace.switch': {
-    oscillators: [
-      { waveform: 'sine', frequency: 180, amplitude: 0.05,
-        pitchEnvelope: { start: 150, end: 220, duration: 0.08 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 700, Q: 0.7 },
-    envelope: { attack: 0.005, decay: 0.07, sustain: 0.0, release: 0.035 },
-    pan: 0.3,
-  },
-
-  // Command palette open: two-note ascending
-  'command_palette.open': {
-    oscillators: [
-      { waveform: 'triangle', frequency: 300, amplitude: 0.05 },
-      { waveform: 'triangle', frequency: 400, amplitude: 0.03 },
-    ],
-    filter: { type: 'lowpass', cutoff: 1000, Q: 0.5 },
-    envelope: { attack: 0.002, decay: 0.04, sustain: 0.0, release: 0.02 },
-  },
-
-  // Command palette close: single descending note
-  'command_palette.close': {
-    oscillators: [
-      { waveform: 'triangle', frequency: 350, amplitude: 0.03,
-        pitchEnvelope: { start: 380, end: 280, duration: 0.03 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 800, Q: 0.5 },
-    envelope: { attack: 0.002, decay: 0.03, sustain: 0.0, release: 0.015 },
-  },
-
-  // Command palette execute: confirmation ping
-  'command_palette.execute': {
-    oscillators: [
-      { waveform: 'sine', frequency: 440, amplitude: 0.06 },
-    ],
-    filter: { type: 'lowpass', cutoff: 1200, Q: 0.7 },
-    envelope: { attack: 0.001, decay: 0.04, sustain: 0.0, release: 0.02 },
-  },
-
-  // Hint activate: scanning sweep (rising shimmer)
-  'hint.activate': {
-    oscillators: [
-      { waveform: 'triangle', frequency: 350, amplitude: 0.05,
-        pitchEnvelope: { start: 300, end: 450, duration: 0.05 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 1100, Q: 0.6 },
-    envelope: { attack: 0.002, decay: 0.04, sustain: 0.0, release: 0.02 },
-  },
-
-  // Hint select: confirmation click (short, decisive)
-  'hint.select': {
-    oscillators: [
-      { waveform: 'sine', frequency: 480, amplitude: 0.06 },
-      { waveform: 'sine', frequency: 600, amplitude: 0.03 },
-    ],
-    filter: { type: 'lowpass', cutoff: 1400, Q: 0.7 },
-    envelope: { attack: 0.001, decay: 0.03, sustain: 0.0, release: 0.015 },
-  },
-
-  // Hint cancel: soft descending blip
-  'hint.cancel': {
-    oscillators: [
-      { waveform: 'triangle', frequency: 320, amplitude: 0.03,
-        pitchEnvelope: { start: 350, end: 250, duration: 0.03 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 800, Q: 0.5 },
-    envelope: { attack: 0.002, decay: 0.03, sustain: 0.0, release: 0.015 },
-  },
-
-  // Layout toggle: quick two-note flip
-  'layout.toggle': {
-    oscillators: [
-      { waveform: 'sine', frequency: 250, amplitude: 0.05 },
-      { waveform: 'sine', frequency: 330, amplitude: 0.03 },
-    ],
-    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
-    envelope: { attack: 0.002, decay: 0.035, sustain: 0.0, release: 0.018 },
-  },
-
-  // Swap complete: crossing tones
-  'swap.complete': {
-    oscillators: [
-      { waveform: 'sine', frequency: 250, amplitude: 0.04,
-        pitchEnvelope: { start: 220, end: 300, duration: 0.04 } },
-      { waveform: 'sine', frequency: 350, amplitude: 0.03,
-        pitchEnvelope: { start: 380, end: 280, duration: 0.04 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 900, Q: 0.7 },
-    envelope: { attack: 0.002, decay: 0.04, sustain: 0.0, release: 0.02 },
-  },
-
-  // Resize step: tiny triangle pip
-  'resize.step': {
-    oscillators: [
-      { waveform: 'triangle', frequency: 600, amplitude: 0.03 },
-    ],
-    envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
-  },
-
-  // Move step: slightly lower pip
-  'move.step': {
-    oscillators: [
-      { waveform: 'triangle', frequency: 500, amplitude: 0.025 },
-    ],
-    envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
-  },
-
-  // Terminal bell: metallic ping (FM synthesis)
-  'terminal.bell': {
-    oscillators: [
-      { waveform: 'sine', frequency: 600, amplitude: 0.08,
-        fm: { modulatorIndex: 1, depth: 80 } },
-      { waveform: 'sine', frequency: 1500, amplitude: 0.03 },
-    ],
-    filter: { type: 'lowpass', cutoff: 2000, Q: 1.0 },
-    envelope: { attack: 0.001, decay: 0.06, sustain: 0.0, release: 0.03 },
-  },
-
-  // Terminal exit: descending fade
-  'terminal.exit': {
-    oscillators: [
-      { waveform: 'sine', frequency: 180, amplitude: 0.06,
-        pitchEnvelope: { start: 200, end: 100, duration: 0.1 } },
-    ],
-    filter: { type: 'lowpass', cutoff: 600, Q: 0.7 },
-    envelope: { attack: 0.003, decay: 0.08, sustain: 0.0, release: 0.04 },
-  },
-
-  // ─── Tab/Pane events ──────────────────────────────────
-  'tab.create': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.06 },
-      { waveform: 'sine', frequency: 140, amplitude: 0.04 },
-    ],
-    filter: { type: 'bandpass', cutoff: 4000, Q: 1.5 },
-    envelope: { attack: 0.001, decay: 0.012, sustain: 0.0, release: 0.006 },
-  },
-  'tab.close': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.05 },
-    ],
-    filter: { type: 'highpass', cutoff: 3000, Q: 1.2 },
-    envelope: { attack: 0.001, decay: 0.01, sustain: 0.0, release: 0.005 },
-  },
-  'tab.switch': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.04 },
-    ],
-    filter: { type: 'bandpass', cutoff: 4200, Q: 2.0 },
-    envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
-  },
-  'tab.move': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.06 },
-      { waveform: 'sine', frequency: 100, amplitude: 0.03 },
-    ],
-    filter: { type: 'bandpass', cutoff: 3500, Q: 1.5 },
-    envelope: { attack: 0.001, decay: 0.012, sustain: 0.0, release: 0.005 },
-  },
-  'pane.split': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.07 },
-      { waveform: 'sine', frequency: 160, amplitude: 0.03 },
-    ],
-    filter: { type: 'bandpass', cutoff: 3800, Q: 1.4 },
-    envelope: { attack: 0.001, decay: 0.015, sustain: 0.0, release: 0.006 },
-  },
-  'pane.close': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.04 },
-    ],
-    filter: { type: 'highpass', cutoff: 3200, Q: 1.0 },
-    envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
-  },
-  'pane.focus': {
-    oscillators: [
-      { waveform: 'white-noise', frequency: 0, amplitude: 0.03 },
-    ],
-    filter: { type: 'bandpass', cutoff: 4500, Q: 2.2 },
-    envelope: { attack: 0.001, decay: 0.006, sustain: 0.0, release: 0.003 },
-  },
-
-  'startup': {
-    oscillators: [
-      { waveform: 'sine', frequency: 120, amplitude: 0.07,
-        pitchEnvelope: { start: 80, end: 160, duration: 0.1 } },
-      { waveform: 'sine', frequency: 240, amplitude: 0.04 },
-    ],
-    filter: {
-      type: 'lowpass', cutoff: 500, Q: 0.7,
-      envelope: { start: 300, end: 700, duration: 0.12 },
-    },
-    envelope: { attack: 0.005, decay: 0.1, sustain: 0.02, release: 0.05 },
-  },
-};
-
-// ─── Keyboard Type Sound Patches ─────────────────────────────────
-// Each keyboard type has a press (key-down) and release (key-up) patch.
-// All are noise-based with subtle tonal body — modeled after real switch acoustics.
-
-const KEYBOARD_PATCHES: Record<Exclude<KeyboardType, 'none'>, KeypressPatchSet> = {
-  // Cherry MX Blue: loud tactile click — sharp high click on press, lighter click on release
-  'cherry-mx-blue': {
-    press: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.14 },
-        { waveform: 'sine', frequency: 180, amplitude: 0.05 },
-      ],
-      filter: { type: 'bandpass', cutoff: 4500, Q: 1.8 },
-      envelope: { attack: 0.001, decay: 0.018, sustain: 0.0, release: 0.008 },
-    },
-    release: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.08 },
-      ],
-      filter: { type: 'bandpass', cutoff: 5500, Q: 2.0 },
-      envelope: { attack: 0.001, decay: 0.01, sustain: 0.0, release: 0.005 },
-    },
-  },
-
-  // Cherry MX Red: linear smooth — soft thock on bottom-out, very quiet upstroke
-  'cherry-mx-red': {
-    press: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.07 },
-        { waveform: 'sine', frequency: 100, amplitude: 0.04 },
-      ],
-      filter: { type: 'bandpass', cutoff: 2800, Q: 1.0 },
-      envelope: { attack: 0.001, decay: 0.012, sustain: 0.0, release: 0.006 },
-    },
-    release: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.03 },
-      ],
-      filter: { type: 'highpass', cutoff: 4000, Q: 0.8 },
-      envelope: { attack: 0.001, decay: 0.006, sustain: 0.0, release: 0.003 },
-    },
-  },
-
-  // Cherry MX Brown: tactile bump — gentle bump click, moderate thock
-  'cherry-mx-brown': {
-    press: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
-        { waveform: 'sine', frequency: 130, amplitude: 0.04 },
-      ],
-      filter: { type: 'bandpass', cutoff: 3500, Q: 1.3 },
-      envelope: { attack: 0.001, decay: 0.014, sustain: 0.0, release: 0.007 },
-    },
-    release: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.05 },
-      ],
-      filter: { type: 'highpass', cutoff: 3500, Q: 1.0 },
-      envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
-    },
-  },
-
-  // Topre: rubber dome + capacitive — deep soft thock, very muted
-  'topre': {
-    press: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.06 },
-        { waveform: 'sine', frequency: 80, amplitude: 0.05 },
-      ],
-      filter: { type: 'lowpass', cutoff: 2000, Q: 0.8 },
-      envelope: { attack: 0.001, decay: 0.02, sustain: 0.0, release: 0.01 },
-    },
-    release: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.03 },
-      ],
-      filter: { type: 'bandpass', cutoff: 2500, Q: 1.0 },
-      envelope: { attack: 0.001, decay: 0.008, sustain: 0.0, release: 0.004 },
-    },
-  },
-
-  // Buckling Spring (IBM Model M): loud metallic ping + spring rattle
-  'buckling-spring': {
-    press: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.15 },
-        { waveform: 'sine', frequency: 220, amplitude: 0.06 },
-        { waveform: 'sine', frequency: 440, amplitude: 0.03 },
-      ],
-      filter: { type: 'bandpass', cutoff: 5000, Q: 2.0 },
-      envelope: { attack: 0.001, decay: 0.022, sustain: 0.0, release: 0.012 },
-    },
-    release: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.1 },
-        { waveform: 'sine', frequency: 300, amplitude: 0.03 },
-      ],
-      filter: { type: 'bandpass', cutoff: 4500, Q: 1.5 },
-      envelope: { attack: 0.001, decay: 0.015, sustain: 0.0, release: 0.008 },
-    },
-  },
-
-  // Membrane: soft mushy press — very quiet, dampened
-  'membrane': {
-    press: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.04 },
-        { waveform: 'sine', frequency: 70, amplitude: 0.02 },
-      ],
-      filter: { type: 'lowpass', cutoff: 1500, Q: 0.6 },
-      envelope: { attack: 0.002, decay: 0.015, sustain: 0.0, release: 0.008 },
-    },
-    release: {
-      oscillators: [
-        { waveform: 'white-noise', frequency: 0, amplitude: 0.02 },
-      ],
-      filter: { type: 'lowpass', cutoff: 1200, Q: 0.5 },
-      envelope: { attack: 0.002, decay: 0.01, sustain: 0.0, release: 0.005 },
-    },
-  },
-};
+/** All WAV file names (unique set of sounds to load) */
+const ALL_WAV_NAMES = [
+  'APP_START', 'CLICK', 'FEATURE_SWITCH_OFF', 'FEATURE_SWITCH_ON',
+  'HOVER', 'HOVER_UP', 'IMPORTANT_CLICK', 'LIMITER_OFF', 'LIMITER_ON',
+  'SWITCH_TOGGLE', 'TAB_CLOSE', 'TAB_INSERT', 'TAB_SLASH',
+  'TYPING_BACKSPACE', 'TYPING_ENTER', 'TYPING_LETTER', 'TYPING_SPACE',
+] as const;
 
 // ─── Sound Engine ─────────────────────────────────────────────────
 
@@ -632,343 +112,90 @@ export class SoundEngine {
   private masterGain: GainNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
   private config: SoundConfig = { ...DEFAULT_SOUND_CONFIG };
-  private patches: Record<string, SoundPatch> = { ...KRYPTON_CYBER };
 
-  // ─── Sound theme state ────────────────────────────────────────
-  private activeTheme: ActiveSoundTheme = { type: 'patches', patches: KRYPTON_CYBER };
-  /** Ghost-signal proxy context (wraps real ctx with volume-controlled destination) */
-  private ghostSignalCtx: AudioContext | null = null;
-  private ghostSignalGain: GainNode | null = null;
+  // ─── WAV buffer cache ───────────────────────────────────────
+  /** Decoded AudioBuffers keyed by WAV name (e.g., 'CLICK', 'HOVER') */
+  private buffers: Map<string, AudioBuffer> = new Map();
+  /** True while WAV files are being loaded */
+  private loading = false;
+  /** True once initial load has completed */
+  private loaded = false;
 
   // ─── Sound queue / overlap management ─────────────────────────
-  /** Max concurrent synthesized sounds. Beyond this, new sounds are dropped. */
+  /** Max concurrent sounds. Beyond this, new sounds are dropped. */
   private static readonly MAX_CONCURRENT = 8;
   /** Minimum interval (ms) between keypress sounds to avoid stacking during fast typing */
   private static readonly KEYPRESS_THROTTLE_MS = 25;
   /** Per-event cooldown (ms) — same action event won't re-fire within this window */
   private static readonly EVENT_COOLDOWN_MS = 50;
 
-  // ─── AudioContext health / recycling ──────────────────────────
-  /** Recycle AudioContext after this many sounds to prevent WebKit degradation.
-   *  Raised from 50k to 500k — with buffer caching each playback creates only
-   *  2 nodes instead of ~15, so effective node pressure is ~7x lower. */
-  private static readonly CONTEXT_RECYCLE_THRESHOLD = 500_000;
-  /** Number of sounds played on the current AudioContext instance */
-  private contextSoundCount = 0;
-  /** Flag: context resume is in-flight (prevents double-resume) */
-  private resuming = false;
-
-  // ─── Sound buffer cache ──────────────────────────────────────
-  /** Pre-rendered AudioBuffers keyed by patch hash or 'gs:<soundKey>' */
-  private bufferCache: Map<string, CachedBuffer> = new Map();
-  /** Pool of TYPING_LETTER variants for ghost-signal themes (round-robin) */
-  private typingLetterPool: CachedBuffer[] = [];
-  /** Round-robin index into typingLetterPool */
-  private typingLetterIndex = 0;
-  /** Number of TYPING_LETTER variants to pre-render per ghost-signal theme */
-  private static readonly TYPING_LETTER_POOL_SIZE = 8;
-  /** Max duration (seconds) for each ghost-signal sound key (conservative upper bounds) */
-  private static readonly GS_SOUND_DURATIONS: Record<string, number> = {
-    HOVER: 0.08, HOVER_UP: 0.07, CLICK: 0.05, IMPORTANT_CLICK: 0.15,
-    FEATURE_SWITCH_ON: 0.30, FEATURE_SWITCH_OFF: 0.30,
-    LIMITER_ON: 0.25, LIMITER_OFF: 0.25,
-    SWITCH_TOGGLE: 0.05, TAB_INSERT: 0.15, TAB_CLOSE: 0.12,
-    TAB_SLASH: 0.20, TYPING_LETTER: 0.04, TYPING_BACKSPACE: 0.05,
-    TYPING_ENTER: 0.10, TYPING_SPACE: 0.05, APP_START: 1.40,
-  };
-
-  /** Currently playing sound IDs — use Set for accurate tracking without timer drift */
-  private activeSoundIds: Set<number> = new Set();
-  /** Monotonically increasing ID for each sound instance */
-  private nextSoundId = 0;
+  /** Currently playing sound count */
+  private activeSounds = 0;
   /** Timestamp of the last keypress sound (press phase) */
   private lastKeypressTime = 0;
   /** Last fire time per action event for dedup */
   private lastEventTime: Map<string, number> = new Map();
 
-  /** Flag to prevent play() during async theme loading */
-  private themeLoading = false;
-
   // ─── Diagnostics ──────────────────────────────────────────────
   private totalSoundsAttempted = 0;
   private totalSoundsPlayed = 0;
-  private dropReasons: Record<string, number> = {};
   private diagInterval: ReturnType<typeof setInterval> | null = null;
 
   /** Start periodic diagnostic logging. Call once after init. */
   startDiagnostics(): void {
     if (this.diagInterval) return;
-    console.log('[SoundEngine:diag] diagnostics ON, theme=' + this.config.pack);
+    console.log('[SoundEngine] diagnostics ON (WAV-based), pack=' + this.config.pack);
     this.diagInterval = setInterval(() => this.logDiag(), 30_000);
   }
 
   private logDiag(): void {
-    const ctx = this.ctx;
-    let extraInfo = '';
-
-    // Check if ghost-signal gain node is still connected and has valid gain
-    if (this.ghostSignalGain) {
-      extraInfo += ` gsGain=${this.ghostSignalGain.gain.value.toFixed(3)}`;
-      extraInfo += ` gsGainCtx=${this.ghostSignalGain.context === ctx ? 'same' : 'STALE'}`;
-    }
-    if (this.compressor) {
-      extraInfo += ` compCtx=${this.compressor.context === ctx ? 'same' : 'STALE'}`;
-    }
-    if (this.masterGain) {
-      extraInfo += ` masterGain=${this.masterGain.gain.value.toFixed(3)}`;
-      extraInfo += ` masterCtx=${this.masterGain.context === ctx ? 'same' : 'STALE'}`;
-    }
-
-    // Test if audio graph actually works: create a silent oscillator and check
-    if (ctx && ctx.state === 'running') {
-      try {
-        const testOsc = ctx.createOscillator();
-        const testGain = ctx.createGain();
-        testGain.gain.value = 0; // silent
-        testOsc.connect(testGain).connect(ctx.destination);
-        testOsc.start();
-        testOsc.stop(ctx.currentTime + 0.001);
-        extraInfo += ' testNode=ok';
-        // Clean up
-        setTimeout(() => {
-          try { testOsc.disconnect(); testGain.disconnect(); } catch { /* ok */ }
-        }, 50);
-      } catch (err) {
-        extraInfo += ` testNode=FAIL(${err})`;
-      }
-    }
-
-    // Check ghost-signal proxy: is its destination still the gsGain?
-    if (this.activeTheme.type === 'ghost-signal' && this.ghostSignalCtx) {
-      const proxyDest = this.ghostSignalCtx.destination;
-      extraInfo += ` proxyDest=${(proxyDest as unknown) === this.ghostSignalGain ? 'gsGain' : 'OTHER'}`;
-      extraInfo += ` proxySameCtx=${(this.ghostSignalCtx as unknown as { __target?: AudioContext }).__target === ctx ? 'yes' : 'unknown'}`;
-    }
-
     console.log(
-      `[SoundEngine:diag] ctx=${ctx?.state ?? 'null'} ` +
-      `active=${this.activeSoundIds.size} ctxSounds=${this.contextSoundCount} ` +
+      `[SoundEngine] ctx=${this.ctx?.state ?? 'null'} ` +
+      `active=${this.activeSounds} ` +
       `attempted=${this.totalSoundsAttempted} played=${this.totalSoundsPlayed} ` +
-      `resuming=${this.resuming} themeType=${this.activeTheme.type} ` +
-      `drops=${JSON.stringify(this.dropReasons)}${extraInfo}`
+      `buffers=${this.buffers.size}/${ALL_WAV_NAMES.length} loaded=${this.loaded}`
     );
-  }
-
-  private drop(reason: string): void {
-    this.dropReasons[reason] = (this.dropReasons[reason] ?? 0) + 1;
   }
 
   /**
    * Apply sound configuration. Call after loading config from backend.
-   * If the pack changed, triggers async theme loading.
+   * If the pack changed, triggers async WAV loading.
    */
   applyConfig(config: SoundConfig): void {
-    const oldPack = this.config.pack;
     this.config = { ...DEFAULT_SOUND_CONFIG, ...config };
     // Update master volume if context is live
     if (this.masterGain) {
       this.masterGain.gain.value = this.config.volume;
     }
-    // Update ghost-signal gain if active
-    if (this.ghostSignalGain) {
-      this.ghostSignalGain.gain.value = this.config.volume;
-    }
-    // Reload theme if pack changed, or warm cache on first config application
-    if (this.config.pack !== oldPack) {
-      this.themeLoading = true;
-      this.loadTheme(this.config.pack)
-        .catch((err) => console.warn('Sound theme loading failed:', err))
-        .finally(() => { this.themeLoading = false; });
-    } else if (this.bufferCache.size === 0) {
-      // First config application with default pack — warm the cache
-      this.warmCache();
+    // Load WAV files if not already loaded
+    if (!this.loaded && !this.loading) {
+      this.loadAllWavs();
     }
   }
 
   /**
-   * Load a sound theme by name. Async — resolves built-in or custom themes.
-   * Falls back to krypton-cyber if loading fails.
+   * Load a sound theme by name. For WAV-based engine, all packs
+   * use the same deep-glyph WAV files. Kept for API compatibility.
    */
-  async loadTheme(packName: string): Promise<void> {
-    // krypton-cyber is the built-in patch-based theme
-    if (packName === 'krypton-cyber') {
-      this.activeTheme = { type: 'patches', patches: KRYPTON_CYBER };
-      this.patches = { ...KRYPTON_CYBER };
-      // Disconnect old ghost-signal gain to prevent orphaned nodes
-      if (this.ghostSignalGain) {
-        try { this.ghostSignalGain.disconnect(); } catch { /* ok */ }
-      }
-      this.ghostSignalCtx = null;
-      this.ghostSignalGain = null;
-      // Warm cache for patch-based sounds
-      this.warmCache();
-      return;
+  async loadTheme(_packName: string): Promise<void> {
+    if (!this.loaded && !this.loading) {
+      await this.loadAllWavs();
     }
-
-    // Try ghost-signal built-in themes
-    const loader = GHOST_SIGNAL_THEMES[packName];
-    if (loader) {
-      try {
-        const theme = await loader();
-        this.activateGhostSignalTheme(theme);
-        // Warm cache for ghost-signal sounds
-        this.warmCache();
-        return;
-      } catch (err) {
-        console.warn(`Failed to load sound theme "${packName}":`, err);
-      }
-    }
-
-    // Unknown theme — fallback to krypton-cyber
-    console.warn(`Unknown sound pack "${packName}", falling back to krypton-cyber`);
-    this.activeTheme = { type: 'patches', patches: KRYPTON_CYBER };
-    this.patches = { ...KRYPTON_CYBER };
-    if (this.ghostSignalGain) {
-      try { this.ghostSignalGain.disconnect(); } catch { /* ok */ }
-    }
-    this.ghostSignalCtx = null;
-    this.ghostSignalGain = null;
-    this.warmCache();
-  }
-
-  /**
-   * Activate a ghost-signal theme: create proxy context and sound functions.
-   * The proxy intercepts all node creation to track nodes, and wraps each
-   * sound function to auto-disconnect all created nodes after a timeout.
-   * This prevents the Web Audio graph from accumulating orphaned nodes
-   * that degrade audio quality over time.
-   */
-  private activateGhostSignalTheme(theme: GhostSignalTheme): void {
-    this.ensureContext();
-    if (!this.ctx || !this.compressor) return;
-
-    // Disconnect old gsGain if switching themes (prevents orphaned nodes)
-    if (this.ghostSignalGain) {
-      try { this.ghostSignalGain.disconnect(); } catch { /* ok */ }
-    }
-
-    // Create a master gain node for ghost-signal volume control.
-    // Route through the compressor for clipping protection and consistent
-    // loudness with patch-based sounds: gsGain -> compressor -> masterGain -> destination
-    const gsGain = this.ctx.createGain();
-    gsGain.gain.value = this.config.volume;
-    gsGain.connect(this.compressor);
-    this.ghostSignalGain = gsGain;
-
-    // Node tracking: during each sound function call, all created nodes
-    // are collected so they can be disconnected after the sound finishes.
-    let activeCollector: AudioNode[] | null = null;
-
-    // Create a proxy context where:
-    // 1. .destination points to our gsGain for volume control
-    // 2. All create*() methods track the returned nodes for cleanup
-    const realCtx = this.ctx;
-    const proxyCtx = new Proxy(realCtx, {
-      get(target: AudioContext, prop: string | symbol): unknown {
-        if (prop === 'destination') return gsGain;
-        const val = Reflect.get(target, prop);
-        if (typeof val !== 'function') return val;
-        const fn = val as Function;
-        const bound = fn.bind(target);
-        // Intercept create* methods to track returned AudioNodes
-        if (typeof prop === 'string' && prop.startsWith('create')) {
-          return (...args: unknown[]) => {
-            const node = bound(...args);
-            if (node instanceof AudioNode && activeCollector) {
-              activeCollector.push(node);
-            }
-            return node;
-          };
-        }
-        return bound;
-      },
-    }) as AudioContext;
-    this.ghostSignalCtx = proxyCtx;
-
-    // Pre-allocate a shared noise buffer (avoids per-invocation GC pressure)
-    const sharedNoiseDuration = 0.15; // covers longest ghost-signal noise usage
-    const sharedNoiseLen = Math.ceil(realCtx.sampleRate * sharedNoiseDuration);
-    const sharedNoiseBuf = realCtx.createBuffer(1, sharedNoiseLen, realCtx.sampleRate);
-    const sharedNoiseData = sharedNoiseBuf.getChannelData(0);
-    for (let i = 0; i < sharedNoiseLen; i++) sharedNoiseData[i] = Math.random() * 2 - 1;
-
-    const noiseBuffer = (duration = 0.1): AudioBuffer => {
-      // Return shared buffer if requested duration fits, else create a new one
-      if (duration <= sharedNoiseDuration) return sharedNoiseBuf;
-      const len = Math.ceil(realCtx.sampleRate * duration);
-      const buf = realCtx.createBuffer(1, len, realCtx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-      return buf;
-    };
-
-    // Initialize the theme's raw sound functions
-    const rawSounds = theme.createSounds(proxyCtx, noiseBuffer);
-
-    // Wrap each sound function to auto-disconnect all nodes after playback
-    const wrappedSounds: Record<string, () => void> = {};
-    let totalNodesCreated = 0;
-    let totalNodesDisconnected = 0;
-    let invocationCount = 0;
-
-    for (const [key, fn] of Object.entries(rawSounds)) {
-      wrappedSounds[key] = () => {
-        invocationCount++;
-        const callNum = invocationCount;
-        // Start collecting nodes created during this call
-        const nodes: AudioNode[] = [];
-        activeCollector = nodes;
-        try {
-          fn();
-        } finally {
-          activeCollector = null;
-        }
-        totalNodesCreated += nodes.length;
-
-        // Log every 100th invocation for ongoing monitoring
-        if (callNum <= 3 || callNum % 100 === 0) {
-          console.log(
-            `[SoundEngine:diag] gs-invoke #${callNum} key=${key} nodes=${nodes.length} ` +
-            `totalNodes=${totalNodesCreated} totalDisconnected=${totalNodesDisconnected} ` +
-            `ctxTime=${realCtx.currentTime.toFixed(3)} ctxState=${realCtx.state}`
-          );
-        }
-
-        // Schedule cleanup: disconnect all nodes after the sound decays.
-        // APP_START sounds are 1.2-1.4s; all others are < 0.5s.
-        const cleanupDelay = key === 'APP_START' ? 2000 : 600;
-        if (nodes.length > 0) {
-          setTimeout(() => {
-            let disconnected = 0;
-            for (const node of nodes) {
-              try { node.disconnect(); disconnected++; } catch { /* already disconnected */ }
-            }
-            totalNodesDisconnected += disconnected;
-          }, cleanupDelay);
-        }
-      };
-    }
-
-    this.activeTheme = { type: 'ghost-signal', sounds: wrappedSounds, theme };
   }
 
   /**
    * Get list of available sound theme names.
    */
   getAvailableThemes(): string[] {
-    return ['krypton-cyber', ...Object.keys(GHOST_SIGNAL_THEMES)];
+    return ['deep-glyph'];
   }
 
   /**
    * Get the display name of a sound theme.
    */
   getThemeDisplayName(packName: string): string {
-    if (packName === 'krypton-cyber') return 'Krypton Cyber';
-    if (packName in GHOST_SIGNAL_THEMES) {
-      // Return a formatted version of the pack name
-      return packName.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    }
-    return packName;
+    if (packName === 'deep-glyph') return 'Deep Glyph';
+    return packName.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
 
   /**
@@ -979,159 +206,58 @@ export class SoundEngine {
   }
 
   /**
-   * Track a new active sound. Returns the sound ID.
-   * For ghost-signal sounds: auto-untrack after fallbackMs (since we can't hook node events).
-   * For patch-based sounds: untrack explicitly via untrackSound() in the 'ended' event listener.
-   */
-  private trackSound(fallbackMs: number): number {
-    const id = this.nextSoundId++;
-    this.activeSoundIds.add(id);
-    // Safety net: always untrack after fallback timeout to prevent counter leaks
-    setTimeout(() => {
-      this.activeSoundIds.delete(id);
-    }, fallbackMs);
-    return id;
-  }
-
-  /**
-   * Explicitly untrack a sound (called from oscillator 'ended' event).
-   * No-op if already removed by the safety-net timeout.
-   */
-  private untrackSound(id: number): void {
-    this.activeSoundIds.delete(id);
-  }
-
-  /**
    * Play a keypress sound (press or release).
-   * For patch-based themes: uses the configured keyboard_type to select the patch set.
-   * For ghost-signal themes: routes to the appropriate TYPING_* sound based on key.
-   * Throttled: skips if previous press is still within throttle window.
+   * Routes by key name to the appropriate TYPING_* WAV.
+   * Release phase is ignored — WAV files include the full sound.
    */
   playKeypress(phase: 'press' | 'release', key?: string): void {
     if (phase === 'press') this.totalSoundsAttempted++;
-    if (!this.config.enabled) { this.drop('disabled'); return; }
-    if (this.themeLoading) { this.drop('theme_loading'); return; }
+    if (!this.config.enabled) return;
+
+    // Only play on press — release is baked into the WAV
+    if (phase === 'release') return;
 
     // Check per-event override for keypress
     const eventConfig = this.config.events['keypress'];
-    if (eventConfig === false) { this.drop('event_off'); return; }
+    if (eventConfig === false) return;
 
     // Throttle: skip if too soon after last press
     const now = performance.now();
-    if (phase === 'press') {
-      if (now - this.lastKeypressTime < SoundEngine.KEYPRESS_THROTTLE_MS) {
-        this.drop('throttle'); return;
-      }
-      this.lastKeypressTime = now;
-    }
+    if (now - this.lastKeypressTime < SoundEngine.KEYPRESS_THROTTLE_MS) return;
+    this.lastKeypressTime = now;
 
     // Max concurrent check
-    if (this.activeSoundIds.size >= SoundEngine.MAX_CONCURRENT) {
-      this.drop('max_concurrent'); return;
+    if (this.activeSounds >= SoundEngine.MAX_CONCURRENT) return;
+
+    // Determine which WAV to play
+    let wavName: string;
+    if (key === 'Backspace') {
+      wavName = 'TYPING_BACKSPACE';
+    } else if (key === 'Enter') {
+      wavName = 'TYPING_ENTER';
+    } else if (key === ' ') {
+      wavName = 'TYPING_SPACE';
+    } else {
+      wavName = 'TYPING_LETTER';
     }
 
-    this.ensureContext();
-    if (!this.ctx || !this.masterGain) { this.drop('no_ctx'); return; }
-
-    // ─── Ghost-signal theme: use TYPING_* functions ───
-    if (this.activeTheme.type === 'ghost-signal') {
-      // Ghost-signal themes have no key-release sounds
-      if (phase === 'release') return;
-
-      let gsSoundId: string;
-      if (key === 'Backspace') {
-        gsSoundId = 'TYPING_BACKSPACE';
-      } else if (key === 'Enter') {
-        gsSoundId = 'TYPING_ENTER';
-      } else if (key === ' ') {
-        gsSoundId = 'TYPING_SPACE';
-      } else {
-        gsSoundId = 'TYPING_LETTER';
-      }
-
-      // Try cached playback: TYPING_LETTER uses round-robin pool, others use bufferCache
-      if (gsSoundId === 'TYPING_LETTER' && this.typingLetterPool.length > 0) {
-        const cached = this.typingLetterPool[this.typingLetterIndex];
-        this.typingLetterIndex = (this.typingLetterIndex + 1) % this.typingLetterPool.length;
-        this.playCached(cached, this.config.volume);
-        this.totalSoundsPlayed++;
-      } else {
-        const cached = this.bufferCache.get(`gs:${gsSoundId}`);
-        if (cached) {
-          this.playCached(cached, this.config.volume);
-          this.totalSoundsPlayed++;
-        } else {
-          // Fallback: live synthesis (cache not ready)
-          const fn = this.activeTheme.sounds[gsSoundId];
-          if (fn) {
-            const id = this.trackSound(200);
-            try {
-              fn();
-              this.totalSoundsPlayed++;
-            } catch (err) {
-              this.drop('gs_throw');
-              console.error('[SoundEngine:diag] ghost-signal threw:', err);
-            }
-            void id;
-          } else {
-            this.drop('no_fn');
-          }
-        }
-      }
-      this.maybeRecycleContext();
-      return;
-    }
-
-    // ─── Patch-based theme: use keyboard_type ───
-    const kbType = this.config.keyboard_type;
-    if (kbType === 'none') return;
-
-    // Validate keyboard type is a known key
-    if (!(kbType in KEYBOARD_PATCHES)) return;
-    const patchSet = KEYBOARD_PATCHES[kbType as Exclude<KeyboardType, 'none'>];
-
-    const basePatch = phase === 'press' ? patchSet.press : patchSet.release;
-
-    // Determine volume: keyboard_volume * per-event override
+    // Determine volume
     let volume = this.config.keyboard_volume;
     if (typeof eventConfig === 'number') {
       volume *= Math.max(0, Math.min(1, eventConfig));
     }
 
-    // Add subtle randomization for natural feel: +/-8% amplitude variation
-    const ampJitter = 0.92 + Math.random() * 0.16;    // 0.92 – 1.08
-
-    // Try cached playback (uses base patch key — jitter applied via volume)
-    const cacheKey = SoundEngine.patchCacheKey(basePatch);
-    const cached = this.bufferCache.get(cacheKey);
-    if (cached) {
-      this.playCached(cached, volume * ampJitter);
-    } else {
-      // Fallback: live synthesis with full jitter (amplitude + filter cutoff)
-      const cutoffJitter = 0.97 + Math.random() * 0.06;  // 0.97 – 1.03
-      const patch: SoundPatch = {
-        ...basePatch,
-        oscillators: basePatch.oscillators.map((osc) => ({
-          ...osc,
-          amplitude: osc.amplitude * ampJitter,
-        })),
-        filter: basePatch.filter
-          ? { ...basePatch.filter, cutoff: basePatch.filter.cutoff * cutoffJitter }
-          : undefined,
-      };
-      this.synthesize(patch, volume);
-    }
-    this.totalSoundsPlayed++;
-    this.maybeRecycleContext();
+    this.playBuffer(wavName, volume);
   }
 
   /**
-   * Play a sound event. Non-blocking — schedules audio via Web Audio API timing.
-   * Gracefully no-ops if sound is disabled, event is disabled, or AudioContext unavailable.
+   * Play a sound event. Non-blocking — schedules audio via Web Audio API.
+   * Gracefully no-ops if sound is disabled, event is disabled, or WAV not loaded.
    * Deduplicates: skips if the same event fired within the cooldown window.
    */
   play(event: SoundEvent): void {
-    if (!this.config.enabled || this.themeLoading) return;
+    this.totalSoundsAttempted++;
+    if (!this.config.enabled) return;
 
     // Check per-event override
     const eventConfig = this.config.events[event];
@@ -1144,105 +270,60 @@ export class SoundEngine {
     this.lastEventTime.set(event, now);
 
     // Max concurrent check
-    if (this.activeSoundIds.size >= SoundEngine.MAX_CONCURRENT) return;
+    if (this.activeSounds >= SoundEngine.MAX_CONCURRENT) return;
 
-    // Lazily initialize AudioContext on first play
-    this.ensureContext();
-    if (!this.ctx || !this.masterGain) return;
+    // Map event to WAV name
+    const wavName = EVENT_TO_WAV[event];
+    if (!wavName) return;
 
-    // ─── Ghost-signal theme: use event map ───
-    if (this.activeTheme.type === 'ghost-signal') {
-      const ghostSoundId = GHOST_SIGNAL_EVENT_MAP[event];
-      if (!ghostSoundId) return;
-
-      // Try cached playback first
-      const cached = this.bufferCache.get(`gs:${ghostSoundId}`);
-      if (cached) {
-        this.playCached(cached, this.config.volume);
-      } else {
-        // Fallback: live synthesis (cache not ready or miss)
-        const fn = this.activeTheme.sounds[ghostSoundId];
-        if (!fn) return;
-        const timeout = ghostSoundId === 'APP_START' ? 1500 : 300;
-        this.trackSound(timeout);
-        fn();
-      }
-      this.maybeRecycleContext();
-      return;
-    }
-
-    // ─── Patch-based theme: try cache, fall back to live synthesis ───
-    const patch = this.patches[event];
-    if (!patch) return;
-
-    // Determine volume for this event
-    let eventVolume = 1.0;
+    // Determine volume
+    let volume = 1.0;
     if (typeof eventConfig === 'number') {
-      eventVolume = Math.max(0, Math.min(1, eventConfig));
+      volume = Math.max(0, Math.min(1, eventConfig));
     }
 
-    const cacheKey = SoundEngine.patchCacheKey(patch);
-    const cached = this.bufferCache.get(cacheKey);
-    if (cached) {
-      this.playCached(cached, eventVolume);
-    } else {
-      this.synthesize(patch, eventVolume);
-    }
-    this.maybeRecycleContext();
+    this.playBuffer(wavName, volume);
   }
+
+  // ─── Private: AudioContext lifecycle ───────────────────────────
 
   /**
    * Lazily create AudioContext and master channel.
-   * Called on first play() to comply with browser autoplay policy.
-   * Monitors context health via statechange listener — if WebKit closes
-   * the context (e.g., resource pressure), everything is nulled so the
-   * next call recreates it. Suspended contexts are auto-resumed.
+   * Called on first play to comply with browser autoplay policy.
    */
-  private ensureContext(): void {
+  private ensureContext(): boolean {
     if (this.ctx) {
       // Resume if suspended (browser autoplay policy or macOS display sleep)
-      if (this.ctx.state === 'suspended' && !this.resuming) {
-        this.resuming = true;
-        this.ctx.resume()
-          .catch(() => { /* best-effort resume */ })
-          .finally(() => { this.resuming = false; });
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => { /* best-effort */ });
       }
-      return;
+      if (this.ctx.state === 'closed') {
+        // Context died — recreate
+        this.ctx = null;
+        this.masterGain = null;
+        this.compressor = null;
+      } else {
+        return true;
+      }
     }
 
     try {
       this.ctx = new AudioContext();
-      this.contextSoundCount = 0;
 
-      // ── State health monitor ──
-      // If the context is closed externally (WebKit resource reclaim, etc.),
-      // null everything so the next ensureContext() recreates from scratch.
-      // If suspended (display sleep, background), auto-resume.
+      // Monitor for context death
       this.ctx.addEventListener('statechange', () => {
-        console.log(`[SoundEngine:diag] statechange: ${this.ctx?.state ?? 'null'}`);
-        if (!this.ctx) return;
-        if (this.ctx.state === 'closed') {
+        if (this.ctx?.state === 'closed') {
           this.ctx = null;
           this.masterGain = null;
           this.compressor = null;
-          this.ghostSignalCtx = null;
-          this.ghostSignalGain = null;
-          this.contextSoundCount = 0;
-          this.resuming = false;
-        } else if (this.ctx.state === 'suspended' && !this.resuming) {
-          this.resuming = true;
-          this.ctx.resume()
-            .catch(() => { /* best-effort */ })
-            .finally(() => { this.resuming = false; });
+        } else if (this.ctx?.state === 'suspended') {
+          this.ctx.resume().catch(() => { /* best-effort */ });
         }
       });
 
       // Resume immediately — some WebViews create contexts in suspended state
       if (this.ctx.state === 'suspended') {
-        this.resuming = true;
-        this.ctx.resume()
-          .catch(() => { /* best-effort resume */ })
-          .finally(() => { this.resuming = false; });
+        this.ctx.resume().catch(() => { /* best-effort */ });
       }
 
       // Master channel: compressor -> gain -> destination
@@ -1258,508 +339,99 @@ export class SoundEngine {
 
       this.compressor.connect(this.masterGain);
       this.masterGain.connect(this.ctx.destination);
+
+      return true;
     } catch {
       // Web Audio API unavailable — silent degradation
       this.ctx = null;
       this.masterGain = null;
       this.compressor = null;
+      return false;
     }
   }
 
+  // ─── Private: WAV loading ─────────────────────────────────────
+
   /**
-   * Increment sound counter and recycle AudioContext if threshold is reached.
-   * WebKit's WKWebView AudioContext degrades after creating/destroying millions
-   * of AudioNodes (typical over long sessions with keypress sounds). Recycling
-   * the context proactively prevents the degradation from becoming audible.
+   * Fetch and decode all WAV files into AudioBuffers.
+   * Files are served from /sounds/deep-glyph/ (Vite public directory).
    */
-  private maybeRecycleContext(): void {
-    this.contextSoundCount++;
-    if (this.contextSoundCount < SoundEngine.CONTEXT_RECYCLE_THRESHOLD) return;
+  private async loadAllWavs(): Promise<void> {
+    if (this.loading) return;
+    this.loading = true;
 
-    console.log(`[SoundEngine:diag] RECYCLING context at count=${this.contextSoundCount}, ctx.state=${this.ctx?.state}`);
-    const oldSampleRate = this.ctx?.sampleRate;
-    const oldCtx = this.ctx;
-
-    // Null out references so ensureContext() creates a fresh context
-    this.ctx = null;
-    this.masterGain = null;
-    this.compressor = null;
-    this.ghostSignalCtx = null;
-    this.ghostSignalGain = null;
-    this.contextSoundCount = 0;
-    this.resuming = false;
-
-    // Close old context after a grace period (let in-flight sounds finish)
-    if (oldCtx) {
-      setTimeout(() => {
-        oldCtx.close().catch(() => { /* already closed */ });
-      }, 3000);
+    // Ensure context exists for decodeAudioData
+    if (!this.ensureContext()) {
+      this.loading = false;
+      return;
     }
 
-    // Recreate immediately so the next sound works
-    this.ensureContext();
+    const basePath = '/sounds/deep-glyph';
+    let loadedCount = 0;
 
-    // Re-activate ghost-signal theme if one was active
-    if (this.activeTheme.type === 'ghost-signal' && this.activeTheme.theme) {
-      this.activateGhostSignalTheme(this.activeTheme.theme);
+    for (const name of ALL_WAV_NAMES) {
+      try {
+        const url = `${basePath}/${name}.wav`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          console.warn(`[SoundEngine] Failed to fetch ${url}: ${response.status}`);
+          continue;
+        }
+        const arrayBuffer = await response.arrayBuffer();
+
+        // decodeAudioData needs a valid context
+        if (!this.ctx || this.ctx.state === 'closed') {
+          if (!this.ensureContext()) break;
+        }
+
+        const audioBuffer = await this.ctx!.decodeAudioData(arrayBuffer);
+        this.buffers.set(name, audioBuffer);
+        loadedCount++;
+      } catch (err) {
+        console.warn(`[SoundEngine] Failed to load WAV "${name}":`, err);
+      }
     }
 
-    // Re-warm buffer cache (async — fallback to live synthesis until ready).
-    // Ghost-signal themes always need re-rendering since they were re-activated
-    // on the new context above. Patch-based buffers survive if sample rate matches.
-    // eslint-disable-next-line -- TS narrows this.ctx to never after the null assignment above,
-    // but ensureContext() re-assigns it. Cast to access the new context.
-    const newSampleRate = (this as unknown as { ctx: AudioContext | null }).ctx?.sampleRate;
-    if (oldSampleRate !== newSampleRate || this.activeTheme.type === 'ghost-signal') {
-      this.warmCache();
-    }
+    this.loaded = true;
+    this.loading = false;
+    console.log(`[SoundEngine] Loaded ${loadedCount}/${ALL_WAV_NAMES.length} WAV files`);
   }
 
-  // ─── Buffer cache: pre-rendering and playback ─────────────────
+  // ─── Private: Playback ────────────────────────────────────────
 
   /**
-   * Generate a stable cache key for a SoundPatch.
-   * Uses the base patch definition (before any jitter).
+   * Play a named WAV buffer through the master channel.
+   * Creates only 2 nodes: BufferSourceNode + GainNode.
    */
-  private static patchCacheKey(patch: SoundPatch): string {
-    return JSON.stringify({
-      o: patch.oscillators.map(o => ({
-        w: o.waveform, f: o.frequency, a: o.amplitude,
-        d: o.detune, pe: o.pitchEnvelope, fm: o.fm,
-      })),
-      f: patch.filter ? {
-        t: patch.filter.type, c: patch.filter.cutoff,
-        q: patch.filter.Q, e: patch.filter.envelope,
-      } : null,
-      e: patch.envelope,
-      fx: patch.effects ?? null,
-      p: patch.pan ?? 0,
-    });
-  }
+  private playBuffer(wavName: string, volume: number): void {
+    const buffer = this.buffers.get(wavName);
+    if (!buffer) return; // WAV not loaded yet — silent skip
 
-  /**
-   * Pre-render a SoundPatch into a cached AudioBuffer via OfflineAudioContext.
-   */
-  private async prerenderPatch(patch: SoundPatch): Promise<CachedBuffer> {
-    const env = patch.envelope;
-    const duration = env.attack + env.decay + env.sustain * 0.1 + env.release + 0.05;
-    const sampleRate = this.ctx?.sampleRate ?? 44100;
-    const offline = new OfflineAudioContext(1, Math.ceil(sampleRate * duration), sampleRate);
-
-    this.buildSoundGraph(offline, patch, 1.0, offline.destination);
-
-    const rendered = await offline.startRendering();
-    return { buffer: rendered, duration };
-  }
-
-  /**
-   * Pre-render a single ghost-signal sound function into a cached AudioBuffer.
-   * Creates an OfflineAudioContext, builds a proxy that redirects ctx.destination,
-   * invokes the sound function, and renders.
-   */
-  private async prerenderGhostSignalSound(
-    theme: GhostSignalTheme,
-    soundKey: string,
-    duration: number,
-  ): Promise<CachedBuffer> {
-    const sampleRate = this.ctx?.sampleRate ?? 44100;
-    const length = Math.max(1, Math.ceil(sampleRate * duration));
-    const offline = new OfflineAudioContext(1, length, sampleRate);
-
-    // Noise buffer helper for the offline context
-    const noiseBuffer = (dur = 0.1): AudioBuffer => {
-      const len = Math.ceil(sampleRate * dur);
-      const buf = offline.createBuffer(1, len, sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-      return buf;
-    };
-
-    // Proxy: redirect .destination to offline.destination, bind methods to offline ctx.
-    // The ghost-signal createSounds() expects an AudioContext but only uses
-    // BaseAudioContext methods (create*, destination, currentTime, sampleRate).
-    const offlineRef = offline;
-    const proxy = new Proxy(offline as unknown as AudioContext, {
-      get(_target: AudioContext, prop: string | symbol): unknown {
-        if (prop === 'destination') return offlineRef.destination;
-        const val = Reflect.get(offlineRef, prop);
-        if (typeof val === 'function') return (val as Function).bind(offlineRef);
-        return val;
-      },
-    });
-
-    // Create all sound functions, invoke only the one we want
-    const allSounds = theme.createSounds(proxy, noiseBuffer);
-    const fn = allSounds[soundKey];
-    if (fn) fn();
-
-    const rendered = await offline.startRendering();
-    return { buffer: rendered, duration };
-  }
-
-  /**
-   * Play a pre-rendered cached buffer. Creates only 2 nodes: source + gain.
-   */
-  private playCached(cached: CachedBuffer, volume: number): void {
-    const ctx = this.ctx!;
-    const source = ctx.createBufferSource();
-    source.buffer = cached.buffer;
-
-    const gain = ctx.createGain();
-    gain.gain.value = volume;
-
-    source.connect(gain);
-    gain.connect(this.compressor!);
-
-    const soundId = this.trackSound(cached.duration * 1000 + 200);
-    source.addEventListener('ended', () => {
-      this.untrackSound(soundId);
-      try { source.disconnect(); } catch { /* ok */ }
-      try { gain.disconnect(); } catch { /* ok */ }
-    }, { once: true });
-
-    source.start();
-  }
-
-  /**
-   * Pre-render all sounds for the current theme into the buffer cache.
-   * Async and non-blocking — sounds fall back to live synthesis until ready.
-   */
-  private async warmCache(): Promise<void> {
-    this.bufferCache.clear();
-    this.typingLetterPool = [];
-    this.typingLetterIndex = 0;
+    if (!this.ensureContext()) return;
+    if (!this.ctx || !this.compressor) return;
 
     try {
-      if (this.activeTheme.type === 'ghost-signal' && this.activeTheme.theme) {
-        const theme = this.activeTheme.theme;
+      const source = this.ctx.createBufferSource();
+      source.buffer = buffer;
 
-        // Pre-render all ghost-signal sounds (except TYPING_LETTER which gets a pool)
-        for (const [key, dur] of Object.entries(SoundEngine.GS_SOUND_DURATIONS)) {
-          if (key === 'TYPING_LETTER') continue;
-          try {
-            const cached = await this.prerenderGhostSignalSound(theme, key, dur);
-            this.bufferCache.set(`gs:${key}`, cached);
-          } catch {
-            // Skip this sound — live fallback will handle it
-          }
-        }
+      const gain = this.ctx.createGain();
+      gain.gain.value = volume;
 
-        // Pre-render TYPING_LETTER pool (each call gets different Math.random() values)
-        for (let i = 0; i < SoundEngine.TYPING_LETTER_POOL_SIZE; i++) {
-          try {
-            this.typingLetterPool.push(
-              await this.prerenderGhostSignalSound(theme, 'TYPING_LETTER', 0.04),
-            );
-          } catch {
-            // Partial pool is fine — live fallback for remaining
-          }
-        }
+      source.connect(gain);
+      gain.connect(this.compressor);
 
-        console.log(
-          `[SoundEngine] Cache warmed: ${this.bufferCache.size} ghost-signal sounds + ` +
-          `${this.typingLetterPool.length} TYPING_LETTER variants`,
-        );
-      } else {
-        // Patch-based: pre-render all event patches + all keyboard patches
-        for (const [, patch] of Object.entries(this.patches)) {
-          if (!patch) continue;
-          const key = SoundEngine.patchCacheKey(patch);
-          if (!this.bufferCache.has(key)) {
-            try {
-              this.bufferCache.set(key, await this.prerenderPatch(patch));
-            } catch { /* skip — live fallback */ }
-          }
-        }
-        for (const [, patchSet] of Object.entries(KEYBOARD_PATCHES)) {
-          for (const phase of ['press', 'release'] as const) {
-            const patch = patchSet[phase];
-            const key = SoundEngine.patchCacheKey(patch);
-            if (!this.bufferCache.has(key)) {
-              try {
-                this.bufferCache.set(key, await this.prerenderPatch(patch));
-              } catch { /* skip — live fallback */ }
-            }
-          }
-        }
+      this.activeSounds++;
+      this.totalSoundsPlayed++;
 
-        console.log(`[SoundEngine] Cache warmed: ${this.bufferCache.size} patch-based sounds`);
-      }
+      source.addEventListener('ended', () => {
+        this.activeSounds = Math.max(0, this.activeSounds - 1);
+        try { source.disconnect(); } catch { /* ok */ }
+        try { gain.disconnect(); } catch { /* ok */ }
+      }, { once: true });
+
+      source.start();
     } catch (err) {
-      console.error('[SoundEngine] Cache warming failed, using live synthesis:', err);
+      console.warn('[SoundEngine] Playback error:', err);
     }
-  }
-
-  /**
-   * Build a sound graph for a patch on any audio context (live or offline).
-   * Creates oscillators, filter, envelope, effects, pan — connects to destination.
-   * Returns all created nodes for cleanup.
-   */
-  private buildSoundGraph(
-    ctx: BaseAudioContext,
-    patch: SoundPatch,
-    volume: number,
-    destination: AudioNode,
-  ): { nodes: AudioNode[]; oscNodes: Array<OscillatorNode | AudioBufferSourceNode>; duration: number } {
-    const now = ctx.currentTime;
-    const env = patch.envelope;
-    const totalDuration = env.attack + env.decay + env.sustain * 0.1 + env.release + 0.05;
-    const endTime = now + totalDuration;
-
-    // ─── Build oscillator sources ───
-
-    const oscNodes: Array<OscillatorNode | AudioBufferSourceNode> = [];
-    const oscGains: GainNode[] = [];
-
-    for (const oscDef of patch.oscillators) {
-      let source: OscillatorNode | AudioBufferSourceNode;
-      const oscGain = ctx.createGain();
-      oscGain.gain.value = oscDef.amplitude * volume;
-
-      if (oscDef.waveform === 'white-noise' || oscDef.waveform === 'pink-noise') {
-        // Noise generator
-        source = SoundEngine.createNoiseSourceOn(ctx, oscDef.waveform, totalDuration);
-      } else {
-        // Standard oscillator
-        const osc = ctx.createOscillator();
-        osc.type = oscDef.waveform;
-        osc.frequency.setValueAtTime(oscDef.frequency, now);
-
-        if (oscDef.detune) {
-          osc.detune.setValueAtTime(oscDef.detune, now);
-        }
-
-        // Pitch envelope
-        if (oscDef.pitchEnvelope) {
-          const pe = oscDef.pitchEnvelope;
-          osc.frequency.setValueAtTime(pe.start, now);
-          osc.frequency.linearRampToValueAtTime(pe.end, now + pe.duration);
-        }
-
-        source = osc;
-      }
-
-      source.connect(oscGain);
-      oscNodes.push(source);
-      oscGains.push(oscGain);
-    }
-
-    // ─── FM synthesis ───
-    // Wire FM modulators: modulator output -> gain (depth) -> carrier frequency
-    const fmGains: GainNode[] = [];
-    for (let i = 0; i < patch.oscillators.length; i++) {
-      const oscDef = patch.oscillators[i];
-      if (oscDef.fm && oscDef.fm.modulatorIndex < oscNodes.length) {
-        const modNode = oscNodes[oscDef.fm.modulatorIndex];
-        const carrier = oscNodes[i];
-        if (modNode instanceof OscillatorNode && carrier instanceof OscillatorNode) {
-          const fmGain = ctx.createGain();
-          fmGain.gain.value = oscDef.fm.depth;
-          modNode.connect(fmGain);
-          fmGain.connect(carrier.frequency);
-          fmGains.push(fmGain);
-        }
-      }
-    }
-
-    // ─── Mix oscillators into a bus ───
-
-    const busMerge = ctx.createGain();
-    busMerge.gain.value = 1.0;
-    for (const oscGain of oscGains) {
-      oscGain.connect(busMerge);
-    }
-
-    // ─── Subtractive filter ───
-
-    let filteredOutput: AudioNode = busMerge;
-    if (patch.filter) {
-      const bqf = ctx.createBiquadFilter();
-      bqf.type = patch.filter.type;
-      bqf.frequency.setValueAtTime(patch.filter.cutoff, now);
-      bqf.Q.setValueAtTime(patch.filter.Q, now);
-
-      if (patch.filter.envelope) {
-        const fe = patch.filter.envelope;
-        bqf.frequency.setValueAtTime(fe.start, now);
-        bqf.frequency.linearRampToValueAtTime(fe.end, now + fe.duration);
-      }
-
-      busMerge.connect(bqf);
-      filteredOutput = bqf;
-    }
-
-    // ─── ADSR amplitude envelope ───
-
-    const envGain = ctx.createGain();
-    envGain.gain.setValueAtTime(0.0001, now);
-    // Attack
-    envGain.gain.linearRampToValueAtTime(1.0, now + env.attack);
-    // Decay -> Sustain
-    envGain.gain.linearRampToValueAtTime(
-      Math.max(0.0001, env.sustain),
-      now + env.attack + env.decay,
-    );
-    // Release
-    const releaseStart = now + env.attack + env.decay + env.sustain * 0.1;
-    envGain.gain.setValueAtTime(Math.max(0.0001, env.sustain), releaseStart);
-    envGain.gain.linearRampToValueAtTime(0.0001, releaseStart + env.release);
-
-    filteredOutput.connect(envGain);
-
-    // ─── Effects chain ───
-
-    let effectsOutput: AudioNode = envGain;
-    const effectNodes: AudioNode[] = [];  // track for cleanup
-
-    if (patch.effects) {
-      // Delay
-      if (patch.effects.delay) {
-        const delay = ctx.createDelay(1.0);
-        delay.delayTime.value = patch.effects.delay.time;
-
-        const feedbackGain = ctx.createGain();
-        feedbackGain.gain.value = patch.effects.delay.feedback;
-
-        const dryGain = ctx.createGain();
-        dryGain.gain.value = 1.0;
-        const wetGain = ctx.createGain();
-        wetGain.gain.value = 0.3;
-
-        const delayMerge = ctx.createGain();
-
-        effectsOutput.connect(dryGain);
-        effectsOutput.connect(delay);
-        delay.connect(feedbackGain);
-        feedbackGain.connect(delay);
-        delay.connect(wetGain);
-
-        dryGain.connect(delayMerge);
-        wetGain.connect(delayMerge);
-        effectsOutput = delayMerge;
-        effectNodes.push(delay, feedbackGain, dryGain, wetGain, delayMerge);
-      }
-
-      // Distortion
-      if (patch.effects.distortion) {
-        const shaper = ctx.createWaveShaper();
-        shaper.curve = this.makeDistortionCurve(patch.effects.distortion.amount);
-        shaper.oversample = '2x';
-        effectsOutput.connect(shaper);
-        effectsOutput = shaper;
-        effectNodes.push(shaper);
-      }
-    }
-
-    // ─── Stereo pan ───
-
-    let panOutput: AudioNode = effectsOutput;
-    if (patch.pan !== undefined && patch.pan !== 0) {
-      const panner = ctx.createStereoPanner();
-      panner.pan.value = patch.pan;
-      effectsOutput.connect(panner);
-      panOutput = panner;
-    }
-
-    // ─── Connect to destination ───
-
-    panOutput.connect(destination);
-
-    // ─── Collect all nodes ───
-
-    const allNodes: AudioNode[] = [
-      ...oscNodes, ...oscGains, ...fmGains, ...effectNodes,
-      busMerge, envGain,
-    ];
-    if (filteredOutput !== busMerge) allNodes.push(filteredOutput); // biquad filter
-    if (panOutput !== effectsOutput) allNodes.push(panOutput);      // stereo panner
-
-    // ─── Start oscillators ───
-
-    for (const source of oscNodes) {
-      source.start(now);
-      source.stop(endTime);
-    }
-
-    return { nodes: allNodes, oscNodes, duration: totalDuration };
-  }
-
-  /**
-   * Synthesize and play a sound patch (live, non-cached fallback).
-   * Creates an ephemeral audio subgraph: oscillators -> filter -> envelope -> effects -> master.
-   */
-  private synthesize(patch: SoundPatch, eventVolume: number): void {
-    const { nodes, oscNodes, duration } = this.buildSoundGraph(
-      this.ctx!, patch, eventVolume, this.compressor!,
-    );
-
-    // Track active sound — use 'ended' event on first oscillator for accurate cleanup,
-    // with a safety-net timeout in case the event doesn't fire
-    const soundId = this.trackSound(duration * 1000 + 500);
-
-    const cleanupNodes = (): void => {
-      this.untrackSound(soundId);
-      for (const node of nodes) {
-        try { node.disconnect(); } catch { /* already disconnected */ }
-      }
-    };
-
-    // Attach cleanup to first oscillator's 'ended' event
-    if (oscNodes.length > 0) {
-      oscNodes[0].addEventListener('ended', cleanupNodes, { once: true });
-    }
-  }
-
-  /**
-   * Create a noise source (white or pink noise) as an AudioBufferSourceNode.
-   * Static so it can work with both AudioContext and OfflineAudioContext.
-   */
-  private static createNoiseSourceOn(
-    ctx: BaseAudioContext,
-    type: 'white-noise' | 'pink-noise',
-    duration: number,
-  ): AudioBufferSourceNode {
-    const sampleRate = ctx.sampleRate;
-    const length = Math.ceil(sampleRate * Math.max(duration, 0.1));
-    const buffer = ctx.createBuffer(1, length, sampleRate);
-    const data = buffer.getChannelData(0);
-
-    if (type === 'white-noise') {
-      for (let i = 0; i < length; i++) {
-        data[i] = Math.random() * 2 - 1;
-      }
-    } else {
-      // Pink noise using Paul Kellet's algorithm
-      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-      for (let i = 0; i < length; i++) {
-        const white = Math.random() * 2 - 1;
-        b0 = 0.99886 * b0 + white * 0.0555179;
-        b1 = 0.99332 * b1 + white * 0.0750759;
-        b2 = 0.96900 * b2 + white * 0.1538520;
-        b3 = 0.86650 * b3 + white * 0.3104856;
-        b4 = 0.55000 * b4 + white * 0.5329522;
-        b5 = -0.7616 * b5 - white * 0.0168980;
-        data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
-        b6 = white * 0.115926;
-      }
-    }
-
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    return source;
-  }
-
-  /**
-   * Generate a distortion curve for WaveShaperNode.
-   */
-  private makeDistortionCurve(amount: number): Float32Array<ArrayBuffer> {
-    const samples = 256;
-    const curve = new Float32Array(samples) as Float32Array<ArrayBuffer>;
-    const k = amount * 50;
-    for (let i = 0; i < samples; i++) {
-      const x = (i * 2) / samples - 1;
-      curve[i] = ((Math.PI + k) * x) / (Math.PI + k * Math.abs(x));
-    }
-    return curve;
   }
 }

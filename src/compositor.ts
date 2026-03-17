@@ -392,7 +392,7 @@ export class Compositor {
       root.setProperty('--krypton-dashboard-backdrop', `rgba(0, 0, 0, ${opacity * 0.6})`);
       const themeBg = this.themeEngine?.theme?.colors?.background
         ?? 'rgba(10, 10, 15, 0.95)';
-      root.setProperty('--krypton-dashboard-panel-bg', replaceAlpha(themeBg, Math.min(1, opacity + 0.3)));
+      root.setProperty('--krypton-dashboard-panel-bg', replaceAlpha(themeBg, opacity));
 
       // Update existing terminals so their background alpha matches
       this.updateTerminalThemes();
