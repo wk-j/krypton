@@ -35,11 +35,11 @@
 |  |  presets)     | |            | |           | |                    |  |
 |  +---------------+ +------------+ +-----------+ +--------------------+  |
 |                                                                         |
-|  +---------------+ +------------+ +-------------------+                  |
-|  | Theme         | | VT Parser  | | Process Poller    |                  |
-|  | Engine        | | (vte)      | | (tcgetpgrp,       |                  |
-|  +---------------+ +------------+ |  process-changed) |                  |
-|                                   +-------------------+                  |
+|  +---------------+ +------------+ +-------------------+ +--------------+  |
+|  | Theme         | | VT Parser  | | Process Poller    | | Sound        |  |
+|  | Engine        | | (vte)      | | (tcgetpgrp,       | | Engine       |  |
+|  +---------------+ +------------+ |  process-changed) | | (rodio/cpal) |  |
+|                                   +-------------------+ +--------------+  |
 +-------------------------------------------------------------------------+
               |
               v
@@ -101,6 +101,7 @@ The webview's `<html>` and `<body>` have `background: transparent`. Windows are 
 | `unicode-width` | Character width calculation for CJK / emoji | Planned |
 | `display-info` | Query monitor geometry for fullscreen dimensions | Planned |
 | `rusqlite` | Read-only SQLite database access for dashboard overlays | Implemented |
+| `rodio` | Audio playback for sound engine (WAV decoding + OS audio output via cpal) | Implemented |
 
 ## 5.2 Key Frontend Packages (npm)
 
@@ -413,101 +414,80 @@ Implementation options:
 
 The animation engine must maintain **60 FPS** and avoid layout thrashing (use `transform: translate()` + `width`/`height`, not `top`/`left`).
 
-## 5.8 Sound Engine (Frontend)
+## 5.8 Sound Engine (Rust Backend)
 
-A dedicated TypeScript module (`src/sound.ts`) that synthesizes and plays short sound effects for every user action using the Web Audio API. No audio files — all sounds are generated procedurally and **pre-rendered into cached `AudioBuffer`s** at theme load time via `OfflineAudioContext`. Supports two synthesis backends: **patch-based** (additive + subtractive functional synthesis via `krypton-cyber`) and **ghost-signal** (function-based themes from the ghost-signal project). Both are pre-rendered; playback uses only 2 Web Audio nodes per sound.
+The sound engine runs entirely in the Rust backend (`src-tauri/src/sound.rs`) using the `rodio` crate for OS-native audio playback. The frontend `src/sound.ts` is a thin IPC wrapper — it contains no Web Audio API code. This eliminates all AudioContext degradation, suspended-state, and silence bugs that plagued the previous browser-based implementation.
 
 ### Architecture
 
 ```
-Theme load / app start
+App start (lib.rs setup)
   |
   v
-[warmCache()] — pre-render all sounds via OfflineAudioContext
-  |  - Patch-based: buildSoundGraph() on OfflineAudioContext → AudioBuffer
-  |  - Ghost-signal: invoke sound fn on proxied OfflineAudioContext → AudioBuffer
-  |  - TYPING_LETTER: 8 variants pre-rendered for round-robin variation
+SoundEngine::new() — spawns dedicated "krypton-audio" thread
+  |                    (owns OutputStream + Sinks, receives AudioMsg via mpsc)
   |
   v
-bufferCache: Map<string, CachedBuffer>   typingLetterPool: CachedBuffer[]
+SoundEngine::init(resource_dir) — sends LoadPack message to audio thread
+  |                                  audio thread reads 17 WAV files into HashMap<String, Vec<u8>>
+  |
+  v
+[Ready — WAV bytes cached in audio thread memory]
 
 ---
 
-Action (compositor/input-router event)
+Frontend action (compositor/input-router event)
   |
   v
-SoundEngine.play('window.create')
+SoundEngine.play('window.create')         [src/sound.ts — thin IPC wrapper]
   |
   v
-[Cache Lookup] — find pre-rendered AudioBuffer by patch key or 'gs:<soundId>'
-  |
-  ├── HIT: playCached() — AudioBufferSourceNode + GainNode (2 nodes)
-  |
-  └── MISS: synthesize() — full node graph (10-18 nodes, fallback while cache warms)
+invoke('sound_play', { event })            [Tauri IPC]
   |
   v
-[Master Channel]
-  |  - DynamicsCompressorNode (limiter to prevent clipping on simultaneous sounds)
-  |  - GainNode (master volume from config)
+sound::sound_play() command                [src-tauri/src/sound.rs]
+  |  - Check enabled, per-event override, cooldown dedup (50ms)
+  |  - Map event -> WAV name
+  |  - Calculate volume (master * per-event override)
   |
   v
-AudioContext.destination (speakers)
+mpsc::Sender::send(AudioMsg::Play { wav_name, volume })
+  |
+  v
+Audio thread receives message
+  |  - Prune finished Sinks
+  |  - Check MAX_CONCURRENT (8)
+  |  - Clone WAV bytes from buffer cache
+  |  - Decoder::new(Cursor::new(bytes))
+  |  - Sink::try_new() -> set_volume() -> append(source)
+  |
+  v
+OS audio output (via cpal/CoreAudio)
 ```
 
 ### Key Design Decisions
 
-- **Single AudioContext** — lazily created on first user interaction (browser autoplay policy). Reused for all subsequent sounds. Proactively recycled every 500,000 sounds (raised from 50k thanks to buffer caching) to prevent WebKit degradation.
-- **Buffer cache** — all sounds are pre-rendered into `AudioBuffer`s via `OfflineAudioContext` at theme load time. Playback creates only 2 nodes (`AudioBufferSourceNode` + `GainNode`) instead of 10-18. Falls back to live synthesis while cache warms or on cache miss. Ghost-signal `TYPING_LETTER` uses a pool of 8 pre-rendered variants cycled round-robin.
-- **Non-blocking** — all scheduling uses `AudioContext.currentTime` offsets. No `setTimeout` or `requestAnimationFrame` for audio timing. The audio thread runs independently from the main thread.
-- **Patch definitions** — each sound is a plain object (or TOML-serializable struct) describing oscillators, filters, envelopes, and effects. This makes them configurable and replaceable via custom sound packs.
-- **Dual theme system** — `krypton-cyber` uses the patch-based model; ghost-signal themes use a function-based model where `createSounds(ctx, noiseBuffer)` returns fire-and-forget functions. Both coexist via the `ActiveSoundTheme` discriminated union.
-- **Proxy AudioContext** — ghost-signal functions connect to `ctx.destination` directly. A `Proxy` wraps the real `AudioContext`, redirecting `.destination` to a `GainNode` for master volume control without modifying theme code.
-- **Per-key typing sounds** — `playKeypress(phase, key?)` routes Backspace, Enter, Space, and letter keys to distinct ghost-signal typing sounds (`TYPING_BACKSPACE`, `TYPING_ENTER`, `TYPING_SPACE`, `TYPING_LETTER`).
-- **Lazy loading** — ghost-signal themes are loaded via dynamic `import()` so only the active theme's code is bundled into the running app.
-- **Graceful degradation** — if `AudioContext` is unavailable or construction fails, the engine silently becomes a no-op. All `play()` calls are guarded.
+- **Dedicated audio thread** — `rodio::OutputStream` is `!Send+!Sync` (platform audio handles), so all audio resources live on a dedicated named thread (`krypton-audio`). The Tauri-managed `SoundEngine` holds only an `mpsc::Sender<AudioMsg>` which is `Send+Sync`.
+- **WAV-only** — no procedural synthesis. Each sound pack is a directory of 17 pre-rendered WAV files under `src-tauri/sounds/<pack>/`. Total ~1.4 MB for both packs.
+- **In-memory buffers** — WAV file bytes are read into `Vec<u8>` at pack load time. Each playback clones the bytes into a `Cursor` for `rodio::Decoder`. This avoids filesystem I/O on the hot path.
+- **Overlap management** — same constants as the previous frontend implementation: `MAX_CONCURRENT=8` (excess dropped), `KEYPRESS_THROTTLE_MS=25`, `EVENT_COOLDOWN_MS=50`. Enforced in the `SoundEngine` (Tauri command side) before sending to the audio thread.
+- **Fire-and-forget IPC** — frontend `invoke()` calls don't await completion. The Tauri command acquires the mutex, checks throttle/cooldown, sends a channel message, and returns immediately. Actual audio playback is asynchronous on the audio thread.
+- **Graceful degradation** — if no audio device is available, `OutputStream::try_default()` fails on the audio thread, which drains the channel and exits. All `play()` calls become silent no-ops.
+- **Hot-reload** — on `config-changed`, `lib.rs::reload_and_emit()` calls `engine.apply_config()` directly on the Rust side. If the pack changed, a `LoadPack` message is sent to the audio thread.
 
-### SoundPatch Data Model
+### Tauri Commands
 
-```typescript
-interface SoundPatch {
-  oscillators: Array<{
-    waveform: 'sine' | 'square' | 'sawtooth' | 'triangle' | 'white-noise' | 'pink-noise';
-    frequency: number;          // Hz (or relative: 'fundamental', '2x', '3x', etc.)
-    amplitude: number;          // 0.0 - 1.0
-    detune?: number;            // cents
-    pitchEnvelope?: { start: number; end: number; duration: number };
-    fm?: { modulatorIndex: number; depth: number };  // FM synthesis
-  }>;
-  filter?: {
-    type: 'lowpass' | 'highpass' | 'bandpass' | 'notch';
-    cutoff: number;             // Hz
-    Q: number;                  // resonance
-    envelope?: { start: number; end: number; duration: number };  // cutoff sweep
-  };
-  envelope: {
-    attack: number;             // seconds
-    decay: number;              // seconds
-    sustain: number;            // 0.0 - 1.0
-    release: number;            // seconds
-  };
-  effects?: {
-    reverb?: { duration: number; decay: number };
-    delay?: { time: number; feedback: number };
-    distortion?: { amount: number };  // WaveShaperNode curve
-  };
-  pan?: number;                 // -1.0 (left) to 1.0 (right)
-}
-```
-
-### Keyboard Type Patch Sets
-
-Keypress sounds are separate from action sounds. Each keyboard type defines a **press** (key-down) and **release** (key-up) `SoundPatch`. The engine adds per-keystroke randomization (+/-8% amplitude, +/-3% filter cutoff) for a natural feel. The release sound fires 30-70ms (randomized) after the press.
-
-Six keyboard types are built in: `cherry-mx-blue`, `cherry-mx-red`, `cherry-mx-brown` (default), `topre`, `buckling-spring`, `membrane`. Set to `none` to disable. When a ghost-signal theme is active, `keyboard_type` is ignored — the theme provides its own typing sounds.
+| Command | Parameters | Purpose |
+|---------|-----------|---------|
+| `sound_play` | `event: String` | Play a UI sound event |
+| `sound_play_keypress` | `key: String` | Play a keypress sound (routes by key name) |
+| `sound_apply_config` | `config: SoundConfig` | Apply sound config from frontend |
+| `sound_load_pack` | `pack: String` | Switch sound pack |
+| `sound_get_packs` | — | Get available packs and current selection |
 
 ### Integration Points
 
-The Sound Engine is called by the compositor and input router at the moment each action occurs:
+The frontend `SoundEngine` class (`src/sound.ts`) exposes the same `play()` / `playKeypress()` API as before. Call sites in `compositor.ts`, `input-router.ts`, `command-palette.ts`, and `main.ts` are unchanged.
 
 | Caller | Event | Sound |
 |--------|-------|-------|
@@ -523,21 +503,15 @@ The Sound Engine is called by the compositor and input router at the moment each
 | `main.ts` (startup) | After first window rendered | `startup` |
 | PTY event listener | On BEL character | `terminal.bell` |
 | PTY event listener | On shell exit | `terminal.exit` |
-| `terminal.onData()` (both regular + QT) | On each keystroke to PTY | `keypress` (press + release via `playKeypress(phase, key)`) |
+| `terminal.onData()` (both regular + QT) | On each keystroke to PTY | `keypress` (press phase only via `playKeypress('press', key)`) |
 
-### Sound Themes (`src/sound-themes/`)
+### Sound Packs
 
-Five ghost-signal themes are embedded as TypeScript modules under `src/sound-themes/`:
+Two built-in packs, each containing 17 WAV files:
 
-| File | Theme | Description |
-|------|-------|-------------|
-| `types.ts` | — | `GhostSignalTheme` and `GhostSignalMeta` interfaces |
-| `ghost-signal.ts` | Ghost Signal | Original ghost-signal sound set |
-| `chill-city-fm.ts` | Chill City FM | Lo-fi/ambient aesthetic |
-| `orbit-deck.ts` | Orbit Deck | Space/sci-fi aesthetic |
-| `mach-line.ts` | Mach Line | Industrial/mechanical aesthetic |
-| `deep-glyph.ts` | Deep Glyph | Midnight-code trance aesthetic |
+| Pack | Directory | Description |
+|------|-----------|-------------|
+| `deep-glyph` (default) | `src-tauri/sounds/deep-glyph/` | Rich, deep UI sounds |
+| `mach-line` | `src-tauri/sounds/mach-line/` | Sharp, mechanical interface tones |
 
-Each module exports a `GhostSignalTheme` with `{ meta, createSounds }`. The `createSounds(ctx, noiseBuffer)` function returns an object of 16 fire-and-forget sound functions (e.g., `CLICK`, `HOVER`, `TAB_INSERT`, `TYPING_LETTER`, etc.).
-
-A static `GHOST_SIGNAL_EVENT_MAP` in `src/sound.ts` maps Krypton's 30 `SoundEvent` values to the appropriate ghost-signal sound IDs. The command palette dynamically lists all available sound themes (both `krypton-cyber` and ghost-signal themes) for switching at runtime.
+Packs are bundled as Tauri resources (declared in `tauri.conf.json`) and loaded at runtime from the app's resource directory. The command palette lists all available packs for switching.

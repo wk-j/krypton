@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-17 (M7: added mach-line sound pack; consolidated sound docs into docs/17-sound-themes.md)
+> Last updated: 2026-03-17 (Moved sound engine from frontend Web Audio API to Rust backend via rodio)
 
 ## Overview
 
@@ -13,7 +13,7 @@
 | M4 — Keyboard System & Workspaces | In Progress | 12/14 |
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
-| M7 — Sound Effects | In Progress | 14/15 |
+| M7 — Sound Effects | In Progress | 10/11 |
 | M8 — Polish | In Progress | 11/12 |
 | M9 — Release | Not Started | 0/4 |
 
@@ -100,20 +100,17 @@
 
 ## M7 — Sound Effects (Week 22-23)
 
-- [x] Sound engine module (`src/sound.ts`): Web Audio API wrapper with single shared AudioContext
-- [x] Additive synthesis: multi-oscillator patch builder (sine, square, sawtooth, triangle, noise generators)
-- [x] Subtractive synthesis: filter chain (lowpass, highpass, bandpass, notch) with cutoff/Q envelopes
-- [x] ADSR amplitude envelope and pitch envelope automation
-- [x] FM synthesis support (oscillator-to-oscillator frequency modulation)
-- [x] Effects chain: reverb, delay, distortion
-- [x] Master channel: DynamicsCompressorNode limiter + GainNode volume control
-- [x] Built-in `krypton-cyber` sound pack: patches for all action events
-- [x] Integration: compositor + input-router call `SoundEngine.play()` at each action point
-- [x] Configuration: `[sound]` TOML section applied via `applyConfig()`
-- [x] Keypress sounds: 6 keyboard types (cherry-mx-blue, cherry-mx-red, cherry-mx-brown, topre, buckling-spring, membrane) with press/release phases, amplitude/filter randomization, configurable via `keyboard_type` and `keyboard_volume`
-- [x] Sound theme system: WAV-based sound packs (deep-glyph, mach-line), per-key typing sound routing, command palette switching. See `docs/17-sound-themes.md`
-- [ ] Custom sound pack loading from `~/.config/krypton/sounds/*.toml`
-- [x] Graceful degradation when Web Audio API is unavailable
+- [x] Sound engine: Rust backend (`src-tauri/src/sound.rs`) via `rodio` crate with dedicated audio thread. Replaced frontend Web Audio API for reliability. See `docs/17-sound-themes.md`, `docs/27-rust-sound-engine.md`
+- [x] WAV-based sound packs (deep-glyph, mach-line) bundled as Tauri resources under `src-tauri/sounds/`
+- [x] Frontend thin IPC wrapper (`src/sound.ts`): `play()` / `playKeypress()` call Tauri commands
+- [x] 5 Tauri commands: `sound_play`, `sound_play_keypress`, `sound_apply_config`, `sound_load_pack`, `sound_get_packs`
+- [x] Overlap management in Rust: MAX_CONCURRENT=8, keypress throttle 25ms, event cooldown 50ms
+- [x] Integration: compositor + input-router call `SoundEngine.play()` at each action point (48 call sites unchanged)
+- [x] Configuration: `[sound]` TOML section applied via `applyConfig()` — hot-reload updates Rust engine directly
+- [x] Keypress sounds: per-key routing (Backspace/Enter/Space/Letter), configurable `keyboard_volume`
+- [x] Sound theme switching via command palette
+- [ ] Custom sound pack loading from `~/.config/krypton/sounds/`
+- [x] Graceful degradation when no audio device is available
 
 ## M8 — Polish (Week 24-27)
 
@@ -127,9 +124,9 @@
 - [x] OpenCode Dashboard (`Cmd+Shift+O`) — reads OpenCode's local SQLite database (`~/.local/share/opencode/opencode.db`) via new `query_sqlite` Tauri command (`rusqlite`, read-only). Displays: aggregate stats (sessions, messages, output tokens, cache reads, cost), 20 most recent sessions with message counts/tokens/diffs/duration, model usage breakdown (model, provider, count, output tokens), and top 15 tool usage with bar chart. New `query_sqlite` command: generic read-only SQLite query executor with write-statement rejection, 1000-row limit, 5-second busy timeout.
 - [ ] `@xterm/addon-search` integration with keyboard-driven search overlay
 - [ ] IME support testing and fixes
-- [ ] Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)
+- [ ] Performance profiling (latency, animation FPS, transparent rendering overhead)
 - [x] Fix macOS transparency freeze — removed `backdrop-filter: blur()` from all elements (`.krypton-window`, Quick Terminal, which-key, command palette, dashboard, hint-toast). On macOS, `backdrop-filter` in a transparent WKWebView causes the compositor to snapshot/freeze the desktop behind terminal windows when focused. Also added `.xterm-scrollable-element` CSS override to fix xterm.js setting opaque inline `backgroundColor`. See `docs/24-backdrop-filter-removal.md`.
-- [x] Sound buffer cache — replaced procedural synthesis with WAV-based playback. Each sound uses only 2 Web Audio nodes (`AudioBufferSourceNode` + `GainNode`). Sound packs are directories of 17 pre-rendered WAV files under `public/sounds/<pack>/`. See `docs/17-sound-themes.md`.
+- [x] Sound engine moved to Rust backend — replaced frontend Web Audio API with `rodio` crate on dedicated audio thread. WAV packs bundled as Tauri resources under `src-tauri/sounds/`. Frontend is thin IPC wrapper. See `docs/17-sound-themes.md`, `docs/27-rust-sound-engine.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 

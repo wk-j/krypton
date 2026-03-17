@@ -1,9 +1,10 @@
 mod commands;
 mod config;
 mod pty;
+pub mod sound;
 pub mod theme;
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -17,10 +18,14 @@ pub fn run() {
     // Initialize theme engine (loads built-in themes)
     let theme_engine = Arc::new(theme::ThemeEngine::new());
 
+    // Initialize sound engine
+    let sound_engine: sound::SoundEngineState = Mutex::new(sound::SoundEngine::new());
+
     tauri::Builder::default()
         .manage(pty_manager)
         .manage(krypton_config.clone())
         .manage(theme_engine.clone())
+        .manage(sound_engine)
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
             commands::get_pty_cwd,
@@ -39,6 +44,11 @@ pub fn run() {
             commands::find_java_server_by_cwd,
             commands::run_command,
             commands::query_sqlite,
+            sound::sound_play,
+            sound::sound_play_keypress,
+            sound::sound_apply_config,
+            sound::sound_load_pack,
+            sound::sound_get_packs,
         ])
         .setup(move |app| {
             if cfg!(debug_assertions) {
@@ -68,6 +78,26 @@ pub fn run() {
             }
             let _ = window.set_always_on_top(true);
             let _ = window.set_always_on_top(false);
+
+            // Initialize sound engine with resource path and config
+            {
+                let resource_dir = app
+                    .path()
+                    .resource_dir()
+                    .expect("failed to resolve resource directory");
+                let sound_config = krypton_config
+                    .read()
+                    .ok()
+                    .map(|cfg| cfg.sound.clone());
+                let sound_state = app.state::<sound::SoundEngineState>();
+                let mut engine = sound_state
+                    .lock()
+                    .expect("sound engine lock poisoned at init");
+                engine.init(resource_dir);
+                if let Some(cfg) = sound_config {
+                    engine.apply_config(cfg);
+                }
+            }
 
             // Start filesystem watcher for config + theme hot-reload
             let app_handle = app.handle().clone();
@@ -205,6 +235,12 @@ fn reload_and_emit(
 
     match config.read() {
         Ok(cfg) => {
+            // Apply sound config to Rust engine directly (no IPC round-trip)
+            let sound_state = app_handle.state::<sound::SoundEngineState>();
+            if let Ok(mut engine) = sound_state.lock() {
+                engine.apply_config(cfg.sound.clone());
+            }
+
             if let Err(e) = app_handle.emit("config-changed", &*cfg) {
                 log::error!("Failed to emit config-changed: {e}");
             }

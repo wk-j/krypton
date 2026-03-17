@@ -10,22 +10,32 @@
 
 ## 1. Overview
 
-Krypton's sound engine is entirely frontend-based — no Rust-side audio. The `SoundEngine` class (`src/sound.ts`) plays pre-rendered WAV files via the Web Audio API. Each sound pack is a directory of 17 WAV files. The engine maps 31 UI events and 4 keypress types to these files.
+Krypton's sound engine runs in the Rust backend (`src-tauri/src/sound.rs`) using the `rodio` crate for OS-native audio playback via cpal/CoreAudio. The frontend `SoundEngine` class (`src/sound.ts`) is a thin IPC wrapper — it contains no Web Audio API code. Each sound pack is a directory of 17 WAV files bundled as Tauri resources.
 
 ### Architecture
 
 ```
-WAV file (fetch) -> decodeAudioData() -> AudioBuffer (cached in Map)
-                                              |
-play() -> AudioBufferSourceNode -> GainNode -> DynamicsCompressorNode -> GainNode (master) -> destination
-           (2 nodes per sound)
+App startup: SoundEngine::new() spawns "krypton-audio" thread
+             SoundEngine::init() sends LoadPack -> audio thread reads 17 WAVs into HashMap
+
+Frontend event -> invoke('sound_play') -> Rust sound_play command
+  |                                         |
+  |                                         v
+  |                                       Check enabled, cooldown, throttle
+  |                                         |
+  |                                         v
+  |                                       mpsc::send(AudioMsg::Play { wav_name, volume })
+  |                                         |
+  v                                         v
+(returns immediately)                   Audio thread: clone bytes -> Decoder -> Sink -> OS audio
 ```
 
 Key properties:
-- **2 nodes per sound** (source + gain) — minimal Web Audio overhead
-- **No procedural synthesis** — eliminates AudioContext degradation from high node churn
+- **Rust-native audio** — uses `rodio`/`cpal` for direct OS audio output, no browser WebView involvement
+- **Dedicated audio thread** — `OutputStream` is `!Send`, so it lives on a named thread. Communication via `mpsc` channel
+- **No procedural synthesis** — static WAV file playback only
 - **Pack-switchable** — users swap entire sound aesthetics via config or command palette
-- **Frontend-only** — Rust backend carries `SoundConfig` for serialization but does zero audio processing
+- **No AudioContext issues** — eliminates all WebView audio degradation, suspended-state, and silence bugs
 
 ---
 
@@ -35,8 +45,8 @@ Key properties:
 
 | Pack | Directory | Description |
 |------|-----------|-------------|
-| `deep-glyph` (default) | `public/sounds/deep-glyph/` | Rich, deep UI sounds |
-| `mach-line` | `public/sounds/mach-line/` | Sharp, mechanical interface tones |
+| `deep-glyph` (default) | `src-tauri/sounds/deep-glyph/` | Rich, deep UI sounds |
+| `mach-line` | `src-tauri/sounds/mach-line/` | Sharp, mechanical interface tones |
 
 ### WAV File Convention
 
@@ -56,26 +66,26 @@ WAV files originate from the [ghost-signal](https://github.com/wk-j/ghost-signal
 
 ### Pack Registry
 
-Packs are registered in `src/sound.ts`:
+Packs are registered in `src-tauri/src/sound.rs`:
 
-```typescript
-interface SoundPack {
-  id: string;
-  displayName: string;
+```rust
+fn available_packs() -> Vec<SoundPack> {
+    vec![
+        SoundPack { id: "deep-glyph".into(), display_name: "Deep Glyph".into() },
+        SoundPack { id: "mach-line".into(), display_name: "Mach Line".into() },
+    ]
 }
-
-const AVAILABLE_PACKS: SoundPack[] = [
-  { id: 'deep-glyph', displayName: 'Deep Glyph' },
-  { id: 'mach-line', displayName: 'Mach Line' },
-];
 ```
+
+Display names are also mirrored in `src/sound.ts` for synchronous access in the command palette.
 
 ### Adding a New Pack
 
-1. Create `public/sounds/<pack-name>/`
+1. Create `src-tauri/sounds/<pack-name>/`
 2. Place all 17 WAV files (same naming convention)
-3. Add an entry to `AVAILABLE_PACKS` in `src/sound.ts`
-4. The pack appears in the command palette and is selectable via `[sound] pack = "<pack-name>"`
+3. Add an entry to `available_packs()` in `src-tauri/src/sound.rs`
+4. Add the display name to `PACK_DISPLAY_NAMES` in `src/sound.ts`
+5. The pack appears in the command palette and is selectable via `[sound] pack = "<pack-name>"`
 
 ---
 
@@ -156,30 +166,21 @@ All triggers are direct method calls (`this.sound.play('event.name')`) — no pu
 
 ---
 
-## 5. AudioContext Lifecycle
+## 5. Audio Thread Lifecycle
 
-### Lazy Initialization
+### Initialization
 
-The `AudioContext` is created on first sound play (not at startup) to comply with browser autoplay policy. `ensureContext()` is called before every sound:
+The audio thread is spawned at app startup by `SoundEngine::new()`. It owns the `rodio::OutputStream` (which holds the cpal audio device) and the `OutputStreamHandle` for creating `Sink`s. The thread blocks on `mpsc::Receiver::recv()` waiting for `AudioMsg` messages.
 
-1. If context exists and is `running` — return immediately
-2. If `suspended` — call `ctx.resume()` (macOS display sleep, audio device change)
-3. If `closed` — null everything, recreate on next call
-4. If no context — create a new one with master chain
+If no audio output device is available, `OutputStream::try_default()` fails, the thread drains the channel and exits. All subsequent `play()` calls are silent no-ops.
 
-### Master Channel
+### Audio Chain
 
 ```
-DynamicsCompressorNode (limiter: threshold=-3dB, ratio=8:1, knee=10, attack=3ms, release=100ms)
-    -> GainNode (master volume from config)
-    -> AudioContext.destination
+WAV bytes (Vec<u8>) -> Cursor -> rodio::Decoder -> rodio::Sink (with volume) -> OS audio output
 ```
 
-### State Monitoring
-
-A `statechange` listener on the `AudioContext` handles:
-- **`closed`**: Nulls all references so the next `ensureContext()` recreates
-- **`suspended`**: Calls `ctx.resume()` (best-effort)
+Each sound gets its own `Sink` with configurable volume. Sinks are tracked in a `Vec<Sink>` and pruned (via `sink.empty()`) before each new sound.
 
 ---
 
@@ -187,44 +188,44 @@ A `statechange` listener on the `AudioContext` handles:
 
 ### Load Flow
 
-`loadAllWavs()` is called on first `applyConfig()` or when the pack changes:
+On `AudioMsg::LoadPack`, the audio thread:
 
-1. Clear existing buffer cache
-2. Ensure AudioContext exists (needed for `decodeAudioData`)
-3. For each of the 17 WAV names, fetch `/sounds/<packName>/<NAME>.wav`
-4. Decode each response into an `AudioBuffer` via `ctx.decodeAudioData()`
-5. Store in `Map<string, AudioBuffer>`
+1. Clears the existing buffer `HashMap`
+2. Reads each of the 17 WAV files from `<resource_dir>/sounds/<pack>/<NAME>.wav`
+3. Stores raw bytes as `Vec<u8>` in `HashMap<String, Vec<u8>>`
+
+WAV files are bundled as Tauri resources (declared in `tauri.conf.json` under `bundle.resources`). At runtime, resolved via `app.path().resource_dir()`.
 
 ### Pack Switching
 
-When the user switches packs:
+When the user switches packs (via command palette or config change):
 
-1. `loadTheme(packName)` updates `config.pack`
-2. `loaded` flag reset, buffer cache cleared
-3. `loadAllWavs()` fetches from the new pack's directory
-4. Sounds already playing finish normally; new sounds use new buffers
+1. Frontend calls `invoke('sound_load_pack', { pack })` or config hot-reload triggers `apply_config()`
+2. `SoundEngine` sends `AudioMsg::LoadPack { pack_dir }` to the audio thread
+3. Audio thread clears buffer cache, reads new WAV files
+4. Sounds already playing on existing Sinks finish normally; new sounds use new buffers
 
 ---
 
 ## 7. Playback
 
-### `play(event: SoundEvent)`
+### `sound_play(event)` (Tauri command)
 
-1. Check `enabled`, per-event override, cooldown dedup, max concurrent
-2. Map event to WAV name via `EVENT_TO_WAV`
-3. Look up `AudioBuffer` from cache
-4. Create `AudioBufferSourceNode` + `GainNode` (2 nodes)
-5. Connect through compressor to master
-6. Track active sound count; decrement on `ended` event
+1. Lock `SoundEngineState` mutex
+2. Check `enabled`, per-event override, cooldown dedup (50ms)
+3. Map event to WAV name via `event_to_wav()` match
+4. Calculate volume: `config.volume * per_event_override`
+5. Send `AudioMsg::Play { wav_name, volume }` to audio thread
+6. Audio thread: prune finished sinks, check `MAX_CONCURRENT`, clone bytes, decode, create `Sink`, play
 
-### `playKeypress(phase, key)`
+### `sound_play_keypress(key)` (Tauri command)
 
-1. Ignore `release` phase
+1. Lock mutex
 2. Check enabled, per-event override for `keypress`
 3. Throttle check (25ms minimum interval)
 4. Route key to WAV name (`TYPING_BACKSPACE` / `TYPING_ENTER` / `TYPING_SPACE` / `TYPING_LETTER`)
-5. Apply `keyboard_volume` multiplier
-6. Play via same buffer playback path
+5. Calculate volume: `config.volume * config.keyboard_volume * per_event_override`
+6. Send `AudioMsg::Play` to audio thread
 
 ---
 
@@ -272,13 +273,15 @@ interface SoundConfig {
 }
 ```
 
+The TypeScript `SoundEngine` class is a thin IPC wrapper. `play()` and `playKeypress()` call `invoke()` to the Rust backend. No Web Audio API code.
+
 ### Hot-Reload
 
-On `config-changed` Tauri event, `SoundEngine.applyConfig()` compares the new `pack` to the previous one. If changed, clears the buffer cache and reloads WAVs from the new directory.
+On config file change, `lib.rs::reload_and_emit()` calls `engine.apply_config()` directly on the Rust `SoundEngine` — no IPC round-trip. If the pack changed, the audio thread reloads WAV files.
 
 ### Command Palette
 
-The command palette dynamically lists all available packs under the "Sound Theme" category. The current pack is marked `(active)`. Selecting a pack calls `soundEngine.loadTheme(packName)`.
+The command palette dynamically lists all available packs under the "Sound Theme" category. The current pack is marked `(active)`. Selecting a pack calls `soundEngine.loadTheme(packName)` which invokes `sound_load_pack` on the backend.
 
 ---
 
@@ -286,27 +289,25 @@ The command palette dynamically lists all available packs under the "Sound Theme
 
 | File | Role |
 |------|------|
-| `src/sound.ts` | Sound engine: WAV loading, buffer cache, playback, event mapping, pack registry, overlap management, AudioContext lifecycle |
+| `src-tauri/src/sound.rs` | Rust sound engine: audio thread, WAV buffer cache, playback via rodio, event mapping, overlap/throttle/cooldown, Tauri commands |
+| `src-tauri/src/lib.rs` | Sound engine initialization, command registration, hot-reload integration |
+| `src-tauri/src/config.rs` | Rust `SoundConfig` struct with defaults |
+| `src/sound.ts` | Thin IPC wrapper: `play()` / `playKeypress()` call Tauri commands |
 | `src/compositor.ts` | Triggers sounds for window/tab/pane/layout actions, keypress sounds, terminal bell |
 | `src/input-router.ts` | Triggers sounds for mode changes, resize/move/swap/hint actions |
 | `src/command-palette.ts` | Triggers palette open/close/execute sounds; lists sound packs for switching |
 | `src/main.ts` | Startup sound |
-| `src/config.ts` | TypeScript `SoundConfig` interface |
-| `src-tauri/src/config.rs` | Rust `SoundConfig` struct with defaults |
-| `public/sounds/deep-glyph/` | 17 WAV files — Deep Glyph pack |
-| `public/sounds/mach-line/` | 17 WAV files — Mach Line pack |
+| `src-tauri/sounds/deep-glyph/` | 17 WAV files — Deep Glyph pack (bundled as Tauri resource) |
+| `src-tauri/sounds/mach-line/` | 17 WAV files — Mach Line pack (bundled as Tauri resource) |
 
 ---
 
 ## 10. Diagnostics
 
-`startDiagnostics()` enables 30-second periodic logging:
-
-```
-[SoundEngine] ctx=running active=2 attempted=1423 played=1401 buffers=17/17 loaded=true
-```
-
-Fields: AudioContext state, active concurrent sounds, total attempted/played counts, buffer cache population, load status.
+The Rust sound engine logs via the `log` crate:
+- WAV loading: `Loaded 17/17 WAV files from pack 'deep-glyph'`
+- Warnings: failed WAV reads, missing pack directories, decode errors, no audio device
+- Audio thread lifecycle: startup and device availability
 
 ---
 
@@ -324,15 +325,16 @@ The sound engine evolved through several iterations:
 
 5. **Silence bug analysis** (former doc 26): Identified four interacting causes: `resume()` promise never settling, `warmCache()` race conditions, stale ghost-signal closures, and no output health check. Proposed resume timeout, generation-guarded cache warming, closure invalidation, and `AnalyserNode` output probes.
 
-6. **WAV replacement** (current): Eliminated all procedural synthesis. Replaced with static WAV file playback. Each sound pack is a directory of 17 pre-rendered WAVs. This eliminates the root cause of all prior AudioContext degradation — node churn is now 2 nodes/sound instead of 10-18. The resilience, buffer cache, and silence bug mitigations are no longer needed in the WAV architecture but informed the current design's simplicity.
+6. **WAV replacement**: Eliminated all procedural synthesis. Replaced with static WAV file playback. Each sound pack is a directory of 17 pre-rendered WAVs. This eliminated the root cause of all prior AudioContext degradation.
+
+7. **Rust backend** (current): Moved all audio from the frontend Web Audio API to the Rust backend using `rodio` (cpal). A dedicated `krypton-audio` thread owns the `OutputStream` and `Sink`s. The frontend `SoundEngine` became a thin IPC wrapper calling Tauri commands. This eliminates all browser/WebView audio issues entirely — no AudioContext lifecycle management, no suspended states, no silence bugs. See `docs/27-rust-sound-engine.md`.
 
 ---
 
 ## 12. Out of Scope
 
-- Procedural/real-time synthesis (removed — root cause of AudioContext degradation)
-- Custom user sound packs from `~/.config/krypton/sounds/` (future — needs Tauri asset protocol)
+- Procedural/real-time synthesis (removed — was root cause of AudioContext degradation)
+- Custom user sound packs from `~/.config/krypton/sounds/` (future)
 - Mixing sounds from different packs
 - Per-event WAV override within a pack
-- AudioWorklet-based playback
-- Rust-side audio engine
+- Spatial audio / panning based on window position
