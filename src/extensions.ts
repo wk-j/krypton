@@ -15,11 +15,11 @@ import type {
 
 // ─── Built-in Extension Registry ─────────────────────────────────
 
-import { javaExtension } from './extensions/java';
+// import { javaExtension } from './extensions/java'; // Disabled — buggy
 
 /** All built-in context extensions. Order = priority (first match wins). */
 const EXTENSIONS: ContextExtension[] = [
-  javaExtension,
+  // javaExtension, // Disabled — buggy
   // Future: sshExtension, vimExtension, pythonExtension, nodeExtension, etc.
 ];
 
