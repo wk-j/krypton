@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-16 (M8: sound buffer cache — pre-rendered AudioBuffer playback)
+> Last updated: 2026-03-17 (M7: added mach-line sound pack; consolidated sound docs into docs/17-sound-themes.md)
 
 ## Overview
 
@@ -111,7 +111,7 @@
 - [x] Integration: compositor + input-router call `SoundEngine.play()` at each action point
 - [x] Configuration: `[sound]` TOML section applied via `applyConfig()`
 - [x] Keypress sounds: 6 keyboard types (cherry-mx-blue, cherry-mx-red, cherry-mx-brown, topre, buckling-spring, membrane) with press/release phases, amplitude/filter randomization, configurable via `keyboard_type` and `keyboard_volume`
-- [x] Sound theme system: ghost-signal integration with 5 built-in themes (ghost-signal, chill-city-fm, orbit-deck, mach-line, deep-glyph), per-key typing sound routing, command palette switching, proxy AudioContext for volume control
+- [x] Sound theme system: WAV-based sound packs (deep-glyph, mach-line), per-key typing sound routing, command palette switching. See `docs/17-sound-themes.md`
 - [ ] Custom sound pack loading from `~/.config/krypton/sounds/*.toml`
 - [x] Graceful degradation when Web Audio API is unavailable
 
@@ -129,7 +129,7 @@
 - [ ] IME support testing and fixes
 - [ ] Performance profiling (latency, animation FPS, transparent rendering overhead, sound synthesis overhead)
 - [x] Fix macOS transparency freeze — removed `backdrop-filter: blur()` from all elements (`.krypton-window`, Quick Terminal, which-key, command palette, dashboard, hint-toast). On macOS, `backdrop-filter` in a transparent WKWebView causes the compositor to snapshot/freeze the desktop behind terminal windows when focused. Also added `.xterm-scrollable-element` CSS override to fix xterm.js setting opaque inline `backgroundColor`. See `docs/24-backdrop-filter-removal.md`.
-- [x] Sound buffer cache — pre-render all sounds (both patch-based and ghost-signal themes) into `AudioBuffer`s via `OfflineAudioContext` at theme load time. Cached playback uses only 2 Web Audio nodes (`AudioBufferSourceNode` + `GainNode`) instead of 10-18 per sound. Ghost-signal `TYPING_LETTER` pre-renders 8 variants in a round-robin pool for natural variation. Context recycle threshold raised from 50k to 500k. Falls back to live synthesis while cache warms. See `docs/25-sound-buffer-cache.md`.
+- [x] Sound buffer cache — replaced procedural synthesis with WAV-based playback. Each sound uses only 2 Web Audio nodes (`AudioBufferSourceNode` + `GainNode`). Sound packs are directories of 17 pre-rendered WAV files under `public/sounds/<pack>/`. See `docs/17-sound-themes.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 

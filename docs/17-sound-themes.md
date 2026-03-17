@@ -1,39 +1,93 @@
-# Sound Themes — Implementation Spec
+# Sound Engine — Specification
 
 > Status: Implemented
-> Date: 2026-03-12
-> Milestone: M7 — Sound Effects
+> Date: 2026-03-17
+> Milestone: M7 — Sound Effects / M8 — Polish
+>
+> Consolidates: former docs 17, 21, 25, 26
 
-## Problem
+---
 
-Sound effects in Krypton are hardcoded as the single `krypton-cyber` pack using a patch-based synthesis model (oscillator definitions + filters + envelopes). Users cannot swap to a different sound aesthetic. Meanwhile, the [ghost-signal](https://github.com/wk-j/ghost-signal) project provides a library of Web Audio API sound themes with a different but compatible architecture: each theme is a JS module exporting `{ meta, createSounds }` where `createSounds(ctx, noiseBuffer)` returns an object of 17 fire-and-forget functions.
+## 1. Overview
 
-The goal is to make sound effects customizable like visual themes — users pick a sound theme from built-in options or install custom ones.
+Krypton's sound engine is entirely frontend-based — no Rust-side audio. The `SoundEngine` class (`src/sound.ts`) plays pre-rendered WAV files via the Web Audio API. Each sound pack is a directory of 17 WAV files. The engine maps 31 UI events and 4 keypress types to these files.
 
-## Solution
+### Architecture
 
-Embed the five ghost-signal themes as built-in sound packs alongside `krypton-cyber`. Add a **sound theme adapter** that bridges ghost-signal's function-based sounds to Krypton's `SoundEngine.play(event)` API. Support loading custom sound themes from `~/.config/krypton/sounds/<name>/sounds.js`. The `pack` config key selects the active sound theme; hot-reload applies on change.
+```
+WAV file (fetch) -> decodeAudioData() -> AudioBuffer (cached in Map)
+                                              |
+play() -> AudioBufferSourceNode -> GainNode -> DynamicsCompressorNode -> GainNode (master) -> destination
+           (2 nodes per sound)
+```
 
-## Affected Files
+Key properties:
+- **2 nodes per sound** (source + gain) — minimal Web Audio overhead
+- **No procedural synthesis** — eliminates AudioContext degradation from high node churn
+- **Pack-switchable** — users swap entire sound aesthetics via config or command palette
+- **Frontend-only** — Rust backend carries `SoundConfig` for serialization but does zero audio processing
 
-| File | Change |
-|------|--------|
-| `src/sound.ts` | Add `SoundThemeAdapter` interface, ghost-signal event mapping, `loadSoundTheme()`, refactor `play()`/`playKeypress()` to delegate to active theme |
-| `src/sound-themes/` | New directory: embedded ghost-signal theme modules (5 files) |
-| `src/config.ts` | Add `sound_theme` to `SoundConfig` type (alias of `pack`), extend `KeyboardType` |
-| `src-tauri/src/config.rs` | No Rust changes — sound themes are frontend-only |
-| `src/compositor.ts` | Update `applyConfig` to trigger sound theme reload on pack change |
-| `src/main.ts` | No changes — theme loading happens inside `SoundEngine.applyConfig()` |
+---
 
-## Design
+## 2. Sound Packs
 
-### Sound Event Mapping
+### Built-in Packs
 
-Ghost-signal defines 17 sounds (including `APP_START`). Krypton defines 30 `SoundEvent` values. The adapter maps Krypton events to ghost-signal sound IDs:
+| Pack | Directory | Description |
+|------|-----------|-------------|
+| `deep-glyph` (default) | `public/sounds/deep-glyph/` | Rich, deep UI sounds |
+| `mach-line` | `public/sounds/mach-line/` | Sharp, mechanical interface tones |
 
-| Krypton Event | Ghost-Signal Sound | Rationale |
+### WAV File Convention
+
+All packs must provide exactly 17 WAV files with these names:
+
+```
+APP_START.wav          LIMITER_OFF.wav        TAB_SLASH.wav
+CLICK.wav              LIMITER_ON.wav         TYPING_BACKSPACE.wav
+FEATURE_SWITCH_OFF.wav SWITCH_TOGGLE.wav      TYPING_ENTER.wav
+FEATURE_SWITCH_ON.wav  TAB_CLOSE.wav          TYPING_LETTER.wav
+HOVER.wav              TAB_INSERT.wav         TYPING_SPACE.wav
+HOVER_UP.wav
+IMPORTANT_CLICK.wav
+```
+
+WAV files originate from the [ghost-signal](https://github.com/wk-j/ghost-signal) project. Each ghost-signal theme exports WAV renders of its 17 sounds.
+
+### Pack Registry
+
+Packs are registered in `src/sound.ts`:
+
+```typescript
+interface SoundPack {
+  id: string;
+  displayName: string;
+}
+
+const AVAILABLE_PACKS: SoundPack[] = [
+  { id: 'deep-glyph', displayName: 'Deep Glyph' },
+  { id: 'mach-line', displayName: 'Mach Line' },
+];
+```
+
+### Adding a New Pack
+
+1. Create `public/sounds/<pack-name>/`
+2. Place all 17 WAV files (same naming convention)
+3. Add an entry to `AVAILABLE_PACKS` in `src/sound.ts`
+4. The pack appears in the command palette and is selectable via `[sound] pack = "<pack-name>"`
+
+---
+
+## 3. Sound Event Mapping
+
+### UI Events
+
+31 `SoundEvent` values mapped to the 17 WAV files. All packs share this mapping:
+
+| Krypton Event | WAV File | Rationale |
 |---|---|---|
-| `startup` | `APP_START` | Application awakening — atmospheric drone |
+| `startup` | `APP_START` | Application awakening |
 | `window.create` | `TAB_INSERT` | New element appearing |
 | `window.close` | `TAB_CLOSE` | Element disappearing |
 | `window.focus` | `HOVER` | Attention/proximity |
@@ -66,174 +120,219 @@ Ghost-signal defines 17 sounds (including `APP_START`). Krypton defines 30 `Soun
 | `pane.close` | `TAB_CLOSE` | Pane removed |
 | `pane.focus` | `HOVER` | Focus shift |
 
-### Keyboard Sound Mapping
+### Keyboard Sounds
 
-Ghost-signal provides 4 distinct typing sounds. The `playKeypress()` signature is extended to accept an optional `key` parameter:
+Four typing WAV files routed by key:
 
-```typescript
-playKeypress(phase: 'press' | 'release', key?: string): void
-```
-
-The compositor passes `domEvent.key` from xterm.js's `onKey` callback:
-
-```typescript
-pane.terminal.onKey(({ domEvent }) => {
-  this.sound.playKeypress('press', domEvent.key);
-  setTimeout(() => this.sound.playKeypress('release', domEvent.key), 30 + Math.random() * 40);
-});
-```
-
-When a ghost-signal theme is active, the key is routed to the correct typing sound:
-
-| Key | Ghost-Signal Sound |
+| Key | WAV File |
 |---|---|
 | `Backspace` | `TYPING_BACKSPACE` |
 | `Enter` | `TYPING_ENTER` |
 | ` ` (space) | `TYPING_SPACE` |
 | Everything else | `TYPING_LETTER` |
 
-Release phase is a no-op for ghost-signal themes (they have no release sounds). When a ghost-signal theme is active, the `keyboard_type` config is ignored — the theme provides its own typing sounds.
+Only the `press` phase plays. The `release` phase is a no-op — WAV files include the full envelope.
 
-### Data Structures
+### Where Sounds Are Triggered
 
-```typescript
-/** 
- * A ghost-signal compatible sound theme.
- * `createSounds(ctx, noiseBuffer)` returns an object of fire-and-forget functions.
- */
-interface GhostSignalTheme {
-  meta: {
-    name: string;
-    subtitle: string;
-    colors: Record<string, string>;
-    sounds: Record<string, { label: string; meta: string; desc: string }>;
-  };
-  createSounds: (
-    ctx: AudioContext,
-    noiseBuffer: (duration?: number) => AudioBuffer,
-  ) => Record<string, () => void>;
-}
+| Location | Events |
+|---|---|
+| `src/compositor.ts` | Window create/close/focus/maximize/restore/pin/unpin, tab create/close/switch/move, pane split/close/focus, layout toggle, terminal bell (BEL `\x07` detection), terminal exit, keypress sounds, quick terminal show/hide |
+| `src/input-router.ts` | Mode enter/exit, resize/move step, swap complete, hint activate/select/cancel |
+| `src/command-palette.ts` | Palette open/close/execute |
+| `src/main.ts` | Startup sound |
 
-/**
- * Resolved sound theme: either patch-based (krypton-native) or function-based (ghost-signal).
- */
-type ActiveSoundTheme =
-  | { type: 'patches'; patches: Record<string, SoundPatch> }
-  | { type: 'ghost-signal'; sounds: Record<string, () => void>; theme: GhostSignalTheme };
-```
+All triggers are direct method calls (`this.sound.play('event.name')`) — no pub/sub event bus.
 
-### Built-in Theme Registry
+---
 
-The five ghost-signal themes are copied into `src/sound-themes/` as ES modules:
+## 4. Overlap Management
 
-```
-src/sound-themes/
-  ghost-signal.ts    # re-export from adapted ghost-signal/sounds.js
-  chill-city-fm.ts
-  orbit-deck.ts
-  mach-line.ts
-  deep-glyph.ts
-```
+| Parameter | Value | Purpose |
+|---|---|---|
+| `MAX_CONCURRENT` | 8 | Max simultaneous sounds — excess dropped |
+| `KEYPRESS_THROTTLE_MS` | 25 | Minimum interval between keypress sounds |
+| `EVENT_COOLDOWN_MS` | 50 | Per-event dedup — same event won't re-fire within this window |
 
-Each file wraps the original `sounds.js` content into a TypeScript module exporting a `GhostSignalTheme` object. The `meta` and `createSounds` function are preserved verbatim.
+---
 
-A registry maps pack names to themes:
+## 5. AudioContext Lifecycle
 
-```typescript
-const BUILT_IN_THEMES: Record<string, () => Promise<GhostSignalTheme>> = {
-  'ghost-signal':  () => import('./sound-themes/ghost-signal').then(m => m.default),
-  'chill-city-fm': () => import('./sound-themes/chill-city-fm').then(m => m.default),
-  'orbit-deck':    () => import('./sound-themes/orbit-deck').then(m => m.default),
-  'mach-line':     () => import('./sound-themes/mach-line').then(m => m.default),
-  'deep-glyph':    () => import('./sound-themes/deep-glyph').then(m => m.default),
-};
-```
+### Lazy Initialization
 
-Lazy imports via dynamic `import()` so only the active theme is loaded.
+The `AudioContext` is created on first sound play (not at startup) to comply with browser autoplay policy. `ensureContext()` is called before every sound:
 
-### Custom Theme Loading
+1. If context exists and is `running` — return immediately
+2. If `suspended` — call `ctx.resume()` (macOS display sleep, audio device change)
+3. If `closed` — null everything, recreate on next call
+4. If no context — create a new one with master chain
 
-Custom themes live at `~/.config/krypton/sounds/<name>/sounds.js`. Loading uses a dynamic `import()` with the Tauri `convertFileSrc()` API to create a valid URL from the filesystem path. The Tauri backend already has `asset:` protocol scope configured.
-
-```typescript
-async function loadCustomSoundTheme(name: string): Promise<GhostSignalTheme | null> {
-  const basePath = await resolveConfigPath(`sounds/${name}/sounds.js`);
-  const url = convertFileSrc(basePath);
-  const module = await import(/* @vite-ignore */ url);
-  return module.default;
-}
-```
-
-### Refactored `play()` Flow
+### Master Channel
 
 ```
-1. SoundEngine.play('window.create') called
-2. Check enabled, cooldown, max concurrent — unchanged
-3. If activeTheme.type === 'patches':
-     → existing patch-based synthesis (unchanged)
-4. If activeTheme.type === 'ghost-signal':
-     → lookup event in EVENT_MAP → get ghost-signal sound ID
-     → call activeTheme.sounds[soundId]()
-     → (the function creates its own oscillators connected to ctx.destination)
+DynamicsCompressorNode (limiter: threshold=-3dB, ratio=8:1, knee=10, attack=3ms, release=100ms)
+    -> GainNode (master volume from config)
+    -> AudioContext.destination
 ```
 
-For ghost-signal themes, the `SoundEngine` still owns the `AudioContext` and passes it to `createSounds()`. The master gain/compressor are bypassed since ghost-signal functions connect directly to `ctx.destination`. To integrate with the master volume, we insert a `GainNode` as `ctx.destination` override — but actually ghost-signal functions hardcode `ctx.destination`. The simplest correct approach: after `createSounds()`, the master volume is controlled by setting `ctx.destination` gain. Since `AudioContext.destination` is read-only, we instead monkey-patch the context's `destination` with a `GainNode`:
+### State Monitoring
 
-```typescript
-// Create a volume-controlled context wrapper for ghost-signal themes
-const masterGain = ctx.createGain();
-masterGain.gain.value = config.volume;
-masterGain.connect(ctx.destination);
+A `statechange` listener on the `AudioContext` handles:
+- **`closed`**: Nulls all references so the next `ensureContext()` recreates
+- **`suspended`**: Calls `ctx.resume()` (best-effort)
 
-// Create a proxy context where .destination points to masterGain
-const proxyCtx = new Proxy(ctx, {
-  get(target, prop) {
-    if (prop === 'destination') return masterGain;
-    const val = Reflect.get(target, prop);
-    return typeof val === 'function' ? val.bind(target) : val;
-  }
-});
+---
 
-const sounds = theme.createSounds(proxyCtx, noiseBuffer);
-```
+## 6. WAV Loading
 
-This way ghost-signal functions that connect to `ctx.destination` actually connect to our gain node, giving us volume control without modifying the theme code.
+### Load Flow
 
-### Configuration
+`loadAllWavs()` is called on first `applyConfig()` or when the pack changes:
 
-No new config keys needed. Existing `[sound]` config already supports:
+1. Clear existing buffer cache
+2. Ensure AudioContext exists (needed for `decodeAudioData`)
+3. For each of the 17 WAV names, fetch `/sounds/<packName>/<NAME>.wav`
+4. Decode each response into an `AudioBuffer` via `ctx.decodeAudioData()`
+5. Store in `Map<string, AudioBuffer>`
+
+### Pack Switching
+
+When the user switches packs:
+
+1. `loadTheme(packName)` updates `config.pack`
+2. `loaded` flag reset, buffer cache cleared
+3. `loadAllWavs()` fetches from the new pack's directory
+4. Sounds already playing finish normally; new sounds use new buffers
+
+---
+
+## 7. Playback
+
+### `play(event: SoundEvent)`
+
+1. Check `enabled`, per-event override, cooldown dedup, max concurrent
+2. Map event to WAV name via `EVENT_TO_WAV`
+3. Look up `AudioBuffer` from cache
+4. Create `AudioBufferSourceNode` + `GainNode` (2 nodes)
+5. Connect through compressor to master
+6. Track active sound count; decrement on `ended` event
+
+### `playKeypress(phase, key)`
+
+1. Ignore `release` phase
+2. Check enabled, per-event override for `keypress`
+3. Throttle check (25ms minimum interval)
+4. Route key to WAV name (`TYPING_BACKSPACE` / `TYPING_ENTER` / `TYPING_SPACE` / `TYPING_LETTER`)
+5. Apply `keyboard_volume` multiplier
+6. Play via same buffer playback path
+
+---
+
+## 8. Configuration
+
+### TOML (`[sound]` section)
 
 ```toml
 [sound]
-pack = "ghost-signal"       # any built-in or custom theme name
-# "krypton-cyber" = original patch-based
-# "ghost-signal" | "chill-city-fm" | "orbit-deck" | "mach-line" | "deep-glyph" = ghost-signal themes
-# "<custom-name>" = loads from ~/.config/krypton/sounds/<custom-name>/sounds.js
+enabled = true              # master toggle
+volume = 0.5                # 0.0-1.0
+pack = "deep-glyph"         # "deep-glyph" | "mach-line"
+keyboard_type = "cherry-mx-brown"  # reserved for future use
+keyboard_volume = 1.0       # 0.0-1.0 multiplier for typing sounds
+
+[sound.events]
+# Per-event overrides (boolean to toggle, float for volume)
+# "terminal.bell" = false   # disable bell sound
+# "startup" = 0.3           # quiet startup
 ```
 
-When `pack` is a ghost-signal theme, `keyboard_type` is ignored (the theme's `TYPING_LETTER` is used for all keypress sounds).
+### Rust (`src-tauri/src/config.rs`)
+
+```rust
+pub struct SoundConfig {
+    pub enabled: bool,              // default: true
+    pub volume: f64,                // default: 0.5
+    pub pack: String,               // default: "deep-glyph"
+    pub keyboard_type: String,      // default: "cherry-mx-brown"
+    pub keyboard_volume: f64,       // default: 1.0
+    pub events: HashMap<String, serde_json::Value>,
+}
+```
+
+### TypeScript (`src/sound.ts`)
+
+```typescript
+interface SoundConfig {
+  enabled: boolean;
+  volume: number;
+  pack: string;
+  keyboard_type: string;
+  keyboard_volume: number;
+  events: Record<string, boolean | number>;
+}
+```
 
 ### Hot-Reload
 
-On `config-changed` event, `SoundEngine.applyConfig()` compares the new `pack` value to the current one. If changed, it calls `loadSoundTheme()` which resolves the new theme (built-in or custom) and swaps `activeTheme`. The old ghost-signal sound functions are dropped (GC cleans up).
+On `config-changed` Tauri event, `SoundEngine.applyConfig()` compares the new `pack` to the previous one. If changed, clears the buffer cache and reloads WAVs from the new directory.
 
-### Command Palette Integration
+### Command Palette
 
-Add a "Switch Sound Theme" action to the command palette that lists available themes. Selecting one updates the config and triggers reload. This mirrors the existing pattern for visual themes.
+The command palette dynamically lists all available packs under the "Sound Theme" category. The current pack is marked `(active)`. Selecting a pack calls `soundEngine.loadTheme(packName)`.
 
-## Edge Cases
+---
 
-- **Invalid custom theme**: If `sounds.js` fails to import or doesn't export `{ meta, createSounds }`, fall back to `krypton-cyber` and log a warning.
-- **Missing sound ID**: If a ghost-signal theme doesn't define a mapped sound (e.g., `SWITCH_TOGGLE` missing), the `play()` call silently no-ops for that event.
-- **AudioContext suspension**: Ghost-signal functions assume `ctx` is running. The existing `ensureContext()` already handles resume.
-- **Per-event volume overrides**: For ghost-signal themes, per-event volume overrides from `[sound.events]` are not supported (the functions don't accept volume params). The master volume still works via the proxy context.
-- **Keyboard release sounds**: Ghost-signal has no key-release sounds. When a ghost-signal theme is active, `playKeypress('release', key)` is a no-op.
-- **Key parameter backwards-compatible**: The `key` param is optional. Existing call sites that don't pass it still work — they default to `TYPING_LETTER` for ghost-signal themes and behave identically for patch-based themes (which ignore it).
+## 9. Affected Files
 
-## Out of Scope
+| File | Role |
+|------|------|
+| `src/sound.ts` | Sound engine: WAV loading, buffer cache, playback, event mapping, pack registry, overlap management, AudioContext lifecycle |
+| `src/compositor.ts` | Triggers sounds for window/tab/pane/layout actions, keypress sounds, terminal bell |
+| `src/input-router.ts` | Triggers sounds for mode changes, resize/move/swap/hint actions |
+| `src/command-palette.ts` | Triggers palette open/close/execute sounds; lists sound packs for switching |
+| `src/main.ts` | Startup sound |
+| `src/config.ts` | TypeScript `SoundConfig` interface |
+| `src-tauri/src/config.rs` | Rust `SoundConfig` struct with defaults |
+| `public/sounds/deep-glyph/` | 17 WAV files — Deep Glyph pack |
+| `public/sounds/mach-line/` | 17 WAV files — Mach Line pack |
 
-- Creating new ghost-signal themes from within Krypton (use the ghost-signal project directly)
-- Mixing sounds from different themes (e.g., keyboard from one, events from another)
-- TOML-defined sound patches for custom themes (the existing M7 item; this spec uses JS modules instead)
-- Modifying the ghost-signal `sounds.js` files (they're used as-is)
-- Visual theme integration with ghost-signal's `meta.colors` (sound and visual themes are independent)
+---
+
+## 10. Diagnostics
+
+`startDiagnostics()` enables 30-second periodic logging:
+
+```
+[SoundEngine] ctx=running active=2 attempted=1423 played=1401 buffers=17/17 loaded=true
+```
+
+Fields: AudioContext state, active concurrent sounds, total attempted/played counts, buffer cache population, load status.
+
+---
+
+## 11. Design History
+
+The sound engine evolved through several iterations:
+
+1. **M7 original**: Procedural additive/subtractive synthesis with `krypton-cyber` patches (10-18 Web Audio nodes per sound). Caused AudioContext degradation after hours of use.
+
+2. **Ghost-signal integration**: Added 5 function-based sound themes from the ghost-signal project. Each theme was a JS module exporting `createSounds(ctx, noiseBuffer)` returning fire-and-forget functions. Volume controlled via `Proxy` wrapping `AudioContext.destination`.
+
+3. **AudioContext resilience** (former doc 21): Added `statechange` monitoring and context recycling at 50k sounds to mitigate degradation. Resume-aware guards to handle macOS display sleep.
+
+4. **Buffer cache** (former doc 25): Pre-rendered all sounds into `AudioBuffer`s via `OfflineAudioContext` at theme load time. Reduced per-sound nodes from 10-18 to 2. Ghost-signal `TYPING_LETTER` pre-rendered 8 variants in round-robin pool. Context recycle threshold raised to 500k.
+
+5. **Silence bug analysis** (former doc 26): Identified four interacting causes: `resume()` promise never settling, `warmCache()` race conditions, stale ghost-signal closures, and no output health check. Proposed resume timeout, generation-guarded cache warming, closure invalidation, and `AnalyserNode` output probes.
+
+6. **WAV replacement** (current): Eliminated all procedural synthesis. Replaced with static WAV file playback. Each sound pack is a directory of 17 pre-rendered WAVs. This eliminates the root cause of all prior AudioContext degradation — node churn is now 2 nodes/sound instead of 10-18. The resilience, buffer cache, and silence bug mitigations are no longer needed in the WAV architecture but informed the current design's simplicity.
+
+---
+
+## 12. Out of Scope
+
+- Procedural/real-time synthesis (removed — root cause of AudioContext degradation)
+- Custom user sound packs from `~/.config/krypton/sounds/` (future — needs Tauri asset protocol)
+- Mixing sounds from different packs
+- Per-event WAV override within a pack
+- AudioWorklet-based playback
+- Rust-side audio engine

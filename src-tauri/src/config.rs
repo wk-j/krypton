@@ -128,7 +128,7 @@ impl Default for SoundConfig {
         Self {
             enabled: true,
             volume: 0.5,
-            pack: "krypton-cyber".to_string(),
+            pack: "deep-glyph".to_string(),
             keyboard_type: "cherry-mx-brown".to_string(),
             keyboard_volume: 1.0,
             events: std::collections::HashMap::new(),

@@ -105,6 +105,20 @@ const ALL_WAV_NAMES = [
   'TYPING_BACKSPACE', 'TYPING_ENTER', 'TYPING_LETTER', 'TYPING_SPACE',
 ] as const;
 
+// ─── Available sound packs ───────────────────────────────────────
+// Each pack is a directory under /sounds/<id>/ containing the standard
+// set of 17 WAV files. All packs share the same file naming convention.
+
+interface SoundPack {
+  id: string;
+  displayName: string;
+}
+
+const AVAILABLE_PACKS: SoundPack[] = [
+  { id: 'deep-glyph', displayName: 'Deep Glyph' },
+  { id: 'mach-line', displayName: 'Mach Line' },
+];
+
 // ─── Sound Engine ─────────────────────────────────────────────────
 
 export class SoundEngine {
@@ -159,42 +173,45 @@ export class SoundEngine {
 
   /**
    * Apply sound configuration. Call after loading config from backend.
-   * If the pack changed, triggers async WAV loading.
+   * If the pack changed, triggers async WAV reload from the new pack's directory.
    */
   applyConfig(config: SoundConfig): void {
+    const prevPack = this.config.pack;
     this.config = { ...DEFAULT_SOUND_CONFIG, ...config };
     // Update master volume if context is live
     if (this.masterGain) {
       this.masterGain.gain.value = this.config.volume;
     }
-    // Load WAV files if not already loaded
-    if (!this.loaded && !this.loading) {
+    // Reload WAVs if pack changed or not yet loaded
+    if (this.config.pack !== prevPack || (!this.loaded && !this.loading)) {
       this.loadAllWavs();
     }
   }
 
   /**
-   * Load a sound theme by name. For WAV-based engine, all packs
-   * use the same deep-glyph WAV files. Kept for API compatibility.
+   * Load a sound theme by pack name. Clears existing buffers and
+   * loads WAV files from /sounds/<packName>/.
    */
-  async loadTheme(_packName: string): Promise<void> {
-    if (!this.loaded && !this.loading) {
-      await this.loadAllWavs();
-    }
+  async loadTheme(packName: string): Promise<void> {
+    this.config.pack = packName;
+    this.loaded = false;
+    this.buffers.clear();
+    await this.loadAllWavs();
   }
 
   /**
    * Get list of available sound theme names.
    */
   getAvailableThemes(): string[] {
-    return ['deep-glyph'];
+    return AVAILABLE_PACKS.map(p => p.id);
   }
 
   /**
    * Get the display name of a sound theme.
    */
   getThemeDisplayName(packName: string): string {
-    if (packName === 'deep-glyph') return 'Deep Glyph';
+    const entry = AVAILABLE_PACKS.find(p => p.id === packName);
+    if (entry) return entry.displayName;
     return packName.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
 
@@ -354,11 +371,15 @@ export class SoundEngine {
 
   /**
    * Fetch and decode all WAV files into AudioBuffers.
-   * Files are served from /sounds/deep-glyph/ (Vite public directory).
+   * Files are served from /sounds/<pack>/ (Vite public directory).
    */
   private async loadAllWavs(): Promise<void> {
     if (this.loading) return;
     this.loading = true;
+
+    // Clear existing buffers when switching packs
+    this.buffers.clear();
+    this.loaded = false;
 
     // Ensure context exists for decodeAudioData
     if (!this.ensureContext()) {
@@ -366,7 +387,8 @@ export class SoundEngine {
       return;
     }
 
-    const basePath = '/sounds/deep-glyph';
+    const packName = this.config.pack;
+    const basePath = `/sounds/${packName}`;
     let loadedCount = 0;
 
     for (const name of ALL_WAV_NAMES) {
@@ -394,7 +416,7 @@ export class SoundEngine {
 
     this.loaded = true;
     this.loading = false;
-    console.log(`[SoundEngine] Loaded ${loadedCount}/${ALL_WAV_NAMES.length} WAV files`);
+    console.log(`[SoundEngine] Loaded ${loadedCount}/${ALL_WAV_NAMES.length} WAV files from pack "${packName}"`);
   }
 
   // ─── Private: Playback ────────────────────────────────────────
