@@ -81,6 +81,14 @@ interface SoundPackInfo {
 export class SoundEngine {
   private enabled: boolean = true;
   private currentPack: string = 'deep-glyph';
+  // Suppress key-repeat sounds: track last-played timestamp per key.
+  // domEvent.repeat is unreliable in WKWebView (Tauri/macOS), so we
+  // use a time-based guard instead. A key held down fires repeats
+  // every ~30ms; a deliberate re-press takes >120ms. We suppress
+  // anything that arrives within 80ms of the previous sound for the
+  // same key so the first tap always plays but held-key spam is silent.
+  private _lastKeySoundAt: Map<string, number> = new Map();
+  private static readonly KEY_REPEAT_SUPPRESS_MS = 80;
 
   /**
    * Apply sound configuration. Forwards to Rust backend.
@@ -107,7 +115,16 @@ export class SoundEngine {
    */
   playKeypress(phase: 'press' | 'release', key?: string): void {
     if (phase !== 'press' || !this.enabled) return;
-    invoke('sound_play_keypress', { key: key ?? '' }).catch(() => {});
+    // Suppress key-repeat sounds. domEvent.repeat is unreliable in
+    // WKWebView, so we gate on elapsed time since the last sound for
+    // this key. First tap always plays; held-key repeats (~30ms apart)
+    // are silenced.
+    const k = key ?? '';
+    const now = performance.now();
+    const last = this._lastKeySoundAt.get(k) ?? -Infinity;
+    if (now - last < SoundEngine.KEY_REPEAT_SUPPRESS_MS) return;
+    this._lastKeySoundAt.set(k, now);
+    invoke('sound_play_keypress', { key: k }).catch(() => {});
   }
 
   /**
