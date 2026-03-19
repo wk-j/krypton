@@ -26,6 +26,8 @@ pub struct SshManager {
     socket_dir: PathBuf,
     /// Cached connection info per PTY session ID.
     connections: Mutex<HashMap<u32, SshConnectionInfo>>,
+    /// Last-known remote CWD per session, reported by frontend via OSC 7.
+    remote_cwds: Mutex<HashMap<u32, String>>,
     /// Seconds to keep a ControlMaster alive after the last client disconnects.
     control_persist: u64,
 }
@@ -46,6 +48,7 @@ impl SshManager {
         Self {
             socket_dir,
             connections: Mutex::new(HashMap::new()),
+            remote_cwds: Mutex::new(HashMap::new()),
             control_persist,
         }
     }
@@ -135,43 +138,17 @@ impl SshManager {
         ("ssh".to_string(), args)
     }
 
-    /// Query the remote working directory by running `pwd` over the
-    /// multiplexed SSH connection. Returns None if the query fails
-    /// or no control socket exists yet.
-    pub fn get_remote_cwd(&self, info: &SshConnectionInfo) -> Option<String> {
-        let socket_path = info.control_socket.as_deref()?;
-
-        // Check if the socket exists — if not, we can't query
-        if !std::path::Path::new(socket_path).exists() {
-            return None;
+    /// Store the last-known remote CWD for a session, reported by
+    /// the frontend via OSC 7 tracking.
+    pub fn set_remote_cwd(&self, session_id: u32, cwd: String) {
+        if let Ok(mut map) = self.remote_cwds.lock() {
+            map.insert(session_id, cwd);
         }
+    }
 
-        let output = std::process::Command::new("ssh")
-            .args([
-                "-S",
-                socket_path,
-                "-o",
-                "ControlMaster=no",
-                "-o",
-                "ConnectTimeout=3",
-                &format!("{}@{}", info.user, info.host),
-                "pwd",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        let cwd = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if cwd.is_empty() {
-            None
-        } else {
-            Some(cwd)
-        }
+    /// Get the last-known remote CWD for a session.
+    pub fn get_remote_cwd(&self, session_id: u32) -> Option<String> {
+        self.remote_cwds.lock().ok()?.get(&session_id).cloned()
     }
 
     /// Clear cached connection info for a session (e.g., on PTY exit).
@@ -560,6 +537,7 @@ mod tests {
         let mgr = SshManager {
             socket_dir,
             connections: Mutex::new(HashMap::new()),
+            remote_cwds: Mutex::new(HashMap::new()),
             control_persist: 600,
         };
 
@@ -587,6 +565,7 @@ mod tests {
         let mgr = SshManager {
             socket_dir,
             connections: Mutex::new(HashMap::new()),
+            remote_cwds: Mutex::new(HashMap::new()),
             control_persist: 600,
         };
 
@@ -611,6 +590,7 @@ mod tests {
         let mgr = SshManager {
             socket_dir,
             connections: Mutex::new(HashMap::new()),
+            remote_cwds: Mutex::new(HashMap::new()),
             control_persist: 600,
         };
 

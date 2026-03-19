@@ -2636,6 +2636,46 @@ export class Compositor {
     el.style.bottom = 'auto';
   }
 
+  // ─── OSC 7 CWD Tracking ──────────────────────────────────────────
+
+  /**
+   * Scan raw PTY output for OSC 7 escape sequences that report the
+   * current working directory: ESC ] 7 ; file://host/path BEL|ST
+   *
+   * When found, reports the path to the backend so SSH clone can
+   * use it as the remote CWD.
+   */
+  private parseOsc7(sessionId: number, data: number[]): void {
+    // Quick scan: look for ESC ] 7 ; (0x1b 0x5d 0x37 0x3b)
+    for (let i = 0; i < data.length - 4; i++) {
+      if (data[i] === 0x1b && data[i + 1] === 0x5d && data[i + 2] === 0x37 && data[i + 3] === 0x3b) {
+        // Found OSC 7 start — collect until BEL (0x07) or ESC \ (0x1b 0x5c)
+        let end = -1;
+        for (let j = i + 4; j < data.length; j++) {
+          if (data[j] === 0x07) {
+            end = j;
+            break;
+          }
+          if (data[j] === 0x1b && j + 1 < data.length && data[j + 1] === 0x5c) {
+            end = j;
+            break;
+          }
+        }
+        if (end > i + 4) {
+          const uriBytes = data.slice(i + 4, end);
+          const uri = new TextDecoder().decode(new Uint8Array(uriBytes));
+          // URI format: file://hostname/path or file:///path
+          const match = uri.match(/^file:\/\/[^/]*(\/.*)$/);
+          if (match) {
+            const path = decodeURIComponent(match[1]);
+            invoke('set_ssh_remote_cwd', { sessionId, cwd: path })
+              .catch(() => { /* ignore — ssh feature may be disabled */ });
+          }
+        }
+      }
+    }
+  }
+
   // ─── PTY Events ──────────────────────────────────────────────────
 
   private setupPtyListeners(): void {
@@ -2664,6 +2704,10 @@ export class Compositor {
           }
         }
       }
+
+      // Detect OSC 7 (current directory reporting): ESC ] 7 ; <uri> BEL/ST
+      // Used to track the remote working directory for SSH clone.
+      this.parseOsc7(sid, data);
 
       // Check Quick Terminal first
       if (this.qtSessionId === sid && this.qtTerminal) {

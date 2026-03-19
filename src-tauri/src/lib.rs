@@ -58,6 +58,7 @@ pub fn run() {
             commands::find_java_server_by_cwd,
             commands::run_command,
             commands::query_sqlite,
+            commands::set_ssh_remote_cwd,
             commands::detect_ssh_session,
             commands::clone_ssh_session,
             sound::sound_play,

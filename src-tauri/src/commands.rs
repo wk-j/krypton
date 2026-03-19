@@ -320,6 +320,19 @@ fn query_sqlite_blocking(
 
 // ─── SSH Session Multiplexing ──────────────────────────────────────
 
+/// Report the current working directory of a remote SSH session.
+/// Called by the frontend when it receives an OSC 7 escape sequence
+/// from a terminal that has an active SSH connection. This allows
+/// the clone command to start in the same remote directory.
+#[tauri::command]
+pub fn set_ssh_remote_cwd(
+    ssh_manager: State<'_, Arc<SshManager>>,
+    session_id: u32,
+    cwd: String,
+) {
+    ssh_manager.set_remote_cwd(session_id, cwd);
+}
+
 /// Detect an SSH session in the focused terminal's process tree.
 /// Returns connection metadata (user, host, port) if an active SSH
 /// process is found, or None if the terminal isn't running SSH.
@@ -350,8 +363,8 @@ pub fn clone_ssh_session(
         .detect(session_id, &pty_manager)
         .ok_or_else(|| "No SSH session detected in this terminal".to_string())?;
 
-    // Use provided remote_cwd, or try to auto-detect via the control socket
-    let cwd = remote_cwd.or_else(|| ssh_manager.get_remote_cwd(&info));
+    // Use provided remote_cwd, or look up the last-known CWD tracked via OSC 7
+    let cwd = remote_cwd.or_else(|| ssh_manager.get_remote_cwd(session_id));
 
     let (program, args) = ssh_manager.build_clone_command(&info, cwd.as_deref());
 
