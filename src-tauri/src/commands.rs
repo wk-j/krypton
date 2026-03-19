@@ -334,7 +334,8 @@ pub fn detect_ssh_session(
 
 /// Clone an SSH session by spawning a new PTY with an ssh command
 /// that reuses the existing connection via ControlMaster multiplexing.
-/// Returns the new PTY session ID.
+/// If `remote_cwd` is provided (or auto-detected), the cloned session
+/// starts in that remote directory. Returns the new PTY session ID.
 #[tauri::command]
 pub fn clone_ssh_session(
     app_handle: AppHandle,
@@ -343,19 +344,24 @@ pub fn clone_ssh_session(
     session_id: u32,
     cols: u16,
     rows: u16,
+    remote_cwd: Option<String>,
 ) -> Result<u32, String> {
     let info = ssh_manager
         .detect(session_id, &pty_manager)
         .ok_or_else(|| "No SSH session detected in this terminal".to_string())?;
 
-    let (program, args) = ssh_manager.build_clone_command(&info);
+    // Use provided remote_cwd, or try to auto-detect via the control socket
+    let cwd = remote_cwd.or_else(|| ssh_manager.get_remote_cwd(&info));
+
+    let (program, args) = ssh_manager.build_clone_command(&info, cwd.as_deref());
 
     log::info!(
-        "Cloning SSH session {} -> {}@{}:{} via ControlMaster",
+        "Cloning SSH session {} -> {}@{}:{} cwd={:?} via ControlMaster",
         session_id,
         info.user,
         info.host,
-        info.port
+        info.port,
+        cwd,
     );
 
     pty_manager.spawn(&app_handle, cols, rows, None, &program, &args)

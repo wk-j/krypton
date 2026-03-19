@@ -83,7 +83,13 @@ impl SshManager {
     }
 
     /// Build the ssh command to clone a session using ControlMaster multiplexing.
-    pub fn build_clone_command(&self, info: &SshConnectionInfo) -> (String, Vec<String>) {
+    /// If `remote_cwd` is provided, the cloned session will `cd` into that
+    /// directory before spawning a login shell.
+    pub fn build_clone_command(
+        &self,
+        info: &SshConnectionInfo,
+        remote_cwd: Option<&str>,
+    ) -> (String, Vec<String>) {
         let socket_path = info
             .control_socket
             .as_deref()
@@ -107,10 +113,65 @@ impl SshManager {
         // Add extra args (e.g., -i keyfile, -J jumphost)
         args.extend(info.extra_args.clone());
 
+        // If we have a remote CWD, force a TTY and run cd + shell
+        if let Some(cwd) = remote_cwd {
+            if !cwd.is_empty() {
+                args.push("-t".to_string());
+            }
+        }
+
         // Destination
         args.push(format!("{}@{}", info.user, info.host));
 
+        // Remote command: cd into the directory then exec a login shell
+        if let Some(cwd) = remote_cwd {
+            if !cwd.is_empty() {
+                // Shell-escape the path by wrapping in single quotes
+                let escaped = cwd.replace('\'', "'\\''");
+                args.push(format!("cd '{escaped}' && exec $SHELL -l"));
+            }
+        }
+
         ("ssh".to_string(), args)
+    }
+
+    /// Query the remote working directory by running `pwd` over the
+    /// multiplexed SSH connection. Returns None if the query fails
+    /// or no control socket exists yet.
+    pub fn get_remote_cwd(&self, info: &SshConnectionInfo) -> Option<String> {
+        let socket_path = info.control_socket.as_deref()?;
+
+        // Check if the socket exists — if not, we can't query
+        if !std::path::Path::new(socket_path).exists() {
+            return None;
+        }
+
+        let output = std::process::Command::new("ssh")
+            .args([
+                "-S",
+                socket_path,
+                "-o",
+                "ControlMaster=no",
+                "-o",
+                "ConnectTimeout=3",
+                &format!("{}@{}", info.user, info.host),
+                "pwd",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let cwd = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if cwd.is_empty() {
+            None
+        } else {
+            Some(cwd)
+        }
     }
 
     /// Clear cached connection info for a session (e.g., on PTY exit).
@@ -510,12 +571,14 @@ mod tests {
             extra_args: vec![],
         };
 
-        let (prog, args) = mgr.build_clone_command(&info);
+        let (prog, args) = mgr.build_clone_command(&info, None);
         assert_eq!(prog, "ssh");
         assert!(args.contains(&"ControlMaster=auto".to_string()));
         assert!(args.contains(&"alice@example.com".to_string()));
         // No -p flag for default port 22
         assert!(!args.contains(&"-p".to_string()));
+        // No -t flag without remote_cwd
+        assert!(!args.contains(&"-t".to_string()));
     }
 
     #[test]
@@ -535,11 +598,38 @@ mod tests {
             extra_args: vec!["-i".into(), "~/.ssh/key".into()],
         };
 
-        let (prog, args) = mgr.build_clone_command(&info);
+        let (prog, args) = mgr.build_clone_command(&info, None);
         assert_eq!(prog, "ssh");
         assert!(args.contains(&"-p".to_string()));
         assert!(args.contains(&"2222".to_string()));
         assert!(args.contains(&"-i".to_string()));
+    }
+
+    #[test]
+    fn test_build_clone_command_with_remote_cwd() {
+        let socket_dir = PathBuf::from("/tmp/test-sockets");
+        let mgr = SshManager {
+            socket_dir,
+            connections: Mutex::new(HashMap::new()),
+            control_persist: 600,
+        };
+
+        let info = SshConnectionInfo {
+            user: "alice".into(),
+            host: "example.com".into(),
+            port: 22,
+            control_socket: Some("/tmp/test-sockets/alice@example.com:22".into()),
+            extra_args: vec![],
+        };
+
+        let (prog, args) = mgr.build_clone_command(&info, Some("/home/alice/projects"));
+        assert_eq!(prog, "ssh");
+        // Should have -t for forced TTY
+        assert!(args.contains(&"-t".to_string()));
+        // Last arg should be the cd + exec command
+        let last = args.last().unwrap();
+        assert!(last.contains("cd '/home/alice/projects'"));
+        assert!(last.contains("exec $SHELL -l"));
     }
 
     #[test]
