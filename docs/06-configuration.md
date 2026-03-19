@@ -212,6 +212,15 @@ blur = 12                      # Window backdrop blur radius in pixels. Controls
                                # frosted-glass blur on terminal windows.
                                # 0 = no blur, higher = stronger blur. Default: 12
 
+# --- SSH Session Multiplexing ---
+# Clone SSH sessions into new tabs/windows via ControlMaster multiplexing.
+# Krypton detects active SSH connections and manages control sockets automatically.
+
+[ssh]
+enabled = true                                          # Master toggle
+control_persist = 600                                   # Seconds to keep master alive after last session
+clone_target = "tab"                                    # Default target: "tab" or "window"
+
 # --- Context Extensions ---
 # Built-in extensions that activate when specific processes are detected
 # running in terminal panes. Currently includes: Java Resource Monitor.
@@ -382,6 +391,14 @@ Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled glo
 | `[visual]` | `perspective_tilt` | float | `2.0` | Tilt angle in degrees for 3D layer separation. 0 = no tilt. Recommended: 1–6 |
 | `[visual]` | `opacity` | float | `0.5` | Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque). Overrides the theme's backdrop alpha. |
 | `[visual]` | `blur` | int | `12` | Window backdrop blur radius in pixels. 0 = no blur (sharp see-through), higher = stronger frosted-glass effect. |
+
+### SSH Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[ssh]` | `enabled` | bool | `true` | Master toggle — enables/disables SSH session cloning feature |
+| `[ssh]` | `control_persist` | int | `600` | Seconds to keep a ControlMaster connection alive after the last client disconnects |
+| `[ssh]` | `clone_target` | string | `"tab"` | Default target for the clone action: `"tab"` (new tab in same window) or `"window"` (new window) |
 
 ### Extensions Configuration
 

@@ -22,6 +22,7 @@ pub struct KryptonConfig {
     pub shader: ShaderConfig,
     pub visual: VisualConfig,
     pub extensions: ExtensionsConfig,
+    pub ssh: SshConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,6 +289,29 @@ impl Default for ExtensionsConfig {
         Self {
             enabled: true,
             poll_interval_ms: 500,
+        }
+    }
+}
+
+// ─── SSH ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SshConfig {
+    /// Master toggle for SSH session multiplexing
+    pub enabled: bool,
+    /// Seconds to keep a ControlMaster alive after the last client disconnects
+    pub control_persist: u64,
+    /// Default target for clone action: "tab" or "window"
+    pub clone_target: String,
+}
+
+impl Default for SshConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            control_persist: 600,
+            clone_target: "tab".to_string(),
         }
     }
 }

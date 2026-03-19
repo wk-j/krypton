@@ -63,6 +63,15 @@ interface SessionLocation {
   paneId: PaneId;
 }
 
+/** SSH connection metadata returned by detect_ssh_session */
+interface SshConnectionInfo {
+  user: string;
+  host: string;
+  port: number;
+  control_socket: string | null;
+  extra_args: string[];
+}
+
 /**
  * Abbreviate an absolute path for display in the title bar.
  * - Replaces $HOME with ~
@@ -2992,6 +3001,186 @@ export class Compositor {
       'krypton-window__titlebar--progress-error',
       'krypton-window__titlebar--progress-paused',
     );
+  }
+
+  // ─── SSH Session Multiplexing ─────────────────────────────────────
+
+  /**
+   * Clone the SSH session from the focused pane into a new tab.
+   * Detects the active SSH connection and spawns a new PTY that
+   * piggybacks on the same connection via ControlMaster.
+   */
+  async cloneSshSession(): Promise<void> {
+    const sessionId = this.getFocusedSessionId();
+    if (sessionId === null) return;
+
+    const win = this.focusedWindowId ? this.windows.get(this.focusedWindowId) : null;
+    if (!win) return;
+
+    try {
+      // Detect SSH connection in the current terminal
+      const info = await invoke<SshConnectionInfo | null>('detect_ssh_session', { sessionId });
+      if (!info) {
+        this.showNotification('No SSH session detected in focused terminal');
+        return;
+      }
+
+      // Create a new tab in the current window
+      const tabId = nextTabId();
+
+      // Detach current tab's pane tree from DOM
+      while (win.contentElement.firstChild) {
+        win.contentElement.removeChild(win.contentElement.firstChild);
+      }
+
+      const pane = this.createPane(win.contentElement);
+
+      const tabEl = document.createElement('div');
+      tabEl.className = 'krypton-tab';
+      tabEl.dataset.tabId = tabId;
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'krypton-tab__title';
+      titleSpan.textContent = `SSH ${info.user}@${info.host}`;
+      tabEl.appendChild(titleSpan);
+
+      const tab: Tab = {
+        id: tabId,
+        title: `SSH ${info.user}@${info.host}`,
+        paneTree: { type: 'leaf', pane },
+        focusedPaneId: pane.id,
+        element: tabEl,
+      };
+
+      win.tabs.push(tab);
+      win.activeTabIndex = win.tabs.length - 1;
+      this.rebuildTabBar(win);
+      this.showActiveTab(win);
+
+      await this.nextFrame();
+      this.fitWindow(win.id);
+
+      // Spawn cloned SSH PTY
+      const newSessionId = await invoke<number>('clone_ssh_session', {
+        sessionId,
+        cols: pane.terminal.cols,
+        rows: pane.terminal.rows,
+      });
+      pane.sessionId = newSessionId;
+      this.sessionMap.set(newSessionId, { windowId: win.id, tabId, paneId: pane.id });
+      this.wirePaneInput(pane);
+
+      // Update titlebar
+      const ptyStatus = this.findPtyStatus(win.element);
+      if (ptyStatus) {
+        ptyStatus.textContent = `SSH: ${info.user}@${info.host}`;
+      }
+
+      pane.terminal.onTitleChange((title: string) => {
+        if (title) {
+          tab.title = title;
+          titleSpan.textContent = title;
+        }
+      });
+
+      pane.terminal.focus();
+      this.sound.play('tab.create');
+    } catch (e) {
+      console.error('Failed to clone SSH session:', e);
+      this.showNotification(`SSH clone failed: ${e}`);
+    }
+  }
+
+  /**
+   * Clone the SSH session from the focused pane into a new window.
+   */
+  async cloneSshSessionToNewWindow(): Promise<void> {
+    const sessionId = this.getFocusedSessionId();
+    if (sessionId === null) return;
+
+    try {
+      // Detect SSH connection
+      const info = await invoke<SshConnectionInfo | null>('detect_ssh_session', { sessionId });
+      if (!info) {
+        this.showNotification('No SSH session detected in focused terminal');
+        return;
+      }
+
+      // Create a new window (reuses createWindow's DOM setup)
+      const newWindowId = await this.createWindow();
+      const win = this.windows.get(newWindowId);
+      if (!win) return;
+
+      // Get the pane that was just created
+      const activeTab = win.tabs[win.activeTabIndex];
+      if (!activeTab) return;
+      const pane = activeTab.paneTree.type === 'leaf' ? activeTab.paneTree.pane : null;
+      if (!pane || pane.sessionId === null) return;
+
+      // The createWindow already spawned a shell PTY — we need to replace it
+      // with a cloned SSH session. Remove the old session from the map.
+      const oldSessionId = pane.sessionId;
+      this.sessionMap.delete(oldSessionId);
+
+      // Spawn cloned SSH PTY
+      const newSessionId = await invoke<number>('clone_ssh_session', {
+        sessionId,
+        cols: pane.terminal.cols,
+        rows: pane.terminal.rows,
+      });
+      pane.sessionId = newSessionId;
+      this.sessionMap.set(newSessionId, {
+        windowId: newWindowId,
+        tabId: activeTab.id,
+        paneId: pane.id,
+      });
+
+      // Update titlebar to show SSH info
+      const ptyStatus = this.findPtyStatus(win.element);
+      if (ptyStatus) {
+        ptyStatus.textContent = `SSH: ${info.user}@${info.host}`;
+      }
+      const label = this.findLabel(win.element);
+      if (label) {
+        label.textContent = `ssh_${info.host}`;
+      }
+
+      // Update tab title
+      activeTab.title = `SSH ${info.user}@${info.host}`;
+      const titleSpan = activeTab.element.querySelector('.krypton-tab__title');
+      if (titleSpan) {
+        titleSpan.textContent = activeTab.title;
+      }
+    } catch (e) {
+      console.error('Failed to clone SSH session to new window:', e);
+      this.showNotification(`SSH clone failed: ${e}`);
+    }
+  }
+
+  /**
+   * Show a brief notification toast. Falls through silently if the method
+   * is not yet implemented (notifications are a nice-to-have).
+   */
+  private showNotification(message: string): void {
+    console.warn(`[krypton:ssh] ${message}`);
+    // Create a simple toast notification
+    const toast = document.createElement('div');
+    toast.className = 'krypton-toast';
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+      padding: 8px 20px; border-radius: 6px; z-index: 9999;
+      font-family: var(--krypton-font-family, monospace);
+      font-size: 13px; color: var(--krypton-ui-text, #c0c5ce);
+      background: var(--krypton-ui-bg, rgba(30, 40, 50, 0.95));
+      border: 1px solid var(--krypton-chrome-border, rgba(0, 255, 255, 0.3));
+      pointer-events: none; opacity: 0; transition: opacity 0.2s ease;
+    `;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => { toast.style.opacity = '1'; });
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 200);
+    }, 2500);
   }
 
   // ─── Window Title Helpers ─────────────────────────────────────────

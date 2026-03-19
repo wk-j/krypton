@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod pty;
 pub mod sound;
+pub mod ssh;
 pub mod theme;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -21,11 +22,24 @@ pub fn run() {
     // Initialize sound engine
     let sound_engine: sound::SoundEngineState = Mutex::new(sound::SoundEngine::new());
 
+    // Initialize SSH manager
+    let ssh_socket_dir = config::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("ssh-sockets");
+    let ssh_persist = krypton_config
+        .read()
+        .map(|cfg| cfg.ssh.control_persist)
+        .unwrap_or(600);
+    let ssh_manager = Arc::new(ssh::SshManager::new(ssh_socket_dir, ssh_persist));
+    // Clean up stale sockets from previous runs
+    ssh_manager.cleanup_sockets();
+
     tauri::Builder::default()
         .manage(pty_manager)
         .manage(krypton_config.clone())
         .manage(theme_engine.clone())
         .manage(sound_engine)
+        .manage(ssh_manager)
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
             commands::get_pty_cwd,
@@ -44,6 +58,8 @@ pub fn run() {
             commands::find_java_server_by_cwd,
             commands::run_command,
             commands::query_sqlite,
+            commands::detect_ssh_session,
+            commands::clone_ssh_session,
             sound::sound_play,
             sound::sound_play_keypress,
             sound::sound_apply_config,

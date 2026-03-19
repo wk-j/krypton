@@ -37,6 +37,8 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: '-', label: 'split horizontal' },
   { key: 'A-hjkl', label: 'focus pane' },
   { key: 'A-x', label: 'close pane' },
+  { key: 'c', label: 'clone SSH tab' },
+  { key: 'C', label: 'clone SSH window' },
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [

@@ -40,6 +40,12 @@
 |  | Engine        | | (vte)      | | (tcgetpgrp,       | | Engine       |  |
 |  +---------------+ +------------+ |  process-changed) | | (rodio/cpal) |  |
 |                                   +-------------------+ +--------------+  |
+|  +---------------+                                                        |
+|  | SSH Manager   |                                                        |
+|  | (detect,      |                                                        |
+|  |  clone, ctrl  |                                                        |
+|  |  sockets)     |                                                        |
+|  +---------------+                                                        |
 +-------------------------------------------------------------------------+
               |
               v
@@ -342,6 +348,8 @@ The input router is the central keyboard dispatcher. It determines what happens 
 |-----|--------|
 | `g` | Cycle shader preset on focused pane (none → crt → hologram → glitch → bloom → matrix → none) |
 | `G` (Shift+g) | Toggle shaders on/off globally |
+| `c` | Clone SSH session from focused pane into a new tab (via ControlMaster multiplexing) |
+| `C` (Shift+c) | Clone SSH session from focused pane into a new window |
 | **Command Palette** | `CmdOrCtrl+Shift+P` | Text input filters the action list; Enter executes; Escape closes | `Escape` or action execution |
 | **Search** | `CmdOrCtrl+F` | Text input searches scrollback in the focused window | `Escape` to close |
 
@@ -394,6 +402,7 @@ The command palette is a fuzzy-searchable overlay listing **every action** in Kr
 - Search: open search, next/prev match
 - Config: reload config, open config file
 - Dashboard actions: toggle registered dashboards (Git Status, etc.)
+- SSH actions: clone session to new tab/window
 - Application: quit
 
 Each entry displays the action name and its current keybinding (if any).

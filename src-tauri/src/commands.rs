@@ -1,5 +1,6 @@
 use crate::config::KryptonConfig;
 use crate::pty::PtyManager;
+use crate::ssh::SshManager;
 use crate::theme::{FullTheme, ThemeEngine};
 use std::sync::{Arc, RwLock};
 use tauri::{AppHandle, Emitter, State};
@@ -315,6 +316,49 @@ fn query_sqlite_blocking(
     }
 
     Ok(result)
+}
+
+// ─── SSH Session Multiplexing ──────────────────────────────────────
+
+/// Detect an SSH session in the focused terminal's process tree.
+/// Returns connection metadata (user, host, port) if an active SSH
+/// process is found, or None if the terminal isn't running SSH.
+#[tauri::command]
+pub fn detect_ssh_session(
+    pty_manager: State<'_, Arc<PtyManager>>,
+    ssh_manager: State<'_, Arc<SshManager>>,
+    session_id: u32,
+) -> Option<crate::ssh::SshConnectionInfo> {
+    ssh_manager.detect(session_id, &pty_manager)
+}
+
+/// Clone an SSH session by spawning a new PTY with an ssh command
+/// that reuses the existing connection via ControlMaster multiplexing.
+/// Returns the new PTY session ID.
+#[tauri::command]
+pub fn clone_ssh_session(
+    app_handle: AppHandle,
+    pty_manager: State<'_, Arc<PtyManager>>,
+    ssh_manager: State<'_, Arc<SshManager>>,
+    session_id: u32,
+    cols: u16,
+    rows: u16,
+) -> Result<u32, String> {
+    let info = ssh_manager
+        .detect(session_id, &pty_manager)
+        .ok_or_else(|| "No SSH session detected in this terminal".to_string())?;
+
+    let (program, args) = ssh_manager.build_clone_command(&info);
+
+    log::info!(
+        "Cloning SSH session {} -> {}@{}:{} via ControlMaster",
+        session_id,
+        info.user,
+        info.host,
+        info.port
+    );
+
+    pty_manager.spawn(&app_handle, cols, rows, None, &program, &args)
 }
 
 /// Find the Java server process by matching the terminal's CWD.

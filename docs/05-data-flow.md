@@ -256,6 +256,34 @@ Sessions live in a shared pool. Windows reference sessions by ID. When a workspa
    f. Calls refocusCallback() -> compositor.refocusTerminal()
 ```
 
+## SSH Session Clone Flow (e.g., user presses Leader then c)
+
+```
+1. User presses Leader key, then 'c' (or selects "Clone SSH Session" from command palette)
+2. InputRouter: calls compositor.cloneSshSession()
+3. Compositor: gets focused pane's sessionId via getFocusedSessionId()
+4. Compositor: invoke('detect_ssh_session', { sessionId })
+5. Rust SshManager:
+   a. Calls pty_manager.get_shell_pid(session_id) to get the PTY's shell PID
+   b. Walks the process tree downward (sysinfo) looking for an "ssh" process
+   c. Reads SSH process's command line (sysinfo or ps fallback on macOS)
+   d. Parses args: extracts user, host, port, identity files, jump hosts
+   e. Assigns a control socket path: ~/.config/krypton/ssh-sockets/<user>@<host>:<port>
+   f. Caches SshConnectionInfo and returns it
+6. Frontend receives SshConnectionInfo (or null → show "No SSH session" toast)
+7. Compositor: creates new tab (DOM elements, pane, xterm.js instance)
+8. Compositor: invoke('clone_ssh_session', { sessionId, cols, rows })
+9. Rust SshManager:
+   a. Looks up cached SshConnectionInfo for the source session
+   b. Builds ssh command: ssh -o ControlPath=<socket> -o ControlMaster=auto
+      -o ControlPersist=600 [-p port] [-i key] [-J jump] user@host
+   c. Calls pty_manager.spawn() with this ssh command (not the default shell)
+   d. Returns new session_id
+10. Compositor: registers new session in sessionMap, wires input
+11. xterm.js connects instantly (ControlMaster reuses existing TCP connection)
+12. Titlebar updated to show "SSH: user@host"
+```
+
 ## OpenCode Dashboard Flow (e.g., user presses Cmd+Shift+O)
 
 ```

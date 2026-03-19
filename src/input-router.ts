@@ -556,6 +556,15 @@ export class InputRouter {
         this.toNormal();
         break;
 
+      // c — clone SSH session (new tab) / C — clone SSH session (new window)
+      case 'c':
+        if (e.shiftKey) {
+          this.compositor.cloneSshSessionToNewWindow().then(() => this.toNormal());
+        } else {
+          this.compositor.cloneSshSession().then(() => this.toNormal());
+        }
+        break;
+
       default:
         // Alt+h/j/k/l — navigate panes
         if (e.altKey && !e.shiftKey) {

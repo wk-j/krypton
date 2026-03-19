@@ -612,6 +612,22 @@ export class CommandPalette {
       keybinding: 'Ctrl+Shift+D',
       execute: () => c.scrollPages(1),
     });
+
+    // ── SSH actions ──
+    this.register({
+      id: 'ssh.clone-tab',
+      label: 'Clone SSH Session (New Tab)',
+      category: 'SSH',
+      keybinding: 'Leader c',
+      execute: () => c.cloneSshSession(),
+    });
+    this.register({
+      id: 'ssh.clone-window',
+      label: 'Clone SSH Session (New Window)',
+      category: 'SSH',
+      keybinding: 'Leader Shift+C',
+      execute: () => c.cloneSshSessionToNewWindow(),
+    });
   }
 
   private register(action: PaletteAction): void {
