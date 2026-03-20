@@ -285,6 +285,12 @@ export class Compositor {
     this.fontSize = config.font.size;
     this.lineHeight = config.font.line_height;
 
+    // Expose cell height for CSS overlays (e.g. top-line glow)
+    document.documentElement.style.setProperty(
+      '--krypton-terminal-cell-height',
+      `${this.fontSize * this.lineHeight}px`
+    );
+
     // Terminal
     this.scrollbackLines = config.terminal.scrollback_lines;
     this.cursorStyle = config.terminal.cursor_style;
@@ -439,6 +445,11 @@ export class Compositor {
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(terminalWrap);
+
+    // Top-line glow overlay — sits above the xterm canvas
+    const glowOverlay = document.createElement('div');
+    glowOverlay.className = 'krypton-glow-overlay';
+    terminalWrap.appendChild(glowOverlay);
 
     if (this.customKeyHandler) {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);
@@ -2232,6 +2243,11 @@ export class Compositor {
     terminal.loadAddon(fitAddon);
     terminal.open(body);
 
+    // Top-line glow overlay
+    const qtGlow = document.createElement('div');
+    qtGlow.className = 'krypton-glow-overlay';
+    body.appendChild(qtGlow);
+
     // Attach custom key handler
     if (this.customKeyHandler) {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);
@@ -2665,10 +2681,13 @@ export class Compositor {
           const uriBytes = data.slice(i + 4, end);
           const uri = new TextDecoder().decode(new Uint8Array(uriBytes));
           // URI format: file://hostname/path or file:///path
-          const match = uri.match(/^file:\/\/[^/]*(\/.*)$/);
+          // Extract both hostname and path so the backend can distinguish
+          // local CWD updates from remote ones (SSH shells emit the remote hostname).
+          const match = uri.match(/^file:\/\/([^/]*)(\/.*)$/);
           if (match) {
-            const path = decodeURIComponent(match[1]);
-            invoke('set_ssh_remote_cwd', { sessionId, cwd: path })
+            const hostname = decodeURIComponent(match[1]);
+            const path = decodeURIComponent(match[2]);
+            invoke('set_ssh_remote_cwd', { sessionId, cwd: path, hostname })
               .catch(() => { /* ignore — ssh feature may be disabled */ });
           }
         }
@@ -3050,6 +3069,111 @@ export class Compositor {
   // ─── SSH Session Multiplexing ─────────────────────────────────────
 
   /**
+   * Probe the remote CWD by injecting a command into the active PTY.
+   *
+   * The probe output is embedded inside a private-use OSC escape
+   * sequence (OSC 7337) that xterm.js silently discards — the printf
+   * output itself is completely invisible to the user.
+   *
+   * To hide the *command echo* (the shell repeating what we typed),
+   * we wrap the payload in a compound command that:
+   *   1. Saves the cursor position  (ESC 7)
+   *   2. Turns off terminal echo    (stty -echo)
+   *   3. Runs the printf            (produces the invisible OSC)
+   *   4. Restores echo              (stty echo)
+   *   5. Restores the cursor        (ESC 8) and erases the line
+   *
+   * Because `stty -echo` is set before the newline is echoed back
+   * by the remote TTY driver, and cursor save/restore brackets the
+   * whole thing, the terminal buffer is left untouched.
+   *
+   * Falls back to `null` if no response arrives within the timeout.
+   */
+  private probeRemoteCwd(sessionId: number): Promise<string | null> {
+    const marker = `__KR_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}__`;
+    const TIMEOUT_MS = 3000;
+
+    // What we look for in the raw pty-output stream.
+    // The printf will emit: ESC ] 7337 ; <marker> ; <cwd> BEL
+    const oscStart = `\x1b]7337;${marker};`;
+    const oscEnd = '\x07';
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let buffer = '';
+
+      // eslint-disable-next-line prefer-const
+      let unlisten: (() => void) | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        if (unlisten) unlisten();
+      };
+
+      const finish = (cwd: string | null) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(cwd);
+      };
+
+      timer = setTimeout(() => finish(null), TIMEOUT_MS);
+
+      // Listen for the OSC response in raw pty-output
+      listen<[number, number[]]>('pty-output', (event) => {
+        const [sid, data] = event.payload;
+        if (sid !== sessionId || settled) return;
+
+        buffer += new TextDecoder().decode(new Uint8Array(data));
+
+        const si = buffer.indexOf(oscStart);
+        if (si === -1) return;
+        const payloadStart = si + oscStart.length;
+        const ei = buffer.indexOf(oscEnd, payloadStart);
+        if (ei === -1) return;
+
+        const cwd = buffer.slice(payloadStart, ei).trim();
+        finish(cwd || null);
+      }).then((fn) => {
+        if (settled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      });
+
+      // Inject the probe command.
+      //
+      // The command we send (as keystrokes into the PTY):
+      //   <CR><ESC[2K> — move to column 0, erase the current line
+      //                   (wipes the visible prompt so our command
+      //                    doesn't appear next to stale text)
+      //   <space>      — leading space: most shells skip history
+      //   stty -echo;  — disable TTY echo so the command + output
+      //                   are not displayed
+      //   printf '\033]7337;<marker>;%s\007' "$(pwd)";
+      //                — emit the CWD inside an invisible OSC sequence
+      //   stty echo    — re-enable TTY echo
+      //   <\n>         — execute the compound command
+      //
+      // After execution the shell prints a fresh prompt.  Because
+      // echo was off during execution, neither the command text
+      // nor the printf output were visible.  The fresh prompt
+      // naturally replaces the erased line.
+      const cmd = [
+        '\r\x1b[2K',                                                    // CR + erase line
+        ` stty -echo; printf '\\033]7337;${marker};%s\\007' "$(pwd)";`, // probe (no echo)
+        ' stty echo\n',                                                  // restore echo + exec
+      ].join('');
+
+      const encoded = new TextEncoder().encode(cmd);
+      invoke('write_to_pty', { sessionId, data: Array.from(encoded) })
+        .catch(() => finish(null));
+    });
+  }
+
+  /**
    * Clone the SSH session from the focused pane into a new tab.
    * Detects the active SSH connection and spawns a new PTY that
    * piggybacks on the same connection via ControlMaster.
@@ -3068,6 +3192,10 @@ export class Compositor {
         this.showNotification('No SSH session detected in focused terminal');
         return;
       }
+
+      // Probe the remote CWD from the live SSH shell before we switch tabs.
+      // This injects a command into the existing PTY and captures the output.
+      const remoteCwd = await this.probeRemoteCwd(sessionId);
 
       // Create a new tab in the current window
       const tabId = nextTabId();
@@ -3103,11 +3231,12 @@ export class Compositor {
       await this.nextFrame();
       this.fitWindow(win.id);
 
-      // Spawn cloned SSH PTY
+      // Spawn cloned SSH PTY with the probed remote CWD
       const newSessionId = await invoke<number>('clone_ssh_session', {
         sessionId,
         cols: pane.terminal.cols,
         rows: pane.terminal.rows,
+        remoteCwd,
       });
       pane.sessionId = newSessionId;
       this.sessionMap.set(newSessionId, { windowId: win.id, tabId, paneId: pane.id });
@@ -3149,6 +3278,9 @@ export class Compositor {
         return;
       }
 
+      // Probe the remote CWD from the live SSH shell before spawning
+      const remoteCwd = await this.probeRemoteCwd(sessionId);
+
       // Create a new window (reuses createWindow's DOM setup)
       const newWindowId = await this.createWindow();
       const win = this.windows.get(newWindowId);
@@ -3165,11 +3297,12 @@ export class Compositor {
       const oldSessionId = pane.sessionId;
       this.sessionMap.delete(oldSessionId);
 
-      // Spawn cloned SSH PTY
+      // Spawn cloned SSH PTY with the probed remote CWD
       const newSessionId = await invoke<number>('clone_ssh_session', {
         sessionId,
         cols: pane.terminal.cols,
         rows: pane.terminal.rows,
+        remoteCwd,
       });
       pane.sessionId = newSessionId;
       this.sessionMap.set(newSessionId, {
