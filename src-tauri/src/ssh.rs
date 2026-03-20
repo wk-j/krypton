@@ -77,9 +77,14 @@ impl SshManager {
         let socket_path = self.socket_dir.join(&socket_name);
         info.control_socket = Some(socket_path.to_string_lossy().to_string());
 
-        // Cache it
+        // Cache it and clear any stale remote CWD that was stored before
+        // detection (should not exist with the set_remote_cwd guard, but
+        // defensive cleanup just in case).
         if let Ok(mut conns) = self.connections.lock() {
             conns.insert(session_id, info.clone());
+        }
+        if let Ok(mut cwds) = self.remote_cwds.lock() {
+            cwds.remove(&session_id);
         }
 
         Some(info)
@@ -140,7 +145,23 @@ impl SshManager {
 
     /// Store the last-known remote CWD for a session, reported by
     /// the frontend via OSC 7 tracking.
+    ///
+    /// Only stores the CWD if the session has a detected SSH connection
+    /// in the cache. This prevents local shell CWD updates (emitted via
+    /// OSC 7 before the SSH session is detected) from being mistakenly
+    /// used as the remote CWD during clone, which would cause the clone
+    /// command to `cd` into a non-existent path and exit immediately.
     pub fn set_remote_cwd(&self, session_id: u32, cwd: String) {
+        // Only track CWD for sessions with a known SSH connection.
+        // Before detection, OSC 7 comes from the local shell and must be ignored.
+        let is_ssh = self
+            .connections
+            .lock()
+            .map(|c| c.contains_key(&session_id))
+            .unwrap_or(false);
+        if !is_ssh {
+            return;
+        }
         if let Ok(mut map) = self.remote_cwds.lock() {
             map.insert(session_id, cwd);
         }
