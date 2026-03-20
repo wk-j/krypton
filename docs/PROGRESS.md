@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-20 (SSH session multiplexing via ControlMaster — detect, clone, keybindings)
+> Last updated: 2026-03-21 (Cursor trail — rainbow flame effect on mouse + text cursor)
 
 ## Overview
 
@@ -14,7 +14,7 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 10/11 |
-| M8 — Polish | In Progress | 12/13 |
+| M8 — Polish | In Progress | 13/14 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -127,7 +127,8 @@
 - [ ] Performance profiling (latency, animation FPS, transparent rendering overhead)
 - [x] Fix macOS transparency freeze — removed `backdrop-filter: blur()` from all elements (`.krypton-window`, Quick Terminal, which-key, command palette, dashboard, hint-toast). On macOS, `backdrop-filter` in a transparent WKWebView causes the compositor to snapshot/freeze the desktop behind terminal windows when focused. Also added `.xterm-scrollable-element` CSS override to fix xterm.js setting opaque inline `backgroundColor`. See `docs/24-backdrop-filter-removal.md`.
 - [x] Sound engine moved to Rust backend — replaced frontend Web Audio API with `rodio` crate on dedicated audio thread. WAV packs bundled as Tauri resources under `src-tauri/sounds/`. Frontend is thin IPC wrapper. See `docs/17-sound-themes.md`, `docs/27-rust-sound-engine.md`.
-- [x] SSH session multiplexing — detect active SSH connections in terminal panes via process tree inspection (`SshManager` in `src-tauri/src/ssh.rs`), clone sessions using OpenSSH `ControlMaster` auto-multiplexing. Keybindings: `Leader c` (clone to new tab), `Leader Shift+C` (clone to new window). Command palette actions. Titlebar shows `SSH: user@host`. Config: `[ssh]` section with `enabled`, `control_persist`, `clone_target`. Socket dir: `~/.config/krypton/ssh-sockets/`. See `docs/28-ssh-session-multiplexing.md`.
+- [x] SSH session multiplexing — detect active SSH connections in terminal panes via process tree inspection (`SshManager` in `src-tauri/src/ssh.rs`), clone sessions using OpenSSH `ControlMaster` auto-multiplexing. **Remote CWD inheritance**: cloned sessions start in the same directory via invisible PTY probe (`stty -echo` + OSC 7337 private escape sequence); passive OSC 7 hostname filtering as fallback (uses `hostname` crate to distinguish local vs remote CWD). Keybindings: `Leader c` (clone to new tab), `Leader Shift+C` (clone to new window). Command palette actions. Titlebar shows `SSH: user@host`. Config: `[ssh]` section with `enabled`, `control_persist`, `clone_target`. Socket dir: `~/.config/krypton/ssh-sockets/`. See `docs/28-ssh-session-multiplexing.md`.
+- [x] Cursor trail — rainbow flame particle effect (`src/cursor-trail.ts`) on both mouse cursor (document-level `mousemove` capture) and terminal text cursor (polls `buffer.active.cursorX/Y` via compositor). Particles drift upward with turbulence, cycle rainbow hues, fade with quadratic falloff. Teardrop-shaped with radial gradient + glow. Appended to `document.body` (z-index 99999). Togglable via `toggle()`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 

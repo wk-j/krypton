@@ -1727,3 +1727,13 @@ html, body {
 .krypton-oc__session-rows::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
 }
+
+/* ─── Cursor Trail (Rainbow Flame) ─── */
+.krypton-cursor-trail__particle {
+  position: fixed;
+  border-radius: 40% 40% 50% 50%;  /* teardrop-ish flame shape */
+  pointer-events: none;
+  z-index: 99999;
+  will-change: transform, opacity, left, top;
+  filter: blur(1px);
+}

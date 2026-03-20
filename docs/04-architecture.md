@@ -108,6 +108,7 @@ The webview's `<html>` and `<body>` have `background: transparent`. Windows are 
 | `display-info` | Query monitor geometry for fullscreen dimensions | Planned |
 | `rusqlite` | Read-only SQLite database access for dashboard overlays | Implemented |
 | `rodio` | Audio playback for sound engine (WAV decoding + OS audio output via cpal) | Implemented |
+| `hostname` | Local hostname detection for SSH remote CWD filtering (OSC 7 hostname comparison) | Implemented |
 
 ## 5.2 Key Frontend Packages (npm)
 
@@ -151,6 +152,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 15. **Context extensions** — `ExtensionManager` listens for `process-changed` Tauri events from a backend poller (500ms, using `tcgetpgrp()` on PTY master fd). When a matching foreground process is detected (e.g., `java`), the corresponding built-in extension activates and renders widget bars (top/bottom horizontal strips inside the pane). Bars are real flex children that push the xterm terminal inward — `addon-fit` recalculates and `resize_pty` fires. First extension: Java Resource Monitor (JVM heap, GC, CPU%, RSS via `jstat` + `ps`).
 16. **Overlay dashboards** — `DashboardManager` provides a generic framework for full-screen overlay panels. Modules register dashboards with an ID, title, optional keyboard shortcut, and `onOpen`/`onClose`/`onKeyDown` lifecycle hooks. The manager handles DOM creation (backdrop + panel + header + scrollable content area at z-index 9500), show/hide transitions (CSS opacity + scale), `Mode.Dashboard` integration with the InputRouter, and focus restoration. Built-in dashboards: **Git Status** (`Cmd+Shift+G`) — branch, file counts, changed file list via `run_command`; **OpenCode** (`Cmd+Shift+O`) — session history, token usage, model/tool distribution from local SQLite database via `query_sqlite`.
 17. **Optional mouse handling** — secondary drag/resize/click interactions for users who prefer mouse
+18. **Cursor trail** — `CursorTrail` (`src/cursor-trail.ts`) renders a rainbow flame particle effect on both the mouse cursor and the terminal text cursor. Spawns burst particles on `mousemove` (document-level capture) and polls the focused terminal's `buffer.active.cursorX/Y` each frame. Particles drift upward with turbulence, cycle through rainbow hues, and fade with quadratic falloff. Appended to `document.body` at z-index 99999. Togglable at runtime via `toggle()`
 
 ### Window DOM Structure
 

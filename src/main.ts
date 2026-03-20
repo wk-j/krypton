@@ -10,6 +10,7 @@ import { loadConfig } from './config';
 import { FrontendThemeEngine } from './theme';
 import { createGitDashboard } from './dashboards/git';
 import { createOpenCodeDashboard } from './dashboards/opencode';
+import { CursorTrail } from './cursor-trail';
 
 async function main(): Promise<void> {
   const workspace = document.getElementById('krypton-workspace');
@@ -80,6 +81,11 @@ async function main(): Promise<void> {
 
   // Create the first terminal window
   await compositor.createWindow();
+
+  // Initialize cursor trail (rainbow flame effect on mouse + text cursor)
+  const cursorTrail = new CursorTrail();
+  cursorTrail.setCompositor(compositor);
+  cursorTrail.init();
 
   // Play startup sound after first window is ready
   compositor.soundEngine.play('startup');
