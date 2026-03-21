@@ -73,6 +73,12 @@ export class ClaudeHookManager {
   private toolClearTimer: ReturnType<typeof setTimeout> | null = null;
 
   async init(): Promise<void> {
+    // Create toast container first so toasts can be shown during init
+    this.toastContainer = document.createElement('div');
+    this.toastContainer.className = 'krypton-claude-toasts';
+    document.body.appendChild(this.toastContainer);
+    console.log('[Krypton] Toast container created:', this.toastContainer);
+
     // Listen for hook server ready event to get the port
     await listen<number>('claude-hook-server-ready', (event) => {
       this.hookPort = event.payload;
@@ -82,19 +88,18 @@ export class ClaudeHookManager {
     // Try to get port immediately (server may have started before us)
     try {
       this.hookPort = await invoke<number>('get_hook_server_port');
+      console.log(`[Krypton] Hook server port: ${this.hookPort}`);
     } catch {
-      // Server not started yet, will get port from event
+      console.log('[Krypton] Hook server not started yet');
     }
 
     // Listen for hook events
     await listen<ClaudeHookEvent>('claude-hook', (event) => {
+      console.log('[Krypton] Hook event received:', event.payload.hook_event_name, event.payload);
       this.handleHookEvent(event.payload);
     });
 
-    // Create toast container
-    this.toastContainer = document.createElement('div');
-    this.toastContainer.className = 'krypton-claude-toasts';
-    document.body.appendChild(this.toastContainer);
+    console.log('[Krypton] Claude hook manager initialized');
   }
 
   /** Get the hook server port (0 if not running) */
@@ -436,7 +441,8 @@ export class ClaudeHookManager {
     toast.appendChild(text);
     toast.appendChild(close);
 
-    this.toastContainer.appendChild(toast);
+    // Prepend so newest toast is at the bottom (closest to the corner)
+    this.toastContainer.prepend(toast);
 
     // Animate in
     requestAnimationFrame(() => {

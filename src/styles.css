@@ -1864,17 +1864,11 @@ html, body {
   right: 16px;
   z-index: 9999;
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
   gap: 4px;
   pointer-events: none;
   max-height: 50vh;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
-}
-
-.krypton-claude-toasts::-webkit-scrollbar {
-  display: none;
+  overflow: visible;
 }
 
 .krypton-claude-toast {

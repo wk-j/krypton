@@ -10,7 +10,19 @@
       "Bash(cd /Users/wk/Source/krypton/src-tauri && cargo build 2>&1)",
       "Bash(grep -r \"soundEngine\\\\.play\\\\|this\\\\.sound\\\\.play\" /Users/wk/Source/krypton/src/*.ts 2>/dev/null | wc -l && grep -r \"soundEngine\\\\.play\" /Users/wk/Source/krypton/src/*.ts 2>/dev/null | cut -d: -f1 | sort -u)",
       "Bash(grep -r \"\\\\.sound\\\\.play\" /Users/wk/Source/krypton/src/*.ts 2>/dev/null | cut -d: -f1 | sort -u)",
-      "Bash(find /Users/wk/Source/krypton -name \"*.toml\" -not -path \"*/target/*\" -not -path \"*/.cargo/*\" 2>/dev/null | head -20)"
+      "Bash(find /Users/wk/Source/krypton -name \"*.toml\" -not -path \"*/target/*\" -not -path \"*/.cargo/*\" 2>/dev/null | head -20)",
+      "Bash(grep -r \"Result<\" /Users/wk/Source/krypton/src-tauri/src/*.rs)",
+      "Bash(git commit:*)",
+      "Bash(ls /Users/wk/Source/krypton/docs/*.md)",
+      "Bash(sort -t/ -k6 -V)",
+      "Bash(ls -la /Users/wk/Source/krypton/src/*.ts)",
+      "Bash(npm run:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(ls /Users/wk/Source/krypton/src/*.ts)",
+      "Bash(xargs -I{} basename {})",
+      "Bash(ls /Users/wk/Source/krypton/src-tauri/src/*.rs)",
+      "Bash(git:*)",
+      "Bash(curl:*)"
     ]
   }
 }
