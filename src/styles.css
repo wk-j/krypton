@@ -1860,8 +1860,9 @@ html, body {
 /* 4. Intercept Toasts — persistent stack, click to dismiss */
 .krypton-claude-toasts {
   position: fixed;
-  bottom: 16px;
+  top: 50%;
   right: 16px;
+  transform: translateY(-50%);
   z-index: 9999;
   display: flex;
   flex-direction: column;
@@ -1876,17 +1877,21 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background: var(--krypton-backdrop-color, rgba(6, 10, 18, 0.92));
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
-  border-left: 3px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
-  border-radius: 2px;
+  padding: 6px 14px;
+  background: linear-gradient(
+    135deg,
+    rgba(6, 10, 18, 0.94),
+    rgba(10, 16, 28, 0.88)
+  );
+  border: none;
+  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+  border-radius: 1px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: 16px;
   color: var(--krypton-fg, #b0c4d8);
   box-shadow:
-    0 0 12px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08),
-    inset 0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
+    0 0 16px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06),
+    inset 0 0 30px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02);
   transform: perspective(600px) translateX(20px) rotateY(8deg);
   opacity: 0;
   transition: transform 0.3s ease, opacity 0.3s ease;
@@ -1933,16 +1938,14 @@ html, body {
 }
 
 .krypton-claude-toast__label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
-  padding: 1px 5px;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
-  border-radius: 2px;
+  letter-spacing: 0.12em;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
+  padding: 0;
   flex-shrink: 0;
-  text-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
 }
 
 .krypton-claude-toast__text {
@@ -1952,53 +1955,33 @@ html, body {
   flex: 1;
 }
 
-.krypton-claude-toast__close {
-  flex-shrink: 0;
-  font-size: 16px;
-  line-height: 1;
-  color: rgba(255, 255, 255, 0.25);
-  cursor: pointer;
-  padding: 0 2px;
-  transition: color 0.2s ease;
-}
-
-.krypton-claude-toast__close:hover {
-  color: rgba(255, 255, 255, 0.7);
-}
-
 /* ─── Toast type: session (green) — SessionStart */
 .krypton-claude-toast--session {
-  border-color: rgba(80, 220, 100, 0.3);
   border-left-color: rgba(80, 220, 100, 0.7);
 }
 
 .krypton-claude-toast--session .krypton-claude-toast__label {
   color: #50dc64;
-  border-color: rgba(80, 220, 100, 0.4);
-  text-shadow: 0 0 4px rgba(80, 220, 100, 0.3);
+  text-shadow: 0 0 6px rgba(80, 220, 100, 0.4);
 }
 
 /* ─── Toast type: tool (cyan) — PreToolUse */
 .krypton-claude-toast--tool {
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
   border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
 }
 
 .krypton-claude-toast--tool .krypton-claude-toast__label {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
-  text-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
 }
 
 /* ─── Toast type: tool_done (dim cyan) — PostToolUse */
 .krypton-claude-toast--tool_done {
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
   border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
 }
 
 .krypton-claude-toast--tool_done .krypton-claude-toast__label {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
   text-shadow: none;
 }
 
@@ -2008,73 +1991,61 @@ html, body {
 
 /* ─── Toast type: notification (amber) — Notification */
 .krypton-claude-toast--notification {
-  border-color: rgba(250, 200, 99, 0.3);
   border-left-color: rgba(250, 200, 99, 0.7);
 }
 
 .krypton-claude-toast--notification .krypton-claude-toast__label {
   color: #fac863;
-  border-color: rgba(250, 200, 99, 0.4);
-  text-shadow: 0 0 4px rgba(250, 200, 99, 0.3);
+  text-shadow: 0 0 6px rgba(250, 200, 99, 0.4);
 }
 
 /* ─── Toast type: permission_prompt (amber, brighter) */
 .krypton-claude-toast--permission_prompt {
-  border-color: rgba(250, 200, 99, 0.4);
   border-left-color: rgba(250, 200, 99, 0.8);
 }
 
 .krypton-claude-toast--permission_prompt .krypton-claude-toast__label {
   color: #fac863;
-  border-color: rgba(250, 200, 99, 0.5);
-  text-shadow: 0 0 6px rgba(250, 200, 99, 0.4);
+  text-shadow: 0 0 8px rgba(250, 200, 99, 0.5);
 }
 
 /* ─── Toast type: error (red) */
 .krypton-claude-toast--error {
-  border-color: rgba(255, 64, 64, 0.4);
   border-left-color: rgba(255, 64, 64, 0.7);
 }
 
 .krypton-claude-toast--error .krypton-claude-toast__label {
   color: #ff5050;
-  border-color: rgba(255, 64, 64, 0.4);
-  text-shadow: 0 0 4px rgba(255, 64, 64, 0.3);
+  text-shadow: 0 0 6px rgba(255, 64, 64, 0.4);
 }
 
 /* ─── Toast type: success (green) */
 .krypton-claude-toast--success {
-  border-color: rgba(80, 220, 100, 0.4);
   border-left-color: rgba(80, 220, 100, 0.7);
 }
 
 .krypton-claude-toast--success .krypton-claude-toast__label {
   color: #50dc64;
-  border-color: rgba(80, 220, 100, 0.4);
-  text-shadow: 0 0 4px rgba(80, 220, 100, 0.3);
+  text-shadow: 0 0 6px rgba(80, 220, 100, 0.4);
 }
 
 /* ─── Toast type: stop (magenta) — Stop */
 .krypton-claude-toast--stop {
-  border-color: rgba(200, 100, 255, 0.3);
   border-left-color: rgba(200, 100, 255, 0.7);
 }
 
 .krypton-claude-toast--stop .krypton-claude-toast__label {
   color: #c864ff;
-  border-color: rgba(200, 100, 255, 0.4);
-  text-shadow: 0 0 4px rgba(200, 100, 255, 0.3);
+  text-shadow: 0 0 6px rgba(200, 100, 255, 0.4);
 }
 
 /* ─── Toast type: instructions (dim green) — InstructionsLoaded */
 .krypton-claude-toast--instructions {
-  border-color: rgba(80, 220, 100, 0.15);
   border-left-color: rgba(80, 220, 100, 0.35);
 }
 
 .krypton-claude-toast--instructions .krypton-claude-toast__label {
   color: rgba(80, 220, 100, 0.6);
-  border-color: rgba(80, 220, 100, 0.25);
   text-shadow: none;
 }
 
@@ -2084,37 +2055,31 @@ html, body {
 
 /* ─── Toast type: prompt (blue) — UserPromptSubmit */
 .krypton-claude-toast--prompt {
-  border-color: rgba(100, 160, 255, 0.3);
   border-left-color: rgba(100, 160, 255, 0.7);
 }
 
 .krypton-claude-toast--prompt .krypton-claude-toast__label {
   color: #64a0ff;
-  border-color: rgba(100, 160, 255, 0.4);
-  text-shadow: 0 0 4px rgba(100, 160, 255, 0.3);
+  text-shadow: 0 0 6px rgba(100, 160, 255, 0.4);
 }
 
 /* ─── Toast type: subagent (violet) — SubagentStart */
 .krypton-claude-toast--subagent {
-  border-color: rgba(160, 120, 255, 0.3);
   border-left-color: rgba(160, 120, 255, 0.7);
 }
 
 .krypton-claude-toast--subagent .krypton-claude-toast__label {
   color: #a078ff;
-  border-color: rgba(160, 120, 255, 0.4);
-  text-shadow: 0 0 4px rgba(160, 120, 255, 0.3);
+  text-shadow: 0 0 6px rgba(160, 120, 255, 0.4);
 }
 
 /* ─── Toast type: subagent_done (dim violet) — SubagentStop */
 .krypton-claude-toast--subagent_done {
-  border-color: rgba(160, 120, 255, 0.15);
   border-left-color: rgba(160, 120, 255, 0.35);
 }
 
 .krypton-claude-toast--subagent_done .krypton-claude-toast__label {
   color: rgba(160, 120, 255, 0.5);
-  border-color: rgba(160, 120, 255, 0.2);
   text-shadow: none;
 }
 
@@ -2124,61 +2089,51 @@ html, body {
 
 /* ─── Toast type: teammate (teal) — TeammateIdle */
 .krypton-claude-toast--teammate {
-  border-color: rgba(80, 200, 180, 0.3);
   border-left-color: rgba(80, 200, 180, 0.7);
 }
 
 .krypton-claude-toast--teammate .krypton-claude-toast__label {
   color: #50c8b4;
-  border-color: rgba(80, 200, 180, 0.4);
-  text-shadow: 0 0 4px rgba(80, 200, 180, 0.3);
+  text-shadow: 0 0 6px rgba(80, 200, 180, 0.4);
 }
 
 /* ─── Toast type: task (green) — TaskCompleted */
 .krypton-claude-toast--task {
-  border-color: rgba(80, 220, 100, 0.3);
   border-left-color: rgba(80, 220, 100, 0.7);
 }
 
 .krypton-claude-toast--task .krypton-claude-toast__label {
   color: #50dc64;
-  border-color: rgba(80, 220, 100, 0.4);
-  text-shadow: 0 0 4px rgba(80, 220, 100, 0.3);
+  text-shadow: 0 0 6px rgba(80, 220, 100, 0.4);
 }
 
 /* ─── Toast type: config (amber-dim) — ConfigChange */
 .krypton-claude-toast--config {
-  border-color: rgba(250, 200, 99, 0.2);
   border-left-color: rgba(250, 200, 99, 0.5);
 }
 
 .krypton-claude-toast--config .krypton-claude-toast__label {
   color: rgba(250, 200, 99, 0.7);
-  border-color: rgba(250, 200, 99, 0.3);
   text-shadow: none;
 }
 
 /* ─── Toast type: worktree (cyan-dim) — WorktreeCreate/Remove */
 .krypton-claude-toast--worktree {
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
   border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
 }
 
 .krypton-claude-toast--worktree .krypton-claude-toast__label {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
   text-shadow: none;
 }
 
 /* ─── Toast type: compact (magenta-dim) — PreCompact/PostCompact */
 .krypton-claude-toast--compact {
-  border-color: rgba(200, 100, 255, 0.15);
   border-left-color: rgba(200, 100, 255, 0.35);
 }
 
 .krypton-claude-toast--compact .krypton-claude-toast__label {
   color: rgba(200, 100, 255, 0.5);
-  border-color: rgba(200, 100, 255, 0.2);
   text-shadow: none;
 }
 
@@ -2188,14 +2143,12 @@ html, body {
 
 /* ─── Toast type: elicitation (amber-bright) — Elicitation/ElicitationResult */
 .krypton-claude-toast--elicitation {
-  border-color: rgba(250, 200, 99, 0.4);
   border-left-color: rgba(250, 200, 99, 0.8);
 }
 
 .krypton-claude-toast--elicitation .krypton-claude-toast__label {
   color: #fac863;
-  border-color: rgba(250, 200, 99, 0.5);
-  text-shadow: 0 0 6px rgba(250, 200, 99, 0.4);
+  text-shadow: 0 0 8px rgba(250, 200, 99, 0.5);
 }
 
 /* 5. Activity Trace — seismograph ticker on right edge of content area */

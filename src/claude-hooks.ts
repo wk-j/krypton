@@ -676,14 +676,8 @@ export class ClaudeHookManager {
     text.className = 'krypton-claude-toast__text';
     text.textContent = message;
 
-    // Close button
-    const close = document.createElement('span');
-    close.className = 'krypton-claude-toast__close';
-    close.textContent = '\u00D7'; // ×
-
     toast.appendChild(label);
     toast.appendChild(text);
-    toast.appendChild(close);
 
     // Prepend so newest toast is at the bottom (closest to the corner)
     this.toastContainer.prepend(toast);
@@ -693,16 +687,11 @@ export class ClaudeHookManager {
       toast.classList.add('krypton-claude-toast--visible');
     });
 
-    // Click anywhere on toast or close button to dismiss
-    const dismiss = (): void => {
+    // Click anywhere to dismiss
+    toast.addEventListener('click', () => {
       toast.classList.remove('krypton-claude-toast--visible');
       setTimeout(() => toast.remove(), 300);
-    };
-    close.addEventListener('click', (e) => {
-      e.stopPropagation();
-      dismiss();
     });
-    toast.addEventListener('click', dismiss);
   }
 
   /** Format tool detail string from event input */

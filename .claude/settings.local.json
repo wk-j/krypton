@@ -23,7 +23,9 @@
       "Bash(ls /Users/wk/Source/krypton/src-tauri/src/*.rs)",
       "Bash(git:*)",
       "Bash(curl:*)",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Read(//Users/wk/.claude/**)",
+      "Read(//Users/wk/.claude/plugins/**)"
     ]
   }
 }
