@@ -137,7 +137,7 @@ export class ClaudeHookManager {
       lastEvent: 'SessionStart',
       originalTitle: null,
     });
-    // Window label is driven by xterm.js onTitleChange (OSC 0/2 from Claude Code)
+    this.showToast('Session started', 'session');
   }
 
   private onPreToolUse(event: ClaudeHookEvent): void {
@@ -154,6 +154,10 @@ export class ClaudeHookManager {
 
     this.updateToolActivity(event);
     this.addActivityTick(event.tool_name ?? 'unknown');
+
+    const toolName = event.tool_name ?? 'unknown';
+    const detail = this.formatToolDetail(event);
+    this.showToast(detail ? `${toolName} \u2190 ${detail}` : toolName, 'tool');
   }
 
   private onPostToolUse(event: ClaudeHookEvent): void {
@@ -162,12 +166,18 @@ export class ClaudeHookManager {
     session.lastEvent = 'PostToolUse';
 
     // Check if tool had an error
-    if (event.tool_response) {
-      const resp = event.tool_response as Record<string, unknown>;
-      if (resp.is_error || resp.error) {
-        this.flashUplinkError();
-        this.addActivityTick('error');
-      }
+    const hasError = event.tool_response
+      && ((event.tool_response as Record<string, unknown>).is_error
+        || (event.tool_response as Record<string, unknown>).error);
+
+    if (hasError) {
+      this.flashUplinkError();
+      this.addActivityTick('error');
+      const toolName = event.tool_name ?? 'unknown';
+      this.showToast(`${toolName} failed`, 'error');
+    } else {
+      const toolName = event.tool_name ?? 'unknown';
+      this.showToast(`${toolName} done`, 'tool_done');
     }
 
     // Hold tool text for 1.5s, then glitch-out — unless a new PreToolUse arrives
@@ -198,6 +208,7 @@ export class ClaudeHookManager {
     }
     // Flash sigil bright then fade to dormant
     this.flashSigilComplete();
+    this.showToast('Session ended', 'stop');
   }
 
   private getOrCreateSession(sessionId: string): ClaudeSession {
@@ -385,55 +396,80 @@ export class ClaudeHookManager {
     garbleOut();
   }
 
-  // ─── UI: Intercept Toasts (scan-line wipe) ─────────────────────
+  // ─── UI: Intercept Toasts (persistent stack, click to dismiss) ─
+
+  /** Label text per event type */
+  private static TOAST_LABELS: Record<string, string> = {
+    session: 'SESSION',
+    tool: 'TOOL',
+    tool_done: 'DONE',
+    notification: 'CLAUDE',
+    permission_prompt: 'PERMIT',
+    error: 'ERROR',
+    success: 'OK',
+    stop: 'STOP',
+  };
 
   private showToast(message: string, type?: string): void {
     if (!this.toastContainer) return;
 
+    const toastType = type ?? 'notification';
+
     const toast = document.createElement('div');
     toast.className = 'krypton-claude-toast';
-    if (type) {
-      toast.classList.add(`krypton-claude-toast--${type}`);
-    }
+    toast.classList.add(`krypton-claude-toast--${toastType}`);
 
     const label = document.createElement('span');
     label.className = 'krypton-claude-toast__label';
-    label.textContent = 'CLAUDE';
+    label.textContent = ClaudeHookManager.TOAST_LABELS[toastType] ?? 'CLAUDE';
 
     const text = document.createElement('span');
     text.className = 'krypton-claude-toast__text';
     text.textContent = message;
 
+    // Close button
+    const close = document.createElement('span');
+    close.className = 'krypton-claude-toast__close';
+    close.textContent = '\u00D7'; // ×
+
     toast.appendChild(label);
     toast.appendChild(text);
-
-    // Enforce max 3 visible toasts — remove oldest
-    const existing = this.toastContainer.querySelectorAll('.krypton-claude-toast');
-    if (existing.length >= 3) {
-      existing[0].remove();
-    }
+    toast.appendChild(close);
 
     this.toastContainer.appendChild(toast);
 
-    // Animate in (triggers scan-line wipe via CSS ::after)
+    // Animate in
     requestAnimationFrame(() => {
       toast.classList.add('krypton-claude-toast--visible');
     });
 
-    // Auto-dismiss (errors stay until clicked)
-    const isError = type === 'error';
-    if (isError) {
-      toast.style.cursor = 'pointer';
-      toast.addEventListener('click', () => {
-        toast.classList.remove('krypton-claude-toast--visible');
-        setTimeout(() => toast.remove(), 300);
-      });
-    } else {
-      setTimeout(() => {
-        toast.classList.remove('krypton-claude-toast--visible');
-        setTimeout(() => toast.remove(), 300);
-      }, 4000);
+    // Click anywhere on toast or close button to dismiss
+    const dismiss = (): void => {
+      toast.classList.remove('krypton-claude-toast--visible');
+      setTimeout(() => toast.remove(), 300);
+    };
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dismiss();
+    });
+    toast.addEventListener('click', dismiss);
+  }
+
+  /** Format tool detail string from event input */
+  private formatToolDetail(event: ClaudeHookEvent): string {
+    if (!event.tool_input || typeof event.tool_input !== 'object') return '';
+    const input = event.tool_input as Record<string, unknown>;
+    if (input.file_path && typeof input.file_path === 'string') {
+      return this.abbreviatePath(input.file_path);
     }
+    if (input.command && typeof input.command === 'string') {
+      const cmd = input.command as string;
+      return cmd.length > 30 ? cmd.slice(0, 30) + '\u2026' : cmd;
+    }
+    if (input.pattern && typeof input.pattern === 'string') {
+      return input.pattern as string;
+    }
+    return '';
   }
 
   // ─── UI: Activity Trace (seismograph) ──────────────────────────

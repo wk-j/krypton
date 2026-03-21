@@ -161,7 +161,9 @@ All UI uses existing cyberpunk HUD aesthetic (`--krypton-*` CSS custom propertie
 │═══════════════════════════════════════════════════════│ ← neural uplink bar (bottom edge)
 └───────────────────────────────────────────────────────┘
                                   ┌──────────────────────┐
-                                  │ ▌CLAUDE▐  Task done  │ ← intercept toast (fixed pos)
+                                  │ ▌SESSION▐ Started   ×│ ← persistent toast stack
+                                  │ ▌TOOL▐   Edit ← f  ×│    (click to dismiss)
+                                  │ ▌DONE▐   Edit done  ×│
                                   └──────────────────────┘
 ```
 
@@ -189,7 +191,7 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | Adds `--active` → fades in as solid accent strip at 40% opacity |
 | Tool HUD | No change |
 | Activity Trace | No change |
-| Toast | No change |
+| Toast | `SESSION` label (green) — "Session started" |
 | Terminal Title | Claude Code sets OSC 2 title → `formatTerminalTitle()` rewrites it (e.g., `◈ neural_link // online`) |
 
 #### `PreToolUse`
@@ -200,7 +202,7 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | Adds `--working` → dual-pulse gradient scrolls left-to-right. Adds `--fast` for Bash/Edit/Write/NotebookEdit (0.9s vs 1.8s animation) |
 | Tool HUD | Decode animation: 6 frames of glitch chars (`░▒▓█▀▄▌▐`) resolve over ~180ms into `▸ <tool> ← <target>`. Target shows abbreviated file path, truncated command, or pattern. Cancels any pending clear timer from a previous PostToolUse |
 | Activity Trace | New tick appended at bottom, colored by tool type: cyan (Edit/Write), amber (Bash), dim cyan (Read/Glob/Grep). Tick fades to invisible over 30s, then removed. Max 20 ticks |
-| Toast | No change |
+| Toast | `TOOL` label (cyan) — "`<tool> ← <detail>`" |
 
 #### `PostToolUse`
 
@@ -210,7 +212,7 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | Removes `--working`, returns to `--active` (solid strip). If tool response contains error: flashes `--error` (red, 2 blinks over 600ms), then returns to `--active` |
 | Tool HUD | Holds current text for **1.5 seconds**. Then glitch-out animation (2 frames of increasing garble) and hides. If a new PreToolUse arrives during the hold, the clear is cancelled and new tool text decodes in immediately |
 | Activity Trace | If tool had error: additional red tick added |
-| Toast | No change |
+| Toast | Success: `DONE` label (dim cyan) — "`<tool> done`". Error: `ERROR` label (red) — "`<tool> failed`" |
 
 #### `Notification`
 
@@ -220,7 +222,7 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | No change |
 | Tool HUD | No change |
 | Activity Trace | No change |
-| Toast | New toast slides in from right with scan-line wipe (CSS `::after` sweeps top→bottom over 400ms). Dark panel with 3px left accent stripe. `CLAUDE` label chip. Auto-dismisses after 4s. Type variants: `--permission_prompt` (amber), `--error` (red, stays until clicked), `--success` (green). Max 3 visible; excess pushes oldest out |
+| Toast | `CLAUDE` label (amber) for general, `PERMIT` (amber, brighter) for permission prompts, `ERROR` (red) for errors, `OK` (green) for success |
 
 #### `Stop`
 
@@ -230,7 +232,7 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | Removes all modifiers → fades to invisible (`opacity: 0`) |
 | Tool HUD | Cleared if visible |
 | Activity Trace | No change (existing ticks continue fading naturally) |
-| Toast | No change |
+| Toast | `STOP` label (magenta) — "Session ended" |
 | Terminal Title | Claude Code may set a final OSC 2 title → `formatTerminalTitle()` rewrites it (e.g., `◈ signal_end // done`) |
 
 ### UI Element Details
@@ -271,16 +273,27 @@ Monospace readout in right side of titlebar. Format: `▸ Edit ← main.ts`
 - Layout: `flex-direction: column-reverse`, newest at bottom
 - Max 20 ticks; overflow removes oldest immediately
 
-#### 5. Intercept Toast
+#### 5. Intercept Toast (persistent stack)
 
-Fixed-position notification panel at bottom-right of viewport.
+Fixed-position panel stack at bottom-right of viewport. **All events** produce toasts. Toasts are **persistent** — no auto-dismiss. User clicks toast or `×` button to dismiss.
 
 - Entrance: `translateX(20px) → 0` over 300ms + `::after` scan-line (2px accent, sweeps top→bottom over 400ms)
-- Body: `rgba(6,10,18,0.92)`, 1px accent border, 3px solid left stripe
-- Label: `CLAUDE` in uppercase bordered chip with `text-shadow`
-- Variants: default (accent), `--permission_prompt` (amber), `--error` (red, click to dismiss), `--success` (green)
-- Auto-dismiss: 4s (non-error), then reverse slide-out
-- Stack: max 3, `column-reverse`, 6px gap. Excess pushes oldest out
+- Body: `rgba(6,10,18,0.92)`, 1px accent border, 3px solid left stripe colored by type
+- Label: uppercase bordered chip, text varies by event type (SESSION, TOOL, DONE, CLAUDE, PERMIT, ERROR, OK, STOP)
+- Close button: `×` glyph at right edge, dim by default, brightens on hover
+- Stack: `column-reverse`, 4px gap, scrollable up to 50vh. No cap on count
+- Type styles:
+
+| Type | Label | Left stripe / border color |
+|------|-------|---------------------------|
+| `--session` | SESSION | green (`#50dc64`) |
+| `--tool` | TOOL | accent/cyan |
+| `--tool_done` | DONE | dim cyan (35% opacity) |
+| `--notification` | CLAUDE | amber (`#fac863`) |
+| `--permission_prompt` | PERMIT | amber (brighter) |
+| `--error` | ERROR | red (`#ff5050`) |
+| `--success` | OK | green |
+| `--stop` | STOP | magenta (`#c864ff`) |
 
 ### Configuration
 
