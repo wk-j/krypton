@@ -654,6 +654,11 @@ export class ClaudeHookManager {
     elicitation: 'INPUT',
   };
 
+  /** Show a toast programmatically (for testing or startup messages) */
+  public toast(message: string, type?: string): void {
+    this.showToast(message, type);
+  }
+
   private showToast(message: string, type?: string): void {
     if (!this.toastContainer || !this.toastsEnabled) return;
 

@@ -1868,8 +1868,7 @@ html, body {
   gap: 4px;
   pointer-events: auto;
   max-height: 80vh;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
 }
 
 .krypton-claude-toast {
@@ -1878,7 +1877,7 @@ html, body {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: rgba(6, 10, 18, 0.92);
+  background: var(--krypton-backdrop-color, rgba(6, 10, 18, 0.92));
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
   border-left: 3px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
   border-radius: 2px;
@@ -1888,7 +1887,7 @@ html, body {
   box-shadow:
     0 0 12px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08),
     inset 0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
-  transform: translateX(20px);
+  transform: perspective(600px) translateX(20px) rotateY(8deg);
   opacity: 0;
   transition: transform 0.3s ease, opacity 0.3s ease;
   pointer-events: auto;
@@ -1918,7 +1917,7 @@ html, body {
 }
 
 .krypton-claude-toast--visible {
-  transform: translateX(0);
+  transform: perspective(600px) translateX(0) rotateY(8deg);
   opacity: 1;
 }
 

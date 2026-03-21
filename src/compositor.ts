@@ -384,25 +384,26 @@ export class Compositor {
       const depth = config.visual.perspective_depth;
       const tiltX = config.visual.perspective_tilt_x ?? 0;
       const tiltY = config.visual.perspective_tilt_y ?? 0;
-      this.workspace.style.setProperty(
-        '--krypton-perspective',
-        depth > 0 ? `${depth}px` : 'none'
-      );
-      this.workspace.style.setProperty(
-        '--krypton-perspective-tilt-x',
-        depth > 0 && tiltX !== 0 ? `${tiltX}deg` : '0deg'
-      );
-      this.workspace.style.setProperty(
-        '--krypton-perspective-tilt-y',
-        depth > 0 && tiltY !== 0 ? `${tiltY}deg` : '0deg'
-      );
+      // Set perspective variables on both workspace (for windows) and root (for toasts).
+      // Workspace uses `perspective` property (accepts 'none'), toasts use `perspective()`
+      // function in transform (needs a length). Store the numeric value so both work.
+      const perspProp = depth > 0 ? `${depth}px` : 'none';
+      const perspFunc = depth > 0 ? `${depth}px` : '9999px';
+      const tiltXVal = depth > 0 && tiltX !== 0 ? `${tiltX}deg` : '0deg';
+      const tiltYVal = depth > 0 && tiltY !== 0 ? `${tiltY}deg` : '0deg';
+      this.workspace.style.setProperty('--krypton-perspective', perspProp);
+      this.workspace.style.setProperty('--krypton-perspective-tilt-x', tiltXVal);
+      this.workspace.style.setProperty('--krypton-perspective-tilt-y', tiltYVal);
+      const root = document.documentElement.style;
+      root.setProperty('--krypton-perspective', perspFunc);
+      root.setProperty('--krypton-perspective-tilt-x', tiltXVal);
+      root.setProperty('--krypton-perspective-tilt-y', tiltYVal);
 
       // Transparency — window backdrop opacity and blur from [visual] config.
       // These override the theme's backdrop values when set.
       const opacity = Math.max(0, Math.min(1, config.visual.opacity ?? 0.5));
       const blur = Math.max(0, config.visual.blur ?? 12);
       this.configOpacity = opacity;
-      const root = document.documentElement.style;
       root.setProperty('--krypton-window-blur', `${blur}px`);
 
       // Override the theme's backdrop color alpha with config opacity.
