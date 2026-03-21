@@ -30,6 +30,10 @@ pub struct SshManager {
     remote_cwds: Mutex<HashMap<u32, String>>,
     /// Seconds to keep a ControlMaster alive after the last client disconnects.
     control_persist: u64,
+    /// Local hostname, cached at startup for filtering OSC 7 CWD updates.
+    /// OSC 7 URIs from local shells contain this hostname (or "localhost"),
+    /// while remote shells emit the remote machine's hostname.
+    local_hostname: String,
 }
 
 impl SshManager {
@@ -45,11 +49,21 @@ impl SshManager {
             }
         }
 
+        // Cache local hostname for OSC 7 filtering.
+        // Local shells emit file://localhost/... or file://<hostname>/...
+        // Remote shells emit file://<remote-hostname>/...
+        let local_hostname = hostname::get()
+            .ok()
+            .and_then(|h| h.into_string().ok())
+            .unwrap_or_default();
+        log::info!("SshManager: local_hostname = '{}'", local_hostname);
+
         Self {
             socket_dir,
             connections: Mutex::new(HashMap::new()),
             remote_cwds: Mutex::new(HashMap::new()),
             control_persist,
+            local_hostname,
         }
     }
 
@@ -77,14 +91,9 @@ impl SshManager {
         let socket_path = self.socket_dir.join(&socket_name);
         info.control_socket = Some(socket_path.to_string_lossy().to_string());
 
-        // Cache it and clear any stale remote CWD that was stored before
-        // detection (should not exist with the set_remote_cwd guard, but
-        // defensive cleanup just in case).
+        // Cache it
         if let Ok(mut conns) = self.connections.lock() {
             conns.insert(session_id, info.clone());
-        }
-        if let Ok(mut cwds) = self.remote_cwds.lock() {
-            cwds.remove(&session_id);
         }
 
         Some(info)
@@ -146,30 +155,54 @@ impl SshManager {
     /// Store the last-known remote CWD for a session, reported by
     /// the frontend via OSC 7 tracking.
     ///
-    /// Only stores the CWD if the session has a detected SSH connection
-    /// in the cache. This prevents local shell CWD updates (emitted via
-    /// OSC 7 before the SSH session is detected) from being mistakenly
-    /// used as the remote CWD during clone, which would cause the clone
-    /// command to `cd` into a non-existent path and exit immediately.
-    pub fn set_remote_cwd(&self, session_id: u32, cwd: String) {
-        // Only track CWD for sessions with a known SSH connection.
-        // Before detection, OSC 7 comes from the local shell and must be ignored.
-        let is_ssh = self
-            .connections
-            .lock()
-            .map(|c| c.contains_key(&session_id))
-            .unwrap_or(false);
-        if !is_ssh {
+    /// Filters out local CWD updates by comparing the OSC 7 hostname
+    /// against the local machine hostname. Local shells emit OSC 7 with
+    /// "localhost", "", or the local machine name. Remote shells (over SSH)
+    /// emit the remote hostname, which won't match any of those.
+    ///
+    /// The hostname filter is the primary guard — if the hostname is
+    /// clearly remote, we store the CWD even before `detect()` has been
+    /// called. This is necessary because `detect()` is lazy (only runs
+    /// when the user triggers clone), but OSC 7 from the remote shell
+    /// arrives as soon as the SSH session starts. Without eagerly storing
+    /// these, the first clone would never have a remote CWD.
+    pub fn set_remote_cwd(&self, session_id: u32, cwd: String, hostname: &str) {
+        // Filter out local CWD updates.
+        // Local shells use: "" (empty), "localhost", or the machine's actual hostname.
+        if hostname.is_empty()
+            || hostname.eq_ignore_ascii_case("localhost")
+            || hostname.eq_ignore_ascii_case(&self.local_hostname)
+        {
+            log::debug!(
+                "SSH CWD ignored for session {}: hostname '{}' is local (local_hostname='{}')",
+                session_id,
+                hostname,
+                self.local_hostname,
+            );
             return;
         }
+
+        log::info!(
+            "SSH CWD stored for session {}: hostname='{}' cwd='{}'",
+            session_id,
+            hostname,
+            cwd,
+        );
         if let Ok(mut map) = self.remote_cwds.lock() {
             map.insert(session_id, cwd);
         }
     }
 
     /// Get the last-known remote CWD for a session.
+    /// If no CWD was tracked via OSC 7, returns None.
     pub fn get_remote_cwd(&self, session_id: u32) -> Option<String> {
-        self.remote_cwds.lock().ok()?.get(&session_id).cloned()
+        let result = self.remote_cwds.lock().ok()?.get(&session_id).cloned();
+        log::info!(
+            "SSH get_remote_cwd for session {}: {:?}",
+            session_id,
+            result,
+        );
+        result
     }
 
     /// Clear cached connection info for a session (e.g., on PTY exit).
@@ -560,6 +593,7 @@ mod tests {
             connections: Mutex::new(HashMap::new()),
             remote_cwds: Mutex::new(HashMap::new()),
             control_persist: 600,
+            local_hostname: "my-mac".into(),
         };
 
         let info = SshConnectionInfo {
@@ -588,6 +622,7 @@ mod tests {
             connections: Mutex::new(HashMap::new()),
             remote_cwds: Mutex::new(HashMap::new()),
             control_persist: 600,
+            local_hostname: "my-mac".into(),
         };
 
         let info = SshConnectionInfo {
@@ -613,6 +648,7 @@ mod tests {
             connections: Mutex::new(HashMap::new()),
             remote_cwds: Mutex::new(HashMap::new()),
             control_persist: 600,
+            local_hostname: "my-mac".into(),
         };
 
         let info = SshConnectionInfo {
@@ -638,5 +674,55 @@ mod tests {
         let input = r#"ssh -i "my key.pem" user@host"#;
         let result = shell_words_split(input);
         assert_eq!(result, vec!["ssh", "-i", "my key.pem", "user@host"]);
+    }
+
+    #[test]
+    fn test_set_remote_cwd_filters_local_hostname() {
+        let socket_dir = PathBuf::from("/tmp/test-sockets");
+        let mgr = SshManager {
+            socket_dir,
+            connections: Mutex::new(HashMap::new()),
+            remote_cwds: Mutex::new(HashMap::new()),
+            control_persist: 600,
+            local_hostname: "my-macbook.local".into(),
+        };
+
+        // Local hostnames should be rejected (no SSH connection needed for this test)
+        mgr.set_remote_cwd(1, "/Users/alice".into(), "localhost");
+        assert!(mgr.get_remote_cwd(1).is_none());
+
+        mgr.set_remote_cwd(1, "/Users/alice".into(), "");
+        assert!(mgr.get_remote_cwd(1).is_none());
+
+        mgr.set_remote_cwd(1, "/Users/alice".into(), "my-macbook.local");
+        assert!(mgr.get_remote_cwd(1).is_none());
+
+        // Case-insensitive local hostname match
+        mgr.set_remote_cwd(1, "/Users/alice".into(), "MY-MACBOOK.LOCAL");
+        assert!(mgr.get_remote_cwd(1).is_none());
+
+        // Remote hostname should be accepted even before detect() is called
+        mgr.set_remote_cwd(1, "/home/alice/projects".into(), "remote-server");
+        assert_eq!(
+            mgr.get_remote_cwd(1),
+            Some("/home/alice/projects".to_string())
+        );
+    }
+
+    #[test]
+    fn test_set_remote_cwd_works_before_detect() {
+        let socket_dir = PathBuf::from("/tmp/test-sockets");
+        let mgr = SshManager {
+            socket_dir,
+            connections: Mutex::new(HashMap::new()),
+            remote_cwds: Mutex::new(HashMap::new()),
+            control_persist: 600,
+            local_hostname: "my-mac".into(),
+        };
+
+        // Remote CWD should be stored even without prior detect() call,
+        // because the hostname filter is sufficient to identify remote updates.
+        mgr.set_remote_cwd(1, "/home/alice".into(), "remote-server");
+        assert_eq!(mgr.get_remote_cwd(1), Some("/home/alice".to_string()));
     }
 }

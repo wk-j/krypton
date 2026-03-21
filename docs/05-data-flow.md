@@ -263,25 +263,51 @@ Sessions live in a shared pool. Windows reference sessions by ID. When a workspa
 2. InputRouter: calls compositor.cloneSshSession()
 3. Compositor: gets focused pane's sessionId via getFocusedSessionId()
 4. Compositor: invoke('detect_ssh_session', { sessionId })
-5. Rust SshManager:
-   a. Calls pty_manager.get_shell_pid(session_id) to get the PTY's shell PID
-   b. Walks the process tree downward (sysinfo) looking for an "ssh" process
-   c. Reads SSH process's command line (sysinfo or ps fallback on macOS)
-   d. Parses args: extracts user, host, port, identity files, jump hosts
-   e. Assigns a control socket path: ~/.config/krypton/ssh-sockets/<user>@<host>:<port>
-   f. Caches SshConnectionInfo and returns it
+5. Rust SshManager.detect():
+   a. Checks cache — returns immediately if this session was already detected
+   b. Calls pty_manager.get_shell_pid(session_id) to get the PTY's shell PID
+   c. Walks the process tree downward (sysinfo) looking for an "ssh" process
+   d. Falls back to `ps -o ppid,pid,comm` if sysinfo doesn't find it (macOS)
+   e. Reads SSH process's command line (sysinfo or ps fallback)
+   f. Parses args: extracts user, host, port, identity files, jump hosts, extra args
+   g. Assigns a control socket path: ~/.config/krypton/ssh-sockets/<user>@<host>:<port>
+   h. Caches SshConnectionInfo (with extra_args) and returns it
 6. Frontend receives SshConnectionInfo (or null → show "No SSH session" toast)
-7. Compositor: creates new tab (DOM elements, pane, xterm.js instance)
-8. Compositor: invoke('clone_ssh_session', { sessionId, cols, rows })
-9. Rust SshManager:
-   a. Looks up cached SshConnectionInfo for the source session
-   b. Builds ssh command: ssh -o ControlPath=<socket> -o ControlMaster=auto
-      -o ControlPersist=600 [-p port] [-i key] [-J jump] user@host
-   c. Calls pty_manager.spawn() with this ssh command (not the default shell)
-   d. Returns new session_id
-10. Compositor: registers new session in sessionMap, wires input
-11. xterm.js connects instantly (ControlMaster reuses existing TCP connection)
-12. Titlebar updated to show "SSH: user@host"
+7. Compositor: probeRemoteCwd(sessionId) — invisible PTY probe:
+   a. Generates unique marker string (__KR_<timestamp>_<random>__)
+   b. Listens on raw 'pty-output' events for an OSC 7337 response
+   c. Writes to PTY: \r\x1b[2K stty -echo; printf '\033]7337;<marker>;%s\007' "$(pwd)"; stty echo\n
+   d. stty -echo suppresses all echo — command and output are invisible
+   e. printf emits CWD inside a private-use OSC that xterm.js silently discards
+   f. Raw bytes still arrive via pty-output event — frontend extracts the CWD
+   g. Returns CWD string, or null on 3-second timeout
+8. Compositor: creates new tab (DOM elements, pane, xterm.js instance)
+9. Compositor: invoke('clone_ssh_session', { sessionId, cols, rows, remoteCwd })
+10. Rust clone_ssh_session():
+   a. Calls detect() to get/verify SshConnectionInfo
+   b. Uses provided remote_cwd, or falls back to get_remote_cwd() (OSC 7 tracked)
+   c. Builds ssh command: ssh -o ControlPath=<socket> -o ControlMaster=auto
+      -o ControlPersist=600 [-p port] [extra_args...] [-t] user@host
+      [cd '<cwd>' && exec $SHELL -l]
+   d. Calls pty_manager.spawn() with this ssh command (not the default shell)
+   e. Returns new session_id
+11. Compositor: registers new session in sessionMap, wires input
+12. xterm.js connects instantly (ControlMaster reuses existing TCP connection)
+13. Shell starts in the same working directory as the source terminal
+14. Titlebar updated to show "SSH: user@host"
+```
+
+### OSC 7 Remote CWD Tracking (passive background)
+
+```
+1. Remote shell (if configured) emits OSC 7: \033]7;file://<hostname>/<path>\007
+2. Frontend parseOsc7(): extracts hostname and path from the URI
+3. Frontend: invoke('set_ssh_remote_cwd', { sessionId, cwd, hostname })
+4. Backend SshManager.set_remote_cwd():
+   a. Compares hostname against local_hostname (cached at startup via `hostname` crate)
+   b. If hostname matches local machine → ignored (local CWD, not remote)
+   c. If hostname is different → stored as remote CWD for this session
+5. On clone, get_remote_cwd() provides a fallback when probeRemoteCwd() times out
 ```
 
 ## OpenCode Dashboard Flow (e.g., user presses Cmd+Shift+O)
