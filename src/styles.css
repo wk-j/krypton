@@ -1866,9 +1866,10 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  pointer-events: none;
-  max-height: 50vh;
-  overflow: visible;
+  pointer-events: auto;
+  max-height: 80vh;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .krypton-claude-toast {
