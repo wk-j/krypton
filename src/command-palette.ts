@@ -708,6 +708,15 @@ export class CommandPalette {
       });
     }
 
+    // Dynamic: hook toast toggle (shows current state)
+    const toastsOn = c.hookToastsVisible;
+    this.actions.push({
+      id: 'claude.toggle-toasts',
+      label: `Hook Toasts: ${toastsOn ? 'ON' : 'OFF'}`,
+      category: 'Claude Code',
+      execute: () => c.toggleHookToasts(),
+    });
+
     // Dynamic: sound theme switching
     const soundEngine = c.soundEngine;
     const currentPack = soundEngine.getCurrentPack();

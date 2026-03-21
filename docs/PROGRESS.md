@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-21 (Cursor trail — rainbow flame effect on mouse + text cursor)
+> Last updated: 2026-03-21 (Hook toast toggle — configurable + command palette action)
 
 ## Overview
 

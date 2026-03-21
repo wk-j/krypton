@@ -326,6 +326,8 @@ pub struct HooksConfig {
     pub enabled: bool,
     /// Port to listen on (0 = auto-assign available port)
     pub port: u16,
+    /// Show toast notifications for hook events
+    pub show_toasts: bool,
 }
 
 impl Default for HooksConfig {
@@ -333,6 +335,7 @@ impl Default for HooksConfig {
         Self {
             enabled: true,
             port: 0,
+            show_toasts: true,
         }
     }
 }

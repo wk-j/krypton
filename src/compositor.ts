@@ -204,6 +204,7 @@ export class Compositor {
 
   // ─── Claude Hook Manager ────────────────────────────────────────
   private claudeHookManager: ClaudeHookManager | null = null;
+  private hookToastsEnabled: boolean = true;
 
   // ─── Config-backed settings ──────────────────────────────────────
   /** xterm.js theme — built-in default, overridable by config theme.colors */
@@ -368,6 +369,14 @@ export class Compositor {
     // Extensions — enable/disable context extensions
     if (config.extensions) {
       this.extensions.setEnabled(config.extensions.enabled);
+    }
+
+    // Hooks — toggle toast display
+    if (config.hooks) {
+      this.hookToastsEnabled = config.hooks.show_toasts;
+      if (this.claudeHookManager) {
+        this.claudeHookManager.setToastsEnabled(this.hookToastsEnabled);
+      }
     }
 
     // Visual — 3D perspective depth and tilt
@@ -746,6 +755,19 @@ export class Compositor {
    */
   setClaudeHookManager(manager: ClaudeHookManager): void {
     this.claudeHookManager = manager;
+  }
+
+  /** Toggle hook toast notifications on/off. Returns new state. */
+  toggleHookToasts(): boolean {
+    if (!this.claudeHookManager) return false;
+    this.hookToastsEnabled = !this.hookToastsEnabled;
+    this.claudeHookManager.setToastsEnabled(this.hookToastsEnabled);
+    return this.hookToastsEnabled;
+  }
+
+  /** Whether hook toasts are currently enabled */
+  get hookToastsVisible(): boolean {
+    return this.hookToastsEnabled;
   }
 
   /** Get the currently focused window ID */

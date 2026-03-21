@@ -113,9 +113,17 @@ function toolTickCategory(toolName: string): string {
 export class ClaudeHookManager {
   private sessions: Map<string, ClaudeSession> = new Map();
   private toastContainer: HTMLElement | null = null;
+  private toastsEnabled: boolean = true;
   private hookPort: number = 0;
   private decodeTimer: ReturnType<typeof setTimeout> | null = null;
   private toolClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+  setToastsEnabled(enabled: boolean): void {
+    this.toastsEnabled = enabled;
+    if (this.toastContainer) {
+      this.toastContainer.style.display = enabled ? '' : 'none';
+    }
+  }
 
   async init(): Promise<void> {
     // Create toast container first so toasts can be shown during init
@@ -647,7 +655,7 @@ export class ClaudeHookManager {
   };
 
   private showToast(message: string, type?: string): void {
-    if (!this.toastContainer) return;
+    if (!this.toastContainer || !this.toastsEnabled) return;
 
     const toastType = type ?? 'notification';
 

@@ -127,6 +127,12 @@ export interface ExtensionsConfig {
   poll_interval_ms: number;
 }
 
+export interface HooksConfig {
+  enabled: boolean;
+  port: number;
+  show_toasts: boolean;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -140,6 +146,7 @@ export interface KryptonConfig {
   shader: ShaderConfig;
   visual: VisualConfig;
   extensions: ExtensionsConfig;
+  hooks: HooksConfig;
 }
 
 /** Load configuration from the Rust backend */

@@ -212,6 +212,14 @@ blur = 12                      # Window backdrop blur radius in pixels. Controls
                                # frosted-glass blur on terminal windows.
                                # 0 = no blur, higher = stronger blur. Default: 12
 
+# --- Claude Code Hooks ---
+# HTTP server for receiving Claude Code hook events (toast notifications, status).
+
+[hooks]
+enabled = true                 # Enable the hook HTTP server
+port = 0                       # Port to listen on (0 = auto-assign)
+show_toasts = true             # Show toast notifications for hook events
+
 # --- SSH Session Multiplexing ---
 # Clone SSH sessions into new tabs/windows via ControlMaster multiplexing.
 # Krypton detects active SSH connections and manages control sockets automatically.
@@ -345,6 +353,14 @@ name = "custom-fixed"
 | `[keybindings]` | *(various)* | string | — | See full keybinding reference in TOML example above |
 | `[keybindings.resize_mode]` | *(various)* | string | — | Keys active in resize mode |
 | `[keybindings.move_mode]` | *(various)* | string | — | Keys active in move mode |
+
+### Hooks Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[hooks]` | `enabled` | bool | `true` | Master toggle — enables/disables the Claude Code hook HTTP server |
+| `[hooks]` | `port` | int | `0` | Port to listen on. 0 = OS auto-assigns an available port |
+| `[hooks]` | `show_toasts` | bool | `true` | Show toast notifications for hook events. Toggleable at runtime via command palette |
 
 ### Hints Configuration
 

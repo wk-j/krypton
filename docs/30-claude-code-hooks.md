@@ -422,11 +422,13 @@ Fixed-position panel stack at bottom-right of viewport. **All events** produce t
 enabled = true
 # Port to listen on (0 = auto-assign available port)
 port = 0
+# Show toast notifications for hook events (default: true)
+show_toasts = true
 ```
 
-### Keybindings
+### Keybindings / Command Palette
 
-No new keybindings in phase 1. Future: compositor key to open Claude Code dashboard.
+- **Hook Toasts: ON/OFF** — command palette action (`claude.toggle-toasts`) toggles toast notification visibility at runtime. State is also configurable via `[hooks] show_toasts` in TOML (hot-reloadable).
 
 ## Edge Cases
 
