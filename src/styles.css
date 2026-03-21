@@ -1866,10 +1866,12 @@ html, body {
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   pointer-events: auto;
   max-height: 80vh;
   overflow: visible;
+  perspective: 900px;
+  transform-style: preserve-3d;
 }
 
 .krypton-claude-toast {
@@ -1890,11 +1892,15 @@ html, body {
   font-size: 16px;
   color: var(--krypton-fg, #b0c4d8);
   box-shadow:
-    0 0 16px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
     inset 0 0 30px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02);
-  transform: perspective(600px) translateX(20px) rotateY(8deg);
+  transform: translateX(40px) rotateY(-25deg) translateZ(-30px);
+  transform-origin: right center;
   opacity: 0;
-  transition: transform 0.3s ease, opacity 0.3s ease;
+  transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.3s ease, box-shadow 0.3s ease;
   pointer-events: auto;
   cursor: pointer;
   max-width: 480px;
@@ -1922,8 +1928,32 @@ html, body {
 }
 
 .krypton-claude-toast--visible {
-  transform: perspective(600px) translateX(0) rotateY(8deg);
+  transform: translateX(0) rotateY(-18deg) translateZ(0px);
   opacity: 1;
+}
+
+.krypton-claude-toast--visible:hover {
+  transform: translateX(-6px) rotateY(-8deg) translateZ(20px);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.5),
+    0 16px 48px rgba(0, 0, 0, 0.35),
+    0 0 32px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 30px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
+}
+
+/* Staggered depth — toasts further down stack recede */
+.krypton-claude-toast--visible:nth-child(2) {
+  transform: translateX(0) rotateY(-18deg) translateZ(-10px);
+}
+.krypton-claude-toast--visible:nth-child(3) {
+  transform: translateX(0) rotateY(-18deg) translateZ(-20px);
+}
+.krypton-claude-toast--visible:nth-child(4) {
+  transform: translateX(0) rotateY(-18deg) translateZ(-30px);
+}
+.krypton-claude-toast--visible:nth-child(n+5) {
+  transform: translateX(0) rotateY(-18deg) translateZ(-40px);
 }
 
 .krypton-claude-toast--visible::after {
