@@ -235,6 +235,115 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Toast | `STOP` label (magenta) — "Session ended" |
 | Terminal Title | Claude Code may set a final OSC 2 title → `formatTerminalTitle()` rewrites it (e.g., `◈ signal_end // done`) |
 
+#### `InstructionsLoaded`
+
+| Element | Change |
+|---------|--------|
+| Toast | `LOAD` label (dim green) — "Loaded `<abbreviated path>`" |
+
+#### `UserPromptSubmit`
+
+| Element | Change |
+|---------|--------|
+| Sigil Badge | Session marked active |
+| Toast | `PROMPT` label (blue) — "Prompt submitted" |
+
+#### `PermissionRequest`
+
+| Element | Change |
+|---------|--------|
+| Toast | `PERMIT` label (amber, bright) — "Permission: `<tool_name>`" |
+
+#### `PostToolUseFailure`
+
+| Element | Change |
+|---------|--------|
+| Neural Uplink Bar | Flashes `--error` (red, 2 blinks over 600ms) |
+| Activity Trace | Red error tick added |
+| Toast | `ERROR` label (red) — "`<tool> failed — <error>`" |
+
+#### `SubagentStart`
+
+| Element | Change |
+|---------|--------|
+| Activity Trace | Edit tick added |
+| Toast | `AGENT` label (violet) — "Spawned `<subagent_type>`" |
+
+#### `SubagentStop`
+
+| Element | Change |
+|---------|--------|
+| Toast | `AGENT` label (dim violet) — "`<subagent_type>` finished" |
+
+#### `StopFailure`
+
+| Element | Change |
+|---------|--------|
+| Neural Uplink Bar | Flashes `--error` |
+| Toast | `ERROR` label (red) — "`<error detail>`" |
+
+#### `TeammateIdle`
+
+| Element | Change |
+|---------|--------|
+| Toast | `TEAM` label (teal) — "Teammate idle" |
+
+#### `TaskCompleted`
+
+| Element | Change |
+|---------|--------|
+| Toast | `TASK` label (green) — "✓ `<task_subject>`" |
+
+#### `ConfigChange`
+
+| Element | Change |
+|---------|--------|
+| Toast | `CONFIG` label (dim amber) — "Config: `<config_key>`" |
+
+#### `WorktreeCreate`
+
+| Element | Change |
+|---------|--------|
+| Toast | `TREE` label (dim cyan) — "Worktree: `<abbreviated path>`" |
+
+#### `WorktreeRemove`
+
+| Element | Change |
+|---------|--------|
+| Toast | `TREE` label (dim cyan) — "Removed `<abbreviated path>`" |
+
+#### `PreCompact`
+
+| Element | Change |
+|---------|--------|
+| Toast | `COMPACT` label (dim magenta) — "Compacting context…" |
+
+#### `PostCompact`
+
+| Element | Change |
+|---------|--------|
+| Toast | `COMPACT` label (dim magenta) — "Context compacted" |
+
+#### `Elicitation`
+
+| Element | Change |
+|---------|--------|
+| Toast | `INPUT` label (amber, bright) — "Input requested" |
+
+#### `ElicitationResult`
+
+| Element | Change |
+|---------|--------|
+| Toast | `INPUT` label (amber, bright) — "Input received" |
+
+#### `SessionEnd`
+
+| Element | Change |
+|---------|--------|
+| Sigil Badge | Session marked inactive, bright flash then fade to dormant |
+| Neural Uplink Bar | Fades to invisible |
+| Toast | `STOP` label (magenta) — "Session terminated" |
+
 ### UI Element Details
 
 #### 1. Sigil Badge (◈)
@@ -281,7 +390,7 @@ Fixed-position panel stack at bottom-right of viewport. **All events** produce t
 - Body: `rgba(6,10,18,0.92)`, 1px accent border, 3px solid left stripe colored by type
 - Label: uppercase bordered chip, text varies by event type (SESSION, TOOL, DONE, CLAUDE, PERMIT, ERROR, OK, STOP)
 - Close button: `×` glyph at right edge, dim by default, brightens on hover
-- Stack: `column-reverse`, 4px gap, scrollable up to 50vh. No cap on count
+- Stack: `column-reverse`, 4px gap, scrollable up to 80vh with manual scroll. No cap on count
 - Type styles:
 
 | Type | Label | Left stripe / border color |
@@ -294,6 +403,16 @@ Fixed-position panel stack at bottom-right of viewport. **All events** produce t
 | `--error` | ERROR | red (`#ff5050`) |
 | `--success` | OK | green |
 | `--stop` | STOP | magenta (`#c864ff`) |
+| `--instructions` | LOAD | dim green (35% opacity) |
+| `--prompt` | PROMPT | blue (`#64a0ff`) |
+| `--subagent` | AGENT | violet (`#a078ff`) |
+| `--subagent_done` | AGENT | dim violet (35% opacity) |
+| `--teammate` | TEAM | teal (`#50c8b4`) |
+| `--task` | TASK | green (`#50dc64`) |
+| `--config` | CONFIG | dim amber |
+| `--worktree` | TREE | dim cyan |
+| `--compact` | COMPACT | dim magenta (35% opacity) |
+| `--elicitation` | INPUT | amber (bright) |
 
 ### Configuration
 

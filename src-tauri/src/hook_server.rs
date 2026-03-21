@@ -22,7 +22,15 @@ pub struct ClaudeHookEvent {
     #[serde(default)]
     pub permission_mode: Option<String>,
 
-    // Event-specific fields (PreToolUse, Notification, Stop, etc.)
+    // Common optional fields
+    #[serde(default)]
+    pub transcript_path: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+
+    // Tool events (PreToolUse, PostToolUse, PermissionRequest, PostToolUseFailure)
     #[serde(default)]
     pub tool_name: Option<String>,
     #[serde(default)]
@@ -30,13 +38,99 @@ pub struct ClaudeHookEvent {
     #[serde(default)]
     pub tool_response: Option<serde_json::Value>,
     #[serde(default)]
+    pub tool_use_id: Option<String>,
+
+    // Notification fields
+    #[serde(default)]
     pub message: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
     pub notification_type: Option<String>,
+
+    // Stop / SubagentStop fields
     #[serde(default)]
     pub last_assistant_message: Option<String>,
+    #[serde(default)]
+    pub stop_hook_active: Option<bool>,
+
+    // SubagentStart / SubagentStop fields
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_type: Option<String>,
+    #[serde(default)]
+    pub agent_transcript_path: Option<String>,
+
+    // PostToolUseFailure / StopFailure fields
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub error_details: Option<String>,
+    #[serde(default)]
+    pub is_interrupt: Option<bool>,
+
+    // InstructionsLoaded fields
+    #[serde(default)]
+    pub file_path: Option<String>,
+    #[serde(default)]
+    pub memory_type: Option<String>,
+    #[serde(default)]
+    pub load_reason: Option<String>,
+
+    // UserPromptSubmit fields
+    #[serde(default)]
+    pub prompt: Option<String>,
+
+    // TaskCompleted / TeammateIdle fields
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub task_subject: Option<String>,
+    #[serde(default)]
+    pub task_description: Option<String>,
+    #[serde(default)]
+    pub teammate_name: Option<String>,
+    #[serde(default)]
+    pub team_name: Option<String>,
+
+    // ConfigChange fields
+    #[serde(default)]
+    pub config_source: Option<String>,
+
+    // WorktreeCreate / WorktreeRemove fields
+    #[serde(default)]
+    pub worktree_path: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+
+    // PreCompact / PostCompact fields
+    #[serde(default)]
+    pub trigger: Option<String>,
+    #[serde(default)]
+    pub custom_instructions: Option<String>,
+    #[serde(default)]
+    pub compact_summary: Option<String>,
+
+    // Elicitation / ElicitationResult fields
+    #[serde(default)]
+    pub mcp_server_name: Option<String>,
+    #[serde(default)]
+    pub elicitation_id: Option<String>,
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub content: Option<serde_json::Value>,
+    #[serde(default)]
+    pub requested_schema: Option<serde_json::Value>,
+
+    // SessionEnd fields
+    #[serde(default)]
+    pub reason: Option<String>,
+
+    // Catch-all for any other fields
+    #[serde(flatten)]
+    pub extra: Option<serde_json::Value>,
 }
 
 /// Shared state for the axum handler.

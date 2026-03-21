@@ -12,13 +12,58 @@ export interface ClaudeHookEvent {
   hook_event_name: string;
   cwd?: string;
   permission_mode?: string;
+  transcript_path?: string;
+  source?: string;
+  model?: string;
+  // Tool events
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   tool_response?: Record<string, unknown>;
+  tool_use_id?: string;
+  // Notification
   message?: string;
   title?: string;
   notification_type?: string;
+  // Stop / SubagentStop
   last_assistant_message?: string;
+  stop_hook_active?: boolean;
+  // SubagentStart / SubagentStop
+  agent_id?: string;
+  agent_type?: string;
+  agent_transcript_path?: string;
+  // PostToolUseFailure / StopFailure
+  error?: string;
+  error_details?: string;
+  is_interrupt?: boolean;
+  // InstructionsLoaded
+  file_path?: string;
+  memory_type?: string;
+  load_reason?: string;
+  // UserPromptSubmit
+  prompt?: string;
+  // TaskCompleted / TeammateIdle
+  task_id?: string;
+  task_subject?: string;
+  task_description?: string;
+  teammate_name?: string;
+  team_name?: string;
+  // ConfigChange
+  config_source?: string;
+  // WorktreeCreate / WorktreeRemove
+  worktree_path?: string;
+  name?: string;
+  // PreCompact / PostCompact
+  trigger?: string;
+  custom_instructions?: string;
+  compact_summary?: string;
+  // Elicitation / ElicitationResult
+  mcp_server_name?: string;
+  elicitation_id?: string;
+  action?: string;
+  content?: Record<string, unknown>;
+  requested_schema?: Record<string, unknown>;
+  // SessionEnd
+  reason?: string;
 }
 
 /** Tracks active Claude Code sessions per terminal window */
@@ -126,6 +171,57 @@ export class ClaudeHookManager {
       case 'Stop':
         this.onStop(event);
         break;
+      case 'InstructionsLoaded':
+        this.onInstructionsLoaded(event);
+        break;
+      case 'UserPromptSubmit':
+        this.onUserPromptSubmit(event);
+        break;
+      case 'PermissionRequest':
+        this.onPermissionRequest(event);
+        break;
+      case 'PostToolUseFailure':
+        this.onPostToolUseFailure(event);
+        break;
+      case 'SubagentStart':
+        this.onSubagentStart(event);
+        break;
+      case 'SubagentStop':
+        this.onSubagentStop(event);
+        break;
+      case 'StopFailure':
+        this.onStopFailure(event);
+        break;
+      case 'TeammateIdle':
+        this.onTeammateIdle(event);
+        break;
+      case 'TaskCompleted':
+        this.onTaskCompleted(event);
+        break;
+      case 'ConfigChange':
+        this.onConfigChange(event);
+        break;
+      case 'WorktreeCreate':
+        this.onWorktreeCreate(event);
+        break;
+      case 'WorktreeRemove':
+        this.onWorktreeRemove(event);
+        break;
+      case 'PreCompact':
+        this.onPreCompact(event);
+        break;
+      case 'PostCompact':
+        this.onPostCompact(event);
+        break;
+      case 'Elicitation':
+        this.onElicitation(event);
+        break;
+      case 'ElicitationResult':
+        this.onElicitationResult(event);
+        break;
+      case 'SessionEnd':
+        this.onSessionEnd(event);
+        break;
       default:
         console.log(`[Krypton] Claude hook: ${hook_event_name}`, event);
     }
@@ -142,7 +238,10 @@ export class ClaudeHookManager {
       lastEvent: 'SessionStart',
       originalTitle: null,
     });
-    this.showToast('Session started', 'session');
+    const parts: string[] = ['Session started'];
+    if (event.source && event.source !== 'startup') parts.push(`(${event.source})`);
+    if (event.model) parts.push(`\u2014 ${event.model}`);
+    this.showToast(parts.join(' '), 'session');
   }
 
   private onPreToolUse(event: ClaudeHookEvent): void {
@@ -214,6 +313,128 @@ export class ClaudeHookManager {
     // Flash sigil bright then fade to dormant
     this.flashSigilComplete();
     this.showToast('Session ended', 'stop');
+  }
+
+  private onInstructionsLoaded(event: ClaudeHookEvent): void {
+    const file = event.file_path ? this.abbreviatePath(event.file_path) : 'config';
+    const type = event.memory_type ? ` [${event.memory_type}]` : '';
+    const reason = event.load_reason ? ` (${event.load_reason})` : '';
+    this.showToast(`${file}${type}${reason}`, 'instructions');
+  }
+
+  private onUserPromptSubmit(event: ClaudeHookEvent): void {
+    const session = this.getOrCreateSession(event.session_id);
+    session.active = true;
+    session.lastEvent = 'UserPromptSubmit';
+    const preview = event.prompt
+      ? (event.prompt.length > 40 ? event.prompt.slice(0, 40) + '\u2026' : event.prompt)
+      : 'Prompt submitted';
+    this.showToast(preview, 'prompt');
+  }
+
+  private onPermissionRequest(event: ClaudeHookEvent): void {
+    const toolName = event.tool_name ?? 'unknown';
+    const detail = this.formatToolDetail(event);
+    this.showToast(detail ? `${toolName} \u2190 ${detail}` : toolName, 'permission_prompt');
+  }
+
+  private onPostToolUseFailure(event: ClaudeHookEvent): void {
+    const session = this.getOrCreateSession(event.session_id);
+    session.currentTool = null;
+    session.lastEvent = 'PostToolUseFailure';
+    this.flashUplinkError();
+    this.addActivityTick('error');
+    const toolName = event.tool_name ?? 'unknown';
+    const detail = this.formatToolDetail(event);
+    const errMsg = event.error ? ` \u2014 ${event.error}` : '';
+    const target = detail ? ` \u2190 ${detail}` : '';
+    this.showToast(`${toolName}${target}${errMsg}`, 'error');
+  }
+
+  private onSubagentStart(event: ClaudeHookEvent): void {
+    const agentType = event.agent_type ?? 'subagent';
+    const agentId = event.agent_id ? ` (${event.agent_id.slice(0, 8)})` : '';
+    this.showToast(`Spawned ${agentType}${agentId}`, 'subagent');
+    this.addActivityTick('edit');
+  }
+
+  private onSubagentStop(event: ClaudeHookEvent): void {
+    const agentType = event.agent_type ?? 'subagent';
+    const agentId = event.agent_id ? ` (${event.agent_id.slice(0, 8)})` : '';
+    this.showToast(`${agentType}${agentId} finished`, 'subagent_done');
+  }
+
+  private onStopFailure(event: ClaudeHookEvent): void {
+    const errType = event.error ?? 'unknown';
+    const detail = event.error_details ? ` \u2014 ${event.error_details}` : '';
+    this.flashUplinkError();
+    this.showToast(`${errType}${detail}`, 'error');
+  }
+
+  private onTeammateIdle(event: ClaudeHookEvent): void {
+    const name = event.teammate_name ?? 'Teammate';
+    const team = event.team_name ? ` [${event.team_name}]` : '';
+    this.showToast(`${name} idle${team}`, 'teammate');
+  }
+
+  private onTaskCompleted(event: ClaudeHookEvent): void {
+    const subject = event.task_subject ?? 'Task';
+    const owner = event.teammate_name ? ` (${event.teammate_name})` : '';
+    this.showToast(`\u2713 ${subject}${owner}`, 'task');
+  }
+
+  private onConfigChange(event: ClaudeHookEvent): void {
+    const source = event.config_source ?? event.source ?? 'config';
+    const file = event.file_path ? ` \u2190 ${this.abbreviatePath(event.file_path)}` : '';
+    this.showToast(`${source}${file}`, 'config');
+  }
+
+  private onWorktreeCreate(event: ClaudeHookEvent): void {
+    const label = event.name ?? (event.worktree_path ? this.abbreviatePath(event.worktree_path) : 'worktree');
+    this.showToast(`Created ${label}`, 'worktree');
+  }
+
+  private onWorktreeRemove(event: ClaudeHookEvent): void {
+    const path = event.worktree_path ? this.abbreviatePath(event.worktree_path) : 'worktree';
+    this.showToast(`Removed ${path}`, 'worktree');
+  }
+
+  private onPreCompact(event: ClaudeHookEvent): void {
+    const trigger = event.trigger ? ` (${event.trigger})` : '';
+    this.showToast(`Compacting context\u2026${trigger}`, 'compact');
+  }
+
+  private onPostCompact(event: ClaudeHookEvent): void {
+    const summary = event.compact_summary
+      ? (event.compact_summary.length > 50 ? event.compact_summary.slice(0, 50) + '\u2026' : event.compact_summary)
+      : 'Context compacted';
+    this.showToast(summary, 'compact');
+  }
+
+  private onElicitation(event: ClaudeHookEvent): void {
+    const server = event.mcp_server_name ?? 'MCP';
+    const msg = event.message
+      ? (event.message.length > 40 ? event.message.slice(0, 40) + '\u2026' : event.message)
+      : 'input requested';
+    this.showToast(`${server}: ${msg}`, 'elicitation');
+  }
+
+  private onElicitationResult(event: ClaudeHookEvent): void {
+    const server = event.mcp_server_name ?? 'MCP';
+    const action = event.action ?? 'responded';
+    this.showToast(`${server}: ${action}`, 'elicitation');
+  }
+
+  private onSessionEnd(event: ClaudeHookEvent): void {
+    const session = this.sessions.get(event.session_id);
+    if (session) {
+      session.active = false;
+      session.currentTool = null;
+      session.lastEvent = 'SessionEnd';
+    }
+    this.flashSigilComplete();
+    const reason = event.reason ? ` (${event.reason})` : '';
+    this.showToast(`Session ended${reason}`, 'stop');
   }
 
   private getOrCreateSession(sessionId: string): ClaudeSession {
@@ -413,6 +634,16 @@ export class ClaudeHookManager {
     error: 'ERROR',
     success: 'OK',
     stop: 'STOP',
+    instructions: 'LOAD',
+    prompt: 'PROMPT',
+    subagent: 'AGENT',
+    subagent_done: 'AGENT',
+    teammate: 'TEAM',
+    task: 'TASK',
+    config: 'CONFIG',
+    worktree: 'TREE',
+    compact: 'COMPACT',
+    elicitation: 'INPUT',
   };
 
   private showToast(message: string, type?: string): void {

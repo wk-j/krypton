@@ -1893,7 +1893,7 @@ html, body {
   transition: transform 0.3s ease, opacity 0.3s ease;
   pointer-events: auto;
   cursor: pointer;
-  max-width: 360px;
+  max-width: 480px;
   overflow: hidden;
 }
 
@@ -2065,6 +2065,138 @@ html, body {
   color: #c864ff;
   border-color: rgba(200, 100, 255, 0.4);
   text-shadow: 0 0 4px rgba(200, 100, 255, 0.3);
+}
+
+/* ─── Toast type: instructions (dim green) — InstructionsLoaded */
+.krypton-claude-toast--instructions {
+  border-color: rgba(80, 220, 100, 0.15);
+  border-left-color: rgba(80, 220, 100, 0.35);
+}
+
+.krypton-claude-toast--instructions .krypton-claude-toast__label {
+  color: rgba(80, 220, 100, 0.6);
+  border-color: rgba(80, 220, 100, 0.25);
+  text-shadow: none;
+}
+
+.krypton-claude-toast--instructions .krypton-claude-toast__text {
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.6);
+}
+
+/* ─── Toast type: prompt (blue) — UserPromptSubmit */
+.krypton-claude-toast--prompt {
+  border-color: rgba(100, 160, 255, 0.3);
+  border-left-color: rgba(100, 160, 255, 0.7);
+}
+
+.krypton-claude-toast--prompt .krypton-claude-toast__label {
+  color: #64a0ff;
+  border-color: rgba(100, 160, 255, 0.4);
+  text-shadow: 0 0 4px rgba(100, 160, 255, 0.3);
+}
+
+/* ─── Toast type: subagent (violet) — SubagentStart */
+.krypton-claude-toast--subagent {
+  border-color: rgba(160, 120, 255, 0.3);
+  border-left-color: rgba(160, 120, 255, 0.7);
+}
+
+.krypton-claude-toast--subagent .krypton-claude-toast__label {
+  color: #a078ff;
+  border-color: rgba(160, 120, 255, 0.4);
+  text-shadow: 0 0 4px rgba(160, 120, 255, 0.3);
+}
+
+/* ─── Toast type: subagent_done (dim violet) — SubagentStop */
+.krypton-claude-toast--subagent_done {
+  border-color: rgba(160, 120, 255, 0.15);
+  border-left-color: rgba(160, 120, 255, 0.35);
+}
+
+.krypton-claude-toast--subagent_done .krypton-claude-toast__label {
+  color: rgba(160, 120, 255, 0.5);
+  border-color: rgba(160, 120, 255, 0.2);
+  text-shadow: none;
+}
+
+.krypton-claude-toast--subagent_done .krypton-claude-toast__text {
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5);
+}
+
+/* ─── Toast type: teammate (teal) — TeammateIdle */
+.krypton-claude-toast--teammate {
+  border-color: rgba(80, 200, 180, 0.3);
+  border-left-color: rgba(80, 200, 180, 0.7);
+}
+
+.krypton-claude-toast--teammate .krypton-claude-toast__label {
+  color: #50c8b4;
+  border-color: rgba(80, 200, 180, 0.4);
+  text-shadow: 0 0 4px rgba(80, 200, 180, 0.3);
+}
+
+/* ─── Toast type: task (green) — TaskCompleted */
+.krypton-claude-toast--task {
+  border-color: rgba(80, 220, 100, 0.3);
+  border-left-color: rgba(80, 220, 100, 0.7);
+}
+
+.krypton-claude-toast--task .krypton-claude-toast__label {
+  color: #50dc64;
+  border-color: rgba(80, 220, 100, 0.4);
+  text-shadow: 0 0 4px rgba(80, 220, 100, 0.3);
+}
+
+/* ─── Toast type: config (amber-dim) — ConfigChange */
+.krypton-claude-toast--config {
+  border-color: rgba(250, 200, 99, 0.2);
+  border-left-color: rgba(250, 200, 99, 0.5);
+}
+
+.krypton-claude-toast--config .krypton-claude-toast__label {
+  color: rgba(250, 200, 99, 0.7);
+  border-color: rgba(250, 200, 99, 0.3);
+  text-shadow: none;
+}
+
+/* ─── Toast type: worktree (cyan-dim) — WorktreeCreate/Remove */
+.krypton-claude-toast--worktree {
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+  border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+}
+
+.krypton-claude-toast--worktree .krypton-claude-toast__label {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
+  text-shadow: none;
+}
+
+/* ─── Toast type: compact (magenta-dim) — PreCompact/PostCompact */
+.krypton-claude-toast--compact {
+  border-color: rgba(200, 100, 255, 0.15);
+  border-left-color: rgba(200, 100, 255, 0.35);
+}
+
+.krypton-claude-toast--compact .krypton-claude-toast__label {
+  color: rgba(200, 100, 255, 0.5);
+  border-color: rgba(200, 100, 255, 0.2);
+  text-shadow: none;
+}
+
+.krypton-claude-toast--compact .krypton-claude-toast__text {
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.6);
+}
+
+/* ─── Toast type: elicitation (amber-bright) — Elicitation/ElicitationResult */
+.krypton-claude-toast--elicitation {
+  border-color: rgba(250, 200, 99, 0.4);
+  border-left-color: rgba(250, 200, 99, 0.8);
+}
+
+.krypton-claude-toast--elicitation .krypton-claude-toast__label {
+  color: #fac863;
+  border-color: rgba(250, 200, 99, 0.5);
+  text-shadow: 0 0 6px rgba(250, 200, 99, 0.4);
 }
 
 /* 5. Activity Trace — seismograph ticker on right edge of content area */
