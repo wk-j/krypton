@@ -1728,6 +1728,117 @@ html, body {
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* ─── Claude Code Hook Integration ─── */
+
+/* Badge in titlebar — small sparkle indicator */
+.krypton-claude-badge {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+.krypton-claude-badge--active {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+}
+
+.krypton-claude-badge--working {
+  animation: krypton-claude-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes krypton-claude-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; text-shadow: 0 0 10px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6); }
+}
+
+/* Tool activity text in titlebar */
+.krypton-claude-tool {
+  font-size: 10px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 0;
+  opacity: 0;
+  transition: max-width 0.3s ease, opacity 0.3s ease;
+}
+
+.krypton-claude-tool--visible {
+  max-width: 200px;
+  opacity: 1;
+}
+
+/* Toast container — bottom-right corner */
+.krypton-claude-toasts {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 6px;
+  pointer-events: none;
+}
+
+/* Individual toast */
+.krypton-claude-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(6, 10, 18, 0.85);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  border-radius: 4px;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 11px;
+  color: var(--krypton-fg, #b0c4d8);
+  box-shadow: 0 0 12px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  transform: translateX(20px);
+  opacity: 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  pointer-events: auto;
+  max-width: 360px;
+}
+
+.krypton-claude-toast--visible {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.krypton-claude-toast__label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
+  padding: 1px 5px;
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.krypton-claude-toast__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.krypton-claude-toast--permission_prompt {
+  border-color: rgba(250, 200, 99, 0.4);
+}
+
+.krypton-claude-toast--permission_prompt .krypton-claude-toast__label {
+  color: #fac863;
+  border-color: rgba(250, 200, 99, 0.4);
+}
+
 /* ─── Cursor Trail (Rainbow Flame) ─── */
 .krypton-cursor-trail__particle {
   position: fixed;

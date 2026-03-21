@@ -11,6 +11,7 @@ import { FrontendThemeEngine } from './theme';
 import { createGitDashboard } from './dashboards/git';
 import { createOpenCodeDashboard } from './dashboards/opencode';
 import { CursorTrail } from './cursor-trail';
+import { ClaudeHookManager } from './claude-hooks';
 
 async function main(): Promise<void> {
   const workspace = document.getElementById('krypton-workspace');
@@ -77,6 +78,13 @@ async function main(): Promise<void> {
   const whichKey = new WhichKey();
   inputRouter.onModeChange((mode) => {
     whichKey.setMode(mode);
+  });
+
+  // Initialize Claude Code hook integration
+  const claudeHooks = new ClaudeHookManager();
+  compositor.setClaudeHookManager(claudeHooks);
+  claudeHooks.init().catch((e) => {
+    console.warn('[Krypton] Claude hook integration unavailable:', e);
   });
 
   // Create the first terminal window

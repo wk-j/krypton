@@ -1,4 +1,5 @@
 use crate::config::KryptonConfig;
+use crate::hook_server::HookServer;
 use crate::pty::PtyManager;
 use crate::ssh::SshManager;
 use crate::theme::{FullTheme, ThemeEngine};
@@ -322,15 +323,17 @@ fn query_sqlite_blocking(
 
 /// Report the current working directory of a remote SSH session.
 /// Called by the frontend when it receives an OSC 7 escape sequence
-/// from a terminal that has an active SSH connection. This allows
-/// the clone command to start in the same remote directory.
+/// from a terminal. The hostname parameter (extracted from the OSC 7
+/// URI) is used to distinguish local vs remote CWD updates — only
+/// remote hostnames are stored.
 #[tauri::command]
 pub fn set_ssh_remote_cwd(
     ssh_manager: State<'_, Arc<SshManager>>,
     session_id: u32,
     cwd: String,
+    hostname: String,
 ) {
-    ssh_manager.set_remote_cwd(session_id, cwd);
+    ssh_manager.set_remote_cwd(session_id, cwd, &hostname);
 }
 
 /// Detect an SSH session in the focused terminal's process tree.
@@ -347,8 +350,9 @@ pub fn detect_ssh_session(
 
 /// Clone an SSH session by spawning a new PTY with an ssh command
 /// that reuses the existing connection via ControlMaster multiplexing.
-/// If `remote_cwd` is provided (or auto-detected), the cloned session
-/// starts in that remote directory. Returns the new PTY session ID.
+/// If `remote_cwd` is provided (from frontend CWD probing or OSC 7
+/// tracking), the cloned session starts in that remote directory.
+/// Returns the new PTY session ID.
 #[tauri::command]
 pub fn clone_ssh_session(
     app_handle: AppHandle,
@@ -363,7 +367,8 @@ pub fn clone_ssh_session(
         .detect(session_id, &pty_manager)
         .ok_or_else(|| "No SSH session detected in this terminal".to_string())?;
 
-    // Use provided remote_cwd, or look up the last-known CWD tracked via OSC 7
+    // Use provided remote_cwd (from frontend probe), or look up the
+    // last-known CWD tracked via OSC 7.
     let cwd = remote_cwd.or_else(|| ssh_manager.get_remote_cwd(session_id));
 
     let (program, args) = ssh_manager.build_clone_command(&info, cwd.as_deref());
@@ -378,6 +383,89 @@ pub fn clone_ssh_session(
     );
 
     pty_manager.spawn(&app_handle, cols, rows, None, &program, &args)
+}
+
+// ─── Claude Code Hook Server ───────────────────────────────────────
+
+/// Get the port the hook server is listening on (0 if not started).
+#[tauri::command]
+pub fn get_hook_server_port(hook_server: State<'_, Arc<HookServer>>) -> u16 {
+    hook_server.get_port()
+}
+
+/// Copy the Claude Code hook configuration snippet to the system clipboard
+/// and return it. Users paste this into their ~/.claude/settings.json.
+#[tauri::command]
+pub fn get_hook_server_config_snippet(hook_server: State<'_, Arc<HookServer>>) -> Result<String, String> {
+    let port = hook_server.get_port();
+    if port == 0 {
+        return Err("Hook server is not running".to_string());
+    }
+
+    let snippet = serde_json::json!({
+        "hooks": {
+            "PreToolUse": [{
+                "matcher": ".*",
+                "hooks": [{
+                    "type": "http",
+                    "url": format!("http://127.0.0.1:{port}/hook"),
+                    "timeout": 5
+                }]
+            }],
+            "PostToolUse": [{
+                "matcher": ".*",
+                "hooks": [{
+                    "type": "http",
+                    "url": format!("http://127.0.0.1:{port}/hook"),
+                    "timeout": 5
+                }]
+            }],
+            "Notification": [{
+                "matcher": ".*",
+                "hooks": [{
+                    "type": "http",
+                    "url": format!("http://127.0.0.1:{port}/hook"),
+                    "timeout": 5
+                }]
+            }],
+            "SessionStart": [{
+                "matcher": ".*",
+                "hooks": [{
+                    "type": "http",
+                    "url": format!("http://127.0.0.1:{port}/hook"),
+                    "timeout": 5
+                }]
+            }],
+            "Stop": [{
+                "matcher": ".*",
+                "hooks": [{
+                    "type": "http",
+                    "url": format!("http://127.0.0.1:{port}/hook"),
+                    "timeout": 5
+                }]
+            }]
+        }
+    });
+
+    let text = serde_json::to_string_pretty(&snippet)
+        .map_err(|e| format!("Failed to serialize: {e}"))?;
+
+    // Copy to system clipboard via pbcopy (macOS)
+    if let Ok(mut child) = std::process::Command::new("pbcopy")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+    {
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            let _ = stdin.write_all(text.as_bytes());
+        }
+        let _ = child.wait();
+        log::info!("Claude hook config copied to clipboard (port {port})");
+    } else {
+        log::warn!("pbcopy not available, returning snippet without clipboard copy");
+    }
+
+    Ok(text)
 }
 
 /// Find the Java server process by matching the terminal's CWD.

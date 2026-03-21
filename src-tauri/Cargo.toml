@@ -31,3 +31,7 @@ sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 netstat2 = "0.11"
 rusqlite = { version = "0.35", features = ["bundled"] }
 rodio = { version = "0.20", default-features = false, features = ["wav"] }
+hostname = "0.4"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync"] }
+tower-http = { version = "0.6", features = ["cors"] }

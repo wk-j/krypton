@@ -2,6 +2,7 @@
 // Fuzzy-searchable overlay listing every action in Krypton.
 // Activated by Cmd+Shift+P. Each entry shows the action name and keybinding.
 
+import { invoke } from '@tauri-apps/api/core';
 import { Compositor } from './compositor';
 import type { DashboardShortcut } from './types';
 
@@ -627,6 +628,33 @@ export class CommandPalette {
       category: 'SSH',
       keybinding: 'Leader Shift+C',
       execute: () => c.cloneSshSessionToNewWindow(),
+    });
+
+    // ── Claude Code actions ──
+    this.register({
+      id: 'claude.copy-hook-config',
+      label: 'Copy Hook Config to Clipboard',
+      category: 'Claude Code',
+      execute: async () => {
+        try {
+          await invoke<string>('get_hook_server_config_snippet');
+        } catch (e) {
+          console.error('[Krypton] Failed to get hook config:', e);
+        }
+      },
+    });
+    this.register({
+      id: 'claude.show-hook-port',
+      label: 'Show Hook Server Port',
+      category: 'Claude Code',
+      execute: async () => {
+        try {
+          const port = await invoke<number>('get_hook_server_port');
+          console.log(`[Krypton] Hook server port: ${port}`);
+        } catch (e) {
+          console.error('[Krypton] Hook server not running');
+        }
+      },
     });
   }
 

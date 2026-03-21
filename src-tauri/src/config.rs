@@ -23,6 +23,7 @@ pub struct KryptonConfig {
     pub visual: VisualConfig,
     pub extensions: ExtensionsConfig,
     pub ssh: SshConfig,
+    pub hooks: HooksConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -312,6 +313,26 @@ impl Default for SshConfig {
             enabled: true,
             control_persist: 600,
             clone_target: "tab".to_string(),
+        }
+    }
+}
+
+// ─── Hooks ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HooksConfig {
+    /// Enable the HTTP hook server for Claude Code integration
+    pub enabled: bool,
+    /// Port to listen on (0 = auto-assign available port)
+    pub port: u16,
+}
+
+impl Default for HooksConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            port: 0,
         }
     }
 }

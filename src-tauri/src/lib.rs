@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+pub mod hook_server;
 mod pty;
 pub mod sound;
 pub mod ssh;
@@ -22,6 +23,9 @@ pub fn run() {
     // Initialize sound engine
     let sound_engine: sound::SoundEngineState = Mutex::new(sound::SoundEngine::new());
 
+    // Initialize hook server state
+    let hook_server = Arc::new(hook_server::HookServer::new());
+
     // Initialize SSH manager
     let ssh_socket_dir = config::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
@@ -40,6 +44,7 @@ pub fn run() {
         .manage(theme_engine.clone())
         .manage(sound_engine)
         .manage(ssh_manager)
+        .manage(hook_server.clone())
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
             commands::get_pty_cwd,
@@ -66,6 +71,8 @@ pub fn run() {
             sound::sound_apply_config,
             sound::sound_load_pack,
             sound::sound_get_packs,
+            commands::get_hook_server_port,
+            commands::get_hook_server_config_snippet,
         ])
         .setup(move |app| {
             if cfg!(debug_assertions) {
@@ -123,6 +130,25 @@ pub fn run() {
             std::thread::spawn(move || {
                 start_config_watcher(app_handle, config_for_watcher, theme_for_watcher);
             });
+
+            // Start Claude Code hook server if enabled
+            {
+                let hooks_enabled = krypton_config
+                    .read()
+                    .map(|cfg| cfg.hooks.enabled)
+                    .unwrap_or(true);
+                let hooks_port = krypton_config
+                    .read()
+                    .map(|cfg| cfg.hooks.port)
+                    .unwrap_or(0);
+                if hooks_enabled {
+                    hook_server::start(
+                        app.handle().clone(),
+                        hook_server.clone(),
+                        hooks_port,
+                    );
+                }
+            }
 
             // Start process detection poller for context-aware extensions
             let poller_handle = app.handle().clone();

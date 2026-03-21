@@ -36,6 +36,7 @@ import type { FrontendThemeEngine } from './theme';
 import { ExtensionManager } from './extensions';
 import type { ExtensionHost } from './extensions';
 import { DashboardManager } from './dashboard';
+import type { ClaudeHookManager } from './claude-hooks';
 
 /** Replace the alpha channel of an rgba() color string.
  *  e.g. replaceAlpha('rgba(6, 10, 18, 0.5)', 0.8) → 'rgba(6, 10, 18, 0.8)' */
@@ -200,6 +201,9 @@ export class Compositor {
   // ─── Theme Engine ─────────────────────────────────────────────────
   /** Reference to the frontend theme engine (set via setThemeEngine) */
   private themeEngine: FrontendThemeEngine | null = null;
+
+  // ─── Claude Hook Manager ────────────────────────────────────────
+  private claudeHookManager: ClaudeHookManager | null = null;
 
   // ─── Config-backed settings ──────────────────────────────────────
   /** xterm.js theme — built-in default, overridable by config theme.colors */
@@ -736,6 +740,14 @@ export class Compositor {
     }
   }
 
+  /**
+   * Set the Claude hook manager. The compositor will use it to create
+   * badge and tool indicator elements in window chrome.
+   */
+  setClaudeHookManager(manager: ClaudeHookManager): void {
+    this.claudeHookManager = manager;
+  }
+
   /** Get the currently focused window ID */
   get focusedId(): WindowId | null {
     return this.focusedWindowId;
@@ -987,14 +999,22 @@ export class Compositor {
     label.textContent = `session_${sessionNum}`;
 
     labelGroup.appendChild(statusDot);
+    // Claude Code badge (sparkle indicator)
+    if (this.claudeHookManager) {
+      labelGroup.appendChild(this.claudeHookManager.createBadge());
+    }
     labelGroup.appendChild(label);
 
-    // Right side: PTY status (shows CWD once available)
+    // Right side: Claude tool indicator + PTY status
+    const claudeTool = this.claudeHookManager
+      ? this.claudeHookManager.createToolIndicator()
+      : document.createElement('span');
     const ptyStatus = document.createElement('span');
     ptyStatus.className = 'krypton-window__pty-status';
     ptyStatus.textContent = 'starting...';
 
     titlebar.appendChild(labelGroup);
+    titlebar.appendChild(claudeTool);
     titlebar.appendChild(ptyStatus);
     chrome.appendChild(titlebar);
 
