@@ -1038,6 +1038,12 @@ export class Compositor {
       el.appendChild(corner);
     }
 
+    // Claude Code HUD elements inside content area
+    if (this.claudeHookManager) {
+      content.appendChild(this.claudeHookManager.createUplinkBar());
+      content.appendChild(this.claudeHookManager.createActivityTrace());
+    }
+
     // 3D perspective wrapper — isolates the 3D context from backdrop-filter
     const perspectiveWrap = document.createElement('div');
     perspectiveWrap.className = 'krypton-window__perspective';
@@ -1103,10 +1109,12 @@ export class Compositor {
     // Listen for shell title changes (OSC 0/2 sequences)
     pane.terminal.onTitleChange((title: string) => {
       if (title) {
-        label.textContent = title;
-        // Also update the tab title
-        tab.title = title;
-        tabTitle.textContent = title;
+        const styled = this.claudeHookManager
+          ? this.claudeHookManager.formatTerminalTitle(title)
+          : title;
+        label.textContent = styled;
+        tab.title = styled;
+        tabTitle.textContent = styled;
       }
     });
 
@@ -3413,6 +3421,7 @@ export class Compositor {
   private findLabel(windowEl: HTMLElement): HTMLElement | null {
     return windowEl.querySelector('.krypton-window__label');
   }
+
 
   // ─── Window Resize Handler ───────────────────────────────────────
 

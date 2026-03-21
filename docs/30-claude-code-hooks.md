@@ -134,11 +134,7 @@ Phase 1 is observe-only — the server always returns `200 {}`, meaning it never
 4. Handler emits Tauri event "claude-hook" with the payload
 5. Handler responds 200 {} immediately
 6. Frontend claude-hooks.ts listener receives event
-7. Based on hookEventName, renders appropriate UI:
-   - PreToolUse/PostToolUse: status badge update on window chrome
-   - Notification: toast overlay
-   - SessionStart: badge terminal window as "Claude Code active"
-   - Stop: clear active status
+7. Based on hookEventName, updates UI elements (see event→UI table below)
 ```
 
 **User setup:**
@@ -149,15 +145,142 @@ Phase 1 is observe-only — the server always returns `200 {}`, meaning it never
 4. Claude Code picks up hooks config on next session
 ```
 
-### UI Changes
+### UI Elements
 
-**Status badge** — small indicator in the window titlebar (next to existing status dot) that shows when Claude Code is active in that terminal. Pulses during tool execution.
+All UI uses existing cyberpunk HUD aesthetic (`--krypton-*` CSS custom properties, BEM classes). No `backdrop-filter`. Animations via WAAPI or CSS keyframes at 60 FPS.
 
-**Notification toast** — minimal overlay in the bottom-right of the window content area. Auto-dismisses after 3 seconds. Shows Claude Code notification messages.
+```
+┌─── titlebar ─────────────────────────────────────────┐
+│ ● ◈ ◈ neural_link // online    ▸ Edit ← main.ts  ~/ │
+│    ↑                            ↑                     │
+│    sigil badge                  tool execution HUD    │
+├───────────────────────────────────────────────────────┤
+│                                                    ║  │
+│              terminal content                      ║  │ ← activity trace (right edge)
+│                                                    ║  │
+│═══════════════════════════════════════════════════════│ ← neural uplink bar (bottom edge)
+└───────────────────────────────────────────────────────┘
+                                  ┌──────────────────────┐
+                                  │ ▌CLAUDE▐  Task done  │ ← intercept toast (fixed pos)
+                                  └──────────────────────┘
+```
 
-**Tool activity indicator** — text in the titlebar showing current tool name during PreToolUse → PostToolUse lifecycle (e.g., "Edit: src/main.ts").
+Five UI elements, all managed by `ClaudeHookManager` in `claude-hooks.ts`:
 
-All UI uses existing cyberpunk styling (accent colors, BEM classes). No `backdrop-filter`.
+| # | Element | Location | CSS class |
+|---|---------|----------|-----------|
+| 1 | **Sigil Badge** | Titlebar, left (after status dot) | `.krypton-claude-badge` |
+| 2 | **Tool Execution HUD** | Titlebar, right side | `.krypton-claude-tool` |
+| 3 | **Neural Uplink Bar** | Bottom edge of `.krypton-window__content` | `.krypton-uplink` |
+| 4 | **Activity Trace** | Right edge of `.krypton-window__content` | `.krypton-activity-trace` |
+| 5 | **Intercept Toast** | Fixed, bottom-right of viewport | `.krypton-claude-toast` |
+
+Additionally, `ClaudeHookManager.formatTerminalTitle()` rewrites Claude Code's OSC 0/2 terminal titles into cyberpunk labels (e.g., `NEW CODING SESSION` → `◈ neural_link // online`). This is called from compositor's `onTitleChange` handler but the logic lives in `claude-hooks.ts`.
+
+### Event → UI Mapping
+
+Each hook event triggers specific changes across the five UI elements. This is the authoritative reference for what happens visually when each event fires.
+
+#### `SessionStart`
+
+| Element | Change |
+|---------|--------|
+| Sigil Badge | Adds `--active` → glows accent color with halo `text-shadow` |
+| Neural Uplink Bar | Adds `--active` → fades in as solid accent strip at 40% opacity |
+| Tool HUD | No change |
+| Activity Trace | No change |
+| Toast | No change |
+| Terminal Title | Claude Code sets OSC 2 title → `formatTerminalTitle()` rewrites it (e.g., `◈ neural_link // online`) |
+
+#### `PreToolUse`
+
+| Element | Change |
+|---------|--------|
+| Sigil Badge | Adds `--working` → sonar-ping animation (`krypton-sigil-ping`, 1.5s cycle) |
+| Neural Uplink Bar | Adds `--working` → dual-pulse gradient scrolls left-to-right. Adds `--fast` for Bash/Edit/Write/NotebookEdit (0.9s vs 1.8s animation) |
+| Tool HUD | Decode animation: 6 frames of glitch chars (`░▒▓█▀▄▌▐`) resolve over ~180ms into `▸ <tool> ← <target>`. Target shows abbreviated file path, truncated command, or pattern. Cancels any pending clear timer from a previous PostToolUse |
+| Activity Trace | New tick appended at bottom, colored by tool type: cyan (Edit/Write), amber (Bash), dim cyan (Read/Glob/Grep). Tick fades to invisible over 30s, then removed. Max 20 ticks |
+| Toast | No change |
+
+#### `PostToolUse`
+
+| Element | Change |
+|---------|--------|
+| Sigil Badge | Removes `--working` if no other session has an active tool |
+| Neural Uplink Bar | Removes `--working`, returns to `--active` (solid strip). If tool response contains error: flashes `--error` (red, 2 blinks over 600ms), then returns to `--active` |
+| Tool HUD | Holds current text for **1.5 seconds**. Then glitch-out animation (2 frames of increasing garble) and hides. If a new PreToolUse arrives during the hold, the clear is cancelled and new tool text decodes in immediately |
+| Activity Trace | If tool had error: additional red tick added |
+| Toast | No change |
+
+#### `Notification`
+
+| Element | Change |
+|---------|--------|
+| Sigil Badge | No change |
+| Neural Uplink Bar | No change |
+| Tool HUD | No change |
+| Activity Trace | No change |
+| Toast | New toast slides in from right with scan-line wipe (CSS `::after` sweeps top→bottom over 400ms). Dark panel with 3px left accent stripe. `CLAUDE` label chip. Auto-dismisses after 4s. Type variants: `--permission_prompt` (amber), `--error` (red, stays until clicked), `--success` (green). Max 3 visible; excess pushes oldest out |
+
+#### `Stop`
+
+| Element | Change |
+|---------|--------|
+| Sigil Badge | Brief bright flash (keeps `--active` for 2s), then removes `--active` → fades to dormant (15% ghost) |
+| Neural Uplink Bar | Removes all modifiers → fades to invisible (`opacity: 0`) |
+| Tool HUD | Cleared if visible |
+| Activity Trace | No change (existing ticks continue fading naturally) |
+| Toast | No change |
+| Terminal Title | Claude Code may set a final OSC 2 title → `formatTerminalTitle()` rewrites it (e.g., `◈ signal_end // done`) |
+
+### UI Element Details
+
+#### 1. Sigil Badge (◈)
+
+Diamond glyph (`◈` U+25C8) in the titlebar. States:
+
+- **Dormant:** `color: rgba(255,255,255,0.15)` — barely visible ghost
+- **Active (`--active`):** accent color at 85% + double `text-shadow` halo (6px + 14px)
+- **Working (`--working`):** `krypton-sigil-ping` animation — glow radiates outward (4px → 20px → 36px shadow) then contracts, 1.5s cycle
+
+#### 2. Tool Execution HUD
+
+Monospace readout in right side of titlebar. Format: `▸ Edit ← main.ts`
+
+- **Decode-in:** 6 frames × 30ms. Glitch characters progressively resolve to real text (probability increases each frame). Class `--decoding` dims color to 35% during animation
+- **Visible (`--visible`):** `max-width: 220px`, `opacity: 1`. Full accent color at 60%
+- **Glitch-out:** 2 frames × 30ms. Characters randomly replaced, then element hidden
+
+#### 3. Neural Uplink Bar
+
+2px strip at bottom of terminal content area. States:
+
+- **Hidden:** `opacity: 0` — completely invisible
+- **Active (`--active`):** solid accent at 40% opacity
+- **Working (`--working`):** animated gradient with two bright pulses, `background-size: 200%`, scrolls via `krypton-uplink-stream` at 1.8s/cycle
+- **Fast (`--fast`):** same animation at 0.9s/cycle (for Bash/Edit/Write tools)
+- **Error (`--error`):** red-orange, flashes twice via `krypton-uplink-error` (300ms × 2)
+
+#### 4. Activity Trace
+
+3px vertical strip on right edge. Each tool leaves a tick mark:
+
+- Tick size: 3px × 6px with 2px gap, `border-radius: 1px`, colored `box-shadow`
+- Colors: `--edit` (accent/cyan), `--bash` (amber `#f0a030`), `--read` (dim accent 30%), `--error` (red `#ff4040`)
+- Fade: full opacity → 0 over 30 seconds (CSS `transition`), removed from DOM after fade
+- Layout: `flex-direction: column-reverse`, newest at bottom
+- Max 20 ticks; overflow removes oldest immediately
+
+#### 5. Intercept Toast
+
+Fixed-position notification panel at bottom-right of viewport.
+
+- Entrance: `translateX(20px) → 0` over 300ms + `::after` scan-line (2px accent, sweeps top→bottom over 400ms)
+- Body: `rgba(6,10,18,0.92)`, 1px accent border, 3px solid left stripe
+- Label: `CLAUDE` in uppercase bordered chip with `text-shadow`
+- Variants: default (accent), `--permission_prompt` (amber), `--error` (red, click to dismiss), `--success` (green)
+- Auto-dismiss: 4s (non-error), then reverse slide-out
+- Stack: max 3, `column-reverse`, 6px gap. Excess pushes oldest out
 
 ### Configuration
 

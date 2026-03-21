@@ -1730,52 +1730,134 @@ html, body {
 
 /* ─── Claude Code Hook Integration ─── */
 
-/* Badge in titlebar — small sparkle indicator */
+/* ─── Claude Code Hook UI — Futuristic HUD ─── */
+
+/* 1. Sigil Badge (◈) — AI presence indicator in titlebar */
 .krypton-claude-badge {
   width: 14px;
   height: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 11px;
   color: rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
   flex-shrink: 0;
-  transition: color 0.3s ease, text-shadow 0.3s ease;
+  transition: color 0.4s ease, text-shadow 0.4s ease;
 }
 
 .krypton-claude-badge--active {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
-  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
+  text-shadow:
+    0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5),
+    0 0 14px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
 }
 
 .krypton-claude-badge--working {
-  animation: krypton-claude-pulse 1.2s ease-in-out infinite;
+  animation: krypton-sigil-ping 1.5s ease-out infinite;
 }
 
-@keyframes krypton-claude-pulse {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; text-shadow: 0 0 10px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6); }
+@keyframes krypton-sigil-ping {
+  0% {
+    text-shadow:
+      0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6),
+      0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+  }
+  40% {
+    text-shadow:
+      0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9),
+      0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4),
+      0 0 36px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  }
+  100% {
+    text-shadow:
+      0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6),
+      0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+  }
 }
 
-/* Tool activity text in titlebar */
+/* 2. Neural Uplink Bar — luminous strip at bottom of terminal content */
+.krypton-uplink {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+}
+
+.krypton-uplink--active {
+  opacity: 1;
+}
+
+.krypton-uplink--working {
+  opacity: 1;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 15%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8) 30%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 45%,
+    transparent 50%,
+    transparent 55%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 65%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6) 78%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 88%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: krypton-uplink-stream 1.8s linear infinite;
+}
+
+.krypton-uplink--fast {
+  animation-duration: 0.9s;
+}
+
+.krypton-uplink--error {
+  opacity: 1;
+  background: rgba(255, 64, 64, 0.8);
+  animation: krypton-uplink-error 0.3s ease 2;
+}
+
+@keyframes krypton-uplink-stream {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@keyframes krypton-uplink-error {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+/* 3. Tool Execution HUD — decode-style readout in titlebar */
 .krypton-claude-tool {
   font-size: 10px;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 0;
   opacity: 0;
-  transition: max-width 0.3s ease, opacity 0.3s ease;
+  transition: max-width 0.3s ease, opacity 0.2s ease;
+  letter-spacing: 0.03em;
 }
 
 .krypton-claude-tool--visible {
-  max-width: 200px;
+  max-width: 220px;
   opacity: 1;
 }
 
-/* Toast container — bottom-right corner */
+.krypton-claude-tool--decoding {
+  max-width: 220px;
+  opacity: 1;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
+}
+
+/* 4. Intercept Toasts — scan-line wipe entrance */
 .krypton-claude-toasts {
   position: fixed;
   bottom: 16px;
@@ -1785,26 +1867,52 @@ html, body {
   flex-direction: column-reverse;
   gap: 6px;
   pointer-events: none;
+  max-height: calc(3 * 48px + 2 * 6px);
+  overflow: hidden;
 }
 
-/* Individual toast */
 .krypton-claude-toast {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  background: rgba(6, 10, 18, 0.85);
+  padding: 8px 12px;
+  background: rgba(6, 10, 18, 0.92);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
-  border-radius: 4px;
+  border-left: 3px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+  border-radius: 2px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: 11px;
   color: var(--krypton-fg, #b0c4d8);
-  box-shadow: 0 0 12px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  box-shadow:
+    0 0 12px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08),
+    inset 0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
   transform: translateX(20px);
   opacity: 0;
   transition: transform 0.3s ease, opacity 0.3s ease;
   pointer-events: auto;
   max-width: 360px;
+  overflow: hidden;
+}
+
+/* Scan-line wipe pseudo-element */
+.krypton-claude-toast::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6),
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9),
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6),
+    transparent
+  );
+  top: -100%;
+  pointer-events: none;
+  opacity: 0;
 }
 
 .krypton-claude-toast--visible {
@@ -1812,16 +1920,28 @@ html, body {
   opacity: 1;
 }
 
+.krypton-claude-toast--visible::after {
+  opacity: 1;
+  animation: krypton-toast-scanline 0.4s ease-out forwards;
+}
+
+@keyframes krypton-toast-scanline {
+  0% { top: -2px; opacity: 1; }
+  80% { opacity: 0.8; }
+  100% { top: calc(100% + 2px); opacity: 0; }
+}
+
 .krypton-claude-toast__label {
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
   padding: 1px 5px;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
   border-radius: 2px;
   flex-shrink: 0;
+  text-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
 }
 
 .krypton-claude-toast__text {
@@ -1832,11 +1952,84 @@ html, body {
 
 .krypton-claude-toast--permission_prompt {
   border-color: rgba(250, 200, 99, 0.4);
+  border-left-color: rgba(250, 200, 99, 0.7);
 }
 
 .krypton-claude-toast--permission_prompt .krypton-claude-toast__label {
   color: #fac863;
   border-color: rgba(250, 200, 99, 0.4);
+  text-shadow: 0 0 4px rgba(250, 200, 99, 0.3);
+}
+
+.krypton-claude-toast--error {
+  border-color: rgba(255, 64, 64, 0.4);
+  border-left-color: rgba(255, 64, 64, 0.7);
+}
+
+.krypton-claude-toast--error .krypton-claude-toast__label {
+  color: #ff5050;
+  border-color: rgba(255, 64, 64, 0.4);
+  text-shadow: 0 0 4px rgba(255, 64, 64, 0.3);
+}
+
+.krypton-claude-toast--success {
+  border-color: rgba(80, 220, 100, 0.4);
+  border-left-color: rgba(80, 220, 100, 0.7);
+}
+
+.krypton-claude-toast--success .krypton-claude-toast__label {
+  color: #50dc64;
+  border-color: rgba(80, 220, 100, 0.4);
+  text-shadow: 0 0 4px rgba(80, 220, 100, 0.3);
+}
+
+/* 5. Activity Trace — seismograph ticker on right edge of content area */
+.krypton-activity-trace {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  justify-content: flex-start;
+  align-items: flex-end;
+  padding-bottom: 4px;
+  overflow: hidden;
+}
+
+.krypton-activity-trace__tick {
+  width: 3px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 1px;
+  opacity: 1;
+  transition: opacity 1s linear, transform 0.3s ease;
+  box-shadow: 0 0 4px currentColor;
+}
+
+/* Tool-type tick colors */
+.krypton-activity-trace__tick--edit {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+}
+
+.krypton-activity-trace__tick--bash {
+  background: rgba(240, 160, 48, 0.9);
+  color: rgba(240, 160, 48, 0.5);
+}
+
+.krypton-activity-trace__tick--read {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+}
+
+.krypton-activity-trace__tick--error {
+  background: rgba(255, 64, 64, 0.9);
+  color: rgba(255, 64, 64, 0.5);
 }
 
 /* ─── Cursor Trail (Rainbow Flame) ─── */
