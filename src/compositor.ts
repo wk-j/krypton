@@ -2099,14 +2099,14 @@ export class Compositor {
     // Focus the Quick Terminal (add focused styling)
     this.qtElement.classList.add('krypton-window--focused');
 
-    // Animate slide-down + fade-in
+    // Animate 3D float-in: swings from tilted-back to resting float
     const duration = this.qtConfig.animationDuration;
     const anim = this.qtElement.animate(
       [
-        { transform: 'translateY(-30px)', opacity: '0' },
-        { transform: 'translateY(0)', opacity: '1' },
+        { transform: 'perspective(800px) rotateX(16deg) translateZ(-60px) translateY(-40px)', opacity: '0' },
+        { transform: 'perspective(800px) rotateX(1.5deg) translateZ(20px) translateY(0)', opacity: '1' },
       ],
-      { duration, easing: 'cubic-bezier(0, 0, 0.2, 1)', fill: 'none' },
+      { duration, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)', fill: 'none' },
     );
 
     // Fit terminal after visible
@@ -2135,12 +2135,12 @@ export class Compositor {
     if (!this.qtVisible || !this.qtElement) return;
     this.sound.play('tab.close');
 
-    // Animate slide-up + fade-out
+    // Animate 3D float-out: tilts back and recedes into depth
     const duration = this.qtConfig.animationDuration;
     const anim = this.qtElement.animate(
       [
-        { transform: 'translateY(0)', opacity: '1' },
-        { transform: 'translateY(-30px)', opacity: '0' },
+        { transform: 'perspective(800px) rotateX(1.5deg) translateZ(20px) translateY(0)', opacity: '1' },
+        { transform: 'perspective(800px) rotateX(16deg) translateZ(-60px) translateY(-40px)', opacity: '0' },
       ],
       { duration, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' },
     );

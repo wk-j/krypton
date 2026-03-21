@@ -530,17 +530,31 @@ html, body {
     0 8px 32px rgba(0, 0, 0, 0.4);
   /* Hidden by default — toggled via JS */
   display: none;
+  /* 3D floating — perspective() in transform so it affects THIS element */
+  transform-origin: center top !important;
+  transform-style: preserve-3d;
 }
 
 .krypton-quick-terminal.krypton-quick-terminal--visible {
   display: flex;
+  /* Resting 3D float: tilted slightly toward viewer, pushed forward in Z */
+  transform: perspective(800px) rotateX(1.5deg) translateZ(20px);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.6),
+    0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.12)),
+    0 0 80px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 40px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02);
 }
 
 .krypton-quick-terminal.krypton-window--focused {
   border-color: var(--krypton-focused-border, rgba(0, 200, 255, 0.6));
   box-shadow:
-    0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.15)),
-    0 8px 32px rgba(0, 0, 0, 0.4);
+    0 24px 70px rgba(0, 0, 0, 0.65),
+    0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.18)),
+    0 0 100px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 40px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
 }
 
 /* ─── Command Palette ─── */
