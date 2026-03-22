@@ -114,6 +114,7 @@ export class ClaudeHookManager {
   private sessions: Map<string, ClaudeSession> = new Map();
   private toastContainer: HTMLElement | null = null;
   private toastsEnabled: boolean = true;
+  private maxToasts: number = 20;
   private hookPort: number = 0;
   private decodeTimer: ReturnType<typeof setTimeout> | null = null;
   private toolClearTimer: ReturnType<typeof setTimeout> | null = null;
@@ -123,6 +124,11 @@ export class ClaudeHookManager {
     if (this.toastContainer) {
       this.toastContainer.style.display = enabled ? '' : 'none';
     }
+  }
+
+  setMaxToasts(max: number): void {
+    this.maxToasts = Math.max(1, max);
+    this.trimToasts();
   }
 
   async init(): Promise<void> {
@@ -692,6 +698,21 @@ export class ClaudeHookManager {
       toast.classList.remove('krypton-claude-toast--visible');
       setTimeout(() => toast.remove(), 300);
     });
+
+    // Enforce max visible toasts
+    this.trimToasts();
+  }
+
+  /** Remove oldest toasts that exceed maxToasts limit */
+  private trimToasts(): void {
+    if (!this.toastContainer) return;
+    const toasts = this.toastContainer.querySelectorAll('.krypton-claude-toast');
+    // Container is prepend-ordered (newest first), so oldest are at the end
+    for (let i = this.maxToasts; i < toasts.length; i++) {
+      const old = toasts[i] as HTMLElement;
+      old.classList.remove('krypton-claude-toast--visible');
+      setTimeout(() => old.remove(), 300);
+    }
   }
 
   /** Format tool detail string from event input */

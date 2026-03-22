@@ -132,6 +132,7 @@ export interface HooksConfig {
   enabled: boolean;
   port: number;
   show_toasts: boolean;
+  max_toasts: number;
 }
 
 export interface KryptonConfig {

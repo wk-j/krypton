@@ -371,11 +371,12 @@ export class Compositor {
       this.extensions.setEnabled(config.extensions.enabled);
     }
 
-    // Hooks — toggle toast display
+    // Hooks — toggle toast display and max visible toasts
     if (config.hooks) {
       this.hookToastsEnabled = config.hooks.show_toasts;
       if (this.claudeHookManager) {
         this.claudeHookManager.setToastsEnabled(this.hookToastsEnabled);
+        this.claudeHookManager.setMaxToasts(config.hooks.max_toasts);
       }
     }
 

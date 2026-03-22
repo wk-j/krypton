@@ -332,6 +332,8 @@ pub struct HooksConfig {
     pub port: u16,
     /// Show toast notifications for hook events
     pub show_toasts: bool,
+    /// Maximum number of visible toasts (oldest dismissed when exceeded)
+    pub max_toasts: usize,
 }
 
 impl Default for HooksConfig {
@@ -340,6 +342,7 @@ impl Default for HooksConfig {
             enabled: true,
             port: 0,
             show_toasts: true,
+            max_toasts: 20,
         }
     }
 }
