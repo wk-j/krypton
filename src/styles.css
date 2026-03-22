@@ -296,7 +296,9 @@ html, body {
 /* Top-line glow — accent-tinted gradient over the first 3 terminal rows.
    NOTE: Cannot use backdrop-filter here — blur() causes window freeze on
    transparent WKWebView on macOS.  Instead we use a gradient background
-   whose opacity is driven by --krypton-glow-intensity. */
+   whose opacity is driven by --krypton-glow-intensity.
+   NOTE: calc() inside rgba() alpha is unreliable in WKWebView, so we use
+   a fixed-alpha gradient and control brightness via the element's opacity. */
 .krypton-glow-overlay {
   position: absolute;
   top: 0;
@@ -305,9 +307,10 @@ html, body {
   height: calc(var(--krypton-terminal-cell-height, 17px) * 5 + 4px);
   background: linear-gradient(
     to bottom,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), calc(0.12 * var(--krypton-glow-intensity, 0.8))),
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35),
     transparent 100%
   );
+  opacity: var(--krypton-glow-intensity, 0.8);
   mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   pointer-events: none;
