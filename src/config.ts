@@ -120,6 +120,7 @@ export interface VisualConfig {
   perspective_tilt_y: number; // degrees, Y-axis rotation (left/right)
   opacity: number;           // 0.0–1.0, window backdrop opacity
   blur: number;              // px, window backdrop blur radius
+  glow_intensity: number;    // 0.0–3.0, top-line glow brightness boost
 }
 
 export interface ExtensionsConfig {

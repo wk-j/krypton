@@ -76,5 +76,5 @@ A `::before` pseudo-element on `.krypton-pane__terminal`:
 ## Out of Scope
 
 - Per-line glow that tracks specific buffer content (decoration API approach)
-- User-configurable glow color, intensity, or line count (can be added later via `[visual]` config)
+- ~~User-configurable glow color, intensity, or line count~~ — intensity is now configurable via `[visual] glow_intensity` (see `docs/31-configurable-glow-intensity.md`)
 - Glow on other edges (bottom, sides)

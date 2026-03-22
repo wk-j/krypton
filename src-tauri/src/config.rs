@@ -260,6 +260,9 @@ pub struct VisualConfig {
     /// Window backdrop blur radius in pixels. 0 = no blur.
     /// Controls the CSS backdrop-filter blur on terminal windows.
     pub blur: u32,
+    /// Top-line glow brightness boost. 0.0 = off, 0.8 = default, higher = stronger.
+    /// Controls the brightness() filter on the glow overlay (added to 1.0).
+    pub glow_intensity: f64,
 }
 
 impl Default for VisualConfig {
@@ -270,6 +273,7 @@ impl Default for VisualConfig {
             perspective_tilt_y: 0.0,
             opacity: 0.5,
             blur: 12,
+            glow_intensity: 0.8,
         }
     }
 }

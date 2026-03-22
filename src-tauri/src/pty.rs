@@ -301,6 +301,8 @@ impl PtyManager {
             cmd.arg(arg);
         }
 
+        cmd.env("TERM", "xterm-256color");
+
         // Set working directory if provided
         if let Some(ref dir) = cwd {
             let path = std::path::Path::new(dir);

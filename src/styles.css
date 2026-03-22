@@ -293,16 +293,21 @@ html, body {
   overflow: hidden;
 }
 
-/* Top-line glow — accent-tinted gradient over the first 3 terminal rows */
+/* Top-line glow — accent-tinted gradient over the first 3 terminal rows.
+   NOTE: Cannot use backdrop-filter here — blur() causes window freeze on
+   transparent WKWebView on macOS.  Instead we use a gradient background
+   whose opacity is driven by --krypton-glow-intensity. */
 .krypton-glow-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: calc(var(--krypton-terminal-cell-height, 17px) * 5 + 4px);
-  background: transparent;
-  -webkit-backdrop-filter: blur(3px) brightness(1.8);
-  backdrop-filter: blur(3px) brightness(1.8);
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), calc(0.12 * var(--krypton-glow-intensity, 0.8))),
+    transparent 100%
+  );
   mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   pointer-events: none;

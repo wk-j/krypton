@@ -208,9 +208,9 @@ perspective_tilt_y = 0.0       # Y-axis tilt in degrees (left/right lean).
 opacity = 0.5                  # Window backdrop opacity (0.0 = fully transparent,
                                # 1.0 = fully opaque). Controls the alpha channel of
                                # terminal window backgrounds. Default: 0.5
-blur = 12                      # Window backdrop blur radius in pixels. Controls the
-                               # frosted-glass blur on terminal windows.
-                               # 0 = no blur, higher = stronger blur. Default: 12
+glow_intensity = 0.8           # Top-line glow brightness boost (0.0 = off, 3.0 = max).
+                               # Controls the brightness of the glow overlay on the
+                               # first few terminal rows. Default: 0.8
 
 # --- Claude Code Hooks ---
 # HTTP server for receiving Claude Code hook events (toast notifications, status).
@@ -243,7 +243,6 @@ poll_interval_ms = 500         # How often to poll foreground process (milliseco
 [quick_terminal]
 width_ratio = 0.6              # fraction of screen width (default: 60%)
 height_ratio = 0.5             # fraction of screen height (default: 50%)
-backdrop_blur = 20             # backdrop-filter blur in pixels (stronger than regular windows)
 animation = "slide"            # entrance/exit animation: "slide", "fade", "none"
 shell = ""                     # shell override (empty = use default [shell] config)
 cwd = ""                       # working directory override (empty = $HOME)
@@ -406,7 +405,7 @@ Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled glo
 | `[visual]` | `perspective_depth` | int | `800` | 3D perspective depth in pixels. Higher = subtler effect. 0 = disabled. Recommended: 400–1200 |
 | `[visual]` | `perspective_tilt` | float | `2.0` | Tilt angle in degrees for 3D layer separation. 0 = no tilt. Recommended: 1–6 |
 | `[visual]` | `opacity` | float | `0.5` | Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque). Overrides the theme's backdrop alpha. |
-| `[visual]` | `blur` | int | `12` | Window backdrop blur radius in pixels. 0 = no blur (sharp see-through), higher = stronger frosted-glass effect. |
+| `[visual]` | `glow_intensity` | float | `0.8` | Top-line glow brightness boost. 0.0 disables the glow, higher = stronger. Clamped to 0.0–3.0. |
 
 ### SSH Configuration
 
@@ -431,7 +430,6 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 |---------|-----|------|---------|-------------|
 | `[quick_terminal]` | `width_ratio` | float | `0.6` | Width as fraction of screen (0.0–1.0) |
 | `[quick_terminal]` | `height_ratio` | float | `0.5` | Height as fraction of screen (0.0–1.0) |
-| `[quick_terminal]` | `backdrop_blur` | int | `20` | Backdrop blur in pixels (stronger than regular windows) |
 | `[quick_terminal]` | `animation` | string | `"slide"` | Entrance/exit animation: `slide`, `fade`, `none` |
 | `[quick_terminal]` | `shell` | string | `""` | Shell override (empty = use default `[shell]` config) |
 | `[quick_terminal]` | `cwd` | string | `""` | Working directory override (empty = `$HOME`) |

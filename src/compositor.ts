@@ -399,12 +399,10 @@ export class Compositor {
       root.setProperty('--krypton-perspective-tilt-x', tiltXVal);
       root.setProperty('--krypton-perspective-tilt-y', tiltYVal);
 
-      // Transparency — window backdrop opacity and blur from [visual] config.
-      // These override the theme's backdrop values when set.
+      // Transparency — window backdrop opacity from [visual] config.
+      // Overrides the theme's backdrop alpha when set.
       const opacity = Math.max(0, Math.min(1, config.visual.opacity ?? 0.5));
-      const blur = Math.max(0, config.visual.blur ?? 12);
       this.configOpacity = opacity;
-      root.setProperty('--krypton-window-blur', `${blur}px`);
 
       // Override the theme's backdrop color alpha with config opacity.
       // Read the current theme backdrop color and replace its alpha channel.
@@ -425,6 +423,10 @@ export class Compositor {
 
       // Update existing terminals so their background alpha matches
       this.updateTerminalThemes();
+
+      // Glow intensity — controls the top-line brightness overlay
+      const glow = Math.max(0, Math.min(3, config.visual.glow_intensity ?? 0.8));
+      root.setProperty('--krypton-glow-intensity', String(glow));
     }
   }
 
