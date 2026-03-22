@@ -454,7 +454,7 @@ pub fn load_config() -> KryptonConfig {
         return config;
     }
 
-    match fs::read_to_string(&path) {
+    let config = match fs::read_to_string(&path) {
         Ok(contents) => match toml::from_str::<KryptonConfig>(&contents) {
             Ok(config) => {
                 log::info!("Loaded config from {}", path.display());
@@ -469,6 +469,41 @@ pub fn load_config() -> KryptonConfig {
         Err(e) => {
             log::error!("Failed to read config at {}: {e}", path.display());
             KryptonConfig::default()
+        }
+    };
+
+    // Flush the fully-populated config back to disk so that any new
+    // fields added since the file was last written appear with their defaults.
+    flush_config(&path, &config);
+
+    config
+}
+
+/// Write the fully-populated config back to disk, adding any new
+/// fields that were missing from the user's file.
+fn flush_config(path: &PathBuf, config: &KryptonConfig) {
+    match toml::to_string_pretty(config) {
+        Ok(toml_str) => {
+            let content = format!(
+                "# Krypton configuration\n\
+                 # See docs/06-configuration.md for full reference\n\n\
+                 {toml_str}"
+            );
+            // Only write if content differs to avoid triggering the filesystem watcher loop
+            if let Ok(existing) = fs::read_to_string(path) {
+                if existing == content {
+                    log::debug!("Config file already up to date, skipping flush");
+                    return;
+                }
+            }
+            if let Err(e) = fs::write(path, &content) {
+                log::error!("Failed to flush config to {}: {e}", path.display());
+            } else {
+                log::debug!("Flushed config to {}", path.display());
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to serialize config for flush: {e}");
         }
     }
 }

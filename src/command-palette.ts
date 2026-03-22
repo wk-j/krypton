@@ -630,6 +630,21 @@ export class CommandPalette {
       execute: () => c.cloneSshSessionToNewWindow(),
     });
 
+    // ── Config actions ──
+    this.register({
+      id: 'config.flush-defaults',
+      label: 'Flush Default Config to File',
+      category: 'Config',
+      execute: async () => {
+        try {
+          await invoke('reload_config');
+          console.log('[Krypton] Config flushed with defaults');
+        } catch (e) {
+          console.error('[Krypton] Failed to flush config:', e);
+        }
+      },
+    });
+
     // ── Claude Code actions ──
     this.register({
       id: 'claude.copy-hook-config',
