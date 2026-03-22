@@ -505,11 +505,46 @@ html, body {
   top: 0;
   left: 0;
   background: var(--krypton-focused-accent, #0cf);
-  opacity: 0.7;
   pointer-events: none;
   z-index: 10;
   transition: transform 50ms ease;
-  transform: translateZ(30px);
+  box-shadow: 0 0 6px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  animation: krypton-selection-cursor-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes krypton-selection-cursor-pulse {
+  from { opacity: 0.7; box-shadow: 0 0 6px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5); }
+  to   { opacity: 0.9; box-shadow: 0 0 12px 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7); }
+}
+
+/* ─── Selection Mode — glow overlay around selection region ─── */
+.krypton-selection-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 9;
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  border-radius: 2px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05);
+  box-shadow:
+    0 0 8px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3),
+    inset 0 0 6px 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  animation: krypton-selection-glow 2s ease-in-out infinite alternate;
+  transition: transform 50ms ease, width 50ms ease, height 50ms ease;
+}
+
+@keyframes krypton-selection-glow {
+  from {
+    box-shadow:
+      0 0 8px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3),
+      inset 0 0 6px 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  }
+  to {
+    box-shadow:
+      0 0 16px 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5),
+      inset 0 0 10px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  }
 }
 
 .krypton-window__body .xterm,

@@ -25,6 +25,7 @@ export class SelectionController {
   private anchor: BufferPosition | null = null;
   private selectionType: SelectionType = SelectionType.None;
   private cursorOverlay: HTMLElement | null = null;
+  private glowOverlay: HTMLElement | null = null;
   private gPending: boolean = false; // waiting for second 'g' press
 
   /** Whether the controller is currently active */
@@ -63,15 +64,18 @@ export class SelectionController {
       y: buf.baseY + buf.cursorY,
     };
 
-    // Create the visual cursor overlay
+    // Create the visual overlays
     this.createCursorOverlay();
     this.updateCursorOverlay();
+    this.createGlowOverlay();
 
     // If line-wise, immediately start selection
     if (lineWise) {
       this.selectionType = SelectionType.Line;
       this.anchor = { ...this.cursor };
       this.updateSelection();
+      this.showGlowOverlay();
+      this.updateGlowOverlay();
     }
   }
 
@@ -81,6 +85,7 @@ export class SelectionController {
       this.terminal.clearSelection();
     }
     this.removeCursorOverlay();
+    this.removeGlowOverlay();
     this.terminal = null;
     this.terminalBody = null;
     this.anchor = null;
@@ -312,14 +317,16 @@ export class SelectionController {
   toggleCharSelect(): void {
     this.gPending = false;
     if (this.selectionType === SelectionType.Char) {
-      // Cancel selection, back to cursor-only
       this.selectionType = SelectionType.None;
       this.anchor = null;
       if (this.terminal) this.terminal.clearSelection();
+      this.hideGlowOverlay();
     } else {
       this.selectionType = SelectionType.Char;
       this.anchor = { ...this.cursor };
       this.updateSelection();
+      this.showGlowOverlay();
+      this.updateGlowOverlay();
     }
   }
 
@@ -329,10 +336,13 @@ export class SelectionController {
       this.selectionType = SelectionType.None;
       this.anchor = null;
       if (this.terminal) this.terminal.clearSelection();
+      this.hideGlowOverlay();
     } else {
       this.selectionType = SelectionType.Line;
       this.anchor = { ...this.cursor };
       this.updateSelection();
+      this.showGlowOverlay();
+      this.updateGlowOverlay();
     }
   }
 
@@ -361,6 +371,7 @@ export class SelectionController {
     this.ensureCursorVisible();
     this.updateSelection();
     this.updateCursorOverlay();
+    this.updateGlowOverlay();
   }
 
   /** Clamp cursor.x to be within the valid range for the current row */
@@ -471,6 +482,98 @@ export class SelectionController {
     } else {
       this.cursorOverlay.style.display = '';
     }
+  }
+
+  // ─── Glow Overlay ─────────────────────────────────────────────────
+
+  /** Create the glow overlay element (hidden by default) */
+  private createGlowOverlay(): void {
+    this.removeGlowOverlay();
+    const el = document.createElement('div');
+    el.className = 'krypton-selection-glow';
+    el.style.display = 'none';
+    if (this.terminalBody) {
+      this.terminalBody.appendChild(el);
+    }
+    this.glowOverlay = el;
+  }
+
+  /** Remove the glow overlay from DOM */
+  private removeGlowOverlay(): void {
+    if (this.glowOverlay) {
+      this.glowOverlay.remove();
+      this.glowOverlay = null;
+    }
+  }
+
+  /** Show the glow overlay */
+  private showGlowOverlay(): void {
+    if (!this.glowOverlay) this.createGlowOverlay();
+    if (this.glowOverlay) this.glowOverlay.style.display = '';
+  }
+
+  /** Hide the glow overlay */
+  private hideGlowOverlay(): void {
+    if (this.glowOverlay) this.glowOverlay.style.display = 'none';
+  }
+
+  /** Position and size the glow overlay to cover the selection bounding box */
+  private updateGlowOverlay(): void {
+    if (!this.glowOverlay || !this.terminal || !this.anchor) return;
+    if (this.selectionType === SelectionType.None) return;
+
+    const buf = this.terminal.buffer.active;
+    const xtermEl = this.terminal.element;
+    if (!xtermEl) return;
+
+    const screenEl = xtermEl.querySelector('.xterm-screen') as HTMLElement;
+    if (!screenEl) return;
+
+    const cellWidth = screenEl.clientWidth / this.terminal.cols;
+    const cellHeight = screenEl.clientHeight / this.terminal.rows;
+    const padTop = 4;
+    const padLeft = 6;
+
+    const startRow = Math.min(this.anchor.y, this.cursor.y);
+    const endRow = Math.max(this.anchor.y, this.cursor.y);
+
+    let leftCol: number;
+    let rightCol: number;
+
+    if (this.selectionType === SelectionType.Line) {
+      leftCol = 0;
+      rightCol = this.terminal.cols - 1;
+    } else if (startRow === endRow) {
+      leftCol = Math.min(this.anchor.x, this.cursor.x);
+      rightCol = Math.max(this.anchor.x, this.cursor.x);
+    } else {
+      // Multi-line char selection: full-width bounding box
+      leftCol = 0;
+      rightCol = this.terminal.cols - 1;
+    }
+
+    const viewStartRow = startRow - buf.viewportY;
+    const viewEndRow = endRow - buf.viewportY;
+
+    // Hide if entirely outside viewport
+    if (viewEndRow < 0 || viewStartRow >= this.terminal.rows) {
+      this.glowOverlay.style.display = 'none';
+      return;
+    }
+    this.glowOverlay.style.display = '';
+
+    // Clamp to viewport
+    const clampedStart = Math.max(viewStartRow, 0);
+    const clampedEnd = Math.min(viewEndRow, this.terminal.rows - 1);
+
+    const x = padLeft + leftCol * cellWidth;
+    const y = padTop + clampedStart * cellHeight;
+    const w = (rightCol - leftCol + 1) * cellWidth;
+    const h = (clampedEnd - clampedStart + 1) * cellHeight;
+
+    this.glowOverlay.style.transform = `translate(${x}px, ${y}px)`;
+    this.glowOverlay.style.width = `${w}px`;
+    this.glowOverlay.style.height = `${h}px`;
   }
 
   /** Get character at position in a buffer line */
