@@ -69,6 +69,8 @@ export class CursorTrail {
 
   private onMouseMove = (e: MouseEvent): void => {
     if (!this.enabled) return;
+    // Suppress trail during mouse selection (any button held)
+    if (e.buttons !== 0) return;
 
     const now = performance.now();
     if (now - this.lastMouseSpawn < SPAWN_THROTTLE) return;
