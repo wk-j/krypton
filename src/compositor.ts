@@ -674,20 +674,35 @@ export class Compositor {
     });
   }
 
+  /** Build a single tab DOM element with index, dot, and title */
+  private buildTabElement(tabId: TabId, index: number, title: string): HTMLElement {
+    const tabEl = document.createElement('div');
+    tabEl.className = 'krypton-tab';
+    tabEl.dataset.tabId = tabId;
+
+    const indexSpan = document.createElement('span');
+    indexSpan.className = 'krypton-tab__index';
+    indexSpan.textContent = String(index + 1).padStart(2, '0');
+
+    const dot = document.createElement('span');
+    dot.className = 'krypton-tab__dot';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'krypton-tab__title';
+    titleSpan.textContent = title;
+
+    tabEl.appendChild(indexSpan);
+    tabEl.appendChild(dot);
+    tabEl.appendChild(titleSpan);
+    return tabEl;
+  }
+
   /** Rebuild the tab bar DOM for a window */
   private rebuildTabBar(win: KryptonWindow): void {
     win.tabBarElement.innerHTML = '';
     for (let i = 0; i < win.tabs.length; i++) {
       const tab = win.tabs[i];
-      const tabEl = document.createElement('div');
-      tabEl.className = 'krypton-tab';
-      tabEl.dataset.tabId = tab.id;
-
-      const titleSpan = document.createElement('span');
-      titleSpan.className = 'krypton-tab__title';
-      titleSpan.textContent = tab.title;
-      tabEl.appendChild(titleSpan);
-
+      const tabEl = this.buildTabElement(tab.id, i, tab.title);
       tab.element = tabEl;
       win.tabBarElement.appendChild(tabEl);
     }
@@ -1087,13 +1102,7 @@ export class Compositor {
     // Create first tab with a single pane
     const pane = this.createPane(content);
     const tabId = nextTabId();
-    const tabEl = document.createElement('div');
-    tabEl.className = 'krypton-tab krypton-tab--active';
-    tabEl.dataset.tabId = tabId;
-    const tabTitle = document.createElement('span');
-    tabTitle.className = 'krypton-tab__title';
-    tabTitle.textContent = `Shell 1`;
-    tabEl.appendChild(tabTitle);
+    const tabEl = this.buildTabElement(tabId, 0, 'Shell 1');
     tabBar.appendChild(tabEl);
 
     const tab: Tab = {
@@ -1144,7 +1153,8 @@ export class Compositor {
           : title;
         label.textContent = styled;
         tab.title = styled;
-        tabTitle.textContent = styled;
+        const titleEl = tab.element.querySelector('.krypton-tab__title');
+        if (titleEl) titleEl.textContent = styled;
       }
     });
 
@@ -1649,14 +1659,8 @@ export class Compositor {
     // Create the new pane
     const pane = this.createPane(win.contentElement);
 
-    const tabEl = document.createElement('div');
-    tabEl.className = 'krypton-tab';
-    tabEl.dataset.tabId = tabId;
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'krypton-tab__title';
     const tabNum = win.tabs.length + 1;
-    titleSpan.textContent = `Shell ${tabNum}`;
-    tabEl.appendChild(titleSpan);
+    const tabEl = this.buildTabElement(tabId, tabNum - 1, `Shell ${tabNum}`);
 
     const tab: Tab = {
       id: tabId,
@@ -1682,7 +1686,8 @@ export class Compositor {
     pane.terminal.onTitleChange((title: string) => {
       if (title) {
         tab.title = title;
-        titleSpan.textContent = title;
+        const titleEl = tab.element.querySelector('.krypton-tab__title');
+        if (titleEl) titleEl.textContent = title;
       }
     });
 
