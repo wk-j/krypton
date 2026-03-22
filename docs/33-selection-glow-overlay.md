@@ -10,14 +10,14 @@ Krypton's selection mode highlights text via xterm.js's built-in canvas selectio
 
 ## Solution
 
-Add a DOM-based glow overlay that tracks the selection region and pulses with an animated `box-shadow` glow. Also add a breathing glow animation to the existing `.krypton-selection-cursor`. This keeps the xterm.js canvas selection as the source of truth for the actual highlight while layering a glowing border/shadow effect on top via CSS.
+Add a DOM-based glow overlay that tracks the selection region with a horizontal scan-line sweep animation inside. Also add a breathing glow animation to the existing `.krypton-selection-cursor`. This keeps the xterm.js canvas selection as the source of truth for the actual highlight while layering a scan-line effect on top via CSS.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
 | `src/selection.ts` | Create/update/remove a `<div>` overlay that tracks selection bounds |
-| `src/styles.css` | New `.krypton-selection-glow` class + `@keyframes krypton-selection-glow` animation; update `.krypton-selection-cursor` with glow |
+| `src/styles.css` | New `.krypton-selection-glow` class + `@keyframes krypton-selection-scan` animation; update `.krypton-selection-cursor` with glow |
 
 ## Design
 
@@ -42,7 +42,7 @@ No new IPC commands or events. All changes are frontend-only.
 4. updateGlowOverlay() reads anchor + cursor + selectionType to compute
    a bounding rect (top-left to bottom-right in pixel coords)
 5. The glowOverlay div is positioned/sized to cover that rect
-6. CSS applies animated box-shadow glow + faint border to glowOverlay
+6. CSS renders a horizontal scan-line sweep (::after pseudo-element) inside the overlay
 7. On exit() or selection cancel, glowOverlay is removed from DOM
 ```
 
@@ -67,26 +67,33 @@ No new IPC commands or events. All changes are frontend-only.
   left: 0;
   pointer-events: none;
   z-index: 9;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
-  border-radius: 2px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05);
-  box-shadow:
-    0 0 8px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3),
-    inset 0 0 6px 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
-  animation: krypton-selection-glow 2s ease-in-out infinite alternate;
+  border: none;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  overflow: hidden;
 }
 
-@keyframes krypton-selection-glow {
-  from {
-    box-shadow:
-      0 0 8px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3),
-      inset 0 0 6px 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
-  }
-  to {
-    box-shadow:
-      0 0 16px 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5),
-      inset 0 0 10px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
-  }
+/* Horizontal scan-line sweep inside the selection */
+.krypton-selection-glow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 40%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3) 50%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 60%,
+    transparent 100%
+  );
+  animation: krypton-selection-scan 3s linear infinite;
+}
+
+@keyframes krypton-selection-scan {
+  from { left: -100%; }
+  to   { left: 100%; }
 }
 ```
 
@@ -121,7 +128,8 @@ No new config keys. The glow uses the existing per-window accent color (`--krypt
 | Terminal resized while in selection mode | `afterMove()` already fires on resize via existing flow — overlay recalculates |
 | Very small selection (1 char) | Glow still renders around the single cell; `min-width`/`min-height` not needed since cell size is already visible |
 | Multi-line char selection bounding box | Uses full-width bounding rect (slightly larger than exact selection) — acceptable visual approximation |
-| `backdrop-filter` constraint | No `backdrop-filter` used — only `box-shadow` and `background` (safe per `docs/24-backdrop-filter-removal.md`) |
+| `backdrop-filter` constraint | No `backdrop-filter` used — only `background` and pseudo-element gradient (safe per `docs/24-backdrop-filter-removal.md`) |
+| Parent `overflow: hidden` | Glow uses internal scan-line (pseudo-element) instead of `box-shadow`, so parent clipping is not an issue |
 
 ## Open Questions
 

@@ -524,27 +524,34 @@ html, body {
   left: 0;
   pointer-events: none;
   z-index: 9;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
-  border-radius: 2px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05);
-  box-shadow:
-    0 0 8px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3),
-    inset 0 0 6px 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
-  animation: krypton-selection-glow 2s ease-in-out infinite alternate;
+  border: none;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  overflow: hidden;
   transition: transform 50ms ease, width 50ms ease, height 50ms ease;
 }
 
-@keyframes krypton-selection-glow {
-  from {
-    box-shadow:
-      0 0 8px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3),
-      inset 0 0 6px 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
-  }
-  to {
-    box-shadow:
-      0 0 16px 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5),
-      inset 0 0 10px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
-  }
+/* Horizontal scan-line sweep inside the selection */
+.krypton-selection-glow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 40%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3) 50%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 60%,
+    transparent 100%
+  );
+  animation: krypton-selection-scan 3s linear infinite;
+}
+
+@keyframes krypton-selection-scan {
+  from { left: -100%; }
+  to   { left: 100%; }
 }
 
 .krypton-window__body .xterm,
