@@ -463,10 +463,14 @@ export class Compositor {
     terminal.loadAddon(fitAddon);
     terminal.open(terminalWrap);
 
-    // Top-line glow overlay — sits above the xterm canvas
-    const glowOverlay = document.createElement('div');
-    glowOverlay.className = 'krypton-glow-overlay';
-    terminalWrap.appendChild(glowOverlay);
+    // Edge glow overlays — sit above the xterm canvas
+    const glowTop = document.createElement('div');
+    glowTop.className = 'krypton-glow-overlay';
+    terminalWrap.appendChild(glowTop);
+
+    const glowBottom = document.createElement('div');
+    glowBottom.className = 'krypton-glow-overlay krypton-glow-overlay--bottom';
+    terminalWrap.appendChild(glowBottom);
 
     if (this.customKeyHandler) {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);
@@ -2297,10 +2301,14 @@ export class Compositor {
     terminal.loadAddon(fitAddon);
     terminal.open(body);
 
-    // Top-line glow overlay
-    const qtGlow = document.createElement('div');
-    qtGlow.className = 'krypton-glow-overlay';
-    body.appendChild(qtGlow);
+    // Edge glow overlays
+    const qtGlowTop = document.createElement('div');
+    qtGlowTop.className = 'krypton-glow-overlay';
+    body.appendChild(qtGlowTop);
+
+    const qtGlowBottom = document.createElement('div');
+    qtGlowBottom.className = 'krypton-glow-overlay krypton-glow-overlay--bottom';
+    body.appendChild(qtGlowBottom);
 
     // Attach custom key handler
     if (this.customKeyHandler) {

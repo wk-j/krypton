@@ -1,80 +1,131 @@
-# Terminal Top-Line Glow Overlay — Implementation Spec
+# Terminal Glow Overlays — Implementation Spec
 
 > Status: Implemented
-> Date: 2026-03-20
+> Date: 2026-03-20 (updated 2026-03-22)
 
 ## Problem
 
-Krypton's cyberpunk aesthetic would benefit from a subtle glow effect on the top rows of each terminal. Currently all terminal rows look identical — there is no visual depth or atmosphere near the top edge of each pane.
+Krypton's cyberpunk aesthetic benefits from subtle glow effects on terminal edges. Without them all terminal rows look identical — there is no visual depth or atmosphere near the edges of each pane.
 
 ## Solution
 
-Add a CSS `::before` pseudo-element on `.krypton-pane__terminal` (and `.krypton-window__body` for Quick Terminal) that creates a fixed glow overlay covering the first 3 lines. The overlay uses the window's accent color, stays fixed at the top regardless of scroll, and is purely cosmetic (no pointer events). Height is computed from font size, line height, and xterm padding via CSS custom properties set by the compositor.
+Add `.krypton-glow-overlay` elements inside each terminal wrapper — one at the top edge, one at the bottom — that create accent-tinted gradient glows over the first and last few rows. Both overlays use the per-window accent color, are purely cosmetic (no pointer events), and share a single `glow_intensity` config knob.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
-| `src/styles.css` | Add `::before` pseudo-element on `.krypton-pane__terminal` and `.krypton-window__body` |
-| `src/compositor.ts` | Set `--krypton-terminal-cell-height` CSS custom property when font config is applied |
+| `src/styles.css` | `.krypton-glow-overlay` base + `--bottom` modifier rules |
+| `src/compositor.ts` | Create top + bottom overlay elements in `createPane()` and Quick Terminal; set `--krypton-terminal-cell-height` and `--krypton-glow-intensity` CSS custom properties in `applyConfig()` |
+| `src-tauri/src/config.rs` | `glow_intensity: f64` in `VisualConfig` (default `0.8`) |
+| `src/config.ts` | `glow_intensity: number` in `VisualConfig` interface |
 
 ## Design
 
 ### CSS Custom Properties
 
-The compositor already sets `--krypton-window-accent-rgb` per window. We add one new property on the document root:
-
 ```
---krypton-terminal-cell-height: <fontSize * lineHeight>px
+--krypton-terminal-cell-height: <fontSize * lineHeight>px   (document root)
+--krypton-glow-intensity: <0.0–3.0>                         (document root)
+--krypton-window-accent-rgb: <r, g, b>                      (per window)
 ```
 
-Set in `applyConfig()` whenever `fontSize` or `lineHeight` changes.
+### Glow Overlays
 
-### Glow Overlay
-
-A `::before` pseudo-element on `.krypton-pane__terminal`:
+Base class handles shared properties. The bottom modifier flips the gradient direction.
 
 ```css
-.krypton-pane__terminal::before {
-  content: '';
+.krypton-glow-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: calc(var(--krypton-terminal-cell-height, 17px) * 3 + 4px);
+  height: calc(var(--krypton-terminal-cell-height, 17px) * 5 + 4px);
   background: linear-gradient(
-    180deg,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.07) 0%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02) 60%,
+    to bottom,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35),
     transparent 100%
   );
+  opacity: var(--krypton-glow-intensity, 0.8);
+  mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   pointer-events: none;
-  z-index: 1;
+  z-index: 12;
+}
+
+.krypton-glow-overlay--bottom {
+  top: auto;
+  bottom: 0;
+  background: linear-gradient(
+    to top,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35),
+    transparent 100%
+  );
+  mask-image: linear-gradient(to top, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 100%);
 }
 ```
 
-- Height = 3 rows (`cell-height * 3`) + xterm top padding (4px from `.xterm { padding: 4px 6px }`)
-- Uses the per-window accent color via `--krypton-window-accent-rgb` so each window's glow matches its border/accent
-- Gradient fades from ~7% opacity at top to transparent, giving a soft glow rather than a hard band
-- `pointer-events: none` and `z-index: 1` ensure it doesn't interfere with terminal interaction
-- The same rule is duplicated for `.krypton-window__body::before` (Quick Terminal)
+### DOM Structure
+
+Each terminal wrapper gets two overlay children:
+
+```
+.krypton-pane__terminal
+  ├── .krypton-glow-overlay              (top)
+  ├── .krypton-glow-overlay--bottom      (bottom)
+  └── .xterm (terminal canvas)
+```
+
+Same structure for Quick Terminal's `.krypton-window__body`.
+
+### Configurable Intensity
+
+**Rust** (`VisualConfig`):
+```rust
+/// Glow brightness. 0.0 = off, 0.8 = default, higher = stronger.
+pub glow_intensity: f64,
+```
+
+**TypeScript** (`VisualConfig`):
+```typescript
+glow_intensity: number;
+```
+
+**TOML:**
+```toml
+[visual]
+glow_intensity = 0.8   # 0.0 = off, 3.0 = max. Default: 0.8
+```
 
 ### Data Flow
 
-1. Compositor `applyConfig()` reads `fontSize` and `lineHeight` from config
-2. Sets `--krypton-terminal-cell-height` on document root: `fontSize * lineHeight` px
-3. CSS `::before` uses `calc()` to derive overlay height from that property
-4. Overlay renders on top of terminal canvas, fades over first 3 lines
+1. Compositor `applyConfig()` reads `fontSize`, `lineHeight`, and `glow_intensity` from config
+2. Sets `--krypton-terminal-cell-height` and `--krypton-glow-intensity` on document root
+3. CSS uses `calc()` and `var()` to derive overlay height and opacity
+4. Both top and bottom overlays render, matching the window's accent color
+5. If `glow_intensity == 0`, overlays are hidden to avoid unnecessary compositing
+
+### Hot-Reload
+
+Config watcher triggers `config-changed` event → compositor calls `applyConfig()` → CSS custom properties update → overlays re-render automatically.
 
 ## Edge Cases
 
-- **Font size change (hot-reload):** `--krypton-terminal-cell-height` is updated in `applyConfig()`, so the overlay height adjusts automatically via CSS `calc()`.
-- **Shader interaction:** The overlay is inside `.krypton-pane__terminal` which is below the shader canvas. If the shader obscures it, `z-index` may need adjustment — but shaders apply to the pane parent, so this should layer correctly.
-- **Quick Terminal:** `.krypton-window__body` gets the same `::before` rule so the glow appears there too.
-- **Split panes:** Each pane has its own `.krypton-pane__terminal`, so each gets its own glow overlay independently.
+- **Font size change:** `--krypton-terminal-cell-height` updates in `applyConfig()`, overlay height adjusts via CSS `calc()`.
+- **`glow_intensity = 0`:** Both overlays hidden entirely.
+- **Negative values:** Clamped to `0.0`.
+- **Very high values:** Clamped to `3.0`.
+- **Missing field:** `serde(default)` provides `0.8`.
+- **Short terminals (< 10 rows):** Top and bottom glows overlap in the middle. The blended gradient looks natural — no special handling needed.
+- **Quick Terminal:** Gets the same pair of overlays.
+- **Split panes:** Each pane gets its own independent pair.
+- **Shader interaction:** Overlays are inside `.krypton-pane__terminal`, below the shader canvas. Layers correctly via z-index.
 
 ## Out of Scope
 
-- Per-line glow that tracks specific buffer content (decoration API approach)
-- ~~User-configurable glow color, intensity, or line count~~ — intensity is now configurable via `[visual] glow_intensity` (see `docs/31-configurable-glow-intensity.md`)
-- Glow on other edges (bottom, sides)
+- Per-line glow tracking buffer content (decoration API)
+- Glow color configuration (separate from accent)
+- Glow height / row count configuration
+- Per-window glow intensity
+- Side (left/right) glow overlays
