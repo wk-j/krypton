@@ -1461,6 +1461,46 @@ export class Compositor {
   }
 
   /**
+   * Open a markdown viewer window listing .md files from the focused terminal's CWD.
+   */
+  async openMarkdownView(): Promise<void> {
+    const cwd = await this.getFocusedCwd() ?? undefined;
+
+    // List all .md files recursively (max depth 5)
+    let fileList: string;
+    try {
+      fileList = await invoke<string>('run_command', {
+        program: 'find',
+        args: ['.', '-maxdepth', '5', '-name', '*.md', '-type', 'f'],
+        cwd,
+      });
+    } catch (e) {
+      console.error('Failed to list markdown files:', e);
+      return;
+    }
+
+    // Parse file list (one per line), strip leading ./
+    const files = fileList
+      .split('\n')
+      .map((f) => f.trim().replace(/^\.\//, ''))
+      .filter((f) => f.length > 0);
+
+    const { MarkdownContentView } = await import('./markdown-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const mdView = new MarkdownContentView(files, cwd ?? '.', container);
+
+    // Use the last path component of CWD as title
+    const dirName = (cwd ?? '.').split('/').filter(Boolean).pop() ?? 'docs';
+    const winId = await this.createContentWindow(`MD // ${dirName}`, mdView);
+
+    mdView.onClose(() => {
+      this.closeWindow(winId);
+    });
+  }
+
+  /**
    * Correct mouse coordinates for perspective tilt distortion.
    *
    * CSS perspective + rotateX/Y on .krypton-window__content creates a non-linear

@@ -2637,3 +2637,261 @@ html, body {
   letter-spacing: 2px;
   text-transform: uppercase;
 }
+
+/* ─── Markdown Viewer ─── */
+.krypton-md {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  color: #c0c5ce;
+}
+
+/* ── Sidebar ── */
+.krypton-md__sidebar {
+  width: 250px;
+  min-width: 250px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+  background: rgba(6, 10, 18, 0.4);
+}
+
+.krypton-md__sidebar.krypton-md__panel--focused {
+  border-right-color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+}
+
+.krypton-md__sidebar-header {
+  padding: 6px 12px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1);
+  flex-shrink: 0;
+}
+
+.krypton-md__filter {
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1);
+  flex-shrink: 0;
+}
+
+.krypton-md__filter-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  color: #c0c5ce;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 4px;
+  outline: none;
+}
+
+.krypton-md__file-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.krypton-md__file {
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #8a9199;
+}
+
+.krypton-md__file:hover {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.05);
+}
+
+.krypton-md__file--selected {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+}
+
+/* ── Preview ── */
+.krypton-md__preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.krypton-md__preview.krypton-md__panel--focused {
+  box-shadow: inset 1px 0 0 rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.3);
+}
+
+.krypton-md__preview-header {
+  padding: 6px 16px;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1);
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.krypton-md__preview-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 16px 24px;
+  line-height: 1.7;
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.krypton-md__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  font-size: 16px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.krypton-md__truncated {
+  padding: 12px;
+  text-align: center;
+  color: rgba(255, 170, 0, 0.7);
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* ── Markdown rendered content ── */
+.krypton-md__preview-content h1,
+.krypton-md__preview-content h2,
+.krypton-md__preview-content h3,
+.krypton-md__preview-content h4,
+.krypton-md__preview-content h5,
+.krypton-md__preview-content h6 {
+  color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  margin: 1.5em 0 0.5em;
+  line-height: 1.3;
+}
+
+.krypton-md__preview-content h1 { font-size: 1.8em; border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.2); padding-bottom: 0.3em; }
+.krypton-md__preview-content h2 { font-size: 1.4em; border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1); padding-bottom: 0.2em; }
+.krypton-md__preview-content h3 { font-size: 1.2em; }
+.krypton-md__preview-content h4 { font-size: 1.05em; }
+.krypton-md__preview-content h5,
+.krypton-md__preview-content h6 { font-size: 0.95em; opacity: 0.8; }
+
+.krypton-md__preview-content p {
+  margin: 0.8em 0;
+}
+
+.krypton-md__preview-content a {
+  color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.krypton-md__preview-content a:hover {
+  opacity: 0.8;
+}
+
+.krypton-md__preview-content code {
+  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  font-size: 0.9em;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+
+.krypton-md__preview-content pre {
+  background: rgba(6, 10, 18, 0.6);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  border-radius: 4px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.krypton-md__preview-content pre code {
+  background: none;
+  padding: 0;
+  font-size: var(--krypton-font-size, 13px);
+}
+
+/* Override highlight.js github-dark background to match Krypton */
+.krypton-md__preview-content pre code.hljs {
+  background: transparent;
+  padding: 0;
+}
+
+.krypton-md__preview-content blockquote {
+  border-left: 3px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  color: #8a9199;
+}
+
+.krypton-md__preview-content ul,
+.krypton-md__preview-content ol {
+  padding-left: 1.5em;
+  margin: 0.8em 0;
+}
+
+.krypton-md__preview-content li {
+  margin: 0.3em 0;
+}
+
+.krypton-md__preview-content li::marker {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
+}
+
+.krypton-md__preview-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+.krypton-md__preview-content th,
+.krypton-md__preview-content td {
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.krypton-md__preview-content th {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
+  color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.krypton-md__preview-content tr:nth-child(even) {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.03);
+}
+
+.krypton-md__preview-content hr {
+  border: none;
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.2);
+  margin: 2em 0;
+}
+
+.krypton-md__preview-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+/* Task list checkboxes (GFM) */
+.krypton-md__preview-content input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+}

@@ -565,6 +565,11 @@ export class InputRouter {
         this.toNormal();
         break;
 
+      // o — open markdown viewer
+      case 'o':
+        this.compositor.openMarkdownView().then(() => this.toNormal());
+        break;
+
       // d — open diff view / D — open diff view (staged)
       case 'd':
         this.compositor.openDiffView({ staged: e.shiftKey }).then(() => this.toNormal());

@@ -630,6 +630,15 @@ export class CommandPalette {
       execute: () => c.openDiffView({ staged: true }),
     });
 
+    // ── Markdown Viewer ──
+    this.register({
+      id: 'markdown.open',
+      label: 'Open Markdown Viewer',
+      category: 'Window',
+      keybinding: 'Leader o',
+      execute: () => c.openMarkdownView(),
+    });
+
     // ── SSH actions ──
     this.register({
       id: 'ssh.clone-tab',
