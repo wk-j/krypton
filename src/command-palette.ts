@@ -614,6 +614,22 @@ export class CommandPalette {
       execute: () => c.scrollPages(1),
     });
 
+    // ── Diff View ──
+    this.register({
+      id: 'diff.open',
+      label: 'Open Diff View',
+      category: 'Window',
+      keybinding: 'Leader d',
+      execute: () => c.openDiffView(),
+    });
+    this.register({
+      id: 'diff.open-staged',
+      label: 'Open Diff View (Staged)',
+      category: 'Window',
+      keybinding: 'Leader D',
+      execute: () => c.openDiffView({ staged: true }),
+    });
+
     // ── SSH actions ──
     this.register({
       id: 'ssh.clone-tab',

@@ -361,8 +361,17 @@ export class InputRouter {
         return;
       }
 
-      // Normal mode: pass through to terminal
+      // Normal mode: if focused pane has a content view, delegate to it
       if (this.mode === Mode.Normal) {
+        const pane = this.compositor.getFocusedPanePublic();
+        if (pane?.contentView) {
+          if (pane.contentView.onKeyDown(e)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
+        // Otherwise pass through to terminal
         return;
       }
 
@@ -554,6 +563,11 @@ export class InputRouter {
           this.compositor.cycleShaderPreset();
         }
         this.toNormal();
+        break;
+
+      // d — open diff view / D — open diff view (staged)
+      case 'd':
+        this.compositor.openDiffView({ staged: e.shiftKey }).then(() => this.toNormal());
         break;
 
       // c — clone SSH session (new tab) / C — clone SSH session (new window)

@@ -15,6 +15,7 @@ import {
   WindowBounds,
   KryptonWindow,
   LayoutMode,
+  ContentView,
   QuickTerminalAnimation,
   QuickTerminalConfig,
   DEFAULT_QUICK_TERMINAL_CONFIG,
@@ -551,7 +552,7 @@ export class Compositor {
       console.log('[krypton:shaders] Shader skipped — enabled:', this.shaderConfig.enabled, 'preset:', this.shaderConfig.preset);
     }
 
-    return { id: paneId, sessionId: null, terminal, fitAddon, element: el, shaderInstance };
+    return { id: paneId, sessionId: null, terminal, fitAddon, element: el, shaderInstance, contentView: null };
   }
 
   /** Copy-on-select: copy terminal selection to clipboard when text is selected */
@@ -568,6 +569,7 @@ export class Compositor {
 
   /** Wire a pane's terminal to a PTY session */
   private wirePaneInput(pane: Pane): void {
+    if (!pane.terminal) return;
     pane.terminal.onData((data: string) => {
       if (pane.sessionId !== null) {
         const encoder = new TextEncoder();
@@ -593,6 +595,7 @@ export class Compositor {
     tabId: TabId,
     cwd: string | null,
   ): Promise<void> {
+    if (!pane.terminal) return;
     try {
       const sessionId = await invoke<number>('spawn_pty', {
         cols: pane.terminal.cols,
@@ -637,7 +640,7 @@ export class Compositor {
     for (const win of this.windows.values()) {
       for (const tab of win.tabs) {
         const pane = this.findPaneInTree(tab.paneTree, paneId);
-        if (pane) {
+        if (pane && pane.fitAddon && pane.terminal) {
           pane.fitAddon.fit();
           if (pane.sessionId !== null) {
             invoke('resize_pty', {
@@ -684,7 +687,12 @@ export class Compositor {
         this.shaderEngine.detach(node.pane.shaderInstance);
         node.pane.shaderInstance = null;
       }
-      node.pane.terminal.dispose();
+      if (node.pane.contentView) {
+        node.pane.contentView.dispose();
+      }
+      if (node.pane.terminal) {
+        node.pane.terminal.dispose();
+      }
       if (node.pane.sessionId !== null) {
         this.sessionMap.delete(node.pane.sessionId);
       }
@@ -700,13 +708,17 @@ export class Compositor {
   private fitPaneTree(node: PaneNode): void {
     if (node.type === 'leaf') {
       const pane = node.pane;
-      pane.fitAddon.fit();
-      if (pane.sessionId !== null) {
-        invoke('resize_pty', {
-          sessionId: pane.sessionId,
-          cols: pane.terminal.cols,
-          rows: pane.terminal.rows,
-        }).catch((e: unknown) => console.error('Resize PTY failed:', e));
+      if (pane.contentView) {
+        pane.contentView.onResize?.(pane.element.clientWidth, pane.element.clientHeight);
+      } else if (pane.fitAddon && pane.terminal) {
+        pane.fitAddon.fit();
+        if (pane.sessionId !== null) {
+          invoke('resize_pty', {
+            sessionId: pane.sessionId,
+            cols: pane.terminal.cols,
+            rows: pane.terminal.rows,
+          }).catch((e: unknown) => console.error('Resize PTY failed:', e));
+        }
       }
     } else {
       this.fitPaneTree(node.first);
@@ -837,7 +849,7 @@ export class Compositor {
     for (const [, win] of this.windows) {
       for (const tab of win.tabs) {
         for (const pane of this.collectPanes(tab.paneTree)) {
-          pane.terminal.options.theme = xtermTheme;
+          if (pane.terminal) pane.terminal.options.theme = xtermTheme;
         }
       }
     }
@@ -1021,7 +1033,7 @@ export class Compositor {
     for (const [, win] of this.windows) {
       for (const tab of win.tabs) {
         for (const pane of this.collectPanes(tab.paneTree)) {
-          pane.terminal.attachCustomKeyEventHandler(handler);
+          if (pane.terminal) pane.terminal.attachCustomKeyEventHandler(handler);
         }
       }
     }
@@ -1232,7 +1244,7 @@ export class Compositor {
     this.sound.play('window.create');
 
     // Listen for shell title changes (OSC 0/2 sequences)
-    pane.terminal.onTitleChange((title: string) => {
+    pane.terminal!.onTitleChange((title: string) => {
       if (title) {
         const styled = this.claudeHookManager
           ? this.claudeHookManager.formatTerminalTitle(title)
@@ -1262,6 +1274,182 @@ export class Compositor {
     });
 
     return id;
+  }
+
+  /**
+   * Create a non-terminal window with a ContentView (e.g., diff view).
+   * Uses the same chrome as regular windows but skips PTY/terminal setup.
+   */
+  async createContentWindow(title: string, contentView: ContentView): Promise<WindowId> {
+    if (this.maximizedWindowId) {
+      this.maximizedWindowId = null;
+      this.showAllWindows();
+    }
+
+    const id = nextWindowId();
+    const el = document.createElement('div');
+    el.id = id;
+    el.className = 'krypton-window';
+    el.dataset.windowId = id;
+
+    const accentColor = this.allocateAccentColor(id);
+    this.applyAccentColor(el, accentColor);
+
+    const chrome = document.createElement('div');
+    chrome.className = 'krypton-window__chrome';
+
+    const titlebar = document.createElement('div');
+    titlebar.className = 'krypton-window__titlebar';
+
+    const labelGroup = document.createElement('div');
+    labelGroup.className = 'krypton-window__label-group';
+
+    const statusDot = document.createElement('div');
+    statusDot.className = 'krypton-window__status-dot';
+
+    const label = document.createElement('span');
+    label.className = 'krypton-window__label';
+    label.textContent = title;
+
+    labelGroup.appendChild(statusDot);
+    labelGroup.appendChild(label);
+
+    const ptyStatus = document.createElement('span');
+    ptyStatus.className = 'krypton-window__pty-status';
+    ptyStatus.textContent = contentView.type.toUpperCase();
+
+    titlebar.appendChild(labelGroup);
+    titlebar.appendChild(ptyStatus);
+    chrome.appendChild(titlebar);
+
+    const headerAccent = document.createElement('div');
+    headerAccent.className = 'krypton-window__header-accent';
+    chrome.appendChild(headerAccent);
+
+    const tabBar = document.createElement('div');
+    tabBar.className = 'krypton-window__tabbar';
+
+    const content = document.createElement('div');
+    content.className = 'krypton-window__content';
+
+    for (const pos of ['tl', 'tr', 'bl', 'br']) {
+      const corner = document.createElement('div');
+      corner.className = `krypton-window__corner krypton-window__corner--${pos}`;
+      el.appendChild(corner);
+    }
+
+    const perspectiveWrap = document.createElement('div');
+    perspectiveWrap.className = 'krypton-window__perspective';
+    perspectiveWrap.appendChild(content);
+
+    el.appendChild(chrome);
+    el.appendChild(tabBar);
+    el.appendChild(perspectiveWrap);
+    this.workspace.appendChild(el);
+
+    // Create pane with content view (no terminal/PTY)
+    const paneId = nextPaneId();
+    const paneEl = document.createElement('div');
+    paneEl.className = 'krypton-pane';
+    paneEl.dataset.paneId = paneId;
+    content.appendChild(paneEl);
+
+    // Mount the content view into the pane
+    paneEl.appendChild(contentView.element);
+
+    const pane: Pane = {
+      id: paneId,
+      sessionId: null,
+      terminal: null,
+      fitAddon: null,
+      element: paneEl,
+      shaderInstance: null,
+      contentView,
+    };
+
+    const tabId = nextTabId();
+    const tabEl = this.buildTabElement(tabId, 0, title);
+    tabBar.appendChild(tabEl);
+
+    const tab: Tab = {
+      id: tabId,
+      title,
+      paneTree: { type: 'leaf', pane },
+      focusedPaneId: pane.id,
+      element: tabEl,
+    };
+
+    const win: KryptonWindow = {
+      id,
+      tabs: [tab],
+      activeTabIndex: 0,
+      gridSlot: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+      bounds: { x: 0, y: 0, width: 0, height: 0 },
+      element: el,
+      tabBarElement: tabBar,
+      contentElement: content,
+      pinned: false,
+    };
+    this.windows.set(id, win);
+    this.updateTabBar(win);
+
+    this.focusWindowQuiet(id);
+    const snapshots = this.snapshotBounds();
+    this.relayout();
+    await this.nextFrame();
+    this.fitAll();
+
+    this.animation.entrance(el);
+    this.animateRelayout(snapshots.filter((s) => s.id !== id));
+    this.sound.play('window.create');
+
+    // Focus the content view
+    contentView.element.focus();
+
+    el.addEventListener('mousedown', () => {
+      this.focusWindow(id);
+    });
+
+    return id;
+  }
+
+  /**
+   * Open a diff view window showing git diff output from the focused terminal's CWD.
+   */
+  async openDiffView(options?: { staged?: boolean }): Promise<void> {
+    const cwd = await this.getFocusedCwd();
+    const args = ['diff'];
+    if (options?.staged) args.push('--staged');
+
+    let diffOutput: string;
+    try {
+      diffOutput = await invoke<string>('run_command', {
+        program: 'git',
+        args,
+        cwd,
+      });
+    } catch (e) {
+      console.error('Failed to run git diff:', e);
+      return;
+    }
+
+    const { DiffContentView } = await import('./diff-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const diffView = new DiffContentView(diffOutput, container);
+
+    const fileCount = diffView['files'].length;
+    const titleText = options?.staged
+      ? `DIFF_STAGED // ${fileCount} file${fileCount !== 1 ? 's' : ''}`
+      : `DIFF // ${fileCount} file${fileCount !== 1 ? 's' : ''}`;
+
+    const winId = await this.createContentWindow(titleText, diffView);
+
+    // Wire close callback to close the window
+    diffView.onClose(() => {
+      this.closeWindow(winId);
+    });
   }
 
   /**
@@ -1453,7 +1641,7 @@ export class Compositor {
         const tab = win.tabs[win.activeTabIndex];
         const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
         if (pane) {
-          pane.terminal.focus();
+          pane.terminal?.focus();
         }
       }
     }
@@ -1710,11 +1898,20 @@ export class Compositor {
     return pane?.sessionId ?? null;
   }
 
+  /** Get the currently focused pane (public accessor for input routing) */
+  getFocusedPanePublic(): Pane | null {
+    return this.getFocusedPane();
+  }
+
   /** Refocus the terminal of the currently focused pane */
   refocusTerminal(): void {
     const pane = this.getFocusedPane();
     if (pane) {
-      pane.terminal.focus();
+      if (pane.contentView) {
+        pane.contentView.element.focus();
+      } else {
+        pane.terminal?.focus();
+      }
     }
   }
 
@@ -1727,7 +1924,7 @@ export class Compositor {
     }
     const pane = this.getFocusedPane();
     if (pane) {
-      pane.terminal.scrollPages(pages);
+      pane.terminal?.scrollPages(pages);
     }
   }
 
@@ -1881,7 +2078,7 @@ export class Compositor {
     this.wirePaneInput(pane);
 
     // Title change listener
-    pane.terminal.onTitleChange((title: string) => {
+    pane.terminal?.onTitleChange((title: string) => {
       if (title) {
         tab.title = title;
         const titleEl = tab.element.querySelector('.krypton-tab__title');
@@ -1889,7 +2086,7 @@ export class Compositor {
       }
     });
 
-    pane.terminal.focus();
+    pane.terminal?.focus();
     this.sound.play('tab.create');
   }
 
@@ -1930,7 +2127,7 @@ export class Compositor {
     if (win.tabs.length > 0) {
       const newTab = win.tabs[win.activeTabIndex];
       const pane = this.findPaneInTree(newTab.paneTree, newTab.focusedPaneId);
-      if (pane) pane.terminal.focus();
+      if (pane) pane.terminal?.focus();
     }
   }
 
@@ -1950,7 +2147,7 @@ export class Compositor {
 
     const tab = win.tabs[win.activeTabIndex];
     const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
-    if (pane) pane.terminal.focus();
+    if (pane) pane.terminal?.focus();
 
     this.sound.play('tab.switch');
   }
@@ -2079,7 +2276,7 @@ export class Compositor {
     this.wirePaneInput(newPane);
 
     // Title change listener for new pane
-    newPane.terminal.onTitleChange((title: string) => {
+    newPane.terminal?.onTitleChange((title: string) => {
       if (title && tab.focusedPaneId === newPane.id) {
         tab.title = title;
       }
@@ -2089,7 +2286,7 @@ export class Compositor {
 
     await this.nextFrame();
     this.fitPaneTree(tab.paneTree);
-    newPane.terminal.focus();
+    newPane.terminal?.focus();
     this.updatePaneFocusIndicator(tab);
     this.sound.play('pane.split');
   }
@@ -2118,7 +2315,8 @@ export class Compositor {
     // Find and dispose the pane
     const pane = this.findPaneInTree(tab.paneTree, paneId);
     if (pane) {
-      pane.terminal.dispose();
+      if (pane.contentView) pane.contentView.dispose();
+      pane.terminal?.dispose();
       if (pane.sessionId !== null) {
         this.sessionMap.delete(pane.sessionId);
       }
@@ -2158,7 +2356,7 @@ export class Compositor {
     const remainingPanes = this.collectPanes(tab.paneTree);
     if (remainingPanes.length > 0) {
       tab.focusedPaneId = remainingPanes[0].id;
-      remainingPanes[0].terminal.focus();
+      remainingPanes[0].terminal?.focus();
       this.updatePaneFocusIndicator(tab);
     }
 
@@ -2209,7 +2407,7 @@ export class Compositor {
 
     if (bestPane) {
       tab.focusedPaneId = bestPane.id;
-      bestPane.terminal.focus();
+      bestPane.terminal?.focus();
       this.updatePaneFocusIndicator(tab);
       this.sound.play('pane.focus');
     }
@@ -2232,7 +2430,7 @@ export class Compositor {
     const nextPane = panes[nextIndex];
 
     tab.focusedPaneId = nextPane.id;
-    nextPane.terminal.focus();
+    nextPane.terminal?.focus();
     this.updatePaneFocusIndicator(tab);
     this.sound.play('pane.focus');
   }
@@ -2369,7 +2567,7 @@ export class Compositor {
         const tab = win.tabs[win.activeTabIndex];
         const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
         if (pane) {
-          pane.terminal.focus();
+          pane.terminal?.focus();
         }
       }
       this.notifyFocusChange();
@@ -2758,7 +2956,7 @@ export class Compositor {
     const pane = this.getFocusedPane();
     if (pane) {
       // Replay each buffered keydown by re-dispatching to the terminal's textarea
-      const textarea = pane.terminal.textarea;
+      const textarea = pane.terminal?.textarea;
       if (textarea) {
         for (const event of events) {
           textarea.dispatchEvent(new KeyboardEvent('keydown', {
@@ -3087,7 +3285,7 @@ export class Compositor {
           if (tab) {
             const pane = this.findPaneInTree(tab.paneTree, loc.paneId);
             if (pane) {
-              pane.terminal.write(new Uint8Array(data));
+              pane.terminal?.write(new Uint8Array(data));
             }
           }
         }
@@ -3576,8 +3774,8 @@ export class Compositor {
       // Spawn cloned SSH PTY with the probed remote CWD
       const newSessionId = await invoke<number>('clone_ssh_session', {
         sessionId,
-        cols: pane.terminal.cols,
-        rows: pane.terminal.rows,
+        cols: pane.terminal!.cols,
+        rows: pane.terminal!.rows,
         remoteCwd,
       });
       pane.sessionId = newSessionId;
@@ -3590,14 +3788,14 @@ export class Compositor {
         ptyStatus.textContent = `SSH: ${info.user}@${info.host}`;
       }
 
-      pane.terminal.onTitleChange((title: string) => {
+      pane.terminal!.onTitleChange((title: string) => {
         if (title) {
           tab.title = title;
           titleSpan.textContent = title;
         }
       });
 
-      pane.terminal.focus();
+      pane.terminal?.focus();
       this.sound.play('tab.create');
     } catch (e) {
       console.error('Failed to clone SSH session:', e);
@@ -3642,8 +3840,8 @@ export class Compositor {
       // Spawn cloned SSH PTY with the probed remote CWD
       const newSessionId = await invoke<number>('clone_ssh_session', {
         sessionId,
-        cols: pane.terminal.cols,
-        rows: pane.terminal.rows,
+        cols: pane.terminal!.cols,
+        rows: pane.terminal!.rows,
         remoteCwd,
       });
       pane.sessionId = newSessionId;

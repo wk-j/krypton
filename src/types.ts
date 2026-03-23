@@ -57,14 +57,30 @@ export interface WindowBounds {
   height: number;
 }
 
-/** A leaf pane — hosts one xterm.js terminal + PTY session */
+/** Content types that can live inside a pane */
+export type PaneContentType = 'terminal' | 'diff';
+
+/** Interface for non-terminal content views */
+export interface ContentView {
+  type: PaneContentType;
+  element: HTMLElement;
+  /** Handle keyboard input when this pane is focused. Return true if handled. */
+  onKeyDown(e: KeyboardEvent): boolean;
+  /** Clean up resources */
+  dispose(): void;
+  /** Called when pane is resized */
+  onResize?(width: number, height: number): void;
+}
+
+/** A leaf pane — hosts one xterm.js terminal + PTY session, or a content view */
 export interface Pane {
   id: PaneId;
   sessionId: SessionId | null;
-  terminal: Terminal;
-  fitAddon: FitAddon;
+  terminal: Terminal | null;
+  fitAddon: FitAddon | null;
   element: HTMLElement;
   shaderInstance: ShaderInstance | null;
+  contentView: ContentView | null;
 }
 
 /** Binary tree node for pane splits */
