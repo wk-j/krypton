@@ -6,6 +6,9 @@
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
+import { BackgroundAnimation, FlameAnimation } from './flame';
+import { BrainwaveAnimation } from './brainwave';
+
 /** Claude Code hook event payload (emitted by Rust hook server) */
 export interface ClaudeHookEvent {
   session_id: string;
@@ -118,6 +121,8 @@ export class ClaudeHookManager {
   private hookPort: number = 0;
   private decodeTimer: ReturnType<typeof setTimeout> | null = null;
   private toolClearTimer: ReturnType<typeof setTimeout> | null = null;
+  private animations: Set<BackgroundAnimation> = new Set();
+  private animationType: string = 'flame';
 
   setToastsEnabled(enabled: boolean): void {
     this.toastsEnabled = enabled;
@@ -256,6 +261,7 @@ export class ClaudeHookManager {
     if (event.source && event.source !== 'startup') parts.push(`(${event.source})`);
     if (event.model) parts.push(`\u2014 ${event.model}`);
     this.showToast(parts.join(' '), 'session');
+    this.startFlame();
   }
 
   private onPreToolUse(event: ClaudeHookEvent): void {
@@ -327,6 +333,7 @@ export class ClaudeHookManager {
     // Flash sigil bright then fade to dormant
     this.flashSigilComplete();
     this.showToast('Session ended', 'stop');
+    this.stopFlame();
   }
 
   private onInstructionsLoaded(event: ClaudeHookEvent): void {
@@ -344,6 +351,7 @@ export class ClaudeHookManager {
       ? (event.prompt.length > 40 ? event.prompt.slice(0, 40) + '\u2026' : event.prompt)
       : 'Prompt submitted';
     this.showToast(preview, 'prompt');
+    this.startFlame();
   }
 
   private onPermissionRequest(event: ClaudeHookEvent): void {
@@ -449,6 +457,7 @@ export class ClaudeHookManager {
     this.flashSigilComplete();
     const reason = event.reason ? ` (${event.reason})` : '';
     this.showToast(`Session ended${reason}`, 'stop');
+    this.stopFlame();
   }
 
   private getOrCreateSession(sessionId: string): ClaudeSession {
@@ -644,7 +653,7 @@ export class ClaudeHookManager {
     tool: 'TOOL',
     tool_done: 'DONE',
     notification: 'CLAUDE',
-    permission_prompt: 'PERMIT',
+    permission_prompt: '⚡ PERMIT',
     error: 'ERROR',
     success: 'OK',
     stop: 'STOP',
@@ -833,5 +842,80 @@ export class ClaudeHookManager {
     const trace = document.createElement('div');
     trace.className = 'krypton-activity-trace';
     return trace;
+  }
+
+  /** Set the animation type ("flame", "brainwave", or "none"). */
+  setAnimationType(type: string): void {
+    const normalized = type === 'brainwave' || type === 'none' ? type : 'flame';
+    if (normalized === this.animationType) return;
+
+    const wasActive = Array.from(this.animations).some((a) => a.isRunning());
+
+    // Collect parent elements before disposing
+    const parents: HTMLElement[] = [];
+    for (const anim of this.animations) {
+      const parent = anim.getElement().parentElement;
+      if (parent) parents.push(parent);
+      anim.dispose();
+    }
+    this.animations.clear();
+
+    // Re-create with new type
+    if (normalized !== 'none') {
+      for (const parent of parents) {
+        const replacement = this.createAnimationInstance(normalized);
+        parent.insertBefore(replacement.getElement(), parent.firstChild);
+        this.animations.add(replacement);
+        if (wasActive) replacement.start();
+      }
+    }
+
+    this.animationType = normalized;
+  }
+
+  /** Create a background animation canvas for a window content area. */
+  createAnimationCanvas(): HTMLCanvasElement | null {
+    if (this.animationType === 'none') return null;
+    const anim = this.createAnimationInstance(this.animationType);
+    this.animations.add(anim);
+    return anim.getElement();
+  }
+
+  /** Remove an animation instance when its window is destroyed. */
+  disposeAnimation(canvas: HTMLCanvasElement): void {
+    for (const anim of this.animations) {
+      if (anim.getElement() === canvas) {
+        anim.dispose();
+        this.animations.delete(anim);
+        return;
+      }
+    }
+  }
+
+  /** Resize all animation canvases (call after window relayout). */
+  resizeAnimations(): void {
+    for (const anim of this.animations) {
+      if (anim.isRunning()) {
+        anim.resize();
+      }
+    }
+  }
+
+  /** Start all background animations. */
+  private startFlame(): void {
+    for (const anim of this.animations) {
+      anim.start();
+    }
+  }
+
+  /** Stop all background animations. */
+  private stopFlame(): void {
+    for (const anim of this.animations) {
+      anim.stop();
+    }
+  }
+
+  private createAnimationInstance(type: string): BackgroundAnimation {
+    return type === 'brainwave' ? new BrainwaveAnimation() : new FlameAnimation();
   }
 }

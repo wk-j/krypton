@@ -395,6 +395,19 @@ html, body {
              rotateY(var(--krypton-perspective-tilt-y, 0deg));
 }
 
+/* ─── Background Animations (Claude processing) ─── */
+.krypton-flame-canvas,
+.krypton-brainwave-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: none;
+  opacity: 0;
+  /* Force GPU compositing in preserve-3d context (WebKit) */
+  transform: translateZ(0);
+}
+
 /* ─── Pane containers ─── */
 /* Pane is ALWAYS flex column. Extension bars are flex siblings of __terminal.
    This eliminates the layout mode switch that caused terminal overflow. */
@@ -2255,14 +2268,74 @@ html, body {
   text-shadow: 0 0 6px rgba(250, 200, 99, 0.4);
 }
 
-/* ─── Toast type: permission_prompt (amber, brighter) */
+/* ─── Toast type: permission_prompt (hot amber, pulsing — requires user action) */
 .krypton-claude-toast--permission_prompt {
-  border-left-color: rgba(250, 200, 99, 0.8);
+  border-left-color: rgba(255, 180, 40, 1);
+  border-left-width: 3px;
+  background: linear-gradient(
+    135deg,
+    rgba(30, 20, 6, 0.96),
+    rgba(20, 14, 4, 0.92)
+  );
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 0 24px rgba(255, 180, 40, 0.15),
+    0 0 48px rgba(255, 180, 40, 0.06),
+    inset 0 1px 0 rgba(255, 200, 80, 0.08),
+    inset 0 0 30px rgba(255, 180, 40, 0.04);
+  animation: krypton-permit-pulse 2s ease-in-out infinite;
 }
 
 .krypton-claude-toast--permission_prompt .krypton-claude-toast__label {
-  color: #fac863;
-  text-shadow: 0 0 8px rgba(250, 200, 99, 0.5);
+  color: #ffb828;
+  text-shadow: 0 0 10px rgba(255, 180, 40, 0.7), 0 0 20px rgba(255, 180, 40, 0.3);
+  animation: krypton-permit-label-glow 2s ease-in-out infinite;
+}
+
+.krypton-claude-toast--permission_prompt .krypton-claude-toast__text {
+  color: #e8d0a0;
+}
+
+/* Pulsing scan-line override for permit toasts */
+.krypton-claude-toast--permission_prompt.krypton-claude-toast--visible::before {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 180, 40, 0.15) 40%,
+    rgba(255, 180, 40, 0.3) 50%,
+    rgba(255, 180, 40, 0.15) 60%,
+    transparent 100%
+  );
+  animation: krypton-toast-scan 1.8s linear infinite;
+}
+
+@keyframes krypton-permit-pulse {
+  0%, 100% {
+    box-shadow:
+      0 2px 8px rgba(0, 0, 0, 0.4),
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      0 0 24px rgba(255, 180, 40, 0.15),
+      0 0 48px rgba(255, 180, 40, 0.06),
+      inset 0 1px 0 rgba(255, 200, 80, 0.08),
+      inset 0 0 30px rgba(255, 180, 40, 0.04);
+    border-left-color: rgba(255, 180, 40, 1);
+  }
+  50% {
+    box-shadow:
+      0 2px 8px rgba(0, 0, 0, 0.4),
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      0 0 32px rgba(255, 180, 40, 0.25),
+      0 0 64px rgba(255, 180, 40, 0.12),
+      inset 0 1px 0 rgba(255, 200, 80, 0.12),
+      inset 0 0 40px rgba(255, 180, 40, 0.07);
+    border-left-color: rgba(255, 200, 80, 1);
+  }
+}
+
+@keyframes krypton-permit-label-glow {
+  0%, 100% { text-shadow: 0 0 10px rgba(255, 180, 40, 0.7), 0 0 20px rgba(255, 180, 40, 0.3); }
+  50% { text-shadow: 0 0 14px rgba(255, 200, 60, 0.9), 0 0 28px rgba(255, 180, 40, 0.5); }
 }
 
 /* ─── Toast type: error (red) */

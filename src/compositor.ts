@@ -254,6 +254,7 @@ export class Compositor {
   // ─── Claude Hook Manager ────────────────────────────────────────
   private claudeHookManager: ClaudeHookManager | null = null;
   private hookToastsEnabled: boolean = true;
+  private pendingHookAnimation: string | null = null;
 
   // ─── Config-backed settings ──────────────────────────────────────
   /** xterm.js theme — built-in default, overridable by config theme.colors */
@@ -420,12 +421,19 @@ export class Compositor {
       this.extensions.setEnabled(config.extensions.enabled);
     }
 
-    // Hooks — toggle toast display and max visible toasts
+    // Hooks — toggle toast display, max visible toasts, animation type
     if (config.hooks) {
       this.hookToastsEnabled = config.hooks.show_toasts;
+      if (config.hooks.animation) {
+        this.pendingHookAnimation = config.hooks.animation;
+      }
       if (this.claudeHookManager) {
         this.claudeHookManager.setToastsEnabled(this.hookToastsEnabled);
         this.claudeHookManager.setMaxToasts(config.hooks.max_toasts);
+        if (this.pendingHookAnimation) {
+          this.claudeHookManager.setAnimationType(this.pendingHookAnimation);
+          this.pendingHookAnimation = null;
+        }
       }
     }
 
@@ -760,16 +768,30 @@ export class Compositor {
 
   /** Switch the visible tab content for a window */
   private showActiveTab(win: KryptonWindow): void {
-    // Clear content area
-    while (win.contentElement.firstChild) {
-      win.contentElement.removeChild(win.contentElement.firstChild);
-    }
+    // Remove only pane-tree elements, preserving persistent HUD overlays
+    // (flame canvas, uplink bar, activity trace) that live in content area.
+    this.clearPaneTree(win.contentElement);
 
     const tab = win.tabs[win.activeTabIndex];
     if (!tab) return;
 
     // Mount the active tab's pane tree
     this.buildPaneTreeDom(tab.paneTree, win.contentElement);
+  }
+
+  /** Remove pane-tree elements from a content area, keeping HUD overlays */
+  private clearPaneTree(contentEl: HTMLElement): void {
+    const toRemove: Element[] = [];
+    for (const child of Array.from(contentEl.children)) {
+      const cl = child.classList;
+      if (!cl.contains('krypton-flame-canvas') &&
+          !cl.contains('krypton-brainwave-canvas') &&
+          !cl.contains('krypton-uplink') &&
+          !cl.contains('krypton-activity-trace')) {
+        toRemove.push(child);
+      }
+    }
+    for (const el of toRemove) el.remove();
   }
 
   /**
@@ -827,6 +849,11 @@ export class Compositor {
    */
   setClaudeHookManager(manager: ClaudeHookManager): void {
     this.claudeHookManager = manager;
+    // Apply any animation type that was configured before the manager existed
+    if (this.pendingHookAnimation) {
+      manager.setAnimationType(this.pendingHookAnimation);
+      this.pendingHookAnimation = null;
+    }
   }
 
   /** Toggle hook toast notifications on/off. Returns new state. */
@@ -1134,6 +1161,8 @@ export class Compositor {
 
     // Claude Code HUD elements inside content area
     if (this.claudeHookManager) {
+      const animCanvas = this.claudeHookManager.createAnimationCanvas();
+      if (animCanvas) content.appendChild(animCanvas);
       content.appendChild(this.claudeHookManager.createUplinkBar());
       content.appendChild(this.claudeHookManager.createActivityTrace());
     }
@@ -1350,6 +1379,14 @@ export class Compositor {
     // Dispose all tabs and their pane trees
     for (const tab of win.tabs) {
       this.disposePaneTree(tab.paneTree);
+    }
+
+    // Dispose flame animation for this window
+    if (this.claudeHookManager) {
+      const animCanvas = win.contentElement.querySelector('.krypton-flame-canvas, .krypton-brainwave-canvas') as HTMLCanvasElement | null;
+      if (animCanvas) {
+        this.claudeHookManager.disposeAnimation(animCanvas);
+      }
     }
 
     // Free accent color for reuse
@@ -1809,10 +1846,8 @@ export class Compositor {
     const cwd = await this.getFocusedCwd();
     const tabId = nextTabId();
 
-    // Detach current tab's pane tree from DOM
-    while (win.contentElement.firstChild) {
-      win.contentElement.removeChild(win.contentElement.firstChild);
-    }
+    // Detach current tab's pane tree from DOM (preserve HUD overlays)
+    this.clearPaneTree(win.contentElement);
 
     // Create the new pane
     const pane = this.createPane(win.contentElement);
@@ -1900,10 +1935,8 @@ export class Compositor {
     const win = this.windows.get(this.focusedWindowId);
     if (!win || win.tabs.length <= 1) return;
 
-    // Detach current pane tree from DOM
-    while (win.contentElement.firstChild) {
-      win.contentElement.removeChild(win.contentElement.firstChild);
-    }
+    // Detach current pane tree from DOM (preserve HUD overlays)
+    this.clearPaneTree(win.contentElement);
 
     win.activeTabIndex = (win.activeTabIndex + direction + win.tabs.length) % win.tabs.length;
     this.updateTabBar(win);
@@ -1937,10 +1970,8 @@ export class Compositor {
     // Detach the tab from source
     const tab = srcWin.tabs[srcWin.activeTabIndex];
 
-    // Remove pane tree from source window's DOM
-    while (srcWin.contentElement.firstChild) {
-      srcWin.contentElement.removeChild(srcWin.contentElement.firstChild);
-    }
+    // Remove pane tree from source window's DOM (preserve HUD overlays)
+    this.clearPaneTree(srcWin.contentElement);
 
     srcWin.tabs.splice(srcWin.activeTabIndex, 1);
 
@@ -1973,10 +2004,8 @@ export class Compositor {
 
     // Update target window
     this.rebuildTabBar(targetWin);
-    // Detach current content and show new tab
-    while (targetWin.contentElement.firstChild) {
-      targetWin.contentElement.removeChild(targetWin.contentElement.firstChild);
-    }
+    // Detach current pane tree and show new tab (preserve HUD overlays)
+    this.clearPaneTree(targetWin.contentElement);
     this.showActiveTab(targetWin);
     this.fitWindow(targetWin.id);
 
@@ -2032,10 +2061,8 @@ export class Compositor {
 
     tab.paneTree = replaceInTree(tab.paneTree);
 
-    // Rebuild the content DOM
-    while (win.contentElement.firstChild) {
-      win.contentElement.removeChild(win.contentElement.firstChild);
-    }
+    // Rebuild the content DOM (preserve HUD overlays)
+    this.clearPaneTree(win.contentElement);
     this.buildPaneTreeDom(tab.paneTree, win.contentElement);
 
     // Find the new pane (it's the one that was just created — last in the tree)
@@ -2118,10 +2145,8 @@ export class Compositor {
       tab.paneTree = newTree;
     }
 
-    // Rebuild DOM
-    while (win.contentElement.firstChild) {
-      win.contentElement.removeChild(win.contentElement.firstChild);
-    }
+    // Rebuild DOM (preserve HUD overlays)
+    this.clearPaneTree(win.contentElement);
     this.buildPaneTreeDom(tab.paneTree, win.contentElement);
 
     // Focus the first remaining pane
@@ -2857,6 +2882,10 @@ export class Compositor {
     for (const [, win] of this.windows) {
       this.fitWindow(win.id);
     }
+    // Resize flame canvases to match new window dimensions
+    if (this.claudeHookManager) {
+      this.claudeHookManager.resizeAnimations();
+    }
   }
 
   /** Fit the active tab's pane tree for a window */
@@ -3428,10 +3457,8 @@ export class Compositor {
       // Create a new tab in the current window
       const tabId = nextTabId();
 
-      // Detach current tab's pane tree from DOM
-      while (win.contentElement.firstChild) {
-        win.contentElement.removeChild(win.contentElement.firstChild);
-      }
+      // Detach current tab's pane tree from DOM (preserve HUD overlays)
+      this.clearPaneTree(win.contentElement);
 
       const pane = this.createPane(win.contentElement);
 
