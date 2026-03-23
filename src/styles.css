@@ -397,7 +397,8 @@ html, body {
 
 /* ─── Background Animations (Claude processing) ─── */
 .krypton-flame-canvas,
-.krypton-brainwave-canvas {
+.krypton-brainwave-canvas,
+.krypton-matrix-canvas {
   position: absolute;
   inset: 0;
   z-index: 0;

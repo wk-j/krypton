@@ -786,6 +786,7 @@ export class Compositor {
       const cl = child.classList;
       if (!cl.contains('krypton-flame-canvas') &&
           !cl.contains('krypton-brainwave-canvas') &&
+          !cl.contains('krypton-matrix-canvas') &&
           !cl.contains('krypton-uplink') &&
           !cl.contains('krypton-activity-trace')) {
         toRemove.push(child);
@@ -1383,7 +1384,7 @@ export class Compositor {
 
     // Dispose flame animation for this window
     if (this.claudeHookManager) {
-      const animCanvas = win.contentElement.querySelector('.krypton-flame-canvas, .krypton-brainwave-canvas') as HTMLCanvasElement | null;
+      const animCanvas = win.contentElement.querySelector('.krypton-flame-canvas, .krypton-brainwave-canvas, .krypton-matrix-canvas') as HTMLCanvasElement | null;
       if (animCanvas) {
         this.claudeHookManager.disposeAnimation(animCanvas);
       }

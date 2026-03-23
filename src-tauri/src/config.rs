@@ -334,7 +334,7 @@ pub struct HooksConfig {
     pub show_toasts: bool,
     /// Maximum number of visible toasts (oldest dismissed when exceeded)
     pub max_toasts: usize,
-    /// Background animation style: "flame", "brainwave", or "none"
+    /// Background animation style: "flame", "brainwave", "matrix", or "none"
     pub animation: String,
 }
 

@@ -47,7 +47,7 @@ interface ScanPulse {
 const FADE_DURATION = 600;
 const BASE_OPACITY = 0.22;
 
-/** Channel definitions — 6 EEG-like bands with harmonics */
+/** Channel definitions — 4 EEG bands with harmonics */
 function createChannels(): Channel[] {
   return [
     // Delta — slow, high amplitude, deep
@@ -58,20 +58,12 @@ function createChannels(): Channel[] {
       width: 2.0, speed: 0.12, phase: 0,
       spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
     },
-    // Theta — moderate rhythm
-    {
-      baseFreq: 2.8, harmonics: [5.6, 8.4], harmonicAmps: [0.25, 0.08],
-      noiseFreq: 14, noiseAmp: 0.2,
-      color: 'rgba(0,210,255,0.7)', glowColor: 'rgba(0,210,255,0.25)',
-      width: 1.6, speed: 0.18, phase: 0.7,
-      spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
-    },
     // Alpha — classic brain rhythm
     {
       baseFreq: 4.2, harmonics: [8.4, 12.6], harmonicAmps: [0.2, 0.12],
       noiseFreq: 20, noiseAmp: 0.18,
       color: 'rgba(60,150,255,0.65)', glowColor: 'rgba(60,150,255,0.22)',
-      width: 1.4, speed: 0.26, phase: 1.4,
+      width: 1.5, speed: 0.26, phase: 1.2,
       spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
     },
     // Beta — fast, analytical
@@ -79,7 +71,7 @@ function createChannels(): Channel[] {
       baseFreq: 7.0, harmonics: [14, 21], harmonicAmps: [0.15, 0.06],
       noiseFreq: 30, noiseAmp: 0.3,
       color: 'rgba(130,80,255,0.6)', glowColor: 'rgba(130,80,255,0.2)',
-      width: 1.1, speed: 0.35, phase: 2.1,
+      width: 1.2, speed: 0.35, phase: 2.4,
       spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
     },
     // Gamma — fastest, subtle but complex
@@ -87,15 +79,7 @@ function createChannels(): Channel[] {
       baseFreq: 11.0, harmonics: [22, 33], harmonicAmps: [0.12, 0.05],
       noiseFreq: 45, noiseAmp: 0.35,
       color: 'rgba(200,50,255,0.5)', glowColor: 'rgba(200,50,255,0.18)',
-      width: 0.9, speed: 0.48, phase: 2.8,
-      spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
-    },
-    // High-gamma — neural burst signatures
-    {
-      baseFreq: 16.0, harmonics: [32], harmonicAmps: [0.08],
-      noiseFreq: 60, noiseAmp: 0.4,
-      color: 'rgba(255,40,120,0.4)', glowColor: 'rgba(255,40,120,0.12)',
-      width: 0.7, speed: 0.6, phase: 3.5,
+      width: 0.9, speed: 0.48, phase: 3.6,
       spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
     },
   ];
@@ -411,7 +395,7 @@ export class BrainwaveAnimation implements BackgroundAnimation {
 
       // Channel label on left edge
       if (ci < numChannels) {
-        const labels = ['\u03b4', '\u03b8', '\u03b1', '\u03b2', '\u03b3', 'H\u03b3'];
+        const labels = ['\u03b4', '\u03b1', '\u03b2', '\u03b3'];
         const margin = this.H * 0.08;
         const usableH = this.H - margin * 2;
         const spacing = usableH / (numChannels + 1);
@@ -433,7 +417,7 @@ export class BrainwaveAnimation implements BackgroundAnimation {
     if (Math.random() < 0.01 && this.readouts.length < 6) {
       const ci = Math.floor(Math.random() * this.channels.length);
       const x = 0.2 + Math.random() * 0.6; // normalized x
-      const freqLabels = ['1.2Hz', '2.8Hz', '4.2Hz', '7.0Hz', '11Hz', '16Hz'];
+      const freqLabels = ['1.2Hz', '4.2Hz', '7.0Hz', '11Hz'];
       const values = [
         freqLabels[ci] ?? '',
         `${(Math.random() * 80 + 20).toFixed(0)}\u03bcV`,

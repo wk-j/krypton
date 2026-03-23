@@ -8,6 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { BackgroundAnimation, FlameAnimation } from './flame';
 import { BrainwaveAnimation } from './brainwave';
+import { MatrixAnimation } from './matrix';
 
 /** Claude Code hook event payload (emitted by Rust hook server) */
 export interface ClaudeHookEvent {
@@ -269,6 +270,9 @@ export class ClaudeHookManager {
     session.active = true;
     session.currentTool = event.tool_name ?? null;
     session.lastEvent = 'PreToolUse';
+
+    // Ensure animation is running — Stop may have paused it between agentic turns
+    this.startFlame();
 
     // Cancel any pending tool-clear so new tool text stays visible
     if (this.toolClearTimer) {
@@ -846,7 +850,7 @@ export class ClaudeHookManager {
 
   /** Set the animation type ("flame", "brainwave", or "none"). */
   setAnimationType(type: string): void {
-    const normalized = type === 'brainwave' || type === 'none' ? type : 'flame';
+    const normalized = type === 'brainwave' || type === 'matrix' || type === 'none' ? type : 'flame';
     if (normalized === this.animationType) return;
 
     const wasActive = Array.from(this.animations).some((a) => a.isRunning());
@@ -916,6 +920,8 @@ export class ClaudeHookManager {
   }
 
   private createAnimationInstance(type: string): BackgroundAnimation {
-    return type === 'brainwave' ? new BrainwaveAnimation() : new FlameAnimation();
+    if (type === 'brainwave') return new BrainwaveAnimation();
+    if (type === 'matrix') return new MatrixAnimation();
+    return new FlameAnimation();
   }
 }
