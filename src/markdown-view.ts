@@ -162,7 +162,10 @@ export class MarkdownContentView implements ContentView {
       this.closeFilter();
     } else if (e.key === 'Enter') {
       e.stopPropagation();
-      this.closeFilter();
+      // Close filter UI but keep filtered results
+      this.isFilterActive = false;
+      this.filterContainer.style.display = 'none';
+      this.element.focus();
       if (this.filteredFiles.length > 0) {
         this.loadFile(this.filteredFiles[this.selectedIndex]);
         this.setFocus('preview');
