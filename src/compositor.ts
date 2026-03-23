@@ -1466,17 +1466,25 @@ export class Compositor {
   async openMarkdownView(): Promise<void> {
     const cwd = await this.getFocusedCwd() ?? undefined;
 
-    // List all .md files recursively (max depth 5)
+    // List .md files, respecting .gitignore (fall back to find if not a git repo)
     let fileList: string;
     try {
       fileList = await invoke<string>('run_command', {
-        program: 'find',
-        args: ['.', '-maxdepth', '5', '-name', '*.md', '-type', 'f'],
+        program: 'git',
+        args: ['ls-files', '--cached', '--others', '--exclude-standard', '*.md'],
         cwd,
       });
-    } catch (e) {
-      console.error('Failed to list markdown files:', e);
-      return;
+    } catch {
+      try {
+        fileList = await invoke<string>('run_command', {
+          program: 'find',
+          args: ['.', '-maxdepth', '5', '-name', '*.md', '-type', 'f'],
+          cwd,
+        });
+      } catch (e) {
+        console.error('Failed to list markdown files:', e);
+        return;
+      }
     }
 
     // Parse file list (one per line), strip leading ./
