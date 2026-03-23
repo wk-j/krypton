@@ -12,7 +12,7 @@ Single transparent native window. Multiple terminal windows rendered as DOM elem
 - **Tiling layouts** -- Grid (auto-tile balanced) and Focus (65/35 split with pinned windows on right)
 - **Modal keyboard system** -- Normal, Compositor, Resize, Move, Swap, Selection, Hint, TabMove, CommandPalette, Dashboard modes
 - **Tabs & panes** -- split terminals horizontally/vertically within a window, tab bar with keyboard navigation
-- **Which-key popup** -- Helix-style hint overlay showing available keybindings per mode
+- **Which-key popup** -- Helix-style hint overlay showing context-aware keybindings per mode and pane type
 - **Command palette** -- fuzzy-searchable action list (`Cmd+Shift+P`) with ~35 registered actions
 - **Quick Terminal** -- persistent overlay terminal toggled with `Cmd+I`
 - **Animation engine** -- morph, slide, crossfade transitions with entrance/exit effects and input buffering
@@ -25,6 +25,8 @@ Single transparent native window. Multiple terminal windows rendered as DOM elem
 - **Theming** -- built-in themes + custom TOML themes in `~/.config/krypton/themes/`, hot-reloaded
 - **SSH support** -- connection detection and OpenSSH ControlMaster multiplexing
 - **Claude Code hooks** -- HTTP server receives Claude Code events, renders neural uplink bar, sigil badge, tool HUD, activity trace, and notification toasts in the window chrome
+- **Markdown viewer** -- two-panel file browser + rendered preview with block select mode, reload, and heading navigation
+- **Git diff viewer** -- syntax-highlighted diff view for staged/unstaged changes
 - **Dashboard system** -- tabbed overlay dashboards (Git, OpenCode) with keyboard routing
 - **Extensions** -- context-aware plugins that activate on process detection
 - **Cursor trail** -- rainbow flame particle system on mouse and text cursor
@@ -49,6 +51,8 @@ Single transparent native window. Multiple terminal windows rendered as DOM elem
 | Leader + `s` | Enter Swap mode |
 | Leader + `t` | New tab |
 | Leader + `\` / `-` | Split pane vertical / horizontal |
+| Leader + `d` / `D` | Git diff (unstaged / staged) |
+| Leader + `o` | Open markdown viewer for CWD |
 | `Escape` | Exit current mode / hide Quick Terminal |
 
 ## Configuration
@@ -104,6 +108,8 @@ krypton/
     claude-hooks.ts        # Claude Code hook event UI
     dashboard.ts           # Tabbed overlay dashboard framework
     hints.ts               # Regex-pattern label overlays
+    markdown-view.ts       # Markdown viewer with file browser + block select
+    diff-view.ts           # Git diff viewer with syntax highlighting
     selection.ts           # Vim-like text selection mode
     shaders.ts             # Post-processing shader presets
     cursor-trail.ts        # Rainbow flame particle effects
