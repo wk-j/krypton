@@ -11,8 +11,10 @@ import { HintController } from './hints';
 import { CommandPalette } from './command-palette';
 import { DashboardManager } from './dashboard';
 
+import type { PaneContentType } from './types';
+
 /** Callback for mode changes */
-type ModeChangeCallback = (mode: Mode) => void;
+type ModeChangeCallback = (mode: Mode, contentType: PaneContentType | null) => void;
 
 export class InputRouter {
   private mode: Mode = Mode.Normal;
@@ -177,8 +179,9 @@ export class InputRouter {
       this.compositor.soundEngine.play('mode.exit');
     }
 
+    const contentType = this.compositor.getFocusedContentType();
     for (const cb of this.modeChangeCallbacks) {
-      cb(mode);
+      cb(mode, contentType);
     }
   }
 

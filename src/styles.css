@@ -2722,6 +2722,7 @@ html, body {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  position: relative;
 }
 
 .krypton-md__preview.krypton-md__panel--focused {
@@ -2894,4 +2895,29 @@ html, body {
 .krypton-md__preview-content input[type="checkbox"] {
   margin-right: 6px;
   accent-color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+}
+
+/* ── Select Mode ── */
+.krypton-md__block--selected {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  outline: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.3);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.krypton-md__select-indicator {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  padding: 4px 10px;
+  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+  background: rgba(6, 10, 18, 0.85);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.3);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 10;
 }

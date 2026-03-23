@@ -2,16 +2,21 @@
 // Helix-style modal popup that shows available keybindings
 // when entering a non-Normal mode.
 
+import type { PaneContentType } from './types';
 import { Mode } from './types';
 
 /** A single keybinding entry displayed in the popup */
 interface KeyEntry {
   key: string;
   label: string;
+  /** If set, only show this entry when focused pane matches one of these types.
+   *  null in the array means "terminal" (no contentView). */
+  contentTypes?: (PaneContentType | null)[];
 }
 
-/** Keybindings per mode */
+/** Keybindings per mode — compositor keys are content-type-aware */
 const COMPOSITOR_KEYS: KeyEntry[] = [
+  // ── Window management (always shown) ──
   { key: 'n', label: 'new window' },
   { key: 'x', label: 'close window' },
   { key: 'h', label: 'focus left' },
@@ -25,9 +30,9 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: 's', label: 'swap mode' },
   { key: 'z', label: 'maximize' },
   { key: 'p', label: 'pin window' },
-  { key: 'v', label: 'select mode' },
-  { key: 'V', label: 'select lines' },
   { key: 'H', label: 'hint mode' },
+
+  // ── Tab / pane management (always shown) ──
   { key: 't', label: 'new tab' },
   { key: 'w', label: 'close tab' },
   { key: '[', label: 'prev tab' },
@@ -37,11 +42,18 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: '-', label: 'split horizontal' },
   { key: 'A-hjkl', label: 'focus pane' },
   { key: 'A-x', label: 'close pane' },
-  { key: 'd', label: 'git diff' },
-  { key: 'D', label: 'git diff staged' },
-  { key: 'o', label: 'markdown viewer' },
-  { key: 'c', label: 'clone SSH tab' },
-  { key: 'C', label: 'clone SSH window' },
+
+  // ── Terminal-only ──
+  { key: 'v', label: 'select mode', contentTypes: [null] },
+  { key: 'V', label: 'select lines', contentTypes: [null] },
+  { key: 'd', label: 'git diff', contentTypes: [null] },
+  { key: 'D', label: 'git diff staged', contentTypes: [null] },
+  { key: 'o', label: 'markdown viewer', contentTypes: [null] },
+  { key: 'c', label: 'clone SSH tab', contentTypes: [null] },
+  { key: 'C', label: 'clone SSH window', contentTypes: [null] },
+
+  // ── Markdown viewer ──
+  { key: 'o', label: 'markdown viewer', contentTypes: ['markdown'] },
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [
@@ -91,6 +103,14 @@ const SELECTION_KEYS: KeyEntry[] = [
   { key: 'Esc', label: 'exit' },
 ];
 
+/** Filter key entries by focused pane content type. */
+function filterByContentType(entries: KeyEntry[], contentType: PaneContentType | null): KeyEntry[] {
+  return entries.filter((e) => {
+    if (!e.contentTypes) return true; // no restriction — always show
+    return e.contentTypes.includes(contentType);
+  });
+}
+
 export class WhichKey {
   private overlay: HTMLElement;
   private title: HTMLElement;
@@ -119,8 +139,8 @@ export class WhichKey {
     document.body.appendChild(this.overlay);
   }
 
-  /** Update the popup for the given mode */
-  setMode(mode: Mode): void {
+  /** Update the popup for the given mode and focused content type */
+  setMode(mode: Mode, contentType: PaneContentType | null = null): void {
     if (mode === Mode.Normal) {
       this.hide();
       return;
@@ -131,8 +151,10 @@ export class WhichKey {
 
     switch (mode) {
       case Mode.Compositor:
-        entries = COMPOSITOR_KEYS;
-        titleText = 'Compositor';
+        entries = filterByContentType(COMPOSITOR_KEYS, contentType);
+        titleText = contentType
+          ? `Compositor · ${contentType}`
+          : 'Compositor';
         break;
       case Mode.Resize:
         entries = RESIZE_KEYS;

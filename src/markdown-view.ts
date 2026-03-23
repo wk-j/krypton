@@ -9,6 +9,33 @@ import { invoke } from '@tauri-apps/api/core';
 
 import type { ContentView, PaneContentType } from './types';
 
+/** List .md files in a directory, respecting .gitignore when possible. */
+export async function listMarkdownFiles(cwd: string): Promise<string[]> {
+  let fileList: string;
+  try {
+    fileList = await invoke<string>('run_command', {
+      program: 'git',
+      args: ['ls-files', '--cached', '--others', '--exclude-standard', '*.md'],
+      cwd,
+    });
+  } catch {
+    try {
+      fileList = await invoke<string>('run_command', {
+        program: 'find',
+        args: ['.', '-maxdepth', '5', '-name', '*.md', '-type', 'f'],
+        cwd,
+      });
+    } catch {
+      return [];
+    }
+  }
+  return fileList
+    .split('\n')
+    .map((f) => f.trim().replace(/^\.\//, ''))
+    .filter((f) => f.length > 0)
+    .sort();
+}
+
 // Create marked instance with highlight.js integration
 const md = new Marked(
   markedHighlight({
@@ -41,7 +68,13 @@ export class MarkdownContentView implements ContentView {
   private previewHeader: HTMLElement;
   private previewContent: HTMLElement;
   private isFilterActive = false;
-  private focusPanel: 'sidebar' | 'preview' = 'sidebar';
+  private focusPanel: 'sidebar' | 'preview' | 'select' = 'sidebar';
+
+  // Select mode state
+  private selectableBlocks: HTMLElement[] = [];
+  private selectAnchor = -1;  // first selected block index
+  private selectCursor = -1;  // current block index (extends from anchor)
+  private selectIndicator: HTMLElement | null = null;
 
   constructor(files: string[], cwd: string, container: HTMLElement) {
     this.files = files.sort();
@@ -234,7 +267,7 @@ export class MarkdownContentView implements ContentView {
     }
   }
 
-  private setFocus(panel: 'sidebar' | 'preview'): void {
+  private setFocus(panel: 'sidebar' | 'preview' | 'select'): void {
     this.focusPanel = panel;
     if (panel === 'sidebar') {
       this.sidebar.classList.add('krypton-md__panel--focused');
@@ -254,7 +287,9 @@ export class MarkdownContentView implements ContentView {
     // Don't intercept modifier combos (let globals handle them)
     if (e.metaKey || e.ctrlKey || e.altKey) return false;
 
-    if (this.focusPanel === 'sidebar') {
+    if (this.focusPanel === 'select') {
+      return this.handleSelectKey(e);
+    } else if (this.focusPanel === 'sidebar') {
       return this.handleSidebarKey(e);
     } else {
       return this.handlePreviewKey(e);
@@ -281,6 +316,12 @@ export class MarkdownContentView implements ContentView {
         return true;
       case '/':
         this.openFilter();
+        return true;
+      case 'r':
+        this.reloadCurrentFile();
+        return true;
+      case 'R':
+        this.refreshFileList();
         return true;
       case 'q':
       case 'Escape':
@@ -322,6 +363,15 @@ export class MarkdownContentView implements ContentView {
       case '[':
         this.navigateHeading(-1);
         return true;
+      case 'v':
+        this.enterSelectMode();
+        return true;
+      case 'r':
+        this.reloadCurrentFile();
+        return true;
+      case 'R':
+        this.refreshFileList();
+        return true;
       case 'q':
       case 'Escape':
         if (this.closeCallback) this.closeCallback();
@@ -359,6 +409,176 @@ export class MarkdownContentView implements ContentView {
 
     if (target) {
       target.scrollIntoView({ behavior: 'auto', block: 'start' });
+    }
+  }
+
+  // ── Select Mode ──
+
+  private static readonly BLOCK_SELECTOR =
+    'p, pre, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, table, hr';
+
+  /** Enter select mode — highlight the block nearest the current scroll position. */
+  private enterSelectMode(): void {
+    this.selectableBlocks = Array.from(
+      this.previewContent.querySelectorAll(MarkdownContentView.BLOCK_SELECTOR),
+    ) as HTMLElement[];
+    if (this.selectableBlocks.length === 0) return;
+
+    // Find the first block visible in the viewport
+    const scrollTop = this.previewContent.scrollTop;
+    const containerTop = this.previewContent.getBoundingClientRect().top;
+    let startIdx = 0;
+    for (let i = 0; i < this.selectableBlocks.length; i++) {
+      const rect = this.selectableBlocks[i].getBoundingClientRect();
+      const offset = rect.top - containerTop + scrollTop;
+      if (offset + rect.height > scrollTop) {
+        startIdx = i;
+        break;
+      }
+    }
+
+    this.selectAnchor = startIdx;
+    this.selectCursor = startIdx;
+    this.focusPanel = 'select';
+    this.updateSelectHighlight();
+    this.showSelectIndicator();
+  }
+
+  /** Exit select mode and clear highlights. */
+  private exitSelectMode(): void {
+    for (const el of this.selectableBlocks) {
+      el.classList.remove('krypton-md__block--selected');
+    }
+    this.selectableBlocks = [];
+    this.selectAnchor = -1;
+    this.selectCursor = -1;
+    this.hideSelectIndicator();
+    this.setFocus('preview');
+  }
+
+  /** Update which blocks have the selected highlight. */
+  private updateSelectHighlight(): void {
+    const lo = Math.min(this.selectAnchor, this.selectCursor);
+    const hi = Math.max(this.selectAnchor, this.selectCursor);
+    for (let i = 0; i < this.selectableBlocks.length; i++) {
+      this.selectableBlocks[i].classList.toggle(
+        'krypton-md__block--selected',
+        i >= lo && i <= hi,
+      );
+    }
+    // Scroll current block into view
+    this.selectableBlocks[this.selectCursor]?.scrollIntoView({
+      block: 'nearest',
+      behavior: 'auto',
+    });
+    this.updateSelectIndicator();
+  }
+
+  /** Move cursor in select mode. If extend is true, anchor stays (visual-line expand). */
+  private moveSelectCursor(delta: number, extend: boolean): void {
+    const next = Math.max(0, Math.min(this.selectableBlocks.length - 1, this.selectCursor + delta));
+    if (next === this.selectCursor) return;
+    this.selectCursor = next;
+    if (!extend) this.selectAnchor = next;
+    this.updateSelectHighlight();
+  }
+
+  /** Copy selected blocks as plain text to clipboard. */
+  private async copySelection(): Promise<void> {
+    const lo = Math.min(this.selectAnchor, this.selectCursor);
+    const hi = Math.max(this.selectAnchor, this.selectCursor);
+    const texts: string[] = [];
+    for (let i = lo; i <= hi; i++) {
+      const text = this.selectableBlocks[i].textContent?.trim();
+      if (text) texts.push(text);
+    }
+    if (texts.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(texts.join('\n\n'));
+    } catch {
+      // Clipboard API may fail in some contexts — silently ignore
+    }
+    this.exitSelectMode();
+  }
+
+  private showSelectIndicator(): void {
+    if (!this.selectIndicator) {
+      this.selectIndicator = document.createElement('div');
+      this.selectIndicator.className = 'krypton-md__select-indicator';
+      this.previewContent.parentElement?.appendChild(this.selectIndicator);
+    }
+    this.updateSelectIndicator();
+    this.selectIndicator.style.display = '';
+  }
+
+  private updateSelectIndicator(): void {
+    if (!this.selectIndicator) return;
+    const count = Math.abs(this.selectCursor - this.selectAnchor) + 1;
+    this.selectIndicator.textContent = `SELECT · ${count} block${count > 1 ? 's' : ''} · y:copy  Esc:cancel`;
+  }
+
+  private hideSelectIndicator(): void {
+    if (this.selectIndicator) {
+      this.selectIndicator.style.display = 'none';
+    }
+  }
+
+  private handleSelectKey(e: KeyboardEvent): boolean {
+    switch (e.key) {
+      case 'j':
+      case 'ArrowDown':
+        this.moveSelectCursor(1, e.shiftKey);
+        return true;
+      case 'k':
+      case 'ArrowUp':
+        this.moveSelectCursor(-1, e.shiftKey);
+        return true;
+      case 'J':
+        this.moveSelectCursor(1, true);
+        return true;
+      case 'K':
+        this.moveSelectCursor(-1, true);
+        return true;
+      case 'g':
+        if (e.shiftKey) {
+          this.moveSelectCursor(this.selectableBlocks.length, true);
+        } else {
+          this.moveSelectCursor(-this.selectableBlocks.length, true);
+        }
+        return true;
+      case 'y':
+        this.copySelection();
+        return true;
+      case 'Escape':
+      case 'q':
+        this.exitSelectMode();
+        return true;
+      default:
+        return true; // absorb all keys in select mode
+    }
+  }
+
+  /** Reload the currently selected file from disk. */
+  private reloadCurrentFile(): void {
+    const file = this.filteredFiles[this.selectedIndex];
+    if (file) this.loadFile(file);
+  }
+
+  /** Re-scan the CWD for .md files and refresh the sidebar. */
+  private async refreshFileList(): Promise<void> {
+    const newFiles = await listMarkdownFiles(this.cwd);
+    const currentFile = this.filteredFiles[this.selectedIndex] ?? null;
+
+    this.files = newFiles;
+    this.applyFilter();
+
+    // Try to preserve selection
+    if (currentFile) {
+      const idx = this.filteredFiles.indexOf(currentFile);
+      if (idx >= 0) {
+        this.selectedIndex = idx;
+        this.renderFileList();
+      }
     }
   }
 

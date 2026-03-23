@@ -16,6 +16,7 @@ import {
   KryptonWindow,
   LayoutMode,
   ContentView,
+  PaneContentType,
   QuickTerminalAnimation,
   QuickTerminalConfig,
   DEFAULT_QUICK_TERMINAL_CONFIG,
@@ -664,6 +665,12 @@ export class Compositor {
   }
 
   /** Get the focused pane of the focused window's active tab */
+  /** Get the content type of the focused pane (null = terminal). */
+  getFocusedContentType(): PaneContentType | null {
+    const pane = this.getFocusedPane();
+    return pane?.contentView?.type ?? null;
+  }
+
   private getFocusedPane(): Pane | null {
     if (!this.focusedWindowId) return null;
     const win = this.windows.get(this.focusedWindowId);
@@ -1466,34 +1473,12 @@ export class Compositor {
   async openMarkdownView(): Promise<void> {
     const cwd = await this.getFocusedCwd() ?? undefined;
 
-    // List .md files, respecting .gitignore (fall back to find if not a git repo)
-    let fileList: string;
-    try {
-      fileList = await invoke<string>('run_command', {
-        program: 'git',
-        args: ['ls-files', '--cached', '--others', '--exclude-standard', '*.md'],
-        cwd,
-      });
-    } catch {
-      try {
-        fileList = await invoke<string>('run_command', {
-          program: 'find',
-          args: ['.', '-maxdepth', '5', '-name', '*.md', '-type', 'f'],
-          cwd,
-        });
-      } catch (e) {
-        console.error('Failed to list markdown files:', e);
-        return;
-      }
+    const { listMarkdownFiles, MarkdownContentView } = await import('./markdown-view');
+    const files = await listMarkdownFiles(cwd ?? '.');
+    if (files.length === 0) {
+      console.error('No markdown files found');
     }
 
-    // Parse file list (one per line), strip leading ./
-    const files = fileList
-      .split('\n')
-      .map((f) => f.trim().replace(/^\.\//, ''))
-      .filter((f) => f.length > 0);
-
-    const { MarkdownContentView } = await import('./markdown-view');
     const container = document.createElement('div');
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
 

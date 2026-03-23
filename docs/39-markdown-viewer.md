@@ -52,6 +52,15 @@ Add a dedicated markdown viewer window with a two-panel layout: a **file browser
 | `f` / `b` | Preview focused | Page down / page up |
 | `g` / `G` | Preview focused | Jump to top / bottom |
 | `]` / `[` | Preview focused | Next / previous heading |
+| `r` | Either panel | Reload current file from disk |
+| `R` | Either panel | Refresh file tree (re-scan for new/removed .md files) |
+| `v` | Preview focused | Enter Select mode (block selection) |
+| `j` / `k` | Select mode | Move selection to next / previous block |
+| `J` / `K` | Select mode | Extend selection down / up (visual-line expand) |
+| `Shift+j/k` | Select mode | Also extends selection (alternative to J/K) |
+| `g` / `G` | Select mode | Extend selection to first / last block |
+| `y` | Select mode | Copy selected blocks to clipboard, exit Select mode |
+| `Escape` / `q` | Select mode | Cancel selection, return to preview |
 | `q` / `Escape` | Either panel | Close viewer (Escape clears filter first if active) |
 
 ### UI Changes
@@ -112,7 +121,7 @@ Preview styling (dark theme matching Krypton):
 
 ## Out of Scope
 
-- Live file watching / auto-reload on change
+- Live file watching / auto-reload on change (manual reload via `r` / `R` is supported)
 - Editing markdown
 - Mermaid / diagram rendering
 - Tree view (files are a flat sorted list with relative paths)

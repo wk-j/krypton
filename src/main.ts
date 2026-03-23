@@ -77,8 +77,8 @@ async function main(): Promise<void> {
 
   // Initialize which-key popup (shows available keys per mode)
   const whichKey = new WhichKey();
-  inputRouter.onModeChange((mode) => {
-    whichKey.setMode(mode);
+  inputRouter.onModeChange((mode, contentType) => {
+    whichKey.setMode(mode, contentType);
   });
 
   // Initialize Claude Code hook integration
