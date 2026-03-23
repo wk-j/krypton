@@ -347,6 +347,14 @@ export class Compositor {
       '--krypton-terminal-cell-height',
       `${this.fontSize * this.lineHeight}px`
     );
+    document.documentElement.style.setProperty(
+      '--krypton-font-family',
+      this.fontFamily
+    );
+    document.documentElement.style.setProperty(
+      '--krypton-font-size',
+      `${this.fontSize}px`
+    );
 
     // Terminal
     this.scrollbackLines = config.terminal.scrollback_lines;

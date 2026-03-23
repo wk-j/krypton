@@ -2608,7 +2608,11 @@ html, body {
   margin-bottom: 0;
 }
 
-.krypton-diff__content .d2h-diff-table {
+.krypton-diff__content .d2h-diff-table,
+.krypton-diff__content .d2h-code-line-ctn,
+.krypton-diff__content .d2h-code-line-prefix,
+.krypton-diff__content .d2h-code-linenumber,
+.krypton-diff__content .d2h-code-side-linenumber {
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
   font-size: var(--krypton-font-size, 13px);
 }

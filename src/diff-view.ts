@@ -99,13 +99,19 @@ export class DiffContentView implements ContentView {
     const file = this.files[this.currentFileIndex];
     if (!file) return;
 
+    // Use cheaper matching for large diffs to avoid O(n²) slowdown
+    const totalLines = file.addedLines + file.deletedLines;
+    const matching = totalLines > 500 ? 'none' as const : 'lines' as const;
+
     // Render single file diff as HTML
     const diffHtml = html([file], {
       outputFormat: this.diffStyle,
       drawFileList: false,
       colorScheme: 'dark' as never,
       diffStyle: 'word',
-      matching: 'lines',
+      matching,
+      maxLineSizeInBlockForComparison: 200,
+      maxLineLengthHighlight: 10000,
       renderNothingWhenEmpty: false,
     });
 
@@ -121,22 +127,22 @@ export class DiffContentView implements ContentView {
 
     switch (e.key) {
       case 'j':
-        this.fileContainer.scrollBy({ top: 40, behavior: 'smooth' });
+        this.fileContainer.scrollBy({ top: 40, behavior: 'auto' });
         return true;
       case 'k':
-        this.fileContainer.scrollBy({ top: -40, behavior: 'smooth' });
+        this.fileContainer.scrollBy({ top: -40, behavior: 'auto' });
         return true;
       case 'f':
-        this.fileContainer.scrollBy({ top: this.fileContainer.clientHeight * 0.9, behavior: 'smooth' });
+        this.fileContainer.scrollBy({ top: this.fileContainer.clientHeight * 0.9, behavior: 'auto' });
         return true;
       case 'b':
-        this.fileContainer.scrollBy({ top: -this.fileContainer.clientHeight * 0.9, behavior: 'smooth' });
+        this.fileContainer.scrollBy({ top: -this.fileContainer.clientHeight * 0.9, behavior: 'auto' });
         return true;
       case 'g':
         if (e.shiftKey) {
-          this.fileContainer.scrollTo({ top: this.fileContainer.scrollHeight, behavior: 'smooth' });
+          this.fileContainer.scrollTo({ top: this.fileContainer.scrollHeight, behavior: 'auto' });
         } else {
-          this.fileContainer.scrollTo({ top: 0, behavior: 'smooth' });
+          this.fileContainer.scrollTo({ top: 0, behavior: 'auto' });
         }
         return true;
       case 'n':
@@ -173,7 +179,7 @@ export class DiffContentView implements ContentView {
     // Navigate between diff blocks (d2h-diff-tbody sections)
     const blocks = this.fileContainer.querySelectorAll('.d2h-diff-tbody');
     if (blocks.length === 0) {
-      this.fileContainer.scrollBy({ top: delta * 200, behavior: 'smooth' });
+      this.fileContainer.scrollBy({ top: delta * 200, behavior: 'auto' });
       return;
     }
 
@@ -200,7 +206,7 @@ export class DiffContentView implements ContentView {
     }
 
     if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target.scrollIntoView({ behavior: 'auto', block: 'start' });
     }
   }
 
