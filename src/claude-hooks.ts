@@ -326,13 +326,13 @@ export class ClaudeHookManager {
   private onStop(event: ClaudeHookEvent): void {
     const session = this.sessions.get(event.session_id);
     if (session) {
-      session.active = false;
+      // Session is still alive — just waiting for next prompt
       session.currentTool = null;
       session.lastEvent = 'Stop';
     }
-    // Flash sigil bright then fade to dormant
-    this.flashSigilComplete();
-    this.showToast('Session ended', 'stop');
+    this.showToast('Response complete', 'tool_done');
+    // Stop animation — Claude is idle, waiting for next prompt.
+    // Animation restarts on next UserPromptSubmit.
     this.stopFlame();
   }
 

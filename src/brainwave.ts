@@ -1,39 +1,103 @@
 // Krypton — Brainwave EEG Background Animation
 // Canvas-based multi-channel EEG waveform animation that renders behind terminal
 // content when Claude Code is actively processing a prompt.
+// Features: multi-layered channels with harmonics, travelling spike pulses,
+// grid overlay, data readout tickers, and glow compositing.
 
 import { BackgroundAnimation } from './flame';
 
 /** Single EEG channel definition */
 interface Channel {
   baseFreq: number;
+  harmonics: number[];
+  harmonicAmps: number[];
   noiseFreq: number;
   noiseAmp: number;
   color: string;
   glowColor: string;
   width: number;
   speed: number;
-  /** Spike state: remaining frames of elevated amplitude */
+  /** Phase offset for visual variety */
+  phase: number;
+  /** Spike state */
   spikeLife: number;
   spikeAmp: number;
+  /** Travelling spike position (0..1) */
+  spikePos: number;
+  spikeSpeed: number;
+}
+
+/** Floating data readout near a channel */
+interface Readout {
+  channel: number;
+  x: number;
+  value: string;
+  opacity: number;
+  life: number;
+}
+
+/** Vertical scan pulse */
+interface ScanPulse {
+  x: number;
+  speed: number;
+  width: number;
+  opacity: number;
 }
 
 const FADE_DURATION = 600;
-const BASE_OPACITY = 0.20;
+const BASE_OPACITY = 0.22;
 
-/** Channel definitions — 5 EEG-like bands */
+/** Channel definitions — 6 EEG-like bands with harmonics */
 function createChannels(): Channel[] {
   return [
-    // Delta — slow, high amplitude
-    { baseFreq: 1.2, noiseFreq: 8, noiseAmp: 0.3, color: 'rgba(0,255,200,0.7)', glowColor: 'rgba(0,255,200,0.25)', width: 1.8, speed: 0.15, spikeLife: 0, spikeAmp: 0 },
-    // Theta — moderate
-    { baseFreq: 2.5, noiseFreq: 12, noiseAmp: 0.25, color: 'rgba(0,200,255,0.65)', glowColor: 'rgba(0,200,255,0.2)', width: 1.5, speed: 0.22, spikeLife: 0, spikeAmp: 0 },
+    // Delta — slow, high amplitude, deep
+    {
+      baseFreq: 1.2, harmonics: [2.4, 3.6], harmonicAmps: [0.3, 0.1],
+      noiseFreq: 8, noiseAmp: 0.25,
+      color: 'rgba(0,255,200,0.75)', glowColor: 'rgba(0,255,200,0.3)',
+      width: 2.0, speed: 0.12, phase: 0,
+      spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
+    },
+    // Theta — moderate rhythm
+    {
+      baseFreq: 2.8, harmonics: [5.6, 8.4], harmonicAmps: [0.25, 0.08],
+      noiseFreq: 14, noiseAmp: 0.2,
+      color: 'rgba(0,210,255,0.7)', glowColor: 'rgba(0,210,255,0.25)',
+      width: 1.6, speed: 0.18, phase: 0.7,
+      spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
+    },
     // Alpha — classic brain rhythm
-    { baseFreq: 4.0, noiseFreq: 18, noiseAmp: 0.2, color: 'rgba(80,140,255,0.6)', glowColor: 'rgba(80,140,255,0.2)', width: 1.3, speed: 0.30, spikeLife: 0, spikeAmp: 0 },
-    // Beta — fast, low amplitude
-    { baseFreq: 6.5, noiseFreq: 28, noiseAmp: 0.35, color: 'rgba(120,80,255,0.55)', glowColor: 'rgba(120,80,255,0.18)', width: 1.0, speed: 0.40, spikeLife: 0, spikeAmp: 0 },
-    // Gamma — fastest, subtle
-    { baseFreq: 10.0, noiseFreq: 40, noiseAmp: 0.4, color: 'rgba(180,60,255,0.45)', glowColor: 'rgba(180,60,255,0.15)', width: 0.8, speed: 0.50, spikeLife: 0, spikeAmp: 0 },
+    {
+      baseFreq: 4.2, harmonics: [8.4, 12.6], harmonicAmps: [0.2, 0.12],
+      noiseFreq: 20, noiseAmp: 0.18,
+      color: 'rgba(60,150,255,0.65)', glowColor: 'rgba(60,150,255,0.22)',
+      width: 1.4, speed: 0.26, phase: 1.4,
+      spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
+    },
+    // Beta — fast, analytical
+    {
+      baseFreq: 7.0, harmonics: [14, 21], harmonicAmps: [0.15, 0.06],
+      noiseFreq: 30, noiseAmp: 0.3,
+      color: 'rgba(130,80,255,0.6)', glowColor: 'rgba(130,80,255,0.2)',
+      width: 1.1, speed: 0.35, phase: 2.1,
+      spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
+    },
+    // Gamma — fastest, subtle but complex
+    {
+      baseFreq: 11.0, harmonics: [22, 33], harmonicAmps: [0.12, 0.05],
+      noiseFreq: 45, noiseAmp: 0.35,
+      color: 'rgba(200,50,255,0.5)', glowColor: 'rgba(200,50,255,0.18)',
+      width: 0.9, speed: 0.48, phase: 2.8,
+      spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
+    },
+    // High-gamma — neural burst signatures
+    {
+      baseFreq: 16.0, harmonics: [32], harmonicAmps: [0.08],
+      noiseFreq: 60, noiseAmp: 0.4,
+      color: 'rgba(255,40,120,0.4)', glowColor: 'rgba(255,40,120,0.12)',
+      width: 0.7, speed: 0.6, phase: 3.5,
+      spikeLife: 0, spikeAmp: 0, spikePos: 0, spikeSpeed: 0,
+    },
   ];
 }
 
@@ -42,11 +106,15 @@ export class BrainwaveAnimation implements BackgroundAnimation {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private channels: Channel[] = [];
+  private readouts: Readout[] = [];
+  private scanPulses: ScanPulse[] = [];
   private animFrame: number = 0;
   private t: number = 0;
   private running: boolean = false;
   private W: number = 0;
   private H: number = 0;
+  /** Cached waveform Y values per channel to avoid double-computation */
+  private waveCache: Float32Array[] = [];
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -109,6 +177,9 @@ export class BrainwaveAnimation implements BackgroundAnimation {
     this.canvas.style.width = `${this.W}px`;
     this.canvas.style.height = `${this.H}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Re-allocate wave cache
+    this.waveCache = this.channels.map(() => new Float32Array(Math.ceil(this.W) + 1));
   }
 
   dispose(): void {
@@ -119,6 +190,9 @@ export class BrainwaveAnimation implements BackgroundAnimation {
     }
     this.canvas.remove();
     this.channels = [];
+    this.readouts = [];
+    this.scanPulses = [];
+    this.waveCache = [];
   }
 
   // ─── Private ───────────────────────────────────────────────────
@@ -127,78 +201,288 @@ export class BrainwaveAnimation implements BackgroundAnimation {
     if (!this.running) return;
 
     this.ctx.clearRect(0, 0, this.W, this.H);
+
+    this.drawGrid();
+    this.updateScanPulses();
+    this.drawScanPulses();
+    this.computeWaves();
     this.drawChannels();
+    this.updateReadouts();
+    this.drawReadouts();
 
     this.t += 0.008;
     this.animFrame = requestAnimationFrame(this.tick);
   };
 
-  private drawChannels(): void {
+  /** Subtle background grid — HUD aesthetic */
+  private drawGrid(): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,255,200,0.04)';
+    ctx.lineWidth = 0.5;
+
+    // Horizontal lines
+    const hSpacing = 30;
+    for (let y = 0; y < this.H; y += hSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(this.W, y);
+      ctx.stroke();
+    }
+
+    // Vertical lines
+    const vSpacing = 50;
+    for (let x = 0; x < this.W; x += vSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, this.H);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  /** Spawn and advance vertical scan pulses */
+  private updateScanPulses(): void {
+    // Spawn new pulse (~0.5% chance per frame)
+    if (Math.random() < 0.005) {
+      this.scanPulses.push({
+        x: -20,
+        speed: 1.5 + Math.random() * 2.5,
+        width: 30 + Math.random() * 60,
+        opacity: 0.04 + Math.random() * 0.06,
+      });
+    }
+
+    // Advance and cull
+    for (let i = this.scanPulses.length - 1; i >= 0; i--) {
+      this.scanPulses[i].x += this.scanPulses[i].speed;
+      if (this.scanPulses[i].x > this.W + this.scanPulses[i].width) {
+        this.scanPulses.splice(i, 1);
+      }
+    }
+  }
+
+  /** Draw vertical scan pulses with gradient */
+  private drawScanPulses(): void {
+    const ctx = this.ctx;
+    for (const pulse of this.scanPulses) {
+      const grad = ctx.createLinearGradient(
+        pulse.x - pulse.width / 2, 0,
+        pulse.x + pulse.width / 2, 0
+      );
+      grad.addColorStop(0, 'rgba(0,255,200,0)');
+      grad.addColorStop(0.5, `rgba(0,255,200,${pulse.opacity})`);
+      grad.addColorStop(1, 'rgba(0,255,200,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(pulse.x - pulse.width / 2, 0, pulse.width, this.H);
+    }
+  }
+
+  /** Pre-compute waveform Y values for all channels */
+  private computeWaves(): void {
     const numChannels = this.channels.length;
-    const margin = this.H * 0.1;
+    const margin = this.H * 0.08;
     const usableH = this.H - margin * 2;
     const spacing = usableH / (numChannels + 1);
 
     for (let ci = 0; ci < numChannels; ci++) {
       const ch = this.channels[ci];
       const cy = margin + spacing * (ci + 1);
-      const amp = spacing * 0.35;
+      const amp = spacing * 0.32;
 
-      // Random spike trigger (~0.3% chance per frame)
-      if (ch.spikeLife <= 0 && Math.random() < 0.003) {
-        ch.spikeLife = 15 + Math.random() * 20;
-        ch.spikeAmp = 1.5 + Math.random() * 1.5;
+      // Random spike trigger (~0.4% chance per frame)
+      if (ch.spikeLife <= 0 && Math.random() < 0.004) {
+        ch.spikeLife = 20 + Math.random() * 25;
+        ch.spikeAmp = 1.8 + Math.random() * 1.8;
+        ch.spikePos = Math.random() * 0.3; // start from left third
+        ch.spikeSpeed = 0.008 + Math.random() * 0.012;
       }
 
-      // Decay spike
+      // Advance and decay spike
       const spikeMultiplier = ch.spikeLife > 0
-        ? 1 + (ch.spikeAmp - 1) * (ch.spikeLife / 30)
+        ? 1 + (ch.spikeAmp - 1) * (ch.spikeLife / 35)
         : 1;
-      if (ch.spikeLife > 0) ch.spikeLife--;
+      if (ch.spikeLife > 0) {
+        ch.spikeLife--;
+        ch.spikePos += ch.spikeSpeed;
+      }
 
-      // Main stroke
-      this.ctx.beginPath();
-      this.ctx.lineWidth = ch.width;
-      this.ctx.lineCap = 'round';
-      this.ctx.lineJoin = 'round';
-      this.ctx.strokeStyle = ch.color;
+      const cache = this.waveCache[ci];
+      if (!cache) continue;
 
       for (let x = 0; x <= this.W; x++) {
         const nx = x / this.W;
         // Envelope: fade edges to flat baseline
         const env = Math.sin(nx * Math.PI);
+
         // Base wave
-        const base = Math.sin(nx * Math.PI * 2 * ch.baseFreq + this.t * ch.speed * 10);
+        let wave = Math.sin(nx * Math.PI * 2 * ch.baseFreq + this.t * ch.speed * 10 + ch.phase);
+
+        // Harmonics
+        for (let hi = 0; hi < ch.harmonics.length; hi++) {
+          wave += Math.sin(
+            nx * Math.PI * 2 * ch.harmonics[hi] + this.t * ch.speed * 10 * (hi + 2) + ch.phase
+          ) * ch.harmonicAmps[hi];
+        }
+
         // High-frequency noise
         const noise = Math.sin(nx * Math.PI * 2 * ch.noiseFreq + this.t * ch.speed * 25)
           * ch.noiseAmp;
-        // Spike envelope (travels as a pulse)
-        const spikePulse = ch.spikeLife > 0
-          ? Math.exp(-Math.pow((nx - 0.5) * 4, 2)) * (spikeMultiplier - 1)
-          : 0;
-        const y = cy + (base + noise) * amp * env * (1 + spikePulse);
-        x === 0 ? this.ctx.moveTo(x, y) : this.ctx.lineTo(x, y);
-      }
-      this.ctx.stroke();
 
-      // Glow pass
-      this.ctx.beginPath();
-      this.ctx.lineWidth = ch.width * 3;
-      this.ctx.strokeStyle = ch.glowColor;
-
-      for (let x = 0; x <= this.W; x += 2) {
-        const nx = x / this.W;
-        const env = Math.sin(nx * Math.PI);
-        const base = Math.sin(nx * Math.PI * 2 * ch.baseFreq + this.t * ch.speed * 10);
-        const noise = Math.sin(nx * Math.PI * 2 * ch.noiseFreq + this.t * ch.speed * 25)
-          * ch.noiseAmp;
+        // Travelling spike pulse (Gaussian envelope moving across)
         const spikePulse = ch.spikeLife > 0
-          ? Math.exp(-Math.pow((nx - 0.5) * 4, 2)) * (spikeMultiplier - 1)
+          ? Math.exp(-Math.pow((nx - ch.spikePos) * 6, 2)) * (spikeMultiplier - 1)
           : 0;
-        const y = cy + (base + noise) * amp * env * (1 + spikePulse);
-        x === 0 ? this.ctx.moveTo(x, y) : this.ctx.lineTo(x, y);
+
+        cache[x] = cy + (wave + noise) * amp * env * (1 + spikePulse);
       }
-      this.ctx.stroke();
     }
+  }
+
+  private drawChannels(): void {
+    const ctx = this.ctx;
+    const numChannels = this.channels.length;
+
+    for (let ci = 0; ci < numChannels; ci++) {
+      const ch = this.channels[ci];
+      const cache = this.waveCache[ci];
+      if (!cache) continue;
+
+      // Outer glow pass (wide, soft)
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.beginPath();
+      ctx.lineWidth = ch.width * 5;
+      ctx.strokeStyle = ch.glowColor;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let x = 0; x <= this.W; x += 3) {
+        x === 0 ? ctx.moveTo(x, cache[x]) : ctx.lineTo(x, cache[x]);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // Inner glow pass
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.beginPath();
+      ctx.lineWidth = ch.width * 2.5;
+      ctx.strokeStyle = ch.glowColor;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let x = 0; x <= this.W; x += 2) {
+        x === 0 ? ctx.moveTo(x, cache[x]) : ctx.lineTo(x, cache[x]);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // Main crisp stroke
+      ctx.beginPath();
+      ctx.lineWidth = ch.width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = ch.color;
+      for (let x = 0; x <= this.W; x++) {
+        x === 0 ? ctx.moveTo(x, cache[x]) : ctx.lineTo(x, cache[x]);
+      }
+      ctx.stroke();
+
+      // Data point dots at spike peaks
+      if (ch.spikeLife > 0 && ch.spikeLife < 15) {
+        const peakX = Math.round(ch.spikePos * this.W);
+        if (peakX >= 0 && peakX <= this.W && cache[peakX] !== undefined) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          const dotRadius = 2 + ch.width;
+          ctx.beginPath();
+          ctx.arc(peakX, cache[peakX], dotRadius, 0, Math.PI * 2);
+          ctx.fillStyle = ch.color;
+          ctx.fill();
+
+          // Dot glow ring
+          ctx.beginPath();
+          ctx.arc(peakX, cache[peakX], dotRadius * 3, 0, Math.PI * 2);
+          ctx.fillStyle = ch.glowColor;
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // Channel label on left edge
+      if (ci < numChannels) {
+        const labels = ['\u03b4', '\u03b8', '\u03b1', '\u03b2', '\u03b3', 'H\u03b3'];
+        const margin = this.H * 0.08;
+        const usableH = this.H - margin * 2;
+        const spacing = usableH / (numChannels + 1);
+        const cy = margin + spacing * (ci + 1);
+
+        ctx.save();
+        ctx.font = '9px monospace';
+        ctx.fillStyle = ch.color;
+        ctx.globalAlpha = 0.6;
+        ctx.fillText(labels[ci] ?? '', 4, cy - spacing * 0.3);
+        ctx.restore();
+      }
+    }
+  }
+
+  /** Spawn floating data readouts near active channels */
+  private updateReadouts(): void {
+    // Spawn new readout (~1% chance per frame)
+    if (Math.random() < 0.01 && this.readouts.length < 6) {
+      const ci = Math.floor(Math.random() * this.channels.length);
+      const x = 0.2 + Math.random() * 0.6; // normalized x
+      const freqLabels = ['1.2Hz', '2.8Hz', '4.2Hz', '7.0Hz', '11Hz', '16Hz'];
+      const values = [
+        freqLabels[ci] ?? '',
+        `${(Math.random() * 80 + 20).toFixed(0)}\u03bcV`,
+        `SNR ${(Math.random() * 12 + 3).toFixed(1)}`,
+        `\u0394${(Math.random() * 2 - 1).toFixed(2)}`,
+      ];
+      this.readouts.push({
+        channel: ci,
+        x,
+        value: values[Math.floor(Math.random() * values.length)],
+        opacity: 0.5,
+        life: 80 + Math.random() * 60,
+      });
+    }
+
+    // Age and cull
+    for (let i = this.readouts.length - 1; i >= 0; i--) {
+      this.readouts[i].life--;
+      if (this.readouts[i].life < 20) {
+        this.readouts[i].opacity *= 0.92;
+      }
+      if (this.readouts[i].life <= 0) {
+        this.readouts.splice(i, 1);
+      }
+    }
+  }
+
+  /** Draw floating readout labels */
+  private drawReadouts(): void {
+    const ctx = this.ctx;
+    const numChannels = this.channels.length;
+    const margin = this.H * 0.08;
+    const usableH = this.H - margin * 2;
+    const spacing = usableH / (numChannels + 1);
+
+    ctx.save();
+    ctx.font = '8px monospace';
+
+    for (const r of this.readouts) {
+      const ch = this.channels[r.channel];
+      if (!ch) continue;
+      const cy = margin + spacing * (r.channel + 1);
+      const px = r.x * this.W;
+
+      ctx.globalAlpha = r.opacity * 0.5;
+      ctx.fillStyle = ch.color;
+      ctx.fillText(r.value, px, cy - spacing * 0.35);
+    }
+
+    ctx.restore();
   }
 }
