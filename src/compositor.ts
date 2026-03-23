@@ -15,6 +15,7 @@ import {
   WindowBounds,
   KryptonWindow,
   LayoutMode,
+  QuickTerminalAnimation,
   QuickTerminalConfig,
   DEFAULT_QUICK_TERMINAL_CONFIG,
   Tab,
@@ -388,11 +389,14 @@ export class Compositor {
     }
 
     // Quick Terminal
+    const qtAnim = config.quick_terminal.animation;
+    const validAnims = ['slide', 'float', 'fade', 'glitch', 'none'] as const;
     this.qtConfig = {
       widthRatio: config.quick_terminal.width_ratio,
       heightRatio: config.quick_terminal.height_ratio,
       backdropBlur: config.quick_terminal.backdrop_blur,
       animationDuration: 200, // not yet in TOML, keep default
+      animation: validAnims.includes(qtAnim as any) ? qtAnim as QuickTerminalAnimation : 'slide',
     };
 
     // Workspaces
@@ -2295,15 +2299,9 @@ export class Compositor {
     // Focus the Quick Terminal (add focused styling)
     this.qtElement.classList.add('krypton-window--focused');
 
-    // Animate 3D float-in: swings from tilted-back to resting float
+    // Animate show based on configured style
     const duration = this.qtConfig.animationDuration;
-    const anim = this.qtElement.animate(
-      [
-        { transform: 'perspective(800px) rotateX(16deg) translateZ(-60px) translateY(-40px)', opacity: '0' },
-        { transform: 'perspective(800px) rotateX(1.5deg) translateZ(20px) translateY(0)', opacity: '1' },
-      ],
-      { duration, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)', fill: 'none' },
-    );
+    const anim = this.animateQtShow(this.qtElement, duration);
 
     // Fit terminal after visible
     await this.nextFrame();
@@ -2319,10 +2317,12 @@ export class Compositor {
     // Focus xterm.js
     this.qtTerminal.terminal.focus();
 
-    try {
-      await anim.finished;
-    } catch {
-      // Animation cancelled
+    if (anim) {
+      try {
+        await anim.finished;
+      } catch {
+        // Animation cancelled
+      }
     }
   }
 
@@ -2331,27 +2331,23 @@ export class Compositor {
     if (!this.qtVisible || !this.qtElement) return;
     this.sound.play('tab.close');
 
-    // Animate 3D float-out: tilts back and recedes into depth
+    // Animate hide based on configured style
     const duration = this.qtConfig.animationDuration;
-    const anim = this.qtElement.animate(
-      [
-        { transform: 'perspective(800px) rotateX(1.5deg) translateZ(20px) translateY(0)', opacity: '1' },
-        { transform: 'perspective(800px) rotateX(16deg) translateZ(-60px) translateY(-40px)', opacity: '0' },
-      ],
-      { duration, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' },
-    );
+    const anim = this.animateQtHide(this.qtElement, duration);
 
-    try {
-      await anim.finished;
-    } catch {
-      // Animation cancelled
+    if (anim) {
+      try {
+        await anim.finished;
+      } catch {
+        // Animation cancelled
+      }
     }
 
     // Hide element
     this.qtElement.classList.remove('krypton-quick-terminal--visible');
     this.qtElement.classList.remove('krypton-window--focused');
     // Cancel fill-forwards so next show starts clean
-    anim.cancel();
+    if (anim) anim.cancel();
     this.qtVisible = false;
 
     // Blur the Quick Terminal's xterm.js so browser focus is released
@@ -2566,6 +2562,96 @@ export class Compositor {
   }
 
   /** Position the Quick Terminal centered on the viewport */
+  /** Build WAAPI show animation for Quick Terminal based on configured style */
+  private animateQtShow(el: HTMLElement, duration: number): Animation | null {
+    switch (this.qtConfig.animation) {
+      case 'slide':
+        return el.animate(
+          [
+            { transform: 'translateY(-100%)', opacity: '0' },
+            { transform: 'translateY(0)', opacity: '1' },
+          ],
+          { duration, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)', fill: 'none' },
+        );
+      case 'float':
+        return el.animate(
+          [
+            { transform: 'perspective(800px) rotateX(16deg) translateZ(-60px) translateY(-40px)', opacity: '0' },
+            { transform: 'perspective(800px) rotateX(1.5deg) translateZ(20px) translateY(0)', opacity: '1' },
+          ],
+          { duration, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)', fill: 'none' },
+        );
+      case 'fade':
+        return el.animate(
+          [
+            { opacity: '0', transform: 'scale(0.96)' },
+            { opacity: '1', transform: 'scale(1)' },
+          ],
+          { duration, easing: 'ease-out', fill: 'none' },
+        );
+      case 'glitch': {
+        const d = duration;
+        return el.animate(
+          [
+            { clipPath: 'inset(40% 0 60% 0)', opacity: '0.6', offset: 0 },
+            { clipPath: 'inset(10% 0 30% 0)', opacity: '0.8', offset: 0.25 },
+            { clipPath: 'inset(60% 0 5% 0)', opacity: '0.7', offset: 0.5 },
+            { clipPath: 'inset(20% 0 10% 0)', opacity: '0.9', offset: 0.75 },
+            { clipPath: 'inset(0 0 0 0)', opacity: '1', offset: 1 },
+          ],
+          { duration: d, easing: 'steps(4, end)', fill: 'none' },
+        );
+      }
+      case 'none':
+        return null;
+    }
+  }
+
+  /** Build WAAPI hide animation for Quick Terminal based on configured style */
+  private animateQtHide(el: HTMLElement, duration: number): Animation | null {
+    switch (this.qtConfig.animation) {
+      case 'slide':
+        return el.animate(
+          [
+            { transform: 'translateY(0)', opacity: '1' },
+            { transform: 'translateY(-100%)', opacity: '0' },
+          ],
+          { duration, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' },
+        );
+      case 'float':
+        return el.animate(
+          [
+            { transform: 'perspective(800px) rotateX(1.5deg) translateZ(20px) translateY(0)', opacity: '1' },
+            { transform: 'perspective(800px) rotateX(16deg) translateZ(-60px) translateY(-40px)', opacity: '0' },
+          ],
+          { duration, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' },
+        );
+      case 'fade':
+        return el.animate(
+          [
+            { opacity: '1', transform: 'scale(1)' },
+            { opacity: '0', transform: 'scale(0.96)' },
+          ],
+          { duration, easing: 'ease-in', fill: 'forwards' },
+        );
+      case 'glitch': {
+        const d = duration;
+        return el.animate(
+          [
+            { clipPath: 'inset(0 0 0 0)', opacity: '1', offset: 0 },
+            { clipPath: 'inset(20% 0 10% 0)', opacity: '0.9', offset: 0.25 },
+            { clipPath: 'inset(60% 0 5% 0)', opacity: '0.7', offset: 0.5 },
+            { clipPath: 'inset(10% 0 30% 0)', opacity: '0.8', offset: 0.75 },
+            { clipPath: 'inset(40% 0 60% 0)', opacity: '0', offset: 1 },
+          ],
+          { duration: d, easing: 'steps(4, end)', fill: 'forwards' },
+        );
+      }
+      case 'none':
+        return null;
+    }
+  }
+
   private positionQuickTerminal(): void {
     if (!this.qtElement) return;
     const vw = window.innerWidth;

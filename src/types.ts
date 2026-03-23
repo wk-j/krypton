@@ -146,6 +146,9 @@ export interface AnimationConfig {
 // ─── Quick Terminal Types ─────────────────────────────────────────
 
 /** Quick Terminal configuration */
+/** Quick Terminal show/hide animation style */
+export type QuickTerminalAnimation = 'slide' | 'float' | 'fade' | 'glitch' | 'none';
+
 export interface QuickTerminalConfig {
   /** Width as fraction of viewport (default 0.6) */
   widthRatio: number;
@@ -155,6 +158,8 @@ export interface QuickTerminalConfig {
   backdropBlur: number;
   /** Show/hide animation duration in ms (default 200) */
   animationDuration: number;
+  /** Animation style (default 'slide') */
+  animation: QuickTerminalAnimation;
 }
 
 // ─── Progress Bar Types (OSC 9;4) ─────────────────────────────────
@@ -193,6 +198,7 @@ export const DEFAULT_QUICK_TERMINAL_CONFIG: QuickTerminalConfig = {
   heightRatio: 0.5,
   backdropBlur: 20,
   animationDuration: 200,
+  animation: 'slide',
 };
 
 // ─── Context Extension Types ─────────────────────────────────────
