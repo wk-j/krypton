@@ -37,6 +37,9 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: '-', label: 'split horizontal' },
   { key: 'A-hjkl', label: 'focus pane' },
   { key: 'A-x', label: 'close pane' },
+  { key: 'd', label: 'git diff' },
+  { key: 'D', label: 'git diff staged' },
+  { key: 'o', label: 'markdown viewer' },
   { key: 'c', label: 'clone SSH tab' },
   { key: 'C', label: 'clone SSH window' },
 ];

@@ -1452,11 +1452,11 @@ export class Compositor {
       ? `DIFF_STAGED // ${fileCount} file${fileCount !== 1 ? 's' : ''}`
       : `DIFF // ${fileCount} file${fileCount !== 1 ? 's' : ''}`;
 
-    const winId = await this.createContentWindow(titleText, diffView);
+    await this.createContentTab(titleText, diffView);
 
-    // Wire close callback to close the window
+    // Wire close callback to close the tab
     diffView.onClose(() => {
-      this.closeWindow(winId);
+      this.closeTab();
     });
   }
 
@@ -1493,10 +1493,10 @@ export class Compositor {
 
     // Use the last path component of CWD as title
     const dirName = (cwd ?? '.').split('/').filter(Boolean).pop() ?? 'docs';
-    const winId = await this.createContentWindow(`MD // ${dirName}`, mdView);
+    await this.createContentTab(`MD // ${dirName}`, mdView);
 
     mdView.onClose(() => {
-      this.closeWindow(winId);
+      this.closeTab();
     });
   }
 
@@ -2138,6 +2138,59 @@ export class Compositor {
     this.sound.play('tab.create');
   }
 
+  /** Create a new tab with a content view in the focused window */
+  async createContentTab(title: string, contentView: ContentView): Promise<void> {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win) return;
+
+    const tabId = nextTabId();
+
+    // Detach current tab's pane tree from DOM (preserve HUD overlays)
+    this.clearPaneTree(win.contentElement);
+
+    // Create pane with content view (no terminal/PTY)
+    const paneId = nextPaneId();
+    const paneEl = document.createElement('div');
+    paneEl.className = 'krypton-pane';
+    paneEl.dataset.paneId = paneId;
+    win.contentElement.appendChild(paneEl);
+
+    paneEl.appendChild(contentView.element);
+
+    const pane: Pane = {
+      id: paneId,
+      sessionId: null,
+      terminal: null,
+      fitAddon: null,
+      element: paneEl,
+      shaderInstance: null,
+      contentView,
+    };
+
+    const tabNum = win.tabs.length + 1;
+    const tabEl = this.buildTabElement(tabId, tabNum - 1, title);
+
+    const tab: Tab = {
+      id: tabId,
+      title,
+      paneTree: { type: 'leaf', pane },
+      focusedPaneId: pane.id,
+      element: tabEl,
+    };
+
+    win.tabs.push(tab);
+    win.activeTabIndex = win.tabs.length - 1;
+    this.rebuildTabBar(win);
+    this.showActiveTab(win);
+
+    await this.nextFrame();
+    this.fitWindow(win.id);
+
+    contentView.element.focus();
+    this.sound.play('tab.create');
+  }
+
   /** Close the active tab in the focused window */
   async closeTab(): Promise<void> {
     if (!this.focusedWindowId) return;
@@ -2175,7 +2228,11 @@ export class Compositor {
     if (win.tabs.length > 0) {
       const newTab = win.tabs[win.activeTabIndex];
       const pane = this.findPaneInTree(newTab.paneTree, newTab.focusedPaneId);
-      if (pane) pane.terminal?.focus();
+      if (pane?.contentView) {
+        pane.contentView.element.focus();
+      } else if (pane?.terminal) {
+        pane.terminal.focus();
+      }
     }
   }
 
