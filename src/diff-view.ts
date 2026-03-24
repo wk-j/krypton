@@ -1,7 +1,8 @@
 // Krypton — Diff View
 // Renders git diff output as side-by-side HTML using diff2html.
 
-import { parse, html } from 'diff2html';
+import { parse } from 'diff2html';
+import { Diff2HtmlUI } from 'diff2html/lib-esm/ui/js/diff2html-ui';
 import type { DiffFile } from 'diff2html/lib/types';
 import 'diff2html/bundles/css/diff2html.min.css';
 
@@ -103,8 +104,13 @@ export class DiffContentView implements ContentView {
     const totalLines = file.addedLines + file.deletedLines;
     const matching = totalLines > 500 ? 'none' as const : 'lines' as const;
 
-    // Render single file diff as HTML
-    const diffHtml = html([file], {
+    // Wrap in dark color scheme container
+    const wrapper = document.createElement('div');
+    wrapper.className = 'd2h-dark-color-scheme';
+    this.fileContainer.appendChild(wrapper);
+
+    // Render with Diff2HtmlUI for built-in syntax highlighting
+    const ui = new Diff2HtmlUI(wrapper, [file], {
       outputFormat: this.diffStyle,
       drawFileList: false,
       colorScheme: 'dark' as never,
@@ -113,13 +119,10 @@ export class DiffContentView implements ContentView {
       maxLineSizeInBlockForComparison: 200,
       maxLineLengthHighlight: 10000,
       renderNothingWhenEmpty: false,
+      highlight: true,
+      synchronisedScroll: this.diffStyle === 'side-by-side',
     });
-
-    // Wrap in dark color scheme container
-    const wrapper = document.createElement('div');
-    wrapper.className = 'd2h-dark-color-scheme';
-    wrapper.innerHTML = diffHtml;
-    this.fileContainer.appendChild(wrapper);
+    ui.draw();
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
