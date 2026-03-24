@@ -36,6 +36,11 @@ Add a dedicated markdown viewer window with a two-panel layout: a **file browser
 5. File browser panel renders the list; first file is auto-selected
 6. On selection, reads file via run_command('cat', [path]) and renders via marked()
 7. Window enters tiling layout with title "MD // <cwd-basename>"
+8. Navigation history (jumplist) tracks each file visited
+9. Ctrl+O / Ctrl+I move back/forward through jumplist
+10. Link hint mode (o) overlays labels on links; typing a label follows the link
+    - Local .md links resolve relative to current file and navigate in-viewer
+    - External URLs open in browser via open_url
 ```
 
 ### Keybindings
@@ -52,6 +57,10 @@ Add a dedicated markdown viewer window with a two-panel layout: a **file browser
 | `f` / `b` | Preview focused | Page down / page up |
 | `g` / `G` | Preview focused | Jump to top / bottom |
 | `]` / `[` | Preview focused | Next / previous heading |
+| `o` | Preview focused | Enter link hint mode (type label to follow link) |
+| `Escape` | Link hint active | Cancel link hints |
+| `Ctrl+o` | Any panel | Jump back in navigation history |
+| `Ctrl+i` | Any panel | Jump forward in navigation history |
 | `r` | Either panel | Reload current file from disk |
 | `R` | Either panel | Refresh file tree (re-scan for new/removed .md files) |
 | `v` | Preview focused | Enter Select mode (block selection) |
@@ -103,7 +112,7 @@ Preview styling (dark theme matching Krypton):
 - Headings: accent-colored, monospace, sized h1→h6
 - Code blocks: dark background with accent border, uses configured font
 - Inline code: subtle background highlight
-- Links: accent-colored, clickable (opens in browser via `open_url`)
+- Links: accent-colored, clickable — local `.md` links navigate within the viewer, external URLs open in browser via `open_url`. Keyboard-accessible via link hint mode (`o`)
 - Lists: accent-colored bullets/numbers
 - Blockquotes: left border accent, dimmed text
 - Tables: bordered, alternating row tint

@@ -2921,3 +2921,25 @@ html, body {
   pointer-events: none;
   z-index: 10;
 }
+
+/* ── Link Hint Mode ── */
+.krypton-md__link-hint {
+  position: absolute;
+  top: -6px;
+  left: -2px;
+  padding: 0 4px;
+  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-transform: uppercase;
+  color: rgba(6, 10, 18, 0.95);
+  background: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+  border-radius: 3px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.krypton-md__link-hint--dimmed {
+  opacity: 0.2;
+}

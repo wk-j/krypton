@@ -76,6 +76,16 @@ export class MarkdownContentView implements ContentView {
   private selectCursor = -1;  // current block index (extends from anchor)
   private selectIndicator: HTMLElement | null = null;
 
+  // Navigation history (jumplist)
+  private jumpHistory: string[] = [];
+  private jumpIndex = -1;
+
+  // Link hint mode state
+  private linkHintActive = false;
+  private linkHintLabels: HTMLElement[] = [];
+  private linkHintMap: Map<string, HTMLAnchorElement> = new Map();
+  private linkHintInput = '';
+
   constructor(files: string[], cwd: string, container: HTMLElement) {
     this.files = files.sort();
     this.filteredFiles = [...this.files];
@@ -135,13 +145,18 @@ export class MarkdownContentView implements ContentView {
       this.previewContent.innerHTML = '<div class="krypton-md__empty">No markdown files found</div>';
     }
 
-    // Handle link clicks — open in browser
+    // Handle link clicks — local .md links navigate in viewer, others open in browser
     this.previewContent.addEventListener('click', (e) => {
       const link = (e.target as HTMLElement).closest('a');
       if (link) {
         e.preventDefault();
         const href = link.getAttribute('href');
-        if (href) {
+        if (!href) return;
+
+        // Check if it's a local markdown link (relative path ending in .md, no protocol)
+        if (href.endsWith('.md') && !href.includes('://')) {
+          this.navigateToLocalMd(href);
+        } else {
           invoke('open_url', { url: href }).catch(() => {
             console.error('Failed to open URL:', href);
           });
@@ -236,7 +251,61 @@ export class MarkdownContentView implements ContentView {
 
   // ── Preview ──
 
-  private async loadFile(relativePath: string): Promise<void> {
+  private pushJump(file: string): void {
+    // Truncate forward history when navigating to a new file
+    if (this.jumpIndex < this.jumpHistory.length - 1) {
+      this.jumpHistory.splice(this.jumpIndex + 1);
+    }
+    // Don't push duplicates at the top
+    if (this.jumpHistory[this.jumpHistory.length - 1] !== file) {
+      this.jumpHistory.push(file);
+    }
+    this.jumpIndex = this.jumpHistory.length - 1;
+  }
+
+  private navigateJump(delta: number): void {
+    const next = this.jumpIndex + delta;
+    if (next < 0 || next >= this.jumpHistory.length) return;
+    this.jumpIndex = next;
+    const file = this.jumpHistory[next];
+
+    const idx = this.filteredFiles.indexOf(file);
+    if (idx !== -1) {
+      this.selectedIndex = idx;
+      this.renderFileList();
+    }
+    this.loadFile(file, false);
+    this.setFocus('preview');
+  }
+
+  private navigateToLocalMd(href: string): void {
+    // Resolve relative to the directory of the currently viewed file
+    const currentFile = this.previewHeader.textContent || '';
+    const currentDir = currentFile.includes('/')
+      ? currentFile.slice(0, currentFile.lastIndexOf('/'))
+      : '';
+    const resolved = currentDir ? `${currentDir}/${href}` : href;
+
+    // Normalize path (resolve ../ and ./ segments)
+    const parts: string[] = [];
+    for (const seg of resolved.split('/')) {
+      if (seg === '..') parts.pop();
+      else if (seg !== '.' && seg !== '') parts.push(seg);
+    }
+    const normalizedPath = parts.join('/');
+
+    // If the file is in our list, select it; otherwise just load it directly
+    const idx = this.filteredFiles.indexOf(normalizedPath);
+    if (idx !== -1) {
+      this.selectedIndex = idx;
+      this.renderFileList();
+    }
+    this.loadFile(normalizedPath);
+    this.setFocus('preview');
+  }
+
+  private async loadFile(relativePath: string, recordJump = true): Promise<void> {
+    if (recordJump) this.pushJump(relativePath);
     this.previewHeader.textContent = relativePath;
 
     try {
@@ -284,8 +353,22 @@ export class MarkdownContentView implements ContentView {
     // Don't intercept when filter input is active
     if (this.isFilterActive) return false;
 
+    // Ctrl+O / Ctrl+I — jumplist back/forward (handle before modifier guard)
+    if (e.ctrlKey && e.key === 'o') {
+      this.navigateJump(-1);
+      return true;
+    }
+    if (e.ctrlKey && e.key === 'i') {
+      this.navigateJump(1);
+      return true;
+    }
+
     // Don't intercept modifier combos (let globals handle them)
     if (e.metaKey || e.ctrlKey || e.altKey) return false;
+
+    if (this.linkHintActive) {
+      return this.handleLinkHintKey(e);
+    }
 
     if (this.focusPanel === 'select') {
       return this.handleSelectKey(e);
@@ -365,6 +448,9 @@ export class MarkdownContentView implements ContentView {
         return true;
       case 'v':
         this.enterSelectMode();
+        return true;
+      case 'o':
+        this.enterLinkHintMode();
         return true;
       case 'r':
         this.reloadCurrentFile();
@@ -521,6 +607,110 @@ export class MarkdownContentView implements ContentView {
     if (this.selectIndicator) {
       this.selectIndicator.style.display = 'none';
     }
+  }
+
+  // ── Link Hint Mode ──
+
+  private static generateHintLabels(count: number): string[] {
+    const chars = 'asdfghjkl';
+    const labels: string[] = [];
+    if (count <= chars.length) {
+      for (let i = 0; i < count; i++) labels.push(chars[i]);
+    } else {
+      for (let i = 0; i < chars.length && labels.length < count; i++) {
+        for (let j = 0; j < chars.length && labels.length < count; j++) {
+          labels.push(chars[i] + chars[j]);
+        }
+      }
+    }
+    return labels;
+  }
+
+  private enterLinkHintMode(): void {
+    const links = Array.from(
+      this.previewContent.querySelectorAll('a[href]'),
+    ) as HTMLAnchorElement[];
+    if (links.length === 0) return;
+
+    const labels = MarkdownContentView.generateHintLabels(links.length);
+    this.linkHintMap.clear();
+    this.linkHintLabels = [];
+    this.linkHintInput = '';
+
+    for (let i = 0; i < links.length; i++) {
+      const link = links[i];
+      const label = labels[i];
+      this.linkHintMap.set(label, link);
+
+      const badge = document.createElement('span');
+      badge.className = 'krypton-md__link-hint';
+      badge.textContent = label;
+      link.style.position = 'relative';
+      link.appendChild(badge);
+      this.linkHintLabels.push(badge);
+    }
+
+    this.linkHintActive = true;
+  }
+
+  private exitLinkHintMode(): void {
+    for (const badge of this.linkHintLabels) badge.remove();
+    this.linkHintLabels = [];
+    this.linkHintMap.clear();
+    this.linkHintInput = '';
+    this.linkHintActive = false;
+  }
+
+  private handleLinkHintKey(e: KeyboardEvent): boolean {
+    if (e.key === 'Escape') {
+      this.exitLinkHintMode();
+      return true;
+    }
+
+    if (e.key.length !== 1) return true; // absorb non-character keys
+
+    this.linkHintInput += e.key.toLowerCase();
+
+    // Check for exact match
+    const match = this.linkHintMap.get(this.linkHintInput);
+    if (match) {
+      const href = match.getAttribute('href');
+      this.exitLinkHintMode();
+      if (href) {
+        if (href.endsWith('.md') && !href.includes('://')) {
+          this.navigateToLocalMd(href);
+        } else {
+          invoke('open_url', { url: href }).catch(() => {
+            console.error('Failed to open URL:', href);
+          });
+        }
+      }
+      return true;
+    }
+
+    // Check if input is a prefix of any label
+    let hasPrefix = false;
+    for (const label of this.linkHintMap.keys()) {
+      if (label.startsWith(this.linkHintInput)) {
+        hasPrefix = true;
+        break;
+      }
+    }
+
+    if (!hasPrefix) {
+      // No possible match — exit
+      this.exitLinkHintMode();
+    } else {
+      // Dim non-matching hints
+      for (const badge of this.linkHintLabels) {
+        const label = badge.textContent || '';
+        badge.classList.toggle(
+          'krypton-md__link-hint--dimmed',
+          !label.startsWith(this.linkHintInput),
+        );
+      }
+    }
+    return true;
   }
 
   private handleSelectKey(e: KeyboardEvent): boolean {
