@@ -1372,6 +1372,15 @@ export class Compositor {
     // Mount the content view into the pane
     paneEl.appendChild(contentView.element);
 
+    // Edge glow overlays — match terminal pane glow
+    const glowTop = document.createElement('div');
+    glowTop.className = 'krypton-glow-overlay';
+    paneEl.appendChild(glowTop);
+
+    const glowBottom = document.createElement('div');
+    glowBottom.className = 'krypton-glow-overlay krypton-glow-overlay--bottom';
+    paneEl.appendChild(glowBottom);
+
     const pane: Pane = {
       id: paneId,
       sessionId: null,
@@ -2150,6 +2159,15 @@ export class Compositor {
     win.contentElement.appendChild(paneEl);
 
     paneEl.appendChild(contentView.element);
+
+    // Edge glow overlays — match terminal pane glow
+    const ctGlowTop = document.createElement('div');
+    ctGlowTop.className = 'krypton-glow-overlay';
+    paneEl.appendChild(ctGlowTop);
+
+    const ctGlowBottom = document.createElement('div');
+    ctGlowBottom.className = 'krypton-glow-overlay krypton-glow-overlay--bottom';
+    paneEl.appendChild(ctGlowBottom);
 
     const pane: Pane = {
       id: paneId,
