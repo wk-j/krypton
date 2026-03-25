@@ -13,6 +13,7 @@ import { createGitDashboard } from './dashboards/git';
 import { createOpenCodeDashboard } from './dashboards/opencode';
 import { CursorTrail } from './cursor-trail';
 import { ClaudeHookManager } from './claude-hooks';
+import { NotificationController } from './notification';
 
 async function main(): Promise<void> {
   const workspace = document.getElementById('krypton-workspace');
@@ -81,8 +82,13 @@ async function main(): Promise<void> {
     whichKey.setMode(mode, contentType);
   });
 
+  // Initialize notification overlay (bottom-right, OSC-aware)
+  const notifications = new NotificationController();
+  compositor.setNotificationController(notifications);
+
   // Initialize Claude Code hook integration
   const claudeHooks = new ClaudeHookManager();
+  claudeHooks.setNotificationController(notifications);
   compositor.setClaudeHookManager(claudeHooks);
   claudeHooks.init().catch((e) => {
     console.warn('[Krypton] Claude hook integration unavailable:', e);

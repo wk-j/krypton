@@ -40,6 +40,7 @@ import { ExtensionManager } from './extensions';
 import type { ExtensionHost } from './extensions';
 import { DashboardManager } from './dashboard';
 import type { ClaudeHookManager } from './claude-hooks';
+import type { NotificationController } from './notification';
 
 /** Replace the alpha channel of an rgba() color string.
  *  e.g. replaceAlpha('rgba(6, 10, 18, 0.5)', 0.8) → 'rgba(6, 10, 18, 0.8)' */
@@ -253,6 +254,9 @@ export class Compositor {
   // ─── Theme Engine ─────────────────────────────────────────────────
   /** Reference to the frontend theme engine (set via setThemeEngine) */
   private themeEngine: FrontendThemeEngine | null = null;
+
+  // ─── Notification Controller ────────────────────────────────────
+  private notifController: NotificationController | null = null;
 
   // ─── Claude Hook Manager ────────────────────────────────────────
   private claudeHookManager: ClaudeHookManager | null = null;
@@ -545,6 +549,11 @@ export class Compositor {
 
     if (this.customKeyHandler) {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);
+    }
+
+    // Register OSC notification handlers (OSC 9/777/99)
+    if (this.notifController) {
+      this.notifController.registerOscHandlers(terminal);
     }
 
     // Attach shader if enabled — use short delay to let WebGL addon render first frame
@@ -947,6 +956,24 @@ export class Compositor {
   /** Get the dashboard manager instance */
   get dashboardManager(): DashboardManager {
     return this.dashboards;
+  }
+
+  /** Set the notification controller (called from main.ts).
+   *  Wires focus-change to reparent the overlay into the active window. */
+  setNotificationController(ctrl: NotificationController): void {
+    this.notifController = ctrl;
+    this.onFocusChange((id) => {
+      if (!id) return;
+      const win = this.windows.get(id);
+      if (win) {
+        ctrl.attachTo(win.contentElement);
+      }
+    });
+  }
+
+  /** Get the notification controller */
+  get notifications(): NotificationController | null {
+    return this.notifController;
   }
 
   // ─── Shader Controls ─────────────────────────────────────────────
@@ -2815,6 +2842,11 @@ export class Compositor {
     // Attach custom key handler
     if (this.customKeyHandler) {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);
+    }
+
+    // Register OSC notification handlers (OSC 9/777/99)
+    if (this.notifController) {
+      this.notifController.registerOscHandlers(terminal);
     }
 
     // Listen for shell title changes (OSC 0/2 sequences)

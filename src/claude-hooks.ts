@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { BackgroundAnimation, FlameAnimation } from './flame';
 import { BrainwaveAnimation } from './brainwave';
 import { MatrixAnimation } from './matrix';
+import type { NotificationController, NotificationLevel } from './notification';
 
 /** Claude Code hook event payload (emitted by Rust hook server) */
 export interface ClaudeHookEvent {
@@ -124,6 +125,34 @@ export class ClaudeHookManager {
   private toolClearTimer: ReturnType<typeof setTimeout> | null = null;
   private animations: Set<BackgroundAnimation> = new Set();
   private animationType: string = 'flame';
+  private notifController: NotificationController | null = null;
+
+  /** Connect the in-window notification overlay so hook messages are forwarded */
+  setNotificationController(ctrl: NotificationController): void {
+    this.notifController = ctrl;
+  }
+
+  /** Map toast type → notification level */
+  private static TOAST_LEVEL: Record<string, NotificationLevel> = {
+    session: 'system',
+    tool: 'info',
+    tool_done: 'success',
+    notification: 'info',
+    permission_prompt: 'warning',
+    error: 'error',
+    success: 'success',
+    stop: 'system',
+    instructions: 'info',
+    prompt: 'info',
+    subagent: 'system',
+    subagent_done: 'success',
+    teammate: 'system',
+    task: 'success',
+    config: 'info',
+    worktree: 'info',
+    compact: 'system',
+    elicitation: 'warning',
+  };
 
   setToastsEnabled(enabled: boolean): void {
     this.toastsEnabled = enabled;
@@ -679,9 +708,16 @@ export class ClaudeHookManager {
   }
 
   private showToast(message: string, type?: string): void {
-    if (!this.toastContainer || !this.toastsEnabled) return;
-
     const toastType = type ?? 'notification';
+
+    // Forward to in-window notification overlay
+    if (this.notifController) {
+      const level = ClaudeHookManager.TOAST_LEVEL[toastType] ?? 'info';
+      const label = ClaudeHookManager.TOAST_LABELS[toastType] ?? 'CLAUDE';
+      this.notifController.show({ message, level, label });
+    }
+
+    if (!this.toastContainer || !this.toastsEnabled) return;
 
     const toast = document.createElement('div');
     toast.className = 'krypton-claude-toast';
