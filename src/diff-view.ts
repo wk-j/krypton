@@ -75,7 +75,12 @@ export class DiffContentView implements ContentView {
 
     const path = document.createElement('span');
     path.className = 'krypton-diff__file-path';
-    path.textContent = file.newName || file.oldName || 'unknown';
+    const isRename = file.oldName && file.newName && file.oldName !== file.newName
+      && file.oldName !== '/dev/null' && file.newName !== '/dev/null';
+    path.textContent = isRename
+      ? `${file.oldName} → ${file.newName}`
+      : file.newName === '/dev/null' ? file.oldName || 'unknown'
+      : file.newName || file.oldName || 'unknown';
 
     const stats = document.createElement('span');
     stats.className = 'krypton-diff__stats';
@@ -135,6 +140,12 @@ export class DiffContentView implements ContentView {
       case 'k':
         this.fileContainer.scrollBy({ top: -40, behavior: 'auto' });
         return true;
+      case 'h':
+        this.scrollHorizontal(-40);
+        return true;
+      case 'l':
+        this.scrollHorizontal(40);
+        return true;
       case 'f':
         this.fileContainer.scrollBy({ top: this.fileContainer.clientHeight * 0.9, behavior: 'auto' });
         return true;
@@ -169,6 +180,17 @@ export class DiffContentView implements ContentView {
         return true;
       default:
         return false;
+    }
+  }
+
+  private scrollHorizontal(delta: number): void {
+    // In side-by-side mode, .d2h-file-side-diff is the per-panel scrollable
+    // container (overflow-x: scroll). Fall back to outer container for unified.
+    const panels = this.fileContainer.querySelectorAll<HTMLElement>('.d2h-file-side-diff');
+    if (panels.length > 0) {
+      panels.forEach((p) => p.scrollBy({ left: delta, behavior: 'auto' }));
+    } else {
+      this.fileContainer.scrollBy({ left: delta, behavior: 'auto' });
     }
   }
 

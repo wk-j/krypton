@@ -1442,7 +1442,7 @@ export class Compositor {
    */
   async openDiffView(options?: { staged?: boolean }): Promise<void> {
     const cwd = await this.getFocusedCwd();
-    const args = ['diff'];
+    const args = ['diff', '-M'];
     if (options?.staged) args.push('--staged');
 
     let diffOutput: string;
