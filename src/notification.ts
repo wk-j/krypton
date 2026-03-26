@@ -1,6 +1,6 @@
-// Krypton — Futuristic Notification Overlay
-// Bottom-right text animation overlay with glitch-decode reveal and OSC detection.
-// Captures OSC 9/777/99 from terminal apps and provides a programmatic API.
+// Krypton — Persistent Notification Control
+// Pinned to bottom-right of the focused terminal window.
+// Updates in-place with glitch-decode reveal. Captures OSC 9/777/99 from terminals.
 
 import type { Terminal } from '@xterm/xterm';
 
@@ -13,8 +13,6 @@ export interface NotificationOptions {
   level?: NotificationLevel;
   /** Label prefix (e.g. 'SYSTEM', 'ALERT'). Auto-derived from level if omitted */
   label?: string;
-  /** Duration in ms before auto-dismiss. 0 = manual dismiss only. Default: 4000 */
-  duration?: number;
   /** Whether to use the decode (glitch) text reveal. Default: true */
   decode?: boolean;
 }
@@ -23,16 +21,11 @@ export interface NotificationOptions {
 
 const GLYPH_SET = '░▒▓█▀▄▌▐─═╌╍┄┅⟋⟍⧸⧹';
 const DECODE_FPS = 40;
-/** Base probability a character resolves each frame (modified by position) */
 const DECODE_BASE_CHANCE = 0.08;
-/** How much earlier left-side characters tend to resolve vs right-side */
 const DECODE_POSITION_BIAS = 0.04;
 
-const MAX_VISIBLE = 6;
-const DEFAULT_DURATION = 4000;
 const MAX_MESSAGE_LEN = 256;
 const KITTY_TITLE_TIMEOUT_MS = 500;
-const MIN_DISMISS_GAP_MS = 2000;
 
 const LEVEL_LABELS: Record<NotificationLevel, string> = {
   info: 'INFO',
@@ -45,92 +38,80 @@ const LEVEL_LABELS: Record<NotificationLevel, string> = {
 // ── Controller ─────────────────────────────────────────────────────────
 
 export class NotificationController {
-  private container: HTMLElement;
-  private queue: HTMLElement[] = [];
+  private el: HTMLElement;
+  private barEl: HTMLElement;
+  private labelEl: HTMLElement;
+  private msgEl: HTMLElement;
+  private decodeInterval: ReturnType<typeof setInterval> | null = null;
   private pendingKitty = new Map<string, { title: string; timer: number }>();
-  /** Timestamp of the next available auto-dismiss slot (staggers dismissals) */
-  private nextDismissAt = 0;
+  private currentLevel: NotificationLevel = 'info';
 
   constructor() {
-    this.container = document.createElement('div');
-    this.container.className = 'krypton-notif';
-    // Mount on body so notifications float above all windows including Quick Terminal
-    document.body.appendChild(this.container);
+    this.el = document.createElement('div');
+    this.el.className = 'krypton-notif krypton-notif--idle';
+
+    this.barEl = document.createElement('div');
+    this.barEl.className = 'krypton-notif__bar';
+    this.el.appendChild(this.barEl);
+
+    this.labelEl = document.createElement('span');
+    this.labelEl.className = 'krypton-notif__label';
+    this.labelEl.textContent = 'SYS';
+    this.el.appendChild(this.labelEl);
+
+    this.msgEl = document.createElement('span');
+    this.msgEl.className = 'krypton-notif__msg';
+    this.msgEl.textContent = 'Ready';
+    this.el.appendChild(this.msgEl);
   }
 
-  /** Reposition the notification container to align with a given element's bounds.
-   *  Called on focus change so notifications appear anchored to the active window. */
-  alignTo(element: HTMLElement): void {
-    const rect = element.getBoundingClientRect();
-    this.container.style.bottom = `${window.innerHeight - rect.bottom + 12}px`;
-    this.container.style.right = `${window.innerWidth - rect.right + 12}px`;
+  /** Attach the notification control to a window's footer (called on focus change) */
+  attachTo(windowEl: HTMLElement): void {
+    const footer = windowEl.querySelector('.krypton-window__footer');
+    if (footer) {
+      footer.appendChild(this.el);
+    }
   }
 
   // ── Public API ─────────────────────────────────────────────────────
 
-  /** Push a new notification */
+  /** Update the notification control with a new message */
   show(opts: NotificationOptions): void {
     const level = opts.level ?? 'info';
     const label = opts.label ?? LEVEL_LABELS[level];
-    const duration = opts.duration ?? DEFAULT_DURATION;
     const useDecode = opts.decode !== false;
     const message = opts.message.slice(0, MAX_MESSAGE_LEN);
 
     if (!message && !label) return;
 
-    const el = document.createElement('div');
-    el.className = `krypton-notif__item krypton-notif__item--${level}`;
+    // Stop any running decode animation
+    if (this.decodeInterval !== null) {
+      clearInterval(this.decodeInterval);
+      this.decodeInterval = null;
+    }
 
-    // Left accent bar
-    const bar = document.createElement('div');
-    bar.className = 'krypton-notif__bar';
-    el.appendChild(bar);
+    // Update level styling
+    if (level !== this.currentLevel) {
+      this.el.classList.remove(`krypton-notif--${this.currentLevel}`);
+    }
+    this.currentLevel = level;
+    this.el.classList.remove('krypton-notif--idle');
+    this.el.classList.add(`krypton-notif--${level}`);
 
-    // Label badge
-    const badge = document.createElement('span');
-    badge.className = 'krypton-notif__label';
-    badge.textContent = label;
-    el.appendChild(badge);
+    // Update label
+    this.labelEl.textContent = label;
 
-    // Message text
-    const msg = document.createElement('span');
-    msg.className = 'krypton-notif__msg';
-    msg.textContent = useDecode ? '' : message;
-    el.appendChild(msg);
-
-    // Insert (prepend so newest is at visual bottom via column-reverse)
-    this.container.prepend(el);
-    this.queue.push(el);
-
-    // Animate in
-    requestAnimationFrame(() => {
-      el.classList.add('krypton-notif__item--enter');
-    });
-
-    // Decode text animation
+    // Update message
     if (useDecode && message) {
-      this.decodeReveal(msg, message);
+      this.decodeReveal(this.msgEl, message);
+    } else {
+      this.msgEl.textContent = message;
     }
 
-    // Click to dismiss
-    el.addEventListener('click', () => this.dismiss(el));
-
-    // Auto-dismiss — stagger so consecutive items hide ≥2s apart
-    if (duration > 0) {
-      const now = Date.now();
-      const earliest = Math.max(now + duration, this.nextDismissAt + MIN_DISMISS_GAP_MS);
-      this.nextDismissAt = earliest;
-      const actualDuration = earliest - now;
-      setTimeout(() => this.dismiss(el), actualDuration);
-
-      // Timer progress bar — use actual dismiss delay so bar matches real lifetime
-      const timer = document.createElement('div');
-      timer.className = 'krypton-notif__timer';
-      timer.style.animationDuration = `${actualDuration}ms`;
-      el.appendChild(timer);
-    }
-
-    this.trim();
+    // Trigger scanline flash
+    this.el.classList.remove('krypton-notif--flash');
+    void this.el.offsetWidth;
+    this.el.classList.add('krypton-notif--flash');
   }
 
   info(message: string, opts?: Partial<NotificationOptions>): void {
@@ -153,22 +134,27 @@ export class NotificationController {
     this.show({ message, level: 'system', ...opts });
   }
 
-  /** Dismiss all visible notifications */
+  /** Reset to idle */
   clear(): void {
-    [...this.queue].forEach((el) => this.dismiss(el));
+    if (this.decodeInterval !== null) {
+      clearInterval(this.decodeInterval);
+      this.decodeInterval = null;
+    }
+    this.el.classList.remove(`krypton-notif--${this.currentLevel}`, 'krypton-notif--flash');
+    this.el.classList.add('krypton-notif--idle');
+    this.labelEl.textContent = 'SYS';
+    this.msgEl.textContent = 'Ready';
   }
 
   /** Destroy the controller and remove from DOM */
   destroy(): void {
     this.clear();
-    this.container.remove();
+    this.el.remove();
   }
 
   // ── OSC Handlers ───────────────────────────────────────────────────
 
-  /** Register OSC notification handlers on an xterm.js terminal */
   registerOscHandlers(terminal: Terminal): void {
-    // OSC 9 — iTerm2/ConEmu: \e]9;message\a
     terminal.parser.registerOscHandler(9, (data: string) => {
       if (data) {
         this.show({ message: data, level: 'info', label: 'TERM' });
@@ -176,7 +162,6 @@ export class NotificationController {
       return true;
     });
 
-    // OSC 777 — rxvt-unicode: \e]777;notify;title;body\a
     terminal.parser.registerOscHandler(777, (data: string) => {
       const parts = data.split(';');
       if (parts[0] === 'notify' && parts.length >= 3) {
@@ -189,7 +174,6 @@ export class NotificationController {
       return true;
     });
 
-    // OSC 99 — kitty notification protocol (multi-part)
     terminal.parser.registerOscHandler(99, (data: string) => {
       this.handleKittyNotification(data);
       return true;
@@ -198,7 +182,6 @@ export class NotificationController {
 
   // ── Private ────────────────────────────────────────────────────────
 
-  /** Handle kitty OSC 99 multi-part notification protocol */
   private handleKittyNotification(data: string): void {
     const semiIdx = data.indexOf(';');
     const meta = semiIdx >= 0 ? data.slice(0, semiIdx) : data;
@@ -214,7 +197,6 @@ export class NotificationController {
     const done = params.get('d') ?? '0';
 
     if (done === '0') {
-      // Title part — wait for body
       const timer = window.setTimeout(() => {
         this.pendingKitty.delete(id);
         if (payload) {
@@ -223,7 +205,6 @@ export class NotificationController {
       }, KITTY_TITLE_TIMEOUT_MS);
       this.pendingKitty.set(id, { title: payload, timer });
     } else if (done === '1') {
-      // Body part — combine with pending title
       const pending = this.pendingKitty.get(id);
       if (pending) {
         clearTimeout(pending.timer);
@@ -241,36 +222,12 @@ export class NotificationController {
     }
   }
 
-  /** Remove a notification with exit animation */
-  private dismiss(el: HTMLElement): void {
-    if (el.classList.contains('krypton-notif__item--exit')) return;
-    el.classList.add('krypton-notif__item--exit');
-    el.classList.remove('krypton-notif__item--enter');
-    setTimeout(() => {
-      el.remove();
-      const idx = this.queue.indexOf(el);
-      if (idx !== -1) this.queue.splice(idx, 1);
-    }, 400);
-  }
-
-  /** Remove oldest beyond MAX_VISIBLE */
-  private trim(): void {
-    while (this.queue.length > MAX_VISIBLE) {
-      const oldest = this.queue.shift();
-      if (oldest) this.dismiss(oldest);
-    }
-  }
-
-  /** Glitch-decode text reveal: characters scramble then probabilistically lock in
-   *  with a left-biased cascade. Spaces resolve instantly. Each character flickers
-   *  faster right before it locks, giving an organic "descramble" feel. */
   private decodeReveal(el: HTMLElement, finalText: string): void {
     const len = finalText.length;
-    const locked = new Uint8Array(len);   // 1 = resolved
-    const heat = new Float32Array(len);   // accumulates toward 1.0 → lock
+    const locked = new Uint8Array(len);
+    const heat = new Float32Array(len);
     let resolved = 0;
 
-    // Spaces and punctuation lock immediately
     for (let i = 0; i < len; i++) {
       if (finalText[i] === ' ') {
         locked[i] = 1;
@@ -278,7 +235,6 @@ export class NotificationController {
       }
     }
 
-    // Initial scramble — show all glyphs at once (no blank lead-in)
     let output = '';
     for (let i = 0; i < len; i++) {
       output += locked[i]
@@ -287,7 +243,7 @@ export class NotificationController {
     }
     el.textContent = output;
 
-    const interval = setInterval(() => {
+    this.decodeInterval = setInterval(() => {
       let buf = '';
 
       for (let i = 0; i < len; i++) {
@@ -296,24 +252,19 @@ export class NotificationController {
           continue;
         }
 
-        // Position bias: characters earlier in the string accumulate faster
         const positionFactor = 1 - (i / len) * DECODE_POSITION_BIAS * 10;
-        // Neighbour pull: if the character to the left is locked, boost this one
         const neighbourBoost = (i > 0 && locked[i - 1]) ? 0.06 : 0;
         heat[i] += (DECODE_BASE_CHANCE * positionFactor + neighbourBoost) * (0.7 + Math.random() * 0.6);
 
         if (heat[i] >= 1.0) {
-          // Lock this character
           locked[i] = 1;
           resolved++;
           buf += finalText[i];
         } else if (heat[i] > 0.7) {
-          // Near-lock flicker: alternate between final char and glyph
           buf += Math.random() < 0.5
             ? finalText[i]
             : GLYPH_SET[Math.floor(Math.random() * GLYPH_SET.length)];
         } else {
-          // Still scrambling
           buf += GLYPH_SET[Math.floor(Math.random() * GLYPH_SET.length)];
         }
       }
@@ -321,7 +272,8 @@ export class NotificationController {
       el.textContent = buf;
 
       if (resolved >= len) {
-        clearInterval(interval);
+        clearInterval(this.decodeInterval!);
+        this.decodeInterval = null;
         el.textContent = finalText;
       }
     }, 1000 / DECODE_FPS);

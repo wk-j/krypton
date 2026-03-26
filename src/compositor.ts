@@ -959,14 +959,14 @@ export class Compositor {
   }
 
   /** Set the notification controller (called from main.ts).
-   *  Wires focus-change to reparent the overlay into the active window. */
+   *  Wires focus-change to move the control into the active window. */
   setNotificationController(ctrl: NotificationController): void {
     this.notifController = ctrl;
     this.onFocusChange((id) => {
       if (!id) return;
       const win = this.windows.get(id);
       if (win) {
-        ctrl.alignTo(win.element);
+        ctrl.attachTo(win.element);
       }
     });
   }
@@ -1231,9 +1231,14 @@ export class Compositor {
     perspectiveWrap.className = 'krypton-window__perspective';
     perspectiveWrap.appendChild(content);
 
+    // Footer bar (notification area)
+    const footer = document.createElement('div');
+    footer.className = 'krypton-window__footer';
+
     el.appendChild(chrome);
     el.appendChild(tabBar);
     el.appendChild(perspectiveWrap);
+    el.appendChild(footer);
     this.workspace.appendChild(el);
 
     // Fix mouse coordinates under perspective tilt
@@ -1384,9 +1389,13 @@ export class Compositor {
     perspectiveWrap.className = 'krypton-window__perspective';
     perspectiveWrap.appendChild(content);
 
+    const footer = document.createElement('div');
+    footer.className = 'krypton-window__footer';
+
     el.appendChild(chrome);
     el.appendChild(tabBar);
     el.appendChild(perspectiveWrap);
+    el.appendChild(footer);
     this.workspace.appendChild(el);
 
     // Create pane with content view (no terminal/PTY)
@@ -2658,11 +2667,6 @@ export class Compositor {
     // Focus xterm.js
     this.qtTerminal.terminal.focus();
 
-    // Align notifications to the Quick Terminal
-    if (this.notifController && this.qtElement) {
-      this.notifController.alignTo(this.qtElement);
-    }
-
     if (anim) {
       try {
         await anim.finished;
@@ -2811,8 +2815,12 @@ export class Compositor {
     perspectiveWrap.className = 'krypton-window__perspective';
     perspectiveWrap.appendChild(content);
 
+    const footer = document.createElement('div');
+    footer.className = 'krypton-window__footer';
+
     el.appendChild(chrome);
     el.appendChild(perspectiveWrap);
+    el.appendChild(footer);
     this.workspace.appendChild(el);
     this.qtElement = el;
 
@@ -3166,7 +3174,6 @@ export class Compositor {
       }
 
       this.applyBounds(win);
-      this.realignNotifications();
       return;
     }
 
@@ -3174,16 +3181,6 @@ export class Compositor {
       this.relayoutFocus(vw, vh, count);
     } else {
       this.relayoutGrid(vw, vh, count);
-    }
-    this.realignNotifications();
-  }
-
-  /** Reposition the notification overlay to match the focused window */
-  private realignNotifications(): void {
-    if (!this.notifController || !this.focusedWindowId) return;
-    const win = this.windows.get(this.focusedWindowId);
-    if (win) {
-      this.notifController.alignTo(win.element);
     }
   }
 

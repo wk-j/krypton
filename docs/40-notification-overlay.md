@@ -21,9 +21,9 @@ OSC notification sequences are intercepted via `terminal.parser.registerOscHandl
 | File | Change |
 |------|--------|
 | `src/notification.ts` | New module — controller class, decode animation, DOM management, OSC parser hooks |
-| `src/styles.css` | New `.krypton-notif` block — container, item, bar, label, msg, timer |
+| `src/styles.css` | New `.krypton-window__footer` block and `.krypton-notif` block — footer bar, notification bar/label/msg |
 | `src/main.ts` | Instantiate `NotificationController`, wire to compositor |
-| `src/compositor.ts` | Call `registerOscHandlers(terminal)` after each xterm.js Terminal is created; expose controller ref; `realignNotifications()` after layout changes; `alignTo` on Quick Terminal open and focus change |
+| `src/compositor.ts` | Call `registerOscHandlers(terminal)` after each xterm.js Terminal is created; expose controller ref; build `krypton-window__footer` in all window creation paths (regular, content, Quick Terminal); `attachTo` targets footer on focus change |
 
 ## Design
 
@@ -171,25 +171,27 @@ private handleKittyNotification(data: string): void {
 
 ### UI Changes
 
-**DOM structure per notification:**
+**DOM structure — notification lives inside the window footer:**
 ```html
-<div class="krypton-notif">                          <!-- fixed container -->
-  <div class="krypton-notif__item krypton-notif__item--info">
-    <div class="krypton-notif__bar"></div>            <!-- left accent glow -->
-    <span class="krypton-notif__label">INFO</span>   <!-- level badge -->
-    <span class="krypton-notif__msg">message</span>  <!-- decode-animated text -->
-    <div class="krypton-notif__timer"></div>          <!-- shrinking progress bar -->
+<div class="krypton-window">
+  <div class="krypton-window__chrome">...</div>       <!-- titlebar + header accent -->
+  <div class="krypton-window__tabbar">...</div>
+  <div class="krypton-window__perspective">...</div>   <!-- terminal content -->
+  <div class="krypton-window__footer">                 <!-- footer bar -->
+    <div class="krypton-notif krypton-notif--info">    <!-- notification (moved on focus) -->
+      <div class="krypton-notif__bar"></div>            <!-- left accent line -->
+      <span class="krypton-notif__label">INFO</span>   <!-- level badge -->
+      <span class="krypton-notif__msg">message</span>  <!-- decode-animated text -->
+    </div>
   </div>
 </div>
 ```
 
-**Container positioning:**
-- Mounted on `document.body` at construction time (not reparented per-window)
-- `position: fixed; z-index: 6000` (above windows, below command palette/which-key)
-- `display: flex; flex-direction: column-reverse; gap: 8px;` (newest at bottom)
-- `pointer-events: none` on container, `pointer-events: auto` on items
-- `perspective: 800px` for 3D depth effect matching existing toast style
-- `alignTo(element)` repositions `bottom`/`right` to anchor to the focused window's bounds (12px inset from bottom-right corner). Called on focus change, layout recalculation, and Quick Terminal open
+**Footer positioning:**
+- `krypton-window__footer` is a structural child of every window element (regular, content, Quick Terminal)
+- 24px height, flex row, faint accent-colored top border and tinted background
+- Notification is inline (`margin-left: auto` for right-alignment), not absolutely positioned
+- `attachTo(windowEl)` finds `.krypton-window__footer` inside the target window and appends the notification element there. Called on focus change to move the single notification control between windows
 
 **Visual style per level:**
 
@@ -201,30 +203,26 @@ private handleKittyNotification(data: string): void {
 | error | red (#ff3355) | red | red |
 | system | magenta (#cc44ff) | magenta | magenta |
 
-**Item styling (matching project aesthetic):**
-- Dark semi-transparent background: `rgba(6, 10, 18, 0.92)`
-- Left accent bar: 2px solid, colored by level
-- Monospace font (project font family var)
-- Font size: 13px for message, 10px uppercase for label
-- Subtle box-shadow with level-colored glow
-- 3D tilt: `rotateY(-12deg)` matching existing toast perspective
-- Scan-line sweep on newest item (reuse `@keyframes` pattern from toasts)
+**Item styling (integrated into window chrome):**
+- Transparent background (inherits from window footer)
+- Left accent bar: 2px, colored by level, with subtle glow
+- Monospace font (project font family var `--krypton-font-family`)
+- Font size: 12px for message, 11px uppercase for label
+- Bar and label colors use `--krypton-window-accent` as fallback — automatically matches the window's accent color
+- Scan-line sweep on new message (`krypton-notif--flash` triggers `krypton-notif-scanline` keyframe)
 
 **Animations:**
-- **Enter:** `translateX(60px) → translateX(0)`, `opacity: 0 → 1`, 350ms ease-out
-- **Exit:** `translateX(0) → translateX(60px)`, `opacity: 1 → 0`, 400ms ease-in
-- **Decode:** ~5 passes per character, left-to-right wave with 0.6 char delay, 35 FPS
-- **Timer bar:** width 100% → 0% linear over duration, 1px height at bottom of item
+- **Decode:** probabilistic heat-based reveal, left-to-right bias with neighbour boost, 40 FPS
+- **Scan-line flash:** 2px gradient line sweeps top-to-bottom on new message, 400ms
+- **Idle/active:** opacity transition (0.4 idle → 1.0 active), 300ms ease
 
-**Max visible:** 6 notifications. Oldest dismissed when exceeded.
+**Single persistent control:** One notification at a time; new messages replace the current one in-place (no stacking).
 
 ## Edge Cases
 
-- **Rapid fire:** If many notifications arrive quickly, older ones are trimmed (max 6). No queue/backlog — excess are dismissed immediately.
-- **Zero duration:** `duration: 0` creates sticky notifications that only dismiss on click.
+- **Rapid fire:** New messages replace the current one in-place (single persistent control, no stacking).
 - **Empty message:** Render the label only; skip decode animation.
-- **Long messages:** `max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`
-- **Click dismiss:** Clicking any notification dismisses it immediately with exit animation.
+- **Long messages:** `max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`
 - **OSC with empty payload:** Ignore silently (return true to consume the sequence).
 - **Kitty orphaned title:** If OSC 99 `d=0` arrives but no `d=1` within 500ms, show title as the message.
 - **Multiple terminals:** Each terminal registers its own OSC handlers, all route to the same controller. No dedup — if two terminals send the same notification, both show.
