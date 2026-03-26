@@ -1,7 +1,7 @@
 // Krypton — Markdown Viewer
 // Two-panel layout: file browser (left) + rendered preview (right).
 
-import { Marked } from 'marked';
+import { Marked, Lexer } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
@@ -59,6 +59,7 @@ export class MarkdownContentView implements ContentView {
   private selectedIndex = 0;
   private cwd: string;
   private closeCallback: (() => void) | null = null;
+  private rawMarkdown = '';
 
   // DOM elements
   private sidebar: HTMLElement;
@@ -320,8 +321,10 @@ export class MarkdownContentView implements ContentView {
       const truncated = content.length > maxSize;
       const text = truncated ? content.slice(0, maxSize) : content;
 
+      this.rawMarkdown = text;
       const html = await md.parse(text, { gfm: true, breaks: false });
       this.previewContent.innerHTML = html;
+      this.annotateBlocksWithRaw(text);
 
       if (truncated) {
         const notice = document.createElement('div');
@@ -452,6 +455,9 @@ export class MarkdownContentView implements ContentView {
       case 'o':
         this.enterLinkHintMode();
         return true;
+      case 'y':
+        this.copyFilePath();
+        return true;
       case 'r':
         this.reloadCurrentFile();
         return true;
@@ -569,13 +575,33 @@ export class MarkdownContentView implements ContentView {
     this.updateSelectHighlight();
   }
 
-  /** Copy selected blocks as plain text to clipboard. */
+  /** Annotate rendered block elements with their raw markdown source. */
+  private annotateBlocksWithRaw(rawText: string): void {
+    const tokens = Lexer.lex(rawText, { gfm: true });
+    const blocks = this.previewContent.querySelectorAll(
+      MarkdownContentView.BLOCK_SELECTOR,
+    );
+
+    // Walk tokens (skipping 'space' tokens that produce no DOM element)
+    // and pair each with the corresponding DOM block.
+    let blockIdx = 0;
+    for (const tok of tokens) {
+      if (tok.type === 'space') continue;
+      if (blockIdx >= blocks.length) break;
+      (blocks[blockIdx] as HTMLElement).dataset.raw = tok.raw.replace(/\n+$/, '');
+      blockIdx++;
+    }
+  }
+
+  /** Copy selected blocks as raw markdown to clipboard. */
   private async copySelection(): Promise<void> {
     const lo = Math.min(this.selectAnchor, this.selectCursor);
     const hi = Math.max(this.selectAnchor, this.selectCursor);
     const texts: string[] = [];
     for (let i = lo; i <= hi; i++) {
-      const text = this.selectableBlocks[i].textContent?.trim();
+      const el = this.selectableBlocks[i];
+      const raw = el.dataset.raw;
+      const text = raw ?? el.textContent?.trim();
       if (text) texts.push(text);
     }
     if (texts.length === 0) return;
@@ -585,6 +611,17 @@ export class MarkdownContentView implements ContentView {
       // Clipboard API may fail in some contexts — silently ignore
     }
     this.exitSelectMode();
+  }
+
+  /** Copy the active file's relative path to clipboard. */
+  private async copyFilePath(): Promise<void> {
+    const file = this.previewHeader.textContent;
+    if (!file) return;
+    try {
+      await navigator.clipboard.writeText(file);
+    } catch {
+      // Clipboard API may fail — silently ignore
+    }
   }
 
   private showSelectIndicator(): void {
@@ -600,7 +637,7 @@ export class MarkdownContentView implements ContentView {
   private updateSelectIndicator(): void {
     if (!this.selectIndicator) return;
     const count = Math.abs(this.selectCursor - this.selectAnchor) + 1;
-    this.selectIndicator.textContent = `SELECT · ${count} block${count > 1 ? 's' : ''} · y:copy  Esc:cancel`;
+    this.selectIndicator.textContent = `SELECT · ${count} block${count > 1 ? 's' : ''} · y:yank md  Esc:cancel`;
   }
 
   private hideSelectIndicator(): void {
