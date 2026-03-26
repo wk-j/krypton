@@ -49,14 +49,16 @@ export class NotificationController {
   constructor() {
     this.container = document.createElement('div');
     this.container.className = 'krypton-notif';
-    // Starts detached — call attachTo() when a window gains focus
+    // Mount on body so notifications float above all windows including Quick Terminal
+    document.body.appendChild(this.container);
   }
 
-  /** Move the notification container into a window's content element.
-   *  Called on focus change so notifications always appear in the active window. */
-  attachTo(contentElement: HTMLElement): void {
-    // Reparenting preserves existing notification children
-    contentElement.appendChild(this.container);
+  /** Reposition the notification container to align with a given element's bounds.
+   *  Called on focus change so notifications appear anchored to the active window. */
+  alignTo(element: HTMLElement): void {
+    const rect = element.getBoundingClientRect();
+    this.container.style.bottom = `${window.innerHeight - rect.bottom + 12}px`;
+    this.container.style.right = `${window.innerWidth - rect.right + 12}px`;
   }
 
   // ── Public API ─────────────────────────────────────────────────────

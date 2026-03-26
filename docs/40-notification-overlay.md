@@ -23,7 +23,7 @@ OSC notification sequences are intercepted via `terminal.parser.registerOscHandl
 | `src/notification.ts` | New module — controller class, decode animation, DOM management, OSC parser hooks |
 | `src/styles.css` | New `.krypton-notif` block — container, item, bar, label, msg, timer |
 | `src/main.ts` | Instantiate `NotificationController`, wire to compositor |
-| `src/compositor.ts` | Call `registerOscHandlers(terminal)` after each xterm.js Terminal is created; expose controller ref |
+| `src/compositor.ts` | Call `registerOscHandlers(terminal)` after each xterm.js Terminal is created; expose controller ref; `realignNotifications()` after layout changes; `alignTo` on Quick Terminal open and focus change |
 
 ## Design
 
@@ -184,11 +184,12 @@ private handleKittyNotification(data: string): void {
 ```
 
 **Container positioning:**
-- `position: fixed; bottom: 24px; right: 20px;`
-- `z-index: 8000` (above windows ~100, below command palette 10002, below which-key 10000)
+- Mounted on `document.body` at construction time (not reparented per-window)
+- `position: fixed; z-index: 6000` (above windows, below command palette/which-key)
 - `display: flex; flex-direction: column-reverse; gap: 8px;` (newest at bottom)
 - `pointer-events: none` on container, `pointer-events: auto` on items
 - `perspective: 800px` for 3D depth effect matching existing toast style
+- `alignTo(element)` repositions `bottom`/`right` to anchor to the focused window's bounds (12px inset from bottom-right corner). Called on focus change, layout recalculation, and Quick Terminal open
 
 **Visual style per level:**
 

@@ -966,7 +966,7 @@ export class Compositor {
       if (!id) return;
       const win = this.windows.get(id);
       if (win) {
-        ctrl.attachTo(win.contentElement);
+        ctrl.alignTo(win.element);
       }
     });
   }
@@ -2658,6 +2658,11 @@ export class Compositor {
     // Focus xterm.js
     this.qtTerminal.terminal.focus();
 
+    // Align notifications to the Quick Terminal
+    if (this.notifController && this.qtElement) {
+      this.notifController.alignTo(this.qtElement);
+    }
+
     if (anim) {
       try {
         await anim.finished;
@@ -3161,6 +3166,7 @@ export class Compositor {
       }
 
       this.applyBounds(win);
+      this.realignNotifications();
       return;
     }
 
@@ -3168,6 +3174,16 @@ export class Compositor {
       this.relayoutFocus(vw, vh, count);
     } else {
       this.relayoutGrid(vw, vh, count);
+    }
+    this.realignNotifications();
+  }
+
+  /** Reposition the notification overlay to match the focused window */
+  private realignNotifications(): void {
+    if (!this.notifController || !this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (win) {
+      this.notifController.alignTo(win.element);
     }
   }
 
