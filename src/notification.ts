@@ -19,13 +19,14 @@ export interface NotificationOptions {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const GLYPH_SET = '░▒▓█▀▄▌▐─═╌╍┄┅⟋⟍⧸⧹';
+const GLYPH_SET = 'アイ ウ エ オ カ キ ク ケ コ サ シ ス セ ソ タ チ ツ テ ト ナ ニ ヌ ネ ノ ハ ヒ フ ヘ ホ マ ミ ム メ モ ヤ ユ ヨ ラ リ ル レ ロ ワ ヲ ン ０ １ ２ ３ ４ ５ ６ ７ ８ ９'.replace(/ /g, '');
 const DECODE_FPS = 40;
 const DECODE_BASE_CHANCE = 0.08;
 const DECODE_POSITION_BIAS = 0.04;
 
 const MAX_MESSAGE_LEN = 256;
 const KITTY_TITLE_TIMEOUT_MS = 500;
+const MIN_DISPLAY_MS = 2000;
 
 const LEVEL_LABELS: Record<NotificationLevel, string> = {
   info: 'INFO',
@@ -45,6 +46,9 @@ export class NotificationController {
   private decodeInterval: ReturnType<typeof setInterval> | null = null;
   private pendingKitty = new Map<string, { title: string; timer: number }>();
   private currentLevel: NotificationLevel = 'info';
+  private showTime = 0;
+  private pendingNotif: NotificationOptions | null = null;
+  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.el = document.createElement('div');
@@ -77,6 +81,26 @@ export class NotificationController {
 
   /** Update the notification control with a new message */
   show(opts: NotificationOptions): void {
+    const elapsed = Date.now() - this.showTime;
+
+    // If current notification hasn't been visible long enough, queue replacement
+    if (this.showTime > 0 && elapsed < MIN_DISPLAY_MS) {
+      this.pendingNotif = opts;
+      if (this.pendingTimer === null) {
+        this.pendingTimer = setTimeout(() => {
+          this.pendingTimer = null;
+          const next = this.pendingNotif;
+          this.pendingNotif = null;
+          if (next) this.showImmediate(next);
+        }, MIN_DISPLAY_MS - elapsed);
+      }
+      return;
+    }
+
+    this.showImmediate(opts);
+  }
+
+  private showImmediate(opts: NotificationOptions): void {
     const level = opts.level ?? 'info';
     const label = opts.label ?? LEVEL_LABELS[level];
     const useDecode = opts.decode !== false;
@@ -89,6 +113,8 @@ export class NotificationController {
       clearInterval(this.decodeInterval);
       this.decodeInterval = null;
     }
+
+    this.showTime = Date.now();
 
     // Update level styling
     if (level !== this.currentLevel) {
@@ -140,6 +166,12 @@ export class NotificationController {
       clearInterval(this.decodeInterval);
       this.decodeInterval = null;
     }
+    if (this.pendingTimer !== null) {
+      clearTimeout(this.pendingTimer);
+      this.pendingTimer = null;
+    }
+    this.pendingNotif = null;
+    this.showTime = 0;
     this.el.classList.remove(`krypton-notif--${this.currentLevel}`, 'krypton-notif--flash');
     this.el.classList.add('krypton-notif--idle');
     this.labelEl.textContent = 'SYS';
