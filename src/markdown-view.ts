@@ -59,7 +59,7 @@ export class MarkdownContentView implements ContentView {
   private selectedIndex = 0;
   private cwd: string;
   private closeCallback: (() => void) | null = null;
-  private rawMarkdown = '';
+
 
   // DOM elements
   private sidebar: HTMLElement;
@@ -321,7 +321,6 @@ export class MarkdownContentView implements ContentView {
       const truncated = content.length > maxSize;
       const text = truncated ? content.slice(0, maxSize) : content;
 
-      this.rawMarkdown = text;
       const html = await md.parse(text, { gfm: true, breaks: false });
       this.previewContent.innerHTML = html;
       this.annotateBlocksWithRaw(text);
@@ -575,7 +574,7 @@ export class MarkdownContentView implements ContentView {
     this.updateSelectHighlight();
   }
 
-  /** Annotate rendered block elements with their raw markdown source. */
+  /** Annotate rendered block elements with their raw markdown source and line numbers. */
   private annotateBlocksWithRaw(rawText: string): void {
     const tokens = Lexer.lex(rawText, { gfm: true });
     const blocks = this.previewContent.querySelectorAll(
@@ -584,17 +583,30 @@ export class MarkdownContentView implements ContentView {
 
     // Walk tokens (skipping 'space' tokens that produce no DOM element)
     // and pair each with the corresponding DOM block.
+    // Track character offset to compute accurate line numbers.
     let blockIdx = 0;
+    let charOffset = 0;
     for (const tok of tokens) {
+      const tokStart = rawText.indexOf(tok.raw, charOffset);
+      if (tokStart !== -1) charOffset = tokStart + tok.raw.length;
+
       if (tok.type === 'space') continue;
       if (blockIdx >= blocks.length) break;
-      (blocks[blockIdx] as HTMLElement).dataset.raw = tok.raw.replace(/\n+$/, '');
+
+      const el = blocks[blockIdx] as HTMLElement;
+      el.dataset.raw = tok.raw.replace(/\n+$/, '');
+      if (tokStart !== -1) {
+        const startLine = rawText.slice(0, tokStart).split('\n').length;
+        const endLine = startLine + tok.raw.trimEnd().split('\n').length - 1;
+        el.dataset.startLine = String(startLine);
+        el.dataset.endLine = String(endLine);
+      }
       blockIdx++;
     }
   }
 
-  /** Copy selected blocks as raw markdown to clipboard. */
-  private async copySelection(): Promise<void> {
+  /** Collect raw text from selected blocks. */
+  private collectSelectedText(): string[] {
     const lo = Math.min(this.selectAnchor, this.selectCursor);
     const hi = Math.max(this.selectAnchor, this.selectCursor);
     const texts: string[] = [];
@@ -604,11 +616,53 @@ export class MarkdownContentView implements ContentView {
       const text = raw ?? el.textContent?.trim();
       if (text) texts.push(text);
     }
+    return texts;
+  }
+
+  /** Find the line range of selected blocks within the raw markdown. */
+  private getSelectedLineRange(): { start: number; end: number } | null {
+    const lo = Math.min(this.selectAnchor, this.selectCursor);
+    const hi = Math.max(this.selectAnchor, this.selectCursor);
+    const startLine = this.selectableBlocks[lo]?.dataset.startLine;
+    const endLine = this.selectableBlocks[hi]?.dataset.endLine;
+    if (!startLine || !endLine) return null;
+    return { start: parseInt(startLine, 10), end: parseInt(endLine, 10) };
+  }
+
+  /** Copy selected blocks as raw markdown to clipboard. */
+  private async copySelection(): Promise<void> {
+    const texts = this.collectSelectedText();
     if (texts.length === 0) return;
     try {
       await navigator.clipboard.writeText(texts.join('\n\n'));
     } catch {
       // Clipboard API may fail in some contexts — silently ignore
+    }
+    this.exitSelectMode();
+  }
+
+  /** Copy selected blocks wrapped with file path and line range as AI context. */
+  private async copyAsContext(): Promise<void> {
+    const texts = this.collectSelectedText();
+    if (texts.length === 0) return;
+
+    const filePath = this.previewHeader.textContent || 'unknown';
+    const range = this.getSelectedLineRange();
+    const content = texts.join('\n\n');
+
+    let header = `\`${filePath}\``;
+    if (range) {
+      header += range.start === range.end
+        ? ` (line ${range.start})`
+        : ` (lines ${range.start}-${range.end})`;
+    }
+
+    const formatted = `${header}\n\`\`\`markdown\n${content}\n\`\`\``;
+
+    try {
+      await navigator.clipboard.writeText(formatted);
+    } catch {
+      // Clipboard API may fail — silently ignore
     }
     this.exitSelectMode();
   }
@@ -637,7 +691,7 @@ export class MarkdownContentView implements ContentView {
   private updateSelectIndicator(): void {
     if (!this.selectIndicator) return;
     const count = Math.abs(this.selectCursor - this.selectAnchor) + 1;
-    this.selectIndicator.textContent = `SELECT · ${count} block${count > 1 ? 's' : ''} · y:yank md  Esc:cancel`;
+    this.selectIndicator.textContent = `SELECT · ${count} block${count > 1 ? 's' : ''} · y:yank md  Y:yank context  Esc:cancel`;
   }
 
   private hideSelectIndicator(): void {
@@ -775,6 +829,9 @@ export class MarkdownContentView implements ContentView {
         return true;
       case 'y':
         this.copySelection();
+        return true;
+      case 'Y':
+        this.copyAsContext();
         return true;
       case 'Escape':
       case 'q':

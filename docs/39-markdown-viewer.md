@@ -68,7 +68,8 @@ Add a dedicated markdown viewer window with a two-panel layout: a **file browser
 | `J` / `K` | Select mode | Extend selection down / up (visual-line expand) |
 | `Shift+j/k` | Select mode | Also extends selection (alternative to J/K) |
 | `g` / `G` | Select mode | Extend selection to first / last block |
-| `y` | Select mode | Copy selected blocks to clipboard, exit Select mode |
+| `y` | Select mode | Copy selected blocks as raw markdown, exit Select mode |
+| `Y` | Select mode | Copy selected blocks as AI context (with file path + line range), exit Select mode |
 | `Escape` / `q` | Select mode | Cancel selection, return to preview |
 | `q` / `Escape` | Either panel | Close viewer (Escape clears filter first if active) |
 
