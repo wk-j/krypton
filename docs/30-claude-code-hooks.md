@@ -382,15 +382,18 @@ Monospace readout in right side of titlebar. Format: `▸ Edit ← main.ts`
 - Layout: `flex-direction: column-reverse`, newest at bottom
 - Max 20 ticks; overflow removes oldest immediately
 
-#### 5. Intercept Toast (persistent stack)
+#### 5. Intercept Toast — Stark HUD Panels (persistent stack)
 
-Fixed-position panel stack at bottom-right of viewport. **All events** produce toasts. Toasts are **persistent** — no auto-dismiss. User clicks toast or `×` button to dismiss.
+Fixed-position panel stack at right of viewport (vertically centered). **All events** produce toasts. Toasts are **persistent** — no auto-dismiss. User clicks toast to dismiss.
 
-- Entrance: `translateX(20px) → 0` over 300ms + `::after` scan-line (2px accent, sweeps top→bottom over 400ms)
-- Body: `rgba(6,10,18,0.92)`, 1px accent border, 3px solid left stripe colored by type
-- Label: uppercase bordered chip, text varies by event type (SESSION, TOOL, DONE, CLAUDE, PERMIT, ERROR, OK, STOP)
-- Close button: `×` glyph at right edge, dim by default, brightens on hover
-- Stack: `column-reverse`, 4px gap, scrollable up to 80vh with manual scroll. No cap on count
+- **Corner targeting brackets:** `┌ ┐ └ ┘` box-drawing glyphs at corners, stagger-animated on entrance (50ms per corner)
+- **Holographic dot-grid overlay:** `::before` radial-gradient texture tinted per type at 3-4% opacity
+- **Telemetry readout:** Right-aligned micro-text (8px) showing `0xNNNN · HH:MM:SS` — random hex + creation timestamp
+- **Entrance:** 3D perspective slide (`rotateY(-25deg)` → `-18deg`) + scan-line sweep (`::after`) + bracket draw-in
+- **Body:** `rgba(6,10,18,0.94)`, 1px border colored per type, dot-grid overlay
+- **Label:** Bracket-wrapped `[ TOOL ]` with letter-spacing 0.18em, thin underline rule beneath
+- **Hover:** Brackets brighten to 70%, telemetry brightens, border intensifies, 3D tilt shifts forward
+- **Stack:** `column-reverse`, 6px gap, 3D perspective depth stagger (nth-child recedes in Z)
 - Type styles:
 
 | Type | Label | Left stripe / border color |

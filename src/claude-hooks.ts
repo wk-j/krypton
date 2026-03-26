@@ -723,16 +723,36 @@ export class ClaudeHookManager {
     toast.className = 'krypton-claude-toast';
     toast.classList.add(`krypton-claude-toast--${toastType}`);
 
+    // Corner targeting brackets
+    const corners = ['tl', 'tr', 'bl', 'br'] as const;
+    const glyphs = ['\u250C', '\u2510', '\u2514', '\u2518']; // ┌ ┐ └ ┘
+    corners.forEach((pos, i) => {
+      const bracket = document.createElement('span');
+      bracket.className = `krypton-claude-toast__bracket krypton-claude-toast__bracket--${pos}`;
+      bracket.textContent = glyphs[i];
+      toast.appendChild(bracket);
+    });
+
     const label = document.createElement('span');
     label.className = 'krypton-claude-toast__label';
-    label.textContent = ClaudeHookManager.TOAST_LABELS[toastType] ?? 'CLAUDE';
+    const labelText = ClaudeHookManager.TOAST_LABELS[toastType] ?? 'CLAUDE';
+    label.textContent = `[ ${labelText} ]`;
 
     const text = document.createElement('span');
     text.className = 'krypton-claude-toast__text';
     text.textContent = message;
 
+    // Telemetry readout: hex address + timestamp
+    const telemetry = document.createElement('span');
+    telemetry.className = 'krypton-claude-toast__telemetry';
+    const hex = Math.floor(Math.random() * 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+    const now = new Date();
+    const ts = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    telemetry.textContent = `0x${hex} \u00B7 ${ts}`;
+
     toast.appendChild(label);
     toast.appendChild(text);
+    toast.appendChild(telemetry);
 
     // Prepend so newest toast is at the bottom (closest to the corner)
     this.toastContainer.prepend(toast);

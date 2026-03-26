@@ -2072,7 +2072,7 @@ html, body {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
 }
 
-/* 4. Intercept Toasts — persistent stack, click to dismiss */
+/* 4. Intercept Toasts — Stark HUD panels, click to dismiss */
 .krypton-claude-toasts {
   position: fixed;
   top: 50%;
@@ -2094,14 +2094,13 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 14px;
+  padding: 8px 18px;
   background: linear-gradient(
     135deg,
     rgba(6, 10, 18, 0.94),
     rgba(10, 16, 28, 0.88)
   );
-  border: none;
-  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
   border-radius: 1px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: 18px;
@@ -2115,11 +2114,28 @@ html, body {
   transform: translateX(40px) rotateY(-25deg) translateZ(-30px);
   transform-origin: right center;
   opacity: 0;
-  transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.3s ease, box-shadow 0.3s ease;
+  transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
   pointer-events: auto;
   cursor: pointer;
   max-width: 480px;
-  overflow: hidden;
+  overflow: visible;
+}
+
+/* Holographic dot-grid overlay */
+.krypton-claude-toast::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.04) 0.5px,
+    transparent 0.5px
+  );
+  background-size: 4px 4px;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 /* Scan-line wipe pseudo-element */
@@ -2142,44 +2158,131 @@ html, body {
   opacity: 0;
 }
 
+/* ─── Corner Targeting Brackets ─── */
+.krypton-claude-toast__bracket {
+  position: absolute;
+  font-size: 10px;
+  line-height: 1;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1), color 0.3s ease;
+  z-index: 2;
+}
+
+.krypton-claude-toast__bracket--tl {
+  top: -1px;
+  left: -1px;
+  transform: translate(4px, 4px);
+}
+
+.krypton-claude-toast__bracket--tr {
+  top: -1px;
+  right: -1px;
+  transform: translate(-4px, 4px);
+}
+
+.krypton-claude-toast__bracket--bl {
+  bottom: -1px;
+  left: -1px;
+  transform: translate(4px, -4px);
+}
+
+.krypton-claude-toast__bracket--br {
+  bottom: -1px;
+  right: -1px;
+  transform: translate(-4px, -4px);
+}
+
+/* ─── Visible state ─── */
 .krypton-claude-toast--visible {
   transform: translateX(0) rotateY(-18deg) translateZ(0px);
   opacity: 1;
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.18);
+}
+
+.krypton-claude-toast--visible::before {
+  opacity: 1;
+}
+
+.krypton-claude-toast--visible .krypton-claude-toast__bracket {
+  opacity: 1;
+  transform: translate(0, 0);
+}
+
+/* Stagger bracket entrance */
+.krypton-claude-toast--visible .krypton-claude-toast__bracket--tl {
+  transition-delay: 0s;
+}
+.krypton-claude-toast--visible .krypton-claude-toast__bracket--tr {
+  transition-delay: 0.05s;
+}
+.krypton-claude-toast--visible .krypton-claude-toast__bracket--bl {
+  transition-delay: 0.1s;
+}
+.krypton-claude-toast--visible .krypton-claude-toast__bracket--br {
+  transition-delay: 0.15s;
 }
 
 .krypton-claude-toast--visible:hover {
   transform: translateX(-6px) rotateY(-8deg) translateZ(20px);
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.5),
     0 16px 48px rgba(0, 0, 0, 0.35),
-    0 0 32px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12),
+    0 0 32px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15),
+    0 0 60px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 30px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.04);
+}
+
+.krypton-claude-toast--visible:hover .krypton-claude-toast__bracket {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+}
+
+.krypton-claude-toast--visible:hover .krypton-claude-toast__telemetry {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
+}
+
+/* Newest toast gets a continuous horizontal scan-line sweep */
+.krypton-claude-toast--visible:first-child {
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.28);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 0 24px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12),
+    0 0 48px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
     inset 0 0 30px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
 }
 
-/* Continuous horizontal scan-line on the latest (newest) toast */
-.krypton-claude-toast--visible:first-child::before {
+/* Top-edge accent line — holographic separator */
+.krypton-claude-toast--visible:first-child .krypton-claude-toast__bracket--tl::after,
+.krypton-claude-toast--visible:first-child .krypton-claude-toast__bracket--tr::after {
   content: '';
   position: absolute;
   top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
+  height: 1px;
+  width: 16px;
   background: linear-gradient(
     90deg,
-    transparent 0%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1) 40%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2) 50%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1) 60%,
-    transparent 100%
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5),
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05)
   );
   pointer-events: none;
-  animation: krypton-toast-scan 3s linear infinite;
 }
 
-@keyframes krypton-toast-scan {
-  from { left: -100%; }
-  to   { left: 100%; }
+.krypton-claude-toast--visible:first-child .krypton-claude-toast__bracket--tl::after {
+  left: 8px;
+}
+
+.krypton-claude-toast--visible:first-child .krypton-claude-toast__bracket--tr::after {
+  right: 8px;
+  background: linear-gradient(
+    270deg,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5),
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05)
+  );
 }
 
 /* Staggered depth — toasts further down stack recede */
@@ -2207,15 +2310,18 @@ html, body {
   100% { top: calc(100% + 2px); opacity: 0; }
 }
 
+/* ─── Label — bracket-wrapped HUD readout ─── */
 .krypton-claude-toast__label {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.18em;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
   padding: 0;
   flex-shrink: 0;
   text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  padding-bottom: 1px;
 }
 
 .krypton-claude-toast__text {
@@ -2225,21 +2331,46 @@ html, body {
   flex: 1;
 }
 
-/* ─── Toast type: session (green) — SessionStart */
-.krypton-claude-toast--session {
-  border-left-color: rgba(80, 220, 100, 0.7);
+/* ─── Telemetry readout — hex address + timestamp ─── */
+.krypton-claude-toast__telemetry {
+  position: absolute;
+  top: 1px;
+  right: 8px;
+  font-size: 8px;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+  white-space: nowrap;
+  letter-spacing: 0.06em;
+  transition: color 0.3s ease;
+  pointer-events: none;
 }
 
+/* ─── Toast type color helper: sets border, bracket, label, telemetry, and dot-grid tint ─── */
+
+/* ─── Toast type: session (green) — SessionStart */
+.krypton-claude-toast--session {
+  border-color: rgba(80, 220, 100, 0.18);
+}
+.krypton-claude-toast--session.krypton-claude-toast--visible {
+  border-color: rgba(80, 220, 100, 0.25);
+}
+.krypton-claude-toast--session .krypton-claude-toast__bracket {
+  color: rgba(80, 220, 100, 0.35);
+}
 .krypton-claude-toast--session .krypton-claude-toast__label {
   color: #50dc64;
   text-shadow: 0 0 6px rgba(80, 220, 100, 0.4);
+  border-bottom-color: rgba(80, 220, 100, 0.2);
+}
+.krypton-claude-toast--session .krypton-claude-toast__telemetry {
+  color: rgba(80, 220, 100, 0.2);
+}
+.krypton-claude-toast--session::before {
+  background: radial-gradient(circle, rgba(80, 220, 100, 0.04) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
 }
 
 /* ─── Toast type: tool (cyan) — PreToolUse */
-.krypton-claude-toast--tool {
-  border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
-}
-
 .krypton-claude-toast--tool .krypton-claude-toast__label {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
   text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
@@ -2247,32 +2378,47 @@ html, body {
 
 /* ─── Toast type: tool_done (dim cyan) — PostToolUse */
 .krypton-claude-toast--tool_done {
-  border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
 }
-
+.krypton-claude-toast--tool_done .krypton-claude-toast__bracket {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+}
 .krypton-claude-toast--tool_done .krypton-claude-toast__label {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
   text-shadow: none;
+  border-bottom-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
 }
-
 .krypton-claude-toast--tool_done .krypton-claude-toast__text {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5);
+}
+.krypton-claude-toast--tool_done .krypton-claude-toast__telemetry {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
 }
 
 /* ─── Toast type: notification (amber) — Notification */
 .krypton-claude-toast--notification {
-  border-left-color: rgba(250, 200, 99, 0.7);
+  border-color: rgba(250, 200, 99, 0.18);
 }
-
+.krypton-claude-toast--notification .krypton-claude-toast__bracket {
+  color: rgba(250, 200, 99, 0.3);
+}
 .krypton-claude-toast--notification .krypton-claude-toast__label {
   color: #fac863;
   text-shadow: 0 0 6px rgba(250, 200, 99, 0.4);
+  border-bottom-color: rgba(250, 200, 99, 0.2);
+}
+.krypton-claude-toast--notification .krypton-claude-toast__telemetry {
+  color: rgba(250, 200, 99, 0.18);
+}
+.krypton-claude-toast--notification::before {
+  background: radial-gradient(circle, rgba(250, 200, 99, 0.03) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
 }
 
 /* ─── Toast type: permission_prompt (hot amber, pulsing — requires user action) */
 .krypton-claude-toast--permission_prompt {
-  border-left-color: rgba(255, 180, 40, 1);
-  border-left-width: 3px;
+  border-color: rgba(255, 180, 40, 0.35);
+  border-width: 1px;
   background: linear-gradient(
     135deg,
     rgba(30, 20, 6, 0.96),
@@ -2287,28 +2433,24 @@ html, body {
     inset 0 0 30px rgba(255, 180, 40, 0.04);
   animation: krypton-permit-pulse 2s ease-in-out infinite;
 }
-
+.krypton-claude-toast--permission_prompt .krypton-claude-toast__bracket {
+  color: rgba(255, 180, 40, 0.6);
+}
 .krypton-claude-toast--permission_prompt .krypton-claude-toast__label {
   color: #ffb828;
   text-shadow: 0 0 10px rgba(255, 180, 40, 0.7), 0 0 20px rgba(255, 180, 40, 0.3);
+  border-bottom-color: rgba(255, 180, 40, 0.3);
   animation: krypton-permit-label-glow 2s ease-in-out infinite;
 }
-
 .krypton-claude-toast--permission_prompt .krypton-claude-toast__text {
   color: #e8d0a0;
 }
-
-/* Pulsing scan-line override for permit toasts */
-.krypton-claude-toast--permission_prompt.krypton-claude-toast--visible::before {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 180, 40, 0.15) 40%,
-    rgba(255, 180, 40, 0.3) 50%,
-    rgba(255, 180, 40, 0.15) 60%,
-    transparent 100%
-  );
-  animation: krypton-toast-scan 1.8s linear infinite;
+.krypton-claude-toast--permission_prompt .krypton-claude-toast__telemetry {
+  color: rgba(255, 180, 40, 0.25);
+}
+.krypton-claude-toast--permission_prompt::before {
+  background: radial-gradient(circle, rgba(255, 180, 40, 0.05) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
 }
 
 @keyframes krypton-permit-pulse {
@@ -2320,7 +2462,7 @@ html, body {
       0 0 48px rgba(255, 180, 40, 0.06),
       inset 0 1px 0 rgba(255, 200, 80, 0.08),
       inset 0 0 30px rgba(255, 180, 40, 0.04);
-    border-left-color: rgba(255, 180, 40, 1);
+    border-color: rgba(255, 180, 40, 0.35);
   }
   50% {
     box-shadow:
@@ -2330,7 +2472,7 @@ html, body {
       0 0 64px rgba(255, 180, 40, 0.12),
       inset 0 1px 0 rgba(255, 200, 80, 0.12),
       inset 0 0 40px rgba(255, 180, 40, 0.07);
-    border-left-color: rgba(255, 200, 80, 1);
+    border-color: rgba(255, 200, 80, 0.5);
   }
 }
 
@@ -2341,144 +2483,235 @@ html, body {
 
 /* ─── Toast type: error (red) */
 .krypton-claude-toast--error {
-  border-left-color: rgba(255, 64, 64, 0.7);
+  border-color: rgba(255, 64, 64, 0.25);
 }
-
+.krypton-claude-toast--error .krypton-claude-toast__bracket {
+  color: rgba(255, 64, 64, 0.45);
+}
 .krypton-claude-toast--error .krypton-claude-toast__label {
   color: #ff5050;
   text-shadow: 0 0 6px rgba(255, 64, 64, 0.4);
+  border-bottom-color: rgba(255, 64, 64, 0.2);
+}
+.krypton-claude-toast--error .krypton-claude-toast__telemetry {
+  color: rgba(255, 64, 64, 0.2);
+}
+.krypton-claude-toast--error::before {
+  background: radial-gradient(circle, rgba(255, 64, 64, 0.04) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
 }
 
 /* ─── Toast type: success (green) */
 .krypton-claude-toast--success {
-  border-left-color: rgba(80, 220, 100, 0.7);
+  border-color: rgba(80, 220, 100, 0.18);
 }
-
+.krypton-claude-toast--success .krypton-claude-toast__bracket {
+  color: rgba(80, 220, 100, 0.35);
+}
 .krypton-claude-toast--success .krypton-claude-toast__label {
   color: #50dc64;
   text-shadow: 0 0 6px rgba(80, 220, 100, 0.4);
+  border-bottom-color: rgba(80, 220, 100, 0.2);
+}
+.krypton-claude-toast--success .krypton-claude-toast__telemetry {
+  color: rgba(80, 220, 100, 0.2);
 }
 
 /* ─── Toast type: stop (magenta) — Stop */
 .krypton-claude-toast--stop {
-  border-left-color: rgba(200, 100, 255, 0.7);
+  border-color: rgba(200, 100, 255, 0.2);
 }
-
+.krypton-claude-toast--stop .krypton-claude-toast__bracket {
+  color: rgba(200, 100, 255, 0.35);
+}
 .krypton-claude-toast--stop .krypton-claude-toast__label {
   color: #c864ff;
   text-shadow: 0 0 6px rgba(200, 100, 255, 0.4);
+  border-bottom-color: rgba(200, 100, 255, 0.2);
+}
+.krypton-claude-toast--stop .krypton-claude-toast__telemetry {
+  color: rgba(200, 100, 255, 0.2);
+}
+.krypton-claude-toast--stop::before {
+  background: radial-gradient(circle, rgba(200, 100, 255, 0.03) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
 }
 
 /* ─── Toast type: instructions (dim green) — InstructionsLoaded */
 .krypton-claude-toast--instructions {
-  border-left-color: rgba(80, 220, 100, 0.35);
+  border-color: rgba(80, 220, 100, 0.1);
 }
-
+.krypton-claude-toast--instructions .krypton-claude-toast__bracket {
+  color: rgba(80, 220, 100, 0.15);
+}
 .krypton-claude-toast--instructions .krypton-claude-toast__label {
   color: rgba(80, 220, 100, 0.6);
   text-shadow: none;
+  border-bottom-color: rgba(80, 220, 100, 0.1);
 }
-
 .krypton-claude-toast--instructions .krypton-claude-toast__text {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.6);
+}
+.krypton-claude-toast--instructions .krypton-claude-toast__telemetry {
+  color: rgba(80, 220, 100, 0.12);
 }
 
 /* ─── Toast type: prompt (blue) — UserPromptSubmit */
 .krypton-claude-toast--prompt {
-  border-left-color: rgba(100, 160, 255, 0.7);
+  border-color: rgba(100, 160, 255, 0.2);
 }
-
+.krypton-claude-toast--prompt .krypton-claude-toast__bracket {
+  color: rgba(100, 160, 255, 0.35);
+}
 .krypton-claude-toast--prompt .krypton-claude-toast__label {
   color: #64a0ff;
   text-shadow: 0 0 6px rgba(100, 160, 255, 0.4);
+  border-bottom-color: rgba(100, 160, 255, 0.2);
+}
+.krypton-claude-toast--prompt .krypton-claude-toast__telemetry {
+  color: rgba(100, 160, 255, 0.2);
+}
+.krypton-claude-toast--prompt::before {
+  background: radial-gradient(circle, rgba(100, 160, 255, 0.03) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
 }
 
 /* ─── Toast type: subagent (violet) — SubagentStart */
 .krypton-claude-toast--subagent {
-  border-left-color: rgba(160, 120, 255, 0.7);
+  border-color: rgba(160, 120, 255, 0.2);
 }
-
+.krypton-claude-toast--subagent .krypton-claude-toast__bracket {
+  color: rgba(160, 120, 255, 0.35);
+}
 .krypton-claude-toast--subagent .krypton-claude-toast__label {
   color: #a078ff;
   text-shadow: 0 0 6px rgba(160, 120, 255, 0.4);
+  border-bottom-color: rgba(160, 120, 255, 0.2);
+}
+.krypton-claude-toast--subagent .krypton-claude-toast__telemetry {
+  color: rgba(160, 120, 255, 0.2);
+}
+.krypton-claude-toast--subagent::before {
+  background: radial-gradient(circle, rgba(160, 120, 255, 0.03) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
 }
 
 /* ─── Toast type: subagent_done (dim violet) — SubagentStop */
 .krypton-claude-toast--subagent_done {
-  border-left-color: rgba(160, 120, 255, 0.35);
+  border-color: rgba(160, 120, 255, 0.1);
 }
-
+.krypton-claude-toast--subagent_done .krypton-claude-toast__bracket {
+  color: rgba(160, 120, 255, 0.15);
+}
 .krypton-claude-toast--subagent_done .krypton-claude-toast__label {
   color: rgba(160, 120, 255, 0.5);
   text-shadow: none;
+  border-bottom-color: rgba(160, 120, 255, 0.08);
 }
-
 .krypton-claude-toast--subagent_done .krypton-claude-toast__text {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5);
+}
+.krypton-claude-toast--subagent_done .krypton-claude-toast__telemetry {
+  color: rgba(160, 120, 255, 0.12);
 }
 
 /* ─── Toast type: teammate (teal) — TeammateIdle */
 .krypton-claude-toast--teammate {
-  border-left-color: rgba(80, 200, 180, 0.7);
+  border-color: rgba(80, 200, 180, 0.2);
 }
-
+.krypton-claude-toast--teammate .krypton-claude-toast__bracket {
+  color: rgba(80, 200, 180, 0.35);
+}
 .krypton-claude-toast--teammate .krypton-claude-toast__label {
   color: #50c8b4;
   text-shadow: 0 0 6px rgba(80, 200, 180, 0.4);
+  border-bottom-color: rgba(80, 200, 180, 0.2);
+}
+.krypton-claude-toast--teammate .krypton-claude-toast__telemetry {
+  color: rgba(80, 200, 180, 0.2);
 }
 
 /* ─── Toast type: task (green) — TaskCompleted */
 .krypton-claude-toast--task {
-  border-left-color: rgba(80, 220, 100, 0.7);
+  border-color: rgba(80, 220, 100, 0.18);
 }
-
+.krypton-claude-toast--task .krypton-claude-toast__bracket {
+  color: rgba(80, 220, 100, 0.35);
+}
 .krypton-claude-toast--task .krypton-claude-toast__label {
   color: #50dc64;
   text-shadow: 0 0 6px rgba(80, 220, 100, 0.4);
+  border-bottom-color: rgba(80, 220, 100, 0.2);
+}
+.krypton-claude-toast--task .krypton-claude-toast__telemetry {
+  color: rgba(80, 220, 100, 0.2);
 }
 
 /* ─── Toast type: config (amber-dim) — ConfigChange */
 .krypton-claude-toast--config {
-  border-left-color: rgba(250, 200, 99, 0.5);
+  border-color: rgba(250, 200, 99, 0.12);
 }
-
+.krypton-claude-toast--config .krypton-claude-toast__bracket {
+  color: rgba(250, 200, 99, 0.2);
+}
 .krypton-claude-toast--config .krypton-claude-toast__label {
   color: rgba(250, 200, 99, 0.7);
   text-shadow: none;
+  border-bottom-color: rgba(250, 200, 99, 0.12);
+}
+.krypton-claude-toast--config .krypton-claude-toast__telemetry {
+  color: rgba(250, 200, 99, 0.15);
 }
 
 /* ─── Toast type: worktree (cyan-dim) — WorktreeCreate/Remove */
 .krypton-claude-toast--worktree {
-  border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
 }
-
+.krypton-claude-toast--worktree .krypton-claude-toast__bracket {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+}
 .krypton-claude-toast--worktree .krypton-claude-toast__label {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
   text-shadow: none;
+  border-bottom-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+}
+.krypton-claude-toast--worktree .krypton-claude-toast__telemetry {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
 }
 
 /* ─── Toast type: compact (magenta-dim) — PreCompact/PostCompact */
 .krypton-claude-toast--compact {
-  border-left-color: rgba(200, 100, 255, 0.35);
+  border-color: rgba(200, 100, 255, 0.1);
 }
-
+.krypton-claude-toast--compact .krypton-claude-toast__bracket {
+  color: rgba(200, 100, 255, 0.15);
+}
 .krypton-claude-toast--compact .krypton-claude-toast__label {
   color: rgba(200, 100, 255, 0.5);
   text-shadow: none;
+  border-bottom-color: rgba(200, 100, 255, 0.08);
 }
-
 .krypton-claude-toast--compact .krypton-claude-toast__text {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.6);
+}
+.krypton-claude-toast--compact .krypton-claude-toast__telemetry {
+  color: rgba(200, 100, 255, 0.12);
 }
 
 /* ─── Toast type: elicitation (amber-bright) — Elicitation/ElicitationResult */
 .krypton-claude-toast--elicitation {
-  border-left-color: rgba(250, 200, 99, 0.8);
+  border-color: rgba(250, 200, 99, 0.22);
 }
-
+.krypton-claude-toast--elicitation .krypton-claude-toast__bracket {
+  color: rgba(250, 200, 99, 0.35);
+}
 .krypton-claude-toast--elicitation .krypton-claude-toast__label {
   color: #fac863;
   text-shadow: 0 0 8px rgba(250, 200, 99, 0.5);
+  border-bottom-color: rgba(250, 200, 99, 0.2);
+}
+.krypton-claude-toast--elicitation .krypton-claude-toast__telemetry {
+  color: rgba(250, 200, 99, 0.2);
 }
 
 /* 5. Activity Trace — seismograph ticker on right edge of content area */
