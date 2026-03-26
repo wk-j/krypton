@@ -22,14 +22,17 @@ export interface NotificationOptions {
 // ── Constants ──────────────────────────────────────────────────────────
 
 const GLYPH_SET = '░▒▓█▀▄▌▐─═╌╍┄┅⟋⟍⧸⧹';
-const DECODE_FPS = 35;
-const DECODE_PASSES = 5;
-const DECODE_WAVE_DELAY = 0.6;
+const DECODE_FPS = 40;
+/** Base probability a character resolves each frame (modified by position) */
+const DECODE_BASE_CHANCE = 0.08;
+/** How much earlier left-side characters tend to resolve vs right-side */
+const DECODE_POSITION_BIAS = 0.04;
 
 const MAX_VISIBLE = 6;
 const DEFAULT_DURATION = 4000;
 const MAX_MESSAGE_LEN = 256;
 const KITTY_TITLE_TIMEOUT_MS = 500;
+const MIN_DISMISS_GAP_MS = 2000;
 
 const LEVEL_LABELS: Record<NotificationLevel, string> = {
   info: 'INFO',
@@ -45,6 +48,8 @@ export class NotificationController {
   private container: HTMLElement;
   private queue: HTMLElement[] = [];
   private pendingKitty = new Map<string, { title: string; timer: number }>();
+  /** Timestamp of the next available auto-dismiss slot (staggers dismissals) */
+  private nextDismissAt = 0;
 
   constructor() {
     this.container = document.createElement('div');
@@ -93,14 +98,6 @@ export class NotificationController {
     msg.textContent = useDecode ? '' : message;
     el.appendChild(msg);
 
-    // Timer progress bar
-    if (duration > 0) {
-      const timer = document.createElement('div');
-      timer.className = 'krypton-notif__timer';
-      timer.style.animationDuration = `${duration}ms`;
-      el.appendChild(timer);
-    }
-
     // Insert (prepend so newest is at visual bottom via column-reverse)
     this.container.prepend(el);
     this.queue.push(el);
@@ -118,9 +115,19 @@ export class NotificationController {
     // Click to dismiss
     el.addEventListener('click', () => this.dismiss(el));
 
-    // Auto-dismiss
+    // Auto-dismiss — stagger so consecutive items hide ≥2s apart
     if (duration > 0) {
-      setTimeout(() => this.dismiss(el), duration);
+      const now = Date.now();
+      const earliest = Math.max(now + duration, this.nextDismissAt + MIN_DISMISS_GAP_MS);
+      this.nextDismissAt = earliest;
+      const actualDuration = earliest - now;
+      setTimeout(() => this.dismiss(el), actualDuration);
+
+      // Timer progress bar — use actual dismiss delay so bar matches real lifetime
+      const timer = document.createElement('div');
+      timer.className = 'krypton-notif__timer';
+      timer.style.animationDuration = `${actualDuration}ms`;
+      el.appendChild(timer);
     }
 
     this.trim();
@@ -254,39 +261,66 @@ export class NotificationController {
     }
   }
 
-  /** Glitch-decode text reveal: characters resolve from random glyphs left-to-right */
+  /** Glitch-decode text reveal: characters scramble then probabilistically lock in
+   *  with a left-biased cascade. Spaces resolve instantly. Each character flickers
+   *  faster right before it locks, giving an organic "descramble" feel. */
   private decodeReveal(el: HTMLElement, finalText: string): void {
     const len = finalText.length;
-    const remaining = new Array<number>(len).fill(DECODE_PASSES);
-    let frame = 0;
+    const locked = new Uint8Array(len);   // 1 = resolved
+    const heat = new Float32Array(len);   // accumulates toward 1.0 → lock
+    let resolved = 0;
+
+    // Spaces and punctuation lock immediately
+    for (let i = 0; i < len; i++) {
+      if (finalText[i] === ' ') {
+        locked[i] = 1;
+        resolved++;
+      }
+    }
+
+    // Initial scramble — show all glyphs at once (no blank lead-in)
+    let output = '';
+    for (let i = 0; i < len; i++) {
+      output += locked[i]
+        ? finalText[i]
+        : GLYPH_SET[Math.floor(Math.random() * GLYPH_SET.length)];
+    }
+    el.textContent = output;
 
     const interval = setInterval(() => {
-      let output = '';
-      let allDone = true;
+      let buf = '';
 
       for (let i = 0; i < len; i++) {
-        const waveDelay = Math.floor(i * DECODE_WAVE_DELAY);
-        if (frame < waveDelay) {
-          // Not started — show dim glyph or space
-          output += i < frame + 3
-            ? GLYPH_SET[Math.floor(Math.random() * GLYPH_SET.length)]
-            : ' ';
-          allDone = false;
-        } else if (remaining[i] > 0) {
-          // Decoding — random glyph
-          output += GLYPH_SET[Math.floor(Math.random() * GLYPH_SET.length)];
-          remaining[i]--;
-          allDone = false;
+        if (locked[i]) {
+          buf += finalText[i];
+          continue;
+        }
+
+        // Position bias: characters earlier in the string accumulate faster
+        const positionFactor = 1 - (i / len) * DECODE_POSITION_BIAS * 10;
+        // Neighbour pull: if the character to the left is locked, boost this one
+        const neighbourBoost = (i > 0 && locked[i - 1]) ? 0.06 : 0;
+        heat[i] += (DECODE_BASE_CHANCE * positionFactor + neighbourBoost) * (0.7 + Math.random() * 0.6);
+
+        if (heat[i] >= 1.0) {
+          // Lock this character
+          locked[i] = 1;
+          resolved++;
+          buf += finalText[i];
+        } else if (heat[i] > 0.7) {
+          // Near-lock flicker: alternate between final char and glyph
+          buf += Math.random() < 0.5
+            ? finalText[i]
+            : GLYPH_SET[Math.floor(Math.random() * GLYPH_SET.length)];
         } else {
-          // Resolved
-          output += finalText[i];
+          // Still scrambling
+          buf += GLYPH_SET[Math.floor(Math.random() * GLYPH_SET.length)];
         }
       }
 
-      el.textContent = output;
-      frame++;
+      el.textContent = buf;
 
-      if (allDone) {
+      if (resolved >= len) {
         clearInterval(interval);
         el.textContent = finalText;
       }
