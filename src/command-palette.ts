@@ -630,6 +630,15 @@ export class CommandPalette {
       execute: () => c.openDiffView({ staged: true }),
     });
 
+    // ── AI Agent ──
+    this.register({
+      id: 'agent.open',
+      label: 'Open AI Agent Window',
+      category: 'Window',
+      keybinding: 'Leader a',
+      execute: () => c.openAgentView(),
+    });
+
     // ── Markdown Viewer ──
     this.register({
       id: 'markdown.open',

@@ -1,6 +1,6 @@
 # Pi-Agent Integration — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-03-28
 > Milestone: M8 — Polish
 

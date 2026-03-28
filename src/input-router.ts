@@ -578,6 +578,11 @@ export class InputRouter {
         this.compositor.openDiffView({ staged: e.shiftKey }).then(() => this.toNormal());
         break;
 
+      // a — open AI agent window (or focus existing)
+      case 'a':
+        this.compositor.openAgentView().then(() => this.toNormal());
+        break;
+
       // c — clone SSH session (new tab) / C — clone SSH session (new window)
       case 'c':
         if (e.shiftKey) {

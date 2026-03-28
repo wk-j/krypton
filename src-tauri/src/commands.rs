@@ -170,6 +170,30 @@ pub fn find_java_server_for_session(
     crate::pty::find_java_servers_pid(shell_pid)
 }
 
+/// Read a file's contents as a UTF-8 string.
+/// Used by the AI agent tool to inspect source files.
+#[tauri::command]
+pub fn read_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| format!("read_file: {e}"))
+}
+
+/// Write a string to a file, creating parent directories if needed.
+/// Used by the AI agent tool to write or overwrite source files.
+#[tauri::command]
+pub fn write_file(path: String, content: String) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("write_file mkdir: {e}"))?;
+    }
+    std::fs::write(&path, content).map_err(|e| format!("write_file: {e}"))
+}
+
+/// Read a single environment variable from the process environment.
+/// Returns null if the variable is not set.
+#[tauri::command]
+pub fn get_env_var(name: String) -> Option<String> {
+    std::env::var(&name).ok()
+}
+
 /// Run a short-lived command and return its stdout.
 /// Used by dashboard overlays to gather data (e.g., git status) without
 /// creating a PTY session. Capped at 10 MB output limit.

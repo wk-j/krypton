@@ -43,6 +43,9 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   { key: 'A-hjkl', label: 'focus pane' },
   { key: 'A-x', label: 'close pane' },
 
+  // ── AI agent ──
+  { key: 'a', label: 'AI agent' },
+
   // ── Terminal-only ──
   { key: 'v', label: 'select mode', contentTypes: [null] },
   { key: 'V', label: 'select lines', contentTypes: [null] },

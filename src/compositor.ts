@@ -231,6 +231,8 @@ export class Compositor {
   private windows: Map<WindowId, KryptonWindow> = new Map();
   private sessionMap: Map<SessionId, SessionLocation> = new Map();
   private focusedWindowId: WindowId | null = null;
+  /** ID of the dedicated AI agent window (at most one at a time) */
+  private agentWindowId: WindowId | null = null;
   private workspace: HTMLElement;
   private onFocusChangeCallbacks: Array<(id: WindowId | null) => void> = [];
   private customKeyHandler: CustomKeyHandler | null = null;
@@ -1536,6 +1538,32 @@ export class Compositor {
     mdView.onClose(() => {
       this.closeTab();
     });
+  }
+
+  /**
+   * Open (or focus) the dedicated AI agent window.
+   * At most one agent window exists at a time; subsequent calls focus the existing one.
+   */
+  async openAgentView(): Promise<void> {
+    // If the agent window still exists, just focus it
+    if (this.agentWindowId && this.windows.has(this.agentWindowId)) {
+      this.focusWindow(this.agentWindowId);
+      return;
+    }
+
+    const { AgentView } = await import('./agent/agent-view');
+
+    // Inject the focused terminal's session ID so the agent view can look up CWD
+    const focusedPane = this.getFocusedPane();
+    const sessionId = focusedPane?.sessionId ?? null;
+
+    // AgentView uses CSS custom properties inherited from the window element
+    // for accent color — no need to pass hex/rgb at construction time.
+    const agentView = new AgentView();
+    if (sessionId !== null) agentView.setActivePaneSessionId(sessionId);
+
+    const id = await this.createContentWindow('AI  claude-sonnet-4', agentView);
+    this.agentWindowId = id;
   }
 
   /**
