@@ -19,7 +19,7 @@ const WriteFileSchema = Type.Object({
 });
 
 const BashSchema = Type.Object({
-  command: Type.String({ description: 'Shell command to run (passed to sh -c)' }),
+  command: Type.String({ description: 'Shell command to run (passed to the user\'s default login shell)' }),
   cwd: Type.Optional(Type.String({ description: 'Working directory (defaults to project root)' })),
 });
 
@@ -38,6 +38,19 @@ function resolvePath(path: string, projectDir: string | null): string {
 }
 
 // ─── Tool factories ─────────────────────────────────────────────
+
+/** Cached shell config (resolved once per session). */
+let cachedShell: [string, string[]] | null = null;
+
+async function getShell(): Promise<[string, string[]]> {
+  if (cachedShell) return cachedShell;
+  try {
+    cachedShell = await invoke<[string, string[]]>('get_default_shell');
+  } catch {
+    cachedShell = ['/bin/sh', []];
+  }
+  return cachedShell;
+}
 
 export function createKryptonTools(projectDir: string | null): AgentTool[] {
   const readFileTool: AgentTool<typeof ReadFileSchema, string> = {
@@ -71,9 +84,10 @@ export function createKryptonTools(projectDir: string | null): AgentTool[] {
     parameters: BashSchema,
     async execute(_id: string, rawParams: unknown): Promise<AgentToolResult<string>> {
       const params = rawParams as Static<typeof BashSchema>;
+      const [program, shellArgs] = await getShell();
       const output = await invoke<string>('run_command', {
-        program: 'sh',
-        args: ['-c', params.command],
+        program,
+        args: [...shellArgs, '-c', params.command],
         cwd: params.cwd ?? projectDir ?? null,
       });
       return text(output || '(no output)');

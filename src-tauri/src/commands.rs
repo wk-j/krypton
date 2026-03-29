@@ -187,11 +187,46 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| format!("write_file: {e}"))
 }
 
-/// Read a single environment variable from the process environment.
-/// Returns null if the variable is not set.
+/// Read a single environment variable.
+/// First checks the process environment, then falls back to spawning a login
+/// shell to resolve it — this is necessary on macOS where GUI apps launched
+/// from Finder/Spotlight don't inherit the user's shell profile.
 #[tauri::command]
 pub fn get_env_var(name: String) -> Option<String> {
-    std::env::var(&name).ok()
+    if let Ok(val) = std::env::var(&name) {
+        return Some(val);
+    }
+
+    // Fallback: ask the user's default shell for the variable.
+    // Validate name contains only safe characters to prevent shell injection.
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    // Use printenv which works regardless of shell syntax (fish vs bash/zsh)
+    let output = std::process::Command::new(&shell)
+        .args(["-l", "-c", &format!("printenv {}", name)])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+
+    let val = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if val.is_empty() {
+        None
+    } else {
+        Some(val)
+    }
+}
+
+/// Return the user's configured shell program and args from krypton.toml.
+/// Falls back to $SHELL (then /bin/sh) if config is unavailable.
+#[tauri::command]
+pub fn get_default_shell(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+) -> Result<(String, Vec<String>), String> {
+    let cfg = config.read().map_err(|e| format!("Config lock poisoned: {e}"))?;
+    Ok((cfg.shell.program.clone(), cfg.shell.args.clone()))
 }
 
 /// Run a short-lived command and return its stdout.

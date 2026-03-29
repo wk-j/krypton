@@ -1261,6 +1261,10 @@ export class AgentView implements ContentView {
 
   // ─── ContentView interface ────────────────────────────────────────
 
+  getWorkingDirectory(): string | null {
+    return this.projectDir;
+  }
+
   onResize(_w: number, _h: number): void {
     // Restore scroll position after tab switch (DOM reflow resets scrollTop to 0)
     if (this.savedScrollTop > 0) {

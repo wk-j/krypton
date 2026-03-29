@@ -1126,15 +1126,21 @@ export class Compositor {
   /** Get the cwd of the focused pane's shell, if available */
   private async getFocusedCwd(): Promise<string | null> {
     const pane = this.getFocusedPane();
-    if (!pane || pane.sessionId === null) return null;
-    try {
-      const cwd = await invoke<string | null>('get_pty_cwd', {
-        sessionId: pane.sessionId,
-      });
-      return cwd;
-    } catch {
-      return null;
+    if (!pane) return null;
+
+    // If the pane has a PTY session, ask the backend for its cwd
+    if (pane.sessionId !== null) {
+      try {
+        return await invoke<string | null>('get_pty_cwd', {
+          sessionId: pane.sessionId,
+        });
+      } catch {
+        return null;
+      }
     }
+
+    // Content view (e.g. AI agent) — use its project directory
+    return pane.contentView?.getWorkingDirectory?.() ?? null;
   }
 
   /** Create a new terminal window, spawn a PTY, and add it to the layout */

@@ -70,6 +70,8 @@ export interface ContentView {
   dispose(): void;
   /** Called when pane is resized */
   onResize?(width: number, height: number): void;
+  /** Optional working directory associated with this content view */
+  getWorkingDirectory?(): string | null;
 }
 
 /** A leaf pane — hosts one xterm.js terminal + PTY session, or a content view */

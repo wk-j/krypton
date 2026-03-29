@@ -65,6 +65,7 @@ pub fn run() {
             commands::write_file,
             commands::get_env_var,
             commands::run_command,
+            commands::get_default_shell,
             commands::query_sqlite,
             commands::set_ssh_remote_cwd,
             commands::detect_ssh_session,

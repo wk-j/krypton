@@ -3325,6 +3325,10 @@ html, body {
 
 /* ─── AI Agent View ─────────────────────────────────────────────────────── */
 
+/* ═══════════════════════════════════════════════════════════════
+   AGENT VIEW — KRYPTON HUD INTERFACE
+   ═══════════════════════════════════════════════════════════════ */
+
 .agent-view {
   display: flex;
   flex-direction: column;
@@ -3332,9 +3336,12 @@ html, body {
   height: 100%;
   overflow: hidden;
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
-  font-size: 15px;
+  font-size: 16px;
   color: var(--krypton-fg, #b0c4d8);
   outline: none;
+  background:
+    radial-gradient(circle, rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03) 0.5px, transparent 0.5px);
+  background-size: 6px 6px;
 }
 
 /* Messages list */
@@ -3342,38 +3349,44 @@ html, body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 14px;
+  padding: 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3) transparent;
+  scrollbar-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25) transparent;
 }
 
-/* Fade edges in scroll state to signal scrollability */
+/* Fade edges in scroll state */
 .agent-view--scroll .agent-view__messages {
-  mask-image: linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 6%, black 94%, transparent 100%);
 }
 
-/* Individual messages */
+/* ─── Message cards ──────────────────────────────────────────── */
+
 .agent-view__msg {
   display: grid;
-  grid-template-columns: 3ch 1fr;
-  gap: 0 10px;
-  line-height: 1.5;
+  grid-template-columns: auto 1fr;
+  gap: 0 12px;
+  line-height: 1.55;
+  position: relative;
 }
 
+/* Role badge — HUD-style uppercase label */
 .agent-view__msg-label {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  padding-top: 2px;
-  text-align: right;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  padding: 3px 0 0;
   user-select: none;
+  white-space: nowrap;
 }
+
+/* ─── User messages ──────────────────────────────────────────── */
 
 .agent-view__msg--user .agent-view__msg-label {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.35);
 }
 
 .agent-view__msg-body {
@@ -3382,80 +3395,111 @@ html, body {
 }
 
 .agent-view__msg--user .agent-view__msg-body {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.7);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.75);
 }
 
-/* Markdown-rendered assistant messages */
+/* ─── Assistant messages ─────────────────────────────────────── */
+
+.agent-view__msg--assistant {
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(6, 10, 18, 0.6), rgba(10, 16, 28, 0.4));
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
+  box-shadow:
+    inset 0 0 30px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02),
+    0 2px 12px rgba(0, 0, 0, 0.25);
+  position: relative;
+}
+
+.agent-view__msg--assistant .agent-view__msg-label {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
+  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+}
+
+/* ─── System messages ────────────────────────────────────────── */
+
+.agent-view__msg--system .agent-view__msg-label {
+  color: rgba(200, 150, 255, 0.6);
+}
+
+.agent-view__msg-body--system {
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.45);
+  font-size: 14px;
+  font-style: italic;
+}
+
+/* ═══ Markdown rendering ═══════════════════════════════════════ */
+
 .agent-view__msg-body--markdown {
   white-space: normal;
   line-height: 1.6;
 }
 
 .agent-view__msg-body--markdown p {
-  margin: 0.4em 0;
+  margin: 0.35em 0;
 }
 
-.agent-view__msg-body--markdown p:first-child {
-  margin-top: 0;
-}
-
-.agent-view__msg-body--markdown p:last-child {
-  margin-bottom: 0;
-}
+.agent-view__msg-body--markdown p:first-child { margin-top: 0; }
+.agent-view__msg-body--markdown p:last-child { margin-bottom: 0; }
 
 .agent-view__msg-body--markdown code {
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
-  font-size: 0.9em;
-  padding: 0.15em 0.4em;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 3px;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
+  font-size: 0.88em;
+  padding: 0.15em 0.45em;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  border-radius: 2px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
 }
 
 .agent-view__msg-body--markdown pre {
-  margin: 0.5em 0;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.4);
-  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
-  border-radius: 3px;
+  margin: 0.6em 0;
+  padding: 12px 14px;
+  background: rgba(6, 10, 18, 0.7);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  border-radius: 2px;
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2) transparent;
+  position: relative;
 }
 
 .agent-view__msg-body--markdown pre code {
   padding: 0;
   background: none;
-  font-size: 13px;
-  line-height: 1.45;
+  border: none;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.85);
 }
 
 .agent-view__msg-body--markdown ul,
 .agent-view__msg-body--markdown ol {
-  margin: 0.4em 0;
+  margin: 0.35em 0;
   padding-left: 1.5em;
 }
 
-.agent-view__msg-body--markdown li {
-  margin: 0.2em 0;
-}
+.agent-view__msg-body--markdown li { margin: 0.15em 0; }
 
 .agent-view__msg-body--markdown h1,
 .agent-view__msg-body--markdown h2,
 .agent-view__msg-body--markdown h3,
 .agent-view__msg-body--markdown h4 {
-  margin: 0.8em 0 0.3em;
-  color: var(--krypton-fg, #b0c4d8);
+  margin: 0.7em 0 0.25em;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
+  text-shadow: 0 0 10px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
 }
 
-.agent-view__msg-body--markdown h1 { font-size: 1.3em; }
-.agent-view__msg-body--markdown h2 { font-size: 1.15em; }
-.agent-view__msg-body--markdown h3 { font-size: 1.05em; }
+.agent-view__msg-body--markdown h1 { font-size: 1.25em; border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15); padding-bottom: 0.2em; }
+.agent-view__msg-body--markdown h2 { font-size: 1.1em; }
+.agent-view__msg-body--markdown h3 { font-size: 1.02em; }
 
 .agent-view__msg-body--markdown blockquote {
   margin: 0.4em 0;
   padding: 0.3em 0.8em;
-  border-left: 3px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.6);
 }
 
@@ -3464,87 +3508,109 @@ html, body {
 }
 
 .agent-view__msg-body--markdown a {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
   text-decoration: none;
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
 }
 
 .agent-view__msg-body--markdown hr {
   border: none;
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
-  margin: 0.6em 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25), transparent);
+  margin: 0.8em 0;
 }
 
 .agent-view__msg-body--markdown table {
   border-collapse: collapse;
-  margin: 0.4em 0;
+  margin: 0.5em 0;
   font-size: 0.9em;
 }
 
 .agent-view__msg-body--markdown th,
 .agent-view__msg-body--markdown td {
-  padding: 4px 10px;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  padding: 5px 12px;
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
 }
 
 .agent-view__msg-body--markdown th {
-  background: rgba(0, 0, 0, 0.25);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.75);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
-.agent-view__msg--system .agent-view__msg-label {
-  color: rgba(200, 150, 255, 0.6);
-}
+/* ═══ Streaming cursor ═════════════════════════════════════════ */
 
-.agent-view__msg-body--system {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5);
-  font-size: 13px;
-}
-
-/* Streaming cursor blink */
 .agent-view__stream-cursor {
   display: inline;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
-  animation: agent-cursor-blink 0.9s step-end infinite;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
+  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+  animation: agent-cursor-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes agent-cursor-blink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
+@keyframes agent-cursor-pulse {
+  0%, 100% { opacity: 1; text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6); }
+  50%      { opacity: 0.2; text-shadow: 0 0 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1); }
 }
 
-/* Tool execution rows */
+/* ═══ Tool execution rows ══════════════════════════════════════ */
+
 .agent-view__tool-row {
   display: flex;
   align-items: baseline;
-  gap: 6px;
-  padding: 3px 0 3px 2px;
+  gap: 8px;
+  padding: 6px 10px;
   border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
-  padding-left: 8px;
-  font-size: 13px;
+  font-size: 14px;
+  background: linear-gradient(135deg, rgba(6, 10, 18, 0.35), transparent);
+  position: relative;
+}
+
+/* Holographic dot grid on tool rows */
+.agent-view__tool-row::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
+  pointer-events: none;
 }
 
 .agent-view__tool-icon {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
-  width: 1ch;
+  width: 1.2ch;
   flex-shrink: 0;
+}
+
+.agent-view__tool-row--done {
+  border-left-color: rgba(57, 255, 127, 0.4);
 }
 
 .agent-view__tool-row--done .agent-view__tool-icon {
   color: rgba(57, 255, 127, 0.8);
+  text-shadow: 0 0 6px rgba(57, 255, 127, 0.3);
+}
+
+.agent-view__tool-row--error {
+  border-left-color: rgba(255, 58, 92, 0.5);
 }
 
 .agent-view__tool-row--error .agent-view__tool-icon {
   color: rgba(255, 58, 92, 0.9);
+  text-shadow: 0 0 6px rgba(255, 58, 92, 0.3);
 }
 
 .agent-view__tool-name {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
-  font-size: 13px;
-  letter-spacing: 0.04em;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .agent-view__tool-args {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.45);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
@@ -3557,35 +3623,43 @@ html, body {
   margin-top: 4px;
   white-space: pre-wrap;
   word-break: break-word;
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.55);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5);
   font-size: 13px;
-  border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
   padding-left: 8px;
 }
 
 .agent-view__tool-more {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
   font-style: italic;
 }
 
-/* Error messages */
+/* ═══ Error messages ═══════════════════════════════════════════ */
+
 .agent-view__error {
   color: rgba(255, 58, 92, 0.9);
-  padding: 6px 8px;
-  border-left: 2px solid rgba(255, 58, 92, 0.5);
-  font-size: 14px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 58, 92, 0.2);
+  border-left: 2px solid rgba(255, 58, 92, 0.6);
+  background: rgba(255, 58, 92, 0.04);
+  font-size: 15px;
   white-space: pre-wrap;
+  text-shadow: 0 0 8px rgba(255, 58, 92, 0.15);
 }
 
-/* Scroll state hint */
+/* ═══ State hint bar ═══════════════════════════════════════════ */
+
 .agent-view__state-hint {
   display: none;
-  padding: 4px 14px;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.3);
+  padding: 5px 16px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
   text-align: right;
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02);
   user-select: none;
 }
 
@@ -3593,14 +3667,34 @@ html, body {
   display: block;
 }
 
-/* Input row */
+/* ═══ Input row — HUD command line ═════════════════════════════ */
+
 .agent-view__input-row {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 8px 14px 10px;
+  gap: 10px;
+  padding: 10px 16px 12px;
   border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
   flex-shrink: 0;
+  position: relative;
+  background: rgba(6, 10, 18, 0.3);
+}
+
+/* Scanline accent above input */
+.agent-view__input-row::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4),
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15),
+    transparent
+  );
 }
 
 .agent-view__input-row--hidden {
@@ -3610,13 +3704,16 @@ html, body {
   border: none;
 }
 
+.agent-view__input-row--hidden::before { display: none; }
+
 .agent-view__input-row--busy {
-  opacity: 0.6;
+  opacity: 0.5;
   pointer-events: none;
 }
 
 .agent-view__prompt-glyph {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
   flex-shrink: 0;
   padding-top: 1px;
   user-select: none;
@@ -3632,11 +3729,12 @@ html, body {
   outline: none;
 }
 
-/* Input cursor */
+/* Input cursor — glowing pulse */
 .agent-view__input-cursor {
   display: inline;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
-  animation: agent-cursor-blink 0.7s step-end infinite;
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  animation: agent-cursor-pulse 0.8s ease-in-out infinite;
 }
 
 /* ─── Autocomplete dropdown ────────────────────────────────────── */
@@ -3645,9 +3743,13 @@ html, body {
   display: none;
   flex-direction: column;
   padding: 4px 0;
-  margin: 0 14px;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
-  background: rgba(0, 0, 0, 0.7);
+  margin: 0 16px;
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  background: linear-gradient(135deg, rgba(6, 10, 18, 0.95), rgba(10, 16, 28, 0.92));
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05),
+    inset 0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02);
   max-height: 180px;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -3662,25 +3764,28 @@ html, body {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  padding: 4px 10px;
+  padding: 5px 12px;
   cursor: default;
   flex-shrink: 0;
+  border-left: 2px solid transparent;
 }
 
 .agent-view__ac-row--selected {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
 }
 
 .agent-view__ac-cmd {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 700;
   flex-shrink: 0;
   width: 10ch;
 }
 
 .agent-view__ac-desc {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.45);
-  font-size: 12px;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
+  font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

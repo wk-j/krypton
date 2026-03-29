@@ -82,6 +82,7 @@ The app has two halves that communicate over Tauri IPC:
 - **macOS fullscreen:** Set position+size manually, NOT using fullscreen API (breaks transparency)
 - **macOS focus fix:** Window must be `always_on_top(true)` then immediately `always_on_top(false)` in setup
 - **Process detection:** Uses `tcgetpgrp()` on Unix; different API on Windows
+- **Environment variables in release:** macOS GUI apps don't inherit shell env vars. `get_env_var` falls back to spawning a login shell with `printenv` (not shell-specific variable syntax) to stay compatible with bash/zsh/fish
 - Both `<html>` and `<body>` must have `background: transparent`
 
 ## Code Style
