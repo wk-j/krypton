@@ -2,7 +2,7 @@
 
 A keyboard-driven terminal emulator with a cyberpunk aesthetic. Built with Rust + Tauri v2 and TypeScript + xterm.js.
 
-Single transparent native window. Multiple terminal windows rendered as DOM elements with custom chrome. Tiling layout engine. Vim-style modal keyboard system. Sound effects. Shader post-processing. Claude Code integration.
+Single transparent native window. Multiple terminal windows rendered as DOM elements with custom chrome. Tiling layout engine. Vim-style modal keyboard system. Sound effects. Shader post-processing. Claude Code integration. Embedded AI coding agent.
 
 ![](./docs/images/SCR-20260312-maqq.png)
 
@@ -16,6 +16,7 @@ Single transparent native window. Multiple terminal windows rendered as DOM elem
 - **Command palette** -- fuzzy-searchable action list (`Cmd+Shift+P`) with ~35 registered actions
 - **Quick Terminal** -- persistent overlay terminal toggled with `Cmd+I`
 - **Animation engine** -- morph, slide, crossfade transitions with entrance/exit effects and input buffering
+- **Background animations** -- canvas-based effects (flame cursor trail, brainwave EEG, Matrix rain) during Claude Code processing
 - **Cyberpunk HUD chrome** -- glowing borders, L-shaped corner accents, striped header bars, telemetry sidebar
 - **Sound effects** -- 20+ event-driven sounds (window create/close, mode enter/exit, focus, tabs, panes) via rodio
 - **Shader effects** -- post-processing presets: CRT, hologram, glitch, bloom, matrix
@@ -25,10 +26,12 @@ Single transparent native window. Multiple terminal windows rendered as DOM elem
 - **Theming** -- built-in themes + custom TOML themes in `~/.config/krypton/themes/`, hot-reloaded
 - **SSH support** -- connection detection and OpenSSH ControlMaster multiplexing
 - **Claude Code hooks** -- HTTP server receives Claude Code events, renders neural uplink bar, sigil badge, tool HUD, activity trace, and notification toasts in the window chrome
+- **AI Agent** -- embedded coding agent (`@mariozechner/pi-agent-core`) in a dedicated tileable window with streaming responses, tool execution (bash, read_file, write_file), and session persistence
+- **Notification system** -- persistent bottom-right notifications with glitch-decode reveal, captures OSC 9/777/99 from terminals
 - **Markdown viewer** -- two-panel file browser + rendered preview with block select mode, reload, and heading navigation
 - **Git diff viewer** -- syntax-highlighted diff view for staged/unstaged changes
 - **Dashboard system** -- tabbed overlay dashboards (Git, OpenCode) with keyboard routing
-- **Extensions** -- context-aware plugins that activate on process detection
+- **Extensions** -- context-aware plugins that activate on process detection (Java, etc.)
 - **Cursor trail** -- rainbow flame particle system on mouse and text cursor
 
 ## Keyboard Shortcuts
@@ -42,6 +45,7 @@ Single transparent native window. Multiple terminal windows rendered as DOM elem
 | `Ctrl+Shift+U` / `D` | Scroll buffer up/down one page |
 | Leader + `n` | New window |
 | Leader + `x` | Close window |
+| Leader + `a` | Open AI Agent window |
 | Leader + `f` | Toggle Focus/Grid layout |
 | Leader + `z` | Toggle maximize |
 | Leader + `p` | Toggle pin on focused window |
@@ -54,6 +58,15 @@ Single transparent native window. Multiple terminal windows rendered as DOM elem
 | Leader + `d` / `D` | Git diff (unstaged / staged) |
 | Leader + `o` | Open markdown viewer for CWD |
 | `Escape` | Exit current mode / hide Quick Terminal |
+
+**AI Agent shortcuts** (when agent window focused):
+- `Enter` -- Submit prompt
+- `Shift+Enter` -- Insert newline
+- `Up/Down` (empty input) -- Recall previous/next prompt
+- `Ctrl+C` -- Abort turn / clear input
+- `Page Up/Down` -- Scroll messages (stays in input mode)
+- `Escape` (empty input) -- Enter scroll mode
+- Scroll mode: `j/k` scroll lines, `g/G` top/bottom, `y/Y` yank to clipboard, `i` return to input
 
 ## Configuration
 
@@ -107,13 +120,28 @@ krypton/
     config.ts              # Frontend config bridge
     claude-hooks.ts        # Claude Code hook event UI
     dashboard.ts           # Tabbed overlay dashboard framework
+    notification.ts        # Persistent notification control (OSC 9/777/99)
+    flame.ts               # Background animation interface
+    brainwave.ts           # EEG waveform animation for Claude Code
+    matrix.ts              # Matrix 3D rain background animation
     hints.ts               # Regex-pattern label overlays
     markdown-view.ts       # Markdown viewer with file browser + block select
     diff-view.ts           # Git diff viewer with syntax highlighting
     selection.ts           # Vim-like text selection mode
     shaders.ts             # Post-processing shader presets
     cursor-trail.ts        # Rainbow flame particle effects
-    extensions.ts          # Context-aware process extensions
+    extensions.ts          # Context-aware process extension framework
+    agent/                 # AI Agent integration
+      agent.ts             # AgentController wrapping pi-agent-core
+      agent-view.ts        # ContentView with streaming message render
+      tools.ts             # Krypton tools (read_file, write_file, bash, get_cwd)
+      session.ts           # Session persistence to ~/.config/krypton/agent-sessions/
+      index.ts             # Public API exports
+    dashboards/            # Dashboard implementations
+      git.ts               # Git status dashboard
+      opencode.ts          # OpenCode dashboard
+    extensions/            # Process-specific extensions
+      java.ts              # Java context extension
     types.ts               # Shared type definitions
     styles.css             # Cyberpunk HUD styles (BEM)
   src-tauri/               # Rust backend
@@ -135,6 +163,7 @@ krypton/
 
 - **Rust** + **Tauri v2** -- native shell, PTY management, IPC, audio, HTTP hook server
 - **TypeScript** + **xterm.js** -- terminal rendering, compositor, input system
+- **@mariozechner/pi-agent-core** -- embedded AI coding agent
 - **Vite** -- frontend build tooling
 - **portable-pty** -- cross-platform PTY spawning
 - **rodio** -- audio playback
