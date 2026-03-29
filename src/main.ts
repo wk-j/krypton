@@ -86,6 +86,15 @@ async function main(): Promise<void> {
   const notifications = new NotificationController();
   compositor.setNotificationController(notifications);
 
+  // Surface unhandled promise rejections and uncaught errors as visible notifications
+  window.addEventListener('unhandledrejection', (e) => {
+    const msg = e.reason instanceof Error ? e.reason.message : String(e.reason ?? 'Unknown error');
+    notifications.error(msg, { label: 'ERROR' });
+  });
+  window.addEventListener('error', (e) => {
+    notifications.error(e.message || 'Unknown error', { label: 'ERROR' });
+  });
+
   // Initialize Claude Code hook integration
   const claudeHooks = new ClaudeHookManager();
   claudeHooks.setNotificationController(notifications);

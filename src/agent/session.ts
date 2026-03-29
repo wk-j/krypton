@@ -1,8 +1,10 @@
 // Krypton — AI Agent Session Persistence
-// Saves and restores agent conversation using localStorage.
-// Key: 'krypton_agent_session'
+// Saves and restores agent conversation as a JSON file per project.
+// Location: <projectDir>/.krypton/agent-session.json
 
-const STORAGE_KEY = 'krypton_agent_session';
+import { invoke } from '@tauri-apps/api/core';
+
+const SESSION_FILENAME = '.krypton/agent-session.json';
 const MAX_MESSAGES = 80;
 
 export interface StoredMessage {
@@ -12,18 +14,24 @@ export interface StoredMessage {
   isError?: boolean;
 }
 
-export function saveSession(messages: StoredMessage[]): void {
+function sessionPath(projectDir: string): string {
+  return `${projectDir}/${SESSION_FILENAME}`;
+}
+
+export async function saveSession(messages: StoredMessage[], projectDir: string | null): Promise<void> {
+  if (!projectDir) return;
   try {
     const trimmed = messages.slice(-MAX_MESSAGES);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+    await invoke('write_file', { path: sessionPath(projectDir), content: JSON.stringify(trimmed, null, 2) });
   } catch {
-    // Storage full or unavailable — silently skip
+    // Write failed — silently skip
   }
 }
 
-export function loadSession(): StoredMessage[] {
+export async function loadSession(projectDir: string | null): Promise<StoredMessage[]> {
+  if (!projectDir) return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = await invoke<string>('read_file', { path: sessionPath(projectDir) });
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -33,9 +41,10 @@ export function loadSession(): StoredMessage[] {
   }
 }
 
-export function clearSession(): void {
+export async function clearSession(projectDir: string | null): Promise<void> {
+  if (!projectDir) return;
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    await invoke('write_file', { path: sessionPath(projectDir), content: '[]' });
   } catch {
     // ignore
   }

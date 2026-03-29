@@ -2,7 +2,6 @@
 // ContentView implementation that renders a keyboard-driven coding agent panel.
 // Uses manual input handling (no contenteditable) for full keyboard control.
 
-import { invoke } from '@tauri-apps/api/core';
 import { AgentController, type AgentEventType } from './agent';
 import { saveSession, loadSession, clearSession, type StoredMessage } from './session';
 import type { ContentView, PaneContentType } from '../types';
@@ -49,8 +48,11 @@ export class AgentView implements ContentView {
   private spinnerInterval: ReturnType<typeof setInterval> | null = null;
   private spinnerFrame = 0;
 
-  // CWD refresh
-  private activePaneSessionId: number | null = null;
+  // Project scoping
+  private projectDir: string | null = null;
+
+  // Close callback registered by compositor (called when user presses q)
+  private closeCallback: (() => void) | null = null;
 
   constructor() {
     this.controller = new AgentController();
@@ -60,7 +62,6 @@ export class AgentView implements ContentView {
     this.element.tabIndex = 0;
 
     this.buildDom();
-    this.restoreSession();
   }
 
   private buildDom(): void {
@@ -96,8 +97,8 @@ export class AgentView implements ContentView {
 
   // ─── Session ──────────────────────────────────────────────────────
 
-  private restoreSession(): void {
-    const msgs = loadSession();
+  private async restoreSession(): Promise<void> {
+    const msgs = await loadSession(this.projectDir);
     for (const m of msgs) {
       if (m.role === 'user') {
         this.appendUserMessageDom(m.text);
@@ -265,7 +266,7 @@ export class AgentView implements ContentView {
 
       case 'tool_end':
         if (this.currentToolRowEl) {
-          this.finalizeToolRow(this.currentToolRowEl, e.isError);
+          this.finalizeToolRow(this.currentToolRowEl, e.isError, e.result);
           this.currentToolRowEl = null;
         }
         break;
@@ -307,20 +308,14 @@ export class AgentView implements ContentView {
     this.storedMessages.push({ role: 'user', text });
     this.scrollToBottom();
 
-    // Inject CWD if available
-    if (this.activePaneSessionId !== null) {
-      try {
-        const cwd = await invoke<string>('get_pty_cwd', { sessionId: this.activePaneSessionId });
-        if (cwd) this.controller.setLastCwd(cwd);
-      } catch {
-        // CWD unavailable — continue without it
-      }
+    try {
+      await this.controller.prompt(text, (e) => this.handleAgentEvent(e));
+    } catch (e) {
+      this.handleAgentEvent({ type: 'error', message: `Unexpected error: ${e}` });
     }
-
-    await this.controller.prompt(text, (e) => this.handleAgentEvent(e));
   }
 
-  private saveCurrentSession(): void {
+  private async saveCurrentSession(): Promise<void> {
     // Sync DOM back to storedMessages for persistence
     const msgs: StoredMessage[] = [];
     for (const el of Array.from(this.messagesEl.children)) {
@@ -336,7 +331,7 @@ export class AgentView implements ContentView {
       }
     }
     this.storedMessages = msgs;
-    saveSession(msgs);
+    await saveSession(msgs, this.projectDir);
   }
 
   // ─── Keyboard ────────────────────────────────────────────────────
@@ -453,6 +448,21 @@ export class AgentView implements ContentView {
       return true;
     }
 
+    // Paste (Cmd+V / Ctrl+V)
+    if (e.code === 'KeyV' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+      navigator.clipboard.readText().then((text) => {
+        if (text) {
+          this.insert(text);
+        }
+      }).catch(() => { /* clipboard unavailable */ });
+      return true;
+    }
+
+    // Select all (Cmd+A / Ctrl+A)
+    if (e.code === 'KeyA' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+      return true; // consume — no text selection in manual input
+    }
+
     // Printable character
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       this.insert(e.key);
@@ -509,7 +519,17 @@ export class AgentView implements ContentView {
       return true;
     }
 
+    // q — close tab (same convention as diff/markdown viewers)
+    if (e.key === 'q') {
+      this.closeCallback?.();
+      return true;
+    }
+
     return false;
+  }
+
+  onClose(cb: () => void): void {
+    this.closeCallback = cb;
   }
 
   private insert(char: string): void {
@@ -611,7 +631,7 @@ export class AgentView implements ContentView {
 
   // ─── New session ──────────────────────────────────────────────────
 
-  newSession(): void {
+  async newSession(): Promise<void> {
     this.controller.reset();
     this.storedMessages = [];
     this.messagesEl.innerHTML = '';
@@ -619,15 +639,18 @@ export class AgentView implements ContentView {
     this.cursorPos = 0;
     this.promptHistory = [];
     this.historyIdx = -1;
-    clearSession();
+    await clearSession(this.projectDir);
     this.renderInput();
   }
 
   // ─── Set context ──────────────────────────────────────────────────
 
-  /** Called by compositor to inject the focused terminal's session ID for CWD lookup */
-  setActivePaneSessionId(sessionId: number | null): void {
-    this.activePaneSessionId = sessionId;
+  /** Set the project directory for per-project session scoping and tool CWD. Restores the matching session. */
+  setProjectDir(dir: string | null): void {
+    console.log('[agent] setProjectDir:', dir);
+    this.projectDir = dir;
+    this.controller.setProjectDir(dir);
+    this.restoreSession();
   }
 
   // ─── ContentView interface ────────────────────────────────────────

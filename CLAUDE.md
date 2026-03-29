@@ -104,6 +104,7 @@ Skills in `.agents/skills/` define repeatable workflows. Load the appropriate sk
 - **`/design-first`** — Before writing code for a new feature or significant change (3+ files or 2+ subsystems), write an implementation spec at `docs/<NN>-<feature-name>.md`, present it, and wait for explicit user approval. Skip for bug fixes, one-line changes, doc-only changes, or when user says "just do it".
 - **`/feature-implementation`** — When implementing any feature, ensures all related docs in `docs/` are updated (PROGRESS.md, architecture, data-flow, configuration, requirements). A feature is not complete until docs reflect the actual implementation. See the skill for the full doc map of which changes require which doc updates.
 - **`/ghost-signal-theme`** — Automates adding a new ghost-signal sound pack: copy 17 WAVs to `src-tauri/sounds/<pack-id>/`, register in `sound.rs` and `sound.ts`, update `docs/17-sound-themes.md`. Trigger on "add sound theme", "new sound pack", or referencing a WAV directory.
+- **`/pi-mono-reference`** — Reference for `@mariozechner/pi-agent-core` and `@mariozechner/pi-ai`. Load when working on `src/agent/`, debugging agent events, adding tools, changing models/providers, or any question about the pi-agent-core or pi-ai API. Source of truth is at `/Users/wk/Source/pi-mono`.
 
 ## Documentation
 

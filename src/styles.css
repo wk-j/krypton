@@ -3332,7 +3332,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
-  font-size: 13px;
+  font-size: 15px;
   color: var(--krypton-fg, #b0c4d8);
   outline: none;
 }
@@ -3365,7 +3365,7 @@ html, body {
 
 .agent-view__msg-label {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   padding-top: 2px;
   text-align: right;
@@ -3405,7 +3405,7 @@ html, body {
   padding: 3px 0 3px 2px;
   border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
   padding-left: 8px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .agent-view__tool-icon {
@@ -3424,13 +3424,13 @@ html, body {
 
 .agent-view__tool-name {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.04em;
 }
 
 .agent-view__tool-args {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.45);
-  font-size: 11px;
+  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3443,7 +3443,7 @@ html, body {
   white-space: pre-wrap;
   word-break: break-word;
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.55);
-  font-size: 11px;
+  font-size: 13px;
   border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
   padding-left: 8px;
 }
@@ -3458,7 +3458,7 @@ html, body {
   color: rgba(255, 58, 92, 0.9);
   padding: 6px 8px;
   border-left: 2px solid rgba(255, 58, 92, 0.5);
-  font-size: 12px;
+  font-size: 14px;
   white-space: pre-wrap;
 }
 
@@ -3466,7 +3466,7 @@ html, body {
 .agent-view__state-hint {
   display: none;
   padding: 4px 14px;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.3);
   text-align: right;
