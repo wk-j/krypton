@@ -6,7 +6,6 @@ import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import { AgentController, type AgentEventType, type AgentContextSnapshot, type ContextMessage } from './agent';
-import { saveSession, loadSession, clearSession, type StoredMessage } from './session';
 import type { ContentView, PaneContentType } from '../types';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -56,7 +55,6 @@ export class AgentView implements ContentView {
   private historyIdx = -1;
 
   private controller: AgentController;
-  private storedMessages: StoredMessage[] = [];
 
   // Current streaming elements
   private currentAssistantTextEl: HTMLElement | null = null;
@@ -139,26 +137,43 @@ export class AgentView implements ContentView {
   // ─── Session ──────────────────────────────────────────────────────
 
   private async restoreSession(): Promise<void> {
-    const msgs = await loadSession(this.projectDir);
-    for (const m of msgs) {
-      if (m.role === 'user') {
-        this.appendUserMessageDom(m.text);
-      } else if (m.role === 'assistant') {
+    await this.controller.initSession();
+    const entries = await this.controller.restoreFromSession();
+    for (const { role, message } of entries) {
+      if (role === 'user') {
+        const text = typeof message.content === 'string'
+          ? message.content
+          : this.extractTextFromContent(message.content);
+        this.appendUserMessageDom(text);
+      } else if (role === 'assistant') {
+        const text = this.extractTextFromContent(message.content);
         const el = this.appendAssistantMessageDom();
         el.querySelector('.agent-view__stream-cursor')?.remove();
         try {
-          el.innerHTML = md.parse(m.text) as string;
+          el.innerHTML = md.parse(text) as string;
           el.classList.add('agent-view__msg-body--markdown');
         } catch {
-          el.textContent = m.text;
+          el.textContent = text;
         }
-      } else if (m.role === 'tool') {
-        const row = this.appendToolRowDom(m.toolName ?? 'tool', '');
-        this.finalizeToolRow(row, m.isError ?? false, m.text);
+      } else if (role === 'toolResult') {
+        const name = (message.toolName as string) ?? 'tool';
+        const isError = Boolean(message.isError);
+        const text = this.extractTextFromContent(message.content);
+        const row = this.appendToolRowDom(name, '');
+        this.finalizeToolRow(row, isError, text);
       }
-      this.storedMessages.push(m);
     }
-    if (msgs.length > 0) this.scrollToBottom();
+    if (entries.length > 0) this.scrollToBottom();
+  }
+
+  /** Extract plain text from pi-agent-core content blocks (string | Array<{type, text}>). */
+  private extractTextFromContent(content: unknown): string {
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+    return content
+      .filter((b: Record<string, unknown>) => b.type === 'text' && typeof b.text === 'string')
+      .map((b: Record<string, unknown>) => b.text as string)
+      .join('');
   }
 
   // ─── DOM helpers ─────────────────────────────────────────────────
@@ -362,7 +377,6 @@ export class AgentView implements ContentView {
         // Render accumulated text as markdown
         this.finalizeAssistantMessage();
         this.currentToolRowEl = null;
-        this.saveCurrentSession();
         break;
 
       case 'message_update':
@@ -577,7 +591,6 @@ export class AgentView implements ContentView {
 
     // Render user message
     this.appendUserMessageDom(text);
-    this.storedMessages.push({ role: 'user', text });
     this.scrollToBottom();
 
     try {
@@ -585,25 +598,6 @@ export class AgentView implements ContentView {
     } catch (e) {
       this.handleAgentEvent({ type: 'error', message: `Unexpected error: ${e}` });
     }
-  }
-
-  private async saveCurrentSession(): Promise<void> {
-    // Sync DOM back to storedMessages for persistence
-    const msgs: StoredMessage[] = [];
-    for (const el of Array.from(this.messagesEl.children)) {
-      if (el.classList.contains('agent-view__msg--user')) {
-        msgs.push({ role: 'user', text: el.querySelector('.agent-view__msg-body')?.textContent ?? '' });
-      } else if (el.classList.contains('agent-view__msg--assistant')) {
-        msgs.push({ role: 'assistant', text: el.querySelector('.agent-view__msg-body')?.textContent ?? '' });
-      } else if (el.classList.contains('agent-view__tool-row')) {
-        const isError = el.classList.contains('agent-view__tool-row--error');
-        const name = el.querySelector('.agent-view__tool-name')?.textContent ?? '';
-        const result = el.querySelector('.agent-view__tool-result')?.textContent ?? '';
-        msgs.push({ role: 'tool', toolName: name, text: result, isError });
-      }
-    }
-    this.storedMessages = msgs;
-    await saveSession(msgs, this.projectDir);
   }
 
   // ─── Keyboard ────────────────────────────────────────────────────
@@ -1238,14 +1232,12 @@ export class AgentView implements ContentView {
   // ─── New session ──────────────────────────────────────────────────
 
   async newSession(): Promise<void> {
-    this.controller.reset();
-    this.storedMessages = [];
+    await this.controller.reset();
     this.messagesEl.innerHTML = '';
     this.inputText = '';
     this.cursorPos = 0;
     this.promptHistory = [];
     this.historyIdx = -1;
-    await clearSession(this.projectDir);
     this.renderInput();
   }
 
@@ -1275,6 +1267,5 @@ export class AgentView implements ContentView {
   dispose(): void {
     this.controller.abort();
     this.stopSpinner();
-    this.saveCurrentSession();
   }
 }

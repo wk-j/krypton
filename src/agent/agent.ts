@@ -1,9 +1,18 @@
 // Krypton — AI Agent Controller
 // Wraps @mariozechner/pi-agent-core Agent with lazy initialization,
-// CWD-aware system prompt, and Krypton-specific tool registration.
+// CWD-aware system prompt, Krypton-specific tool registration,
+// and pi-compatible JSONL session persistence.
 
 import { invoke } from '@tauri-apps/api/core';
 import { createKryptonTools } from './tools';
+import {
+  createSession,
+  continueRecentSession,
+  appendMessage,
+  loadEntries,
+  extractMessages,
+  type SessionHandle,
+} from './session';
 
 /** Normalized events emitted to AgentView for rendering */
 export type AgentEventType =
@@ -27,6 +36,10 @@ export class AgentController {
   private projectDir: string | null = null;
   private running = false;
   private unsubscribe: (() => void) | null = null;
+
+  // Session persistence
+  private session: SessionHandle | null = null;
+  private lastEntryId: string | null = null;
 
   get isRunning(): boolean {
     return this.running;
@@ -58,6 +71,63 @@ export class AgentController {
     });
   }
 
+  /** Initialize or continue a session for the current project directory. */
+  async initSession(): Promise<void> {
+    if (!this.projectDir || this.session) return;
+    try {
+      const existing = await continueRecentSession(this.projectDir);
+      if (existing) {
+        this.session = existing;
+      } else {
+        this.session = await createSession(this.projectDir);
+      }
+    } catch (e) {
+      console.warn('[agent] session init failed:', e);
+    }
+  }
+
+  /** Restore agent messages from the current session file. Returns restored message entries for UI rendering. */
+  async restoreFromSession(): Promise<Array<{ role: string; message: Record<string, unknown> }>> {
+    if (!this.session) return [];
+    try {
+      const entries = await loadEntries(this.session.filePath);
+      const messageEntries = extractMessages(entries);
+      if (messageEntries.length === 0) return [];
+
+      // Track the last entry ID for parentId chaining
+      this.lastEntryId = messageEntries[messageEntries.length - 1].id;
+
+      // Restore into agent if it's already initialized
+      if (this.agent) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const messages = messageEntries.map((e) => e.message as any);
+        this.agent.replaceMessages(messages);
+      }
+
+      return messageEntries.map((e) => ({
+        role: (e.message.role as string) ?? 'unknown',
+        message: e.message,
+      }));
+    } catch (e) {
+      console.warn('[agent] restore failed:', e);
+      return [];
+    }
+  }
+
+  /** Persist a message to the session file. */
+  private async persistMessage(message: Record<string, unknown>): Promise<void> {
+    if (!this.session) return;
+    try {
+      this.lastEntryId = await appendMessage(
+        this.session.filePath,
+        this.lastEntryId,
+        message,
+      );
+    } catch (e) {
+      console.warn('[agent] persist failed:', e);
+    }
+  }
+
   async prompt(text: string, onEvent: AgentEventCallback): Promise<void> {
     if (this.running) return;
 
@@ -81,12 +151,22 @@ export class AgentController {
       try {
         this.agent = await this.buildAgent(apiKey);
         console.log('[agent] initialized, projectDir:', this.projectDir);
+
+        // Restore messages from session into the agent
+        await this.restoreFromSession();
       } catch (e) {
         console.error('[agent] buildAgent failed:', e);
         onEvent({ type: 'error', message: `Failed to initialize agent: ${e}` });
         return;
       }
     }
+
+    // Initialize session if not already
+    await this.initSession();
+
+    // Persist the user message
+    const userMessage = { role: 'user', content: text, timestamp: Date.now() };
+    await this.persistMessage(userMessage);
 
     // Subscribe to events and map to our simplified AgentEventType
     this.unsubscribe = this.agent.subscribe((raw: unknown) => {
@@ -101,7 +181,6 @@ export class AgentController {
 
         case 'agent_end': {
           this.running = false;
-          // pi-agent-core emits agent_end even on errors; error is on the LAST message
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const lastMsg = e.messages?.[e.messages.length - 1] as any;
           const errMsg = lastMsg?.errorMessage as string | undefined;
@@ -109,6 +188,17 @@ export class AgentController {
           if (errMsg) {
             onEvent({ type: 'error', message: `Agent error: ${errMsg}` });
           }
+
+          // Persist assistant and tool result messages from this turn
+          if (e.messages) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const msg of e.messages as any[]) {
+              if (msg.role === 'assistant' || msg.role === 'toolResult') {
+                this.persistMessage(msg);
+              }
+            }
+          }
+
           onEvent({ type: 'agent_end' });
           break;
         }
@@ -169,10 +259,13 @@ export class AgentController {
     }
   }
 
-  reset(): void {
+  /** Start a new session (old session file is preserved). */
+  async reset(): Promise<void> {
     this.abort();
     this.agent?.clearMessages?.();
     this.agent = null; // force re-init on next prompt (picks up new projectDir)
+    this.session = null;
+    this.lastEntryId = null;
   }
 
   /** Return a snapshot of the agent's internal context for inspection */

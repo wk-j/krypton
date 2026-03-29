@@ -3,5 +3,5 @@
 export { AgentView } from './agent-view';
 export { AgentController } from './agent';
 export type { AgentEventType, AgentEventCallback } from './agent';
-export { saveSession, loadSession, clearSession } from './session';
-export type { StoredMessage } from './session';
+export { createSession, continueRecentSession, loadEntries, listSessions } from './session';
+export type { SessionHandle, SessionInfo, SessionEntry } from './session';

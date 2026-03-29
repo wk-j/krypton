@@ -2,6 +2,7 @@ mod commands;
 mod config;
 pub mod hook_server;
 mod pty;
+mod session;
 pub mod sound;
 pub mod ssh;
 pub mod theme;
@@ -77,6 +78,11 @@ pub fn run() {
             sound::sound_get_packs,
             commands::get_hook_server_port,
             commands::get_hook_server_config_snippet,
+            session::session_create,
+            session::session_append,
+            session::session_load,
+            session::session_continue_recent,
+            session::session_list,
         ])
         .setup(move |app| {
             if cfg!(debug_assertions) {
