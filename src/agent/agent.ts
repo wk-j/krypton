@@ -50,7 +50,7 @@ export class AgentController {
     return new Agent({
       initialState: {
         systemPrompt,
-        model: getModel('zai', 'glm-4.7'),
+        model: { ...getModel('zai', 'glm-4.7'), baseUrl: 'https://api.z.ai/api/coding/paas/v4' },
         tools: createKryptonTools(this.projectDir),
       },
       getApiKey: (provider: string) => (provider === 'zai' ? apiKey : undefined),

@@ -365,7 +365,11 @@ export class InputRouter {
       }
 
       // Normal mode: if focused pane has a content view, delegate to it
+      // (but not when Quick Terminal is visible — QT owns keyboard focus)
       if (this.mode === Mode.Normal) {
+        if (this.compositor.isQuickTerminalVisible) {
+          return; // Let xterm.js Quick Terminal handle the key
+        }
         const pane = this.compositor.getFocusedPanePublic();
         if (pane?.contentView) {
           if (pane.contentView.onKeyDown(e)) {

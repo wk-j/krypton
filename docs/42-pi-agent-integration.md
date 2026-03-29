@@ -30,7 +30,7 @@ Embed `@mariozechner/pi-agent-core` directly in the TypeScript frontend (the lib
 
 ### Model & Provider
 
-Hardcoded to ZAI provider with `glm-4.7` model. API key read from `ZAI_API_KEY` environment variable at runtime via Tauri `get_env_var` command. No TOML configuration yet — model/provider changes require code edits.
+Hardcoded to ZAI provider with `glm-4.7` model on the **coding plan** endpoint (`https://api.z.ai/api/coding/paas/v4`). The coding plan endpoint is distinct from the regular pay-per-use endpoint — models like `glm-5` require a separate subscription, while `glm-4.7`, `glm-4.7-flash`, and `glm-5.1` (once pi-ai is updated) are available on the coding plan. API key read from `ZAI_API_KEY` environment variable at runtime via Tauri `get_env_var` command. The command first checks `std::env::var`, then falls back to spawning a login shell with `printenv` (shell-agnostic, works with bash/zsh/fish). No TOML configuration yet — model/provider changes require code edits.
 
 ### Tools
 

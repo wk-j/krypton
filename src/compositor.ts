@@ -2664,11 +2664,19 @@ export class Compositor {
     this.qtElement.classList.add('krypton-quick-terminal--visible');
     this.qtVisible = true;
 
-    // Unfocus workspace window visually
+    // Unfocus workspace window visually and blur any focused content view
     if (this.focusedWindowId) {
       const prev = this.windows.get(this.focusedWindowId);
       if (prev) {
         prev.element.classList.remove('krypton-window--focused');
+        // Blur the active pane's content view (e.g. agent) so it releases keyboard focus
+        if (prev.tabs.length > 0) {
+          const tab = prev.tabs[prev.activeTabIndex];
+          const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
+          if (pane?.contentView) {
+            pane.contentView.element.blur();
+          }
+        }
       }
     }
 
@@ -2740,12 +2748,16 @@ export class Compositor {
       win.element.classList.add('krypton-window--focused');
       this.focusedWindowId = restoreId;
 
-      // Refocus the restored window's active pane terminal
+      // Refocus the restored window's active pane (terminal or content view)
       if (win.tabs.length > 0) {
         const tab = win.tabs[win.activeTabIndex];
         const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
         if (pane) {
-          pane.terminal?.focus();
+          if (pane.contentView) {
+            pane.contentView.element.focus();
+          } else {
+            pane.terminal?.focus();
+          }
         }
       }
       this.notifyFocusChange();
