@@ -174,4 +174,107 @@ export class AgentController {
     this.agent?.clearMessages?.();
     this.agent = null; // force re-init on next prompt (picks up new projectDir)
   }
+
+  /** Return a snapshot of the agent's internal context for inspection */
+  getContext(): AgentContextSnapshot | null {
+    if (!this.agent) return null;
+    const state = this.agent.state;
+    if (!state) return null;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const messages: ContextMessage[] = (state.messages ?? []).map((m: any, i: number) => {
+      const role = m.role ?? 'unknown';
+      const contentBlocks = Array.isArray(m.content) ? m.content : [];
+      let textLen = 0;
+      let types: string[] = [];
+      for (const block of contentBlocks) {
+        if (typeof block === 'string') {
+          textLen += block.length;
+          types.push('string');
+        } else if (block?.type === 'text') {
+          textLen += (block.text ?? '').length;
+          types.push('text');
+        } else if (block?.type === 'toolCall') {
+          textLen += JSON.stringify(block.args ?? {}).length;
+          types.push(`toolCall:${block.toolName ?? '?'}`);
+        } else if (block?.type === 'toolResult') {
+          textLen += JSON.stringify(block).length;
+          types.push('toolResult');
+        } else if (block?.type === 'thinking') {
+          textLen += (block.text ?? '').length;
+          types.push('thinking');
+        } else if (block?.type === 'image') {
+          types.push('image');
+        } else {
+          types.push(block?.type ?? 'unknown');
+        }
+      }
+
+      // For simple string content (UserMessage shorthand)
+      if (typeof m.content === 'string') {
+        textLen = m.content.length;
+        types = ['string'];
+      }
+
+      return {
+        index: i,
+        role,
+        contentTypes: types,
+        textLength: textLen,
+        stopReason: m.stopReason,
+        errorMessage: m.errorMessage,
+        isError: m.isError,
+        toolName: m.toolName,
+        toolCallId: m.toolCallId,
+        raw: m,
+      };
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tools: ContextTool[] = (state.tools ?? []).map((t: any) => ({
+      name: t.name ?? '?',
+      label: t.label ?? '',
+      description: t.description ?? '',
+    }));
+
+    return {
+      systemPrompt: state.systemPrompt ?? '',
+      model: state.model?.name ?? state.model?.id ?? 'unknown',
+      thinkingLevel: state.thinkingLevel ?? 'off',
+      messageCount: messages.length,
+      messages,
+      tools,
+      isStreaming: state.isStreaming ?? false,
+    };
+  }
+}
+
+export interface ContextMessage {
+  index: number;
+  role: string;
+  contentTypes: string[];
+  textLength: number;
+  stopReason?: string;
+  errorMessage?: string;
+  isError?: boolean;
+  toolName?: string;
+  toolCallId?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  raw: any;
+}
+
+export interface ContextTool {
+  name: string;
+  label: string;
+  description: string;
+}
+
+export interface AgentContextSnapshot {
+  systemPrompt: string;
+  model: string;
+  thinkingLevel: string;
+  messageCount: number;
+  messages: ContextMessage[];
+  tools: ContextTool[];
+  isStreaming: boolean;
 }
