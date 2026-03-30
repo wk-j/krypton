@@ -1566,8 +1566,20 @@ export class Compositor {
     const agentView = new AgentView();
     agentView.setProjectDir(projectDir);
     agentView.onClose(() => this.closeTab());
+    agentView.onOpenContext((ctrl) => this.openContextView(ctrl));
 
     await this.createContentTab('AI  glm-4.7', agentView);
+  }
+
+  /**
+   * Open a dedicated context inspector window for an agent controller.
+   * Subscribes to live state changes for real-time updates.
+   */
+  async openContextView(controller: import('./agent/agent').AgentController): Promise<void> {
+    const { ContextView } = await import('./agent/context-view');
+    const contextView = new ContextView(controller);
+    contextView.onClose(() => this.closeTab());
+    await this.createContentTab('CTX  agent', contextView);
   }
 
   /**

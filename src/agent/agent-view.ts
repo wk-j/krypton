@@ -5,7 +5,7 @@
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
-import { AgentController, type AgentEventType, type AgentContextSnapshot, type ContextMessage } from './agent';
+import { AgentController, type AgentEventType } from './agent';
 import type { ContentView, PaneContentType } from '../types';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -46,9 +46,7 @@ export class AgentView implements ContentView {
   private inputDisplayEl!: HTMLElement;
   private stateHintEl!: HTMLElement;
 
-  private state: 'input' | 'scroll' | 'context' = 'input';
-  private contextPanelEl!: HTMLElement;
-  private contextSelectedIdx = 0;
+  private state: 'input' | 'scroll' = 'input';
   private inputText = '';
   private cursorPos = 0;
   private promptHistory: string[] = [];
@@ -70,6 +68,9 @@ export class AgentView implements ContentView {
 
   // Close callback registered by compositor (called when user presses q)
   private closeCallback: (() => void) | null = null;
+
+  // Context window callback (compositor opens a dedicated ContextView)
+  private contextCallback: ((controller: AgentController) => void) | null = null;
 
   // Autocomplete state
   private autocompleteEl!: HTMLElement;
@@ -99,10 +100,6 @@ export class AgentView implements ContentView {
     this.stateHintEl.className = 'agent-view__state-hint';
     this.stateHintEl.textContent = 'SCROLL  g/G top/bot  j/k lines  y yank  c context  i insert';
 
-    // Context inspector panel (hidden by default)
-    this.contextPanelEl = document.createElement('div');
-    this.contextPanelEl.className = 'agent-view__context-panel';
-
     // Input row
     this.inputRowEl = document.createElement('div');
     this.inputRowEl.className = 'agent-view__input-row';
@@ -126,7 +123,6 @@ export class AgentView implements ContentView {
     }, { passive: true });
 
     this.element.appendChild(this.messagesEl);
-    this.element.appendChild(this.contextPanelEl);
     this.element.appendChild(this.stateHintEl);
     this.element.appendChild(this.autocompleteEl);
     this.element.appendChild(this.inputRowEl);
@@ -468,7 +464,7 @@ export class AgentView implements ContentView {
         return true;
 
       case '/context':
-        this.enterContextState();
+        this.contextCallback?.(this.controller);
         return true;
 
       case '/skills': {
@@ -643,9 +639,6 @@ export class AgentView implements ContentView {
   onKeyDown(e: KeyboardEvent): boolean {
     if (this.state === 'input') {
       return this.handleInputKey(e);
-    }
-    if (this.state === 'context') {
-      return this.handleContextKey(e);
     }
     return this.handleScrollKey(e);
   }
@@ -860,9 +853,9 @@ export class AgentView implements ContentView {
       return true;
     }
 
-    // c — context inspector
+    // c — open dedicated context window
     if (e.key === 'c' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      this.enterContextState();
+      this.contextCallback?.(this.controller);
       return true;
     }
 
@@ -877,6 +870,14 @@ export class AgentView implements ContentView {
 
   onClose(cb: () => void): void {
     this.closeCallback = cb;
+  }
+
+  onOpenContext(cb: (controller: AgentController) => void): void {
+    this.contextCallback = cb;
+  }
+
+  getController(): AgentController {
+    return this.controller;
   }
 
   private insert(char: string): void {
@@ -921,297 +922,6 @@ export class AgentView implements ContentView {
     this.element.classList.remove('agent-view--scroll');
     this.inputRowEl.classList.remove('agent-view__input-row--hidden');
     this.stateHintEl.classList.remove('agent-view__state-hint--visible');
-  }
-
-  // ─── Context inspector ──────────────────────────────────────────
-
-  // Track which state we came from so Escape returns correctly
-  private preContextState: 'input' | 'scroll' = 'scroll';
-
-  private enterContextState(): void {
-    this.preContextState = this.state === 'input' ? 'input' : 'scroll';
-    this.state = 'context';
-    this.contextSelectedIdx = 0;
-    this.messagesEl.classList.add('agent-view__messages--hidden');
-    this.contextPanelEl.classList.add('agent-view__context-panel--visible');
-    this.stateHintEl.classList.add('agent-view__state-hint--visible');
-    this.stateHintEl.textContent = 'CONTEXT  j/k navigate  Enter expand  y yank  Escape back';
-    this.inputRowEl.classList.add('agent-view__input-row--hidden');
-    this.renderContextPanel();
-  }
-
-  private exitContextState(): void {
-    this.messagesEl.classList.remove('agent-view__messages--hidden');
-    this.contextPanelEl.classList.remove('agent-view__context-panel--visible');
-    this.contextPanelEl.innerHTML = '';
-
-    // Restore scroll position (display:none resets scrollTop)
-    if (this.savedScrollTop > 0) {
-      requestAnimationFrame(() => {
-        this.messagesEl.scrollTop = this.savedScrollTop;
-      });
-    }
-
-    // Return to the state we came from
-    if (this.preContextState === 'input') {
-      this.state = 'input';
-      this.element.classList.remove('agent-view--scroll');
-      this.inputRowEl.classList.remove('agent-view__input-row--hidden');
-      this.stateHintEl.classList.remove('agent-view__state-hint--visible');
-    } else {
-      this.state = 'scroll';
-      this.stateHintEl.textContent = 'SCROLL  g/G top/bot  j/k lines  y yank  c context  i insert';
-    }
-  }
-
-  private handleContextKey(e: KeyboardEvent): boolean {
-    if (e.key === 'Escape') {
-      this.exitContextState();
-      return true;
-    }
-
-    // Navigate message list
-    if (e.key === 'j' || e.key === 'ArrowDown') {
-      this.contextNavigate(1);
-      return true;
-    }
-    if (e.key === 'k' || e.key === 'ArrowUp') {
-      this.contextNavigate(-1);
-      return true;
-    }
-
-    // Jump to top/bottom
-    if (e.key === 'g' && !e.shiftKey) {
-      this.contextSelectedIdx = 0;
-      this.renderContextPanel();
-      return true;
-    }
-    if (e.key === 'G' || (e.key === 'g' && e.shiftKey)) {
-      const ctx = this.controller.getContext();
-      if (ctx) {
-        // +2 for system prompt row and tools row
-        this.contextSelectedIdx = ctx.messageCount + 1;
-      }
-      this.renderContextPanel();
-      return true;
-    }
-
-    // Expand selected message
-    if (e.key === 'Enter') {
-      this.contextExpandSelected();
-      return true;
-    }
-
-    // Yank selected message raw JSON
-    if (e.key === 'y') {
-      this.contextYankSelected();
-      return true;
-    }
-
-    // Half-page scroll
-    if (e.key === 'PageDown' || (e.code === 'KeyD' && e.ctrlKey)) {
-      this.contextPanelEl.scrollBy({ top: this.contextPanelEl.clientHeight * 0.4, behavior: 'instant' });
-      return true;
-    }
-    if (e.key === 'PageUp' || (e.code === 'KeyU' && e.ctrlKey)) {
-      this.contextPanelEl.scrollBy({ top: -this.contextPanelEl.clientHeight * 0.4, behavior: 'instant' });
-      return true;
-    }
-
-    return true; // consume all keys in context mode
-  }
-
-  private contextNavigate(delta: number): void {
-    const ctx = this.controller.getContext();
-    if (!ctx) return;
-    // Total rows: 1 (system prompt) + messages.length + 1 (tools)
-    const maxIdx = ctx.messageCount + 1;
-    this.contextSelectedIdx = Math.max(0, Math.min(maxIdx, this.contextSelectedIdx + delta));
-    this.renderContextPanel();
-
-    // Scroll selected row into view
-    const selected = this.contextPanelEl.querySelector('.agent-view__ctx-row--selected');
-    selected?.scrollIntoView({ block: 'nearest' });
-  }
-
-  private renderContextPanel(): void {
-    const ctx = this.controller.getContext();
-    this.contextPanelEl.innerHTML = '';
-
-    if (!ctx) {
-      this.contextPanelEl.textContent = 'Agent not initialized — submit a prompt first.';
-      return;
-    }
-
-    // Header
-    const header = document.createElement('div');
-    header.className = 'agent-view__ctx-header';
-    header.innerHTML =
-      `<span class="agent-view__ctx-label">MODEL</span> ${escHtml(ctx.model)}` +
-      `  <span class="agent-view__ctx-label">THINKING</span> ${escHtml(ctx.thinkingLevel)}` +
-      `  <span class="agent-view__ctx-label">MSGS</span> ${ctx.messageCount}` +
-      `  <span class="agent-view__ctx-label">STREAMING</span> ${ctx.isStreaming ? 'yes' : 'no'}`;
-    this.contextPanelEl.appendChild(header);
-
-    // System prompt row (index 0)
-    const sysRow = this.createContextRow(
-      0,
-      'system',
-      ['text'],
-      ctx.systemPrompt.length,
-      `${ctx.systemPrompt.slice(0, 80)}${ctx.systemPrompt.length > 80 ? '…' : ''}`,
-    );
-    this.contextPanelEl.appendChild(sysRow);
-
-    // Message rows
-    for (const msg of ctx.messages) {
-      const rowIdx = msg.index + 1; // offset by 1 for system prompt row
-      const summary = this.summarizeMessage(msg);
-      const row = this.createContextRow(
-        rowIdx,
-        msg.role,
-        msg.contentTypes,
-        msg.textLength,
-        summary,
-      );
-      if (msg.errorMessage) row.classList.add('agent-view__ctx-row--error');
-      if (msg.stopReason) {
-        const badge = document.createElement('span');
-        badge.className = 'agent-view__ctx-badge';
-        badge.textContent = msg.stopReason;
-        row.appendChild(badge);
-      }
-      this.contextPanelEl.appendChild(row);
-    }
-
-    // Tools row (last)
-    const toolsIdx = ctx.messageCount + 1;
-    const toolNames = ctx.tools.map((t) => t.name).join(', ');
-    const toolsRow = this.createContextRow(
-      toolsIdx,
-      'tools',
-      [],
-      0,
-      `${ctx.tools.length} tools: ${toolNames}`,
-    );
-    this.contextPanelEl.appendChild(toolsRow);
-  }
-
-  private createContextRow(
-    idx: number,
-    role: string,
-    types: string[],
-    textLen: number,
-    summary: string,
-  ): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'agent-view__ctx-row';
-    if (idx === this.contextSelectedIdx) row.classList.add('agent-view__ctx-row--selected');
-
-    const idxEl = document.createElement('span');
-    idxEl.className = 'agent-view__ctx-idx';
-    idxEl.textContent = String(idx);
-
-    const roleEl = document.createElement('span');
-    roleEl.className = `agent-view__ctx-role agent-view__ctx-role--${role}`;
-    roleEl.textContent = role;
-
-    const typesEl = document.createElement('span');
-    typesEl.className = 'agent-view__ctx-types';
-    typesEl.textContent = types.join(', ');
-
-    const lenEl = document.createElement('span');
-    lenEl.className = 'agent-view__ctx-len';
-    lenEl.textContent = textLen > 0 ? `${textLen}ch` : '';
-
-    const sumEl = document.createElement('span');
-    sumEl.className = 'agent-view__ctx-summary';
-    sumEl.textContent = summary;
-
-    row.appendChild(idxEl);
-    row.appendChild(roleEl);
-    row.appendChild(typesEl);
-    row.appendChild(lenEl);
-    row.appendChild(sumEl);
-    return row;
-  }
-
-  private summarizeMessage(msg: ContextMessage): string {
-    const raw = msg.raw;
-    if (msg.role === 'user') {
-      const text = typeof raw.content === 'string'
-        ? raw.content
-        : raw.content?.find((b: { type: string; text?: string }) => b.type === 'text')?.text ?? '';
-      return text.slice(0, 100) + (text.length > 100 ? '…' : '');
-    }
-    if (msg.role === 'assistant') {
-      const parts: string[] = [];
-      for (const b of (raw.content ?? [])) {
-        if (b.type === 'text') parts.push(b.text?.slice(0, 60) ?? '');
-        if (b.type === 'toolCall') parts.push(`tool:${b.toolName}(…)`);
-        if (b.type === 'thinking') parts.push(`thinking[${(b.text ?? '').length}ch]`);
-      }
-      return parts.join(' | ').slice(0, 120);
-    }
-    if (msg.role === 'toolResult') {
-      const text = raw.content?.find((b: { type: string; text?: string }) => b.type === 'text')?.text ?? '';
-      return `${msg.toolName ?? '?'}: ${text.slice(0, 80)}${text.length > 80 ? '…' : ''}`;
-    }
-    return JSON.stringify(raw).slice(0, 100);
-  }
-
-  private contextExpandSelected(): void {
-    const ctx = this.controller.getContext();
-    if (!ctx) return;
-
-    let rawContent: unknown;
-    if (this.contextSelectedIdx === 0) {
-      rawContent = ctx.systemPrompt;
-    } else if (this.contextSelectedIdx <= ctx.messageCount) {
-      rawContent = ctx.messages[this.contextSelectedIdx - 1].raw;
-    } else {
-      rawContent = ctx.tools;
-    }
-
-    // Toggle: if there's already an expanded block, remove it
-    const existing = this.contextPanelEl.querySelector('.agent-view__ctx-expanded');
-    if (existing) {
-      existing.remove();
-      return;
-    }
-
-    // Find the selected row and insert expanded content after it
-    const rows = this.contextPanelEl.querySelectorAll('.agent-view__ctx-row');
-    const selectedRow = rows[this.contextSelectedIdx];
-    if (!selectedRow) return;
-
-    const expanded = document.createElement('pre');
-    expanded.className = 'agent-view__ctx-expanded';
-    expanded.textContent = typeof rawContent === 'string'
-      ? rawContent
-      : JSON.stringify(rawContent, null, 2);
-    selectedRow.after(expanded);
-
-    expanded.scrollIntoView({ block: 'nearest' });
-  }
-
-  private contextYankSelected(): void {
-    const ctx = this.controller.getContext();
-    if (!ctx) return;
-
-    let rawContent: unknown;
-    if (this.contextSelectedIdx === 0) {
-      rawContent = ctx.systemPrompt;
-    } else if (this.contextSelectedIdx <= ctx.messageCount) {
-      rawContent = ctx.messages[this.contextSelectedIdx - 1].raw;
-    } else {
-      rawContent = ctx.tools;
-    }
-
-    const text = typeof rawContent === 'string'
-      ? rawContent
-      : JSON.stringify(rawContent, null, 2);
-    navigator.clipboard.writeText(text).catch(() => {});
   }
 
   private scrollToBottom(): void {

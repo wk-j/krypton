@@ -55,8 +55,21 @@ export class AgentController {
   private forcedSkill: string | null = null;
   private lastActiveSkills: string[] = [];
 
+  // Change listeners for real-time context window updates
+  private changeListeners: Set<() => void> = new Set();
+
   get isRunning(): boolean {
     return this.running;
+  }
+
+  /** Subscribe to state changes (used by ContextView for live updates). Returns unsubscribe function. */
+  onChange(cb: () => void): () => void {
+    this.changeListeners.add(cb);
+    return () => this.changeListeners.delete(cb);
+  }
+
+  private notifyChange(): void {
+    for (const cb of this.changeListeners) cb();
   }
 
   setProjectDir(dir: string | null): void {
@@ -283,6 +296,7 @@ export class AgentController {
         case 'agent_start':
           this.running = true;
           onEvent({ type: 'agent_start' });
+          this.notifyChange();
           break;
 
         case 'agent_end': {
@@ -306,6 +320,7 @@ export class AgentController {
           }
 
           onEvent({ type: 'agent_end' });
+          this.notifyChange();
           break;
         }
 
@@ -314,6 +329,7 @@ export class AgentController {
           const ev = e.assistantMessageEvent;
           if (ev?.type === 'text_delta' && typeof ev.delta === 'string') {
             onEvent({ type: 'message_update', delta: ev.delta });
+            this.notifyChange();
           }
           break;
         }
@@ -324,6 +340,7 @@ export class AgentController {
             name: String(e.toolName ?? ''),
             args: typeof e.args === 'object' ? JSON.stringify(e.args) : String(e.args ?? ''),
           });
+          this.notifyChange();
           break;
 
         case 'tool_execution_end': {
@@ -339,6 +356,7 @@ export class AgentController {
             isError: Boolean(e.isError),
             result,
           });
+          this.notifyChange();
           break;
         }
       }
