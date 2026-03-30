@@ -229,9 +229,10 @@ pub fn get_default_shell(
     Ok((cfg.shell.program.clone(), cfg.shell.args.clone()))
 }
 
-/// Run a short-lived command and return its stdout.
+/// Run a short-lived command and return its combined stdout+stderr.
 /// Used by dashboard overlays to gather data (e.g., git status) without
 /// creating a PTY session. Capped at 10 MB output limit.
+/// Returns an error string on non-zero exit or spawn failure.
 #[tauri::command]
 pub fn run_command(
     program: String,
@@ -243,7 +244,6 @@ pub fn run_command(
     if let Some(ref dir) = cwd {
         cmd.current_dir(dir);
     }
-    // Capture stdout, discard stderr
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
@@ -251,12 +251,33 @@ pub fn run_command(
         .output()
         .map_err(|e| format!("Failed to run '{}': {}", program, e))?;
 
-    // Check we didn't exceed a reasonable output size (10 MB)
-    if output.stdout.len() > 10 * 1024 * 1024 {
+    let total_len = output.stdout.len() + output.stderr.len();
+    if total_len > 10 * 1024 * 1024 {
         return Err("Command output exceeded 10 MB limit".to_string());
     }
 
-    String::from_utf8(output.stdout).map_err(|e| format!("Command output is not valid UTF-8: {e}"))
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Combine stdout and stderr
+    let mut combined = stdout.into_owned();
+    if !stderr.is_empty() {
+        if !combined.is_empty() && !combined.ends_with('\n') {
+            combined.push('\n');
+        }
+        combined.push_str(&stderr);
+    }
+
+    if output.status.success() {
+        Ok(combined)
+    } else {
+        let code = output.status.code().map_or("signal".to_string(), |c| c.to_string());
+        if combined.is_empty() {
+            Err(format!("exit code {code}"))
+        } else {
+            Err(combined)
+        }
+    }
 }
 
 /// Execute a read-only SQL query against a SQLite database and return rows as JSON.

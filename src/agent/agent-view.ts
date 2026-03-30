@@ -7,6 +7,7 @@ import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import { AgentController, type AgentEventType } from './agent';
 import type { ContentView, PaneContentType } from '../types';
+import { invoke } from '@tauri-apps/api/core';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -278,6 +279,45 @@ export class AgentView implements ContentView {
     }
   }
 
+  private appendShellCommandDom(command: string): HTMLElement {
+    const msg = document.createElement('div');
+    msg.className = 'agent-view__msg agent-view__msg--shell';
+
+    const label = document.createElement('span');
+    label.className = 'agent-view__msg-label agent-view__msg-label--shell';
+    label.textContent = 'SH';
+
+    const body = document.createElement('div');
+    body.className = 'agent-view__msg-body';
+    body.textContent = `$ ${command}`;
+
+    msg.appendChild(label);
+    msg.appendChild(body);
+    this.messagesEl.appendChild(msg);
+    return body;
+  }
+
+  private appendShellResultDom(output: string, isError: boolean): void {
+    const result = document.createElement('div');
+    result.className = 'agent-view__shell-result';
+    if (isError) result.classList.add('agent-view__shell-result--error');
+    
+    const lines = output.split('\n');
+    const MAX_LINES = 20;
+    if (lines.length > MAX_LINES) {
+      result.textContent = lines.slice(0, MAX_LINES).join('\n');
+      const more = document.createElement('span');
+      more.className = 'agent-view__shell-more';
+      more.textContent = `\n… ${lines.length - MAX_LINES} more lines`;
+      result.appendChild(more);
+    } else {
+      result.textContent = output || '(no output)';
+    }
+    
+    this.messagesEl.appendChild(result);
+    this.scrollToBottom();
+  }
+
   // ─── Input rendering ─────────────────────────────────────────────
 
   private renderInput(): void {
@@ -430,6 +470,27 @@ export class AgentView implements ContentView {
     }
   }
 
+  // ─── Shell command execution (! prefix) ─────────────────────────────
+
+  private async executeShellCommand(command: string): Promise<void> {
+    // Display the command being executed
+    this.appendShellCommandDom(command);
+    this.scrollToBottom();
+
+    try {
+      const [program, shellArgs] = await invoke<[string, string[]]>('get_default_shell');
+      const output = await invoke<string>('run_command', {
+        program,
+        args: [...shellArgs, '-c', command],
+        cwd: this.projectDir ?? null,
+      });
+      this.appendShellResultDom(output, false);
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      this.appendShellResultDom(`Error: ${errorMsg}`, true);
+    }
+  }
+
   // ─── Slash commands ──────────────────────────────────────────────
 
   private static readonly COMMANDS: Record<string, { description: string; usage?: string }> = {
@@ -568,6 +629,10 @@ export class AgentView implements ContentView {
       lines.push(`  ${cmd.padEnd(12)} ${info.description}`);
     }
     lines.push('');
+    lines.push('Quick shell commands:');
+    lines.push('  !<command>    Execute shell command directly');
+    lines.push('                 Example: !ls -la, !git status');
+    lines.push('');
     lines.push('Keyboard shortcuts (scroll mode — Escape with empty input):');
     lines.push('  j/k          Scroll lines');
     lines.push('  g/G          Top/bottom');
@@ -612,6 +677,17 @@ export class AgentView implements ContentView {
     this.inputText = '';
     this.cursorPos = 0;
     this.renderInput();
+
+    // Handle shell commands (! prefix)
+    if (text.startsWith('!')) {
+      const command = text.slice(1).trim();
+      if (!command) {
+        this.showSystemMessage('Usage: !<command>\nExecute shell command directly.\nExample: !ls -la');
+      } else {
+        await this.executeShellCommand(command);
+      }
+      return;
+    }
 
     // Handle slash commands
     if (text.startsWith('/')) {

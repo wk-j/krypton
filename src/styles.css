@@ -3540,6 +3540,39 @@ html, body {
   letter-spacing: 0.08em;
 }
 
+/* ═══ Shell command output ═════════════════════════════════════ */
+
+.agent-view__msg--shell .agent-view__msg-label {
+  background: rgba(57, 255, 127, 0.12);
+  color: rgba(57, 255, 127, 0.85);
+  border: 1px solid rgba(57, 255, 127, 0.25);
+}
+
+.agent-view__shell-result {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--krypton-font-family, monospace);
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 10px 14px;
+  margin: 4px 0 12px 0;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.9);
+  background: rgba(0, 0, 0, 0.35);
+  border-left: 3px solid rgba(57, 255, 127, 0.4);
+  border-radius: 0 4px 4px 0;
+}
+
+.agent-view__shell-result--error {
+  color: rgba(255, 80, 80, 0.95);
+  border-left-color: rgba(255, 80, 80, 0.5);
+  background: rgba(255, 30, 30, 0.08);
+}
+
+.agent-view__shell-more {
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
+  font-style: italic;
+}
+
 /* ═══ Streaming cursor ═════════════════════════════════════════ */
 
 .agent-view__stream-cursor {

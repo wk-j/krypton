@@ -24,6 +24,7 @@ Embed `@mariozechner/pi-agent-core` directly in the TypeScript frontend (the lib
 | `src/agent/index.ts` | Re-exports public API |
 | `src/compositor.ts` | `openAgentView()`: resolves CWD, creates `AgentView`, calls `createContentTab()` |
 | `src/command-palette.ts` | Register "Open AI Agent Window" action with `Leader a` keybinding |
+| `src-tauri/src/commands.rs` | `run_command` returns combined stdout+stderr, error on non-zero exit |
 | `package.json` | `@mariozechner/pi-agent-core`, `@mariozechner/pi-ai`, `@sinclair/typebox` |
 
 ## Design
@@ -66,7 +67,10 @@ Sessions are stored as JSON files on the local filesystem, scoped per project di
    e. Calls createContentTab('AI  glm-4.7', agentView)
 4. User focuses agent window, starts typing prompt
 5. AgentView.onKeyDown intercepts Enter → calls submit()
-6. submit() calls agentController.prompt(text, onEvent)
+6. submit() routes by prefix:
+   - `!<cmd>` → executeShellCommand(cmd): invokes get_default_shell + run_command IPC, renders output inline
+   - `/<cmd>` → handleSlashCommand(): /help, /new, /context, /model, etc.
+   - Otherwise → agentController.prompt(text, onEvent)
 7. AgentController (lazy init on first prompt):
    a. Reads ZAI_API_KEY via Tauri get_env_var
    b. Dynamic-imports pi-agent-core and pi-ai
@@ -113,6 +117,12 @@ Sessions are stored as JSON files on the local filesystem, scoped per project di
 | `Page Down` / `Ctrl+D` | Scroll message list down half-page (stays in input state) |
 | `Escape` (empty input) | Enter scroll state |
 
+**Shell command prefix**
+
+| Input | Action |
+|-------|--------|
+| `!<command>` | Execute shell command directly in `projectDir` (e.g., `!ls -la`, `!git status`). Output displayed inline with 20-line cap. Uses `get_default_shell` + `run_command` IPC — combined stdout+stderr, non-zero exit shown as error. |
+
 **Scroll state (Escape from empty input)**
 
 | Key | Action |
@@ -125,6 +135,7 @@ Sessions are stored as JSON files on the local filesystem, scoped per project di
 | `G` | Scroll to bottom (latest message) |
 | `y` | Yank last assistant message to clipboard |
 | `Y` | Yank full conversation to clipboard |
+| `c` | Open dedicated context window (ContextView in separate compositor tab) |
 | `q` | Close the agent tab |
 | `Escape` / `i` | Return to input state |
 
@@ -140,6 +151,11 @@ Sessions are stored as JSON files on the local filesystem, scoped per project di
       .agent-view__msg-label                   ← "AI" (12px)
       .agent-view__msg-body                    ← streamed delta by delta
       .agent-view__stream-cursor               ← blinking "▋", removed on agent_end
+    .agent-view__msg.agent-view__msg--shell     ← shell command (! prefix)
+      .agent-view__msg-label--shell             ← "SH" green badge
+      .agent-view__msg-body                     ← "$ <command>"
+    .agent-view__shell-result                   ← output (20-line cap, pre-wrap)
+    .agent-view__shell-result--error            ← red variant for non-zero exit
     .agent-view__tool-row                      ← tool execution row (13px)
       .agent-view__tool-icon                   ← spinning braille → "✓"/"✗"
       .agent-view__tool-name                   ← e.g. "bash"
