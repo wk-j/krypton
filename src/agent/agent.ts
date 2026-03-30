@@ -13,6 +13,14 @@ import {
   extractMessages,
   type SessionHandle,
 } from './session';
+import {
+  discoverSkills,
+  matchSkills,
+  forceMatchSkill,
+  buildSkillPrompt,
+  type SkillMeta,
+  type SkillMatch,
+} from './skills';
 
 /** Normalized events emitted to AgentView for rendering */
 export type AgentEventType =
@@ -40,6 +48,12 @@ export class AgentController {
   // Session persistence
   private session: SessionHandle | null = null;
   private lastEntryId: string | null = null;
+
+  // Skills
+  private skillIndex: SkillMeta[] = [];
+  private skillsDiscovered = false;
+  private forcedSkill: string | null = null;
+  private lastActiveSkills: string[] = [];
 
   get isRunning(): boolean {
     return this.running;
@@ -71,9 +85,97 @@ export class AgentController {
     });
   }
 
+  // ─── Skills ────────────────────────────────────────────────────────
+
+  /** Discover skills from project skill directories. Called once at init. */
+  private async ensureSkillsDiscovered(): Promise<void> {
+    if (this.skillsDiscovered || !this.projectDir) return;
+    this.skillsDiscovered = true;
+    try {
+      this.skillIndex = await discoverSkills(this.projectDir);
+      if (this.skillIndex.length > 0) {
+        console.log('[agent] discovered skills:', this.skillIndex.map((s) => s.name).join(', '));
+      }
+    } catch (e) {
+      console.warn('[agent] skill discovery failed:', e);
+    }
+  }
+
+  /** Match user input against skills and inject into system prompt. Returns active skill names. */
+  private async applySkills(input: string): Promise<string[]> {
+    if (!this.agent || this.skillIndex.length === 0) return [];
+
+    let matches: SkillMatch[];
+    if (this.forcedSkill) {
+      const forced = forceMatchSkill(this.forcedSkill, this.skillIndex);
+      matches = forced ? [forced] : [];
+      this.forcedSkill = null;
+    } else {
+      matches = matchSkills(input, this.skillIndex);
+    }
+
+    if (matches.length === 0) {
+      // Revert to base prompt if no skills match
+      this.revertSystemPrompt();
+      return [];
+    }
+
+    const skillSection = await buildSkillPrompt(matches);
+    if (!skillSection) {
+      this.revertSystemPrompt();
+      return [];
+    }
+
+    const basePrompt = this.buildBasePrompt();
+    this.agent.setSystemPrompt(basePrompt + skillSection);
+
+    const names = matches.map((m) => m.skill.name);
+    console.log('[agent] active skills:', names.join(', '));
+    return names;
+  }
+
+  /** Revert system prompt to base (no skills). */
+  private revertSystemPrompt(): void {
+    if (this.agent) {
+      this.agent.setSystemPrompt(this.buildBasePrompt());
+    }
+  }
+
+  /** Build the base system prompt (without skills). */
+  private buildBasePrompt(): string {
+    return this.projectDir
+      ? `${BASE_SYSTEM_PROMPT}\n\nWorking directory: ${this.projectDir}`
+      : BASE_SYSTEM_PROMPT;
+  }
+
+  /** Force-activate a skill by name for the next prompt. */
+  setForcedSkill(name: string): boolean {
+    const found = this.skillIndex.find((s) => s.name === name);
+    if (!found) return false;
+    this.forcedSkill = name;
+    return true;
+  }
+
+  /** Get discovered skill metadata for display. */
+  getSkills(): SkillMeta[] {
+    return this.skillIndex;
+  }
+
+  /** Get skill names that were active on the last prompt. */
+  getLastActiveSkills(): string[] {
+    return this.lastActiveSkills;
+  }
+
+  // ─── Session ──────────────────────────────────────────────────────
+
   /** Initialize or continue a session for the current project directory. */
   async initSession(): Promise<void> {
-    if (!this.projectDir || this.session) return;
+    if (!this.projectDir) return;
+
+    // Discover skills early so /skills works before first prompt
+    await this.ensureSkillsDiscovered();
+
+    if (this.session) return;
     try {
       const existing = await continueRecentSession(this.projectDir);
       if (existing) {
@@ -152,7 +254,8 @@ export class AgentController {
         this.agent = await this.buildAgent(apiKey);
         console.log('[agent] initialized, projectDir:', this.projectDir);
 
-        // Restore messages from session into the agent
+        // Discover skills and restore session
+        await this.ensureSkillsDiscovered();
         await this.restoreFromSession();
       } catch (e) {
         console.error('[agent] buildAgent failed:', e);
@@ -163,6 +266,9 @@ export class AgentController {
 
     // Initialize session if not already
     await this.initSession();
+
+    // Match and inject skills based on user input
+    this.lastActiveSkills = await this.applySkills(text);
 
     // Persist the user message
     const userMessage = { role: 'user', content: text, timestamp: Date.now() };
@@ -249,6 +355,8 @@ export class AgentController {
     } finally {
       this.unsubscribe?.();
       this.unsubscribe = null;
+      // Revert to base prompt after turn (skills are per-turn)
+      this.revertSystemPrompt();
     }
   }
 
@@ -266,6 +374,10 @@ export class AgentController {
     this.agent = null; // force re-init on next prompt (picks up new projectDir)
     this.session = null;
     this.lastEntryId = null;
+    this.skillsDiscovered = false;
+    this.skillIndex = [];
+    this.forcedSkill = null;
+    this.lastActiveSkills = [];
   }
 
   /** Return a snapshot of the agent's internal context for inspection */

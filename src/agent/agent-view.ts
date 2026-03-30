@@ -383,6 +383,13 @@ export class AgentView implements ContentView {
         if (!this.currentAssistantTextEl) {
           this.currentAssistantTextEl = this.appendAssistantMessageDom();
           this.currentAssistantBuffer = '';
+          // Show active skills in the label
+          const activeSkills = this.controller.getLastActiveSkills();
+          if (activeSkills.length > 0) {
+            const msgEl = this.currentAssistantTextEl.closest('.agent-view__msg');
+            const labelEl = msgEl?.querySelector('.agent-view__msg-label');
+            if (labelEl) labelEl.textContent = `AI [${activeSkills.join(', ')}]`;
+          }
         }
         // Accumulate raw text and show as plain text during streaming
         this.currentAssistantBuffer += e.delta;
@@ -432,6 +439,8 @@ export class AgentView implements ContentView {
   private static readonly COMMANDS: Record<string, { description: string; usage?: string }> = {
     '/help':    { description: 'Show available commands' },
     '/new':     { description: 'Clear conversation and start a new session' },
+    '/skills':  { description: 'List discovered skills' },
+    '/skill':   { description: 'Force-activate a skill for the next prompt', usage: '/skill <name>' },
     '/context': { description: 'Open context inspector (view LLM messages, system prompt, tools)' },
     '/model':   { description: 'Show current model and provider info' },
     '/system':  { description: 'Show current system prompt' },
@@ -461,6 +470,35 @@ export class AgentView implements ContentView {
       case '/context':
         this.enterContextState();
         return true;
+
+      case '/skills': {
+        const skills = this.controller.getSkills();
+        if (skills.length === 0) {
+          this.showSystemMessage('No skills discovered.\nPlace SKILL.md files in .claude/skills/ or .agents/skills/');
+        } else {
+          const lines = skills.map((s) => `  ${s.name.padEnd(24)} ${s.description}`);
+          const active = this.controller.getLastActiveSkills();
+          const activeNote = active.length > 0 ? `\n\nLast active: ${active.join(', ')}` : '';
+          this.showSystemMessage(`Discovered skills (${skills.length}):\n${lines.join('\n')}${activeNote}`);
+        }
+        return true;
+      }
+
+      case '/skill': {
+        const skillName = parts[1];
+        if (!skillName) {
+          this.showSystemMessage('Usage: /skill <name>\nUse /skills to list available skills.');
+          return true;
+        }
+        const ok = this.controller.setForcedSkill(skillName);
+        if (ok) {
+          this.showSystemMessage(`Skill "${skillName}" will be active for the next prompt.`);
+        } else {
+          const available = this.controller.getSkills().map((s) => s.name).join(', ');
+          this.showSystemMessage(`Skill "${skillName}" not found.\nAvailable: ${available || 'none'}`);
+        }
+        return true;
+      }
 
       case '/model': {
         const ctx = this.controller.getContext();
