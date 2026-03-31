@@ -48,6 +48,7 @@ export class AgentView implements ContentView {
   private inputDisplayEl!: HTMLElement;
   private stateHintEl!: HTMLElement;
   private statusLineEl!: HTMLElement;
+  private logoEl!: HTMLElement;
 
   private state: 'input' | 'scroll' = 'input';
   private inputText = '';
@@ -68,8 +69,7 @@ export class AgentView implements ContentView {
   private promptStartTime = 0;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
 
-  // Streaming markdown render throttle
-  private streamRenderPending = false;
+  // Streaming render throttle
   private streamRenderRaf: ReturnType<typeof requestAnimationFrame> | null = null;
 
   // Project scoping
@@ -148,6 +148,15 @@ export class AgentView implements ContentView {
       this.savedScrollTop = this.messagesEl.scrollTop;
     }, { passive: true });
 
+    // Logo header (shown when conversation is empty)
+    this.logoEl = document.createElement('div');
+    this.logoEl.className = 'agent-view__logo';
+    this.logoEl.innerHTML =
+      '<div class="agent-view__logo-glyph">⬡</div>' +
+      '<div class="agent-view__logo-title">KRYPTON <span class="agent-view__logo-accent">AI</span></div>' +
+      '<div class="agent-view__logo-sub">agent ready</div>';
+
+    this.element.appendChild(this.logoEl);
     this.element.appendChild(this.messagesEl);
     this.element.appendChild(this.stateHintEl);
     this.element.appendChild(this.autocompleteEl);
@@ -202,6 +211,8 @@ export class AgentView implements ContentView {
   // ─── DOM helpers ─────────────────────────────────────────────────
 
   private appendUserMessageDom(text: string): void {
+    this.logoEl.classList.add('agent-view__logo--hidden');
+
     const msg = document.createElement('div');
     msg.className = 'agent-view__msg agent-view__msg--user';
 
@@ -243,11 +254,9 @@ export class AgentView implements ContentView {
   /** Final markdown render — remove cursor, cancel pending RAF. */
   private finalizeAssistantMessage(): void {
     if (!this.currentAssistantTextEl) return;
-    // Cancel any pending streaming render
     if (this.streamRenderRaf !== null) {
       cancelAnimationFrame(this.streamRenderRaf);
       this.streamRenderRaf = null;
-      this.streamRenderPending = false;
     }
     if (this.currentAssistantBuffer) {
       try {
@@ -584,16 +593,15 @@ export class AgentView implements ContentView {
         }
         // Accumulate raw text and render markdown on next animation frame
         this.currentAssistantBuffer += e.delta;
-        if (!this.streamRenderPending) {
-          this.streamRenderPending = true;
+        if (this.streamRenderRaf === null) {
           this.streamRenderRaf = requestAnimationFrame(() => {
-            this.streamRenderPending = false;
             this.streamRenderRaf = null;
             if (this.currentAssistantTextEl && this.currentAssistantBuffer) {
               try {
                 const html = md.parse(this.currentAssistantBuffer) as string;
-                this.currentAssistantTextEl.innerHTML =
-                  html + '<span class="agent-view__stream-cursor">▋</span>';
+                this.currentAssistantTextEl.innerHTML = html;
+                // Place cursor inline at the end of the last text node
+                this.appendInlineCursor(this.currentAssistantTextEl);
               } catch {
                 this.currentAssistantTextEl.textContent = this.currentAssistantBuffer;
               }
@@ -1499,6 +1507,39 @@ export class AgentView implements ContentView {
     this.statusLineEl.querySelector('.agent-view__timer')?.remove();
   }
 
+  // ─── Inline cursor ────────────────────────────────────────────────
+
+  /** Place the blinking cursor inline at the end of the last text node. */
+  private appendInlineCursor(container: HTMLElement): void {
+    const cursor = document.createElement('span');
+    cursor.className = 'agent-view__stream-cursor';
+    cursor.textContent = '▋';
+
+    // Walk backwards to find the deepest last element that contains text
+    let target: Node = container;
+    while (target.lastChild) {
+      const last = target.lastChild;
+      // Skip empty text nodes
+      if (last.nodeType === Node.TEXT_NODE && !last.textContent?.trim()) {
+        if (last.previousSibling) {
+          target = last.previousSibling;
+          continue;
+        }
+        break;
+      }
+      target = last;
+    }
+
+    if (target.nodeType === Node.TEXT_NODE && target.parentNode) {
+      // Insert cursor right after the last text node
+      target.parentNode.insertBefore(cursor, target.nextSibling);
+    } else if (target instanceof HTMLElement) {
+      target.appendChild(cursor);
+    } else {
+      container.appendChild(cursor);
+    }
+  }
+
   // ─── New session ──────────────────────────────────────────────────
 
   async newSession(): Promise<void> {
@@ -1510,6 +1551,11 @@ export class AgentView implements ContentView {
     this.historyIdx = -1;
     this.statusLineEl.textContent = '';
     this.statusLineEl.classList.remove('agent-view__status-line--visible');
+    if (this.streamRenderRaf !== null) {
+      cancelAnimationFrame(this.streamRenderRaf);
+      this.streamRenderRaf = null;
+    }
+    this.logoEl.classList.remove('agent-view__logo--hidden');
     this.renderInput();
   }
 

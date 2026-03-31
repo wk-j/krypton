@@ -19,6 +19,56 @@
   background-size: 6px 6px;
 }
 
+/* ─── Logo / welcome header ─────────────────────────────────── */
+
+.agent-view__logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 48px 16px 24px;
+  transition: opacity 0.3s ease, max-height 0.3s ease;
+  max-height: 200px;
+  overflow: hidden;
+}
+
+.agent-view__logo--hidden {
+  opacity: 0;
+  max-height: 0;
+  padding: 0 16px;
+  pointer-events: none;
+}
+
+.agent-view__logo-glyph {
+  font-size: 36px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+  text-shadow:
+    0 0 12px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4),
+    0 0 24px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  line-height: 1;
+}
+
+.agent-view__logo-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.6);
+}
+
+.agent-view__logo-accent {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
+  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+}
+
+.agent-view__logo-sub {
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.25);
+}
+
 /* Messages list */
 .agent-view__messages {
   flex: 1;
