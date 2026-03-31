@@ -372,13 +372,31 @@
 
 .agent-view__tool-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   padding: 6px 10px;
   border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
   font-size: 14px;
   background: linear-gradient(135deg, rgba(6, 10, 18, 0.35), transparent);
   position: relative;
+}
+
+.agent-view__tool-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.agent-view__tool-command {
+  font-family: var(--krypton-font-family, monospace);
+  font-size: 13px;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.85);
+  padding: 3px 8px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-left: 20px;
 }
 
 /* Holographic dot grid on tool rows */

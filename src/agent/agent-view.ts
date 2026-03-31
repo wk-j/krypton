@@ -134,6 +134,15 @@ export class AgentView implements ContentView {
     this.inputRowEl.appendChild(this.promptGlyphEl);
     this.inputRowEl.appendChild(this.inputDisplayEl);
 
+    // Handle paste from native macOS Edit menu (Cmd+V triggers menu before JS keydown)
+    this.element.addEventListener('paste', (e: ClipboardEvent) => {
+      e.preventDefault();
+      const text = e.clipboardData?.getData('text');
+      if (text && this.state === 'input') {
+        this.insert(text);
+      }
+    });
+
     // Track scroll position so it can be restored after tab switch
     this.messagesEl.addEventListener('scroll', () => {
       this.savedScrollTop = this.messagesEl.scrollTop;
@@ -256,6 +265,10 @@ export class AgentView implements ContentView {
     const row = document.createElement('div');
     row.className = 'agent-view__tool-row';
 
+    // Header line: icon + tool name + brief args
+    const header = document.createElement('div');
+    header.className = 'agent-view__tool-header';
+
     const icon = document.createElement('span');
     icon.className = 'agent-view__tool-icon';
     icon.textContent = SPINNER_FRAMES[0];
@@ -264,15 +277,48 @@ export class AgentView implements ContentView {
     nameEl.className = 'agent-view__tool-name';
     nameEl.textContent = name;
 
-    const argsEl = document.createElement('span');
-    argsEl.className = 'agent-view__tool-args';
-    argsEl.textContent = truncateArgs(args);
+    header.appendChild(icon);
+    header.appendChild(nameEl);
 
-    row.appendChild(icon);
-    row.appendChild(nameEl);
-    row.appendChild(argsEl);
+    // Extract a human-readable command line for known tools
+    const command = this.extractToolCommand(name, args);
+    if (command) {
+      const cmdEl = document.createElement('div');
+      cmdEl.className = 'agent-view__tool-command';
+      cmdEl.textContent = command;
+      row.appendChild(header);
+      row.appendChild(cmdEl);
+    } else {
+      const argsEl = document.createElement('span');
+      argsEl.className = 'agent-view__tool-args';
+      argsEl.textContent = truncateArgs(args);
+      header.appendChild(argsEl);
+      row.appendChild(header);
+    }
+
     this.messagesEl.appendChild(row);
     return row;
+  }
+
+  /** Extract a readable command string from tool args for display. */
+  private extractToolCommand(name: string, args: string): string | null {
+    try {
+      const parsed = JSON.parse(args);
+      switch (name) {
+        case 'bash':
+          return parsed.command || null;
+        case 'read_file':
+          return parsed.path || parsed.file_path || null;
+        case 'write_file':
+          return parsed.path || parsed.file_path || null;
+        case 'edit_file':
+          return parsed.path || parsed.file_path || null;
+        default:
+          return null;
+      }
+    } catch {
+      return null;
+    }
   }
 
   private finalizeToolRow(row: HTMLElement, isError: boolean, resultText?: string, diff?: string, filePath?: string): void {
@@ -1160,14 +1206,11 @@ export class AgentView implements ContentView {
       return true;
     }
 
-    // Paste (Cmd+V / Ctrl+V)
+    // Paste (Cmd+V / Ctrl+V) — let the native paste event handle insertion
+    // (macOS Edit menu intercepts Cmd+V before JS keydown; the paste event
+    // listener on this.element picks up the clipboard data reliably)
     if (e.code === 'KeyV' && (e.metaKey || e.ctrlKey) && !e.altKey) {
-      navigator.clipboard.readText().then((text) => {
-        if (text) {
-          this.insert(text);
-        }
-      }).catch(() => { /* clipboard unavailable */ });
-      return true;
+      return false; // don't consume — allow native paste event to fire
     }
 
     // Select all (Cmd+A)

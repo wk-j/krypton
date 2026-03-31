@@ -1,3 +1,8 @@
+---
+name: pi-mono-reference
+description: Reference for @mariozechner/pi-agent-core and @mariozechner/pi-ai. Load when working on src/agent/, debugging agent events, adding tools, or changing models/providers.
+---
+
 # pi-mono Reference
 
 Local repo: `/Users/wk/Source/pi-mono`
