@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-31 (Agent skill system — Claude Code .claude/commands/*.md compatibility)
+> Last updated: 2026-03-31 (Agent markdown visual effects — futuristic CSS for AI responses)
 
 ## Overview
 
@@ -14,7 +14,7 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 10/11 |
-| M8 — Polish | In Progress | 14/15 |
+| M8 — Polish | In Progress | 15/16 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -130,6 +130,7 @@
 - [x] SSH session multiplexing — detect active SSH connections in terminal panes via process tree inspection (`SshManager` in `src-tauri/src/ssh.rs`), clone sessions using OpenSSH `ControlMaster` auto-multiplexing. **Remote CWD inheritance**: cloned sessions start in the same directory via invisible PTY probe (`stty -echo` + OSC 7337 private escape sequence); passive OSC 7 hostname filtering as fallback (uses `hostname` crate to distinguish local vs remote CWD). Keybindings: `Leader c` (clone to new tab), `Leader Shift+C` (clone to new window). Command palette actions. Titlebar shows `SSH: user@host`. Config: `[ssh]` section with `enabled`, `control_persist`, `clone_target`. Socket dir: `~/.config/krypton/ssh-sockets/`. See `docs/28-ssh-session-multiplexing.md`.
 - [x] Notification overlay (`src/notification.ts`) — `NotificationController` with glitch-decode text animation, per-level color coding (info/success/warning/error/system), auto-dismiss with timer bar, max 6 stacked. OSC detection (OSC 9, 777, 99/kitty) via `terminal.parser.registerOscHandler()`. Container mounted on `document.body` with `position: fixed`, repositioned via `alignTo()` to anchor to focused window bounds. Programmatic API for any frontend subsystem. See `docs/40-notification-overlay.md`.
 - [x] Cursor trail — rainbow flame particle effect (`src/cursor-trail.ts`) on both mouse cursor (document-level `mousemove` capture) and terminal text cursor (polls `buffer.active.cursorX/Y` via compositor). Particles drift upward with turbulence, cycle rainbow hues, fade with quadratic falloff. Teardrop-shaped with radial gradient + glow. Appended to `document.body` (z-index 99999). Togglable via `toggle()`.
+- [x] Agent markdown visual effects — futuristic CSS effects on AI response rendering: scanline overlay + materialize animation on assistant messages, neon glow pulse on headings, animated edge-sweep on code blocks, holographic shimmer on blockquotes, traveling pulse on horizontal rules, hover-highlight on table rows, custom `▸` bullets, neon glow on inline code/links/bold. All pure CSS, GPU-composited, theme-aware via `--krypton-window-accent-rgb`. See `docs/49-agent-markdown-effects.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 
