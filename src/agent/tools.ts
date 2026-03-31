@@ -6,6 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { Type, type Static } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
+import { loadSkillContent, type SkillMeta } from './skills';
 
 // ─── Parameter schemas ────────────────────────────────────────────
 
@@ -21,6 +22,10 @@ const WriteFileSchema = Type.Object({
 const BashSchema = Type.Object({
   command: Type.String({ description: 'Shell command to run (passed to the user\'s default login shell)' }),
   cwd: Type.Optional(Type.String({ description: 'Working directory (defaults to project root)' })),
+});
+
+const ActivateSkillSchema = Type.Object({
+  name: Type.String({ description: 'Name of the skill to activate' }),
 });
 
 // ─── Result helper ────────────────────────────────────────────────
@@ -52,7 +57,7 @@ async function getShell(): Promise<[string, string[]]> {
   return cachedShell;
 }
 
-export function createKryptonTools(projectDir: string | null): AgentTool[] {
+export function createKryptonTools(projectDir: string | null, skills?: SkillMeta[]): AgentTool[] {
   const readFileTool: AgentTool<typeof ReadFileSchema, string> = {
     name: 'read_file',
     label: 'Read File',
@@ -123,9 +128,35 @@ export function createKryptonTools(projectDir: string | null): AgentTool[] {
     },
   };
 
-  return [
+  const tools: AgentTool[] = [
     readFileTool as unknown as AgentTool,
     writeFileTool as unknown as AgentTool,
     bashTool as unknown as AgentTool,
   ];
+
+  // Only register activate_skill tool if there are skills available
+  if (skills && skills.length > 0) {
+    const activateSkillTool: AgentTool<typeof ActivateSkillSchema, string> = {
+      name: 'activate_skill',
+      label: 'Activate Skill',
+      description: 'Load a skill\'s full instructions to follow its workflow. Call this before starting work when a skill matches the user\'s request.',
+      parameters: ActivateSkillSchema,
+      async execute(_id: string, rawParams: unknown): Promise<AgentToolResult<string>> {
+        const params = rawParams as Static<typeof ActivateSkillSchema>;
+        const skill = skills.find((s) => s.name === params.name);
+        if (!skill) {
+          const available = skills.map((s) => s.name).join(', ');
+          return text(`Skill "${params.name}" not found. Available: ${available}`);
+        }
+        const content = await loadSkillContent(skill);
+        if (!content) {
+          return text(`Skill "${params.name}" has no content.`);
+        }
+        return text(`# Skill: ${skill.name}\n\nFollow these instructions for this request:\n\n${content}`);
+      },
+    };
+    tools.push(activateSkillTool as unknown as AgentTool);
+  }
+
+  return tools;
 }

@@ -542,6 +542,7 @@ export class AgentView implements ContentView {
           this.finalizeToolRow(this.currentToolRowEl, e.isError, e.result, e.diff, e.filePath);
           this.currentToolRowEl = null;
         }
+        this.scrollToBottom();
         break;
 
       case 'error':

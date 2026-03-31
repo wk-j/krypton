@@ -34,9 +34,9 @@ export type AgentEventCallback = (e: AgentEventType) => void;
 
 const BASE_SYSTEM_PROMPT = `You are an AI coding assistant embedded in Krypton, a keyboard-driven terminal emulator. You have tools to read files, write files, and run shell commands.
 
-Be concise and direct. Respond naturally to conversational messages — only use tools when the user asks you to perform a task. Do not proactively read files, run commands, or take actions unless explicitly requested.
+CRITICAL RULE: NEVER use tools unless the user explicitly asks you to do something that requires them. If the user says "hi", "hello", or anything conversational, just respond with text. Do NOT run git commands, read files, check status, or take any action on your own initiative. Wait for the user to give you a specific task.
 
-When writing files, prefer small targeted edits over full rewrites. Write the complete file content.`;
+Be concise and direct. When writing files, prefer small targeted edits over full rewrites. Write the complete file content.`;
 
 export class AgentController {
   // Lazy-initialized pi-agent-core Agent instance
@@ -85,15 +85,11 @@ export class AgentController {
       import('@mariozechner/pi-ai'),
     ]);
 
-    const systemPrompt = this.projectDir
-      ? `${BASE_SYSTEM_PROMPT}\n\nWorking directory: ${this.projectDir}`
-      : BASE_SYSTEM_PROMPT;
-
     return new Agent({
       initialState: {
-        systemPrompt,
+        systemPrompt: this.buildBasePrompt(),
         model: { ...getModel('zai', 'glm-4.7'), baseUrl: 'https://api.z.ai/api/coding/paas/v4' },
-        tools: createKryptonTools(this.projectDir),
+        tools: createKryptonTools(this.projectDir, this.skillIndex),
       },
       getApiKey: (provider: string) => (provider === 'zai' ? apiKey : undefined),
       toolExecution: 'sequential',
@@ -160,11 +156,23 @@ export class AgentController {
     }
   }
 
-  /** Build the base system prompt (without skills). */
+  /** Build the base system prompt, including skill catalog if skills are discovered. */
   private buildBasePrompt(): string {
-    return this.projectDir
-      ? `${BASE_SYSTEM_PROMPT}\n\nWorking directory: ${this.projectDir}`
-      : BASE_SYSTEM_PROMPT;
+    let prompt = BASE_SYSTEM_PROMPT;
+    if (this.projectDir) {
+      prompt += `\n\nWorking directory: ${this.projectDir}`;
+    }
+
+    // Include skill catalog so the model knows what's available
+    if (this.skillIndex.length > 0) {
+      const catalog = this.skillIndex.map((s) => {
+        const tag = s.isCommand ? ' [command]' : '';
+        return `- ${s.name}${tag}: ${s.description}`;
+      }).join('\n');
+      prompt += `\n\n# Available Skills\n\nThe following skills provide specialized workflows. When a user's request matches a skill, use the activate_skill tool to load its full instructions before proceeding.\n\n${catalog}`;
+    }
+
+    return prompt;
   }
 
   /** Force-activate a skill by name for the next prompt. */
@@ -228,10 +236,17 @@ export class AgentController {
       // Track the last entry ID for parentId chaining
       this.lastEntryId = messageEntries[messageEntries.length - 1].id;
 
-      // Restore into agent if it's already initialized
+      // Restore messages into agent context so it has history for reference
       if (this.agent) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const messages = messageEntries.map((e) => e.message as any);
+
+        // Append a boundary marker so the model treats prior messages as history
+        messages.push(
+          { role: 'user', content: '[Session resumed — the messages above are history from a previous session. Do not continue or repeat any prior tasks. Wait for my next message.]' },
+          { role: 'assistant', content: [{ type: 'text', text: 'Understood. Previous conversation is context only. Ready for your next request.' }] },
+        );
+
         this.agent.replaceMessages(messages);
       }
 
@@ -280,11 +295,12 @@ export class AgentController {
       }
 
       try {
+        // Discover skills first so buildAgent can include them in system prompt and tools
+        await this.ensureSkillsDiscovered();
+
         this.agent = await this.buildAgent(apiKey);
         console.log('[agent] initialized, projectDir:', this.projectDir);
 
-        // Discover skills and restore session
-        await this.ensureSkillsDiscovered();
         await this.restoreFromSession();
       } catch (e) {
         console.error('[agent] buildAgent failed:', e);
