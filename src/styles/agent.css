@@ -289,26 +289,12 @@
   position: relative;
 }
 
-.agent-view__shell-result::before {
-  content: '›';
-  position: absolute;
-  top: 8px;
-  left: -8px;
-  font-size: 12px;
-  color: rgba(57, 255, 127, 0.5);
-}
-
 .agent-view__shell-result--error {
   color: rgba(255, 100, 100, 0.95);
   border-color: rgba(255, 70, 70, 0.15);
   border-left-color: rgba(255, 70, 70, 0.5);
   background:
     linear-gradient(135deg, rgba(255, 50, 50, 0.04) 0%, rgba(0, 0, 0, 0.4) 100%);
-}
-
-.agent-view__shell-result--error::before {
-  content: '✗';
-  color: rgba(255, 70, 70, 0.5);
 }
 
 .agent-view__shell-more {
