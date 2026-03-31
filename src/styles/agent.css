@@ -78,8 +78,11 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25) transparent;
+  scrollbar-width: none;
+}
+
+.agent-view__messages::-webkit-scrollbar {
+  display: none;
 }
 
 /* Ensures bottom padding is respected when scrolled to bottom (WebKit flex+overflow bug) */
