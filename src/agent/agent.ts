@@ -41,6 +41,7 @@ export type AgentEventType =
   | { type: 'tool_start'; name: string; args: string }
   | { type: 'tool_end'; name: string; isError: boolean; result?: string; diff?: string; filePath?: string }
   | { type: 'usage_update'; usage: TokenUsage }
+  | { type: 'message_usage'; outputTokens: number }
   | { type: 'error'; message: string };
 
 export type AgentEventCallback = (e: AgentEventType) => void;
@@ -388,6 +389,7 @@ export class AgentController {
               ? Math.round(((u.input ?? 0) / this.modelContextWindow) * 100)
               : 0;
             onEvent({ type: 'usage_update', usage: { ...this.cumulativeUsage } });
+            onEvent({ type: 'message_usage', outputTokens: u.output ?? 0 });
           }
           break;
         }

@@ -573,6 +573,19 @@ export class AgentView implements ContentView {
         this.renderStatusLine(e.usage);
         break;
 
+      case 'message_usage': {
+        // Annotate the current assistant message with its output token count (top-right)
+        const msgEl = this.currentAssistantTextEl?.closest('.agent-view__msg');
+        if (msgEl) {
+          const badge = document.createElement('span');
+          badge.className = 'agent-view__msg-tokens';
+          const n = e.outputTokens;
+          badge.textContent = n >= 1000 ? `${(n / 1000).toFixed(1)}k tok` : `${n} tok`;
+          msgEl.appendChild(badge);
+        }
+        break;
+      }
+
       case 'error':
         this.stopSpinner();
         this.promptGlyphEl.textContent = '❯';
