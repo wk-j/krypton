@@ -65,6 +65,10 @@ export class AgentView implements ContentView {
   private spinnerInterval: ReturnType<typeof setInterval> | null = null;
   private spinnerFrame = 0;
 
+  // Streaming markdown render throttle
+  private streamRenderPending = false;
+  private streamRenderRaf: ReturnType<typeof requestAnimationFrame> | null = null;
+
   // Project scoping
   private projectDir: string | null = null;
 
@@ -219,18 +223,23 @@ export class AgentView implements ContentView {
     return body;
   }
 
-  /** Convert the accumulated raw text buffer to rendered markdown HTML */
+  /** Final markdown render — remove cursor, cancel pending RAF. */
   private finalizeAssistantMessage(): void {
-    if (!this.currentAssistantTextEl || !this.currentAssistantBuffer) return;
-    const cursor = this.currentAssistantTextEl.querySelector('.agent-view__stream-cursor');
-    cursor?.remove();
-    try {
-      const html = md.parse(this.currentAssistantBuffer) as string;
-      this.currentAssistantTextEl.innerHTML = html;
-      this.currentAssistantTextEl.classList.add('agent-view__msg-body--markdown');
-    } catch {
-      // Fallback: leave as plain text
+    if (!this.currentAssistantTextEl) return;
+    // Cancel any pending streaming render
+    if (this.streamRenderRaf !== null) {
+      cancelAnimationFrame(this.streamRenderRaf);
+      this.streamRenderRaf = null;
+      this.streamRenderPending = false;
     }
+    if (this.currentAssistantBuffer) {
+      try {
+        this.currentAssistantTextEl.innerHTML = md.parse(this.currentAssistantBuffer) as string;
+      } catch {
+        // leave as-is
+      }
+    }
+    this.currentAssistantTextEl.querySelector('.agent-view__stream-cursor')?.remove();
     this.currentAssistantBuffer = '';
     this.currentAssistantTextEl = null;
   }
@@ -508,6 +517,7 @@ export class AgentView implements ContentView {
         if (!this.currentAssistantTextEl) {
           this.currentAssistantTextEl = this.appendAssistantMessageDom();
           this.currentAssistantBuffer = '';
+          this.currentAssistantTextEl.classList.add('agent-view__msg-body--markdown');
           // Show active skills in the label
           const activeSkills = this.controller.getLastActiveSkills();
           if (activeSkills.length > 0) {
@@ -516,18 +526,25 @@ export class AgentView implements ContentView {
             if (labelEl) labelEl.textContent = `AI [${activeSkills.join(', ')}]`;
           }
         }
-        // Accumulate raw text and show as plain text during streaming
+        // Accumulate raw text and render markdown on next animation frame
         this.currentAssistantBuffer += e.delta;
-        {
-          const cursor = this.currentAssistantTextEl.querySelector('.agent-view__stream-cursor');
-          const text = document.createTextNode(e.delta);
-          if (cursor) {
-            this.currentAssistantTextEl.insertBefore(text, cursor);
-          } else {
-            this.currentAssistantTextEl.appendChild(text);
-          }
+        if (!this.streamRenderPending) {
+          this.streamRenderPending = true;
+          this.streamRenderRaf = requestAnimationFrame(() => {
+            this.streamRenderPending = false;
+            this.streamRenderRaf = null;
+            if (this.currentAssistantTextEl && this.currentAssistantBuffer) {
+              try {
+                const html = md.parse(this.currentAssistantBuffer) as string;
+                this.currentAssistantTextEl.innerHTML =
+                  html + '<span class="agent-view__stream-cursor">▋</span>';
+              } catch {
+                this.currentAssistantTextEl.textContent = this.currentAssistantBuffer;
+              }
+              this.scrollToBottom();
+            }
+          });
         }
-        this.scrollToBottom();
         break;
 
       case 'tool_start':
