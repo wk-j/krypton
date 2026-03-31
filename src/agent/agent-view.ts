@@ -1353,6 +1353,8 @@ export class AgentView implements ContentView {
     parts.push(`Σ ${fmt(usage.totalTokens)}`);
     if (usage.cost > 0) parts.push(`$${usage.cost.toFixed(4)}`);
     if (usage.contextWindow > 0) parts.push(`CTX ${usage.contextPercent}%`);
+    const skillCount = this.controller.getSkills().length;
+    if (skillCount > 0) parts.push(`SKILLS ${skillCount}`);
 
     this.statusLineEl.textContent = parts.join('  ·  ');
     this.statusLineEl.classList.add('agent-view__status-line--visible');
