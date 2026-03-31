@@ -15,7 +15,6 @@ import {
 } from './session';
 import {
   discoverSkills,
-  matchSkills,
   forceMatchSkill,
   buildSkillPrompt,
   type SkillMeta,
@@ -35,7 +34,9 @@ export type AgentEventCallback = (e: AgentEventType) => void;
 
 const BASE_SYSTEM_PROMPT = `You are an AI coding assistant embedded in Krypton, a keyboard-driven terminal emulator. You have tools to read files, write files, and run shell commands.
 
-Be concise and direct. Prefer small targeted edits over full rewrites. When writing files, write the complete file content.`;
+Be concise and direct. Respond naturally to conversational messages — only use tools when the user asks you to perform a task. Do not proactively read files, run commands, or take actions unless explicitly requested.
+
+When writing files, prefer small targeted edits over full rewrites. Write the complete file content.`;
 
 export class AgentController {
   // Lazy-initialized pi-agent-core Agent instance
@@ -54,6 +55,7 @@ export class AgentController {
   private skillsDiscovered = false;
   private forcedSkill: string | null = null;
   private lastActiveSkills: string[] = [];
+
 
   // Change listeners for real-time context window updates
   private changeListeners: Set<() => void> = new Set();
@@ -114,8 +116,11 @@ export class AgentController {
     }
   }
 
-  /** Match user input against skills and inject into system prompt. Returns active skill names. */
-  private async applySkills(input: string): Promise<string[]> {
+  /**
+   * Match user input against skills and inject into system prompt. Returns active skill names.
+   * When commandArgs is provided, the forced skill is a command and $ARGUMENTS is replaced.
+   */
+  private async applySkills(_input: string, commandArgs?: string): Promise<string[]> {
     if (!this.agent || this.skillIndex.length === 0) return [];
 
     let matches: SkillMatch[];
@@ -124,7 +129,8 @@ export class AgentController {
       matches = forced ? [forced] : [];
       this.forcedSkill = null;
     } else {
-      matches = matchSkills(input, this.skillIndex);
+      // Skills only activate via explicit /skill or /command invocation — no auto-matching
+      matches = [];
     }
 
     if (matches.length === 0) {
@@ -133,7 +139,7 @@ export class AgentController {
       return [];
     }
 
-    const skillSection = await buildSkillPrompt(matches);
+    const skillSection = await buildSkillPrompt(matches, commandArgs);
     if (!skillSection) {
       this.revertSystemPrompt();
       return [];
@@ -177,6 +183,16 @@ export class AgentController {
   /** Get skill names that were active on the last prompt. */
   getLastActiveSkills(): string[] {
     return this.lastActiveSkills;
+  }
+
+  /** Get command-type skills (from .claude/commands/) for slash command registration. */
+  getCommands(): SkillMeta[] {
+    return this.skillIndex.filter((s) => s.isCommand);
+  }
+
+  /** Find a command skill by name. */
+  findCommand(name: string): SkillMeta | undefined {
+    return this.skillIndex.find((s) => s.isCommand && s.name === name);
   }
 
   // ─── Session ──────────────────────────────────────────────────────
@@ -243,7 +259,7 @@ export class AgentController {
     }
   }
 
-  async prompt(text: string, onEvent: AgentEventCallback): Promise<void> {
+  async prompt(text: string, onEvent: AgentEventCallback, commandArgs?: string): Promise<void> {
     if (this.running) return;
 
     // Lazy init — read API key from the shell environment
@@ -281,7 +297,7 @@ export class AgentController {
     await this.initSession();
 
     // Match and inject skills based on user input
-    this.lastActiveSkills = await this.applySkills(text);
+    this.lastActiveSkills = await this.applySkills(text, commandArgs);
 
     // Persist the user message
     const userMessage = { role: 'user', content: text, timestamp: Date.now() };

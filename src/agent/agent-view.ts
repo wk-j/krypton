@@ -84,6 +84,7 @@ export class AgentView implements ContentView {
 
   // Scroll position preservation across tab switches
   private savedScrollTop = 0;
+  private pendingScrollToBottom = false;
 
   constructor() {
     this.controller = new AgentController();
@@ -407,6 +408,18 @@ export class AgentView implements ContentView {
 
   // ─── Autocomplete ───────────────────────────────────────────────
 
+  /** Get all slash commands: built-in + custom commands from .claude/commands/. */
+  private getAllCommands(): Record<string, { description: string; usage?: string }> {
+    const cmds: Record<string, { description: string; usage?: string }> = { ...AgentView.COMMANDS };
+    for (const cmd of this.controller.getCommands()) {
+      const key = `/${cmd.name}`;
+      if (!cmds[key]) {
+        cmds[key] = { description: cmd.description, usage: `/${cmd.name} [args]` };
+      }
+    }
+    return cmds;
+  }
+
   private updateAutocomplete(): void {
     const text = this.inputText.trim();
 
@@ -417,7 +430,7 @@ export class AgentView implements ContentView {
     }
 
     const prefix = text.toLowerCase();
-    const allCmds = Object.keys(AgentView.COMMANDS);
+    const allCmds = Object.keys(this.getAllCommands());
     this.acMatches = allCmds.filter((cmd) => cmd.startsWith(prefix) && cmd !== prefix);
 
     if (this.acMatches.length === 0) {
@@ -429,10 +442,11 @@ export class AgentView implements ContentView {
     if (this.acSelectedIdx >= this.acMatches.length) this.acSelectedIdx = this.acMatches.length - 1;
     if (this.acSelectedIdx < 0) this.acSelectedIdx = 0;
 
+    const allCmdInfo = this.getAllCommands();
     this.autocompleteEl.innerHTML = '';
     for (let i = 0; i < this.acMatches.length; i++) {
       const cmd = this.acMatches[i];
-      const info = AgentView.COMMANDS[cmd];
+      const info = allCmdInfo[cmd];
       const row = document.createElement('div');
       row.className = 'agent-view__ac-row';
       if (i === this.acSelectedIdx) row.classList.add('agent-view__ac-row--selected');
@@ -606,9 +620,12 @@ export class AgentView implements ContentView {
       case '/skills': {
         const skills = this.controller.getSkills();
         if (skills.length === 0) {
-          this.showSystemMessage('No skills discovered.\nPlace SKILL.md files in .claude/skills/ or .agents/skills/');
+          this.showSystemMessage('No skills discovered.\nPlace SKILL.md files in .claude/skills/ or .agents/skills/\nOr add commands in .claude/commands/*.md');
         } else {
-          const lines = skills.map((s) => `  ${s.name.padEnd(24)} ${s.description}`);
+          const lines = skills.map((s) => {
+            const tag = s.isCommand ? ' [cmd]' : '';
+            return `  ${(s.name + tag).padEnd(28)} ${s.description}`;
+          });
           const active = this.controller.getLastActiveSkills();
           const activeNote = active.length > 0 ? `\n\nLast active: ${active.join(', ')}` : '';
           this.showSystemMessage(`Discovered skills (${skills.length}):\n${lines.join('\n')}${activeNote}`);
@@ -698,11 +715,53 @@ export class AgentView implements ContentView {
     }
   }
 
+  /**
+   * Handle a custom command from .claude/commands/.
+   * Force-activates the command skill, then sends args as a prompt to the agent.
+   */
+  private async handleCustomCommand(text: string): Promise<boolean> {
+    const parts = text.split(/\s+/);
+    const cmdName = parts[0].slice(1); // strip leading /
+    const cmd = this.controller.findCommand(cmdName);
+    if (!cmd) return false;
+
+    const args = parts.slice(1).join(' ');
+
+    // Force-activate the command skill with args
+    this.controller.setForcedSkill(cmdName);
+
+    if (this.controller.isRunning) return true;
+
+    // Show the command invocation as a user message and start spinner immediately
+    this.appendUserMessageDom(text);
+    this.scrollToBottom();
+    this.startSpinner();
+    this.inputRowEl.classList.add('agent-view__input-row--busy');
+
+    try {
+      await this.controller.prompt(args || cmdName, (e) => this.handleAgentEvent(e), args);
+    } catch (e) {
+      this.handleAgentEvent({ type: 'error', message: `Unexpected error: ${e}` });
+    }
+    return true;
+  }
+
   private formatHelp(): string {
     const lines: string[] = ['Available commands:'];
     for (const [cmd, info] of Object.entries(AgentView.COMMANDS)) {
       lines.push(`  ${cmd.padEnd(12)} ${info.description}`);
     }
+
+    // Include custom commands from .claude/commands/
+    const customCmds = this.controller.getCommands();
+    if (customCmds.length > 0) {
+      lines.push('');
+      lines.push('Custom commands (.claude/commands/):');
+      for (const cmd of customCmds) {
+        lines.push(`  /${cmd.name.padEnd(11)} ${cmd.description}`);
+      }
+    }
+
     lines.push('');
     lines.push('Quick shell commands:');
     lines.push('  !<command>    Execute shell command directly');
@@ -764,19 +823,21 @@ export class AgentView implements ContentView {
       return;
     }
 
-    // Handle slash commands
+    // Handle slash commands (built-in, then custom .claude/commands/)
     if (text.startsWith('/')) {
       if (this.handleSlashCommand(text)) return;
-      // Unknown command — show error
+      if (await this.handleCustomCommand(text)) return;
       this.showSystemMessage(`Unknown command: ${text.split(/\s+/)[0]}\nType /help for available commands.`);
       return;
     }
 
     if (this.controller.isRunning) return;
 
-    // Render user message
+    // Render user message and show processing indicator immediately
     this.appendUserMessageDom(text);
     this.scrollToBottom();
+    this.startSpinner();
+    this.inputRowEl.classList.add('agent-view__input-row--busy');
 
     try {
       await this.controller.prompt(text, (e) => this.handleAgentEvent(e));
@@ -862,8 +923,121 @@ export class AgentView implements ContentView {
       return true;
     }
 
-    // Delete word (Ctrl+W)
+    // Readline: Ctrl+U — kill line before cursor
+    if (e.code === 'KeyU' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      this.inputText = this.inputText.slice(this.cursorPos);
+      this.cursorPos = 0;
+      this.renderInput();
+      return true;
+    }
+
+    // Readline: Ctrl+K — kill line after cursor
+    if (e.code === 'KeyK' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      this.inputText = this.inputText.slice(0, this.cursorPos);
+      this.renderInput();
+      return true;
+    }
+
+    // Readline: Ctrl+A — move to beginning of line
+    if (e.code === 'KeyA' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      this.cursorPos = 0;
+      this.renderInput();
+      return true;
+    }
+
+    // Readline: Ctrl+E — move to end of line
+    if (e.code === 'KeyE' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      this.cursorPos = this.inputText.length;
+      this.renderInput();
+      return true;
+    }
+
+    // Readline: Ctrl+B — move back one char
+    if (e.code === 'KeyB' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (this.cursorPos > 0) this.cursorPos--;
+      this.renderInput();
+      return true;
+    }
+
+    // Readline: Ctrl+F — move forward one char
+    if (e.code === 'KeyF' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (this.cursorPos < this.inputText.length) this.cursorPos++;
+      this.renderInput();
+      return true;
+    }
+
+    // Readline: Ctrl+D — delete char under cursor
+    if (e.code === 'KeyD' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (this.cursorPos < this.inputText.length) {
+        this.inputText = this.inputText.slice(0, this.cursorPos) + this.inputText.slice(this.cursorPos + 1);
+        this.renderInput();
+      }
+      return true;
+    }
+
+    // Readline: Ctrl+H — backspace
+    if (e.code === 'KeyH' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (this.cursorPos > 0) {
+        this.inputText = this.inputText.slice(0, this.cursorPos - 1) + this.inputText.slice(this.cursorPos);
+        this.cursorPos--;
+        this.renderInput();
+      }
+      return true;
+    }
+
+    // Readline: Ctrl+T — transpose chars
+    if (e.code === 'KeyT' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (this.cursorPos > 0 && this.cursorPos < this.inputText.length) {
+        const chars = this.inputText.split('');
+        [chars[this.cursorPos - 1], chars[this.cursorPos]] = [chars[this.cursorPos], chars[this.cursorPos - 1]];
+        this.inputText = chars.join('');
+        this.cursorPos++;
+        this.renderInput();
+      }
+      return true;
+    }
+
+    // Readline: Ctrl+W — delete word backward
     if (e.code === 'KeyW' && e.ctrlKey && !e.metaKey && !e.altKey) {
+      const before = this.inputText.slice(0, this.cursorPos);
+      const trimmed = before.replace(/\S+\s*$/, '');
+      this.inputText = trimmed + this.inputText.slice(this.cursorPos);
+      this.cursorPos = trimmed.length;
+      this.renderInput();
+      return true;
+    }
+
+    // Readline: Alt+B — move back one word
+    if (e.code === 'KeyB' && e.altKey && !e.ctrlKey && !e.metaKey) {
+      const before = this.inputText.slice(0, this.cursorPos);
+      const match = before.match(/(?:\S+\s*|\s+)$/);
+      this.cursorPos -= match ? match[0].length : 0;
+      this.renderInput();
+      return true;
+    }
+
+    // Readline: Alt+F — move forward one word
+    if (e.code === 'KeyF' && e.altKey && !e.ctrlKey && !e.metaKey) {
+      const after = this.inputText.slice(this.cursorPos);
+      const match = after.match(/^(?:\s*\S+|\s+)/);
+      this.cursorPos += match ? match[0].length : 0;
+      this.renderInput();
+      return true;
+    }
+
+    // Readline: Alt+D — delete word forward
+    if (e.code === 'KeyD' && e.altKey && !e.ctrlKey && !e.metaKey) {
+      const after = this.inputText.slice(this.cursorPos);
+      const match = after.match(/^\s*\S+/);
+      if (match) {
+        this.inputText = this.inputText.slice(0, this.cursorPos) + after.slice(match[0].length);
+        this.renderInput();
+      }
+      return true;
+    }
+
+    // Readline: Alt+Backspace — delete word backward
+    if (e.key === 'Backspace' && e.altKey && !e.ctrlKey && !e.metaKey) {
       const before = this.inputText.slice(0, this.cursorPos);
       const trimmed = before.replace(/\S+\s*$/, '');
       this.inputText = trimmed + this.inputText.slice(this.cursorPos);
@@ -924,11 +1098,11 @@ export class AgentView implements ContentView {
     }
 
     // Scroll message list without leaving input state
-    if (e.key === 'PageUp' || (e.code === 'KeyU' && e.ctrlKey && !e.metaKey && !e.altKey)) {
+    if (e.key === 'PageUp') {
       this.scrollMessagesFraction(-0.4);
       return true;
     }
-    if (e.key === 'PageDown' || (e.code === 'KeyD' && e.ctrlKey && !e.metaKey && !e.altKey)) {
+    if (e.key === 'PageDown') {
       this.scrollMessagesFraction(0.4);
       return true;
     }
@@ -943,8 +1117,8 @@ export class AgentView implements ContentView {
       return true;
     }
 
-    // Select all (Cmd+A / Ctrl+A)
-    if (e.code === 'KeyA' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+    // Select all (Cmd+A)
+    if (e.code === 'KeyA' && e.metaKey && !e.ctrlKey && !e.altKey) {
       return true; // consume — no text selection in manual input
     }
 
@@ -1110,6 +1284,12 @@ export class AgentView implements ContentView {
   }
 
   private scrollToBottom(): void {
+    if (!this.messagesEl.offsetParent) {
+      // Element is detached from DOM (tab not visible) — defer scroll
+      this.pendingScrollToBottom = true;
+      return;
+    }
+    this.pendingScrollToBottom = false;
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
 
@@ -1191,8 +1371,12 @@ export class AgentView implements ContentView {
   }
 
   onResize(_w: number, _h: number): void {
-    // Restore scroll position after tab switch (DOM reflow resets scrollTop to 0)
-    if (this.savedScrollTop > 0) {
+    // After tab switch, DOM reflow resets scrollTop to 0.
+    // If new content arrived while detached, scroll to bottom; otherwise restore.
+    if (this.pendingScrollToBottom) {
+      this.pendingScrollToBottom = false;
+      this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    } else if (this.savedScrollTop > 0) {
       this.messagesEl.scrollTop = this.savedScrollTop;
     }
   }

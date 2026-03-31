@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-26 (Notification overlay — body-mounted fixed positioning with alignTo)
+> Last updated: 2026-03-31 (Agent skill system — Claude Code .claude/commands/*.md compatibility)
 
 ## Overview
 

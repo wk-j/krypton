@@ -198,7 +198,7 @@ Font sizes: body 15px, labels 12px, tools/results 13px, errors 14px, hints 12px.
 - `Cmd+N` new session keybinding
 - `Ctrl+E` expand/collapse tool output
 - Per-tool approve/reject gate
-- Skill system (custom instructions/workflows)
+- ~~Skill system (custom instructions/workflows)~~ — implemented (see `docs/44-agent-skill-auto-detection.md`); also supports `.claude/commands/*.md` (Claude Code format)
 - MCP tool integration
 - Inline diff view for file edits
 - Agent-initiated compositor actions
