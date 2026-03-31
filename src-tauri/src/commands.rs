@@ -232,16 +232,30 @@ pub fn get_default_shell(
 /// Run a short-lived command and return its combined stdout+stderr.
 /// Used by dashboard overlays to gather data (e.g., git status) without
 /// creating a PTY session. Capped at 10 MB output limit.
+/// Runs on a blocking thread pool to avoid stalling the Tauri IPC dispatcher.
 /// Returns an error string on non-zero exit or spawn failure.
 #[tauri::command]
-pub fn run_command(
+pub async fn run_command(
     program: String,
     args: Vec<String>,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    let mut cmd = std::process::Command::new(&program);
-    cmd.args(&args);
-    if let Some(ref dir) = cwd {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_command_blocking(&program, &args, cwd.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// Synchronous command execution (runs on blocking thread pool).
+fn run_command_blocking(
+    program: &str,
+    args: &[String],
+    cwd: Option<&str>,
+) -> Result<String, String> {
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args);
+    if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
     cmd.stdout(std::process::Stdio::piped());
