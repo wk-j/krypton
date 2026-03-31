@@ -1,0 +1,98 @@
+/* ─── Diff View ─── */
+.krypton-diff {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  font-size: 15px;
+  color: var(--krypton-foreground, #c0c5ce);
+  background: transparent;
+}
+
+.krypton-diff__nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.2);
+  flex-shrink: 0;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.krypton-diff__file-index {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
+  font-weight: bold;
+}
+
+.krypton-diff__file-path {
+  color: var(--krypton-foreground, #c0c5ce);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.krypton-diff__adds {
+  color: #a3be8c;
+}
+
+.krypton-diff__dels {
+  color: #bf616a;
+}
+
+.krypton-diff__mode {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  font-size: 10px;
+}
+
+.krypton-diff__content {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* diff2html integration */
+.krypton-diff__content .d2h-file-header {
+  display: none; /* we have our own nav bar */
+}
+
+.krypton-diff__content .d2h-file-wrapper {
+  border-radius: 0;
+  margin-bottom: 0;
+}
+
+.krypton-diff__content .d2h-diff-table,
+.krypton-diff__content .d2h-code-line-ctn,
+.krypton-diff__content .d2h-code-line-prefix,
+.krypton-diff__content .d2h-code-linenumber,
+.krypton-diff__content .d2h-code-side-linenumber {
+  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  font-size: 15px;
+}
+
+/* Fix line numbers: absolute positioning breaks vertical scrolling.
+   Use sticky so they stay left-anchored on horizontal scroll but
+   move normally with vertical scroll. */
+.krypton-diff__content .d2h-code-linenumber,
+.krypton-diff__content .d2h-code-side-linenumber {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.krypton-diff__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  font-size: 16px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+

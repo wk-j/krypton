@@ -1,0 +1,92 @@
+/* ─── Window body — xterm.js (used by Quick Terminal) ─── */
+.krypton-window__body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* ─── Selection Mode — virtual cursor overlay ─── */
+.krypton-selection-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--krypton-focused-accent, #0cf);
+  pointer-events: none;
+  z-index: 10;
+  transition: transform 50ms ease;
+  box-shadow: 0 0 6px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  animation: krypton-selection-cursor-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes krypton-selection-cursor-pulse {
+  from { opacity: 0.7; box-shadow: 0 0 6px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5); }
+  to   { opacity: 0.9; box-shadow: 0 0 12px 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7); }
+}
+
+/* ─── Selection Mode — glow overlay around selection region ─── */
+.krypton-selection-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 9;
+  border: none;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  overflow: hidden;
+  transition: transform 50ms ease, width 50ms ease, height 50ms ease;
+}
+
+/* Horizontal scan-line sweep inside the selection */
+.krypton-selection-glow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 40%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3) 50%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 60%,
+    transparent 100%
+  );
+  animation: krypton-selection-scan 3s linear infinite;
+}
+
+@keyframes krypton-selection-scan {
+  from { left: -100%; }
+  to   { left: 100%; }
+}
+
+.krypton-window__body .xterm,
+.krypton-pane__terminal .xterm {
+  height: 100%;
+  padding: 4px 6px;
+  background: transparent !important;
+}
+
+.krypton-window__body .xterm-viewport,
+.krypton-pane__terminal .xterm-viewport {
+  overflow-y: auto !important;
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+.krypton-window__body .xterm-screen,
+.krypton-pane__terminal .xterm-screen {
+  background: transparent !important;
+}
+
+/* xterm.js sets inline style.backgroundColor on the scrollable-element DOM node
+   whenever colors change (falls back to opaque #000000 because its color parser
+   rejects rgba with alpha < 1). Override with !important to keep transparency. */
+.krypton-window__body .xterm-scrollable-element,
+.krypton-pane__terminal .xterm-scrollable-element {
+  background-color: transparent !important;
+}
+

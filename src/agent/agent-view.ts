@@ -47,6 +47,7 @@ export class AgentView implements ContentView {
   private promptGlyphEl!: HTMLElement;
   private inputDisplayEl!: HTMLElement;
   private stateHintEl!: HTMLElement;
+  private statusLineEl!: HTMLElement;
 
   private state: 'input' | 'scroll' = 'input';
   private inputText = '';
@@ -124,6 +125,10 @@ export class AgentView implements ContentView {
     this.autocompleteEl = document.createElement('div');
     this.autocompleteEl.className = 'agent-view__autocomplete';
 
+    // Status line (token usage)
+    this.statusLineEl = document.createElement('div');
+    this.statusLineEl.className = 'agent-view__status-line';
+
     this.inputRowEl.appendChild(this.promptGlyphEl);
     this.inputRowEl.appendChild(this.inputDisplayEl);
 
@@ -135,6 +140,7 @@ export class AgentView implements ContentView {
     this.element.appendChild(this.messagesEl);
     this.element.appendChild(this.stateHintEl);
     this.element.appendChild(this.autocompleteEl);
+    this.element.appendChild(this.statusLineEl);
     this.element.appendChild(this.inputRowEl);
 
     this.renderInput();
@@ -511,6 +517,7 @@ export class AgentView implements ContentView {
         // Render accumulated text as markdown
         this.finalizeAssistantMessage();
         this.currentToolRowEl = null;
+        if (e.usage) this.renderStatusLine(e.usage);
         break;
 
       case 'message_update':
@@ -560,6 +567,10 @@ export class AgentView implements ContentView {
           this.currentToolRowEl = null;
         }
         this.scrollToBottom();
+        break;
+
+      case 'usage_update':
+        this.renderStatusLine(e.usage);
         break;
 
       case 'error':
@@ -1301,6 +1312,32 @@ export class AgentView implements ContentView {
     this.stateHintEl.classList.remove('agent-view__state-hint--visible');
   }
 
+  // ─── Status line ──────────────────────────────────────────────────
+
+  private renderStatusLine(usage: import('./agent').TokenUsage): void {
+    const fmt = (n: number): string => {
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+      if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+      return String(n);
+    };
+
+    const parts: string[] = [
+      `IN ${fmt(usage.input)}`,
+      `OUT ${fmt(usage.output)}`,
+    ];
+    if (usage.cacheRead > 0) parts.push(`CACHE ${fmt(usage.cacheRead)}`);
+    parts.push(`Σ ${fmt(usage.totalTokens)}`);
+    if (usage.cost > 0) parts.push(`$${usage.cost.toFixed(4)}`);
+    if (usage.contextWindow > 0) parts.push(`CTX ${usage.contextPercent}%`);
+
+    this.statusLineEl.textContent = parts.join('  ·  ');
+    this.statusLineEl.classList.add('agent-view__status-line--visible');
+
+    // Visual warning when context is getting full
+    this.statusLineEl.classList.toggle('agent-view__status-line--warn', usage.contextPercent >= 70);
+    this.statusLineEl.classList.toggle('agent-view__status-line--critical', usage.contextPercent >= 90);
+  }
+
   private scrollToBottom(): void {
     if (!this.messagesEl.offsetParent) {
       // Element is detached from DOM (tab not visible) — defer scroll
@@ -1369,6 +1406,8 @@ export class AgentView implements ContentView {
     this.cursorPos = 0;
     this.promptHistory = [];
     this.historyIdx = -1;
+    this.statusLineEl.textContent = '';
+    this.statusLineEl.classList.remove('agent-view__status-line--visible');
     this.renderInput();
   }
 

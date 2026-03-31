@@ -1,0 +1,193 @@
+/* ─── Progress Gauge (OSC 9;4) ─── */
+/* Large centered arc gauge rendered behind terminal content as a HUD background */
+
+.krypton-progress-gauge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateZ(10px);
+  width: min(60%, 220px);
+  height: min(60%, 220px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.krypton-progress-gauge--visible {
+  opacity: 1;
+}
+
+.krypton-progress-gauge__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter:
+    drop-shadow(0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5))
+    drop-shadow(0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15));
+}
+
+.krypton-progress-gauge__track {
+  fill: none;
+  stroke: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.06);
+  stroke-width: 3;
+}
+
+.krypton-progress-gauge__fill {
+  fill: none;
+  stroke: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.2);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dasharray 300ms ease-out;
+}
+
+/* Percentage text centered inside the gauge */
+.krypton-progress-gauge__pct {
+  fill: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  font-size: 28px;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  transition: fill 0.3s ease;
+}
+
+/* Smaller status label below percentage ("LOADING", "ERROR", "PAUSED") */
+.krypton-progress-gauge__label {
+  fill: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
+  font-size: 7px;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-anchor: middle;
+  dominant-baseline: central;
+  text-transform: uppercase;
+}
+
+/* ── Normal state ────────────────────────────── */
+/* (default styles above) */
+
+/* ── Error state ─────────────────────────────── */
+.krypton-progress-gauge--error .krypton-progress-gauge__fill {
+  stroke: rgba(255, 51, 102, 0.25);
+}
+
+.krypton-progress-gauge--error .krypton-progress-gauge__track {
+  stroke: rgba(255, 51, 102, 0.06);
+}
+
+.krypton-progress-gauge--error .krypton-progress-gauge__pct {
+  fill: rgba(255, 51, 102, 0.15);
+}
+
+.krypton-progress-gauge--error .krypton-progress-gauge__label {
+  fill: rgba(255, 51, 102, 0.1);
+}
+
+.krypton-progress-gauge--error .krypton-progress-gauge__svg {
+  filter:
+    drop-shadow(0 0 6px rgba(255, 51, 102, 0.5))
+    drop-shadow(0 0 20px rgba(255, 51, 102, 0.15));
+}
+
+/* ── Paused state ────────────────────────────── */
+.krypton-progress-gauge--paused .krypton-progress-gauge__fill {
+  stroke: rgba(255, 170, 0, 0.2);
+}
+
+.krypton-progress-gauge--paused .krypton-progress-gauge__track {
+  stroke: rgba(255, 170, 0, 0.06);
+}
+
+.krypton-progress-gauge--paused .krypton-progress-gauge__pct {
+  fill: rgba(255, 170, 0, 0.12);
+}
+
+.krypton-progress-gauge--paused .krypton-progress-gauge__label {
+  fill: rgba(255, 170, 0, 0.08);
+}
+
+.krypton-progress-gauge--paused .krypton-progress-gauge__svg {
+  filter:
+    drop-shadow(0 0 6px rgba(255, 170, 0, 0.4))
+    drop-shadow(0 0 20px rgba(255, 170, 0, 0.1));
+}
+
+/* ── Indeterminate state ─────────────────────── */
+.krypton-progress-gauge--indeterminate .krypton-progress-gauge__fill {
+  animation: krypton-gauge-orbit 1.8s linear infinite;
+  transform-origin: 50px 50px;
+}
+
+/* ── Completion flare ────────────────────────── */
+.krypton-progress-gauge--flare .krypton-progress-gauge__svg {
+  animation: krypton-gauge-flare 0.8s ease-out forwards;
+}
+
+.krypton-progress-gauge--fade-out {
+  opacity: 0;
+  transition: opacity 1.5s ease-out;
+}
+
+@keyframes krypton-gauge-orbit {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes krypton-gauge-flare {
+  0%   {
+    filter: drop-shadow(0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5))
+            drop-shadow(0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15));
+  }
+  50%  {
+    filter: drop-shadow(0 0 15px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9))
+            drop-shadow(0 0 40px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4));
+  }
+  100% {
+    filter: drop-shadow(0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5))
+            drop-shadow(0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15));
+  }
+}
+
+/* ── Titlebar scanline sweep (secondary cue) ── */
+.krypton-window__titlebar {
+  position: relative;
+  overflow: hidden;
+}
+
+.krypton-window__titlebar--progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12) 40%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2) 50%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12) 60%,
+    transparent 100%
+  );
+  animation: krypton-scanline-sweep 2.5s linear infinite;
+  pointer-events: none;
+}
+
+.krypton-window__titlebar--progress-error::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 51, 102, 0.12) 40%,
+    rgba(255, 51, 102, 0.2) 50%,
+    rgba(255, 51, 102, 0.12) 60%,
+    transparent 100%
+  );
+}
+
+.krypton-window__titlebar--progress-paused::after {
+  animation-play-state: paused;
+}
+
+@keyframes krypton-scanline-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+

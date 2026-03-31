@@ -21,13 +21,26 @@ import {
   type SkillMatch,
 } from './skills';
 
+/** Token usage snapshot */
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  cost: number;           // total cost in dollars
+  contextWindow: number;  // model's max context size
+  contextPercent: number; // usage.input / contextWindow (0-100)
+}
+
 /** Normalized events emitted to AgentView for rendering */
 export type AgentEventType =
   | { type: 'agent_start' }
-  | { type: 'agent_end' }
+  | { type: 'agent_end'; usage?: TokenUsage }
   | { type: 'message_update'; delta: string }
   | { type: 'tool_start'; name: string; args: string }
   | { type: 'tool_end'; name: string; isError: boolean; result?: string; diff?: string; filePath?: string }
+  | { type: 'usage_update'; usage: TokenUsage }
   | { type: 'error'; message: string };
 
 export type AgentEventCallback = (e: AgentEventType) => void;
@@ -49,6 +62,10 @@ export class AgentController {
   // Session persistence
   private session: SessionHandle | null = null;
   private lastEntryId: string | null = null;
+
+  // Cumulative token usage across all turns
+  private cumulativeUsage: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, contextWindow: 0, contextPercent: 0 };
+  private modelContextWindow = 128000;
 
   // Skills
   private skillIndex: SkillMeta[] = [];
@@ -85,10 +102,13 @@ export class AgentController {
       import('@mariozechner/pi-ai'),
     ]);
 
+    const model = { ...getModel('zai', 'glm-4.7'), baseUrl: 'https://api.z.ai/api/coding/paas/v4' };
+    this.modelContextWindow = model.contextWindow ?? 128000;
+
     return new Agent({
       initialState: {
         systemPrompt: this.buildBasePrompt(),
-        model: { ...getModel('zai', 'glm-4.7'), baseUrl: 'https://api.z.ai/api/coding/paas/v4' },
+        model,
         tools: createKryptonTools(this.projectDir, this.skillIndex),
       },
       getApiKey: (provider: string) => (provider === 'zai' ? apiKey : undefined),
@@ -193,6 +213,11 @@ export class AgentController {
     return this.lastActiveSkills;
   }
 
+  /** Get cumulative token usage for the session. */
+  getUsage(): TokenUsage {
+    return { ...this.cumulativeUsage };
+  }
+
   /** Get command-type skills (from .claude/commands/) for slash command registration. */
   getCommands(): SkillMeta[] {
     return this.skillIndex.filter((s) => s.isCommand);
@@ -236,19 +261,8 @@ export class AgentController {
       // Track the last entry ID for parentId chaining
       this.lastEntryId = messageEntries[messageEntries.length - 1].id;
 
-      // Restore messages into agent context so it has history for reference
-      if (this.agent) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const messages = messageEntries.map((e) => e.message as any);
-
-        // Append a boundary marker so the model treats prior messages as history
-        messages.push(
-          { role: 'user', content: '[Session resumed — the messages above are history from a previous session. Do not continue or repeat any prior tasks. Wait for my next message.]' },
-          { role: 'assistant', content: [{ type: 'text', text: 'Understood. Previous conversation is context only. Ready for your next request.' }] },
-        );
-
-        this.agent.replaceMessages(messages);
-      }
+      // Do NOT restore messages into agent LLM context — they are for UI display only.
+      // Loading full history would consume thousands of tokens on every prompt.
 
       return messageEntries.map((e) => ({
         role: (e.message.role as string) ?? 'unknown',
@@ -351,8 +365,30 @@ export class AgentController {
             }
           }
 
-          onEvent({ type: 'agent_end' });
+          onEvent({ type: 'agent_end', usage: { ...this.cumulativeUsage } });
           this.notifyChange();
+          break;
+        }
+
+        case 'message_end': {
+          // Extract usage from completed assistant message
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const msg = e.message as any;
+          if (msg?.usage) {
+            const u = msg.usage;
+            this.cumulativeUsage.input += u.input ?? 0;
+            this.cumulativeUsage.output += u.output ?? 0;
+            this.cumulativeUsage.cacheRead += u.cacheRead ?? 0;
+            this.cumulativeUsage.cacheWrite += u.cacheWrite ?? 0;
+            this.cumulativeUsage.totalTokens += u.totalTokens ?? 0;
+            this.cumulativeUsage.cost += u.cost?.total ?? 0;
+            // usage.input from the latest response = current context size
+            this.cumulativeUsage.contextWindow = this.modelContextWindow;
+            this.cumulativeUsage.contextPercent = this.modelContextWindow > 0
+              ? Math.round(((u.input ?? 0) / this.modelContextWindow) * 100)
+              : 0;
+            onEvent({ type: 'usage_update', usage: { ...this.cumulativeUsage } });
+          }
           break;
         }
 
@@ -430,6 +466,7 @@ export class AgentController {
     this.skillIndex = [];
     this.forcedSkill = null;
     this.lastActiveSkills = [];
+    this.cumulativeUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, contextWindow: 0, contextPercent: 0 };
   }
 
   /** Return a snapshot of the agent's internal context for inspection */

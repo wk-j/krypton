@@ -1,0 +1,299 @@
+/* ─── Which-Key Popup ─── */
+.krypton-whichkey {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 48px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.krypton-whichkey--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.krypton-whichkey__popup {
+  background: var(--krypton-whichkey-bg, rgba(6, 10, 18, 0.85));
+  border: 1px solid var(--krypton-whichkey-border, rgba(0, 200, 255, 0.4));
+  padding: 10px 14px;
+  min-width: 240px;
+}
+
+.krypton-whichkey__title {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--krypton-whichkey-title, #0cf);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--krypton-whichkey-separator, rgba(0, 200, 255, 0.2));
+}
+
+.krypton-whichkey__keys {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.krypton-whichkey__entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.krypton-whichkey__key {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--krypton-whichkey-key, #0cf);
+  min-width: 28px;
+  text-align: center;
+}
+
+.krypton-whichkey__label {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
+}
+
+/* ─── Hint Mode Overlay ─── */
+.krypton-hint-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+}
+
+.krypton-hint {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.krypton-hint__label {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 2px;
+  background: var(--krypton-hint-bg, #f4bf75);
+  color: var(--krypton-hint-fg, #181818);
+  white-space: nowrap;
+  transition: opacity 0.08s ease;
+}
+
+.krypton-hint--dimmed .krypton-hint__label {
+  opacity: 0.15;
+}
+
+.krypton-hint__label-matched {
+  color: var(--krypton-hint-matched-fg, #8a7444);
+}
+
+/* "No hints found" toast */
+.krypton-hint-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--krypton-whichkey-title, #0cf);
+  background: var(--krypton-whichkey-bg, rgba(6, 10, 18, 0.85));
+  border: 1px solid var(--krypton-whichkey-border, rgba(0, 200, 255, 0.4));
+  padding: 6px 14px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.krypton-hint-toast--visible {
+  opacity: 1;
+}
+
+/* ─── Quick Terminal Overlay ─── */
+.krypton-quick-terminal {
+  z-index: 5000;
+  /* Slightly stronger background for overlay feel */
+  background: var(--krypton-qt-bg, rgba(6, 10, 18, 0.6));
+  box-shadow:
+    0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.1)),
+    0 8px 32px rgba(0, 0, 0, 0.4);
+  /* Hidden by default — toggled via JS */
+  display: none;
+  /* 3D floating — perspective() in transform so it affects THIS element */
+  transform-origin: center top !important;
+  transform-style: preserve-3d;
+}
+
+.krypton-quick-terminal.krypton-quick-terminal--visible {
+  display: flex;
+  /* Resting 3D float: tilted slightly toward viewer, pushed forward in Z */
+  transform: perspective(800px) rotateX(1.5deg) translateZ(20px);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.6),
+    0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.12)),
+    0 0 80px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 40px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02);
+}
+
+.krypton-quick-terminal.krypton-window--focused {
+  border-color: var(--krypton-focused-border, rgba(0, 200, 255, 0.6));
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.65),
+    0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.18)),
+    0 0 100px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 40px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
+}
+
+/* ─── Command Palette ─── */
+.krypton-palette {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.krypton-palette--visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.krypton-palette__container {
+  width: 500px;
+  max-width: 90vw;
+  background: var(--krypton-palette-bg, rgba(6, 10, 18, 0.92));
+  border: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.4));
+  border-radius: 4px;
+  box-shadow:
+    0 0 30px rgba(0, 200, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.krypton-palette__input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.2));
+}
+
+.krypton-palette__prompt {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--krypton-palette-highlight, #0cf);
+  flex-shrink: 0;
+}
+
+.krypton-palette__input {
+  flex: 1;
+  background: var(--krypton-palette-input-bg, transparent);
+  border: none;
+  outline: none;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--krypton-palette-input-text, #c0c5ce);
+  caret-color: var(--krypton-palette-highlight, #0cf);
+}
+
+.krypton-palette__input::placeholder {
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
+  font-style: italic;
+}
+
+.krypton-palette__results {
+  max-height: 360px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--krypton-palette-border, rgba(0, 200, 255, 0.2)) transparent;
+}
+
+.krypton-palette__empty {
+  padding: 16px 14px;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
+  text-align: center;
+}
+
+.krypton-palette__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 0.06s ease;
+}
+
+.krypton-palette__item:hover {
+  background: rgba(0, 200, 255, 0.04);
+}
+
+.krypton-palette__item--selected {
+  background: rgba(0, 200, 255, 0.08);
+}
+
+.krypton-palette__item-category {
+  flex-shrink: 0;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--krypton-palette-highlight, #0cf);
+  background: rgba(0, 200, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 2px;
+  min-width: 48px;
+  text-align: center;
+}
+
+.krypton-palette__item-label {
+  flex: 1;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--krypton-palette-text, #c0c5ce);
+}
+
+.krypton-palette__item-label mark {
+  background: none;
+  color: var(--krypton-palette-highlight, #0cf);
+  font-weight: 700;
+}
+
+.krypton-palette__item-key {
+  flex-shrink: 0;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
+}
+

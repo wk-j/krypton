@@ -1,0 +1,488 @@
+/* ─── Workspace ─── */
+.krypton-workspace {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
+
+/* ─── Window ─── */
+.krypton-window {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: var(--krypton-backdrop-color, rgba(6, 10, 18, 0.5));
+  border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  border-radius: var(--krypton-border-radius, 0px);
+  overflow: visible;
+  box-shadow: 0 0 var(--krypton-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  /* backdrop-filter removed: on macOS, blur() in a transparent WKWebView causes
+     the compositor to snapshot (freeze) the desktop behind the element when the
+     window is focused, breaking live wallpaper / video desktop transparency.
+     The semi-transparent background color alone provides the tinted overlay. */
+  /* GPU-composited layer for smooth animations (transform, opacity) */
+  will-change: transform, opacity;
+  transform-origin: top left;
+}
+
+.krypton-window--focused {
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  box-shadow: 0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+}
+
+/* ─── Corner accents ─── */
+/* Small glowing L-shapes at each corner */
+.krypton-window__corner {
+  position: absolute;
+  width: var(--krypton-corner-size, 14px);
+  height: var(--krypton-corner-size, 14px);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.krypton-window__corner::before,
+.krypton-window__corner::after {
+  content: '';
+  position: absolute;
+  background: var(--krypton-window-accent, var(--krypton-corner-color, #0cf));
+  box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
+}
+
+/* Top-left corner */
+.krypton-window__corner--tl {
+  top: -1px;
+  left: -1px;
+}
+.krypton-window__corner--tl::before {
+  top: 0; left: 0;
+  width: var(--krypton-corner-size, 14px); height: var(--krypton-corner-thickness, 2px);
+}
+.krypton-window__corner--tl::after {
+  top: 0; left: 0;
+  width: var(--krypton-corner-thickness, 2px); height: var(--krypton-corner-size, 14px);
+}
+
+/* Top-right corner */
+.krypton-window__corner--tr {
+  top: -1px;
+  right: -1px;
+}
+.krypton-window__corner--tr::before {
+  top: 0; right: 0;
+  width: var(--krypton-corner-size, 14px); height: var(--krypton-corner-thickness, 2px);
+}
+.krypton-window__corner--tr::after {
+  top: 0; right: 0;
+  width: var(--krypton-corner-thickness, 2px); height: var(--krypton-corner-size, 14px);
+}
+
+/* Bottom-left corner */
+.krypton-window__corner--bl {
+  bottom: -1px;
+  left: -1px;
+}
+.krypton-window__corner--bl::before {
+  bottom: 0; left: 0;
+  width: var(--krypton-corner-size, 14px); height: var(--krypton-corner-thickness, 2px);
+}
+.krypton-window__corner--bl::after {
+  bottom: 0; left: 0;
+  width: var(--krypton-corner-thickness, 2px); height: var(--krypton-corner-size, 14px);
+}
+
+/* Bottom-right corner */
+.krypton-window__corner--br {
+  bottom: -1px;
+  right: -1px;
+}
+.krypton-window__corner--br::before {
+  bottom: 0; right: 0;
+  width: var(--krypton-corner-size, 14px); height: var(--krypton-corner-thickness, 2px);
+}
+.krypton-window__corner--br::after {
+  bottom: 0; right: 0;
+  width: var(--krypton-corner-thickness, 2px); height: var(--krypton-corner-size, 14px);
+}
+
+/* ─── Header accent bar ─── */
+/* Decorative striped bar below the titlebar */
+.krypton-window__header-accent {
+  height: var(--krypton-header-accent-height, 6px);
+  margin: 0 var(--krypton-header-accent-margin, 20px);
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 0px,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  flex-shrink: 0;
+}
+
+/* ─── Chrome — title bar ─── */
+.krypton-window__chrome {
+  flex-shrink: 0;
+}
+
+.krypton-window__titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--krypton-titlebar-height, 28px);
+  padding: 0 12px;
+  background: var(--krypton-titlebar-bg, transparent);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.krypton-window__label-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.krypton-window__status-dot {
+  width: var(--krypton-status-dot-size, 6px);
+  height: var(--krypton-status-dot-size, 6px);
+  background: var(--krypton-window-accent, var(--krypton-status-dot-color, #0cf));
+}
+
+.krypton-window__label {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
+}
+
+.krypton-window__pty-status {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--krypton-titlebar-text, rgba(0, 200, 255, 0.4));
+}
+
+/* ─── Pinned Window Indicator ─── */
+.krypton-window--pinned .krypton-window__label-group::after {
+  content: '\u25C8';  /* Unicode diamond with dot */
+  font-size: 10px;
+  color: var(--krypton-window-accent, var(--krypton-pin-color, #0cf));
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  margin-left: 4px;
+}
+
+/* ─── Tab Bar ─── */
+.krypton-window__tabbar {
+  display: none;
+  flex-shrink: 0;
+  height: var(--krypton-tab-height, 28px);
+  padding: 0 6px;
+  gap: 2px;
+  align-items: stretch;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02) 0px,
+      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  overflow: hidden;
+}
+
+.krypton-window__tabbar--visible {
+  display: flex;
+}
+
+/* ─── Tab ─── */
+.krypton-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.2s ease;
+}
+
+/* Diagonal separator between tabs */
+.krypton-tab + .krypton-tab::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 20%;
+  bottom: 20%;
+  width: 1px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  transform: rotate(12deg);
+}
+
+/* Active tab styling */
+.krypton-tab--active {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.07);
+  clip-path: polygon(4px 0%, calc(100% - 4px) 0%, 100% 100%, 0% 100%);
+  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+  animation: krypton-tab-pulse 3s ease-in-out infinite;
+}
+
+@keyframes krypton-tab-pulse {
+  0%, 100% {
+    background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05);
+    border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+    box-shadow: inset 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05);
+  }
+  50% {
+    background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+    border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
+    box-shadow: inset 0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  }
+}
+
+/* Active tab bottom accent line with glow */
+.krypton-tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
+  box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  animation: krypton-tab-glow 3s ease-in-out infinite;
+}
+
+@keyframes krypton-tab-glow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+    opacity: 0.6;
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
+    opacity: 1;
+  }
+}
+
+/* Animated scan line on active tab */
+.krypton-tab--active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15),
+    transparent
+  );
+  animation: krypton-tab-scan 4s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes krypton-tab-scan {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+/* Inactive tab hover */
+.krypton-tab:not(.krypton-tab--active):hover {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
+}
+
+.krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title,
+.krypton-tab:not(.krypton-tab--active):hover .krypton-tab__index {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+}
+
+/* ─── Tab Index ─── */
+.krypton-tab__index {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+  min-width: 16px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.krypton-tab--active .krypton-tab__index {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.55);
+}
+
+/* ─── Tab Dot (status indicator) ─── */
+.krypton-tab__dot {
+  width: 4px;
+  height: 4px;
+  flex-shrink: 0;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+}
+
+.krypton-tab--active .krypton-tab__dot {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
+  box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+}
+
+/* ─── Tab Title ─── */
+.krypton-tab__title {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: var(--krypton-tab-font-size, 11px);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-tab--active .krypton-tab__title {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
+  font-weight: 600;
+  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+}
+
+/* ─── Window content area (body + sidebar) ─── */
+/* 3D perspective wrapper — sits between the window and content area.
+   Isolates the 3D context from backdrop-filter on .krypton-window
+   (backdrop-filter flattens preserve-3d in all browsers). */
+.krypton-window__perspective {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  perspective: var(--krypton-perspective, none);
+}
+
+.krypton-window__content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  background: transparent;
+  position: relative;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--krypton-perspective-tilt-x, 0deg))
+             rotateY(var(--krypton-perspective-tilt-y, 0deg));
+}
+
+/* ─── Background Animations (Claude processing) ─── */
+.krypton-flame-canvas,
+.krypton-brainwave-canvas,
+.krypton-matrix-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: none;
+  opacity: 0;
+  /* Force GPU compositing in preserve-3d context (WebKit) */
+  transform: translateZ(0);
+}
+
+/* ─── Pane containers ─── */
+/* Pane is ALWAYS flex column. Extension bars are flex siblings of __terminal.
+   This eliminates the layout mode switch that caused terminal overflow. */
+.krypton-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* Terminal wrapper — the flex-growing child that shrinks when extension bars
+   are inserted as siblings. xterm.js opens into this, not the pane directly. */
+.krypton-pane__terminal {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Edge glow — accent-tinted gradient over the first/last terminal rows.
+   NOTE: Cannot use backdrop-filter here — blur() causes window freeze on
+   transparent WKWebView on macOS.  Instead we use a gradient background
+   whose opacity is driven by --krypton-glow-intensity.
+   NOTE: calc() inside rgba() alpha is unreliable in WKWebView, so we use
+   a fixed-alpha gradient and control brightness via the element's opacity. */
+.krypton-glow-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--krypton-terminal-cell-height, 17px) * 5 + 4px);
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35),
+    transparent 100%
+  );
+  opacity: var(--krypton-glow-intensity, 0.8);
+  mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 12;
+}
+
+.krypton-glow-overlay--bottom {
+  top: auto;
+  bottom: 0;
+  background: linear-gradient(
+    to top,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35),
+    transparent 100%
+  );
+  mask-image: linear-gradient(to top, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 100%);
+}
+
+.krypton-pane--focused {
+  box-shadow: inset 0 0 0 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+}
+
+.krypton-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.krypton-split--vertical {
+  flex-direction: row;
+}
+
+.krypton-split--horizontal {
+  flex-direction: column;
+}
+
+.krypton-split__divider {
+  flex-shrink: 0;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  transform: translateZ(30px);
+}
+
+.krypton-split--vertical > .krypton-split__divider {
+  width: 1px;
+  cursor: col-resize;
+}
+
+.krypton-split--horizontal > .krypton-split__divider {
+  height: 1px;
+  cursor: row-resize;
+}
+

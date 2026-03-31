@@ -3760,6 +3760,25 @@ html, body {
   display: block;
 }
 
+/* ═══ Status line — token usage ═════════════════════════════════ */
+
+.agent-view__status-line {
+  display: none;
+  padding: 3px 16px;
+  font-size: 11px;
+  font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
+  letter-spacing: 0.06em;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.agent-view__status-line--visible {
+  display: block;
+}
+
 /* ═══ Input row — HUD command line ═════════════════════════════ */
 
 .agent-view__input-row {

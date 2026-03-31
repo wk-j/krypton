@@ -1,0 +1,13 @@
+@import './base.css';
+@import './window.css';
+@import './terminal.css';
+@import './overlays.css';
+@import './progress.css';
+@import './shaders.css';
+@import './extensions.css';
+@import './dashboard.css';
+@import './hooks.css';
+@import './cursor-trail.css';
+@import './diff-view.css';
+@import './markdown-view.css';
+@import './agent.css';

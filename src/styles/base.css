@@ -1,0 +1,17 @@
+/* Krypton — Global Styles */
+/* Sci-fi HUD panel aesthetic — all colors driven by --krypton-* CSS custom properties */
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', 'Fira Code', monospace;
+}
+
