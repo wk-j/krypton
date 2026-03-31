@@ -442,7 +442,7 @@
 
 .agent-view__tool-command {
   font-family: var(--krypton-font-family, monospace);
-  font-size: 13px;
+  font-size: 14px;
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.85);
   padding: 3px 8px;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
@@ -488,7 +488,7 @@
 
 .agent-view__tool-name {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -496,7 +496,7 @@
 
 .agent-view__tool-args {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
-  font-size: 13px;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -509,7 +509,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5);
-  font-size: 13px;
+  font-size: 14px;
   border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
   padding-left: 8px;
 }
