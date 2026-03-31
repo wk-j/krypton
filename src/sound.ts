@@ -2,7 +2,7 @@
 // Thin frontend wrapper that delegates all audio playback to the Rust
 // sound engine via Tauri commands. No Web Audio API usage.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './profiler/ipc';
 
 // ─── Types ────────────────────────────────────────────────────────
 

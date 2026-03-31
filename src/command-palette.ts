@@ -2,7 +2,7 @@
 // Fuzzy-searchable overlay listing every action in Krypton.
 // Activated by Cmd+Shift+P. Each entry shows the action name and keybinding.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './profiler/ipc';
 import { Compositor } from './compositor';
 import type { DashboardShortcut } from './types';
 

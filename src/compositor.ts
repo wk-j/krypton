@@ -1,7 +1,8 @@
 // Krypton — Compositor
 // Manages terminal windows: creation, destruction, layout, focus, resize, move.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './profiler/ipc';
+import { collector } from './profiler/metrics';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal } from '@xterm/xterm';
@@ -261,7 +262,7 @@ export class Compositor {
 
   // ─── Claude Hook Manager ────────────────────────────────────────
   private claudeHookManager: ClaudeHookManager | null = null;
-  private hookToastsEnabled: boolean = true;
+  private hookToastsEnabled: boolean = false;
   private pendingHookAnimation: string | null = null;
 
   // ─── Config-backed settings ──────────────────────────────────────
@@ -323,6 +324,10 @@ export class Compositor {
 
   /** Dashboard overlay manager */
   private dashboards: DashboardManager = new DashboardManager();
+
+  /** Profiler HUD overlay (lazy-created on first toggle) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private profilerHud: any = null;
 
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
@@ -1570,6 +1575,15 @@ export class Compositor {
     agentView.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
 
     await this.createContentTab('AI  glm-4.7', agentView);
+  }
+
+  /** Toggle the profiler HUD overlay (non-modal, docked top-right). */
+  async toggleProfilerHud(): Promise<void> {
+    if (!this.profilerHud) {
+      const { ProfilerHud } = await import('./profiler/profiler-hud');
+      this.profilerHud = new ProfilerHud();
+    }
+    this.profilerHud.toggle();
   }
 
   /**
@@ -3213,8 +3227,9 @@ export class Compositor {
 
   /** Recalculate grid layout and apply positions to all windows */
   relayout(): void {
+    collector.layoutStart();
     const count = this.windows.size;
-    if (count === 0) return;
+    if (count === 0) { collector.layoutEnd(); return; }
 
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -3243,6 +3258,7 @@ export class Compositor {
       }
 
       this.applyBounds(win);
+      collector.layoutEnd();
       return;
     }
 
@@ -3251,6 +3267,7 @@ export class Compositor {
     } else {
       this.relayoutGrid(vw, vh, count);
     }
+    collector.layoutEnd();
   }
 
   /** Grid layout: tile windows in a balanced grid within a centered region */
@@ -3472,6 +3489,9 @@ export class Compositor {
   private setupPtyListeners(): void {
     listen<[number, number[]]>('pty-output', (event) => {
       const [sid, data] = event.payload;
+
+      // Record bytes for profiler PTY throughput
+      collector.recordPtyBytes(sid, data.length);
 
       // Detect standalone BEL character (\x07) for terminal bell sound.
       // Skip BEL when it appears as an OSC sequence terminator (e.g. \x1b]0;title\x07)

@@ -134,13 +134,8 @@
 /* ─── Assistant messages ─────────────────────────────────────── */
 
 .agent-view__msg--assistant {
-  padding: 10px 14px;
-  background: linear-gradient(135deg, rgba(6, 10, 18, 0.6), rgba(10, 16, 28, 0.4));
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
-  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
-  box-shadow:
-    inset 0 0 30px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02),
-    0 2px 12px rgba(0, 0, 0, 0.25);
+  padding: 4px 100px 4px 12px;
+  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
   position: relative;
 }
 
@@ -158,6 +153,7 @@
   letter-spacing: 0.06em;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
   text-shadow: none;
+  padding: 1px 4px;
 }
 
 /* ─── System messages ────────────────────────────────────────── */
@@ -198,10 +194,9 @@
 
 .agent-view__msg-body--markdown pre {
   margin: 0.6em 0;
-  padding: 12px 14px;
-  background: rgba(6, 10, 18, 0.7);
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
-  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  padding: 10px 14px;
+  background: rgba(6, 10, 18, 0.4);
+  border: none;
   border-radius: 2px;
   overflow-x: auto;
   scrollbar-width: thin;

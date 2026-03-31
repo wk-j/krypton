@@ -343,7 +343,7 @@ impl Default for HooksConfig {
         Self {
             enabled: true,
             port: 0,
-            show_toasts: true,
+            show_toasts: false,
             max_toasts: 20,
             animation: "brainwave".to_string(),
         }

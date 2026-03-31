@@ -188,7 +188,7 @@ export class NotificationController {
 
   registerOscHandlers(terminal: Terminal): void {
     terminal.parser.registerOscHandler(9, (data: string) => {
-      if (data) {
+      if (data && !/^[\d;]+$/.test(data)) {
         this.show({ message: data, level: 'info', label: 'TERM' });
       }
       return true;

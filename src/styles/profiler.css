@@ -1,0 +1,54 @@
+/* Krypton — Profiler HUD overlay */
+
+.krypton-profiler-hud {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  width: 340px;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  font-family: var(--krypton-font-family, monospace);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--krypton-foreground, #c5c8c6);
+  background: var(--krypton-background, rgba(20, 20, 20, 0.92));
+  border: 1px solid var(--krypton-border, rgba(80, 200, 255, 0.2));
+  border-radius: 4px;
+  padding: 8px 12px;
+  overflow: hidden;
+  white-space: pre;
+}
+
+.krypton-profiler-hud--visible {
+  opacity: 0.88;
+}
+
+.krypton-profiler-hud__title {
+  color: var(--krypton-accent, #50c8ff);
+  font-weight: bold;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--krypton-border, rgba(80, 200, 255, 0.15));
+  padding-bottom: 4px;
+}
+
+.krypton-profiler-hud__section-header {
+  color: var(--krypton-accent, #50c8ff);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  margin-top: 8px;
+  opacity: 0.7;
+}
+
+.krypton-profiler-hud__section {
+  color: var(--krypton-dim, rgba(197, 200, 198, 0.6));
+  font-size: 11px;
+  min-height: 1.6em;
+}
+
+.krypton-profiler-hud__row {
+  white-space: pre;
+}

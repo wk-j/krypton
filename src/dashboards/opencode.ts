@@ -4,7 +4,7 @@
 // terminal's project. Organized into keyboard-navigable tabs.
 // Toggled via Cmd+Shift+O.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../profiler/ipc';
 import type { DashboardDefinition, DashboardTab } from '../types';
 import type { Compositor } from '../compositor';
 

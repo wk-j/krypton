@@ -2,7 +2,7 @@
 // Receives full theme data from the backend, sets CSS custom properties on
 // document.documentElement, and updates xterm.js terminal instances.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './profiler/ipc';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
 // ─── Theme Data Types (mirrors Rust FullTheme) ───────────────────

@@ -3,7 +3,8 @@
 // CWD-aware system prompt, Krypton-specific tool registration,
 // and pi-compatible JSONL session persistence.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../profiler/ipc';
+import { collector } from '../profiler/metrics';
 import { createKryptonTools } from './tools';
 import {
   createSession,
@@ -366,6 +367,7 @@ export class AgentController {
             }
           }
 
+          collector.agentPromptEnd(this.cumulativeUsage.output);
           onEvent({ type: 'agent_end', usage: { ...this.cumulativeUsage } });
           this.notifyChange();
           break;
@@ -398,6 +400,7 @@ export class AgentController {
           // AssistantMessageEvent is a discriminated union; we only care about text_delta
           const ev = e.assistantMessageEvent;
           if (ev?.type === 'text_delta' && typeof ev.delta === 'string') {
+            collector.agentFirstToken();
             onEvent({ type: 'message_update', delta: ev.delta });
             this.notifyChange();
           }
@@ -436,6 +439,7 @@ export class AgentController {
 
     try {
       console.log('[agent] calling agent.prompt()');
+      collector.agentPromptStart(text);
       await this.agent.prompt(text);
       console.log('[agent] agent.prompt() resolved');
     } catch (e) {

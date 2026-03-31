@@ -488,9 +488,13 @@ export class InputRouter {
         break;
       }
 
-      // Toggle pin on focused window
+      // p — toggle pin / Shift+P — toggle profiler HUD
       case 'p':
-        this.compositor.togglePin().then(() => this.toNormal());
+        if (e.shiftKey) {
+          this.compositor.toggleProfilerHud().then(() => this.toNormal());
+        } else {
+          this.compositor.togglePin().then(() => this.toNormal());
+        }
         break;
 
       // Toggle focus layout

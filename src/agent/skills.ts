@@ -8,7 +8,7 @@
 // Skills are auto-matched by keyword; commands are invocable as /command-name.
 // Matched content is injected into the agent's system prompt.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../profiler/ipc';
 
 // ─── Types ────────────────────────────────────────────────────────────
 

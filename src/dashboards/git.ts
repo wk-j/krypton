@@ -2,7 +2,7 @@
 // Read-only overlay showing git status for the focused terminal's CWD.
 // Toggled via Cmd+Shift+G. Single tab — content fits without scrolling.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../profiler/ipc';
 import type { DashboardDefinition } from '../types';
 import type { Compositor } from '../compositor';
 

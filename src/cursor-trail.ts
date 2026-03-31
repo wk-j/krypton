@@ -1,10 +1,161 @@
 // Krypton — Cursor Trail (Rainbow Flame)
 // Spawns particles that rise, spread, and shift through rainbow colors
 // like a flame trailing behind the mouse cursor AND the terminal text cursor.
+//
+// Phase 2: When OffscreenCanvas is supported, all particle rendering runs in a
+// Web Worker — the main thread only forwards mouse/cursor positions. Falls back
+// to the legacy DOM-based implementation otherwise.
 
 import type { Compositor } from './compositor';
 
-interface Particle {
+const SPAWN_THROTTLE = 10;
+const MIN_MOVE = 2;
+const TEXT_CURSOR_SPAWN_INTERVAL = 50;
+
+// ─── OffscreenCanvas Worker Proxy ────────────────────────────────
+
+class CursorTrailWorker {
+  private compositor: Compositor | null = null;
+  private canvas: HTMLCanvasElement;
+  private worker: Worker;
+  private running = false;
+  private bound = false;
+  private lastMouseX = 0;
+  private lastMouseY = 0;
+  private lastMouseSpawn = 0;
+  private lastTextX = -1;
+  private lastTextY = -1;
+  private lastTextSpawn = 0;
+  private pollRafId = 0;
+
+  constructor() {
+    this.canvas = document.createElement('canvas');
+    this.canvas.className = 'krypton-cursor-trail-canvas';
+
+    const offscreen = this.canvas.transferControlToOffscreen();
+    this.worker = new Worker(
+      new URL('./cursor-trail-worker.ts', import.meta.url),
+      { type: 'module' }
+    );
+
+    const dpr = window.devicePixelRatio || 1;
+    this.worker.postMessage(
+      { type: 'init', canvas: offscreen, width: window.innerWidth, height: window.innerHeight, dpr },
+      [offscreen]
+    );
+  }
+
+  setCompositor(compositor: Compositor): void {
+    this.compositor = compositor;
+  }
+
+  init(): void {
+    if (this.bound) return;
+    this.bound = true;
+    this.running = true;
+
+    document.body.appendChild(this.canvas);
+    this.resize();
+
+    this.worker.postMessage({ type: 'start' });
+    document.addEventListener('mousemove', this.onMouseMove, true);
+    window.addEventListener('resize', this.onResize);
+    this.pollRafId = requestAnimationFrame(this.pollTick);
+  }
+
+  toggle(): void {
+    if (this.running) {
+      this.running = false;
+      this.worker.postMessage({ type: 'stop' });
+    } else {
+      this.running = true;
+      this.worker.postMessage({ type: 'start' });
+    }
+  }
+
+  destroy(): void {
+    document.removeEventListener('mousemove', this.onMouseMove, true);
+    window.removeEventListener('resize', this.onResize);
+    if (this.pollRafId) cancelAnimationFrame(this.pollRafId);
+    this.worker.postMessage({ type: 'dispose' });
+    this.worker.terminate();
+    this.canvas.remove();
+    this.bound = false;
+    this.running = false;
+  }
+
+  private resize(): void {
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
+    this.worker.postMessage({ type: 'resize', width: w, height: h, dpr });
+  }
+
+  private onResize = (): void => {
+    this.resize();
+  };
+
+  private onMouseMove = (e: MouseEvent): void => {
+    if (!this.running) return;
+    if (e.buttons !== 0) return;
+
+    const now = performance.now();
+    if (now - this.lastMouseSpawn < SPAWN_THROTTLE) return;
+
+    const dx = e.clientX - this.lastMouseX;
+    const dy = e.clientY - this.lastMouseY;
+    if (Math.abs(dx) + Math.abs(dy) < MIN_MOVE) return;
+
+    this.lastMouseX = e.clientX;
+    this.lastMouseY = e.clientY;
+    this.lastMouseSpawn = now;
+
+    this.worker.postMessage({ type: 'mouse', x: e.clientX, y: e.clientY });
+  };
+
+  private pollTick = (now: number): void => {
+    if (this.running) {
+      this.pollTextCursor(now);
+    }
+    this.pollRafId = requestAnimationFrame(this.pollTick);
+  };
+
+  private pollTextCursor(now: number): void {
+    if (!this.compositor) return;
+    if (now - this.lastTextSpawn < TEXT_CURSOR_SPAWN_INTERVAL) return;
+
+    const terminal = this.compositor.getActiveTerminal();
+    if (!terminal) return;
+
+    const buf = terminal.buffer.active;
+    const cursorCol = buf.cursorX;
+    const cursorRow = buf.cursorY;
+
+    const screenEl = terminal.element?.querySelector('.xterm-screen') as HTMLElement | null;
+    if (!screenEl) return;
+
+    const rect = screenEl.getBoundingClientRect();
+    const cellWidth = rect.width / terminal.cols;
+    const cellHeight = rect.height / terminal.rows;
+
+    const x = rect.left + cursorCol * cellWidth + cellWidth / 2;
+    const y = rect.top + cursorRow * cellHeight + cellHeight / 2;
+
+    if (cursorCol === this.lastTextX && cursorRow === this.lastTextY) return;
+
+    this.lastTextX = cursorCol;
+    this.lastTextY = cursorRow;
+    this.lastTextSpawn = now;
+
+    this.worker.postMessage({ type: 'cursor', x, y });
+  }
+}
+
+// ─── DOM Fallback (legacy implementation) ────────────────────────
+
+interface DOMParticle {
   el: HTMLDivElement;
   x: number;
   y: number;
@@ -16,16 +167,13 @@ interface Particle {
 }
 
 const LIFETIME = 700;
-const SPAWN_THROTTLE = 10;
-const MIN_MOVE = 2;
 const MAX_PARTICLES = 120;
 const PARTICLES_PER_MOVE = 3;
-const TEXT_CURSOR_SPAWN_INTERVAL = 50;  // ms between text cursor particle bursts
 const TEXT_CURSOR_PARTICLES = 2;
 
-export class CursorTrail {
+class CursorTrailDOM {
   private compositor: Compositor | null = null;
-  private particles: Particle[] = [];
+  private particles: DOMParticle[] = [];
   private hue = 0;
   private lastMouseX = 0;
   private lastMouseY = 0;
@@ -65,11 +213,8 @@ export class CursorTrail {
     this.particles.length = 0;
   }
 
-  // ─── Mouse cursor trail ───
-
   private onMouseMove = (e: MouseEvent): void => {
     if (!this.enabled) return;
-    // Suppress trail during mouse selection (any button held)
     if (e.buttons !== 0) return;
 
     const now = performance.now();
@@ -88,8 +233,6 @@ export class CursorTrail {
     }
   };
 
-  // ─── Text cursor trail ───
-
   private pollTextCursor(now: number): void {
     if (!this.compositor) return;
     if (now - this.lastTextSpawn < TEXT_CURSOR_SPAWN_INTERVAL) return;
@@ -99,9 +242,8 @@ export class CursorTrail {
 
     const buf = terminal.buffer.active;
     const cursorCol = buf.cursorX;
-    const cursorRow = buf.cursorY; // viewport-relative row
+    const cursorRow = buf.cursorY;
 
-    // Find the terminal's screen element to compute pixel position
     const screenEl = terminal.element?.querySelector('.xterm-screen') as HTMLElement | null;
     if (!screenEl) return;
 
@@ -109,11 +251,9 @@ export class CursorTrail {
     const cellWidth = rect.width / terminal.cols;
     const cellHeight = rect.height / terminal.rows;
 
-    // Pixel position of cursor center (in viewport coords)
     const x = rect.left + cursorCol * cellWidth + cellWidth / 2;
     const y = rect.top + cursorRow * cellHeight + cellHeight / 2;
 
-    // Only spawn if cursor actually moved
     if (cursorCol === this.lastTextX && cursorRow === this.lastTextY) return;
 
     this.lastTextX = cursorCol;
@@ -124,8 +264,6 @@ export class CursorTrail {
       this.spawnParticle(x, y, now);
     }
   }
-
-  // ─── Shared particle logic ───
 
   private spawnParticle(x: number, y: number, now: number): void {
     while (this.particles.length >= MAX_PARTICLES) {
@@ -155,12 +293,10 @@ export class CursorTrail {
   }
 
   private tick = (now: number): void => {
-    // Poll text cursor each frame
     if (this.enabled) {
       this.pollTextCursor(now);
     }
 
-    // Remove expired
     while (this.particles.length > 0 && now - this.particles[0].birth > LIFETIME) {
       const old = this.particles.shift()!;
       old.el.remove();
@@ -191,4 +327,26 @@ export class CursorTrail {
 
     this.rafId = requestAnimationFrame(this.tick);
   };
+}
+
+// ─── Public API — auto-selects worker or DOM implementation ──────
+
+export interface CursorTrailAPI {
+  setCompositor(compositor: Compositor): void;
+  init(): void;
+  toggle(): void;
+  destroy(): void;
+}
+
+export type CursorTrail = CursorTrailAPI;
+
+export function createCursorTrail(): CursorTrailAPI {
+  if (typeof HTMLCanvasElement.prototype.transferControlToOffscreen === 'function') {
+    try {
+      return new CursorTrailWorker();
+    } catch {
+      // Worker creation failed — fall back to DOM
+    }
+  }
+  return new CursorTrailDOM();
 }

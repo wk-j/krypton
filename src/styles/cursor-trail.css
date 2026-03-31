@@ -1,4 +1,14 @@
 /* ─── Cursor Trail (Rainbow Flame) ─── */
+
+/* OffscreenCanvas worker version — full-viewport canvas */
+.krypton-cursor-trail-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99999;
+}
+
+/* DOM fallback — individual particle divs */
 .krypton-cursor-trail__particle {
   position: fixed;
   border-radius: 40% 40% 50% 50%;  /* teardrop-ish flame shape */

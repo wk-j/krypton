@@ -11,7 +11,7 @@ import { listen } from '@tauri-apps/api/event';
 import { FrontendThemeEngine } from './theme';
 import { createGitDashboard } from './dashboards/git';
 import { createOpenCodeDashboard } from './dashboards/opencode';
-import { CursorTrail } from './cursor-trail';
+import { createCursorTrail } from './cursor-trail';
 import { ClaudeHookManager } from './claude-hooks';
 import { NotificationController } from './notification';
 
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
   await compositor.createWindow();
 
   // Initialize cursor trail (rainbow flame effect on mouse + text cursor)
-  const cursorTrail = new CursorTrail();
+  const cursorTrail = createCursorTrail();
   cursorTrail.setCompositor(compositor);
   cursorTrail.init();
 

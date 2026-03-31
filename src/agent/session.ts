@@ -6,7 +6,7 @@
 // Each line is a JSON object with a "type" discriminator matching
 // @mariozechner/pi-agent-core's SessionManager format.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../profiler/ipc';
 
 // ─── Types ────────────────────────────────────────────────────────────
 

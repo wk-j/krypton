@@ -2,7 +2,7 @@
 // Canvas-based falling character columns with simulated depth (parallax).
 // Renders behind terminal content when Claude Code is actively processing.
 
-import { BackgroundAnimation } from './flame';
+import { BackgroundAnimation, RenderCtx } from './flame';
 
 /** Katakana range + digits + select Latin for the character pool */
 const CHAR_POOL: string[] = [];
@@ -62,11 +62,104 @@ function spawnColumn(x: number, H: number, startAbove: boolean): MatrixColumn {
   };
 }
 
+// ─── Pure Renderer (no DOM) ─────────────────────────────────────
+
+/** Pure matrix rain renderer — usable from both main thread and Web Worker */
+export class MatrixRenderer {
+  private columns: MatrixColumn[] = [];
+  private W: number = 0;
+  private H: number = 0;
+
+  init(W: number, H: number): void {
+    this.W = W;
+    this.H = H;
+    const count = Math.max(MIN_COLUMNS, Math.floor(W * COLUMN_DENSITY));
+    this.columns = [];
+    for (let i = 0; i < count; i++) {
+      const x = (i / count) * W + (Math.random() - 0.5) * (W / count) * 0.6;
+      this.columns.push(spawnColumn(x, H, false));
+    }
+    this.columns.sort((a, b) => b.depth - a.depth);
+  }
+
+  update(ctx: RenderCtx, W: number, H: number): void {
+    if (this.W !== W || this.H !== H) this.init(W, H);
+    this.updateAndDraw(ctx);
+  }
+
+  private updateAndDraw(ctx: RenderCtx): void {
+    for (const col of this.columns) {
+      // Advance position
+      col.y += col.speed;
+
+      // Cycle characters periodically
+      col.charTimer++;
+      if (col.charTimer >= col.charInterval) {
+        col.charTimer = 0;
+        const swaps = 1 + Math.floor(Math.random() * 3);
+        for (let s = 0; s < swaps; s++) {
+          const idx = Math.floor(Math.random() * col.chars.length);
+          col.chars[idx] = randomChar();
+        }
+      }
+
+      // Reset column when fully off-screen
+      const tailEnd = col.y - col.length * col.fontSize;
+      if (tailEnd > this.H) {
+        const newCol = spawnColumn(col.x, this.H, true);
+        newCol.x = col.x;
+        Object.assign(col, newCol);
+        col.y = -col.length * col.fontSize * Math.random();
+        continue;
+      }
+
+      // Draw characters from head upward
+      ctx.save();
+      ctx.font = `${col.fontSize}px monospace`;
+      ctx.textAlign = 'center';
+
+      for (let i = 0; i < col.length; i++) {
+        const charY = col.y - i * col.fontSize;
+
+        if (charY < -col.fontSize || charY > this.H + col.fontSize) continue;
+
+        const charIdx = i % col.chars.length;
+        const fadeRatio = 1 - i / col.length;
+
+        if (i === 0) {
+          ctx.globalAlpha = col.opacity;
+          ctx.fillStyle = '#e0ffe0';
+          ctx.fillText(col.chars[charIdx], col.x, charY);
+
+          ctx.globalAlpha = col.opacity * 0.5;
+          ctx.shadowColor = '#00ff41';
+          ctx.shadowBlur = col.fontSize * 0.8;
+          ctx.fillText(col.chars[charIdx], col.x, charY);
+          ctx.shadowBlur = 0;
+        } else {
+          const alpha = col.opacity * fadeRatio * fadeRatio;
+          if (alpha < 0.02) continue;
+
+          ctx.globalAlpha = alpha;
+          const g = Math.floor(255 - fadeRatio * 40);
+          const b = Math.floor(40 + (1 - fadeRatio) * 80);
+          ctx.fillStyle = `rgb(0,${g},${b})`;
+          ctx.fillText(col.chars[charIdx], col.x, charY);
+        }
+      }
+
+      ctx.restore();
+    }
+  }
+}
+
+// ─── DOM Animation (main-thread fallback) ────────────────────────
+
 /** Manages a single Matrix rain canvas animation instance */
 export class MatrixAnimation implements BackgroundAnimation {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private columns: MatrixColumn[] = [];
+  private renderer = new MatrixRenderer();
   private animFrame: number = 0;
   private running: boolean = false;
   private W: number = 0;
@@ -86,7 +179,7 @@ export class MatrixAnimation implements BackgroundAnimation {
     if (this.running) return;
     this.running = true;
     this.resize();
-    this.initColumns(false);
+    this.renderer.init(this.W, this.H);
     this.canvas.style.opacity = '0';
     this.canvas.style.display = 'block';
 
@@ -133,8 +226,6 @@ export class MatrixAnimation implements BackgroundAnimation {
     this.canvas.style.width = `${this.W}px`;
     this.canvas.style.height = `${this.H}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    this.redistributeColumns();
   }
 
   dispose(): void {
@@ -144,118 +235,15 @@ export class MatrixAnimation implements BackgroundAnimation {
       this.animFrame = 0;
     }
     this.canvas.remove();
-    this.columns = [];
-  }
-
-  // ─── Private ───────────────────────────────────────────────────
-
-  private initColumns(startAbove: boolean): void {
-    const count = Math.max(MIN_COLUMNS, Math.floor(this.W * COLUMN_DENSITY));
-    this.columns = [];
-    for (let i = 0; i < count; i++) {
-      const x = (i / count) * this.W + (Math.random() - 0.5) * (this.W / count) * 0.6;
-      this.columns.push(spawnColumn(x, this.H, startAbove));
-    }
-    // Sort by depth so back columns render first
-    this.columns.sort((a, b) => b.depth - a.depth);
-  }
-
-  private redistributeColumns(): void {
-    const count = Math.max(MIN_COLUMNS, Math.floor(this.W * COLUMN_DENSITY));
-    // Adjust column count if needed
-    while (this.columns.length < count) {
-      const x = Math.random() * this.W;
-      this.columns.push(spawnColumn(x, this.H, true));
-    }
-    while (this.columns.length > count) {
-      this.columns.pop();
-    }
-    // Redistribute x positions
-    for (let i = 0; i < this.columns.length; i++) {
-      this.columns[i].x = (i / count) * this.W + (Math.random() - 0.5) * (this.W / count) * 0.6;
-    }
-    this.columns.sort((a, b) => b.depth - a.depth);
+    this.renderer = new MatrixRenderer();
   }
 
   private tick = (): void => {
     if (!this.running) return;
 
     this.ctx.clearRect(0, 0, this.W, this.H);
-    this.updateAndDraw();
+    this.renderer.update(this.ctx, this.W, this.H);
 
     this.animFrame = requestAnimationFrame(this.tick);
   };
-
-  private updateAndDraw(): void {
-    const ctx = this.ctx;
-
-    for (const col of this.columns) {
-      // Advance position
-      col.y += col.speed;
-
-      // Cycle characters periodically
-      col.charTimer++;
-      if (col.charTimer >= col.charInterval) {
-        col.charTimer = 0;
-        // Swap 1-3 random chars in the tail
-        const swaps = 1 + Math.floor(Math.random() * 3);
-        for (let s = 0; s < swaps; s++) {
-          const idx = Math.floor(Math.random() * col.chars.length);
-          col.chars[idx] = randomChar();
-        }
-      }
-
-      // Reset column when fully off-screen
-      const tailEnd = col.y - col.length * col.fontSize;
-      if (tailEnd > this.H) {
-        const newCol = spawnColumn(col.x, this.H, true);
-        newCol.x = col.x; // keep same x slot
-        Object.assign(col, newCol);
-        col.y = -col.length * col.fontSize * Math.random();
-        continue;
-      }
-
-      // Draw characters from head upward
-      ctx.save();
-      ctx.font = `${col.fontSize}px monospace`;
-      ctx.textAlign = 'center';
-
-      for (let i = 0; i < col.length; i++) {
-        const charY = col.y - i * col.fontSize;
-
-        // Skip off-screen characters
-        if (charY < -col.fontSize || charY > this.H + col.fontSize) continue;
-
-        const charIdx = i % col.chars.length;
-        const fadeRatio = 1 - i / col.length; // 1 at head, 0 at tail
-
-        if (i === 0) {
-          // Head character — bright white-green glow
-          ctx.globalAlpha = col.opacity;
-          ctx.fillStyle = '#e0ffe0';
-          ctx.fillText(col.chars[charIdx], col.x, charY);
-
-          // Glow around head
-          ctx.globalAlpha = col.opacity * 0.5;
-          ctx.shadowColor = '#00ff41';
-          ctx.shadowBlur = col.fontSize * 0.8;
-          ctx.fillText(col.chars[charIdx], col.x, charY);
-          ctx.shadowBlur = 0;
-        } else {
-          // Tail characters — fade from green to transparent
-          const alpha = col.opacity * fadeRatio * fadeRatio; // quadratic falloff
-          if (alpha < 0.02) continue;
-
-          ctx.globalAlpha = alpha;
-          // Shift hue from bright green toward cyan-teal as it fades
-          const g = Math.floor(255 - fadeRatio * 40);
-          const b = Math.floor(40 + (1 - fadeRatio) * 80);
-          ctx.fillStyle = `rgb(0,${g},${b})`;
-          ctx.fillText(col.chars[charIdx], col.x, charY);
-        }
-      }
-
-      ctx.restore();
-    }
-  }
 }

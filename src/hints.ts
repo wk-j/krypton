@@ -3,7 +3,7 @@
 // overlays keyboard labels on matches, and executes actions when a label
 // is selected. Inspired by Rio Terminal hints.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './profiler/ipc';
 import type { Terminal } from '@xterm/xterm';
 import type { HintsConfig, HintRule } from './config';
 

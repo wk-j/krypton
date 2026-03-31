@@ -3,7 +3,7 @@
 // Uses process tree ownership: only shows java processes that are
 // descendants of the terminal's shell PID.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../profiler/ipc';
 import type { ContextExtension, ExtensionWidget, JavaServerInfo, JavaStats, ProcessInfo, SessionId } from '../types';
 
 /** Format a number, avoiding NaN display. */

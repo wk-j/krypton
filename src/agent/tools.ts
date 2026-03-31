@@ -3,7 +3,7 @@
 // Each tool wraps an existing Tauri IPC command.
 // Tools are CWD-aware: relative paths resolve against the project directory.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../profiler/ipc';
 import { Type, type Static } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import { loadSkillContent, type SkillMeta } from './skills';

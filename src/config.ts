@@ -2,7 +2,7 @@
 // TypeScript types mirroring the Rust config structs.
 // Loaded from backend via IPC on startup.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './profiler/ipc';
 
 export interface ShellConfig {
   program: string;

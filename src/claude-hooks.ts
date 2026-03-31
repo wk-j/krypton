@@ -4,11 +4,12 @@
 // scan-line toasts, and activity trace seismograph.
 
 import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './profiler/ipc';
 
 import { BackgroundAnimation, FlameAnimation } from './flame';
 import { BrainwaveAnimation } from './brainwave';
 import { MatrixAnimation } from './matrix';
+import { OffscreenAnimationProxy, supportsOffscreenCanvas } from './offscreen-animation';
 import type { NotificationController, NotificationLevel } from './notification';
 
 /** Claude Code hook event payload (emitted by Rust hook server) */
@@ -118,7 +119,7 @@ function toolTickCategory(toolName: string): string {
 export class ClaudeHookManager {
   private sessions: Map<string, ClaudeSession> = new Map();
   private toastContainer: HTMLElement | null = null;
-  private toastsEnabled: boolean = true;
+  private toastsEnabled: boolean = false;
   private maxToasts: number = 20;
   private hookPort: number = 0;
   private decodeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -976,6 +977,14 @@ export class ClaudeHookManager {
   }
 
   private createAnimationInstance(type: string): BackgroundAnimation {
+    // Use OffscreenCanvas worker to avoid main-thread jank during heavy PTY output
+    if (supportsOffscreenCanvas()) {
+      const anim = type === 'brainwave' ? 'brainwave'
+        : type === 'matrix' ? 'matrix'
+        : 'flame';
+      return new OffscreenAnimationProxy(anim);
+    }
+    // Fallback to main-thread rendering
     if (type === 'brainwave') return new BrainwaveAnimation();
     if (type === 'matrix') return new MatrixAnimation();
     return new FlameAnimation();

@@ -8,7 +8,7 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { AgentController, type AgentEventType } from './agent';
 import type { ContentView, PaneContentType } from '../types';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../profiler/ipc';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 

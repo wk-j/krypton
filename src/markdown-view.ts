@@ -5,7 +5,7 @@ import { Marked, Lexer } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './profiler/ipc';
 
 import type { ContentView, PaneContentType } from './types';
 
