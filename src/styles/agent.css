@@ -245,35 +245,76 @@
 
 /* ═══ Shell command output ═════════════════════════════════════ */
 
+.agent-view__msg--shell {
+  display: block;
+  position: relative;
+  padding: 0;
+  margin: 2px 0;
+}
+
 .agent-view__msg--shell .agent-view__msg-label {
-  background: rgba(57, 255, 127, 0.12);
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  color: rgba(57, 255, 127, 0.95);
+  background: rgba(57, 255, 127, 0.1);
+  border: 1px solid rgba(57, 255, 127, 0.3);
+  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+}
+
+.agent-view__msg--shell .agent-view__msg-body {
+  display: inline;
+  margin-left: 8px;
+  font-size: 15px;
   color: rgba(57, 255, 127, 0.85);
-  border: 1px solid rgba(57, 255, 127, 0.25);
+  text-shadow: 0 0 6px rgba(57, 255, 127, 0.15);
 }
 
 .agent-view__shell-result {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--krypton-font-family, monospace);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
-  padding: 10px 14px;
-  margin: 4px 0 12px 0;
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.9);
-  background: rgba(0, 0, 0, 0.35);
-  border-left: 3px solid rgba(57, 255, 127, 0.4);
-  border-radius: 0 4px 4px 0;
+  padding: 8px 12px;
+  margin: 4px 0 8px 0;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.85);
+  background:
+    linear-gradient(135deg, rgba(57, 255, 127, 0.03) 0%, rgba(0, 0, 0, 0.4) 100%);
+  border: 1px solid rgba(57, 255, 127, 0.1);
+  border-left: 2px solid rgba(57, 255, 127, 0.45);
+  position: relative;
+}
+
+.agent-view__shell-result::before {
+  content: '›';
+  position: absolute;
+  top: 8px;
+  left: -8px;
+  font-size: 12px;
+  color: rgba(57, 255, 127, 0.5);
 }
 
 .agent-view__shell-result--error {
-  color: rgba(255, 80, 80, 0.95);
-  border-left-color: rgba(255, 80, 80, 0.5);
-  background: rgba(255, 30, 30, 0.08);
+  color: rgba(255, 100, 100, 0.95);
+  border-color: rgba(255, 70, 70, 0.15);
+  border-left-color: rgba(255, 70, 70, 0.5);
+  background:
+    linear-gradient(135deg, rgba(255, 50, 50, 0.04) 0%, rgba(0, 0, 0, 0.4) 100%);
+}
+
+.agent-view__shell-result--error::before {
+  content: '✗';
+  color: rgba(255, 70, 70, 0.5);
 }
 
 .agent-view__shell-more {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.35);
   font-style: italic;
+  font-size: 12px;
 }
 
 /* ═══ Inline diff preview ══════════════════════════════════════ */
