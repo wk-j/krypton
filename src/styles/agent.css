@@ -401,11 +401,16 @@
 
 /* ═══ Streaming cursor ═════════════════════════════════════════ */
 
-.agent-view__stream-cursor {
+.agent-view__stream-cursor {/* AI response cursor - magenta */
   display: inline;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
-  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
-  animation: agent-cursor-pulse 1.2s ease-in-out infinite;
+  color: rgba(255, 100, 220, 1);
+  text-shadow: 0 0 8px rgba(255, 100, 220, 0.6);
+  animation: stream-cursor-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes stream-cursor-pulse {
+  0%, 100% { opacity: 1; text-shadow: 0 0 8px rgba(255, 100, 220, 0.6); }
+  50%      { opacity: 0.2; text-shadow: 0 0 2px rgba(255, 100, 220, 0.1); }
 }
 
 @keyframes agent-cursor-pulse {
