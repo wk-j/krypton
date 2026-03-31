@@ -502,6 +502,25 @@
   border-top-color: rgba(255, 70, 70, 0.2);
 }
 
+.agent-view__timer {
+  display: inline-block;
+  margin-right: 10px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  clip-path: polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 3px 100%, 0 calc(100% - 3px));
+  animation: agent-timer-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes agent-timer-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
 /* ═══ Input row — HUD command line ═════════════════════════════ */
 
 .agent-view__input-row {

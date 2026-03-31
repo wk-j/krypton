@@ -62,9 +62,11 @@ export class AgentView implements ContentView {
   private currentAssistantBuffer = '';
   private currentToolRowEl: HTMLElement | null = null;
 
-  // Spinner
+  // Spinner & timer
   private spinnerInterval: ReturnType<typeof setInterval> | null = null;
   private spinnerFrame = 0;
+  private promptStartTime = 0;
+  private timerInterval: ReturnType<typeof setInterval> | null = null;
 
   // Streaming markdown render throttle
   private streamRenderPending = false;
@@ -512,6 +514,7 @@ export class AgentView implements ContentView {
 
       case 'agent_end':
         this.stopSpinner();
+        this.stopTimer();
         this.promptGlyphEl.textContent = '❯';
         this.inputRowEl.classList.remove('agent-view__input-row--busy');
         // Render accumulated text as markdown
@@ -574,13 +577,18 @@ export class AgentView implements ContentView {
         break;
 
       case 'message_usage': {
-        // Annotate the current assistant message with its output token count (top-right)
+        // Annotate the current assistant message with token count + response time (top-right)
         const msgEl = this.currentAssistantTextEl?.closest('.agent-view__msg');
         if (msgEl) {
           const badge = document.createElement('span');
           badge.className = 'agent-view__msg-tokens';
           const n = e.outputTokens;
-          badge.textContent = n >= 1000 ? `${(n / 1000).toFixed(1)}k tok` : `${n} tok`;
+          const tokStr = n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+          const elapsed = this.promptStartTime > 0 ? (Date.now() - this.promptStartTime) / 1000 : 0;
+          const timeStr = elapsed >= 60
+            ? `${Math.floor(elapsed / 60)}m${Math.floor(elapsed % 60).toString().padStart(2, '0')}s`
+            : `${elapsed.toFixed(1)}s`;
+          badge.textContent = `${tokStr} tok · ${timeStr}`;
           msgEl.appendChild(badge);
         }
         break;
@@ -588,6 +596,7 @@ export class AgentView implements ContentView {
 
       case 'error':
         this.stopSpinner();
+        this.stopTimer();
         this.promptGlyphEl.textContent = '❯';
         this.inputRowEl.classList.remove('agent-view__input-row--busy');
         {
@@ -778,6 +787,7 @@ export class AgentView implements ContentView {
     this.appendUserMessageDom(text);
     this.scrollToBottom();
     this.startSpinner();
+    this.startTimer();
     this.inputRowEl.classList.add('agent-view__input-row--busy');
 
     try {
@@ -879,6 +889,7 @@ export class AgentView implements ContentView {
     this.appendUserMessageDom(text);
     this.scrollToBottom();
     this.startSpinner();
+    this.startTimer();
     this.inputRowEl.classList.add('agent-view__input-row--busy');
 
     try {
@@ -1408,6 +1419,39 @@ export class AgentView implements ContentView {
       this.spinnerInterval = null;
     }
     this.spinnerFrame = 0;
+  }
+
+  // ─── Timer ────────────────────────────────────────────────────────
+
+  private startTimer(): void {
+    this.stopTimer();
+    this.promptStartTime = Date.now();
+    this.statusLineEl.classList.add('agent-view__status-line--visible');
+    this.timerInterval = setInterval(() => {
+      const elapsed = (Date.now() - this.promptStartTime) / 1000;
+      const timeStr = elapsed >= 60
+        ? `${Math.floor(elapsed / 60)}:${Math.floor(elapsed % 60).toString().padStart(2, '0')}`
+        : `${elapsed.toFixed(1)}s`;
+      // Update or create the timer segment in the status line
+      const existing = this.statusLineEl.querySelector('.agent-view__timer');
+      if (existing) {
+        existing.textContent = timeStr;
+      } else {
+        const timer = document.createElement('span');
+        timer.className = 'agent-view__timer';
+        timer.textContent = timeStr;
+        this.statusLineEl.prepend(timer);
+      }
+    }, 100);
+  }
+
+  private stopTimer(): void {
+    if (this.timerInterval !== null) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+    // Remove the live timer element
+    this.statusLineEl.querySelector('.agent-view__timer')?.remove();
   }
 
   // ─── New session ──────────────────────────────────────────────────
