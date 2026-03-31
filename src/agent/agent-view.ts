@@ -5,6 +5,7 @@
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
+import 'highlight.js/styles/github-dark.css';
 import { AgentController, type AgentEventType } from './agent';
 import type { ContentView, PaneContentType } from '../types';
 import { invoke } from '@tauri-apps/api/core';
@@ -72,6 +73,9 @@ export class AgentView implements ContentView {
 
   // Context window callback (compositor opens a dedicated ContextView)
   private contextCallback: ((controller: AgentController) => void) | null = null;
+
+  // Diff view callback (compositor opens DiffContentView in new tab)
+  private diffCallback: ((diff: string, title: string) => void) | null = null;
 
   // Autocomplete state
   private autocompleteEl!: HTMLElement;
@@ -253,7 +257,7 @@ export class AgentView implements ContentView {
     return row;
   }
 
-  private finalizeToolRow(row: HTMLElement, isError: boolean, resultText?: string): void {
+  private finalizeToolRow(row: HTMLElement, isError: boolean, resultText?: string, diff?: string, filePath?: string): void {
     const icon = row.querySelector('.agent-view__tool-icon');
     if (icon) icon.textContent = isError ? '✗' : '✓';
     row.classList.add(isError ? 'agent-view__tool-row--error' : 'agent-view__tool-row--done');
@@ -277,6 +281,77 @@ export class AgentView implements ContentView {
         row.appendChild(result);
       }
     }
+
+    // Render inline diff preview for write_file
+    if (diff && filePath) {
+      row.dataset.diff = diff;
+      row.dataset.filePath = filePath;
+      row.classList.add('agent-view__tool-row--has-diff');
+      this.renderDiffPreview(row, diff);
+    }
+  }
+
+  private renderDiffPreview(row: HTMLElement, diff: string): void {
+    const preview = document.createElement('div');
+    preview.className = 'agent-view__diff-preview';
+
+    const diffLines = diff.split('\n');
+    // Collect changed lines (skip unified diff headers)
+    const changedLines: { type: 'added' | 'removed' | 'context'; text: string }[] = [];
+    let inHunk = false;
+    for (const line of diffLines) {
+      if (line.startsWith('@@')) {
+        inHunk = true;
+        continue;
+      }
+      if (!inHunk) continue;
+      if (line.startsWith('+')) {
+        changedLines.push({ type: 'added', text: line.slice(1) });
+      } else if (line.startsWith('-')) {
+        changedLines.push({ type: 'removed', text: line.slice(1) });
+      } else if (line.startsWith(' ')) {
+        changedLines.push({ type: 'context', text: line.slice(1) });
+      }
+    }
+
+    // Count additions and deletions
+    const additions = changedLines.filter((l) => l.type === 'added').length;
+    const deletions = changedLines.filter((l) => l.type === 'removed').length;
+
+    if (additions === 0 && deletions === 0) {
+      const noChange = document.createElement('div');
+      noChange.className = 'agent-view__diff-line agent-view__diff-line--context';
+      noChange.textContent = '(no changes)';
+      preview.appendChild(noChange);
+      row.appendChild(preview);
+      return;
+    }
+
+    // Show only changed lines (additions + deletions), limited to 8
+    const MAX_PREVIEW = 8;
+    const significant = changedLines.filter((l) => l.type !== 'context');
+    const showing = significant.slice(0, MAX_PREVIEW);
+
+    for (const line of showing) {
+      const el = document.createElement('div');
+      el.className = `agent-view__diff-line agent-view__diff-line--${line.type}`;
+      el.textContent = (line.type === 'added' ? '+' : '-') + line.text;
+      preview.appendChild(el);
+    }
+
+    // Summary line
+    const remaining = significant.length - showing.length;
+    const summary = document.createElement('div');
+    summary.className = 'agent-view__diff-summary';
+    const stats = `+${additions} -${deletions}`;
+    if (remaining > 0) {
+      summary.textContent = `${stats}  … ${remaining} more lines  Enter → full diff`;
+    } else {
+      summary.textContent = `${stats}  Enter → full diff`;
+    }
+    preview.appendChild(summary);
+
+    row.appendChild(preview);
   }
 
   private appendShellCommandDom(command: string): HTMLElement {
@@ -450,7 +525,7 @@ export class AgentView implements ContentView {
 
       case 'tool_end':
         if (this.currentToolRowEl) {
-          this.finalizeToolRow(this.currentToolRowEl, e.isError, e.result);
+          this.finalizeToolRow(this.currentToolRowEl, e.isError, e.result, e.diff, e.filePath);
           this.currentToolRowEl = null;
         }
         break;
@@ -929,6 +1004,12 @@ export class AgentView implements ContentView {
       return true;
     }
 
+    // Enter — open full diff for nearest tool row with diff data
+    if (e.key === 'Enter') {
+      this.openNearestDiff();
+      return true;
+    }
+
     // c — open dedicated context window
     if (e.key === 'c' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       this.contextCallback?.(this.controller);
@@ -952,8 +1033,36 @@ export class AgentView implements ContentView {
     this.contextCallback = cb;
   }
 
+  onOpenDiff(cb: (diff: string, title: string) => void): void {
+    this.diffCallback = cb;
+  }
+
   getController(): AgentController {
     return this.controller;
+  }
+
+  /** Find the tool row closest to the current scroll position that has diff data, and open it. */
+  private openNearestDiff(): void {
+    if (!this.diffCallback) return;
+    const rows = this.messagesEl.querySelectorAll<HTMLElement>('.agent-view__tool-row--has-diff');
+    if (rows.length === 0) return;
+
+    // Find row closest to viewport center
+    const viewCenter = this.messagesEl.scrollTop + this.messagesEl.clientHeight / 2;
+    let closest: HTMLElement | null = null;
+    let closestDist = Infinity;
+    for (const row of rows) {
+      const rowCenter = row.offsetTop + row.offsetHeight / 2;
+      const dist = Math.abs(rowCenter - viewCenter);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = row;
+      }
+    }
+
+    if (closest?.dataset.diff && closest.dataset.filePath) {
+      this.diffCallback(closest.dataset.diff, `DIFF // ${closest.dataset.filePath}`);
+    }
   }
 
   private insert(char: string): void {

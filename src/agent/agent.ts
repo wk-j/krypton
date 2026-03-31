@@ -28,7 +28,7 @@ export type AgentEventType =
   | { type: 'agent_end' }
   | { type: 'message_update'; delta: string }
   | { type: 'tool_start'; name: string; args: string }
-  | { type: 'tool_end'; name: string; isError: boolean; result?: string }
+  | { type: 'tool_end'; name: string; isError: boolean; result?: string; diff?: string; filePath?: string }
   | { type: 'error'; message: string };
 
 export type AgentEventCallback = (e: AgentEventType) => void;
@@ -345,7 +345,7 @@ export class AgentController {
 
         case 'tool_execution_end': {
           // result is AgentToolResult<T>; details holds the display string
-          const res = e.result as { details?: unknown; content?: Array<{ type: string; text?: string }> } | undefined;
+          const res = e.result as { details?: unknown; diff?: string; filePath?: string; content?: Array<{ type: string; text?: string }> } | undefined;
           const result =
             typeof res?.details === 'string'
               ? res.details
@@ -355,6 +355,8 @@ export class AgentController {
             name: String(e.toolName ?? ''),
             isError: Boolean(e.isError),
             result,
+            diff: res?.diff,
+            filePath: res?.filePath,
           });
           this.notifyChange();
           break;

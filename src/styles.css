@@ -3472,6 +3472,23 @@ html, body {
   font-size: 14px;
   line-height: 1.5;
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.85);
+  /* Override highlight.js colors to match Krypton cyberpunk theme */
+  .hljs-comment { color: rgba(120, 144, 168, 0.7); font-style: italic; }
+  .hljs-keyword { color: rgba(255, 121, 198, 0.9); }
+  .hljs-string { color: rgba(57, 255, 127, 0.9); }
+  .hljs-number { color: rgba(255, 204, 102, 0.9); }
+  .hljs-function { color: rgba(102, 217, 239, 0.9); }
+  .hljs-title { color: rgba(255, 121, 198, 0.9); }
+  .hljs-params { color: rgba(176, 196, 216, 0.85); }
+  .hljs-built_in { color: rgba(102, 217, 239, 0.85); }
+  .hljs-type { color: rgba(255, 121, 198, 0.8); }
+  .hljs-literal { color: rgba(255, 121, 198, 0.85); }
+  .hljs-class { color: rgba(255, 204, 102, 0.85); }
+  .hljs-variable { color: rgba(176, 196, 216, 0.9); }
+  .hljs-attr { color: rgba(102, 217, 239, 0.85); }
+  .hljs-tag { color: rgba(255, 121, 198, 0.85); }
+  .hljs-name { color: rgba(102, 217, 239, 0.85); }
+  .hljs-symbol { color: rgba(255, 204, 102, 0.85); }
 }
 
 .agent-view__msg-body--markdown ul,
@@ -3571,6 +3588,49 @@ html, body {
 .agent-view__shell-more {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
   font-style: italic;
+}
+
+/* ═══ Inline diff preview ══════════════════════════════════════ */
+
+.agent-view__tool-row--has-diff {
+  cursor: default;
+}
+
+.agent-view__diff-preview {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+}
+
+.agent-view__diff-line {
+  font-family: var(--krypton-font-family, monospace);
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 1px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-view__diff-line--added {
+  color: rgba(57, 255, 127, 0.9);
+  background: rgba(57, 255, 127, 0.06);
+}
+
+.agent-view__diff-line--removed {
+  color: rgba(255, 80, 80, 0.85);
+  background: rgba(255, 80, 80, 0.06);
+}
+
+.agent-view__diff-line--context {
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
+}
+
+.agent-view__diff-summary {
+  font-size: 13px;
+  padding: 4px 8px 0;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
+  letter-spacing: 0.02em;
 }
 
 /* ═══ Streaming cursor ═════════════════════════════════════════ */

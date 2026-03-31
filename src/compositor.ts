@@ -1567,6 +1567,7 @@ export class Compositor {
     agentView.setProjectDir(projectDir);
     agentView.onClose(() => this.closeTab());
     agentView.onOpenContext((ctrl) => this.openContextView(ctrl));
+    agentView.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
 
     await this.createContentTab('AI  glm-4.7', agentView);
   }
@@ -1580,6 +1581,18 @@ export class Compositor {
     const contextView = new ContextView(controller);
     contextView.onClose(() => this.closeTab());
     await this.createContentTab('CTX  agent', contextView);
+  }
+
+  /**
+   * Open a diff view from a unified diff string (used by agent inline diff).
+   */
+  async openDiffFromString(unifiedDiff: string, title: string): Promise<void> {
+    const { DiffContentView } = await import('./diff-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+    const diffView = new DiffContentView(unifiedDiff, container);
+    diffView.onClose(() => this.closeTab());
+    await this.createContentTab(title, diffView);
   }
 
   /**

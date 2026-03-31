@@ -72,8 +72,37 @@ export function createKryptonTools(projectDir: string | null): AgentTool[] {
     parameters: WriteFileSchema,
     async execute(_id: string, rawParams: unknown): Promise<AgentToolResult<string>> {
       const params = rawParams as Static<typeof WriteFileSchema>;
-      await invoke('write_file', { path: resolvePath(params.path, projectDir), content: params.content });
-      return text(`Written: ${params.path}`);
+      const resolved = resolvePath(params.path, projectDir);
+
+      // Read old content for diff (skip for very large files)
+      let oldContent = '';
+      let hasDiff = false;
+      try {
+        oldContent = await invoke<string>('read_file', { path: resolved });
+        hasDiff = (oldContent.length + params.content.length) <= 50 * 1024;
+      } catch {
+        // New file — old content stays empty
+        hasDiff = params.content.length <= 50 * 1024;
+      }
+
+      await invoke('write_file', { path: resolved, content: params.content });
+
+      const result: AgentToolResult<string> & { diff?: string; filePath?: string } = {
+        content: [{ type: 'text', text: `Written: ${params.path}` }],
+        details: `Written: ${params.path}`,
+      };
+
+      if (hasDiff) {
+        try {
+          const { createTwoFilesPatch } = await import('diff');
+          result.diff = createTwoFilesPatch(params.path, params.path, oldContent, params.content);
+          result.filePath = params.path;
+        } catch {
+          // diff computation failed — proceed without it
+        }
+      }
+
+      return result;
     },
   };
 
