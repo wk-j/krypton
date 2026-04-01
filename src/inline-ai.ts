@@ -75,13 +75,17 @@ export class InlineAIOverlay {
   private spinnerEl: HTMLElement;
   private hintEl: HTMLElement;
   private phase: Phase = 'input';
+  private askMode = false;  // false = command mode, true = question mode
   private command = '';
+  private answer = '';      // full text answer in ask mode
   private explanation = '';
   private controller: AgentController;
   private writePty: WriteCallback;
   private onClose: CloseCallback;
   private decodeTimer: number | null = null;
   private sessionId: number | null;
+  private promptEl: HTMLElement = null!;
+  private modeEl: HTMLElement = null!;
 
   constructor(
     controller: AgentController,
@@ -102,19 +106,24 @@ export class InlineAIOverlay {
     const inputRow = document.createElement('div');
     inputRow.className = 'krypton-inline-ai__input-row';
 
-    const prompt = document.createElement('span');
-    prompt.className = 'krypton-inline-ai__prompt';
-    prompt.textContent = 'AI \u25b8';
+    this.promptEl = document.createElement('span');
+    this.promptEl.className = 'krypton-inline-ai__prompt';
+    this.promptEl.textContent = 'CMD \u25b8';
+
+    this.modeEl = document.createElement('span');
+    this.modeEl.className = 'krypton-inline-ai__mode';
+    this.modeEl.textContent = '\u21e5 ask';
 
     this.inputEl = document.createElement('input');
     this.inputEl.className = 'krypton-inline-ai__input';
     this.inputEl.type = 'text';
-    this.inputEl.placeholder = 'Ask anything...';
+    this.inputEl.placeholder = 'Describe a command...';
     this.inputEl.spellcheck = false;
     this.inputEl.autocomplete = 'off';
 
-    inputRow.appendChild(prompt);
+    inputRow.appendChild(this.promptEl);
     inputRow.appendChild(this.inputEl);
+    inputRow.appendChild(this.modeEl);
     this.el.appendChild(inputRow);
 
     // Result area (hidden initially)
@@ -146,7 +155,7 @@ export class InlineAIOverlay {
     // Hint bar
     this.hintEl = document.createElement('div');
     this.hintEl.className = 'krypton-inline-ai__hint';
-    this.hintEl.textContent = '\u21b5 submit \u00b7 \u238b dismiss';
+    this.hintEl.textContent = '\u21b5 submit \u00b7 \u21e5 ask \u00b7 \u238b dismiss';
     this.el.appendChild(this.hintEl);
   }
 
@@ -188,6 +197,11 @@ export class InlineAIOverlay {
         if (query) this.submit(query);
         return true;
       }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        this.toggleMode();
+        return true;
+      }
       // Let all other keys flow to the <input> element
       return false;
     }
@@ -198,6 +212,23 @@ export class InlineAIOverlay {
     }
 
     if (this.phase === 'result') {
+      if (this.askMode) {
+        // Ask mode — allow continuous questions
+        if (e.key === 'c' && e.metaKey) {
+          e.preventDefault();
+          navigator.clipboard.writeText(this.answer);
+          return true;
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          // Return to input for next question
+          e.preventDefault();
+          this.resetToInput();
+          return true;
+        }
+        return true;
+      }
+
+      // Command mode
       if (e.key === 'Enter' && !e.shiftKey) {
         // Accept — insert command into terminal (no execute)
         e.preventDefault();
@@ -213,7 +244,6 @@ export class InlineAIOverlay {
         return true;
       }
       if (e.key === 'c' && e.metaKey) {
-        // Copy command to clipboard
         e.preventDefault();
         navigator.clipboard.writeText(this.command);
         return true;
@@ -224,7 +254,7 @@ export class InlineAIOverlay {
         this.inputEl.value = this.command;
         this.resultEl.hidden = true;
         this.phase = 'input';
-        this.hintEl.textContent = '\u21b5 submit \u00b7 \u238b dismiss';
+        this.updateInputHint();
         this.inputEl.focus();
         return true;
       }
@@ -236,12 +266,53 @@ export class InlineAIOverlay {
 
   // ── Private ─────────────────────────────────────────────────────────
 
+  private resetToInput(): void {
+    this.resultEl.hidden = true;
+    this.commandEl.textContent = '';
+    this.explainEl.textContent = '';
+    this.explainEl.classList.remove('krypton-inline-ai__explain--error');
+    this.commandEl.classList.remove('krypton-inline-ai__command--answer');
+    this.commandEl.classList.remove('krypton-inline-ai__command--ready');
+    this.phase = 'input';
+    this.inputEl.value = '';
+    this.inputEl.readOnly = false;
+    this.updateInputHint();
+    this.inputEl.focus();
+  }
+
+  private toggleMode(): void {
+    this.askMode = !this.askMode;
+    if (this.askMode) {
+      this.promptEl.textContent = 'ASK \u25b8';
+      this.promptEl.classList.add('krypton-inline-ai__prompt--ask');
+      this.modeEl.textContent = '\u21e5 cmd';
+      this.inputEl.placeholder = 'Ask a question...';
+    } else {
+      this.promptEl.textContent = 'CMD \u25b8';
+      this.promptEl.classList.remove('krypton-inline-ai__prompt--ask');
+      this.modeEl.textContent = '\u21e5 ask';
+      this.inputEl.placeholder = 'Describe a command...';
+    }
+    this.updateInputHint();
+    this.inputEl.focus();
+  }
+
+  private updateInputHint(): void {
+    this.hintEl.textContent = this.askMode
+      ? '\u21b5 submit \u00b7 \u21e5 cmd \u00b7 \u238b dismiss'
+      : '\u21b5 submit \u00b7 \u21e5 ask \u00b7 \u238b dismiss';
+  }
+
   private async submit(query: string): Promise<void> {
     this.phase = 'loading';
     this.inputEl.readOnly = true;
     this.spinnerEl.hidden = false;
     this.resultEl.hidden = true;
     this.hintEl.textContent = '\u238b cancel';
+
+    // Show initializing text while agent lazy-loads
+    const dots = this.spinnerEl.querySelector('.krypton-inline-ai__dots') as HTMLElement;
+    if (dots) dots.textContent = 'Initializing...';
 
     // Gather context
     let cwd = '';
@@ -251,40 +322,67 @@ export class InlineAIOverlay {
       } catch { /* ignore */ }
     }
 
-    // Build contextual prompt
-    const contextualPrompt = [
-      'You are a terminal command assistant. The user will describe what they want to do.',
-      'Return ONLY the command on the first line.',
-      'Optionally add a one-line explanation on the second line, prefixed with #.',
-      'Do NOT use markdown formatting, code fences, or backticks.',
-      'Nothing else.',
-      '',
-      cwd ? `Working directory: ${cwd}` : '',
-      '',
-      `User query: ${query}`,
-    ].filter(Boolean).join('\n');
+    // Build contextual prompt based on mode
+    const systemLines = this.askMode
+      ? [
+          'You are a helpful terminal assistant. Answer the user\'s question concisely.',
+          'Keep answers short — a few sentences max. Use plain text, no markdown.',
+          '',
+          cwd ? `Working directory: ${cwd}` : '',
+          '',
+          `User question: ${query}`,
+        ]
+      : [
+          'You are a terminal command assistant. The user will describe what they want to do.',
+          'Return ONLY the command on the first line.',
+          'Optionally add a one-line explanation on the second line, prefixed with #.',
+          'Do NOT use markdown formatting, code fences, or backticks.',
+          'Nothing else.',
+          '',
+          cwd ? `Working directory: ${cwd}` : '',
+          '',
+          `User query: ${query}`,
+        ];
+    const contextualPrompt = systemLines.filter(Boolean).join('\n');
 
     this.command = '';
+    this.answer = '';
     this.explanation = '';
 
     let fullResponse = '';
 
     const onEvent: AgentEventCallback = (e) => {
       switch (e.type) {
+        case 'agent_start':
+          // Agent initialized — update spinner to show we're waiting for response
+          if (dots) dots.textContent = 'Thinking...';
+          break;
         case 'message_update':
           fullResponse += e.delta;
-          // Live-update command display
-          this.parseResponse(fullResponse);
-          this.commandEl.textContent = this.command;
-          if (this.explanation) {
-            this.explainEl.textContent = this.explanation;
-          }
-          // Show result area as soon as we get content
-          if (!this.resultEl.hidden === false && fullResponse.length > 0) {
+          // Hide spinner, show result area on first token
+          this.spinnerEl.hidden = true;
+          if (this.resultEl.hidden && fullResponse.length > 0) {
             this.resultEl.hidden = false;
           }
+          if (this.askMode) {
+            // Ask mode — show full response as-is
+            this.answer = fullResponse.trim();
+            this.commandEl.textContent = this.answer;
+          } else {
+            // Command mode — parse first line as command
+            this.parseResponse(fullResponse);
+            this.commandEl.textContent = this.command;
+            if (this.explanation) {
+              this.explainEl.textContent = this.explanation;
+            }
+          }
+          break;
+        case 'tool_start':
+          // Agent is using tools — update status
+          if (dots) dots.textContent = 'Working...';
           break;
         case 'agent_end':
+          this.spinnerEl.hidden = true;
           this.onComplete();
           break;
         case 'error':
@@ -327,15 +425,25 @@ export class InlineAIOverlay {
     this.resultEl.hidden = false;
     this.inputEl.readOnly = false;
 
-    // Decode-reveal the final command
-    if (this.command) {
-      this.decodeTimer = decodeReveal(this.commandEl, this.command);
+    if (this.askMode) {
+      // Ask mode — text answer, no execute actions
+      this.commandEl.classList.add('krypton-inline-ai__command--answer');
+      this.hintEl.textContent = '\u2318C copy \u00b7 \u21b5 ask another \u00b7 \u238b dismiss';
+    } else {
+      // Command mode — show final command
+      if (this.command) {
+        const alreadyShown = this.commandEl.textContent === this.command;
+        if (alreadyShown) {
+          this.commandEl.classList.add('krypton-inline-ai__command--ready');
+        } else {
+          this.decodeTimer = decodeReveal(this.commandEl, this.command);
+        }
+      }
+      if (this.explanation) {
+        this.explainEl.textContent = this.explanation;
+      }
+      this.hintEl.textContent = '\u21b5 accept \u00b7 \u21e7\u21b5 run \u00b7 \u21e5 edit \u00b7 \u2318C copy \u00b7 \u238b dismiss';
     }
-    if (this.explanation) {
-      this.explainEl.textContent = this.explanation;
-    }
-
-    this.hintEl.textContent = '\u21b5 accept \u00b7 \u21e7\u21b5 run \u00b7 \u21e5 edit \u00b7 \u2318C copy \u00b7 \u238b dismiss';
   }
 
   private onError(message: string): void {
