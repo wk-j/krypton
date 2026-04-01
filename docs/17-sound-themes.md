@@ -330,7 +330,7 @@ The sound engine evolved through several iterations:
 
 6. **WAV replacement**: Eliminated all procedural synthesis. Replaced with static WAV file playback. Each sound pack is a directory of 17 pre-rendered WAVs. This eliminated the root cause of all prior AudioContext degradation.
 
-7. **Rust backend** (current): Moved all audio from the frontend Web Audio API to the Rust backend using `rodio` (cpal). A dedicated `krypton-audio` thread owns the `OutputStream` and `Sink`s. The frontend `SoundEngine` became a thin IPC wrapper calling Tauri commands. This eliminates all browser/WebView audio issues entirely — no AudioContext lifecycle management, no suspended states, no silence bugs. See `docs/27-rust-sound-engine.md`.
+7. **Rust backend** (current): Moved all audio from the frontend Web Audio API to the Rust backend using `rodio` (cpal). A dedicated `krypton-audio` thread owns the `OutputStream` and `Sink`s. The frontend `SoundEngine` became a thin IPC wrapper calling Tauri commands. This eliminates all browser/WebView audio issues entirely — no AudioContext lifecycle management, no suspended states, no silence bugs.
 
 ---
 

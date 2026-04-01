@@ -459,3 +459,39 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 | `[[workspaces.layouts.windows]]` | `shell` | string | Default shell | Shell binary for this window |
 | `[[workspaces.layouts.windows]]` | `args` | string[] | `[]` | Shell arguments |
 | `[[workspaces.layouts.windows]]` | `cwd` | string | `$HOME` | Working directory |
+
+---
+
+## Config Flush Defaults
+
+> Status: Implemented — Date: 2026-03-22
+
+When new configuration fields are added to the Rust `KryptonConfig` structs, existing users' `krypton.toml` files don't include those new keys. After loading and deserializing the config (which merges defaults for missing fields via `#[serde(default)]`), the fully-populated config is serialized back to disk. This "flushes" any new fields into the user's file with their default values.
+
+### Flush Behavior
+
+```rust
+fn flush_config(path: &PathBuf, config: &KryptonConfig) {
+    match toml::to_string_pretty(config) {
+        Ok(toml_str) => {
+            let content = format!(
+                "# Krypton configuration\n\
+                 # See docs/06-configuration.md for full reference\n\n\
+                 {toml_str}"
+            );
+            if let Err(e) = fs::write(path, &content) {
+                log::error!("Failed to flush config to {}: {e}", path.display());
+            }
+        }
+        Err(e) => log::error!("Failed to serialize config for flush: {e}"),
+    }
+}
+```
+
+The flush runs on every startup and on every hot-reload, ensuring the file always reflects the complete schema. It compares serialized content against the existing file and only writes if they differ, preventing watcher re-trigger loops.
+
+### Caveats
+
+- **User comments stripped**: `toml::to_string_pretty` does not preserve comments. The config file header directs users to the docs for reference.
+- **Parse error recovery**: When the file has syntax errors, flushing defaults overwrites the broken file — the user gets a working config instead of being stuck.
+- **Read-only file**: The flush logs an error and continues. The app still works with the in-memory config.

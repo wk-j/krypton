@@ -209,3 +209,33 @@ Font sizes: body 15px, labels 12px, tools/results 13px, errors 14px, hints 12px.
 - [@mariozechner/pi-agent-core npm](https://www.npmjs.com/package/@mariozechner/pi-agent-core) — install, changelog
 - [@sinclair/typebox](https://github.com/sinclairzx81/typebox) — TypeBox schema library used for tool parameter definitions
 - [pi-agent-core source](https://github.com/badlogic/pi-mono/tree/main/packages/pi-agent-core/src) — Agent constructor, public methods, full AgentEvent type union
+
+---
+
+## Agent Markdown Visual Effects
+
+Futuristic visual effects applied to AI agent markdown responses, giving the agent view a cyberpunk HUD aesthetic. All effects are pure CSS in `src/styles/agent.css` — no JavaScript changes required. They use GPU-friendly properties (`transform`, `opacity`, `filter`) and respect `--krypton-window-accent-rgb`.
+
+### Effects Summary
+
+| Element | Effect | Details |
+|---------|--------|---------|
+| Assistant message | Scanline overlay + materialize animation | Horizontal lines every 4px at 1.2% accent opacity; 0.3s fade-in with 4px slide + blur |
+| Message label | Flicker animation | 4s cycle with micro-opacity dips — digital interference |
+| Headings (h1–h4) | Neon glow pulse | 3s breathing cycle between two `text-shadow` glow intensities |
+| H1 | Gradient wash | Subtle accent-colored background fading right, with bottom border |
+| Code blocks (`pre`) | Animated edge sweep + inner glow | 1px gradient line sweeps top edge in 4s loop; inset 30px soft glow |
+| Inline code | Neon text-shadow | 6px accent glow at 15% opacity |
+| Blockquotes | Holographic shimmer | Translucent highlight sweeps across surface on 6s loop |
+| Horizontal rules | Traveling pulse | 30px glowing dot slides left-to-right in 3s |
+| Tables | Row hover highlight + header glow | Rows light up on hover; neon glow on header text |
+| Lists | Custom bullets | Glowing cyan `▸` arrow markers |
+| Links | Hover glow | Text-shadow intensifies, color brightens on hover |
+| Bold | Subtle glow | 4px foreground-color text-shadow |
+| Italic | Accent color | Uses accent color at 70% opacity |
+
+### Performance
+
+- All animations use `transform`, `opacity`, or `background-position` — composited on GPU
+- Pseudo-element overlays use `pointer-events: none`
+- Scanline repeating-gradient is static (no animation), very cheap to render

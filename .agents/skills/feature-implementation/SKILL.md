@@ -47,8 +47,8 @@ After code compiles and works, update ALL affected documents. Rule: if the imple
 | New dependency (Rust crate or npm package) | `docs/04-architecture.md` (crate/package tables) |
 | Milestone task completed | `docs/PROGRESS.md` (check box, update counts in overview table) |
 | Milestone task partially done | `docs/PROGRESS.md` (add note like "basic version done, needs testing") |
-| New terminology or concept | `docs/09-glossary.md` |
-| Resolved open question | `docs/08-open-questions.md` (mark resolved, add outcome) |
+| New terminology or concept | `docs/01-introduction.md` (glossary section) |
+| Resolved open question | `docs/01-introduction.md` (open questions section) |
 | Non-functional behavior change (perf, limits) | `docs/03-non-functional-requirements.md` |
 | New user-facing capability | `docs/02-functional-requirements.md` |
 

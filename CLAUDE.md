@@ -78,7 +78,7 @@ The app has two halves that communicate over Tauri IPC:
 
 ## Platform Gotchas
 
-- **NO `backdrop-filter: blur()`** — causes window freeze on transparent WKWebView on macOS (see `docs/24-backdrop-filter-removal.md`)
+- **NO `backdrop-filter: blur()`** — causes window freeze on transparent WKWebView on macOS (see platform gotcha in `docs/04-architecture.md`)
 - **macOS fullscreen:** Set position+size manually, NOT using fullscreen API (breaks transparency)
 - **macOS focus fix:** Window must be `always_on_top(true)` then immediately `always_on_top(false)` in setup
 - **Process detection:** Uses `tcgetpgrp()` on Unix; different API on Windows

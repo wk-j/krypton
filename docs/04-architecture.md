@@ -486,6 +486,20 @@ OS audio output (via cpal/CoreAudio)
 - **Graceful degradation** — if no audio device is available, `OutputStream::try_default()` fails on the audio thread, which drains the channel and exits. All `play()` calls become silent no-ops.
 - **Hot-reload** — on `config-changed`, `lib.rs::reload_and_emit()` calls `engine.apply_config()` directly on the Rust side. If the pack changed, a `LoadPack` message is sent to the audio thread.
 
+### macOS Backdrop-Filter Freeze (Platform Gotcha)
+
+> Implemented: 2026-03-16
+
+CSS `backdrop-filter: blur()` on macOS transparent WKWebView windows causes the native compositor to **snapshot** the content behind the blurred element rather than continuously compositing it live. When the Tauri window gains focus, macOS optimizes rendering by freezing this snapshot — dynamic desktop content (video wallpapers) behind terminal windows stops updating.
+
+**Fix:** All `backdrop-filter` / `-webkit-backdrop-filter` declarations were removed from `src/styles.css`. Semi-transparent `background` colors (rgba with alpha) remain, providing a tinted overlay without triggering the snapshot. Affected elements: `.krypton-window`, `.krypton-quick-terminal`, `.krypton-whichkey__popup`, `.krypton-hint-toast`, `.krypton-palette__container`, `.krypton-dashboard__backdrop`.
+
+Additionally, xterm.js's internal color parser rejects alpha < 255, falling back to opaque `#000000` on `.xterm-scrollable-element`. A CSS `!important` override was added for that element.
+
+Config/theme keys `blur`, `backdrop_blur` remain in parsers for forward compatibility but are currently **inert**.
+
+See also: `docs/16-terminal-shaders.md` for related visual rendering.
+
 ### Tauri Commands
 
 | Command | Parameters | Purpose |
