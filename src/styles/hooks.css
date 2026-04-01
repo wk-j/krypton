@@ -218,7 +218,7 @@
   opacity: 0;
 }
 
-/* ─── Icon (geometric sigil) ─── */
+/* ─── Icon (animated SVG sigil) ─── */
 .krypton-claude-toast__icon {
   flex-shrink: 0;
   width: 32px;
@@ -232,6 +232,62 @@
   color: rgba(var(--card-accent), 0.8);
   background: rgba(var(--card-accent), 0.04);
   margin-top: 2px;
+}
+
+.krypton-claude-toast__icon svg {
+  width: 20px;
+  height: 20px;
+  overflow: visible;
+}
+
+/* ─── SVG icon animations ─── */
+.krypton-icon-spin,
+.krypton-icon-spin-fast,
+.krypton-icon-spin-slow,
+.krypton-icon-orbit {
+  transform-origin: 16px 16px;
+}
+
+.krypton-icon-spin {
+  animation: krypton-icon-rotate 8s linear infinite;
+}
+.krypton-icon-spin-fast {
+  animation: krypton-icon-rotate 2s linear infinite;
+}
+.krypton-icon-spin-slow {
+  animation: krypton-icon-rotate 12s linear infinite;
+}
+.krypton-icon-orbit {
+  animation: krypton-icon-rotate 3s linear infinite;
+}
+
+@keyframes krypton-icon-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.krypton-icon-pulse {
+  transform-origin: 16px 16px;
+  animation: krypton-icon-scale-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes krypton-icon-scale-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.2; }
+  50% { transform: scale(1.15); opacity: 0.45; }
+}
+
+.krypton-icon-radar {
+  transform-origin: 16px 16px;
+  animation: krypton-icon-radar-ping 2s ease-in-out infinite;
+}
+.krypton-icon-radar-delay {
+  transform-origin: 16px 16px;
+  animation: krypton-icon-radar-ping 2s ease-in-out infinite 0.5s;
+}
+
+@keyframes krypton-icon-radar-ping {
+  0%, 100% { transform: scale(0.9); opacity: 0.15; }
+  50% { transform: scale(1.08); opacity: 0.5; }
 }
 
 /* ─── Content area ─── */

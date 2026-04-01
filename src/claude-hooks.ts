@@ -703,27 +703,48 @@ export class ClaudeHookManager {
     elicitation: 'INPUT',
   };
 
-  /** Geometric icon per event type */
-  private static TOAST_ICONS: Record<string, string> = {
-    session: '\u25C8',     // ◈ diamond
-    tool: '\u25B8',        // ▸ right triangle
-    tool_done: '\u2713',   // ✓ check
-    notification: '\u25C6',// ◆ filled diamond
-    permission_prompt: '\u26A0', // ⚠ warning
-    error: '\u25CF',       // ● filled circle
-    success: '\u2713',     // ✓ check
-    stop: '\u25A0',        // ■ square
-    instructions: '\u25CB',// ○ circle
-    prompt: '\u25B7',      // ▷ triangle
-    subagent: '\u2B22',    // ⬢ hexagon
-    subagent_done: '\u2B22',
-    teammate: '\u2B22',    // ⬢ hexagon
-    task: '\u2713',        // ✓ check
-    config: '\u2699',      // ⚙ gear
-    worktree: '\u25CA',    // ◊ lozenge
-    compact: '\u25C9',     // ◉ fisheye
-    elicitation: '\u25C7', // ◇ diamond outline
+  /** Animated SVG icon per event type (viewBox 0 0 32 32, uses currentColor) */
+  private static TOAST_ICON_SVG: Record<string, string> = {
+    // Diamond + rotating dashed ring
+    session: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" stroke-dasharray="3 4" opacity=".35" class="krypton-icon-spin"/><rect x="11.5" y="11.5" width="9" height="9" rx="1" transform="rotate(45 16 16)" fill="currentColor" opacity=".8"/></svg>',
+    // Right-triangle + fast spinning arc
+    tool: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1" stroke-dasharray="12 76" stroke-linecap="round" opacity=".45" class="krypton-icon-spin-fast"/><polygon points="12,9 12,23 24,16" fill="currentColor" opacity=".6"/></svg>',
+    // Checkmark (static, dim)
+    tool_done: '<svg viewBox="0 0 32 32" fill="none"><polyline points="10,17 14.5,21.5 22,12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/></svg>',
+    // Filled diamond + pulsing ring
+    notification: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" opacity=".2" class="krypton-icon-pulse"/><rect x="11.5" y="11.5" width="9" height="9" rx=".5" transform="rotate(45 16 16)" fill="currentColor" opacity=".8"/></svg>',
+    // Warning triangle + pulsing ring
+    permission_prompt: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" opacity=".25" class="krypton-icon-pulse"/><path d="M16 7L26 25H6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" opacity=".85"/><line x1="16" y1="14" x2="16" y2="19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity=".85"/><circle cx="16" cy="22" r="1" fill="currentColor" opacity=".85"/></svg>',
+    // Concentric target rings (radar pulse)
+    error: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" opacity=".25" class="krypton-icon-radar"/><circle cx="16" cy="16" r="9" stroke="currentColor" stroke-width=".75" opacity=".35" class="krypton-icon-radar-delay"/><circle cx="16" cy="16" r="4" fill="currentColor" opacity=".75"/></svg>',
+    // Checkmark
+    success: '<svg viewBox="0 0 32 32" fill="none"><polyline points="10,17 14.5,21.5 22,12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/></svg>',
+    // Square
+    stop: '<svg viewBox="0 0 32 32" fill="none"><rect x="9" y="9" width="14" height="14" rx="1.5" fill="currentColor" opacity=".75"/></svg>',
+    // Circle outline (static)
+    instructions: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="8" stroke="currentColor" stroke-width="1.2" opacity=".45"/></svg>',
+    // Triangle outline + spinning arc
+    prompt: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1" stroke-dasharray="8 80" stroke-linecap="round" opacity=".4" class="krypton-icon-spin"/><polygon points="12,8 12,24 26,16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" opacity=".7"/></svg>',
+    // Hexagon + orbiting dot
+    subagent: '<svg viewBox="0 0 32 32" fill="none"><g class="krypton-icon-orbit"><circle cx="16" cy="2" r="1.5" fill="currentColor" opacity=".7"/></g><polygon points="16,8 23,12 23,20 16,24 9,20 9,12" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".75"/></svg>',
+    // Hexagon (static, dim)
+    subagent_done: '<svg viewBox="0 0 32 32" fill="none"><polygon points="16,8 23,12 23,20 16,24 9,20 9,12" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".4"/></svg>',
+    // Hexagon + dashed rotating ring
+    teammate: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" stroke-dasharray="3 4" opacity=".3" class="krypton-icon-spin"/><polygon points="16,8 23,12 23,20 16,24 9,20 9,12" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".75"/></svg>',
+    // Checkmark
+    task: '<svg viewBox="0 0 32 32" fill="none"><polyline points="10,17 14.5,21.5 22,12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/></svg>',
+    // Gear (central circle + dashed ring teeth) + slow rotate
+    config: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="5" stroke="currentColor" stroke-width="1.2" opacity=".55"/><circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3.5 3.5" opacity=".35" class="krypton-icon-spin-slow"/></svg>',
+    // Diamond outline (static)
+    worktree: '<svg viewBox="0 0 32 32" fill="none"><rect x="11.5" y="11.5" width="9" height="9" rx=".5" transform="rotate(45 16 16)" stroke="currentColor" stroke-width="1.2" fill="none" opacity=".45"/></svg>',
+    // Fisheye — circle + center dot (static)
+    compact: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="9" stroke="currentColor" stroke-width="1" opacity=".35"/><circle cx="16" cy="16" r="3" fill="currentColor" opacity=".45"/></svg>',
+    // Diamond outline + pulsing ring
+    elicitation: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" opacity=".2" class="krypton-icon-pulse"/><rect x="11.5" y="11.5" width="9" height="9" rx=".5" transform="rotate(45 16 16)" stroke="currentColor" stroke-width="1.3" fill="none" opacity=".8"/></svg>',
   };
+
+  /** Fallback unicode icons for unknown types */
+  private static TOAST_ICONS_FALLBACK = '\u25C6';
 
   /** Show a toast programmatically (for testing or startup messages) */
   public toast(message: string, type?: string): void {
@@ -746,10 +767,15 @@ export class ClaudeHookManager {
     toast.className = 'krypton-claude-toast';
     toast.classList.add(`krypton-claude-toast--${toastType}`);
 
-    // Icon (geometric sigil)
+    // Icon (animated SVG sigil)
     const icon = document.createElement('div');
     icon.className = 'krypton-claude-toast__icon';
-    icon.textContent = ClaudeHookManager.TOAST_ICONS[toastType] ?? '\u25C6';
+    const svgHtml = ClaudeHookManager.TOAST_ICON_SVG[toastType];
+    if (svgHtml) {
+      icon.innerHTML = svgHtml;
+    } else {
+      icon.textContent = ClaudeHookManager.TOAST_ICONS_FALLBACK;
+    }
     toast.appendChild(icon);
 
     // Content area

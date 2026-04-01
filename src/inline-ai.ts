@@ -66,6 +66,9 @@ function decodeReveal(el: HTMLElement, finalText: string): number {
 
 type Phase = 'input' | 'loading' | 'result';
 
+/** Persists the user's last selected mode across overlay lifetimes */
+let lastAskMode = false;
+
 export class InlineAIOverlay {
   private el: HTMLElement;
   private inputEl: HTMLInputElement;
@@ -75,7 +78,7 @@ export class InlineAIOverlay {
   private spinnerEl: HTMLElement;
   private hintEl: HTMLElement;
   private phase: Phase = 'input';
-  private askMode = false;  // false = command mode, true = question mode
+  private askMode = lastAskMode;
   private command = '';
   private answer = '';      // full text answer in ask mode
   private explanation = '';
@@ -108,16 +111,17 @@ export class InlineAIOverlay {
 
     this.promptEl = document.createElement('span');
     this.promptEl.className = 'krypton-inline-ai__prompt';
-    this.promptEl.textContent = 'CMD \u25b8';
+    this.promptEl.textContent = this.askMode ? 'ASK \u25b8' : 'CMD \u25b8';
+    if (this.askMode) this.promptEl.classList.add('krypton-inline-ai__prompt--ask');
 
     this.modeEl = document.createElement('span');
     this.modeEl.className = 'krypton-inline-ai__mode';
-    this.modeEl.textContent = '\u21e5 ask';
+    this.modeEl.textContent = this.askMode ? '\u21e5 cmd' : '\u21e5 ask';
 
     this.inputEl = document.createElement('input');
     this.inputEl.className = 'krypton-inline-ai__input';
     this.inputEl.type = 'text';
-    this.inputEl.placeholder = 'Describe a command...';
+    this.inputEl.placeholder = this.askMode ? 'Ask a question...' : 'Describe a command...';
     this.inputEl.spellcheck = false;
     this.inputEl.autocomplete = 'off';
 
@@ -155,7 +159,9 @@ export class InlineAIOverlay {
     // Hint bar
     this.hintEl = document.createElement('div');
     this.hintEl.className = 'krypton-inline-ai__hint';
-    this.hintEl.textContent = '\u21b5 submit \u00b7 \u21e5 ask \u00b7 \u238b dismiss';
+    this.hintEl.textContent = this.askMode
+      ? '\u21b5 submit \u00b7 \u21e5 cmd \u00b7 \u238b dismiss'
+      : '\u21b5 submit \u00b7 \u21e5 ask \u00b7 \u238b dismiss';
     this.el.appendChild(this.hintEl);
   }
 
@@ -282,6 +288,7 @@ export class InlineAIOverlay {
 
   private toggleMode(): void {
     this.askMode = !this.askMode;
+    lastAskMode = this.askMode;
     if (this.askMode) {
       this.promptEl.textContent = 'ASK \u25b8';
       this.promptEl.classList.add('krypton-inline-ai__prompt--ask');
