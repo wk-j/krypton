@@ -687,7 +687,7 @@ export class ClaudeHookManager {
     tool: 'TOOL',
     tool_done: 'DONE',
     notification: 'CLAUDE',
-    permission_prompt: '⚡ PERMIT',
+    permission_prompt: '\u26A1 PERMIT',
     error: 'ERROR',
     success: 'OK',
     stop: 'STOP',
@@ -701,6 +701,28 @@ export class ClaudeHookManager {
     worktree: 'TREE',
     compact: 'COMPACT',
     elicitation: 'INPUT',
+  };
+
+  /** Geometric icon per event type */
+  private static TOAST_ICONS: Record<string, string> = {
+    session: '\u25C8',     // ◈ diamond
+    tool: '\u25B8',        // ▸ right triangle
+    tool_done: '\u2713',   // ✓ check
+    notification: '\u25C6',// ◆ filled diamond
+    permission_prompt: '\u26A0', // ⚠ warning
+    error: '\u25CF',       // ● filled circle
+    success: '\u2713',     // ✓ check
+    stop: '\u25A0',        // ■ square
+    instructions: '\u25CB',// ○ circle
+    prompt: '\u25B7',      // ▷ triangle
+    subagent: '\u2B22',    // ⬢ hexagon
+    subagent_done: '\u2B22',
+    teammate: '\u2B22',    // ⬢ hexagon
+    task: '\u2713',        // ✓ check
+    config: '\u2699',      // ⚙ gear
+    worktree: '\u25CA',    // ◊ lozenge
+    compact: '\u25C9',     // ◉ fisheye
+    elicitation: '\u25C7', // ◇ diamond outline
   };
 
   /** Show a toast programmatically (for testing or startup messages) */
@@ -724,39 +746,45 @@ export class ClaudeHookManager {
     toast.className = 'krypton-claude-toast';
     toast.classList.add(`krypton-claude-toast--${toastType}`);
 
-    // Corner targeting brackets
-    const corners = ['tl', 'tr', 'bl', 'br'] as const;
-    const glyphs = ['\u250C', '\u2510', '\u2514', '\u2518']; // ┌ ┐ └ ┘
-    corners.forEach((pos, i) => {
-      const bracket = document.createElement('span');
-      bracket.className = `krypton-claude-toast__bracket krypton-claude-toast__bracket--${pos}`;
-      bracket.textContent = glyphs[i];
-      toast.appendChild(bracket);
-    });
+    // Icon (geometric sigil)
+    const icon = document.createElement('div');
+    icon.className = 'krypton-claude-toast__icon';
+    icon.textContent = ClaudeHookManager.TOAST_ICONS[toastType] ?? '\u25C6';
+    toast.appendChild(icon);
+
+    // Content area
+    const content = document.createElement('div');
+    content.className = 'krypton-claude-toast__content';
+
+    // Header row: category label + timestamp
+    const header = document.createElement('div');
+    header.className = 'krypton-claude-toast__header';
 
     const label = document.createElement('span');
     label.className = 'krypton-claude-toast__label';
     const labelText = ClaudeHookManager.TOAST_LABELS[toastType] ?? 'CLAUDE';
-    label.textContent = `[ ${labelText} ]`;
+    label.textContent = labelText;
 
-    const text = document.createElement('span');
-    text.className = 'krypton-claude-toast__text';
-    text.textContent = message;
-
-    // Telemetry readout: hex address + timestamp
     const telemetry = document.createElement('span');
     telemetry.className = 'krypton-claude-toast__telemetry';
-    const hex = Math.floor(Math.random() * 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
     const now = new Date();
     const ts = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    telemetry.textContent = `0x${hex} \u00B7 ${ts}`;
+    telemetry.textContent = ts;
 
-    toast.appendChild(label);
-    toast.appendChild(text);
-    toast.appendChild(telemetry);
+    header.appendChild(label);
+    header.appendChild(telemetry);
+    content.appendChild(header);
 
-    // Prepend so newest toast is at the bottom (closest to the corner)
-    this.toastContainer.prepend(toast);
+    // Message text
+    const text = document.createElement('div');
+    text.className = 'krypton-claude-toast__text';
+    text.textContent = message;
+    content.appendChild(text);
+
+    toast.appendChild(content);
+
+    // Append so newest toast is at the bottom
+    this.toastContainer.appendChild(toast);
 
     // Animate in
     requestAnimationFrame(() => {
@@ -777,8 +805,9 @@ export class ClaudeHookManager {
   private trimToasts(): void {
     if (!this.toastContainer) return;
     const toasts = this.toastContainer.querySelectorAll('.krypton-claude-toast');
-    // Container is prepend-ordered (newest first), so oldest are at the end
-    for (let i = this.maxToasts; i < toasts.length; i++) {
+    // Container is append-ordered (oldest first), so remove from the start
+    const excess = toasts.length - this.maxToasts;
+    for (let i = 0; i < excess; i++) {
       const old = toasts[i] as HTMLElement;
       old.classList.remove('krypton-claude-toast--visible');
       setTimeout(() => old.remove(), 300);

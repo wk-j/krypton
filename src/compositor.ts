@@ -899,7 +899,8 @@ export class Compositor {
    */
   setClaudeHookManager(manager: ClaudeHookManager): void {
     this.claudeHookManager = manager;
-    // Apply any animation type that was configured before the manager existed
+    // Apply settings that were configured before the manager existed
+    manager.setToastsEnabled(this.hookToastsEnabled);
     if (this.pendingHookAnimation) {
       manager.setAnimationType(this.pendingHookAnimation);
       this.pendingHookAnimation = null;
