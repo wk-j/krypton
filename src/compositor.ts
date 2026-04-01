@@ -2436,17 +2436,19 @@ export class Compositor {
     const win = this.windows.get(this.focusedWindowId);
     if (!win || win.tabs.length <= 1) return;
 
-    // Detach current pane tree from DOM (preserve HUD overlays)
-    this.clearPaneTree(win.contentElement);
-
     win.activeTabIndex = (win.activeTabIndex + direction + win.tabs.length) % win.tabs.length;
     this.updateTabBar(win);
     this.showActiveTab(win);
-    this.fitWindow(win.id);
 
     const tab = win.tabs[win.activeTabIndex];
     const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
     if (pane) pane.terminal?.focus();
+
+    // Defer fit to next frame so the browser can paint the re-mounted DOM
+    // before we force a layout reflow reading clientWidth/clientHeight.
+    // This prevents a visible delay when switching to tabs with large DOM
+    // trees (e.g. agent views with long conversation histories).
+    requestAnimationFrame(() => this.fitWindow(win.id));
 
     this.sound.play('tab.switch');
   }
