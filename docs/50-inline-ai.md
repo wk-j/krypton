@@ -1,6 +1,6 @@
 # Inline AI — Implementation Spec
 
-> Status: Draft
+> Status: Approved
 > Date: 2026-04-01
 > Milestone: M8 — Polish
 

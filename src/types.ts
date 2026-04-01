@@ -31,6 +31,7 @@ export enum Mode {
   TabMove = 'TabMove',
   CommandPalette = 'CommandPalette',
   Dashboard = 'Dashboard',
+  InlineAI = 'InlineAI',
 }
 
 /** Layout strategy for tiling windows */

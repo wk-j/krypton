@@ -77,6 +77,10 @@ export class InputRouter {
       if (InputRouter.isHintKey(e)) {
         return false;
       }
+      // Prevent xterm from consuming Cmd+K (inline AI)
+      if (InputRouter.isInlineAIKey(e)) {
+        return false;
+      }
       // Prevent xterm from consuming dashboard toggle shortcuts
       if (this.dashboardManager?.matchShortcut(e)) {
         return false;
@@ -154,6 +158,17 @@ export class InputRouter {
       e.shiftKey &&
       !e.ctrlKey &&
       !e.altKey
+    );
+  }
+
+  /** Check if a key event is the Inline AI shortcut (Cmd+K) */
+  static isInlineAIKey(e: KeyboardEvent): boolean {
+    return (
+      e.code === 'KeyK' &&
+      e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.shiftKey
     );
   }
 
@@ -275,7 +290,10 @@ export class InputRouter {
       if (e.key === 'Escape' && this.mode !== Mode.Normal) {
         e.preventDefault();
         e.stopPropagation();
-        if (this.mode === Mode.Selection) {
+        if (this.mode === Mode.InlineAI) {
+          this.compositor.closeInlineAI();
+          this.toNormal();
+        } else if (this.mode === Mode.Selection) {
           this.exitSelectionMode();
         } else if (this.mode === Mode.Hint) {
           this.compositor.soundEngine.play('hint.cancel');
@@ -337,6 +355,23 @@ export class InputRouter {
         return;
       }
 
+      // Global: Cmd+K — toggle inline AI overlay (works from Normal mode)
+      if (InputRouter.isInlineAIKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.compositor.isInlineAIOpen) {
+          this.compositor.closeInlineAI();
+          this.toNormal();
+        } else if (this.mode === Mode.Normal) {
+          this.compositor.openInlineAI().then((opened) => {
+            if (opened) {
+              this.setMode(Mode.InlineAI);
+            }
+          });
+        }
+        return;
+      }
+
       // Global: Cmd+Shift+H — enter hint mode (works from Normal mode)
       if (InputRouter.isHintKey(e)) {
         e.preventDefault();
@@ -379,6 +414,14 @@ export class InputRouter {
           return;
         }
         // Otherwise pass through to terminal
+        return;
+      }
+
+      // Inline AI mode: delegate all keys to the overlay.
+      // The overlay's <input> receives typing naturally; we intercept
+      // Enter, Tab, Cmd+C, and other action keys.
+      if (this.mode === Mode.InlineAI) {
+        this.handleInlineAIKey(e);
         return;
       }
 
@@ -803,6 +846,24 @@ export class InputRouter {
     }
     // If the dashboard was closed by the key handler, mode is already Normal
     // (DashboardManager.close() triggers modeCallback -> toNormal)
+  }
+
+  // ─── Inline AI Mode ─────────────────────────────────────────────
+  // The overlay has an <input> that receives typing events naturally.
+  // We only intercept action keys (Enter, Tab, Cmd+C, Escape).
+
+  private handleInlineAIKey(e: KeyboardEvent): void {
+    const consumed = this.compositor.handleInlineAIKey(e);
+    if (consumed) {
+      e.preventDefault();
+      e.stopPropagation();
+      // If the overlay was closed by the key handler (Escape/Enter accept),
+      // return to Normal mode
+      if (!this.compositor.isInlineAIOpen) {
+        this.toNormal();
+      }
+    }
+    // If not consumed (typing), let it flow to the <input> element naturally
   }
 
   // ─── Hint Mode ─────────────────────────────────────────────────

@@ -329,6 +329,9 @@ export class Compositor {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private profilerHud: any = null;
 
+  /** Active inline AI overlay (at most one) */
+  private inlineAI: import('./inline-ai').InlineAIOverlay | null = null;
+
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
     this.setupResizeHandler();
@@ -1575,6 +1578,72 @@ export class Compositor {
     agentView.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
 
     await this.createContentTab('AI  glm-4.7', agentView);
+  }
+
+  // ─── Inline AI Overlay ──────────────────────────────────────────────
+
+  /**
+   * Open the inline AI overlay on the focused terminal window.
+   * Returns true if opened, false if not possible (no terminal pane).
+   */
+  async openInlineAI(): Promise<boolean> {
+    // Already open — just focus the input
+    if (this.inlineAI) return true;
+
+    const pane = this.getFocusedPane();
+    if (!pane || pane.contentView) {
+      // Not a terminal pane
+      this.notifController?.show({ message: 'Inline AI requires a terminal pane', level: 'warning' });
+      return false;
+    }
+
+    const win = this.focusedWindowId ? this.windows.get(this.focusedWindowId) : null;
+    if (!win) return false;
+
+    const { InlineAIOverlay } = await import('./inline-ai');
+    const { AgentController } = await import('./agent/agent');
+
+    // Get or create a shared controller for inline queries
+    // Use a lightweight, disposable controller — not the agent-pane one
+    const controller = new AgentController();
+    let projectDir: string | null = null;
+    if (pane.sessionId !== null) {
+      try {
+        projectDir = await invoke<string>('get_pty_cwd', { sessionId: pane.sessionId });
+      } catch { /* ignore */ }
+    }
+    controller.setProjectDir(projectDir);
+
+    const overlay = new InlineAIOverlay(
+      controller,
+      (data: string) => this.writeToFocusedPty(data),
+      () => this.closeInlineAI(),
+      pane.sessionId,
+    );
+
+    this.inlineAI = overlay;
+    overlay.open(win.contentElement);
+    this.sound.play('mode.enter');
+    return true;
+  }
+
+  /** Close the inline AI overlay and return focus to the terminal. */
+  closeInlineAI(): void {
+    if (this.inlineAI) {
+      this.inlineAI.close();
+      this.inlineAI = null;
+      this.refocusTerminal();
+    }
+  }
+
+  /** Whether the inline AI overlay is currently open */
+  get isInlineAIOpen(): boolean {
+    return this.inlineAI !== null;
+  }
+
+  /** Forward a keyboard event to the inline AI overlay. Returns true if consumed. */
+  handleInlineAIKey(e: KeyboardEvent): boolean {
+    return this.inlineAI?.onKeyDown(e) ?? false;
   }
 
   /** Toggle the profiler HUD overlay (non-modal, docked top-right). */
