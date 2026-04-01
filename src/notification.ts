@@ -26,8 +26,6 @@ const DECODE_POSITION_BIAS = 0.04;
 
 const MAX_MESSAGE_LEN = 256;
 const KITTY_TITLE_TIMEOUT_MS = 500;
-const MIN_DISPLAY_MS = 2000;
-
 const LEVEL_LABELS: Record<NotificationLevel, string> = {
   info: 'INFO',
   success: 'OK',
@@ -46,9 +44,6 @@ export class NotificationController {
   private decodeInterval: ReturnType<typeof setInterval> | null = null;
   private pendingKitty = new Map<string, { title: string; timer: number }>();
   private currentLevel: NotificationLevel = 'info';
-  private showTime = 0;
-  private queue: NotificationOptions[] = [];
-  private drainTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.el = document.createElement('div');
@@ -81,30 +76,7 @@ export class NotificationController {
 
   /** Update the notification control with a new message */
   show(opts: NotificationOptions): void {
-    const elapsed = Date.now() - this.showTime;
-
-    // If current notification hasn't been visible long enough, enqueue and drain later
-    if (this.showTime > 0 && elapsed < MIN_DISPLAY_MS) {
-      this.queue.push(opts);
-      if (this.drainTimer === null) {
-        this.drainTimer = setTimeout(() => this.drainQueue(), MIN_DISPLAY_MS - elapsed);
-      }
-      return;
-    }
-
     this.showImmediate(opts);
-  }
-
-  /** Process queued notifications one at a time, each respecting MIN_DISPLAY_MS */
-  private drainQueue(): void {
-    this.drainTimer = null;
-    const next = this.queue.shift();
-    if (!next) return;
-    this.showImmediate(next);
-    // If more items remain, schedule the next one after MIN_DISPLAY_MS
-    if (this.queue.length > 0) {
-      this.drainTimer = setTimeout(() => this.drainQueue(), MIN_DISPLAY_MS);
-    }
   }
 
   private showImmediate(opts: NotificationOptions): void {
@@ -120,8 +92,6 @@ export class NotificationController {
       clearInterval(this.decodeInterval);
       this.decodeInterval = null;
     }
-
-    this.showTime = Date.now();
 
     // Update level styling
     if (level !== this.currentLevel) {
@@ -173,12 +143,6 @@ export class NotificationController {
       clearInterval(this.decodeInterval);
       this.decodeInterval = null;
     }
-    if (this.drainTimer !== null) {
-      clearTimeout(this.drainTimer);
-      this.drainTimer = null;
-    }
-    this.queue.length = 0;
-    this.showTime = 0;
     this.el.classList.remove(`krypton-notif--${this.currentLevel}`, 'krypton-notif--flash');
     this.el.classList.add('krypton-notif--idle');
     this.labelEl.textContent = 'SYS';

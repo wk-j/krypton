@@ -264,6 +264,7 @@ export class Compositor {
   private claudeHookManager: ClaudeHookManager | null = null;
   private hookToastsEnabled: boolean = false;
   private pendingHookAnimation: string | null = null;
+  private pendingMaxToasts: number | null = null;
 
   // ─── Config-backed settings ──────────────────────────────────────
   /** xterm.js theme — built-in default, overridable by config theme.colors */
@@ -454,6 +455,7 @@ export class Compositor {
       if (config.hooks.animation) {
         this.pendingHookAnimation = config.hooks.animation;
       }
+      this.pendingMaxToasts = config.hooks.max_toasts;
       if (this.claudeHookManager) {
         this.claudeHookManager.setToastsEnabled(this.hookToastsEnabled);
         this.claudeHookManager.setMaxToasts(config.hooks.max_toasts);
@@ -901,6 +903,10 @@ export class Compositor {
     this.claudeHookManager = manager;
     // Apply settings that were configured before the manager existed
     manager.setToastsEnabled(this.hookToastsEnabled);
+    if (this.pendingMaxToasts !== null) {
+      manager.setMaxToasts(this.pendingMaxToasts);
+      this.pendingMaxToasts = null;
+    }
     if (this.pendingHookAnimation) {
       manager.setAnimationType(this.pendingHookAnimation);
       this.pendingHookAnimation = null;

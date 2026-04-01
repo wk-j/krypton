@@ -157,8 +157,8 @@
   padding: 12px 16px 12px 16px;
   background: linear-gradient(
     160deg,
-    rgba(8, 14, 24, 0.96),
-    rgba(12, 18, 30, 0.92)
+    rgb(8, 14, 24),
+    rgb(12, 18, 30)
   );
   border: 1px solid rgba(var(--card-accent), 0.08);
   border-left: 3px solid rgba(var(--card-accent), 0.6);
@@ -443,8 +443,8 @@
 .krypton-claude-toast--permission_prompt {
   background: linear-gradient(
     160deg,
-    rgba(30, 20, 6, 0.96),
-    rgba(20, 14, 4, 0.92)
+    rgb(30, 20, 6),
+    rgb(20, 14, 4)
   );
   border-left-width: 3px;
   animation: krypton-card-pulse 2s ease-in-out infinite;

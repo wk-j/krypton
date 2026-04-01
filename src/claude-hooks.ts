@@ -819,6 +819,7 @@ export class ClaudeHookManager {
 
     // Click anywhere to dismiss
     toast.addEventListener('click', () => {
+      toast.classList.add('krypton-claude-toast--exiting');
       toast.classList.remove('krypton-claude-toast--visible');
       setTimeout(() => toast.remove(), 300);
     });
@@ -830,11 +831,15 @@ export class ClaudeHookManager {
   /** Remove oldest toasts that exceed maxToasts limit */
   private trimToasts(): void {
     if (!this.toastContainer) return;
-    const toasts = this.toastContainer.querySelectorAll('.krypton-claude-toast');
+    // Only count toasts that aren't already exiting
+    const toasts = this.toastContainer.querySelectorAll(
+      '.krypton-claude-toast:not(.krypton-claude-toast--exiting)'
+    );
     // Container is append-ordered (oldest first), so remove from the start
     const excess = toasts.length - this.maxToasts;
     for (let i = 0; i < excess; i++) {
       const old = toasts[i] as HTMLElement;
+      old.classList.add('krypton-claude-toast--exiting');
       old.classList.remove('krypton-claude-toast--visible');
       setTimeout(() => old.remove(), 300);
     }

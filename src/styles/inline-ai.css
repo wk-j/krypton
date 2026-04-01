@@ -33,7 +33,7 @@
 
 .krypton-inline-ai__prompt {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--krypton-inline-ai-accent, #0cf);
   flex-shrink: 0;
@@ -47,7 +47,7 @@
 
 .krypton-inline-ai__mode {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   color: rgba(192, 197, 206, 0.30);
   flex-shrink: 0;
@@ -60,7 +60,7 @@
   border: none;
   outline: none;
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--krypton-inline-ai-text, #c0c5ce);
   caret-color: var(--krypton-inline-ai-accent, #0cf);
 }
@@ -88,7 +88,7 @@
 
 .krypton-inline-ai__command {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--krypton-inline-ai-command, #0f6);
   margin: 0;
@@ -118,7 +118,7 @@
 
 .krypton-inline-ai__explain {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   color: rgba(192, 197, 206, 0.5);
   font-style: italic;
 }
@@ -137,7 +137,7 @@
 
 .krypton-inline-ai__dots {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--krypton-inline-ai-accent, #0cf);
   animation: krypton-inline-ai-pulse 1.2s ease-in-out infinite;
 }
@@ -150,7 +150,7 @@
 /* ── Hint Bar ── */
 .krypton-inline-ai__hint {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.06em;
   color: rgba(192, 197, 206, 0.30);

@@ -21,6 +21,11 @@ import {
   type SkillMeta,
   type SkillMatch,
 } from './skills';
+import {
+  createAfterToolCallHook,
+  createTransformContext,
+  DEFAULT_SETTINGS as COMPACTION_DEFAULTS,
+} from './compaction';
 
 /** Token usage snapshot */
 export interface TokenUsage {
@@ -107,14 +112,24 @@ export class AgentController {
     const model = { ...getModel('zai', 'glm-4.7'), baseUrl: 'https://api.z.ai/api/coding/paas/v4' };
     this.modelContextWindow = model.contextWindow ?? 128000;
 
+    const getApiKey = (provider: string): string | undefined =>
+      provider === 'zai' ? apiKey : undefined;
+
     return new Agent({
       initialState: {
         systemPrompt: this.buildBasePrompt(),
         model,
         tools: createKryptonTools(this.projectDir, this.skillIndex),
       },
-      getApiKey: (provider: string) => (provider === 'zai' ? apiKey : undefined),
+      getApiKey,
       toolExecution: 'sequential',
+      afterToolCall: createAfterToolCallHook(COMPACTION_DEFAULTS),
+      transformContext: createTransformContext(
+        model,
+        this.modelContextWindow,
+        getApiKey,
+        COMPACTION_DEFAULTS,
+      ),
     });
   }
 

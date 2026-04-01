@@ -218,13 +218,19 @@ export class InlineAIOverlay {
     }
 
     if (this.phase === 'result') {
+      // Cmd+C — copy to clipboard (check using code for reliability)
+      if ((e.key === 'c' || e.code === 'KeyC') && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        const textToCopy = this.askMode ? this.answer : this.command;
+        navigator.clipboard.writeText(textToCopy).catch((err) => {
+          console.error('[InlineAI] Failed to copy to clipboard:', err);
+        });
+        return true;
+      }
+
       if (this.askMode) {
         // Ask mode — allow continuous questions
-        if (e.key === 'c' && e.metaKey) {
-          e.preventDefault();
-          navigator.clipboard.writeText(this.answer);
-          return true;
-        }
         if (e.key === 'Enter' || e.key === 'Tab') {
           // Return to input for next question
           e.preventDefault();
@@ -247,11 +253,6 @@ export class InlineAIOverlay {
         e.preventDefault();
         this.writePty(this.command + '\n');
         this.onClose();
-        return true;
-      }
-      if (e.key === 'c' && e.metaKey) {
-        e.preventDefault();
-        navigator.clipboard.writeText(this.command);
         return true;
       }
       if (e.key === 'Tab') {
