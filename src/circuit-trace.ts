@@ -49,8 +49,9 @@ const BAND_COLORS = [
 ];
 const BAND_THICKNESS = [3, 2, 1];
 const PULSE_SPEED_BASE = [0.008, 0.012, 0.02];
-const TRACE_DIM_ALPHA = 0.15;
-const GLOW_BLUR = 8;
+const TRACE_DIM_ALPHA = 0.08;
+const TRACE_MAX_ALPHA = 0.55;
+const GLOW_BLUR = 10;
 
 // ─── Renderer ─────────────────────────────────────────────────────
 
@@ -60,6 +61,7 @@ export class CircuitTraceRenderer {
   private chips: Chip[] = [];
   private vias: Via[] = [];
   private fftBins: Float32Array = new Float32Array(32);
+  private bandEnergy: Float32Array = new Float32Array(3);
   private W = 0;
   private H = 0;
   private frameCount = 0;
@@ -238,43 +240,48 @@ export class CircuitTraceRenderer {
   // ─── Pulse Management ──────────────────────────────────────────
 
   private spawnPulses(): void {
-    // Only spawn every few frames
-    if (this.frameCount % 2 !== 0) return;
-
     for (let band = 0; band < 3; band++) {
       // Average FFT energy for this band
       const binStart = Math.floor((band / 3) * 32);
       const binEnd = Math.floor(((band + 1) / 3) * 32);
       let energy = 0;
+      let peak = 0;
       for (let i = binStart; i < binEnd; i++) {
         energy += this.fftBins[i];
+        if (this.fftBins[i] > peak) peak = this.fftBins[i];
       }
       energy /= (binEnd - binStart);
+      this.bandEnergy[band] = energy;
 
-      // Always have a minimum ambient pulse rate so the board looks alive
-      const ambientRate = 0.08;
-      const spawnRate = Math.max(ambientRate, energy * 3);
-      if (Math.random() > spawnRate) continue;
+      // Ambient + energy-driven spawn rate
+      const ambientRate = 0.05;
+      const spawnRate = Math.max(ambientRate, energy * 4);
 
-      // Pick a random segment in this band
+      // On strong beats, spawn multiple pulses
+      const spawnCount = peak > 0.5 ? Math.ceil(spawnRate * 3) : (Math.random() < spawnRate ? 1 : 0);
+      if (spawnCount === 0) continue;
+
+      // Pick random segments in this band
       const bandSegs = this.segments
         .map((s, i) => ({ s, i }))
         .filter(({ s }) => s.band === band);
       if (bandSegs.length === 0) continue;
 
-      const choice = bandSegs[Math.floor(Math.random() * bandSegs.length)];
-      this.pulses.push({
-        segIdx: choice.i,
-        position: 0,
-        speed: PULSE_SPEED_BASE[band] * (0.8 + energy * 1.5),
-        intensity: 0.3 + energy * 0.7,
-        decay: 0.992 + energy * 0.005,
-      });
+      for (let s = 0; s < spawnCount; s++) {
+        const choice = bandSegs[Math.floor(Math.random() * bandSegs.length)];
+        this.pulses.push({
+          segIdx: choice.i,
+          position: 0,
+          speed: PULSE_SPEED_BASE[band] * (0.8 + energy * 2.5),
+          intensity: 0.4 + energy * 0.6,
+          decay: 0.985 + energy * 0.01,
+        });
+      }
     }
 
     // Cap pulse count
-    if (this.pulses.length > 200) {
-      this.pulses = this.pulses.slice(-150);
+    if (this.pulses.length > 300) {
+      this.pulses = this.pulses.slice(-200);
     }
   }
 
@@ -320,22 +327,26 @@ export class CircuitTraceRenderer {
       ctx.fill();
     }
 
-    // Draw vias (dim)
+    // Draw vias — glow with overall energy
+    const totalEnergy = (this.bandEnergy[0] + this.bandEnergy[1] + this.bandEnergy[2]) / 3;
     for (const via of this.vias) {
       ctx.beginPath();
       ctx.arc(via.x, via.y, via.radius, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(100, 150, 110, 0.1)';
+      const viaAlpha = 0.1 + totalEnergy * 0.3;
+      ctx.strokeStyle = `rgba(100, 150, 110, ${viaAlpha})`;
       ctx.lineWidth = 0.5;
       ctx.stroke();
-      ctx.fillStyle = 'rgba(80, 120, 90, 0.06)';
+      ctx.fillStyle = `rgba(80, 120, 90, ${0.06 + totalEnergy * 0.15})`;
       ctx.fill();
     }
 
-    // Draw trace segments (dim base)
+    // Draw trace segments — brightness reacts to FFT band energy
     for (const seg of this.segments) {
       const [r, g, b] = BAND_COLORS[seg.band];
-      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${TRACE_DIM_ALPHA})`;
-      ctx.lineWidth = seg.thickness;
+      const energy = this.bandEnergy[seg.band];
+      const alpha = TRACE_DIM_ALPHA + energy * (TRACE_MAX_ALPHA - TRACE_DIM_ALPHA);
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      ctx.lineWidth = seg.thickness + energy * 1.5;
       ctx.beginPath();
       ctx.moveTo(seg.x1, seg.y1);
       ctx.lineTo(seg.x2, seg.y2);

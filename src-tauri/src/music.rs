@@ -6,8 +6,9 @@
 
 use std::io::{BufReader, Cursor};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use rodio::{Decoder, OutputStream, Sink, Source};
@@ -24,6 +25,117 @@ const FFT_SIZE: usize = 2048;
 const FFT_BINS: usize = 32;
 const FFT_INTERVAL_MS: u64 = 33; // ~30fps
 const POSITION_INTERVAL_MS: u64 = 500;
+const RING_BUF_SIZE: usize = 8192; // ~186ms at 44.1kHz — enough for FFT window
+
+// ─── Real-time Audio Tap ─────────────────────────────────────────
+
+/// Lock-free(ish) ring buffer for capturing PCM samples during playback.
+struct AudioRingBuffer {
+    buf: Mutex<Vec<f32>>,
+    write_pos: AtomicUsize,
+    sample_rate: AtomicUsize,
+}
+
+impl AudioRingBuffer {
+    fn new() -> Self {
+        Self {
+            buf: Mutex::new(vec![0.0; RING_BUF_SIZE]),
+            write_pos: AtomicUsize::new(0),
+            sample_rate: AtomicUsize::new(44100),
+        }
+    }
+
+    /// Write samples into the ring buffer (called from audio thread).
+    fn push(&self, samples: &[f32]) {
+        let mut buf = self.buf.lock().unwrap();
+        let mut pos = self.write_pos.load(Ordering::Relaxed);
+        for &s in samples {
+            buf[pos % RING_BUF_SIZE] = s;
+            pos = pos.wrapping_add(1);
+        }
+        self.write_pos.store(pos, Ordering::Relaxed);
+    }
+
+    /// Read the last `count` samples (for FFT). Returns mono samples.
+    fn read_last(&self, count: usize) -> Vec<f32> {
+        let buf = self.buf.lock().unwrap();
+        let pos = self.write_pos.load(Ordering::Relaxed);
+        let count = count.min(RING_BUF_SIZE);
+        let mut out = Vec::with_capacity(count);
+        for i in (pos.wrapping_sub(count))..pos {
+            out.push(buf[i % RING_BUF_SIZE]);
+        }
+        out
+    }
+}
+
+/// A rodio Source wrapper that copies samples to a shared ring buffer
+/// as they flow through playback — zero-latency audio tap.
+struct TappedSource<S: Source<Item = f32>> {
+    inner: S,
+    ring: Arc<AudioRingBuffer>,
+    batch: Vec<f32>,
+}
+
+impl<S: Source<Item = f32>> TappedSource<S> {
+    fn new(source: S, ring: Arc<AudioRingBuffer>) -> Self {
+        let sr = source.sample_rate();
+        let ch = source.channels();
+        ring.sample_rate.store(sr as usize, Ordering::Relaxed);
+        // We'll mix to mono in the batch flush
+        let _ = ch; // channels used in Iterator::next
+        Self {
+            inner: source,
+            ring,
+            batch: Vec::with_capacity(256),
+        }
+    }
+}
+
+impl<S: Source<Item = f32>> Iterator for TappedSource<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        let sample = self.inner.next()?;
+        self.batch.push(sample);
+
+        // Flush in batches to reduce lock contention
+        let channels = self.inner.channels() as usize;
+        if self.batch.len() >= 256 {
+            // Mix to mono before pushing
+            let mono: Vec<f32> = if channels > 1 {
+                self.batch
+                    .chunks(channels)
+                    .map(|ch| ch.iter().sum::<f32>() / channels as f32)
+                    .collect()
+            } else {
+                self.batch.clone()
+            };
+            self.ring.push(&mono);
+            self.batch.clear();
+        }
+
+        Some(sample)
+    }
+}
+
+impl<S: Source<Item = f32>> Source for TappedSource<S> {
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
+}
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -229,12 +341,9 @@ fn music_audio_thread(
     let mut last_position_time = Instant::now();
     let mut playback_start: Option<Instant> = None;
     let mut playback_offset_secs: f64 = 0.0;
-    // Track bytes for current file to decode PCM for FFT
-    let mut current_file_bytes: Option<Vec<u8>> = None;
-    // Pre-decoded PCM samples for fast FFT access (mono, f32)
-    let mut pcm_cache: Option<Vec<f32>> = None;
-    let mut pcm_sample_rate: u32 = 44100;
-    let mut pcm_decode_rx: Option<mpsc::Receiver<(Vec<f32>, u32)>> = None;
+
+    // Real-time audio ring buffer — shared with TappedSource
+    let audio_ring = Arc::new(AudioRingBuffer::new());
 
     // Smoothed FFT bins for visual smoothing
     let mut smooth_bins = vec![0.0f32; FFT_BINS];
@@ -290,7 +399,6 @@ fn music_audio_thread(
                                 emit_state(&app_handle, &st);
                             }
                         } else {
-                            // Start playing current index
                             let idx = st.playlist_index;
                             drop(st);
                             play_track(
@@ -298,10 +406,7 @@ fn music_audio_thread(
                                 &state,
                                 &stream_handle,
                                 &mut sink,
-                                &mut current_file_bytes,
-                                &mut pcm_cache,
-                                &mut pcm_sample_rate,
-                                &mut pcm_decode_rx,
+                                &audio_ring,
                                 &mut playback_start,
                                 &mut playback_offset_secs,
                                 &app_handle,
@@ -328,7 +433,6 @@ fn music_audio_thread(
                         st.status = PlayStatus::Stopped;
                         st.position_secs = 0.0;
                         playback_start = None;
-                        current_file_bytes = None;
                         emit_state(&app_handle, &st);
                     }
                     MusicMsg::Next => {
@@ -364,10 +468,7 @@ fn music_audio_thread(
                             &state,
                             &stream_handle,
                             &mut sink,
-                            &mut current_file_bytes,
-                            &mut pcm_cache,
-                            &mut pcm_sample_rate,
-                            &mut pcm_decode_rx,
+                            &audio_ring,
                             &mut playback_start,
                             &mut playback_offset_secs,
                             &app_handle,
@@ -389,10 +490,7 @@ fn music_audio_thread(
                             &state,
                             &stream_handle,
                             &mut sink,
-                            &mut current_file_bytes,
-                            &mut pcm_cache,
-                            &mut pcm_sample_rate,
-                            &mut pcm_decode_rx,
+                            &audio_ring,
                             &mut playback_start,
                             &mut playback_offset_secs,
                             &app_handle,
@@ -408,10 +506,7 @@ fn music_audio_thread(
                             &state,
                             &stream_handle,
                             &mut sink,
-                            &mut current_file_bytes,
-                            &mut pcm_cache,
-                            &mut pcm_sample_rate,
-                            &mut pcm_decode_rx,
+                            &audio_ring,
                             &mut playback_start,
                             &mut playback_offset_secs,
                             &app_handle,
@@ -431,15 +526,18 @@ fn music_audio_thread(
                         if idx < st_r.playlist.len() {
                             let track = &st_r.playlist[idx];
                             if let Ok(bytes) = std::fs::read(&track.path) {
-                                current_file_bytes = Some(bytes.clone());
                                 let cursor = Cursor::new(bytes);
                                 if let Ok(source) = Decoder::new(BufReader::new(cursor)) {
                                     let skip_dur = Duration::from_secs_f64(position_secs.max(0.0));
                                     let skipped = source.skip_duration(skip_dur);
+                                    let tapped = TappedSource::new(
+                                        skipped.convert_samples::<f32>(),
+                                        Arc::clone(&audio_ring),
+                                    );
                                     match Sink::try_new(&stream_handle) {
                                         Ok(s) => {
                                             s.set_volume(vol);
-                                            s.append(skipped);
+                                            s.append(tapped);
                                             sink = Some(s);
                                         }
                                         Err(e) => log::warn!("Failed to create sink for seek: {e}"),
@@ -525,10 +623,7 @@ fn music_audio_thread(
                             &state,
                             &stream_handle,
                             &mut sink,
-                            &mut current_file_bytes,
-                            &mut pcm_cache,
-                            &mut pcm_sample_rate,
-                            &mut pcm_decode_rx,
+                            &audio_ring,
                             &mut playback_start,
                             &mut playback_offset_secs,
                             &app_handle,
@@ -538,16 +633,7 @@ fn music_audio_thread(
             }
         }
 
-        // Check if background PCM decoding completed
-        if let Some(ref rx) = pcm_decode_rx {
-            if let Ok((pcm, sr)) = rx.try_recv() {
-                pcm_cache = Some(pcm);
-                pcm_sample_rate = sr;
-                pcm_decode_rx = None;
-            }
-        }
-
-        // Emit position updates
+        // Emit position updates and FFT
         {
             let st = state.read().unwrap();
             if st.status == PlayStatus::Playing {
@@ -566,34 +652,27 @@ fn music_audio_thread(
                         );
                     }
 
-                    // FFT update (~30fps)
+                    // FFT update (~30fps) — read from real-time audio tap
                     if now.duration_since(last_fft_time).as_millis() >= FFT_INTERVAL_MS as u128 {
                         last_fft_time = now;
 
-                        // Use pre-decoded PCM cache for fast FFT access
-                        if let Some(ref pcm) = pcm_cache {
-                            let pos_secs = playback_offset_secs + start.elapsed().as_secs_f64();
-                            let sample_offset = (pos_secs * pcm_sample_rate as f64) as usize;
-                            let end = (sample_offset + FFT_SIZE).min(pcm.len());
-                            let samples = if sample_offset < pcm.len() {
-                                &pcm[sample_offset..end]
-                            } else {
-                                &[]
-                            };
-                            if !samples.is_empty() {
-                                let raw_bins = compute_fft_bins(samples);
-                                // Smooth bins for visual appeal
-                                for (i, &raw) in raw_bins.iter().enumerate() {
-                                    smooth_bins[i] =
-                                        smooth_bins[i] * 0.7 + raw * 0.3;
+                        let samples = audio_ring.read_last(FFT_SIZE);
+                        if !samples.is_empty() {
+                            let raw_bins = compute_fft_bins(&samples);
+                            for (i, &raw) in raw_bins.iter().enumerate() {
+                                // Fast attack (0.6), slow release (0.85) — beats punch through
+                                if raw > smooth_bins[i] {
+                                    smooth_bins[i] = smooth_bins[i] * 0.4 + raw * 0.6;
+                                } else {
+                                    smooth_bins[i] = smooth_bins[i] * 0.85 + raw * 0.15;
                                 }
-                                let _ = app_handle.emit(
-                                    "music-fft",
-                                    FftData {
-                                        bins: smooth_bins.clone(),
-                                    },
-                                );
                             }
+                            let _ = app_handle.emit(
+                                "music-fft",
+                                FftData {
+                                    bins: smooth_bins.clone(),
+                                },
+                            );
                         }
                     }
                 }
@@ -610,10 +689,7 @@ fn play_track(
     state: &Arc<RwLock<PlaybackState>>,
     stream_handle: &rodio::OutputStreamHandle,
     sink: &mut Option<Sink>,
-    current_file_bytes: &mut Option<Vec<u8>>,
-    pcm_cache: &mut Option<Vec<f32>>,
-    _pcm_sample_rate: &mut u32,
-    pcm_decode_rx: &mut Option<mpsc::Receiver<(Vec<f32>, u32)>>,
+    audio_ring: &Arc<AudioRingBuffer>,
     playback_start: &mut Option<Instant>,
     playback_offset_secs: &mut f64,
     app_handle: &tauri::AppHandle,
@@ -639,10 +715,7 @@ fn play_track(
         }
     };
 
-    *current_file_bytes = Some(bytes.clone());
-
-    // Start playback FIRST — don't block on PCM decoding
-    let cursor = Cursor::new(bytes.clone());
+    let cursor = Cursor::new(bytes);
     let source = match Decoder::new(BufReader::new(cursor)) {
         Ok(s) => s,
         Err(e) => {
@@ -651,13 +724,16 @@ fn play_track(
         }
     };
 
+    // Wrap in TappedSource for real-time FFT — captures samples as they play
+    let tapped = TappedSource::new(source.convert_samples::<f32>(), Arc::clone(audio_ring));
+
     let mut st = state.write().unwrap();
     st.volume = st.volume.clamp(0.0, 1.0);
 
     match Sink::try_new(stream_handle) {
         Ok(s) => {
             s.set_volume(st.volume);
-            s.append(source);
+            s.append(tapped);
             *sink = Some(s);
         }
         Err(e) => {
@@ -676,50 +752,12 @@ fn play_track(
 
     emit_state(app_handle, &st);
     log::info!("Playing: {}", track.filename);
-
-    // Decode PCM for FFT visualization in the background — don't block playback
-    *pcm_cache = None;
-    let (tx, rx) = std::sync::mpsc::channel();
-    *pcm_decode_rx = Some(rx);
-    let bytes_for_fft = bytes;
-    std::thread::Builder::new()
-        .name("krypton-pcm-decode".into())
-        .spawn(move || {
-            match decode_to_pcm(&bytes_for_fft) {
-                Some((pcm, sr)) => {
-                    log::info!("Decoded {} PCM samples for FFT ({}Hz)", pcm.len(), sr);
-                    let _ = tx.send((pcm, sr));
-                }
-                None => {
-                    log::warn!("Failed to pre-decode PCM for FFT");
-                }
-            }
-        })
-        .ok();
 }
 
 fn emit_state(app_handle: &tauri::AppHandle, state: &PlaybackState) {
     let _ = app_handle.emit("music-state-changed", state);
 }
 
-/// Pre-decode an MP3 file into mono f32 PCM samples for fast FFT access.
-fn decode_to_pcm(file_bytes: &[u8]) -> Option<(Vec<f32>, u32)> {
-    let cursor = Cursor::new(file_bytes.to_vec());
-    let source = Decoder::new(BufReader::new(cursor)).ok()?;
-    let sample_rate = source.sample_rate();
-    let channels = source.channels() as usize;
-    let samples: Vec<f32> = source.convert_samples::<f32>().collect();
-    // Mix down to mono
-    let mono = if channels > 1 {
-        samples
-            .chunks(channels)
-            .map(|chunk| chunk.iter().sum::<f32>() / channels as f32)
-            .collect()
-    } else {
-        samples
-    };
-    Some((mono, sample_rate))
-}
 
 fn expand_tilde(path: &str) -> String {
     if path.starts_with("~/") || path == "~" {

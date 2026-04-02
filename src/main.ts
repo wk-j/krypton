@@ -79,7 +79,7 @@ async function main(): Promise<void> {
 
   // Initialize music player
   const musicPlayer = new MusicPlayer();
-  await musicPlayer.init(workspace);
+  await musicPlayer.init(workspace, compositor);
   dashboardManager.register(musicPlayer.createDashboard());
   inputRouter.setMusicPlayer(musicPlayer);
 

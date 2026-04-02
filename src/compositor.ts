@@ -235,6 +235,7 @@ export class Compositor {
   /** ID of the dedicated AI agent window (at most one at a time) */
   private workspace: HTMLElement;
   private onFocusChangeCallbacks: Array<(id: WindowId | null) => void> = [];
+  private onRelayoutCallbacks: Array<() => void> = [];
   private customKeyHandler: CustomKeyHandler | null = null;
   private layoutMode: LayoutMode = LayoutMode.Focus;
   /** Visual order of window IDs after the last Focus layout relayout.
@@ -838,6 +839,7 @@ export class Compositor {
       if (!cl.contains('krypton-flame-canvas') &&
           !cl.contains('krypton-brainwave-canvas') &&
           !cl.contains('krypton-matrix-canvas') &&
+          !cl.contains('krypton-circuit-trace-canvas') &&
           !cl.contains('krypton-uplink') &&
           !cl.contains('krypton-activity-trace')) {
         toRemove.push(child);
@@ -929,6 +931,13 @@ export class Compositor {
   /** Get the currently focused window ID */
   get focusedId(): WindowId | null {
     return this.focusedWindowId;
+  }
+
+  /** Get the content element of the focused window (for overlay layers like visualizer) */
+  getFocusedContentElement(): HTMLElement | null {
+    if (!this.focusedWindowId) return null;
+    const win = this.windows.get(this.focusedWindowId);
+    return win?.contentElement ?? null;
   }
 
   /** Get all window IDs in creation order */
@@ -1082,6 +1091,11 @@ export class Compositor {
   /** Register callback for focus changes */
   onFocusChange(cb: (id: WindowId | null) => void): void {
     this.onFocusChangeCallbacks.push(cb);
+  }
+
+  /** Register callback invoked after window relayout (for resizing overlays) */
+  onRelayout(cb: () => void): void {
+    this.onRelayoutCallbacks.push(cb);
   }
 
   /** Set custom key event handler for all terminals (called by InputRouter) */
@@ -3496,6 +3510,7 @@ export class Compositor {
     if (this.claudeHookManager) {
       this.claudeHookManager.resizeAnimations();
     }
+    for (const cb of this.onRelayoutCallbacks) cb();
   }
 
   /** Fit the active tab's pane tree for a window */

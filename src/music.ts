@@ -7,6 +7,7 @@ import { listen } from '@tauri-apps/api/event';
 
 import { OffscreenAnimationProxy, supportsOffscreenCanvas } from './offscreen-animation';
 
+import type { Compositor } from './compositor';
 import type { DashboardDefinition } from './types';
 
 // ─── Types (mirror Rust) ─────────────────────────────────────────
@@ -71,7 +72,7 @@ export class MusicPlayer {
   private visualizer: OffscreenAnimationProxy | null = null;
   private visualizerEnabled = true;
   private visualizerOpacity = 0.18;
-  private workspaceEl: HTMLElement | null = null;
+  private compositor: Compositor | null = null;
   private unlistenState: (() => void) | null = null;
   private unlistenPosition: (() => void) | null = null;
   private unlistenFft: (() => void) | null = null;
@@ -80,8 +81,19 @@ export class MusicPlayer {
   private selectedIndex = 0;
   private currentDirectory = '';
 
-  async init(workspaceEl: HTMLElement): Promise<void> {
-    this.workspaceEl = workspaceEl;
+  async init(workspaceEl: HTMLElement, compositor?: Compositor): Promise<void> {
+    this.compositor = compositor ?? null;
+
+    if (this.compositor) {
+      // Move visualizer canvas when focused window changes
+      this.compositor.onFocusChange(() => {
+        this.moveVisualizerToFocusedWindow();
+      });
+      // Resize visualizer after window relayout
+      this.compositor.onRelayout(() => {
+        this.resizeVisualizer();
+      });
+    }
 
     // Listen for backend events
     this.unlistenState = await listen<PlaybackState>('music-state-changed', (event) => {
@@ -211,28 +223,39 @@ export class MusicPlayer {
   // ─── Visualizer ──────────────────────────────────────────────
 
   private startVisualizer(): void {
-    if (!this.visualizerEnabled || !this.workspaceEl) return;
+    if (!this.visualizerEnabled) return;
     if (this.visualizer) return; // Already running
     if (!supportsOffscreenCanvas()) {
       console.warn('[MusicPlayer] OffscreenCanvas not supported');
       return;
     }
 
-    console.log('[MusicPlayer] Starting Circuit Trace visualizer');
+    const container = this.compositor?.getFocusedContentElement();
+    if (!container) return;
 
-    // Create canvas element manually (don't rely on OffscreenAnimationProxy CSS)
+    console.log('[MusicPlayer] Starting Circuit Trace visualizer (in-window)');
+
     this.visualizer = new OffscreenAnimationProxy('circuit-trace');
     const canvas = this.visualizer.getElement();
 
-    // Insert into DOM first so resize() can measure parent dimensions
-    this.workspaceEl.insertBefore(canvas, this.workspaceEl.firstChild);
+    // Insert as first child of window content (behind terminal panes)
+    container.insertBefore(canvas, container.firstChild);
 
-    // Start the animation — OffscreenAnimationProxy handles fade-in
     this.visualizer.start();
+  }
 
-    // Debug: verify canvas is in DOM and has dimensions
-    const rect = canvas.getBoundingClientRect();
-    console.log(`[MusicPlayer] Visualizer canvas: ${rect.width}x${rect.height}, parent: ${canvas.parentElement?.tagName}, display: ${canvas.style.display}, opacity: ${canvas.style.opacity}`);
+  /** Move the visualizer canvas into the currently focused window */
+  private moveVisualizerToFocusedWindow(): void {
+    if (!this.visualizer) return;
+    const container = this.compositor?.getFocusedContentElement();
+    if (!container) return;
+
+    const canvas = this.visualizer.getElement();
+    // Skip if already in this window
+    if (canvas.parentElement === container) return;
+
+    container.insertBefore(canvas, container.firstChild);
+    this.visualizer.resize();
   }
 
   private stopVisualizer(): void {
@@ -241,6 +264,13 @@ export class MusicPlayer {
       this.visualizer.stop();
       this.visualizer.dispose();
       this.visualizer = null;
+    }
+  }
+
+  /** Resize the visualizer canvas (call after window relayout) */
+  resizeVisualizer(): void {
+    if (this.visualizer) {
+      this.visualizer.resize();
     }
   }
 
@@ -273,7 +303,7 @@ export class MusicPlayer {
     // Manage visualizer lifecycle
     if (this.state.status === 'Playing') {
       this.startVisualizer();
-    } else if (this.state.status === 'Stopped') {
+    } else {
       this.stopVisualizer();
     }
 
