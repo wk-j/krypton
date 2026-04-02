@@ -11,7 +11,7 @@ const BASE_OPACITY: Record<AnimationType, string> = {
   flame: '0.25',
   matrix: '0.25',
   brainwave: '0.22',
-  'circuit-trace': '0.18',
+  'circuit-trace': '0.35',
 };
 
 const CANVAS_CLASS: Record<AnimationType, string> = {

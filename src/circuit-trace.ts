@@ -49,7 +49,7 @@ const BAND_COLORS = [
 ];
 const BAND_THICKNESS = [3, 2, 1];
 const PULSE_SPEED_BASE = [0.008, 0.012, 0.02];
-const TRACE_DIM_ALPHA = 0.08;
+const TRACE_DIM_ALPHA = 0.15;
 const GLOW_BLUR = 8;
 
 // ─── Renderer ─────────────────────────────────────────────────────
@@ -252,7 +252,7 @@ export class CircuitTraceRenderer {
       energy /= (binEnd - binStart);
 
       // Always have a minimum ambient pulse rate so the board looks alive
-      const ambientRate = 0.03;
+      const ambientRate = 0.08;
       const spawnRate = Math.max(ambientRate, energy * 3);
       if (Math.random() > spawnRate) continue;
 

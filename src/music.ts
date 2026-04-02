@@ -211,37 +211,33 @@ export class MusicPlayer {
   // ─── Visualizer ──────────────────────────────────────────────
 
   private startVisualizer(): void {
-    if (!this.visualizerEnabled || !this.workspaceEl || this.visualizer) return;
-    if (!supportsOffscreenCanvas()) return;
+    if (!this.visualizerEnabled || !this.workspaceEl) return;
+    if (this.visualizer) return; // Already running
+    if (!supportsOffscreenCanvas()) {
+      console.warn('[MusicPlayer] OffscreenCanvas not supported');
+      return;
+    }
 
+    console.log('[MusicPlayer] Starting Circuit Trace visualizer');
+
+    // Create canvas element manually (don't rely on OffscreenAnimationProxy CSS)
     this.visualizer = new OffscreenAnimationProxy('circuit-trace');
     const canvas = this.visualizer.getElement();
-    canvas.style.position = 'absolute';
-    canvas.style.top = '0';
-    canvas.style.left = '0';
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    canvas.style.pointerEvents = 'none';
-    canvas.style.zIndex = '0';
 
-    // Insert into DOM first so resize() can measure dimensions
+    // Insert into DOM first so resize() can measure parent dimensions
     this.workspaceEl.insertBefore(canvas, this.workspaceEl.firstChild);
 
-    // Start the animation (handles fade-in internally)
+    // Start the animation — OffscreenAnimationProxy handles fade-in
     this.visualizer.start();
 
-    // Override the fade-in target opacity after the rAF in start() fires
-    const vis = this.visualizer;
-    const targetOpacity = this.visualizerOpacity;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        vis.setOpacity(targetOpacity);
-      });
-    });
+    // Debug: verify canvas is in DOM and has dimensions
+    const rect = canvas.getBoundingClientRect();
+    console.log(`[MusicPlayer] Visualizer canvas: ${rect.width}x${rect.height}, parent: ${canvas.parentElement?.tagName}, display: ${canvas.style.display}, opacity: ${canvas.style.opacity}`);
   }
 
   private stopVisualizer(): void {
     if (this.visualizer) {
+      console.log('[MusicPlayer] Stopping Circuit Trace visualizer');
       this.visualizer.stop();
       this.visualizer.dispose();
       this.visualizer = null;
@@ -252,7 +248,7 @@ export class MusicPlayer {
     this.visualizerEnabled = !this.visualizerEnabled;
     if (this.visualizerEnabled && this.state.status === 'Playing') {
       this.startVisualizer();
-    } else {
+    } else if (!this.visualizerEnabled) {
       this.stopVisualizer();
     }
   }
