@@ -321,7 +321,7 @@ export class MarkdownContentView implements ContentView {
       const truncated = content.length > maxSize;
       const text = truncated ? content.slice(0, maxSize) : content;
 
-      const html = await md.parse(text, { gfm: true, breaks: false });
+      const html = await md.parse(text, { gfm: true, breaks: true });
       this.previewContent.innerHTML = html;
       this.annotateBlocksWithRaw(text);
 
