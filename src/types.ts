@@ -32,6 +32,7 @@ export enum Mode {
   CommandPalette = 'CommandPalette',
   Dashboard = 'Dashboard',
   InlineAI = 'InlineAI',
+  Music = 'Music',
 }
 
 /** Layout strategy for tiling windows */

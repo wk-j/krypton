@@ -11,6 +11,7 @@ import { HintController } from './hints';
 import { CommandPalette } from './command-palette';
 import { DashboardManager } from './dashboard';
 
+import type { MusicPlayer } from './music';
 import type { PaneContentType } from './types';
 
 /** Callback for mode changes */
@@ -24,6 +25,7 @@ export class InputRouter {
   private hints: HintController = new HintController();
   private commandPalette: CommandPalette | null = null;
   private dashboardManager: DashboardManager | null = null;
+  private musicPlayer: MusicPlayer | null = null;
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
@@ -75,6 +77,10 @@ export class InputRouter {
       }
       // Prevent xterm from consuming Cmd+Shift+H (hint mode)
       if (InputRouter.isHintKey(e)) {
+        return false;
+      }
+      // Prevent xterm from consuming Cmd+Shift+M (music dashboard)
+      if (InputRouter.isMusicKey(e)) {
         return false;
       }
       // Prevent xterm from consuming Cmd+K (inline AI)
@@ -148,6 +154,22 @@ export class InputRouter {
         this.toNormal();
       }
     });
+  }
+
+  /** Set the music player instance (called after construction) */
+  setMusicPlayer(player: MusicPlayer): void {
+    this.musicPlayer = player;
+  }
+
+  /** Check if a key event is the Music shortcut (Cmd+Shift+M) */
+  static isMusicKey(e: KeyboardEvent): boolean {
+    return (
+      e.code === 'KeyM' &&
+      e.metaKey &&
+      e.shiftKey &&
+      !e.ctrlKey &&
+      !e.altKey
+    );
   }
 
   /** Check if a key event is the Command Palette shortcut (Cmd+Shift+P) */
@@ -560,9 +582,13 @@ export class InputRouter {
         this.setMode(Mode.Swap);
         break;
 
-      // Enter Move mode
+      // Enter Move mode / Shift+M: toggle music dashboard
       case 'm':
-        this.setMode(Mode.Move);
+        if (e.shiftKey) {
+          this.dashboardManager?.toggle('music');
+        } else {
+          this.setMode(Mode.Move);
+        }
         break;
 
       // Enter Selection mode (character-wise)

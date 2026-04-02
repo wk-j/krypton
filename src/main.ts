@@ -14,6 +14,7 @@ import { createOpenCodeDashboard } from './dashboards/opencode';
 import { createCursorTrail } from './cursor-trail';
 import { ClaudeHookManager } from './claude-hooks';
 import { NotificationController } from './notification';
+import { MusicPlayer } from './music';
 
 async function main(): Promise<void> {
   const workspace = document.getElementById('krypton-workspace');
@@ -76,6 +77,17 @@ async function main(): Promise<void> {
   dashboardManager.register(createGitDashboard(compositor));
   dashboardManager.register(createOpenCodeDashboard(compositor));
 
+  // Initialize music player
+  const musicPlayer = new MusicPlayer();
+  await musicPlayer.init(workspace);
+  dashboardManager.register(musicPlayer.createDashboard());
+  inputRouter.setMusicPlayer(musicPlayer);
+
+  // Apply music config if loaded
+  if (config?.music) {
+    musicPlayer.applyConfig(config.music);
+  }
+
   // Initialize which-key popup (shows available keys per mode)
   const whichKey = new WhichKey();
   inputRouter.onModeChange((mode, contentType) => {
@@ -108,6 +120,9 @@ async function main(): Promise<void> {
     console.log('[Krypton] Config hot-reload received');
     compositor.applyConfig(event.payload);
     inputRouter.hintController.applyConfig(event.payload.hints);
+    if (event.payload.music) {
+      musicPlayer.applyConfig(event.payload.music);
+    }
   });
 
   // Create the first terminal window

@@ -24,6 +24,7 @@ pub struct KryptonConfig {
     pub extensions: ExtensionsConfig,
     pub ssh: SshConfig,
     pub hooks: HooksConfig,
+    pub music: MusicConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -350,6 +351,35 @@ impl Default for HooksConfig {
     }
 }
 
+// ─── Music ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MusicConfig {
+    /// Master toggle for the music player
+    pub enabled: bool,
+    /// Default volume (0.0–1.0)
+    pub volume: f64,
+    /// Default directory to scan for MP3 files
+    pub directory: String,
+    /// Enable Circuit Trace background visualizer
+    pub visualizer: bool,
+    /// Background canvas opacity (0.0–1.0)
+    pub visualizer_opacity: f64,
+}
+
+impl Default for MusicConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            volume: 0.7,
+            directory: "~/Music".to_string(),
+            visualizer: true,
+            visualizer_opacity: 0.18,
+        }
+    }
+}
+
 // ─── Defaults ──────────────────────────────────────────────────────
 
 impl Default for ShellConfig {
@@ -438,7 +468,18 @@ pub fn config_path() -> Option<PathBuf> {
 
 /// Load config from disk, merging with defaults for any missing fields.
 /// If the file doesn't exist, returns defaults and creates it.
+/// On first load (startup), flushes new fields back to disk.
 pub fn load_config() -> KryptonConfig {
+    load_config_inner(true)
+}
+
+/// Load config without flushing to disk. Used by the filesystem watcher
+/// to avoid a write→watch→reload→write loop.
+pub fn load_config_no_flush() -> KryptonConfig {
+    load_config_inner(false)
+}
+
+fn load_config_inner(flush: bool) -> KryptonConfig {
     let path = match config_path() {
         Some(p) => p,
         None => {
@@ -475,9 +516,11 @@ pub fn load_config() -> KryptonConfig {
         }
     };
 
-    // Flush the fully-populated config back to disk so that any new
-    // fields added since the file was last written appear with their defaults.
-    flush_config(&path, &config);
+    if flush {
+        // Flush the fully-populated config back to disk so that any new
+        // fields added since the file was last written appear with their defaults.
+        flush_config(&path, &config);
+    }
 
     config
 }

@@ -136,6 +136,14 @@ export interface HooksConfig {
   animation: string;
 }
 
+export interface MusicConfig {
+  enabled: boolean;
+  volume: number;
+  directory: string;
+  visualizer: boolean;
+  visualizer_opacity: number;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -150,6 +158,7 @@ export interface KryptonConfig {
   visual: VisualConfig;
   extensions: ExtensionsConfig;
   hooks: HooksConfig;
+  music: MusicConfig;
 }
 
 /** Load configuration from the Rust backend */

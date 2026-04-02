@@ -6,8 +6,9 @@
 import { FlameRenderer } from './flame';
 import { MatrixRenderer } from './matrix';
 import { BrainwaveRenderer } from './brainwave';
+import { CircuitTraceRenderer } from './circuit-trace';
 
-type AnimationType = 'flame' | 'matrix' | 'brainwave';
+type AnimationType = 'flame' | 'matrix' | 'brainwave' | 'circuit-trace';
 
 interface Renderer {
   init(W: number, H: number): void;
@@ -19,7 +20,8 @@ type WorkerMessage =
   | { type: 'start' }
   | { type: 'stop' }
   | { type: 'resize'; width: number; height: number; dpr: number }
-  | { type: 'dispose' };
+  | { type: 'dispose' }
+  | { type: 'fft'; bins: number[] };
 
 let canvas: OffscreenCanvas | null = null;
 let ctx: OffscreenCanvasRenderingContext2D | null = null;
@@ -34,6 +36,7 @@ function createRenderer(type: AnimationType): Renderer {
   switch (type) {
     case 'matrix': return new MatrixRenderer();
     case 'brainwave': return new BrainwaveRenderer();
+    case 'circuit-trace': return new CircuitTraceRenderer();
     default: return new FlameRenderer();
   }
 }
@@ -87,6 +90,13 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
 
     case 'resize':
       applySize(msg.width, msg.height, msg.dpr);
+      break;
+
+    case 'fft':
+      // Forward FFT bins to the circuit-trace renderer
+      if (renderer && 'setFftBins' in renderer) {
+        (renderer as CircuitTraceRenderer).setFftBins(msg.bins);
+      }
       break;
 
     case 'dispose':

@@ -3,6 +3,7 @@ mod config;
 pub mod hook_server;
 mod pty;
 mod session;
+pub mod music;
 pub mod sound;
 pub mod ssh;
 pub mod theme;
@@ -46,6 +47,7 @@ pub fn run() {
         .manage(sound_engine)
         .manage(ssh_manager)
         .manage(hook_server.clone())
+        // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
             commands::get_pty_cwd,
@@ -76,6 +78,19 @@ pub fn run() {
             sound::sound_apply_config,
             sound::sound_load_pack,
             sound::sound_get_packs,
+            music::music_load_dir,
+            music::music_load_file,
+            music::music_play,
+            music::music_pause,
+            music::music_stop,
+            music::music_next,
+            music::music_previous,
+            music::music_play_index,
+            music::music_seek,
+            music::music_set_volume,
+            music::music_toggle_repeat,
+            music::music_toggle_shuffle,
+            music::music_get_state,
             commands::get_hook_server_port,
             commands::get_hook_server_config_snippet,
             session::session_create,
@@ -131,6 +146,20 @@ pub fn run() {
                 if let Some(cfg) = sound_config {
                     engine.apply_config(cfg);
                 }
+            }
+
+            // Initialize music engine
+            {
+                let music_config = krypton_config
+                    .read()
+                    .ok()
+                    .map(|cfg| cfg.music.clone())
+                    .unwrap_or_default();
+                let music_engine = music::MusicEngine::new(
+                    app.handle().clone(),
+                    &music_config,
+                );
+                app.manage::<music::MusicEngineState>(std::sync::Mutex::new(music_engine));
             }
 
             // Start filesystem watcher for config + theme hot-reload
@@ -257,7 +286,7 @@ fn reload_and_emit(
     config: &Arc<RwLock<config::KryptonConfig>>,
     theme_engine: &Arc<theme::ThemeEngine>,
 ) {
-    let new_config = config::load_config();
+    let new_config = config::load_config_no_flush();
 
     let theme = match theme_engine.resolve(&new_config.theme.name) {
         Ok(mut t) => {
