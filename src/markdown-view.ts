@@ -7,6 +7,8 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { invoke } from './profiler/ipc';
 
+import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
+
 import type { ContentView, PaneContentType } from './types';
 
 /** List .md files in a directory, respecting .gitignore when possible. */
@@ -60,6 +62,10 @@ export class MarkdownContentView implements ContentView {
   private cwd: string;
   private closeCallback: (() => void) | null = null;
 
+  getWorkingDirectory(): string | null {
+    return this.cwd;
+  }
+
 
   // DOM elements
   private sidebar: HTMLElement;
@@ -80,6 +86,9 @@ export class MarkdownContentView implements ContentView {
   // Navigation history (jumplist)
   private jumpHistory: string[] = [];
   private jumpIndex = -1;
+
+  // Content reveal animations
+  private revealAnimations: Animation[] = [];
 
   // Link hint mode state
   private linkHintActive = false;
@@ -333,9 +342,146 @@ export class MarkdownContentView implements ContentView {
       }
 
       this.previewContent.scrollTop = 0;
+      this.animateContentReveal();
     } catch {
       this.previewContent.innerHTML = `<div class="krypton-md__empty">Failed to read file: ${relativePath}</div>`;
     }
+  }
+
+  /** Animate content blocks into view — headings get pretext line-by-line reveal, other blocks stagger in. */
+  private animateContentReveal(): void {
+    // Cancel previous animations
+    for (const a of this.revealAnimations) a.cancel();
+    this.revealAnimations = [];
+
+    const blocks = this.previewContent.querySelectorAll(
+      'h1, h2, h3, h4, h5, h6, p, pre, ul, ol, blockquote, table, hr',
+    ) as NodeListOf<HTMLElement>;
+
+    // Only animate the first ~40 blocks to avoid perf overhead on huge files
+    const limit = Math.min(blocks.length, 40);
+    let lineIndex = 0; // cumulative line counter for stagger timing
+
+    for (let i = 0; i < limit; i++) {
+      const el = blocks[i];
+      const tag = el.tagName;
+
+      if (/^H[1-6]$/.test(tag)) {
+        // Heading: use pretext to split into lines, animate each line
+        lineIndex = this.animateHeadingLines(el, lineIndex);
+      } else {
+        // Regular block: simple staggered fade+slide
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(6px)';
+
+        const delay = lineIndex * 30;
+        const anim = el.animate([
+          { opacity: 0, transform: 'translateY(6px)' },
+          { opacity: 1, transform: 'translateY(0)' },
+        ], {
+          duration: 250,
+          delay,
+          easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+          fill: 'forwards',
+        });
+        this.revealAnimations.push(anim);
+        lineIndex++;
+      }
+    }
+  }
+
+  /** Split a heading into lines with pretext and animate each line. Returns updated lineIndex. */
+  private animateHeadingLines(heading: HTMLElement, lineIndex: number): number {
+    const text = heading.textContent || '';
+    if (!text.trim()) return lineIndex;
+
+    // Determine font from heading level
+    const level = parseInt(heading.tagName[1], 10);
+    const sizes: Record<number, string> = { 1: '1.8em', 2: '1.4em', 3: '1.2em', 4: '1.05em', 5: '0.95em', 6: '0.95em' };
+    const fontSize = sizes[level] || '1em';
+    const font = `bold ${fontSize} "Fira Code", monospace`;
+
+    // Measure available width from container (preview content has 24px padding each side)
+    const maxWidth = this.previewContent.clientWidth - 48;
+    if (maxWidth <= 0) return lineIndex + 1;
+
+    const prepared = prepareWithSegments(text, font);
+    const { lines } = layoutWithLines(prepared, maxWidth, 1.3 * parseFloat(fontSize) * 16);
+
+    // If single line, just animate the heading as-is
+    if (lines.length <= 1) {
+      heading.style.opacity = '0';
+      heading.style.transform = 'translateX(-8px)';
+
+      const delay = lineIndex * 30;
+      const anim = heading.animate([
+        { opacity: 0, transform: 'translateX(-8px)', filter: 'blur(3px)' },
+        { opacity: 0.7, transform: 'translateX(1px)', filter: 'blur(0px)', offset: 0.6 },
+        { opacity: 1, transform: 'translateX(0)', filter: 'blur(0px)' },
+      ], {
+        duration: 300,
+        delay,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fill: 'forwards',
+      });
+      this.revealAnimations.push(anim);
+
+      // Glow pulse
+      const glowAnim = heading.animate([
+        { textShadow: '0 0 0px transparent' },
+        { textShadow: '0 0 12px rgba(0, 204, 255, 0.5)', offset: 0.4 },
+        { textShadow: '0 0 3px rgba(0, 204, 255, 0.1)' },
+      ], {
+        duration: 500,
+        delay: delay + 180,
+        easing: 'ease-out',
+        fill: 'forwards',
+      });
+      this.revealAnimations.push(glowAnim);
+
+      return lineIndex + 1;
+    }
+
+    // Multi-line heading: replace content with per-line spans
+    heading.textContent = '';
+    heading.style.opacity = '1'; // container visible, children animate
+
+    for (let j = 0; j < lines.length; j++) {
+      const lineEl = document.createElement('div');
+      lineEl.className = 'krypton-md__heading-line';
+      lineEl.textContent = lines[j].text;
+      lineEl.style.opacity = '0';
+      lineEl.style.transform = 'translateX(-10px)';
+      heading.appendChild(lineEl);
+
+      const delay = (lineIndex + j) * 30;
+      const anim = lineEl.animate([
+        { opacity: 0, transform: 'translateX(-10px)', filter: 'blur(3px)' },
+        { opacity: 0.7, transform: 'translateX(1px)', filter: 'blur(0px)', offset: 0.6 },
+        { opacity: 1, transform: 'translateX(0)', filter: 'blur(0px)' },
+      ], {
+        duration: 300,
+        delay,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fill: 'forwards',
+      });
+      this.revealAnimations.push(anim);
+
+      // Glow pulse per line
+      const glowAnim = lineEl.animate([
+        { textShadow: '0 0 0px transparent' },
+        { textShadow: '0 0 12px rgba(0, 204, 255, 0.5)', offset: 0.4 },
+        { textShadow: '0 0 3px rgba(0, 204, 255, 0.1)' },
+      ], {
+        duration: 500,
+        delay: delay + 180,
+        easing: 'ease-out',
+        fill: 'forwards',
+      });
+      this.revealAnimations.push(glowAnim);
+    }
+
+    return lineIndex + lines.length;
   }
 
   private setFocus(panel: 'sidebar' | 'preview' | 'select'): void {

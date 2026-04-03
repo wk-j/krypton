@@ -102,6 +102,14 @@ export class AgentController {
     this.projectDir = dir;
   }
 
+  // Optional override for the system prompt (used by inline AI overlay)
+  private inlineSystemPrompt: string | null = null;
+
+  /** Override the system prompt for the next prompt call (e.g. for inline AI mode). */
+  setInlineSystemPrompt(prompt: string | null): void {
+    this.inlineSystemPrompt = prompt;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async buildAgent(apiKey: string): Promise<any> {
     const [{ Agent }, { getModel }] = await Promise.all([
@@ -186,8 +194,9 @@ export class AgentController {
     return names;
   }
 
-  /** Revert system prompt to base (no skills). */
+  /** Revert system prompt to base (no skills). Clear inline override if set. */
   private revertSystemPrompt(): void {
+    this.inlineSystemPrompt = null;
     if (this.agent) {
       this.agent.setSystemPrompt(this.buildBasePrompt());
     }
@@ -195,7 +204,8 @@ export class AgentController {
 
   /** Build the base system prompt, including skill catalog if skills are discovered. */
   private buildBasePrompt(): string {
-    let prompt = BASE_SYSTEM_PROMPT;
+    // Use inline override if set (for inline AI overlay)
+    let prompt = this.inlineSystemPrompt ?? BASE_SYSTEM_PROMPT;
     if (this.projectDir) {
       prompt += `\n\nWorking directory: ${this.projectDir}`;
     }
@@ -326,13 +336,17 @@ export class AgentController {
       }
 
       try {
-        // Discover skills first so buildAgent can include them in system prompt and tools
-        await this.ensureSkillsDiscovered();
+        // Skip skill discovery and session restore for inline mode (lightweight, disposable)
+        if (!this.inlineSystemPrompt) {
+          await this.ensureSkillsDiscovered();
+        }
 
         this.agent = await this.buildAgent(apiKey);
         console.log('[agent] initialized, projectDir:', this.projectDir);
 
-        await this.restoreFromSession();
+        if (!this.inlineSystemPrompt) {
+          await this.restoreFromSession();
+        }
       } catch (e) {
         console.error('[agent] buildAgent failed:', e);
         onEvent({ type: 'error', message: `Failed to initialize agent: ${e}` });
@@ -340,11 +354,13 @@ export class AgentController {
       }
     }
 
-    // Initialize session if not already
-    await this.initSession();
-
-    // Match and inject skills based on user input
-    this.lastActiveSkills = await this.applySkills(text, commandArgs);
+    // Skip session and skill matching for inline mode
+    if (!this.inlineSystemPrompt) {
+      await this.initSession();
+      this.lastActiveSkills = await this.applySkills(text, commandArgs);
+    } else {
+      this.lastActiveSkills = [];
+    }
 
     // Persist the user message
     const userMessage = { role: 'user', content: text, timestamp: Date.now() };

@@ -116,6 +116,10 @@
   100% { text-shadow: 0 0 6px rgba(0, 255, 102, 0.3); }
 }
 
+.krypton-inline-ai__command-line {
+  line-height: 20px;
+}
+
 .krypton-inline-ai__explain {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-size: 13px;

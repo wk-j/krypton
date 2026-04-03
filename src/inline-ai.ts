@@ -2,15 +2,42 @@
 // Warp-style command suggestion overlay triggered by Cmd+K.
 // Floats inside the focused terminal window, sends natural language
 // queries to the AgentController, and streams command suggestions.
+// The AI uses tools (bash, read_file) to gather context autonomously —
+// e.g. reading git diff before crafting a commit message.
 
 import { AgentController } from './agent/agent';
 import type { AgentEventCallback } from './agent/agent';
 import { invoke } from './profiler/ipc';
+import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 
 /** Callback to write a string into the focused PTY */
 type WriteCallback = (data: string) => void;
 /** Callback to close the overlay and return to Normal mode */
 type CloseCallback = () => void;
+
+// ── Inline AI system prompts ─────────────────────────────────────────
+
+const INLINE_CMD_SYSTEM_PROMPT = `You are a terminal command generator. You output ONE shell command. Nothing else.
+
+RULES:
+- NEVER ask questions. NEVER ask for clarification. NEVER say "Would you like". Just output the command.
+- Make your best judgment call. If the user says "commit changes", commit ALL changes with a good message. Don't ask what to commit.
+- Use the bash tool to gather context BEFORE generating the command. For example:
+  - "commit changes" → run \`git diff --stat\` and \`git status -s\`, then output a git commit command with a message that describes what actually changed.
+  - "kill the server" → run \`lsof -iTCP -sTCP:LISTEN -P -n\` to find the PID, then output the kill command.
+  - "install dependencies" → run \`ls\` to detect package.json/Cargo.toml/etc, then output the right install command.
+
+OUTPUT FORMAT (your final text response after using tools):
+- Line 1: the command. Nothing else.
+- Line 2 (optional): a comment starting with # to briefly explain.
+- No markdown. No code fences. No backticks. No XML tags. No prose. No questions.`;
+
+const INLINE_ASK_SYSTEM_PROMPT = `You are a concise terminal expert. Answer directly. NEVER ask follow-up questions.
+
+- Use the bash tool to gather context if needed before answering.
+- Be brief — 1-3 sentences max. Plain text only.
+- No markdown, no code fences, no XML tags.
+- If the answer is a command, just show the command.`;
 
 // ── Glitch-decode animation (borrowed from NotificationController) ────
 
@@ -330,55 +357,45 @@ export class InlineAIOverlay {
       } catch { /* ignore */ }
     }
 
-    // Build contextual prompt based on mode
-    const systemLines = this.askMode
-      ? [
-          'You are a helpful terminal assistant. Answer the user\'s question concisely.',
-          'Keep answers short — a few sentences max. Use plain text, no markdown.',
-          '',
-          cwd ? `Working directory: ${cwd}` : '',
-          '',
-          `User question: ${query}`,
-        ]
-      : [
-          'You are a terminal command assistant. The user will describe what they want to do.',
-          'Return ONLY the command on the first line.',
-          'Optionally add a one-line explanation on the second line, prefixed with #.',
-          'Do NOT use markdown formatting, code fences, or backticks.',
-          'Nothing else.',
-          '',
-          cwd ? `Working directory: ${cwd}` : '',
-          '',
-          `User query: ${query}`,
-        ];
-    const contextualPrompt = systemLines.filter(Boolean).join('\n');
+    // Override the agent's system prompt for inline mode
+    this.controller.setInlineSystemPrompt(
+      this.askMode ? INLINE_ASK_SYSTEM_PROMPT : INLINE_CMD_SYSTEM_PROMPT
+    );
+
+    // Build contextual prompt
+    const contextualPrompt = cwd
+      ? `Working directory: ${cwd}\n\n${query}`
+      : query;
 
     this.command = '';
     this.answer = '';
     this.explanation = '';
 
-    let fullResponse = '';
+    let latestResponse = '';
+    let usedTools = false;
 
     const onEvent: AgentEventCallback = (e) => {
       switch (e.type) {
         case 'agent_start':
-          // Agent initialized — update spinner to show we're waiting for response
           if (dots) dots.textContent = 'Thinking...';
           break;
         case 'message_update':
-          fullResponse += e.delta;
-          // Hide spinner, show result area on first token
+          if (usedTools) {
+            // New LLM round after tool calls — reset to show only the final answer
+            latestResponse = '';
+            usedTools = false;
+          }
+          latestResponse += e.delta;
+          // Show result area on first token
           this.spinnerEl.hidden = true;
-          if (this.resultEl.hidden && fullResponse.length > 0) {
+          if (this.resultEl.hidden && latestResponse.length > 0) {
             this.resultEl.hidden = false;
           }
           if (this.askMode) {
-            // Ask mode — show full response as-is
-            this.answer = fullResponse.trim();
+            this.answer = this.stripArtifacts(latestResponse.trim());
             this.commandEl.textContent = this.answer;
           } else {
-            // Command mode — parse first line as command
-            this.parseResponse(fullResponse);
+            this.parseResponse(latestResponse);
             this.commandEl.textContent = this.command;
             if (this.explanation) {
               this.explainEl.textContent = this.explanation;
@@ -386,8 +403,18 @@ export class InlineAIOverlay {
           }
           break;
         case 'tool_start':
-          // Agent is using tools — update status
-          if (dots) dots.textContent = 'Working...';
+          // Hide any intermediate text and show spinner — avoids flicker
+          // when result area clears on the next LLM round
+          this.resultEl.hidden = true;
+          this.commandEl.textContent = '';
+          this.explainEl.textContent = '';
+          if (dots) dots.textContent = `Running ${e.name}...`;
+          this.spinnerEl.hidden = false;
+          usedTools = true;
+          break;
+        case 'tool_end':
+          // Keep spinner visible until next message_update arrives
+          if (dots) dots.textContent = 'Thinking...';
           break;
         case 'agent_end':
           this.spinnerEl.hidden = true;
@@ -406,9 +433,14 @@ export class InlineAIOverlay {
     }
   }
 
+  /** Strip XML/tool-call artifacts that the GLM model may leak into text responses. */
+  private stripArtifacts(text: string): string {
+    return text.replace(/<\/?[a-zA-Z_][a-zA-Z0-9_.-]*>/g, '').trim();
+  }
+
   private parseResponse(text: string): void {
-    // Strip markdown code fences if the model wraps the response
-    let cleaned = text.trim();
+    // Strip XML/tool artifacts that GLM may leak, then markdown code fences
+    let cleaned = this.stripArtifacts(text);
     if (cleaned.startsWith('```')) {
       const lines = cleaned.split('\n');
       // Remove opening fence (```bash, ```sh, ```, etc.)
@@ -420,11 +452,65 @@ export class InlineAIOverlay {
       cleaned = lines.join('\n').trim();
     }
 
+    // Collect command lines (everything before first # comment line).
+    // The model may wrap long commands (e.g. commit messages) across multiple lines.
     const lines = cleaned.split('\n');
-    this.command = lines[0] ?? '';
-    // Look for explanation line starting with #
-    const explainLine = lines.find((l, i) => i > 0 && l.startsWith('#'));
-    this.explanation = explainLine ? explainLine.slice(1).trim() : '';
+    const commandLines: string[] = [];
+    let explainLine = '';
+    for (const line of lines) {
+      if (line.startsWith('#')) {
+        explainLine = line.slice(1).trim();
+        break;
+      }
+      commandLines.push(line);
+    }
+    this.command = commandLines.join(' ').trim();
+    this.explanation = explainLine;
+  }
+
+  /**
+   * Reveal text inside commandEl using pretext line-by-line animation.
+   * Short single-line results use glitch decode; multi-line results
+   * use staggered line slide-in with glow pulse.
+   */
+  private revealWithPretext(text: string): void {
+    // Measure available width: result container minus padding
+    const maxWidth = this.resultEl.clientWidth - 16; // 8px padding each side
+    if (maxWidth <= 0) {
+      // Fallback if not yet laid out
+      this.commandEl.textContent = text;
+      return;
+    }
+
+    const font = '600 15px "Mononoki Nerd Font Mono", "JetBrains Mono", monospace';
+    const lineHeight = 20; // ~15px * 1.3
+    const prepared = prepareWithSegments(text, font);
+    const { lines } = layoutWithLines(prepared, maxWidth, lineHeight);
+
+    if (lines.length <= 1) {
+      // Single line — use glitch decode animation
+      this.decodeTimer = decodeReveal(this.commandEl, text);
+      return;
+    }
+
+    // Multi-line — clear and animate line by line
+    this.commandEl.textContent = '';
+    for (let i = 0; i < lines.length; i++) {
+      const lineEl = document.createElement('div');
+      lineEl.className = 'krypton-inline-ai__command-line';
+      lineEl.textContent = lines[i].text;
+      this.commandEl.appendChild(lineEl);
+
+      lineEl.animate([
+        { opacity: 0, transform: 'translateX(-6px)', filter: 'blur(2px)' },
+        { opacity: 1, transform: 'translateX(0)', filter: 'blur(0)' },
+      ], {
+        duration: 250,
+        delay: i * 60,
+        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        fill: 'backwards',
+      });
+    }
   }
 
   private onComplete(): void {
@@ -434,17 +520,20 @@ export class InlineAIOverlay {
     this.inputEl.readOnly = false;
 
     if (this.askMode) {
-      // Ask mode — text answer, no execute actions
+      // Ask mode — text answer with line-by-line reveal
       this.commandEl.classList.add('krypton-inline-ai__command--answer');
+      if (this.answer) {
+        this.revealWithPretext(this.answer);
+      }
       this.hintEl.textContent = '\u2318C copy \u00b7 \u21b5 ask another \u00b7 \u238b dismiss';
     } else {
-      // Command mode — show final command
+      // Command mode — reveal command
       if (this.command) {
         const alreadyShown = this.commandEl.textContent === this.command;
         if (alreadyShown) {
           this.commandEl.classList.add('krypton-inline-ai__command--ready');
         } else {
-          this.decodeTimer = decodeReveal(this.commandEl, this.command);
+          this.revealWithPretext(this.command);
         }
       }
       if (this.explanation) {

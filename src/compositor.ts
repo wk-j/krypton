@@ -1509,11 +1509,30 @@ export class Compositor {
     return id;
   }
 
+  /** Check whether the given directory is inside a git repository. */
+  private async isGitRepo(cwd: string | null): Promise<boolean> {
+    if (!cwd) return false;
+    try {
+      await invoke<string>('run_command', {
+        program: 'git',
+        args: ['rev-parse', '--git-dir'],
+        cwd,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Open a diff view window showing git diff output from the focused terminal's CWD.
    */
   async openDiffView(options?: { staged?: boolean }): Promise<void> {
     const cwd = await this.getFocusedCwd();
+    if (!await this.isGitRepo(cwd)) {
+      this.showNotification('Not a git repository — diff view unavailable');
+      return;
+    }
     const args = ['diff', '-M'];
     if (options?.staged) args.push('--staged');
 
@@ -1553,6 +1572,10 @@ export class Compositor {
    */
   async openMarkdownView(): Promise<void> {
     const cwd = await this.getFocusedCwd() ?? undefined;
+    if (!await this.isGitRepo(cwd ?? null)) {
+      this.showNotification('Not a git repository — markdown viewer unavailable');
+      return;
+    }
 
     const { listMarkdownFiles, MarkdownContentView } = await import('./markdown-view');
     const files = await listMarkdownFiles(cwd ?? '.');
@@ -1624,7 +1647,6 @@ export class Compositor {
     const { InlineAIOverlay } = await import('./inline-ai');
     const { AgentController } = await import('./agent/agent');
 
-    // Get or create a shared controller for inline queries
     // Use a lightweight, disposable controller — not the agent-pane one
     const controller = new AgentController();
     let projectDir: string | null = null;
@@ -2820,11 +2842,7 @@ export class Compositor {
     // Focus the Quick Terminal (add focused styling)
     this.qtElement.classList.add('krypton-window--focused');
 
-    // Animate show based on configured style
-    const duration = this.qtConfig.animationDuration;
-    const anim = this.animateQtShow(this.qtElement, duration);
-
-    // Fit terminal after visible
+    // Fit terminal BEFORE animation so reflow doesn't cause a visible jump
     await this.nextFrame();
     this.qtTerminal.fitAddon.fit();
     if (this.qtSessionId !== null) {
@@ -2834,6 +2852,10 @@ export class Compositor {
         rows: this.qtTerminal.terminal.rows,
       }).catch((e) => console.error('QT resize PTY failed:', e));
     }
+
+    // Animate show based on configured style
+    const duration = this.qtConfig.animationDuration;
+    const anim = this.animateQtShow(this.qtElement, duration);
 
     // Focus xterm.js
     this.qtTerminal.terminal.focus();
@@ -4221,7 +4243,7 @@ export class Compositor {
    * is not yet implemented (notifications are a nice-to-have).
    */
   private showNotification(message: string): void {
-    console.warn(`[krypton:ssh] ${message}`);
+    console.warn(`[krypton] ${message}`);
     // Create a simple toast notification
     const toast = document.createElement('div');
     toast.className = 'krypton-toast';

@@ -2100,11 +2100,11 @@ html, body {
     rgba(6, 10, 18, 0.94),
     rgba(10, 16, 28, 0.88)
   );
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
   border-radius: 1px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: 18px;
-  color: var(--krypton-fg, #b0c4d8);
+  color: var(--krypton-fg, #e0e8f0);
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.4),
     0 8px 32px rgba(0, 0, 0, 0.3),
@@ -2198,7 +2198,7 @@ html, body {
 .krypton-claude-toast--visible {
   transform: translateX(0) rotateY(-18deg) translateZ(0px);
   opacity: 1;
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.18);
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
 }
 
 .krypton-claude-toast--visible::before {
@@ -2363,7 +2363,7 @@ html, body {
   border-bottom-color: rgba(80, 220, 100, 0.2);
 }
 .krypton-claude-toast--session .krypton-claude-toast__telemetry {
-  color: rgba(80, 220, 100, 0.2);
+  color: rgba(80, 220, 100, 0.4);
 }
 .krypton-claude-toast--session::before {
   background: radial-gradient(circle, rgba(80, 220, 100, 0.04) 0.5px, transparent 0.5px);
@@ -2384,9 +2384,9 @@ html, body {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
 }
 .krypton-claude-toast--tool_done .krypton-claude-toast__label {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
   text-shadow: none;
-  border-bottom-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  border-bottom-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
 }
 .krypton-claude-toast--tool_done .krypton-claude-toast__text {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5);
@@ -2511,7 +2511,7 @@ html, body {
 .krypton-claude-toast--success .krypton-claude-toast__label {
   color: #50dc64;
   text-shadow: 0 0 6px rgba(80, 220, 100, 0.4);
-  border-bottom-color: rgba(80, 220, 100, 0.2);
+  border-bottom-color: rgba(80, 220, 100, 0.4);
 }
 .krypton-claude-toast--success .krypton-claude-toast__telemetry {
   color: rgba(80, 220, 100, 0.2);
@@ -2542,7 +2542,7 @@ html, body {
   border-color: rgba(80, 220, 100, 0.1);
 }
 .krypton-claude-toast--instructions .krypton-claude-toast__bracket {
-  color: rgba(80, 220, 100, 0.15);
+  color: rgba(80, 220, 100, 0.35);
 }
 .krypton-claude-toast--instructions .krypton-claude-toast__label {
   color: rgba(80, 220, 100, 0.6);
@@ -2550,7 +2550,7 @@ html, body {
   border-bottom-color: rgba(80, 220, 100, 0.1);
 }
 .krypton-claude-toast--instructions .krypton-claude-toast__text {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.6);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.8);
 }
 .krypton-claude-toast--instructions .krypton-claude-toast__telemetry {
   color: rgba(80, 220, 100, 0.12);
@@ -2558,7 +2558,7 @@ html, body {
 
 /* ─── Toast type: prompt (blue) — UserPromptSubmit */
 .krypton-claude-toast--prompt {
-  border-color: rgba(100, 160, 255, 0.2);
+  border-color: rgba(100, 160, 255, 0.4);
 }
 .krypton-claude-toast--prompt .krypton-claude-toast__bracket {
   color: rgba(100, 160, 255, 0.35);
@@ -3031,6 +3031,10 @@ html, body {
 .krypton-md__preview-content h4 { font-size: 1.05em; }
 .krypton-md__preview-content h5,
 .krypton-md__preview-content h6 { font-size: 0.95em; opacity: 0.8; }
+
+.krypton-md__heading-line {
+  white-space: pre;
+}
 
 .krypton-md__preview-content p {
   margin: 0.8em 0;
