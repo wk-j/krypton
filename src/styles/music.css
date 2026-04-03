@@ -84,6 +84,13 @@
   transition: width 0.5s linear;
 }
 
+.krypton-mini-player__viz {
+  width: 120px;
+  height: 22px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 3px rgba(0, 212, 255, 0.5));
+}
+
 /* ─── Music Dashboard ───────────────────────────────────────────── */
 
 .krypton-music-dashboard {
@@ -223,7 +230,13 @@
   font-size: 16px;
   font-weight: 500;
   color: var(--krypton-foreground, #c0c8d4);
-  word-break: break-word;
+  line-height: 22px;
+  min-height: 22px;
+}
+
+.krypton-music-dashboard__np-track-line {
+  white-space: pre;
+  text-shadow: 0 0 2px rgba(0, 212, 255, 0.15);
 }
 
 .krypton-music-dashboard__np-info {

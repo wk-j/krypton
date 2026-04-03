@@ -5,6 +5,8 @@
 import { invoke } from './profiler/ipc';
 import { listen } from '@tauri-apps/api/event';
 
+import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
+
 import { OffscreenAnimationProxy, supportsOffscreenCanvas } from './offscreen-animation';
 
 import type { Compositor } from './compositor';
@@ -77,9 +79,19 @@ export class MusicPlayer {
   private unlistenPosition: (() => void) | null = null;
   private unlistenFft: (() => void) | null = null;
 
+  // Mini visualizer state
+  private miniVizCanvas: HTMLCanvasElement | null = null;
+  private miniVizCtx: CanvasRenderingContext2D | null = null;
+  private miniVizBins: number[] = [];
+  private miniVizRaf: number = 0;
+
   // Dashboard selection state
   private selectedIndex = 0;
   private currentDirectory = '';
+
+  // Animated track name state
+  private animatedTrackPath = '';
+  private trackLineAnimations: Animation[] = [];
 
   async init(workspaceEl: HTMLElement, compositor?: Compositor): Promise<void> {
     this.compositor = compositor ?? null;
@@ -116,6 +128,7 @@ export class MusicPlayer {
       if (this.visualizer) {
         this.visualizer.sendFftData(event.payload.bins);
       }
+      this.miniVizBins = event.payload.bins;
     });
 
     // Create mini-player bar
@@ -290,6 +303,13 @@ export class MusicPlayer {
     this.miniPlayer.className = 'krypton-mini-player';
     this.miniPlayer.style.display = 'none';
     document.body.appendChild(this.miniPlayer);
+
+    // Create mini visualizer canvas
+    this.miniVizCanvas = document.createElement('canvas');
+    this.miniVizCanvas.className = 'krypton-mini-player__viz';
+    this.miniVizCanvas.width = 120;
+    this.miniVizCanvas.height = 22;
+    this.miniVizCtx = this.miniVizCanvas.getContext('2d');
   }
 
   private updateMiniPlayer(): void {
@@ -334,6 +354,21 @@ export class MusicPlayer {
         <div class="krypton-mini-player__progress-fill" style="width: ${progress}%"></div>
       </div>
     `;
+
+    // Insert mini visualizer canvas (between status icon and track name)
+    if (this.miniVizCanvas) {
+      const statusEl = this.miniPlayer.querySelector('.krypton-mini-player__status');
+      if (statusEl) {
+        statusEl.after(this.miniVizCanvas);
+      }
+    }
+
+    // Start/stop mini visualizer animation loop
+    if (this.state.status === 'Playing') {
+      this.startMiniViz();
+    } else {
+      this.stopMiniViz();
+    }
   }
 
   private updateMiniPlayerPosition(): void {
@@ -353,6 +388,70 @@ export class MusicPlayer {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  // ─── Mini Visualizer ───────────────────────────────────────
+
+  private startMiniViz(): void {
+    if (this.miniVizRaf) return;
+    const draw = (): void => {
+      this.drawMiniViz();
+      this.miniVizRaf = requestAnimationFrame(draw);
+    };
+    this.miniVizRaf = requestAnimationFrame(draw);
+  }
+
+  private stopMiniViz(): void {
+    if (this.miniVizRaf) {
+      cancelAnimationFrame(this.miniVizRaf);
+      this.miniVizRaf = 0;
+    }
+    // Clear canvas
+    if (this.miniVizCtx && this.miniVizCanvas) {
+      this.miniVizCtx.clearRect(0, 0, this.miniVizCanvas.width, this.miniVizCanvas.height);
+    }
+  }
+
+  private drawMiniViz(): void {
+    const ctx = this.miniVizCtx;
+    const canvas = this.miniVizCanvas;
+    if (!ctx || !canvas) return;
+
+    const bins = this.miniVizBins;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (bins.length === 0) return;
+
+    // Draw frequency bars across the canvas
+    const barCount = 28;
+    const gap = 1;
+    const barWidth = (w - gap * (barCount - 1)) / barCount;
+
+    for (let i = 0; i < barCount; i++) {
+      // Map bar index to FFT bin (skip bin 0 which is DC offset)
+      const binIndex = Math.min(1 + Math.floor((i / barCount) * (bins.length - 1)), bins.length - 1);
+      const value = bins[binIndex] ?? 0;
+
+      // Height proportional to FFT magnitude (bins are 0..1 range)
+      const barH = Math.max(2, value * h);
+      const x = i * (barWidth + gap);
+      const y = h - barH;
+
+      // Brighter bars with cyan-to-white gradient based on intensity
+      const alpha = 0.6 + value * 0.4;
+      const green = Math.round(212 + value * 43);
+      ctx.fillStyle = `rgba(0, ${green}, 255, ${alpha})`;
+      ctx.fillRect(x, y, barWidth, barH);
+
+      // Bright cap on top of each bar for extra visibility
+      if (value > 0.05) {
+        ctx.fillStyle = `rgba(180, 240, 255, ${0.7 + value * 0.3})`;
+        ctx.fillRect(x, y, barWidth, Math.min(2, barH));
+      }
+    }
   }
 
   // ─── Dashboard Definition ──────────────────────────────────
@@ -460,7 +559,7 @@ export class MusicPlayer {
 
     container.innerHTML = `
       <div class="krypton-music-dashboard__np-status">${statusLabel}</div>
-      <div class="krypton-music-dashboard__np-track">${track ? this.escapeHtml(track.filename) : '—'}</div>
+      <div class="krypton-music-dashboard__np-track"></div>
       <div class="krypton-music-dashboard__np-info">${track ? `MP3 \u00B7 ${track.bitrate_kbps}kbps \u00B7 ${formatSampleRate(track.sample_rate_hz)} \u00B7 ${formatChannels(track.channels)}` : ''}</div>
       <div class="krypton-music-dashboard__np-time">
         <span>${formatTime(this.state.position_secs)}</span>
@@ -481,6 +580,83 @@ export class MusicPlayer {
         <div>[r] Repeat  [z] Shuffle  [v] Visualizer  [Esc] Close</div>
       </div>
     `;
+
+    // Animate the track name with pretext line-by-line reveal
+    const trackEl = container.querySelector('.krypton-music-dashboard__np-track') as HTMLElement;
+    if (trackEl) {
+      this.renderAnimatedTrackName(trackEl, track?.filename ?? '\u2014', track?.path ?? '');
+    }
+  }
+
+  private renderAnimatedTrackName(container: HTMLElement, name: string, trackPath: string): void {
+    // Check if this is a new track (skip re-animation on state refreshes)
+    const isNewTrack = trackPath !== this.animatedTrackPath;
+    this.animatedTrackPath = trackPath;
+
+    // Cancel any running animations
+    for (const anim of this.trackLineAnimations) {
+      anim.cancel();
+    }
+    this.trackLineAnimations = [];
+
+    container.innerHTML = '';
+
+    if (name === '\u2014') {
+      container.textContent = '\u2014';
+      return;
+    }
+
+    // Use pretext to break the track name into lines.
+    // The now-playing panel is 320px with 16px padding on each side = 288px available.
+    const font = '500 16px "Mononoki Nerd Font Mono", "JetBrains Mono", monospace';
+    const maxWidth = 288;
+    const lineHeight = 22;
+
+    const prepared = prepareWithSegments(name, font);
+    const { lines } = layoutWithLines(prepared, maxWidth, lineHeight);
+
+    for (let i = 0; i < lines.length; i++) {
+      const lineEl = document.createElement('div');
+      lineEl.className = 'krypton-music-dashboard__np-track-line';
+      lineEl.textContent = lines[i].text;
+
+      if (isNewTrack) {
+        // Start hidden, then animate in
+        lineEl.style.opacity = '0';
+        lineEl.style.transform = 'translateX(-12px)';
+      }
+
+      container.appendChild(lineEl);
+
+      if (isNewTrack) {
+        // Staggered slide-in + fade animation per line
+        const delay = i * 80;
+        const anim = lineEl.animate([
+          { opacity: 0, transform: 'translateX(-12px)', filter: 'blur(4px)' },
+          { opacity: 0.5, transform: 'translateX(2px)', filter: 'blur(0px)', offset: 0.6 },
+          { opacity: 1, transform: 'translateX(0)', filter: 'blur(0px)' },
+        ], {
+          duration: 320,
+          delay,
+          easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+          fill: 'forwards',
+        });
+        this.trackLineAnimations.push(anim);
+
+        // Glow pulse on each line after it appears
+        const glowAnim = lineEl.animate([
+          { textShadow: '0 0 0px transparent' },
+          { textShadow: '0 0 8px rgba(0, 212, 255, 0.6)', offset: 0.4 },
+          { textShadow: '0 0 2px rgba(0, 212, 255, 0.15)' },
+        ], {
+          duration: 600,
+          delay: delay + 200,
+          easing: 'ease-out',
+          fill: 'forwards',
+        });
+        this.trackLineAnimations.push(glowAnim);
+      }
+    }
   }
 
   private handleDashboardKey(e: KeyboardEvent): boolean {
