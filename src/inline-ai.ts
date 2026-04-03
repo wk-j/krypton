@@ -5,10 +5,26 @@
 // The AI uses tools (bash, read_file) to gather context autonomously —
 // e.g. reading git diff before crafting a commit message.
 
+import { Marked } from 'marked';
+import { markedHighlight } from 'marked-highlight';
+import hljs from 'highlight.js';
 import { AgentController } from './agent/agent';
 import type { AgentEventCallback } from './agent/agent';
 import { invoke } from './profiler/ipc';
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
+
+// Markdown renderer for ask-mode answers (shared instance)
+const md = new Marked(
+  markedHighlight({
+    langPrefix: 'hljs language-',
+    highlight(code: string, lang: string): string {
+      if (lang && hljs.getLanguage(lang)) {
+        return hljs.highlight(code, { language: lang }).value;
+      }
+      return hljs.highlightAuto(code).value;
+    },
+  }),
+);
 
 /** Callback to write a string into the focused PTY */
 type WriteCallback = (data: string) => void;
@@ -393,7 +409,7 @@ export class InlineAIOverlay {
           }
           if (this.askMode) {
             this.answer = this.stripArtifacts(latestResponse.trim());
-            this.commandEl.textContent = this.answer;
+            this.commandEl.innerHTML = md.parse(this.answer) as string;
           } else {
             this.parseResponse(latestResponse);
             this.commandEl.textContent = this.command;
@@ -520,10 +536,10 @@ export class InlineAIOverlay {
     this.inputEl.readOnly = false;
 
     if (this.askMode) {
-      // Ask mode — text answer with line-by-line reveal
+      // Ask mode — markdown answer
       this.commandEl.classList.add('krypton-inline-ai__command--answer');
       if (this.answer) {
-        this.revealWithPretext(this.answer);
+        this.commandEl.innerHTML = md.parse(this.answer) as string;
       }
       this.hintEl.textContent = '\u2318C copy \u00b7 \u21b5 ask another \u00b7 \u238b dismiss';
     } else {
