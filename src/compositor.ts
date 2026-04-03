@@ -1598,6 +1598,28 @@ export class Compositor {
   }
 
   /**
+   * Open a keyboard-driven file manager in a new tab.
+   * Starts in the focused terminal's CWD.
+   */
+  async openFileManager(): Promise<void> {
+    const cwd = await this.getFocusedCwd() ?? '/';
+
+    const { FileManagerView } = await import('./file-manager');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const fm = new FileManagerView(cwd, container);
+
+    // Derive a short title from the CWD
+    const dirName = cwd.split('/').filter(Boolean).pop() ?? '/';
+    await this.createContentTab(`FILE // ${dirName}`, fm);
+
+    fm.onClose(() => {
+      this.closeTab();
+    });
+  }
+
+  /**
    * Open (or focus) the dedicated AI agent window.
    * At most one agent window exists at a time; subsequent calls focus the existing one.
    */

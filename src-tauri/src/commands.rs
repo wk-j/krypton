@@ -562,6 +562,125 @@ pub fn get_hook_server_config_snippet(hook_server: State<'_, Arc<HookServer>>) -
     Ok(text)
 }
 
+// ─── File Manager ─────────────────────────────────────────────────
+
+/// A single entry from a directory listing.
+#[derive(serde::Serialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub is_symlink: bool,
+    pub size: u64,
+    pub modified: u64,
+    pub permissions: String,
+    pub symlink_target: Option<String>,
+}
+
+/// List the contents of a directory, returning structured file entries.
+/// Directories are sorted first, then files, both alphabetically.
+#[tauri::command]
+pub fn list_directory(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+    use std::time::UNIX_EPOCH;
+
+    let dir = Path::new(&path);
+    if !dir.is_dir() {
+        return Err(format!("Not a directory: {path}"));
+    }
+
+    let mut entries = Vec::new();
+    let read_dir = fs::read_dir(dir).map_err(|e| format!("list_directory: {e}"))?;
+
+    for entry in read_dir {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // Skip hidden files unless show_hidden is true
+        if !show_hidden && name.starts_with('.') {
+            continue;
+        }
+
+        let entry_path = entry.path();
+        let path_str = entry_path.to_string_lossy().to_string();
+
+        // Use symlink_metadata to detect symlinks without following them
+        let lmeta = match fs::symlink_metadata(&entry_path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        let is_symlink = lmeta.file_type().is_symlink();
+
+        // Follow symlink for size/is_dir, fall back to symlink metadata if broken
+        let meta = if is_symlink {
+            fs::metadata(&entry_path).unwrap_or_else(|_| lmeta.clone())
+        } else {
+            lmeta.clone()
+        };
+
+        let is_dir = meta.is_dir();
+        let size = meta.len();
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let mode = lmeta.permissions().mode();
+        let permissions = format_unix_permissions(mode);
+
+        let symlink_target = if is_symlink {
+            fs::read_link(&entry_path)
+                .ok()
+                .map(|t| t.to_string_lossy().to_string())
+        } else {
+            None
+        };
+
+        entries.push(FileEntry {
+            name,
+            path: path_str,
+            is_dir,
+            is_symlink,
+            size,
+            modified,
+            permissions,
+            symlink_target,
+        });
+    }
+
+    // Sort: directories first, then alphabetically (case-insensitive)
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(entries)
+}
+
+/// Format a Unix mode_t as a rwx permission string.
+fn format_unix_permissions(mode: u32) -> String {
+    let mut s = String::with_capacity(9);
+    let flags = [
+        (0o400, 'r'), (0o200, 'w'), (0o100, 'x'),
+        (0o040, 'r'), (0o020, 'w'), (0o010, 'x'),
+        (0o004, 'r'), (0o002, 'w'), (0o001, 'x'),
+    ];
+    for (bit, ch) in flags {
+        s.push(if mode & bit != 0 { ch } else { '-' });
+    }
+    s
+}
+
 /// Find the Java server process by matching the terminal's CWD.
 /// Finds all java processes system-wide whose CWD equals the terminal's,
 /// then returns the one with a TCP listening port.

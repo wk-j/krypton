@@ -60,7 +60,7 @@ export interface WindowBounds {
 }
 
 /** Content types that can live inside a pane */
-export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'context';
+export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'context' | 'file_manager';
 
 /** Interface for non-terminal content views */
 export interface ContentView {

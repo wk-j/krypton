@@ -1,0 +1,165 @@
+/* ─── File Manager ─── */
+
+.krypton-file-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--krypton-backdrop-color, rgba(6, 10, 18, 0.5));
+  color: var(--krypton-fg, #b0c4d8);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: var(--krypton-font-size, 14px);
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.krypton-file-manager__breadcrumb {
+  flex-shrink: 0;
+  height: var(--krypton-terminal-cell-height, 20px);
+  line-height: var(--krypton-terminal-cell-height, 20px);
+  padding: 0 12px;
+  color: var(--krypton-window-accent, #00c8ff);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.5px;
+}
+
+.krypton-file-manager__body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.krypton-file-manager__list {
+  flex: 3;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.krypton-file-manager__preview {
+  flex: 2;
+  overflow: hidden;
+  border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  min-width: 0;
+}
+
+.krypton-file-manager__preview--hidden {
+  display: none;
+}
+
+.krypton-file-manager__preview-content {
+  margin: 0;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.5;
+  color: var(--krypton-fg, #b0c4d8);
+  opacity: 0.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.krypton-file-manager__item {
+  display: flex;
+  align-items: center;
+  height: var(--krypton-terminal-cell-height, 20px);
+  line-height: var(--krypton-terminal-cell-height, 20px);
+  padding: 0 8px;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.krypton-file-manager__item--cursor {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  border-left: 2px solid var(--krypton-window-accent, #00c8ff);
+  padding-left: 6px;
+}
+
+.krypton-file-manager__item--dir .krypton-file-manager__name {
+  color: var(--krypton-window-accent, #00c8ff);
+}
+
+.krypton-file-manager__item--symlink .krypton-file-manager__name {
+  color: var(--krypton-fg, #b0c4d8);
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.krypton-file-manager__item--marked .krypton-file-manager__mark {
+  color: var(--krypton-window-accent, #00c8ff);
+}
+
+.krypton-file-manager__mark {
+  flex-shrink: 0;
+  width: 1.2em;
+  color: transparent;
+}
+
+.krypton-file-manager__icon {
+  flex-shrink: 0;
+  width: 1.2em;
+  color: var(--krypton-fg, #b0c4d8);
+  opacity: 0.4;
+}
+
+.krypton-file-manager__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-file-manager__size {
+  flex-shrink: 0;
+  margin-left: 12px;
+  opacity: 0.4;
+  text-align: right;
+  min-width: 48px;
+}
+
+.krypton-file-manager__empty {
+  padding: 24px 12px;
+  color: var(--krypton-fg, #b0c4d8);
+  opacity: 0.3;
+  font-style: italic;
+}
+
+.krypton-file-manager__status {
+  flex-shrink: 0;
+  height: var(--krypton-terminal-cell-height, 20px);
+  line-height: var(--krypton-terminal-cell-height, 20px);
+  padding: 0 12px;
+  color: var(--krypton-fg, #b0c4d8);
+  opacity: 0.6;
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-file-manager__status--filter {
+  color: var(--krypton-window-accent, #00c8ff);
+  opacity: 1;
+}
+
+.krypton-file-manager__status--prompt {
+  color: var(--krypton-window-accent, #00c8ff);
+  opacity: 1;
+}
+
+.krypton-file-manager__status--error {
+  color: #ff4444;
+  opacity: 1;
+}
+
+.krypton-file-manager__status--confirm {
+  color: #ffaa00;
+  opacity: 1;
+}

@@ -660,6 +660,11 @@ export class InputRouter {
         this.compositor.openAgentView().then(() => this.toNormal());
         break;
 
+      // b — open file manager (browse)
+      case 'b':
+        this.compositor.openFileManager().then(() => this.toNormal());
+        break;
+
       // c — clone SSH session (new tab) / C — clone SSH session (new window)
       case 'c':
         if (e.shiftKey) {
