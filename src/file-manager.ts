@@ -2,6 +2,7 @@
 // Keyboard-driven file browser as a ContentView pane.
 
 import { invoke } from '@tauri-apps/api/core';
+import hljs from 'highlight.js';
 
 import type { ContentView, PaneContentType } from './types';
 
@@ -587,10 +588,20 @@ export class FileManagerView implements ContentView {
     try {
       const content = await invoke<string>('read_file', { path: entry.path });
       const lines = content.split('\n');
-      if (lines.length > 200) {
-        this.previewContentEl.textContent = lines.slice(0, 200).join('\n') + '\n\n... (truncated)';
+      const truncated = lines.length > 200;
+      const text = truncated ? lines.slice(0, 200).join('\n') : content;
+
+      // Syntax highlight using file extension
+      const lang = this.extToLang(entry.name);
+      if (lang && hljs.getLanguage(lang)) {
+        const result = hljs.highlight(text, { language: lang });
+        this.previewContentEl.innerHTML = result.value
+          + (truncated ? '\n\n<span style="opacity:0.4">... (truncated)</span>' : '');
       } else {
-        this.previewContentEl.textContent = content;
+        // Auto-detect language
+        const result = hljs.highlightAuto(text);
+        this.previewContentEl.innerHTML = result.value
+          + (truncated ? '\n\n<span style="opacity:0.4">... (truncated)</span>' : '');
       }
     } catch {
       this.previewContentEl.textContent = `Cannot read file\n${this.formatSize(entry.size)}`;
@@ -875,6 +886,33 @@ export class FileManagerView implements ContentView {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}K`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}G`;
+  }
+
+  /** Map file extension to highlight.js language name */
+  private extToLang(name: string): string | null {
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    const map: Record<string, string> = {
+      ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+      rs: 'rust', py: 'python', rb: 'ruby', go: 'go', java: 'java',
+      c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', cc: 'cpp',
+      cs: 'csharp', swift: 'swift', kt: 'kotlin', scala: 'scala',
+      sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash',
+      html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
+      json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'ini',
+      xml: 'xml', sql: 'sql', graphql: 'graphql',
+      md: 'markdown', markdown: 'markdown',
+      dockerfile: 'dockerfile', makefile: 'makefile',
+      lua: 'lua', r: 'r', dart: 'dart', zig: 'zig',
+      ex: 'elixir', exs: 'elixir', erl: 'erlang',
+      hs: 'haskell', ml: 'ocaml', clj: 'clojure',
+      vim: 'vim', el: 'lisp', lisp: 'lisp',
+      php: 'php', pl: 'perl', pm: 'perl',
+    };
+    // Handle dotfiles like Makefile, Dockerfile
+    const basename = name.toLowerCase();
+    if (basename === 'makefile' || basename === 'gnumakefile') return 'makefile';
+    if (basename === 'dockerfile') return 'dockerfile';
+    return map[ext] ?? null;
   }
 
   private isBinaryExtension(name: string): boolean {

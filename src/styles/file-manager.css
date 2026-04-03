@@ -35,13 +35,13 @@
 }
 
 .krypton-file-manager__list {
-  flex: 3;
+  flex: 2;
   overflow: hidden;
   min-width: 0;
 }
 
 .krypton-file-manager__preview {
-  flex: 2;
+  flex: 3;
   overflow: hidden;
   border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
   min-width: 0;
@@ -163,3 +163,25 @@
   color: #ffaa00;
   opacity: 1;
 }
+
+/* Syntax highlighting — match Krypton cyberpunk palette */
+.krypton-file-manager__preview-content .hljs-comment { color: rgba(120, 144, 168, 0.7); font-style: italic; }
+.krypton-file-manager__preview-content .hljs-keyword { color: rgba(255, 121, 198, 0.9); }
+.krypton-file-manager__preview-content .hljs-string { color: rgba(57, 255, 127, 0.9); }
+.krypton-file-manager__preview-content .hljs-number { color: rgba(255, 204, 102, 0.9); }
+.krypton-file-manager__preview-content .hljs-function { color: rgba(102, 217, 239, 0.9); }
+.krypton-file-manager__preview-content .hljs-title { color: rgba(255, 121, 198, 0.9); }
+.krypton-file-manager__preview-content .hljs-params { color: rgba(176, 196, 216, 0.85); }
+.krypton-file-manager__preview-content .hljs-built_in { color: rgba(102, 217, 239, 0.85); }
+.krypton-file-manager__preview-content .hljs-type { color: rgba(255, 121, 198, 0.8); }
+.krypton-file-manager__preview-content .hljs-literal { color: rgba(255, 121, 198, 0.85); }
+.krypton-file-manager__preview-content .hljs-class { color: rgba(255, 204, 102, 0.85); }
+.krypton-file-manager__preview-content .hljs-variable { color: rgba(176, 196, 216, 0.9); }
+.krypton-file-manager__preview-content .hljs-attr { color: rgba(102, 217, 239, 0.85); }
+.krypton-file-manager__preview-content .hljs-tag { color: rgba(255, 121, 198, 0.85); }
+.krypton-file-manager__preview-content .hljs-name { color: rgba(255, 121, 198, 0.9); }
+.krypton-file-manager__preview-content .hljs-selector-class { color: rgba(57, 255, 127, 0.85); }
+.krypton-file-manager__preview-content .hljs-selector-id { color: rgba(255, 204, 102, 0.85); }
+.krypton-file-manager__preview-content .hljs-property { color: rgba(102, 217, 239, 0.85); }
+.krypton-file-manager__preview-content .hljs-meta { color: rgba(176, 196, 216, 0.6); }
+.krypton-file-manager__preview-content .hljs-punctuation { color: rgba(176, 196, 216, 0.5); }
