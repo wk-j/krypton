@@ -331,7 +331,8 @@ export class FileManagerView implements ContentView {
       case 'o': {
         const entry = this.filteredEntries[this.cursor];
         if (entry && !entry.is_dir) {
-          this.openInEditor(entry.path);
+          this.previewEl.classList.remove('krypton-file-manager__preview--hidden');
+          this.loadPreview();
         }
         return true;
       }
@@ -435,7 +436,8 @@ export class FileManagerView implements ContentView {
       this.history.push(this.cwd);
       this.loadDirectory(entry.path);
     } else {
-      this.openInEditor(entry.path);
+      this.previewEl.classList.remove('krypton-file-manager__preview--hidden');
+      this.loadPreview();
     }
   }
 
@@ -701,14 +703,6 @@ export class FileManagerView implements ContentView {
 
     this.marked.clear();
     await this.loadDirectory(this.cwd);
-  }
-
-  private async openInEditor(filePath: string): Promise<void> {
-    try {
-      await invoke('open_url', { url: filePath });
-    } catch {
-      this.loadPreview();
-    }
   }
 
   // ─── Rendering ─────────────────────────────────────────────────

@@ -5,7 +5,7 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: var(--krypton-backdrop-color, rgba(6, 10, 18, 0.5));
+  background: transparent;
   color: var(--krypton-fg, #b0c4d8);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: var(--krypton-font-size, 14px);
