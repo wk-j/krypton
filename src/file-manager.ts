@@ -3,8 +3,23 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import hljs from 'highlight.js';
+import { Marked } from 'marked';
+import { markedHighlight } from 'marked-highlight';
 
 import type { ContentView, PaneContentType } from './types';
+
+/** Marked instance for rendering markdown previews */
+const md = new Marked(
+  markedHighlight({
+    langPrefix: 'hljs language-',
+    highlight(code: string, lang: string): string {
+      if (lang && hljs.getLanguage(lang)) {
+        return hljs.highlight(code, { language: lang }).value;
+      }
+      return hljs.highlightAuto(code).value;
+    },
+  }),
+);
 
 /** A file/directory entry returned by the backend list_directory command */
 interface FileEntry {
@@ -76,6 +91,7 @@ export class FileManagerView implements ContentView {
   private listEl: HTMLElement;
   private previewEl: HTMLElement;
   private previewContentEl: HTMLPreElement;
+  private previewMarkdownEl!: HTMLDivElement;
   private statusEl: HTMLElement;
   private bodyEl: HTMLElement;
 
@@ -106,6 +122,10 @@ export class FileManagerView implements ContentView {
     this.previewContentEl = document.createElement('pre');
     this.previewContentEl.className = 'krypton-file-manager__preview-content';
     this.previewEl.appendChild(this.previewContentEl);
+    this.previewMarkdownEl = document.createElement('div');
+    this.previewMarkdownEl.className = 'krypton-file-manager__preview-markdown';
+    this.previewMarkdownEl.style.display = 'none';
+    this.previewEl.appendChild(this.previewMarkdownEl);
     this.bodyEl.appendChild(this.previewEl);
 
     // Status bar
@@ -204,6 +224,14 @@ export class FileManagerView implements ContentView {
         }
         this.lastKey = 'g';
         this.lastKeyTime = now;
+        return true;
+
+      case 'J':
+        this.scrollPreview(80);
+        return true;
+
+      case 'K':
+        this.scrollPreview(-80);
         return true;
 
       case 'G':
@@ -550,10 +578,24 @@ export class FileManagerView implements ContentView {
 
   // ─── Preview ───────────────────────────────────────────────────
 
+  private scrollPreview(delta: number): void {
+    const target = this.previewMarkdownEl.style.display !== 'none'
+      ? this.previewMarkdownEl
+      : this.previewContentEl;
+    target.scrollBy({ top: delta });
+  }
+
+  /** Show the <pre> element and hide the markdown <div> */
+  private showPreText(text: string): void {
+    this.previewContentEl.style.display = '';
+    this.previewMarkdownEl.style.display = 'none';
+    this.previewContentEl.textContent = text;
+  }
+
   private async loadPreview(): Promise<void> {
     const entry = this.filteredEntries[this.cursor];
     if (!entry) {
-      this.previewContentEl.textContent = '';
+      this.showPreText('');
       this.lastPreviewPath = null;
       return;
     }
@@ -561,6 +603,7 @@ export class FileManagerView implements ContentView {
     // Skip if we already previewed this exact path
     if (entry.path === this.lastPreviewPath) return;
     this.lastPreviewPath = entry.path;
+    this.previewEl.scrollTop = 0;
 
     if (entry.is_dir) {
       try {
@@ -570,20 +613,20 @@ export class FileManagerView implements ContentView {
         });
         const dirs = children.filter((c) => c.is_dir).length;
         const files = children.length - dirs;
-        this.previewContentEl.textContent = `Directory: ${entry.name}/\n\n${dirs} directories, ${files} files`;
+        this.showPreText(`Directory: ${entry.name}/\n\n${dirs} directories, ${files} files`);
       } catch {
-        this.previewContentEl.textContent = `Directory: ${entry.name}/\n\n(cannot read)`;
+        this.showPreText(`Directory: ${entry.name}/\n\n(cannot read)`);
       }
       return;
     }
 
     if (entry.size > PREVIEW_MAX_BYTES) {
-      this.previewContentEl.textContent = `File too large for preview\n${this.formatSize(entry.size)}`;
+      this.showPreText(`File too large for preview\n${this.formatSize(entry.size)}`);
       return;
     }
 
     if (this.isBinaryExtension(entry.name)) {
-      this.previewContentEl.textContent = `Binary file\n${this.formatSize(entry.size)}`;
+      this.showPreText(`Binary file\n${this.formatSize(entry.size)}`);
       return;
     }
 
@@ -593,7 +636,19 @@ export class FileManagerView implements ContentView {
       const truncated = lines.length > 200;
       const text = truncated ? lines.slice(0, 200).join('\n') : content;
 
+      // Render markdown files
+      if (this.isMarkdownFile(entry.name)) {
+        const rendered = md.parse(text) as string;
+        this.previewContentEl.style.display = 'none';
+        this.previewMarkdownEl.style.display = '';
+        this.previewMarkdownEl.innerHTML = rendered
+          + (truncated ? '<p style="opacity:0.4">... (truncated)</p>' : '');
+        return;
+      }
+
       // Syntax highlight using file extension
+      this.previewContentEl.style.display = '';
+      this.previewMarkdownEl.style.display = 'none';
       const lang = this.extToLang(entry.name);
       if (lang && hljs.getLanguage(lang)) {
         const result = hljs.highlight(text, { language: lang });
@@ -606,6 +661,8 @@ export class FileManagerView implements ContentView {
           + (truncated ? '\n\n<span style="opacity:0.4">... (truncated)</span>' : '');
       }
     } catch {
+      this.previewContentEl.style.display = '';
+      this.previewMarkdownEl.style.display = 'none';
       this.previewContentEl.textContent = `Cannot read file\n${this.formatSize(entry.size)}`;
     }
   }
@@ -894,7 +951,6 @@ export class FileManagerView implements ContentView {
       html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
       json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'ini',
       xml: 'xml', sql: 'sql', graphql: 'graphql',
-      md: 'markdown', markdown: 'markdown',
       dockerfile: 'dockerfile', makefile: 'makefile',
       lua: 'lua', r: 'r', dart: 'dart', zig: 'zig',
       ex: 'elixir', exs: 'elixir', erl: 'erlang',
@@ -907,6 +963,11 @@ export class FileManagerView implements ContentView {
     if (basename === 'makefile' || basename === 'gnumakefile') return 'makefile';
     if (basename === 'dockerfile') return 'dockerfile';
     return map[ext] ?? null;
+  }
+
+  private isMarkdownFile(name: string): boolean {
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    return ext === 'md' || ext === 'markdown';
   }
 
   private isBinaryExtension(name: string): boolean {
