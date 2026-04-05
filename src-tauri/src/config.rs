@@ -414,15 +414,26 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             active: "zai".to_string(),
-            models: vec![AgentModelConfig {
-                name: "zai".to_string(),
-                provider: "zai".to_string(),
-                model: "glm-4.7".to_string(),
-                base_url: "https://api.z.ai/api/coding/paas/v4".to_string(),
-                api_key_env: "ZAI_API_KEY".to_string(),
-                context_window: 128000,
-                max_tokens: 8192,
-            }],
+            models: vec![
+                AgentModelConfig {
+                    name: "zai".to_string(),
+                    provider: "zai".to_string(),
+                    model: "glm-4.7".to_string(),
+                    base_url: "https://api.z.ai/api/coding/paas/v4".to_string(),
+                    api_key_env: "ZAI_API_KEY".to_string(),
+                    context_window: 128000,
+                    max_tokens: 8192,
+                },
+                AgentModelConfig {
+                    name: "ollama-qwen3.5".to_string(),
+                    provider: "ollama".to_string(),
+                    model: "qwen3.5:latest".to_string(),
+                    base_url: "http://localhost:11434/v1".to_string(),
+                    api_key_env: "".to_string(),
+                    context_window: 32768,
+                    max_tokens: 8192,
+                },
+            ],
         }
     }
 }
