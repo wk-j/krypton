@@ -7,6 +7,7 @@ import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 
 import type { ContentView, PaneContentType } from './types';
+import type { FileManagerAI, FileManagerContext, FileContextEntry } from './file-manager-ai';
 
 /** Marked instance for rendering markdown previews */
 const md = new Marked(
@@ -81,6 +82,7 @@ export class FileManagerView implements ContentView {
   private confirmAction: (() => void) | null = null;
   private closeCallback: (() => void) | null = null;
   private lastPreviewPath: string | null = null;
+  private aiOverlay: FileManagerAI | null = null;
 
   // Vim-style gg detection
   private lastKey = '';
@@ -143,6 +145,11 @@ export class FileManagerView implements ContentView {
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
+    // AI overlay active — delegate all keys to it
+    if (this.aiOverlay) {
+      return this.aiOverlay.onKeyDown(e);
+    }
+
     // Confirmation mode — only y/n/Escape
     if (this.confirmAction) {
       if (e.key === 'y') {
@@ -364,6 +371,10 @@ export class FileManagerView implements ContentView {
         }
         return true;
       }
+
+      case 'i':
+        this.openAI();
+        return true;
     }
 
     // Didn't match 'g' continuation — reset
@@ -531,6 +542,52 @@ export class FileManagerView implements ContentView {
     this.cursor = 0;
     this.scrollOffset = 0;
     this.marked.clear();
+    this.lastPreviewPath = null;
+    this.renderBreadcrumb();
+    this.renderList();
+    this.renderStatus();
+    this.loadPreview();
+  }
+
+  /** Reload current directory without resetting cursor position or marks. */
+  private async refreshDirectory(): Promise<void> {
+    const prevName = this.filteredEntries[this.cursor]?.name ?? null;
+    const prevMarked = new Set(this.marked);
+
+    try {
+      this.entries = await invoke<FileEntry[]>('list_directory', {
+        path: this.cwd,
+        showHidden: this.showHidden,
+      });
+    } catch (err) {
+      this.entries = [];
+      this.setStatusError(`${err}`);
+    }
+
+    this.applySort();
+    this.applyFilter();
+
+    // Restore marks for entries that still exist
+    this.marked.clear();
+    for (const entry of this.filteredEntries) {
+      if (prevMarked.has(entry.path)) {
+        this.marked.add(entry.path);
+      }
+    }
+
+    // Restore cursor to same file name, or clamp
+    if (prevName) {
+      const idx = this.filteredEntries.findIndex((e) => e.name === prevName);
+      if (idx >= 0) {
+        this.cursor = idx;
+      } else {
+        this.cursor = Math.min(this.cursor, Math.max(0, this.filteredEntries.length - 1));
+      }
+    } else {
+      this.cursor = 0;
+    }
+
+    this.clampScroll();
     this.lastPreviewPath = null;
     this.renderBreadcrumb();
     this.renderList();
@@ -895,6 +952,50 @@ export class FileManagerView implements ContentView {
     }
 
     this.statusEl.textContent = parts.join(' \u2502 ');
+  }
+
+  // ─── AI Overlay ────────────────────────────────────────────────
+
+  private async openAI(): Promise<void> {
+    if (this.aiOverlay) return;
+
+    const { FileManagerAI } = await import('./file-manager-ai');
+
+    this.aiOverlay = new FileManagerAI({
+      cwd: this.cwd,
+      getContext: () => this.getAIContext(),
+      onDone: () => this.refreshDirectory(),
+      onClose: () => this.closeAI(),
+    });
+
+    this.aiOverlay.open(this.element);
+  }
+
+  private closeAI(): void {
+    if (!this.aiOverlay) return;
+    this.aiOverlay.close();
+    this.aiOverlay = null;
+  }
+
+  private getAIContext(): FileManagerContext {
+    const cursorEntry = this.filteredEntries[this.cursor] ?? null;
+    const cursorFile: FileContextEntry | null = cursorEntry
+      ? { name: cursorEntry.name, path: cursorEntry.path, is_dir: cursorEntry.is_dir, size: cursorEntry.size }
+      : null;
+
+    const markedFiles: FileContextEntry[] = [];
+    for (const entry of this.filteredEntries) {
+      if (this.marked.has(entry.path)) {
+        markedFiles.push({ name: entry.name, path: entry.path, is_dir: entry.is_dir, size: entry.size });
+      }
+    }
+
+    return {
+      cwd: this.cwd,
+      cursorFile,
+      markedFiles,
+      totalEntries: this.filteredEntries.length,
+    };
   }
 
   // ─── Helpers ───────────────────────────────────────────────────
