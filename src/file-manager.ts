@@ -88,6 +88,10 @@ export class FileManagerView implements ContentView {
   private lastKey = '';
   private lastKeyTime = 0;
 
+  // Preview generation counter to discard stale async results
+  private previewGeneration = 0;
+  private previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
   // DOM elements
   private breadcrumbEl: HTMLElement;
   private listEl: HTMLElement;
@@ -372,6 +376,10 @@ export class FileManagerView implements ContentView {
         return true;
       }
 
+      case 'Y':
+        this.copyPathToClipboard();
+        return true;
+
       case 'i':
         this.openAI();
         return true;
@@ -649,7 +657,17 @@ export class FileManagerView implements ContentView {
     this.previewContentEl.textContent = text;
   }
 
-  private async loadPreview(): Promise<void> {
+  private loadPreview(): void {
+    if (this.previewDebounceTimer !== null) {
+      clearTimeout(this.previewDebounceTimer);
+    }
+    this.previewDebounceTimer = setTimeout(() => {
+      this.previewDebounceTimer = null;
+      this.loadPreviewNow();
+    }, 80);
+  }
+
+  private async loadPreviewNow(): Promise<void> {
     const entry = this.filteredEntries[this.cursor];
     if (!entry) {
       this.showPreText('');
@@ -662,16 +680,21 @@ export class FileManagerView implements ContentView {
     this.lastPreviewPath = entry.path;
     this.previewEl.scrollTop = 0;
 
+    // Bump generation so any in-flight async preview is discarded
+    const gen = ++this.previewGeneration;
+
     if (entry.is_dir) {
       try {
         const children = await invoke<FileEntry[]>('list_directory', {
           path: entry.path,
           showHidden: this.showHidden,
         });
+        if (gen !== this.previewGeneration) return;
         const dirs = children.filter((c) => c.is_dir).length;
         const files = children.length - dirs;
         this.showPreText(`Directory: ${entry.name}/\n\n${dirs} directories, ${files} files`);
       } catch {
+        if (gen !== this.previewGeneration) return;
         this.showPreText(`Directory: ${entry.name}/\n\n(cannot read)`);
       }
       return;
@@ -689,6 +712,9 @@ export class FileManagerView implements ContentView {
 
     try {
       const content = await invoke<string>('read_file', { path: entry.path });
+      // Discard result if cursor moved while we were reading
+      if (gen !== this.previewGeneration) return;
+
       const lines = content.split('\n');
       const truncated = lines.length > 200;
       const text = truncated ? lines.slice(0, 200).join('\n') : content;
@@ -718,6 +744,7 @@ export class FileManagerView implements ContentView {
           + (truncated ? '\n\n<span style="opacity:0.4">... (truncated)</span>' : '');
       }
     } catch {
+      if (gen !== this.previewGeneration) return;
       this.previewContentEl.style.display = '';
       this.previewMarkdownEl.style.display = 'none';
       this.previewContentEl.textContent = `Cannot read file\n${this.formatSize(entry.size)}`;
@@ -725,6 +752,15 @@ export class FileManagerView implements ContentView {
   }
 
   // ─── File Operations ───────────────────────────────────────────
+
+  private copyPathToClipboard(): void {
+    const entry = this.filteredEntries[this.cursor];
+    if (!entry) return;
+    navigator.clipboard.writeText(entry.path).then(() => {
+      this.statusEl.textContent = `Copied: ${entry.path}`;
+      setTimeout(() => this.renderStatus(), 2000);
+    });
+  }
 
   private deleteMarkedOrCurrent(): void {
     const paths = this.getMarkedOrCurrent();
