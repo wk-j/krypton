@@ -229,6 +229,42 @@ enabled = true                                          # Master toggle
 control_persist = 600                                   # Seconds to keep master alive after last session
 clone_target = "tab"                                    # Default target: "tab" or "window"
 
+# --- AI Agent ---
+# Model presets for the embedded AI coding agent.
+# Define multiple presets and switch between them by changing `active`.
+
+[agent]
+active = "zai"                          # which model preset to use
+
+[[agent.models]]
+name = "zai"
+provider = "zai"
+model = "glm-4.7"
+base_url = "https://api.z.ai/api/coding/paas/v4"
+api_key_env = "ZAI_API_KEY"             # env var for API key (empty = no key)
+context_window = 128000
+max_tokens = 8192
+
+# Example: Ollama local model
+# [[agent.models]]
+# name = "ollama-gemma4"
+# provider = "ollama"
+# model = "gemma4:latest"
+# base_url = "http://localhost:11434/v1"
+# api_key_env = ""
+# context_window = 128000
+# max_tokens = 8192
+
+# Example: OpenAI
+# [[agent.models]]
+# name = "openai-gpt4o"
+# provider = "openai"
+# model = "gpt-4o"
+# base_url = "https://api.openai.com/v1"
+# api_key_env = "OPENAI_API_KEY"
+# context_window = 128000
+# max_tokens = 16384
+
 # --- Context Extensions ---
 # Built-in extensions that activate when specific processes are detected
 # running in terminal panes. Currently includes: Java Resource Monitor.
@@ -352,6 +388,21 @@ name = "custom-fixed"
 | `[keybindings]` | *(various)* | string | — | See full keybinding reference in TOML example above |
 | `[keybindings.resize_mode]` | *(various)* | string | — | Keys active in resize mode |
 | `[keybindings.move_mode]` | *(various)* | string | — | Keys active in move mode |
+
+### Agent Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[agent]` | `active` | string | `"zai"` | Name of the active model preset |
+| `[[agent.models]]` | `name` | string | *required* | Unique preset name (e.g. `"zai"`, `"ollama-gemma4"`) |
+| `[[agent.models]]` | `provider` | string | — | Provider: `"zai"`, `"ollama"`, `"openai"`, `"anthropic"`, etc. |
+| `[[agent.models]]` | `model` | string | — | Model identifier (e.g. `"glm-4.7"`, `"gemma4:latest"`, `"gpt-4o"`) |
+| `[[agent.models]]` | `base_url` | string | — | API endpoint URL |
+| `[[agent.models]]` | `api_key_env` | string | — | Environment variable name for API key. Empty string = no key needed (local models) |
+| `[[agent.models]]` | `context_window` | int | `128000` | Model's context window in tokens |
+| `[[agent.models]]` | `max_tokens` | int | `8192` | Maximum output tokens per response |
+
+To switch models, change `active` to the name of another preset. Changes take effect on next agent session (reset the agent or open a new agent window).
 
 ### Hooks Configuration
 

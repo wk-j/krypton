@@ -25,6 +25,7 @@ pub struct KryptonConfig {
     pub ssh: SshConfig,
     pub hooks: HooksConfig,
     pub music: MusicConfig,
+    pub agent: AgentConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -376,6 +377,52 @@ impl Default for MusicConfig {
             directory: "~/Music".to_string(),
             visualizer: true,
             visualizer_opacity: 0.18,
+        }
+    }
+}
+
+// ─── Agent ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AgentConfig {
+    /// Name of the active model preset
+    pub active: String,
+    /// Named model presets
+    pub models: Vec<AgentModelConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentModelConfig {
+    /// Unique preset name, e.g. "zai", "ollama-gemma4"
+    pub name: String,
+    /// Provider identifier: "zai", "ollama", "openai", "anthropic", etc.
+    pub provider: String,
+    /// Model identifier: "glm-4.7", "gemma4:latest", "gpt-4o", etc.
+    pub model: String,
+    /// API endpoint URL
+    pub base_url: String,
+    /// Environment variable name for the API key (empty = no key needed)
+    pub api_key_env: String,
+    /// Model's context window size in tokens
+    pub context_window: u32,
+    /// Maximum output tokens
+    pub max_tokens: u32,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            active: "zai".to_string(),
+            models: vec![AgentModelConfig {
+                name: "zai".to_string(),
+                provider: "zai".to_string(),
+                model: "glm-4.7".to_string(),
+                base_url: "https://api.z.ai/api/coding/paas/v4".to_string(),
+                api_key_env: "ZAI_API_KEY".to_string(),
+                context_window: 128000,
+                max_tokens: 8192,
+            }],
         }
     }
 }

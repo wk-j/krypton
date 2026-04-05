@@ -52,6 +52,17 @@ export type AgentEventType =
 
 export type AgentEventCallback = (e: AgentEventType) => void;
 
+/** Agent model preset from krypton.toml [agent] config */
+interface AgentModelPreset {
+  name: string;
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key_env: string;
+  context_window: number;
+  max_tokens: number;
+}
+
 const BASE_SYSTEM_PROMPT = `You are an AI coding assistant embedded in Krypton, a keyboard-driven terminal emulator. You have tools to read files, write files, and run shell commands.
 
 CRITICAL RULE: NEVER use tools unless the user explicitly asks you to do something that requires them. If the user says "hi", "hello", or anything conversational, just respond with text. Do NOT run git commands, read files, check status, or take any action on your own initiative. Wait for the user to give you a specific task.
@@ -112,17 +123,45 @@ export class AgentController {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async buildAgent(apiKey: string): Promise<any> {
+  private async buildAgent(apiKey: string | null, preset: AgentModelPreset): Promise<any> {
     const [{ Agent }, { getModel }] = await Promise.all([
       import('@mariozechner/pi-agent-core'),
       import('@mariozechner/pi-ai'),
     ]);
 
-    const model = { ...getModel('zai', 'glm-4.7'), baseUrl: 'https://api.z.ai/api/coding/paas/v4' };
-    this.modelContextWindow = model.contextWindow ?? 128000;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let model: any;
+    // Try pi-ai registry first (works for zai, openai, anthropic, etc.)
+    // getModel returns undefined for unknown providers (doesn't throw)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const registeredModel = getModel(preset.provider as any, preset.model);
+    if (registeredModel?.api) {
+      model = {
+        ...registeredModel,
+        baseUrl: preset.base_url,
+        contextWindow: preset.context_window,
+        maxTokens: preset.max_tokens,
+      };
+    } else {
+      // Fallback: construct OpenAI-compatible model manually (ollama, vllm, lm-studio)
+      model = {
+        id: preset.model,
+        name: `${preset.provider}/${preset.model}`,
+        api: 'openai-completions',
+        provider: preset.provider,
+        baseUrl: preset.base_url,
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: preset.context_window,
+        maxTokens: preset.max_tokens,
+      };
+    }
 
-    const getApiKey = (provider: string): string | undefined =>
-      provider === 'zai' ? apiKey : undefined;
+    this.modelContextWindow = model.contextWindow ?? preset.context_window;
+
+    const getApiKey = (_provider: string): string | undefined =>
+      apiKey ?? 'ollama';
 
     return new Agent({
       initialState: {
@@ -320,21 +359,48 @@ export class AgentController {
   async prompt(text: string, onEvent: AgentEventCallback, commandArgs?: string): Promise<void> {
     if (this.running) return;
 
-    // Lazy init — read API key from the shell environment
+    // Lazy init — resolve model preset and API key from config
     if (!this.agent) {
-      let apiKey: string | null;
+      // Read agent config to find the active model preset
+      let preset: AgentModelPreset;
       try {
-        apiKey = await invoke<string | null>('get_env_var', { name: 'ZAI_API_KEY' });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const config = await invoke<any>('get_config');
+        const agentCfg = config?.agent;
+        const models: AgentModelPreset[] = agentCfg?.models ?? [];
+        const activeName: string = agentCfg?.active ?? 'zai';
+        const found = models.find((m: AgentModelPreset) => m.name === activeName) ?? models[0];
+        if (!found) {
+          // No presets at all — use hardcoded ZAI default
+          preset = {
+            name: 'zai', provider: 'zai', model: 'glm-4.7',
+            base_url: 'https://api.z.ai/api/coding/paas/v4',
+            api_key_env: 'ZAI_API_KEY', context_window: 128000, max_tokens: 8192,
+          };
+        } else {
+          preset = found;
+        }
       } catch (e) {
-        onEvent({ type: 'error', message: `Failed to read ZAI_API_KEY: ${e}` });
+        onEvent({ type: 'error', message: `Failed to read agent config: ${e}` });
         return;
       }
-      if (!apiKey) {
-        onEvent({
-          type: 'error',
-          message: 'ZAI_API_KEY not set.\nGet a key at bigmodel.cn and add it to your shell environment, then restart Krypton.',
-        });
-        return;
+
+      // Read API key if the preset requires one
+      let apiKey: string | null = null;
+      if (preset.api_key_env) {
+        try {
+          apiKey = await invoke<string | null>('get_env_var', { name: preset.api_key_env });
+        } catch (e) {
+          onEvent({ type: 'error', message: `Failed to read ${preset.api_key_env}: ${e}` });
+          return;
+        }
+        if (!apiKey) {
+          onEvent({
+            type: 'error',
+            message: `${preset.api_key_env} not set.\nSet this environment variable for the "${preset.name}" model preset, then restart Krypton.`,
+          });
+          return;
+        }
       }
 
       try {
@@ -343,8 +409,8 @@ export class AgentController {
           await this.ensureSkillsDiscovered();
         }
 
-        this.agent = await this.buildAgent(apiKey);
-        console.log('[agent] initialized, projectDir:', this.projectDir);
+        this.agent = await this.buildAgent(apiKey, preset);
+        console.log('[agent] initialized with preset:', preset.name, `(${preset.provider}/${preset.model})`, 'projectDir:', this.projectDir);
 
         if (!this.inlineSystemPrompt) {
           await this.restoreFromSession();
