@@ -3,7 +3,6 @@
 // document.documentElement, and updates xterm.js terminal instances.
 
 import { invoke } from './profiler/ipc';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
 // ─── Theme Data Types (mirrors Rust FullTheme) ───────────────────
 
@@ -199,19 +198,18 @@ export type ThemeChangeCallback = (theme: FullTheme) => void;
 export class FrontendThemeEngine {
   private currentTheme: FullTheme | null = null;
   private changeCallbacks: ThemeChangeCallback[] = [];
-  private unlisten: UnlistenFn | null = null;
 
   /** Load the initial theme from the backend */
   async init(): Promise<FullTheme> {
     const theme = await invoke<FullTheme>('get_theme');
     this.apply(theme);
+    return theme;
+  }
 
-    // Listen for hot-reload events from the backend
-    this.unlisten = await listen<FullTheme>('theme-changed', (event) => {
-      console.log('[Krypton] Theme hot-reload received:', event.payload.meta.display_name);
-      this.apply(event.payload);
-    });
-
+  /** Re-fetch the theme from the backend and apply it. */
+  async reload(): Promise<FullTheme> {
+    const theme = await invoke<FullTheme>('get_theme');
+    this.apply(theme);
     return theme;
   }
 
@@ -264,13 +262,6 @@ export class FrontendThemeEngine {
     }
   }
 
-  /** Dispose the event listener */
-  dispose(): void {
-    if (this.unlisten) {
-      this.unlisten();
-      this.unlisten = null;
-    }
-  }
 
   /** Set all --krypton-* CSS custom properties on document.documentElement */
   private setCssProperties(theme: FullTheme): void {

@@ -812,8 +812,14 @@ export class AgentView implements ContentView {
         if (modelArg) {
           // Switch to a different preset
           this.showSystemMessage(`Switching to "${modelArg}"…`);
-          this.controller.switchModel(modelArg).then((result) => {
+          this.controller.switchModel(modelArg).then(async (result) => {
             if (result.ok) {
+              // Persist to config file
+              try {
+                await invoke('set_agent_active', { name: modelArg });
+              } catch (e) {
+                console.warn('[agent] failed to persist model switch:', e);
+              }
               this.showSystemMessage(`Switched to "${modelArg}". Next prompt will use the new model.`);
             } else {
               this.showSystemMessage(`Failed to switch: ${result.error}`);
@@ -1470,10 +1476,11 @@ export class AgentView implements ContentView {
       return String(n);
     };
 
-    const parts: string[] = [
-      `IN ${fmt(usage.input)}`,
-      `OUT ${fmt(usage.output)}`,
-    ];
+    const parts: string[] = [];
+    const modelName = this.controller.getActivePresetName();
+    if (modelName) parts.push(modelName);
+    parts.push(`IN ${fmt(usage.input)}`);
+    parts.push(`OUT ${fmt(usage.output)}`);
     if (usage.cacheRead > 0) parts.push(`CACHE ${fmt(usage.cacheRead)}`);
     parts.push(`Σ ${fmt(usage.totalTokens)}`);
     if (usage.cost > 0) parts.push(`$${usage.cost.toFixed(4)}`);

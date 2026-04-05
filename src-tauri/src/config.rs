@@ -531,12 +531,6 @@ pub fn load_config() -> KryptonConfig {
     load_config_inner(true)
 }
 
-/// Load config without flushing to disk. Used by the filesystem watcher
-/// to avoid a write→watch→reload→write loop.
-pub fn load_config_no_flush() -> KryptonConfig {
-    load_config_inner(false)
-}
-
 fn load_config_inner(flush: bool) -> KryptonConfig {
     let path = match config_path() {
         Some(p) => p,
@@ -585,7 +579,7 @@ fn load_config_inner(flush: bool) -> KryptonConfig {
 
 /// Write the fully-populated config back to disk, adding any new
 /// fields that were missing from the user's file.
-fn flush_config(path: &PathBuf, config: &KryptonConfig) {
+pub fn flush_config(path: &PathBuf, config: &KryptonConfig) {
     match toml::to_string_pretty(config) {
         Ok(toml_str) => {
             let content = format!(

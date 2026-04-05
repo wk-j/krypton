@@ -35,7 +35,7 @@ import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
 import type { KryptonConfig, TabsConfig, ShaderConfig } from './config';
-import { DEFAULT_SHADER_CONFIG } from './config';
+import { DEFAULT_SHADER_CONFIG, loadConfig } from './config';
 import type { FrontendThemeEngine } from './theme';
 import { ExtensionManager } from './extensions';
 import type { ExtensionHost } from './extensions';
@@ -516,6 +516,27 @@ export class Compositor {
       const glow = Math.max(0, Math.min(3, config.visual.glow_intensity ?? 0.8));
       root.setProperty('--krypton-glow-intensity', String(glow));
     }
+  }
+
+  /** Reload config and theme from the backend and re-apply everything.
+   *  Called by the command palette "Reload Config" action. */
+  async reloadConfig(): Promise<void> {
+    // Tell the backend to re-read the TOML file
+    await invoke('reload_config');
+
+    // Fetch the updated config and theme
+    const config = await loadConfig();
+    this.applyConfig(config);
+
+    // Reload theme (triggers onChange → updateTerminalThemes)
+    if (this.themeEngine) {
+      await this.themeEngine.reload();
+    }
+
+    // Re-apply config opacity after theme reload (theme sets its own alpha)
+    this.applyConfig(config);
+
+    console.log('[Krypton] Config reloaded via command palette');
   }
 
   // ─── Pane Tree Helpers ──────────────────────────────────────────

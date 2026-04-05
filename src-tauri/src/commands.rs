@@ -4,7 +4,7 @@ use crate::pty::PtyManager;
 use crate::ssh::SshManager;
 use crate::theme::{FullTheme, ThemeEngine};
 use std::sync::{Arc, RwLock};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -85,16 +85,21 @@ pub fn list_themes(theme_engine: State<'_, Arc<ThemeEngine>>) -> Vec<String> {
     theme_engine.list_names()
 }
 
-/// Reload config from disk and emit a theme-changed event if the theme changed.
+/// Reload config from disk. Updates the shared config state and applies
+/// sound config on the Rust side. The frontend is responsible for calling
+/// `get_config` / `get_theme` after this to pick up the new values.
 #[tauri::command]
 pub fn reload_config(
     app_handle: AppHandle,
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
-    theme_engine: State<'_, Arc<ThemeEngine>>,
 ) -> Result<(), String> {
     let new_config = crate::config::load_config();
-    let mut theme = theme_engine.resolve(&new_config.theme.name)?;
-    theme_engine.apply_config_overrides(&mut theme, &new_config.theme.colors);
+
+    // Apply sound config to Rust engine directly
+    let sound_state = app_handle.state::<crate::sound::SoundEngineState>();
+    if let Ok(mut engine) = sound_state.lock() {
+        engine.apply_config(new_config.sound.clone());
+    }
 
     // Update the shared config
     {
@@ -104,20 +109,7 @@ pub fn reload_config(
         *cfg = new_config;
     }
 
-    // Emit theme-changed event to frontend
-    app_handle
-        .emit("theme-changed", &theme)
-        .map_err(|e| format!("Failed to emit theme-changed event: {e}"))?;
-
-    // Emit config-changed event for non-theme settings
-    let cfg = config
-        .read()
-        .map_err(|e| format!("Config lock poisoned: {e}"))?;
-    app_handle
-        .emit("config-changed", &*cfg)
-        .map_err(|e| format!("Failed to emit config-changed event: {e}"))?;
-
-    log::info!("Config reloaded, theme-changed event emitted");
+    log::info!("Config reloaded from disk");
     Ok(())
 }
 
@@ -485,6 +477,26 @@ pub fn clone_ssh_session(
 #[tauri::command]
 pub fn get_hook_server_port(hook_server: State<'_, Arc<HookServer>>) -> u16 {
     hook_server.get_port()
+}
+
+/// Persist the active agent model preset to the config file.
+#[tauri::command]
+pub fn set_agent_active(
+    name: String,
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+) -> Result<(), String> {
+    let mut cfg = config
+        .write()
+        .map_err(|e| format!("Config lock poisoned: {e}"))?;
+    // Verify the preset exists
+    if !cfg.agent.models.iter().any(|m| m.name == name) {
+        return Err(format!("Unknown model preset \"{name}\""));
+    }
+    cfg.agent.active = name;
+    if let Some(path) = crate::config::config_path() {
+        crate::config::flush_config(&path, &cfg);
+    }
+    Ok(())
 }
 
 /// Copy the Claude Code hook configuration snippet to the system clipboard

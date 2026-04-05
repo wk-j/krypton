@@ -666,15 +666,14 @@ export class CommandPalette {
 
     // ── Config actions ──
     this.register({
-      id: 'config.flush-defaults',
-      label: 'Flush Default Config to File',
+      id: 'config.reload',
+      label: 'Reload Config',
       category: 'Config',
       execute: async () => {
         try {
-          await invoke('reload_config');
-          console.log('[Krypton] Config flushed with defaults');
+          await this.compositor.reloadConfig();
         } catch (e) {
-          console.error('[Krypton] Failed to flush config:', e);
+          console.error('[Krypton] Failed to reload config:', e);
         }
       },
     });

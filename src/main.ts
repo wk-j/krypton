@@ -6,8 +6,7 @@ import { Compositor } from './compositor';
 import { InputRouter } from './input-router';
 import { WhichKey } from './which-key';
 import { CommandPalette } from './command-palette';
-import { loadConfig, KryptonConfig } from './config';
-import { listen } from '@tauri-apps/api/event';
+import { loadConfig } from './config';
 import { FrontendThemeEngine } from './theme';
 import { createGitDashboard } from './dashboards/git';
 import { createOpenCodeDashboard } from './dashboards/opencode';
@@ -113,16 +112,6 @@ async function main(): Promise<void> {
   compositor.setClaudeHookManager(claudeHooks);
   claudeHooks.init().catch((e) => {
     console.warn('[Krypton] Claude hook integration unavailable:', e);
-  });
-
-  // Listen for config hot-reload events from backend
-  await listen<KryptonConfig>('config-changed', (event) => {
-    console.log('[Krypton] Config hot-reload received');
-    compositor.applyConfig(event.payload);
-    inputRouter.hintController.applyConfig(event.payload.hints);
-    if (event.payload.music) {
-      musicPlayer.applyConfig(event.payload.music);
-    }
   });
 
   // Create the first terminal window
