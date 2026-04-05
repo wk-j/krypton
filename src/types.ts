@@ -99,6 +99,9 @@ export interface Tab {
   paneTree: PaneNode;
   focusedPaneId: PaneId;
   element: HTMLElement;
+  /** Persistent wrapper that holds the pane tree DOM and stays mounted (hidden/shown via CSS).
+   *  Created lazily on first showActiveTab call. */
+  contentWrapperEl: HTMLElement | null;
 }
 
 /** Represents a terminal window's state */

@@ -520,6 +520,16 @@ export class Compositor {
 
   // ─── Pane Tree Helpers ──────────────────────────────────────────
 
+  /** Create a persistent wrapper for a tab's pane tree content.
+   *  The wrapper stays in the DOM and is shown/hidden via CSS class toggle,
+   *  avoiding expensive DOM detach/reattach on tab switch. */
+  private createTabWrapper(contentEl: HTMLElement): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'krypton-tab-wrapper';
+    contentEl.appendChild(wrapper);
+    return wrapper;
+  }
+
   /** Create a terminal instance and return a Pane */
   private createPane(container: HTMLElement): Pane {
     const paneId = nextPaneId();
@@ -818,17 +828,32 @@ export class Compositor {
     this.updateTabBar(win);
   }
 
-  /** Switch the visible tab content for a window */
+  /** Switch the visible tab content for a window.
+   *  Uses CSS visibility toggle instead of DOM detach/reattach to avoid
+   *  expensive reflow — critical for agent views with large chat histories. */
   private showActiveTab(win: KryptonWindow): void {
-    // Remove only pane-tree elements, preserving persistent HUD overlays
-    // (flame canvas, uplink bar, activity trace) that live in content area.
-    this.clearPaneTree(win.contentElement);
+    const activeTab = win.tabs[win.activeTabIndex];
+    if (!activeTab) return;
 
-    const tab = win.tabs[win.activeTabIndex];
-    if (!tab) return;
+    for (const tab of win.tabs) {
+      // Ensure wrapper exists and is mounted
+      if (!tab.contentWrapperEl) {
+        tab.contentWrapperEl = this.createTabWrapper(win.contentElement);
+        this.buildPaneTreeDom(tab.paneTree, tab.contentWrapperEl);
+      } else if (!tab.contentWrapperEl.parentElement) {
+        win.contentElement.appendChild(tab.contentWrapperEl);
+        // Re-mount pane tree if wrapper was detached (e.g. after tab close cleanup)
+        if (tab.contentWrapperEl.children.length === 0) {
+          this.buildPaneTreeDom(tab.paneTree, tab.contentWrapperEl);
+        }
+      }
 
-    // Mount the active tab's pane tree
-    this.buildPaneTreeDom(tab.paneTree, win.contentElement);
+      // Toggle visibility
+      tab.contentWrapperEl.classList.toggle(
+        'krypton-tab-wrapper--hidden',
+        tab !== activeTab,
+      );
+    }
   }
 
   /** Remove pane-tree elements from a content area, keeping HUD overlays */
@@ -1281,7 +1306,8 @@ export class Compositor {
     this.installPerspectiveMouseFix(content);
 
     // Create first tab with a single pane
-    const pane = this.createPane(content);
+    const wrapper = this.createTabWrapper(content);
+    const pane = this.createPane(wrapper);
     const tabId = nextTabId();
     const tabEl = this.buildTabElement(tabId, 0, 'Shell 1');
     tabBar.appendChild(tabEl);
@@ -1292,6 +1318,7 @@ export class Compositor {
       paneTree: { type: 'leaf', pane },
       focusedPaneId: pane.id,
       element: tabEl,
+      contentWrapperEl: wrapper,
     };
 
     // Create window record
@@ -1435,11 +1462,12 @@ export class Compositor {
     this.workspace.appendChild(el);
 
     // Create pane with content view (no terminal/PTY)
+    const cvWrapper = this.createTabWrapper(content);
     const paneId = nextPaneId();
     const paneEl = document.createElement('div');
     paneEl.className = 'krypton-pane';
     paneEl.dataset.paneId = paneId;
-    content.appendChild(paneEl);
+    cvWrapper.appendChild(paneEl);
 
     // Mount the content view into the pane
     paneEl.appendChild(contentView.element);
@@ -1473,6 +1501,7 @@ export class Compositor {
       paneTree: { type: 'leaf', pane },
       focusedPaneId: pane.id,
       element: tabEl,
+      contentWrapperEl: cvWrapper,
     };
 
     const win: KryptonWindow = {
@@ -2339,11 +2368,9 @@ export class Compositor {
     const cwd = await this.getFocusedCwd();
     const tabId = nextTabId();
 
-    // Detach current tab's pane tree from DOM (preserve HUD overlays)
-    this.clearPaneTree(win.contentElement);
-
-    // Create the new pane
-    const pane = this.createPane(win.contentElement);
+    // Create a new wrapper for this tab's pane tree
+    const wrapper = this.createTabWrapper(win.contentElement);
+    const pane = this.createPane(wrapper);
 
     const tabNum = win.tabs.length + 1;
     const tabEl = this.buildTabElement(tabId, tabNum - 1, `Shell ${tabNum}`);
@@ -2354,6 +2381,7 @@ export class Compositor {
       paneTree: { type: 'leaf', pane },
       focusedPaneId: pane.id,
       element: tabEl,
+      contentWrapperEl: wrapper,
     };
 
     win.tabs.push(tab);
@@ -2389,15 +2417,13 @@ export class Compositor {
 
     const tabId = nextTabId();
 
-    // Detach current tab's pane tree from DOM (preserve HUD overlays)
-    this.clearPaneTree(win.contentElement);
-
-    // Create pane with content view (no terminal/PTY)
+    // Create wrapper and pane with content view (no terminal/PTY)
+    const ctWrapper = this.createTabWrapper(win.contentElement);
     const paneId = nextPaneId();
     const paneEl = document.createElement('div');
     paneEl.className = 'krypton-pane';
     paneEl.dataset.paneId = paneId;
-    win.contentElement.appendChild(paneEl);
+    ctWrapper.appendChild(paneEl);
 
     paneEl.appendChild(contentView.element);
 
@@ -2429,6 +2455,7 @@ export class Compositor {
       paneTree: { type: 'leaf', pane },
       focusedPaneId: pane.id,
       element: tabEl,
+      contentWrapperEl: ctWrapper,
     };
 
     win.tabs.push(tab);
@@ -2465,6 +2492,8 @@ export class Compositor {
   private closeTabByIndex(win: KryptonWindow, tabIndex: number): void {
     const tab = win.tabs[tabIndex];
     this.disposePaneTree(tab.paneTree);
+    // Remove the tab's persistent wrapper from DOM
+    tab.contentWrapperEl?.remove();
     win.tabs.splice(tabIndex, 1);
 
     // Adjust active tab index
@@ -2502,11 +2531,9 @@ export class Compositor {
     const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
     if (pane) pane.terminal?.focus();
 
-    // Defer fit to next frame so the browser can paint the re-mounted DOM
-    // before we force a layout reflow reading clientWidth/clientHeight.
-    // This prevents a visible delay when switching to tabs with large DOM
-    // trees (e.g. agent views with long conversation histories).
-    requestAnimationFrame(() => this.fitWindow(win.id));
+    // Tab wrappers stay mounted (CSS visibility toggle, no DOM detach/reattach),
+    // so fit can run immediately without waiting for reflow.
+    this.fitWindow(win.id);
 
     this.sound.play('tab.switch');
   }
@@ -2531,8 +2558,8 @@ export class Compositor {
     // Detach the tab from source
     const tab = srcWin.tabs[srcWin.activeTabIndex];
 
-    // Remove pane tree from source window's DOM (preserve HUD overlays)
-    this.clearPaneTree(srcWin.contentElement);
+    // Detach the tab's wrapper from source window (don't destroy it)
+    tab.contentWrapperEl?.remove();
 
     srcWin.tabs.splice(srcWin.activeTabIndex, 1);
 
@@ -2547,7 +2574,10 @@ export class Compositor {
       }
     }
 
-    // Attach to target window
+    // Attach to target window — re-parent the wrapper into the target's content
+    if (tab.contentWrapperEl) {
+      targetWin.contentElement.appendChild(tab.contentWrapperEl);
+    }
     targetWin.tabs.push(tab);
     targetWin.activeTabIndex = targetWin.tabs.length - 1;
 
@@ -2565,8 +2595,6 @@ export class Compositor {
 
     // Update target window
     this.rebuildTabBar(targetWin);
-    // Detach current pane tree and show new tab (preserve HUD overlays)
-    this.clearPaneTree(targetWin.contentElement);
     this.showActiveTab(targetWin);
     this.fitWindow(targetWin.id);
 
@@ -2622,9 +2650,10 @@ export class Compositor {
 
     tab.paneTree = replaceInTree(tab.paneTree);
 
-    // Rebuild the content DOM (preserve HUD overlays)
-    this.clearPaneTree(win.contentElement);
-    this.buildPaneTreeDom(tab.paneTree, win.contentElement);
+    // Rebuild the pane tree inside the tab's wrapper
+    const splitContainer = tab.contentWrapperEl ?? win.contentElement;
+    this.clearPaneTree(splitContainer);
+    this.buildPaneTreeDom(tab.paneTree, splitContainer);
 
     // Find the new pane (it's the one that was just created — last in the tree)
     const allPanes = this.collectPanes(tab.paneTree);
@@ -2707,9 +2736,10 @@ export class Compositor {
       tab.paneTree = newTree;
     }
 
-    // Rebuild DOM (preserve HUD overlays)
-    this.clearPaneTree(win.contentElement);
-    this.buildPaneTreeDom(tab.paneTree, win.contentElement);
+    // Rebuild DOM inside the tab's wrapper
+    const closeContainer = tab.contentWrapperEl ?? win.contentElement;
+    this.clearPaneTree(closeContainer);
+    this.buildPaneTreeDom(tab.paneTree, closeContainer);
 
     // Focus the first remaining pane
     const remainingPanes = this.collectPanes(tab.paneTree);
@@ -4129,10 +4159,9 @@ export class Compositor {
       // Create a new tab in the current window
       const tabId = nextTabId();
 
-      // Detach current tab's pane tree from DOM (preserve HUD overlays)
-      this.clearPaneTree(win.contentElement);
-
-      const pane = this.createPane(win.contentElement);
+      // Create wrapper for the new tab's pane tree
+      const sshWrapper = this.createTabWrapper(win.contentElement);
+      const pane = this.createPane(sshWrapper);
 
       const tabEl = document.createElement('div');
       tabEl.className = 'krypton-tab';
@@ -4148,6 +4177,7 @@ export class Compositor {
         paneTree: { type: 'leaf', pane },
         focusedPaneId: pane.id,
         element: tabEl,
+        contentWrapperEl: sshWrapper,
       };
 
       win.tabs.push(tab);

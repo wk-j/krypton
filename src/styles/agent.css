@@ -108,6 +108,14 @@
   position: relative;
 }
 
+/* Virtualized off-screen message — content stripped, height preserved */
+.agent-view__msg--collapsed,
+.agent-view__tool-row.agent-view__msg--collapsed {
+  display: block;
+  visibility: hidden;
+  contain: strict;
+}
+
 /* Role badge — HUD-style uppercase label */
 .agent-view__msg-label {
   font-size: 10px;

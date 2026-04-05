@@ -93,6 +93,10 @@ export class AgentView implements ContentView {
   private savedScrollTop = 0;
   private pendingScrollToBottom = false;
 
+  // Message virtualization — collapse off-screen messages to reduce DOM complexity
+  private virtualObserver: IntersectionObserver | null = null;
+  private collapsedMessages = new Map<HTMLElement, { html: string; height: number }>();
+
   constructor() {
     this.controller = new AgentController();
 
@@ -164,6 +168,52 @@ export class AgentView implements ContentView {
     this.element.appendChild(this.inputRowEl);
 
     this.renderInput();
+    this.initVirtualization();
+  }
+
+  // ─── Message virtualization ─────────────────────────────────────
+
+  /** Set up IntersectionObserver to collapse off-screen messages, reducing DOM weight.
+   *  Messages within 800px of the viewport stay expanded; distant ones are replaced
+   *  with a fixed-height placeholder to avoid layout shift. */
+  private initVirtualization(): void {
+    this.virtualObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const el = entry.target as HTMLElement;
+          if (entry.isIntersecting) {
+            // Restore collapsed message
+            const saved = this.collapsedMessages.get(el);
+            if (saved) {
+              el.innerHTML = saved.html;
+              el.style.minHeight = '';
+              el.classList.remove('agent-view__msg--collapsed');
+              this.collapsedMessages.delete(el);
+            }
+          } else {
+            // Collapse off-screen message (only if it has substantial content)
+            if (!this.collapsedMessages.has(el) && el.children.length > 0) {
+              const height = el.offsetHeight;
+              if (height > 0) {
+                this.collapsedMessages.set(el, { html: el.innerHTML, height });
+                el.innerHTML = '';
+                el.style.minHeight = `${height}px`;
+                el.classList.add('agent-view__msg--collapsed');
+              }
+            }
+          }
+        }
+      },
+      {
+        root: this.messagesEl,
+        rootMargin: '800px 0px',  // 800px buffer above/below viewport
+      },
+    );
+  }
+
+  /** Start observing a message element for virtualization */
+  private observeMessage(el: HTMLElement): void {
+    this.virtualObserver?.observe(el);
   }
 
   // ─── Session ──────────────────────────────────────────────────────
@@ -227,6 +277,7 @@ export class AgentView implements ContentView {
     msg.appendChild(label);
     msg.appendChild(body);
     this.messagesEl.appendChild(msg);
+    this.observeMessage(msg);
   }
 
   private appendAssistantMessageDom(): HTMLElement {
@@ -248,6 +299,7 @@ export class AgentView implements ContentView {
     msg.appendChild(body);
     body.appendChild(cursor);
     this.messagesEl.appendChild(msg);
+    this.observeMessage(msg);
     return body;
   }
 
@@ -306,6 +358,7 @@ export class AgentView implements ContentView {
     }
 
     this.messagesEl.appendChild(row);
+    this.observeMessage(row);
     return row;
   }
 
@@ -1589,5 +1642,7 @@ export class AgentView implements ContentView {
   dispose(): void {
     this.controller.abort();
     this.stopSpinner();
+    this.virtualObserver?.disconnect();
+    this.collapsedMessages.clear();
   }
 }

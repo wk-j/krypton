@@ -378,6 +378,19 @@
              rotateY(var(--krypton-perspective-tilt-y, 0deg));
 }
 
+/* ─── Tab wrapper (persistent mount, CSS visibility toggle) ─── */
+.krypton-tab-wrapper {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.krypton-tab-wrapper--hidden {
+  display: none;
+}
+
 /* ─── Background Animations (Claude processing) ─── */
 .krypton-flame-canvas,
 .krypton-brainwave-canvas,

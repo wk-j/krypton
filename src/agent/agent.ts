@@ -69,6 +69,7 @@ export class AgentController {
   // Session persistence
   private session: SessionHandle | null = null;
   private lastEntryId: string | null = null;
+  private forceNewSession = false;
 
   // Cumulative token usage across all turns
   private cumulativeUsage: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, contextWindow: 0, contextPercent: 0 };
@@ -266,7 +267,8 @@ export class AgentController {
 
     if (this.session) return;
     try {
-      const existing = await continueRecentSession(this.projectDir);
+      const existing = this.forceNewSession ? null : await continueRecentSession(this.projectDir);
+      this.forceNewSession = false;
       if (existing) {
         this.session = existing;
       } else {
@@ -499,11 +501,22 @@ export class AgentController {
     this.agent = null; // force re-init on next prompt (picks up new projectDir)
     this.session = null;
     this.lastEntryId = null;
+    this.forceNewSession = true;
     this.skillsDiscovered = false;
     this.skillIndex = [];
     this.forcedSkill = null;
     this.lastActiveSkills = [];
     this.cumulativeUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, contextWindow: 0, contextPercent: 0 };
+
+    // Eagerly create the new session file so it exists immediately
+    if (this.projectDir) {
+      try {
+        this.session = await createSession(this.projectDir);
+        this.forceNewSession = false;
+      } catch (e) {
+        console.warn('[agent] reset: failed to create new session, will retry on next prompt:', e);
+      }
+    }
   }
 
   /** Return a snapshot of the agent's internal context for inspection */
