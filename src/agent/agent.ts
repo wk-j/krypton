@@ -86,6 +86,9 @@ export class AgentController {
   private cumulativeUsage: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, contextWindow: 0, contextPercent: 0 };
   private modelContextWindow = 128000;
 
+  // Active model preset (set by switchModel or lazy init)
+  private activePreset: AgentModelPreset | null = null;
+
   // Skills
   private skillIndex: SkillMeta[] = [];
   private skillsDiscovered = false;
@@ -356,52 +359,103 @@ export class AgentController {
     }
   }
 
+  // ─── Model switching ───────────────────────────────────────────
+
+  /** Resolve a model preset by name (or the active default) and its API key. */
+  private async resolvePreset(name?: string): Promise<{ preset: AgentModelPreset; apiKey: string | null } | { error: string }> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let config: any;
+    try {
+      config = await invoke<unknown>('get_config');
+    } catch (e) {
+      return { error: `Failed to read agent config: ${e}` };
+    }
+
+    const agentCfg = config?.agent;
+    const models: AgentModelPreset[] = agentCfg?.models ?? [];
+    const targetName = name ?? (agentCfg?.active as string) ?? 'zai';
+    const found = models.find((m: AgentModelPreset) => m.name === targetName);
+
+    if (!found) {
+      if (name) {
+        const available = models.map((m: AgentModelPreset) => m.name).join(', ') || 'none';
+        return { error: `Unknown model preset "${name}".\nAvailable: ${available}` };
+      }
+      // No presets at all — hardcoded fallback
+      return {
+        preset: {
+          name: 'zai', provider: 'zai', model: 'glm-4.7',
+          base_url: 'https://api.z.ai/api/coding/paas/v4',
+          api_key_env: 'ZAI_API_KEY', context_window: 128000, max_tokens: 8192,
+        },
+        apiKey: null,
+      };
+    }
+
+    const preset = found;
+    let apiKey: string | null = null;
+    if (preset.api_key_env) {
+      try {
+        apiKey = await invoke<string | null>('get_env_var', { name: preset.api_key_env });
+      } catch (e) {
+        return { error: `Failed to read ${preset.api_key_env}: ${e}` };
+      }
+      if (!apiKey) {
+        return { error: `${preset.api_key_env} not set.\nSet this environment variable for the "${preset.name}" model preset, then restart Krypton.` };
+      }
+    }
+
+    return { preset, apiKey };
+  }
+
+  /** Switch to a different model preset at runtime. Conversation history is preserved. */
+  async switchModel(name: string): Promise<{ ok: boolean; error?: string }> {
+    const result = await this.resolvePreset(name);
+    if ('error' in result) return { ok: false, error: result.error };
+
+    // Abort any running prompt
+    this.abort();
+
+    // Null the agent so it re-inits on next prompt with the new preset
+    this.agent = null;
+    this.activePreset = result.preset;
+
+    console.log('[agent] switchModel:', result.preset.name, `(${result.preset.provider}/${result.preset.model})`);
+    return { ok: true };
+  }
+
+  /** Get the name of the currently active model preset. */
+  getActivePresetName(): string | null {
+    return this.activePreset?.name ?? null;
+  }
+
+  /** Get all available model presets from config. */
+  async getAvailablePresets(): Promise<AgentModelPreset[]> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const config = await invoke<any>('get_config');
+      return config?.agent?.models ?? [];
+    } catch {
+      return [];
+    }
+  }
+
   async prompt(text: string, onEvent: AgentEventCallback, commandArgs?: string): Promise<void> {
     if (this.running) return;
 
-    // Lazy init — resolve model preset and API key from config
+    // Lazy init — resolve model preset and API key
     if (!this.agent) {
-      // Read agent config to find the active model preset
-      let preset: AgentModelPreset;
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const config = await invoke<any>('get_config');
-        const agentCfg = config?.agent;
-        const models: AgentModelPreset[] = agentCfg?.models ?? [];
-        const activeName: string = agentCfg?.active ?? 'zai';
-        const found = models.find((m: AgentModelPreset) => m.name === activeName) ?? models[0];
-        if (!found) {
-          // No presets at all — use hardcoded ZAI default
-          preset = {
-            name: 'zai', provider: 'zai', model: 'glm-4.7',
-            base_url: 'https://api.z.ai/api/coding/paas/v4',
-            api_key_env: 'ZAI_API_KEY', context_window: 128000, max_tokens: 8192,
-          };
-        } else {
-          preset = found;
-        }
-      } catch (e) {
-        onEvent({ type: 'error', message: `Failed to read agent config: ${e}` });
+      // Use stored preset from switchModel(), or resolve from config
+      const result = this.activePreset
+        ? await this.resolvePreset(this.activePreset.name)
+        : await this.resolvePreset();
+      if ('error' in result) {
+        onEvent({ type: 'error', message: result.error });
         return;
       }
 
-      // Read API key if the preset requires one
-      let apiKey: string | null = null;
-      if (preset.api_key_env) {
-        try {
-          apiKey = await invoke<string | null>('get_env_var', { name: preset.api_key_env });
-        } catch (e) {
-          onEvent({ type: 'error', message: `Failed to read ${preset.api_key_env}: ${e}` });
-          return;
-        }
-        if (!apiKey) {
-          onEvent({
-            type: 'error',
-            message: `${preset.api_key_env} not set.\nSet this environment variable for the "${preset.name}" model preset, then restart Krypton.`,
-          });
-          return;
-        }
-      }
+      const { preset, apiKey } = result;
+      this.activePreset = preset;
 
       try {
         // Skip skill discovery and session restore for inline mode (lightweight, disposable)

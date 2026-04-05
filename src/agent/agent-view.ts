@@ -746,7 +746,7 @@ export class AgentView implements ContentView {
     '/skills':  { description: 'List discovered skills' },
     '/skill':   { description: 'Force-activate a skill for the next prompt', usage: '/skill <name>' },
     '/context': { description: 'Open context inspector (view LLM messages, system prompt, tools)' },
-    '/model':   { description: 'Show current model and provider info' },
+    '/model':   { description: 'Show current model or switch preset', usage: '/model [name]' },
     '/system':  { description: 'Show current system prompt' },
     '/tools':   { description: 'List registered tools' },
     '/yank':    { description: 'Copy last assistant response to clipboard' },
@@ -808,13 +808,34 @@ export class AgentView implements ContentView {
       }
 
       case '/model': {
-        const ctx = this.controller.getContext();
-        if (ctx) {
-          this.showSystemMessage(
-            `Model: ${ctx.model}\nThinking: ${ctx.thinkingLevel}\nMessages: ${ctx.messageCount}\nStreaming: ${ctx.isStreaming ? 'yes' : 'no'}`,
-          );
+        const modelArg = parts[1];
+        if (modelArg) {
+          // Switch to a different preset
+          this.showSystemMessage(`Switching to "${modelArg}"…`);
+          this.controller.switchModel(modelArg).then((result) => {
+            if (result.ok) {
+              this.showSystemMessage(`Switched to "${modelArg}". Next prompt will use the new model.`);
+            } else {
+              this.showSystemMessage(`Failed to switch: ${result.error}`);
+            }
+          });
         } else {
-          this.showSystemMessage('Agent not initialized — submit a prompt first.');
+          // Show current model + available presets
+          const active = this.controller.getActivePresetName() ?? 'default';
+          const ctx = this.controller.getContext();
+          const modelInfo = ctx
+            ? `Current: ${active} (${ctx.model})\nMessages: ${ctx.messageCount}`
+            : `Current: ${active} (not initialized yet)`;
+          this.controller.getAvailablePresets().then((presets) => {
+            const list = presets.map((p) => {
+              const marker = p.name === active ? ' ←' : '';
+              return `  ${p.name.padEnd(24)} ${p.provider}/${p.model}${marker}`;
+            }).join('\n');
+            const presetsInfo = presets.length > 0
+              ? `\n\nAvailable presets:\n${list}\n\nSwitch with: /model <name>`
+              : '';
+            this.showSystemMessage(modelInfo + presetsInfo);
+          });
         }
         return true;
       }
