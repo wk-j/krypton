@@ -929,6 +929,11 @@ export class FileManagerView implements ContentView {
       if (!entry.is_dir) {
         const sizeSpan = document.createElement('span');
         sizeSpan.className = 'krypton-file-manager__size';
+        if (entry.size >= 1024 * 1024) {
+          sizeSpan.classList.add('krypton-file-manager__size--mega');
+        } else if (entry.size >= 100 * 1024) {
+          sizeSpan.classList.add('krypton-file-manager__size--large');
+        }
         sizeSpan.textContent = this.formatSize(entry.size);
         row.appendChild(sizeSpan);
       }

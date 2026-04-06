@@ -107,6 +107,7 @@ Skills in `.agents/skills/` define repeatable workflows. Load the appropriate sk
 - **`/ghost-signal-theme`** — Automates adding a new ghost-signal sound pack: copy 17 WAVs to `src-tauri/sounds/<pack-id>/`, register in `sound.rs` and `sound.ts`, update `docs/17-sound-themes.md`. Trigger on "add sound theme", "new sound pack", or referencing a WAV directory.
 - **`/pi-mono-reference`** — Reference for `@mariozechner/pi-agent-core` and `@mariozechner/pi-ai`. Load when working on `src/agent/`, debugging agent events, adding tools, changing models/providers, or any question about the pi-agent-core or pi-ai API. Source of truth is at `/Users/wk/Source/pi-mono`.
 - **`/pretext-reference`** — Reference for `@chenglou/pretext` text layout & measurement library. Load when creating text layouts, text animations, measuring text height without DOM, rendering text to canvas/SVG, or working with multiline text measurement. Source of truth is at `/Users/wk/Source/pretext`.
+- **`/diegetic-ui`** — Design and build Diegetic UI applications — interfaces embedded in the story world (Iron Man HUD, Dead Space health bar, Alien motion tracker). Trigger on "HUD", "sci-fi UI", "holographic interface", "AR overlay", "cockpit display", "diegetic design", "in-world UI", "Iron Man style", or "make it feel like it's in the game/movie/world".
 
 ## Documentation
 

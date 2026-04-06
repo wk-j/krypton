@@ -179,6 +179,18 @@
   margin: 1.5em 0;
 }
 
+/* ─── HUD Nav Items ─── */
+
+@keyframes fm-cursor-scan {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fm-cursor-bracket-pulse {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.5; }
+}
+
 .krypton-file-manager__item {
   display: flex;
   align-items: center;
@@ -188,17 +200,82 @@
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
+  position: relative;
+  letter-spacing: 0.04em;
+  transition: background 0.15s ease;
 }
 
-.krypton-file-manager__item--cursor {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
-  border-left: 2px solid var(--krypton-window-accent, #00c8ff);
-  padding-left: 6px;
+/* Subtle alternating row tint for grid feel */
+.krypton-file-manager__item:nth-child(even) {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.015);
 }
+
+/* ── Cursor: HUD bracket frame with scan sweep ── */
+
+.krypton-file-manager__item--cursor {
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06) 40%,
+      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.10) 50%,
+      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06) 60%,
+      transparent 100%
+    );
+  background-size: 200% 100%;
+  animation: fm-cursor-scan 3s linear infinite;
+  border-left: none;
+  padding-left: 8px;
+}
+
+/* Corner brackets via pseudo-elements */
+.krypton-file-manager__item--cursor::before,
+.krypton-file-manager__item--cursor::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-color: var(--krypton-window-accent, #00c8ff);
+  border-style: solid;
+  animation: fm-cursor-bracket-pulse 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.krypton-file-manager__item--cursor::before {
+  top: 1px;
+  left: 2px;
+  border-width: 1px 0 0 1px;
+}
+
+.krypton-file-manager__item--cursor::after {
+  bottom: 1px;
+  right: 2px;
+  border-width: 0 1px 1px 0;
+}
+
+/* Accent edge on cursor */
+.krypton-file-manager__item--cursor .krypton-file-manager__name {
+  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+}
+
+/* ── Directory styling ── */
 
 .krypton-file-manager__item--dir .krypton-file-manager__name {
   color: var(--krypton-window-accent, #00c8ff);
 }
+
+.krypton-file-manager__item--dir .krypton-file-manager__icon {
+  color: var(--krypton-window-accent, #00c8ff);
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+}
+
+.krypton-file-manager__item--cursor.krypton-file-manager__item--dir .krypton-file-manager__icon {
+  opacity: 1;
+  transform: translateX(1px);
+}
+
+/* ── Symlink ── */
 
 .krypton-file-manager__item--symlink .krypton-file-manager__name {
   color: var(--krypton-fg, #b0c4d8);
@@ -206,9 +283,14 @@
   font-style: italic;
 }
 
+/* ── Marked items ── */
+
 .krypton-file-manager__item--marked .krypton-file-manager__mark {
   color: var(--krypton-window-accent, #00c8ff);
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
 }
+
+/* ── Child elements ── */
 
 .krypton-file-manager__mark {
   flex-shrink: 0;
@@ -233,9 +315,40 @@
 .krypton-file-manager__size {
   flex-shrink: 0;
   margin-left: 12px;
-  opacity: 0.4;
+  opacity: 0.35;
   text-align: right;
   min-width: 48px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+/* Large files (100K+): amber */
+.krypton-file-manager__size--large {
+  color: #f5a623;
+  opacity: 0.5;
+}
+
+/* Mega files (1M+): warm orange */
+.krypton-file-manager__size--mega {
+  color: #e57a3a;
+  opacity: 0.6;
+}
+
+/* Cursor row: brighten size */
+.krypton-file-manager__item--cursor .krypton-file-manager__size {
+  opacity: 0.7;
+  color: var(--krypton-window-accent, #00c8ff);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .krypton-file-manager__item--cursor {
+    animation: none;
+    background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.10);
+  }
+  .krypton-file-manager__item--cursor::before,
+  .krypton-file-manager__item--cursor::after {
+    animation: none;
+  }
 }
 
 .krypton-file-manager__empty {
