@@ -25,7 +25,6 @@ import {
   Pane,
   PaneNode,
   SplitDirection,
-  ProgressState,
   type ProgressEvent,
   type PaneProgress,
 } from './types';
@@ -42,6 +41,9 @@ import type { ExtensionHost } from './extensions';
 import { DashboardManager } from './dashboard';
 import type { ClaudeHookManager } from './claude-hooks';
 import type { NotificationController } from './notification';
+import { installPerspectiveMouseFix } from './perspective-fix';
+import { ProgressGauge } from './progress-gauge';
+import { probeRemoteCwd, type SshConnectionInfo } from './ssh-session';
 
 /** Replace the alpha channel of an rgba() color string.
  *  e.g. replaceAlpha('rgba(6, 10, 18, 0.5)', 0.8) → 'rgba(6, 10, 18, 0.8)' */
@@ -69,15 +71,6 @@ interface SessionLocation {
   paneId: PaneId;
 }
 
-/** SSH connection metadata returned by detect_ssh_session */
-interface SshConnectionInfo {
-  user: string;
-  host: string;
-  port: number;
-  control_socket: string | null;
-  extra_args: string[];
-}
-
 /**
  * Abbreviate an absolute path for display in the title bar.
  * - Replaces $HOME with ~
@@ -102,55 +95,6 @@ function abbreviatePath(fullPath: string): string {
     p = '...' + p.slice(p.length - 37);
   }
   return p;
-}
-
-/**
- * Inverse perspective projection via ray-plane intersection.
- *
- * Given a screen-space point (sx, sy) relative to the perspective center,
- * returns the corresponding local coordinates on the content surface before
- * the perspective + rotateX(tiltX) rotateY(tiltY) transform was applied.
- *
- * Model: camera at (0, 0, d), screen plane at z=0.
- * Content plane passes through origin, rotated by Rx(tiltX) then Ry(tiltY).
- */
-function inversePerspectiveProjection(
-  sx: number, sy: number,
-  d: number,
-  tiltXDeg: number, tiltYDeg: number,
-): { x: number; y: number } {
-  const tx = tiltXDeg * Math.PI / 180;
-  const ty = tiltYDeg * Math.PI / 180;
-  const cosTx = Math.cos(tx), sinTx = Math.sin(tx);
-  const cosTy = Math.cos(ty), sinTy = Math.sin(ty);
-
-  // Normal of rotated plane: Rx(tx) · Ry(ty) · [0,0,1]
-  const n1 = sinTy * cosTx;
-  const n2 = -sinTx;
-  const n3 = cosTy * cosTx;
-
-  // Ray from camera (0,0,d) through screen point (sx,sy,0):
-  //   P(t) = (t·sx, t·sy, d·(1-t))
-  // Intersect with plane n·P = 0:
-  //   t = n3·d / (n3·d - n1·sx - n2·sy)
-  const denom = n3 * d - n1 * sx - n2 * sy;
-  if (Math.abs(denom) < 1e-6) return { x: sx, y: sy };
-  const t = (n3 * d) / denom;
-
-  // World-space intersection point
-  const wx = t * sx;
-  const wy = t * sy;
-  const wz = d * (1 - t);
-
-  // Inverse rotation: Ry(-ty) · Rx(-tx)
-  // Step 1: Rx(-tx)
-  const x1 = wx;
-  const y1 = wy * cosTx + wz * sinTx;
-  const z1 = -wy * sinTx + wz * cosTx;
-  // Step 2: Ry(-ty)
-  const lx = x1 * cosTy - z1 * sinTy;
-  const ly = y1;
-  return { x: lx, y: ly };
 }
 
 /** Fully transparent background for xterm.js canvas.
@@ -301,10 +245,7 @@ export class Compositor {
   private shaderConfig: ShaderConfig = { ...DEFAULT_SHADER_CONFIG };
 
   // ─── Progress Tracking (OSC 9;4) ─────────────────────────────────
-  /** Per-session progress state (tracks all panes independently) */
-  private sessionProgress: Map<SessionId, PaneProgress> = new Map();
-  /** Quick Terminal progress state */
-  private qtProgress: PaneProgress | null = null;
+  private progressGauge!: ProgressGauge;
 
   // ─── Quick Terminal State ─────────────────────────────────────────
   private qtConfig: QuickTerminalConfig = { ...DEFAULT_QUICK_TERMINAL_CONFIG };
@@ -336,6 +277,11 @@ export class Compositor {
 
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
+    this.progressGauge = new ProgressGauge({
+      getWindowElement: (windowId) => this.windows.get(windowId)?.element ?? null,
+      getQuickTerminalElement: () => this.qtElement,
+      getWindowDisplayProgress: (windowId) => this.getWindowDisplayProgress(windowId),
+    });
     this.setupResizeHandler();
     this.setupPtyListeners();
 
@@ -1324,7 +1270,7 @@ export class Compositor {
     this.workspace.appendChild(el);
 
     // Fix mouse coordinates under perspective tilt
-    this.installPerspectiveMouseFix(content);
+    installPerspectiveMouseFix(content);
 
     // Create first tab with a single pane
     const wrapper = this.createTabWrapper(content);
@@ -1791,112 +1737,6 @@ export class Compositor {
     const diffView = new DiffContentView(unifiedDiff, container);
     diffView.onClose(() => this.closeTab());
     await this.createContentTab(title, diffView);
-  }
-
-  /**
-   * Correct mouse coordinates for perspective tilt distortion.
-   *
-   * CSS perspective + rotateX/Y on .krypton-window__content creates a non-linear
-   * mapping between screen coords and content-local coords. xterm.js assumes a
-   * linear mapping (clientX - rect.left), so mouse selection lands on the wrong
-   * cell. We intercept mouse events in the capture phase, compute the correct
-   * local coordinates via inverse perspective projection (ray-plane intersection),
-   * and re-dispatch a synthetic event with corrected clientX/clientY.
-   */
-  private installPerspectiveMouseFix(contentEl: HTMLElement): void {
-    const perspEl = contentEl.parentElement!; // .krypton-window__perspective
-    const CORRECTED = '__kryptonPerspCorrected';
-
-    const eventTypes = [
-      'mousedown', 'mousemove', 'mouseup',
-      'click', 'dblclick', 'contextmenu',
-    ];
-
-    for (const type of eventTypes) {
-      contentEl.addEventListener(type, (e: Event) => {
-        const me = e as MouseEvent;
-        if ((me as unknown as Record<string, unknown>)[CORRECTED]) return;
-
-        // Read perspective depth from the wrapper's computed style
-        const perspValue = getComputedStyle(perspEl).perspective;
-        if (!perspValue || perspValue === 'none') return;
-        const d = parseFloat(perspValue);
-        if (!(d > 0)) return;
-
-        // Read tilt angles from CSS custom properties (set on workspace)
-        const ws = contentEl.closest('.krypton-workspace') as HTMLElement | null;
-        const src = ws ? getComputedStyle(ws) : getComputedStyle(document.documentElement);
-        const tiltX = parseFloat(src.getPropertyValue('--krypton-perspective-tilt-x')) || 0;
-        const tiltY = parseFloat(src.getPropertyValue('--krypton-perspective-tilt-y')) || 0;
-        if (tiltX === 0 && tiltY === 0) return;
-
-        // Only correct events targeting xterm elements
-        const target = me.target as Element;
-        const xtermScreen = target.closest('.xterm-screen');
-        if (!xtermScreen) return;
-
-        // Perspective wrapper rect — the untransformed reference frame
-        const wrapperRect = perspEl.getBoundingClientRect();
-        const cx = wrapperRect.left + wrapperRect.width / 2;
-        const cy = wrapperRect.top + wrapperRect.height / 2;
-
-        // Screen coords relative to perspective center
-        const sx = me.clientX - cx;
-        const sy = me.clientY - cy;
-
-        // Inverse perspective: find local content coords from screen coords
-        const local = inversePerspectiveProjection(sx, sy, d, tiltX, tiltY);
-
-        // Compute the xterm screen's untransformed offset within the content.
-        // offsetLeft/offsetTop are layout-based and unaffected by CSS transforms.
-        let xtermOffX = 0, xtermOffY = 0;
-        let el = xtermScreen as HTMLElement;
-        while (el && el !== contentEl) {
-          xtermOffX += el.offsetLeft;
-          xtermOffY += el.offsetTop;
-          el = el.offsetParent as HTMLElement;
-        }
-
-        // Position within the xterm screen (untransformed, from xterm top-left)
-        const correctX = local.x + wrapperRect.width / 2 - xtermOffX;
-        const correctY = local.y + wrapperRect.height / 2 - xtermOffY;
-
-        // xterm.js computes: clientX - distortedRect.left - paddingLeft = localX
-        // So set clientX = distortedRect.left + correctX (padding handled by xterm)
-        const xtermRect = xtermScreen.getBoundingClientRect();
-        const correctedClientX = xtermRect.left + correctX;
-        const correctedClientY = xtermRect.top + correctY;
-
-        // Skip if correction is negligible
-        const dx = correctedClientX - me.clientX;
-        const dy = correctedClientY - me.clientY;
-        if (dx * dx + dy * dy < 0.25) return;
-
-        // Stop original and dispatch corrected event on the same target
-        me.stopImmediatePropagation();
-        me.preventDefault();
-
-        const corrected = new MouseEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          clientX: correctedClientX,
-          clientY: correctedClientY,
-          screenX: me.screenX + dx,
-          screenY: me.screenY + dy,
-          button: me.button,
-          buttons: me.buttons,
-          detail: me.detail,
-          ctrlKey: me.ctrlKey,
-          altKey: me.altKey,
-          shiftKey: me.shiftKey,
-          metaKey: me.metaKey,
-          view: me.view,
-          relatedTarget: me.relatedTarget,
-        });
-        Object.defineProperty(corrected, CORRECTED, { value: true, enumerable: false });
-        target.dispatchEvent(corrected);
-      }, { capture: true });
-    }
   }
 
   /** Close a window and destroy all its tabs/panes */
@@ -3095,7 +2935,7 @@ export class Compositor {
     this.qtElement = el;
 
     // Fix mouse coordinates under perspective tilt
-    this.installPerspectiveMouseFix(content);
+    installPerspectiveMouseFix(content);
 
     // Create xterm.js terminal with config-backed settings
     const terminal = new Terminal({
@@ -3779,68 +3619,16 @@ export class Compositor {
 
       // Quick Terminal
       if (this.qtSessionId === sid) {
-        this.handleProgress(sid, state, progress, null);
+        this.progressGauge.handleProgress(sid, state, progress, null);
         return;
       }
 
       // Regular window: look up via session map
       const loc = this.sessionMap.get(sid);
       if (loc) {
-        this.handleProgress(sid, state, progress, loc.windowId);
+        this.progressGauge.handleProgress(sid, state, progress, loc.windowId);
       }
     });
-  }
-
-  // ─── Progress Bar Helpers (OSC 9;4) ──────────────────────────────
-
-  /**
-   * Handle a progress update for a session. Updates internal state and
-   * drives the status dot arc gauge + titlebar scanline sweep.
-   */
-  private handleProgress(
-    sessionId: SessionId,
-    state: number,
-    progress: number,
-    windowId: WindowId | null,
-  ): void {
-    const pState = state as ProgressState;
-
-    if (pState === ProgressState.Hidden) {
-      // Clear progress state
-      if (windowId === null) {
-        this.qtProgress = null;
-      } else {
-        this.sessionProgress.delete(sessionId);
-      }
-    } else {
-      // Store progress state
-      const paneProgress: PaneProgress = { state: pState, progress };
-      if (windowId === null) {
-        this.qtProgress = paneProgress;
-      } else {
-        this.sessionProgress.set(sessionId, paneProgress);
-      }
-    }
-
-    // Determine which window element to update
-    let winEl: HTMLElement | null = null;
-    if (windowId === null) {
-      winEl = this.qtElement;
-    } else {
-      const win = this.windows.get(windowId);
-      if (win) winEl = win.element;
-    }
-    if (!winEl) return;
-
-    // Resolve which progress to display — active tab's focused pane for regular windows
-    let displayProgress: PaneProgress | null = null;
-    if (windowId === null) {
-      displayProgress = this.qtProgress;
-    } else {
-      displayProgress = this.getWindowDisplayProgress(windowId);
-    }
-
-    this.updateProgressGauge(winEl, displayProgress);
   }
 
   /**
@@ -3856,302 +3644,10 @@ export class Compositor {
     const focusedPane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
     if (!focusedPane || focusedPane.sessionId === null) return null;
 
-    return this.sessionProgress.get(focusedPane.sessionId) ?? null;
-  }
-
-  /** SVG namespace for creating SVG elements */
-  private static readonly SVG_NS = 'http://www.w3.org/2000/svg';
-
-  /** Circumference of the gauge arc (r=40 in a 100x100 viewBox, C = 2*pi*40 ~= 251.327) */
-  private static readonly GAUGE_CIRCUMFERENCE = 2 * Math.PI * 40;
-
-  /**
-   * Create or update the large centered background gauge in a window's
-   * content area, and toggle the titlebar scanline sweep.
-   */
-  private updateProgressGauge(
-    winEl: HTMLElement,
-    displayProgress: PaneProgress | null,
-  ): void {
-    const contentEl = winEl.querySelector('.krypton-window__content') ?? winEl.querySelector('.krypton-window__body');
-    const titlebar = winEl.querySelector('.krypton-window__titlebar');
-    if (!contentEl || !titlebar) return;
-
-    if (!displayProgress || displayProgress.state === ProgressState.Hidden) {
-      this.removeProgressGauge(contentEl, titlebar);
-      return;
-    }
-
-    const { state, progress } = displayProgress;
-
-    // Ensure gauge container exists
-    let gauge = contentEl.querySelector('.krypton-progress-gauge') as HTMLElement | null;
-    if (!gauge) {
-      gauge = this.createGaugeElement();
-      // Insert as first child so it renders behind terminal content
-      contentEl.insertBefore(gauge, contentEl.firstChild);
-      // Trigger reflow then make visible for opacity transition
-      void gauge.offsetHeight;
-      gauge.classList.add('krypton-progress-gauge--visible');
-    }
-
-    const svg = gauge.querySelector('.krypton-progress-gauge__svg') as SVGElement;
-    const fill = gauge.querySelector('.krypton-progress-gauge__fill') as SVGCircleElement;
-    const pctText = gauge.querySelector('.krypton-progress-gauge__pct') as SVGTextElement;
-    const labelText = gauge.querySelector('.krypton-progress-gauge__label') as SVGTextElement;
-    if (!svg || !fill || !pctText || !labelText) return;
-
-    // Clear state modifiers
-    gauge.classList.remove(
-      'krypton-progress-gauge--error',
-      'krypton-progress-gauge--paused',
-      'krypton-progress-gauge--indeterminate',
-      'krypton-progress-gauge--flare',
-      'krypton-progress-gauge--fade-out',
-    );
-    titlebar.classList.remove(
-      'krypton-window__titlebar--progress-error',
-      'krypton-window__titlebar--progress-paused',
-    );
-
-    // Activate titlebar scanline sweep
-    titlebar.classList.add('krypton-window__titlebar--progress');
-
-    const C = Compositor.GAUGE_CIRCUMFERENCE;
-
-    switch (state) {
-      case ProgressState.Normal: {
-        const filled = (progress / 100) * C;
-        fill.setAttribute('stroke-dasharray', `${filled} ${C - filled}`);
-        pctText.textContent = `${progress}%`;
-        labelText.textContent = 'loading';
-
-        // Completion flash at 100%
-        if (progress >= 100) {
-          pctText.textContent = '100%';
-          labelText.textContent = 'complete';
-          gauge.classList.add('krypton-progress-gauge--flare');
-          const gaugeRef = gauge;
-          const contentRef = contentEl;
-          const titlebarRef = titlebar;
-          setTimeout(() => {
-            gaugeRef.classList.remove('krypton-progress-gauge--flare');
-            gaugeRef.classList.add('krypton-progress-gauge--fade-out');
-            setTimeout(() => {
-              this.removeProgressGauge(contentRef, titlebarRef);
-            }, 1500);
-          }, 800);
-        }
-        break;
-      }
-
-      case ProgressState.Error: {
-        fill.setAttribute('stroke-dasharray', `${C} 0`);
-        gauge.classList.add('krypton-progress-gauge--error');
-        titlebar.classList.add('krypton-window__titlebar--progress-error');
-        pctText.textContent = progress > 0 ? `${progress}%` : 'ERR';
-        labelText.textContent = 'error';
-        break;
-      }
-
-      case ProgressState.Indeterminate: {
-        const segment = C * 0.25;
-        fill.setAttribute('stroke-dasharray', `${segment} ${C - segment}`);
-        gauge.classList.add('krypton-progress-gauge--indeterminate');
-        pctText.textContent = '';
-        labelText.textContent = 'working';
-        break;
-      }
-
-      case ProgressState.Paused: {
-        const filled = (progress / 100) * C;
-        fill.setAttribute('stroke-dasharray', `${filled} ${C - filled}`);
-        gauge.classList.add('krypton-progress-gauge--paused');
-        titlebar.classList.add('krypton-window__titlebar--progress-paused');
-        pctText.textContent = `${progress}%`;
-        labelText.textContent = 'paused';
-        break;
-      }
-    }
-  }
-
-  /**
-   * Create the large centered background gauge DOM element.
-   * Returns a container div with an SVG inside.
-   */
-  private createGaugeElement(): HTMLElement {
-    const ns = Compositor.SVG_NS;
-
-    // Wrapper div
-    const gauge = document.createElement('div');
-    gauge.className = 'krypton-progress-gauge';
-
-    // SVG — 100x100 viewBox with arc at center
-    const svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('class', 'krypton-progress-gauge__svg');
-    svg.setAttribute('viewBox', '0 0 100 100');
-
-    // Background track circle
-    const track = document.createElementNS(ns, 'circle');
-    track.setAttribute('cx', '50');
-    track.setAttribute('cy', '50');
-    track.setAttribute('r', '40');
-    track.setAttribute('class', 'krypton-progress-gauge__track');
-
-    // Progress fill arc
-    const fill = document.createElementNS(ns, 'circle');
-    fill.setAttribute('cx', '50');
-    fill.setAttribute('cy', '50');
-    fill.setAttribute('r', '40');
-    fill.setAttribute('class', 'krypton-progress-gauge__fill');
-    fill.setAttribute('stroke-dasharray', `0 ${Compositor.GAUGE_CIRCUMFERENCE}`);
-    fill.setAttribute('transform', 'rotate(-90 50 50)');
-
-    // Large percentage text
-    const pct = document.createElementNS(ns, 'text');
-    pct.setAttribute('x', '50');
-    pct.setAttribute('y', '47');
-    pct.setAttribute('class', 'krypton-progress-gauge__pct');
-    pct.textContent = '';
-
-    // Status label text
-    const label = document.createElementNS(ns, 'text');
-    label.setAttribute('x', '50');
-    label.setAttribute('y', '60');
-    label.setAttribute('class', 'krypton-progress-gauge__label');
-    label.textContent = '';
-
-    svg.appendChild(track);
-    svg.appendChild(fill);
-    svg.appendChild(pct);
-    svg.appendChild(label);
-    gauge.appendChild(svg);
-    return gauge;
-  }
-
-  /**
-   * Remove the background gauge and titlebar sweep from a window.
-   */
-  private removeProgressGauge(
-    contentEl: Element,
-    titlebar: Element,
-  ): void {
-    const gauge = contentEl.querySelector('.krypton-progress-gauge');
-    if (gauge) gauge.remove();
-
-    titlebar.classList.remove(
-      'krypton-window__titlebar--progress',
-      'krypton-window__titlebar--progress-error',
-      'krypton-window__titlebar--progress-paused',
-    );
+    return this.progressGauge.getSessionProgress(focusedPane.sessionId);
   }
 
   // ─── SSH Session Multiplexing ─────────────────────────────────────
-
-  /**
-   * Probe the remote CWD by injecting a command into the active PTY.
-   *
-   * The probe output is embedded inside a private-use OSC escape
-   * sequence (OSC 7337) that xterm.js silently discards — the printf
-   * output itself is completely invisible to the user.
-   *
-   * To hide the *command echo* (the shell repeating what we typed),
-   * we wrap the payload in a compound command that:
-   *   1. Saves the cursor position  (ESC 7)
-   *   2. Turns off terminal echo    (stty -echo)
-   *   3. Runs the printf            (produces the invisible OSC)
-   *   4. Restores echo              (stty echo)
-   *   5. Restores the cursor        (ESC 8) and erases the line
-   *
-   * Because `stty -echo` is set before the newline is echoed back
-   * by the remote TTY driver, and cursor save/restore brackets the
-   * whole thing, the terminal buffer is left untouched.
-   *
-   * Falls back to `null` if no response arrives within the timeout.
-   */
-  private probeRemoteCwd(sessionId: number): Promise<string | null> {
-    const marker = `__KR_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}__`;
-    const TIMEOUT_MS = 3000;
-
-    // What we look for in the raw pty-output stream.
-    // The printf will emit: ESC ] 7337 ; <marker> ; <cwd> BEL
-    const oscStart = `\x1b]7337;${marker};`;
-    const oscEnd = '\x07';
-
-    return new Promise((resolve) => {
-      let settled = false;
-      let buffer = '';
-
-      // eslint-disable-next-line prefer-const
-      let unlisten: (() => void) | null = null;
-      let timer: ReturnType<typeof setTimeout> | null = null;
-
-      const cleanup = () => {
-        if (timer) clearTimeout(timer);
-        if (unlisten) unlisten();
-      };
-
-      const finish = (cwd: string | null) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve(cwd);
-      };
-
-      timer = setTimeout(() => finish(null), TIMEOUT_MS);
-
-      // Listen for the OSC response in raw pty-output
-      listen<[number, number[]]>('pty-output', (event) => {
-        const [sid, data] = event.payload;
-        if (sid !== sessionId || settled) return;
-
-        buffer += new TextDecoder().decode(new Uint8Array(data));
-
-        const si = buffer.indexOf(oscStart);
-        if (si === -1) return;
-        const payloadStart = si + oscStart.length;
-        const ei = buffer.indexOf(oscEnd, payloadStart);
-        if (ei === -1) return;
-
-        const cwd = buffer.slice(payloadStart, ei).trim();
-        finish(cwd || null);
-      }).then((fn) => {
-        if (settled) {
-          fn();
-        } else {
-          unlisten = fn;
-        }
-      });
-
-      // Inject the probe command.
-      //
-      // The command we send (as keystrokes into the PTY):
-      //   <CR><ESC[2K> — move to column 0, erase the current line
-      //                   (wipes the visible prompt so our command
-      //                    doesn't appear next to stale text)
-      //   <space>      — leading space: most shells skip history
-      //   stty -echo;  — disable TTY echo so the command + output
-      //                   are not displayed
-      //   printf '\033]7337;<marker>;%s\007' "$(pwd)";
-      //                — emit the CWD inside an invisible OSC sequence
-      //   stty echo    — re-enable TTY echo
-      //   <\n>         — execute the compound command
-      //
-      // After execution the shell prints a fresh prompt.  Because
-      // echo was off during execution, neither the command text
-      // nor the printf output were visible.  The fresh prompt
-      // naturally replaces the erased line.
-      const cmd = [
-        '\r\x1b[2K',                                                    // CR + erase line
-        ` stty -echo; printf '\\033]7337;${marker};%s\\007' "$(pwd)";`, // probe (no echo)
-        ' stty echo\n',                                                  // restore echo + exec
-      ].join('');
-
-      const encoded = new TextEncoder().encode(cmd);
-      invoke('write_to_pty', { sessionId, data: Array.from(encoded) })
-        .catch(() => finish(null));
-    });
-  }
 
   /**
    * Clone the SSH session from the focused pane into a new tab.
@@ -4175,7 +3671,7 @@ export class Compositor {
 
       // Probe the remote CWD from the live SSH shell before we switch tabs.
       // This injects a command into the existing PTY and captures the output.
-      const remoteCwd = await this.probeRemoteCwd(sessionId);
+      const remoteCwd = await probeRemoteCwd(sessionId);
 
       // Create a new tab in the current window
       const tabId = nextTabId();
@@ -4257,7 +3753,7 @@ export class Compositor {
       }
 
       // Probe the remote CWD from the live SSH shell before spawning
-      const remoteCwd = await this.probeRemoteCwd(sessionId);
+      const remoteCwd = await probeRemoteCwd(sessionId);
 
       // Create a new window (reuses createWindow's DOM setup)
       const newWindowId = await this.createWindow();
