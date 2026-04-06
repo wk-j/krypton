@@ -33,27 +33,28 @@ type CloseCallback = () => void;
 
 // ── Inline AI system prompts ─────────────────────────────────────────
 
-const INLINE_CMD_SYSTEM_PROMPT = `You are a terminal command generator. You output ONE shell command. Nothing else.
+const INLINE_CMD_SYSTEM_PROMPT = `You are a terminal command generator. Your ONLY job is to output a shell command the user can run. NEVER output results, lists, explanations, or prose.
 
 RULES:
-- NEVER ask questions. NEVER ask for clarification. NEVER say "Would you like". Just output the command.
-- Make your best judgment call. If the user says "commit changes", commit ALL changes with a good message. Don't ask what to commit.
-- Use the bash tool to gather context BEFORE generating the command. For example:
-  - "commit changes" → run \`git diff --stat\` and \`git status -s\`, then output a git commit command with a message that describes what actually changed.
-  - "kill the server" → run \`lsof -iTCP -sTCP:LISTEN -P -n\` to find the PID, then output the kill command.
-  - "install dependencies" → run \`ls\` to detect package.json/Cargo.toml/etc, then output the right install command.
+- NEVER ask questions. NEVER ask for clarification. Just output the command.
+- NEVER show tool results or data you gathered. The user wants a COMMAND to run, not the answer.
+- "list md files" → output \`find . -name '*.md'\` — do NOT list the files yourself.
+- "show disk usage" → output \`du -sh *\` — do NOT show the sizes yourself.
+- "commit changes" → use bash to run \`git diff --stat\` to understand what changed, then output a \`git commit\` command with a good message.
+- "kill the server" → use bash to find the PID, then output the \`kill\` command.
+- Use the bash tool to gather context silently. Then output ONLY the command.
 
-OUTPUT FORMAT (your final text response after using tools):
-- Line 1: the command. Nothing else.
+OUTPUT FORMAT:
+- Line 1: the shell command. Nothing else.
 - Line 2 (optional): a comment starting with # to briefly explain.
-- No markdown. No code fences. No backticks. No XML tags. No prose. No questions.`;
+- No markdown. No code fences. No backticks. No XML tags. No prose. No lists.`;
 
 const INLINE_ASK_SYSTEM_PROMPT = `You are a concise terminal expert. Answer directly. NEVER ask follow-up questions.
 
 - Use the bash tool to gather context if needed before answering.
-- Be brief — 1-3 sentences max. Plain text only.
-- No markdown, no code fences, no XML tags.
-- If the answer is a command, just show the command.`;
+- Be brief — a few sentences or a short list. Use markdown formatting (headings, lists, code blocks, bold) for readability.
+- No XML tags.
+- If the answer is a command, show it in a \`code span\` or fenced code block.`;
 
 // ── Glitch-decode animation (borrowed from NotificationController) ────
 
@@ -409,7 +410,7 @@ export class InlineAIOverlay {
           }
           if (this.askMode) {
             this.answer = this.stripArtifacts(latestResponse.trim());
-            this.commandEl.innerHTML = md.parse(this.answer) as string;
+            this.commandEl.innerHTML = md.parse(this.answer, { gfm: true, breaks: true }) as string;
           } else {
             this.parseResponse(latestResponse);
             this.commandEl.textContent = this.command;
@@ -539,7 +540,7 @@ export class InlineAIOverlay {
       // Ask mode — markdown answer
       this.commandEl.classList.add('krypton-inline-ai__command--answer');
       if (this.answer) {
-        this.commandEl.innerHTML = md.parse(this.answer) as string;
+        this.commandEl.innerHTML = md.parse(this.answer, { gfm: true, breaks: true }) as string;
       }
       this.hintEl.textContent = '\u2318C copy \u00b7 \u21b5 ask another \u00b7 \u238b dismiss';
     } else {
