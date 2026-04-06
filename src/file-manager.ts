@@ -459,7 +459,8 @@ export class FileManagerView implements ContentView {
 
   private moveCursor(delta: number): void {
     if (this.filteredEntries.length === 0) return;
-    this.cursor = Math.max(0, Math.min(this.filteredEntries.length - 1, this.cursor + delta));
+    const len = this.filteredEntries.length;
+    this.cursor = ((this.cursor + delta) % len + len) % len;
     this.clampScroll();
     this.renderList();
     this.loadPreview();
@@ -721,7 +722,7 @@ export class FileManagerView implements ContentView {
 
       // Render markdown files
       if (this.isMarkdownFile(entry.name)) {
-        const rendered = md.parse(text) as string;
+        const rendered = md.parse(text, { gfm: true, breaks: true }) as string;
         this.previewContentEl.style.display = 'none';
         this.previewMarkdownEl.style.display = '';
         this.previewMarkdownEl.innerHTML = rendered
