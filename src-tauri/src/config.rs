@@ -418,7 +418,7 @@ impl Default for AgentConfig {
                 AgentModelConfig {
                     name: "zai".to_string(),
                     provider: "zai".to_string(),
-                    model: "glm-4.7".to_string(),
+                    model: "glm-5.1".to_string(),
                     base_url: "https://api.z.ai/api/coding/paas/v4".to_string(),
                     api_key_env: "ZAI_API_KEY".to_string(),
                     context_window: 128000,

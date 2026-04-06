@@ -230,7 +230,7 @@ export class AgentController {
     }
 
     const basePrompt = this.buildBasePrompt();
-    this.agent.setSystemPrompt(basePrompt + skillSection);
+    this.agent.state.systemPrompt = basePrompt + skillSection;
 
     const names = matches.map((m) => m.skill.name);
     console.log('[agent] active skills:', names.join(', '));
@@ -241,7 +241,7 @@ export class AgentController {
   private revertSystemPrompt(): void {
     this.inlineSystemPrompt = null;
     if (this.agent) {
-      this.agent.setSystemPrompt(this.buildBasePrompt());
+      this.agent.state.systemPrompt = this.buildBasePrompt();
     }
   }
 

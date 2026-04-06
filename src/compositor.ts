@@ -275,6 +275,9 @@ export class Compositor {
   /** Active inline AI overlay (at most one) */
   private inlineAI: import('./inline-ai').InlineAIOverlay | null = null;
 
+  /** Callbacks invoked after config reload with the fresh config */
+  private onConfigReloadCallbacks: Array<(config: KryptonConfig) => void> = [];
+
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
     this.progressGauge = new ProgressGauge({
@@ -482,7 +485,17 @@ export class Compositor {
     // Re-apply config opacity after theme reload (theme sets its own alpha)
     this.applyConfig(config);
 
+    // Notify external consumers (e.g. MusicPlayer) of the updated config
+    for (const cb of this.onConfigReloadCallbacks) {
+      cb(config);
+    }
+
     console.log('[Krypton] Config reloaded via command palette');
+  }
+
+  /** Register a callback to be invoked after config reload with the fresh config. */
+  onConfigReload(cb: (config: KryptonConfig) => void): void {
+    this.onConfigReloadCallbacks.push(cb);
   }
 
   // ─── Pane Tree Helpers ──────────────────────────────────────────

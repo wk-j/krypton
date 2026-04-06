@@ -249,6 +249,7 @@ export class MusicPlayer {
     console.log('[MusicPlayer] Starting Circuit Trace visualizer (in-window)');
 
     this.visualizer = new OffscreenAnimationProxy('circuit-trace');
+    this.visualizer.setOpacity(this.visualizerOpacity);
     const canvas = this.visualizer.getElement();
 
     // Insert as first child of window content (behind terminal panes)

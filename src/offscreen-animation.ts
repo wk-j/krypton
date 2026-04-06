@@ -7,11 +7,11 @@ import type { BackgroundAnimation } from './flame';
 type AnimationType = 'flame' | 'matrix' | 'brainwave' | 'circuit-trace';
 
 const FADE_DURATION = 600;
-const BASE_OPACITY: Record<AnimationType, string> = {
-  flame: '0.25',
-  matrix: '0.25',
-  brainwave: '0.22',
-  'circuit-trace': '0.35',
+const BASE_OPACITY: Record<AnimationType, number> = {
+  flame: 0.25,
+  matrix: 0.25,
+  brainwave: 0.22,
+  'circuit-trace': 0.35,
 };
 
 const CANVAS_CLASS: Record<AnimationType, string> = {
@@ -26,6 +26,7 @@ export class OffscreenAnimationProxy implements BackgroundAnimation {
   private worker: Worker;
   private running = false;
   private animationType: AnimationType;
+  private customOpacity: number | null = null;
 
   constructor(animationType: AnimationType) {
     this.animationType = animationType;
@@ -45,6 +46,11 @@ export class OffscreenAnimationProxy implements BackgroundAnimation {
     );
   }
 
+  /** Get the effective opacity: custom value if set, otherwise the base default */
+  private getEffectiveOpacity(): number {
+    return this.customOpacity ?? BASE_OPACITY[this.animationType];
+  }
+
   getElement(): HTMLCanvasElement {
     return this.canvas;
   }
@@ -56,11 +62,12 @@ export class OffscreenAnimationProxy implements BackgroundAnimation {
     this.worker.postMessage({ type: 'start' });
 
     // Fade in via CSS on the main-thread canvas element
+    const targetOpacity = this.getEffectiveOpacity();
     this.canvas.style.opacity = '0';
     this.canvas.style.display = 'block';
     requestAnimationFrame(() => {
       this.canvas.style.transition = `opacity ${FADE_DURATION}ms ease-in`;
-      this.canvas.style.opacity = BASE_OPACITY[this.animationType];
+      this.canvas.style.opacity = String(targetOpacity);
     });
   }
 
@@ -97,8 +104,10 @@ export class OffscreenAnimationProxy implements BackgroundAnimation {
     this.worker.postMessage({ type: 'fft', bins });
   }
 
-  /** Set canvas opacity (e.g., from config) */
+  /** Set canvas opacity (e.g., from config). Takes effect immediately if running,
+   *  or will be used as the initial opacity when start() is called. */
   setOpacity(opacity: number): void {
+    this.customOpacity = opacity;
     if (this.running) {
       this.canvas.style.opacity = String(opacity);
     }

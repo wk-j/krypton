@@ -87,6 +87,13 @@ async function main(): Promise<void> {
     musicPlayer.applyConfig(config.music);
   }
 
+  // Re-apply music config on hot-reload
+  compositor.onConfigReload((newConfig) => {
+    if (newConfig.music) {
+      musicPlayer.applyConfig(newConfig.music);
+    }
+  });
+
   // Initialize which-key popup (shows available keys per mode)
   const whichKey = new WhichKey();
   inputRouter.onModeChange((mode, contentType) => {
