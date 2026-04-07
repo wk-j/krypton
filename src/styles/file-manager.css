@@ -430,6 +430,14 @@
 .krypton-file-manager__preview-content .hljs-bullet { color: #00d4c0; }
 .krypton-file-manager__preview-content .hljs-regexp { color: #00ffc8; }
 
+/* ─── Fuzzy Search Match Highlight ─── */
+
+.krypton-file-manager__match {
+  color: var(--krypton-window-accent, #00c8ff);
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+}
+
 /* ─── File Manager AI Overlay ─── */
 
 .krypton-file-manager-ai {

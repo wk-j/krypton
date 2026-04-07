@@ -66,6 +66,7 @@ export class FileManagerView implements ContentView {
   readonly element: HTMLElement;
 
   private cwd = '';
+  private initialCwd = '';
   private entries: FileEntry[] = [];
   private filteredEntries: FileEntry[] = [];
   private cursor = 0;
@@ -83,6 +84,16 @@ export class FileManagerView implements ContentView {
   private closeCallback: (() => void) | null = null;
   private lastPreviewPath: string | null = null;
   private aiOverlay: FileManagerAI | null = null;
+
+  // Fuzzy file search state
+  private searchMode = false;
+  private searchText = '';
+  private searchPool: string[] = [];
+  private searchResults: string[] = [];
+  private searchCursor = 0;
+  private searchScrollOffset = 0;
+  private searchRoot = '';
+  private searchCapped = false;
 
   // Vim-style gg detection
   private lastKey = '';
@@ -103,6 +114,7 @@ export class FileManagerView implements ContentView {
 
   constructor(initialCwd: string, container: HTMLElement) {
     this.cwd = initialCwd;
+    this.initialCwd = initialCwd;
 
     this.element = document.createElement('div');
     this.element.className = 'krypton-file-manager';
@@ -170,6 +182,11 @@ export class FileManagerView implements ContentView {
     // Prompt mode — typing into status bar input
     if (this.prompt) {
       return this.handlePromptKey(e);
+    }
+
+    // Search mode — fuzzy file search
+    if (this.searchMode) {
+      return this.handleSearchKey(e);
     }
 
     // Filter mode — typing into filter
@@ -382,6 +399,10 @@ export class FileManagerView implements ContentView {
 
       case 'i':
         this.openAI();
+        return true;
+
+      case 'f':
+        this.enterSearchMode();
         return true;
     }
 
@@ -859,6 +880,10 @@ export class FileManagerView implements ContentView {
   // ─── Rendering ─────────────────────────────────────────────────
 
   private async renderBreadcrumb(): Promise<void> {
+    if (this.searchMode) {
+      this.breadcrumbEl.textContent = `SEARCH // ${this.searchText}\u2588`;
+      return;
+    }
     const home = await getHome();
     let display = this.cwd;
     if (home !== '/' && display.startsWith(home)) {
@@ -869,6 +894,11 @@ export class FileManagerView implements ContentView {
 
   private renderList(): void {
     this.listEl.innerHTML = '';
+
+    if (this.searchMode) {
+      this.renderSearchList();
+      return;
+    }
 
     if (this.filteredEntries.length === 0) {
       const empty = document.createElement('div');
@@ -951,6 +981,78 @@ export class FileManagerView implements ContentView {
     }
   }
 
+  private renderSearchList(): void {
+    if (this.searchResults.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'krypton-file-manager__empty';
+      empty.textContent = this.searchText ? 'No matches' : 'Loading...';
+      this.listEl.appendChild(empty);
+      return;
+    }
+
+    if (this.visibleRows <= 0) {
+      const h = this.listEl.clientHeight || this.bodyEl.clientHeight || 600;
+      this.visibleRows = Math.max(1, Math.floor(h / this.getCellHeight()));
+    }
+
+    const end = Math.min(this.searchScrollOffset + this.visibleRows, this.searchResults.length);
+
+    // Top spacer
+    if (this.searchScrollOffset > 0) {
+      const spacer = document.createElement('div');
+      spacer.style.height = `${this.searchScrollOffset * this.getCellHeight()}px`;
+      this.listEl.appendChild(spacer);
+    }
+
+    const query = this.searchText.toLowerCase();
+
+    for (let i = this.searchScrollOffset; i < end; i++) {
+      const relPath = this.searchResults[i];
+      const row = document.createElement('div');
+      row.className = 'krypton-file-manager__item';
+      if (i === this.searchCursor) row.classList.add('krypton-file-manager__item--cursor');
+
+      // Icon — file icon
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'krypton-file-manager__icon';
+      iconSpan.textContent = '  ';
+      row.appendChild(iconSpan);
+
+      // Name with fuzzy match highlighting
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'krypton-file-manager__name';
+
+      if (query) {
+        const lower = relPath.toLowerCase();
+        let qi = 0;
+        for (let ci = 0; ci < relPath.length; ci++) {
+          if (qi < query.length && lower[ci] === query[qi]) {
+            const mark = document.createElement('span');
+            mark.className = 'krypton-file-manager__match';
+            mark.textContent = relPath[ci];
+            nameSpan.appendChild(mark);
+            qi++;
+          } else {
+            nameSpan.appendChild(document.createTextNode(relPath[ci]));
+          }
+        }
+      } else {
+        nameSpan.textContent = relPath;
+      }
+
+      row.appendChild(nameSpan);
+      this.listEl.appendChild(row);
+    }
+
+    // Bottom spacer
+    const remaining = this.searchResults.length - end;
+    if (remaining > 0) {
+      const spacer = document.createElement('div');
+      spacer.style.height = `${remaining * this.getCellHeight()}px`;
+      this.listEl.appendChild(spacer);
+    }
+  }
+
   private renderStatus(): void {
     if (this.confirmAction) {
       // Already set by setStatusConfirm
@@ -960,6 +1062,15 @@ export class FileManagerView implements ContentView {
     if (this.prompt) {
       this.statusEl.textContent = `${this.prompt.label} ${this.prompt.value}\u2588`;
       this.statusEl.className = 'krypton-file-manager__status krypton-file-manager__status--prompt';
+      return;
+    }
+
+    if (this.searchMode) {
+      let text = `${this.searchResults.length} matches`;
+      if (this.searchCapped) text += ' (capped)';
+      text += ` \u2502 ${this.searchPool.length} files indexed`;
+      this.statusEl.textContent = text;
+      this.statusEl.className = 'krypton-file-manager__status krypton-file-manager__status--filter';
       return;
     }
 
@@ -994,6 +1105,296 @@ export class FileManagerView implements ContentView {
     }
 
     this.statusEl.textContent = parts.join(' \u2502 ');
+  }
+
+  // ─── Fuzzy File Search ──────────────────────────────────────────
+
+  private async enterSearchMode(): Promise<void> {
+    this.searchMode = true;
+    this.searchText = '';
+    this.searchCursor = 0;
+    this.searchScrollOffset = 0;
+    this.searchRoot = this.initialCwd;
+    this.searchResults = [];
+    this.searchCapped = false;
+    this.renderBreadcrumb();
+    this.renderStatus();
+    this.renderList();
+
+    try {
+      const files = await invoke<string[]>('search_files', {
+        root: this.initialCwd,
+        showHidden: this.showHidden,
+      });
+      this.searchCapped = files.length >= 50_000;
+      this.searchPool = files;
+    } catch (err) {
+      this.searchPool = [];
+      this.setStatusError(`${err}`);
+    }
+
+    this.applySearch();
+    this.renderList();
+    this.renderStatus();
+  }
+
+  private handleSearchKey(e: KeyboardEvent): boolean {
+    if (e.key === 'Escape') {
+      this.searchMode = false;
+      this.searchText = '';
+      this.searchPool = [];
+      this.searchResults = [];
+      this.renderBreadcrumb();
+      this.renderList();
+      this.renderStatus();
+      this.loadPreview();
+      return true;
+    }
+
+    if (e.key === 'Enter') {
+      this.selectSearchResult();
+      return true;
+    }
+
+    if (e.key === 'ArrowDown' || (e.key === 'j' && e.ctrlKey)) {
+      this.moveSearchCursor(1);
+      return true;
+    }
+
+    if (e.key === 'ArrowUp' || (e.key === 'k' && e.ctrlKey)) {
+      this.moveSearchCursor(-1);
+      return true;
+    }
+
+    if (e.key === 'u' && e.ctrlKey) {
+      this.searchText = '';
+      this.applySearch();
+      this.searchCursor = 0;
+      this.searchScrollOffset = 0;
+      this.renderList();
+      this.renderBreadcrumb();
+      this.renderStatus();
+      this.loadSearchPreview();
+      return true;
+    }
+
+    if (e.key === 'Backspace') {
+      this.searchText = this.searchText.slice(0, -1);
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+      this.searchText += e.key;
+    } else {
+      return true;
+    }
+
+    this.applySearch();
+    this.searchCursor = 0;
+    this.searchScrollOffset = 0;
+    this.renderList();
+    this.renderBreadcrumb();
+    this.renderStatus();
+    this.loadSearchPreview();
+    return true;
+  }
+
+  private applySearch(): void {
+    if (!this.searchText) {
+      this.searchResults = this.searchPool.slice(0, 500);
+      return;
+    }
+
+    const query = this.searchText.toLowerCase();
+    const scored: { path: string; score: number }[] = [];
+
+    for (const p of this.searchPool) {
+      const score = this.fuzzyScore(p.toLowerCase(), query);
+      if (score > 0) {
+        scored.push({ path: p, score });
+      }
+    }
+
+    scored.sort((a, b) => b.score - a.score || a.path.length - b.path.length);
+    this.searchResults = scored.slice(0, 500).map((s) => s.path);
+  }
+
+  /** Fuzzy score: higher is better, 0 means no match */
+  private fuzzyScore(target: string, query: string): number {
+    let qi = 0;
+    let score = 0;
+    let consecutive = 0;
+    let prevMatchIdx = -2;
+
+    for (let ti = 0; ti < target.length && qi < query.length; ti++) {
+      if (target[ti] === query[qi]) {
+        qi++;
+        score += 1;
+
+        // Consecutive match bonus
+        if (ti === prevMatchIdx + 1) {
+          consecutive++;
+          score += consecutive * 2;
+        } else {
+          consecutive = 0;
+        }
+
+        // Word boundary bonus: after / . _ -
+        if (ti === 0 || '/._-'.includes(target[ti - 1])) {
+          score += 5;
+        }
+
+        prevMatchIdx = ti;
+      }
+    }
+
+    // All query chars must match
+    if (qi < query.length) return 0;
+
+    // Basename match bonus: if all query chars matched within the filename portion
+    const lastSlash = target.lastIndexOf('/');
+    const basename = lastSlash >= 0 ? target.slice(lastSlash + 1) : target;
+    let bi = 0;
+    for (let ci = 0; ci < basename.length && bi < query.length; ci++) {
+      if (basename[ci] === query[bi]) bi++;
+    }
+    if (bi === query.length) {
+      score += 10;
+      // Exact basename prefix bonus
+      if (basename.startsWith(query)) {
+        score += 15;
+      }
+    }
+
+    return score;
+  }
+
+  private moveSearchCursor(delta: number): void {
+    if (this.searchResults.length === 0) return;
+    const len = this.searchResults.length;
+    this.searchCursor = ((this.searchCursor + delta) % len + len) % len;
+    this.clampSearchScroll();
+    this.renderList();
+    this.loadSearchPreview();
+  }
+
+  private clampSearchScroll(): void {
+    if (this.visibleRows <= 0) return;
+    if (this.searchCursor < this.searchScrollOffset) {
+      this.searchScrollOffset = this.searchCursor;
+    } else if (this.searchCursor >= this.searchScrollOffset + this.visibleRows) {
+      this.searchScrollOffset = this.searchCursor - this.visibleRows + 1;
+    }
+    this.searchScrollOffset = Math.max(0, this.searchScrollOffset);
+  }
+
+  private selectSearchResult(): void {
+    const relPath = this.searchResults[this.searchCursor];
+    if (!relPath) return;
+
+    const absPath = this.searchRoot + '/' + relPath;
+    const lastSlash = absPath.lastIndexOf('/');
+    const dir = lastSlash > 0 ? absPath.slice(0, lastSlash) : '/';
+    const fileName = absPath.slice(lastSlash + 1);
+
+    // Exit search mode
+    this.searchMode = false;
+    this.searchText = '';
+    this.searchPool = [];
+    this.searchResults = [];
+
+    // Navigate to the file's directory, then highlight the file
+    this.history.push(this.cwd);
+    this.loadDirectoryAndSelect(dir, fileName);
+  }
+
+  /** Load a directory and set cursor to the entry matching `selectName`. */
+  private async loadDirectoryAndSelect(path: string, selectName: string): Promise<void> {
+    try {
+      this.entries = await invoke<FileEntry[]>('list_directory', {
+        path,
+        showHidden: this.showHidden,
+      });
+    } catch (err) {
+      this.entries = [];
+      this.setStatusError(`${err}`);
+    }
+
+    this.cwd = path;
+    this.applySort();
+    this.applyFilter();
+    this.marked.clear();
+    this.lastPreviewPath = null;
+
+    // Find the file in the listing
+    const idx = this.filteredEntries.findIndex((e) => e.name === selectName);
+    this.cursor = idx >= 0 ? idx : 0;
+    this.scrollOffset = 0;
+    this.clampScroll();
+
+    this.renderBreadcrumb();
+    this.renderList();
+    this.renderStatus();
+
+    // Auto-open preview for the selected file
+    if (idx >= 0 && !this.filteredEntries[idx].is_dir) {
+      this.previewEl.classList.remove('krypton-file-manager__preview--hidden');
+    }
+    this.loadPreview();
+  }
+
+  private loadSearchPreview(): void {
+    const relPath = this.searchResults[this.searchCursor];
+    if (!relPath) return;
+    const absPath = this.searchRoot + '/' + relPath;
+    // Reuse the preview system — temporarily set lastPreviewPath to force reload
+    this.lastPreviewPath = null;
+    this.loadPreviewForPath(absPath, relPath.split('/').pop() ?? relPath);
+  }
+
+  /** Load preview for an arbitrary absolute path (used by search mode). */
+  private loadPreviewForPath(absPath: string, displayName: string): void {
+    if (this.previewDebounceTimer !== null) {
+      clearTimeout(this.previewDebounceTimer);
+    }
+    this.previewDebounceTimer = setTimeout(async () => {
+      this.previewDebounceTimer = null;
+      const gen = ++this.previewGeneration;
+
+      if (this.isBinaryExtension(displayName)) {
+        if (gen !== this.previewGeneration) return;
+        this.showPreText(`[binary file]`);
+        return;
+      }
+
+      try {
+        const content = await invoke<string>('read_file', { path: absPath });
+        if (gen !== this.previewGeneration) return;
+
+        if (this.isMarkdownFile(displayName)) {
+          this.previewContentEl.style.display = 'none';
+          this.previewMarkdownEl.style.display = '';
+          this.previewMarkdownEl.innerHTML = await md.parse(content) as string;
+          // Make images responsive
+          for (const img of this.previewMarkdownEl.querySelectorAll('img')) {
+            (img as HTMLElement).style.maxWidth = '100%';
+          }
+        } else {
+          const lang = this.extToLang(displayName);
+          const lines = content.split('\n');
+          const truncated = lines.length > 200
+            ? lines.slice(0, 200).join('\n') + '\n\n... (truncated)'
+            : content;
+          if (lang) {
+            this.previewContentEl.style.display = '';
+            this.previewMarkdownEl.style.display = 'none';
+            this.previewContentEl.innerHTML = hljs.highlight(truncated, { language: lang }).value;
+          } else {
+            this.showPreText(truncated);
+          }
+        }
+      } catch {
+        if (gen !== this.previewGeneration) return;
+        this.showPreText('[cannot read file]');
+      }
+    }, 80);
   }
 
   // ─── AI Overlay ────────────────────────────────────────────────

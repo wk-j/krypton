@@ -704,3 +704,51 @@ pub fn find_java_server_by_cwd(
     let cwd = pty_manager.get_cwd(session_id).ok()??;
     crate::pty::find_java_server_by_cwd(&cwd)
 }
+
+/// Recursively list all files under `root`, respecting .gitignore rules.
+/// Returns relative paths (relative to `root`). Capped at 50,000 entries.
+#[tauri::command]
+pub fn search_files(root: String, show_hidden: bool) -> Result<Vec<String>, String> {
+    use ignore::WalkBuilder;
+    use std::path::Path;
+
+    let root_path = Path::new(&root);
+    if !root_path.is_dir() {
+        return Err(format!("Not a directory: {root}"));
+    }
+
+    const MAX_FILES: usize = 50_000;
+    let mut files = Vec::new();
+
+    let walker = WalkBuilder::new(root_path)
+        .hidden(!show_hidden)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .build();
+
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        // Skip directories — we only want files
+        let Some(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            continue;
+        }
+
+        let path = entry.path();
+        if let Ok(rel) = path.strip_prefix(root_path) {
+            files.push(rel.to_string_lossy().to_string());
+        }
+
+        if files.len() >= MAX_FILES {
+            break;
+        }
+    }
+
+    files.sort_unstable();
+    Ok(files)
+}
