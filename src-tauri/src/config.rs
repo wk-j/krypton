@@ -433,6 +433,15 @@ impl Default for AgentConfig {
                     context_window: 32768,
                     max_tokens: 8192,
                 },
+                AgentModelConfig {
+                    name: "ollama-gemma4".to_string(),
+                    provider: "ollama".to_string(),
+                    model: "gemma4:latest".to_string(),
+                    base_url: "http://localhost:11434/v1".to_string(),
+                    api_key_env: "".to_string(),
+                    context_window: 128000,
+                    max_tokens: 8192,
+                },
             ],
         }
     }

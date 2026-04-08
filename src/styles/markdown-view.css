@@ -306,6 +306,180 @@
   opacity: 0.2;
 }
 
+/* ── Markdown Viewer AI Overlay ── */
+
+.krypton-md-ai {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 8000;
+  background: rgba(6, 10, 18, 0.94);
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  box-shadow:
+    0 -4px 20px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+}
+
+.krypton-md-ai--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.krypton-md-ai__input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.krypton-md-ai__prompt {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--krypton-window-accent, #00c8ff);
+  flex-shrink: 0;
+  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+}
+
+.krypton-md-ai__prompt--ask {
+  color: #c4f;
+  text-shadow: 0 0 8px rgba(204, 68, 255, 0.4);
+}
+
+.krypton-md-ai__mode {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(192, 197, 206, 0.30);
+  flex-shrink: 0;
+  cursor: default;
+}
+
+.krypton-md-ai__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 14px;
+  color: var(--krypton-fg, #c0c5ce);
+  caret-color: var(--krypton-window-accent, #00c8ff);
+}
+
+.krypton-md-ai__input::placeholder {
+  color: rgba(192, 197, 206, 0.30);
+  font-style: italic;
+}
+
+.krypton-md-ai__result[hidden],
+.krypton-md-ai__spinner[hidden] {
+  display: none !important;
+}
+
+.krypton-md-ai__result {
+  padding: 6px 8px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.04);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  border-radius: 2px;
+  max-height: 14em;
+  overflow-y: auto;
+}
+
+.krypton-md-ai__response {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 13px;
+  color: var(--krypton-fg, #c0c5ce);
+  line-height: 1.5;
+}
+
+.krypton-md-ai__response p {
+  margin: 0 0 0.4em;
+}
+.krypton-md-ai__response p:last-child {
+  margin-bottom: 0;
+}
+.krypton-md-ai__response strong {
+  color: #fff;
+  font-weight: 600;
+}
+.krypton-md-ai__response code {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 12px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--krypton-window-accent, #00c8ff);
+}
+.krypton-md-ai__response pre {
+  background: rgba(6, 10, 18, 0.6);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  border-radius: 3px;
+  padding: 6px 8px;
+  margin: 0.4em 0;
+  overflow-x: auto;
+}
+.krypton-md-ai__response pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.krypton-md-ai__response ul,
+.krypton-md-ai__response ol {
+  margin: 0.3em 0;
+  padding-left: 1.4em;
+}
+.krypton-md-ai__response li {
+  margin: 0.15em 0;
+}
+.krypton-md-ai__response h1,
+.krypton-md-ai__response h2,
+.krypton-md-ai__response h3,
+.krypton-md-ai__response h4 {
+  color: var(--krypton-window-accent, #00c8ff);
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+}
+
+.krypton-md-ai__error {
+  color: rgba(255, 51, 85, 0.8);
+}
+
+.krypton-md-ai__spinner {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.krypton-md-ai__dots {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 13px;
+  color: var(--krypton-window-accent, #00c8ff);
+  animation: krypton-md-ai-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes krypton-md-ai-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.krypton-md-ai__hint {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: rgba(192, 197, 206, 0.30);
+  text-align: right;
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    Notification Overlay — bottom-right futuristic notification stack
    ══════════════════════════════════════════════════════════════════════ */

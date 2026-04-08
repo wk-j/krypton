@@ -10,6 +10,8 @@ import { invoke } from './profiler/ipc';
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 
 import type { ContentView, PaneContentType } from './types';
+import type { MarkdownViewAI } from './markdown-view-ai';
+import type { MarkdownViewContext } from './markdown-view-ai';
 
 /** List .md files in a directory, respecting .gitignore when possible. */
 export async function listMarkdownFiles(cwd: string): Promise<string[]> {
@@ -95,6 +97,9 @@ export class MarkdownContentView implements ContentView {
   private linkHintLabels: HTMLElement[] = [];
   private linkHintMap: Map<string, HTMLAnchorElement> = new Map();
   private linkHintInput = '';
+
+  // AI overlay
+  private aiOverlay: MarkdownViewAI | null = null;
 
   constructor(files: string[], cwd: string, container: HTMLElement) {
     this.files = files.sort();
@@ -498,6 +503,11 @@ export class MarkdownContentView implements ContentView {
   // ── Keyboard ──
 
   onKeyDown(e: KeyboardEvent): boolean {
+    // AI overlay active — delegate all keys to it
+    if (this.aiOverlay) {
+      return this.aiOverlay.onKeyDown(e);
+    }
+
     // Don't intercept when filter input is active
     if (this.isFilterActive) return false;
 
@@ -602,6 +612,9 @@ export class MarkdownContentView implements ContentView {
         return true;
       case 'y':
         this.copyFilePath();
+        return true;
+      case 'i':
+        this.openAI();
         return true;
       case 'r':
         this.reloadCurrentFile();
@@ -1012,11 +1025,53 @@ export class MarkdownContentView implements ContentView {
     }
   }
 
+  // ── AI Overlay ──
+
+  private async openAI(): Promise<void> {
+    if (this.aiOverlay) return;
+
+    const { MarkdownViewAI } = await import('./markdown-view-ai');
+
+    this.aiOverlay = new MarkdownViewAI({
+      cwd: this.cwd,
+      getContext: () => this.getAIContext(),
+      onClose: () => this.closeAI(),
+    });
+
+    this.aiOverlay.open(this.element);
+  }
+
+  private closeAI(): void {
+    if (!this.aiOverlay) return;
+    this.aiOverlay.close();
+    this.aiOverlay = null;
+  }
+
+  private getAIContext(): MarkdownViewContext {
+    const currentFile = this.previewHeader.textContent || null;
+
+    // Collect selected text if in select mode
+    let selectedText: string | null = null;
+    if (this.selectableBlocks.length > 0 && this.selectAnchor >= 0) {
+      const texts = this.collectSelectedText();
+      if (texts.length > 0) {
+        selectedText = texts.join('\n\n');
+      }
+    }
+
+    return {
+      cwd: this.cwd,
+      currentFile,
+      selectedText,
+    };
+  }
+
   onResize(): void {
     // No special handling needed
   }
 
   dispose(): void {
+    this.closeAI();
     this.element.remove();
   }
 }
