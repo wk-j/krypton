@@ -388,8 +388,8 @@
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.04);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
   border-radius: 2px;
-  max-height: 14em;
-  overflow-y: auto;
+  max-height: 60vh;
+  overflow-y: hidden;
 }
 
 .krypton-md-ai__response {

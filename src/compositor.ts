@@ -1652,7 +1652,14 @@ export class Compositor {
     agentView.onOpenContext((ctrl) => this.openContextView(ctrl));
     agentView.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
 
-    await this.createContentTab('AI  glm-4.7', agentView);
+    // Resolve active model preset name for the tab title
+    let modelLabel = 'agent';
+    try {
+      const config = await invoke<{ agent?: { active?: string } }>('get_config');
+      if (config?.agent?.active) modelLabel = config.agent.active;
+    } catch { /* use fallback */ }
+
+    await this.createContentTab(`AI  ${modelLabel}`, agentView);
   }
 
   // ─── Inline AI Overlay ──────────────────────────────────────────────
