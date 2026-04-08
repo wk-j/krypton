@@ -41,6 +41,8 @@ export enum LayoutMode {
   Grid = 'Grid',
   /** Focused window on left (full height), remaining windows stacked on right */
   Focus = 'Focus',
+  /** Z-Stack: windows layered in depth like cards, focused at front */
+  Depth = 'Depth',
 }
 
 /** A slot in the grid layout */

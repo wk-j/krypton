@@ -185,6 +185,8 @@ export class Compositor {
   /** Visual order of window IDs after the last Focus layout relayout.
    *  Index 0 = left (main) column, 1..N = top-to-bottom right stack. */
   private focusVisualOrder: WindowId[] = [];
+  /** Ordered list of window IDs from front (index 0) to back in Depth layout. */
+  private depthOrder: WindowId[] = [];
   /** When a window is maximized, store its ID here. Only one window can be maximized at a time. */
   private maximizedWindowId: WindowId | null = null;
   /** Animation engine for layout transitions and window effects */
@@ -376,6 +378,16 @@ export class Compositor {
     // Workspaces
     this.windowGap = config.workspaces.gap;
     this.stepSize = config.workspaces.resize_step;
+
+    // Default layout mode
+    const layoutStr = config.workspaces.default_layout?.toLowerCase();
+    if (layoutStr === 'grid') {
+      this.layoutMode = LayoutMode.Grid;
+    } else if (layoutStr === 'depth') {
+      this.layoutMode = LayoutMode.Depth;
+    } else {
+      this.layoutMode = LayoutMode.Focus;
+    }
 
     // Sound
     this.sound.applyConfig(config.sound);
@@ -1864,7 +1876,7 @@ export class Compositor {
     // In Focus layout, the focused window is always the left (main) panel.
     // Relayout so the newly focused window swaps to the left and the
     // previously focused window moves into the right stack.
-    if (this.layoutMode === LayoutMode.Focus && previousId !== id && this.windows.size > 1) {
+    if ((this.layoutMode === LayoutMode.Focus || this.layoutMode === LayoutMode.Depth) && previousId !== id && this.windows.size > 1) {
       const snapshots = this.snapshotBounds();
       this.relayout();
       this.fitAll();
@@ -2159,12 +2171,26 @@ export class Compositor {
     return this.layoutMode;
   }
 
-  /** Toggle between Grid and Focus layout modes, then relayout */
+  /** Cycle layout modes: Grid → Focus → Depth → Grid */
   async toggleFocusLayout(): Promise<void> {
     this.sound.play('layout.toggle');
     const snapshots = this.snapshotBounds();
-    this.layoutMode =
-      this.layoutMode === LayoutMode.Grid ? LayoutMode.Focus : LayoutMode.Grid;
+    const prev = this.layoutMode;
+
+    // Cycle: Grid → Focus → Depth → Grid
+    if (prev === LayoutMode.Grid) {
+      this.layoutMode = LayoutMode.Focus;
+    } else if (prev === LayoutMode.Focus) {
+      this.layoutMode = LayoutMode.Depth;
+    } else {
+      this.layoutMode = LayoutMode.Grid;
+    }
+
+    // Clear depth styles when leaving Depth mode
+    if (prev === LayoutMode.Depth) {
+      this.clearDepthStyles();
+    }
+
     // Exit maximize when switching layout
     this.maximizedWindowId = null;
     this.showAllWindows();
@@ -3271,6 +3297,11 @@ export class Compositor {
   private static readonly MULTI_WIDTH_RATIO = 0.85;
   private static readonly MULTI_HEIGHT_RATIO = 0.75;
   private static readonly WINDOW_GAP = 6;
+  /** Depth layout: window size as fraction of viewport */
+  private static readonly DEPTH_WIDTH_RATIO = 0.88;
+  private static readonly DEPTH_HEIGHT_RATIO = 0.90;
+  /** Depth layout: maximum visible layers (GPU budget) */
+  private static readonly DEPTH_MAX_VISIBLE = 4;
 
   /** Recalculate grid layout and apply positions to all windows */
   relayout(): void {
@@ -3291,6 +3322,20 @@ export class Compositor {
         const w = Math.round(vw * Compositor.FOCUS_MAIN_RATIO);
         win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
         win.bounds = { x: 0, y: 0, width: w, height: vh };
+      } else if (this.layoutMode === LayoutMode.Depth) {
+        // Depth mode: centered inset, single window
+        const w = Math.round(vw * Compositor.DEPTH_WIDTH_RATIO);
+        const h = Math.round(vh * Compositor.DEPTH_HEIGHT_RATIO);
+        win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
+        win.bounds = {
+          x: Math.round((vw - w) / 2),
+          y: Math.round((vh - h) / 2),
+          width: w,
+          height: h,
+        };
+        win.element.classList.add('krypton-window--depth');
+        this.applyDepthLayer(win, 0);
+        this.depthOrder = [win.id];
       } else {
         // Grid mode: centered at a comfortable default size
         const w = Math.round(vw * Compositor.DEFAULT_WIDTH_RATIO);
@@ -3311,6 +3356,8 @@ export class Compositor {
 
     if (this.layoutMode === LayoutMode.Focus) {
       this.relayoutFocus(vw, vh, count);
+    } else if (this.layoutMode === LayoutMode.Depth) {
+      this.relayoutDepth(vw, vh);
     } else {
       this.relayoutGrid(vw, vh, count);
     }
@@ -3454,6 +3501,187 @@ export class Compositor {
 
       y += stackCellH + gap;
     }
+  }
+
+  // ─── Depth / Z-Stack Layout ─────────────────────────────────────
+
+  /** Build depth order: focused window first, then remaining in MRU-like order */
+  private buildDepthOrder(): WindowId[] {
+    const ids = this.windowIds;
+    if (ids.length === 0) return [];
+
+    // If we already have a depth order, preserve it but ensure focused is at front
+    if (this.depthOrder.length > 0 && this.focusedWindowId) {
+      // Remove any stale IDs and duplicates, add any new ones
+      const validIds = new Set(ids);
+      const seen = new Set<WindowId>();
+      const filtered: WindowId[] = [];
+      for (const id of this.depthOrder) {
+        if (validIds.has(id) && !seen.has(id)) {
+          seen.add(id);
+          filtered.push(id);
+        }
+      }
+
+      // Move focused to front
+      const focusIdx = filtered.indexOf(this.focusedWindowId);
+      if (focusIdx > 0) {
+        filtered.splice(focusIdx, 1);
+        filtered.unshift(this.focusedWindowId);
+      } else if (focusIdx === -1) {
+        filtered.unshift(this.focusedWindowId);
+      }
+
+      // Add any windows not yet in the depth order (excluding focused, already added)
+      const inOrder = new Set(filtered);
+      const newIds = ids.filter((id) => !inOrder.has(id));
+      return [...filtered, ...newIds];
+    }
+
+    // First time: focused at front, rest in creation order
+    if (this.focusedWindowId && ids.includes(this.focusedWindowId)) {
+      const rest = ids.filter((id) => id !== this.focusedWindowId);
+      return [this.focusedWindowId, ...rest];
+    }
+    return [...ids];
+  }
+
+  /** Depth layout: all windows at same bounds, layered as a card stack */
+  private relayoutDepth(vw: number, vh: number): void {
+    const w = Math.round(vw * Compositor.DEPTH_WIDTH_RATIO);
+    const h = Math.round(vh * Compositor.DEPTH_HEIGHT_RATIO);
+    const x = Math.round((vw - w) / 2);
+    const y = Math.round((vh - h) / 2);
+
+    this.depthOrder = this.buildDepthOrder();
+
+    for (let i = 0; i < this.depthOrder.length; i++) {
+      const win = this.windows.get(this.depthOrder[i]);
+      if (!win) continue;
+
+      win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
+      win.bounds = { x, y, width: w, height: h };
+      this.applyBounds(win);
+      win.element.classList.add('krypton-window--depth');
+      this.applyDepthLayer(win, i);
+    }
+  }
+
+  /** Apply depth-layer visual properties to a window using 3D perspective */
+  private applyDepthLayer(win: KryptonWindow, depth: number): void {
+    const el = win.element;
+
+    if (depth >= Compositor.DEPTH_MAX_VISIBLE) {
+      el.style.display = 'none';
+      return;
+    }
+
+    el.style.display = '';
+    el.style.zIndex = `${100 - depth}`;
+    el.style.pointerEvents = depth === 0 ? 'auto' : 'none';
+
+    // Card-stack: shift each layer up so its top border peeks above the front.
+    // No translateZ/rotateX — perspective projection fights the Y offset.
+    // Depth cue comes from scale + opacity + brightness instead.
+    const ty = -depth * 40;         // 40px peek per layer
+    const scale = 1 - depth * 0.04; // 4% smaller per layer
+    el.style.transform = `translateY(${ty}px) scale(${scale})`;
+    el.style.transformOrigin = 'center top';
+    el.style.opacity = `${Math.max(0.3, 1 - depth * 0.15)}`;
+    el.style.filter = depth > 0
+      ? `brightness(${1 - depth * 0.08})`
+      : '';
+  }
+
+  /** Clear all depth-specific inline styles (when leaving Depth mode) */
+  private clearDepthStyles(): void {
+    for (const [, win] of this.windows) {
+      win.element.classList.remove('krypton-window--depth');
+      win.element.style.transform = '';
+      win.element.style.opacity = '';
+      win.element.style.filter = '';
+      win.element.style.pointerEvents = '';
+      win.element.style.display = '';
+      win.element.style.zIndex = '';
+      win.element.style.transformOrigin = '';
+    }
+    this.depthOrder = [];
+  }
+
+  /** Depth: pull next card to front (rotate stack forward) */
+  async depthPullForward(): Promise<void> {
+    if (this.layoutMode !== LayoutMode.Depth || this.depthOrder.length < 2) return;
+
+    // Capture old depth indices for animation
+    const oldDepths = new Map<WindowId, number>();
+    for (let i = 0; i < this.depthOrder.length; i++) {
+      oldDepths.set(this.depthOrder[i], i);
+    }
+
+    // Rotate: front goes to back
+    const front = this.depthOrder.shift()!;
+    this.depthOrder.push(front);
+
+    // Focus the new front window
+    this.focusWindowQuiet(this.depthOrder[0]);
+    this.notifyFocusChange();
+
+    // Apply new layout
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    this.relayoutDepth(vw, vh);
+    await this.nextFrame();
+    this.fitAll();
+
+    // Animate the shuffle
+    const layers = new Map<WindowId, { element: HTMLElement; oldDepth: number; newDepth: number }>();
+    for (let i = 0; i < this.depthOrder.length; i++) {
+      const id = this.depthOrder[i];
+      const win = this.windows.get(id);
+      if (!win || i >= Compositor.DEPTH_MAX_VISIBLE) continue;
+      const od = oldDepths.get(id) ?? i;
+      if (od !== i) {
+        layers.set(id, { element: win.element, oldDepth: od, newDepth: i });
+      }
+    }
+    await this.animation.depthShuffle(layers, 'forward');
+    this.replayBufferedInput();
+  }
+
+  /** Depth: push front card to back (rotate stack backward) */
+  async depthPushBack(): Promise<void> {
+    if (this.layoutMode !== LayoutMode.Depth || this.depthOrder.length < 2) return;
+
+    const oldDepths = new Map<WindowId, number>();
+    for (let i = 0; i < this.depthOrder.length; i++) {
+      oldDepths.set(this.depthOrder[i], i);
+    }
+
+    // Rotate: back comes to front
+    const back = this.depthOrder.pop()!;
+    this.depthOrder.unshift(back);
+
+    this.focusWindowQuiet(this.depthOrder[0]);
+    this.notifyFocusChange();
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    this.relayoutDepth(vw, vh);
+    await this.nextFrame();
+    this.fitAll();
+
+    const layers = new Map<WindowId, { element: HTMLElement; oldDepth: number; newDepth: number }>();
+    for (let i = 0; i < this.depthOrder.length; i++) {
+      const id = this.depthOrder[i];
+      const win = this.windows.get(id);
+      if (!win || i >= Compositor.DEPTH_MAX_VISIBLE) continue;
+      const od = oldDepths.get(id) ?? i;
+      if (od !== i) {
+        layers.set(id, { element: win.element, oldDepth: od, newDepth: i });
+      }
+    }
+    await this.animation.depthShuffle(layers, 'backward');
+    this.replayBufferedInput();
   }
 
   /** Fit all terminals to their containers and resize PTYs */

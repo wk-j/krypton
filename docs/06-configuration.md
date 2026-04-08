@@ -490,6 +490,7 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
 | `[workspaces]` | `startup` | string | `"single"` | Workspace to activate on launch |
+| `[workspaces]` | `default_layout` | string | `"focus"` | Default layout mode: `"grid"`, `"focus"`, or `"depth"` |
 | `[workspaces]` | `gap` | int | `0` | Pixel gap between tiled windows |
 | `[workspaces]` | `padding` | int | `0` | Inner margin of the workspace |
 | `[workspaces]` | `resize_step` | int | `20` | Pixels per arrow key press in resize mode |

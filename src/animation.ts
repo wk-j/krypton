@@ -460,4 +460,68 @@ export class AnimationEngine {
       }
     }
   }
+
+  // ─── Depth Shuffle Animation ──────────────────────────────────────
+
+  /**
+   * Animate a depth stack shuffle — cards sliding forward/backward.
+   * Each entry maps a windowId to its element and its OLD depth index.
+   * Elements must already be styled at their NEW depth positions.
+   *
+   * @param layers Map of windowId -> { element, oldDepth, newDepth }
+   * @param direction 'forward' = next card pulled to front, 'backward' = front sent to back
+   */
+  async depthShuffle(
+    layers: Map<WindowId, { element: HTMLElement; oldDepth: number; newDepth: number }>,
+    _direction: 'forward' | 'backward',
+  ): Promise<void> {
+    if (this.config.style === AnimationStyle.None || this.config.duration === 0) {
+      return;
+    }
+
+    if (layers.size === 0) return;
+
+    this._isAnimating = true;
+    this.running = [];
+
+    const easing = resolveEasing(AnimationEasing.EaseOut);
+    const duration = 200;
+    const promises: Promise<void>[] = [];
+
+    for (const [, { element, oldDepth, newDepth }] of layers) {
+      // Card-stack transforms matching applyDepthLayer()
+      const oldTy = -oldDepth * 40;
+      const newTy = -newDepth * 40;
+      const oldScale = 1 - oldDepth * 0.04;
+      const newScale = 1 - newDepth * 0.04;
+      const oldOpacity = Math.max(0.3, 1 - oldDepth * 0.15);
+      const newOpacity = Math.max(0.3, 1 - newDepth * 0.15);
+
+      const keyframes: Keyframe[] = [
+        {
+          transform: `translateY(${oldTy}px) scale(${oldScale})`,
+          opacity: oldOpacity,
+        },
+        {
+          transform: `translateY(${newTy}px) scale(${newScale})`,
+          opacity: newOpacity,
+        },
+      ];
+
+      const anim = element.animate(keyframes, {
+        duration,
+        easing,
+        fill: 'none',
+      });
+
+      this.running.push(anim);
+      promises.push(
+        anim.finished.then(() => {}).catch(() => {}),
+      );
+    }
+
+    await Promise.all(promises);
+    this.running = [];
+    this._isAnimating = false;
+  }
 }

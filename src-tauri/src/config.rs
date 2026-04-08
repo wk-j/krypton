@@ -99,6 +99,7 @@ pub struct QuickTerminalConfig {
 #[serde(default)]
 pub struct WorkspacesConfig {
     pub startup: String,
+    pub default_layout: String,
     pub gap: u32,
     pub padding: u32,
     pub resize_step: u32,
@@ -506,6 +507,7 @@ impl Default for WorkspacesConfig {
     fn default() -> Self {
         Self {
             startup: "single".to_string(),
+            default_layout: "focus".to_string(),
             gap: 6,
             padding: 0,
             resize_step: 20,

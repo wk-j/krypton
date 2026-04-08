@@ -4,7 +4,7 @@
 // Leader key (Ctrl+Space) enters Compositor mode which shows a
 // which-key popup with available actions.
 
-import { Mode } from './types';
+import { Mode, LayoutMode } from './types';
 import { Compositor } from './compositor';
 import { SelectionController } from './selection';
 import { HintController } from './hints';
@@ -514,12 +514,20 @@ export class InputRouter {
         }
         break;
       case 'j':
-        this.compositor.focusDirection('down');
-        this.toNormal();
+        if (this.compositor.currentLayoutMode === LayoutMode.Depth) {
+          this.compositor.depthPullForward().then(() => this.toNormal());
+        } else {
+          this.compositor.focusDirection('down');
+          this.toNormal();
+        }
         break;
       case 'k':
-        this.compositor.focusDirection('up');
-        this.toNormal();
+        if (this.compositor.currentLayoutMode === LayoutMode.Depth) {
+          this.compositor.depthPushBack().then(() => this.toNormal());
+        } else {
+          this.compositor.focusDirection('up');
+          this.toNormal();
+        }
         break;
       case 'l':
         this.compositor.focusDirection('right');

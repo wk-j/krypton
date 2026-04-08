@@ -61,6 +61,7 @@ export interface QuickTerminalConfig {
 
 export interface WorkspacesConfig {
   startup: string;
+  default_layout: string;
   gap: number;
   padding: number;
   resize_step: number;
