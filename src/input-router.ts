@@ -673,6 +673,11 @@ export class InputRouter {
         this.compositor.openFileManager().then(() => this.toNormal());
         break;
 
+      // u — open vault viewer
+      case 'u':
+        this.compositor.openVault().then(() => this.toNormal());
+        break;
+
       // c — clone SSH session (new tab) / C — clone SSH session (new window)
       case 'c':
         if (e.shiftKey) {

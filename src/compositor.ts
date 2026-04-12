@@ -1641,6 +1641,52 @@ export class Compositor {
   }
 
   /**
+   * Open an Obsidian vault viewer window.
+   */
+  async openVault(vaultPath?: string): Promise<void> {
+    let path = vaultPath;
+
+    if (!path) {
+      try {
+        const config = await invoke<{ vault?: { path?: string } }>('get_config');
+        path = config.vault?.path;
+      } catch {
+        // Config unavailable
+      }
+    }
+
+    if (!path) {
+      this.showNotification('No vault path configured — set [vault] path in krypton.toml');
+      return;
+    }
+
+    if (!path) return;
+
+    // Expand ~ to home directory
+    if (path.startsWith('~/')) {
+      try {
+        const home = await invoke<string>('get_env_var', { name: 'HOME' });
+        if (home) path = home + path.slice(1);
+      } catch {
+        // Keep path as-is
+      }
+    }
+
+    const { VaultContentView } = await import('./vault-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const vaultView = new VaultContentView(path, container);
+
+    const dirName = path.split('/').filter(Boolean).pop() ?? 'vault';
+    await this.createContentTab(`VAULT // ${dirName}`, vaultView);
+
+    vaultView.onClose(() => {
+      this.closeTab();
+    });
+  }
+
+  /**
    * Open (or focus) the dedicated AI agent window.
    * At most one agent window exists at a time; subsequent calls focus the existing one.
    */

@@ -26,6 +26,7 @@ pub struct KryptonConfig {
     pub hooks: HooksConfig,
     pub music: MusicConfig,
     pub agent: AgentConfig,
+    pub vault: VaultConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -409,6 +410,12 @@ pub struct AgentModelConfig {
     pub context_window: u32,
     /// Maximum output tokens
     pub max_tokens: u32,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VaultConfig {
+    pub path: String,
 }
 
 impl Default for AgentConfig {
