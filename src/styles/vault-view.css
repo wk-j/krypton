@@ -411,6 +411,30 @@
   border-bottom-color: var(--vault-primary);
 }
 
+/* ─── Link Hints ─── */
+
+.krypton-vault__link-hint {
+  position: absolute;
+  top: -8px;
+  left: -2px;
+  background: var(--vault-gold);
+  color: #181818;
+  font-family: var(--vault-font-data);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  z-index: 10;
+  pointer-events: none;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: 0 0 6px rgba(255, 213, 79, 0.4);
+}
+
+.krypton-vault__link-hint--dimmed {
+  opacity: 0.2;
+}
+
 /* ─── Tags ─── */
 
 .krypton-vault__tag {

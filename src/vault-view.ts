@@ -17,6 +17,10 @@ export class VaultContentView implements ContentView {
   private filterActive = false;
   private selectedIndex = 0;
   private closeCb: (() => void) | null = null;
+  private linkHintActive = false;
+  private linkHintLabels: HTMLElement[] = [];
+  private linkHintMap: Map<string, HTMLAnchorElement> = new Map();
+  private linkHintInput = '';
 
   private sidebarEl: HTMLElement;
   private sidebarHeaderEl: HTMLElement;
@@ -490,7 +494,105 @@ export class VaultContentView implements ContentView {
     }
   }
 
+  // ── Link Hint Mode ──
+
+  private static generateHintLabels(count: number): string[] {
+    const chars = 'asdfghjkl';
+    const labels: string[] = [];
+    if (count <= chars.length) {
+      for (let i = 0; i < count; i++) labels.push(chars[i]);
+    } else {
+      for (let i = 0; i < chars.length && labels.length < count; i++) {
+        for (let j = 0; j < chars.length && labels.length < count; j++) {
+          labels.push(chars[i] + chars[j]);
+        }
+      }
+    }
+    return labels;
+  }
+
+  private enterLinkHintMode(): void {
+    const links = Array.from(
+      this.contentEl.querySelectorAll('a[href], .krypton-vault__wikilink'),
+    ) as HTMLAnchorElement[];
+    if (links.length === 0) return;
+
+    const labels = VaultContentView.generateHintLabels(links.length);
+    this.linkHintMap.clear();
+    this.linkHintLabels = [];
+    this.linkHintInput = '';
+
+    for (let i = 0; i < links.length; i++) {
+      const link = links[i];
+      const label = labels[i];
+      this.linkHintMap.set(label, link);
+
+      const badge = document.createElement('span');
+      badge.className = 'krypton-vault__link-hint';
+      badge.textContent = label;
+      link.style.position = 'relative';
+      link.appendChild(badge);
+      this.linkHintLabels.push(badge);
+    }
+
+    this.linkHintActive = true;
+  }
+
+  private exitLinkHintMode(): void {
+    for (const badge of this.linkHintLabels) badge.remove();
+    this.linkHintLabels = [];
+    this.linkHintMap.clear();
+    this.linkHintInput = '';
+    this.linkHintActive = false;
+  }
+
+  private handleLinkHintKey(e: KeyboardEvent): boolean {
+    if (e.key === 'Escape') {
+      this.exitLinkHintMode();
+      return true;
+    }
+
+    if (e.key.length !== 1) return true;
+
+    this.linkHintInput += e.key.toLowerCase();
+
+    const match = this.linkHintMap.get(this.linkHintInput);
+    if (match) {
+      const href = match.getAttribute('href');
+      this.exitLinkHintMode();
+      if (href) {
+        const resolved = this.resolveLink(href);
+        if (resolved) {
+          this.openFile(resolved);
+        }
+      }
+      return true;
+    }
+
+    let hasPrefix = false;
+    for (const label of this.linkHintMap.keys()) {
+      if (label.startsWith(this.linkHintInput)) {
+        hasPrefix = true;
+        break;
+      }
+    }
+
+    if (!hasPrefix) {
+      this.exitLinkHintMode();
+    } else {
+      for (const badge of this.linkHintLabels) {
+        const label = badge.textContent || '';
+        badge.classList.toggle(
+          'krypton-vault__link-hint--dimmed',
+          !label.startsWith(this.linkHintInput),
+        );
+      }
+    }
+    return true;
+  }
+
   onKeyDown(e: KeyboardEvent): boolean {
+    if (this.linkHintActive) return this.handleLinkHintKey(e);
     if (this.filterActive) return false;
 
     const key = e.key;
@@ -526,6 +628,10 @@ export class VaultContentView implements ContentView {
 
       case '/':
         this.openFilter();
+        return true;
+
+      case 'f':
+        this.enterLinkHintMode();
         return true;
 
       case 'q':
