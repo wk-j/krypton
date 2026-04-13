@@ -12,6 +12,8 @@ export class VaultContentView implements ContentView {
   private index: VaultIndex | null = null;
   private currentFile: string | null = null;
   private jumpHistory: string[] = [];
+  private forwardHistory: string[] = [];
+  private _navigatingHistory = false;
   private sidebarMode: SidebarMode = 'files';
   private filterText = '';
   private filterActive = false;
@@ -225,7 +227,14 @@ export class VaultContentView implements ContentView {
 
       let label: string;
       if (this.sidebarMode === 'files') {
-        label = items[i].split('/').pop() ?? items[i];
+        const filename = items[i].split('/').pop() ?? items[i];
+        const parts = items[i].split('/');
+        const isDuplicate = items.some(
+          (other, j) => j !== i && (other.split('/').pop() ?? other) === filename
+        );
+        label = isDuplicate && parts.length > 1
+          ? `${parts[parts.length - 2]}/${filename}`
+          : filename;
       } else if (this.sidebarMode === 'tags') {
         const count = this.index?.tags.get(items[i])?.length ?? 0;
         label = `#${items[i]}  (${count})`;
@@ -244,6 +253,7 @@ export class VaultContentView implements ContentView {
 
     if (this.currentFile && this.currentFile !== relativePath) {
       this.jumpHistory.push(this.currentFile);
+      if (!this._navigatingHistory) this.forwardHistory.length = 0;
     }
     this.currentFile = relativePath;
 
@@ -520,12 +530,21 @@ export class VaultContentView implements ContentView {
   private goBack(): void {
     const prev = this.jumpHistory.pop();
     if (prev) {
-      const saved = this.currentFile;
+      if (this.currentFile) this.forwardHistory.push(this.currentFile);
+      this._navigatingHistory = true;
       this.currentFile = null;
       this.openFile(prev);
-      if (saved) {
-        this.jumpHistory.pop();
-      }
+      this.jumpHistory.pop();
+      this._navigatingHistory = false;
+    }
+  }
+
+  private goForward(): void {
+    const next = this.forwardHistory.pop();
+    if (next) {
+      this._navigatingHistory = true;
+      this.openFile(next);
+      this._navigatingHistory = false;
     }
   }
 
@@ -629,6 +648,15 @@ export class VaultContentView implements ContentView {
   onKeyDown(e: KeyboardEvent): boolean {
     if (this.linkHintActive) return this.handleLinkHintKey(e);
     if (this.filterActive) return false;
+
+    if (e.ctrlKey && e.key === 'o') {
+      this.goBack();
+      return true;
+    }
+    if (e.ctrlKey && e.key === 'i') {
+      this.goForward();
+      return true;
+    }
 
     const key = e.key;
 
