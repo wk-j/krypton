@@ -27,14 +27,14 @@
   background: rgba(6, 10, 18, 0.85);
   border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--krypton-foreground, #c0c8d4);
   z-index: 9999;
   user-select: none;
 }
 
 .krypton-mini-player__status {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--krypton-cyan, #00d4ff);
   min-width: 14px;
   text-align: center;
@@ -52,12 +52,12 @@
 .krypton-mini-player__info {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
   white-space: nowrap;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-mini-player__flags {
   color: var(--krypton-yellow, #ffcc00);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   white-space: nowrap;
 }
 
@@ -129,7 +129,7 @@
 
 .krypton-music-dashboard__dir-label {
   color: var(--krypton-cyan, #00d4ff);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.05em;
 }
@@ -140,7 +140,7 @@
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
   color: var(--krypton-foreground, #c0c8d4);
   font-family: inherit;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   padding: 4px 8px;
   outline: none;
   border-radius: 2px;
@@ -171,7 +171,7 @@
   padding: 24px;
   text-align: center;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-music-dashboard__track {
@@ -199,7 +199,7 @@
 
 .krypton-music-dashboard__track-idx {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   min-width: 22px;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -214,13 +214,13 @@
 
 .krypton-music-dashboard__track-duration {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.55);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-variant-numeric: tabular-nums;
 }
 
 /* Now playing panel */
 .krypton-music-dashboard__np-status {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.15em;
   color: var(--krypton-cyan, #00d4ff);
@@ -240,7 +240,7 @@
 }
 
 .krypton-music-dashboard__np-info {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
 }
 
@@ -248,7 +248,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
   font-variant-numeric: tabular-nums;
 }
@@ -271,14 +271,14 @@
 .krypton-music-dashboard__np-controls {
   display: flex;
   gap: 12px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
   letter-spacing: 0.03em;
 }
 
 .krypton-music-dashboard__np-help {
   margin-top: auto;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
   line-height: 1.6;
   border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);

@@ -16,7 +16,7 @@
   gap: 12px;
   padding: 6px 12px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--krypton-chrome-text, #a0a8b7);
   background: rgba(0, 0, 0, 0.5);
   flex-shrink: 0;
@@ -78,7 +78,7 @@
 
 .krypton-extension-bar__label {
   font-weight: 700;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
@@ -97,11 +97,11 @@
 .krypton-extension-bar__stat {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
   white-space: nowrap;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-extension-bar__stat-label {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -110,7 +110,7 @@
 
 .krypton-extension-bar__stat-value {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 /* Warning state: heap > 80% */
@@ -157,7 +157,7 @@
 }
 
 .krypton-java-panel__label {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -165,7 +165,7 @@
 }
 
 .krypton-java-panel__value {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-variant-numeric: tabular-nums;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
 }
@@ -238,7 +238,7 @@
 }
 
 .krypton-java-panel__metric-icon {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
   line-height: 1;
 }
@@ -249,7 +249,7 @@
 }
 
 .krypton-java-panel__metric .krypton-java-panel__value {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
 }

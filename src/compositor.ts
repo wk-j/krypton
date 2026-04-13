@@ -322,6 +322,14 @@ export class Compositor {
       '--krypton-font-size',
       `${this.fontSize}px`
     );
+    document.documentElement.style.setProperty(
+      '--krypton-chrome-font-size',
+      `${Math.round(this.fontSize * 0.786)}px`
+    );
+    document.documentElement.style.setProperty(
+      '--krypton-line-height',
+      `${this.lineHeight}`
+    );
 
     // Terminal
     this.scrollbackLines = config.terminal.scrollback_lines;

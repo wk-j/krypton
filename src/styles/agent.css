@@ -63,7 +63,7 @@
 }
 
 .agent-view__logo-sub {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.25);
@@ -118,7 +118,7 @@
 
 /* Role badge — HUD-style uppercase label */
 .agent-view__msg-label {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -182,7 +182,7 @@
   position: absolute;
   top: 6px;
   right: 10px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 400;
   letter-spacing: 0.06em;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
@@ -459,7 +459,7 @@
 .agent-view__msg-body--markdown th {
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.07);
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
@@ -477,7 +477,7 @@
 
 .agent-view__msg--shell .agent-view__msg-label {
   display: inline-block;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -523,7 +523,7 @@
 .agent-view__shell-more {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.35);
   font-style: italic;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 /* ═══ Inline diff preview ══════════════════════════════════════ */
@@ -704,7 +704,7 @@
 .agent-view__state-hint {
   display: none;
   padding: 5px 16px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -724,7 +724,7 @@
 .agent-view__status-line {
   display: none;
   padding: 8px 16px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
   letter-spacing: 0.06em;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
@@ -752,7 +752,7 @@
   display: inline-block;
   margin-right: 10px;
   padding: 1px 6px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   letter-spacing: 0.08em;
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
@@ -877,7 +877,7 @@
 
 .agent-view__ac-cmd {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   flex-shrink: 0;
   width: 10ch;
@@ -885,7 +885,7 @@
 
 .agent-view__ac-desc {
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -924,7 +924,7 @@
 
 .agent-view__ctx-label {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.08em;
   margin-right: 4px;
 }
@@ -1012,7 +1012,7 @@
 }
 
 .agent-view__ctx-badge {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   padding: 0 4px;
   border-radius: 2px;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
@@ -1062,7 +1062,7 @@
 
 .context-view__stat-label {
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.08em;
   margin-left: 10px;
 }
@@ -1197,7 +1197,7 @@
 }
 
 .context-view__row-badge {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   padding: 0 4px;
   border-radius: 2px;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
@@ -1231,7 +1231,7 @@
 
 .context-view__hint {
   padding: 4px 14px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.35);
   border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
   flex-shrink: 0;

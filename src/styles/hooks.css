@@ -9,7 +9,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(255, 255, 255, 0.15);
   flex-shrink: 0;
   transition: color 0.4s ease, text-shadow 0.4s ease;
@@ -104,7 +104,7 @@
 
 /* 3. Tool Execution HUD — decode-style readout in titlebar */
 .krypton-claude-tool {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
   white-space: nowrap;
@@ -164,7 +164,7 @@
   border-left: 3px solid rgba(var(--card-accent), 0.6);
   border-radius: 2px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--krypton-fg, #b0c4d8);
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.5),
@@ -309,7 +309,7 @@
 
 /* ─── Category label ─── */
 .krypton-claude-toast__label {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -320,7 +320,7 @@
 
 /* ─── Timestamp (top right) ─── */
 .krypton-claude-toast__telemetry {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.3);
   white-space: nowrap;
@@ -331,7 +331,7 @@
 
 /* ─── Message text ─── */
 .krypton-claude-toast__text {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(var(--card-accent), 0.9);
   font-weight: 600;
   white-space: nowrap;

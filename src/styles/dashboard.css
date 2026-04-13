@@ -80,7 +80,7 @@
   background: none;
   color: rgba(255, 255, 255, 0.35);
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   cursor: pointer;
   transition: all 0.1s ease;
   white-space: nowrap;
@@ -105,7 +105,7 @@
   height: 16px;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.06);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   line-height: 1;
 }
@@ -130,7 +130,7 @@
 
 .krypton-dashboard__shortcut-hint {
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(255, 255, 255, 0.3);
 }
 
@@ -177,7 +177,7 @@
 }
 
 .krypton-dashboard__section-title {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.35);
   text-transform: uppercase;
@@ -249,7 +249,7 @@
 }
 
 .krypton-git__stat-label {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -279,7 +279,7 @@
   gap: 8px;
   padding: 4px 8px;
   border-radius: 3px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-git__file:hover {
@@ -288,7 +288,7 @@
 
 .krypton-git__file-status {
   font-weight: 700;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   width: 20px;
   text-align: center;
   flex-shrink: 0;
@@ -323,7 +323,7 @@
 
 .krypton-git__hint {
   margin-top: 16px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(255, 255, 255, 0.25);
   text-align: center;
 }
@@ -331,7 +331,7 @@
 /* ─── OpenCode Dashboard ────────────────────────────────────────── */
 
 .krypton-oc__project-header {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(255, 255, 255, 0.4);
   margin-bottom: 12px;
   padding: 6px 10px;
@@ -385,7 +385,7 @@
 }
 
 .krypton-oc__stat-label {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(255, 255, 255, 0.35);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -396,7 +396,7 @@
 .krypton-oc__sessions {
   display: flex;
   flex-direction: column;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-oc__session-row {
@@ -413,7 +413,7 @@
 }
 
 .krypton-oc__session-row--header {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(255, 255, 255, 0.3);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -433,7 +433,7 @@
 }
 
 .krypton-oc__session-cell--agents {
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(255, 255, 255, 0.35);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -447,13 +447,13 @@
 
 .krypton-oc__session-cell--diff {
   text-align: right;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-oc__session-cell--time {
   text-align: right;
   color: rgba(255, 255, 255, 0.3);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-oc__diff-add {
@@ -489,7 +489,7 @@
   gap: 12px;
   padding: 5px 8px;
   align-items: center;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   border-radius: 3px;
 }
 
@@ -507,19 +507,19 @@
 
 .krypton-oc__usage-provider {
   color: rgba(255, 255, 255, 0.3);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-oc__usage-count {
   color: var(--krypton-ansi-cyan, #0cf);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   text-align: right;
   white-space: nowrap;
 }
 
 .krypton-oc__usage-tokens {
   color: rgba(255, 255, 255, 0.35);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   text-align: right;
   white-space: nowrap;
 }
@@ -531,7 +531,7 @@
   gap: 8px;
   padding: 4px 8px;
   align-items: center;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-oc__tool-name {
@@ -558,13 +558,13 @@
 
 .krypton-oc__tool-count {
   color: rgba(255, 255, 255, 0.4);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   text-align: right;
 }
 
 .krypton-oc__hint {
   margin-top: 8px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(255, 255, 255, 0.25);
   text-align: center;
   flex-shrink: 0;

@@ -47,7 +47,7 @@
 
 .krypton-diff__mode {
   color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-diff__content {

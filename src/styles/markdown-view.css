@@ -24,7 +24,7 @@
 
 .krypton-md__sidebar-header {
   padding: 6px 12px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
@@ -124,7 +124,7 @@
   padding: 12px;
   text-align: center;
   color: rgba(255, 170, 0, 0.7);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 1px;
   text-transform: uppercase;
 }
@@ -273,7 +273,7 @@
   right: 12px;
   padding: 4px 10px;
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 1px;
   text-transform: uppercase;
   color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
@@ -291,9 +291,9 @@
   left: -2px;
   padding: 0 4px;
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
-  line-height: calc(var(--krypton-font-size) * 1.143);
+  line-height: calc(var(--krypton-chrome-font-size, 11px) * 1.143);
   text-transform: uppercase;
   color: rgba(6, 10, 18, 0.95);
   background: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
@@ -355,7 +355,7 @@
 
 .krypton-md-ai__mode {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   color: rgba(192, 197, 206, 0.30);
   flex-shrink: 0;
@@ -411,7 +411,7 @@
 }
 .krypton-md-ai__response code {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
   border-radius: 3px;
@@ -473,7 +473,7 @@
 
 .krypton-md-ai__hint {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   letter-spacing: 0.06em;
   color: rgba(192, 197, 206, 0.30);

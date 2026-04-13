@@ -26,7 +26,7 @@
 
 .krypton-whichkey__title {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -51,7 +51,7 @@
 
 .krypton-whichkey__key {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   color: var(--krypton-whichkey-key, #0cf);
   min-width: 28px;
@@ -60,7 +60,7 @@
 
 .krypton-whichkey__label {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
 }
 
@@ -81,7 +81,7 @@
 
 .krypton-hint__label {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   line-height: 1;
   padding: 1px 3px;
@@ -108,7 +108,7 @@
   transform: translateX(-50%);
   z-index: 10001;
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -234,7 +234,7 @@
 .krypton-palette__empty {
   padding: 16px 14px;
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -262,7 +262,7 @@
 .krypton-palette__item-category {
   flex-shrink: 0;
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -277,7 +277,7 @@
 .krypton-palette__item-label {
   flex: 1;
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   color: var(--krypton-palette-text, #c0c5ce);
 }
@@ -291,7 +291,7 @@
 .krypton-palette__item-key {
   flex-shrink: 0;
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   letter-spacing: 0.06em;
   color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
