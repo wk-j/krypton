@@ -55,7 +55,7 @@
 
 .krypton-dashboard__title {
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   color: var(--krypton-fg, #b0c4d8);
   letter-spacing: 0.5px;
@@ -139,7 +139,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   color: rgba(255, 255, 255, 0.4);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   line-height: 1;
   width: 28px;
   height: 28px;
@@ -165,7 +165,7 @@
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
   color: var(--krypton-fg, #b0c4d8);
-  line-height: 1.5;
+  line-height: var(--krypton-content-line-height, 1.5);
   display: flex;
   flex-direction: column;
 }
@@ -219,7 +219,7 @@
   background: rgba(0, 200, 255, 0.08);
   border: 1px solid rgba(0, 200, 255, 0.15);
   color: var(--krypton-ansi-cyan, #0cf);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   margin-bottom: 16px;
 }

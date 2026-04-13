@@ -179,7 +179,7 @@
   align-items: center;
   gap: 8px;
   padding: 4px 12px;
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--krypton-foreground, #c0c8d4);
   cursor: default;
 }
@@ -194,7 +194,7 @@
 
 .krypton-music-dashboard__track--playing .krypton-music-dashboard__track-idx::before {
   content: '\25B6 ';
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-music-dashboard__track-idx {
@@ -230,7 +230,7 @@
   font-size: calc(var(--krypton-font-size) * 1.143);
   font-weight: 500;
   color: var(--krypton-foreground, #c0c8d4);
-  line-height: calc(var(--krypton-font-size) * 1.571);
+  line-height: var(--krypton-content-line-height, 1.5);
   min-height: 22px;
 }
 
@@ -280,7 +280,7 @@
   margin-top: auto;
   font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
-  line-height: 1.6;
+  line-height: var(--krypton-content-line-height, 1.5);
   border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
   padding-top: 8px;
 }

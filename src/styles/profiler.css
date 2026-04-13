@@ -11,7 +11,7 @@
   transition: opacity 0.15s ease;
   font-family: var(--krypton-font-family, monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  line-height: 1.6;
+  line-height: var(--krypton-content-line-height, 1.5);
   color: var(--krypton-foreground, #c5c8c6);
   background: var(--krypton-background, rgba(20, 20, 20, 0.92));
   border: 1px solid var(--krypton-border, rgba(80, 200, 255, 0.2));

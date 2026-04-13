@@ -297,7 +297,7 @@
 
 .krypton-vault__sidebar-title {
   font-family: var(--vault-font-display);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   letter-spacing: 0.2em;
   color: var(--vault-primary);
@@ -344,7 +344,7 @@
   border: 1px solid var(--vault-border);
   color: var(--vault-primary);
   font-family: var(--vault-font-data);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   padding: 4px 8px;
   outline: none;
   border-radius: 1px;
@@ -366,7 +366,7 @@
 .krypton-vault__sidebar-item {
   padding: 4px 12px;
   font-family: var(--vault-font-data);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--vault-text-dim);
   cursor: pointer;
   white-space: nowrap;
@@ -419,7 +419,7 @@
 .krypton-vault__breadcrumb {
   padding: 8px 16px;
   font-family: var(--vault-font-data);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.08em;
   color: var(--vault-text-dim);
   border-bottom: 1px solid var(--vault-border);
@@ -435,7 +435,7 @@
   flex: 1;
   overflow-y: auto;
   padding: 20px 28px;
-  line-height: 1.7;
+  line-height: var(--krypton-prose-line-height, 1.7);
   position: relative;
 }
 
@@ -465,7 +465,7 @@
   border: 1px solid var(--vault-border);
   border-radius: 2px;
   font-family: var(--vault-font-data);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-vault__frontmatter-row {
@@ -692,7 +692,7 @@
 .krypton-vault__tag {
   color: var(--vault-gold);
   font-family: var(--vault-font-data);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 /* ─── Status Bar ─── */

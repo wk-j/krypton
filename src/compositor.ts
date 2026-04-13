@@ -330,6 +330,14 @@ export class Compositor {
       '--krypton-line-height',
       `${this.lineHeight}`
     );
+    document.documentElement.style.setProperty(
+      '--krypton-content-line-height',
+      '1.5'
+    );
+    document.documentElement.style.setProperty(
+      '--krypton-prose-line-height',
+      '1.7'
+    );
 
     // Terminal
     this.scrollbackLines = config.terminal.scrollback_lines;

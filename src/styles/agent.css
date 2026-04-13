@@ -104,7 +104,7 @@
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0 12px;
-  line-height: 1.55;
+  line-height: var(--krypton-content-line-height, 1.5);
   position: relative;
 }
 
@@ -206,7 +206,7 @@
 
 .agent-view__msg-body--markdown {
   white-space: normal;
-  line-height: 1.6;
+  line-height: var(--krypton-prose-line-height, 1.7);
 }
 
 .agent-view__msg-body--markdown p {
@@ -273,7 +273,7 @@
   background: none;
   border: none;
   font-size: var(--krypton-font-size);
-  line-height: 1.5;
+  line-height: var(--krypton-content-line-height, 1.5);
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.85);
   /* Override highlight.js colors to match Krypton cyberpunk theme */
   .hljs-comment { color: rgba(120, 144, 168, 0.7); font-style: italic; }
@@ -501,7 +501,7 @@
   word-break: break-word;
   font-family: var(--krypton-font-family, monospace);
   font-size: var(--krypton-font-size);
-  line-height: 1.5;
+  line-height: var(--krypton-content-line-height, 1.5);
   padding: 8px 12px;
   margin: 4px 0 8px 0;
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.85);
@@ -542,7 +542,7 @@
 .agent-view__diff-line {
   font-family: var(--krypton-font-family, monospace);
   font-size: var(--krypton-font-size);
-  line-height: 1.5;
+  line-height: var(--krypton-content-line-height, 1.5);
   padding: 1px 8px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -824,7 +824,7 @@
   min-width: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  line-height: 1.5;
+  line-height: var(--krypton-content-line-height, 1.5);
   min-height: 1.5em;
   outline: none;
 }
@@ -1024,7 +1024,7 @@
   margin: 4px 0 4px 3ch;
   padding: 8px 12px;
   font-size: var(--krypton-font-size);
-  line-height: 1.5;
+  line-height: var(--krypton-content-line-height, 1.5);
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.7);
   background: rgba(0, 0, 0, 0.3);
   border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
@@ -1223,7 +1223,7 @@
   margin: 0;
   padding: 12px 14px;
   font-size: var(--krypton-font-size);
-  line-height: 1.5;
+  line-height: var(--krypton-content-line-height, 1.5);
   color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.7);
   white-space: pre-wrap;
   word-break: break-word;
