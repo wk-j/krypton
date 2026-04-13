@@ -593,6 +593,7 @@ pub struct FileEntry {
 /// Directories are sorted first, then files, both alphabetically.
 #[tauri::command]
 pub fn list_directory(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
+    use ignore::gitignore::Gitignore;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
@@ -602,6 +603,25 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<Vec<FileEntry>,
     if !dir.is_dir() {
         return Err(format!("Not a directory: {path}"));
     }
+
+    // Build a gitignore matcher by walking up to the repo root
+    let gitignore = {
+        let mut gi = None;
+        let mut ancestor = Some(dir);
+        while let Some(d) = ancestor {
+            let gi_path = d.join(".gitignore");
+            if gi_path.is_file() {
+                let (built, _) = Gitignore::new(&gi_path);
+                gi = Some(built);
+                break;
+            }
+            if d.join(".git").exists() {
+                break;
+            }
+            ancestor = d.parent();
+        }
+        gi
+    };
 
     let mut entries = Vec::new();
     let read_dir = fs::read_dir(dir).map_err(|e| format!("list_directory: {e}"))?;
@@ -619,7 +639,15 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<Vec<FileEntry>,
             continue;
         }
 
+        // Skip gitignored entries
         let entry_path = entry.path();
+        let is_dir_hint = entry_path.is_dir();
+        if let Some(ref gi) = gitignore {
+            if gi.matched(&entry_path, is_dir_hint).is_ignore() {
+                continue;
+            }
+        }
+
         let path_str = entry_path.to_string_lossy().to_string();
 
         // Use symlink_metadata to detect symlinks without following them
