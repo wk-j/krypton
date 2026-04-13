@@ -157,7 +157,7 @@ export class VaultContentView implements ContentView {
         let all = [...this.index.files.keys()]
           .filter((f) => {
             const file = this.index!.files.get(f);
-            return file != null && file.tags.length > 0;
+            return file != null && file.frontmatterTags.length > 0;
           })
           .sort();
         if (this.activeTag) {

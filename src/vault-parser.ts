@@ -20,6 +20,7 @@ export interface VaultFile {
   frontmatter: Record<string, unknown>;
   wikilinks: WikiLink[];
   tags: string[];
+  frontmatterTags: string[];
   headings: Heading[];
 }
 
@@ -178,6 +179,7 @@ function parseVaultFile(absolutePath: string, root: string, content: string): Va
     frontmatter,
     wikilinks: parseWikilinks(body),
     tags: allTags,
+    frontmatterTags: fmTags,
     headings: parseHeadings(body),
   };
 }

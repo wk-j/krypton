@@ -1680,7 +1680,7 @@ export class Compositor {
     const vaultView = new VaultContentView(path, container);
 
     const dirName = path.split('/').filter(Boolean).pop() ?? 'vault';
-    await this.createContentWindow(`VAULT // ${dirName}`, vaultView);
+    await this.createContentTab(`VAULT // ${dirName}`, vaultView);
 
     vaultView.onClose(() => {
       this.closeTab();
