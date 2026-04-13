@@ -78,7 +78,9 @@ export class VaultContentView implements ContentView {
         this.closeFilter();
         e.stopPropagation();
       } else if (e.key === 'Enter') {
-        this.closeFilter();
+        this.filterActive = false;
+        this.filterEl.style.display = 'none';
+        this.element.focus();
         this.openSelectedItem();
         e.stopPropagation();
       }
