@@ -741,17 +741,12 @@ export class FileManagerView implements ContentView {
       // Discard result if cursor moved while we were reading
       if (gen !== this.previewGeneration) return;
 
-      const lines = content.split('\n');
-      const truncated = lines.length > 200;
-      const text = truncated ? lines.slice(0, 200).join('\n') : content;
-
       // Render markdown files
       if (this.isMarkdownFile(entry.name)) {
-        const rendered = md.parse(text, { gfm: true, breaks: true }) as string;
+        const rendered = md.parse(content, { gfm: true, breaks: true }) as string;
         this.previewContentEl.style.display = 'none';
         this.previewMarkdownEl.style.display = '';
-        this.previewMarkdownEl.innerHTML = rendered
-          + (truncated ? '<p style="opacity:0.4">... (truncated)</p>' : '');
+        this.previewMarkdownEl.innerHTML = rendered;
         return;
       }
 
@@ -760,14 +755,11 @@ export class FileManagerView implements ContentView {
       this.previewMarkdownEl.style.display = 'none';
       const lang = this.extToLang(entry.name);
       if (lang && hljs.getLanguage(lang)) {
-        const result = hljs.highlight(text, { language: lang });
-        this.previewContentEl.innerHTML = result.value
-          + (truncated ? '\n\n<span style="opacity:0.4">... (truncated)</span>' : '');
+        const result = hljs.highlight(content, { language: lang });
+        this.previewContentEl.innerHTML = result.value;
       } else {
-        // Auto-detect language
-        const result = hljs.highlightAuto(text);
-        this.previewContentEl.innerHTML = result.value
-          + (truncated ? '\n\n<span style="opacity:0.4">... (truncated)</span>' : '');
+        const result = hljs.highlightAuto(content);
+        this.previewContentEl.innerHTML = result.value;
       }
     } catch {
       if (gen !== this.previewGeneration) return;

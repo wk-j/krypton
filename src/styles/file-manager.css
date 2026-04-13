@@ -277,7 +277,7 @@
 }
 
 .krypton-file-manager__item--cursor .krypton-file-manager__mark {
-  margin-left: 10px;
+  margin-left: 0;
 }
 
 .krypton-file-manager__item--cursor .krypton-file-manager__name {
