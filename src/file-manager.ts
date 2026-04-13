@@ -203,8 +203,8 @@ export class FileManagerView implements ContentView {
 
   onResize(_width: number, height: number): void {
     const cellH = this.getCellHeight();
-    // Subtract breadcrumb + status bar (each one cell-height row)
-    const available = height - cellH * 2;
+    const chromeH = this.breadcrumbEl.offsetHeight + this.statusEl.offsetHeight;
+    const available = height - chromeH;
     this.visibleRows = Math.max(1, Math.floor(available / cellH));
     this.clampScroll();
     this.renderList();
