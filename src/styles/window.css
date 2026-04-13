@@ -151,7 +151,7 @@
 
 .krypton-window__label {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 11px;
+  font-size: var(--krypton-font-size);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -160,7 +160,7 @@
 
 .krypton-window__pty-status {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: var(--krypton-font-size);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -170,7 +170,7 @@
 /* ─── Pinned Window Indicator ─── */
 .krypton-window--pinned .krypton-window__label-group::after {
   content: '\u25C8';  /* Unicode diamond with dot */
-  font-size: 10px;
+  font-size: var(--krypton-font-size);
   color: var(--krypton-window-accent, var(--krypton-pin-color, #0cf));
   text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
   margin-left: 4px;
@@ -308,7 +308,7 @@
 /* ─── Tab Index ─── */
 .krypton-tab__index {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: var(--krypton-font-size);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.08em;
@@ -338,7 +338,7 @@
 /* ─── Tab Title ─── */
 .krypton-tab__title {
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  font-size: var(--krypton-tab-font-size, 11px);
+  font-size: var(--krypton-tab-font-size, var(--krypton-font-size));
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;

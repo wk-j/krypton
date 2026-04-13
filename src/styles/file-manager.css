@@ -474,7 +474,7 @@
 
 .krypton-file-manager-ai__prompt {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 14px;
+  font-size: var(--krypton-font-size);
   font-weight: 700;
   color: var(--krypton-window-accent, #00c8ff);
   flex-shrink: 0;
@@ -488,7 +488,7 @@
 
 .krypton-file-manager-ai__mode {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 12px;
+  font-size: var(--krypton-font-size);
   font-weight: 500;
   color: rgba(192, 197, 206, 0.30);
   flex-shrink: 0;
@@ -501,7 +501,7 @@
   border: none;
   outline: none;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 14px;
+  font-size: var(--krypton-font-size);
   color: var(--krypton-fg, #c0c5ce);
   caret-color: var(--krypton-window-accent, #00c8ff);
 }
@@ -528,7 +528,7 @@
 
 .krypton-file-manager-ai__response {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   color: var(--krypton-fg, #c0c5ce);
   line-height: 1.5;
 }
@@ -545,7 +545,7 @@
 }
 .krypton-file-manager-ai__response code {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 12px;
+  font-size: var(--krypton-font-size);
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
   border-radius: 3px;
@@ -578,7 +578,7 @@
 .krypton-file-manager-ai__response h3,
 .krypton-file-manager-ai__response h4 {
   color: var(--krypton-window-accent, #00c8ff);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   font-weight: 700;
   margin: 0.5em 0 0.25em;
 }
@@ -597,7 +597,7 @@
 
 .krypton-file-manager-ai__dots {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   color: var(--krypton-window-accent, #00c8ff);
   animation: krypton-fm-ai-pulse 1.2s ease-in-out infinite;
 }
@@ -610,7 +610,7 @@
 /* Hint bar */
 .krypton-file-manager-ai__hint {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 11px;
+  font-size: var(--krypton-font-size);
   font-weight: 500;
   letter-spacing: 0.06em;
   color: rgba(192, 197, 206, 0.30);

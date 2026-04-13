@@ -140,7 +140,7 @@
 
 .krypton-window[data-content-type="vault"] .krypton-window__label {
   font-family: var(--vault-font-display) !important;
-  font-size: 11px !important;
+  font-size: var(--krypton-font-size) !important;
   font-weight: 700 !important;
   letter-spacing: 0.2em !important;
   color: var(--vault-primary) !important;
@@ -242,7 +242,7 @@
   background: var(--vault-bg);
   color: var(--vault-text);
   font-family: var(--vault-font-data);
-  font-size: 15px;
+  font-size: var(--krypton-font-size);
   outline: none;
   position: relative;
   overflow: hidden;
@@ -297,7 +297,7 @@
 
 .krypton-vault__sidebar-title {
   font-family: var(--vault-font-display);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   font-weight: 700;
   letter-spacing: 0.2em;
   color: var(--vault-primary);
@@ -314,7 +314,7 @@
 
 .krypton-vault__sidebar-tab {
   font-family: var(--vault-font-data);
-  font-size: 11px;
+  font-size: var(--krypton-font-size);
   letter-spacing: 0.05em;
   white-space: nowrap;
   flex-shrink: 0;
@@ -344,7 +344,7 @@
   border: 1px solid var(--vault-border);
   color: var(--vault-primary);
   font-family: var(--vault-font-data);
-  font-size: 14px;
+  font-size: var(--krypton-font-size);
   padding: 4px 8px;
   outline: none;
   border-radius: 1px;
@@ -366,7 +366,7 @@
 .krypton-vault__sidebar-item {
   padding: 4px 12px;
   font-family: var(--vault-font-data);
-  font-size: 14px;
+  font-size: var(--krypton-font-size);
   color: var(--vault-text-dim);
   cursor: pointer;
   white-space: nowrap;
@@ -419,7 +419,7 @@
 .krypton-vault__breadcrumb {
   padding: 8px 16px;
   font-family: var(--vault-font-data);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   letter-spacing: 0.08em;
   color: var(--vault-text-dim);
   border-bottom: 1px solid var(--vault-border);
@@ -465,7 +465,7 @@
   border: 1px solid var(--vault-border);
   border-radius: 2px;
   font-family: var(--vault-font-data);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
 }
 
 .krypton-vault__frontmatter-row {
@@ -490,7 +490,7 @@
 .krypton-vault__article {
   color: var(--vault-text);
   font-family: var(--vault-font-body);
-  font-size: 16px;
+  font-size: var(--krypton-font-size);
 }
 
 .krypton-vault__article h1,
@@ -505,19 +505,19 @@
 }
 
 .krypton-vault__article h1 {
-  font-size: 24px;
+  font-size: calc(var(--krypton-font-size) * 1.714);
   font-weight: 900;
   color: #e8f4fd;
   text-shadow: 0 0 12px rgba(var(--vault-primary-rgb), 0.2);
 }
 .krypton-vault__article h2 {
-  font-size: 19px;
+  font-size: calc(var(--krypton-font-size) * 1.357);
   font-weight: 700;
   color: var(--vault-gold);
   text-shadow: 0 0 10px rgba(255, 213, 79, 0.12);
 }
 .krypton-vault__article h3 {
-  font-size: 16px;
+  font-size: calc(var(--krypton-font-size) * 1.143);
   font-weight: 700;
   color: var(--vault-cyan);
 }
@@ -542,7 +542,7 @@
   background: rgba(255, 213, 79, 0.08);
   padding: 1px 5px;
   border-radius: 2px;
-  font-size: 14px;
+  font-size: var(--krypton-font-size);
   color: var(--vault-orange);
 }
 
@@ -559,7 +559,7 @@
   background: none;
   padding: 0;
   color: var(--vault-text);
-  font-size: 14px;
+  font-size: var(--krypton-font-size);
 }
 
 .krypton-vault__article strong {
@@ -593,7 +593,7 @@
   border-collapse: collapse;
   margin: 1em 0;
   font-family: var(--vault-font-data);
-  font-size: 14px;
+  font-size: var(--krypton-font-size);
 }
 
 .krypton-vault__table th,
@@ -608,7 +608,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 12px;
+  font-size: var(--krypton-font-size);
 }
 
 .krypton-vault__table td {
@@ -672,7 +672,7 @@
   background: var(--vault-gold);
   color: #181818;
   font-family: var(--vault-font-data);
-  font-size: 11px;
+  font-size: var(--krypton-font-size);
   font-weight: 700;
   padding: 1px 4px;
   border-radius: 2px;
@@ -692,14 +692,14 @@
 .krypton-vault__tag {
   color: var(--vault-gold);
   font-family: var(--vault-font-data);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
 }
 
 /* ─── Status Bar ─── */
 
 .krypton-vault__status-bar {
   padding: 6px 16px;
-  font-size: 12px;
+  font-size: var(--krypton-font-size);
   letter-spacing: 0.15em;
   color: var(--vault-text-dim);
   border-top: 1px solid var(--vault-border);

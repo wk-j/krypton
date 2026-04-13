@@ -44,7 +44,7 @@
 /* Percentage text centered inside the gauge */
 .krypton-progress-gauge__pct {
   fill: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
-  font-size: 28px;
+  font-size: calc(var(--krypton-font-size) * 2);
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-weight: 700;
   text-anchor: middle;
@@ -55,7 +55,7 @@
 /* Smaller status label below percentage ("LOADING", "ERROR", "PAUSED") */
 .krypton-progress-gauge__label {
   fill: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
-  font-size: 7px;
+  font-size: var(--krypton-font-size);
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-weight: 600;
   letter-spacing: 0.2em;

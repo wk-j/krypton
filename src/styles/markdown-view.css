@@ -24,7 +24,7 @@
 
 .krypton-md__sidebar-header {
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--krypton-font-size);
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
@@ -45,7 +45,7 @@
   border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
   color: #c0c5ce;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   padding: 2px 4px;
   outline: none;
 }
@@ -58,7 +58,7 @@
 
 .krypton-md__file {
   padding: 4px 12px;
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -91,7 +91,7 @@
 
 .krypton-md__preview-header {
   padding: 6px 16px;
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   letter-spacing: 0.5px;
   color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
   border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1);
@@ -105,7 +105,7 @@
   min-height: 0;
   padding: 16px 24px;
   line-height: 1.7;
-  font-size: 16px;
+  font-size: var(--krypton-font-size);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -115,7 +115,7 @@
   justify-content: center;
   height: 100%;
   color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
-  font-size: 16px;
+  font-size: var(--krypton-font-size);
   letter-spacing: 2px;
   text-transform: uppercase;
 }
@@ -124,7 +124,7 @@
   padding: 12px;
   text-align: center;
   color: rgba(255, 170, 0, 0.7);
-  font-size: 12px;
+  font-size: var(--krypton-font-size);
   letter-spacing: 1px;
   text-transform: uppercase;
 }
@@ -273,7 +273,7 @@
   right: 12px;
   padding: 4px 10px;
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
-  font-size: 11px;
+  font-size: var(--krypton-font-size);
   letter-spacing: 1px;
   text-transform: uppercase;
   color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
@@ -291,9 +291,9 @@
   left: -2px;
   padding: 0 4px;
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
-  font-size: 10px;
+  font-size: var(--krypton-font-size);
   font-weight: 700;
-  line-height: 16px;
+  line-height: calc(var(--krypton-font-size) * 1.143);
   text-transform: uppercase;
   color: rgba(6, 10, 18, 0.95);
   background: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
@@ -341,7 +341,7 @@
 
 .krypton-md-ai__prompt {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 14px;
+  font-size: var(--krypton-font-size);
   font-weight: 700;
   color: var(--krypton-window-accent, #00c8ff);
   flex-shrink: 0;
@@ -355,7 +355,7 @@
 
 .krypton-md-ai__mode {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 12px;
+  font-size: var(--krypton-font-size);
   font-weight: 500;
   color: rgba(192, 197, 206, 0.30);
   flex-shrink: 0;
@@ -368,7 +368,7 @@
   border: none;
   outline: none;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 14px;
+  font-size: var(--krypton-font-size);
   color: var(--krypton-fg, #c0c5ce);
   caret-color: var(--krypton-window-accent, #00c8ff);
 }
@@ -394,7 +394,7 @@
 
 .krypton-md-ai__response {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   color: var(--krypton-fg, #c0c5ce);
   line-height: 1.5;
 }
@@ -411,7 +411,7 @@
 }
 .krypton-md-ai__response code {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 12px;
+  font-size: var(--krypton-font-size);
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
   border-radius: 3px;
@@ -444,7 +444,7 @@
 .krypton-md-ai__response h3,
 .krypton-md-ai__response h4 {
   color: var(--krypton-window-accent, #00c8ff);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   font-weight: 700;
   margin: 0.5em 0 0.25em;
 }
@@ -461,7 +461,7 @@
 
 .krypton-md-ai__dots {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   color: var(--krypton-window-accent, #00c8ff);
   animation: krypton-md-ai-pulse 1.2s ease-in-out infinite;
 }
@@ -473,7 +473,7 @@
 
 .krypton-md-ai__hint {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 11px;
+  font-size: var(--krypton-font-size);
   font-weight: 500;
   letter-spacing: 0.06em;
   color: rgba(192, 197, 206, 0.30);
@@ -510,7 +510,7 @@
   gap: 8px;
   margin-left: auto;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 15px;
+  font-size: var(--krypton-font-size);
   color: var(--krypton-fg, #b0c4d8);
   max-width: 70%;
   overflow: hidden;
@@ -570,7 +570,7 @@
 /* ── Label badge ── */
 
 .krypton-notif__label {
-  font-size: 13px;
+  font-size: var(--krypton-font-size);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.14em;

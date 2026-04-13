@@ -12,6 +12,8 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: transparent;
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', 'Fira Code', monospace);
+  font-size: var(--krypton-font-size, 14px);
+  line-height: var(--krypton-line-height, 1.2);
 }
 
