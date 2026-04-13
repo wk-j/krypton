@@ -103,6 +103,8 @@ export class FileManagerView implements ContentView {
   private previewGeneration = 0;
   private previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private homeDir = '/';
+
   // DOM elements
   private breadcrumbEl: HTMLElement;
   private listEl: HTMLElement;
@@ -153,6 +155,7 @@ export class FileManagerView implements ContentView {
 
     container.appendChild(this.element);
 
+    getHome().then((h) => { this.homeDir = h; });
     this.loadDirectory(this.cwd);
   }
 
@@ -246,7 +249,6 @@ export class FileManagerView implements ContentView {
           this.cursor = 0;
           this.scrollOffset = 0;
           this.renderList();
-          this.loadPreview();
           this.lastKey = '';
           return true;
         }
@@ -266,7 +268,6 @@ export class FileManagerView implements ContentView {
         this.cursor = Math.max(0, this.filteredEntries.length - 1);
         this.clampScroll();
         this.renderList();
-        this.loadPreview();
         return true;
 
       case 'd':
@@ -322,7 +323,6 @@ export class FileManagerView implements ContentView {
         this.scrollOffset = 0;
         this.renderList();
         this.renderStatus();
-        this.loadPreview();
         return true;
 
       case ' ':
@@ -423,7 +423,6 @@ export class FileManagerView implements ContentView {
       this.scrollOffset = 0;
       this.renderList();
       this.renderStatus();
-      this.loadPreview();
       return true;
     }
 
@@ -446,7 +445,6 @@ export class FileManagerView implements ContentView {
     this.scrollOffset = 0;
     this.renderList();
     this.renderStatus();
-    this.loadPreview();
     return true;
   }
 
@@ -484,7 +482,6 @@ export class FileManagerView implements ContentView {
     this.cursor = ((this.cursor + delta) % len + len) % len;
     this.clampScroll();
     this.renderList();
-    this.loadPreview();
   }
 
   private clampScroll(): void {
@@ -552,7 +549,7 @@ export class FileManagerView implements ContentView {
     this.renderBreadcrumb();
     this.renderList();
     this.renderStatus();
-    this.loadPreview();
+    this.clearPreview();
   }
 
   private async loadDirectoryNoHistory(path: string): Promise<void> {
@@ -576,7 +573,7 @@ export class FileManagerView implements ContentView {
     this.renderBreadcrumb();
     this.renderList();
     this.renderStatus();
-    this.loadPreview();
+    this.clearPreview();
   }
 
   /** Reload current directory without resetting cursor position or marks. */
@@ -622,7 +619,7 @@ export class FileManagerView implements ContentView {
     this.renderBreadcrumb();
     this.renderList();
     this.renderStatus();
-    this.loadPreview();
+    this.clearPreview();
   }
 
   // ─── Sorting & Filtering ───────────────────────────────────────
@@ -670,6 +667,13 @@ export class FileManagerView implements ContentView {
       ? this.previewMarkdownEl
       : this.previewContentEl;
     target.scrollBy({ top: delta });
+  }
+
+  private clearPreview(): void {
+    this.lastPreviewPath = null;
+    this.previewContentEl.style.display = '';
+    this.previewMarkdownEl.style.display = 'none';
+    this.previewContentEl.textContent = '';
   }
 
   /** Show the <pre> element and hide the markdown <div> */
@@ -879,15 +883,14 @@ export class FileManagerView implements ContentView {
 
   // ─── Rendering ─────────────────────────────────────────────────
 
-  private async renderBreadcrumb(): Promise<void> {
+  private renderBreadcrumb(): void {
     if (this.searchMode) {
       this.breadcrumbEl.textContent = `SEARCH // ${this.searchText}\u2588`;
       return;
     }
-    const home = await getHome();
     let display = this.cwd;
-    if (home !== '/' && display.startsWith(home)) {
-      display = '~' + display.slice(home.length);
+    if (this.homeDir !== '/' && display.startsWith(this.homeDir)) {
+      display = '~' + display.slice(this.homeDir.length);
     }
     this.breadcrumbEl.textContent = display;
   }
@@ -1147,7 +1150,6 @@ export class FileManagerView implements ContentView {
       this.renderBreadcrumb();
       this.renderList();
       this.renderStatus();
-      this.loadPreview();
       return true;
     }
 
