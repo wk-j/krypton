@@ -302,6 +302,16 @@ impl PtyManager {
         }
 
         cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+
+        // Ensure UTF-8 locale is set — macOS GUI apps don't inherit shell env vars,
+        // so LANG may be unset, causing tmux and other apps to mishandle Unicode.
+        if std::env::var("LANG").unwrap_or_default().is_empty() {
+            cmd.env("LANG", "en_US.UTF-8");
+        }
+        if std::env::var("LC_ALL").unwrap_or_default().is_empty() {
+            cmd.env("LC_ALL", "en_US.UTF-8");
+        }
 
         // Set working directory if provided
         if let Some(ref dir) = cwd {

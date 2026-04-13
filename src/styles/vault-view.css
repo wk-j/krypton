@@ -1,8 +1,9 @@
 /* ─── Vault Viewer — Retro-Futurism (NASA Mission Control) ─── */
+/* Fully self-contained: overrides window chrome + internal content */
 
 :root {
   --vault-bg: #060a14;
-  --vault-panel: rgba(10, 16, 32, 0.75);
+  --vault-panel: rgba(10, 16, 32, 0.85);
   --vault-border: rgba(79, 195, 247, 0.2);
   --vault-border-active: rgba(79, 195, 247, 0.45);
   --vault-primary: #4fc3f7;
@@ -15,11 +16,222 @@
   --vault-orange: #ff6b35;
   --vault-gold: #ffd54f;
   --vault-green: #66bb6a;
-  --vault-font-display: 'Orbitron', 'Mononoki Nerd Font Mono', monospace;
-  --vault-font-data: 'Share Tech Mono', 'Mononoki Nerd Font Mono', monospace;
-  --vault-font-body: 'Rajdhani', -apple-system, sans-serif;
-  --vault-scanline: rgba(0, 0, 0, 0.08);
+  --vault-cyan: #4dd0e1;
+  --vault-red: #ef5350;
+  --vault-magenta: #ce93d8;
+  --vault-font-display: 'Mononoki Nerd Font Mono', monospace;
+  --vault-font-data: 'Mononoki Nerd Font Mono', monospace;
+  --vault-font-body: 'Mononoki Nerd Font Mono', monospace;
+  --vault-scanline: rgba(0, 0, 0, 0.06);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   WINDOW CHROME OVERRIDES
+   Scoped via data-content-type="vault" on the .krypton-window
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Window Frame ─── */
+
+.krypton-window[data-content-type="vault"] {
+  background: var(--vault-panel) !important;
+  border: 1px solid var(--vault-border) !important;
+  border-radius: 3px !important;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.6),
+    0 0 1px rgba(var(--vault-primary-rgb), 0.15) !important;
+}
+
+.krypton-window[data-content-type="vault"].krypton-window--focused {
+  border-color: var(--vault-border-active) !important;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.7),
+    0 0 8px rgba(var(--vault-primary-rgb), 0.08) !important;
+}
+
+/* ─── Corner Accents → Corner Brackets ─── */
+
+.krypton-window[data-content-type="vault"] .krypton-window__corner::before,
+.krypton-window[data-content-type="vault"] .krypton-window__corner::after {
+  background: none !important;
+  box-shadow: none !important;
+  border-style: solid !important;
+  border-color: rgba(var(--vault-primary-rgb), 0.4) !important;
+  border-width: 0 !important;
+}
+
+/* Top-left corner bracket */
+.krypton-window[data-content-type="vault"] .krypton-window__corner--tl::before {
+  top: 0 !important;
+  left: 0 !important;
+  width: 14px !important;
+  height: 1px !important;
+  border-top-width: 1px !important;
+}
+.krypton-window[data-content-type="vault"] .krypton-window__corner--tl::after {
+  top: 0 !important;
+  left: 0 !important;
+  width: 1px !important;
+  height: 14px !important;
+  border-left-width: 1px !important;
+}
+
+/* Top-right corner bracket */
+.krypton-window[data-content-type="vault"] .krypton-window__corner--tr::before {
+  top: 0 !important;
+  right: 0 !important;
+  left: auto !important;
+  width: 14px !important;
+  height: 1px !important;
+  border-top-width: 1px !important;
+}
+.krypton-window[data-content-type="vault"] .krypton-window__corner--tr::after {
+  top: 0 !important;
+  right: 0 !important;
+  left: auto !important;
+  width: 1px !important;
+  height: 14px !important;
+  border-right-width: 1px !important;
+}
+
+/* Bottom-left corner bracket */
+.krypton-window[data-content-type="vault"] .krypton-window__corner--bl::before {
+  bottom: 0 !important;
+  left: 0 !important;
+  top: auto !important;
+  width: 14px !important;
+  height: 1px !important;
+  border-bottom-width: 1px !important;
+}
+.krypton-window[data-content-type="vault"] .krypton-window__corner--bl::after {
+  bottom: 0 !important;
+  left: 0 !important;
+  top: auto !important;
+  width: 1px !important;
+  height: 14px !important;
+  border-left-width: 1px !important;
+}
+
+/* Bottom-right corner bracket */
+.krypton-window[data-content-type="vault"] .krypton-window__corner--br::before {
+  bottom: 0 !important;
+  right: 0 !important;
+  top: auto !important;
+  left: auto !important;
+  width: 14px !important;
+  height: 1px !important;
+  border-bottom-width: 1px !important;
+}
+.krypton-window[data-content-type="vault"] .krypton-window__corner--br::after {
+  bottom: 0 !important;
+  right: 0 !important;
+  top: auto !important;
+  left: auto !important;
+  width: 1px !important;
+  height: 14px !important;
+  border-right-width: 1px !important;
+}
+
+/* ─── Titlebar ─── */
+
+.krypton-window[data-content-type="vault"] .krypton-window__titlebar {
+  background: rgba(6, 10, 20, 0.9) !important;
+  border-bottom: 1px solid var(--vault-border) !important;
+}
+
+.krypton-window[data-content-type="vault"] .krypton-window__label {
+  font-family: var(--vault-font-display) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.2em !important;
+  color: var(--vault-primary) !important;
+  text-shadow: none !important;
+}
+
+.krypton-window[data-content-type="vault"].krypton-window--focused .krypton-window__label {
+  text-shadow: 0 0 10px rgba(var(--vault-primary-rgb), 0.25) !important;
+}
+
+.krypton-window[data-content-type="vault"] .krypton-window__status-dot {
+  background: var(--vault-primary) !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  width: 4px !important;
+  height: 4px !important;
+  transform: rotate(45deg);
+}
+
+.krypton-window[data-content-type="vault"] .krypton-window__pty-status {
+  font-family: var(--vault-font-data) !important;
+  color: var(--vault-text-dim) !important;
+  letter-spacing: 0.15em !important;
+}
+
+/* ─── Header Accent → Solid Ruled Line ─── */
+
+.krypton-window[data-content-type="vault"] .krypton-window__header-accent {
+  height: 1px !important;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--vault-primary-rgb), 0.3) 15%,
+    rgba(var(--vault-primary-rgb), 0.3) 85%,
+    transparent 100%
+  ) !important;
+  margin: 0 !important;
+}
+
+/* ─── Tab Bar ─── */
+
+.krypton-window[data-content-type="vault"] .krypton-window__tabbar {
+  background: none !important;
+}
+
+.krypton-window[data-content-type="vault"] .krypton-window__tabbar::before {
+  display: none !important;
+}
+
+.krypton-window[data-content-type="vault"] .krypton-tab {
+  font-family: var(--vault-font-data) !important;
+  letter-spacing: 0.1em !important;
+  border-radius: 0 !important;
+  clip-path: none !important;
+}
+
+.krypton-window[data-content-type="vault"] .krypton-tab--active {
+  background: rgba(var(--vault-primary-rgb), 0.08) !important;
+  border-left: 2px solid var(--vault-primary) !important;
+  color: var(--vault-primary) !important;
+  animation: none !important;
+  clip-path: none !important;
+}
+
+.krypton-window[data-content-type="vault"] .krypton-tab--active::before,
+.krypton-window[data-content-type="vault"] .krypton-tab--active::after {
+  display: none !important;
+}
+
+/* Tab separator → vertical pipe */
+.krypton-window[data-content-type="vault"] .krypton-tab + .krypton-tab::before {
+  transform: none !important;
+  background: rgba(var(--vault-primary-rgb), 0.15) !important;
+}
+
+/* ─── Edge Glow → Disabled ─── */
+
+.krypton-window[data-content-type="vault"] .krypton-glow-overlay {
+  display: none !important;
+}
+
+/* ─── Footer ─── */
+
+.krypton-window[data-content-type="vault"] .krypton-window__footer {
+  background: transparent !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   VAULT CONTENT (inside the pane)
+   ═══════════════════════════════════════════════════════════════ */
 
 /* ─── Root ─── */
 
@@ -95,12 +307,17 @@
 
 .krypton-vault__sidebar-tabs {
   display: flex;
-  gap: 8px;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .krypton-vault__sidebar-tab {
-  font-size: 12px;
-  letter-spacing: 0.1em;
+  font-family: var(--vault-font-data);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
   color: var(--vault-text-dim);
   cursor: pointer;
   padding: 2px 4px;
@@ -148,6 +365,7 @@
 
 .krypton-vault__sidebar-item {
   padding: 4px 12px;
+  font-family: var(--vault-font-data);
   font-size: 14px;
   color: var(--vault-text-dim);
   cursor: pointer;
@@ -200,6 +418,7 @@
 
 .krypton-vault__breadcrumb {
   padding: 8px 16px;
+  font-family: var(--vault-font-data);
   font-size: 13px;
   letter-spacing: 0.08em;
   color: var(--vault-text-dim);
@@ -245,6 +464,7 @@
   background: rgba(var(--vault-primary-rgb), 0.03);
   border: 1px solid var(--vault-border);
   border-radius: 2px;
+  font-family: var(--vault-font-data);
   font-size: 13px;
 }
 
@@ -255,14 +475,14 @@
 }
 
 .krypton-vault__frontmatter-key {
-  color: var(--vault-dim);
+  color: var(--vault-cyan);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   min-width: 80px;
 }
 
 .krypton-vault__frontmatter-value {
-  color: var(--vault-text);
+  color: var(--vault-gold);
 }
 
 /* ─── Article (rendered markdown) ─── */
@@ -280,27 +500,50 @@
 .krypton-vault__article h5,
 .krypton-vault__article h6 {
   font-family: var(--vault-font-display);
-  color: var(--vault-bright);
   letter-spacing: 0.05em;
   margin: 1.5em 0 0.5em;
-  text-shadow: 0 0 8px rgba(var(--vault-primary-rgb), 0.2);
 }
 
-.krypton-vault__article h1 { font-size: 22px; }
-.krypton-vault__article h2 { font-size: 18px; }
-.krypton-vault__article h3 { font-size: 15px; }
+.krypton-vault__article h1 {
+  font-size: 24px;
+  font-weight: 900;
+  color: #e8f4fd;
+  text-shadow: 0 0 12px rgba(var(--vault-primary-rgb), 0.2);
+}
+.krypton-vault__article h2 {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--vault-gold);
+  text-shadow: 0 0 10px rgba(255, 213, 79, 0.12);
+}
+.krypton-vault__article h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--vault-cyan);
+}
 
 .krypton-vault__article p {
   margin: 0.6em 0;
 }
 
+.krypton-vault__article a {
+  color: var(--vault-cyan);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(77, 208, 225, 0.3);
+}
+
+.krypton-vault__article a:hover {
+  text-shadow: 0 0 8px rgba(77, 208, 225, 0.4);
+  border-bottom-color: var(--vault-cyan);
+}
+
 .krypton-vault__article code {
   font-family: var(--vault-font-data);
-  background: rgba(var(--vault-primary-rgb), 0.06);
+  background: rgba(255, 213, 79, 0.08);
   padding: 1px 5px;
   border-radius: 2px;
   font-size: 14px;
-  color: var(--vault-primary);
+  color: var(--vault-orange);
 }
 
 .krypton-vault__article pre {
@@ -320,15 +563,17 @@
 }
 
 .krypton-vault__article strong {
-  color: var(--vault-bright);
+  color: #e8f4fd;
+  font-weight: 700;
 }
 
 .krypton-vault__article em {
-  color: var(--vault-dim);
+  color: var(--vault-cyan);
   font-style: italic;
 }
 
-.krypton-vault__article ul {
+.krypton-vault__article ul,
+.krypton-vault__article ol {
   padding-left: 20px;
   margin: 0.5em 0;
 }
@@ -358,8 +603,8 @@
 }
 
 .krypton-vault__table th {
-  background: rgba(var(--vault-primary-rgb), 0.06);
-  color: var(--vault-primary);
+  background: rgba(255, 213, 79, 0.06);
+  color: var(--vault-gold);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -381,34 +626,41 @@
 /* ─── Blockquotes ─── */
 
 .krypton-vault__article blockquote {
-  border-left: 2px solid var(--vault-dim);
+  border-left: 2px solid var(--vault-magenta);
   margin: 1em 0;
   padding: 6px 16px;
-  color: var(--vault-text-dim);
-  background: rgba(var(--vault-primary-rgb), 0.02);
+  color: #d0c4d8;
+  background: rgba(206, 147, 216, 0.03);
 }
 
 /* ─── Horizontal Rule ─── */
 
 .krypton-vault__article hr {
   border: none;
-  border-top: 1px solid var(--vault-border);
-  margin: 1.5em 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--vault-primary-rgb), 0.25) 20%,
+    rgba(var(--vault-primary-rgb), 0.25) 80%,
+    transparent 100%
+  );
+  margin: 2em 0;
 }
 
 /* ─── Wikilinks ─── */
 
 .krypton-vault__wikilink {
-  color: var(--vault-primary);
+  color: var(--vault-green);
   text-decoration: none;
-  border-bottom: 1px solid rgba(var(--vault-primary-rgb), 0.3);
+  border-bottom: 1px solid rgba(102, 187, 106, 0.3);
   transition: text-shadow 0.15s, border-color 0.15s;
   cursor: pointer;
 }
 
 .krypton-vault__wikilink:hover {
-  text-shadow: 0 0 8px rgba(var(--vault-primary-rgb), 0.5);
-  border-bottom-color: var(--vault-primary);
+  text-shadow: 0 0 8px rgba(102, 187, 106, 0.5);
+  border-bottom-color: var(--vault-green);
 }
 
 /* ─── Link Hints ─── */
@@ -484,4 +736,13 @@
   );
   pointer-events: none;
   z-index: 1;
+}
+
+/* ─── Images ─── */
+
+.krypton-vault__image {
+  max-width: 100%;
+  border-radius: 2px;
+  border: 1px solid var(--vault-border);
+  margin: 0.5em 0;
 }

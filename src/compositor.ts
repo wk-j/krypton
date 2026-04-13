@@ -1393,6 +1393,7 @@ export class Compositor {
     el.id = id;
     el.className = 'krypton-window';
     el.dataset.windowId = id;
+    el.dataset.contentType = contentView.type;
 
     const accentColor = this.allocateAccentColor(id);
     this.applyAccentColor(el, accentColor);
@@ -1679,7 +1680,7 @@ export class Compositor {
     const vaultView = new VaultContentView(path, container);
 
     const dirName = path.split('/').filter(Boolean).pop() ?? 'vault';
-    await this.createContentTab(`VAULT // ${dirName}`, vaultView);
+    await this.createContentWindow(`VAULT // ${dirName}`, vaultView);
 
     vaultView.onClose(() => {
       this.closeTab();

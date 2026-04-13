@@ -335,9 +335,12 @@ export class MarkdownContentView implements ContentView {
       const truncated = content.length > maxSize;
       const text = truncated ? content.slice(0, maxSize) : content;
 
-      const html = await md.parse(text, { gfm: true, breaks: true });
+      const fmMatch = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+      const body = fmMatch ? text.slice(fmMatch[0].length) : text;
+      const lineOffset = fmMatch ? fmMatch[0].split('\n').length - 1 : 0;
+      const html = await md.parse(body, { gfm: true, breaks: true });
       this.previewContent.innerHTML = html;
-      this.annotateBlocksWithRaw(text);
+      this.annotateBlocksWithRaw(body, lineOffset);
 
       if (truncated) {
         const notice = document.createElement('div');
@@ -734,7 +737,7 @@ export class MarkdownContentView implements ContentView {
   }
 
   /** Annotate rendered block elements with their raw markdown source and line numbers. */
-  private annotateBlocksWithRaw(rawText: string): void {
+  private annotateBlocksWithRaw(rawText: string, lineOffset = 0): void {
     const tokens = Lexer.lex(rawText, { gfm: true });
     const blocks = this.previewContent.querySelectorAll(
       MarkdownContentView.BLOCK_SELECTOR,
@@ -755,7 +758,7 @@ export class MarkdownContentView implements ContentView {
       const el = blocks[blockIdx] as HTMLElement;
       el.dataset.raw = tok.raw.replace(/\n+$/, '');
       if (tokStart !== -1) {
-        const startLine = rawText.slice(0, tokStart).split('\n').length;
+        const startLine = rawText.slice(0, tokStart).split('\n').length + lineOffset;
         const endLine = startLine + tok.raw.trimEnd().split('\n').length - 1;
         el.dataset.startLine = String(startLine);
         el.dataset.endLine = String(endLine);

@@ -103,6 +103,18 @@ function parseTags(content: string): string[] {
   return [...tags];
 }
 
+function parseFrontmatterTags(fm: Record<string, unknown>): string[] {
+  const raw = fm['tags'] ?? fm['Tags'] ?? fm['TAGS'];
+  if (!raw) return [];
+  const str = String(raw);
+  // Handle YAML array syntax: [tag1, tag2] or tag1, tag2
+  const cleaned = str.replace(/^\[|\]$/g, '');
+  return cleaned
+    .split(',')
+    .map((t) => t.trim().replace(/^#/, ''))
+    .filter((t) => t.length > 0);
+}
+
 function resolveWikilinkTarget(target: string, fileMap: Map<string, VaultFile>): string {
   const normalized = target.toLowerCase().replace(/\.md$/, '');
 
@@ -155,13 +167,17 @@ function parseVaultFile(absolutePath: string, root: string, content: string): Va
     ?? relativePath.split('/').pop()?.replace(/\.md$/, '')
     ?? 'Untitled';
 
+  const inlineTags = parseTags(body);
+  const fmTags = parseFrontmatterTags(frontmatter);
+  const allTags = [...new Set([...fmTags, ...inlineTags])];
+
   return {
     path: absolutePath,
     relativePath,
     title,
     frontmatter,
     wikilinks: parseWikilinks(body),
-    tags: parseTags(body),
+    tags: allTags,
     headings: parseHeadings(body),
   };
 }

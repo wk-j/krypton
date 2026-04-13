@@ -2,7 +2,7 @@ import type { ContentView, PaneContentType } from './types';
 import type { VaultIndex, VaultFile } from './vault-parser';
 import { buildVaultIndex, readVaultFile } from './vault-parser';
 
-type SidebarMode = 'files' | 'backlinks' | 'outline';
+type SidebarMode = 'files' | 'backlinks' | 'outline' | 'tags';
 
 export class VaultContentView implements ContentView {
   readonly type: PaneContentType = 'vault';
@@ -16,6 +16,7 @@ export class VaultContentView implements ContentView {
   private filterText = '';
   private filterActive = false;
   private selectedIndex = 0;
+  private activeTag: string | null = null;
   private closeCb: (() => void) | null = null;
   private linkHintActive = false;
   private linkHintLabels: HTMLElement[] = [];
@@ -153,10 +154,21 @@ export class VaultContentView implements ContentView {
 
     switch (this.sidebarMode) {
       case 'files': {
-        const all = [...this.index.files.keys()].sort();
-        if (!this.filterText) return all;
-        const lower = this.filterText.toLowerCase();
-        return all.filter((f) => f.toLowerCase().includes(lower));
+        let all = [...this.index.files.keys()]
+          .filter((f) => {
+            const file = this.index!.files.get(f);
+            return file != null && file.tags.length > 0;
+          })
+          .sort();
+        if (this.activeTag) {
+          const tagged = new Set(this.index.tags.get(this.activeTag) ?? []);
+          all = all.filter((f) => tagged.has(f));
+        }
+        if (this.filterText) {
+          const lower = this.filterText.toLowerCase();
+          all = all.filter((f) => f.toLowerCase().includes(lower));
+        }
+        return all;
       }
       case 'backlinks': {
         if (!this.currentFile) return [];
@@ -168,13 +180,19 @@ export class VaultContentView implements ContentView {
         if (!file) return [];
         return file.headings.map((h) => '  '.repeat(h.level - 1) + h.text);
       }
+      case 'tags': {
+        const allTags = [...this.index.tags.keys()].sort();
+        if (!this.filterText) return allTags;
+        const lower = this.filterText.toLowerCase();
+        return allTags.filter((t) => t.toLowerCase().includes(lower));
+      }
     }
   }
 
   private renderSidebarTabs(): void {
     this.sidebarTabsEl.innerHTML = '';
-    const modes: SidebarMode[] = ['files', 'backlinks', 'outline'];
-    const labels = ['FILES', 'LINKS', 'OUTLINE'];
+    const modes: SidebarMode[] = ['files', 'backlinks', 'outline', 'tags'];
+    const labels = ['FILE', 'LINK', 'HEAD', 'TAG'];
 
     for (let i = 0; i < modes.length; i++) {
       const tab = document.createElement('span');
@@ -182,7 +200,11 @@ export class VaultContentView implements ContentView {
       if (modes[i] === this.sidebarMode) {
         tab.classList.add('krypton-vault__sidebar-tab--active');
       }
-      tab.textContent = `${i + 1}:${labels[i]}`;
+      let text = `${i + 1}:${labels[i]}`;
+      if (modes[i] === 'files' && this.activeTag) {
+        text += ` #${this.activeTag}`;
+      }
+      tab.textContent = text;
       this.sidebarTabsEl.appendChild(tab);
     }
   }
@@ -201,9 +223,15 @@ export class VaultContentView implements ContentView {
         el.classList.add('krypton-vault__sidebar-item--current');
       }
 
-      const label = this.sidebarMode === 'files'
-        ? items[i].split('/').pop() ?? items[i]
-        : items[i];
+      let label: string;
+      if (this.sidebarMode === 'files') {
+        label = items[i].split('/').pop() ?? items[i];
+      } else if (this.sidebarMode === 'tags') {
+        const count = this.index?.tags.get(items[i])?.length ?? 0;
+        label = `#${items[i]}  (${count})`;
+      } else {
+        label = items[i];
+      }
       el.textContent = label;
       this.sidebarListEl.appendChild(el);
     }
@@ -464,6 +492,13 @@ export class VaultContentView implements ContentView {
         }
         break;
       }
+      case 'tags':
+        this.activeTag = item;
+        this.sidebarMode = 'files';
+        this.selectedIndex = 0;
+        this.renderSidebarTabs();
+        this.renderSidebarList();
+        break;
     }
   }
 
@@ -634,8 +669,18 @@ export class VaultContentView implements ContentView {
         this.enterLinkHintMode();
         return true;
 
-      case 'q':
       case 'Escape':
+        if (this.activeTag) {
+          this.activeTag = null;
+          this.selectedIndex = 0;
+          this.renderSidebarTabs();
+          this.renderSidebarList();
+          return true;
+        }
+        if (this.closeCb) this.closeCb();
+        return true;
+
+      case 'q':
         if (this.closeCb) this.closeCb();
         return true;
 
@@ -655,6 +700,13 @@ export class VaultContentView implements ContentView {
 
       case '3':
         this.sidebarMode = 'outline';
+        this.selectedIndex = 0;
+        this.renderSidebarTabs();
+        this.renderSidebarList();
+        return true;
+
+      case '4':
+        this.sidebarMode = 'tags';
         this.selectedIndex = 0;
         this.renderSidebarTabs();
         this.renderSidebarList();
