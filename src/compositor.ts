@@ -332,11 +332,11 @@ export class Compositor {
     );
     document.documentElement.style.setProperty(
       '--krypton-content-line-height',
-      '1.5'
+      `${this.lineHeight}`
     );
     document.documentElement.style.setProperty(
       '--krypton-prose-line-height',
-      '1.7'
+      `${this.lineHeight}`
     );
 
     // Terminal
