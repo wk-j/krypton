@@ -41,10 +41,10 @@
   transition: stroke-dasharray 300ms ease-out;
 }
 
-/* Percentage text centered inside the gauge */
+/* Percentage text centered inside the gauge — font-size in SVG user units (viewBox is 100x100) */
 .krypton-progress-gauge__pct {
   fill: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
-  font-size: calc(var(--krypton-font-size) * 2);
+  font-size: 18px;
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-weight: 700;
   text-anchor: middle;
@@ -55,7 +55,7 @@
 /* Smaller status label below percentage ("LOADING", "ERROR", "PAUSED") */
 .krypton-progress-gauge__label {
   fill: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
-  font-size: var(--krypton-font-size);
+  font-size: 8px;
   font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
   font-weight: 600;
   letter-spacing: 0.2em;

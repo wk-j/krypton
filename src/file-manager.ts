@@ -77,6 +77,7 @@ export class FileManagerView implements ContentView {
   private filterMode = false;
   private filterText = '';
   private marked = new Set<string>();
+  private clipboard: { paths: string[]; op: 'copy' | 'cut' } | null = null;
   private showHidden = false;
   private history: string[] = [];
   private prompt: PromptState | null = null;
@@ -360,15 +361,11 @@ export class FileManagerView implements ContentView {
         return true;
 
       case 'y':
-        if (this.marked.size > 0) {
-          this.startPrompt('Copy to:', '', (dest) => this.doBatchOp('cp', dest));
-        }
+        this.yankToClipboard('copy');
         return true;
 
-      case 'm':
-        if (this.marked.size > 0) {
-          this.startPrompt('Move to:', '', (dest) => this.doBatchOp('mv', dest));
-        }
+      case 'x':
+        this.yankToClipboard('cut');
         return true;
 
       case 'D':
@@ -399,7 +396,7 @@ export class FileManagerView implements ContentView {
         return true;
 
       case 'p':
-        this.previewEl.classList.toggle('krypton-file-manager__preview--hidden');
+        this.pasteFromClipboard();
         return true;
 
       case 'o': {
@@ -410,6 +407,10 @@ export class FileManagerView implements ContentView {
         }
         return true;
       }
+
+      case 'w':
+        this.previewEl.classList.toggle('krypton-file-manager__preview--hidden');
+        return true;
 
       case 'Y':
         this.copyPathToClipboard();
@@ -908,29 +909,61 @@ export class FileManagerView implements ContentView {
     }
   }
 
-  private async doBatchOp(op: 'cp' | 'mv', dest: string): Promise<void> {
+  private yankToClipboard(op: 'copy' | 'cut'): void {
     const paths = this.getMarkedOrCurrent();
-    if (paths.length === 0 || !dest) return;
+    if (paths.length === 0) return;
+    this.clipboard = { paths, op };
+    const label = op === 'copy' ? 'Yanked' : 'Cut';
+    this.statusEl.textContent = `${label} ${paths.length} item${paths.length > 1 ? 's' : ''}`;
+    this.statusEl.className = 'krypton-file-manager__status';
+    setTimeout(() => this.renderStatus(), 2000);
+  }
 
-    // Resolve relative paths against cwd
-    const destPath = dest.startsWith('/') ? dest : `${this.cwd}/${dest}`;
+  private async pasteFromClipboard(): Promise<void> {
+    if (!this.clipboard) {
+      this.setStatusError('Nothing in clipboard');
+      return;
+    }
+
+    const { paths, op } = this.clipboard;
 
     for (const p of paths) {
-      const args = op === 'cp' ? ['-r', p, destPath] : [p, destPath];
+      const name = p.split('/').pop()!;
+      const srcDir = p.slice(0, p.length - name.length - 1) || '/';
+      const sameDir = srcDir === this.cwd;
+      let destPath = `${this.cwd}/${name}`;
+
+      if (sameDir && op === 'copy') {
+        destPath = this.findUniqueName(name);
+      }
+
+      const args = op === 'copy'
+        ? ['-r', p, destPath]
+        : [p, this.cwd];
       try {
-        await invoke<string>('run_command', {
-          program: op,
-          args,
-          cwd: null,
-        });
+        await invoke<string>('run_command', { program: op === 'copy' ? 'cp' : 'mv', args, cwd: null });
       } catch (err) {
-        this.setStatusError(`${op} failed: ${err}`);
+        this.setStatusError(`Paste failed: ${err}`);
         return;
       }
     }
 
+    if (op === 'cut') this.clipboard = null;
     this.marked.clear();
-    await this.loadDirectory(this.cwd);
+    await this.refreshDirectory();
+  }
+
+  private findUniqueName(name: string): string {
+    const existing = new Set(this.entries.map((e) => e.name));
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : '';
+
+    for (let i = 2; i < 1000; i++) {
+      const candidate = `${stem} ${i}${ext}`;
+      if (!existing.has(candidate)) return `${this.cwd}/${candidate}`;
+    }
+    return `${this.cwd}/${stem} copy${ext}`;
   }
 
   // ─── Rendering ─────────────────────────────────────────────────
@@ -1145,6 +1178,11 @@ export class FileManagerView implements ContentView {
 
     const sortArrow = this.sortOrder === 'asc' ? '\u2191' : '\u2193';
     parts.push(`sort: ${this.sortField} ${sortArrow}`);
+
+    if (this.clipboard) {
+      const icon = this.clipboard.op === 'copy' ? '\u2398' : '\u2702';
+      parts.push(`${icon} ${this.clipboard.paths.length}`);
+    }
 
     if (this.showHidden) {
       parts.push('hidden: on');
