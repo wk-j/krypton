@@ -112,12 +112,13 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--krypton-whichkey-title, #0cf);
-  background: var(--krypton-whichkey-bg, rgba(6, 10, 18, 0.85));
-  border: 1px solid var(--krypton-whichkey-border, rgba(0, 200, 255, 0.4));
+  color: #ffb300;
+  background: rgba(20, 14, 8, 0.9);
+  border: 1px solid rgba(255, 179, 0, 0.35);
   padding: 6px 14px;
   opacity: 0;
   transition: opacity 0.15s ease;
+  text-shadow: 0 0 8px rgba(255, 179, 0, 0.4);
 }
 
 .krypton-hint-toast--visible {
