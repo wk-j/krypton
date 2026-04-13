@@ -23,6 +23,7 @@
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: var(--krypton-font-size, 14px);
   overflow: hidden;
+  contain: content;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -71,6 +72,7 @@
   flex: 35;
   overflow: hidden;
   min-width: 0;
+  contain: layout;
 }
 
 .krypton-file-manager__preview {

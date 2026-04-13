@@ -105,6 +105,7 @@ export class FileManagerView implements ContentView {
 
   private homeDir = '/';
   private listFlex = 35;
+  private cellHeight = 20;
 
   // DOM elements
   private breadcrumbEl: HTMLElement;
@@ -202,14 +203,22 @@ export class FileManagerView implements ContentView {
   }
 
   dispose(): void {
-    // No persistent resources to clean up
+    if (this.previewDebounceTimer !== null) {
+      clearTimeout(this.previewDebounceTimer);
+      this.previewDebounceTimer = null;
+    }
+    this.entries = [];
+    this.filteredEntries = [];
+    this.searchPool = [];
+    this.searchResults = [];
+    this.marked.clear();
   }
 
   onResize(_width: number, height: number): void {
-    const cellH = this.getCellHeight();
+    this.cellHeight = this.getCellHeight();
     const chromeH = this.breadcrumbEl.offsetHeight + this.statusEl.offsetHeight;
     const available = height - chromeH;
-    this.visibleRows = Math.max(1, Math.floor(available / cellH));
+    this.visibleRows = Math.max(1, Math.floor(available / this.cellHeight));
     this.clampScroll();
     this.renderList();
   }
@@ -488,9 +497,45 @@ export class FileManagerView implements ContentView {
   private moveCursor(delta: number): void {
     if (this.filteredEntries.length === 0) return;
     const len = this.filteredEntries.length;
+    const prevCursor = this.cursor;
+    const prevScroll = this.scrollOffset;
     this.cursor = ((this.cursor + delta) % len + len) % len;
     this.clampScroll();
-    this.renderList();
+
+    if (!this.searchMode && this.scrollOffset === prevScroll) {
+      this.patchCursor(prevCursor, this.cursor);
+    } else {
+      this.renderList();
+    }
+  }
+
+  private patchCursor(prev: number, next: number): void {
+    const base = this.scrollOffset;
+    const items = this.listEl.children;
+    const offset = this.scrollOffset > 0 ? 1 : 0; // skip top spacer
+
+    const prevIdx = prev - base + offset;
+    const nextIdx = next - base + offset;
+
+    if (prevIdx >= 0 && prevIdx < items.length) {
+      items[prevIdx].classList.remove('krypton-file-manager__item--cursor');
+      (items[prevIdx] as HTMLElement).querySelector('.krypton-file-manager__mark')?.remove();
+      const markSpan = document.createElement('span');
+      markSpan.className = 'krypton-file-manager__mark';
+      const entry = this.filteredEntries[prev];
+      markSpan.textContent = entry && this.marked.has(entry.path) ? '\u25cf ' : '  ';
+      items[prevIdx].insertBefore(markSpan, items[prevIdx].firstChild);
+    }
+
+    if (nextIdx >= 0 && nextIdx < items.length) {
+      items[nextIdx].classList.add('krypton-file-manager__item--cursor');
+      (items[nextIdx] as HTMLElement).querySelector('.krypton-file-manager__mark')?.remove();
+      const markSpan = document.createElement('span');
+      markSpan.className = 'krypton-file-manager__mark';
+      const entry = this.filteredEntries[next];
+      markSpan.textContent = entry && this.marked.has(entry.path) ? '\u25cf ' : '  ';
+      items[nextIdx].insertBefore(markSpan, items[nextIdx].firstChild);
+    }
   }
 
   private clampScroll(): void {
@@ -921,7 +966,7 @@ export class FileManagerView implements ContentView {
     // Calculate visible rows from actual DOM height if not yet set by onResize
     if (this.visibleRows <= 0) {
       const h = this.listEl.clientHeight || this.bodyEl.clientHeight || 600;
-      this.visibleRows = Math.max(1, Math.floor(h / this.getCellHeight()));
+      this.visibleRows = Math.max(1, Math.floor(h / this.cellHeight));
     }
 
     const end = Math.min(this.scrollOffset + this.visibleRows, this.filteredEntries.length);
@@ -929,7 +974,7 @@ export class FileManagerView implements ContentView {
     // Top spacer for virtual scrolling
     if (this.scrollOffset > 0) {
       const spacer = document.createElement('div');
-      spacer.style.height = `${this.scrollOffset * this.getCellHeight()}px`;
+      spacer.style.height = `${this.scrollOffset * this.cellHeight}px`;
       this.listEl.appendChild(spacer);
     }
 
@@ -986,7 +1031,7 @@ export class FileManagerView implements ContentView {
     const remaining = this.filteredEntries.length - end;
     if (remaining > 0) {
       const spacer = document.createElement('div');
-      spacer.style.height = `${remaining * this.getCellHeight()}px`;
+      spacer.style.height = `${remaining * this.cellHeight}px`;
       this.listEl.appendChild(spacer);
     }
   }
@@ -1002,7 +1047,7 @@ export class FileManagerView implements ContentView {
 
     if (this.visibleRows <= 0) {
       const h = this.listEl.clientHeight || this.bodyEl.clientHeight || 600;
-      this.visibleRows = Math.max(1, Math.floor(h / this.getCellHeight()));
+      this.visibleRows = Math.max(1, Math.floor(h / this.cellHeight));
     }
 
     const end = Math.min(this.searchScrollOffset + this.visibleRows, this.searchResults.length);
@@ -1010,7 +1055,7 @@ export class FileManagerView implements ContentView {
     // Top spacer
     if (this.searchScrollOffset > 0) {
       const spacer = document.createElement('div');
-      spacer.style.height = `${this.searchScrollOffset * this.getCellHeight()}px`;
+      spacer.style.height = `${this.searchScrollOffset * this.cellHeight}px`;
       this.listEl.appendChild(spacer);
     }
 
@@ -1058,7 +1103,7 @@ export class FileManagerView implements ContentView {
     const remaining = this.searchResults.length - end;
     if (remaining > 0) {
       const spacer = document.createElement('div');
-      spacer.style.height = `${remaining * this.getCellHeight()}px`;
+      spacer.style.height = `${remaining * this.cellHeight}px`;
       this.listEl.appendChild(spacer);
     }
   }
