@@ -104,6 +104,7 @@ export class FileManagerView implements ContentView {
   private previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   private homeDir = '/';
+  private listFlex = 35;
 
   // DOM elements
   private breadcrumbEl: HTMLElement;
@@ -262,6 +263,14 @@ export class FileManagerView implements ContentView {
 
       case 'K':
         this.scrollPreview(-80);
+        return true;
+
+      case 'H':
+        this.resizeSplit(-5);
+        return true;
+
+      case 'L':
+        this.resizeSplit(5);
         return true;
 
       case 'G':
@@ -666,7 +675,13 @@ export class FileManagerView implements ContentView {
     const target = this.previewMarkdownEl.style.display !== 'none'
       ? this.previewMarkdownEl
       : this.previewContentEl;
-    target.scrollBy({ top: delta });
+    target.scrollBy({ top: delta, behavior: 'smooth' });
+  }
+
+  private resizeSplit(delta: number): void {
+    this.listFlex = Math.max(15, Math.min(85, this.listFlex + delta));
+    this.listEl.style.flex = String(this.listFlex);
+    this.previewEl.style.flex = String(100 - this.listFlex);
   }
 
   private clearPreview(): void {
