@@ -497,6 +497,17 @@ export class MusicPlayer {
     `;
     left.appendChild(dirBar);
 
+    // Playlist header
+    const header = document.createElement('div');
+    header.className = 'krypton-music-dashboard__playlist-header';
+    const count = this.state.playlist.length;
+    const totalSecs = this.state.playlist.reduce((sum, t) => sum + t.duration_secs, 0);
+    header.innerHTML = `
+      <span class="krypton-music-dashboard__playlist-title">Playlist</span>
+      <span class="krypton-music-dashboard__playlist-count">${count} track${count !== 1 ? 's' : ''} · ${formatTime(totalSecs)}</span>
+    `;
+    left.appendChild(header);
+
     // Track list
     const list = document.createElement('div');
     list.className = 'krypton-music-dashboard__track-list';
@@ -527,15 +538,20 @@ export class MusicPlayer {
 
     for (let i = 0; i < this.state.playlist.length; i++) {
       const track = this.state.playlist[i];
+      const isPlaying = i === this.state.playlist_index && this.state.status !== 'Stopped';
       const el = document.createElement('div');
       el.className = 'krypton-music-dashboard__track';
-      if (i === this.state.playlist_index && this.state.status !== 'Stopped') {
+      if (isPlaying) {
         el.classList.add('krypton-music-dashboard__track--playing');
       }
       if (i === this.selectedIndex) {
         el.classList.add('krypton-music-dashboard__track--selected');
       }
+      const indicator = isPlaying
+        ? (this.state.status === 'Playing' ? '\u25B6' : '\u23F8')
+        : '';
       el.innerHTML = `
+        <span class="krypton-music-dashboard__track-indicator">${indicator}</span>
         <span class="krypton-music-dashboard__track-idx">${String(i + 1).padStart(2, ' ')}</span>
         <span class="krypton-music-dashboard__track-name">${this.escapeHtml(track.filename)}</span>
         <span class="krypton-music-dashboard__track-duration">${formatTime(track.duration_secs)}</span>
@@ -554,31 +570,44 @@ export class MusicPlayer {
       this.state.status === 'Playing' ? 'PLAYING' :
       this.state.status === 'Paused' ? 'PAUSED' : 'STOPPED';
 
-    const repeatLabel = this.state.repeat === 'One' ? 'REPEAT: ONE' : this.state.repeat === 'All' ? 'REPEAT: ALL' : 'REPEAT: OFF';
-    const shuffleLabel = this.state.shuffle ? 'SHUFFLE: ON' : 'SHUFFLE: OFF';
     const volPercent = Math.round(this.state.volume * 100);
+    const statusClass = `krypton-music-dashboard__np-status--${this.state.status.toLowerCase()}`;
+    const progress = this.state.duration_secs > 0 ? (this.state.position_secs / this.state.duration_secs * 100) : 0;
+
+    const repeatActive = this.state.repeat !== 'Off';
+    const repeatText = this.state.repeat === 'One' ? 'RPT:1' : this.state.repeat === 'All' ? 'RPT:ALL' : 'RPT';
+    const shuffleActive = this.state.shuffle;
 
     container.innerHTML = `
-      <div class="krypton-music-dashboard__np-status">${statusLabel}</div>
+      <div class="krypton-music-dashboard__np-status ${statusClass}">
+        <span class="krypton-music-dashboard__np-status-dot"></span>
+        ${statusLabel}
+      </div>
+      <div class="krypton-music-dashboard__np-divider"></div>
       <div class="krypton-music-dashboard__np-track"></div>
-      <div class="krypton-music-dashboard__np-info">${track ? `MP3 \u00B7 ${track.bitrate_kbps}kbps \u00B7 ${formatSampleRate(track.sample_rate_hz)} \u00B7 ${formatChannels(track.channels)}` : ''}</div>
+      <div class="krypton-music-dashboard__np-info">${track ? `MP3 · ${track.bitrate_kbps}kbps · ${formatSampleRate(track.sample_rate_hz)} · ${formatChannels(track.channels)}` : ''}</div>
       <div class="krypton-music-dashboard__np-time">
         <span>${formatTime(this.state.position_secs)}</span>
         <div class="krypton-music-dashboard__np-progress">
-          <div class="krypton-music-dashboard__np-progress-fill" style="width: ${this.state.duration_secs > 0 ? (this.state.position_secs / this.state.duration_secs * 100) : 0}%"></div>
+          <div class="krypton-music-dashboard__np-progress-fill" style="width: ${progress}%"></div>
         </div>
         <span>${formatTime(this.state.duration_secs)}</span>
       </div>
+      <div class="krypton-music-dashboard__np-volume">
+        <span class="krypton-music-dashboard__np-volume-label">VOL ${volPercent}%</span>
+        <div class="krypton-music-dashboard__np-volume-bar">
+          <div class="krypton-music-dashboard__np-volume-fill" style="width: ${volPercent}%"></div>
+        </div>
+      </div>
       <div class="krypton-music-dashboard__np-controls">
-        <span>VOL: ${volPercent}%</span>
-        <span>${repeatLabel}</span>
-        <span>${shuffleLabel}</span>
-        <span>VIS: ${this.visualizerEnabled ? 'ON' : 'OFF'}</span>
+        <span class="krypton-music-dashboard__np-badge${repeatActive ? ' krypton-music-dashboard__np-badge--active' : ''}">${repeatText}</span>
+        <span class="krypton-music-dashboard__np-badge${shuffleActive ? ' krypton-music-dashboard__np-badge--active' : ''}">${shuffleActive ? 'SHFL' : 'SHFL'}</span>
+        <span class="krypton-music-dashboard__np-badge${this.visualizerEnabled ? ' krypton-music-dashboard__np-badge--active' : ''}">VIS</span>
       </div>
       <div class="krypton-music-dashboard__np-help">
-        <div>[Space] Play/Pause  [s] Stop  [n/j] Next  [p/k] Prev</div>
-        <div>[Enter] Play selected  [o] Open dir  [+/-] Volume</div>
-        <div>[r] Repeat  [z] Shuffle  [v] Visualizer  [Esc] Close</div>
+        <div><kbd>Space</kbd> Play/Pause  <kbd>s</kbd> Stop  <kbd>n</kbd> Next  <kbd>p</kbd> Prev</div>
+        <div><kbd>Enter</kbd> Play selected  <kbd>o</kbd> Open dir  <kbd>+/-</kbd> Vol</div>
+        <div><kbd>r</kbd> Repeat  <kbd>z</kbd> Shuffle  <kbd>v</kbd> Visualizer  <kbd>Esc</kbd> Close</div>
       </div>
     `;
 
@@ -746,6 +775,13 @@ export class MusicPlayer {
     const list = document.querySelector('.krypton-music-dashboard__track-list');
     if (list) {
       this.renderTrackList(list as HTMLElement);
+    }
+    // Update playlist header count
+    const countEl = document.querySelector('.krypton-music-dashboard__playlist-count');
+    if (countEl) {
+      const count = this.state.playlist.length;
+      const totalSecs = this.state.playlist.reduce((sum, t) => sum + t.duration_secs, 0);
+      countEl.textContent = `${count} track${count !== 1 ? 's' : ''} · ${formatTime(totalSecs)}`;
     }
     const np = document.querySelector('.krypton-music-dashboard__now-playing');
     if (np) {

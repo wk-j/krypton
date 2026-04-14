@@ -95,9 +95,9 @@
 
 .krypton-music-dashboard {
   display: flex;
-  gap: 1px;
+  gap: 0;
   height: 100%;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05);
+  background: rgba(4, 8, 16, 0.6);
 }
 
 .krypton-music-dashboard__playlist {
@@ -109,13 +109,14 @@
 }
 
 .krypton-music-dashboard__now-playing {
-  width: 320px;
+  width: 340px;
   flex-shrink: 0;
-  padding: 16px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  gap: 14px;
+  border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  background: rgba(0, 0, 0, 0.15);
 }
 
 /* Directory input bar */
@@ -151,11 +152,34 @@
   box-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
 }
 
+/* Playlist header */
+.krypton-music-dashboard__playlist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+}
+
+.krypton-music-dashboard__playlist-title {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+}
+
+.krypton-music-dashboard__playlist-count {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Track list */
 .krypton-music-dashboard__track-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
 .krypton-music-dashboard__track-list::-webkit-scrollbar {
@@ -178,31 +202,56 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 12px;
+  padding: 5px 12px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--krypton-foreground, #c0c8d4);
+  color: rgba(var(--krypton-foreground-rgb, 192, 200, 212), 0.7);
   cursor: default;
+  border-left: 2px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
 .krypton-music-dashboard__track--selected {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  border-left-color: var(--krypton-cyan, #00d4ff);
+  color: var(--krypton-foreground, #c0c8d4);
 }
 
 .krypton-music-dashboard__track--playing {
   color: var(--krypton-cyan, #00d4ff);
 }
 
-.krypton-music-dashboard__track--playing .krypton-music-dashboard__track-idx::before {
-  content: '\25B6 ';
+.krypton-music-dashboard__track--playing.krypton-music-dashboard__track--selected {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  border-left-color: var(--krypton-cyan, #00d4ff);
+}
+
+.krypton-music-dashboard__track-indicator {
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
+.krypton-music-dashboard__track--playing .krypton-music-dashboard__track-indicator {
+  color: var(--krypton-cyan, #00d4ff);
+  animation: krypton-pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes krypton-pulse-glow {
+  0%, 100% { opacity: 1; text-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4); }
+  50% { opacity: 0.6; text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8); }
+}
+
 .krypton-music-dashboard__track-idx {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
   font-size: var(--krypton-chrome-font-size, 11px);
   min-width: 22px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.krypton-music-dashboard__track--selected .krypton-music-dashboard__track-idx {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
 }
 
 .krypton-music-dashboard__track-name {
@@ -213,17 +262,62 @@
 }
 
 .krypton-music-dashboard__track-duration {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.55);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-variant-numeric: tabular-nums;
 }
 
-/* Now playing panel */
+.krypton-music-dashboard__track--selected .krypton-music-dashboard__track-duration {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+}
+
+/* ─── Now Playing Panel ────────────────────────────────────────── */
+
 .krypton-music-dashboard__np-status {
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.15em;
   color: var(--krypton-cyan, #00d4ff);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.krypton-music-dashboard__np-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--krypton-cyan, #00d4ff);
+  flex-shrink: 0;
+}
+
+.krypton-music-dashboard__np-status--playing .krypton-music-dashboard__np-status-dot {
+  animation: krypton-status-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+}
+
+.krypton-music-dashboard__np-status--paused .krypton-music-dashboard__np-status-dot {
+  background: var(--krypton-yellow, #ffcc00);
+  box-shadow: 0 0 4px rgba(255, 204, 0, 0.3);
+}
+
+.krypton-music-dashboard__np-status--stopped .krypton-music-dashboard__np-status-dot {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  box-shadow: none;
+}
+
+@keyframes krypton-status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.7); }
+}
+
+.krypton-music-dashboard__np-divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3) 0%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08) 100%
+  );
 }
 
 .krypton-music-dashboard__np-track {
@@ -244,6 +338,7 @@
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
 }
 
+/* Time + progress bar */
 .krypton-music-dashboard__np-time {
   display: flex;
   align-items: center;
@@ -256,9 +351,10 @@
 .krypton-music-dashboard__np-progress {
   flex: 1;
   height: 4px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
   border-radius: 2px;
   overflow: hidden;
+  position: relative;
 }
 
 .krypton-music-dashboard__np-progress-fill {
@@ -266,21 +362,88 @@
   background: var(--krypton-cyan, #00d4ff);
   border-radius: 2px;
   transition: width 0.5s linear;
+  box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  position: relative;
 }
 
+.krypton-music-dashboard__np-progress-fill::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -2px;
+  width: 2px;
+  height: 8px;
+  background: var(--krypton-cyan, #00d4ff);
+  border-radius: 1px;
+  box-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+}
+
+/* Volume bar */
+.krypton-music-dashboard__np-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+}
+
+.krypton-music-dashboard__np-volume-label {
+  min-width: 42px;
+  font-variant-numeric: tabular-nums;
+}
+
+.krypton-music-dashboard__np-volume-bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  border-radius: 1.5px;
+  overflow: hidden;
+}
+
+.krypton-music-dashboard__np-volume-fill {
+  height: 100%;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  border-radius: 1.5px;
+  transition: width 0.15s ease;
+}
+
+/* Controls badges */
 .krypton-music-dashboard__np-controls {
   display: flex;
-  gap: 12px;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
-  letter-spacing: 0.03em;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
+.krypton-music-dashboard__np-badge {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  padding: 2px 8px;
+  border-radius: 2px;
+  letter-spacing: 0.05em;
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.krypton-music-dashboard__np-badge--active {
+  color: var(--krypton-cyan, #00d4ff);
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  text-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+}
+
+/* Help text */
 .krypton-music-dashboard__np-help {
   margin-top: auto;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
   line-height: var(--krypton-content-line-height, 1.5);
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
-  padding-top: 8px;
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  padding-top: 10px;
+}
+
+.krypton-music-dashboard__np-help kbd {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
+  font-family: inherit;
+  font-size: inherit;
 }
