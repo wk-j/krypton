@@ -259,7 +259,7 @@ export class VaultContentView implements ContentView {
     }
     this.currentFile = relativePath;
 
-    this.breadcrumbEl.textContent = relativePath;
+    this.breadcrumbEl.textContent = file.title;
 
     const content = await readVaultFile(file.path);
     this.renderMarkdown(content, file);
