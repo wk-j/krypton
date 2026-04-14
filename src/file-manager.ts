@@ -105,7 +105,7 @@ export class FileManagerView implements ContentView {
   private previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   private homeDir = '/';
-  private listFlex = 35;
+  private listFlex = 30;
   private cellHeight = 20;
 
   // DOM elements
@@ -584,6 +584,7 @@ export class FileManagerView implements ContentView {
   // ─── Directory Loading ─────────────────────────────────────────
 
   private async loadDirectory(path: string): Promise<void> {
+    if (!path.startsWith(this.initialCwd)) return;
     try {
       this.entries = await invoke<FileEntry[]>('list_directory', {
         path,
@@ -608,6 +609,7 @@ export class FileManagerView implements ContentView {
   }
 
   private async loadDirectoryNoHistory(path: string): Promise<void> {
+    if (!path.startsWith(this.initialCwd)) return;
     try {
       this.entries = await invoke<FileEntry[]>('list_directory', {
         path,
