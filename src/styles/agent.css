@@ -892,6 +892,14 @@
   50% { opacity: 0.6; }
 }
 
+.agent-view__status-spinner {
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--agent-primary);
+  text-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.5);
+  font-size: var(--krypton-font-size);
+}
+
 .agent-view__timer {
   display: inline-block;
   margin-right: 10px;
@@ -951,9 +959,14 @@
 .agent-view__input-row--hidden::before { display: none; }
 
 .agent-view__input-row--busy {
-  opacity: 0.5;
+  height: 0;
+  overflow: hidden;
+  padding: 0;
+  border: none;
   pointer-events: none;
 }
+
+.agent-view__input-row--busy::before { display: none; }
 
 /* ─── Bash mode (! prefix) — green phosphor shell ─── */
 

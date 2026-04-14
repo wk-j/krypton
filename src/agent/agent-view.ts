@@ -1549,7 +1549,15 @@ export class AgentView implements ContentView {
         const icon = this.currentToolRowEl.querySelector('.agent-view__tool-icon');
         if (icon) icon.textContent = SPINNER_FRAMES[this.spinnerFrame];
       }
+      const statusSpinner = this.statusLineEl.querySelector('.agent-view__status-spinner');
+      if (statusSpinner) statusSpinner.textContent = SPINNER_FRAMES[this.spinnerFrame];
     }, 80);
+    let spinner = this.statusLineEl.querySelector('.agent-view__status-spinner');
+    if (!spinner) {
+      spinner = document.createElement('span');
+      spinner.className = 'agent-view__status-spinner';
+      this.statusLineEl.prepend(spinner);
+    }
   }
 
   private stopSpinner(): void {
@@ -1558,6 +1566,7 @@ export class AgentView implements ContentView {
       this.spinnerInterval = null;
     }
     this.spinnerFrame = 0;
+    this.statusLineEl.querySelector('.agent-view__status-spinner')?.remove();
   }
 
   // ─── Timer ────────────────────────────────────────────────────────
