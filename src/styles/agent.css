@@ -6,18 +6,18 @@
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  --agent-bg: #0a0804;
-  --agent-panel: rgba(14, 11, 6, 0.92);
-  --agent-border: rgba(255, 176, 0, 0.2);
-  --agent-border-active: rgba(255, 176, 0, 0.45);
+  --agent-bg: #1f1609;
+  --agent-panel: rgba(36, 27, 14, 0.92);
+  --agent-border: rgba(255, 176, 0, 0.25);
+  --agent-border-active: rgba(255, 176, 0, 0.5);
   --agent-primary: #ffb000;
   --agent-primary-rgb: 255, 176, 0;
-  --agent-bright: #ffd060;
-  --agent-dim: rgba(255, 176, 0, 0.3);
-  --agent-ghost: rgba(255, 176, 0, 0.06);
-  --agent-text: #d4b896;
-  --agent-text-rgb: 212, 184, 150;
-  --agent-text-dim: #8a7558;
+  --agent-bright: #ffd880;
+  --agent-dim: rgba(255, 176, 0, 0.35);
+  --agent-ghost: rgba(255, 176, 0, 0.08);
+  --agent-text: #e8cfa4;
+  --agent-text-rgb: 232, 207, 164;
+  --agent-text-dim: #a68d68;
   --agent-green: #8bc34a;
   --agent-green-rgb: 139, 195, 74;
   --agent-red: #ff6e40;
@@ -29,7 +29,7 @@
   --agent-blue: #64b5f6;
   --agent-blue-rgb: 100, 181, 246;
   --agent-font: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
-  --agent-scanline: rgba(0, 0, 0, 0.12);
+  --agent-scanline: rgba(0, 0, 0, 0.06);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -147,7 +147,7 @@
 
 .krypton-window[data-content-type="agent"] .krypton-window__tabbar {
   border-top: 1px solid rgba(var(--agent-primary-rgb), 0.12) !important;
-  background: rgba(10, 8, 4, 0.5) !important;
+  background: rgba(31, 22, 9, 0.4) !important;
 }
 
 .krypton-window[data-content-type="agent"] .krypton-window__tab {
@@ -203,8 +203,8 @@
   inset: 0;
   background: radial-gradient(
     ellipse at center,
-    transparent 50%,
-    rgba(0, 0, 0, 0.35) 100%
+    transparent 55%,
+    rgba(0, 0, 0, 0.15) 100%
   );
   pointer-events: none;
   z-index: 11;
@@ -434,7 +434,7 @@
 .agent-view__msg-body--markdown pre {
   margin: 0.6em 0;
   padding: 10px 14px;
-  background: rgba(4, 3, 1, 0.6);
+  background: rgba(20, 14, 6, 0.55);
   border: 1px solid rgba(var(--agent-primary-rgb), 0.12);
   border-left: 2px solid rgba(var(--agent-primary-rgb), 0.35);
   overflow-x: auto;
@@ -929,7 +929,7 @@
   border-top: 1px solid rgba(var(--agent-primary-rgb), 0.2);
   flex-shrink: 0;
   position: relative;
-  background: rgba(10, 8, 4, 0.4);
+  background: rgba(31, 22, 9, 0.35);
 }
 
 /* Ruled accent above input */
@@ -971,8 +971,8 @@
 /* ─── Bash mode (! prefix) — green phosphor shell ─── */
 
 .agent-view__input-row--bash {
-  border-top-color: rgba(var(--agent-green-rgb), 0.25);
-  background: rgba(6, 14, 6, 0.4);
+  border-top-color: rgba(var(--agent-green-rgb), 0.3);
+  background: rgba(22, 34, 16, 0.35);
 }
 
 .agent-view__input-row--bash::before {
@@ -1039,7 +1039,7 @@
   padding: 4px 0;
   margin: 0 16px;
   border: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-  background: rgba(10, 8, 4, 0.96);
+  background: rgba(36, 27, 14, 0.96);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.5),
     0 0 1px rgba(var(--agent-primary-rgb), 0.15);
@@ -1201,8 +1201,8 @@
   padding: 8px 12px;
   font-size: var(--krypton-font-size);
   line-height: var(--krypton-content-line-height, 1.5);
-  color: rgba(var(--agent-text-rgb), 0.65);
-  background: rgba(0, 0, 0, 0.3);
+  color: rgba(var(--agent-text-rgb), 0.75);
+  background: rgba(14, 10, 4, 0.3);
   border-left: 2px solid rgba(var(--agent-primary-rgb), 0.2);
   white-space: pre-wrap;
   word-break: break-word;
