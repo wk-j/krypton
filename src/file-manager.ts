@@ -1013,15 +1013,15 @@ export class FileManagerView implements ContentView {
       this.listEl.appendChild(spacer);
     }
 
-    let minMod = Infinity;
-    let maxMod = -Infinity;
-    for (const e of this.filteredEntries) {
-      if (e.modified > 0) {
-        if (e.modified < minMod) minMod = e.modified;
-        if (e.modified > maxMod) maxMod = e.modified;
+    const recencyByPath = new Map<string, number>();
+    {
+      const withMod = this.filteredEntries.filter((e) => e.modified > 0);
+      const sorted = [...withMod].sort((a, b) => a.modified - b.modified);
+      const n = sorted.length;
+      for (let idx = 0; idx < n; idx++) {
+        recencyByPath.set(sorted[idx].path, n > 1 ? idx / (n - 1) : 0.5);
       }
     }
-    const ageRange = maxMod - minMod;
 
     for (let i = this.scrollOffset; i < end; i++) {
       const entry = this.filteredEntries[i];
@@ -1059,18 +1059,17 @@ export class FileManagerView implements ContentView {
       // Age bar
       const ageBar = document.createElement('span');
       ageBar.className = 'krypton-file-manager__age-bar';
-      if (entry.modified > 0 && ageRange > 0) {
-        const recency = (entry.modified - minMod) / ageRange;
+      const recency = recencyByPath.get(entry.path);
+      if (recency !== undefined) {
         const fill = document.createElement('span');
         fill.className = 'krypton-file-manager__age-fill';
-        fill.style.width = `${10 + recency * 90}%`;
-        fill.style.opacity = `${0.25 + recency * 0.75}`;
-        ageBar.appendChild(fill);
-      } else if (entry.modified > 0) {
-        const fill = document.createElement('span');
-        fill.className = 'krypton-file-manager__age-fill';
-        fill.style.width = '55%';
-        fill.style.opacity = '0.5';
+        fill.style.width = `${15 + recency * 85}%`;
+        // Color ramp: newest → hot amber, middle → orange, oldest → dim red
+        const hue = 50 - (1 - recency) * 40; // 50 (yellow) → 10 (red)
+        const sat = 85 + recency * 15;       // 85% → 100%
+        const light = 35 + recency * 25;     // 35% → 60%
+        fill.style.background = `hsl(${hue}, ${sat}%, ${light}%)`;
+        fill.style.opacity = `${0.4 + recency * 0.6}`;
         ageBar.appendChild(fill);
       }
       row.appendChild(ageBar);

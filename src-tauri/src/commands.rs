@@ -780,3 +780,23 @@ pub fn search_files(root: String, show_hidden: bool) -> Result<Vec<String>, Stri
     files.sort_unstable();
     Ok(files)
 }
+
+/// Return modification time (seconds since Unix epoch) for each absolute path.
+/// Missing/unreadable entries return 0.
+#[tauri::command]
+pub fn stat_files(paths: Vec<String>) -> Vec<u64> {
+    use std::fs;
+    use std::time::UNIX_EPOCH;
+
+    paths
+        .into_iter()
+        .map(|p| {
+            fs::metadata(&p)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        })
+        .collect()
+}

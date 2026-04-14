@@ -22,6 +22,7 @@ export interface VaultFile {
   tags: string[];
   frontmatterTags: string[];
   headings: Heading[];
+  modifiedAt: number;
 }
 
 export interface VaultIndex {
@@ -181,6 +182,7 @@ function parseVaultFile(absolutePath: string, root: string, content: string): Va
     tags: allTags,
     frontmatterTags: fmTags,
     headings: parseHeadings(body),
+    modifiedAt: 0,
   };
 }
 
@@ -190,9 +192,18 @@ export async function buildVaultIndex(root: string): Promise<VaultIndex> {
   const backlinks = new Map<string, string[]>();
   const tags = new Map<string, string[]>();
 
-  for (const absPath of filePaths) {
+  let mtimes: number[] = [];
+  try {
+    mtimes = await invoke<number[]>('stat_files', { paths: filePaths });
+  } catch {
+    mtimes = [];
+  }
+
+  for (let i = 0; i < filePaths.length; i++) {
+    const absPath = filePaths[i];
     const content = await readVaultFile(absPath);
     const file = parseVaultFile(absPath, root, content);
+    file.modifiedAt = mtimes[i] ?? 0;
     files.set(file.relativePath, file);
   }
 

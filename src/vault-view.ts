@@ -217,6 +217,18 @@ export class VaultContentView implements ContentView {
     this.sidebarListEl.innerHTML = '';
     const items = this.getListItems();
 
+    const recencyByKey = new Map<string, number>();
+    if (this.sidebarMode === 'files' && this.index) {
+      const withMtime = items
+        .map((k) => ({ key: k, mtime: this.index!.files.get(k)?.modifiedAt ?? 0 }))
+        .filter((x) => x.mtime > 0)
+        .sort((a, b) => a.mtime - b.mtime);
+      const n = withMtime.length;
+      for (let idx = 0; idx < n; idx++) {
+        recencyByKey.set(withMtime[idx].key, n > 1 ? idx / (n - 1) : 0.5);
+      }
+    }
+
     for (let i = 0; i < items.length; i++) {
       const el = document.createElement('div');
       el.className = 'krypton-vault__sidebar-item';
@@ -237,7 +249,28 @@ export class VaultContentView implements ContentView {
       } else {
         label = items[i];
       }
-      el.textContent = label;
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'krypton-vault__sidebar-item-label';
+      labelEl.textContent = label;
+      el.appendChild(labelEl);
+
+      const recency = recencyByKey.get(items[i]);
+      if (recency !== undefined) {
+        const ageBar = document.createElement('span');
+        ageBar.className = 'krypton-vault__age-bar';
+        const fill = document.createElement('span');
+        fill.className = 'krypton-vault__age-fill';
+        fill.style.width = `${15 + recency * 85}%`;
+        const hue = 200 - (1 - recency) * 40;
+        const sat = 70 + recency * 25;
+        const light = 40 + recency * 25;
+        fill.style.background = `hsl(${hue}, ${sat}%, ${light}%)`;
+        fill.style.opacity = `${0.4 + recency * 0.6}`;
+        ageBar.appendChild(fill);
+        el.appendChild(ageBar);
+      }
+
       this.sidebarListEl.appendChild(el);
     }
   }

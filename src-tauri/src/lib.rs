@@ -66,6 +66,7 @@ pub fn run() {
             commands::find_java_server_by_cwd,
             commands::list_directory,
             commands::search_files,
+            commands::stat_files,
             commands::read_file,
             commands::write_file,
             commands::get_env_var,
