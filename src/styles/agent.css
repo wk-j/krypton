@@ -295,7 +295,7 @@
   content: '';
   display: block;
   flex-shrink: 0;
-  height: 16px;
+  height: 20px;
 }
 
 .agent-view--scroll .agent-view__messages {
@@ -864,12 +864,14 @@
   font-size: var(--krypton-chrome-font-size, 11px);
   font-family: var(--agent-font);
   letter-spacing: 0.1em;
-  color: rgba(var(--agent-primary-rgb), 0.5);
+  color: rgba(var(--agent-primary-rgb), 0.55);
   text-shadow: 0 0 4px rgba(var(--agent-primary-rgb), 0.15);
-  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.1);
-  background: rgba(var(--agent-primary-rgb), 0.02);
+  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.2);
+  background: rgba(31, 22, 9, 0.85);
   flex-shrink: 0;
   user-select: none;
+  position: relative;
+  z-index: 1;
 }
 
 .agent-view__status-line--visible { display: block; }

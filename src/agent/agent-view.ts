@@ -623,6 +623,8 @@ export class AgentView implements ContentView {
         this.startSpinner();
         this.promptGlyphEl.textContent = SPINNER_FRAMES[0];
         this.inputRowEl.classList.add('agent-view__input-row--busy');
+        // Input row collapsed to height:0 — messages viewport grew, re-anchor to bottom
+        requestAnimationFrame(() => this.scrollToBottom());
         break;
 
       case 'agent_end':
@@ -634,6 +636,9 @@ export class AgentView implements ContentView {
         this.finalizeAssistantMessage();
         this.currentToolRowEl = null;
         if (e.usage) this.renderStatusLine(e.usage);
+        // Input row restored + status line appeared — messages viewport shrank,
+        // re-anchor to bottom so the final message isn't hidden behind the status line
+        requestAnimationFrame(() => this.scrollToBottom());
         break;
 
       case 'message_update':
@@ -1107,6 +1112,8 @@ export class AgentView implements ContentView {
         this.stopSpinner();
         this.promptGlyphEl.textContent = '❯';
         this.inputRowEl.classList.remove('agent-view__input-row--busy');
+        // Input row restored — re-anchor scroll so last content isn't hidden
+        requestAnimationFrame(() => this.scrollToBottom());
       } else {
         this.inputText = '';
         this.cursorPos = 0;
