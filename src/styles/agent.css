@@ -951,6 +951,40 @@
   pointer-events: none;
 }
 
+/* ─── Bash mode (! prefix) — green phosphor shell ─── */
+
+.agent-view__input-row--bash {
+  border-top-color: rgba(var(--agent-green-rgb), 0.25);
+  background: rgba(6, 14, 6, 0.4);
+}
+
+.agent-view__input-row--bash::before {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--agent-green-rgb), 0.5),
+    rgba(var(--agent-green-rgb), 0.15),
+    transparent
+  );
+}
+
+.agent-view__input-row--bash .agent-view__prompt-glyph {
+  color: rgba(var(--agent-green-rgb), 0.95);
+  text-shadow:
+    0 0 8px rgba(var(--agent-green-rgb), 0.6),
+    0 0 20px rgba(var(--agent-green-rgb), 0.2);
+}
+
+.agent-view__input-row--bash .agent-view__input-display {
+  color: rgba(var(--agent-green-rgb), 0.85);
+  text-shadow: 0 0 4px rgba(var(--agent-green-rgb), 0.15);
+}
+
+.agent-view__input-row--bash .agent-view__input-cursor {
+  color: rgba(var(--agent-green-rgb), 0.95);
+  text-shadow: 0 0 8px rgba(var(--agent-green-rgb), 0.6);
+}
+
 .agent-view__prompt-glyph {
   color: var(--agent-primary);
   text-shadow:
@@ -959,6 +993,7 @@
   flex-shrink: 0;
   padding-top: 1px;
   user-select: none;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
 }
 
 .agent-view__input-display {

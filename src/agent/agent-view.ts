@@ -528,6 +528,11 @@ export class AgentView implements ContentView {
     const toDisplay = (s: string) => s.replace(/\n/g, '<br>');
     this.inputDisplayEl.innerHTML =
       `${toDisplay(before)}<span class="agent-view__input-cursor">▋</span>${toDisplay(after)}`;
+
+    const isBash = this.inputText.startsWith('!');
+    this.inputRowEl.classList.toggle('agent-view__input-row--bash', isBash);
+    this.promptGlyphEl.textContent = isBash ? '$' : '❯';
+
     this.updateAutocomplete();
   }
 
