@@ -1013,6 +1013,16 @@ export class FileManagerView implements ContentView {
       this.listEl.appendChild(spacer);
     }
 
+    let minMod = Infinity;
+    let maxMod = -Infinity;
+    for (const e of this.filteredEntries) {
+      if (e.modified > 0) {
+        if (e.modified < minMod) minMod = e.modified;
+        if (e.modified > maxMod) maxMod = e.modified;
+      }
+    }
+    const ageRange = maxMod - minMod;
+
     for (let i = this.scrollOffset; i < end; i++) {
       const entry = this.filteredEntries[i];
       const row = document.createElement('div');
@@ -1046,18 +1056,37 @@ export class FileManagerView implements ContentView {
       nameSpan.textContent = nameText;
       row.appendChild(nameSpan);
 
-      // Size (right-aligned, files only)
+      // Age bar
+      const ageBar = document.createElement('span');
+      ageBar.className = 'krypton-file-manager__age-bar';
+      if (entry.modified > 0 && ageRange > 0) {
+        const recency = (entry.modified - minMod) / ageRange;
+        const fill = document.createElement('span');
+        fill.className = 'krypton-file-manager__age-fill';
+        fill.style.width = `${10 + recency * 90}%`;
+        fill.style.opacity = `${0.25 + recency * 0.75}`;
+        ageBar.appendChild(fill);
+      } else if (entry.modified > 0) {
+        const fill = document.createElement('span');
+        fill.className = 'krypton-file-manager__age-fill';
+        fill.style.width = '55%';
+        fill.style.opacity = '0.5';
+        ageBar.appendChild(fill);
+      }
+      row.appendChild(ageBar);
+
+      // Size (right-aligned, always present for alignment)
+      const sizeSpan = document.createElement('span');
+      sizeSpan.className = 'krypton-file-manager__size';
       if (!entry.is_dir) {
-        const sizeSpan = document.createElement('span');
-        sizeSpan.className = 'krypton-file-manager__size';
         if (entry.size >= 1024 * 1024) {
           sizeSpan.classList.add('krypton-file-manager__size--mega');
         } else if (entry.size >= 100 * 1024) {
           sizeSpan.classList.add('krypton-file-manager__size--large');
         }
         sizeSpan.textContent = this.formatSize(entry.size);
-        row.appendChild(sizeSpan);
       }
+      row.appendChild(sizeSpan);
 
       this.listEl.appendChild(row);
     }

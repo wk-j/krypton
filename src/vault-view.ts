@@ -229,14 +229,8 @@ export class VaultContentView implements ContentView {
 
       let label: string;
       if (this.sidebarMode === 'files') {
-        const filename = items[i].split('/').pop() ?? items[i];
-        const parts = items[i].split('/');
-        const isDuplicate = items.some(
-          (other, j) => j !== i && (other.split('/').pop() ?? other) === filename
-        );
-        label = isDuplicate && parts.length > 1
-          ? `${parts[parts.length - 2]}/${filename}`
-          : filename;
+        const file = this.index?.files.get(items[i]);
+        label = file?.title ?? items[i].split('/').pop() ?? items[i];
       } else if (this.sidebarMode === 'tags') {
         const count = this.index?.tags.get(items[i])?.length ?? 0;
         label = `#${items[i]}  (${count})`;
