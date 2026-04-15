@@ -106,7 +106,7 @@
   padding: 16px 24px;
   line-height: var(--krypton-prose-line-height, 1.7);
   font-size: var(--krypton-font-size);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
 }
 
 .krypton-md__empty {
@@ -130,31 +130,78 @@
 }
 
 /* ── Markdown rendered content ── */
+/* Per-element prose palette — diversifies colour so the page doesn't read as
+   a single-hue wash. Pulls from the active ANSI theme (bright variants), with
+   explicit neon fallbacks for themes that don't set them. */
+.krypton-md__preview-content {
+  --md-heading-1: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));   /* window accent */
+  --md-heading-2: var(--krypton-ansi-13, #ff7ad9);                      /* bright magenta */
+  --md-heading-3: var(--krypton-ansi-10, #9efc7c);                      /* bright green */
+  --md-heading-4: var(--krypton-ansi-11, #ffd479);                      /* bright yellow */
+  --md-heading-5: var(--krypton-ansi-12, #7fb4ff);                      /* bright blue */
+  --md-heading-6: var(--krypton-ansi-14, #8de6e6);                      /* bright cyan */
+  --md-link:      rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+  --md-em:        var(--krypton-ansi-13, #ff7ad9);
+  --md-strong:    var(--krypton-ansi-15, #f4f7fa);
+  --md-code:      var(--krypton-ansi-11, #ffd479);
+  --md-quote-bd:  var(--krypton-ansi-13, #ff7ad9);
+  --md-quote-tx:  #b8a9cc;
+  --md-marker-ul: var(--krypton-ansi-10, #9efc7c);
+  --md-marker-ol: var(--krypton-ansi-11, #ffd479);
+  --md-th:        var(--krypton-ansi-13, #ff7ad9);
+  --md-del:       var(--krypton-ansi-9, rgba(255, 100, 120, 0.85));
+}
+
 .krypton-md__preview-content h1,
 .krypton-md__preview-content h2,
 .krypton-md__preview-content h3,
 .krypton-md__preview-content h4,
 .krypton-md__preview-content h5,
 .krypton-md__preview-content h6 {
-  color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
-  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   margin: 1.5em 0 0.5em;
   line-height: var(--krypton-content-line-height, 1.5);
 }
 
-.krypton-md__preview-content h1 { font-size: 1.8em; border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.2); padding-bottom: 0.3em; }
-.krypton-md__preview-content h2 { font-size: 1.4em; border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1); padding-bottom: 0.2em; }
-.krypton-md__preview-content h3 { font-size: 1.2em; }
-.krypton-md__preview-content h4 { font-size: 1.05em; }
-.krypton-md__preview-content h5,
-.krypton-md__preview-content h6 { font-size: 0.95em; opacity: 0.8; }
+.krypton-md__preview-content h1 {
+  color: var(--md-heading-1);
+  font-size: 1.8em;
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.25);
+  padding-bottom: 0.3em;
+}
+.krypton-md__preview-content h2 {
+  color: var(--md-heading-2);
+  font-size: 1.4em;
+  border-bottom: 1px solid rgba(255, 122, 217, 0.18);
+  padding-bottom: 0.2em;
+}
+.krypton-md__preview-content h3 { color: var(--md-heading-3); font-size: 1.2em; }
+.krypton-md__preview-content h4 { color: var(--md-heading-4); font-size: 1.05em; }
+.krypton-md__preview-content h5 { color: var(--md-heading-5); font-size: 0.95em; }
+.krypton-md__preview-content h6 { color: var(--md-heading-6); font-size: 0.95em; opacity: 0.85; }
 
 .krypton-md__preview-content p {
   margin: 0.8em 0;
 }
 
+.krypton-md__preview-content strong {
+  color: var(--md-strong);
+  font-weight: 700;
+}
+
+.krypton-md__preview-content em {
+  color: var(--md-em);
+  font-style: italic;
+}
+
+.krypton-md__preview-content del,
+.krypton-md__preview-content s {
+  color: var(--md-del);
+  text-decoration-color: var(--md-del);
+}
+
 .krypton-md__preview-content a {
-  color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
+  color: var(--md-link);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -166,7 +213,8 @@
 .krypton-md__preview-content code {
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
   font-size: 0.9em;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
+  color: var(--md-code);
+  background: rgba(255, 212, 121, 0.08);
   padding: 2px 5px;
   border-radius: 3px;
 }
@@ -186,6 +234,7 @@
   padding: 0;
   font-size: 0.9em;
   line-height: 1.0;
+  color: #d8e0e8;
 }
 
 /* Override highlight.js github-dark background to match Krypton */
@@ -195,10 +244,15 @@
 }
 
 .krypton-md__preview-content blockquote {
-  border-left: 3px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  border-left: 3px solid var(--md-quote-bd);
   margin: 1em 0;
   padding: 0.5em 1em;
-  color: #8a9199;
+  color: var(--md-quote-tx);
+  background: rgba(255, 122, 217, 0.04);
+}
+
+.krypton-md__preview-content blockquote em {
+  color: #d8c0e6;
 }
 
 .krypton-md__preview-content ul,
@@ -211,8 +265,13 @@
   margin: 0.3em 0;
 }
 
-.krypton-md__preview-content li::marker {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
+.krypton-md__preview-content ul > li::marker {
+  color: var(--md-marker-ul);
+}
+
+.krypton-md__preview-content ol > li::marker {
+  color: var(--md-marker-ol);
+  font-weight: 700;
 }
 
 .krypton-md__preview-content table {
@@ -229,12 +288,13 @@
 }
 
 .krypton-md__preview-content th {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
-  color: rgb(var(--krypton-window-accent-rgb, 0, 204, 255));
-  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  background: rgba(255, 122, 217, 0.1);
+  color: var(--md-th);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: 0.9em;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border-color: rgba(255, 122, 217, 0.3);
 }
 
 .krypton-md__preview-content tr:nth-child(even) {
@@ -243,7 +303,15 @@
 
 .krypton-md__preview-content hr {
   border: none;
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.2);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5),
+    rgba(255, 122, 217, 0.5),
+    rgba(158, 252, 124, 0.4),
+    transparent
+  );
   margin: 2em 0;
 }
 

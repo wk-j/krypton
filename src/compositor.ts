@@ -27,6 +27,9 @@ import {
   SplitDirection,
   type ProgressEvent,
   type PaneProgress,
+  type ProcessChangedEvent,
+  type ProcessInfo,
+  type ProcessCandidate,
 } from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
 import { AnimationEngine, BoundsSnapshot } from './animation';
@@ -277,6 +280,10 @@ export class Compositor {
   /** Active inline AI overlay (at most one) */
   private inlineAI: import('./inline-ai').InlineAIOverlay | null = null;
 
+  /** Latest foreground process per session, populated from process-changed events.
+   *  Used by findSessionsByProcess() for the Smart Prompt Dialog. */
+  private processBySession: Map<SessionId, ProcessInfo> = new Map();
+
   /** Callbacks invoked after config reload with the fresh config */
   private onConfigReloadCallbacks: Array<(config: KryptonConfig) => void> = [];
 
@@ -300,6 +307,16 @@ export class Compositor {
 
     // Wire dashboard manager to restore terminal focus on close
     this.dashboards.onRefocus(() => this.refocusTerminal());
+
+    // Track foreground process per session for Smart Prompt Dialog targeting
+    void listen<ProcessChangedEvent>('process-changed', (event) => {
+      const { session_id, process } = event.payload;
+      if (process) {
+        this.processBySession.set(session_id, process);
+      } else {
+        this.processBySession.delete(session_id);
+      }
+    });
   }
 
   /** Apply loaded config to compositor settings. Call before creating windows. */
@@ -2177,6 +2194,50 @@ export class Compositor {
   /** Get the currently focused pane (public accessor for input routing) */
   getFocusedPanePublic(): Pane | null {
     return this.getFocusedPane();
+  }
+
+  /** Read the current xterm.js selection from the focused terminal pane.
+   *  Returns null if the focused pane isn't a terminal or the selection is empty. */
+  getFocusedSelection(): string | null {
+    const pane = this.getFocusedPane();
+    if (!pane || !pane.terminal) return null;
+    const text = pane.terminal.getSelection();
+    return text.length > 0 ? text : null;
+  }
+
+  /** Enumerate every session whose current foreground process matches `name`.
+   *  Returns rich per-session info (window, pid, title) for the Smart Prompt Dialog. */
+  findSessionsByProcess(name: string): ProcessCandidate[] {
+    const results: ProcessCandidate[] = [];
+    for (const [sessionId, info] of this.processBySession) {
+      if (info.name !== name) continue;
+      const loc = this.sessionMap.get(sessionId);
+      if (!loc) continue;
+      const win = this.windows.get(loc.windowId);
+      if (!win) continue;
+      const tab = win.tabs.find((t) => t.id === loc.tabId);
+      const windowTitle = tab?.title ?? win.id;
+      results.push({ sessionId, windowId: win.id, windowTitle, pid: info.pid });
+    }
+    return results;
+  }
+
+  /** Briefly flash a window's chrome to confirm a prompt was delivered to it. */
+  flashWindow(windowId: WindowId): void {
+    const win = this.windows.get(windowId);
+    if (!win) return;
+    const el = win.element;
+    el.classList.remove('krypton-window--flash');
+    void el.offsetWidth;
+    el.classList.add('krypton-window--flash');
+    window.setTimeout(() => {
+      el.classList.remove('krypton-window--flash');
+    }, 400);
+  }
+
+  /** Get the workspace element — used by overlays that need to mount globally. */
+  get workspaceElement(): HTMLElement {
+    return this.workspace;
   }
 
   /** Refocus the terminal of the currently focused pane */

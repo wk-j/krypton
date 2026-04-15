@@ -10,6 +10,7 @@ import { SelectionController } from './selection';
 import { HintController } from './hints';
 import { CommandPalette } from './command-palette';
 import { DashboardManager } from './dashboard';
+import { PromptDialog } from './prompt-dialog';
 
 import type { MusicPlayer } from './music';
 import type { PaneContentType } from './types';
@@ -26,6 +27,7 @@ export class InputRouter {
   private commandPalette: CommandPalette | null = null;
   private dashboardManager: DashboardManager | null = null;
   private musicPlayer: MusicPlayer | null = null;
+  private promptDialog: PromptDialog | null = null;
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
@@ -85,6 +87,10 @@ export class InputRouter {
       }
       // Prevent xterm from consuming Cmd+K (inline AI)
       if (InputRouter.isInlineAIKey(e)) {
+        return false;
+      }
+      // Prevent xterm from consuming Cmd+Shift+K (smart prompt dialog)
+      if (InputRouter.isPromptDialogKey(e)) {
         return false;
       }
       // Prevent xterm from consuming dashboard toggle shortcuts
@@ -203,6 +209,29 @@ export class InputRouter {
       !e.ctrlKey &&
       !e.altKey
     );
+  }
+
+  /** Check if a key event is the Smart Prompt Dialog shortcut (Cmd+Shift+K) */
+  static isPromptDialogKey(e: KeyboardEvent): boolean {
+    return (
+      e.code === 'KeyK' &&
+      e.metaKey &&
+      e.shiftKey &&
+      !e.ctrlKey &&
+      !e.altKey
+    );
+  }
+
+  /** Set the prompt dialog instance (called after construction) */
+  setPromptDialog(dialog: PromptDialog): void {
+    this.promptDialog = dialog;
+  }
+
+  /** Called by PromptDialog when it self-closes (submit, click-outside, Esc). */
+  exitPromptDialog(): void {
+    if (this.mode === Mode.PromptDialog) {
+      this.toNormal();
+    }
   }
 
   private setMode(mode: Mode): void {
@@ -324,6 +353,12 @@ export class InputRouter {
         } else if (this.mode === Mode.CommandPalette) {
           this.commandPalette?.close();
           this.toNormal();
+        } else if (this.mode === Mode.PromptDialog) {
+          // Dialog owns Escape semantics (close popup → close picker → close dialog).
+          // Delegate, but if it returns false (unexpected), force-close.
+          if (!this.promptDialog?.onKeyDown(e)) {
+            this.promptDialog?.close();
+          }
         } else if (this.mode === Mode.Dashboard) {
           this.dashboardManager?.close();
           // DashboardManager.close() triggers modeCallback -> toNormal()
@@ -394,6 +429,25 @@ export class InputRouter {
         return;
       }
 
+      // Global: Cmd+Shift+K — toggle smart prompt dialog (works from any mode)
+      if (InputRouter.isPromptDialogKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!this.promptDialog) return;
+        if (this.promptDialog.isVisible) {
+          this.promptDialog.close();
+        } else {
+          // Force-exit transient modes before opening
+          if (this.mode === Mode.Selection) this.exitSelectionMode();
+          else if (this.mode === Mode.Hint) this.hints.exit();
+          else if (this.mode === Mode.CommandPalette) this.commandPalette?.close();
+          else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
+          void this.promptDialog.open();
+          this.setMode(Mode.PromptDialog);
+        }
+        return;
+      }
+
       // Global: Cmd+Shift+H — enter hint mode (works from Normal mode)
       if (InputRouter.isHintKey(e)) {
         e.preventDefault();
@@ -444,6 +498,17 @@ export class InputRouter {
       // Enter, Tab, Cmd+C, and other action keys.
       if (this.mode === Mode.InlineAI) {
         this.handleInlineAIKey(e);
+        return;
+      }
+
+      // Prompt Dialog mode: delegate to the dialog's own handler.
+      // The <textarea> receives typing naturally; the dialog intercepts
+      // Enter/Shift+Enter/Tab/Esc/Arrow keys for submit, mention popup, picker.
+      if (this.mode === Mode.PromptDialog) {
+        if (this.promptDialog?.onKeyDown(e)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         return;
       }
 

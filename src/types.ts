@@ -33,6 +33,17 @@ export enum Mode {
   Dashboard = 'Dashboard',
   InlineAI = 'InlineAI',
   Music = 'Music',
+  PromptDialog = 'PromptDialog',
+}
+
+/** Candidate for "which tab runs a given process" lookups.
+ *  Returned by Compositor.findSessionsByProcess — used by the Smart Prompt Dialog
+ *  to enumerate Claude sessions the user can dispatch to. */
+export interface ProcessCandidate {
+  sessionId: SessionId;
+  windowId: WindowId;
+  windowTitle: string;
+  pid: number;
 }
 
 /** Layout strategy for tiling windows */

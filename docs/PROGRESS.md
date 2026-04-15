@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-03-31 (Agent markdown visual effects — futuristic CSS for AI responses)
+> Last updated: 2026-04-15 (Smart Prompt Dialog — Cmd+Shift+K dispatch to Claude tabs)
 
 ## Overview
 
@@ -131,6 +131,7 @@
 - [x] Notification overlay (`src/notification.ts`) — `NotificationController` with glitch-decode text animation, per-level color coding (info/success/warning/error/system), auto-dismiss with timer bar, max 6 stacked. OSC detection (OSC 9, 777, 99/kitty) via `terminal.parser.registerOscHandler()`. Container mounted on `document.body` with `position: fixed`, repositioned via `alignTo()` to anchor to focused window bounds. Programmatic API for any frontend subsystem. See `docs/40-notification-overlay.md`.
 - [x] Cursor trail — rainbow flame particle effect (`src/cursor-trail.ts`) on both mouse cursor (document-level `mousemove` capture) and terminal text cursor (polls `buffer.active.cursorX/Y` via compositor). Particles drift upward with turbulence, cycle rainbow hues, fade with quadratic falloff. Teardrop-shaped with radial gradient + glow. Appended to `document.body` (z-index 99999). Togglable via `toggle()`.
 - [x] Agent markdown visual effects — futuristic CSS effects on AI response rendering: scanline overlay + materialize animation on assistant messages, neon glow pulse on headings, animated edge-sweep on code blocks, holographic shimmer on blockquotes, traveling pulse on horizontal rules, hover-highlight on table rows, custom `▸` bullets, neon glow on inline code/links/bold. All pure CSS, GPU-composited, theme-aware via `--krypton-window-accent-rgb`. See agent markdown effects section in `docs/42-pi-agent-integration.md`.
+- [x] Smart Prompt Dialog (`src/prompt-dialog.ts`) — global modal (`Cmd+Shift+K`) that composes a prompt and dispatches it to an active `claude` terminal tab via `write_to_pty`. Auto-detects Claude sessions through the `process-changed` event + `processBySession` cache on Compositor. Persistent target chip shows `→ Claude <cwd> pid <N>` with `Cmd+,` to reopen the picker (arrow/1-9/Enter/Esc) when multiple sessions exist. Supports `@path` autocomplete via existing `search_files` command (fuzzy-matched, cached per CWD with 10s TTL, positioned via mirrored-div caret helper in `src/caret-position.ts`), `@selection` inline-expanded from the focused xterm selection. Last-used target remembered across opens within the session. Target window gets a 600ms accent-glow flash on dispatch. New `Mode.PromptDialog`, magenta-accented dialog chrome to visually distinguish from the cyan command palette. See `docs/61-smart-prompt-dialog.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 

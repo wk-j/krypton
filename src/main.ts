@@ -6,6 +6,7 @@ import { Compositor } from './compositor';
 import { InputRouter } from './input-router';
 import { WhichKey } from './which-key';
 import { CommandPalette } from './command-palette';
+import { PromptDialog } from './prompt-dialog';
 import { loadConfig } from './config';
 import { FrontendThemeEngine } from './theme';
 import { createGitDashboard } from './dashboards/git';
@@ -69,6 +70,10 @@ async function main(): Promise<void> {
   // Initialize command palette
   const commandPalette = new CommandPalette(compositor);
   inputRouter.setCommandPalette(commandPalette);
+
+  // Initialize smart prompt dialog (Cmd+Shift+K → dispatch prompt to Claude tab)
+  const promptDialog = new PromptDialog(compositor, () => inputRouter.exitPromptDialog());
+  inputRouter.setPromptDialog(promptDialog);
 
   // Initialize dashboard manager and register built-in dashboards
   const dashboardManager = compositor.dashboardManager;
