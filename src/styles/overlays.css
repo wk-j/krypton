@@ -580,6 +580,29 @@
   font-weight: 700;
 }
 
+.krypton-prompt-dialog__mention-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.krypton-prompt-dialog__mention-row--selection {
+  color: var(--krypton-prompt-accent, #c77dff);
+}
+
+.krypton-prompt-dialog__mention-row--selection::before {
+  content: '◆';
+  margin-right: 6px;
+  opacity: 0.8;
+}
+
+.krypton-prompt-dialog__mention-hint {
+  color: var(--krypton-prompt-dim, rgba(192, 197, 206, 0.45));
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  flex-shrink: 0;
+}
+
 /* ─── Footer ─── */
 .krypton-prompt-dialog__footer {
   display: flex;

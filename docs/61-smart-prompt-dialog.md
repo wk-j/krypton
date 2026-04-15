@@ -19,7 +19,7 @@ Users running `claude` in a Krypton terminal tab often want to dispatch a prompt
 A global modal invoked by `Cmd+Shift+K` from any tab or mode. The dialog has a **persistent target chip** at the top (always visible, always switchable via `Cmd+,`) plus a textarea with inline `@`-mention autocomplete for files (`@path`) and a special `@selection` placeholder for the current xterm selection. Krypton enumerates every tab whose foreground process is `claude`; the chip shows the active target, and the user can switch targets at any time without losing typed text. On submit, the prompt is written to the target's PTY with a trailing `\r` and that window flashes to confirm delivery.
 
 - **`@path`** is passed through verbatim — Claude Code natively resolves `@file` references, so the dialog only assists autocomplete.
-- **`@selection`** is expanded inline to the literal selected text (wrapped in a fenced block) before the prompt is sent.
+- **`@selection`** is expanded inline to the literal selected text (wrapped in a fenced block) before the prompt is sent. The selection is snapshotted when the dialog *opens*, not when it submits, so focus changes or terminal clicks between open and submit can't swap the payload out from under the user. The token is also pinned as a special top entry in the `@` mention popup (labeled with a line count) so new users discover it without needing to memorize the keyword.
 
 ## Research
 
@@ -142,6 +142,9 @@ No new IPC events.
 ```
 1. User presses Cmd+Shift+K (any mode).
 2. InputRouter.setMode(Mode.PromptDialog) — PromptDialog.open() runs.
+   The first thing open() does is snapshot Compositor.getFocusedSelection() into a
+   private field, BEFORE the overlay steals focus. That snapshot is the one and only
+   source for @selection expansion throughout the dialog's lifetime; it's cleared on close.
 3. Enumerate targets: Compositor.findSessionsByProcess('claude') → ClaudeTarget[].
    For each candidate, fire-and-forget get_pty_cwd(sessionId) to populate the chip.
 4. Pick initial target:
@@ -154,12 +157,12 @@ No new IPC events.
    Picker navigation: 1-9 hotkey, Up/Down+Enter, Esc to dismiss picker (keeps last target).
 7. User types in textarea. On each keystroke:
    a. If current char is '@' AND preceded by whitespace or start — enter mention mode, record start index.
-   b. In mention mode: query = value.slice(start+1, caret). Run fuzzyMatch against cached file list, render popup under caret.
+   b. In mention mode: query = value.slice(start+1, caret). Run fuzzyMatch against cached file list, render popup under caret. If a non-empty selection snapshot exists and the query is empty or fuzzy-matches "selection", prepend `@selection` as a pinned top entry with a `N lines`/`N chars` hint so the placeholder is discoverable without prior knowledge.
    c. Space/Enter/Tab/Esc/Backspace-past-'@' handled per Slack/Linear conventions (see Edge Cases).
 8. User presses Enter (outside mention mode) or Cmd+Enter.
 9. PromptDialog.submit():
    a. If no target → toast "No target selected", abort.
-   b. Expand @selection → read source tab's xterm selection, replace with fenced block.
+   b. Expand @selection → substitute the snapshot captured in step 2, wrapped in a fenced block.
    c. Leave @path tokens untouched (Claude Code expands them CLI-side).
    d. Two-step delivery: first write `\x1b[200~<prompt>\x1b[201~` (the bracketed-paste frame);
       wait ~30ms; then write `\r` (the Enter keystroke).

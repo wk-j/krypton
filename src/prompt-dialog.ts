@@ -100,11 +100,18 @@ interface TargetEntry extends ProcessCandidate {
   cwd: string | null;
 }
 
+interface MentionItem {
+  kind: 'file' | 'selection';
+  path: string; // 'selection' for the special entry, relative path for files
+  indices: number[];
+  hint?: string; // right-aligned label (e.g. "12 lines")
+}
+
 interface MentionState {
   active: boolean;
   start: number;
   query: string;
-  items: { path: string; indices: number[] }[];
+  items: MentionItem[];
   selectedIndex: number;
 }
 
@@ -137,6 +144,10 @@ export class PromptDialog {
   };
   private files: string[] = [];
   private visible = false;
+  // Selection text captured from the focused terminal pane when the dialog opens.
+  // Frozen for the dialog's lifetime so @selection always expands to what the user
+  // saw highlighted at the moment they pressed Cmd+Shift+K.
+  private selectionSnapshot: string | null = null;
 
   private processUnlisten: (() => void) | null = null;
 
@@ -164,6 +175,9 @@ export class PromptDialog {
     this.textareaEl.value = '';
     this.mention.active = false;
     this.mentionPopupEl.classList.remove('krypton-prompt-dialog__mention-popup--visible');
+    // Capture the terminal selection NOW, before the dialog's overlay steals any
+    // focus and before the user can change what's highlighted.
+    this.selectionSnapshot = this.compositor.getFocusedSelection();
     this.overlay.classList.add('krypton-prompt-dialog--visible');
 
     await this.refreshTargets();
@@ -189,6 +203,7 @@ export class PromptDialog {
     this.overlay.classList.remove('krypton-prompt-dialog--visible');
     this.mentionPopupEl.classList.remove('krypton-prompt-dialog__mention-popup--visible');
     this.pickerOpen = false;
+    this.selectionSnapshot = null;
     if (this.processUnlisten) {
       this.processUnlisten();
       this.processUnlisten = null;
@@ -534,21 +549,46 @@ export class PromptDialog {
 
   private rankFiles(): void {
     const q = this.mention.query;
+    const items: MentionItem[] = [];
+
+    // Pin @selection at the top when there's a captured selection and the
+    // query is empty or fuzzy-matches "selection". Keeps the placeholder
+    // discoverable without forcing the user to memorize the magic keyword.
+    const selectionItem = this.buildSelectionItem(q);
+    if (selectionItem) items.push(selectionItem);
+
+    const remaining = MAX_MENTION_RESULTS - items.length;
     if (q.length === 0) {
-      this.mention.items = this.files
-        .slice(0, MAX_MENTION_RESULTS)
-        .map((path) => ({ path, indices: [] }));
-      return;
+      for (const path of this.files.slice(0, remaining)) {
+        items.push({ kind: 'file', path, indices: [] });
+      }
+    } else {
+      const ranked: { path: string; score: number; indices: number[] }[] = [];
+      for (const path of this.files) {
+        const res = fuzzyMatch(q, path);
+        if (res) ranked.push({ path, score: res.score, indices: res.matchIndices });
+      }
+      ranked.sort((a, b) => b.score - a.score);
+      for (const r of ranked.slice(0, remaining)) {
+        items.push({ kind: 'file', path: r.path, indices: r.indices });
+      }
     }
-    const ranked: { path: string; score: number; indices: number[] }[] = [];
-    for (const path of this.files) {
-      const res = fuzzyMatch(q, path);
-      if (res) ranked.push({ path, score: res.score, indices: res.matchIndices });
+
+    this.mention.items = items;
+  }
+
+  private buildSelectionItem(query: string): MentionItem | null {
+    const snap = this.selectionSnapshot;
+    if (!snap || snap.length === 0) return null;
+    let indices: number[] = [];
+    if (query.length > 0) {
+      const m = fuzzyMatch(query, 'selection');
+      if (!m) return null;
+      indices = m.matchIndices;
     }
-    ranked.sort((a, b) => b.score - a.score);
-    this.mention.items = ranked
-      .slice(0, MAX_MENTION_RESULTS)
-      .map(({ path, indices }) => ({ path, indices }));
+    const lines = snap.split('\n').length;
+    const hint = lines === 1 ? `${snap.length} chars` : `${lines} lines`;
+    return { kind: 'selection', path: 'selection', indices, hint };
   }
 
   private renderMentionPopup(): void {
@@ -558,8 +598,14 @@ export class PromptDialog {
     }
     this.mentionPopupEl.innerHTML = this.mention.items
       .map((item, i) => {
-        const cls = i === this.mention.selectedIndex ? ' is-selected' : '';
-        return `<div class="krypton-prompt-dialog__mention-row${cls}" data-idx="${i}">${highlightMatches(item.path, item.indices)}</div>`;
+        const selCls = i === this.mention.selectedIndex ? ' is-selected' : '';
+        const kindCls =
+          item.kind === 'selection' ? ' krypton-prompt-dialog__mention-row--selection' : '';
+        const label = highlightMatches(item.path, item.indices);
+        const hint = item.hint
+          ? `<span class="krypton-prompt-dialog__mention-hint">${escapeHtml(item.hint)}</span>`
+          : '';
+        return `<div class="krypton-prompt-dialog__mention-row${kindCls}${selCls}" data-idx="${i}">${label}${hint}</div>`;
       })
       .join('');
     this.mentionPopupEl.classList.add('krypton-prompt-dialog__mention-popup--visible');
@@ -620,10 +666,12 @@ export class PromptDialog {
       return;
     }
 
-    // Expand @selection inline (snapshot of the source pane's xterm selection)
+    // Expand @selection inline using the snapshot captured at open time, so
+    // what the user saw highlighted when they pressed Cmd+Shift+K is exactly
+    // what gets sent — regardless of focus changes in between.
     let prompt = raw;
     if (/(^|\s)@selection\b/.test(prompt)) {
-      const sel = this.compositor.getFocusedSelection() ?? '';
+      const sel = this.selectionSnapshot ?? '';
       const block = sel.length > 0 ? '\n```\n' + sel + '\n```\n' : '';
       prompt = prompt.replace(/(^|\s)@selection\b/g, (_m, lead) => `${lead}${block}`);
     }

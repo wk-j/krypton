@@ -24,6 +24,7 @@ export class VaultContentView implements ContentView {
   private linkHintLabels: HTMLElement[] = [];
   private linkHintMap: Map<string, HTMLAnchorElement> = new Map();
   private linkHintInput = '';
+  private statusFlashTimer: number | null = null;
 
   private sidebarEl: HTMLElement;
   private sidebarHeaderEl: HTMLElement;
@@ -367,10 +368,9 @@ export class VaultContentView implements ContentView {
 
       // Tables
       if (i + 1 < lines.length && /^\|(.+\|)+\s*$/.test(line) && /^\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
-        const headerCells = line.split('|').slice(1, -1).map((c) => c.trim());
+        const headerCells = this.splitTableRow(line);
         const alignLine = lines[i + 1];
-        const aligns = alignLine.split('|').slice(1, -1).map((c) => {
-          const t = c.trim();
+        const aligns = this.splitTableRow(alignLine).map((t) => {
           if (t.startsWith(':') && t.endsWith(':')) return 'center';
           if (t.endsWith(':')) return 'right';
           return 'left';
@@ -384,7 +384,7 @@ export class VaultContentView implements ContentView {
         table += '</tr></thead><tbody>';
 
         while (i < lines.length && /^\|(.+\|)+\s*$/.test(lines[i])) {
-          const cells = lines[i].split('|').slice(1, -1).map((c) => c.trim());
+          const cells = this.splitTableRow(lines[i]);
           table += '<tr>';
           for (let c = 0; c < cells.length; c++) {
             table += `<td style="text-align:${aligns[c] ?? 'left'}">${this.inlineFormat(cells[c])}</td>`;
@@ -490,6 +490,15 @@ export class VaultContentView implements ContentView {
     html = html.replace(/(^|\s)#([a-zA-Z][\w/-]*)/g, '$1<span class="krypton-vault__tag">#$2</span>');
 
     return html;
+  }
+
+  // Split a markdown table row on unescaped `|` separators, then unescape `\|` → `|`
+  // in each cell. Needed for Obsidian wikilinks like [[page\|alias]] inside a cell.
+  private splitTableRow(line: string): string[] {
+    return line
+      .split(/(?<!\\)\|/)
+      .slice(1, -1)
+      .map((c) => c.trim().replace(/\\\|/g, '|'));
   }
 
   private escapeHtml(str: string): string {
@@ -777,9 +786,51 @@ export class VaultContentView implements ContentView {
         }
         return true;
 
+      case 'y':
+        this.copyPath(false);
+        return true;
+
+      case 'Y':
+        this.copyPath(true);
+        return true;
+
       default:
         return false;
     }
+  }
+
+  private copyPath(absolute: boolean): void {
+    const rel = this.pathForYank();
+    if (!rel) {
+      this.flashStatus('NO PATH TO COPY');
+      return;
+    }
+    const text = absolute ? `${this.vaultRoot.replace(/\/$/, '')}/${rel}` : rel;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => this.flashStatus(`COPIED  ${text}`))
+      .catch(() => this.flashStatus('COPY FAILED'));
+  }
+
+  private pathForYank(): string | null {
+    if (this.sidebarMode === 'files' || this.sidebarMode === 'backlinks') {
+      const items = this.getListItems();
+      const sel = items[this.selectedIndex];
+      if (sel) return sel;
+    }
+    return this.currentFile;
+  }
+
+  private flashStatus(text: string): void {
+    if (this.statusFlashTimer !== null) {
+      window.clearTimeout(this.statusFlashTimer);
+    }
+    const prev = this.statusBarEl.textContent ?? '';
+    this.statusBarEl.textContent = text;
+    this.statusFlashTimer = window.setTimeout(() => {
+      this.statusBarEl.textContent = prev;
+      this.statusFlashTimer = null;
+    }, 1500);
   }
 
   dispose(): void {
