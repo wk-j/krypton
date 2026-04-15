@@ -885,6 +885,10 @@ export class VaultContentView implements ContentView {
         }
         return true;
 
+      case 'r':
+        this.reload();
+        return true;
+
       default:
         return false;
     }
@@ -922,6 +926,19 @@ export class VaultContentView implements ContentView {
       this.statusBarEl.textContent = prev;
       this.statusFlashTimer = null;
     }, 1500);
+  }
+
+  private async reload(): Promise<void> {
+    this.statusBarEl.textContent = 'RELOADING...';
+    this.index = await buildVaultIndex(this.vaultRoot);
+    this.renderSidebarList();
+    if (this.currentFile) {
+      await this.openFile(this.currentFile);
+    } else {
+      const fileCount = this.index.files.size;
+      const linkCount = [...this.index.backlinks.values()].reduce((sum, arr) => sum + arr.length, 0);
+      this.statusBarEl.textContent = `FILES: ${fileCount}  LINKS: ${linkCount}`;
+    }
   }
 
   dispose(): void {
