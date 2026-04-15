@@ -6,8 +6,12 @@
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  --agent-bg: #1f1609;
-  --agent-panel: rgba(36, 27, 14, 0.92);
+  --agent-bg: rgba(6, 10, 18, 0.55);
+  --agent-panel: rgba(6, 10, 18, 0.82);
+  --agent-surface-low: rgba(6, 10, 18, 0.35);
+  --agent-surface-mid: rgba(6, 10, 18, 0.55);
+  --agent-surface-high: rgba(6, 10, 18, 0.85);
+  --agent-surface-solid: rgba(8, 12, 22, 0.96);
   --agent-border: rgba(255, 176, 0, 0.25);
   --agent-border-active: rgba(255, 176, 0, 0.5);
   --agent-primary: #ffb000;
@@ -147,7 +151,7 @@
 
 .krypton-window[data-content-type="agent"] .krypton-window__tabbar {
   border-top: 1px solid rgba(var(--agent-primary-rgb), 0.12) !important;
-  background: rgba(31, 22, 9, 0.4) !important;
+  background: var(--agent-surface-mid) !important;
 }
 
 .krypton-window[data-content-type="agent"] .krypton-window__tab {
@@ -434,7 +438,7 @@
 .agent-view__msg-body--markdown pre {
   margin: 0.6em 0;
   padding: 10px 14px;
-  background: rgba(20, 14, 6, 0.55);
+  background: var(--agent-surface-mid);
   border: 1px solid rgba(var(--agent-primary-rgb), 0.12);
   border-left: 2px solid rgba(var(--agent-primary-rgb), 0.35);
   overflow-x: auto;
@@ -867,7 +871,7 @@
   color: rgba(var(--agent-primary-rgb), 0.55);
   text-shadow: 0 0 4px rgba(var(--agent-primary-rgb), 0.15);
   border-top: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-  background: rgba(31, 22, 9, 0.85);
+  background: var(--agent-surface-high);
   flex-shrink: 0;
   user-select: none;
   position: relative;
@@ -931,7 +935,7 @@
   border-top: 1px solid rgba(var(--agent-primary-rgb), 0.2);
   flex-shrink: 0;
   position: relative;
-  background: rgba(31, 22, 9, 0.35);
+  background: var(--agent-surface-low);
 }
 
 /* Ruled accent above input */
@@ -1041,7 +1045,7 @@
   padding: 4px 0;
   margin: 0 16px;
   border: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-  background: rgba(36, 27, 14, 0.96);
+  background: var(--agent-surface-solid);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.5),
     0 0 1px rgba(var(--agent-primary-rgb), 0.15);
