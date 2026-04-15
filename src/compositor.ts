@@ -707,6 +707,7 @@ export class Compositor {
         const pane = this.findPaneInTree(tab.paneTree, paneId);
         if (pane && pane.fitAddon && pane.terminal) {
           pane.fitAddon.fit();
+          this.syncTerminalCellHeight(pane.terminal);
           if (pane.sessionId !== null) {
             invoke('resize_pty', {
               sessionId: pane.sessionId,
@@ -783,6 +784,7 @@ export class Compositor {
         pane.contentView.onResize?.(pane.element.clientWidth, pane.element.clientHeight);
       } else if (pane.fitAddon && pane.terminal) {
         pane.fitAddon.fit();
+        this.syncTerminalCellHeight(pane.terminal);
         if (pane.sessionId !== null) {
           invoke('resize_pty', {
             sessionId: pane.sessionId,
@@ -794,6 +796,18 @@ export class Compositor {
     } else {
       this.fitPaneTree(node.first);
       this.fitPaneTree(node.second);
+    }
+  }
+
+  /** Sync --krypton-terminal-cell-height from actual xterm rendering.
+   *  fontSize * lineHeight underestimates real cell height because xterm measures
+   *  actual font bounding boxes via canvas — this reads the ground truth. */
+  private syncTerminalCellHeight(terminal: Terminal): void {
+    const screenEl = terminal.element?.querySelector('.xterm-screen') as HTMLElement | null;
+    if (!screenEl || terminal.rows === 0) return;
+    const cellHeight = screenEl.clientHeight / terminal.rows;
+    if (cellHeight > 0) {
+      document.documentElement.style.setProperty('--krypton-terminal-cell-height', `${cellHeight}px`);
     }
   }
 
