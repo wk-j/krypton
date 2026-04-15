@@ -1,3 +1,8 @@
+---
+name: cyberpunk-aesthetic
+description: Cyberpunk Aesthetic — Krypton UI Style Reference. Load when building new UI style modes, modifying visual chrome, adding CSS effects, or verifying new components match the existing aesthetic.
+---
+
 # Cyberpunk Aesthetic — Krypton UI Style Reference
 
 > **Trigger:** Load when building new UI style modes, modifying visual chrome, adding CSS effects, or needing to understand how the current cyberpunk look is constructed. Also useful as a checklist when ensuring new components match the existing aesthetic.

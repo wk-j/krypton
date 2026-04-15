@@ -38,15 +38,34 @@ function parseFrontmatter(content: string): Frontmatter | null {
   if (!match) return null;
 
   const yaml = match[1];
+  const lines = yaml.split('\n');
   let name = '';
   let description = '';
+  let inDescBlock = false;
 
-  for (const line of yaml.split('\n')) {
+  for (const line of lines) {
+    if (inDescBlock) {
+      if (/^\s+/.test(line)) {
+        description += (description ? ' ' : '') + line.trim();
+        continue;
+      } else {
+        inDescBlock = false;
+      }
+    }
+
     const nameMatch = line.match(/^name:\s*(.+)/);
     if (nameMatch) name = nameMatch[1].trim().replace(/^['"]|['"]$/g, '');
 
-    const descMatch = line.match(/^description:\s*(.+)/);
-    if (descMatch) description = descMatch[1].trim().replace(/^['"]|['"]$/g, '');
+    const descMatch = line.match(/^description:\s*(.*)/);
+    if (descMatch) {
+      const val = descMatch[1].trim().replace(/^['"]|['"]$/g, '');
+      if (val === '>' || val === '|') {
+        inDescBlock = true;
+        description = '';
+      } else if (val) {
+        description = val;
+      }
+    }
   }
 
   return { name: name || undefined, description: description || undefined };
@@ -93,7 +112,7 @@ async function discoverSkillFiles(projectDir: string): Promise<SkillMeta[]> {
         if (seen.has(name)) continue;
         seen.add(name);
 
-        const description = fm?.description ?? '';
+        const description = fm?.description ?? stripFrontmatter(content).slice(0, 120);
         skills.push({ name, description, path, isCommand: false });
       } catch {
         // SKILL.md doesn't exist in this subdirectory — skip

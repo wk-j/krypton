@@ -790,13 +790,19 @@ export class AgentView implements ContentView {
         if (skills.length === 0) {
           this.showSystemMessage('No skills discovered.\nPlace SKILL.md files in .claude/skills/ or .agents/skills/\nOr add commands in .claude/commands/*.md');
         } else {
+          const hasCommands = skills.some((s) => s.isCommand);
+          const nameWidth = Math.max(...skills.map((s) => s.name.length)) + 1;
+          const colWidth = nameWidth + (hasCommands ? 6 : 0); // room for ' [cmd]'
           const lines = skills.map((s) => {
             const tag = s.isCommand ? ' [cmd]' : '';
-            return `  ${(s.name + tag).padEnd(28)} ${s.description}`;
+            const nameCol = (s.name + tag).padEnd(colWidth);
+            const raw = s.description || '—';
+            const desc = raw.length > 68 ? raw.slice(0, 67) + '…' : raw;
+            return `  ${nameCol}  ${desc}`;
           });
           const active = this.controller.getLastActiveSkills();
           const activeNote = active.length > 0 ? `\n\nLast active: ${active.join(', ')}` : '';
-          this.showSystemMessage(`Discovered skills (${skills.length}):\n${lines.join('\n')}${activeNote}`);
+          this.showSystemMessage(`Discovered skills (${skills.length}):\n\n${lines.join('\n')}${activeNote}`);
         }
         return true;
       }
