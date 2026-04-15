@@ -136,24 +136,36 @@
 }
 
 .krypton-file-manager__preview-markdown a {
-  color: var(--fm-amber-bright);
+  color: #4fc3f7;
   text-decoration: underline;
   text-decoration-style: dashed;
+  text-shadow: 0 0 6px rgba(79, 195, 247, 0.3);
+}
+
+.krypton-file-manager__preview-markdown strong {
+  color: var(--fm-amber-bright);
+  font-weight: 700;
+}
+
+.krypton-file-manager__preview-markdown em {
+  color: #b39ddb;
+  font-style: italic;
 }
 
 .krypton-file-manager__preview-markdown code {
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
   font-size: 0.9em;
-  background: rgba(var(--fm-amber-rgb), 0.08);
-  border: 1px solid rgba(var(--fm-amber-rgb), 0.15);
+  background: rgba(79, 195, 247, 0.07);
+  border: 1px solid rgba(79, 195, 247, 0.18);
   padding: 2px 5px;
   border-radius: 2px;
-  color: var(--fm-amber-bright);
+  color: #81c784;
 }
 
 .krypton-file-manager__preview-markdown pre {
   background: rgba(10, 7, 3, 0.6);
-  border: 1px solid var(--fm-border);
+  border: 1px solid rgba(79, 195, 247, 0.12);
+  border-left: 3px solid rgba(79, 195, 247, 0.35);
   border-radius: 2px;
   padding: 12px;
   overflow-x: auto;
@@ -173,10 +185,11 @@
 }
 
 .krypton-file-manager__preview-markdown blockquote {
-  border-left: 3px solid var(--fm-amber-dim);
+  border-left: 3px solid #b39ddb;
   margin: 1em 0;
   padding: 0.5em 1em;
-  opacity: 0.85;
+  color: rgba(232, 213, 176, 0.7);
+  background: rgba(179, 157, 219, 0.04);
 }
 
 .krypton-file-manager__preview-markdown ul,
@@ -194,7 +207,7 @@
 }
 
 .krypton-file-manager__preview-markdown li::marker {
-  color: var(--fm-amber-dim);
+  color: #4db6ac;
 }
 
 .krypton-file-manager__preview-markdown table {
@@ -211,16 +224,20 @@
 }
 
 .krypton-file-manager__preview-markdown th {
-  background: rgba(var(--fm-amber-rgb), 0.08);
-  color: var(--fm-amber);
+  background: rgba(79, 195, 247, 0.06);
+  color: #4fc3f7;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-size: 0.9em;
 }
 
+.krypton-file-manager__preview-markdown tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .krypton-file-manager__preview-markdown hr {
   border: none;
-  border-top: 1px solid var(--fm-border);
+  border-top: 1px solid rgba(79, 195, 247, 0.15);
   margin: 1.5em 0;
 }
 
@@ -491,39 +508,53 @@
   color: #ffaa00;
 }
 
-/* ─── Syntax Highlighting — warm phosphor palette ─── */
+/* ─── Syntax Highlighting ─── */
 
 .krypton-file-manager__preview-content [class^="hljs"] { color: var(--fm-warm-white); }
 .krypton-file-manager__preview-content .hljs-comment,
-.krypton-file-manager__preview-content .hljs-quote { color: rgba(168, 144, 112, 0.7); font-style: italic; }
+.krypton-file-manager__preview-content .hljs-quote { color: rgba(168, 144, 112, 0.6); font-style: italic; }
+/* Keywords: cyan */
 .krypton-file-manager__preview-content .hljs-keyword,
-.krypton-file-manager__preview-content .hljs-selector-tag { color: var(--fm-amber); text-shadow: 0 0 6px rgba(var(--fm-amber-rgb), 0.3); }
+.krypton-file-manager__preview-content .hljs-selector-tag { color: #4fc3f7; text-shadow: 0 0 6px rgba(79, 195, 247, 0.25); }
+/* Strings: green */
 .krypton-file-manager__preview-content .hljs-string,
-.krypton-file-manager__preview-content .hljs-addition { color: #a8c97e; }
+.krypton-file-manager__preview-content .hljs-addition { color: #81c784; }
+/* Numbers / literals: coral */
 .krypton-file-manager__preview-content .hljs-number,
-.krypton-file-manager__preview-content .hljs-literal { color: #e8a060; }
+.krypton-file-manager__preview-content .hljs-literal { color: #ff8a65; }
+/* Functions / titles: amber (brand anchor) */
 .krypton-file-manager__preview-content .hljs-function,
 .krypton-file-manager__preview-content .hljs-title { color: var(--fm-amber-bright); text-shadow: 0 0 6px rgba(var(--fm-amber-rgb), 0.2); }
-.krypton-file-manager__preview-content .hljs-params { color: #d4c0a0; }
-.krypton-file-manager__preview-content .hljs-built_in { color: #e0a848; }
+/* Types / classes: lavender */
 .krypton-file-manager__preview-content .hljs-type,
-.krypton-file-manager__preview-content .hljs-class { color: #d4a84c; }
-.krypton-file-manager__preview-content .hljs-variable,
-.krypton-file-manager__preview-content .hljs-template-variable { color: #d8c8a8; }
+.krypton-file-manager__preview-content .hljs-class { color: #b39ddb; }
+/* Built-ins: teal */
+.krypton-file-manager__preview-content .hljs-built_in { color: #4db6ac; }
+/* Attributes / properties: yellow-green */
 .krypton-file-manager__preview-content .hljs-attr,
-.krypton-file-manager__preview-content .hljs-property { color: #c8a860; }
-.krypton-file-manager__preview-content .hljs-tag { color: #b89848; }
-.krypton-file-manager__preview-content .hljs-name { color: var(--fm-amber); }
-.krypton-file-manager__preview-content .hljs-selector-class { color: #a8c97e; }
-.krypton-file-manager__preview-content .hljs-selector-id { color: var(--fm-amber-bright); }
+.krypton-file-manager__preview-content .hljs-property { color: #d4e157; }
+/* Tags (HTML): pink */
+.krypton-file-manager__preview-content .hljs-tag { color: #f06292; }
+.krypton-file-manager__preview-content .hljs-name { color: #f06292; }
+/* Selectors */
+.krypton-file-manager__preview-content .hljs-selector-class { color: #81c784; }
+.krypton-file-manager__preview-content .hljs-selector-id { color: #ffa726; }
+/* Meta / decorators: orange */
 .krypton-file-manager__preview-content .hljs-meta,
-.krypton-file-manager__preview-content .hljs-doctag { color: #a89878; }
+.krypton-file-manager__preview-content .hljs-doctag { color: #ffa726; }
+/* Params / variables: warm white (readable but not distracting) */
+.krypton-file-manager__preview-content .hljs-params { color: #d4c0a0; }
+.krypton-file-manager__preview-content .hljs-variable,
+.krypton-file-manager__preview-content .hljs-template-variable { color: #d4c0a0; }
+/* Punctuation / operators: dim */
 .krypton-file-manager__preview-content .hljs-punctuation,
-.krypton-file-manager__preview-content .hljs-operator { color: #b8a888; }
-.krypton-file-manager__preview-content .hljs-deletion { color: #ff6060; }
+.krypton-file-manager__preview-content .hljs-operator { color: rgba(232, 213, 176, 0.45); }
+/* Diff */
+.krypton-file-manager__preview-content .hljs-deletion { color: #ef5350; }
+/* Symbols / bullets / regexp */
 .krypton-file-manager__preview-content .hljs-symbol,
-.krypton-file-manager__preview-content .hljs-bullet { color: #d4a84c; }
-.krypton-file-manager__preview-content .hljs-regexp { color: #e0b860; }
+.krypton-file-manager__preview-content .hljs-bullet { color: #4db6ac; }
+.krypton-file-manager__preview-content .hljs-regexp { color: #ff7043; }
 
 /* ─── Fuzzy Search Match Highlight ─── */
 
