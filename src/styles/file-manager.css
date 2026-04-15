@@ -313,6 +313,55 @@
   font-style: italic;
 }
 
+/* ── File type colours ── */
+
+/* Code: cyan-blue */
+.krypton-file-manager__item--ft-code .krypton-file-manager__name { color: #4fc3f7; }
+.krypton-file-manager__item--ft-code .krypton-file-manager__icon { color: #4fc3f7; opacity: 0.6; }
+
+/* Config/dotfiles: lavender */
+.krypton-file-manager__item--ft-config .krypton-file-manager__name { color: #b39ddb; }
+.krypton-file-manager__item--ft-config .krypton-file-manager__icon { color: #b39ddb; opacity: 0.6; }
+
+/* Markup (HTML/CSS/XML/SVG): teal */
+.krypton-file-manager__item--ft-markup .krypton-file-manager__name { color: #4db6ac; }
+.krypton-file-manager__item--ft-markup .krypton-file-manager__icon { color: #4db6ac; opacity: 0.6; }
+
+/* Docs/text/markdown: green */
+.krypton-file-manager__item--ft-doc .krypton-file-manager__name { color: #81c784; }
+.krypton-file-manager__item--ft-doc .krypton-file-manager__icon { color: #81c784; opacity: 0.6; }
+
+/* Images: pink */
+.krypton-file-manager__item--ft-image .krypton-file-manager__name { color: #f06292; }
+.krypton-file-manager__item--ft-image .krypton-file-manager__icon { color: #f06292; opacity: 0.6; }
+
+/* Audio/video: coral */
+.krypton-file-manager__item--ft-media .krypton-file-manager__name { color: #ff7043; }
+.krypton-file-manager__item--ft-media .krypton-file-manager__icon { color: #ff7043; opacity: 0.6; }
+
+/* Archives: orange */
+.krypton-file-manager__item--ft-archive .krypton-file-manager__name { color: #ffa726; }
+.krypton-file-manager__item--ft-archive .krypton-file-manager__icon { color: #ffa726; opacity: 0.6; }
+
+/* Data/databases: blue-grey */
+.krypton-file-manager__item--ft-data .krypton-file-manager__name { color: #78909c; }
+.krypton-file-manager__item--ft-data .krypton-file-manager__icon { color: #78909c; opacity: 0.6; }
+
+/* Scripts/shell: yellow-green */
+.krypton-file-manager__item--ft-script .krypton-file-manager__name { color: #d4e157; }
+.krypton-file-manager__item--ft-script .krypton-file-manager__icon { color: #d4e157; opacity: 0.6; }
+
+/* Cursor row: keep type colour but brighten it */
+.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-code .krypton-file-manager__name { color: #81d4fa; text-shadow: 0 0 8px rgba(79, 195, 247, 0.4); }
+.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-config .krypton-file-manager__name { color: #ce93d8; text-shadow: 0 0 8px rgba(179, 157, 219, 0.4); }
+.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-markup .krypton-file-manager__name { color: #80cbc4; text-shadow: 0 0 8px rgba(77, 182, 172, 0.4); }
+.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-doc .krypton-file-manager__name { color: #a5d6a7; text-shadow: 0 0 8px rgba(129, 199, 132, 0.4); }
+.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-image .krypton-file-manager__name { color: #f48fb1; text-shadow: 0 0 8px rgba(240, 98, 146, 0.4); }
+.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-media .krypton-file-manager__name { color: #ff8a65; text-shadow: 0 0 8px rgba(255, 112, 67, 0.4); }
+.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-archive .krypton-file-manager__name { color: #ffb74d; text-shadow: 0 0 8px rgba(255, 167, 38, 0.4); }
+.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-data .krypton-file-manager__name { color: #90a4ae; text-shadow: 0 0 8px rgba(120, 144, 156, 0.4); }
+.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-script .krypton-file-manager__name { color: #e6ee9c; text-shadow: 0 0 8px rgba(212, 225, 87, 0.4); }
+
 /* ── Marked items ── */
 
 .krypton-file-manager__item--marked .krypton-file-manager__mark {
