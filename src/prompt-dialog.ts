@@ -628,9 +628,19 @@ export class PromptDialog {
       prompt = prompt.replace(/(^|\s)@selection\b/g, (_m, lead) => `${lead}${block}`);
     }
 
-    const bytes = Array.from(new TextEncoder().encode(prompt + '\r'));
+    // Wrap in bracketed paste so embedded newlines land as a single paste event
+    // in Claude's input buffer instead of submitting each line as its own message.
+    // Strip any literal end-marker to prevent prompt content from escaping the paste.
+    const safe = prompt.replace(/\x1b\[201~/g, '');
+    const pasteBytes = Array.from(new TextEncoder().encode(`\x1b[200~${safe}\x1b[201~`));
+    const submitBytes = Array.from(new TextEncoder().encode('\r'));
     try {
-      await invoke('write_to_pty', { sessionId: target.sessionId, data: bytes });
+      // Split paste and submit into two writes with a frame of delay so Ink's
+      // stdin reader sees them as separate events — otherwise the `\r` is
+      // swallowed as the paste's tail byte and never fires onSubmit.
+      await invoke('write_to_pty', { sessionId: target.sessionId, data: pasteBytes });
+      await new Promise((r) => setTimeout(r, 30));
+      await invoke('write_to_pty', { sessionId: target.sessionId, data: submitBytes });
       lastUsedSessionId = target.sessionId;
       this.compositor.flashWindow(target.windowId as WindowId);
       this.close();

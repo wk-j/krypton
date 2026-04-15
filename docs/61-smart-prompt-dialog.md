@@ -161,7 +161,16 @@ No new IPC events.
    a. If no target → toast "No target selected", abort.
    b. Expand @selection → read source tab's xterm selection, replace with fenced block.
    c. Leave @path tokens untouched (Claude Code expands them CLI-side).
-   d. invoke('write_to_pty', { sessionId: target.sessionId, data: utf8Bytes(prompt + '\r') }).
+   d. Two-step delivery: first write `\x1b[200~<prompt>\x1b[201~` (the bracketed-paste frame);
+      wait ~30ms; then write `\r` (the Enter keystroke).
+      - The split is load-bearing: if paste and submit are combined in one write, Ink's stdin
+        reader treats the trailing `\r` as the paste's tail byte and never fires onSubmit. The
+        delay makes the two bytes arrive in separate read() calls, mirroring how a human's
+        Cmd+V-then-Enter looks at the byte level.
+      - Bracketed paste ensures embedded `\n` (from Shift+Enter) is inserted into Claude's input
+        buffer rather than interpreted as per-line submits.
+      - Any literal `\x1b[201~` in the prompt is stripped first so user content can't escape the
+        paste frame.
    e. lastUsedSessionId = target.sessionId.
    f. Compositor.flashWindow(target.windowId) — 400ms CSS glow pulse.
    g. Close dialog, return to previous mode.
@@ -255,7 +264,7 @@ file_index_limit = 5000          # max files per CWD in autocomplete
 - **Backspace past the `@`:** dismiss popup, resume normal typing.
 - **`rg` not installed:** backend falls back to `walkdir` (respects a minimal ignore list: `.git`, `node_modules`, `target`, `dist`).
 - **`get_pty_cwd` returns None (process gone):** show error, close dialog.
-- **Prompt contains literal `\r` or `\n` sequences:** `\n` is converted to `\r` on write (terminal newline convention); multiline prompts use heredoc or bracketed paste — out of scope for v1, see Out of Scope.
+- **Prompt contains literal `\r` or `\n` sequences:** the full payload is wrapped in bracketed paste (`\x1b[200~…\x1b[201~`) before the trailing `\r`, so Shift+Enter newlines survive as newlines inside Claude's input buffer rather than being interpreted as per-line submits. Any literal `\x1b[201~` in the prompt is stripped before wrapping.
 - **Selection on source tab is empty but `@selection` used:** expand to empty string (no fenced block) and surface a warning toast.
 - **Dialog opened while an animation is in progress:** input router already buffers during animations; respect the same buffering.
 
@@ -265,7 +274,6 @@ None — all resolved in conversation (v1 scope: `@path` + `@selection`; backend
 
 ## Out of Scope
 
-- Bracketed-paste handling for multiline prompts (v2 — current impl joins lines with `\r`).
 - `@window` (reference another terminal's buffer) and `@clipboard` — deferred to v2.
 - Manual "mark as Claude tab" override — deferred to v2 if auto-detect proves unreliable.
 - Glob patterns in `@path` — Claude Code does not support, we will not either.
