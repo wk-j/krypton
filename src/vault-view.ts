@@ -3,6 +3,8 @@ import type { VaultIndex, VaultFile } from './vault-parser';
 import { buildVaultIndex, readVaultFile } from './vault-parser';
 
 type SidebarMode = 'files' | 'backlinks' | 'outline' | 'tags';
+type FileSortField = 'title' | 'modified' | 'name' | 'type';
+type FileSortOrder = 'asc' | 'desc';
 
 export class VaultContentView implements ContentView {
   readonly type: PaneContentType = 'vault';
@@ -19,6 +21,8 @@ export class VaultContentView implements ContentView {
   private filterActive = false;
   private selectedIndex = 0;
   private activeTag: string | null = null;
+  private fileSortField: FileSortField = 'modified';
+  private fileSortOrder: FileSortOrder = 'desc';
   private closeCb: (() => void) | null = null;
   private linkHintActive = false;
   private linkHintLabels: HTMLElement[] = [];
@@ -28,6 +32,7 @@ export class VaultContentView implements ContentView {
 
   private sidebarEl: HTMLElement;
   private sidebarHeaderEl: HTMLElement;
+  private sidebarTitleEl!: HTMLElement;
   private sidebarTabsEl: HTMLElement;
   private filterEl: HTMLElement;
   private filterInputEl: HTMLInputElement;
@@ -51,10 +56,10 @@ export class VaultContentView implements ContentView {
     this.sidebarHeaderEl = document.createElement('div');
     this.sidebarHeaderEl.className = 'krypton-vault__sidebar-header';
 
-    const title = document.createElement('div');
-    title.className = 'krypton-vault__sidebar-title';
-    title.textContent = 'VAULT INDEX';
-    this.sidebarHeaderEl.appendChild(title);
+    this.sidebarTitleEl = document.createElement('div');
+    this.sidebarTitleEl.className = 'krypton-vault__sidebar-title';
+    this.sidebarTitleEl.textContent = 'VAULT INDEX';
+    this.sidebarHeaderEl.appendChild(this.sidebarTitleEl);
 
     this.sidebarTabsEl = document.createElement('div');
     this.sidebarTabsEl.className = 'krypton-vault__sidebar-tabs';
@@ -159,12 +164,36 @@ export class VaultContentView implements ContentView {
 
     switch (this.sidebarMode) {
       case 'files': {
-        let all = [...this.index.files.keys()]
-          .filter((f) => {
-            const file = this.index!.files.get(f);
-            return file != null && file.frontmatterTags.length > 0;
-          })
-          .sort();
+        let all = [...this.index.files.keys()].filter((f) => {
+          const file = this.index!.files.get(f);
+          return file != null && file.frontmatterTags.length > 0;
+        });
+        const dir = this.fileSortOrder === 'asc' ? 1 : -1;
+        all.sort((a, b) => {
+          switch (this.fileSortField) {
+            case 'title': {
+              const ta = this.index!.files.get(a)?.title ?? a.split('/').pop() ?? a;
+              const tb = this.index!.files.get(b)?.title ?? b.split('/').pop() ?? b;
+              return dir * ta.localeCompare(tb);
+            }
+            case 'name':
+              return dir * a.toLowerCase().localeCompare(b.toLowerCase());
+            case 'modified': {
+              const ma = this.index!.files.get(a)?.modifiedAt ?? 0;
+              const mb = this.index!.files.get(b)?.modifiedAt ?? 0;
+              return dir * (ma - mb);
+            }
+            case 'type': {
+              const fa = this.index!.files.get(a);
+              const fb = this.index!.files.get(b);
+              const ta = fa ? this.getDocType(a, fa) : '';
+              const tb = fb ? this.getDocType(b, fb) : '';
+              return dir * ta.localeCompare(tb);
+            }
+            default:
+              return 0;
+          }
+        });
         if (this.activeTag) {
           const tagged = new Set(this.index.tags.get(this.activeTag) ?? []);
           all = all.filter((f) => tagged.has(f));
@@ -194,6 +223,40 @@ export class VaultContentView implements ContentView {
     }
   }
 
+  private getDocType(relativePath: string, file: VaultFile): string {
+    const fmType = file.frontmatter['type'];
+    if (typeof fmType === 'string' && fmType) return fmType.toLowerCase();
+    if (relativePath.startsWith('raw/')) return 'clipping';
+    const fmSource = file.frontmatter['source'];
+    if (typeof fmSource === 'string' && fmSource.startsWith('http')) return 'clipping';
+    const basename = relativePath.split('/').pop() ?? '';
+    if (basename === 'log.md') return 'log';
+    if (basename === 'index.md') return 'index';
+    return '';
+  }
+
+  private docTypeAbbr(docType: string): string {
+    const map: Record<string, string> = {
+      concept: 'CON',
+      entity: 'ENT',
+      source: 'SRC',
+      clipping: 'CLIP',
+      log: 'LOG',
+      index: 'IDX',
+      analysis: 'ANA',
+    };
+    return map[docType] ?? docType.slice(0, 3).toUpperCase();
+  }
+
+  private updateSortIndicator(): void {
+    if (this.sidebarMode === 'files') {
+      const arrow = this.fileSortOrder === 'asc' ? '↑' : '↓';
+      this.sidebarTitleEl.textContent = `VAULT INDEX  ${this.fileSortField}${arrow}`;
+    } else {
+      this.sidebarTitleEl.textContent = 'VAULT INDEX';
+    }
+  }
+
   private renderSidebarTabs(): void {
     this.sidebarTabsEl.innerHTML = '';
     const modes: SidebarMode[] = ['files', 'backlinks', 'outline', 'tags'];
@@ -215,6 +278,7 @@ export class VaultContentView implements ContentView {
   }
 
   private renderSidebarList(): void {
+    this.updateSortIndicator();
     this.sidebarListEl.innerHTML = '';
     const items = this.getListItems();
 
@@ -241,14 +305,23 @@ export class VaultContentView implements ContentView {
       }
 
       let label: string;
+      let docType = '';
       if (this.sidebarMode === 'files') {
         const file = this.index?.files.get(items[i]);
         label = file?.title ?? items[i].split('/').pop() ?? items[i];
+        if (file) docType = this.getDocType(items[i], file);
       } else if (this.sidebarMode === 'tags') {
         const count = this.index?.tags.get(items[i])?.length ?? 0;
         label = `#${items[i]}  (${count})`;
       } else {
         label = items[i];
+      }
+
+      if (docType) {
+        const typeEl = document.createElement('span');
+        typeEl.className = `krypton-vault__doc-type krypton-vault__doc-type--${docType}`;
+        typeEl.textContent = this.docTypeAbbr(docType);
+        el.appendChild(typeEl);
       }
 
       const labelEl = document.createElement('span');
@@ -792,6 +865,24 @@ export class VaultContentView implements ContentView {
 
       case 'Y':
         this.copyPath(true);
+        return true;
+
+      case 's':
+        if (this.sidebarMode === 'files') {
+          const fields: FileSortField[] = ['title', 'modified', 'name', 'type'];
+          const idx = fields.indexOf(this.fileSortField);
+          this.fileSortField = fields[(idx + 1) % fields.length];
+          this.selectedIndex = 0;
+          this.renderSidebarList();
+        }
+        return true;
+
+      case 'S':
+        if (this.sidebarMode === 'files') {
+          this.fileSortOrder = this.fileSortOrder === 'asc' ? 'desc' : 'asc';
+          this.selectedIndex = 0;
+          this.renderSidebarList();
+        }
         return true;
 
       default:
