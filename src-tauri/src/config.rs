@@ -410,6 +410,9 @@ pub struct AgentModelConfig {
     pub context_window: u32,
     /// Maximum output tokens
     pub max_tokens: u32,
+    /// Whether this model supports image input (vision)
+    #[serde(default)]
+    pub vision: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -431,6 +434,7 @@ impl Default for AgentConfig {
                     api_key_env: "ZAI_API_KEY".to_string(),
                     context_window: 128000,
                     max_tokens: 8192,
+                    vision: false,
                 },
                 AgentModelConfig {
                     name: "ollama-qwen3.5".to_string(),
@@ -440,6 +444,7 @@ impl Default for AgentConfig {
                     api_key_env: "".to_string(),
                     context_window: 32768,
                     max_tokens: 8192,
+                    vision: false,
                 },
                 AgentModelConfig {
                     name: "ollama-gemma4".to_string(),
@@ -449,6 +454,7 @@ impl Default for AgentConfig {
                     api_key_env: "".to_string(),
                     context_window: 128000,
                     max_tokens: 8192,
+                    vision: false,
                 },
             ],
         }

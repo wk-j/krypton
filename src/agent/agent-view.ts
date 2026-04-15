@@ -6,7 +6,7 @@ import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
-import { AgentController, type AgentEventType } from './agent';
+import { AgentController, type AgentEventType, type ImageContent } from './agent';
 import type { ContentView, PaneContentType } from '../types';
 import { invoke } from '../profiler/ipc';
 
@@ -93,6 +93,10 @@ export class AgentView implements ContentView {
   private savedScrollTop = 0;
   private pendingScrollToBottom = false;
 
+  // Staged images (pending attachment for next submit)
+  private stagedImages: ImageContent[] = [];
+  private stagingAreaEl!: HTMLElement;
+
   // Message virtualization — collapse off-screen messages to reduce DOM complexity
   private virtualObserver: IntersectionObserver | null = null;
   private collapsedMessages = new Map<HTMLElement, { html: string; height: number }>();
@@ -135,15 +139,54 @@ export class AgentView implements ContentView {
     this.statusLineEl = document.createElement('div');
     this.statusLineEl.className = 'agent-view__status-line';
 
+    // Staging area (hidden until images are staged)
+    this.stagingAreaEl = document.createElement('div');
+    this.stagingAreaEl.className = 'agent-view__staging';
+    this.stagingAreaEl.style.display = 'none';
+
     this.inputRowEl.appendChild(this.promptGlyphEl);
     this.inputRowEl.appendChild(this.inputDisplayEl);
 
     // Handle paste from native macOS Edit menu (Cmd+V triggers menu before JS keydown)
     this.element.addEventListener('paste', (e: ClipboardEvent) => {
       e.preventDefault();
+      if (this.state !== 'input') return;
+
+      // Check for image items first
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) this.stageImageFile(file);
+            return;
+          }
+        }
+      }
+
+      // Fall through to text paste
       const text = e.clipboardData?.getData('text');
-      if (text && this.state === 'input') {
-        this.insert(text);
+      if (text) this.insert(text);
+    });
+
+    // Drag-drop image support
+    this.element.addEventListener('dragover', (e: DragEvent) => {
+      e.preventDefault();
+      this.element.classList.add('agent-view--drag-over');
+    });
+    this.element.addEventListener('dragleave', () => {
+      this.element.classList.remove('agent-view--drag-over');
+    });
+    this.element.addEventListener('drop', (e: DragEvent) => {
+      e.preventDefault();
+      this.element.classList.remove('agent-view--drag-over');
+      const files = e.dataTransfer?.files;
+      if (!files) return;
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('image/')) {
+          this.stageImageFile(file);
+          break; // one image per drop event
+        }
       }
     });
 
@@ -165,6 +208,7 @@ export class AgentView implements ContentView {
     this.element.appendChild(this.stateHintEl);
     this.element.appendChild(this.autocompleteEl);
     this.element.appendChild(this.statusLineEl);
+    this.element.appendChild(this.stagingAreaEl);
     this.element.appendChild(this.inputRowEl);
 
     this.renderInput();
@@ -216,6 +260,58 @@ export class AgentView implements ContentView {
     this.virtualObserver?.observe(el);
   }
 
+  // ─── Image staging ───────────────────────────────────────────────
+
+  private stageImageFile(file: File): void {
+    const MAX_IMAGES = 4;
+    const MAX_BYTES = 5 * 1024 * 1024; // 5MB
+
+    if (this.stagedImages.length >= MAX_IMAGES) {
+      this.showSystemMessage(`Max ${MAX_IMAGES} images per message.`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      // Strip "data:<mime>;base64," prefix
+      const commaIdx = dataUrl.indexOf(',');
+      const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+
+      if (base64.length > MAX_BYTES * 1.34) { // base64 is ~4/3 of raw size
+        this.showSystemMessage('Image too large (max 5MB).');
+        return;
+      }
+
+      this.stagedImages.push({ type: 'image', data: base64, mimeType: file.type });
+      this.renderStagingArea();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  private renderStagingArea(): void {
+    if (this.stagedImages.length === 0) {
+      this.stagingAreaEl.style.display = 'none';
+      this.stagingAreaEl.innerHTML = '';
+      return;
+    }
+
+    this.stagingAreaEl.style.display = 'flex';
+    this.stagingAreaEl.innerHTML = '';
+
+    for (const img of this.stagedImages) {
+      const thumb = document.createElement('img');
+      thumb.className = 'agent-view__staged-thumb';
+      thumb.src = `data:${img.mimeType};base64,${img.data}`;
+      this.stagingAreaEl.appendChild(thumb);
+    }
+
+    const hint = document.createElement('span');
+    hint.className = 'agent-view__staging-hint';
+    hint.textContent = 'Ctrl+C to clear';
+    this.stagingAreaEl.appendChild(hint);
+  }
+
   // ─── Session ──────────────────────────────────────────────────────
 
   private async restoreSession(): Promise<void> {
@@ -260,7 +356,7 @@ export class AgentView implements ContentView {
 
   // ─── DOM helpers ─────────────────────────────────────────────────
 
-  private appendUserMessageDom(text: string): void {
+  private appendUserMessageDom(text: string, images?: ImageContent[]): void {
     this.logoEl.classList.add('agent-view__logo--hidden');
 
     const msg = document.createElement('div');
@@ -272,7 +368,25 @@ export class AgentView implements ContentView {
 
     const body = document.createElement('div');
     body.className = 'agent-view__msg-body';
-    body.textContent = text;
+
+    // Render image thumbnails before text
+    if (images && images.length > 0) {
+      const thumbRow = document.createElement('div');
+      thumbRow.className = 'agent-view__msg-thumbs';
+      for (const img of images) {
+        const thumb = document.createElement('img');
+        thumb.className = 'agent-view__msg-thumb';
+        thumb.src = `data:${img.mimeType};base64,${img.data}`;
+        thumbRow.appendChild(thumb);
+      }
+      body.appendChild(thumbRow);
+    }
+
+    if (text) {
+      const textEl = document.createElement('div');
+      textEl.textContent = text;
+      body.appendChild(textEl);
+    }
 
     msg.appendChild(label);
     msg.appendChild(body);
@@ -1001,10 +1115,13 @@ export class AgentView implements ContentView {
 
   private async submit(): Promise<void> {
     const text = this.inputText.trim();
-    if (!text) return;
+    const hasImages = this.stagedImages.length > 0;
 
-    // Save to history
-    if (this.promptHistory[this.promptHistory.length - 1] !== text) {
+    // Require at least text or images
+    if (!text && !hasImages) return;
+
+    // Save to history (text only)
+    if (text && this.promptHistory[this.promptHistory.length - 1] !== text) {
       this.promptHistory.push(text);
     }
     this.historyIdx = -1;
@@ -1014,8 +1131,11 @@ export class AgentView implements ContentView {
     this.cursorPos = 0;
     this.renderInput();
 
-    // Handle shell commands (! prefix)
+    // Shell and slash commands don't support image context — clear images and handle normally
     if (text.startsWith('!')) {
+      const images = this.stagedImages.splice(0);
+      this.renderStagingArea();
+      void images; // images discarded for shell commands
       const command = text.slice(1).trim();
       if (!command) {
         this.showSystemMessage('Usage: !<command>\nExecute shell command directly.\nExample: !ls -la');
@@ -1025,8 +1145,9 @@ export class AgentView implements ContentView {
       return;
     }
 
-    // Handle slash commands (built-in, then custom .claude/commands/)
     if (text.startsWith('/')) {
+      this.stagedImages = [];
+      this.renderStagingArea();
       if (this.handleSlashCommand(text)) return;
       if (await this.handleCustomCommand(text)) return;
       this.showSystemMessage(`Unknown command: ${text.split(/\s+/)[0]}\nType /help for available commands.`);
@@ -1035,15 +1156,26 @@ export class AgentView implements ContentView {
 
     if (this.controller.isRunning) return;
 
+    // Warn if images staged but model doesn't support vision
+    if (hasImages && !this.controller.supportsVision()) {
+      this.showSystemMessage(
+        'Current model doesn\'t support vision — images will be ignored.\nSwitch to a vision model with /model.',
+      );
+    }
+
+    // Snapshot and clear staged images before async work
+    const images = this.stagedImages.splice(0);
+    this.renderStagingArea();
+
     // Render user message and show processing indicator immediately
-    this.appendUserMessageDom(text);
+    this.appendUserMessageDom(text, images);
     this.scrollToBottom();
     this.startSpinner();
     this.startTimer();
     this.inputRowEl.classList.add('agent-view__input-row--busy');
 
     try {
-      await this.controller.prompt(text, (e) => this.handleAgentEvent(e));
+      await this.controller.prompt(text, (e) => this.handleAgentEvent(e), undefined, images);
     } catch (e) {
       this.handleAgentEvent({ type: 'error', message: `Unexpected error: ${e}` });
     }
@@ -1111,7 +1243,7 @@ export class AgentView implements ContentView {
       return true;
     }
 
-    // Abort (Ctrl+C) — clear input if idle, abort if running
+    // Abort (Ctrl+C) — clear input + staged images if idle, abort if running
     if (e.code === 'KeyC' && e.ctrlKey && !e.metaKey && !e.altKey) {
       if (this.controller.isRunning) {
         this.controller.abort();
@@ -1123,6 +1255,8 @@ export class AgentView implements ContentView {
       } else {
         this.inputText = '';
         this.cursorPos = 0;
+        this.stagedImages = [];
+        this.renderStagingArea();
         this.renderInput();
       }
       return true;

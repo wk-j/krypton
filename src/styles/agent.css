@@ -1401,3 +1401,71 @@
   border-top: 1px solid rgba(var(--agent-primary-rgb), 0.08);
   flex-shrink: 0;
 }
+
+/* ═══ Image staging area ═════════════════════════════════════ */
+
+.agent-view__staging {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.15);
+  background: var(--agent-surface-low);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.agent-view__staged-thumb {
+  max-height: 48px;
+  max-width: 96px;
+  object-fit: cover;
+  border: 1px solid rgba(var(--agent-primary-rgb), 0.4);
+  border-radius: 2px;
+  opacity: 0.9;
+}
+
+.agent-view__staging-hint {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--agent-text-rgb), 0.3);
+  margin-left: auto;
+}
+
+/* ═══ User message image thumbnails ══════════════════════════ */
+
+.agent-view__msg-thumbs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.agent-view__msg-thumb {
+  max-height: 48px;
+  max-width: 96px;
+  object-fit: cover;
+  border: 1px solid rgba(var(--agent-primary-rgb), 0.3);
+  border-radius: 2px;
+  opacity: 0.85;
+}
+
+/* ═══ Drag-over overlay ═══════════════════════════════════════ */
+
+.agent-view--drag-over::after {
+  content: 'DROP IMAGE';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 10, 18, 0.75);
+  color: var(--agent-primary);
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.agent-view--drag-over {
+  position: relative;
+}

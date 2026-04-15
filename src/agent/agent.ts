@@ -61,6 +61,14 @@ interface AgentModelPreset {
   api_key_env: string;
   context_window: number;
   max_tokens: number;
+  vision?: boolean;
+}
+
+/** Image content block — matches @mariozechner/pi-ai ImageContent */
+export interface ImageContent {
+  type: 'image';
+  data: string;    // base64-encoded, no data-URL prefix
+  mimeType: string;
 }
 
 const BASE_SYSTEM_PROMPT = `You are an AI coding assistant embedded in Krypton, a keyboard-driven terminal emulator. You have tools to read files, write files, and run shell commands.
@@ -288,6 +296,11 @@ export class AgentController {
     return { ...this.cumulativeUsage };
   }
 
+  /** Whether the active model preset supports image input. */
+  supportsVision(): boolean {
+    return this.activePreset?.vision ?? false;
+  }
+
   /** Get command-type skills (from .claude/commands/) for slash command registration. */
   getCommands(): SkillMeta[] {
     return this.skillIndex.filter((s) => s.isCommand);
@@ -440,7 +453,7 @@ export class AgentController {
     }
   }
 
-  async prompt(text: string, onEvent: AgentEventCallback, commandArgs?: string): Promise<void> {
+  async prompt(text: string, onEvent: AgentEventCallback, commandArgs?: string, images?: ImageContent[]): Promise<void> {
     if (this.running) return;
 
     // Lazy init — resolve model preset and API key
@@ -484,9 +497,12 @@ export class AgentController {
       this.lastActiveSkills = [];
     }
 
-    // Persist the user message
-    const userMessage = { role: 'user', content: text, timestamp: Date.now() };
-    await this.persistMessage(userMessage);
+    // Persist the user message — strip images (base64 would bloat JSONL), append placeholder
+    const hasImages = images && images.length > 0;
+    const persistedText = hasImages
+      ? (text ? `${text}\n[${images!.length} image${images!.length > 1 ? 's' : ''} attached]` : `[${images!.length} image${images!.length > 1 ? 's' : ''} attached]`)
+      : text;
+    await this.persistMessage({ role: 'user', content: persistedText, timestamp: Date.now() });
 
     // Subscribe to events and map to our simplified AgentEventType
     this.unsubscribe = this.agent.subscribe((raw: unknown) => {
@@ -593,7 +609,15 @@ export class AgentController {
     try {
       console.log('[agent] calling agent.prompt()');
       collector.agentPromptStart(text);
-      await this.agent.prompt(text);
+      // Build multi-part UserMessage when images are present
+      if (images && images.length > 0) {
+        const contentBlocks: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
+        if (text) contentBlocks.push({ type: 'text', text });
+        for (const img of images) contentBlocks.push(img);
+        await this.agent.prompt({ role: 'user', content: contentBlocks, timestamp: Date.now() });
+      } else {
+        await this.agent.prompt(text);
+      }
       console.log('[agent] agent.prompt() resolved');
     } catch (e) {
       console.error('[agent] agent.prompt() threw:', e);

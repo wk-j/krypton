@@ -14,7 +14,7 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 10/11 |
-| M8 — Polish | In Progress | 15/16 |
+| M8 — Polish | In Progress | 16/17 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
@@ -132,6 +132,7 @@
 - [x] Cursor trail — rainbow flame particle effect (`src/cursor-trail.ts`) on both mouse cursor (document-level `mousemove` capture) and terminal text cursor (polls `buffer.active.cursorX/Y` via compositor). Particles drift upward with turbulence, cycle rainbow hues, fade with quadratic falloff. Teardrop-shaped with radial gradient + glow. Appended to `document.body` (z-index 99999). Togglable via `toggle()`.
 - [x] Agent markdown visual effects — futuristic CSS effects on AI response rendering: scanline overlay + materialize animation on assistant messages, neon glow pulse on headings, animated edge-sweep on code blocks, holographic shimmer on blockquotes, traveling pulse on horizontal rules, hover-highlight on table rows, custom `▸` bullets, neon glow on inline code/links/bold. All pure CSS, GPU-composited, theme-aware via `--krypton-window-accent-rgb`. See agent markdown effects section in `docs/42-pi-agent-integration.md`.
 - [x] Smart Prompt Dialog (`src/prompt-dialog.ts`) — global modal (`Cmd+Shift+K`) that composes a prompt and dispatches it to an active `claude` terminal tab via `write_to_pty`. Auto-detects Claude sessions through the `process-changed` event + `processBySession` cache on Compositor. Persistent target chip shows `→ Claude <cwd> pid <N>` with `Cmd+,` to reopen the picker (arrow/1-9/Enter/Esc) when multiple sessions exist. Supports `@path` autocomplete via existing `search_files` command (fuzzy-matched, cached per CWD with 10s TTL, positioned via mirrored-div caret helper in `src/caret-position.ts`), `@selection` inline-expanded from the focused xterm selection. Last-used target remembered across opens within the session. Target window gets a 600ms accent-glow flash on dispatch. New `Mode.PromptDialog`, magenta-accented dialog chrome to visually distinguish from the cyan command palette. See `docs/61-smart-prompt-dialog.md`.
+- [x] Agent image attachment — paste (Cmd+V) or drag-drop images into agent windows. Up to 4 images staged as thumbnails above the input line, sent as multi-part `UserMessage` to vision-capable models. Vision gated by `vision = true` in TOML model preset. Non-vision models warned at submit time. Images stripped from JSONL session persistence (placeholder `[N images attached]` saved instead). See `docs/62-agent-image-attachment.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 
