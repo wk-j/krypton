@@ -69,6 +69,7 @@ pub fn run() {
             commands::stat_files,
             commands::read_file,
             commands::write_file,
+            commands::save_temp_image,
             commands::get_env_var,
             commands::run_command,
             commands::get_default_shell,

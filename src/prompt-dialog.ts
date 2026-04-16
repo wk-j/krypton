@@ -131,10 +131,14 @@ export class PromptDialog {
   private textareaEl: HTMLTextAreaElement;
   private mentionPopupEl: HTMLElement;
   private footerEl: HTMLElement;
+  private stagingEl: HTMLElement;
 
   private targets: TargetEntry[] = [];
   private selectedTargetIdx = 0;
   private pickerOpen = false;
+  // Maps temp file path → base64 data URL for thumbnail rendering.
+  // Entries are added when images are pasted/dropped and the @path is inserted inline.
+  private imageThumbs = new Map<string, string>();
   private mention: MentionState = {
     active: false,
     start: -1,
@@ -161,6 +165,7 @@ export class PromptDialog {
     this.textareaEl = this.overlay.querySelector('.krypton-prompt-dialog__textarea')!;
     this.mentionPopupEl = this.overlay.querySelector('.krypton-prompt-dialog__mention-popup')!;
     this.footerEl = this.overlay.querySelector('.krypton-prompt-dialog__footer')!;
+    this.stagingEl = this.overlay.querySelector('.krypton-prompt-dialog__staging')!;
     this.wireEvents();
     document.body.appendChild(this.overlay);
   }
@@ -173,6 +178,8 @@ export class PromptDialog {
     if (this.visible) return;
     this.visible = true;
     this.textareaEl.value = '';
+    this.imageThumbs.clear();
+    this.renderStaging();
     this.mention.active = false;
     this.mentionPopupEl.classList.remove('krypton-prompt-dialog__mention-popup--visible');
     // Capture the terminal selection NOW, before the dialog's overlay steals any
@@ -499,6 +506,7 @@ export class PromptDialog {
   private onInput(): void {
     this.autoGrow();
     this.updateMentionState();
+    if (this.imageThumbs.size > 0) this.renderStaging();
   }
 
   private autoGrow(): void {
@@ -666,9 +674,8 @@ export class PromptDialog {
       return;
     }
 
-    // Expand @selection inline using the snapshot captured at open time, so
-    // what the user saw highlighted when they pressed Cmd+Shift+K is exactly
-    // what gets sent — regardless of focus changes in between.
+    // Image @paths are already inline at the cursor positions where the user
+    // pasted/dropped them — no reordering needed.
     let prompt = raw;
     if (/(^|\s)@selection\b/.test(prompt)) {
       const sel = this.selectionSnapshot ?? '';
@@ -721,6 +728,7 @@ export class PromptDialog {
                   spellcheck="false"
                   placeholder="Type your prompt. Use @path for files, @selection for current terminal selection."></textarea>
         <div class="krypton-prompt-dialog__mention-popup"></div>
+        <div class="krypton-prompt-dialog__staging"></div>
         <div class="krypton-prompt-dialog__footer"></div>
       </div>
     `;
@@ -731,17 +739,139 @@ export class PromptDialog {
     this.textareaEl.addEventListener('input', () => this.onInput());
     this.textareaEl.addEventListener('click', () => this.updateMentionState());
     this.textareaEl.addEventListener('keyup', (e) => {
-      // Arrow keys move the caret — re-evaluate mention state
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         this.updateMentionState();
       }
     });
     this.overlay.addEventListener('mousedown', (e) => {
-      // Click outside the panel closes the dialog
       if (e.target === this.overlay) {
         this.close();
       }
     });
+
+    // Paste: intercept image clipboard items
+    this.panel.addEventListener('paste', (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) this.stageImageFile(file);
+          return;
+        }
+      }
+    });
+
+    // Drag-drop images onto the panel
+    this.panel.addEventListener('dragover', (e: DragEvent) => {
+      e.preventDefault();
+      this.panel.classList.add('krypton-prompt-dialog__panel--drag-over');
+    });
+    this.panel.addEventListener('dragleave', () => {
+      this.panel.classList.remove('krypton-prompt-dialog__panel--drag-over');
+    });
+    this.panel.addEventListener('drop', (e: DragEvent) => {
+      e.preventDefault();
+      this.panel.classList.remove('krypton-prompt-dialog__panel--drag-over');
+      const files = e.dataTransfer?.files;
+      if (!files) return;
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('image/')) {
+          this.stageImageFile(file);
+          break;
+        }
+      }
+    });
+  }
+
+  // ─── Image staging ──────────────────────────────────────────────
+
+  private stageImageFile(file: File): void {
+    const MAX_IMAGES = 4;
+    const MAX_BYTES = 5 * 1024 * 1024;
+
+    if (this.imageThumbs.size >= MAX_IMAGES) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      const commaIdx = dataUrl.indexOf(',');
+      const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+
+      if (base64.length > MAX_BYTES * 1.34) return;
+
+      try {
+        const path = await invoke<string>('save_temp_image', {
+          data: base64,
+          mimeType: file.type,
+        });
+        this.imageThumbs.set(path, `data:${file.type};base64,${base64}`);
+        this.insertAtCursor(`@${path} `);
+        this.renderStaging();
+        this.autoGrow();
+      } catch (e) {
+        console.error('[PromptDialog] save_temp_image failed:', e);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  private insertAtCursor(text: string): void {
+    const ta = this.textareaEl;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    ta.value = ta.value.substring(0, start) + text + ta.value.substring(end);
+    const newPos = start + text.length;
+    ta.setSelectionRange(newPos, newPos);
+    ta.focus();
+  }
+
+  private renderStaging(): void {
+    // Scan textarea text for image paths that are still referenced
+    const text = this.textareaEl.value;
+    const active: string[] = [];
+    for (const path of this.imageThumbs.keys()) {
+      if (text.includes(`@${path}`)) {
+        active.push(path);
+      }
+    }
+
+    if (active.length === 0) {
+      this.stagingEl.style.display = 'none';
+      this.stagingEl.innerHTML = '';
+      return;
+    }
+
+    this.stagingEl.style.display = 'flex';
+    this.stagingEl.innerHTML = '';
+
+    for (const path of active) {
+      const dataUrl = this.imageThumbs.get(path)!;
+      const wrap = document.createElement('div');
+      wrap.className = 'krypton-prompt-dialog__staged-thumb-wrap';
+
+      const thumb = document.createElement('img');
+      thumb.className = 'krypton-prompt-dialog__staged-thumb';
+      thumb.src = dataUrl;
+
+      const remove = document.createElement('button');
+      remove.className = 'krypton-prompt-dialog__staged-remove';
+      remove.textContent = '×';
+      remove.addEventListener('click', (e) => {
+        e.preventDefault();
+        // Remove the @path reference from the textarea text
+        this.textareaEl.value = this.textareaEl.value.replace(`@${path} `, '').replace(`@${path}`, '');
+        this.imageThumbs.delete(path);
+        this.renderStaging();
+        this.autoGrow();
+        this.textareaEl.focus();
+      });
+
+      wrap.appendChild(thumb);
+      wrap.appendChild(remove);
+      this.stagingEl.appendChild(wrap);
+    }
   }
 }
 

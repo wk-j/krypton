@@ -603,6 +603,58 @@
   flex-shrink: 0;
 }
 
+/* ─── Image staging ─── */
+.krypton-prompt-dialog__staging {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--krypton-prompt-border, rgba(199, 125, 255, 0.18));
+}
+
+.krypton-prompt-dialog__staged-thumb-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.krypton-prompt-dialog__staged-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid rgba(199, 125, 255, 0.3);
+}
+
+.krypton-prompt-dialog__staged-remove {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 80, 80, 0.85);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.krypton-prompt-dialog__staged-thumb-wrap:hover .krypton-prompt-dialog__staged-remove {
+  opacity: 1;
+}
+
+.krypton-prompt-dialog__panel--drag-over {
+  border-color: rgba(199, 125, 255, 0.8);
+  box-shadow:
+    0 0 30px rgba(199, 125, 255, 0.25),
+    0 8px 32px rgba(0, 0, 0, 0.55);
+}
+
 /* ─── Footer ─── */
 .krypton-prompt-dialog__footer {
   display: flex;

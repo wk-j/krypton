@@ -179,6 +179,31 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| format!("write_file: {e}"))
 }
 
+#[tauri::command]
+pub fn save_temp_image(data: String, mime_type: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data)
+        .map_err(|e| format!("save_temp_image: base64 decode: {e}"))?;
+    let ext = match mime_type.as_str() {
+        "image/png" => "png",
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        _ => "png",
+    };
+    let dir = std::path::PathBuf::from("/tmp/krypton-prompt-images");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("save_temp_image mkdir: {e}"))?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let path = dir.join(format!("{ts}.{ext}"));
+    std::fs::write(&path, bytes).map_err(|e| format!("save_temp_image write: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// Read a single environment variable.
 /// First checks the process environment, then falls back to spawning a login
 /// shell to resolve it — this is necessary on macOS where GUI apps launched
