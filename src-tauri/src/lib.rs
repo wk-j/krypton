@@ -41,6 +41,18 @@ pub fn run() {
     ssh_manager.cleanup_sockets();
 
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app: &tauri::AppHandle, shortcut, _event| {
+                    use tauri_plugin_global_shortcut::Code;
+                    match shortcut.key {
+                        Code::KeyK => { let _ = app.emit("prompt-dialog-requested", ()); }
+                        Code::KeyS => { let _ = app.emit("capture-requested", ()); }
+                        _ => {}
+                    }
+                })
+                .build(),
+        )
         .manage(pty_manager)
         .manage(krypton_config.clone())
         .manage(theme_engine.clone())
@@ -70,6 +82,7 @@ pub fn run() {
             commands::read_file,
             commands::write_file,
             commands::save_temp_image,
+            commands::capture_screen,
             commands::get_env_var,
             commands::run_command,
             commands::get_default_shell,
@@ -132,6 +145,17 @@ pub fn run() {
             }
             let _ = window.set_always_on_top(true);
             let _ = window.set_always_on_top(false);
+
+            // Register global shortcuts (Ctrl+Shift+K = open dialog, Ctrl+Shift+S = capture)
+            {
+                use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+                app.handle().global_shortcut()
+                    .register(Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyK))
+                    .unwrap_or_else(|e| log::warn!("Failed to register Ctrl+Shift+K: {e}"));
+                app.handle().global_shortcut()
+                    .register(Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS))
+                    .unwrap_or_else(|e| log::warn!("Failed to register Ctrl+Shift+S: {e}"));
+            }
 
             // Initialize sound engine with resource path and config
             {

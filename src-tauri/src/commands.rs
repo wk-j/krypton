@@ -204,6 +204,51 @@ pub fn save_temp_image(data: String, mime_type: String) -> Result<String, String
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Result returned by capture_screen: the saved path and base64-encoded PNG.
+#[derive(serde::Serialize)]
+pub struct CaptureResult {
+    pub path: String,
+    pub data: String,
+}
+
+/// Invoke macOS's interactive screen-capture tool and return the captured PNG.
+/// The `screencapture -i` crosshair overlay appears on top of all windows;
+/// no Krypton window state is modified. Returns None if the user cancels (Esc).
+#[tauri::command]
+pub async fn capture_screen() -> Result<Option<CaptureResult>, String> {
+    use base64::Engine;
+    let dir = std::path::PathBuf::from("/tmp/krypton-prompt-images");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("capture_screen mkdir: {e}"))?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let path = dir.join(format!("{ts}.png"));
+    let path_str = path.to_string_lossy().into_owned();
+
+    // Run screencapture on a blocking thread so the async runtime stays free.
+    tokio::task::spawn_blocking({
+        let p = path_str.clone();
+        move || {
+            std::process::Command::new("screencapture")
+                .args(["-x", "-i", "-t", "png", &p])
+                .status()
+        }
+    })
+    .await
+    .map_err(|e| format!("capture_screen task: {e}"))?
+    .map_err(|e| format!("capture_screen cmd: {e}"))?;
+
+    // No file means the user pressed Esc (cancelled).
+    let bytes = match std::fs::read(&path) {
+        Ok(b) if !b.is_empty() => b,
+        _ => return Ok(None),
+    };
+
+    let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(Some(CaptureResult { path: path_str, data }))
+}
+
 /// Read a single environment variable.
 /// First checks the process environment, then falls back to spawning a login
 /// shell to resolve it — this is necessary on macOS where GUI apps launched

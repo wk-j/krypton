@@ -20,6 +20,11 @@ const TARGET_PROCESS = 'claude';
 const FILE_INDEX_TTL_MS = 10_000;
 const MAX_MENTION_RESULTS = 8;
 
+interface CaptureResult {
+  path: string;
+  data: string;
+}
+
 // ─── Fuzzy match (adapted from command-palette.ts) ────────────────
 
 interface FuzzyResult {
@@ -139,6 +144,9 @@ export class PromptDialog {
   // Maps temp file path → base64 data URL for thumbnail rendering.
   // Entries are added when images are pasted/dropped and the @path is inserted inline.
   private imageThumbs = new Map<string, string>();
+  // Captures queued while the dialog is closed (via global Ctrl+Shift+S shortcut).
+  // Drained into imageThumbs when open() is called.
+  private captureQueue: Array<{ path: string; dataUrl: string }> = [];
   private mention: MentionState = {
     active: false,
     start: -1,
@@ -179,6 +187,14 @@ export class PromptDialog {
     this.visible = true;
     this.textareaEl.value = '';
     this.imageThumbs.clear();
+    // Drain any captures queued while the dialog was closed.
+    const queued = this.captureQueue.splice(0, 4);
+    if (queued.length > 0) {
+      const text = queued.map(item => `@${item.path}`).join(' ') + ' ';
+      this.textareaEl.value = text;
+      this.textareaEl.setSelectionRange(text.length, text.length);
+      for (const item of queued) this.imageThumbs.set(item.path, item.dataUrl);
+    }
     this.renderStaging();
     this.mention.active = false;
     this.mentionPopupEl.classList.remove('krypton-prompt-dialog__mention-popup--visible');
@@ -815,6 +831,31 @@ export class PromptDialog {
       }
     };
     reader.readAsDataURL(file);
+  }
+
+  // Called by the global Ctrl+Shift+S shortcut listener in main.ts.
+  // If the dialog is open, stages the capture immediately; otherwise queues it.
+  async captureAndStage(): Promise<void> {
+    try {
+      const result = await invoke<CaptureResult | null>('capture_screen');
+      if (result === null) return;
+      const dataUrl = `data:image/png;base64,${result.data}`;
+      if (this.visible) {
+        this.stageDiskImage(result.path, dataUrl);
+        this.renderStaging();
+        this.autoGrow();
+      } else if (this.captureQueue.length < 4) {
+        this.captureQueue.push({ path: result.path, dataUrl });
+      }
+    } catch (e) {
+      console.error('[PromptDialog] capture_screen failed:', e);
+    }
+  }
+
+  private stageDiskImage(path: string, dataUrl: string): void {
+    if (this.imageThumbs.size >= 4) return;
+    this.imageThumbs.set(path, dataUrl);
+    this.insertAtCursor(`@${path} `);
   }
 
   private insertAtCursor(text: string): void {

@@ -1,6 +1,6 @@
 # Screen Capture to Prompt Dialog — Implementation Spec
 
-> Status: Approved
+> Status: Implemented
 > Date: 2026-04-16
 > Milestone: Post-M2 — productivity layer
 
@@ -146,16 +146,7 @@ Reuses existing `insertAtCursor` and `renderStaging` unchanged.
 
 ### Configuration
 
-```json
-// tauri.conf.json
-"bundle": {
-  "macOS": {
-    "info": {
-      "NSScreenRecordingUsageDescription": "Krypton uses screen capture to attach screenshots to AI prompts."
-    }
-  }
-}
-```
+Add `NSScreenRecordingUsageDescription` to a custom `Info.plist` file referenced via `bundle.macOS.infoPlist` in `tauri.conf.json`. The key is cosmetic — it provides a description string in macOS's TCC permission dialog. Without it the feature still works; macOS shows a generic dialog on first use. This requires creating a custom plist file (the field takes a path, not inline JSON).
 
 ## Edge Cases
 

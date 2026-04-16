@@ -2,6 +2,8 @@
 // Initializes the theme engine, compositor, input router, and which-key popup.
 
 import '@xterm/xterm/css/xterm.css';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Compositor } from './compositor';
 import { InputRouter } from './input-router';
 import { WhichKey } from './which-key';
@@ -74,6 +76,18 @@ async function main(): Promise<void> {
   // Initialize smart prompt dialog (Cmd+Shift+K → dispatch prompt to Claude tab)
   const promptDialog = new PromptDialog(compositor, () => inputRouter.exitPromptDialog());
   inputRouter.setPromptDialog(promptDialog);
+
+  // Global shortcut events emitted from Rust (Ctrl+Shift+K / Ctrl+Shift+S).
+  // These fire even when Krypton is not focused.
+  void listen('capture-requested', () => void promptDialog.captureAndStage());
+  void listen('prompt-dialog-requested', async () => {
+    if (promptDialog.isVisible) {
+      promptDialog.close();
+    } else {
+      await getCurrentWindow().setFocus();
+      await promptDialog.open();
+    }
+  });
 
   // Initialize dashboard manager and register built-in dashboards
   const dashboardManager = compositor.dashboardManager;

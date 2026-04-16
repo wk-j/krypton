@@ -34,6 +34,7 @@ rustfft = "6"
 hostname = "0.4"
 ignore = "0.4"
 base64 = "0.22"
+tauri-plugin-global-shortcut = "2"
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync"] }
 tower-http = { version = "0.6", features = ["cors"] }
