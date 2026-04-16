@@ -3958,6 +3958,7 @@ export class Compositor {
 
     listen<number>('pty-exit', (event) => {
       const sid = event.payload;
+      this.progressGauge.clearSession(sid);
 
       // Quick Terminal PTY exited — hide, clean up, recreate on next toggle
       if (this.qtSessionId === sid) {

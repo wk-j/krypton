@@ -37,6 +37,11 @@ export class ProgressGauge {
     return this.sessionProgress.get(sessionId) ?? null;
   }
 
+  /** Clear progress state for a session (called on pty-exit) */
+  clearSession(sessionId: SessionId): void {
+    this.sessionProgress.delete(sessionId);
+  }
+
   /**
    * Handle a progress update for a session. Updates internal state and
    * drives the status dot arc gauge + titlebar scanline sweep.
@@ -172,6 +177,15 @@ export class ProgressGauge {
         titlebar.classList.add('krypton-window__titlebar--progress-error');
         pctText.textContent = progress > 0 ? `${progress}%` : 'ERR';
         labelText.textContent = 'error';
+        const gaugeRef = gauge;
+        const contentRef = contentEl;
+        const titlebarRef = titlebar;
+        setTimeout(() => {
+          gaugeRef.classList.add('krypton-progress-gauge--fade-out');
+          setTimeout(() => {
+            this.removeProgressGauge(contentRef, titlebarRef);
+          }, 1500);
+        }, 3000);
         break;
       }
 
