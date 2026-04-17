@@ -61,6 +61,125 @@ async function getHome(): Promise<string> {
   return cachedHome;
 }
 
+// ─── Claude Code Skill Detection & Rendering ────────────────────────
+
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+
+/** Parse YAML frontmatter. Supports simple `key: value`, `key: >` (folded), `key: |` (literal). */
+function parseSkillFrontmatter(content: string): { frontmatter: Record<string, string> | null; body: string } {
+  const match = content.match(FRONTMATTER_RE);
+  if (!match) return { frontmatter: null, body: content };
+
+  const fm: Record<string, string> = {};
+  const lines = match[1].split(/\r?\n/);
+  let key: string | null = null;
+  let mode: 'folded' | 'literal' | null = null;
+  let buffer: string[] = [];
+
+  const commit = (): void => {
+    if (!(key && mode)) return;
+    fm[key] = mode === 'folded'
+      ? buffer.map((l) => l.trim()).filter(Boolean).join(' ')
+      : buffer.join('\n');
+    buffer = [];
+    mode = null;
+  };
+
+  for (const line of lines) {
+    if (mode && (/^\s+\S/.test(line) || /^\s*$/.test(line))) {
+      if (!(buffer.length === 0 && /^\s*$/.test(line))) buffer.push(line);
+      continue;
+    }
+    commit();
+    const kv = line.match(/^([a-zA-Z][a-zA-Z0-9_-]*)\s*:\s*(.*)$/);
+    if (!kv) continue;
+    key = kv[1];
+    const value = kv[2];
+    if (value === '>') mode = 'folded';
+    else if (value === '|') mode = 'literal';
+    else fm[key] = value;
+  }
+  commit();
+
+  return { frontmatter: fm, body: match[2] };
+}
+
+/** Canonical skill file paths: anything inside `.claude/skills/` or named `SKILL.md`. */
+function isSkillPath(path: string): boolean {
+  if (/[/\\]\.claude[/\\]skills[/\\]/.test(path)) return true;
+  const basename = path.split(/[/\\]/).pop() ?? '';
+  return basename.toUpperCase() === 'SKILL.MD';
+}
+
+/** Frontmatter shape matching the Claude Code skill spec (name + description + allowed-tools). */
+function isSkillFrontmatter(fm: Record<string, string> | null): boolean {
+  if (!fm) return false;
+  const hasTools = 'allowed-tools' in fm || 'allowedTools' in fm;
+  return 'name' in fm && 'description' in fm && hasTools;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Split an `allowed-tools` value into entries, respecting parenthesised argument patterns. */
+function parseAllowedTools(str: string): string[] {
+  const tools: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of str) {
+    if (ch === '(') { depth++; current += ch; }
+    else if (ch === ')') { depth--; current += ch; }
+    else if ((ch === ' ' || ch === ',' || ch === '\n' || ch === '\t') && depth === 0) {
+      if (current.trim()) tools.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) tools.push(current.trim());
+  return tools;
+}
+
+function renderSkillSpec(fm: Record<string, string>): string {
+  const name = fm['name'] ?? '';
+  const description = fm['description'] ?? '';
+  const allowedToolsRaw = fm['allowed-tools'] ?? fm['allowedTools'] ?? '';
+  const tools = parseAllowedTools(allowedToolsRaw);
+
+  const known = new Set(['name', 'description', 'allowed-tools', 'allowedTools']);
+  const extras = Object.entries(fm).filter(([k]) => !known.has(k));
+
+  const toolsRow = tools.length > 0
+    ? `<div class="krypton-skill-spec__row">`
+      + `<div class="krypton-skill-spec__label">Allowed Tools</div>`
+      + `<div class="krypton-skill-spec__tools">${tools.map((t) => `<span class="krypton-skill-spec__tool">${escapeHtml(t)}</span>`).join('')}</div>`
+      + `</div>`
+    : '';
+
+  const extraRows = extras.map(([k, v]) =>
+    `<div class="krypton-skill-spec__row">`
+    + `<div class="krypton-skill-spec__label">${escapeHtml(k)}</div>`
+    + `<div class="krypton-skill-spec__value">${escapeHtml(v)}</div>`
+    + `</div>`,
+  ).join('');
+
+  return `<div class="krypton-skill-spec">`
+    + `<div class="krypton-skill-spec__header">`
+    + `<span class="krypton-skill-spec__tag">Claude Code Skill</span>`
+    + (name ? `<span class="krypton-skill-spec__name">${escapeHtml(name)}</span>` : '')
+    + `</div>`
+    + (description ? `<div class="krypton-skill-spec__description">${escapeHtml(description)}</div>` : '')
+    + toolsRow
+    + extraRows
+    + `</div>`;
+}
+
 export class FileManagerView implements ContentView {
   readonly type: PaneContentType = 'file_manager';
   readonly element: HTMLElement;
@@ -103,6 +222,7 @@ export class FileManagerView implements ContentView {
   // Preview generation counter to discard stale async results
   private previewGeneration = 0;
   private previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private statusResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   private homeDir = '/';
   private listFlex = 30;
@@ -208,11 +328,30 @@ export class FileManagerView implements ContentView {
       clearTimeout(this.previewDebounceTimer);
       this.previewDebounceTimer = null;
     }
+    if (this.statusResetTimer !== null) {
+      clearTimeout(this.statusResetTimer);
+      this.statusResetTimer = null;
+    }
+    this.closeAI();
     this.entries = [];
     this.filteredEntries = [];
     this.searchPool = [];
     this.searchResults = [];
     this.marked.clear();
+    this.clipboard = null;
+    this.prompt = null;
+    this.confirmAction = null;
+  }
+
+  /** Schedule a status-bar reset, cancelling any previously scheduled reset. */
+  private scheduleStatusReset(ms: number): void {
+    if (this.statusResetTimer !== null) {
+      clearTimeout(this.statusResetTimer);
+    }
+    this.statusResetTimer = setTimeout(() => {
+      this.statusResetTimer = null;
+      this.renderStatus();
+    }, ms);
   }
 
   onResize(_width: number, height: number): void {
@@ -746,6 +885,27 @@ export class FileManagerView implements ContentView {
     this.previewContentEl.textContent = text;
   }
 
+  /** Render markdown into the preview panel; prepend a skill spec card when applicable. */
+  private renderMarkdownPreview(content: string, absPath: string): void {
+    const { frontmatter, body } = parseSkillFrontmatter(content);
+    const isSkill = isSkillPath(absPath) || isSkillFrontmatter(frontmatter);
+
+    let html = '';
+    if (isSkill && frontmatter) {
+      html = renderSkillSpec(frontmatter) + (md.parse(body, { gfm: true, breaks: true }) as string);
+    } else {
+      html = md.parse(content, { gfm: true, breaks: true }) as string;
+    }
+
+    this.previewContentEl.style.display = 'none';
+    this.previewMarkdownEl.style.display = '';
+    this.previewMarkdownEl.innerHTML = html;
+
+    for (const img of this.previewMarkdownEl.querySelectorAll('img')) {
+      (img as HTMLElement).style.maxWidth = '100%';
+    }
+  }
+
   private loadPreview(): void {
     if (this.previewDebounceTimer !== null) {
       clearTimeout(this.previewDebounceTimer);
@@ -806,10 +966,7 @@ export class FileManagerView implements ContentView {
 
       // Render markdown files
       if (this.isMarkdownFile(entry.name)) {
-        const rendered = md.parse(content, { gfm: true, breaks: true }) as string;
-        this.previewContentEl.style.display = 'none';
-        this.previewMarkdownEl.style.display = '';
-        this.previewMarkdownEl.innerHTML = rendered;
+        this.renderMarkdownPreview(content, entry.path);
         return;
       }
 
@@ -839,7 +996,7 @@ export class FileManagerView implements ContentView {
     if (!entry) return;
     navigator.clipboard.writeText(entry.path).then(() => {
       this.statusEl.textContent = `Copied: ${entry.path}`;
-      setTimeout(() => this.renderStatus(), 2000);
+      this.scheduleStatusReset(2000);
     });
   }
 
@@ -918,7 +1075,7 @@ export class FileManagerView implements ContentView {
     const label = op === 'copy' ? 'Yanked' : 'Cut';
     this.statusEl.textContent = `${label} ${paths.length} item${paths.length > 1 ? 's' : ''}`;
     this.statusEl.className = 'krypton-file-manager__status';
-    setTimeout(() => this.renderStatus(), 2000);
+    this.scheduleStatusReset(2000);
   }
 
   private async pasteFromClipboard(): Promise<void> {
@@ -1493,13 +1650,7 @@ export class FileManagerView implements ContentView {
         if (gen !== this.previewGeneration) return;
 
         if (this.isMarkdownFile(displayName)) {
-          this.previewContentEl.style.display = 'none';
-          this.previewMarkdownEl.style.display = '';
-          this.previewMarkdownEl.innerHTML = await md.parse(content) as string;
-          // Make images responsive
-          for (const img of this.previewMarkdownEl.querySelectorAll('img')) {
-            (img as HTMLElement).style.maxWidth = '100%';
-          }
+          this.renderMarkdownPreview(content, absPath);
         } else {
           const lang = this.extToLang(displayName);
           const lines = content.split('\n');
@@ -1592,7 +1743,7 @@ export class FileManagerView implements ContentView {
   private setStatusError(msg: string): void {
     this.statusEl.textContent = msg;
     this.statusEl.className = 'krypton-file-manager__status krypton-file-manager__status--error';
-    setTimeout(() => this.renderStatus(), 3000);
+    this.scheduleStatusReset(3000);
   }
 
   private setStatusConfirm(msg: string): void {

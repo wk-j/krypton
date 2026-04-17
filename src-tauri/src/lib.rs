@@ -43,8 +43,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app: &tauri::AppHandle, shortcut, _event| {
-                    use tauri_plugin_global_shortcut::Code;
+                .with_handler(|app: &tauri::AppHandle, shortcut, event| {
+                    use tauri_plugin_global_shortcut::{Code, ShortcutState};
+                    if event.state != ShortcutState::Pressed { return; }
                     match shortcut.key {
                         Code::KeyK => { let _ = app.emit("prompt-dialog-requested", ()); }
                         Code::KeyS => { let _ = app.emit("capture-requested", ()); }

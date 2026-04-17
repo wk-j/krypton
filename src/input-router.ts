@@ -234,6 +234,17 @@ export class InputRouter {
     }
   }
 
+  /** Open the prompt dialog and enter PromptDialog mode (used by global shortcut). */
+  enterPromptDialog(): void {
+    if (!this.promptDialog || this.promptDialog.isVisible) return;
+    if (this.mode === Mode.Selection) this.exitSelectionMode();
+    else if (this.mode === Mode.Hint) this.hints.exit();
+    else if (this.mode === Mode.CommandPalette) this.commandPalette?.close();
+    else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
+    void this.promptDialog.open();
+    this.setMode(Mode.PromptDialog);
+  }
+
   private setMode(mode: Mode): void {
     const prevMode = this.mode;
     this.mode = mode;

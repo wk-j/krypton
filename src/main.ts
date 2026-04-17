@@ -85,7 +85,7 @@ async function main(): Promise<void> {
       promptDialog.close();
     } else {
       await getCurrentWindow().setFocus();
-      await promptDialog.open();
+      inputRouter.enterPromptDialog();
     }
   });
 
