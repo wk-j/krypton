@@ -209,6 +209,7 @@ export class FileManagerView implements ContentView {
   private searchMode = false;
   private searchText = '';
   private searchPool: string[] = [];
+  private searchPoolLower: string[] = [];
   private searchResults: string[] = [];
   private searchCursor = 0;
   private searchScrollOffset = 0;
@@ -223,6 +224,8 @@ export class FileManagerView implements ContentView {
   private previewGeneration = 0;
   private previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private statusResetTimer: ReturnType<typeof setTimeout> | null = null;
+  // Coalesces bursts of keystrokes in search mode into one re-filter per frame
+  private searchUpdateRaf: number | null = null;
 
   private homeDir = '/';
   private listFlex = 30;
@@ -336,7 +339,9 @@ export class FileManagerView implements ContentView {
     this.entries = [];
     this.filteredEntries = [];
     this.searchPool = [];
+    this.searchPoolLower = [];
     this.searchResults = [];
+    this.cancelSearchUpdate();
     this.marked.clear();
     this.clipboard = null;
     this.prompt = null;
@@ -1129,9 +1134,11 @@ export class FileManagerView implements ContentView {
 
   private renderBreadcrumb(): void {
     if (this.searchMode) {
+      this.breadcrumbEl.classList.add('krypton-file-manager__breadcrumb--search');
       this.breadcrumbEl.textContent = `SEARCH // ${this.searchText}\u2588`;
       return;
     }
+    this.breadcrumbEl.classList.remove('krypton-file-manager__breadcrumb--search');
     let display = this.cwd;
     if (this.homeDir !== '/' && display.startsWith(this.homeDir)) {
       display = '~' + display.slice(this.homeDir.length);
@@ -1299,20 +1306,23 @@ export class FileManagerView implements ContentView {
       const nameSpan = document.createElement('span');
       nameSpan.className = 'krypton-file-manager__name';
 
-      if (query) {
+      if (query && relPath.length > 0) {
         const lower = relPath.toLowerCase();
         let qi = 0;
-        for (let ci = 0; ci < relPath.length; ci++) {
-          if (qi < query.length && lower[ci] === query[qi]) {
-            const mark = document.createElement('span');
-            mark.className = 'krypton-file-manager__match';
-            mark.textContent = relPath[ci];
-            nameSpan.appendChild(mark);
-            qi++;
-          } else {
-            nameSpan.appendChild(document.createTextNode(relPath[ci]));
+        let runStart = 0;
+        let runMatching = qi < query.length && lower[0] === query[0];
+        if (runMatching) qi++;
+
+        for (let ci = 1; ci < relPath.length; ci++) {
+          const isMatch = qi < query.length && lower[ci] === query[qi];
+          if (isMatch !== runMatching) {
+            this.appendNameRun(nameSpan, relPath.slice(runStart, ci), runMatching);
+            runStart = ci;
+            runMatching = isMatch;
           }
+          if (isMatch) qi++;
         }
+        this.appendNameRun(nameSpan, relPath.slice(runStart), runMatching);
       } else {
         nameSpan.textContent = relPath;
       }
@@ -1327,6 +1337,18 @@ export class FileManagerView implements ContentView {
       const spacer = document.createElement('div');
       spacer.style.height = `${remaining * this.cellHeight}px`;
       this.listEl.appendChild(spacer);
+    }
+  }
+
+  private appendNameRun(parent: HTMLElement, text: string, matched: boolean): void {
+    if (!text) return;
+    if (matched) {
+      const mark = document.createElement('span');
+      mark.className = 'krypton-file-manager__match';
+      mark.textContent = text;
+      parent.appendChild(mark);
+    } else {
+      parent.appendChild(document.createTextNode(text));
     }
   }
 
@@ -1410,8 +1432,10 @@ export class FileManagerView implements ContentView {
       });
       this.searchCapped = files.length >= 50_000;
       this.searchPool = files;
+      this.searchPoolLower = files.map((f) => f.toLowerCase());
     } catch (err) {
       this.searchPool = [];
+      this.searchPoolLower = [];
       this.setStatusError(`${err}`);
     }
 
@@ -1425,7 +1449,9 @@ export class FileManagerView implements ContentView {
       this.searchMode = false;
       this.searchText = '';
       this.searchPool = [];
+      this.searchPoolLower = [];
       this.searchResults = [];
+      this.cancelSearchUpdate();
       this.renderBreadcrumb();
       this.renderList();
       this.renderStatus();
@@ -1449,13 +1475,8 @@ export class FileManagerView implements ContentView {
 
     if (e.key === 'u' && e.ctrlKey) {
       this.searchText = '';
-      this.applySearch();
-      this.searchCursor = 0;
-      this.searchScrollOffset = 0;
-      this.renderList();
       this.renderBreadcrumb();
-      this.renderStatus();
-      this.loadSearchPreview();
+      this.scheduleSearchUpdate();
       return true;
     }
 
@@ -1467,14 +1488,32 @@ export class FileManagerView implements ContentView {
       return true;
     }
 
-    this.applySearch();
-    this.searchCursor = 0;
-    this.searchScrollOffset = 0;
-    this.renderList();
+    // Synchronous: render the typed character immediately so the user sees feedback.
     this.renderBreadcrumb();
-    this.renderStatus();
-    this.loadSearchPreview();
+    // Asynchronous: coalesce burst keystrokes into one filter+render per frame.
+    this.scheduleSearchUpdate();
     return true;
+  }
+
+  private scheduleSearchUpdate(): void {
+    if (this.searchUpdateRaf !== null) return;
+    this.searchUpdateRaf = requestAnimationFrame(() => {
+      this.searchUpdateRaf = null;
+      if (!this.searchMode) return;
+      this.applySearch();
+      this.searchCursor = 0;
+      this.searchScrollOffset = 0;
+      this.renderList();
+      this.renderStatus();
+      this.loadSearchPreview();
+    });
+  }
+
+  private cancelSearchUpdate(): void {
+    if (this.searchUpdateRaf !== null) {
+      cancelAnimationFrame(this.searchUpdateRaf);
+      this.searchUpdateRaf = null;
+    }
   }
 
   private applySearch(): void {
@@ -1485,11 +1524,13 @@ export class FileManagerView implements ContentView {
 
     const query = this.searchText.toLowerCase();
     const scored: { path: string; score: number }[] = [];
+    const pool = this.searchPool;
+    const poolLower = this.searchPoolLower;
 
-    for (const p of this.searchPool) {
-      const score = this.fuzzyScore(p.toLowerCase(), query);
+    for (let i = 0; i < pool.length; i++) {
+      const score = this.fuzzyScore(poolLower[i], query);
       if (score > 0) {
-        scored.push({ path: p, score });
+        scored.push({ path: pool[i], score });
       }
     }
 
@@ -1499,17 +1540,23 @@ export class FileManagerView implements ContentView {
 
   /** Fuzzy score: higher is better, 0 means no match */
   private fuzzyScore(target: string, query: string): number {
+    const qLen = query.length;
+    const tLen = target.length;
+    if (qLen > tLen) return 0;
+
     let qi = 0;
     let score = 0;
     let consecutive = 0;
     let prevMatchIdx = -2;
+    let qChar = query.charCodeAt(0);
 
-    for (let ti = 0; ti < target.length && qi < query.length; ti++) {
-      if (target[ti] === query[qi]) {
-        qi++;
+    for (let ti = 0; ti < tLen; ti++) {
+      // Early exit: remaining target chars can't cover remaining query chars.
+      if (tLen - ti < qLen - qi) return 0;
+
+      if (target.charCodeAt(ti) === qChar) {
         score += 1;
 
-        // Consecutive match bonus
         if (ti === prevMatchIdx + 1) {
           consecutive++;
           score += consecutive * 2;
@@ -1518,29 +1565,44 @@ export class FileManagerView implements ContentView {
         }
 
         // Word boundary bonus: after / . _ -
-        if (ti === 0 || '/._-'.includes(target[ti - 1])) {
+        if (ti === 0) {
           score += 5;
+        } else {
+          const prev = target.charCodeAt(ti - 1);
+          // / . _ -  →  47 46 95 45
+          if (prev === 47 || prev === 46 || prev === 95 || prev === 45) {
+            score += 5;
+          }
         }
 
         prevMatchIdx = ti;
+        qi++;
+        if (qi >= qLen) break;
+        qChar = query.charCodeAt(qi);
       }
     }
 
-    // All query chars must match
-    if (qi < query.length) return 0;
+    if (qi < qLen) return 0;
 
     // Basename match bonus: if all query chars matched within the filename portion
     const lastSlash = target.lastIndexOf('/');
-    const basename = lastSlash >= 0 ? target.slice(lastSlash + 1) : target;
+    const basenameStart = lastSlash >= 0 ? lastSlash + 1 : 0;
     let bi = 0;
-    for (let ci = 0; ci < basename.length && bi < query.length; ci++) {
-      if (basename[ci] === query[bi]) bi++;
+    for (let ci = basenameStart; ci < tLen && bi < qLen; ci++) {
+      if (target.charCodeAt(ci) === query.charCodeAt(bi)) bi++;
     }
-    if (bi === query.length) {
+    if (bi === qLen) {
       score += 10;
       // Exact basename prefix bonus
-      if (basename.startsWith(query)) {
-        score += 15;
+      if (tLen - basenameStart >= qLen) {
+        let prefix = true;
+        for (let k = 0; k < qLen; k++) {
+          if (target.charCodeAt(basenameStart + k) !== query.charCodeAt(k)) {
+            prefix = false;
+            break;
+          }
+        }
+        if (prefix) score += 15;
       }
     }
 
@@ -1579,7 +1641,9 @@ export class FileManagerView implements ContentView {
     this.searchMode = false;
     this.searchText = '';
     this.searchPool = [];
+    this.searchPoolLower = [];
     this.searchResults = [];
+    this.cancelSearchUpdate();
 
     // Navigate to the file's directory, then highlight the file
     this.history.push(this.cwd);

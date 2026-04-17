@@ -61,6 +61,10 @@
   text-shadow: 0 0 10px rgba(var(--fm-amber-rgb), 0.5);
 }
 
+.krypton-file-manager__breadcrumb--search {
+  text-transform: none;
+}
+
 .krypton-file-manager__body {
   flex: 1;
   display: flex;
