@@ -24,6 +24,10 @@ export class VaultContentView implements ContentView {
   private fileSortField: FileSortField = 'modified';
   private fileSortOrder: FileSortOrder = 'desc';
   private closeCb: (() => void) | null = null;
+  private titleCb: ((name: string) => void) | null = null;
+  private listVaults: (() => Promise<Array<{ name: string; path: string }>>) | null = null;
+  private expandPath: ((p: string) => Promise<string>) | null = null;
+  private pickerOverlay: HTMLElement | null = null;
   private linkHintActive = false;
   private linkHintLabels: HTMLElement[] = [];
   private linkHintMap: Map<string, HTMLAnchorElement> = new Map();
@@ -126,6 +130,19 @@ export class VaultContentView implements ContentView {
 
   onClose(cb: () => void): void {
     this.closeCb = cb;
+  }
+
+  onTitleChange(cb: (name: string) => void): void {
+    this.titleCb = cb;
+  }
+
+  /** Wire up multi-vault switching. Host provides the entry list + ~ expansion. */
+  setVaultSwitcher(
+    listVaults: () => Promise<Array<{ name: string; path: string }>>,
+    expandPath: (p: string) => Promise<string>,
+  ): void {
+    this.listVaults = listVaults;
+    this.expandPath = expandPath;
   }
 
   private async init(): Promise<void> {
@@ -889,6 +906,10 @@ export class VaultContentView implements ContentView {
         this.reload();
         return true;
 
+      case 'V':
+        this.openVaultPicker();
+        return true;
+
       default:
         return false;
     }
@@ -941,7 +962,156 @@ export class VaultContentView implements ContentView {
     }
   }
 
+  private async openVaultPicker(): Promise<void> {
+    if (!this.listVaults) {
+      this.flashStatus('VAULT SWITCHING UNAVAILABLE');
+      return;
+    }
+    const entries = await this.listVaults();
+    if (entries.length < 2) {
+      this.flashStatus('ONLY ONE VAULT CONFIGURED');
+      return;
+    }
+
+    if (this.pickerOverlay) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'krypton-vault-picker-overlay';
+
+    const panel = document.createElement('div');
+    panel.className = 'krypton-vault-picker';
+
+    const title = document.createElement('div');
+    title.className = 'krypton-vault-picker__title';
+    title.textContent = 'SWITCH VAULT';
+    panel.appendChild(title);
+
+    const list = document.createElement('div');
+    list.className = 'krypton-vault-picker__list';
+    panel.appendChild(list);
+
+    let selected = Math.max(
+      0,
+      entries.findIndex((e) => this.samePath(e.path, this.vaultRoot)),
+    );
+    if (selected < 0) selected = 0;
+
+    const render = (): void => {
+      list.innerHTML = '';
+      entries.forEach((e, i) => {
+        const row = document.createElement('div');
+        row.className = 'krypton-vault-picker__item';
+        if (i === selected) row.classList.add('krypton-vault-picker__item--selected');
+        if (this.samePath(e.path, this.vaultRoot)) {
+          row.classList.add('krypton-vault-picker__item--current');
+        }
+
+        const name = document.createElement('span');
+        name.className = 'krypton-vault-picker__name';
+        name.textContent = e.name;
+        const p = document.createElement('span');
+        p.className = 'krypton-vault-picker__path';
+        p.textContent = e.path;
+        row.appendChild(name);
+        row.appendChild(p);
+        row.addEventListener('click', () => {
+          close();
+          this.switchVault(e);
+        });
+        list.appendChild(row);
+      });
+    };
+    render();
+
+    const hint = document.createElement('div');
+    hint.className = 'krypton-vault-picker__hint';
+    hint.textContent = 'j/k  select    Enter  open    Esc  cancel';
+    panel.appendChild(hint);
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    this.pickerOverlay = overlay;
+
+    const close = (): void => {
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      this.pickerOverlay = null;
+      this.element.focus();
+    };
+
+    const onKey = (ev: KeyboardEvent): void => {
+      ev.stopPropagation();
+      if (ev.key === 'Escape' || ev.key === 'q') {
+        ev.preventDefault();
+        close();
+        return;
+      }
+      if (ev.key === 'Enter' || ev.key === 'l') {
+        ev.preventDefault();
+        const pick = entries[selected];
+        close();
+        if (pick) this.switchVault(pick);
+        return;
+      }
+      if (ev.key === 'j' || ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        selected = Math.min(selected + 1, entries.length - 1);
+        render();
+        return;
+      }
+      if (ev.key === 'k' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        selected = Math.max(selected - 1, 0);
+        render();
+        return;
+      }
+      const digit = Number.parseInt(ev.key, 10);
+      if (!Number.isNaN(digit) && digit >= 1 && digit <= entries.length) {
+        ev.preventDefault();
+        const pick = entries[digit - 1];
+        close();
+        this.switchVault(pick);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+  }
+
+  private samePath(a: string, b: string): boolean {
+    const norm = (p: string): string => p.replace(/\/+$/, '');
+    return norm(a) === norm(b);
+  }
+
+  private async switchVault(entry: { name: string; path: string }): Promise<void> {
+    const resolved = this.expandPath ? await this.expandPath(entry.path) : entry.path;
+    if (this.samePath(resolved, this.vaultRoot)) return;
+
+    this.vaultRoot = resolved;
+    this.index = null;
+    this.currentFile = null;
+    this.jumpHistory = [];
+    this.forwardHistory = [];
+    this.activeTag = null;
+    this.filterText = '';
+    this.filterActive = false;
+    this.filterEl.style.display = 'none';
+    this.selectedIndex = 0;
+    this.sidebarMode = 'files';
+    this.renderSidebarTabs();
+    this.sidebarListEl.innerHTML = '';
+    this.contentEl.innerHTML = '';
+    this.breadcrumbEl.textContent = '';
+
+    const label = entry.name || resolved.split('/').filter(Boolean).pop() || 'vault';
+    if (this.titleCb) this.titleCb(label);
+
+    await this.init();
+  }
+
   dispose(): void {
+    if (this.pickerOverlay) {
+      this.pickerOverlay.remove();
+      this.pickerOverlay = null;
+    }
     this.element.remove();
   }
 

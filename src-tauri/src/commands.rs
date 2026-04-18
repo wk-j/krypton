@@ -93,7 +93,9 @@ pub fn reload_config(
     app_handle: AppHandle,
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
 ) -> Result<(), String> {
-    let new_config = crate::config::load_config();
+    // On parse/read error: keep the current in-memory config, surface the
+    // error to the UI, and never touch the user's file.
+    let new_config = crate::config::load_config_result()?;
 
     // Apply sound config to Rust engine directly
     let sound_state = app_handle.state::<crate::sound::SoundEngineState>();

@@ -160,6 +160,7 @@ Resolution order: if `path` is set, use it directly. If `paths` is set, show pic
 | `g/G` | Content focused | Jump to top/bottom |
 | `J/K` | Content focused | Scroll content |
 | `Cmd+I` | Any | Toggle AI overlay |
+| `V` | Vault focused | Open vault picker to switch to another configured vault in-place |
 
 ### Wikilink Resolution
 

@@ -23,6 +23,17 @@ type WorkerMessage =
   | { type: 'dispose' }
   | { type: 'fft'; bins: number[] };
 
+// Per-renderer frame budget. matrix/brainwave dominate CPU via OffscreenCanvas
+// fillText (macOS WebKit has no glyph cache and IPCs per draw); cap them to
+// reduce cost while preserving motion. flame is cheap and benefits from 60 fps.
+// See docs/64-matrix-animation-cpu-burn.md.
+const TARGET_FPS_BY_TYPE: Record<AnimationType, number> = {
+  matrix: 30,
+  brainwave: 30,
+  'circuit-trace': 30,
+  flame: 60,
+};
+
 let canvas: OffscreenCanvas | null = null;
 let ctx: OffscreenCanvasRenderingContext2D | null = null;
 let renderer: Renderer | null = null;
@@ -31,6 +42,8 @@ let rafId = 0;
 let W = 0;
 let H = 0;
 let dpr = 1;
+let frameIntervalMs = 1000 / 60;
+let lastTick = 0;
 
 function createRenderer(type: AnimationType): Renderer {
   switch (type) {
@@ -41,11 +54,13 @@ function createRenderer(type: AnimationType): Renderer {
   }
 }
 
-function tick(): void {
+function tick(ts: number): void {
   if (!running || !ctx) return;
+  rafId = requestAnimationFrame(tick);
+  if (ts - lastTick < frameIntervalMs) return;
+  lastTick = ts;
   ctx.clearRect(0, 0, W, H);
   renderer!.update(ctx, W, H);
-  rafId = requestAnimationFrame(tick);
 }
 
 function applySize(w: number, h: number, devicePixelRatio: number): void {
@@ -68,6 +83,7 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
       canvas = msg.canvas;
       ctx = canvas.getContext('2d');
       renderer = createRenderer(msg.animation);
+      frameIntervalMs = 1000 / TARGET_FPS_BY_TYPE[msg.animation];
       if (msg.width > 0 && msg.height > 0) {
         applySize(msg.width, msg.height, msg.dpr);
       }
@@ -76,7 +92,8 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
     case 'start':
       if (!running) {
         running = true;
-        tick();
+        lastTick = 0;
+        rafId = requestAnimationFrame(tick);
       }
       break;
 

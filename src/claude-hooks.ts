@@ -94,6 +94,11 @@ const TICK_FADE_MS = 30_000;
 /** High-intensity tool names that speed up the uplink bar */
 const FAST_TOOLS = new Set(['Bash', 'Edit', 'Write', 'NotebookEdit']);
 
+/** Safety net: auto-stop background animation if no hook event arrives for this
+ *  long. Prevents orphaned animations when Stop/SessionEnd hooks are dropped
+ *  (session crash, abrupt exit, HTTP failure). See docs/64-matrix-animation-cpu-burn.md. */
+const ANIMATION_IDLE_TIMEOUT_MS = 60_000;
+
 /** Map tool names to activity trace tick categories */
 function toolTickCategory(toolName: string): string {
   switch (toolName) {
@@ -126,6 +131,7 @@ export class ClaudeHookManager {
   private toolClearTimer: ReturnType<typeof setTimeout> | null = null;
   private animations: Set<BackgroundAnimation> = new Set();
   private animationType: string = 'flame';
+  private animationIdleTimer: ReturnType<typeof setTimeout> | null = null;
   private notifController: NotificationController | null = null;
 
   /** Connect the in-window notification overlay so hook messages are forwarded */
@@ -204,6 +210,10 @@ export class ClaudeHookManager {
 
   private handleHookEvent(event: ClaudeHookEvent): void {
     const { hook_event_name, session_id } = event;
+
+    // Any hook event while the animation is running resets the idle safety timer.
+    // Prevents a stale PreToolUse → …silence… from leaving the animation orphaned.
+    if (this.isAnyAnimationRunning()) this.armAnimationIdleTimer();
 
     switch (hook_event_name) {
       case 'SessionStart':
@@ -1027,12 +1037,38 @@ export class ClaudeHookManager {
     for (const anim of this.animations) {
       anim.start();
     }
+    this.armAnimationIdleTimer();
   }
 
   /** Stop all background animations. */
   private stopFlame(): void {
     for (const anim of this.animations) {
       anim.stop();
+    }
+    this.clearAnimationIdleTimer();
+  }
+
+  private isAnyAnimationRunning(): boolean {
+    for (const anim of this.animations) if (anim.isRunning()) return true;
+    return false;
+  }
+
+  private armAnimationIdleTimer(): void {
+    this.clearAnimationIdleTimer();
+    this.animationIdleTimer = setTimeout(() => {
+      this.animationIdleTimer = null;
+      if (!this.isAnyAnimationRunning()) return;
+      console.warn(
+        `[Krypton] Animation idle timeout (${ANIMATION_IDLE_TIMEOUT_MS / 1000}s) — force stopping to prevent orphaned CPU burn`,
+      );
+      this.stopFlame();
+    }, ANIMATION_IDLE_TIMEOUT_MS);
+  }
+
+  private clearAnimationIdleTimer(): void {
+    if (this.animationIdleTimer) {
+      clearTimeout(this.animationIdleTimer);
+      this.animationIdleTimer = null;
     }
   }
 

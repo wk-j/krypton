@@ -12,12 +12,78 @@ import { invoke } from '../profiler/ipc';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+const MAX_MENTION_RESULTS = 8;
+const FILE_INDEX_TTL_MS = 10_000;
+
 function escHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+interface FuzzyResult {
+  score: number;
+  matchIndices: number[];
+}
+
+function fuzzyMatch(query: string, target: string): FuzzyResult | null {
+  const ql = query.toLowerCase();
+  const tl = target.toLowerCase();
+  if (ql.length === 0) return { score: 0, matchIndices: [] };
+  if (ql.length > tl.length) return null;
+
+  const matchIndices: number[] = [];
+  let qi = 0;
+  let score = 0;
+  let lastIdx = -2;
+
+  for (let ti = 0; ti < tl.length && qi < ql.length; ti++) {
+    if (tl[ti] === ql[qi]) {
+      matchIndices.push(ti);
+      if (ti === lastIdx + 1) score += 10;
+      if (ti === 0 || /[\s_\-/.]/.test(target[ti - 1])) score += 8;
+      score += Math.max(0, 5 - ti);
+      if (target[ti] === query[qi]) score += 1;
+      lastIdx = ti;
+      qi++;
+    }
+  }
+  if (qi < ql.length) return null;
+  return { score, matchIndices };
+}
+
+function highlightMatches(text: string, indices: number[]): string {
+  const set = new Set(indices);
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const ch = escHtml(text[i]);
+    out += set.has(i) ? `<span class="agent-view__mention-hl">${ch}</span>` : ch;
+  }
+  return out;
+}
+
+interface CachedFileIndex {
+  files: string[];
+  fetchedAt: number;
+}
+
+const fileIndexCache = new Map<string, CachedFileIndex>();
+
+async function loadFileIndex(cwd: string): Promise<string[]> {
+  const cached = fileIndexCache.get(cwd);
+  if (cached && Date.now() - cached.fetchedAt < FILE_INDEX_TTL_MS) {
+    return cached.files;
+  }
+  try {
+    const files = await invoke<string[]>('search_files', { root: cwd, showHidden: false });
+    fileIndexCache.set(cwd, { files, fetchedAt: Date.now() });
+    return files;
+  } catch (e) {
+    console.error('[AgentView] search_files failed:', e);
+    return [];
+  }
 }
 
 function truncateArgs(args: string, maxLen = 120): string {
@@ -84,10 +150,21 @@ export class AgentView implements ContentView {
   // Diff view callback (compositor opens DiffContentView in new tab)
   private diffCallback: ((diff: string, title: string) => void) | null = null;
 
-  // Autocomplete state
+  // Autocomplete state (slash commands)
   private autocompleteEl!: HTMLElement;
   private acMatches: string[] = [];
   private acSelectedIdx = -1;
+
+  // @-mention fuzzy file search state
+  private mentionPopupEl!: HTMLElement;
+  private mention: {
+    active: boolean;
+    start: number;
+    query: string;
+    items: { path: string; indices: number[] }[];
+    selectedIndex: number;
+  } = { active: false, start: -1, query: '', items: [], selectedIndex: 0 };
+  private mentionFiles: string[] = [];
 
   // Scroll position preservation across tab switches
   private savedScrollTop = 0;
@@ -134,6 +211,9 @@ export class AgentView implements ContentView {
 
     this.autocompleteEl = document.createElement('div');
     this.autocompleteEl.className = 'agent-view__autocomplete';
+
+    this.mentionPopupEl = document.createElement('div');
+    this.mentionPopupEl.className = 'agent-view__mention-popup';
 
     // Status line (token usage)
     this.statusLineEl = document.createElement('div');
@@ -207,6 +287,7 @@ export class AgentView implements ContentView {
     this.element.appendChild(this.messagesEl);
     this.element.appendChild(this.stateHintEl);
     this.element.appendChild(this.autocompleteEl);
+    this.element.appendChild(this.mentionPopupEl);
     this.element.appendChild(this.statusLineEl);
     this.element.appendChild(this.stagingAreaEl);
     this.element.appendChild(this.inputRowEl);
@@ -647,7 +728,119 @@ export class AgentView implements ContentView {
     this.inputRowEl.classList.toggle('agent-view__input-row--bash', isBash);
     this.promptGlyphEl.textContent = isBash ? '$' : '❯';
 
+    this.updateSuggestions();
+  }
+
+  // @-mention takes precedence over slash-command autocomplete; they're
+  // mutually exclusive by trigger (slash at BOS vs. @ mid-token) but we
+  // enforce the priority here so only one popup shows at a time.
+  private updateSuggestions(): void {
+    this.updateMentionState();
+    if (this.mention.active) {
+      this.hideAutocomplete();
+      return;
+    }
+    this.hideMention();
     this.updateAutocomplete();
+  }
+
+  // ─── @ mention — fuzzy file search ──────────────────────────────
+
+  private updateMentionState(): void {
+    const text = this.inputText;
+    const caret = this.cursorPos;
+    let atIdx = -1;
+    for (let i = caret - 1; i >= 0; i--) {
+      const ch = text[i];
+      if (ch === '@') {
+        const prev = i === 0 ? ' ' : text[i - 1];
+        if (/\s/.test(prev) || i === 0) atIdx = i;
+        break;
+      }
+      if (/\s/.test(ch)) break;
+    }
+
+    if (atIdx < 0 || !this.projectDir) {
+      this.hideMention();
+      return;
+    }
+
+    const query = text.substring(atIdx + 1, caret);
+    const wasActive = this.mention.active;
+    this.mention.active = true;
+    this.mention.start = atIdx;
+    this.mention.query = query;
+    if (!wasActive) this.mention.selectedIndex = 0;
+
+    if (this.mentionFiles.length === 0) {
+      void this.refreshMentionFiles();
+    }
+    this.rankMentionFiles();
+    if (this.mention.selectedIndex >= this.mention.items.length) {
+      this.mention.selectedIndex = 0;
+    }
+    this.renderMentionPopup();
+  }
+
+  private rankMentionFiles(): void {
+    const q = this.mention.query;
+    const items: { path: string; indices: number[] }[] = [];
+    if (q.length === 0) {
+      for (const path of this.mentionFiles.slice(0, MAX_MENTION_RESULTS)) {
+        items.push({ path, indices: [] });
+      }
+    } else {
+      const ranked: { path: string; score: number; indices: number[] }[] = [];
+      for (const path of this.mentionFiles) {
+        const res = fuzzyMatch(q, path);
+        if (res) ranked.push({ path, score: res.score, indices: res.matchIndices });
+      }
+      ranked.sort((a, b) => b.score - a.score);
+      for (const r of ranked.slice(0, MAX_MENTION_RESULTS)) {
+        items.push({ path: r.path, indices: r.indices });
+      }
+    }
+    this.mention.items = items;
+  }
+
+  private renderMentionPopup(): void {
+    if (!this.mention.active || this.mention.items.length === 0) {
+      this.mentionPopupEl.classList.remove('agent-view__mention-popup--visible');
+      this.mentionPopupEl.innerHTML = '';
+      return;
+    }
+    this.mentionPopupEl.innerHTML = '';
+    for (let i = 0; i < this.mention.items.length; i++) {
+      const item = this.mention.items[i];
+      const row = document.createElement('div');
+      row.className = 'agent-view__mention-row';
+      if (i === this.mention.selectedIndex) row.classList.add('agent-view__mention-row--selected');
+      row.innerHTML = highlightMatches(item.path, item.indices);
+      this.mentionPopupEl.appendChild(row);
+    }
+    this.mentionPopupEl.classList.add('agent-view__mention-popup--visible');
+  }
+
+  private hideMention(): void {
+    if (!this.mention.active && this.mentionPopupEl.innerHTML === '') return;
+    this.mention.active = false;
+    this.mention.items = [];
+    this.mention.selectedIndex = 0;
+    this.mentionPopupEl.classList.remove('agent-view__mention-popup--visible');
+    this.mentionPopupEl.innerHTML = '';
+  }
+
+  private acceptMention(): boolean {
+    if (!this.mention.active || this.mention.items.length === 0) return false;
+    const item = this.mention.items[this.mention.selectedIndex];
+    const before = this.inputText.slice(0, this.mention.start);
+    const after = this.inputText.slice(this.cursorPos);
+    const insert = `@${item.path} `;
+    this.inputText = before + insert + after;
+    this.cursorPos = before.length + insert.length;
+    this.hideMention();
+    this.renderInput();
+    return true;
   }
 
   // ─── Autocomplete ───────────────────────────────────────────────
@@ -1191,8 +1384,12 @@ export class AgentView implements ContentView {
   }
 
   private handleInputKey(e: KeyboardEvent): boolean {
-    // Escape — dismiss autocomplete first, then scroll state
+    // Escape — dismiss mention popup first, then slash ac, then scroll state
     if (e.key === 'Escape') {
+      if (this.mention.active) {
+        this.hideMention();
+        return true;
+      }
       if (this.acMatches.length > 0) {
         this.hideAutocomplete();
         return true;
@@ -1202,6 +1399,35 @@ export class AgentView implements ContentView {
         return true;
       }
       return true;
+    }
+
+    // Mention popup — Tab/Shift+Tab and arrow keys navigate; Tab/Enter accept
+    if (this.mention.active && this.mention.items.length > 0) {
+      if (e.key === 'Tab') {
+        if (e.shiftKey) {
+          this.mention.selectedIndex =
+            (this.mention.selectedIndex - 1 + this.mention.items.length) % this.mention.items.length;
+          this.renderMentionPopup();
+        } else {
+          this.acceptMention();
+        }
+        return true;
+      }
+      if (e.key === 'ArrowUp') {
+        this.mention.selectedIndex =
+          (this.mention.selectedIndex - 1 + this.mention.items.length) % this.mention.items.length;
+        this.renderMentionPopup();
+        return true;
+      }
+      if (e.key === 'ArrowDown') {
+        this.mention.selectedIndex = (this.mention.selectedIndex + 1) % this.mention.items.length;
+        this.renderMentionPopup();
+        return true;
+      }
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        this.acceptMention();
+        return true;
+      }
     }
 
     // Tab — accept autocomplete or cycle
@@ -1809,6 +2035,20 @@ export class AgentView implements ContentView {
     this.projectDir = dir;
     this.controller.setProjectDir(dir);
     this.restoreSession();
+    if (dir) {
+      void this.refreshMentionFiles();
+    } else {
+      this.mentionFiles = [];
+    }
+  }
+
+  private async refreshMentionFiles(): Promise<void> {
+    if (!this.projectDir) return;
+    this.mentionFiles = await loadFileIndex(this.projectDir);
+    if (this.mention.active) {
+      this.rankMentionFiles();
+      this.renderMentionPopup();
+    }
   }
 
   // ─── ContentView interface ────────────────────────────────────────

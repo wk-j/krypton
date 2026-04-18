@@ -515,8 +515,15 @@ export class Compositor {
   /** Reload config and theme from the backend and re-apply everything.
    *  Called by the command palette "Reload Config" action. */
   async reloadConfig(): Promise<void> {
-    // Tell the backend to re-read the TOML file
-    await invoke('reload_config');
+    // Tell the backend to re-read the TOML file. On parse error the backend
+    // leaves the user's file untouched and returns the error message — show
+    // it so the user can fix it manually.
+    try {
+      await invoke('reload_config');
+    } catch (e) {
+      this.showNotification(`Config error (file NOT modified): ${e}`);
+      return;
+    }
 
     // Fetch the updated config and theme
     const config = await loadConfig();
@@ -1692,46 +1699,199 @@ export class Compositor {
    * Open an Obsidian vault viewer window.
    */
   async openVault(vaultPath?: string): Promise<void> {
+    const entries = await this.getVaultEntries();
+
     let path = vaultPath;
 
     if (!path) {
-      try {
-        const config = await invoke<{ vault?: { path?: string } }>('get_config');
-        path = config.vault?.path;
-      } catch {
-        // Config unavailable
+      if (entries.length === 0) {
+        this.showNotification('No vault path configured — set [vault] path in krypton.toml');
+        return;
+      }
+      if (entries.length === 1) {
+        path = entries[0].path;
+      } else {
+        // Show picker — open the vault view with the first entry but pop
+        // the picker immediately so the user can pick.
+        const pick = await this.pickVault(entries);
+        if (!pick) return;
+        path = pick;
       }
     }
 
-    if (!path) {
-      this.showNotification('No vault path configured — set [vault] path in krypton.toml');
-      return;
-    }
-
-    if (!path) return;
-
-    // Expand ~ to home directory
-    if (path.startsWith('~/')) {
-      try {
-        const home = await invoke<string>('get_env_var', { name: 'HOME' });
-        if (home) path = home + path.slice(1);
-      } catch {
-        // Keep path as-is
-      }
-    }
+    path = await this.expandVaultPath(path);
 
     const { VaultContentView } = await import('./vault-view');
     const container = document.createElement('div');
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
 
     const vaultView = new VaultContentView(path, container);
+    vaultView.setVaultSwitcher(
+      () => this.getVaultEntries(),
+      (p: string) => this.expandVaultPath(p),
+    );
 
     const dirName = path.split('/').filter(Boolean).pop() ?? 'vault';
     await this.createContentTab(`VAULT // ${dirName}`, vaultView);
 
+    vaultView.onTitleChange((newName) => this.retitleFocusedTab(`VAULT // ${newName}`));
+
     vaultView.onClose(() => {
       this.closeTab();
     });
+  }
+
+  /**
+   * Resolve the configured vault list, merging the legacy single `path` entry
+   * with the named `vaults` array. Duplicates (by path) are collapsed.
+   */
+  async getVaultEntries(): Promise<Array<{ name: string; path: string }>> {
+    type VaultCfg = { path?: string; paths?: Array<{ name?: string; path?: string }> };
+    let cfg: VaultCfg = {};
+    try {
+      const config = await invoke<{ vault?: VaultCfg }>('get_config');
+      cfg = config.vault ?? {};
+    } catch {
+      // Config unavailable
+    }
+
+    const out: Array<{ name: string; path: string }> = [];
+    const seen = new Set<string>();
+    const push = (name: string, path: string): void => {
+      if (!path || seen.has(path)) return;
+      seen.add(path);
+      out.push({ name: name || path.split('/').filter(Boolean).pop() || path, path });
+    };
+
+    if (cfg.path) push(cfg.path.split('/').filter(Boolean).pop() ?? 'default', cfg.path);
+    for (const v of cfg.paths ?? []) {
+      if (v?.path) push(v.name ?? '', v.path);
+    }
+    return out;
+  }
+
+  /** Expand `~/` in a path to the user's home directory. */
+  async expandVaultPath(path: string): Promise<string> {
+    if (path.startsWith('~/')) {
+      try {
+        const home = await invoke<string>('get_env_var', { name: 'HOME' });
+        if (home) return home + path.slice(1);
+      } catch {
+        // Keep path as-is
+      }
+    }
+    return path;
+  }
+
+  /**
+   * Show a transient overlay picker listing configured vaults.
+   * Resolves with the selected path, or null if cancelled.
+   */
+  private pickVault(entries: Array<{ name: string; path: string }>): Promise<string | null> {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'krypton-vault-picker-overlay';
+
+      const panel = document.createElement('div');
+      panel.className = 'krypton-vault-picker';
+
+      const title = document.createElement('div');
+      title.className = 'krypton-vault-picker__title';
+      title.textContent = 'SELECT VAULT';
+      panel.appendChild(title);
+
+      const list = document.createElement('div');
+      list.className = 'krypton-vault-picker__list';
+      panel.appendChild(list);
+
+      let selected = 0;
+      const render = (): void => {
+        list.innerHTML = '';
+        entries.forEach((e, i) => {
+          const row = document.createElement('div');
+          row.className = 'krypton-vault-picker__item';
+          if (i === selected) row.classList.add('krypton-vault-picker__item--selected');
+
+          const name = document.createElement('span');
+          name.className = 'krypton-vault-picker__name';
+          name.textContent = e.name;
+          const p = document.createElement('span');
+          p.className = 'krypton-vault-picker__path';
+          p.textContent = e.path;
+          row.appendChild(name);
+          row.appendChild(p);
+          row.addEventListener('click', () => {
+            cleanup();
+            resolve(e.path);
+          });
+          list.appendChild(row);
+        });
+      };
+      render();
+
+      const hint = document.createElement('div');
+      hint.className = 'krypton-vault-picker__hint';
+      hint.textContent = 'j/k  select    Enter  open    Esc  cancel';
+      panel.appendChild(hint);
+
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+
+      const cleanup = (): void => {
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+      };
+
+      const onKey = (ev: KeyboardEvent): void => {
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          cleanup();
+          resolve(null);
+          return;
+        }
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const p = entries[selected]?.path ?? null;
+          cleanup();
+          resolve(p);
+          return;
+        }
+        if (ev.key === 'j' || ev.key === 'ArrowDown') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          selected = Math.min(selected + 1, entries.length - 1);
+          render();
+          return;
+        }
+        if (ev.key === 'k' || ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          selected = Math.max(selected - 1, 0);
+          render();
+          return;
+        }
+        const digit = Number.parseInt(ev.key, 10);
+        if (!Number.isNaN(digit) && digit >= 1 && digit <= entries.length) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          cleanup();
+          resolve(entries[digit - 1].path);
+        }
+      };
+      document.addEventListener('keydown', onKey, true);
+
+      // Expose for vault-view direct use
+      (overlay as unknown as { __pickerResolve: typeof resolve }).__pickerResolve = resolve;
+    });
+  }
+
+  /** Public API so VaultContentView can reuse the picker. */
+  async pickVaultPath(): Promise<string | null> {
+    const entries = await this.getVaultEntries();
+    if (entries.length < 2) return null;
+    return this.pickVault(entries);
   }
 
   /**
@@ -2452,6 +2612,18 @@ export class Compositor {
 
     pane.terminal?.focus();
     this.sound.play('tab.create');
+  }
+
+  /** Rename the currently active tab in the focused window. */
+  retitleFocusedTab(title: string): void {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win) return;
+    const tab = win.tabs[win.activeTabIndex];
+    if (!tab) return;
+    tab.title = title;
+    const titleEl = tab.element.querySelector('.krypton-tab__title');
+    if (titleEl) titleEl.textContent = title;
   }
 
   /** Create a new tab with a content view in the focused window */

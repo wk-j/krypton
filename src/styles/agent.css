@@ -1089,6 +1089,51 @@
   text-overflow: ellipsis;
 }
 
+/* ─── @ mention popup — fuzzy file search ──────────────────────── */
+
+.agent-view__mention-popup {
+  display: none;
+  flex-direction: column;
+  padding: 4px 0;
+  margin: 0 16px;
+  border: 1px solid rgba(var(--agent-primary-rgb), 0.2);
+  background: var(--agent-surface-solid);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.5),
+    0 0 1px rgba(var(--agent-primary-rgb), 0.15);
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--agent-primary-rgb), 0.2) transparent;
+}
+
+.agent-view__mention-popup--visible { display: flex; }
+
+.agent-view__mention-row {
+  display: block;
+  padding: 5px 12px;
+  cursor: default;
+  flex-shrink: 0;
+  border-left: 2px solid transparent;
+  color: rgba(var(--agent-text-rgb), 0.7);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-view__mention-row--selected {
+  background: rgba(var(--agent-primary-rgb), 0.1);
+  border-left-color: rgba(var(--agent-primary-rgb), 0.6);
+  color: var(--agent-text);
+}
+
+.agent-view__mention-hl {
+  color: var(--agent-primary);
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(var(--agent-primary-rgb), 0.25);
+}
+
 /* ─── Context inspector panel ────────────────────────────────── */
 
 .agent-view__messages--hidden { display: none; }

@@ -418,6 +418,16 @@ pub struct AgentModelConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VaultConfig {
+    /// Default vault path (single-vault config).
+    pub path: String,
+    /// Named vault entries — populates the multi-vault picker UI.
+    pub paths: Vec<VaultEntry>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VaultEntry {
+    pub name: String,
     pub path: String,
 }
 
@@ -548,21 +558,12 @@ pub fn config_path() -> Option<PathBuf> {
 
 // ─── Load / Save ───────────────────────────────────────────────────
 
-/// Load config from disk, merging with defaults for any missing fields.
-/// If the file doesn't exist, returns defaults and creates it.
-/// On first load (startup), flushes new fields back to disk.
-pub fn load_config() -> KryptonConfig {
-    load_config_inner(true)
-}
-
-fn load_config_inner(flush: bool) -> KryptonConfig {
-    let path = match config_path() {
-        Some(p) => p,
-        None => {
-            log::warn!("Could not determine config directory; using defaults");
-            return KryptonConfig::default();
-        }
-    };
+/// Load config from disk. Never rewrites an existing file. Only creates the
+/// file when it does not exist yet. On parse/read errors the caller receives
+/// a descriptive message so the UI can surface it; the user's file is left
+/// untouched so they can fix it manually.
+pub fn load_config_result() -> Result<KryptonConfig, String> {
+    let path = config_path().ok_or_else(|| "Could not determine config directory".to_string())?;
 
     if !path.exists() {
         log::info!(
@@ -571,34 +572,28 @@ fn load_config_inner(flush: bool) -> KryptonConfig {
         );
         let config = KryptonConfig::default();
         write_default_config(&path, &config);
-        return config;
+        return Ok(config);
     }
 
-    let config = match fs::read_to_string(&path) {
-        Ok(contents) => match toml::from_str::<KryptonConfig>(&contents) {
-            Ok(config) => {
-                log::info!("Loaded config from {}", path.display());
-                config
-            }
-            Err(e) => {
-                log::error!("Failed to parse config at {}: {e}", path.display());
-                log::warn!("Using default configuration");
-                KryptonConfig::default()
-            }
-        },
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read config at {}: {e}", path.display()))?;
+
+    toml::from_str::<KryptonConfig>(&contents)
+        .map_err(|e| format!("Failed to parse config at {}: {e}", path.display()))
+        .inspect(|_| log::info!("Loaded config from {}", path.display()))
+}
+
+/// Startup-friendly wrapper: on any error, logs and falls back to in-memory
+/// defaults. The user's file on disk is never modified.
+pub fn load_config() -> KryptonConfig {
+    match load_config_result() {
+        Ok(cfg) => cfg,
         Err(e) => {
-            log::error!("Failed to read config at {}: {e}", path.display());
+            log::error!("{e}");
+            log::warn!("Using in-memory defaults; your config file was NOT modified");
             KryptonConfig::default()
         }
-    };
-
-    if flush {
-        // Flush the fully-populated config back to disk so that any new
-        // fields added since the file was last written appear with their defaults.
-        flush_config(&path, &config);
     }
-
-    config
 }
 
 /// Write the fully-populated config back to disk, adding any new

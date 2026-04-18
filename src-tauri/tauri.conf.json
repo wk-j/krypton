@@ -29,6 +29,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "signingIdentity": "Krypton Dev"
+    },
     "resources": [
       "sounds/**/*"
     ],
