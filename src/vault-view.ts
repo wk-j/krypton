@@ -20,6 +20,9 @@ export class VaultContentView implements ContentView {
   private filterText = '';
   private filterActive = false;
   private selectedIndex = 0;
+  private pageIndex = 0;
+  private itemsPerPage = 0;
+  private cachedItemHeight = 0;
   private activeTag: string | null = null;
   private fileSortField: FileSortField = 'modified';
   private fileSortOrder: FileSortOrder = 'desc';
@@ -41,6 +44,7 @@ export class VaultContentView implements ContentView {
   private filterEl: HTMLElement;
   private filterInputEl: HTMLInputElement;
   private sidebarListEl: HTMLElement;
+  private sidebarPaginationEl!: HTMLElement;
   private mainEl: HTMLElement;
   private breadcrumbEl: HTMLElement;
   private contentEl: HTMLElement;
@@ -100,9 +104,13 @@ export class VaultContentView implements ContentView {
     this.sidebarListEl = document.createElement('div');
     this.sidebarListEl.className = 'krypton-vault__sidebar-list';
 
+    this.sidebarPaginationEl = document.createElement('div');
+    this.sidebarPaginationEl.className = 'krypton-vault__sidebar-pagination';
+
     this.sidebarEl.appendChild(this.sidebarHeaderEl);
     this.sidebarEl.appendChild(this.filterEl);
     this.sidebarEl.appendChild(this.sidebarListEl);
+    this.sidebarEl.appendChild(this.sidebarPaginationEl);
 
     // Main content
     this.mainEl = document.createElement('div');
@@ -294,10 +302,39 @@ export class VaultContentView implements ContentView {
     }
   }
 
+  private measureItemHeight(): number {
+    if (this.cachedItemHeight > 0) return this.cachedItemHeight;
+    const probe = document.createElement('div');
+    probe.className = 'krypton-vault__sidebar-item';
+    probe.style.visibility = 'hidden';
+    probe.textContent = 'X';
+    this.sidebarListEl.appendChild(probe);
+    const h = probe.offsetHeight;
+    this.sidebarListEl.removeChild(probe);
+    if (h > 0) this.cachedItemHeight = h;
+    return h > 0 ? h : 20;
+  }
+
   private renderSidebarList(): void {
     this.updateSortIndicator();
     this.sidebarListEl.innerHTML = '';
     const items = this.getListItems();
+
+    const itemH = this.measureItemHeight();
+    const listH = this.sidebarListEl.clientHeight;
+    const perPage = Math.max(1, Math.floor(listH / itemH));
+    this.itemsPerPage = perPage;
+    const totalPages = Math.max(1, Math.ceil(items.length / perPage));
+    if (this.selectedIndex > items.length - 1) {
+      this.selectedIndex = Math.max(0, items.length - 1);
+    }
+    const selPage = Math.floor(this.selectedIndex / perPage);
+    this.pageIndex = Math.max(0, Math.min(selPage, totalPages - 1));
+    const start = this.pageIndex * perPage;
+    const end = Math.min(items.length, start + perPage);
+
+    this.sidebarPaginationEl.textContent =
+      totalPages > 1 ? `PAGE ${this.pageIndex + 1}/${totalPages}  ·  H/L` : '';
 
     const recencyByKey = new Map<string, number>();
     if (this.sidebarMode === 'files' && this.index) {
@@ -311,7 +348,7 @@ export class VaultContentView implements ContentView {
       }
     }
 
-    for (let i = 0; i < items.length; i++) {
+    for (let i = start; i < end; i++) {
       const el = document.createElement('div');
       el.className = 'krypton-vault__sidebar-item';
       if (i === this.selectedIndex) {
@@ -797,15 +834,31 @@ export class VaultContentView implements ContentView {
         this.contentEl.scrollBy(0, -60);
         return true;
 
-      case 'j':
-        this.selectedIndex = Math.min(this.selectedIndex + 1, this.getListItems().length - 1);
-        this.renderSidebarList();
+      case 'j': {
+        const n = this.getListItems().length;
+        if (n > 0 && this.itemsPerPage > 0) {
+          const start = this.pageIndex * this.itemsPerPage;
+          const end = Math.min(n, start + this.itemsPerPage);
+          const size = end - start;
+          const rel = this.selectedIndex - start;
+          this.selectedIndex = start + ((rel + 1) % size);
+          this.renderSidebarList();
+        }
         return true;
+      }
 
-      case 'k':
-        this.selectedIndex = Math.max(this.selectedIndex - 1, 0);
-        this.renderSidebarList();
+      case 'k': {
+        const n = this.getListItems().length;
+        if (n > 0 && this.itemsPerPage > 0) {
+          const start = this.pageIndex * this.itemsPerPage;
+          const end = Math.min(n, start + this.itemsPerPage);
+          const size = end - start;
+          const rel = this.selectedIndex - start;
+          this.selectedIndex = start + ((rel - 1 + size) % size);
+          this.renderSidebarList();
+        }
         return true;
+      }
 
       case 'Enter':
       case 'l':
@@ -816,6 +869,28 @@ export class VaultContentView implements ContentView {
       case 'Backspace':
         this.goBack();
         return true;
+
+      case 'H':
+        if (this.itemsPerPage > 0 && this.pageIndex > 0) {
+          this.selectedIndex = (this.pageIndex - 1) * this.itemsPerPage;
+          this.renderSidebarList();
+        }
+        return true;
+
+      case 'L': {
+        const items = this.getListItems();
+        if (this.itemsPerPage > 0) {
+          const totalPages = Math.max(1, Math.ceil(items.length / this.itemsPerPage));
+          if (this.pageIndex < totalPages - 1) {
+            this.selectedIndex = Math.min(
+              items.length - 1,
+              (this.pageIndex + 1) * this.itemsPerPage,
+            );
+            this.renderSidebarList();
+          }
+        }
+        return true;
+      }
 
       case '/':
         this.openFilter();
@@ -1116,7 +1191,7 @@ export class VaultContentView implements ContentView {
   }
 
   onResize(_width: number, _height: number): void {
-    // No-op for now; CSS handles responsive layout
+    if (this.index) this.renderSidebarList();
   }
 
   getWorkingDirectory(): string {

@@ -359,8 +359,24 @@
 
 .krypton-vault__sidebar-list {
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 4px 0;
+}
+
+.krypton-vault__sidebar-pagination {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  font-family: var(--vault-font-data);
+  font-size: 10px;
+  color: var(--vault-text-dim);
+  opacity: 0.6;
+  letter-spacing: 0.08em;
+  text-align: right;
+  min-height: 16px;
+}
+
+.krypton-vault__sidebar-pagination:empty {
+  display: none;
 }
 
 .krypton-vault__sidebar-item {
