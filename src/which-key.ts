@@ -45,6 +45,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
 
   // ── AI agent ──
   { key: 'a', label: 'AI agent' },
+  { key: 'q', label: 'hurl client' },
 
   // ── Terminal-only ──
   { key: 'v', label: 'select mode', contentTypes: [null] },

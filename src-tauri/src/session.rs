@@ -33,9 +33,7 @@ pub struct SessionInfo {
 /// Encode a CWD into a safe directory name, matching pi-mono convention:
 ///   /Users/wk/Source/krypton  →  --Users-wk-Source-krypton--
 fn encode_cwd(cwd: &str) -> String {
-    let stripped = cwd
-        .trim_start_matches('/')
-        .trim_start_matches('\\');
+    let stripped = cwd.trim_start_matches('/').trim_start_matches('\\');
     let safe: String = stripped
         .chars()
         .map(|c| match c {
@@ -93,7 +91,16 @@ fn file_timestamp() -> String {
         let month_days = [
             31,
             if leap { 29 } else { 28 },
-            31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
         ];
         let mut mon = 1u32;
         for &md in &month_days {
@@ -106,9 +113,7 @@ fn file_timestamp() -> String {
         let day = remaining + 1;
         (s, m, h, day, mon, y)
     };
-    format!(
-        "{year:04}-{mon:02}-{day:02}T{h:02}-{m:02}-{s:02}-{millis:03}Z"
-    )
+    format!("{year:04}-{mon:02}-{day:02}T{h:02}-{m:02}-{s:02}-{millis:03}Z")
 }
 
 /// Generate a UUID v4 (simple random, no external crate).
@@ -121,10 +126,12 @@ fn uuid_v4() -> String {
     for chunk in bytes.chunks_mut(8) {
         let s = RandomState::new();
         let mut hasher = s.build_hasher();
-        hasher.write_u64(std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64);
+        hasher.write_u64(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64,
+        );
         let val = hasher.finish();
         for (i, b) in val.to_le_bytes().iter().enumerate() {
             if i < chunk.len() {

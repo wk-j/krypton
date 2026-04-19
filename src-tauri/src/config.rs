@@ -27,6 +27,15 @@ pub struct KryptonConfig {
     pub music: MusicConfig,
     pub agent: AgentConfig,
     pub vault: VaultConfig,
+    pub hurl: HurlConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HurlConfig {
+    /// Absolute path to the `hurl` binary. If empty, Krypton resolves it from
+    /// PATH (then via a login shell on macOS).
+    pub binary_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

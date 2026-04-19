@@ -1742,6 +1742,82 @@ export class Compositor {
   }
 
   /**
+   * Open the Hurl client window for the focused terminal's cwd.
+   */
+  async openHurlClient(): Promise<void> {
+    const cwd = await this.getFocusedCwd() ?? '/';
+
+    const { HurlContentView } = await import('./hurl-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const view = new HurlContentView(cwd, container);
+    view.setEditorHandler((fileDir, editor, filePath) => {
+      void this.openEditorTab(fileDir, editor, filePath);
+    });
+
+    const dirName = cwd.split('/').filter(Boolean).pop() ?? '/';
+    await this.createContentTab(`HURL // ${dirName}`, view);
+
+    view.onClose(() => {
+      this.closeTab();
+    });
+  }
+
+  /**
+   * Spawn a new tab running `<editor> <filePath>` in `fileDir`. Used by the
+   * Hurl view's `e` key.
+   */
+  private async openEditorTab(fileDir: string, editor: string, filePath: string): Promise<void> {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    if (!win) return;
+
+    const tabId = nextTabId();
+    const wrapper = this.createTabWrapper(win.contentElement);
+    const pane = this.createPane(wrapper);
+
+    const label = `EDIT ${filePath.split('/').pop() ?? ''}`.trim();
+    const tabEl = this.buildTabElement(tabId, win.tabs.length, label);
+
+    const tab: Tab = {
+      id: tabId,
+      title: label,
+      paneTree: { type: 'leaf', pane },
+      focusedPaneId: pane.id,
+      element: tabEl,
+      contentWrapperEl: wrapper,
+    };
+
+    win.tabs.push(tab);
+    win.activeTabIndex = win.tabs.length - 1;
+    this.rebuildTabBar(win);
+    this.showActiveTab(win);
+
+    await this.nextFrame();
+    this.fitWindow(win.id);
+
+    if (pane.terminal) {
+      try {
+        const sessionId = await invoke<number>('spawn_pty', {
+          cols: pane.terminal.cols,
+          rows: pane.terminal.rows,
+          cwd: fileDir,
+          shell: editor,
+          shellArgs: [filePath],
+        });
+        pane.sessionId = sessionId;
+        this.sessionMap.set(sessionId, { windowId: win.id, tabId, paneId: pane.id });
+      } catch (e) {
+        console.error(`Failed to spawn editor: ${String(e)}`);
+      }
+    }
+    this.wirePaneInput(pane);
+    pane.terminal?.focus();
+    this.sound.play('tab.create');
+  }
+
+  /**
    * Resolve the configured vault list, merging the legacy single `path` entry
    * with the named `vaults` array. Duplicates (by path) are collapsed.
    */

@@ -19,6 +19,10 @@
 
 ---
 
+## Recent Landings
+
+- **Hurl client window** — keyboard-driven `.hurl` runner with tree sidebar, streaming output, per-file cache, and persistent sidebar state. See `docs/65-hurl-client-window.md`.
+
 ## M0 — Scaffold (Week 1-2)
 
 - [x] Initialize Tauri v2 project with TypeScript frontend

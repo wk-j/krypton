@@ -1,9 +1,10 @@
 mod commands;
 mod config;
 pub mod hook_server;
+pub mod hurl;
+pub mod music;
 mod pty;
 mod session;
-pub mod music;
 pub mod sound;
 pub mod ssh;
 pub mod theme;
@@ -25,6 +26,9 @@ pub fn run() {
     // Initialize sound engine
     let sound_engine: sound::SoundEngineState = Mutex::new(sound::SoundEngine::new());
 
+    // Initialize hurl runner state
+    let hurl_state = Arc::new(hurl::HurlState::default());
+
     // Initialize hook server state
     let hook_server = Arc::new(hook_server::HookServer::new());
 
@@ -45,10 +49,16 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app: &tauri::AppHandle, shortcut, event| {
                     use tauri_plugin_global_shortcut::{Code, ShortcutState};
-                    if event.state != ShortcutState::Pressed { return; }
+                    if event.state != ShortcutState::Pressed {
+                        return;
+                    }
                     match shortcut.key {
-                        Code::KeyK => { let _ = app.emit("prompt-dialog-requested", ()); }
-                        Code::KeyS => { let _ = app.emit("capture-requested", ()); }
+                        Code::KeyK => {
+                            let _ = app.emit("prompt-dialog-requested", ());
+                        }
+                        Code::KeyS => {
+                            let _ = app.emit("capture-requested", ());
+                        }
                         _ => {}
                     }
                 })
@@ -60,6 +70,7 @@ pub fn run() {
         .manage(sound_engine)
         .manage(ssh_manager)
         .manage(hook_server.clone())
+        .manage(hurl_state)
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
@@ -117,6 +128,14 @@ pub fn run() {
             session::session_load,
             session::session_continue_recent,
             session::session_list,
+            hurl::list_hurl_files,
+            hurl::hurl_run,
+            hurl::hurl_cancel,
+            hurl::hurl_save_cache,
+            hurl::hurl_load_cached,
+            hurl::hurl_clear_cache,
+            hurl::hurl_load_sidebar_state,
+            hurl::hurl_save_sidebar_state,
         ])
         .setup(move |app| {
             if cfg!(debug_assertions) {
@@ -150,11 +169,19 @@ pub fn run() {
             // Register global shortcuts (Ctrl+Shift+K = open dialog, Ctrl+Shift+S = capture)
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
-                app.handle().global_shortcut()
-                    .register(Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyK))
+                app.handle()
+                    .global_shortcut()
+                    .register(Shortcut::new(
+                        Some(Modifiers::CONTROL | Modifiers::SHIFT),
+                        Code::KeyK,
+                    ))
                     .unwrap_or_else(|e| log::warn!("Failed to register Ctrl+Shift+K: {e}"));
-                app.handle().global_shortcut()
-                    .register(Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS))
+                app.handle()
+                    .global_shortcut()
+                    .register(Shortcut::new(
+                        Some(Modifiers::CONTROL | Modifiers::SHIFT),
+                        Code::KeyS,
+                    ))
                     .unwrap_or_else(|e| log::warn!("Failed to register Ctrl+Shift+S: {e}"));
             }
 
@@ -164,10 +191,7 @@ pub fn run() {
                     .path()
                     .resource_dir()
                     .expect("failed to resolve resource directory");
-                let sound_config = krypton_config
-                    .read()
-                    .ok()
-                    .map(|cfg| cfg.sound.clone());
+                let sound_config = krypton_config.read().ok().map(|cfg| cfg.sound.clone());
                 let sound_state = app.state::<sound::SoundEngineState>();
                 let mut engine = sound_state
                     .lock()
@@ -185,10 +209,7 @@ pub fn run() {
                     .ok()
                     .map(|cfg| cfg.music.clone())
                     .unwrap_or_default();
-                let music_engine = music::MusicEngine::new(
-                    app.handle().clone(),
-                    &music_config,
-                );
+                let music_engine = music::MusicEngine::new(app.handle().clone(), &music_config);
                 app.manage::<music::MusicEngineState>(std::sync::Mutex::new(music_engine));
             }
 
@@ -198,16 +219,9 @@ pub fn run() {
                     .read()
                     .map(|cfg| cfg.hooks.enabled)
                     .unwrap_or(true);
-                let hooks_port = krypton_config
-                    .read()
-                    .map(|cfg| cfg.hooks.port)
-                    .unwrap_or(0);
+                let hooks_port = krypton_config.read().map(|cfg| cfg.hooks.port).unwrap_or(0);
                 if hooks_enabled {
-                    hook_server::start(
-                        app.handle().clone(),
-                        hook_server.clone(),
-                        hooks_port,
-                    );
+                    hook_server::start(app.handle().clone(), hook_server.clone(), hooks_port);
                 }
             }
 

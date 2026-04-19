@@ -547,3 +547,16 @@ The flush runs on every startup and on every hot-reload, ensuring the file alway
 - **User comments stripped**: `toml::to_string_pretty` does not preserve comments. The config file header directs users to the docs for reference.
 - **Parse error recovery**: When the file has syntax errors, flushing defaults overwrites the broken file — the user gets a working config instead of being stuck.
 - **Read-only file**: The flush logs an error and continues. The app still works with the in-memory config.
+
+## [hurl]
+
+Configure the built-in Hurl client window.
+
+```toml
+[hurl]
+# Absolute path to the `hurl` binary. Leave unset to auto-detect from PATH
+# (falls back to a login shell lookup on macOS GUI launches).
+binary_path = "/opt/homebrew/bin/hurl"
+```
+
+The Hurl client is opened via `Cmd+P` then `H`, or via the command palette ("Open Hurl Client"). It indexes every `.hurl` file under the focused terminal cwd (gitignore-aware) and runs the selected file with `--color --pretty --include`. See `docs/65-hurl-client-window.md` for the full keybinding reference.

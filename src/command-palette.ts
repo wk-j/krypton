@@ -648,6 +648,27 @@ export class CommandPalette {
       execute: () => c.openMarkdownView(),
     });
 
+    // ── Hurl Client ──
+    this.register({
+      id: 'hurl.open',
+      label: 'Open Hurl Client',
+      category: 'Window',
+      keybinding: 'Leader H',
+      execute: () => c.openHurlClient(),
+    });
+    this.register({
+      id: 'hurl.clear-cache',
+      label: 'Hurl: Clear Cache',
+      category: 'Window',
+      execute: async () => {
+        try {
+          await invoke('hurl_clear_cache', { filePath: null });
+        } catch (e) {
+          console.error('[Krypton] Failed to clear hurl cache:', e);
+        }
+      },
+    });
+
     // ── SSH actions ──
     this.register({
       id: 'ssh.clone-tab',

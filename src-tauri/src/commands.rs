@@ -248,7 +248,10 @@ pub async fn capture_screen() -> Result<Option<CaptureResult>, String> {
     };
 
     let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Ok(Some(CaptureResult { path: path_str, data }))
+    Ok(Some(CaptureResult {
+        path: path_str,
+        data,
+    }))
 }
 
 /// Read a single environment variable.
@@ -289,7 +292,9 @@ pub fn get_env_var(name: String) -> Option<String> {
 pub fn get_default_shell(
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
 ) -> Result<(String, Vec<String>), String> {
-    let cfg = config.read().map_err(|e| format!("Config lock poisoned: {e}"))?;
+    let cfg = config
+        .read()
+        .map_err(|e| format!("Config lock poisoned: {e}"))?;
     Ok((cfg.shell.program.clone(), cfg.shell.args.clone()))
 }
 
@@ -349,7 +354,10 @@ fn run_command_blocking(
     if output.status.success() {
         Ok(combined)
     } else {
-        let code = output.status.code().map_or("signal".to_string(), |c| c.to_string());
+        let code = output
+            .status
+            .code()
+            .map_or("signal".to_string(), |c| c.to_string());
         if combined.is_empty() {
             Err(format!("exit code {code}"))
         } else {
@@ -368,11 +376,9 @@ pub async fn query_sqlite(
     query: String,
     params: Vec<serde_json::Value>,
 ) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        query_sqlite_blocking(&db_path, &query, &params)
-    })
-    .await
-    .map_err(|e| format!("Task join error: {e}"))?
+    tauri::async_runtime::spawn_blocking(move || query_sqlite_blocking(&db_path, &query, &params))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
 }
 
 /// Synchronous SQLite query implementation (runs on blocking thread pool).
@@ -574,7 +580,9 @@ pub fn set_agent_active(
 /// Copy the Claude Code hook configuration snippet to the system clipboard
 /// and return it. Users paste this into their ~/.claude/settings.json.
 #[tauri::command]
-pub fn get_hook_server_config_snippet(hook_server: State<'_, Arc<HookServer>>) -> Result<String, String> {
+pub fn get_hook_server_config_snippet(
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<String, String> {
     let port = hook_server.get_port();
     if port == 0 {
         return Err("Hook server is not running".to_string());
@@ -625,8 +633,8 @@ pub fn get_hook_server_config_snippet(hook_server: State<'_, Arc<HookServer>>) -
         }
     });
 
-    let text = serde_json::to_string_pretty(&snippet)
-        .map_err(|e| format!("Failed to serialize: {e}"))?;
+    let text =
+        serde_json::to_string_pretty(&snippet).map_err(|e| format!("Failed to serialize: {e}"))?;
 
     // Copy to system clipboard via pbcopy (macOS)
     if let Ok(mut child) = std::process::Command::new("pbcopy")
@@ -783,9 +791,15 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<Vec<FileEntry>,
 fn format_unix_permissions(mode: u32) -> String {
     let mut s = String::with_capacity(9);
     let flags = [
-        (0o400, 'r'), (0o200, 'w'), (0o100, 'x'),
-        (0o040, 'r'), (0o020, 'w'), (0o010, 'x'),
-        (0o004, 'r'), (0o002, 'w'), (0o001, 'x'),
+        (0o400, 'r'),
+        (0o200, 'w'),
+        (0o100, 'x'),
+        (0o040, 'r'),
+        (0o020, 'w'),
+        (0o010, 'x'),
+        (0o004, 'r'),
+        (0o002, 'w'),
+        (0o001, 'x'),
     ];
     for (bit, ch) in flags {
         s.push(if mode & bit != 0 { ch } else { '-' });
@@ -834,7 +848,9 @@ pub fn search_files(root: String, show_hidden: bool) -> Result<Vec<String>, Stri
         };
 
         // Skip directories — we only want files
-        let Some(ft) = entry.file_type() else { continue };
+        let Some(ft) = entry.file_type() else {
+            continue;
+        };
         if ft.is_dir() {
             continue;
         }

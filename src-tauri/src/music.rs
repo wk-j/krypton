@@ -229,37 +229,35 @@ fn scan_mp3_files(dir: &PathBuf) -> Vec<TrackInfo> {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("mp3")) {
+        if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("mp3"))
+        {
             let filename = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
 
             // Try to get duration and audio info by decoding headers
-            let (duration_secs, sample_rate_hz, channels) =
-                match std::fs::read(&path) {
-                    Ok(bytes) => {
-                        match Decoder::new(Cursor::new(bytes)) {
-                            Ok(source) => {
-                                let sr = source.sample_rate();
-                                let ch = source.channels() as u8;
-                                let dur = source
-                                    .total_duration()
-                                    .map(|d| d.as_secs_f64())
-                                    .unwrap_or(0.0);
-                                (dur, sr, ch)
-                            }
-                            Err(_) => (0.0, 44100, 2),
-                        }
+            let (duration_secs, sample_rate_hz, channels) = match std::fs::read(&path) {
+                Ok(bytes) => match Decoder::new(Cursor::new(bytes)) {
+                    Ok(source) => {
+                        let sr = source.sample_rate();
+                        let ch = source.channels() as u8;
+                        let dur = source
+                            .total_duration()
+                            .map(|d| d.as_secs_f64())
+                            .unwrap_or(0.0);
+                        (dur, sr, ch)
                     }
                     Err(_) => (0.0, 44100, 2),
-                };
+                },
+                Err(_) => (0.0, 44100, 2),
+            };
 
             // Estimate bitrate from file size and duration
             let bitrate_kbps = if duration_secs > 0.0 {
-                let file_size = std::fs::metadata(&path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
+                let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
                 ((file_size as f64 * 8.0) / (duration_secs * 1000.0)) as u32
             } else {
                 0
@@ -419,8 +417,7 @@ fn music_audio_thread(
                         }
                         // Update position before pausing
                         if let Some(start) = playback_start {
-                            st.position_secs =
-                                playback_offset_secs + start.elapsed().as_secs_f64();
+                            st.position_secs = playback_offset_secs + start.elapsed().as_secs_f64();
                         }
                         st.status = PlayStatus::Paused;
                         playback_start = None;
@@ -757,7 +754,6 @@ fn play_track(
 fn emit_state(app_handle: &tauri::AppHandle, state: &PlaybackState) {
     let _ = app_handle.emit("music-state-changed", state);
 }
-
 
 fn expand_tilde(path: &str) -> String {
     if path.starts_with("~/") || path == "~" {
