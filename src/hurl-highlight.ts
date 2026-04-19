@@ -18,6 +18,10 @@ interface Region {
   start: number;
   end: number;
   cls: string;
+  /** Override text to render in place of source.slice(start,end). */
+  replace?: string;
+  /** Extra data encoded into the span's title attribute. */
+  title?: string;
 }
 
 function findJsonBlocks(src: string): Region[] {
@@ -25,6 +29,11 @@ function findJsonBlocks(src: string): Region[] {
   const len = src.length;
   let i = 0;
   while (i < len) {
+    if (src[i] === '{' && src[i + 1] === '{') {
+      const endVar = src.indexOf('}}', i + 2);
+      i = endVar < 0 ? len : endVar + 2;
+      continue;
+    }
     const ch = src[i];
     if (ch === '{' || ch === '[') {
       const open = ch;
@@ -34,6 +43,11 @@ function findJsonBlocks(src: string): Region[] {
       let inStr = false;
       let escape = false;
       while (j < len && depth > 0) {
+        if (!inStr && src[j] === '{' && src[j + 1] === '{') {
+          const endVar = src.indexOf('}}', j + 2);
+          j = endVar < 0 ? len : endVar + 2;
+          continue;
+        }
         const c = src[j];
         if (inStr) {
           if (escape) {
@@ -61,7 +75,7 @@ function findJsonBlocks(src: string): Region[] {
   return out;
 }
 
-export function highlightHurl(source: string): string {
+export function highlightHurl(source: string, vars?: Record<string, string>): string {
   const regions: Region[] = [];
 
   // Comments — full line starting with #
@@ -108,40 +122,101 @@ export function highlightHurl(source: string): string {
   const varRe = /\{\{([^}]+)\}\}/g;
   let vm: RegExpExecArray | null;
   while ((vm = varRe.exec(source)) !== null) {
-    regions.push({
-      start: vm.index,
-      end: vm.index + vm[0].length,
-      cls: 'hurl-token--var',
-    });
+    const name = vm[1].trim();
+    if (vars) {
+      const value = vars[name];
+      if (value !== undefined) {
+        regions.push({
+          start: vm.index,
+          end: vm.index + vm[0].length,
+          cls: 'hurl-token--resolved',
+          replace: value,
+          title: `${name} = ${value}`,
+        });
+      } else {
+        regions.push({
+          start: vm.index,
+          end: vm.index + vm[0].length,
+          cls: 'hurl-token--unresolved',
+          title: `${name} (unresolved)`,
+        });
+      }
+    } else {
+      regions.push({
+        start: vm.index,
+        end: vm.index + vm[0].length,
+        cls: 'hurl-token--var',
+      });
+    }
   }
 
-  regions.sort((a, b) => a.start - b.start || a.end - b.end);
+  const isAtomic = (cls: string): boolean =>
+    cls === 'hurl-token--var' || cls === 'hurl-token--resolved' || cls === 'hurl-token--unresolved';
 
-  // Resolve overlaps — outer wins when encountered first, drop inner until past
+  const atoms = regions.filter((r) => isAtomic(r.cls)).sort((a, b) => a.start - b.start);
+  const containers = regions
+    .filter((r) => !isAtomic(r.cls))
+    .sort((a, b) => a.start - b.start);
+
+  // Drop containers that overlap an earlier container.
+  const kept: Region[] = [];
+  let bound = 0;
+  for (const c of containers) {
+    if (c.start < bound) continue;
+    kept.push(c);
+    bound = c.end;
+  }
+
   const out: string[] = [];
-  let cursor = 0;
-  const stack: Region[] = [];
 
-  const emit = (from: number, to: number): void => {
-    if (from >= to) return;
-    const top = stack[stack.length - 1];
-    if (top) {
-      out.push(`<span class="hurl-token ${top.cls}">${escapeHtml(source.slice(from, to))}</span>`);
-    } else {
-      out.push(escapeHtml(source.slice(from, to)));
-    }
+  const span = (r: Region, text: string): string => {
+    const attr = r.title ? ` title="${escapeHtml(r.title)}"` : '';
+    return `<span class="hurl-token ${r.cls}"${attr}>${escapeHtml(text)}</span>`;
   };
 
-  for (const r of regions) {
-    const top = stack[stack.length - 1];
-    if (top && r.start < top.end) continue;
-    emit(cursor, r.start);
-    cursor = r.start;
-    stack.push(r);
-    emit(cursor, r.end);
-    cursor = r.end;
-    stack.pop();
+  const emitAtom = (a: Region): string => span(a, a.replace ?? source.slice(a.start, a.end));
+
+  const emitContainerWithAtoms = (c: Region, inside: Region[]): void => {
+    let cur = c.start;
+    for (const a of inside) {
+      if (a.start > cur) out.push(span(c, source.slice(cur, a.start)));
+      out.push(emitAtom(a));
+      cur = a.end;
+    }
+    if (cur < c.end) out.push(span(c, source.slice(cur, c.end)));
+  };
+
+  let cursor = 0;
+  let ai = 0;
+  for (const c of kept) {
+    while (ai < atoms.length && atoms[ai].end <= c.start) {
+      const a = atoms[ai];
+      if (a.start >= cursor) {
+        if (cursor < a.start) out.push(escapeHtml(source.slice(cursor, a.start)));
+        out.push(emitAtom(a));
+        cursor = a.end;
+      }
+      ai++;
+    }
+    if (cursor < c.start) out.push(escapeHtml(source.slice(cursor, c.start)));
+    const inside: Region[] = [];
+    while (ai < atoms.length && atoms[ai].end <= c.end) {
+      if (atoms[ai].start >= c.start) inside.push(atoms[ai]);
+      ai++;
+    }
+    emitContainerWithAtoms(c, inside);
+    cursor = c.end;
   }
-  emit(cursor, source.length);
+  while (ai < atoms.length) {
+    const a = atoms[ai];
+    if (a.start >= cursor) {
+      if (cursor < a.start) out.push(escapeHtml(source.slice(cursor, a.start)));
+      out.push(emitAtom(a));
+      cursor = a.end;
+    }
+    ai++;
+  }
+  if (cursor < source.length) out.push(escapeHtml(source.slice(cursor)));
+
   return out.join('');
 }

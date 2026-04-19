@@ -8,6 +8,13 @@ import type { ContentView, PaneContentType } from './types';
 import { ansiToHtml } from './hurl-ansi';
 import { highlightHurl } from './hurl-highlight';
 
+function escapeHtmlText(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 interface HurlFile {
   path: string;
   rel_path: string;
@@ -67,6 +74,7 @@ interface HurlSidebarState {
   verbose: boolean;
   very_verbose: boolean;
   active_env_file: string | null;
+  resolved_view?: boolean;
   updated_at: number;
 }
 
@@ -103,6 +111,8 @@ export class HurlContentView implements ContentView {
   private verbose = false;
   private veryVerbose = false;
   private activeEnvFile: string | null = null;
+  private envVars: Record<string, string> | null = null;
+  private resolvedView = false;
   private activeRun: HurlRun | null = null;
   private lastRun: HurlRun | null = null;
   private sourceCache = new Map<string, string>();
@@ -241,6 +251,7 @@ export class HurlContentView implements ContentView {
         this.verbose = state.verbose;
         this.veryVerbose = state.very_verbose;
         this.activeEnvFile = state.active_env_file;
+        this.resolvedView = state.resolved_view ?? false;
       } else {
         for (const f of this.files) {
           const segs = f.rel_path.split('/');
@@ -259,6 +270,8 @@ export class HurlContentView implements ContentView {
       this.renderTree();
       this.renderToolbar();
       this.updateStatusBar();
+
+      await this.loadEnvVars();
 
       if (this.files.length > 0) {
         this.openSelectedFile();
@@ -414,7 +427,12 @@ export class HurlContentView implements ContentView {
     this.toolbarEl.innerHTML = '';
     const modeLabel = document.createElement('span');
     modeLabel.className = 'krypton-hurl__toolbar-item';
-    modeLabel.textContent = this.viewMode === 'source' ? 'SOURCE' : 'RESPONSE';
+    modeLabel.textContent =
+      this.viewMode === 'source'
+        ? this.resolvedView
+          ? 'SOURCE · RESOLVED'
+          : 'SOURCE'
+        : 'RESPONSE';
     this.toolbarEl.appendChild(modeLabel);
 
     if (this.verbose) {
@@ -520,12 +538,31 @@ export class HurlContentView implements ContentView {
     if (source === undefined) {
       try {
         source = await invoke<string>('read_file', { path: absPath });
-      } catch {
-        source = '';
+      } catch (e) {
+        this.viewportEl.innerHTML =
+          `<div class="krypton-hurl__empty krypton-hurl__empty--error">Failed to read file: ${escapeHtmlText(String(e))}</div>`;
+        return;
       }
       this.sourceCache.set(absPath, source);
     }
-    this.viewportEl.innerHTML = `<pre class="krypton-hurl__source">${highlightHurl(source)}</pre>`;
+    const vars = this.resolvedView && this.envVars ? this.envVars : undefined;
+    this.viewportEl.innerHTML = `<pre class="krypton-hurl__source">${highlightHurl(source, vars)}</pre>`;
+  }
+
+  private async loadEnvVars(): Promise<void> {
+    if (!this.activeEnvFile) {
+      this.envVars = null;
+      return;
+    }
+    try {
+      this.envVars = await invoke<Record<string, string>>('hurl_read_env_file', {
+        path: this.activeEnvFile,
+      });
+    } catch (e) {
+      this.envVars = null;
+      this.statusBarEl.textContent = `ENV PARSE ERROR: ${String(e)}`;
+      console.error('hurl_read_env_file failed:', e);
+    }
   }
 
   private async loadAndRenderCached(absPath: string): Promise<void> {
@@ -553,8 +590,9 @@ export class HurlContentView implements ContentView {
         this.viewportEl.innerHTML = '<div class="krypton-hurl__empty">No response cached — press Enter to run.</div>';
         this.cachedBadge = '';
       }
-    } catch {
-      this.viewportEl.innerHTML = '<div class="krypton-hurl__empty">Failed to load cache.</div>';
+    } catch (e) {
+      this.viewportEl.innerHTML =
+        `<div class="krypton-hurl__empty krypton-hurl__empty--error">Failed to load cache: ${escapeHtmlText(String(e))}</div>`;
     }
   }
 
@@ -676,7 +714,15 @@ export class HurlContentView implements ContentView {
           verbose: this.verbose,
           very_verbose: this.veryVerbose,
         },
-      }).catch(() => { /* swallow */ });
+      }).catch((e) => {
+        console.warn('hurl_save_cache failed:', e);
+      });
+    }
+
+    if (run.status === 'failed' && this.viewMode !== 'response') {
+      this.viewMode = 'response';
+      this.renderToolbar();
+      this.renderViewport();
     }
   }
 
@@ -802,6 +848,16 @@ export class HurlContentView implements ContentView {
       case '.':
         void this.refresh();
         return true;
+      case 'i':
+        this.resolvedView = !this.resolvedView;
+        if (this.viewMode !== 'source') {
+          this.viewMode = 'source';
+          this.renderToolbar();
+        }
+        this.renderViewport();
+        this.updateStatusBar();
+        this.saveStateDebounced();
+        return true;
       case '?':
       case 'F1':
         this.openHelp();
@@ -877,7 +933,10 @@ export class HurlContentView implements ContentView {
       this.buildTree();
       this.rebuildVisible();
       this.renderTree();
-    } catch { /* ignore */ }
+    } catch (e) {
+      this.statusBarEl.textContent = `REFRESH ERROR: ${String(e)}`;
+      console.error('hurl refresh failed:', e);
+    }
   }
 
   // ─── Env picker ───────────────────────────────────────────────
@@ -935,6 +994,10 @@ export class HurlContentView implements ContentView {
         ev.preventDefault();
         const pick = items[sel];
         this.activeEnvFile = pick.path;
+        void this.loadEnvVars().then(() => {
+          this.updateStatusBar();
+          if (this.viewMode === 'source') this.renderViewport();
+        });
         this.updateStatusBar();
         this.saveStateDebounced();
         close();
@@ -990,6 +1053,7 @@ export class HurlContentView implements ContentView {
         heading: 'Output',
         rows: [
           ['o', 'Toggle source / response view'],
+          ['i', 'Inspect: show resolved env values in source'],
           ['g / G', 'Scroll top / bottom'],
           ['J / K', 'Page down / up'],
           ['y', 'Copy full response to clipboard'],
@@ -1089,6 +1153,7 @@ export class HurlContentView implements ContentView {
       verbose: this.verbose,
       very_verbose: this.veryVerbose,
       active_env_file: this.activeEnvFile,
+      resolved_view: this.resolvedView,
       updated_at: Date.now(),
     };
     try {

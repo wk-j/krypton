@@ -129,6 +129,7 @@ pub fn run() {
             session::session_continue_recent,
             session::session_list,
             hurl::list_hurl_files,
+            hurl::hurl_read_env_file,
             hurl::hurl_run,
             hurl::hurl_cancel,
             hurl::hurl_save_cache,

@@ -258,6 +258,18 @@
   color: var(--hurl-accent);
 }
 
+.hurl-token--resolved {
+  color: var(--hurl-green);
+  border-bottom: 1px dotted var(--hurl-green);
+  cursor: help;
+}
+
+.hurl-token--unresolved {
+  color: var(--hurl-pink, var(--hurl-accent));
+  text-decoration: line-through wavy;
+  text-decoration-color: var(--hurl-pink, var(--hurl-accent));
+}
+
 .hurl-token--comment {
   color: var(--hurl-text-dim);
   font-style: italic;

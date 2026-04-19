@@ -334,6 +334,39 @@ pub fn list_hurl_files(cwd: String) -> Result<HurlListing, String> {
     })
 }
 
+/// Parse a hurl --variables-file (KEY=VALUE per line, `#` comments, blank
+/// lines ignored, `export` prefix stripped, surrounding single/double quotes
+/// stripped from the value). Returns a map suitable for substituting into
+/// `{{var}}` tokens in the source view.
+#[tauri::command]
+pub fn hurl_read_env_file(path: String) -> Result<HashMap<String, String>, String> {
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read env file {path}: {e}"))?;
+    let mut out = HashMap::new();
+    for raw in contents.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let key = k.trim().to_string();
+        if key.is_empty() {
+            continue;
+        }
+        let mut val = v.trim().to_string();
+        if (val.starts_with('"') && val.ends_with('"') && val.len() >= 2)
+            || (val.starts_with('\'') && val.ends_with('\'') && val.len() >= 2)
+        {
+            val = val[1..val.len() - 1].to_string();
+        }
+        out.insert(key, val);
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub async fn hurl_run(
     app: AppHandle,
