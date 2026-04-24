@@ -435,20 +435,16 @@
 
 /* ─── User messages ──────────────────────────────────────────── */
 
-.agent-view__msg--user {
-  padding: 2px 0;
-}
-
 .agent-view__msg--user .agent-view__msg-label {
-  color: rgba(var(--agent-cyan-rgb), 0.85);
-  text-shadow: 0 0 6px rgba(var(--agent-cyan-rgb), 0.25);
-  padding-left: 6px;
-  border-left: 2px solid rgba(var(--agent-cyan-rgb), 0.5);
+  color: rgba(var(--agent-cyan-rgb), 0.9);
+  text-shadow:
+    0 0 6px rgba(var(--agent-cyan-rgb), 0.35),
+    0 0 16px rgba(var(--agent-cyan-rgb), 0.15);
 }
 
 .agent-view__msg--user .agent-view__msg-label::before {
   content: '❯ ';
-  color: rgba(var(--agent-cyan-rgb), 0.55);
+  color: rgba(var(--agent-cyan-rgb), 0.6);
   letter-spacing: 0;
   margin-right: 2px;
 }
@@ -466,59 +462,10 @@
 /* ─── Assistant messages — amber phosphor readout ────────────── */
 
 .agent-view__msg--assistant {
-  padding: 14px 100px 14px 18px;
+  padding: 4px 100px 4px 0;
   position: relative;
-  background:
-    linear-gradient(90deg,
-      rgba(var(--agent-primary-rgb), 0.07),
-      rgba(var(--agent-primary-rgb), 0.015) 35%,
-      transparent 70%);
-  animation: msg-boot 0.45s ease-out;
-  overflow: hidden;
-}
-
-/* Top edge: glowing phosphor rule with bright left cap */
-.agent-view__msg--assistant::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(var(--agent-primary-rgb), 0.85) 0,
-    rgba(var(--agent-primary-rgb), 0.85) 40px,
-    rgba(var(--agent-primary-rgb), 0.35) 120px,
-    transparent 75%
-  );
-  box-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.4);
-  pointer-events: none;
-}
-
-/* Bottom edge: faded counterpart rule for panel symmetry */
-.agent-view__msg--assistant::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 40%;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(var(--agent-primary-rgb), 0.4),
-    rgba(var(--agent-primary-rgb), 0.12) 60%,
-    transparent
-  );
-  pointer-events: none;
-}
-
-/* Wrapper container uses grid, so use ::before/::after on body for side-rail.
-   Instead, put left rail as box-shadow inset to avoid pseudo collisions. */
-.agent-view__msg--assistant {
-  box-shadow:
-    inset 2px 0 0 rgba(var(--agent-primary-rgb), 0.5),
-    inset 3px 0 12px -3px rgba(var(--agent-primary-rgb), 0.2);
+  animation: msg-boot 0.4s ease-out;
+  align-items: start;
 }
 
 @keyframes msg-boot {
@@ -526,18 +473,11 @@
   100% { opacity: 1; transform: translateY(0); }
 }
 
-/* Assistant label: bracketed badge with hex marker */
 .agent-view__msg--assistant .agent-view__msg-label {
   color: var(--agent-primary);
-  background: rgba(var(--agent-primary-rgb), 0.1);
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.4);
-  padding: 2px 9px 2px 7px;
   text-shadow:
     0 0 8px rgba(var(--agent-primary-rgb), 0.5),
     0 0 20px rgba(var(--agent-primary-rgb), 0.15);
-  box-shadow:
-    inset 0 0 8px rgba(var(--agent-primary-rgb), 0.08),
-    0 0 6px rgba(var(--agent-primary-rgb), 0.15);
 }
 
 .agent-view__msg--assistant .agent-view__msg-label::before {
@@ -814,19 +754,13 @@
   font-family: var(--agent-font);
   font-size: var(--krypton-font-size);
   line-height: var(--krypton-content-line-height, 1.5);
-  padding: 8px 12px;
-  margin: 4px 0 8px 0;
+  padding: 2px 0 4px 12px;
+  margin: 2px 0 4px 0;
   color: rgba(var(--agent-text-rgb), 0.8);
-  background: rgba(var(--agent-green-rgb), 0.02);
-  border: 1px solid rgba(var(--agent-green-rgb), 0.08);
-  border-left: 2px solid rgba(var(--agent-green-rgb), 0.4);
 }
 
 .agent-view__shell-result--error {
   color: rgba(var(--agent-red-rgb), 0.95);
-  border-color: rgba(var(--agent-red-rgb), 0.12);
-  border-left-color: rgba(var(--agent-red-rgb), 0.5);
-  background: rgba(var(--agent-red-rgb), 0.03);
   text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.15);
 }
 
@@ -901,30 +835,11 @@
 .agent-view__tool-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 7px 12px 8px;
-  border-left: 2px solid rgba(var(--agent-blue-rgb), 0.35);
+  gap: 3px;
+  padding: 3px 0;
   font-size: var(--krypton-font-size);
-  background: linear-gradient(
-    90deg,
-    rgba(var(--agent-blue-rgb), 0.04),
-    rgba(var(--agent-blue-rgb), 0.01) 40%,
-    transparent 70%
-  );
   position: relative;
   animation: msg-boot 0.35s ease-out;
-}
-
-/* Top micro-rule tying tool rows into the telemetry aesthetic */
-.agent-view__tool-row::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 60px;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(var(--agent-blue-rgb), 0.55), transparent);
-  pointer-events: none;
 }
 
 .agent-view__tool-header {
@@ -936,13 +851,15 @@
 .agent-view__tool-command {
   font-family: var(--agent-font);
   font-size: var(--krypton-font-size);
-  color: rgba(var(--agent-text-rgb), 0.85);
-  padding: 4px 10px;
-  background: rgba(var(--agent-primary-rgb), 0.04);
-  border-left: 1px solid rgba(var(--agent-primary-rgb), 0.2);
+  color: rgba(var(--agent-text-rgb), 0.8);
   white-space: pre-wrap;
   word-break: break-all;
   margin-left: 22px;
+}
+
+.agent-view__tool-command::before {
+  content: '└ ';
+  color: rgba(var(--agent-primary-rgb), 0.35);
 }
 
 .agent-view__tool-icon {
@@ -952,22 +869,23 @@
   text-shadow: 0 0 6px rgba(var(--agent-blue-rgb), 0.3);
 }
 
-.agent-view__tool-row--done {
-  border-left-color: rgba(var(--agent-green-rgb), 0.5);
-}
-
 .agent-view__tool-row--done .agent-view__tool-icon {
   color: var(--agent-green);
-  text-shadow: 0 0 8px rgba(var(--agent-green-rgb), 0.4);
-}
-
-.agent-view__tool-row--error {
-  border-left-color: rgba(var(--agent-red-rgb), 0.5);
+  text-shadow: 0 0 8px rgba(var(--agent-green-rgb), 0.5);
 }
 
 .agent-view__tool-row--error .agent-view__tool-icon {
   color: var(--agent-red);
+  text-shadow: 0 0 8px rgba(var(--agent-red-rgb), 0.5);
+}
+
+.agent-view__tool-row--error .agent-view__tool-name {
+  color: var(--agent-red);
   text-shadow: 0 0 8px rgba(var(--agent-red-rgb), 0.4);
+}
+.agent-view__tool-row--error .agent-view__tool-name::before,
+.agent-view__tool-row--error .agent-view__tool-name::after {
+  color: rgba(var(--agent-red-rgb), 0.55);
 }
 
 .agent-view__tool-name {
@@ -1003,13 +921,12 @@
 
 .agent-view__tool-result {
   width: 100%;
-  margin-top: 4px;
+  margin-top: 2px;
+  margin-left: 22px;
   white-space: pre-wrap;
   word-break: break-word;
   color: rgba(var(--agent-text-rgb), 0.45);
   font-size: var(--krypton-font-size);
-  border-left: 1px solid rgba(var(--agent-primary-rgb), 0.12);
-  padding-left: 8px;
 }
 
 .agent-view__tool-more {
