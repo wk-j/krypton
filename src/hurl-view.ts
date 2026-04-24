@@ -15,6 +15,12 @@ function escapeHtmlText(s: string): string {
     .replace(/>/g, '&gt;');
 }
 
+// Strips ANSI SGR color codes and other CSI escape sequences.
+function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
+}
+
 interface HurlFile {
   path: string;
   rel_path: string;
@@ -549,6 +555,85 @@ export class HurlContentView implements ContentView {
     this.viewportEl.innerHTML = `<pre class="krypton-hurl__source">${highlightHurl(source, vars)}</pre>`;
   }
 
+  private resolveSource(source: string): string {
+    if (!this.resolvedView || !this.envVars) return source;
+    const vars = this.envVars;
+    return source.replace(/\{\{([^}]+)\}\}/g, (m, name: string) => {
+      const v = vars[name.trim()];
+      return v !== undefined ? v : m;
+    });
+  }
+
+  private async getCurrentSource(): Promise<{ path: string; content: string } | null> {
+    const node = this.currentFileNode;
+    if (!node?.absPath) return null;
+    let source = this.sourceCache.get(node.absPath);
+    if (source === undefined) {
+      try {
+        source = await invoke<string>('read_file', { path: node.absPath });
+        this.sourceCache.set(node.absPath, source);
+      } catch {
+        return null;
+      }
+    }
+    return { path: node.absPath, content: this.resolveSource(source) };
+  }
+
+  private async copyToClipboard(text: string, label: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      this.flashStatus(`COPIED ${label.toUpperCase()} (${text.length} chars)`);
+    } catch (e) {
+      this.flashStatus(`COPY FAILED: ${String(e)}`);
+    }
+  }
+
+  private async copySource(): Promise<void> {
+    const src = await this.getCurrentSource();
+    if (!src) {
+      this.flashStatus('NO SOURCE TO COPY');
+      return;
+    }
+    const text = `# ${src.path}\n\n${src.content}`;
+    await this.copyToClipboard(text, 'source');
+  }
+
+  private async copyAIContext(): Promise<void> {
+    const src = await this.getCurrentSource();
+    if (!src) {
+      this.flashStatus('NO SOURCE TO COPY');
+      return;
+    }
+    const run = this.activeRun ?? this.lastRun;
+    const parts: string[] = [
+      `## Hurl source`,
+      `Path: \`${src.path}\``,
+      '',
+      '```hurl',
+      src.content,
+      '```',
+    ];
+    if (run) {
+      const combined = stripAnsi(run.stderr + run.stdout);
+      parts.push(
+        '',
+        `## Response (exit code: ${run.exitCode ?? 'n/a'}, status: ${run.status})`,
+        '',
+        '```',
+        combined.trimEnd(),
+        '```',
+      );
+    } else {
+      parts.push('', '## Response', '', '_No response captured yet._');
+    }
+    await this.copyToClipboard(parts.join('\n'), 'AI context');
+  }
+
+  private flashStatus(msg: string): void {
+    this.statusBarEl.textContent = msg;
+    window.setTimeout(() => this.updateStatusBar(), 1500);
+  }
+
   private async loadEnvVars(): Promise<void> {
     if (!this.activeEnvFile) {
       this.envVars = null;
@@ -877,7 +962,25 @@ export class HurlContentView implements ContentView {
       case 'y': {
         const run = this.activeRun ?? this.lastRun;
         if (run) {
-          void navigator.clipboard.writeText(run.stderr + run.stdout);
+          const plain = stripAnsi(run.stderr + run.stdout);
+          void this.copyToClipboard(plain, 'response');
+        }
+        return true;
+      }
+      case 'Y': {
+        void this.copySource();
+        return true;
+      }
+      case 'C': {
+        void this.copyAIContext();
+        return true;
+      }
+      case 'p': {
+        const node = this.currentFileNode;
+        if (node?.absPath) {
+          void this.copyToClipboard(node.absPath, 'path');
+        } else {
+          this.flashStatus('NO FILE SELECTED');
         }
         return true;
       }
@@ -1057,6 +1160,9 @@ export class HurlContentView implements ContentView {
           ['g / G', 'Scroll top / bottom'],
           ['J / K', 'Page down / up'],
           ['y', 'Copy full response to clipboard'],
+          ['Y', 'Copy hurl source (resolved if inspect on)'],
+          ['p', 'Copy absolute path of selected file'],
+          ['C', 'Copy source + response as AI context'],
         ],
       },
       {

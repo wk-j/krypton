@@ -3677,11 +3677,11 @@ export class Compositor {
   }
 
   /** Default window size as fraction of viewport */
-  private static readonly DEFAULT_WIDTH_RATIO = 0.5;
-  private static readonly DEFAULT_HEIGHT_RATIO = 0.6;
+  private static readonly DEFAULT_WIDTH_RATIO = 0.95;
+  private static readonly DEFAULT_HEIGHT_RATIO = 0.95;
   /** Multi-window: total area used as fraction of viewport */
-  private static readonly MULTI_WIDTH_RATIO = 0.85;
-  private static readonly MULTI_HEIGHT_RATIO = 0.75;
+  private static readonly MULTI_WIDTH_RATIO = 0.95;
+  private static readonly MULTI_HEIGHT_RATIO = 0.95;
   private static readonly WINDOW_GAP = 6;
   /** Depth layout: window size as fraction of viewport */
   private static readonly DEPTH_WIDTH_RATIO = 0.88;

@@ -23,12 +23,14 @@ type WorkerMessage =
   | { type: 'dispose' }
   | { type: 'fft'; bins: number[] };
 
-// Per-renderer frame budget. matrix/brainwave dominate CPU via OffscreenCanvas
-// fillText (macOS WebKit has no glyph cache and IPCs per draw); cap them to
-// reduce cost while preserving motion. flame is cheap and benefits from 60 fps.
+// Per-renderer frame budget. brainwave still uses fillText for labels/readouts
+// (cheap at ~12 calls/frame but not free). matrix now renders via a pre-baked
+// glyph atlas (see docs/67-matrix-glyph-atlas.md) so the per-frame cost is
+// pure drawImage blits — restored to 60 fps. circuit-trace pulses read fine
+// at 30 fps. flame is cheap primitives and benefits from 60 fps.
 // See docs/64-matrix-animation-cpu-burn.md.
 const TARGET_FPS_BY_TYPE: Record<AnimationType, number> = {
-  matrix: 30,
+  matrix: 60,
   brainwave: 30,
   'circuit-trace': 30,
   flame: 60,

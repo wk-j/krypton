@@ -17,6 +17,98 @@ function randomChar(): string {
   return CHAR_POOL[Math.floor(Math.random() * CHAR_POOL.length)];
 }
 
+const FADE_DURATION = 600;
+const BASE_OPACITY = 0.25;
+const MIN_COLUMNS = 8;
+const COLUMN_DENSITY = 0.06; // columns per pixel of width
+const FONT_MIN = 8;
+const FONT_MAX = 15;
+
+// ─── Glyph Atlas ─────────────────────────────────────────────────
+// Per-frame fillText on OffscreenCanvas is pathological on macOS WebKit —
+// every call hits uncached CoreText rasterization + GPU-process IPC. We
+// pre-rasterize every (char, fontSize) tile once into an OffscreenCanvas,
+// then the per-frame hot loop becomes pure drawImage blits with varying
+// globalAlpha. See docs/67-matrix-glyph-atlas.md.
+
+/** Integer font sizes covered by the atlas, inclusive of both ends. */
+const ATLAS_SIZES: number[] = (() => {
+  const out: number[] = [];
+  for (let s = FONT_MIN; s <= FONT_MAX; s++) out.push(s);
+  return out;
+})();
+
+interface GlyphAtlas {
+  dpr: number;
+  tileW: number;  // device pixels
+  tileH: number;  // device pixels
+  tileCssW: number; // css pixels (draw size)
+  tileCssH: number; // css pixels
+  white: OffscreenCanvas;
+  green: OffscreenCanvas;
+  /** char -> index in CHAR_POOL */
+  charIndex: Map<string, number>;
+}
+
+let cachedAtlas: GlyphAtlas | null = null;
+
+function buildAtlas(dpr: number): GlyphAtlas {
+  const tileCssW = Math.ceil(FONT_MAX * 1.2);
+  const tileCssH = Math.ceil(FONT_MAX * 1.6);
+  const tileW = Math.ceil(tileCssW * dpr);
+  const tileH = Math.ceil(tileCssH * dpr);
+
+  const cols = ATLAS_SIZES.length;
+  const rows = CHAR_POOL.length;
+
+  const white = new OffscreenCanvas(tileW * cols, tileH * rows);
+  const wctx = white.getContext('2d');
+  if (!wctx) throw new Error('Failed to get 2D context for atlas');
+  wctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  wctx.fillStyle = '#ffffff';
+  wctx.textAlign = 'center';
+  wctx.textBaseline = 'alphabetic';
+
+  for (let ri = 0; ri < rows; ri++) {
+    for (let ci = 0; ci < cols; ci++) {
+      const size = ATLAS_SIZES[ci];
+      const cx = ci * tileCssW + tileCssW / 2;
+      // Baseline near the bottom of the tile leaves descender room above.
+      const cy = ri * tileCssH + tileCssH - Math.ceil(size * 0.25);
+      wctx.font = `${size}px monospace`;
+      wctx.fillText(CHAR_POOL[ri], cx, cy);
+    }
+  }
+
+  // Tinted green version via source-in composite — bitmap-level recolor, no
+  // text rasterization involved.
+  const green = new OffscreenCanvas(white.width, white.height);
+  const gctx = green.getContext('2d');
+  if (!gctx) throw new Error('Failed to get 2D context for atlas');
+  gctx.drawImage(white, 0, 0);
+  gctx.globalCompositeOperation = 'source-in';
+  gctx.fillStyle = '#00ff41';
+  gctx.fillRect(0, 0, green.width, green.height);
+
+  const charIndex = new Map<string, number>();
+  for (let i = 0; i < CHAR_POOL.length; i++) charIndex.set(CHAR_POOL[i], i);
+
+  return { dpr, tileW, tileH, tileCssW, tileCssH, white, green, charIndex };
+}
+
+function getAtlas(dpr: number): GlyphAtlas {
+  if (!cachedAtlas || cachedAtlas.dpr !== dpr) {
+    cachedAtlas = buildAtlas(dpr);
+  }
+  return cachedAtlas;
+}
+
+function readDpr(ctx: RenderCtx): number {
+  const t = ctx.getTransform();
+  // setTransform(dpr, 0, 0, dpr, 0, 0) — .a holds the dpr scale.
+  return t.a > 0 ? t.a : 1;
+}
+
 /** Single falling column */
 interface MatrixColumn {
   x: number;
@@ -32,17 +124,11 @@ interface MatrixColumn {
   opacity: number;
 }
 
-const FADE_DURATION = 600;
-const BASE_OPACITY = 0.25;
-const MIN_COLUMNS = 8;
-const COLUMN_DENSITY = 0.06; // columns per pixel of width
-const FONT_MIN = 8;
-const FONT_MAX = 15;
-
 /** Create a column with random properties */
 function spawnColumn(x: number, H: number, startAbove: boolean): MatrixColumn {
   const depth = Math.random();
-  const fontSize = FONT_MAX - (FONT_MAX - FONT_MIN) * depth;
+  // Quantize to integer sizes so every column maps to an atlas tile.
+  const fontSize = Math.round(FONT_MAX - (FONT_MAX - FONT_MIN) * depth);
   const speed = (1.5 + Math.random() * 2.5) * (1 - depth * 0.6);
   const length = Math.floor(8 + Math.random() * 20 + (H / fontSize) * 0.3);
   const chars: string[] = [];
@@ -88,6 +174,7 @@ export class MatrixRenderer {
   }
 
   private updateAndDraw(ctx: RenderCtx): void {
+    const atlas = getAtlas(readDpr(ctx));
     for (const col of this.columns) {
       // Advance position
       col.y += col.speed;
@@ -113,11 +200,20 @@ export class MatrixRenderer {
         continue;
       }
 
-      // Draw characters from head upward
-      ctx.save();
-      ctx.font = `${col.fontSize}px monospace`;
-      ctx.textAlign = 'center';
+      // Draw characters from head upward via the pre-rasterized atlas.
+      // No fillText, no font set, no fillStyle churn — just drawImage blits
+      // with varying globalAlpha.
+      const sizeCol = col.fontSize - FONT_MIN;
+      const tileW = atlas.tileW;
+      const tileH = atlas.tileH;
+      const drawW = atlas.tileCssW;
+      const drawH = atlas.tileCssH;
+      const halfW = drawW / 2;
+      // Atlas baselines were placed near the bottom of each tile, so shift the
+      // draw rect up by (drawH - descenderPad) to match the original baseline.
+      const baselineOffset = drawH - Math.ceil(col.fontSize * 0.25);
 
+      ctx.save();
       for (let i = 0; i < col.length; i++) {
         const charY = col.y - i * col.fontSize;
 
@@ -125,29 +221,33 @@ export class MatrixRenderer {
 
         const charIdx = i % col.chars.length;
         const fadeRatio = 1 - i / col.length;
+        const ch = col.chars[charIdx];
+        const ri = atlas.charIndex.get(ch);
+        if (ri === undefined) continue;
+
+        const sx = sizeCol * tileW;
+        const sy = ri * tileH;
+        const dx = col.x - halfW;
+        const dy = charY - baselineOffset;
 
         if (i === 0) {
-          ctx.globalAlpha = col.opacity;
-          ctx.fillStyle = '#e0ffe0';
-          ctx.fillText(col.chars[charIdx], col.x, charY);
-
+          // Head: green glow underneath, bright white glyph on top.
           ctx.globalAlpha = col.opacity * 0.5;
           ctx.shadowColor = '#00ff41';
           ctx.shadowBlur = col.fontSize * 0.8;
-          ctx.fillText(col.chars[charIdx], col.x, charY);
+          ctx.drawImage(atlas.green, sx, sy, tileW, tileH, dx, dy, drawW, drawH);
           ctx.shadowBlur = 0;
+
+          ctx.globalAlpha = col.opacity;
+          ctx.drawImage(atlas.white, sx, sy, tileW, tileH, dx, dy, drawW, drawH);
         } else {
           const alpha = col.opacity * fadeRatio * fadeRatio;
           if (alpha < 0.02) continue;
 
           ctx.globalAlpha = alpha;
-          const g = Math.floor(255 - fadeRatio * 40);
-          const b = Math.floor(40 + (1 - fadeRatio) * 80);
-          ctx.fillStyle = `rgb(0,${g},${b})`;
-          ctx.fillText(col.chars[charIdx], col.x, charY);
+          ctx.drawImage(atlas.green, sx, sy, tileW, tileH, dx, dy, drawW, drawH);
         }
       }
-
       ctx.restore();
     }
   }

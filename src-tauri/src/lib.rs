@@ -59,6 +59,12 @@ pub fn run() {
                         Code::KeyS => {
                             let _ = app.emit("capture-requested", ());
                         }
+                        Code::Digit0 => {
+                            // Panic recenter: recover an invisible/offscreen window.
+                            if let Some(w) = app.get_webview_window("main") {
+                                recover_window(&w);
+                            }
+                        }
                         _ => {}
                     }
                 })
@@ -139,13 +145,13 @@ pub fn run() {
             hurl::hurl_save_sidebar_state,
         ])
         .setup(move |app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            // File logging is enabled in release too, so invisible-window and
+            // similar post-mortem bugs are diagnosable from ~/Library/Logs/Krypton/.
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .build(),
+            )?;
 
             // Size the window to cover the entire screen including menu bar and dock
             // (macOS fullscreen mode breaks transparency, so we manually set position/size)
@@ -153,21 +159,14 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("main window not found");
 
-            if let Ok(Some(monitor)) = window.current_monitor() {
-                let pos = monitor.position();
-                let size = monitor.size();
-                let _ = window.set_position(tauri::Position::Physical(
-                    tauri::PhysicalPosition::new(pos.x, pos.y),
-                ));
-                let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
-                    size.width,
-                    size.height,
-                )));
-            }
+            apply_fullscreen_geometry(&window);
             let _ = window.set_always_on_top(true);
             let _ = window.set_always_on_top(false);
 
-            // Register global shortcuts (Ctrl+Shift+K = open dialog, Ctrl+Shift+S = capture)
+            // Register global shortcuts:
+            //   Ctrl+Shift+K = prompt dialog
+            //   Ctrl+Shift+S = screen capture
+            //   Ctrl+Shift+0 = panic recenter (recover invisible/offscreen window)
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
                 app.handle()
@@ -184,6 +183,13 @@ pub fn run() {
                         Code::KeyS,
                     ))
                     .unwrap_or_else(|e| log::warn!("Failed to register Ctrl+Shift+S: {e}"));
+                app.handle()
+                    .global_shortcut()
+                    .register(Shortcut::new(
+                        Some(Modifiers::CONTROL | Modifiers::SHIFT),
+                        Code::Digit0,
+                    ))
+                    .unwrap_or_else(|e| log::warn!("Failed to register Ctrl+Shift+0: {e}"));
             }
 
             // Initialize sound engine with resource path and config
@@ -236,8 +242,121 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            let Some(webview) = window.app_handle().get_webview_window("main") else {
+                return;
+            };
+            match event {
+                tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                    log::info!("scale factor changed; reapplying fullscreen geometry");
+                    apply_fullscreen_geometry(&webview);
+                }
+                tauri::WindowEvent::Focused(true) => {
+                    if window_is_offscreen(&webview) {
+                        log::warn!("window detected offscreen on focus; recentering");
+                        apply_fullscreen_geometry(&webview);
+                    }
+                }
+                _ => {}
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Apply fullscreen geometry to the main window, covering the current monitor.
+///
+/// Falls back from current → primary → first-available monitor, and finally to
+/// a hardcoded 1440×900 default if no monitor is resolvable. Without the
+/// fallback chain, `current_monitor()` returning `None` would leave the window
+/// at its default (possibly zero-sized) rect, which is invisible on a
+/// transparent, decorationless window.
+fn apply_fullscreen_geometry(window: &tauri::WebviewWindow) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .or_else(|| {
+            window
+                .available_monitors()
+                .ok()
+                .and_then(|v| v.into_iter().next())
+        });
+
+    if let Some(m) = monitor {
+        let pos = m.position();
+        let size = m.size();
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+            pos.x, pos.y,
+        )));
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+            size.width,
+            size.height,
+        )));
+        log::info!(
+            "applied fullscreen geometry: pos=({},{}) size={}x{}",
+            pos.x,
+            pos.y,
+            size.width,
+            size.height
+        );
+    } else {
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+            0, 0,
+        )));
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(1440, 900)));
+        log::warn!("no monitor resolvable; applied fallback 1440x900 at (0,0)");
+    }
+}
+
+/// Returns true if the window's rect does not intersect any available monitor.
+fn window_is_offscreen(window: &tauri::WebviewWindow) -> bool {
+    let Ok(pos) = window.outer_position() else {
+        return false;
+    };
+    let Ok(size) = window.outer_size() else {
+        return false;
+    };
+    let Ok(monitors) = window.available_monitors() else {
+        return false;
+    };
+    if monitors.is_empty() {
+        return false;
+    }
+
+    let wx = pos.x;
+    let wy = pos.y;
+    let ww = size.width as i32;
+    let wh = size.height as i32;
+
+    for m in monitors {
+        let mp = m.position();
+        let ms = m.size();
+        let mw = ms.width as i32;
+        let mh = ms.height as i32;
+        let overlap_x = wx < mp.x + mw && mp.x < wx + ww;
+        let overlap_y = wy < mp.y + mh && mp.y < wy + wh;
+        if overlap_x && overlap_y {
+            return false;
+        }
+    }
+    true
+}
+
+/// Bring the window back to a visible, focused state. Invoked by the
+/// Ctrl+Shift+0 "panic recenter" global shortcut — the user-facing escape
+/// hatch when the window becomes invisible or stranded on a disconnected
+/// monitor.
+fn recover_window(window: &tauri::WebviewWindow) {
+    log::info!("panic recenter: recovering window visibility");
+    let _ = window.show();
+    let _ = window.unminimize();
+    apply_fullscreen_geometry(window);
+    let _ = window.set_focus();
 }
 
 // ─── Process Detection Poller ─────────────────────────────────────

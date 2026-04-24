@@ -1,8 +1,8 @@
 # Matrix Animation CPU Burn — Investigation & Remediation Plan
 
-> Status: Phase 1 implemented (idle timeout + per-renderer fps cap)
-> Date: 2026-04-18
-> Related: [34-background-animations.md](34-background-animations.md), [48-offscreen-canvas-animations.md](48-offscreen-canvas-animations.md), [30-claude-code-hooks.md](30-claude-code-hooks.md)
+> Status: Phase 2 implemented (glyph atlas eliminates `fillText` from hot path)
+> Date: 2026-04-18 (phase 1), 2026-04-24 (phase 2)
+> Related: [34-background-animations.md](34-background-animations.md), [48-offscreen-canvas-animations.md](48-offscreen-canvas-animations.md), [30-claude-code-hooks.md](30-claude-code-hooks.md), [67-matrix-glyph-atlas.md](67-matrix-glyph-atlas.md)
 
 ## TL;DR
 
@@ -356,6 +356,44 @@ The timer callback is guarded (`if (!this.isAnyAnimationRunning()) return;`) so 
 
 - `npm run check` passes.
 - Visual spot-check pending user confirmation during normal Claude usage.
+
+---
+
+## Phase 2 Implementation (2026-04-24)
+
+Shipped the glyph atlas (spec: [67-matrix-glyph-atlas.md](67-matrix-glyph-atlas.md)) — the "correct fix" called out in the original remediation plan.
+
+### What changed
+
+**`src/matrix.ts`** — replaced every per-frame `fillText` call with `drawImage` blits from a pre-rasterized `OffscreenCanvas` atlas.
+
+- Atlas built once at module level, cached by DPR, shared across all `MatrixRenderer` instances.
+- Covers the full `CHAR_POOL` (132 chars) at each integer size in `[FONT_MIN..FONT_MAX]` (8 sizes).
+- Two tint layers: `white` (for heads) and `green` (derived via `source-in` composite for trails and head glow).
+- Column `fontSize` quantized to integer in `spawnColumn` so every column maps to an atlas tile.
+- Hot loop has **zero** `fillText`, `ctx.font`, or `fillStyle` calls. Only `globalAlpha` varies per character.
+- Head glow still uses `shadowBlur` but applies it to a `drawImage` (bitmap blur) rather than `fillText` — no CoreText in the stack. One shadowed draw per column head (~72 per frame) vs thousands of shadowed text draws previously.
+
+**`src/animation-worker.ts`** — restored `matrix: 60` fps since the per-frame cost is now dominated by bitmap blits.
+
+### Behavior now
+
+- Matrix hot path no longer calls `CTFontDrawGlyphs` / `DrawGlyphsAtPositions` — expected ~10× CPU reduction per `docs/64`.
+- Matrix runs at 60 fps with full column density with headroom to spare.
+- Phase-1 idle timeout + phase-1 fps cap for `brainwave`/`circuit-trace` remain as defense-in-depth.
+
+### Known follow-ups (still deferred)
+
+- **#2 per-window scoping** — global fan-out still applies. One active Claude session animates all windows.
+- **#4 `document.hidden` pause** — rAF throttles when hidden, explicit stop would be cleaner.
+- **Brainwave atlas** — brainwave's `fillText` usage (~12 calls/frame for labels + readouts) wasn't touched. Revisit only if profiling shows it still matters.
+
+### Verification
+
+- `npm run check` passes.
+- `npm run build` passes.
+- Visual spot-check pending user confirmation during normal Claude usage.
+- `sample` profiling pending confirmation that `CTFontDrawGlyphs` no longer appears in the worker hot stack.
 
 ---
 

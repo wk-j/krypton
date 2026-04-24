@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-04-18 (Matrix animation CPU burn — idle timeout + per-renderer fps cap)
+> Last updated: 2026-04-24 (Matrix animation glyph atlas — fillText removed from hot path, restored 60 fps)
 
 ## Overview
 
@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **Matrix glyph atlas** — per-frame `fillText` replaced with `drawImage` blits from a pre-rasterized `OffscreenCanvas`. Eliminates CoreText/GPU-process IPC from the hot path; matrix runs at 60 fps with single-digit CPU. See `docs/67-matrix-glyph-atlas.md`, `docs/64-matrix-animation-cpu-burn.md` (Phase 2).
 - **Hurl client window** — keyboard-driven `.hurl` runner with tree sidebar, streaming output, per-file cache, and persistent sidebar state. See `docs/65-hurl-client-window.md`.
 
 ## M0 — Scaffold (Week 1-2)
