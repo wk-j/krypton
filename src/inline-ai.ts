@@ -499,8 +499,10 @@ export class InlineAIOverlay {
       return;
     }
 
-    const font = '600 15px "Mononoki Nerd Font Mono", "JetBrains Mono", monospace';
-    const lineHeight = 20; // ~15px * 1.3
+    const cs = getComputedStyle(this.commandEl);
+    const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const fontSizePx = parseFloat(cs.fontSize) || 15;
+    const lineHeight = Math.round(fontSizePx * 1.3);
     const prepared = prepareWithSegments(text, font);
     const { lines } = layoutWithLines(prepared, maxWidth, lineHeight);
 
