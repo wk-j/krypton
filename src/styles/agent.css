@@ -427,7 +427,7 @@
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.22em;
   padding: 3px 0 0;
   user-select: none;
   white-space: nowrap;
@@ -435,9 +435,22 @@
 
 /* ─── User messages ──────────────────────────────────────────── */
 
+.agent-view__msg--user {
+  padding: 2px 0;
+}
+
 .agent-view__msg--user .agent-view__msg-label {
-  color: rgba(var(--agent-cyan-rgb), 0.7);
-  text-shadow: 0 0 6px rgba(var(--agent-cyan-rgb), 0.2);
+  color: rgba(var(--agent-cyan-rgb), 0.85);
+  text-shadow: 0 0 6px rgba(var(--agent-cyan-rgb), 0.25);
+  padding-left: 6px;
+  border-left: 2px solid rgba(var(--agent-cyan-rgb), 0.5);
+}
+
+.agent-view__msg--user .agent-view__msg-label::before {
+  content: '❯ ';
+  color: rgba(var(--agent-cyan-rgb), 0.55);
+  letter-spacing: 0;
+  margin-right: 2px;
 }
 
 .agent-view__msg-body {
@@ -453,40 +466,59 @@
 /* ─── Assistant messages — amber phosphor readout ────────────── */
 
 .agent-view__msg--assistant {
-  padding: 10px 100px 10px 16px;
-  border-left: 2px solid rgba(var(--agent-primary-rgb), 0.4);
+  padding: 14px 100px 14px 18px;
   position: relative;
   background:
-    linear-gradient(90deg, rgba(var(--agent-primary-rgb), 0.05), transparent 40%);
-  animation: msg-boot 0.4s ease-out;
+    linear-gradient(90deg,
+      rgba(var(--agent-primary-rgb), 0.07),
+      rgba(var(--agent-primary-rgb), 0.015) 35%,
+      transparent 70%);
+  animation: msg-boot 0.45s ease-out;
+  overflow: hidden;
 }
 
-/* Corner bracket — top-right */
+/* Top edge: glowing phosphor rule with bright left cap */
 .agent-view__msg--assistant::before {
   content: '';
   position: absolute;
   top: 0;
+  left: 0;
   right: 0;
-  width: 14px;
-  height: 14px;
-  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.35);
-  border-right: 1px solid rgba(var(--agent-primary-rgb), 0.35);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--agent-primary-rgb), 0.85) 0,
+    rgba(var(--agent-primary-rgb), 0.85) 40px,
+    rgba(var(--agent-primary-rgb), 0.35) 120px,
+    transparent 75%
+  );
+  box-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.4);
   pointer-events: none;
-  filter: drop-shadow(0 0 3px rgba(var(--agent-primary-rgb), 0.25));
 }
 
-/* Corner bracket — bottom-right (symmetry) */
+/* Bottom edge: faded counterpart rule for panel symmetry */
 .agent-view__msg--assistant::after {
   content: '';
   position: absolute;
   bottom: 0;
-  right: 0;
-  width: 14px;
-  height: 14px;
-  border-bottom: 1px solid rgba(var(--agent-primary-rgb), 0.35);
-  border-right: 1px solid rgba(var(--agent-primary-rgb), 0.35);
+  left: 0;
+  right: 40%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--agent-primary-rgb), 0.4),
+    rgba(var(--agent-primary-rgb), 0.12) 60%,
+    transparent
+  );
   pointer-events: none;
-  filter: drop-shadow(0 0 3px rgba(var(--agent-primary-rgb), 0.25));
+}
+
+/* Wrapper container uses grid, so use ::before/::after on body for side-rail.
+   Instead, put left rail as box-shadow inset to avoid pseudo collisions. */
+.agent-view__msg--assistant {
+  box-shadow:
+    inset 2px 0 0 rgba(var(--agent-primary-rgb), 0.5),
+    inset 3px 0 12px -3px rgba(var(--agent-primary-rgb), 0.2);
 }
 
 @keyframes msg-boot {
@@ -494,11 +526,26 @@
   100% { opacity: 1; transform: translateY(0); }
 }
 
+/* Assistant label: bracketed badge with hex marker */
 .agent-view__msg--assistant .agent-view__msg-label {
   color: var(--agent-primary);
+  background: rgba(var(--agent-primary-rgb), 0.1);
+  border: 1px solid rgba(var(--agent-primary-rgb), 0.4);
+  padding: 2px 9px 2px 7px;
   text-shadow:
     0 0 8px rgba(var(--agent-primary-rgb), 0.5),
     0 0 20px rgba(var(--agent-primary-rgb), 0.15);
+  box-shadow:
+    inset 0 0 8px rgba(var(--agent-primary-rgb), 0.08),
+    0 0 6px rgba(var(--agent-primary-rgb), 0.15);
+}
+
+.agent-view__msg--assistant .agent-view__msg-label::before {
+  content: '◆ ';
+  color: var(--agent-bright);
+  letter-spacing: 0;
+  font-size: 0.85em;
+  margin-right: 2px;
 }
 
 .agent-view__msg-tokens {
@@ -855,34 +902,54 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 10px;
-  border-left: 2px solid rgba(var(--agent-primary-rgb), 0.25);
+  padding: 7px 12px 8px;
+  border-left: 2px solid rgba(var(--agent-blue-rgb), 0.35);
   font-size: var(--krypton-font-size);
-  background: rgba(var(--agent-primary-rgb), 0.02);
+  background: linear-gradient(
+    90deg,
+    rgba(var(--agent-blue-rgb), 0.04),
+    rgba(var(--agent-blue-rgb), 0.01) 40%,
+    transparent 70%
+  );
   position: relative;
+  animation: msg-boot 0.35s ease-out;
+}
+
+/* Top micro-rule tying tool rows into the telemetry aesthetic */
+.agent-view__tool-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(var(--agent-blue-rgb), 0.55), transparent);
+  pointer-events: none;
 }
 
 .agent-view__tool-header {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
 }
 
 .agent-view__tool-command {
   font-family: var(--agent-font);
   font-size: var(--krypton-font-size);
-  color: rgba(var(--agent-text-rgb), 0.8);
-  padding: 3px 8px;
-  background: rgba(var(--agent-primary-rgb), 0.05);
+  color: rgba(var(--agent-text-rgb), 0.85);
+  padding: 4px 10px;
+  background: rgba(var(--agent-primary-rgb), 0.04);
+  border-left: 1px solid rgba(var(--agent-primary-rgb), 0.2);
   white-space: pre-wrap;
   word-break: break-all;
-  margin-left: 20px;
+  margin-left: 22px;
 }
 
 .agent-view__tool-icon {
-  color: rgba(var(--agent-blue-rgb), 0.6);
+  color: rgba(var(--agent-blue-rgb), 0.8);
   width: 1.2ch;
   flex-shrink: 0;
+  text-shadow: 0 0 6px rgba(var(--agent-blue-rgb), 0.3);
 }
 
 .agent-view__tool-row--done {
@@ -908,8 +975,21 @@
   font-size: var(--krypton-font-size);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  text-shadow: 0 0 8px rgba(var(--agent-blue-rgb), 0.3);
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 8px rgba(var(--agent-blue-rgb), 0.35);
+}
+
+.agent-view__tool-name::before {
+  content: '⟨ ';
+  color: rgba(var(--agent-blue-rgb), 0.55);
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.agent-view__tool-name::after {
+  content: ' ⟩';
+  color: rgba(var(--agent-blue-rgb), 0.55);
+  letter-spacing: 0;
+  font-weight: 400;
 }
 
 .agent-view__tool-args {
