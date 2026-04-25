@@ -46,7 +46,8 @@ Implemented in `src-tauri/src/lib.rs`:
 
 - **`apply_fullscreen_geometry()`** — positions the window covering the full monitor. Falls back from `current_monitor` → `primary_monitor` → first `available_monitors` → hardcoded 1440×900. The previous one-shot `if let Ok(Some(monitor)) = ...` silently left the default (possibly zero-sized) rect on fallthrough; it now always lands somewhere visible.
 - **`on_window_event` handler** — re-applies geometry on `ScaleFactorChanged` (display reconfiguration) and on `Focused(true)` when the window rect does not intersect any available monitor (`window_is_offscreen` helper). This covers sleep/wake, unplugging an external display, and resolution changes.
-- **`Ctrl+Shift+0` panic recenter** — global shortcut that calls `show()` + `unminimize()` + `apply_fullscreen_geometry()` + `set_focus()`. User-facing escape hatch for any future case where the window is unreachable.
+- **`Cmd+Ctrl+Shift+0` panic recenter** — global shortcut that runs a hide→show cycle, `unminimize()`, `apply_fullscreen_geometry()`, an `always_on_top` flicker, and `set_focus()`. The hide→show forces WKWebView to reattach a surface layer when the window rect is valid but nothing renders (the sleep/wake compositor-loss case where `window_is_offscreen` returns false). Quad-modifier was chosen because the user's own global-shortcut tooling owns the simpler `Ctrl+Shift+0`.
+- **Shortcut registration is logged on success** so post-mortem can confirm the hotkey was actually bound (previously only failures were logged, so a silent OS-level conflict looked the same as no event).
 - **File logging in release** — removed the `cfg!(debug_assertions)` gate on `tauri_plugin_log`. Logs now go to `~/Library/Logs/Krypton/` in production. Geometry application, display-change reapply, and panic-recenter events all log a line, so the next recurrence is diagnosable from disk.
 
 ## Still Recommended — Defense-in-Depth (not yet implemented)
@@ -57,8 +58,8 @@ Implemented in `src-tauri/src/lib.rs`:
 
 ## Recovery
 
-- **Ctrl+Shift+0** — panic recenter (ships in this release).
-- If that fails: `kill <pid>` (find via `ps aux | grep Krypton`) and relaunch. PTY sessions are lost.
+- **Cmd+Ctrl+Shift+0** — panic recenter.
+- If that fails: `kill <pid>` (find via `ps aux | grep -i krypton` — the binary is named `app`) and relaunch. PTY sessions are lost.
 
 ## References
 
