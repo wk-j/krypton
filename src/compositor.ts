@@ -3678,7 +3678,7 @@ export class Compositor {
 
   /** Default window size as fraction of viewport */
   private static readonly DEFAULT_WIDTH_RATIO = 0.95;
-  private static readonly DEFAULT_HEIGHT_RATIO = 0.95;
+  private static readonly DEFAULT_HEIGHT_RATIO = 0.90;
   /** Multi-window: total area used as fraction of viewport */
   private static readonly MULTI_WIDTH_RATIO = 0.95;
   private static readonly MULTI_HEIGHT_RATIO = 0.95;
