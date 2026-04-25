@@ -9,6 +9,7 @@ import { InputRouter } from './input-router';
 import { WhichKey } from './which-key';
 import { CommandPalette } from './command-palette';
 import { PromptDialog } from './prompt-dialog';
+import { QuickFileSearch } from './quick-file-search';
 import { loadConfig } from './config';
 import { FrontendThemeEngine } from './theme';
 import { createGitDashboard } from './dashboards/git';
@@ -76,6 +77,10 @@ async function main(): Promise<void> {
   // Initialize smart prompt dialog (Cmd+Shift+K → dispatch prompt to Claude tab)
   const promptDialog = new PromptDialog(compositor, () => inputRouter.exitPromptDialog());
   inputRouter.setPromptDialog(promptDialog);
+
+  // Initialize quick file search (Cmd+O → fff-search-backed picker, copies to clipboard)
+  const quickFileSearch = new QuickFileSearch(compositor, () => inputRouter.exitQuickFileSearch());
+  inputRouter.setQuickFileSearch(quickFileSearch);
 
   // Global shortcut events emitted from Rust (Ctrl+Shift+K / Ctrl+Shift+S).
   // These fire even when Krypton is not focused.

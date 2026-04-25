@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **Quick file search (Cmd+O)** — global modal backed by `fff-search` with long-lived per-project pickers (LRU 8), persistent LMDB frecency, and `.git`-aware root resolution. Enter copies the relative path to the clipboard, Cmd+Enter copies the absolute path — never auto-pasted, so behavior is uniform across terminal/agent/hurl/markdown windows. **Tab toggles into grep mode** (content search reusing the same picker; copies `path:line:col`). See `docs/68-quick-file-search.md`.
 - **Matrix glyph atlas** — per-frame `fillText` replaced with `drawImage` blits from a pre-rasterized `OffscreenCanvas`. Eliminates CoreText/GPU-process IPC from the hot path; matrix runs at 60 fps with single-digit CPU. See `docs/67-matrix-glyph-atlas.md`, `docs/64-matrix-animation-cpu-burn.md` (Phase 2).
 - **Hurl client window** — keyboard-driven `.hurl` runner with tree sidebar, streaming output, per-file cache, and persistent sidebar state. See `docs/65-hurl-client-window.md`.
 

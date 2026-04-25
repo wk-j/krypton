@@ -1,0 +1,214 @@
+/* ─── Quick File Search (Cmd+O) ─── */
+
+.krypton-quicksearch {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.krypton-quicksearch--visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.krypton-quicksearch__container {
+  width: 600px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--krypton-palette-bg, rgba(6, 10, 18, 0.94));
+  border: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.4));
+  border-radius: 4px;
+  box-shadow:
+    0 0 30px rgba(0, 200, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.krypton-quicksearch__input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.2));
+}
+
+.krypton-quicksearch__prompt {
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: var(--krypton-font-size);
+  font-weight: 700;
+  color: var(--krypton-palette-highlight, #0cf);
+  flex-shrink: 0;
+}
+
+.krypton-quicksearch__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: var(--krypton-font-size);
+  color: var(--krypton-palette-input-text, #c0c5ce);
+  caret-color: var(--krypton-palette-highlight, #0cf);
+}
+
+.krypton-quicksearch__input::placeholder {
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
+  font-style: italic;
+}
+
+.krypton-quicksearch__root {
+  flex-shrink: 0;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.45));
+  letter-spacing: 0.04em;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.krypton-quicksearch__results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--krypton-palette-border, rgba(0, 200, 255, 0.2)) transparent;
+}
+
+.krypton-quicksearch__result {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: background 0.05s ease;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: var(--krypton-chrome-font-size, 11px);
+}
+
+.krypton-quicksearch__result:hover {
+  background: rgba(0, 200, 255, 0.04);
+}
+
+.krypton-quicksearch__result.is-selected {
+  background: rgba(0, 200, 255, 0.1);
+}
+
+.krypton-quicksearch__filename {
+  color: var(--krypton-palette-input-text, #c0c5ce);
+  font-weight: 500;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.krypton-quicksearch__filename mark {
+  background: none;
+  color: var(--krypton-palette-highlight, #0cf);
+  font-weight: 700;
+}
+
+.krypton-quicksearch__parent {
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.4));
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  direction: rtl; /* keep tail of long paths visible */
+}
+
+@keyframes krypton-quicksearch-flash {
+  0%   { background: rgba(0, 200, 255, 0.1); }
+  50%  { background: rgba(0, 200, 255, 0.45); }
+  100% { background: rgba(0, 200, 255, 0.1); }
+}
+
+.krypton-quicksearch__result.is-flashing {
+  animation: krypton-quicksearch-flash 80ms ease;
+}
+
+.krypton-quicksearch__statusbar {
+  padding: 5px 14px;
+  border-top: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.18));
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.55));
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.krypton-quicksearch__hint {
+  display: flex;
+  gap: 14px;
+  padding: 5px 14px 7px;
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.4));
+  letter-spacing: 0.06em;
+}
+
+.krypton-quicksearch__hint[data-flash="relative"] span[data-kind="relative"],
+.krypton-quicksearch__hint[data-flash="absolute"] span[data-kind="absolute"] {
+  color: var(--krypton-palette-highlight, #0cf);
+}
+
+/* ─── Grep mode ─── */
+.krypton-quicksearch[data-mode="grep"] .krypton-quicksearch__prompt::after {
+  content: ' grep';
+  color: var(--krypton-prompt-accent, #c77dff);
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  letter-spacing: 0.08em;
+  margin-left: 4px;
+}
+
+.krypton-quicksearch[data-mode="grep"] .krypton-quicksearch__container {
+  border-color: var(--krypton-prompt-border, rgba(199, 125, 255, 0.45));
+}
+
+.krypton-quicksearch__result--grep {
+  display: grid;
+  grid-template-columns: minmax(0, 38%) 1fr;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.krypton-quicksearch__grep-loc {
+  color: var(--krypton-prompt-accent, #c77dff);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.krypton-quicksearch__grep-snippet {
+  color: var(--krypton-palette-input-text, #c0c5ce);
+  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-quicksearch__grep-snippet mark {
+  background: rgba(199, 125, 255, 0.18);
+  color: var(--krypton-prompt-accent, #c77dff);
+  font-weight: 700;
+  border-radius: 1px;
+}

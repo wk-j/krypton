@@ -34,6 +34,40 @@ export enum Mode {
   InlineAI = 'InlineAI',
   Music = 'Music',
   PromptDialog = 'PromptDialog',
+  QuickFileSearch = 'QuickFileSearch',
+}
+
+/** A single file hit from the quick file search backend */
+export interface QuickSearchHit {
+  path: string;
+  absolute: string;
+  score: number;
+}
+
+export interface QuickSearchResponse {
+  hits: QuickSearchHit[];
+  indexing: boolean;
+  indexed_count: number;
+  root: string;
+}
+
+/** A single grep hit (file + line + matched line content) */
+export interface QuickGrepHit {
+  path: string;
+  absolute: string;
+  line: number;
+  col: number;
+  line_content: string;
+  /** [start, end] byte offsets within line_content for each match span */
+  match_ranges: Array<[number, number]>;
+}
+
+export interface QuickGrepResponse {
+  hits: QuickGrepHit[];
+  indexing: boolean;
+  indexed_count: number;
+  root: string;
+  regex_fallback_error: string | null;
 }
 
 /** Candidate for "which tab runs a given process" lookups.

@@ -11,6 +11,7 @@ import { HintController } from './hints';
 import { CommandPalette } from './command-palette';
 import { DashboardManager } from './dashboard';
 import { PromptDialog } from './prompt-dialog';
+import { QuickFileSearch } from './quick-file-search';
 
 import type { MusicPlayer } from './music';
 import type { PaneContentType } from './types';
@@ -28,6 +29,7 @@ export class InputRouter {
   private dashboardManager: DashboardManager | null = null;
   private musicPlayer: MusicPlayer | null = null;
   private promptDialog: PromptDialog | null = null;
+  private quickFileSearch: QuickFileSearch | null = null;
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
@@ -91,6 +93,10 @@ export class InputRouter {
       }
       // Prevent xterm from consuming Cmd+Shift+K (smart prompt dialog)
       if (InputRouter.isPromptDialogKey(e)) {
+        return false;
+      }
+      // Prevent xterm from consuming Cmd+O (quick file search)
+      if (InputRouter.isQuickFileSearchKey(e)) {
         return false;
       }
       // Prevent xterm from consuming dashboard toggle shortcuts
@@ -209,6 +215,29 @@ export class InputRouter {
       !e.ctrlKey &&
       !e.altKey
     );
+  }
+
+  /** Check if a key event is the Quick File Search shortcut (Cmd+O) */
+  static isQuickFileSearchKey(e: KeyboardEvent): boolean {
+    return (
+      e.code === 'KeyO' &&
+      e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.shiftKey
+    );
+  }
+
+  /** Set the quick file search instance (called after construction) */
+  setQuickFileSearch(qfs: QuickFileSearch): void {
+    this.quickFileSearch = qfs;
+  }
+
+  /** Called by QuickFileSearch when it self-closes (accept, click-outside, Esc). */
+  exitQuickFileSearch(): void {
+    if (this.mode === Mode.QuickFileSearch) {
+      this.toNormal();
+    }
   }
 
   /** Check if a key event is the Smart Prompt Dialog shortcut (Cmd+Shift+K) */
@@ -364,6 +393,9 @@ export class InputRouter {
         } else if (this.mode === Mode.CommandPalette) {
           this.commandPalette?.close();
           this.toNormal();
+        } else if (this.mode === Mode.QuickFileSearch) {
+          this.quickFileSearch?.close();
+          this.toNormal();
         } else if (this.mode === Mode.PromptDialog) {
           // Dialog owns Escape semantics (close popup → close picker → close dialog).
           // Delegate, but if it returns false (unexpected), force-close.
@@ -440,6 +472,27 @@ export class InputRouter {
         return;
       }
 
+      // Global: Cmd+O — toggle quick file search (works from any non-overlay mode)
+      if (InputRouter.isQuickFileSearchKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!this.quickFileSearch) return;
+        if (this.quickFileSearch.isVisible) {
+          this.quickFileSearch.close();
+          this.toNormal();
+        } else {
+          // Force-exit transient/overlay modes before opening
+          if (this.mode === Mode.Selection) this.exitSelectionMode();
+          else if (this.mode === Mode.Hint) this.hints.exit();
+          else if (this.mode === Mode.CommandPalette) this.commandPalette?.close();
+          else if (this.mode === Mode.PromptDialog) this.promptDialog?.close();
+          else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
+          void this.quickFileSearch.open();
+          this.setMode(Mode.QuickFileSearch);
+        }
+        return;
+      }
+
       // Global: Cmd+Shift+K — toggle smart prompt dialog (works from any mode)
       if (InputRouter.isPromptDialogKey(e)) {
         e.preventDefault();
@@ -509,6 +562,19 @@ export class InputRouter {
       // Enter, Tab, Cmd+C, and other action keys.
       if (this.mode === Mode.InlineAI) {
         this.handleInlineAIKey(e);
+        return;
+      }
+
+      // Quick File Search mode: let typing flow to the <input>; intercept
+      // navigation keys (Enter/Cmd+Enter/Arrows/Esc/Ctrl-P/N).
+      if (this.mode === Mode.QuickFileSearch) {
+        if (this.quickFileSearch?.handleKey(e)) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!this.quickFileSearch.isVisible) {
+            this.toNormal();
+          }
+        }
         return;
       }
 

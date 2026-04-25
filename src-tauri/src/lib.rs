@@ -4,6 +4,7 @@ pub mod hook_server;
 pub mod hurl;
 pub mod music;
 mod pty;
+mod quick_search;
 mod session;
 pub mod sound;
 pub mod ssh;
@@ -77,6 +78,7 @@ pub fn run() {
         .manage(ssh_manager)
         .manage(hook_server.clone())
         .manage(hurl_state)
+        .manage(quick_search::QuickSearchState::new())
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
@@ -143,6 +145,10 @@ pub fn run() {
             hurl::hurl_clear_cache,
             hurl::hurl_load_sidebar_state,
             hurl::hurl_save_sidebar_state,
+            quick_search::quick_search_warm_root,
+            quick_search::quick_search_query,
+            quick_search::quick_grep_query,
+            quick_search::quick_search_record_pick,
         ])
         .setup(move |app| {
             // File logging is enabled in release too, so invisible-window and
@@ -183,13 +189,16 @@ pub fn run() {
                         Code::KeyS,
                     ))
                     .unwrap_or_else(|e| log::warn!("Failed to register Ctrl+Shift+S: {e}"));
-                app.handle()
-                    .global_shortcut()
-                    .register(Shortcut::new(
-                        Some(Modifiers::CONTROL | Modifiers::SHIFT),
-                        Code::Digit0,
-                    ))
-                    .unwrap_or_else(|e| log::warn!("Failed to register Ctrl+Shift+0: {e}"));
+                // Panic-recenter shortcut. Quad-modifier (Cmd+Ctrl+Shift+0) is
+                // used because the user's own global-shortcut tooling owns the
+                // simpler Ctrl+Shift+0 combo.
+                match app.handle().global_shortcut().register(Shortcut::new(
+                    Some(Modifiers::META | Modifiers::CONTROL | Modifiers::SHIFT),
+                    Code::Digit0,
+                )) {
+                    Ok(()) => log::info!("registered panic recenter: Cmd+Ctrl+Shift+0"),
+                    Err(e) => log::warn!("Failed to register Cmd+Ctrl+Shift+0: {e}"),
+                }
             }
 
             // Initialize sound engine with resource path and config
@@ -353,9 +362,17 @@ fn window_is_offscreen(window: &tauri::WebviewWindow) -> bool {
 /// monitor.
 fn recover_window(window: &tauri::WebviewWindow) {
     log::info!("panic recenter: recovering window visibility");
+    // Force a hide/show cycle: when WKWebView loses its surface layer after
+    // sleep/wake, the window rect can still be valid (so window_is_offscreen
+    // returns false) yet nothing renders. Hide+show forces the compositor to
+    // reattach a surface. The always_on_top flicker mirrors the macOS focus
+    // workaround used at startup.
+    let _ = window.hide();
     let _ = window.show();
     let _ = window.unminimize();
     apply_fullscreen_geometry(window);
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_always_on_top(false);
     let _ = window.set_focus();
 }
 
