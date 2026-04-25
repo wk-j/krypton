@@ -143,6 +143,10 @@
   padding: 6px 10px;
   background: rgba(255, 215, 109, 0.08);
 }
+.acp-view__perm--focused {
+  background: rgba(255, 215, 109, 0.18);
+  box-shadow: inset 0 0 0 1px var(--krypton-warn, #ffd76d);
+}
 .acp-view__perm--resolved {
   opacity: 0.5;
   border-color: var(--krypton-border, rgba(120, 200, 160, 0.3));

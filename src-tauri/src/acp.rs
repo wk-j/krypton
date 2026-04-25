@@ -108,6 +108,9 @@ struct AcpClient {
     stderr_buf: Mutex<String>,
     /// Holds the child handle so we can SIGTERM/SIGKILL it; None after dispose.
     child: Mutex<Option<Child>>,
+    /// Working directory the child was spawned in — also reported as project root
+    /// in `session/new`. Falls back to the host process cwd when None.
+    cwd: RwLock<Option<String>>,
     /// Latch: once true, no more events fire.
     disposed: std::sync::atomic::AtomicBool,
 }
@@ -126,6 +129,7 @@ impl AcpClient {
             acp_session_id: RwLock::new(None),
             stderr_buf: Mutex::new(String::new()),
             child: Mutex::new(None),
+            cwd: RwLock::new(None),
             disposed: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -598,6 +602,9 @@ pub async fn acp_spawn(
 
     let session = registry.allocate_session();
     let client = Arc::new(AcpClient::new(session, backend_id.clone(), display_name));
+    if let Ok(mut g) = client.cwd.write() {
+        *g = cwd.clone();
+    }
     {
         let mut g = client.stdin.lock().await;
         *g = Some(stdin);
@@ -672,12 +679,22 @@ pub async fn acp_initialize(
         *g = Some(capabilities.clone());
     }
 
+    // Project root for session/new: the cwd we spawned the child with, falling
+    // back to the host process cwd. Without this, the agent treats `/` as the
+    // project root and reads/writes happen at filesystem root.
+    let session_cwd = client
+        .cwd
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()));
+
     let new_session = tokio::time::timeout(
         Duration::from_secs(30),
         client.request(
             "session/new",
             json!({
-                "cwd": std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()),
+                "cwd": session_cwd,
                 "mcpServers": [],
             }),
         ),

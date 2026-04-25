@@ -267,6 +267,17 @@ export class CommandPalette {
         return true;
 
       default:
+        // Alt+1..9 quickselect — fire the Nth visible result directly.
+        // Useful for the ACP picker (Leader A) where each backend gets a digit.
+        if (e.altKey && !e.metaKey && !e.ctrlKey && e.key >= '1' && e.key <= '9') {
+          const idx = parseInt(e.key, 10) - 1;
+          if (idx < this.filtered.length) {
+            e.preventDefault();
+            this.selectedIndex = idx;
+            this.executeSelected();
+            return true;
+          }
+        }
         // Let the input handle all other keys (typing, backspace, etc.)
         return false;
     }
@@ -816,26 +827,27 @@ export class CommandPalette {
     });
 
     // Dynamic: ACP agent backends (one row per [acp.<id>] in krypton.toml).
+    // Leader A only opens this picker — it does not fire a specific backend —
+    // so the rows show Alt+digit quickselect chips instead.
     if (this.acpBackends.length === 0) {
       this.actions.push({
         id: 'acp.none',
         label: 'Open ACP Agent — no backends configured',
         category: 'Window',
-        keybinding: 'Leader A',
         execute: () => {
           console.warn('[ACP] No backends configured. See ~/.config/krypton/krypton.toml for [acp.<id>] scaffold.');
         },
       });
     } else {
-      for (const b of this.acpBackends) {
+      this.acpBackends.forEach((b, idx) => {
         this.actions.push({
           id: `acp.open.${b.id}`,
           label: `Open ACP Agent → ${b.display_name}`,
           category: 'Window',
-          keybinding: 'Leader A',
+          keybinding: idx < 9 ? `Alt ${idx + 1}` : undefined,
           execute: () => c.openAcpView(b.id, b.display_name),
         });
-      }
+      });
     }
 
     // Dynamic: sound theme switching

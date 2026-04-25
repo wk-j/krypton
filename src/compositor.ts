@@ -2012,20 +2012,15 @@ export class Compositor {
   async openAcpView(backendId: string, displayName: string): Promise<void> {
     const { AcpView } = await import('./acp/acp-view');
 
-    // Resolve CWD from the focused terminal pane (same logic as openAgentView).
-    const focusedPane = this.getFocusedPane();
-    let projectDir: string | null = null;
-    if (focusedPane?.sessionId !== null && focusedPane?.sessionId !== undefined) {
-      try {
-        projectDir = await invoke<string>('get_pty_cwd', { sessionId: focusedPane.sessionId });
-      } catch {
-        // CWD unavailable — fall back to no project scoping
-      }
-    }
+    // Resolve CWD from the focused pane — handles both PTY panes (via
+    // get_pty_cwd) and content views (via getWorkingDirectory()), so opening
+    // an ACP window while focused on another agent/vault/etc. inherits its dir
+    // instead of falling back to the host process root.
+    const projectDir = await this.getFocusedCwd();
 
-    const view = new AcpView(backendId, displayName);
-    view.setProjectDir(projectDir);
+    const view = new AcpView(backendId, displayName, projectDir);
     view.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
+    view.onClose(() => this.closeTab());
 
     await this.createContentTab(`ACP  ${displayName}`, view);
   }

@@ -80,10 +80,12 @@ export class AcpView implements ContentView {
   private rafQueued = false;
 
   private openDiffCb: ((unifiedDiff: string, title: string) => void) | null = null;
+  private closeCb: (() => void) | null = null;
 
-  constructor(backendId: string, displayName: string) {
+  constructor(backendId: string, displayName: string, projectDir: string | null = null) {
     this.backendId = backendId;
     this.displayName = displayName;
+    this.projectDir = projectDir;
     this.element = document.createElement('div');
     this.element.className = 'acp-view';
     this.element.tabIndex = 0;
@@ -106,6 +108,10 @@ export class AcpView implements ContentView {
 
   onOpenDiff(cb: (unifiedDiff: string, title: string) => void): void {
     this.openDiffCb = cb;
+  }
+
+  onClose(cb: () => void): void {
+    this.closeCb = cb;
   }
 
   // ─── DOM ────────────────────────────────────────────────────────
@@ -240,9 +246,11 @@ export class AcpView implements ContentView {
       el.className = 'acp-view__tool';
       el.tabIndex = -1;
       const callId = id;
+      el.dataset.acpToolId = callId;
       el.addEventListener('click', () => {
         this.focusedToolId = this.focusedToolId === callId ? null : callId;
-        for (const [, t] of this.toolBlocks) this.paintToolBlock(t);
+        this.focusedPermissionId = null;
+        this.repaintFocus();
       });
       this.messagesEl.appendChild(el);
       entry = { el, call, diffString: null, diffPath: null };
@@ -279,6 +287,46 @@ export class AcpView implements ContentView {
     }`;
   }
 
+  private repaintFocus(): void {
+    for (const [, t] of this.toolBlocks) this.paintToolBlock(t);
+    for (const [, p] of this.permissionBlocks) {
+      p.el.classList.toggle('acp-view__perm--focused', this.focusedPermissionId === p.requestId);
+    }
+    const focusedEl =
+      (this.focusedToolId && this.toolBlocks.get(this.focusedToolId)?.el) ||
+      (this.focusedPermissionId !== null && this.permissionBlocks.get(this.focusedPermissionId)?.el) ||
+      null;
+    if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest' });
+  }
+
+  private navigableItems(): Array<{ kind: 'tool' | 'perm'; id: string | number }> {
+    const els = this.messagesEl.querySelectorAll<HTMLElement>('.acp-view__tool, .acp-view__perm');
+    const out: Array<{ kind: 'tool' | 'perm'; id: string | number }> = [];
+    els.forEach((el) => {
+      if (el.dataset.acpToolId) out.push({ kind: 'tool', id: el.dataset.acpToolId });
+      else if (el.dataset.acpPermId) out.push({ kind: 'perm', id: Number(el.dataset.acpPermId) });
+    });
+    return out;
+  }
+
+  private moveFocus(delta: number): void {
+    const items = this.navigableItems();
+    if (items.length === 0) return;
+    let idx = items.findIndex((it) =>
+      it.kind === 'tool' ? it.id === this.focusedToolId : it.id === this.focusedPermissionId,
+    );
+    if (idx === -1) idx = delta > 0 ? -1 : items.length;
+    const next = items[Math.max(0, Math.min(items.length - 1, idx + delta))];
+    if (next.kind === 'tool') {
+      this.focusedToolId = next.id as string;
+      this.focusedPermissionId = null;
+    } else {
+      this.focusedPermissionId = next.id as number;
+      this.focusedToolId = null;
+    }
+    this.repaintFocus();
+  }
+
   // ─── Plans ───────────────────────────────────────────────────────
 
   private renderPlan(entries: PlanEntry[]): void {
@@ -312,6 +360,7 @@ export class AcpView implements ContentView {
         return `<span class="acp-view__perm-opt"><kbd>${key}</kbd> ${esc(opt.name)}</span>`;
       })
       .join(' ');
+    el.dataset.acpPermId = String(requestId);
     el.innerHTML = `
       <div class="acp-view__perm-title">⏵ permission: ${esc(kind)}  ${esc(target)}</div>
       <div class="acp-view__perm-opts">${optsHtml}<span class="acp-view__perm-opt"><kbd>Esc</kbd> cancel</span></div>
@@ -319,6 +368,8 @@ export class AcpView implements ContentView {
     this.messagesEl.appendChild(el);
     this.permissionBlocks.set(requestId, { el, requestId, options });
     this.focusedPermissionId = requestId;
+    this.focusedToolId = null;
+    this.repaintFocus();
     this.scrollToBottom();
   }
 
@@ -406,6 +457,33 @@ export class AcpView implements ContentView {
   // ─── Input handling ──────────────────────────────────────────────
 
   onKeyDown(e: KeyboardEvent): boolean {
+    // Ctrl+P / Ctrl+N — walk focusable items (tool calls + permission prompts).
+    if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'p' || e.key === 'n')) {
+      e.preventDefault();
+      this.moveFocus(e.key === 'n' ? 1 : -1);
+      return true;
+    }
+
+    // Escape — clear item focus.
+    if (e.key === 'Escape' && (this.focusedToolId !== null || this.focusedPermissionId !== null)) {
+      // Permission prompts handle their own Escape (cancel) below; only clear focus
+      // for tool blocks here.
+      if (this.focusedToolId !== null && this.focusedPermissionId === null) {
+        e.preventDefault();
+        this.focusedToolId = null;
+        this.repaintFocus();
+        return true;
+      }
+    }
+
+    // Cmd+W / Ctrl+W — close this ACP tab.
+    // Handled before the input buffer swallows printable keys.
+    if (e.key === 'w' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      this.closeCb?.();
+      return true;
+    }
+
     // Permission prompt focused: single-key resolution.
     if (this.focusedPermissionId !== null) {
       const block = this.permissionBlocks.get(this.focusedPermissionId);
