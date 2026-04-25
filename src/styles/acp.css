@@ -200,13 +200,14 @@
 
 .acp-view__tool {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   padding: 4px 8px;
   border-left: 2px solid var(--agent-accent, #8effb0);
   background: rgba(0, 0, 0, 0.18);
   font-size: 0.92em;
   outline: none;
+  min-width: 0;
 }
 
 .acp-view__tool--pending      { opacity: 0.7; }
@@ -215,9 +216,73 @@
 .acp-view__tool--failed       { border-left-color: var(--krypton-error, #ff6d8a); }
 .acp-view__tool--focused      { background: rgba(120, 200, 160, 0.12); }
 
-.acp-view__tool-status { width: 1ch; opacity: 0.8; }
-.acp-view__tool-summary { flex: 1 1 auto; }
-.acp-view__tool-hint { opacity: 0.5; font-size: 0.85em; }
+.acp-view__tool-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.acp-view__tool-status { flex: 0 0 auto; width: 1ch; opacity: 0.8; line-height: 1.5; }
+.acp-view__tool-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.5;
+}
+.acp-view__tool-hint { flex: 0 0 auto; opacity: 0.5; font-size: 0.85em; line-height: 1.5; }
+
+.acp-view__tool-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.82em;
+  opacity: 0.55;
+  margin-right: 4px;
+}
+.acp-view__tool-counts { margin-left: 6px; font-size: 0.9em; }
+.acp-view__tool-add    { color: var(--agent-accent, #8effb0); }
+.acp-view__tool-del    { color: var(--krypton-error, #ff6d8a); }
+
+.acp-view__tool-body {
+  margin: 2px 0 0 calc(1ch + 8px);
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border-left: 1px solid var(--krypton-border, rgba(120, 200, 160, 0.15));
+  font-family: var(--agent-font, monospace);
+  font-size: 0.9em;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  opacity: 0.85;
+}
+
+.acp-view__tool-body--diff {
+  display: flex;
+  flex-direction: column;
+}
+
+.acp-view__diff-line {
+  display: block;
+  white-space: pre;
+}
+.acp-view__diff-line--add { color: var(--agent-accent, #8effb0); }
+.acp-view__diff-line--del { color: var(--krypton-error, #ff6d8a); opacity: 0.9; }
+
+.acp-view__tool-more {
+  display: block;
+  opacity: 0.5;
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.acp-view__tool-meta {
+  margin: 2px 0 0 calc(1ch + 8px);
+  font-size: 0.85em;
+  opacity: 0.55;
+  font-style: italic;
+}
 
 /* ─── Plan ──────────────────────────────────────────────────── */
 

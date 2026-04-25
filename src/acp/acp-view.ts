@@ -241,6 +241,12 @@ export class AcpView implements ContentView {
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
 
+  private sealStreamingBlocks(): void {
+    if (this.currentAssistant) this.flushMarkdown();
+    this.currentAssistant = null;
+    this.currentThought = null;
+  }
+
   // ─── Tool calls ──────────────────────────────────────────────────
 
   private renderToolBlock(call: ToolCall, isUpdate: boolean): void {
@@ -280,17 +286,24 @@ export class AcpView implements ContentView {
     const status = c.status ?? 'pending';
     const title = c.title ?? kind;
     const focused = this.focusedToolId === c.toolCallId;
-    let summary = `[${kind}] ${esc(title)}`;
     const diff = extractDiff(c.content);
+    let summary: string;
     if (diff) {
       const counts = countDiff(diff.oldText ?? '', diff.newText ?? '');
-      summary = `[edit] ${esc(diff.path)} +${counts.added} -${counts.removed}`;
+      summary = `<span class="acp-view__tool-kind">edit</span> ${esc(diff.path)} <span class="acp-view__tool-counts"><span class="acp-view__tool-add">+${counts.added}</span> <span class="acp-view__tool-del">−${counts.removed}</span></span>`;
+    } else {
+      summary = `<span class="acp-view__tool-kind">${esc(kind)}</span> ${esc(title)}`;
     }
     entry.el.className = `acp-view__tool acp-view__tool--${status}${focused ? ' acp-view__tool--focused' : ''}`;
     const statusGlyph = status === 'completed' ? '✓' : status === 'failed' ? '✗' : status === 'in_progress' ? '⟳' : '·';
-    entry.el.innerHTML = `<span class="acp-view__tool-status">${statusGlyph}</span><span class="acp-view__tool-summary">${summary}</span>${
-      entry.diffString ? '<span class="acp-view__tool-hint">[o] open diff</span>' : ''
-    }`;
+    const body = renderToolBody(c.content, diff);
+    entry.el.innerHTML =
+      `<div class="acp-view__tool-header">` +
+        `<span class="acp-view__tool-status">${statusGlyph}</span>` +
+        `<span class="acp-view__tool-summary">${summary}</span>` +
+        (entry.diffString ? '<span class="acp-view__tool-hint">[o] open</span>' : '') +
+      `</div>` +
+      body;
   }
 
   private repaintFocus(): void {
@@ -418,6 +431,7 @@ export class AcpView implements ContentView {
   private onAcpEvent(e: AcpEvent): void {
     switch (e.type) {
       case 'message_chunk': {
+        this.currentThought = null;
         const blk = this.ensureAssistantBlock();
         this.currentAssistant!.raw += e.text;
         void blk;
@@ -425,6 +439,7 @@ export class AcpView implements ContentView {
         break;
       }
       case 'thought_chunk': {
+        this.currentAssistant = null;
         const blk = this.ensureThoughtBlock();
         this.currentThought!.raw += e.text;
         void blk;
@@ -432,15 +447,18 @@ export class AcpView implements ContentView {
         break;
       }
       case 'tool_call':
+        this.sealStreamingBlocks();
         this.renderToolBlock(e.call, false);
         break;
       case 'tool_call_update':
         this.renderToolBlock(e.update as ToolCall, true);
         break;
       case 'plan':
+        this.sealStreamingBlocks();
         this.renderPlan(e.entries);
         break;
       case 'permission_request':
+        this.sealStreamingBlocks();
         this.renderPermissionRequest(e.requestId, e.toolCall, e.options);
         break;
       case 'stop':
@@ -631,6 +649,60 @@ function diffBody(oldText: string, newText: string): string {
   for (const l of oldLines) out.push('-' + l);
   for (const l of newLines) out.push('+' + l);
   return out.join('\n');
+}
+
+const TOOL_BODY_LINE_CAP = 16;
+
+function renderToolBody(
+  content: ToolCallContent[] | undefined,
+  diff: { path: string; oldText: string | null; newText: string } | null,
+): string {
+  if (diff) return renderDiffPreview(diff.oldText ?? '', diff.newText ?? '');
+  if (!content || content.length === 0) return '';
+  const parts: string[] = [];
+  for (const c of content) {
+    if (c.type === 'content' && c.content) {
+      const text = contentBlockText(c.content);
+      if (text) parts.push(renderTextPreview(text));
+    } else if (c.type === 'terminal' && c.terminalId) {
+      parts.push(`<div class="acp-view__tool-meta">terminal · ${esc(c.terminalId)}</div>`);
+    }
+  }
+  return parts.join('');
+}
+
+function contentBlockText(block: ContentBlock): string {
+  if (block.type === 'text') return block.text;
+  if (block.type === 'resource' && block.resource.text) return block.resource.text;
+  if (block.type === 'resource_link') return block.uri;
+  return '';
+}
+
+function renderTextPreview(text: string): string {
+  const lines = text.replace(/\s+$/, '').split('\n');
+  const visible = lines.slice(0, TOOL_BODY_LINE_CAP);
+  const hidden = lines.length - visible.length;
+  const more = hidden > 0 ? `\n<span class="acp-view__tool-more">… ${hidden} more line${hidden === 1 ? '' : 's'}</span>` : '';
+  return `<pre class="acp-view__tool-body">${esc(visible.join('\n'))}${more}</pre>`;
+}
+
+function renderDiffPreview(oldText: string, newText: string): string {
+  const oldLines = oldText ? oldText.split('\n') : [];
+  const newLines = newText ? newText.split('\n') : [];
+  const rows: string[] = [];
+  let budget = TOOL_BODY_LINE_CAP;
+  for (const l of oldLines) {
+    if (budget-- <= 0) break;
+    rows.push(`<span class="acp-view__diff-line acp-view__diff-line--del">−${esc(l)}</span>`);
+  }
+  for (const l of newLines) {
+    if (budget-- <= 0) break;
+    rows.push(`<span class="acp-view__diff-line acp-view__diff-line--add">+${esc(l)}</span>`);
+  }
+  const total = oldLines.length + newLines.length;
+  const shown = rows.length;
+  const more = total > shown ? `<span class="acp-view__tool-more">… ${total - shown} more line${total - shown === 1 ? '' : 's'} · [o] open</span>` : '';
+  return `<pre class="acp-view__tool-body acp-view__tool-body--diff">${rows.join('\n')}${more ? '\n' + more : ''}</pre>`;
 }
 
 function keyForPermissionKind(kind: PermissionOption['kind']): string {
