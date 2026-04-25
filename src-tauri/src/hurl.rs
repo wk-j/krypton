@@ -340,8 +340,8 @@ pub fn list_hurl_files(cwd: String) -> Result<HurlListing, String> {
 /// `{{var}}` tokens in the source view.
 #[tauri::command]
 pub fn hurl_read_env_file(path: String) -> Result<HashMap<String, String>, String> {
-    let contents = std::fs::read_to_string(&path)
-        .map_err(|e| format!("read env file {path}: {e}"))?;
+    let contents =
+        std::fs::read_to_string(&path).map_err(|e| format!("read env file {path}: {e}"))?;
     let mut out = HashMap::new();
     for raw in contents.lines() {
         let line = raw.trim();

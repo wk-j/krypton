@@ -279,17 +279,7 @@ export class AgentView implements ContentView {
     this.logoEl = document.createElement('div');
     this.logoEl.className = 'agent-view__logo';
     this.logoEl.innerHTML =
-      '<div class="agent-view__logo-frame">' +
-        '<span class="agent-view__logo-corner agent-view__logo-corner--tl"></span>' +
-        '<span class="agent-view__logo-corner agent-view__logo-corner--tr"></span>' +
-        '<span class="agent-view__logo-corner agent-view__logo-corner--bl"></span>' +
-        '<span class="agent-view__logo-corner agent-view__logo-corner--br"></span>' +
-        '<span class="agent-view__logo-ring"></span>' +
-        '<span class="agent-view__logo-ring agent-view__logo-ring--inner"></span>' +
-        '<div class="agent-view__logo-glyph">⬡</div>' +
-      '</div>' +
       '<div class="agent-view__logo-title">KRYPTON <span class="agent-view__logo-accent">AI</span></div>' +
-      '<div class="agent-view__logo-rule"><span>cognition online</span></div>' +
       '<div class="agent-view__logo-sub">awaiting directive</div>';
 
     this.element.appendChild(this.logoEl);
