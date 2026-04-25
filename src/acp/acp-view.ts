@@ -68,6 +68,7 @@ export class AcpView implements ContentView {
   private spawning = true;
   private turnActive = false;
   private inputText = '';
+  private cursorPos = 0;
   private supportsImages = false;
 
   private currentAssistant: { container: HTMLElement; rendered: HTMLElement; raw: string } | null = null;
@@ -526,14 +527,13 @@ export class AcpView implements ContentView {
       }
     }
 
-    // Cancel turn.
+    // Cancel turn / clear input.
     if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       if (this.turnActive && this.client) {
         void this.client.cancel();
       } else if (this.inputText) {
-        this.inputText = '';
-        this.renderInput();
+        this.setInput('', 0);
       }
       return true;
     }
@@ -548,37 +548,123 @@ export class AcpView implements ContentView {
       }
     }
 
-    // Plain input.
+    // Submit.
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       const text = this.inputText.trim();
       if (text && !this.spawning && !this.turnActive) {
-        this.inputText = '';
-        this.renderInput();
+        this.setInput('', 0);
         this.appendUserMessage(text);
         this.sendPrompt(text);
       }
       return true;
     }
-    if (e.key === 'Backspace') {
-      e.preventDefault();
-      if (this.inputText.length > 0) {
-        this.inputText = this.inputText.slice(0, -1);
-        this.renderInput();
-      }
-      return true;
-    }
+
+    // Readline-style editing.
+    if (this.handleEditingKey(e)) return true;
+
+    // Printable insertion.
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      this.inputText += e.key;
-      this.renderInput();
+      this.insertAtCursor(e.key);
       return true;
     }
     return false;
   }
 
+  private handleEditingKey(e: KeyboardEvent): boolean {
+    const len = this.inputText.length;
+    const pos = this.cursorPos;
+    const ctrlOnly = e.ctrlKey && !e.metaKey && !e.altKey;
+    const cmdOnly = e.metaKey && !e.ctrlKey && !e.altKey;
+    const noMod = !e.ctrlKey && !e.metaKey && !e.altKey;
+
+    // Cursor movement.
+    if (e.key === 'ArrowLeft' && noMod) { e.preventDefault(); this.setCursor(pos - 1); return true; }
+    if (e.key === 'ArrowRight' && noMod) { e.preventDefault(); this.setCursor(pos + 1); return true; }
+    if (e.key === 'Home' || (ctrlOnly && e.key === 'a') || (cmdOnly && e.key === 'ArrowLeft')) {
+      e.preventDefault(); this.setCursor(0); return true;
+    }
+    if (e.key === 'End' || (ctrlOnly && e.key === 'e') || (cmdOnly && e.key === 'ArrowRight')) {
+      e.preventDefault(); this.setCursor(len); return true;
+    }
+    if (ctrlOnly && e.key === 'b') { e.preventDefault(); this.setCursor(pos - 1); return true; }
+    if (ctrlOnly && e.key === 'f') { e.preventDefault(); this.setCursor(pos + 1); return true; }
+
+    // Deletion.
+    if (e.key === 'Backspace' && noMod) {
+      e.preventDefault();
+      if (pos > 0) this.setInput(this.inputText.slice(0, pos - 1) + this.inputText.slice(pos), pos - 1);
+      return true;
+    }
+    if (ctrlOnly && e.key === 'h') {
+      e.preventDefault();
+      if (pos > 0) this.setInput(this.inputText.slice(0, pos - 1) + this.inputText.slice(pos), pos - 1);
+      return true;
+    }
+    if (e.key === 'Delete' && noMod) {
+      e.preventDefault();
+      if (pos < len) this.setInput(this.inputText.slice(0, pos) + this.inputText.slice(pos + 1), pos);
+      return true;
+    }
+    if (ctrlOnly && e.key === 'd') {
+      e.preventDefault();
+      if (pos < len) this.setInput(this.inputText.slice(0, pos) + this.inputText.slice(pos + 1), pos);
+      return true;
+    }
+    if (ctrlOnly && e.key === 'u') {
+      e.preventDefault();
+      this.setInput(this.inputText.slice(pos), 0);
+      return true;
+    }
+    if (ctrlOnly && e.key === 'k') {
+      e.preventDefault();
+      this.setInput(this.inputText.slice(0, pos), pos);
+      return true;
+    }
+    if (cmdOnly && e.key === 'Backspace') {
+      e.preventDefault();
+      this.setInput(this.inputText.slice(pos), 0);
+      return true;
+    }
+
+    // Transpose: swap char before cursor with char at cursor (or last two if at end).
+    if (ctrlOnly && e.key === 't') {
+      e.preventDefault();
+      if (len < 2) return true;
+      const t = this.inputText;
+      if (pos === 0) return true;
+      if (pos === len) {
+        this.setInput(t.slice(0, len - 2) + t[len - 1] + t[len - 2], len);
+      } else {
+        this.setInput(t.slice(0, pos - 1) + t[pos] + t[pos - 1] + t.slice(pos + 1), pos + 1);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  private insertAtCursor(s: string): void {
+    const pos = this.cursorPos;
+    this.setInput(this.inputText.slice(0, pos) + s + this.inputText.slice(pos), pos + s.length);
+  }
+
+  private setInput(text: string, cursor: number): void {
+    this.inputText = text;
+    this.cursorPos = Math.max(0, Math.min(cursor, text.length));
+    this.renderInput();
+  }
+
+  private setCursor(pos: number): void {
+    this.cursorPos = Math.max(0, Math.min(pos, this.inputText.length));
+    this.renderInput();
+  }
+
   private renderInput(): void {
-    this.inputDisplayEl.innerHTML = `${esc(this.inputText)}<span class="acp-view__caret">█</span>`;
+    const before = this.inputText.slice(0, this.cursorPos);
+    const after = this.inputText.slice(this.cursorPos);
+    this.inputDisplayEl.innerHTML = `${esc(before)}<span class="acp-view__caret">█</span>${esc(after)}`;
   }
 
   private async sendPrompt(text: string): Promise<void> {
