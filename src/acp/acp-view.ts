@@ -146,10 +146,16 @@ export class AcpView implements ContentView {
   }
 
   private updateStatus(): void {
-    let label = '';
-    if (this.spawning) label = `starting ${this.displayName}…`;
-    else if (this.turnActive) label = 'streaming · Ctrl+C to cancel';
-    else label = 'ready · type message + Enter';
+    this.element.classList.toggle('acp-view--loading', this.spawning);
+    if (this.spawning) {
+      this.statusLineEl.innerHTML =
+        `<span class="acp-view__spinner" aria-hidden="true"></span>` +
+        `starting ${esc(this.displayName)}<span class="acp-view__dots"><span>.</span><span>.</span><span>.</span></span>`;
+      return;
+    }
+    const label = this.turnActive
+      ? 'streaming · Ctrl+C to cancel'
+      : 'ready · type message + Enter';
     this.statusLineEl.textContent = label;
   }
 

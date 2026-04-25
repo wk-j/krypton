@@ -181,6 +181,45 @@
   opacity: 0.55;
   text-transform: uppercase;
   border-top: 1px solid var(--krypton-border, rgba(120, 200, 160, 0.15));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Loading state: brighter status line + animated spinner/dots while spawn+init runs. */
+.acp-view--loading .acp-view__status {
+  opacity: 1;
+  color: var(--agent-accent, #8effb0);
+  animation: acp-view-status-pulse 1.6s ease-in-out infinite;
+}
+
+.acp-view__spinner {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  border-top-color: transparent;
+  display: inline-block;
+  animation: acp-view-spin 0.9s linear infinite;
+}
+
+.acp-view__dots span {
+  display: inline-block;
+  animation: acp-view-dot 1.2s infinite;
+}
+.acp-view__dots span:nth-child(2) { animation-delay: 0.15s; }
+.acp-view__dots span:nth-child(3) { animation-delay: 0.30s; }
+
+@keyframes acp-view-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes acp-view-dot {
+  0%, 60%, 100% { opacity: 0.2; }
+  30% { opacity: 1; }
+}
+@keyframes acp-view-status-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
 }
 
 .acp-view__input-row {
