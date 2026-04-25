@@ -805,9 +805,19 @@ export class InputRouter {
         this.compositor.openDiffView({ staged: e.shiftKey }).then(() => this.toNormal());
         break;
 
-      // a — open AI agent window (or focus existing)
+      // a — open AI agent window (pi-agent, unchanged)
+      // A — open ACP agent picker (palette filtered to ACP entries)
       case 'a':
-        this.compositor.openAgentView().then(() => this.toNormal());
+        if (e.shiftKey) {
+          if (this.commandPalette) {
+            this.commandPalette.openWithQuery('ACP Agent');
+            this.setMode(Mode.CommandPalette);
+          } else {
+            this.toNormal();
+          }
+        } else {
+          this.compositor.openAgentView().then(() => this.toNormal());
+        }
         break;
 
       // b — open file manager (browse)

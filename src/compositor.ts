@@ -2004,6 +2004,32 @@ export class Compositor {
     await this.createContentTab(`AI  ${modelLabel}`, agentView);
   }
 
+  /**
+   * Open a new ACP agent window. `backendId` selects an entry from the
+   * `[acp.<id>]` table in krypton.toml; `displayName` is the friendly label
+   * shown in the tab title and view header.
+   */
+  async openAcpView(backendId: string, displayName: string): Promise<void> {
+    const { AcpView } = await import('./acp/acp-view');
+
+    // Resolve CWD from the focused terminal pane (same logic as openAgentView).
+    const focusedPane = this.getFocusedPane();
+    let projectDir: string | null = null;
+    if (focusedPane?.sessionId !== null && focusedPane?.sessionId !== undefined) {
+      try {
+        projectDir = await invoke<string>('get_pty_cwd', { sessionId: focusedPane.sessionId });
+      } catch {
+        // CWD unavailable — fall back to no project scoping
+      }
+    }
+
+    const view = new AcpView(backendId, displayName);
+    view.setProjectDir(projectDir);
+    view.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
+
+    await this.createContentTab(`ACP  ${displayName}`, view);
+  }
+
   // ─── Inline AI Overlay ──────────────────────────────────────────────
 
   /**

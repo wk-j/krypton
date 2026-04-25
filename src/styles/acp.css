@@ -1,0 +1,206 @@
+/* ═══════════════════════════════════════════════════════════════
+   ACP AGENT VIEW
+   Standalone styles for the ACP (Agent Client Protocol) window.
+   Mirrors agent.css visual conventions but is decoupled from it.
+   ═══════════════════════════════════════════════════════════════ */
+
+.acp-view {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--agent-font, var(--krypton-font-family, monospace));
+  font-size: var(--krypton-font-size, 13px);
+  color: var(--agent-text, #d8e8d8);
+  outline: none;
+  position: relative;
+  background: var(--agent-bg, transparent);
+}
+
+.acp-view__header {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--krypton-border, rgba(120, 200, 160, 0.2));
+  letter-spacing: 0.08em;
+  color: var(--agent-accent, #8effb0);
+  text-transform: uppercase;
+  font-size: 0.85em;
+}
+
+.acp-view__brand {
+  opacity: 0.85;
+}
+
+.acp-view__messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: none;
+}
+.acp-view__messages::-webkit-scrollbar { display: none; }
+
+.acp-view__msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.acp-view__msg-label {
+  font-size: 0.75em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.acp-view__msg--user .acp-view__msg-label {
+  color: var(--agent-user, #6dd0ff);
+}
+
+.acp-view__msg--user .acp-view__msg-body {
+  white-space: pre-wrap;
+  border-left: 2px solid var(--agent-user, #6dd0ff);
+  padding-left: 8px;
+  opacity: 0.95;
+}
+
+.acp-view__msg--assistant .acp-view__msg-label {
+  color: var(--agent-accent, #8effb0);
+}
+
+.acp-view__msg-body--markdown :first-child { margin-top: 0; }
+.acp-view__msg-body--markdown :last-child  { margin-bottom: 0; }
+.acp-view__msg-body--markdown pre {
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--krypton-border, rgba(120, 200, 160, 0.15));
+  overflow-x: auto;
+}
+.acp-view__msg-body--markdown code {
+  font-family: var(--agent-font, monospace);
+  font-size: 0.95em;
+}
+
+.acp-view__msg--thought .acp-view__msg-label,
+.acp-view__msg-body--thought {
+  opacity: 0.45;
+  font-style: italic;
+}
+
+.acp-view__msg--system {
+  opacity: 0.55;
+  font-style: italic;
+  border-left: 1px dashed var(--krypton-border, rgba(120, 200, 160, 0.3));
+  padding-left: 8px;
+}
+
+/* ─── Tool call rows ────────────────────────────────────────── */
+
+.acp-view__tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--agent-accent, #8effb0);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.92em;
+  outline: none;
+}
+
+.acp-view__tool--pending      { opacity: 0.7; }
+.acp-view__tool--in_progress  { border-left-color: var(--krypton-warn, #ffd76d); }
+.acp-view__tool--completed    { border-left-color: var(--agent-accent, #8effb0); }
+.acp-view__tool--failed       { border-left-color: var(--krypton-error, #ff6d8a); }
+.acp-view__tool--focused      { background: rgba(120, 200, 160, 0.12); }
+
+.acp-view__tool-status { width: 1ch; opacity: 0.8; }
+.acp-view__tool-summary { flex: 1 1 auto; }
+.acp-view__tool-hint { opacity: 0.5; font-size: 0.85em; }
+
+/* ─── Plan ──────────────────────────────────────────────────── */
+
+.acp-view__plan {
+  border-left: 2px solid var(--krypton-info, #6dd0ff);
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.acp-view__plan-title {
+  text-transform: uppercase;
+  font-size: 0.75em;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+.acp-view__plan-row { font-family: var(--agent-font, monospace); }
+
+/* ─── Permission prompt ─────────────────────────────────────── */
+
+.acp-view__perm {
+  border: 1px solid var(--krypton-warn, #ffd76d);
+  padding: 6px 10px;
+  background: rgba(255, 215, 109, 0.08);
+}
+.acp-view__perm--resolved {
+  opacity: 0.5;
+  border-color: var(--krypton-border, rgba(120, 200, 160, 0.3));
+}
+.acp-view__perm-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--krypton-warn, #ffd76d);
+}
+.acp-view__perm-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.9em;
+}
+.acp-view__perm-opt kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  margin-right: 4px;
+  font-family: var(--agent-font, monospace);
+}
+
+/* ─── Input row ──────────────────────────────────────────────── */
+
+.acp-view__status {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  font-size: 0.78em;
+  letter-spacing: 0.08em;
+  opacity: 0.55;
+  text-transform: uppercase;
+  border-top: 1px solid var(--krypton-border, rgba(120, 200, 160, 0.15));
+}
+
+.acp-view__input-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 12px;
+}
+.acp-view__prompt {
+  color: var(--agent-accent, #8effb0);
+  font-weight: 600;
+}
+.acp-view__input {
+  flex: 1 1 auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.acp-view__caret {
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--agent-accent, #8effb0);
+  animation: acp-caret-blink 1s steps(1) infinite;
+}
+@keyframes acp-caret-blink {
+  50% { opacity: 0; }
+}

@@ -404,6 +404,34 @@ name = "custom-fixed"
 
 To switch models, change `active` to the name of another preset. Changes take effect on next agent session (reset the agent or open a new agent window).
 
+### ACP Agent Backends
+
+Each `[acp.<id>]` block declares an external [Agent Client Protocol](https://agentclientprotocol.com) adapter that Krypton can spawn as a separate window via `Leader A` (or the command palette). The pi-agent (`[agent]` above) and ACP windows are independent — both can run side by side.
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[acp.<id>]` | `command` | string | *required* | Executable to spawn (resolved through PATH; macOS GUI launches use a cached login-shell PATH) |
+| `[acp.<id>]` | `args` | array of string | `[]` | CLI arguments |
+| `[acp.<id>]` | `env` | inline table | `{}` | Extra env vars. Values prefixed with `$` are resolved through the login-shell `printenv` fallback |
+| `[acp.<id>]` | `display_name` | string | `<id>` | Friendly name shown in the picker and tab title |
+
+Example:
+
+```toml
+[acp.claude-code]
+command = "npx"
+args = ["-y", "@zed-industries/claude-code-acp"]
+env = { ANTHROPIC_API_KEY = "$ANTHROPIC_API_KEY" }
+display_name = "Claude Code"
+
+[acp.gemini-cli]
+command = "gemini"
+args = ["--experimental-acp"]
+display_name = "Gemini CLI"
+```
+
+Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`). See `docs/69-acp-agent-support.md` for the full design.
+
 ### Hooks Configuration
 
 | Section | Key | Type | Default | Description |

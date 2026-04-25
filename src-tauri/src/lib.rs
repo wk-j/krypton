@@ -1,3 +1,4 @@
+pub mod acp;
 mod commands;
 mod config;
 pub mod hook_server;
@@ -79,6 +80,7 @@ pub fn run() {
         .manage(hook_server.clone())
         .manage(hurl_state)
         .manage(quick_search::QuickSearchState::new())
+        .manage(Arc::new(acp::AcpRegistry::new()))
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
@@ -149,6 +151,13 @@ pub fn run() {
             quick_search::quick_search_query,
             quick_search::quick_grep_query,
             quick_search::quick_search_record_pick,
+            acp::acp_list_backends,
+            acp::acp_spawn,
+            acp::acp_initialize,
+            acp::acp_prompt,
+            acp::acp_cancel,
+            acp::acp_permission_response,
+            acp::acp_dispose,
         ])
         .setup(move |app| {
             // File logging is enabled in release too, so invisible-window and

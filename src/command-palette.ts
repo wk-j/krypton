@@ -91,6 +91,9 @@ export class CommandPalette {
   private onOpenCallbacks: Array<() => void> = [];
   private onCloseCallbacks: Array<() => void> = [];
 
+  /** Cached ACP backend list (refreshed when palette opens) */
+  private acpBackends: Array<{ id: string; display_name: string }> = [];
+
   constructor(compositor: Compositor) {
     this.compositor = compositor;
 
@@ -158,6 +161,13 @@ export class CommandPalette {
     return this.visible;
   }
 
+  /** Open the palette pre-filtered to a query string. */
+  openWithQuery(query: string): void {
+    this.open();
+    this.input.value = query;
+    this.filter();
+  }
+
   /** Open the palette */
   open(): void {
     if (this.visible) return;
@@ -174,6 +184,25 @@ export class CommandPalette {
 
     // Filter with empty query shows all actions
     this.filter();
+
+    // Refresh the ACP backend list in the background; on completion,
+    // rebuild + re-filter so any newly-added backends appear.
+    invoke<Array<{ id: string; display_name: string }>>('acp_list_backends')
+      .then((list) => {
+        const same =
+          list.length === this.acpBackends.length &&
+          list.every((b, i) => b.id === this.acpBackends[i]?.id);
+        if (!same) {
+          this.acpBackends = list;
+          if (this.visible) {
+            this.rebuildActions();
+            this.filter();
+          }
+        }
+      })
+      .catch((e) => {
+        console.warn('[CommandPalette] acp_list_backends failed:', e);
+      });
 
     // Focus the input after a microtask to ensure DOM is rendered
     requestAnimationFrame(() => {
@@ -785,6 +814,29 @@ export class CommandPalette {
       category: 'Claude Code',
       execute: () => c.toggleHookToasts(),
     });
+
+    // Dynamic: ACP agent backends (one row per [acp.<id>] in krypton.toml).
+    if (this.acpBackends.length === 0) {
+      this.actions.push({
+        id: 'acp.none',
+        label: 'Open ACP Agent — no backends configured',
+        category: 'Window',
+        keybinding: 'Leader A',
+        execute: () => {
+          console.warn('[ACP] No backends configured. See ~/.config/krypton/krypton.toml for [acp.<id>] scaffold.');
+        },
+      });
+    } else {
+      for (const b of this.acpBackends) {
+        this.actions.push({
+          id: `acp.open.${b.id}`,
+          label: `Open ACP Agent → ${b.display_name}`,
+          category: 'Window',
+          keybinding: 'Leader A',
+          execute: () => c.openAcpView(b.id, b.display_name),
+        });
+      }
+    }
 
     // Dynamic: sound theme switching
     const soundEngine = c.soundEngine;

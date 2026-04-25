@@ -3,6 +3,7 @@
 // falls back to built-in defaults for any missing fields.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -28,6 +29,25 @@ pub struct KryptonConfig {
     pub agent: AgentConfig,
     pub vault: VaultConfig,
     pub hurl: HurlConfig,
+    /// ACP (Agent Client Protocol) backend definitions, keyed by id.
+    /// Each entry spawns a JSON-RPC subprocess (e.g. claude-code-acp, gemini --experimental-acp).
+    #[serde(default)]
+    pub acp: HashMap<String, AcpBackendConfig>,
+}
+
+/// One ACP backend entry from `[acp.<id>]`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AcpBackendConfig {
+    /// Executable to spawn (resolved through PATH).
+    pub command: String,
+    /// CLI arguments.
+    pub args: Vec<String>,
+    /// Extra environment variables. Values prefixed with `$` are resolved at spawn time
+    /// through the same login-shell `printenv` fallback used by `get_env_var`.
+    pub env: HashMap<String, String>,
+    /// Friendly name shown in the picker. Defaults to the table id when empty.
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -550,6 +570,21 @@ impl Default for WorkspacesConfig {
     }
 }
 
+// ─── ACP Scaffold ──────────────────────────────────────────────────
+
+const ACP_SCAFFOLD: &str = r#"
+# Uncomment and adjust to enable ACP agent windows (Leader A).
+# [acp.claude-code]
+# command = "npx"
+# args = ["-y", "@zed-industries/claude-code-acp"]
+# display_name = "Claude Code"
+
+# [acp.gemini-cli]
+# command = "gemini"
+# args = ["--experimental-acp"]
+# display_name = "Gemini CLI"
+"#;
+
 // ─── Config Path ───────────────────────────────────────────────────
 
 /// Get the config directory path: ~/.config/krypton/
@@ -649,11 +684,12 @@ fn write_default_config(path: &PathBuf, config: &KryptonConfig) {
 
     match toml::to_string_pretty(config) {
         Ok(toml_str) => {
-            // Prepend a header comment
+            // Prepend a header comment, append ACP scaffold so users discover it.
             let content = format!(
                 "# Krypton configuration\n\
                  # See docs/06-configuration.md for full reference\n\n\
-                 {toml_str}"
+                 {toml_str}\n\
+                 {ACP_SCAFFOLD}"
             );
             if let Err(e) = fs::write(path, content) {
                 log::error!("Failed to write default config to {}: {e}", path.display());
