@@ -474,18 +474,46 @@ export class AcpView implements ContentView {
     return this.currentThought;
   }
 
-  private flushMarkdown(): void {
+  private flushMarkdown(streaming = true): void {
     if (this.currentAssistant) {
       try {
         this.currentAssistant.rendered.innerHTML = md.parse(this.currentAssistant.raw, { async: false }) as string;
       } catch {
         this.currentAssistant.rendered.textContent = this.currentAssistant.raw;
       }
+      if (streaming) this.appendInlineCursor(this.currentAssistant.rendered);
     }
     if (this.currentThought) {
       this.currentThought.rendered.textContent = this.currentThought.raw;
+      if (streaming) this.appendInlineCursor(this.currentThought.rendered);
     }
     this.scrollToBottom();
+  }
+
+  /** Place a blinking cursor inline at the end of the last text node. */
+  private appendInlineCursor(container: HTMLElement): void {
+    const cursor = document.createElement('span');
+    cursor.className = 'acp-view__stream-cursor';
+    cursor.textContent = '▋';
+    let target: Node = container;
+    while (target.lastChild) {
+      const last = target.lastChild;
+      if (last.nodeType === Node.TEXT_NODE && !last.textContent?.trim()) {
+        if (last.previousSibling) {
+          target = last.previousSibling;
+          continue;
+        }
+        break;
+      }
+      target = last;
+    }
+    if (target.nodeType === Node.TEXT_NODE && target.parentNode) {
+      target.parentNode.insertBefore(cursor, target.nextSibling);
+    } else if (target instanceof HTMLElement) {
+      target.appendChild(cursor);
+    } else {
+      container.appendChild(cursor);
+    }
   }
 
   private scheduleFlush(): void {
@@ -507,7 +535,7 @@ export class AcpView implements ContentView {
   }
 
   private sealStreamingBlocks(): void {
-    if (this.currentAssistant) this.flushMarkdown();
+    if (this.currentAssistant || this.currentThought) this.flushMarkdown(false);
     this.currentAssistant = null;
     this.currentThought = null;
   }
@@ -698,18 +726,22 @@ export class AcpView implements ContentView {
   private onAcpEvent(e: AcpEvent): void {
     switch (e.type) {
       case 'message_chunk': {
-        this.currentThought = null;
-        const blk = this.ensureAssistantBlock();
+        if (this.currentThought) {
+          this.currentThought.rendered.querySelector('.acp-view__stream-cursor')?.remove();
+          this.currentThought = null;
+        }
+        this.ensureAssistantBlock();
         this.currentAssistant!.raw += e.text;
-        void blk;
         this.scheduleFlush();
         break;
       }
       case 'thought_chunk': {
-        this.currentAssistant = null;
-        const blk = this.ensureThoughtBlock();
+        if (this.currentAssistant) {
+          this.currentAssistant.rendered.querySelector('.acp-view__stream-cursor')?.remove();
+          this.currentAssistant = null;
+        }
+        this.ensureThoughtBlock();
         this.currentThought!.raw += e.text;
-        void blk;
         this.scheduleFlush();
         break;
       }

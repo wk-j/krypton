@@ -85,6 +85,18 @@
   line-height: 1.6;
   color: rgba(216, 232, 216, 0.78);
 }
+
+.acp-view__stream-cursor {
+  display: inline;
+  color: var(--agent-accent, #8effb0);
+  text-shadow: 0 0 10px rgba(142, 255, 176, 0.6);
+  animation: acp-cursor-blink 1s step-end infinite;
+}
+
+@keyframes acp-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
 .acp-view__msg-body--markdown > :first-child { margin-top: 0; }
 .acp-view__msg-body--markdown > :last-child  { margin-bottom: 0; }
 
