@@ -432,7 +432,7 @@ export class AcpView implements ContentView {
     }
     const hint = document.createElement('span');
     hint.className = 'acp-view__staging-hint';
-    hint.textContent = `${this.stagedImages.length} image${this.stagedImages.length === 1 ? '' : 's'} · Ctrl+C to clear`;
+    hint.textContent = `${this.stagedImages.length} image${this.stagedImages.length === 1 ? '' : 's'} · Esc to clear`;
     this.stagingAreaEl.appendChild(hint);
   }
 
@@ -753,7 +753,8 @@ export class AcpView implements ContentView {
       return true;
     }
 
-    // Escape — dismiss mention popup first, then clear item focus.
+    // Escape — dismiss mention popup first, then clear item focus,
+    // then clear staged images.
     if (e.key === 'Escape') {
       if (this.mention.active) {
         e.preventDefault();
@@ -764,6 +765,11 @@ export class AcpView implements ContentView {
         e.preventDefault();
         this.focusedToolId = null;
         this.repaintFocus();
+        return true;
+      }
+      if (this.stagedImages.length > 0) {
+        e.preventDefault();
+        this.clearStagedImages();
         return true;
       }
     }
@@ -794,16 +800,30 @@ export class AcpView implements ContentView {
       }
     }
 
-    // Cancel turn / clear staged images / clear input.
+    // Cancel turn / clear input. Image staging clears via Esc.
     if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       if (this.turnActive && this.client) {
         void this.client.cancel();
-      } else if (this.stagedImages.length > 0) {
-        this.clearStagedImages();
       } else if (this.inputText) {
         this.setInput('', 0);
       }
+      return true;
+    }
+
+    // Cmd+V / Ctrl+V — read clipboard text and insert at cursor.
+    // The native paste event is unreliable on non-contenteditable divs in
+    // WKWebView, so we drive it from the async clipboard API.
+    if (e.key === 'v' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      void navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (text) this.insertAtCursor(text);
+        })
+        .catch(() => {
+          /* clipboard permission denied or empty — no-op */
+        });
       return true;
     }
 
