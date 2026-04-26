@@ -409,10 +409,6 @@
   color: var(--krypton-warn, #ffd76d);
   text-shadow: 0 0 8px rgba(255, 215, 109, 0.45);
 }
-.acp-view__perm--focused .acp-view__perm-title::before {
-  content: '▸ ';
-  margin-left: -1ch;
-}
 .acp-view__perm--resolved {
   opacity: 0.4;
   font-style: italic;

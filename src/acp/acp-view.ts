@@ -497,6 +497,11 @@ export class AcpView implements ContentView {
     });
   }
 
+  private isAtBottom(): boolean {
+    const el = this.messagesEl;
+    return el.scrollHeight - el.clientHeight - el.scrollTop <= 24;
+  }
+
   private scrollToBottom(): void {
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
@@ -536,8 +541,9 @@ export class AcpView implements ContentView {
       entry.diffString = unifiedDiff(diff.path, diff.oldText ?? '', diff.newText ?? '');
       entry.diffPath = diff.path;
     }
+    const wasAtBottom = this.isAtBottom();
     this.paintToolBlock(entry);
-    if (!isUpdate) this.scrollToBottom();
+    if (!isUpdate || wasAtBottom) this.scrollToBottom();
   }
 
   private paintToolBlock(entry: ToolBlock): void {
