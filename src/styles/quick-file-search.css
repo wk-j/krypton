@@ -42,7 +42,7 @@
 }
 
 .krypton-quicksearch__prompt {
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
   font-weight: 700;
   color: var(--krypton-palette-highlight, #0cf);
@@ -54,7 +54,7 @@
   background: transparent;
   border: none;
   outline: none;
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
   color: var(--krypton-palette-input-text, #c0c5ce);
   caret-color: var(--krypton-palette-highlight, #0cf);
@@ -67,7 +67,7 @@
 
 .krypton-quicksearch__root {
   flex-shrink: 0;
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--krypton-palette-text, rgba(192, 197, 206, 0.45));
   letter-spacing: 0.04em;
@@ -96,7 +96,7 @@
   padding: 4px 14px;
   cursor: pointer;
   transition: background 0.05s ease;
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
@@ -147,7 +147,7 @@
 .krypton-quicksearch__statusbar {
   padding: 5px 14px;
   border-top: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.18));
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
   color: var(--krypton-palette-text, rgba(192, 197, 206, 0.55));
   letter-spacing: 0.06em;
@@ -158,7 +158,7 @@
   display: flex;
   gap: 14px;
   padding: 5px 14px 7px;
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
   color: var(--krypton-palette-text, rgba(192, 197, 206, 0.4));
   letter-spacing: 0.06em;
@@ -200,7 +200,7 @@
 
 .krypton-quicksearch__grep-snippet {
   color: var(--krypton-palette-input-text, #c0c5ce);
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;

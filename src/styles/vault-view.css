@@ -19,9 +19,9 @@
   --vault-cyan: #4dd0e1;
   --vault-red: #ef5350;
   --vault-magenta: #ce93d8;
-  --vault-font-display: 'Mononoki Nerd Font Mono', monospace;
-  --vault-font-data: 'Mononoki Nerd Font Mono', monospace;
-  --vault-font-body: 'Mononoki Nerd Font Mono', monospace;
+  --vault-font-display: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  --vault-font-data: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  --vault-font-body: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   --vault-scanline: rgba(0, 0, 0, 0.06);
 }
 

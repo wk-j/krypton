@@ -18,7 +18,8 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 - **Lifecycle**: `initialize` (negotiate `protocolVersion`, exchange `clientCapabilities` / `agentCapabilities`) → optional `authenticate` → `session/new` → `session/prompt` (request) with `session/update` notifications streaming back → response with `stopReason`. `session/cancel` interrupts.
 - **Capabilities Krypton must advertise**: `fs.readTextFile`, `fs.writeTextFile` (true — existing Tauri commands suffice). `terminal: false` for v1.
 - **Agent capabilities to honor**: `promptCapabilities.image`, `promptCapabilities.embeddedContext` (gates `@`-mention resource blocks).
-- **`session/update` variants** for v1: `agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`. Skip `available_commands_update`, `current_mode_update`, `user_message_chunk`.
+- **`session/update` variants** forwarded to the frontend: `agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`, `usage_update`, `available_commands_update`, `current_mode_update`. The view consumes the first six; the last two are forwarded for future use. `user_message_chunk` is intentionally skipped (the user message is rendered locally on send).
+- **Usage** is reported through two off-spec channels: claude-agent-acp emits `session/update { sessionUpdate: "usage_update" }` notifications mid-turn, and both claude-agent-acp and codex-acp attach a usage object to the `session/prompt` *response* (claude-agent at top-level, codex under `_meta.usage`). Krypton merges both into a single `UsageInfo` and renders it in the status line.
 - **`ToolCall`** shape: `toolCallId`, `title`, `kind` (`read|edit|delete|move|search|execute|think|fetch|other`), `status` (`pending|in_progress|completed|failed`), `content[]` (text, diff `{path, oldText, newText}`, terminal), `locations[]`, `rawInput`, `rawOutput`.
 - **Permission**: agent calls `session/request_permission` *on the client*, params include `ToolCall` and `options[] = PermissionOption{ optionId, name, kind ∈ allow_once|allow_always|reject_once|reject_always }`; response is `{ outcome: { outcome: "selected"|"cancelled", optionId? } }`. Critical: this is a JSON-RPC **request** initiated by the agent, not a notification — Rust must handle inbound requests with ids, not only notifications.
 - **Stop reasons**: `end_turn | max_tokens | max_turn_requests | refusal | cancelled`.
@@ -30,7 +31,7 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 | App | Implementation | Notes |
 |-----|----------------|-------|
 | Zed | First-class ACP host. `~/.config/zed/settings.json` `agent_servers` block (`command`, `args`, `env`). | Reference implementation; protocol authors. |
-| Neovim (`acp.nvim`, CodeCompanion) | Spawns `npx @zed-industries/claude-code-acp` or `gemini --experimental-acp`, renders chunks in a buffer. | Confirms stdio adapter pattern is the norm. |
+| Neovim (`acp.nvim`, CodeCompanion) | Spawns `npx @agentclientprotocol/claude-agent-acp` or `gemini --experimental-acp`, renders chunks in a buffer. | Confirms stdio adapter pattern is the norm. |
 | IntelliJ "Gemini CLI Companion" | Launches `gemini --experimental-acp`, JSON-RPC over stdio, modal permission prompts. | Validates Gemini CLI ACP mode for IDE-style hosts. |
 | Emacs `acp.el` | Minimal ACP client; line-delimited framing in a non-Node host. | Reference for non-JS implementation. |
 
@@ -62,11 +63,11 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 ```toml
 # Existing [agent] / [agent.<preset>] blocks: untouched.
 
-[acp.claude-code]
+[acp.claude-agent]
 command = "npx"
-args = ["-y", "@zed-industries/claude-code-acp"]
+args = ["-y", "@agentclientprotocol/claude-agent-acp"]
 env = { ANTHROPIC_API_KEY = "$ANTHROPIC_API_KEY" }
-display_name = "Claude Code"
+display_name = "Claude Agent"
 
 [acp.gemini-cli]
 command = "gemini"
@@ -80,10 +81,10 @@ display_name = "Gemini CLI"
 
 ```toml
 # Uncomment and adjust to enable ACP agent windows.
-# [acp.claude-code]
+# [acp.claude-agent]
 # command = "npx"
-# args = ["-y", "@zed-industries/claude-code-acp"]
-# display_name = "Claude Code"
+# args = ["-y", "@agentclientprotocol/claude-agent-acp"]
+# display_name = "Claude Agent"
 
 # [acp.gemini-cli]
 # command = "gemini"
@@ -130,7 +131,7 @@ Stderr is captured into a 64KB rolling per-client buffer **and** mirrored to `lo
 |------------------|------------------|
 | `claude /login`, `not authenticated` | "Run `claude /login` in a terminal, then retry." |
 | `gemini auth`, `please authenticate` | "Run `gemini auth login` in a terminal, then retry." |
-| `npm ERR`, `ENOENT` on `npx` | "Check network or install the adapter manually: `npm i -g @zed-industries/claude-code-acp`." |
+| `npm ERR`, `ENOENT` on `npx` | "Check network or install the adapter manually: `npm i -g @agentclientprotocol/claude-agent-acp`." |
 | _none of the above_ | raw stderr tail. |
 
 After initialize succeeds, stderr stays in the rolling buffer (debug only); it is **not** rendered in AcpView during normal operation.
@@ -159,8 +160,19 @@ export type AcpEvent =
   | { type: 'tool_call_update'; update: ToolCallUpdate }
   | { type: 'plan'; entries: PlanEntry[] }
   | { type: 'permission_request'; requestId: number; toolCall: ToolCall; options: PermissionOption[] }
+  | { type: 'usage'; usage: UsageInfo }
   | { type: 'stop'; stopReason: StopReason }
   | { type: 'error'; message: string };
+
+export interface UsageInfo {
+  used?: number;            // tokens used so far in the session window
+  size?: number;            // total context window size
+  cost?: { amount: number; currency: string };
+  inputTokens?: number;     // alternate shape used by some adapters
+  outputTokens?: number;
+  cachedReadTokens?: number;
+  cachedWriteTokens?: number;
+}
 
 export class AcpClient {
   static async spawn(backendId: string, cwd: string | null): Promise<AcpClient>;
@@ -282,6 +294,6 @@ None.
 - [ACP Prompt Turn](https://agentclientprotocol.com/protocol/prompt-turn.md) — `session/prompt`, `session/update` variants, `stopReason` enum.
 - [ACP Tool Calls](https://agentclientprotocol.com/protocol/tool-calls.md) — `ToolCall` / `ToolCallContent` shape, permission flow.
 - [ACP Content Blocks](https://agentclientprotocol.com/protocol/content) — text/image/audio/resource/resource_link block shapes.
-- [`@zed-industries/claude-code-acp`](https://github.com/zed-industries/claude-code-acp) — reference Claude Code adapter.
+- [`@agentclientprotocol/claude-agent-acp`](https://github.com/agentclientprotocol/claude-agent-acp) — reference Claude Agent SDK adapter.
 - [Gemini CLI ACP mode](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/acp-mode.md) — `gemini --experimental-acp`.
 - [`docs/42-pi-agent-integration.md`](./42-pi-agent-integration.md) — existing pi-agent integration; referenced for context only, not modified.

@@ -32,7 +32,7 @@
   --agent-cyan-rgb: 77, 208, 225;
   --agent-blue: #64b5f6;
   --agent-blue-rgb: 100, 181, 246;
-  --agent-font: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  --agent-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   --agent-scanline: rgba(0, 0, 0, 0.06);
 }
 

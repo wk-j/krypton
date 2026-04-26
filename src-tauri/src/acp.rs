@@ -1,6 +1,6 @@
 // Krypton — ACP (Agent Client Protocol) backend.
 //
-// Spawns an external agent subprocess (e.g. `npx @zed-industries/claude-code-acp`,
+// Spawns an external agent subprocess (e.g. `npx @agentclientprotocol/claude-agent-acp`,
 // `gemini --experimental-acp`) and speaks newline-delimited JSON-RPC 2.0 over its
 // stdio. One AcpClient per Krypton-side session. The Rust side acts as the JSON-RPC
 // client *and* must handle inbound requests (fs/read_text_file, fs/write_text_file,
@@ -414,7 +414,10 @@ fn handle_notification(client: &Arc<AcpClient>, app: &AppHandle, method: &str, p
                 | "agent_thought_chunk"
                 | "tool_call"
                 | "tool_call_update"
-                | "plan" => {
+                | "plan"
+                | "usage_update"
+                | "available_commands_update"
+                | "current_mode_update" => {
                     client.emit_event(
                         app,
                         json!({
@@ -827,7 +830,7 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
         return "Run `gemini auth login` in a terminal, then retry.".to_string();
     }
     if s.contains("npm err") || s.contains("enoent") {
-        return "Check network or install the adapter manually: `npm i -g @zed-industries/claude-code-acp`.".to_string();
+        return "Check network or install the adapter manually: `npm i -g @agentclientprotocol/claude-agent-acp`.".to_string();
     }
     if stderr.is_empty() {
         format!("Adapter `{backend_id}` failed to start.")

@@ -30,7 +30,7 @@ pub struct KryptonConfig {
     pub vault: VaultConfig,
     pub hurl: HurlConfig,
     /// ACP (Agent Client Protocol) backend definitions, keyed by id.
-    /// Each entry spawns a JSON-RPC subprocess (e.g. claude-code-acp, gemini --experimental-acp).
+    /// Each entry spawns a JSON-RPC subprocess (e.g. claude-agent-acp, gemini --experimental-acp).
     #[serde(default)]
     pub acp: HashMap<String, AcpBackendConfig>,
 }
@@ -574,10 +574,10 @@ impl Default for WorkspacesConfig {
 
 const ACP_SCAFFOLD: &str = r#"
 # Uncomment and adjust to enable ACP agent windows (Leader A).
-# [acp.claude-code]
+# [acp.claude-agent]
 # command = "npx"
-# args = ["-y", "@zed-industries/claude-code-acp"]
-# display_name = "Claude Code"
+# args = ["-y", "@agentclientprotocol/claude-agent-acp"]
+# display_name = "Claude Agent"
 
 # [acp.gemini-cli]
 # command = "gemini"

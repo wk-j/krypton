@@ -150,7 +150,7 @@
 }
 
 .krypton-window__label {
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -159,7 +159,7 @@
 }
 
 .krypton-window__pty-status {
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   letter-spacing: 0.1em;
@@ -307,7 +307,7 @@
 
 /* ─── Tab Index ─── */
 .krypton-tab__index {
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -337,7 +337,7 @@
 
 /* ─── Tab Title ─── */
 .krypton-tab__title {
-  font-family: 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-tab-font-size, var(--krypton-chrome-font-size, 11px));
   font-weight: 500;
   letter-spacing: 0.06em;

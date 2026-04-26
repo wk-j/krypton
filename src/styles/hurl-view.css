@@ -14,7 +14,7 @@
   --hurl-text: #c8d8e6;
   --hurl-text-dim: #6a8ea8;
   --hurl-ghost: rgba(0, 229, 255, 0.07);
-  --hurl-font: 'Mononoki Nerd Font Mono', monospace;
+  --hurl-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
 }
 
 .krypton-hurl {

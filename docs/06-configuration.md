@@ -418,11 +418,11 @@ Each `[acp.<id>]` block declares an external [Agent Client Protocol](https://age
 Example:
 
 ```toml
-[acp.claude-code]
+[acp.claude-agent]
 command = "npx"
-args = ["-y", "@zed-industries/claude-code-acp"]
+args = ["-y", "@agentclientprotocol/claude-agent-acp"]
 env = { ANTHROPIC_API_KEY = "$ANTHROPIC_API_KEY" }
-display_name = "Claude Code"
+display_name = "Claude Agent"
 
 [acp.gemini-cli]
 command = "gemini"

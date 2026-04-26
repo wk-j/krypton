@@ -81,6 +81,16 @@ export interface AcpBackendDescriptor {
   command: string;
 }
 
+export interface UsageInfo {
+  used?: number;
+  size?: number;
+  cost?: { amount: number; currency: string };
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedReadTokens?: number;
+  cachedWriteTokens?: number;
+}
+
 export type AcpEvent =
   | { type: 'message_chunk'; text: string }
   | { type: 'thought_chunk'; text: string }
@@ -88,5 +98,6 @@ export type AcpEvent =
   | { type: 'tool_call_update'; update: ToolCallUpdate }
   | { type: 'plan'; entries: PlanEntry[] }
   | { type: 'permission_request'; requestId: number; toolCall: ToolCall; options: PermissionOption[] }
+  | { type: 'usage'; usage: UsageInfo }
   | { type: 'stop'; stopReason: StopReason }
   | { type: 'error'; message: string };

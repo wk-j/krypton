@@ -6,6 +6,7 @@ import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
+import { invoke } from '../profiler/ipc';
 import { AcpClient } from './client';
 import type {
   AcpEvent,
@@ -15,8 +16,77 @@ import type {
   ToolCall,
   ToolCallContent,
   ToolCallUpdate,
+  UsageInfo,
 } from './types';
-import type { ContentView, PaneContentType } from '../types';
+import type { ContentView, PaneContentType, QuickSearchHit, QuickSearchResponse } from '../types';
+
+// ─── Fuzzy file search (@ mention) ─────────────────────────────────
+
+const MAX_MENTION_RESULTS = 8;
+const FILE_INDEX_TTL_MS = 10_000;
+
+interface FuzzyResult {
+  score: number;
+  matchIndices: number[];
+}
+
+function fuzzyMatch(query: string, target: string): FuzzyResult | null {
+  const ql = query.toLowerCase();
+  const tl = target.toLowerCase();
+  if (ql.length === 0) return { score: 0, matchIndices: [] };
+  if (ql.length > tl.length) return null;
+
+  const matchIndices: number[] = [];
+  let qi = 0;
+  let score = 0;
+  let lastIdx = -2;
+
+  for (let ti = 0; ti < tl.length && qi < ql.length; ti++) {
+    if (tl[ti] === ql[qi]) {
+      matchIndices.push(ti);
+      if (ti === lastIdx + 1) score += 10;
+      if (ti === 0 || /[\s_\-/.]/.test(target[ti - 1])) score += 8;
+      score += Math.max(0, 5 - ti);
+      if (target[ti] === query[qi]) score += 1;
+      lastIdx = ti;
+      qi++;
+    }
+  }
+  if (qi < ql.length) return null;
+  return { score, matchIndices };
+}
+
+function highlightMentionMatches(text: string, indices: number[]): string {
+  const set = new Set(indices);
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const ch = esc(text[i]);
+    out += set.has(i) ? `<span class="acp-view__mention-hl">${ch}</span>` : ch;
+  }
+  return out;
+}
+
+interface CachedFileIndex {
+  files: string[];
+  fetchedAt: number;
+}
+
+const fileIndexCache = new Map<string, CachedFileIndex>();
+
+async function loadFileIndex(cwd: string): Promise<string[]> {
+  const cached = fileIndexCache.get(cwd);
+  if (cached && Date.now() - cached.fetchedAt < FILE_INDEX_TTL_MS) {
+    return cached.files;
+  }
+  try {
+    const files = await invoke<string[]>('search_files', { root: cwd, showHidden: false });
+    fileIndexCache.set(cwd, { files, fetchedAt: Date.now() });
+    return files;
+  } catch (e) {
+    console.error('[AcpView] search_files failed:', e);
+    return [];
+  }
+}
 
 const md = new Marked(
   markedHighlight({
@@ -51,6 +121,14 @@ interface PermissionBlock {
   options: PermissionOption[];
 }
 
+interface StagedImage {
+  data: string;
+  mimeType: string;
+}
+
+const MAX_STAGED_IMAGES = 4;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
 export class AcpView implements ContentView {
   readonly type: PaneContentType = 'acp';
   readonly element: HTMLElement;
@@ -59,6 +137,8 @@ export class AcpView implements ContentView {
   private inputRowEl!: HTMLElement;
   private inputDisplayEl!: HTMLElement;
   private statusLineEl!: HTMLElement;
+  private stagingAreaEl!: HTMLElement;
+  private stagedImages: StagedImage[] = [];
 
   private backendId: string;
   private displayName: string;
@@ -70,6 +150,8 @@ export class AcpView implements ContentView {
   private inputText = '';
   private cursorPos = 0;
   private supportsImages = false;
+  private usage: UsageInfo | null = null;
+  private sessionId: string | null = null;
 
   private currentAssistant: { container: HTMLElement; rendered: HTMLElement; raw: string } | null = null;
   private currentThought: { container: HTMLElement; rendered: HTMLElement; raw: string } | null = null;
@@ -79,6 +161,17 @@ export class AcpView implements ContentView {
   private focusedToolId: string | null = null;
 
   private rafQueued = false;
+
+  // @-mention fuzzy file search state
+  private mentionPopupEl!: HTMLElement;
+  private mention: {
+    active: boolean;
+    start: number;
+    query: string;
+    items: { path: string; indices: number[] }[];
+    selectedIndex: number;
+  } = { active: false, start: -1, query: '', items: [], selectedIndex: 0 };
+  private mentionFiles: string[] = [];
 
   private openDiffCb: ((unifiedDiff: string, title: string) => void) | null = null;
   private closeCb: (() => void) | null = null;
@@ -101,6 +194,12 @@ export class AcpView implements ContentView {
 
   setProjectDir(dir: string | null): void {
     this.projectDir = dir;
+    if (dir) {
+      void this.refreshMentionFiles();
+    } else {
+      this.mentionFiles = [];
+    }
+    if (!this.spawning) this.updateStatus();
   }
 
   getWorkingDirectory(): string | null {
@@ -131,6 +230,56 @@ export class AcpView implements ContentView {
     this.statusLineEl.className = 'acp-view__status';
     this.element.appendChild(this.statusLineEl);
 
+    this.mentionPopupEl = document.createElement('div');
+    this.mentionPopupEl.className = 'acp-view__mention-popup';
+    this.element.appendChild(this.mentionPopupEl);
+
+    this.stagingAreaEl = document.createElement('div');
+    this.stagingAreaEl.className = 'acp-view__staging';
+    this.stagingAreaEl.style.display = 'none';
+    this.element.appendChild(this.stagingAreaEl);
+
+    this.element.addEventListener('paste', (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) this.stageImageFile(file);
+          return;
+        }
+      }
+      const text = e.clipboardData?.getData('text');
+      if (text) {
+        e.preventDefault();
+        this.insertAtCursor(text);
+      }
+    });
+
+    this.element.addEventListener('dragover', (e: DragEvent) => {
+      if (!e.dataTransfer) return;
+      const hasFile = Array.from(e.dataTransfer.items ?? []).some((i) => i.kind === 'file');
+      if (!hasFile) return;
+      e.preventDefault();
+      this.element.classList.add('acp-view--drag-over');
+    });
+    this.element.addEventListener('dragleave', (e: DragEvent) => {
+      if (e.target === this.element) this.element.classList.remove('acp-view--drag-over');
+    });
+    this.element.addEventListener('drop', (e: DragEvent) => {
+      e.preventDefault();
+      this.element.classList.remove('acp-view--drag-over');
+      const files = e.dataTransfer?.files;
+      if (!files) return;
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('image/')) {
+          this.stageImageFile(file);
+          break;
+        }
+      }
+    });
+
     this.inputRowEl = document.createElement('div');
     this.inputRowEl.className = 'acp-view__input-row';
     const prompt = document.createElement('span');
@@ -154,10 +303,56 @@ export class AcpView implements ContentView {
         `starting ${esc(this.displayName)}<span class="acp-view__dots"><span>.</span><span>.</span><span>.</span></span>`;
       return;
     }
-    const label = this.turnActive
-      ? 'streaming · Ctrl+C to cancel'
-      : 'ready · type message + Enter';
-    this.statusLineEl.textContent = label;
+    const stateClass = this.turnActive ? 'acp-view__state--active' : 'acp-view__state--idle';
+    const stateGlyph = this.turnActive ? '●' : '○';
+    const stateLabel = this.turnActive ? 'streaming' : 'ready';
+    const segments: string[] = [];
+    segments.push(
+      `<span class="acp-view__state ${stateClass}">${stateGlyph} ${esc(stateLabel)}</span>`,
+    );
+    segments.push(`<span class="acp-view__session-agent">${esc(this.displayName)}</span>`);
+    if (this.projectDir) {
+      segments.push(
+        `<span class="acp-view__session-cwd" title="${esc(this.projectDir)}">${esc(abbreviatePath(this.projectDir))}</span>`,
+      );
+    }
+    if (this.sessionId) {
+      segments.push(
+        `<span class="acp-view__session-id" title="${esc(this.sessionId)}">#${esc(shortSessionId(this.sessionId))}</span>`,
+      );
+    }
+    const hint = this.turnActive ? 'Ctrl+C to cancel' : 'Enter to send';
+    segments.push(`<span class="acp-view__status-hint">${esc(hint)}</span>`);
+    const usageHtml = this.renderUsage();
+    this.statusLineEl.innerHTML =
+      `<span class="acp-view__status-left">${segments.join('<span class="acp-view__status-sep">·</span>')}</span>${usageHtml}`;
+  }
+
+  private renderUsage(): string {
+    const u = this.usage;
+    if (!u) return '';
+    const parts: string[] = [];
+    if (typeof u.used === 'number') {
+      const usedStr = formatTokens(u.used);
+      if (typeof u.size === 'number' && u.size > 0) {
+        const pct = Math.min(100, Math.round((u.used / u.size) * 100));
+        const cls = pct >= 80 ? ' acp-view__usage--high' : pct >= 50 ? ' acp-view__usage--mid' : '';
+        parts.push(
+          `<span class="acp-view__usage-tokens${cls}">${usedStr} / ${formatTokens(u.size)} · ${pct}%</span>`,
+        );
+      } else {
+        parts.push(`<span class="acp-view__usage-tokens">${usedStr}</span>`);
+      }
+    } else if (typeof u.inputTokens === 'number' || typeof u.outputTokens === 'number') {
+      const i = u.inputTokens ?? 0;
+      const o = u.outputTokens ?? 0;
+      parts.push(`<span class="acp-view__usage-tokens">↑${formatTokens(i)} ↓${formatTokens(o)}</span>`);
+    }
+    if (u.cost && typeof u.cost.amount === 'number') {
+      parts.push(`<span class="acp-view__usage-cost">${formatCost(u.cost.amount, u.cost.currency)}</span>`);
+    }
+    if (parts.length === 0) return '';
+    return `<span class="acp-view__usage">${parts.join(' · ')}</span>`;
   }
 
   private appendSystemMessage(text: string): void {
@@ -168,19 +363,83 @@ export class AcpView implements ContentView {
     this.scrollToBottom();
   }
 
-  private appendUserMessage(text: string): void {
+  private appendUserMessage(text: string, images: StagedImage[] = []): void {
     const el = document.createElement('div');
     el.className = 'acp-view__msg acp-view__msg--user';
     const label = document.createElement('div');
     label.className = 'acp-view__msg-label';
     label.textContent = 'you';
-    const body = document.createElement('div');
-    body.className = 'acp-view__msg-body';
-    body.textContent = text;
     el.appendChild(label);
-    el.appendChild(body);
+    if (images.length > 0) {
+      const thumbs = document.createElement('div');
+      thumbs.className = 'acp-view__msg-thumbs';
+      for (const img of images) {
+        const t = document.createElement('img');
+        t.className = 'acp-view__msg-thumb';
+        t.src = `data:${img.mimeType};base64,${img.data}`;
+        thumbs.appendChild(t);
+      }
+      el.appendChild(thumbs);
+    }
+    if (text) {
+      const body = document.createElement('div');
+      body.className = 'acp-view__msg-body';
+      body.textContent = text;
+      el.appendChild(body);
+    }
     this.messagesEl.appendChild(el);
     this.scrollToBottom();
+  }
+
+  // ─── Image staging ──────────────────────────────────────────────
+
+  private stageImageFile(file: File): void {
+    if (this.stagedImages.length >= MAX_STAGED_IMAGES) {
+      this.appendSystemMessage(`max ${MAX_STAGED_IMAGES} images per message.`);
+      return;
+    }
+    if (!this.supportsImages) {
+      this.appendSystemMessage(`${this.displayName} did not advertise image support; sending anyway.`);
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const commaIdx = dataUrl.indexOf(',');
+      const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+      if (base64.length > MAX_IMAGE_BYTES * 1.34) {
+        this.appendSystemMessage('image too large (max 5MB).');
+        return;
+      }
+      this.stagedImages.push({ data: base64, mimeType: file.type });
+      this.renderStagingArea();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  private renderStagingArea(): void {
+    if (this.stagedImages.length === 0) {
+      this.stagingAreaEl.style.display = 'none';
+      this.stagingAreaEl.innerHTML = '';
+      return;
+    }
+    this.stagingAreaEl.style.display = 'flex';
+    this.stagingAreaEl.innerHTML = '';
+    for (const img of this.stagedImages) {
+      const thumb = document.createElement('img');
+      thumb.className = 'acp-view__staged-thumb';
+      thumb.src = `data:${img.mimeType};base64,${img.data}`;
+      this.stagingAreaEl.appendChild(thumb);
+    }
+    const hint = document.createElement('span');
+    hint.className = 'acp-view__staging-hint';
+    hint.textContent = `${this.stagedImages.length} image${this.stagedImages.length === 1 ? '' : 's'} · Ctrl+C to clear`;
+    this.stagingAreaEl.appendChild(hint);
+  }
+
+  private clearStagedImages(): void {
+    if (this.stagedImages.length === 0) return;
+    this.stagedImages = [];
+    this.renderStagingArea();
   }
 
   private ensureAssistantBlock(): { rendered: HTMLElement } {
@@ -418,6 +677,7 @@ export class AcpView implements ContentView {
     try {
       const info = await this.client.initialize();
       this.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
+      this.sessionId = info.session_id ?? null;
     } catch (e) {
       this.appendSystemMessage(`initialize failed: ${e}`);
       this.spawning = false;
@@ -462,6 +722,10 @@ export class AcpView implements ContentView {
         this.sealStreamingBlocks();
         this.renderPermissionRequest(e.requestId, e.toolCall, e.options);
         break;
+      case 'usage':
+        this.usage = mergeUsage(this.usage, e.usage);
+        this.updateStatus();
+        break;
       case 'stop':
         this.turnActive = false;
         this.currentAssistant = null;
@@ -489,10 +753,13 @@ export class AcpView implements ContentView {
       return true;
     }
 
-    // Escape — clear item focus.
-    if (e.key === 'Escape' && (this.focusedToolId !== null || this.focusedPermissionId !== null)) {
-      // Permission prompts handle their own Escape (cancel) below; only clear focus
-      // for tool blocks here.
+    // Escape — dismiss mention popup first, then clear item focus.
+    if (e.key === 'Escape') {
+      if (this.mention.active) {
+        e.preventDefault();
+        this.hideMention();
+        return true;
+      }
       if (this.focusedToolId !== null && this.focusedPermissionId === null) {
         e.preventDefault();
         this.focusedToolId = null;
@@ -527,11 +794,13 @@ export class AcpView implements ContentView {
       }
     }
 
-    // Cancel turn / clear input.
+    // Cancel turn / clear staged images / clear input.
     if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       if (this.turnActive && this.client) {
         void this.client.cancel();
+      } else if (this.stagedImages.length > 0) {
+        this.clearStagedImages();
       } else if (this.inputText) {
         this.setInput('', 0);
       }
@@ -548,14 +817,50 @@ export class AcpView implements ContentView {
       }
     }
 
+    // Mention popup — Tab/Shift+Tab and arrow keys navigate; Tab/Enter accept.
+    if (this.mention.active && this.mention.items.length > 0) {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          this.mention.selectedIndex =
+            (this.mention.selectedIndex - 1 + this.mention.items.length) % this.mention.items.length;
+          this.renderMentionPopup();
+        } else {
+          this.acceptMention();
+        }
+        return true;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        this.mention.selectedIndex =
+          (this.mention.selectedIndex - 1 + this.mention.items.length) % this.mention.items.length;
+        this.renderMentionPopup();
+        return true;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        this.mention.selectedIndex = (this.mention.selectedIndex + 1) % this.mention.items.length;
+        this.renderMentionPopup();
+        return true;
+      }
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        this.acceptMention();
+        return true;
+      }
+    }
+
     // Submit.
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       const text = this.inputText.trim();
-      if (text && !this.spawning && !this.turnActive) {
+      const hasImages = this.stagedImages.length > 0;
+      if ((text || hasImages) && !this.spawning && !this.turnActive) {
+        const images = this.stagedImages.slice();
         this.setInput('', 0);
-        this.appendUserMessage(text);
-        this.sendPrompt(text);
+        this.clearStagedImages();
+        this.appendUserMessage(text, images);
+        this.sendPrompt(text, images);
       }
       return true;
     }
@@ -665,14 +970,126 @@ export class AcpView implements ContentView {
     const before = this.inputText.slice(0, this.cursorPos);
     const after = this.inputText.slice(this.cursorPos);
     this.inputDisplayEl.innerHTML = `${esc(before)}<span class="acp-view__caret">█</span>${esc(after)}`;
+    this.updateMentionState();
   }
 
-  private async sendPrompt(text: string): Promise<void> {
+  // ─── @ mention — fuzzy file search ──────────────────────────────
+
+  private updateMentionState(): void {
+    const text = this.inputText;
+    const caret = this.cursorPos;
+    let atIdx = -1;
+    for (let i = caret - 1; i >= 0; i--) {
+      const ch = text[i];
+      if (ch === '@') {
+        const prev = i === 0 ? ' ' : text[i - 1];
+        if (/\s/.test(prev) || i === 0) atIdx = i;
+        break;
+      }
+      if (/\s/.test(ch)) break;
+    }
+
+    if (atIdx < 0 || !this.projectDir) {
+      this.hideMention();
+      return;
+    }
+
+    const query = text.substring(atIdx + 1, caret);
+    const wasActive = this.mention.active;
+    this.mention.active = true;
+    this.mention.start = atIdx;
+    this.mention.query = query;
+    if (!wasActive) this.mention.selectedIndex = 0;
+
+    if (this.mentionFiles.length === 0) {
+      void this.refreshMentionFiles();
+    }
+    this.rankMentionFiles();
+    if (this.mention.selectedIndex >= this.mention.items.length) {
+      this.mention.selectedIndex = 0;
+    }
+    this.renderMentionPopup();
+  }
+
+  private rankMentionFiles(): void {
+    const q = this.mention.query;
+    const items: { path: string; indices: number[] }[] = [];
+    if (q.length === 0) {
+      for (const path of this.mentionFiles.slice(0, MAX_MENTION_RESULTS)) {
+        items.push({ path, indices: [] });
+      }
+    } else {
+      const ranked: { path: string; score: number; indices: number[] }[] = [];
+      for (const path of this.mentionFiles) {
+        const res = fuzzyMatch(q, path);
+        if (res) ranked.push({ path, score: res.score, indices: res.matchIndices });
+      }
+      ranked.sort((a, b) => b.score - a.score);
+      for (const r of ranked.slice(0, MAX_MENTION_RESULTS)) {
+        items.push({ path: r.path, indices: r.indices });
+      }
+    }
+    this.mention.items = items;
+  }
+
+  private renderMentionPopup(): void {
+    if (!this.mention.active || this.mention.items.length === 0) {
+      this.mentionPopupEl.classList.remove('acp-view__mention-popup--visible');
+      this.mentionPopupEl.innerHTML = '';
+      return;
+    }
+    this.mentionPopupEl.innerHTML = '';
+    for (let i = 0; i < this.mention.items.length; i++) {
+      const item = this.mention.items[i];
+      const row = document.createElement('div');
+      row.className = 'acp-view__mention-row';
+      if (i === this.mention.selectedIndex) row.classList.add('acp-view__mention-row--selected');
+      row.innerHTML = highlightMentionMatches(item.path, item.indices);
+      this.mentionPopupEl.appendChild(row);
+    }
+    this.mentionPopupEl.classList.add('acp-view__mention-popup--visible');
+  }
+
+  private hideMention(): void {
+    if (!this.mention.active && this.mentionPopupEl.innerHTML === '') return;
+    this.mention.active = false;
+    this.mention.items = [];
+    this.mention.selectedIndex = 0;
+    this.mentionPopupEl.classList.remove('acp-view__mention-popup--visible');
+    this.mentionPopupEl.innerHTML = '';
+  }
+
+  private acceptMention(): boolean {
+    if (!this.mention.active || this.mention.items.length === 0) return false;
+    const item = this.mention.items[this.mention.selectedIndex];
+    const before = this.inputText.slice(0, this.mention.start);
+    const after = this.inputText.slice(this.cursorPos);
+    const insert = `@${item.path} `;
+    this.inputText = before + insert + after;
+    this.cursorPos = before.length + insert.length;
+    this.hideMention();
+    this.renderInput();
+    return true;
+  }
+
+  private async refreshMentionFiles(): Promise<void> {
+    if (!this.projectDir) return;
+    this.mentionFiles = await loadFileIndex(this.projectDir);
+    if (this.mention.active) {
+      this.rankMentionFiles();
+      this.renderMentionPopup();
+    }
+  }
+
+  private async sendPrompt(text: string, images: StagedImage[] = []): Promise<void> {
     if (!this.client) return;
     this.turnActive = true;
     this.updateStatus();
-    const blocks: ContentBlock[] = [{ type: 'text', text }];
-    void this.supportsImages;
+    const blocks: ContentBlock[] = [];
+    for (const img of images) {
+      blocks.push({ type: 'image', data: img.data, mimeType: img.mimeType });
+    }
+    if (text) blocks.push({ type: 'text', text });
     try {
       await this.client.prompt(blocks);
     } catch (e) {
@@ -803,4 +1220,48 @@ function keyForPermissionKind(kind: PermissionOption['kind']): string {
 function pickPermissionOption(options: PermissionOption[], key: string): string | null {
   const match = options.find((o) => keyForPermissionKind(o.kind) === key);
   return match?.optionId ?? null;
+}
+
+function abbreviatePath(fullPath: string): string {
+  let p = fullPath;
+  const homeMatch = p.match(/^(\/Users\/[^/]+|\/home\/[^/]+)/);
+  if (homeMatch) p = '~' + p.slice(homeMatch[1].length);
+  const MAX = 32;
+  if (p.length <= MAX) return p;
+  const parts = p.split('/');
+  if (parts.length >= 2) {
+    const tail = parts.slice(-2).join('/');
+    return tail.length <= MAX - 4 ? `…/${tail}` : `…/${parts[parts.length - 1]}`;
+  }
+  return '…' + p.slice(p.length - MAX + 1);
+}
+
+function shortSessionId(id: string): string {
+  const trimmed = id.replace(/^sess(ion)?[-_]?/i, '');
+  return trimmed.length > 8 ? trimmed.slice(-8) : trimmed;
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+function formatCost(amount: number, currency: string): string {
+  const sym = currency === 'USD' ? '$' : `${currency} `;
+  if (amount < 0.01) return `${sym}${amount.toFixed(4)}`;
+  return `${sym}${amount.toFixed(2)}`;
+}
+
+function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {
+  if (!prev) return next;
+  return {
+    used: next.used ?? prev.used,
+    size: next.size ?? prev.size,
+    cost: next.cost ?? prev.cost,
+    inputTokens: next.inputTokens ?? prev.inputTokens,
+    outputTokens: next.outputTokens ?? prev.outputTokens,
+    cachedReadTokens: next.cachedReadTokens ?? prev.cachedReadTokens,
+    cachedWriteTokens: next.cachedWriteTokens ?? prev.cachedWriteTokens,
+  };
 }

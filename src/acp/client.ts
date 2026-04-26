@@ -14,6 +14,7 @@ import type {
   StopReason,
   ToolCall,
   ToolCallUpdate,
+  UsageInfo,
 } from './types';
 
 interface RawAcpEvent {
@@ -74,11 +75,16 @@ export class AcpClient {
   }
 
   async prompt(blocks: ContentBlock[]): Promise<StopReason> {
-    const result = await invoke<{ stopReason: StopReason }>('acp_prompt', {
-      session: this.session,
-      blocks,
-    });
+    const result = await invoke<{ stopReason: StopReason; usage?: UsageInfo; _meta?: { usage?: UsageInfo } }>(
+      'acp_prompt',
+      { session: this.session, blocks },
+    );
     const stopReason: StopReason = result.stopReason ?? 'end_turn';
+    // Off-spec usage: claude-agent-acp puts it at top-level, codex-acp under _meta.
+    const usage = result.usage ?? result._meta?.usage;
+    if (usage && Object.keys(usage).length > 0) {
+      for (const cb of this.listeners.slice()) cb({ type: 'usage', usage });
+    }
     // Per the ACP spec, the `session/prompt` JSON-RPC *response* is the turn-end signal;
     // it is not delivered as a `session/update` notification. Surface it through the
     // event stream so the view can clear `turnActive`.
@@ -138,6 +144,20 @@ export class AcpClient {
           case 'plan': {
             const entries = update.entries ?? [];
             event = { type: 'plan', entries };
+            break;
+          }
+          case 'usage_update': {
+            const u = update as Record<string, unknown>;
+            const cost = u.cost as { amount?: number; currency?: string } | undefined;
+            const usage: UsageInfo = {
+              used: typeof u.used === 'number' ? u.used : undefined,
+              size: typeof u.size === 'number' ? u.size : undefined,
+              cost:
+                cost && typeof cost.amount === 'number'
+                  ? { amount: cost.amount, currency: cost.currency ?? 'USD' }
+                  : undefined,
+            };
+            event = { type: 'usage', usage };
             break;
           }
         }
