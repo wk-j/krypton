@@ -24,6 +24,8 @@ args = ["--login"]
 
 [font]
 family = "Mononoki Nerd Font Mono"
+# Or an array for fallback fonts (e.g. for Thai / CJK glyphs):
+# family = ["Mononoki Nerd Font Mono", "Noto Sans Thai Looped"]
 size = 14.0
 line_height = 1.2
 ligatures = true
@@ -371,7 +373,7 @@ name = "custom-fixed"
 |---------|-----|------|---------|-------------|
 | `[shell]` | `program` | string | System default | Shell binary path |
 | `[shell]` | `args` | string[] | `[]` | Arguments passed to shell |
-| `[font]` | `family` | string | `"Mononoki Nerd Font Mono"` | Font family name |
+| `[font]` | `family` | string \| string[] | `"Mononoki Nerd Font Mono"` | Font family name, or an array of names for fallback (first match per glyph) |
 | `[font]` | `size` | float | `14.0` | Font size in points |
 | `[font]` | `line_height` | float | `1.2` | Line height multiplier |
 | `[font]` | `ligatures` | bool | `true` | Enable font ligatures |

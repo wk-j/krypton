@@ -322,7 +322,11 @@ export class Compositor {
   /** Apply loaded config to compositor settings. Call before creating windows. */
   applyConfig(config: KryptonConfig): void {
     // Font
-    this.fontFamily = `'${config.font.family}', 'Fira Code', 'Cascadia Code', monospace`;
+    const families = Array.isArray(config.font.family)
+      ? config.font.family
+      : [config.font.family as unknown as string];
+    const userFamilies = families.map((f) => `'${f}'`).join(', ');
+    this.fontFamily = `${userFamilies}, 'Fira Code', 'Cascadia Code', monospace`;
     this.fontSize = config.font.size;
     this.lineHeight = config.font.line_height;
 

@@ -2,10 +2,28 @@
 // TOML config parser with serde. Loads from ~/.config/krypton/krypton.toml,
 // falls back to built-in defaults for any missing fields.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+
+/// Accept either a single string or an array of strings for `font.family`.
+/// Normalizes to `Vec<String>` so the frontend always receives an array.
+fn deserialize_font_family<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        Single(String),
+        Multiple(Vec<String>),
+    }
+    match StringOrVec::deserialize(deserializer)? {
+        StringOrVec::Single(s) => Ok(vec![s]),
+        StringOrVec::Multiple(v) => Ok(v),
+    }
+}
 
 /// Top-level configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -68,7 +86,8 @@ pub struct ShellConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FontConfig {
-    pub family: String,
+    #[serde(deserialize_with = "deserialize_font_family")]
+    pub family: Vec<String>,
     pub size: f64,
     pub line_height: f64,
     pub ligatures: bool,
@@ -515,7 +534,7 @@ impl Default for ShellConfig {
 impl Default for FontConfig {
     fn default() -> Self {
         Self {
-            family: "Mononoki Nerd Font Mono".to_string(),
+            family: vec!["Mononoki Nerd Font Mono".to_string()],
             size: 14.0,
             line_height: 1.2,
             ligatures: true,

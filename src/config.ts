@@ -10,7 +10,7 @@ export interface ShellConfig {
 }
 
 export interface FontConfig {
-  family: string;
+  family: string[];
   size: number;
   line_height: number;
   ligatures: boolean;
