@@ -817,20 +817,11 @@ export class AcpView implements ContentView {
       return true;
     }
 
-    // Cmd+V / Ctrl+V — read clipboard text and insert at cursor.
-    // The native paste event is unreliable on non-contenteditable divs in
-    // WKWebView, so we drive it from the async clipboard API.
+    // Cmd+V / Ctrl+V — don't consume; let the native paste event on
+    // this.element fire (handled in buildDOM). The paste event exposes
+    // clipboardData.items including images, with no permission prompt.
     if (e.key === 'v' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
-      e.preventDefault();
-      void navigator.clipboard
-        .readText()
-        .then((text) => {
-          if (text) this.insertAtCursor(text);
-        })
-        .catch(() => {
-          /* clipboard permission denied or empty — no-op */
-        });
-      return true;
+      return false;
     }
 
     // Tool block: open diff via 'o' or 'Enter'.
