@@ -350,9 +350,7 @@
   font-size: 0.88em;
   line-height: 1.5;
   white-space: pre;
-  max-height: 12em;
   overflow-x: auto;
-  overflow-y: auto;
   opacity: 0.7;
 }
 
@@ -368,6 +366,8 @@
 }
 .acp-view__diff-line--add { color: var(--agent-accent, #8effb0); }
 .acp-view__diff-line--del { color: var(--krypton-error, #ff6d8a); opacity: 0.9; }
+.acp-view__diff-line--ctx { opacity: 0.5; }
+.acp-view__diff-line--hunk { opacity: 0.35; letter-spacing: 0.2em; }
 
 .acp-view__tool-more {
   display: block;
