@@ -3,7 +3,7 @@ import type { VaultIndex, VaultFile } from './vault-parser';
 import { buildVaultIndex, readVaultFile } from './vault-parser';
 
 type SidebarMode = 'files' | 'backlinks' | 'outline' | 'tags';
-type FileSortField = 'title' | 'modified' | 'name' | 'type';
+type FileSortField = 'title' | 'updated' | 'modified' | 'name' | 'type';
 type FileSortOrder = 'asc' | 'desc';
 
 export class VaultContentView implements ContentView {
@@ -24,7 +24,7 @@ export class VaultContentView implements ContentView {
   private itemsPerPage = 0;
   private cachedItemHeight = 0;
   private activeTag: string | null = null;
-  private fileSortField: FileSortField = 'modified';
+  private fileSortField: FileSortField = 'updated';
   private fileSortOrder: FileSortOrder = 'desc';
   private closeCb: (() => void) | null = null;
   private titleCb: ((name: string) => void) | null = null;
@@ -206,7 +206,16 @@ export class VaultContentView implements ContentView {
             case 'modified': {
               const ma = this.index!.files.get(a)?.modifiedAt ?? 0;
               const mb = this.index!.files.get(b)?.modifiedAt ?? 0;
-              return dir * (ma - mb);
+              if (ma !== mb) return dir * (ma - mb);
+              return dir * a.localeCompare(b);
+            }
+            case 'updated': {
+              const fa = this.index!.files.get(a);
+              const fb = this.index!.files.get(b);
+              const ua = fa?.contentUpdatedAt || fa?.modifiedAt || 0;
+              const ub = fb?.contentUpdatedAt || fb?.modifiedAt || 0;
+              if (ua !== ub) return dir * (ua - ub);
+              return dir * a.localeCompare(b);
             }
             case 'type': {
               const fa = this.index!.files.get(a);
@@ -338,13 +347,20 @@ export class VaultContentView implements ContentView {
 
     const recencyByKey = new Map<string, number>();
     if (this.sidebarMode === 'files' && this.index) {
-      const withMtime = items
-        .map((k) => ({ key: k, mtime: this.index!.files.get(k)?.modifiedAt ?? 0 }))
-        .filter((x) => x.mtime > 0)
-        .sort((a, b) => a.mtime - b.mtime);
-      const n = withMtime.length;
+      const useUpdated = this.fileSortField === 'updated';
+      const withTime = items
+        .map((k) => {
+          const f = this.index!.files.get(k);
+          const t = useUpdated
+            ? (f?.contentUpdatedAt || f?.modifiedAt || 0)
+            : (f?.modifiedAt || f?.contentUpdatedAt || 0);
+          return { key: k, t };
+        })
+        .filter((x) => x.t > 0)
+        .sort((a, b) => a.t - b.t);
+      const n = withTime.length;
       for (let idx = 0; idx < n; idx++) {
-        recencyByKey.set(withMtime[idx].key, n > 1 ? idx / (n - 1) : 0.5);
+        recencyByKey.set(withTime[idx].key, n > 1 ? idx / (n - 1) : 0.5);
       }
     }
 
@@ -961,7 +977,7 @@ export class VaultContentView implements ContentView {
 
       case 's':
         if (this.sidebarMode === 'files') {
-          const fields: FileSortField[] = ['title', 'modified', 'name', 'type'];
+          const fields: FileSortField[] = ['title', 'updated', 'modified', 'name', 'type'];
           const idx = fields.indexOf(this.fileSortField);
           this.fileSortField = fields[(idx + 1) % fields.length];
           this.selectedIndex = 0;

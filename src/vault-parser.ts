@@ -23,6 +23,7 @@ export interface VaultFile {
   frontmatterTags: string[];
   headings: Heading[];
   modifiedAt: number;
+  contentUpdatedAt: number;
 }
 
 export interface VaultIndex {
@@ -53,7 +54,7 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, unknow
     const colonIdx = line.indexOf(':');
     if (colonIdx > 0) {
       const key = line.slice(0, colonIdx).trim();
-      const value = line.slice(colonIdx + 1).trim();
+      const value = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '');
       frontmatter[key] = value;
     }
   }
@@ -183,7 +184,20 @@ function parseVaultFile(absolutePath: string, root: string, content: string): Va
     frontmatterTags: fmTags,
     headings: parseHeadings(body),
     modifiedAt: 0,
+    contentUpdatedAt: parseFrontmatterDate(frontmatter),
   };
+}
+
+function parseFrontmatterDate(fm: Record<string, unknown>): number {
+  const candidates = ['updated', 'date_ingested', 'date', 'created'];
+  for (const key of candidates) {
+    const raw = fm[key];
+    if (typeof raw === 'string' && raw.length > 0) {
+      const ts = Date.parse(raw);
+      if (!Number.isNaN(ts)) return Math.floor(ts / 1000);
+    }
+  }
+  return 0;
 }
 
 export async function buildVaultIndex(root: string): Promise<VaultIndex> {

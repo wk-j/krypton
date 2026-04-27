@@ -281,6 +281,12 @@
   min-width: 0;
 }
 
+/* Compact consecutive tool rows — they belong to the same turn and
+   shouldn't get the full 16px message gap. */
+.acp-view__tool + .acp-view__tool {
+  margin-top: -10px;
+}
+
 .acp-view__tool--pending     .acp-view__tool-status { color: rgba(216, 232, 216, 0.45); }
 .acp-view__tool--in_progress .acp-view__tool-status {
   color: var(--krypton-warn, #ffd76d);
