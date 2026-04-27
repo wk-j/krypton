@@ -20,7 +20,7 @@ function randomChar(): string {
 const FADE_DURATION = 600;
 const BASE_OPACITY = 0.25;
 const MIN_COLUMNS = 8;
-const COLUMN_DENSITY = 0.06; // columns per pixel of width
+const COLUMN_DENSITY = 0.01; // columns per pixel of width
 const FONT_MIN = 8;
 const FONT_MAX = 15;
 
