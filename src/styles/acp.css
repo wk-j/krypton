@@ -619,6 +619,13 @@
   padding: 8px 12px 12px;
 }
 
+.acp-view__input-row--hidden {
+  height: 0;
+  overflow: hidden;
+  padding: 0;
+  border: none;
+}
+
 /* ─── Image staging ─────────────────────────────────────────── */
 
 .acp-view__staging {

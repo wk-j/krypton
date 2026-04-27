@@ -136,6 +136,7 @@ export class AcpView implements ContentView {
 
   private messagesEl!: HTMLElement;
   private inputRowEl!: HTMLElement;
+  private state: 'input' | 'scroll' = 'input';
   private inputDisplayEl!: HTMLElement;
   private statusLineEl!: HTMLElement;
   private stagingAreaEl!: HTMLElement;
@@ -535,6 +536,67 @@ export class AcpView implements ContentView {
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
 
+  private scrollMessagesFraction(fraction: number): void {
+    const delta = this.messagesEl.clientHeight * fraction;
+    this.messagesEl.scrollBy({ top: delta, behavior: 'instant' });
+  }
+
+  private enterScrollState(): void {
+    this.state = 'scroll';
+    this.element.classList.add('acp-view--scroll');
+    this.inputRowEl.classList.add('acp-view__input-row--hidden');
+  }
+
+  private exitScrollState(): void {
+    this.state = 'input';
+    this.element.classList.remove('acp-view--scroll');
+    this.inputRowEl.classList.remove('acp-view__input-row--hidden');
+  }
+
+  private handleScrollKey(e: KeyboardEvent): boolean {
+    if (e.key === 'Escape' || (e.key === 'i' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+      e.preventDefault();
+      this.exitScrollState();
+      return true;
+    }
+    if (e.key === 'j' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      this.messagesEl.scrollBy({ top: 24, behavior: 'instant' });
+      return true;
+    }
+    if (e.key === 'k' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      this.messagesEl.scrollBy({ top: -24, behavior: 'instant' });
+      return true;
+    }
+    if (e.key === 'PageDown' || (e.code === 'KeyD' && e.ctrlKey && !e.metaKey)) {
+      e.preventDefault();
+      this.scrollMessagesFraction(0.4);
+      return true;
+    }
+    if (e.key === 'PageUp' || (e.code === 'KeyU' && e.ctrlKey && !e.metaKey)) {
+      e.preventDefault();
+      this.scrollMessagesFraction(-0.4);
+      return true;
+    }
+    if (e.key === 'g' && !e.shiftKey) {
+      e.preventDefault();
+      this.messagesEl.scrollTop = 0;
+      return true;
+    }
+    if (e.key === 'G' || (e.key === 'g' && e.shiftKey)) {
+      e.preventDefault();
+      this.scrollToBottom();
+      return true;
+    }
+    if (e.key === 'q') {
+      e.preventDefault();
+      this.closeCb?.();
+      return true;
+    }
+    return false;
+  }
+
   private sealStreamingBlocks(): void {
     if (this.currentAssistant || this.currentThought) this.flushMarkdown(false);
     this.currentAssistant = null;
@@ -785,6 +847,11 @@ export class AcpView implements ContentView {
   // ─── Input handling ──────────────────────────────────────────────
 
   onKeyDown(e: KeyboardEvent): boolean {
+    // Scroll mode — j/k, g/G, PageUp/PageDown, Ctrl+u/Ctrl+d. Esc / i exits.
+    if (this.state === 'scroll') {
+      return this.handleScrollKey(e);
+    }
+
     // Ctrl+P / Ctrl+N — walk focusable items (tool calls + permission prompts).
     if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'p' || e.key === 'n')) {
       e.preventDefault();
@@ -792,8 +859,8 @@ export class AcpView implements ContentView {
       return true;
     }
 
-    // Escape — dismiss mention popup first, then clear item focus,
-    // then clear staged images.
+    // Escape — dismiss mention popup first, clear item focus, clear staged
+    // images, and finally (with empty input) enter scroll mode.
     if (e.key === 'Escape') {
       if (this.mention.active) {
         e.preventDefault();
@@ -809,6 +876,11 @@ export class AcpView implements ContentView {
       if (this.stagedImages.length > 0) {
         e.preventDefault();
         this.clearStagedImages();
+        return true;
+      }
+      if (this.inputText === '') {
+        e.preventDefault();
+        this.enterScrollState();
         return true;
       }
     }

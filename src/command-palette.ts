@@ -826,27 +826,18 @@ export class CommandPalette {
       execute: () => c.toggleHookToasts(),
     });
 
-    // Dynamic: ACP agent backends (one row per [acp.<id>] in krypton.toml).
-    // Leader A only opens this picker — it does not fire a specific backend —
-    // so the rows show Alt+digit quickselect chips instead.
-    if (this.acpBackends.length === 0) {
+    // Dynamic: ACP agent backends. Claude and Gemini are built-in defaults
+    // and have direct compositor shortcuts; any extra user-configured
+    // [acp.<id>] entries appear below without a chip.
+    for (const b of this.acpBackends) {
+      const kb =
+        b.id === 'claude' ? 'Leader Shift a' : b.id === 'gemini' ? 'Leader Shift e' : undefined;
       this.actions.push({
-        id: 'acp.none',
-        label: 'Open ACP Agent — no backends configured',
+        id: `acp.open.${b.id}`,
+        label: `Open ACP Agent → ${b.display_name}`,
         category: 'Window',
-        execute: () => {
-          console.warn('[ACP] No backends configured. See ~/.config/krypton/krypton.toml for [acp.<id>] scaffold.');
-        },
-      });
-    } else {
-      this.acpBackends.forEach((b, idx) => {
-        this.actions.push({
-          id: `acp.open.${b.id}`,
-          label: `Open ACP Agent → ${b.display_name}`,
-          category: 'Window',
-          keybinding: idx < 9 ? `Alt ${idx + 1}` : undefined,
-          execute: () => c.openAcpView(b.id, b.display_name),
-        });
+        keybinding: kb,
+        execute: () => c.openAcpView(b.id, b.display_name),
       });
     }
 

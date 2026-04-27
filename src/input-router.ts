@@ -806,17 +806,19 @@ export class InputRouter {
         break;
 
       // a — open AI agent window (pi-agent, unchanged)
-      // A — open ACP agent picker (palette filtered to ACP entries)
+      // A — open Claude ACP agent (built-in default)
       case 'a':
         if (e.shiftKey) {
-          if (this.commandPalette) {
-            this.commandPalette.openWithQuery('ACP Agent');
-            this.setMode(Mode.CommandPalette);
-          } else {
-            this.toNormal();
-          }
+          this.compositor.openAcpView('claude', 'Claude').then(() => this.toNormal());
         } else {
           this.compositor.openAgentView().then(() => this.toNormal());
+        }
+        break;
+
+      // E — open Gemini ACP agent (built-in default)
+      case 'e':
+        if (e.shiftKey) {
+          this.compositor.openAcpView('gemini', 'Gemini').then(() => this.toNormal());
         }
         break;
 

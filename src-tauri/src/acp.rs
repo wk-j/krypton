@@ -8,7 +8,7 @@
 //
 // See docs/69-acp-agent-support.md for the design.
 
-use crate::config::KryptonConfig;
+use crate::config::{AcpBackendConfig, KryptonConfig};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -70,6 +70,47 @@ fn resolve_env_value(raw: &str) -> String {
         }
     }
     raw.to_string()
+}
+
+// ─── Built-in backends ─────────────────────────────────────────────
+//
+// Claude and Gemini ACP work out of the box without any user config.
+// User entries in `[acp.<id>]` with the same id override the built-in.
+
+fn builtin_backends() -> Vec<(&'static str, AcpBackendConfig)> {
+    vec![
+        (
+            "claude",
+            AcpBackendConfig {
+                command: "npx".to_string(),
+                args: vec![
+                    "-y".to_string(),
+                    "@agentclientprotocol/claude-agent-acp".to_string(),
+                ],
+                env: HashMap::new(),
+                display_name: "Claude".to_string(),
+            },
+        ),
+        (
+            "gemini",
+            AcpBackendConfig {
+                command: "gemini".to_string(),
+                args: vec!["--experimental-acp".to_string()],
+                env: HashMap::new(),
+                display_name: "Gemini".to_string(),
+            },
+        ),
+    ]
+}
+
+fn resolve_backend(cfg: &KryptonConfig, id: &str) -> Option<AcpBackendConfig> {
+    if let Some(b) = cfg.acp.get(id) {
+        return Some(b.clone());
+    }
+    builtin_backends()
+        .into_iter()
+        .find(|(bid, _)| *bid == id)
+        .map(|(_, b)| b)
 }
 
 // ─── Public types exposed to the frontend ──────────────────────────
@@ -533,19 +574,32 @@ pub fn acp_list_backends(
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
 ) -> Result<Vec<AcpBackendDescriptor>, String> {
     let cfg = config.read().map_err(|e| format!("config lock: {e}"))?;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut out: Vec<AcpBackendDescriptor> = cfg
         .acp
         .iter()
-        .map(|(id, b)| AcpBackendDescriptor {
-            id: id.clone(),
-            display_name: if b.display_name.is_empty() {
-                id.clone()
-            } else {
-                b.display_name.clone()
-            },
-            command: b.command.clone(),
+        .map(|(id, b)| {
+            seen.insert(id.clone());
+            AcpBackendDescriptor {
+                id: id.clone(),
+                display_name: if b.display_name.is_empty() {
+                    id.clone()
+                } else {
+                    b.display_name.clone()
+                },
+                command: b.command.clone(),
+            }
         })
         .collect();
+    for (id, b) in builtin_backends() {
+        if !seen.contains(id) {
+            out.push(AcpBackendDescriptor {
+                id: id.to_string(),
+                display_name: b.display_name,
+                command: b.command,
+            });
+        }
+    }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
@@ -560,9 +614,7 @@ pub async fn acp_spawn(
 ) -> Result<u64, String> {
     let backend = {
         let cfg = config.read().map_err(|e| format!("config lock: {e}"))?;
-        cfg.acp
-            .get(&backend_id)
-            .cloned()
+        resolve_backend(&cfg, &backend_id)
             .ok_or_else(|| format!("Unknown ACP backend: {backend_id}"))?
     };
 
