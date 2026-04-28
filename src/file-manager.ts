@@ -685,10 +685,9 @@ export class FileManagerView implements ContentView {
   private patchCursor(prev: number, next: number): void {
     const base = this.scrollOffset;
     const items = this.listEl.children;
-    const offset = this.scrollOffset > 0 ? 1 : 0; // skip top spacer
 
-    const prevIdx = prev - base + offset;
-    const nextIdx = next - base + offset;
+    const prevIdx = prev - base;
+    const nextIdx = next - base;
 
     if (prevIdx >= 0 && prevIdx < items.length) {
       items[prevIdx].classList.remove('krypton-file-manager__item--cursor');
@@ -1200,13 +1199,6 @@ export class FileManagerView implements ContentView {
 
     const end = Math.min(this.scrollOffset + this.visibleRows, this.filteredEntries.length);
 
-    // Top spacer for virtual scrolling
-    if (this.scrollOffset > 0) {
-      const spacer = document.createElement('div');
-      spacer.style.height = `${this.scrollOffset * this.cellHeight}px`;
-      this.listEl.appendChild(spacer);
-    }
-
     const recencyByPath = new Map<string, number>();
     {
       const withMod = this.filteredEntries.filter((e) => e.modified > 0);
@@ -1285,14 +1277,6 @@ export class FileManagerView implements ContentView {
 
       this.listEl.appendChild(row);
     }
-
-    // Bottom spacer
-    const remaining = this.filteredEntries.length - end;
-    if (remaining > 0) {
-      const spacer = document.createElement('div');
-      spacer.style.height = `${remaining * this.cellHeight}px`;
-      this.listEl.appendChild(spacer);
-    }
   }
 
   private renderSearchList(): void {
@@ -1310,13 +1294,6 @@ export class FileManagerView implements ContentView {
     }
 
     const end = Math.min(this.searchScrollOffset + this.visibleRows, this.searchResults.length);
-
-    // Top spacer
-    if (this.searchScrollOffset > 0) {
-      const spacer = document.createElement('div');
-      spacer.style.height = `${this.searchScrollOffset * this.cellHeight}px`;
-      this.listEl.appendChild(spacer);
-    }
 
     const query = this.searchText.toLowerCase();
 
@@ -1361,13 +1338,6 @@ export class FileManagerView implements ContentView {
       this.listEl.appendChild(row);
     }
 
-    // Bottom spacer
-    const remaining = this.searchResults.length - end;
-    if (remaining > 0) {
-      const spacer = document.createElement('div');
-      spacer.style.height = `${remaining * this.cellHeight}px`;
-      this.listEl.appendChild(spacer);
-    }
   }
 
   private appendNameRun(parent: HTMLElement, text: string, matched: boolean): void {

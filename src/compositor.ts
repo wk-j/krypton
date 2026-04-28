@@ -2666,10 +2666,10 @@ export class Compositor {
   // ─── Tab / Pane Public API ─────────────────────────────────────
 
   /** Create a new tab in the focused window */
-  async createTab(): Promise<void> {
-    if (!this.focusedWindowId) return;
+  async createTab(): Promise<number | null> {
+    if (!this.focusedWindowId) return null;
     const win = this.windows.get(this.focusedWindowId);
-    if (!win) return;
+    if (!win) return null;
 
     const cwd = await this.getFocusedCwd();
     const tabId = nextTabId();
@@ -2713,6 +2713,7 @@ export class Compositor {
 
     pane.terminal?.focus();
     this.sound.play('tab.create');
+    return pane.sessionId ?? null;
   }
 
   /** Rename the currently active tab in the focused window. */

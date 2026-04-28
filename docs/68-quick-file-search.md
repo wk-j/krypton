@@ -257,6 +257,7 @@ handler discards mismatched tokens.
 | `↓` / `Ctrl+N` | QuickFileSearch | Cursor down |
 | `Enter` | QuickFileSearch | Copy **relative** path → flash row + sound → close, return to Normal |
 | `Cmd+Enter` | QuickFileSearch | Copy **absolute** path → flash row + sound → close, return to Normal |
+| `Ctrl+E` | QuickFileSearch | Open file in Helix in a new tab (see "Open in editor" below) |
 | `Esc` | QuickFileSearch | Close, return to Normal (no record) |
 | `Ctrl+U` | QuickFileSearch | Clear query |
 
@@ -358,6 +359,33 @@ no extra scan/cache cost for grep — the on-disk index is reused.
 - **Frecency**: grep picks call `quick_search_record_pick` with the absolute
   path, so heavily-greppped files also get bumped in file-mode rankings.
 
+## Open in editor (added post-spec)
+
+`Ctrl+E` inside the dialog opens the highlighted hit in **Helix** in a new
+terminal tab on the focused window. The original "clipboard is the sole sink"
+constraint stays in place for `Enter` / `Cmd+Enter` — `Ctrl+E` is an additive,
+opt-in action; no path is auto-pasted or auto-executed in any other window.
+
+Behavior:
+
+- Calls `compositor.createTab()` (which now returns the new tab's
+  `sessionId`), inheriting cwd from the focused window's PTY — same as
+  `Cmd+T`.
+- Subscribes to `pty-output` for the new sessionId; on the **first** byte
+  (= shell prompt is up) sends `hx '<absolute>'\r` via `write_to_pty`.
+  Falls back to a 400 ms timeout if the shell stays silent (rare — only
+  exotic rc files).
+- Path is always **absolute**, single-quoted (POSIX `'…'` with inner `'`
+  escaped as `'\''`) — works across bash/zsh/fish, safe for spaces and
+  shell metacharacters.
+- In **grep mode** the hit's `:line:col` is appended after the close-quote
+  so Helix jumps to the matching position (`hx '/path/file.ts':123:5`).
+- `quick_search_record_pick` is fired (frecency boost), the row flashes and
+  the same `select`/`execute` sound plays as the clipboard actions, then
+  the dialog closes and returns to Normal.
+- The editor command is currently hardcoded to `hx`. Making it configurable
+  in `krypton.toml` is a follow-up if other editors are requested.
+
 ## Out of Scope
 
 - Symbol mode (`@symbol` modifier — fff-search doesn't expose ctags-style
@@ -367,8 +395,9 @@ no extra scan/cache cost for grep — the on-disk index is reused.
 - Pre-indexing on app startup (cold start handled by background scan + status
   bar feedback)
 - Replacing or modifying file-manager `Ctrl+F` (doc 57 stays as-is)
-- Auto-paste / shell quoting / editor open — explicitly removed; clipboard is
-  the sole sink
+- Auto-paste in arbitrary windows / shell injection across PTYs — the only
+  PTY write is into the freshly-spawned tab from `Ctrl+E`. Clipboard remains
+  the sink for `Enter` / `Cmd+Enter`.
 
 ## Resources
 

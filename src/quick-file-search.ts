@@ -8,6 +8,7 @@
 // See docs/68-quick-file-search.md.
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { Compositor } from './compositor';
 import type { QuickGrepHit, QuickGrepResponse, QuickSearchHit, QuickSearchResponse } from './types';
 
@@ -149,7 +150,7 @@ export class QuickFileSearch {
         return true;
     }
 
-    // Ctrl+P / Ctrl+N readline-style cursor
+    // Ctrl+P / Ctrl+N readline-style cursor; Ctrl+E open in helix
     if (e.ctrlKey && !e.metaKey && !e.altKey) {
       if (e.key === 'n' || e.key === 'p') {
         e.preventDefault();
@@ -160,6 +161,11 @@ export class QuickFileSearch {
         e.preventDefault();
         this.input.value = '';
         this.scheduleQuery();
+        return true;
+      }
+      if (e.key === 'e' || e.key === 'E') {
+        e.preventDefault();
+        void this.openInHelix();
         return true;
       }
     }
@@ -362,7 +368,91 @@ export class QuickFileSearch {
     window.setTimeout(() => this.close(), FLASH_MS);
   }
 
-  private flashSelected(kind: 'relative' | 'absolute'): void {
+  private async openInHelix(): Promise<void> {
+    if (this.currentLength() === 0) return;
+
+    let absolute: string;
+    let line: number | null = null;
+    let col: number | null = null;
+    if (this.mode === 'grep') {
+      const hit = this.grepResults[this.selectedIndex];
+      if (!hit) return;
+      absolute = hit.absolute;
+      line = hit.line;
+      col = hit.col + 1;
+    } else {
+      const hit = this.results[this.selectedIndex];
+      if (!hit) return;
+      absolute = hit.absolute;
+    }
+
+    const quoted = shellQuote(absolute);
+    const suffix = line !== null ? `:${line}:${col}` : '';
+    const command = `hx ${quoted}${suffix}\r`;
+
+    let sessionId: number | null;
+    try {
+      sessionId = await this.compositor.createTab();
+    } catch (e) {
+      console.error('[QuickFileSearch] createTab failed:', e);
+      this.statusBar.textContent = 'open failed: createTab';
+      return;
+    }
+    if (sessionId === null) {
+      this.statusBar.textContent = 'open failed: no focused window';
+      return;
+    }
+
+    void this.writeWhenReady(sessionId, command);
+
+    invoke('quick_search_record_pick', { absolute }).catch((e) => {
+      console.warn('[QuickFileSearch] record_pick failed:', e);
+    });
+
+    this.compositor.soundEngine.play('command_palette.execute');
+    this.flashSelected('helix');
+    window.setTimeout(() => this.close(), FLASH_MS);
+  }
+
+  /** Wait for the new tab's shell to print its first byte (= prompt ready),
+   *  then send the command. Falls back to a 400ms timeout if the shell
+   *  stays silent (rare — only weird custom rc files). */
+  private async writeWhenReady(sessionId: number, command: string): Promise<void> {
+    const bytes = Array.from(new TextEncoder().encode(command));
+    let fired = false;
+    const send = (): void => {
+      if (fired) return;
+      fired = true;
+      invoke('write_to_pty', { sessionId, data: bytes }).catch((e) => {
+        console.error('[QuickFileSearch] write_to_pty failed:', e);
+      });
+    };
+
+    let unlisten: (() => void) | null = null;
+    try {
+      unlisten = await listen<[number, number[]]>('pty-output', (event) => {
+        const [sid] = event.payload;
+        if (sid !== sessionId) return;
+        send();
+        unlisten?.();
+        unlisten = null;
+      });
+    } catch (e) {
+      console.error('[QuickFileSearch] listen failed:', e);
+      send();
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (!fired) {
+        send();
+        unlisten?.();
+        unlisten = null;
+      }
+    }, 400);
+  }
+
+  private flashSelected(kind: 'relative' | 'absolute' | 'helix'): void {
     const row = this.resultsList.children[this.selectedIndex] as HTMLElement | undefined;
     if (row) row.classList.add('is-flashing');
     this.hintBar.dataset.flash = kind;
@@ -456,6 +546,7 @@ export class QuickFileSearch {
         <div class="krypton-quicksearch__hint">
           <span data-kind="relative">↵ copy</span>
           <span data-kind="absolute">⌘↵ copy absolute</span>
+          <span data-kind="helix">^E open in hx</span>
           <span>⇥ toggle file/grep</span>
           <span>⎋ close</span>
         </div>
@@ -471,6 +562,12 @@ function splitPath(p: string): { dir: string; name: string } {
   const idx = p.lastIndexOf('/');
   if (idx < 0) return { dir: '', name: p };
   return { dir: p.slice(0, idx + 1), name: p.slice(idx + 1) };
+}
+
+/** POSIX single-quote quoting — wraps in `'…'` and escapes inner `'` as `'\''`.
+ *  Safe across bash/zsh/fish for paths with spaces, `$`, `*`, `'`, etc. */
+function shellQuote(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
 function abbreviatePath(p: string): string {

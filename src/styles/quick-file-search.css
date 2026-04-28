@@ -165,7 +165,8 @@
 }
 
 .krypton-quicksearch__hint[data-flash="relative"] span[data-kind="relative"],
-.krypton-quicksearch__hint[data-flash="absolute"] span[data-kind="absolute"] {
+.krypton-quicksearch__hint[data-flash="absolute"] span[data-kind="absolute"],
+.krypton-quicksearch__hint[data-flash="helix"] span[data-kind="helix"] {
   color: var(--krypton-palette-highlight, #0cf);
 }
 
