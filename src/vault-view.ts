@@ -215,6 +215,9 @@ export class VaultContentView implements ContentView {
               const ua = fa?.contentUpdatedAt || fa?.modifiedAt || 0;
               const ub = fb?.contentUpdatedAt || fb?.modifiedAt || 0;
               if (ua !== ub) return dir * (ua - ub);
+              const ma = fa?.modifiedAt ?? 0;
+              const mb = fb?.modifiedAt ?? 0;
+              if (ma !== mb) return dir * (ma - mb);
               return dir * a.localeCompare(b);
             }
             case 'type': {
