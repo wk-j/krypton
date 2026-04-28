@@ -370,9 +370,18 @@ async fn handle_inbound_request(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let result = std::fs::read_to_string(&path)
-                .map(|content| json!({ "content": content }))
-                .map_err(|e| json!({ "code": -32000, "message": format!("fs/read_text_file: {e}") }));
+            let result = match std::fs::read_to_string(&path) {
+                Ok(content) => Ok(json!({ "content": content })),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    log::debug!(
+                        "[acp] fs/read_text_file: {path} not found, returning empty"
+                    );
+                    Ok(json!({ "content": "" }))
+                }
+                Err(e) => Err(
+                    json!({ "code": -32000, "message": format!("fs/read_text_file: {e}") }),
+                ),
+            };
             let _ = client.reply(id, result).await;
         }
         "fs/write_text_file" => {

@@ -117,7 +117,7 @@ One reader task per process (`tokio::spawn`) does `BufReader::lines().next_line(
 
 - **Response** (`id` + `result`/`error`): resolve `pending[id]`.
 - **Request** (`id` + `method`):
-  - `fs/read_text_file` / `fs/write_text_file` → call existing Krypton fs helpers, reply.
+  - `fs/read_text_file` / `fs/write_text_file` → call existing Krypton fs helpers, reply. `fs/read_text_file` returns `{content: ""}` for `NotFound` instead of erroring — Gemini's edit tool pre-reads the target file to compute a diff even when creating new files, and treats a read error as a tool-call failure. Permission/IO errors still propagate.
   - `session/request_permission` → store oneshot in `perm_pending[id]`, emit `acp-event` with the JSON-RPC `id`; await frontend response via `acp_permission_response` Tauri command, then send JSON-RPC reply.
 - **Notification** (no `id`): emit `acp-event-<krypton_session>` to frontend with raw `params`.
 
@@ -262,6 +262,7 @@ For v1, auth is the user's responsibility outside Krypton (`claude /login`, `gem
 - **Backend declared in TOML but `command` not on PATH**: deferred error at spawn time; config parse only validates shape.
 - **Image attachment when `promptCapabilities.image` is false**: stripped client-side with a one-time inline notice.
 - **`fs/read_text_file` outside any open project**: allowed (the agent already has shell access via its own tools); no path sandboxing in v1.
+- **`fs/read_text_file` on a missing file**: returns `{content: ""}` instead of an error so Gemini's edit-then-write flow (which pre-reads to diff) can create new files cleanly.
 - **User opens both pi-agent and ACP windows concurrently**: independent — each window has its own controller, its own session, its own keybindings.
 - **User closes AcpView while a turn is streaming**: `acp_dispose` is called → `SIGTERM`, 2s grace, then `SIGKILL`. Pending oneshots resolve to errors but the AcpView is already gone, so no UI follow-up is needed.
 - **User blurs AcpView (`Esc`) mid-stream then reopens later**: agent keeps streaming into the still-mounted DOM; reopening the tab simply restores focus. (Closing the tab is the only way to terminate the subprocess.)
