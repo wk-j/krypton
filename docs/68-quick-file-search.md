@@ -34,10 +34,10 @@ long-lived `SharedPicker`s with background indexing, filesystem watching,
 LMDB-backed frecency, and a query parser. Pickers are cached in an LRU keyed by
 the resolved project root (walk-up from CWD to nearest `.git/`, capped at
 `$HOME`, fallback to literal CWD). The frontend renders a centered overlay; on
-`Enter` the **relative** path is copied to the clipboard and the dialog closes;
-on `Cmd+Enter` the **absolute** path is copied. The action is never automatic —
-no PTY paste, no command execution — so behavior is identical regardless of
-which window is focused. Each pick records frecency, so an empty query in a
+`Enter` the highlighted file opens in **Helix** in a new tab. `Ctrl+E` copies
+the **relative** path to the clipboard and `Cmd+Enter` copies the **absolute**
+path. Clipboard picks are never auto-pasted — no PTY paste, no command
+execution — so behavior is identical regardless of which window is focused. Each pick records frecency, so an empty query in a
 known root immediately surfaces the user's most-used files.
 
 ## Research
@@ -255,9 +255,9 @@ handler discards mismatched tokens.
 | typing | QuickFileSearch | Update query |
 | `↑` / `Ctrl+P` | QuickFileSearch | Cursor up |
 | `↓` / `Ctrl+N` | QuickFileSearch | Cursor down |
-| `Enter` | QuickFileSearch | Copy **relative** path → flash row + sound → close, return to Normal |
+| `Enter` | QuickFileSearch | Open file in Helix in a new tab (see "Open in editor" below) |
+| `Ctrl+E` | QuickFileSearch | Copy **relative** path → flash row + sound → close, return to Normal |
 | `Cmd+Enter` | QuickFileSearch | Copy **absolute** path → flash row + sound → close, return to Normal |
-| `Ctrl+E` | QuickFileSearch | Open file in Helix in a new tab (see "Open in editor" below) |
 | `Esc` | QuickFileSearch | Close, return to Normal (no record) |
 | `Ctrl+U` | QuickFileSearch | Clear query |
 
@@ -329,8 +329,8 @@ None — all design decisions resolved during the grilling pass:
 - Picker cache → LRU 8, frecency global
 - Empty query → top frecency
 - Mode availability → all non-overlay modes; close → Normal
-- Primary action → clipboard copy (never paste/execute); Enter relative,
-  Cmd+Enter absolute
+- Primary action → open in Helix on Enter; clipboard copy on Ctrl+E (relative)
+  / Cmd+Enter (absolute), never paste/execute
 - Filters → respect gitignore, show hidden, show binaries, no symlinks
 - Feedback → row flash 80 ms + sound + hint pulse, then close
 - Display → two-column (filename + dim parent), highlight all matched chars,
@@ -348,7 +348,7 @@ no extra scan/cache cost for grep — the on-disk index is reused.
 - **Hit format**: `path:line | snippet` with the matched substring spans
   highlighted via `match_byte_offsets` from `GrepResult` (no JS heuristic
   required — fff-search reports byte ranges directly).
-- **Enter** copies `path:line:col`, **Cmd+Enter** copies `absolute:line:col`
+- **Ctrl+E** copies `path:line:col`, **Cmd+Enter** copies `absolute:line:col`
   (so `vim`/`hx` can jump straight from clipboard).
 - **Empty query in grep mode**: shows nothing (grep without a pattern is
   meaningless); status reads "grep — type a query".
@@ -361,10 +361,11 @@ no extra scan/cache cost for grep — the on-disk index is reused.
 
 ## Open in editor (added post-spec)
 
-`Ctrl+E` inside the dialog opens the highlighted hit in **Helix** in a new
+`Enter` inside the dialog opens the highlighted hit in **Helix** in a new
 terminal tab on the focused window. The original "clipboard is the sole sink"
-constraint stays in place for `Enter` / `Cmd+Enter` — `Ctrl+E` is an additive,
-opt-in action; no path is auto-pasted or auto-executed in any other window.
+constraint stays in place for `Ctrl+E` / `Cmd+Enter` — opening in Helix is the
+only PTY-side action; no path is auto-pasted or auto-executed in any other
+window.
 
 Behavior:
 
@@ -396,8 +397,8 @@ Behavior:
   bar feedback)
 - Replacing or modifying file-manager `Ctrl+F` (doc 57 stays as-is)
 - Auto-paste in arbitrary windows / shell injection across PTYs — the only
-  PTY write is into the freshly-spawned tab from `Ctrl+E`. Clipboard remains
-  the sink for `Enter` / `Cmd+Enter`.
+  PTY write is into the freshly-spawned tab from `Enter` (open in Helix).
+  Clipboard remains the sink for `Ctrl+E` / `Cmd+Enter`.
 
 ## Resources
 

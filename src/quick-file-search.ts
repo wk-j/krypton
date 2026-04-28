@@ -1,8 +1,9 @@
 // Krypton — Quick File Search
 //
 // Cmd+O opens a centered overlay backed by `fff-search` running in the Rust
-// process. Picks land on the system clipboard (Enter = relative path,
-// Cmd+Enter = absolute path) — never auto-pasted, so behavior is identical
+// process. Enter opens the highlighted file in Helix in a new tab. Ctrl+E
+// copies the relative path to the clipboard; Cmd+Enter copies the absolute
+// path. Clipboard picks are never auto-pasted, so behavior is identical
 // across terminal, agent, hurl, markdown, vault windows.
 //
 // See docs/68-quick-file-search.md.
@@ -136,7 +137,7 @@ export class QuickFileSearch {
 
       case 'Enter':
         e.preventDefault();
-        void this.acceptSelected('relative');
+        void this.openInHelix();
         return true;
 
       case 'ArrowDown':
@@ -150,7 +151,7 @@ export class QuickFileSearch {
         return true;
     }
 
-    // Ctrl+P / Ctrl+N readline-style cursor; Ctrl+E open in helix
+    // Ctrl+P / Ctrl+N readline-style cursor; Ctrl+E copy relative path
     if (e.ctrlKey && !e.metaKey && !e.altKey) {
       if (e.key === 'n' || e.key === 'p') {
         e.preventDefault();
@@ -165,7 +166,7 @@ export class QuickFileSearch {
       }
       if (e.key === 'e' || e.key === 'E') {
         e.preventDefault();
-        void this.openInHelix();
+        void this.acceptSelected('relative');
         return true;
       }
     }
@@ -544,9 +545,9 @@ export class QuickFileSearch {
         <ul class="krypton-quicksearch__results"></ul>
         <div class="krypton-quicksearch__statusbar"></div>
         <div class="krypton-quicksearch__hint">
-          <span data-kind="relative">↵ copy</span>
+          <span data-kind="helix">↵ open in hx</span>
+          <span data-kind="relative">^E copy</span>
           <span data-kind="absolute">⌘↵ copy absolute</span>
-          <span data-kind="helix">^E open in hx</span>
           <span>⇥ toggle file/grep</span>
           <span>⎋ close</span>
         </div>
