@@ -353,7 +353,7 @@
 .acp-view__tool-body {
   margin: 2px 0 0 var(--acp-indent);
   font-family: var(--agent-font, monospace);
-  font-size: 0.88em;
+  font-size: 1em;
   line-height: 1.5;
   white-space: pre;
   overflow-x: auto;

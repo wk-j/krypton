@@ -180,6 +180,34 @@ function renderSkillSpec(fm: Record<string, string>): string {
     + `</div>`;
 }
 
+/** Render a generic frontmatter card for non-skill markdown files using the same spec-card style. */
+function renderFrontmatterCard(fm: Record<string, string>): string {
+  const titleKey = ['title', 'name'].find((k) => k in fm);
+  const title = titleKey ? fm[titleKey] : '';
+  const description = fm['description'] ?? '';
+  const promoted = new Set<string>();
+  if (titleKey) promoted.add(titleKey);
+  if (description) promoted.add('description');
+
+  const rows = Object.entries(fm)
+    .filter(([k, v]) => !promoted.has(k) && v !== '')
+    .map(([k, v]) =>
+      `<div class="krypton-skill-spec__row">`
+      + `<div class="krypton-skill-spec__label">${escapeHtml(k)}</div>`
+      + `<div class="krypton-skill-spec__value">${escapeHtml(v)}</div>`
+      + `</div>`,
+    ).join('');
+
+  return `<div class="krypton-skill-spec">`
+    + `<div class="krypton-skill-spec__header">`
+    + `<span class="krypton-skill-spec__tag">Frontmatter</span>`
+    + (title ? `<span class="krypton-skill-spec__name">${escapeHtml(title)}</span>` : '')
+    + `</div>`
+    + (description ? `<div class="krypton-skill-spec__description">${escapeHtml(description)}</div>` : '')
+    + rows
+    + `</div>`;
+}
+
 export class FileManagerView implements ContentView {
   readonly type: PaneContentType = 'file_manager';
   readonly element: HTMLElement;
@@ -898,6 +926,8 @@ export class FileManagerView implements ContentView {
     let html = '';
     if (isSkill && frontmatter) {
       html = renderSkillSpec(frontmatter) + (md.parse(body, { gfm: true, breaks: true }) as string);
+    } else if (frontmatter && Object.keys(frontmatter).length > 0) {
+      html = renderFrontmatterCard(frontmatter) + (md.parse(body, { gfm: true, breaks: true }) as string);
     } else {
       html = md.parse(content, { gfm: true, breaks: true }) as string;
     }
