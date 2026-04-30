@@ -3,10 +3,6 @@
   position: fixed;
   inset: 0;
   z-index: 10000;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 48px;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.1s ease;
@@ -18,10 +14,12 @@
 }
 
 .krypton-whichkey__popup {
+  position: fixed;
   background: var(--krypton-whichkey-bg, rgba(6, 10, 18, 0.85));
   border: 1px solid var(--krypton-whichkey-border, rgba(0, 200, 255, 0.4));
   padding: 10px 14px;
   min-width: 240px;
+  max-width: min(420px, calc(100vw - 24px));
 }
 
 .krypton-whichkey__title {
@@ -43,10 +41,33 @@
 }
 
 .krypton-whichkey__entry {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 2px 0;
+  padding: 2px 6px;
+}
+
+.krypton-whichkey__entry--important {
+  background: linear-gradient(90deg, rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.16), transparent 75%);
+  box-shadow: inset 2px 0 0 var(--krypton-whichkey-title, #0cf);
+}
+
+.krypton-whichkey__entry--danger {
+  background: linear-gradient(90deg, rgba(255, 80, 110, 0.18), transparent 75%);
+  box-shadow: inset 2px 0 0 var(--krypton-error, #ff506e);
+}
+
+.krypton-whichkey__entry--important .krypton-whichkey__label,
+.krypton-whichkey__entry--important .krypton-whichkey__key {
+  color: var(--krypton-whichkey-title, #0cf);
+  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.55);
+}
+
+.krypton-whichkey__entry--danger .krypton-whichkey__label,
+.krypton-whichkey__entry--danger .krypton-whichkey__key {
+  color: var(--krypton-error, #ff506e);
+  text-shadow: 0 0 8px rgba(255, 80, 110, 0.55);
 }
 
 .krypton-whichkey__key {
@@ -686,4 +707,3 @@
 .krypton-window--flash {
   animation: krypton-window-flash 600ms ease-out;
 }
-

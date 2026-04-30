@@ -1689,6 +1689,7 @@ export class Compositor {
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
 
     const fm = new FileManagerView(cwd, container);
+    fm.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
 
     // Derive a short title from the CWD
     const dirName = cwd.split('/').filter(Boolean).pop() ?? '/';

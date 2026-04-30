@@ -9,6 +9,7 @@ import { Mode } from './types';
 interface KeyEntry {
   key: string;
   label: string;
+  effect?: 'important' | 'danger';
   /** If set, only show this entry when focused pane matches one of these types.
    *  null in the array means "terminal" (no contentView). */
   contentTypes?: (PaneContentType | null)[];
@@ -17,94 +18,105 @@ interface KeyEntry {
 /** Keybindings per mode — compositor keys are content-type-aware */
 const COMPOSITOR_KEYS: KeyEntry[] = [
   // ── Window management (always shown) ──
-  { key: 'n', label: 'new window' },
-  { key: 'x', label: 'close window' },
-  { key: 'h', label: 'focus left' },
-  { key: 'j', label: 'focus down' },
-  { key: 'k', label: 'focus up' },
-  { key: 'l', label: 'focus right' },
-  { key: '1-9', label: 'focus by index' },
-  { key: 'f', label: 'focus layout' },
-  { key: 'r', label: 'resize mode' },
-  { key: 'm', label: 'move mode' },
-  { key: 's', label: 'swap mode' },
-  { key: 'z', label: 'maximize' },
-  { key: 'p', label: 'pin window' },
-  { key: 'H', label: 'hint mode' },
+  { key: 'n', label: 'New Window' },
+  { key: 'x', label: 'Close Window', effect: 'danger' },
+  { key: 'h', label: 'Focus Left' },
+  { key: 'j', label: 'Focus Down' },
+  { key: 'k', label: 'Focus Up' },
+  { key: 'l', label: 'Focus Right' },
+  { key: '1-9', label: 'Focus By Index' },
+  { key: 'f', label: 'Focus Layout' },
+  { key: 'r', label: 'Resize Mode', effect: 'important' },
+  { key: 'm', label: 'Move Mode', effect: 'important' },
+  { key: 'M', label: 'Music Dashboard', effect: 'important' },
+  { key: 's', label: 'Swap Mode', effect: 'important' },
+  { key: 'z', label: 'Maximize', effect: 'important' },
+  { key: 'p', label: 'Pin Window' },
+  { key: 'P', label: 'Profiler HUD', effect: 'important' },
+  { key: 'H', label: 'Hint Mode', effect: 'important' },
+  { key: 'g', label: 'Cycle Shader' },
+  { key: 'G', label: 'Toggle Shaders', effect: 'important' },
 
   // ── Tab / pane management (always shown) ──
-  { key: 't', label: 'new tab' },
-  { key: 'w', label: 'close tab' },
-  { key: '[', label: 'prev tab' },
-  { key: ']', label: 'next tab' },
-  { key: 'T', label: 'move tab' },
-  { key: '\\', label: 'split vertical' },
-  { key: '-', label: 'split horizontal' },
-  { key: 'A-hjkl', label: 'focus pane' },
-  { key: 'A-x', label: 'close pane' },
+  { key: 't', label: 'New Tab' },
+  { key: 'w', label: 'Close Tab', effect: 'danger' },
+  { key: '[', label: 'Previous Tab' },
+  { key: ']', label: 'Next Tab' },
+  { key: 'T', label: 'Move Tab', effect: 'important' },
+  { key: '\\', label: 'Split Vertical' },
+  { key: '-', label: 'Split Horizontal' },
+  { key: 'A-hjkl', label: 'Focus Pane' },
+  { key: 'A-x', label: 'Close Pane', effect: 'danger' },
+
+  // ── Content views ──
+  { key: 'b', label: 'File Manager', effect: 'important' },
+  { key: 'u', label: 'Vault Viewer', effect: 'important' },
+  { key: 'e', label: 'Pencil', effect: 'important' },
+  { key: 'q', label: 'Hurl Client', effect: 'important' },
 
   // ── AI agent ──
-  { key: 'a', label: 'AI agent' },
-  { key: 'q', label: 'hurl client' },
+  { key: 'a', label: 'AI Agent', effect: 'important' },
+  { key: 'A', label: 'Claude ACP', effect: 'important' },
+  { key: 'E', label: 'Gemini ACP', effect: 'important' },
 
   // ── Terminal-only ──
-  { key: 'v', label: 'select mode', contentTypes: [null] },
-  { key: 'V', label: 'select lines', contentTypes: [null] },
-  { key: 'd', label: 'git diff', contentTypes: [null] },
-  { key: 'D', label: 'git diff staged', contentTypes: [null] },
-  { key: 'o', label: 'markdown viewer', contentTypes: [null] },
-  { key: 'c', label: 'clone SSH tab', contentTypes: [null] },
-  { key: 'C', label: 'clone SSH window', contentTypes: [null] },
+  { key: 'v', label: 'Select Mode', contentTypes: [null] },
+  { key: 'V', label: 'Select Lines', contentTypes: [null] },
+  { key: 'd', label: 'Git Diff', effect: 'important', contentTypes: [null] },
+  { key: 'D', label: 'Git Diff Staged', effect: 'important', contentTypes: [null] },
+  { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: [null] },
+  { key: 'c', label: 'Clone SSH Tab', contentTypes: [null] },
+  { key: 'C', label: 'Clone SSH Window', contentTypes: [null] },
 
   // ── Markdown viewer ──
-  { key: 'o', label: 'markdown viewer', contentTypes: ['markdown'] },
+  { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: ['markdown'] },
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [
-  { key: '\u2190', label: 'shrink width' },
-  { key: '\u2192', label: 'grow width' },
-  { key: '\u2191', label: 'shrink height' },
-  { key: '\u2193', label: 'grow height' },
-  { key: 'Esc', label: 'done' },
+  { key: '\u2190', label: 'Shrink Width' },
+  { key: '\u2192', label: 'Grow Width' },
+  { key: '\u2191', label: 'Shrink Height' },
+  { key: '\u2193', label: 'Grow Height' },
+  { key: 'Esc', label: 'Done', effect: 'important' },
 ];
 
 const MOVE_KEYS: KeyEntry[] = [
-  { key: '\u2190', label: 'move left' },
-  { key: '\u2192', label: 'move right' },
-  { key: '\u2191', label: 'move up' },
-  { key: '\u2193', label: 'move down' },
-  { key: 'Esc', label: 'done' },
+  { key: '\u2190', label: 'Move Left' },
+  { key: '\u2192', label: 'Move Right' },
+  { key: '\u2191', label: 'Move Up' },
+  { key: '\u2193', label: 'Move Down' },
+  { key: 'Esc', label: 'Done', effect: 'important' },
 ];
 
 const SWAP_KEYS: KeyEntry[] = [
-  { key: 'h/\u2190', label: 'swap left' },
-  { key: 'l/\u2192', label: 'swap right' },
-  { key: 'k/\u2191', label: 'swap up' },
-  { key: 'j/\u2193', label: 'swap down' },
+  { key: 'h/\u2190', label: 'Swap Left' },
+  { key: 'l/\u2192', label: 'Swap Right' },
+  { key: 'k/\u2191', label: 'Swap Up' },
+  { key: 'j/\u2193', label: 'Swap Down' },
 ];
 
 const TAB_MOVE_KEYS: KeyEntry[] = [
-  { key: '1-9', label: 'move to window N' },
-  { key: 'Esc', label: 'cancel' },
+  { key: '1-9', label: 'Move To Window N' },
+  { key: 'Esc', label: 'Cancel', effect: 'important' },
 ];
 
 const HINT_KEYS: KeyEntry[] = [
-  { key: 'a-z', label: 'type label' },
-  { key: 'Bksp', label: 'undo char' },
-  { key: 'Esc', label: 'cancel' },
+  { key: 'a-z', label: 'Type Label' },
+  { key: 'Bksp', label: 'Undo Char' },
+  { key: 'Esc', label: 'Cancel', effect: 'important' },
 ];
 
 const SELECTION_KEYS: KeyEntry[] = [
-  { key: 'h/l', label: 'move left/right' },
-  { key: 'j/k', label: 'move down/up' },
-  { key: 'w/b', label: 'word fwd/back' },
-  { key: 'e', label: 'word end' },
-  { key: '0/$', label: 'line start/end' },
-  { key: 'gg/G', label: 'buffer top/bottom' },
-  { key: 'v', label: 'toggle char select' },
-  { key: 'V', label: 'toggle line select' },
-  { key: 'y', label: 'yank to clipboard' },
-  { key: 'Esc', label: 'exit' },
+  { key: 'h/l', label: 'Move Left/Right' },
+  { key: 'j/k', label: 'Move Down/Up' },
+  { key: 'w/b', label: 'Word Forward/Back' },
+  { key: 'e', label: 'Word End' },
+  { key: '0/$', label: 'Line Start/End' },
+  { key: 'gg/G', label: 'Buffer Top/Bottom' },
+  { key: 'v', label: 'Toggle Char Select' },
+  { key: 'V', label: 'Toggle Line Select' },
+  { key: 'y', label: 'Yank To Clipboard' },
+  { key: 'Esc', label: 'Exit', effect: 'important' },
 ];
 
 /** Filter key entries by focused pane content type. */
@@ -117,6 +129,7 @@ function filterByContentType(entries: KeyEntry[], contentType: PaneContentType |
 
 export class WhichKey {
   private overlay: HTMLElement;
+  private popup: HTMLElement;
   private title: HTMLElement;
   private keyList: HTMLElement;
 
@@ -126,8 +139,8 @@ export class WhichKey {
     this.overlay.className = 'krypton-whichkey';
 
     // Popup container
-    const popup = document.createElement('div');
-    popup.className = 'krypton-whichkey__popup';
+    this.popup = document.createElement('div');
+    this.popup.className = 'krypton-whichkey__popup';
 
     // Title
     this.title = document.createElement('div');
@@ -137,10 +150,16 @@ export class WhichKey {
     this.keyList = document.createElement('div');
     this.keyList.className = 'krypton-whichkey__keys';
 
-    popup.appendChild(this.title);
-    popup.appendChild(this.keyList);
-    this.overlay.appendChild(popup);
+    this.popup.appendChild(this.title);
+    this.popup.appendChild(this.keyList);
+    this.overlay.appendChild(this.popup);
     document.body.appendChild(this.overlay);
+
+    window.addEventListener('resize', () => {
+      if (this.overlay.classList.contains('krypton-whichkey--visible')) {
+        this.positionPopup();
+      }
+    });
   }
 
   /** Update the popup for the given mode and focused content type */
@@ -192,9 +211,14 @@ export class WhichKey {
     this.title.textContent = titleText;
     this.keyList.innerHTML = '';
 
-    for (const entry of entries) {
+    const sortedEntries = [...entries].sort((a, b) => a.label.localeCompare(b.label));
+
+    for (const entry of sortedEntries) {
       const row = document.createElement('div');
       row.className = 'krypton-whichkey__entry';
+      if (entry.effect) {
+        row.classList.add(`krypton-whichkey__entry--${entry.effect}`);
+      }
 
       const key = document.createElement('span');
       key.className = 'krypton-whichkey__key';
@@ -214,9 +238,37 @@ export class WhichKey {
 
   private show(): void {
     this.overlay.classList.add('krypton-whichkey--visible');
+    requestAnimationFrame(() => this.positionPopup());
   }
 
   private hide(): void {
     this.overlay.classList.remove('krypton-whichkey--visible');
+  }
+
+  private positionPopup(): void {
+    const target = document.querySelector<HTMLElement>('.krypton-window--focused');
+    const margin = 12;
+    const popupRect = this.popup.getBoundingClientRect();
+    const clamp = (value: number, min: number, max: number): number => {
+      if (max < min) return min;
+      return Math.min(Math.max(value, min), max);
+    };
+    const viewportMaxLeft = window.innerWidth - popupRect.width - margin;
+    const viewportMaxTop = window.innerHeight - popupRect.height - margin;
+
+    if (!target) {
+      const fallbackLeft = clamp(window.innerWidth - popupRect.width - margin, margin, viewportMaxLeft);
+      const fallbackTop = clamp(window.innerHeight - popupRect.height - 48, margin, viewportMaxTop);
+      this.popup.style.left = `${fallbackLeft}px`;
+      this.popup.style.top = `${fallbackTop}px`;
+      return;
+    }
+
+    const targetRect = target.getBoundingClientRect();
+    const left = clamp(targetRect.right - popupRect.width - margin, margin, viewportMaxLeft);
+    const top = clamp(targetRect.bottom - popupRect.height - margin, margin, viewportMaxTop);
+
+    this.popup.style.left = `${left}px`;
+    this.popup.style.top = `${top}px`;
   }
 }

@@ -224,12 +224,14 @@ export class FileManagerView implements ContentView {
   private filterMode = false;
   private filterText = '';
   private marked = new Set<string>();
+  private trackedFiles = new Map<string, string>();
   private clipboard: { paths: string[]; op: 'copy' | 'cut' } | null = null;
   private showHidden = false;
   private history: string[] = [];
   private prompt: PromptState | null = null;
   private confirmAction: (() => void) | null = null;
   private closeCallback: (() => void) | null = null;
+  private openDiffCallback: ((diff: string, title: string) => void) | null = null;
   private lastPreviewPath: string | null = null;
   private aiOverlay: FileManagerAI | null = null;
 
@@ -315,6 +317,10 @@ export class FileManagerView implements ContentView {
 
   onClose(cb: () => void): void {
     this.closeCallback = cb;
+  }
+
+  onOpenDiff(cb: (diff: string, title: string) => void): void {
+    this.openDiffCallback = cb;
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
@@ -590,6 +596,14 @@ export class FileManagerView implements ContentView {
 
       case 'i':
         this.openAI();
+        return true;
+
+      case 't':
+        void this.trackMarkedOrCurrent();
+        return true;
+
+      case 'T':
+        void this.openTrackedDiff();
         return true;
 
       case 'f':
@@ -1034,6 +1048,76 @@ export class FileManagerView implements ContentView {
     });
   }
 
+  private getMarkedOrCurrentFiles(): FileEntry[] {
+    if (this.marked.size > 0) {
+      return this.filteredEntries.filter((entry) => !entry.is_dir && this.marked.has(entry.path));
+    }
+    const entry = this.filteredEntries[this.cursor];
+    return entry && !entry.is_dir ? [entry] : [];
+  }
+
+  private async trackMarkedOrCurrent(): Promise<void> {
+    const files = this.getMarkedOrCurrentFiles();
+    if (files.length === 0) {
+      this.setStatusError('No file selected to track');
+      return;
+    }
+
+    let tracked = 0;
+    for (const file of files) {
+      try {
+        const content = await invoke<string>('read_file', { path: file.path });
+        this.trackedFiles.set(file.path, content);
+        tracked++;
+      } catch (err) {
+        this.setStatusError(`Track failed: ${err}`);
+        return;
+      }
+    }
+
+    this.statusEl.textContent = `Tracking ${tracked} file${tracked === 1 ? '' : 's'}`;
+    this.statusEl.className = 'krypton-file-manager__status';
+    this.scheduleStatusReset(2000);
+  }
+
+  private async openTrackedDiff(): Promise<void> {
+    if (!this.openDiffCallback) return;
+
+    const selected = this.getMarkedOrCurrentFiles();
+    const paths = selected.length > 0
+      ? selected.map((entry) => entry.path)
+      : Array.from(this.trackedFiles.keys());
+    const trackedPaths = paths.filter((path) => this.trackedFiles.has(path));
+
+    if (trackedPaths.length === 0) {
+      this.setStatusError('No tracked baseline for selected file');
+      return;
+    }
+
+    const { createTwoFilesPatch } = await import('diff');
+    const patches: string[] = [];
+    for (const path of trackedPaths) {
+      const oldContent = this.trackedFiles.get(path);
+      if (oldContent === undefined) continue;
+      try {
+        const newContent = await invoke<string>('read_file', { path });
+        const patch = createTwoFilesPatch(path, path, oldContent, newContent, 'tracked', 'current');
+        patches.push(patch);
+      } catch (err) {
+        const patch = createTwoFilesPatch(path, '/dev/null', oldContent, '', 'tracked', 'deleted');
+        patches.push(patch);
+        this.setStatusError(`Read failed, showing deleted diff: ${err}`);
+      }
+    }
+
+    if (patches.length === 0) {
+      this.setStatusError('No tracked files to diff');
+      return;
+    }
+
+    this.openDiffCallback(patches.join('\n'), `TRACKED DIFF // ${patches.length} file${patches.length === 1 ? '' : 's'}`);
+  }
+
   private deleteMarkedOrCurrent(): void {
     const paths = this.getMarkedOrCurrent();
     if (paths.length === 0) return;
@@ -1385,6 +1469,9 @@ export class FileManagerView implements ContentView {
     parts.push(`${this.filteredEntries.length} items`);
     if (this.marked.size > 0) {
       parts.push(`${this.marked.size} marked`);
+    }
+    if (this.trackedFiles.size > 0) {
+      parts.push(`${this.trackedFiles.size} tracked`);
     }
 
     const sortArrow = this.sortOrder === 'asc' ? '\u2191' : '\u2193';

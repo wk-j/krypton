@@ -75,6 +75,17 @@
   font-size: var(--krypton-font-size);
 }
 
+/* highlight.js themes target `.hljs` as a whole code block. diff2html adds
+   that class to every line span, so reset block-level theme chrome here and
+   keep only token colors. */
+.krypton-diff__content .d2h-code-line-ctn.hljs {
+  display: inline-block;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  color: inherit;
+}
+
 /* Fix line numbers: absolute positioning breaks vertical scrolling.
    Use sticky so they stay left-anchored on horizontal scroll but
    move normally with vertical scroll. */
@@ -95,4 +106,3 @@
   letter-spacing: 2px;
   text-transform: uppercase;
 }
-
