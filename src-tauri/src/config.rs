@@ -597,21 +597,6 @@ impl Default for WorkspacesConfig {
     }
 }
 
-// ─── ACP Scaffold ──────────────────────────────────────────────────
-
-const ACP_SCAFFOLD: &str = r#"
-# Uncomment and adjust to enable ACP agent windows (Leader A).
-# [acp.claude-agent]
-# command = "npx"
-# args = ["-y", "@agentclientprotocol/claude-agent-acp"]
-# display_name = "Claude Agent"
-
-# [acp.gemini-cli]
-# command = "gemini"
-# args = ["--experimental-acp"]
-# display_name = "Gemini CLI"
-"#;
-
 // ─── Config Path ───────────────────────────────────────────────────
 
 /// Get the config directory path: ~/.config/krypton/
@@ -629,21 +614,18 @@ pub fn config_path() -> Option<PathBuf> {
 
 // ─── Load / Save ───────────────────────────────────────────────────
 
-/// Load config from disk. Never rewrites an existing file. Only creates the
-/// file when it does not exist yet. On parse/read errors the caller receives
-/// a descriptive message so the UI can surface it; the user's file is left
-/// untouched so they can fix it manually.
+/// Load config from disk. NEVER writes to the user's config file under any
+/// circumstance — not on first launch, not on parse error, not ever. If the
+/// file is missing or malformed, returns an error and the caller falls back
+/// to in-memory defaults.
 pub fn load_config_result() -> Result<KryptonConfig, String> {
     let path = config_path().ok_or_else(|| "Could not determine config directory".to_string())?;
 
     if !path.exists() {
-        log::info!(
-            "Config file not found at {}, creating with defaults",
+        return Err(format!(
+            "Config file not found at {}; using in-memory defaults",
             path.display()
-        );
-        let config = KryptonConfig::default();
-        write_default_config(&path, &config);
-        return Ok(config);
+        ));
     }
 
     let contents = fs::read_to_string(&path)
@@ -667,36 +649,3 @@ pub fn load_config() -> KryptonConfig {
     }
 }
 
-/// Write the default config to disk.
-fn write_default_config(path: &PathBuf, config: &KryptonConfig) {
-    // Ensure the parent directory exists
-    if let Some(parent) = path.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            log::error!(
-                "Failed to create config directory {}: {e}",
-                parent.display()
-            );
-            return;
-        }
-    }
-
-    match toml::to_string_pretty(config) {
-        Ok(toml_str) => {
-            // Prepend a header comment, append ACP scaffold so users discover it.
-            let content = format!(
-                "# Krypton configuration\n\
-                 # See docs/06-configuration.md for full reference\n\n\
-                 {toml_str}\n\
-                 {ACP_SCAFFOLD}"
-            );
-            if let Err(e) = fs::write(path, content) {
-                log::error!("Failed to write default config to {}: {e}", path.display());
-            } else {
-                log::info!("Wrote default config to {}", path.display());
-            }
-        }
-        Err(e) => {
-            log::error!("Failed to serialize default config: {e}");
-        }
-    }
-}

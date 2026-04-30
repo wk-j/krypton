@@ -214,9 +214,6 @@
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
   font-size: 0.9em;
   color: var(--md-code);
-  background: rgba(255, 212, 121, 0.08);
-  padding: 2px 5px;
-  border-radius: 3px;
 }
 
 .krypton-md__preview-content pre {
