@@ -4,6 +4,7 @@ mod config;
 pub mod hook_server;
 pub mod hurl;
 pub mod music;
+pub mod pencil;
 mod pty;
 mod quick_search;
 mod session;
@@ -158,6 +159,9 @@ pub fn run() {
             acp::acp_cancel,
             acp::acp_permission_response,
             acp::acp_dispose,
+            pencil::read_pencil_file,
+            pencil::write_pencil_file,
+            pencil::scan_pencil_dir,
         ])
         .setup(move |app| {
             // File logging is enabled in release too, so invisible-window and

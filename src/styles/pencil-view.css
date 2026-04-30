@@ -1,0 +1,88 @@
+/* Krypton — Pencil window (Excalidraw editor).
+   Wrapper chrome only; the Excalidraw stylesheet handles the canvas. */
+
+.krypton-pencil {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--krypton-bg, #0c0d10);
+  color: var(--krypton-fg, #c8d3df);
+  font-family: var(--krypton-mono-font, 'JetBrains Mono', 'Cascadia Code', monospace);
+  outline: none;
+}
+
+.krypton-pencil__statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--krypton-border, rgba(255, 255, 255, 0.08));
+  background: var(--krypton-panel-bg, rgba(0, 0, 0, 0.25));
+  user-select: none;
+  flex: 0 0 auto;
+}
+
+.krypton-pencil__path {
+  color: var(--krypton-fg-dim, rgba(200, 211, 223, 0.6));
+  font-size: 11px;
+}
+
+.krypton-pencil__pill {
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.krypton-pencil__pill:empty {
+  display: none;
+}
+
+.krypton-pencil__pill--saving {
+  background: rgba(255, 200, 60, 0.12);
+  color: var(--krypton-warning, #ffc83c);
+  border: 1px solid rgba(255, 200, 60, 0.35);
+}
+
+.krypton-pencil__pill--saved {
+  background: rgba(80, 200, 120, 0.10);
+  color: var(--krypton-success, #50c878);
+  border: 1px solid rgba(80, 200, 120, 0.30);
+}
+
+.krypton-pencil__pill--error {
+  background: rgba(255, 80, 80, 0.12);
+  color: var(--krypton-error, #ff5050);
+  border: 1px solid rgba(255, 80, 80, 0.35);
+}
+
+.krypton-pencil__canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.krypton-pencil__canvas > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Excalidraw injects its own root with class "excalidraw" — make sure it
+   stretches to fill the canvas container. */
+.krypton-pencil__canvas .excalidraw {
+  width: 100%;
+  height: 100%;
+}
+
+.krypton-pencil__error {
+  padding: 16px;
+  color: var(--krypton-error, #ff5050);
+  font-size: 12px;
+  white-space: pre-wrap;
+}

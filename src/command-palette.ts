@@ -688,6 +688,15 @@ export class CommandPalette {
       execute: () => c.openMarkdownView(),
     });
 
+    // ── Pencil (Excalidraw) ──
+    this.register({
+      id: 'pencil.open',
+      label: 'Open Pencil (Excalidraw)',
+      category: 'Window',
+      keybinding: 'Leader e',
+      execute: () => c.openPencil(),
+    });
+
     // ── Hurl Client ──
     this.register({
       id: 'hurl.open',

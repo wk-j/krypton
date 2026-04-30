@@ -1746,6 +1746,244 @@ export class Compositor {
   }
 
   /**
+   * Open a Pencil (Excalidraw) window. With no path it shows the picker
+   * over the configured `[pencil] dir`; with a path it opens that file
+   * directly (refocusing an existing tab if the same file is already open).
+   */
+  async openPencil(filePath?: string): Promise<void> {
+    let path = filePath;
+
+    if (!path) {
+      type PencilCfg = { dir?: string };
+      let dir = '';
+      try {
+        const cfg = await invoke<{ pencil?: PencilCfg }>('get_config');
+        dir = cfg.pencil?.dir ?? '';
+      } catch (e) {
+        console.error('[Pencil] failed to read config:', e);
+      }
+      if (!dir) {
+        this.showNotification('No pencil dir configured — set [pencil] dir in krypton.toml');
+        return;
+      }
+      const expandedDir = await this.expandVaultPath(dir);
+      let entries: Array<{ path: string; modified_ms: number }> = [];
+      try {
+        entries = await invoke<Array<{ path: string; modified_ms: number }>>('scan_pencil_dir', {
+          dir: expandedDir,
+        });
+      } catch (e) {
+        this.showNotification(`Pencil: scan failed — ${e}`);
+        return;
+      }
+      const pick = await this.pickPencilFile(expandedDir, entries);
+      if (!pick) return;
+      path = pick;
+    }
+
+    if (!path) return;
+
+    // Refocus existing Pencil tab on the same file, if any.
+    if (this.focusExistingPencilTab(path)) return;
+
+    const { PencilContentView } = await import('./pencil-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const view = new PencilContentView(path, container);
+    view.setNotifier((message) => this.showNotification(message));
+
+    const base = (path.split('/').pop() ?? 'pencil').replace(/\.excalidraw$/, '');
+    await this.createContentTab(`PENCIL // ${base}`, view);
+
+    view.onTitleChange((newName) => this.retitleFocusedTab(`PENCIL // ${newName}`));
+  }
+
+  /** Return true and refocus if any tab in any window holds a PencilContentView for `filePath`. */
+  private focusExistingPencilTab(filePath: string): boolean {
+    for (const [winId, win] of this.windows) {
+      for (let i = 0; i < win.tabs.length; i++) {
+        const tab = win.tabs[i];
+        for (const pane of this.collectPanes(tab.paneTree)) {
+          const cv = pane.contentView;
+          if (cv && cv.type === 'pencil' && (cv as { filePath?: string }).filePath === filePath) {
+            this.focusWindow(winId);
+            win.activeTabIndex = i;
+            this.showActiveTab(win);
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private formatPencilMtime(ms: number): string {
+    if (!ms) return '';
+    const diffSec = Math.max(0, (Date.now() - ms) / 1000);
+    if (diffSec < 60) return 'just now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    if (diffSec < 30 * 86400) return `${Math.floor(diffSec / 86400)}d ago`;
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+
+  /** Picker for the Pencil window. Shows "+ New drawing" first, then entries (mtime sorted). */
+  private pickPencilFile(
+    rootDir: string,
+    entries: Array<{ path: string; modified_ms: number }>,
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      type Row = { kind: 'new' } | { kind: 'file'; path: string; rel: string; mtime: number };
+      const rows: Row[] = [{ kind: 'new' }];
+      const stripPrefix = (p: string): string =>
+        p.startsWith(rootDir + '/') ? p.slice(rootDir.length + 1) : p;
+      for (const e of entries) {
+        rows.push({ kind: 'file', path: e.path, rel: stripPrefix(e.path), mtime: e.modified_ms });
+      }
+
+      const overlay = document.createElement('div');
+      overlay.className = 'krypton-vault-picker-overlay';
+      const panel = document.createElement('div');
+      panel.className = 'krypton-vault-picker';
+
+      const title = document.createElement('div');
+      title.className = 'krypton-vault-picker__title';
+      title.textContent = 'OPEN .EXCALIDRAW';
+      panel.appendChild(title);
+
+      const list = document.createElement('div');
+      list.className = 'krypton-vault-picker__list';
+      panel.appendChild(list);
+
+      let selected = 0;
+      const render = (): void => {
+        list.innerHTML = '';
+        rows.forEach((r, i) => {
+          const row = document.createElement('div');
+          row.className = 'krypton-vault-picker__item';
+          if (i === selected) row.classList.add('krypton-vault-picker__item--selected');
+
+          const name = document.createElement('span');
+          name.className = 'krypton-vault-picker__name';
+          const meta = document.createElement('span');
+          meta.className = 'krypton-vault-picker__path';
+
+          if (r.kind === 'new') {
+            name.textContent = '+ New drawing';
+            meta.textContent = rootDir;
+          } else {
+            name.textContent = r.rel.replace(/\.excalidraw$/, '');
+            meta.textContent = this.formatPencilMtime(r.mtime);
+          }
+          row.appendChild(name);
+          row.appendChild(meta);
+          row.addEventListener('click', () => {
+            selected = i;
+            commit();
+          });
+          list.appendChild(row);
+        });
+      };
+      render();
+
+      const hint = document.createElement('div');
+      hint.className = 'krypton-vault-picker__hint';
+      hint.textContent = 'j/k  select    Enter  open    Esc  cancel';
+      panel.appendChild(hint);
+
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+
+      const cleanup = (): void => {
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+      };
+
+      const promptName = (): void => {
+        // Replace list with a single-line input prompt for the new file name.
+        list.innerHTML = '';
+        const inputWrap = document.createElement('div');
+        inputWrap.className = 'krypton-vault-picker__item krypton-vault-picker__item--selected';
+        const label = document.createElement('span');
+        label.className = 'krypton-vault-picker__name';
+        label.textContent = 'Name';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'krypton-pencil-prompt-input';
+        input.placeholder = 'sketch';
+        input.style.cssText =
+          'flex:1;background:transparent;border:none;outline:none;color:inherit;font:inherit;padding:2px 6px;';
+        inputWrap.appendChild(label);
+        inputWrap.appendChild(input);
+        list.appendChild(inputWrap);
+        title.textContent = 'NEW DRAWING';
+        hint.textContent = 'Enter  create    Esc  back';
+        document.removeEventListener('keydown', onKey, true);
+        input.addEventListener('keydown', (ev) => {
+          ev.stopPropagation();
+          if (ev.key === 'Escape') {
+            ev.preventDefault();
+            cleanup();
+            resolve(null);
+          } else if (ev.key === 'Enter') {
+            ev.preventDefault();
+            const name = input.value.trim();
+            if (!name) return;
+            const safe = name.endsWith('.excalidraw') ? name : `${name}.excalidraw`;
+            const full = `${rootDir}/${safe}`;
+            cleanup();
+            resolve(full);
+          }
+        });
+        setTimeout(() => input.focus(), 0);
+      };
+
+      const commit = (): void => {
+        const r = rows[selected];
+        if (!r) return;
+        if (r.kind === 'new') {
+          promptName();
+          return;
+        }
+        cleanup();
+        resolve(r.path);
+      };
+
+      const onKey = (ev: KeyboardEvent): void => {
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          cleanup();
+          resolve(null);
+          return;
+        }
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          commit();
+          return;
+        }
+        if (ev.key === 'j' || ev.key === 'ArrowDown') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          selected = Math.min(selected + 1, rows.length - 1);
+          render();
+          return;
+        }
+        if (ev.key === 'k' || ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          selected = Math.max(selected - 1, 0);
+          render();
+          return;
+        }
+      };
+      document.addEventListener('keydown', onKey, true);
+    });
+  }
+
+  /**
    * Open the Hurl client window for the focused terminal's cwd.
    */
   async openHurlClient(): Promise<void> {

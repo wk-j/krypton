@@ -557,7 +557,9 @@ pub fn get_hook_server_port(hook_server: State<'_, Arc<HookServer>>) -> u16 {
     hook_server.get_port()
 }
 
-/// Persist the active agent model preset to the config file.
+/// Update the active agent model preset for the running session.
+/// In-memory only — the user's `krypton.toml` is never rewritten. To make
+/// the change permanent, edit `[agent] active` in the config file.
 #[tauri::command]
 pub fn set_agent_active(
     name: String,
@@ -566,14 +568,10 @@ pub fn set_agent_active(
     let mut cfg = config
         .write()
         .map_err(|e| format!("Config lock poisoned: {e}"))?;
-    // Verify the preset exists
     if !cfg.agent.models.iter().any(|m| m.name == name) {
         return Err(format!("Unknown model preset \"{name}\""));
     }
     cfg.agent.active = name;
-    if let Some(path) = crate::config::config_path() {
-        crate::config::flush_config(&path, &cfg);
-    }
     Ok(())
 }
 

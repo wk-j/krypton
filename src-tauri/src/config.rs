@@ -47,6 +47,7 @@ pub struct KryptonConfig {
     pub agent: AgentConfig,
     pub vault: VaultConfig,
     pub hurl: HurlConfig,
+    pub pencil: PencilConfig,
     /// ACP (Agent Client Protocol) backend definitions, keyed by id.
     /// Each entry spawns a JSON-RPC subprocess (e.g. claude-agent-acp, gemini --experimental-acp).
     #[serde(default)]
@@ -479,6 +480,13 @@ pub struct VaultEntry {
     pub path: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PencilConfig {
+    /// Directory scanned by the Pencil picker. Tilde-expanded at use time.
+    pub dir: String,
+}
+
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
@@ -655,35 +663,6 @@ pub fn load_config() -> KryptonConfig {
             log::error!("{e}");
             log::warn!("Using in-memory defaults; your config file was NOT modified");
             KryptonConfig::default()
-        }
-    }
-}
-
-/// Write the fully-populated config back to disk, adding any new
-/// fields that were missing from the user's file.
-pub fn flush_config(path: &PathBuf, config: &KryptonConfig) {
-    match toml::to_string_pretty(config) {
-        Ok(toml_str) => {
-            let content = format!(
-                "# Krypton configuration\n\
-                 # See docs/06-configuration.md for full reference\n\n\
-                 {toml_str}"
-            );
-            // Only write if content differs to avoid triggering the filesystem watcher loop
-            if let Ok(existing) = fs::read_to_string(path) {
-                if existing == content {
-                    log::debug!("Config file already up to date, skipping flush");
-                    return;
-                }
-            }
-            if let Err(e) = fs::write(path, &content) {
-                log::error!("Failed to flush config to {}: {e}", path.display());
-            } else {
-                log::debug!("Flushed config to {}", path.display());
-            }
-        }
-        Err(e) => {
-            log::error!("Failed to serialize config for flush: {e}");
         }
     }
 }

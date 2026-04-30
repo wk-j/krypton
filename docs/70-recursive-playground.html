@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Variable Font Playground — Krypton Config Builder</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg-panel: #12121a;
+    --bg-input: #1a1a26;
+    --border: #2a2a3a;
+    --text: #c8c8d4;
+    --text-dim: #6a6a7a;
+    --accent: #00e5a0;
+    --accent-dim: #00e5a033;
+    --red: #ff4466;
+    --yellow: #ffcc00;
+    --cyan: #00ddff;
+    --purple: #c084fc;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+  }
+
+  /* ── Control Panel ─────────────────────────────────── */
+  .panel {
+    width: 400px;
+    min-width: 400px;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    padding: 24px;
+    overflow-y: auto;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+  }
+
+  .panel-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .panel-subtitle {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 24px;
+  }
+
+  .section {
+    margin-bottom: 24px;
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .control {
+    margin-bottom: 14px;
+  }
+
+  .control-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .control-label {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .control-value {
+    font-size: 12px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    min-width: 50px;
+    text-align: right;
+    font-family: var(--current-font), monospace;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: var(--bg-input);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 8px var(--accent-dim);
+  }
+
+  input[type="range"]:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Font family selector */
+  .font-selector {
+    display: flex;
+    gap: 6px;
+  }
+
+  .font-btn {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+    font-weight: 500;
+  }
+
+  .font-btn:hover {
+    border-color: var(--accent);
+  }
+
+  .font-btn.active {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Feature toggles */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .feature-btn {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .feature-btn:hover {
+    border-color: var(--accent);
+  }
+
+  .feature-btn.active {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .feature-btn .tag {
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    font-family: var(--current-font), monospace;
+  }
+
+  .feature-btn .desc {
+    font-size: 10px;
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* TOML output */
+  .toml-output {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: 'Recursive', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre;
+    overflow-x: auto;
+    position: relative;
+  }
+
+  .toml-output .key { color: var(--cyan); }
+  .toml-output .val { color: var(--accent); }
+  .toml-output .str { color: var(--yellow); }
+  .toml-output .comment { color: var(--text-dim); }
+  .toml-output .disable { color: var(--red); }
+
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--border);
+    border: none;
+    color: var(--text-dim);
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: 'Recursive', monospace;
+  }
+
+  .copy-btn:hover { color: var(--accent); background: var(--bg); }
+
+  /* Axis info badge */
+  .axis-info {
+    display: inline-block;
+    font-size: 10px;
+    color: var(--text-dim);
+    background: var(--bg-input);
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    font-family: var(--current-font), monospace;
+  }
+
+  .axes-empty {
+    color: var(--text-dim);
+    font-size: 12px;
+    font-style: italic;
+    padding: 8px 0;
+  }
+
+  /* ── Preview Area ──────────────────────────────────── */
+  .preview {
+    flex: 1;
+    padding: 40px;
+    overflow-y: auto;
+    height: 100vh;
+  }
+
+  .preview-block {
+    margin-bottom: 40px;
+  }
+
+  .preview-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .preview-text {
+    font-family: var(--current-font), monospace;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .preview-text.terminal {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  .preview-text.headings {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .preview-text.alphabet {
+    font-size: 16px;
+    letter-spacing: 0.02em;
+  }
+
+  .preview-text.code {
+    font-size: 14px;
+    tab-size: 2;
+  }
+
+  .prompt { color: var(--accent); }
+  .cmd { color: var(--cyan); }
+  .flag { color: var(--yellow); }
+  .output { color: var(--text-dim); }
+  .error { color: var(--red); }
+  .string { color: var(--accent); }
+  .keyword { color: var(--purple); }
+  .comment-text { color: var(--text-dim); font-style: italic; }
+
+  /* Axis visualization */
+  .axis-vis {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 2px;
+  }
+
+  .axis-bar {
+    height: 3px;
+    background: var(--bg-input);
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .axis-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.1s ease;
+  }
+
+  /* Transition for axis controls */
+  .axis-control {
+    transition: opacity 0.2s ease, max-height 0.3s ease;
+    overflow: hidden;
+  }
+
+  .axis-control.hidden {
+    opacity: 0.3;
+    max-height: 0;
+    margin: 0;
+    pointer-events: none;
+  }
+
+  .axis-control.visible {
+    opacity: 1;
+    max-height: 80px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── Control Panel ──────────────────────────────────── -->
+<div class="panel">
+  <div class="panel-title">Variable Font Config</div>
+  <div class="panel-subtitle">Font playground &amp; Krypton config builder</div>
+
+  <!-- Font Family -->
+  <div class="section">
+    <div class="section-title">Font Family</div>
+    <div class="font-selector" id="font-selector">
+      <button class="font-btn active" data-font="Recursive" onclick="selectFont('Recursive')">Recursive</button>
+      <button class="font-btn" data-font="Kode Mono" onclick="selectFont('Kode Mono')">Kode Mono</button>
+    </div>
+  </div>
+
+  <!-- Axes -->
+  <div class="section">
+    <div class="section-title">Axes</div>
+    <div id="axes-container"></div>
+  </div>
+
+  <!-- Features -->
+  <div class="section">
+    <div class="section-title">OpenType Features</div>
+    <div class="feature-grid" id="feature-grid">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+
+  <!-- Size -->
+  <div class="section">
+    <div class="section-title">Preview</div>
+    <div class="control">
+      <div class="control-header">
+        <span class="control-label">Font size</span>
+        <span class="control-value" id="val-size">14px</span>
+      </div>
+      <input type="range" id="ctrl-size" min="10" max="32" value="14" step="1">
+    </div>
+  </div>
+
+  <!-- TOML Output -->
+  <div class="section">
+    <div class="section-title">Krypton Config</div>
+    <div class="toml-output" id="toml-output">
+      <button class="copy-btn" id="copy-btn" onclick="copyToml()">Copy</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Preview Area ───────────────────────────────────── -->
+<div class="preview">
+
+  <!-- Terminal simulation -->
+  <div class="preview-block">
+    <div class="preview-label">Terminal</div>
+    <div class="preview-text terminal" id="preview-terminal"><span class="prompt">~/krypton</span> <span class="cmd">git</span> <span class="flag">log --oneline -8</span>
+<span class="output">e3f1a2c feat(font): add variable font axes support</span>
+<span class="output">b7d0491 fix(compositor): inherit font-feature-settings via CSS vars</span>
+<span class="output">a1c9e34 chore(deps): update @xterm/addon-webgl to 0.19.0</span>
+<span class="output">f52d8bc refactor(config): extract buildFeatureSettings utility</span>
+<span class="output">9a3b120 docs: add variable font configuration examples</span>
+<span class="output">41ecf87 feat(terminal): wire font-variation-settings to pane DOM</span>
+<span class="output">c08d5fa fix(acp): preserve tnum in feature settings composition</span>
+<span class="output">7f2a1e3 initial commit</span>
+<span class="prompt">~/krypton</span> <span class="cmd">cargo</span> <span class="flag">build --release</span>
+<span class="output">   Compiling krypton v0.1.0 (/Users/wk/Source/krypton)</span>
+<span class="output">    Finished `release` profile [optimized] target(s) in 42.3s</span>
+<span class="prompt">~/krypton</span> <span class="cmd">ls</span> <span class="flag">-la</span> <span class="string">src/styles/</span>
+<span class="output">drwxr-xr-x  22 wk  staff   704 Jul 11 14:22 .</span>
+<span class="output">-rw-r--r--   1 wk  staff  1245 Jul 11 14:22 base.css</span>
+<span class="output">-rw-r--r--   1 wk  staff  8932 Jul 11 14:22 acp.css</span>
+<span class="prompt">~/krypton</span> <span class="error">▊</span></div>
+  </div>
+
+  <!-- Code sample -->
+  <div class="preview-block">
+    <div class="preview-label">Code</div>
+    <div class="preview-text code" id="preview-code"><span class="keyword">export function</span> <span class="cmd">buildFeatureSettings</span>(<span class="string">features</span>: <span class="keyword">string</span>[]): <span class="keyword">string</span> {
+  <span class="keyword">if</span> (features.length === <span class="string">0</span>) <span class="keyword">return</span> <span class="string">''</span>;
+
+  <span class="keyword">const</span> parts: <span class="keyword">string</span>[] = [];
+  <span class="keyword">for</span> (<span class="keyword">const</span> raw <span class="keyword">of</span> features) {
+    <span class="keyword">if</span> (raw.<span class="cmd">startsWith</span>(<span class="string">'-'</span>)) {
+      <span class="keyword">const</span> tag = raw.<span class="cmd">slice</span>(<span class="string">1</span>);
+      parts.<span class="cmd">push</span>(<span class="string">`"${tag}" 0`</span>);
+    } <span class="keyword">else</span> {
+      <span class="keyword">const</span> tag = raw.<span class="cmd">startsWith</span>(<span class="string">'+'</span>) ? raw.<span class="cmd">slice</span>(<span class="string">1</span>) : raw;
+      parts.<span class="cmd">push</span>(<span class="string">`"${tag}" 1`</span>);
+    }
+  }
+  <span class="keyword">return</span> parts.<span class="cmd">join</span>(<span class="string">', '</span>);
+}</div>
+  </div>
+
+  <!-- Alphabet -->
+  <div class="preview-block">
+    <div class="preview-label">Character Set</div>
+    <div class="preview-text alphabet" id="preview-alpha">ABCDEFGHIJKLMNOPQRSTUVWXYZ
+abcdefghijklmnopqrstuvwxyz
+0123456789
+!@#$%^&*()-_=+[]{}|;:'",.<>?/
+=> -> !== === >= <= :: ?? && || >>= <<=
+=>> ->> ==> <-- <== <<>> {[()]}</div>
+  </div>
+
+  <!-- Headings -->
+  <div class="preview-block">
+    <div class="preview-label">Size Scale</div>
+    <div class="preview-text headings" id="preview-headings">
+      <span style="font-size: 32px; font-weight: inherit;">The quick brown fox jumps over the lazy dog</span>
+      <span style="font-size: 24px; font-weight: inherit;">The quick brown fox jumps over the lazy dog</span>
+      <span style="font-size: 18px; font-weight: inherit;">The quick brown fox jumps over the lazy dog</span>
+      <span style="font-size: 14px; font-weight: inherit;">The quick brown fox jumps over the lazy dog</span>
+      <span style="font-size: 12px; font-weight: inherit;">The quick brown fox jumps over the lazy dog</span>
+      <span style="font-size: 10px; font-weight: inherit;">The quick brown fox jumps over the lazy dog</span>
+    </div>
+  </div>
+
+  <!-- Numbers -->
+  <div class="preview-block">
+    <div class="preview-label">Numerals &amp; Alignment</div>
+    <div class="preview-text alphabet" id="preview-nums">0123456789 0123456789 0123456789
+1111111111 2222222222 3333333333
+4444444444 5555555555 6666666666
+7777777777 8888888888 9999999999
+$1,234.56  $7,890.12  $3,456.78
+EUR 9,876.54  GBP 5,432.10  JPY 123,456
+0xFF 0b1010 0o777 0xDEADBEEF</div>
+  </div>
+
+  <!-- Ligatures showcase -->
+  <div class="preview-block">
+    <div class="preview-label">Ligatures &amp; Symbols</div>
+    <div class="preview-text alphabet" id="preview-ligatures">-- -> => == != === !== >= <=
+>> << >>= <<= ->> =>> ==> <==
+&& || ?? ?. !! ++ -- += -= *= /=
+:= :: ::: <| |> <|> ->- -<- <-->
+<!-- --> </> /> {[()]} [(<>)]
+-~- ~-~ ~~~ +++ *** ### $$$
+>=< <=> ==< >== <== >>= <<=
+->= =>= <-> <--> --> <--></div>
+  </div>
+
+</div>
+
+<script>
+// ─── Font definitions ─────────────────────────────────────
+const FONTS = {
+  'Recursive': {
+    family: "'Recursive', monospace",
+    defaultFeatures: ['liga', 'calt'],
+    axes: {
+      wght:  { min: 300, max: 1000, default: 400, step: 1,    label: 'wght — Weight',    integer: true },
+      MONO:  { min: 0,   max: 1,    default: 1,   step: 0.01, label: 'MONO — Monospace', integer: false },
+      CASL:  { min: 0,   max: 1,    default: 0,   step: 0.01, label: 'CASL — Casual',    integer: false },
+      CRSV:  { min: 0,   max: 1,    default: 0,   step: 0.01, label: 'CRSV — Cursive',   integer: false },
+      slnt:  { min: -15, max: 0,    default: 0,   step: 1,    label: 'slnt — Slant',     integer: true },
+    },
+    features: [
+      { tag: 'liga', desc: 'Ligatures' },
+      { tag: 'calt', desc: 'Contextual alt' },
+      { tag: 'ss01', desc: 'Open digits' },
+      { tag: 'ss02', desc: 'Contextual alt' },
+      { tag: 'ss03', desc: 'Closed forms' },
+      { tag: 'ss04', desc: 'Dotted zero' },
+      { tag: 'ss05', desc: 'Simplify shapes' },
+      { tag: 'ss06', desc: 'Alt punctuation' },
+      { tag: 'ss07', desc: 'Alt parentheses' },
+      { tag: 'ss08', desc: 'Compact spacing' },
+      { tag: 'ss09', desc: 'Non-monospaced' },
+      { tag: 'ss10', desc: 'Alt uppercase i' },
+      { tag: 'ss11', desc: 'Alt lowercase l' },
+      { tag: 'cv01', desc: 'Single-story a' },
+      { tag: 'cv02', desc: 'Single-story g' },
+      { tag: 'cv03', desc: 'Simplified f' },
+      { tag: 'cv04', desc: 'Simplified i' },
+      { tag: 'cv05', desc: 'Simplified r' },
+      { tag: 'cv06', desc: 'Simplified t' },
+      { tag: 'tnum', desc: 'Tabular nums' },
+      { tag: 'onum', desc: 'Oldstyle nums' },
+      { tag: 'zero', desc: 'Slashed zero' },
+    ],
+  },
+  'Kode Mono': {
+    family: "'Kode Mono', monospace",
+    defaultFeatures: ['liga', 'calt'],
+    axes: {
+      wght:  { min: 400, max: 700, default: 400, step: 1, label: 'wght — Weight', integer: true },
+    },
+    features: [
+      { tag: 'liga', desc: 'Ligatures' },
+      { tag: 'calt', desc: 'Contextual alt' },
+      { tag: 'tnum', desc: 'Tabular nums' },
+      { tag: 'onum', desc: 'Oldstyle nums' },
+      { tag: 'zero', desc: 'Slashed zero' },
+      { tag: 'ss01', desc: 'Stylistic set 1' },
+      { tag: 'ss02', desc: 'Stylistic set 2' },
+      { tag: 'ss03', desc: 'Stylistic set 3' },
+      { tag: 'cv01', desc: 'Character var 1' },
+      { tag: 'cv02', desc: 'Character var 2' },
+    ],
+  },
+};
+
+// ─── State ────────────────────────────────────────────────
+const state = {
+  fontFamily: 'Recursive',
+  axes: {},
+  features: new Set(),  // features currently ON in the UI
+  fontSize: 14,
+};
+
+function currentFontDef() {
+  return FONTS[state.fontFamily];
+}
+
+// ─── Font selection ───────────────────────────────────────
+function selectFont(name) {
+  state.fontFamily = name;
+
+  // Reset axes to defaults
+  const def = currentFontDef();
+  state.axes = {};
+  for (const [tag, axis] of Object.entries(def.axes)) {
+    state.axes[tag] = axis.default;
+  }
+
+  // Reset features — default-on features start active
+  state.features = new Set(def.defaultFeatures);
+
+  // Update button states
+  document.querySelectorAll('.font-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.font === name);
+  });
+
+  // Set CSS variable for font family
+  document.documentElement.style.setProperty('--current-font', def.family);
+
+  // Rebuild controls
+  buildAxes();
+  buildFeatures();
+  apply();
+}
+
+// ─── Build axes controls ──────────────────────────────────
+function buildAxes() {
+  const container = document.getElementById('axes-container');
+  container.innerHTML = '';
+  const def = currentFontDef();
+  const entries = Object.entries(def.axes);
+
+  if (entries.length === 0) {
+    container.innerHTML = '<div class="axes-empty">No variable axes for this font</div>';
+    return;
+  }
+
+  entries.forEach(([tag, axis]) => {
+    const div = document.createElement('div');
+    div.className = 'control axis-control visible';
+    div.id = `ctrl-${tag}`;
+
+    const range = axis.integer ? Math.round(axis.max - axis.min) : (axis.max - axis.min).toFixed(2);
+    div.innerHTML = `
+      <div class="control-header">
+        <span class="control-label">${axis.label}<span class="axis-info">${axis.min}–${axis.max}</span></span>
+        <span class="control-value" id="val-${tag}">${formatAxisValue(tag, axis.default)}</span>
+      </div>
+      <input type="range" id="axis-${tag}" min="${axis.min}" max="${axis.max}" value="${axis.default}" step="${axis.step}">
+      <div class="axis-vis"><div class="axis-bar"><div class="axis-fill" id="fill-${tag}"></div></div></div>
+    `;
+    container.appendChild(div);
+
+    div.querySelector(`#axis-${tag}`).addEventListener('input', (e) => {
+      state.axes[tag] = parseFloat(e.target.value);
+      apply();
+    });
+  });
+}
+
+function formatAxisValue(tag, val) {
+  const def = currentFontDef();
+  const axis = def.axes[tag];
+  if (!axis) return val;
+  return axis.integer ? Math.round(val) : parseFloat(val).toFixed(2);
+}
+
+// ─── Build feature buttons ────────────────────────────────
+function buildFeatures() {
+  const grid = document.getElementById('feature-grid');
+  grid.innerHTML = '';
+  const def = currentFontDef();
+
+  def.features.forEach(({ tag, desc }) => {
+    const btn = document.createElement('button');
+    btn.className = 'feature-btn';
+    btn.dataset.tag = tag;
+    btn.innerHTML = `<span class="tag">${tag}</span><span class="desc">${desc}</span>`;
+    btn.addEventListener('click', () => {
+      if (state.features.has(tag)) {
+        state.features.delete(tag);
+        btn.classList.remove('active');
+      } else {
+        state.features.add(tag);
+        btn.classList.add('active');
+      }
+      apply();
+    });
+    if (state.features.has(tag)) {
+      btn.classList.add('active');
+    }
+    grid.appendChild(btn);
+  });
+}
+
+// ─── Wire font size ───────────────────────────────────────
+document.getElementById('ctrl-size').addEventListener('input', (e) => {
+  state.fontSize = parseInt(e.target.value);
+  apply();
+});
+
+// ─── Apply to preview ─────────────────────────────────────
+function apply() {
+  const def = currentFontDef();
+
+  // Build font-variation-settings (only for axes this font has)
+  const variationParts = Object.entries(def.axes)
+    .map(([tag]) => `'${tag}' ${state.axes[tag]}`)
+    .join(', ');
+
+  // Build font-feature-settings
+  const featureParts = [];
+  for (const tag of state.features) {
+    featureParts.push(`"${tag}" 1`);
+  }
+  // Explicitly disable common features not in the active set
+  const implicitDisable = ['liga', 'calt', 'tnum', 'onum', 'zero'];
+  for (const tag of implicitDisable) {
+    if (!state.features.has(tag)) {
+      featureParts.push(`"${tag}" 0`);
+    }
+  }
+  const featureSettings = featureParts.join(', ');
+
+  // Apply to all preview elements
+  document.querySelectorAll('.preview-text').forEach(el => {
+    el.style.fontFamily = def.family;
+    el.style.fontVariationSettings = variationParts;
+    el.style.fontFeatureSettings = featureSettings;
+    el.style.fontSize = state.fontSize + 'px';
+  });
+
+  // Update axis value displays and fill bars
+  Object.entries(def.axes).forEach(([tag, axis]) => {
+    const val = state.axes[tag];
+    document.getElementById(`val-${tag}`).textContent = formatAxisValue(tag, val);
+    const pct = ((val - axis.min) / (axis.max - axis.min)) * 100;
+    document.getElementById(`fill-${tag}`).style.width = pct + '%';
+  });
+
+  document.getElementById('val-size').textContent = state.fontSize + 'px';
+
+  // Update TOML output
+  updateToml();
+}
+
+// ─── TOML output ──────────────────────────────────────────
+function updateToml() {
+  const el = document.getElementById('toml-output');
+  const copyBtn = document.getElementById('copy-btn');
+  const def = currentFontDef();
+
+  const lines = [];
+  const plainLines = [];
+
+  // [font]
+  lines.push(`<span class="comment">[font]</span>`);
+  plainLines.push(`[font]`);
+
+  // family
+  lines.push(`<span class="key">family</span> = <span class="str">"${state.fontFamily}"</span>`);
+  plainLines.push(`family = "${state.fontFamily}"`);
+
+  // size
+  lines.push(`<span class="key">size</span> = <span class="val">${state.fontSize}.0</span>`);
+  plainLines.push(`size = ${state.fontSize}.0`);
+
+  // line_height
+  lines.push(`<span class="key">line_height</span> = <span class="val">1.2</span>`);
+  plainLines.push(`line_height = 1.2`);
+
+  // Axes — only non-default
+  const activeAxes = Object.entries(def.axes)
+    .filter(([tag, axis]) => state.axes[tag] !== axis.default)
+    .map(([tag]) => [tag, state.axes[tag]]);
+
+  if (activeAxes.length > 0) {
+    if (activeAxes.length <= 3) {
+      const inlineHtml = activeAxes
+        .map(([tag, val]) => `<span class="key">${tag}</span> = <span class="val">${formatAxisValue(tag, val)}</span>`)
+        .join(', ');
+      const inlinePlain = activeAxes
+        .map(([tag, val]) => `${tag} = ${formatAxisValue(tag, val)}`)
+        .join(', ');
+      lines.push(`<span class="key">axes</span> = { ${inlineHtml} }`);
+      plainLines.push(`axes = { ${inlinePlain} }`);
+    } else {
+      lines.push('');
+      plainLines.push('');
+      lines.push(`<span class="comment">[font.axes]</span>`);
+      plainLines.push(`[font.axes]`);
+      activeAxes.forEach(([tag, val]) => {
+        lines.push(`<span class="key">${tag}</span> = <span class="val">${formatAxisValue(tag, val)}</span>`);
+        plainLines.push(`${tag} = ${formatAxisValue(tag, val)}`);
+      });
+    }
+  }
+
+  // Features — build the config array
+  // Default-on features (liga, calt) are only emitted when toggled OFF ("-liga")
+  // All other features are emitted when toggled ON ("ss01")
+  const featureTags = [];
+
+  // Disabled defaults come first
+  for (const tag of def.defaultFeatures) {
+    if (!state.features.has(tag)) {
+      featureTags.push({ tag: `-${tag}`, disabled: true });
+    }
+  }
+
+  // Non-default features that are enabled
+  for (const tag of state.features) {
+    if (!def.defaultFeatures.includes(tag)) {
+      featureTags.push({ tag: tag, disabled: false });
+    }
+  }
+
+  if (featureTags.length > 0) {
+    const tagsHtml = featureTags.map(f =>
+      f.disabled
+        ? `<span class="disable">"-${f.tag.replace('-', '')}"</span>`
+        : `<span class="str">"${f.tag}"</span>`
+    ).join(', ');
+    const tagsPlain = featureTags.map(f => `"${f.tag}"`).join(', ');
+    lines.push(`<span class="key">features</span> = [${tagsHtml}]`);
+    plainLines.push(`features = [${tagsPlain}]`);
+  }
+
+  el.innerHTML = lines.join('\n') + '\n';
+  el.appendChild(copyBtn);
+  el.dataset.plain = plainLines.join('\n') + '\n';
+}
+
+function copyToml() {
+  const el = document.getElementById('toml-output');
+  const text = el.dataset.plain || el.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
+}
+
+// ─── Initialize ───────────────────────────────────────────
+document.documentElement.style.setProperty('--current-font', FONTS['Recursive'].family);
+selectFont('Recursive');
+</script>
+</body>
+</html>

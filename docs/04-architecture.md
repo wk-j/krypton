@@ -120,6 +120,7 @@ The webview's `<html>` and `<body>` have `background: transparent`. Windows are 
 | `@xterm/addon-search` | In-terminal text search |
 | `@xterm/addon-web-links` | Clickable URL detection |
 | `@xterm/addon-unicode11` | Proper Unicode width handling |
+| `@excalidraw/excalidraw` | Drawing canvas for the Pencil window (lazy-loaded with React 19 — only mounted when Pencil opens) |
 
 ## 5.3 Frontend Technology
 

@@ -815,10 +815,12 @@ export class InputRouter {
         }
         break;
 
-      // E — open Gemini ACP agent (built-in default)
+      // E — Shift: open Gemini ACP agent; lowercase: open Pencil (Excalidraw)
       case 'e':
         if (e.shiftKey) {
           this.compositor.openAcpView('gemini', 'Gemini').then(() => this.toNormal());
+        } else {
+          this.compositor.openPencil().then(() => this.toNormal());
         }
         break;
 

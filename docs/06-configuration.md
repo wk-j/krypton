@@ -590,3 +590,17 @@ binary_path = "/opt/homebrew/bin/hurl"
 ```
 
 The Hurl client is opened via `Cmd+P` then `H`, or via the command palette ("Open Hurl Client"). It indexes every `.hurl` file under the focused terminal cwd (gitignore-aware) and runs the selected file with `--color --pretty --include`. See `docs/65-hurl-client-window.md` for the full keybinding reference.
+
+## [pencil]
+
+Configure the Pencil window — an in-app `.excalidraw` editor backed by `@excalidraw/excalidraw`.
+
+```toml
+[pencil]
+# Directory scanned by the Pencil picker (`Leader e`). Tilde-expanded.
+# If empty, the picker shows a notification; absolute paths can still be
+# opened programmatically (and, in future, via quick-file-search routing).
+dir = "~/Documents/excalidraw"
+```
+
+The picker recursively lists `*.excalidraw` files under `dir`, sorted by modification time (newest first), with a synthetic "+ New drawing" row at the top that prompts for a file name. Opening the same file twice refocuses the existing tab. Saving is autosave-on-change (800 ms debounced) plus `Cmd+S` for an immediate flush — writes are atomic via `<path>.tmp` + rename. Theme follows Krypton's background luminance. See `docs/71-pencil-window.md` for the full design.

@@ -100,6 +100,7 @@ class CursorTrailWorker {
   private onMouseMove = (e: MouseEvent): void => {
     if (!this.running) return;
     if (e.buttons !== 0) return;
+    if ((e.target as Element | null)?.closest('.krypton-pencil')) return;
 
     const now = performance.now();
     if (now - this.lastMouseSpawn < SPAWN_THROTTLE) return;
@@ -216,6 +217,7 @@ class CursorTrailDOM {
   private onMouseMove = (e: MouseEvent): void => {
     if (!this.enabled) return;
     if (e.buttons !== 0) return;
+    if ((e.target as Element | null)?.closest('.krypton-pencil')) return;
 
     const now = performance.now();
     if (now - this.lastMouseSpawn < SPAWN_THROTTLE) return;

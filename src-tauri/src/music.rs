@@ -816,20 +816,10 @@ pub fn music_load_dir(
         path: PathBuf::from(&expanded),
     });
 
-    // Persist directory to config so it auto-loads next launch
+    // Update in-memory config only. krypton.toml is never rewritten;
+    // edit [music] directory by hand to make this persist across launches.
     if let Ok(mut cfg) = config.write() {
         cfg.music.directory = path;
-        // Write config to disk
-        if let Some(config_path) = crate::config::config_path() {
-            if let Ok(toml_str) = toml::to_string_pretty(&*cfg) {
-                let content = format!(
-                    "# Krypton configuration\n\
-                     # See docs/06-configuration.md for full reference\n\n\
-                     {toml_str}"
-                );
-                let _ = std::fs::write(config_path, content);
-            }
-        }
     }
 
     // Give the thread a moment to process
