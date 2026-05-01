@@ -85,6 +85,7 @@ interface HarnessLane {
   currentAssistantId: string | null;
   currentThoughtId: string | null;
   toolTranscriptIds: Map<string, string>;
+  seenTranscriptIds: Set<string>;
 }
 
 interface HarnessSpawnSpec {
@@ -137,7 +138,6 @@ export class AcpHarnessView implements ContentView {
   private memoryOverlayEl!: HTMLElement;
   private memoryPanelEl!: HTMLElement;
   private helpOverlayEl!: HTMLElement;
-  private tabsEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private pretextRaf = false;
 
@@ -261,9 +261,6 @@ export class AcpHarnessView implements ContentView {
 
     const commandCenter = document.createElement('div');
     commandCenter.className = 'acp-harness__command-center';
-    this.tabsEl = document.createElement('nav');
-    this.tabsEl.className = 'acp-harness__tab-strip';
-    commandCenter.appendChild(this.tabsEl);
     this.composerEl = document.createElement('div');
     this.composerEl.className = 'acp-harness__composer';
     commandCenter.appendChild(this.composerEl);
@@ -325,6 +322,7 @@ export class AcpHarnessView implements ContentView {
       currentAssistantId: null,
       currentThoughtId: null,
       toolTranscriptIds: new Map(),
+      seenTranscriptIds: new Set(),
     };
   }
 
@@ -623,7 +621,6 @@ export class AcpHarnessView implements ContentView {
     this.renderDashboard();
     this.renderMemory();
     this.renderHelp();
-    this.renderTabs();
     this.renderComposer();
   }
 
@@ -668,7 +665,12 @@ export class AcpHarnessView implements ContentView {
           empty.textContent = 'lane transcript will appear here';
           body.appendChild(empty);
         } else {
-          for (const item of lane.transcript) body.appendChild(renderTranscriptItem(item));
+          for (const item of lane.transcript) {
+            const isNew = !lane.seenTranscriptIds.has(item.id);
+            const streaming = item.id === lane.currentAssistantId || item.id === lane.currentThoughtId;
+            body.appendChild(renderTranscriptItem(item, isNew, streaming));
+            lane.seenTranscriptIds.add(item.id);
+          }
         }
         laneEl.appendChild(body);
       }
@@ -708,18 +710,6 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  private renderTabs(): void {
-    this.tabsEl.innerHTML = '';
-    for (const lane of this.lanes) {
-      const button = document.createElement('button');
-      button.className = `acp-harness__tab${lane.id === this.activeLaneId ? ' acp-harness__tab--active' : ''} acp-harness__tab--${lane.status}`;
-      button.style.setProperty('--acp-lane-accent', lane.accent);
-      button.textContent = `${tabPrefix(lane)} ${lane.displayName}`;
-      button.addEventListener('click', () => this.activateLane(lane.id));
-      this.tabsEl.appendChild(button);
-    }
-  }
-
   private renderComposer(): void {
     const lane = this.activeLane();
     if (!lane) {
@@ -740,9 +730,12 @@ export class AcpHarnessView implements ContentView {
       : `memory: ${selection.selected.length}/${selection.total}`);
     const before = lane.draft.slice(0, lane.cursor);
     const after = lane.draft.slice(lane.cursor);
+    this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-meta"><span class="acp-harness__memory-chip">${esc(chip)}</span></div>` +
-      `<div class="acp-harness__input-line"><span class="acp-harness__prompt">›</span>` +
+      `<div class="acp-harness__input-line">` +
+      `<span class="acp-harness__lane-tag">${esc(lane.displayName)}</span>` +
+      `<span class="acp-harness__prompt">›</span>` +
       `<span class="acp-harness__input">${esc(before)}<span class="acp-harness__caret">█</span>${esc(after)}</span>` +
       `<span class="acp-harness__help-hint">? help</span></div>`;
   }
@@ -820,7 +813,10 @@ export class AcpHarnessView implements ContentView {
   private appendTranscript(lane: HarnessLane, kind: HarnessTranscriptItem['kind'], text: string): HarnessTranscriptItem {
     const item = { id: makeId(), kind, text };
     lane.transcript.push(item);
-    if (lane.transcript.length > 300) lane.transcript.shift();
+    if (lane.transcript.length > 300) {
+      const dropped = lane.transcript.shift();
+      if (dropped) lane.seenTranscriptIds.delete(dropped.id);
+    }
     return item;
   }
 
@@ -1087,9 +1083,13 @@ function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'r
   return options.find((option) => option.kind === 'reject_once') ?? options.find((option) => option.kind === 'reject_always') ?? null;
 }
 
-function renderTranscriptItem(item: HarnessTranscriptItem): HTMLElement {
+function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, streaming: boolean): HTMLElement {
   const el = document.createElement('div');
-  el.className = `acp-harness__msg acp-harness__msg--${item.kind}${item.status ? ` acp-harness__msg--${item.status}` : ''}`;
+  el.className =
+    `acp-harness__msg acp-harness__msg--${item.kind}` +
+    `${item.status ? ` acp-harness__msg--${item.status}` : ''}` +
+    `${isNew ? ' acp-harness__msg--enter' : ''}` +
+    `${streaming ? ' acp-harness__msg--streaming' : ''}`;
   const label = document.createElement('div');
   label.className = 'acp-harness__msg-label';
   label.textContent = transcriptLabel(item.kind);
@@ -1241,13 +1241,6 @@ function renderToolOutputHint(rawOutput: unknown): string {
     if (typeof code === 'number') return ` exit ${code}`;
   }
   return '';
-}
-
-function tabPrefix(lane: HarnessLane): string {
-  if (lane.status === 'needs_permission') return `!${lane.index}`;
-  if (lane.status === 'error') return `×${lane.index}`;
-  if (lane.status === 'busy') return `●${lane.index}`;
-  return `${lane.index}`;
 }
 
 function abbreviatePath(path: string): string {
