@@ -1,6 +1,10 @@
 // Krypton — ACP Harness View.
 // Coordinates several independent ACP subprocesses for one project directory.
 
+import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
+import { Marked } from 'marked';
+import { markedHighlight } from 'marked-highlight';
+import hljs from 'highlight.js';
 import { AcpClient } from './client';
 import { loadConfig } from '../config';
 import type {
@@ -64,6 +68,7 @@ interface HarnessLane {
   index: number;
   backendId: string;
   displayName: string;
+  accent: string;
   client: AcpClient | null;
   status: HarnessLaneStatus;
   draft: string;
@@ -96,6 +101,18 @@ const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
 
 const FILE_TOUCH_WINDOW_MS = 10 * 60 * 1000;
 
+const md = new Marked(
+  markedHighlight({
+    langPrefix: 'hljs language-',
+    highlight(code: string, lang: string): string {
+      if (lang && hljs.getLanguage(lang)) {
+        return hljs.highlight(code, { language: lang }).value;
+      }
+      return hljs.highlightAuto(code).value;
+    },
+  }),
+);
+
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
@@ -122,6 +139,7 @@ export class AcpHarnessView implements ContentView {
   private helpOverlayEl!: HTMLElement;
   private tabsEl!: HTMLElement;
   private composerEl!: HTMLElement;
+  private pretextRaf = false;
 
   constructor(projectDir: string | null = null) {
     this.projectDir = projectDir;
@@ -201,6 +219,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   onResize(_width: number, _height: number): void {
+    this.schedulePretextLayout();
     this.scrollActiveTranscriptToBottom();
   }
 
@@ -227,7 +246,7 @@ export class AcpHarnessView implements ContentView {
     this.memoryOverlayEl.hidden = true;
     const memoryHead = document.createElement('header');
     memoryHead.className = 'acp-harness__memory-head';
-    memoryHead.textContent = 'MEMORY';
+    memoryHead.textContent = 'Memory';
     this.memoryOverlayEl.appendChild(memoryHead);
     this.memoryPanelEl = document.createElement('section');
     this.memoryPanelEl.className = 'acp-harness__memory-panel';
@@ -289,6 +308,7 @@ export class AcpHarnessView implements ContentView {
       index,
       backendId,
       displayName,
+      accent: laneAccent(index),
       client: null,
       status: 'starting',
       draft: '',
@@ -612,7 +632,7 @@ export class AcpHarnessView implements ContentView {
     const cwd = this.projectDir ? abbreviatePath(this.projectDir) : 'no cwd';
     const shared = this.lanes.filter((lane) => lane.status === 'idle' || lane.status === 'busy').length > 1 ? ' · shared cwd' : '';
     this.topbarEl.innerHTML =
-      `<span class="acp-harness__title">ACP HARNESS</span>` +
+      `<span class="acp-harness__title">ACP Harness</span>` +
       `<span class="acp-harness__cwd" title="${esc(this.projectDir ?? '')}">${esc(cwd)}</span>` +
       `<span class="acp-harness__counts">${counts.idle} idle · ${counts.busy} busy · ${counts.permission} perm · ${counts.error} error${shared}</span>`;
   }
@@ -630,6 +650,7 @@ export class AcpHarnessView implements ContentView {
       const active = lane.id === this.activeLaneId;
       const laneEl = document.createElement(active ? 'section' : 'div');
       laneEl.className = `acp-harness__lane ${active ? 'acp-harness__lane--active' : 'acp-harness__lane--collapsed'} acp-harness__lane--${lane.status}`;
+      laneEl.style.setProperty('--acp-lane-accent', lane.accent);
       const head = document.createElement('header');
       head.className = 'acp-harness__lane-head';
       head.innerHTML = renderLaneHead(lane, active);
@@ -653,6 +674,7 @@ export class AcpHarnessView implements ContentView {
       }
       this.dashboardEl.appendChild(laneEl);
     }
+    this.schedulePretextLayout();
   }
 
   private renderMemory(): void {
@@ -660,7 +682,7 @@ export class AcpHarnessView implements ContentView {
     const head = this.memoryOverlayEl.querySelector('.acp-harness__memory-head');
     if (head) {
       const pinned = this.memory.entries.filter((entry) => entry.pinned).length;
-      head.textContent = `MEMORY · ${this.memory.entries.length} entries (${pinned} pinned)`;
+      head.textContent = `Memory · ${this.memory.entries.length} entries (${pinned} pinned)`;
     }
     this.memoryPanelEl.innerHTML = '';
     const rows = this.sortedMemoryRows();
@@ -678,8 +700,8 @@ export class AcpHarnessView implements ContentView {
       const row = document.createElement('div');
       row.className = `acp-harness__memory-row${entry.id === this.memoryCursorRowId ? ' acp-harness__memory-row--cursor' : ''}${entry.pinned ? ' acp-harness__memory-row--pinned' : ''}`;
       row.innerHTML =
-        `<span class="acp-harness__memory-id">${entry.pinned ? 'LOCK ' : ''}${esc(entry.id)}</span>` +
-        `<span class="acp-harness__memory-source">${esc(entry.sourceLabel)}</span>` +
+        `<span class="acp-harness__memory-id">${entry.pinned ? 'Pinned ' : ''}${esc(entry.id)}</span>` +
+        `<span class="acp-harness__memory-source" style="--acp-memory-accent:${esc(laneAccentForLabel(entry.sourceLabel))}">${esc(entry.sourceLabel)}</span>` +
         `<span class="acp-harness__memory-text">${esc(entry.text)}</span>` +
         `<span class="acp-harness__memory-kind">${entry.source === 'agent_footer' ? 'agent' : 'tool'}</span>`;
       this.memoryPanelEl.appendChild(row);
@@ -691,6 +713,7 @@ export class AcpHarnessView implements ContentView {
     for (const lane of this.lanes) {
       const button = document.createElement('button');
       button.className = `acp-harness__tab${lane.id === this.activeLaneId ? ' acp-harness__tab--active' : ''} acp-harness__tab--${lane.status}`;
+      button.style.setProperty('--acp-lane-accent', lane.accent);
       button.textContent = `${tabPrefix(lane)} ${lane.displayName}`;
       button.addEventListener('click', () => this.activateLane(lane.id));
       this.tabsEl.appendChild(button);
@@ -729,7 +752,7 @@ export class AcpHarnessView implements ContentView {
     if (!this.helpOpen) return;
     this.helpOverlayEl.innerHTML = `
       <header class="acp-harness__help-head">
-        <span>ACP HARNESS HELP</span>
+        <span>ACP Harness Help</span>
         <span>Esc / ? / q closes</span>
       </header>
       <div class="acp-harness__help-grid">
@@ -1020,6 +1043,41 @@ export class AcpHarnessView implements ContentView {
     const body = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
     if (body) body.scrollTop = body.scrollHeight;
   }
+
+  private schedulePretextLayout(): void {
+    if (this.pretextRaf) return;
+    this.pretextRaf = true;
+    requestAnimationFrame(() => {
+      this.pretextRaf = false;
+      this.layoutPretextRows();
+    });
+  }
+
+  private layoutPretextRows(): void {
+    const rows = this.dashboardEl.querySelectorAll<HTMLElement>('.acp-harness__msg-body[data-pretext="true"]');
+    for (const row of rows) {
+      const raw = row.dataset.rawText ?? '';
+      const width = row.clientWidth;
+      if (!raw || width <= 0) continue;
+      const cs = getComputedStyle(row);
+      const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      let lineHeight = parseFloat(cs.lineHeight);
+      if (!Number.isFinite(lineHeight)) lineHeight = (parseFloat(cs.fontSize) || 13) * 1.35;
+      try {
+        const prepared = prepareWithSegments(raw, font, { whiteSpace: 'pre-wrap' });
+        const { lines } = layoutWithLines(prepared, width, lineHeight);
+        row.textContent = '';
+        for (const line of lines) {
+          const lineEl = document.createElement('div');
+          lineEl.className = 'acp-harness__pretext-line';
+          lineEl.textContent = line.text || '\u00a0';
+          row.appendChild(lineEl);
+        }
+      } catch {
+        row.textContent = raw;
+      }
+    }
+  }
 }
 
 function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'reject'): PermissionOption | null {
@@ -1037,10 +1095,27 @@ function renderTranscriptItem(item: HarnessTranscriptItem): HTMLElement {
   label.textContent = transcriptLabel(item.kind);
   const body = document.createElement('div');
   body.className = 'acp-harness__msg-body';
-  body.textContent = item.text;
+  if (item.kind === 'assistant') {
+    body.classList.add('acp-harness__msg-body--markdown');
+    try {
+      body.innerHTML = md.parse(item.text, { async: false }) as string;
+    } catch {
+      body.textContent = item.text;
+    }
+  } else if (usesPretext(item.kind)) {
+    body.dataset.pretext = 'true';
+    body.dataset.rawText = item.text;
+    body.textContent = item.text;
+  } else {
+    body.textContent = item.text;
+  }
   el.appendChild(label);
   el.appendChild(body);
   return el;
+}
+
+function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
+  return kind === 'thought' || kind === 'user';
 }
 
 function renderLaneHead(lane: HarnessLane, active: boolean): string {
@@ -1059,6 +1134,26 @@ function renderLaneHead(lane: HarnessLane, active: boolean): string {
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
     `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
   );
+}
+
+function laneAccent(index: number): string {
+  const accents = [
+    'var(--krypton-window-accent, #0cf)',
+    '#8effb0',
+    '#ffd166',
+    '#c77dff',
+    '#ff6b8b',
+    '#5fb3b3',
+  ];
+  return accents[(index - 1) % accents.length];
+}
+
+function laneAccentForLabel(label: string): string {
+  if (/codex/i.test(label)) return laneAccent(1);
+  if (/claude/i.test(label)) return laneAccent(2);
+  if (/gemini/i.test(label)) return laneAccent(3);
+  const match = label.match(/-(\d+)$/);
+  return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }
 
 function renderLaneStats(lane: HarnessLane): string {
