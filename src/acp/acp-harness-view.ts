@@ -1121,14 +1121,14 @@ function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
 function renderLaneHead(lane: HarnessLane, active: boolean): string {
   if (!active) {
     return (
-      `<span class="acp-harness__lane-index">[${lane.index}]</span>` +
+      `<span class="acp-harness__lane-index">${lane.index}</span>` +
       `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
       `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
     );
   }
   return (
-    `<span class="acp-harness__lane-index">[${lane.index}]</span>` +
+    `<span class="acp-harness__lane-index">${lane.index}</span>` +
     `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
     `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
@@ -1244,10 +1244,10 @@ function renderToolOutputHint(rawOutput: unknown): string {
 }
 
 function tabPrefix(lane: HarnessLane): string {
-  if (lane.status === 'needs_permission') return `[!${lane.index}]`;
-  if (lane.status === 'error') return `[×${lane.index}]`;
-  if (lane.status === 'busy') return `[●${lane.index}]`;
-  return `[${lane.index}]`;
+  if (lane.status === 'needs_permission') return `!${lane.index}`;
+  if (lane.status === 'error') return `×${lane.index}`;
+  if (lane.status === 'busy') return `●${lane.index}`;
+  return `${lane.index}`;
 }
 
 function abbreviatePath(path: string): string {

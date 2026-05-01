@@ -91,7 +91,7 @@
 .acp-harness__lane-head {
   height: 26px;
   display: grid;
-  grid-template-columns: 5ch 2ch minmax(10ch, 18ch) auto minmax(0, 1fr);
+  grid-template-columns: 2ch 2ch minmax(10ch, 18ch) auto minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   padding: 0 8px;
@@ -104,6 +104,11 @@
 .acp-harness__lane-index,
 .acp-harness__lane-symbol {
   color: rgba(216, 232, 216, 0.48);
+}
+
+.acp-harness__lane-index {
+  color: var(--acp-lane-accent, rgba(216, 232, 216, 0.68));
+  font-weight: 700;
 }
 
 .acp-harness__lane-name {
