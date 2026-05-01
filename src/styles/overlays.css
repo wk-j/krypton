@@ -48,6 +48,21 @@
   padding: 2px 6px;
 }
 
+.krypton-whichkey__group {
+  margin: 8px 0 2px;
+  padding: 0 6px;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
+  opacity: 0.65;
+}
+
+.krypton-whichkey__group:first-child {
+  margin-top: 0;
+}
+
 .krypton-whichkey__entry--important {
   background: linear-gradient(90deg, rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.16), transparent 75%);
   box-shadow: inset 2px 0 0 var(--krypton-whichkey-title, #0cf);

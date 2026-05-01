@@ -408,31 +408,15 @@ To switch models, change `active` to the name of another preset. Changes take ef
 
 ### ACP Agent Backends
 
-Each `[acp.<id>]` block declares an external [Agent Client Protocol](https://agentclientprotocol.com) adapter that Krypton can spawn as a separate window via `Leader A` (or the command palette). The pi-agent (`[agent]` above) and ACP windows are independent — both can run side by side.
+ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, and `codex`.
 
-| Section | Key | Type | Default | Description |
-|---------|-----|------|---------|-------------|
-| `[acp.<id>]` | `command` | string | *required* | Executable to spawn (resolved through PATH; macOS GUI launches use a cached login-shell PATH) |
-| `[acp.<id>]` | `args` | array of string | `[]` | CLI arguments |
-| `[acp.<id>]` | `env` | inline table | `{}` | Extra env vars. Values prefixed with `$` are resolved through the login-shell `printenv` fallback |
-| `[acp.<id>]` | `display_name` | string | `<id>` | Friendly name shown in the picker and tab title |
+| Backend | Command |
+|---------|---------|
+| Claude | `npx -y @agentclientprotocol/claude-agent-acp` |
+| Gemini | `gemini --experimental-acp` |
+| Codex | `codex-acp` |
 
-Example:
-
-```toml
-[acp.claude-agent]
-command = "npx"
-args = ["-y", "@agentclientprotocol/claude-agent-acp"]
-env = { ANTHROPIC_API_KEY = "$ANTHROPIC_API_KEY" }
-display_name = "Claude Agent"
-
-[acp.gemini-cli]
-command = "gemini"
-args = ["--experimental-acp"]
-display_name = "Gemini CLI"
-```
-
-Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`). See `docs/69-acp-agent-support.md` for the full design.
+Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup as needed). See `docs/69-acp-agent-support.md` for the full design.
 
 ### Hooks Configuration
 

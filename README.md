@@ -11,7 +11,7 @@ Single transparent native window. Multiple terminal windows rendered as DOM elem
 - **Transparent Workspace** -- Fullscreen borderless window with tiling Grid/Focus layouts.
 - **Modal Keyboard System** -- Normal, Compositor, Resize, Move, Selection, Hint, and Command Palette modes.
 - **Quick File Search (Cmd+O)** -- Fuzzy file picker with integrated grep mode (`Tab`).
-- **AI Agents** -- Embedded pi-agent (`Leader a`) and external ACP-compatible agents (Claude Code, Gemini CLI via `Leader A`).
+- **AI Agents** -- Embedded pi-agent (`Leader a`) and external ACP-compatible agents (Claude Code, Gemini CLI, Codex).
 - **Smart Prompt Dialog (Cmd+Shift+K)** -- Global modal to dispatch prompts to active Claude sessions.
 - **Cyberpunk HUD** -- Glowing chrome, telemetry sidebars, and reactive background animations (EEG, Matrix).
 - **Shader Presets** -- CRT, hologram, glitch, bloom, and matrix post-processing.
@@ -29,7 +29,7 @@ Single transparent native window. Multiple terminal windows rendered as DOM elem
 | `Cmd+Shift+P` | Command palette |
 | `Cmd+Shift+K` | Smart Prompt Dialog |
 | `Cmd+Shift+<` / `>` | Cycle focus between windows |
-| Leader + `a` / `A` | Open AI Agent (Internal / ACP Picker) |
+| Leader + `a` / `A` / `E` / `I` | Open AI Agent (Internal / Claude ACP / Gemini ACP / Codex ACP) |
 | Leader + `h/j/k/l` | Focus window by direction |
 | Leader + `r/m/s` | Enter Resize / Move / Swap mode |
 | Leader + `t / w` | New tab / Close tab |

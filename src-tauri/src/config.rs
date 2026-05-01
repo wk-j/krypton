@@ -3,7 +3,6 @@
 // falls back to built-in defaults for any missing fields.
 
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -48,25 +47,6 @@ pub struct KryptonConfig {
     pub vault: VaultConfig,
     pub hurl: HurlConfig,
     pub pencil: PencilConfig,
-    /// ACP (Agent Client Protocol) backend definitions, keyed by id.
-    /// Each entry spawns a JSON-RPC subprocess (e.g. claude-agent-acp, gemini --experimental-acp).
-    #[serde(default)]
-    pub acp: HashMap<String, AcpBackendConfig>,
-}
-
-/// One ACP backend entry from `[acp.<id>]`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct AcpBackendConfig {
-    /// Executable to spawn (resolved through PATH).
-    pub command: String,
-    /// CLI arguments.
-    pub args: Vec<String>,
-    /// Extra environment variables. Values prefixed with `$` are resolved at spawn time
-    /// through the same login-shell `printenv` fallback used by `get_env_var`.
-    pub env: HashMap<String, String>,
-    /// Friendly name shown in the picker. Defaults to the table id when empty.
-    pub display_name: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -648,4 +628,3 @@ pub fn load_config() -> KryptonConfig {
         }
     }
 }
-

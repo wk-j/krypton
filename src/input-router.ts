@@ -824,6 +824,15 @@ export class InputRouter {
         }
         break;
 
+      // I — open Codex ACP agent (built-in default)
+      case 'i':
+        if (e.shiftKey) {
+          this.compositor.openAcpView('codex', 'Codex').then(() => this.toNormal());
+        } else {
+          this.toNormal();
+        }
+        break;
+
       // b — open file manager (browse)
       case 'b':
         this.compositor.openFileManager().then(() => this.toNormal());

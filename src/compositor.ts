@@ -2248,9 +2248,9 @@ export class Compositor {
   }
 
   /**
-   * Open a new ACP agent window. `backendId` selects an entry from the
-   * `[acp.<id>]` table in krypton.toml; `displayName` is the friendly label
-   * shown in the tab title and view header.
+   * Open a new ACP agent window. `backendId` selects one of the built-in
+   * ACP backends; `displayName` is the friendly label shown in the tab title
+   * and view header.
    */
   async openAcpView(backendId: string, displayName: string): Promise<void> {
     const { AcpView } = await import('./acp/acp-view');

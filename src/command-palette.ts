@@ -835,12 +835,16 @@ export class CommandPalette {
       execute: () => c.toggleHookToasts(),
     });
 
-    // Dynamic: ACP agent backends. Claude and Gemini are built-in defaults
-    // and have direct compositor shortcuts; any extra user-configured
-    // [acp.<id>] entries appear below without a chip.
+    // Dynamic: ACP agent backends. Claude, Gemini, and Codex are built in.
     for (const b of this.acpBackends) {
       const kb =
-        b.id === 'claude' ? 'Leader Shift a' : b.id === 'gemini' ? 'Leader Shift e' : undefined;
+        b.id === 'claude'
+          ? 'Leader Shift a'
+          : b.id === 'gemini'
+            ? 'Leader Shift e'
+            : b.id === 'codex'
+              ? 'Leader Shift i'
+              : undefined;
       this.actions.push({
         id: `acp.open.${b.id}`,
         label: `Open ACP Agent → ${b.display_name}`,

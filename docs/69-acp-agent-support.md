@@ -44,7 +44,6 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 | `src-tauri/Cargo.toml` | Add `tokio` features (`process`, `io-util`, `sync`) if not already present. |
 | `src-tauri/src/acp.rs` | **New.** Spawn agent subprocess, frame newline-delimited JSON-RPC, manage one client per session, route inbound requests/notifications/responses, emit Tauri events. |
 | `src-tauri/src/lib.rs` | Register `acp_*` commands; add `AcpRegistry` to managed state. |
-| `src-tauri/src/config.rs` | Parse new `[acp.<id>]` blocks. |
 | `src/acp/types.ts` | **New.** ACP wire types (`ContentBlock`, `SessionUpdate`, `ToolCall`, `PermissionOption`, `StopReason`). |
 | `src/acp/client.ts` | **New.** `AcpClient` — frontend wrapper around `acp_*` Tauri commands and `acp-event-<session>` listener; spawn / initialize / prompt / cancel / dispose / permission-respond. |
 | `src/acp/acp-view.ts` | **New.** `AcpView` implementing `ContentView` — message list, streamed renderer, inline permission prompt, plan rendering. Modeled on `agent-view.ts` but standalone. |
@@ -52,47 +51,21 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 | `src/styles/acp.css` | **New.** ACP-window-specific styles (consistent with `agent.css`). |
 | `src/types.ts` | Add `'acp'` to `PaneContentType` union. |
 | `src/compositor.ts` | New `openAcpView(backendId)` mirroring `openAgentView()`. **No changes to `openAgentView`.** |
-| `src/command-palette.ts` | New entry "Open ACP Agent →" expanding to one row per configured `[acp.<id>]`. Existing pi-agent palette entry untouched. |
+| `src/command-palette.ts` | New entries for built-in ACP agents. Existing pi-agent palette entry untouched. |
 | `src/input-router.ts` | New compositor key `Leader A` (Shift+a) → palette filter "ACP Agent". |
 | `docs/PROGRESS.md`, `docs/04-architecture.md`, `docs/06-configuration.md` | Add the new ACP module + config section. **`docs/42-pi-agent-integration.md` is not modified.** |
 
 ## Design
 
-### Configuration
+### Built-In Backends
 
-```toml
-# Existing [agent] / [agent.<preset>] blocks: untouched.
+ACP backends are code-defined, not configured in `krypton.toml`.
 
-[acp.claude-agent]
-command = "npx"
-args = ["-y", "@agentclientprotocol/claude-agent-acp"]
-env = { ANTHROPIC_API_KEY = "$ANTHROPIC_API_KEY" }
-display_name = "Claude Agent"
-
-[acp.gemini-cli]
-command = "gemini"
-args = ["--experimental-acp"]
-display_name = "Gemini CLI"
-```
-
-`$VAR` values are resolved through the existing `get_env_var` Tauri command (login-shell `printenv` fallback for macOS GUI launches).
-
-**First-run seeding.** When `config.rs` auto-creates `~/.config/krypton/krypton.toml` on first launch, append a commented-out scaffold for both adapters so users discover the feature when editing config:
-
-```toml
-# Uncomment and adjust to enable ACP agent windows.
-# [acp.claude-agent]
-# command = "npx"
-# args = ["-y", "@agentclientprotocol/claude-agent-acp"]
-# display_name = "Claude Agent"
-
-# [acp.gemini-cli]
-# command = "gemini"
-# args = ["--experimental-acp"]
-# display_name = "Gemini CLI"
-```
-
-If the file already exists, do not modify it. If `acp_list_backends()` returns empty, the Command Palette still shows a single disabled row "Open ACP Agent — no backends configured" with a tooltip pointing at `krypton.toml`.
+| Backend ID | Command |
+|------------|---------|
+| `claude` | `npx -y @agentclientprotocol/claude-agent-acp` |
+| `gemini` | `gemini --experimental-acp` |
+| `codex` | `codex-acp` |
 
 **PATH for spawned adapters.** macOS GUI apps launched from `/Applications` inherit only `/usr/bin:/bin:/usr/sbin:/sbin`, so `gemini` (Homebrew) and `npx` (nvm) are typically invisible. At app start, run `sh -lc 'printenv PATH'` once, cache the result in a `OnceCell<String>`, and pass it via `Command::env("PATH", cached)` for every ACP spawn. Reuses the same login-shell trick already used by `get_env_var`.
 
@@ -259,7 +232,7 @@ For v1, auth is the user's responsibility outside Krypton (`claude /login`, `gem
 - **Adapter not installed** (`npx` fails / `gemini` not on PATH): `acp_spawn` returns descriptive error → palette / view shows toast with install hint.
 - **Newline inside a JSON payload**: ACP forbids it; on a malformed line, log to debug and drop rather than crash.
 - **Multiple ACP windows simultaneously**: each gets its own subprocess + `krypton_session`. No multiplexing.
-- **Backend declared in TOML but `command` not on PATH**: deferred error at spawn time; config parse only validates shape.
+- **Built-in backend command not on PATH**: deferred error at spawn time with an adapter-specific startup hint when available.
 - **Image attachment when `promptCapabilities.image` is false**: stripped client-side with a one-time inline notice.
 - **`fs/read_text_file` outside any open project**: allowed (the agent already has shell access via its own tools); no path sandboxing in v1.
 - **`fs/read_text_file` on a missing file**: returns `{content: ""}` instead of an error so Gemini's edit-then-write flow (which pre-reads to diff) can create new files cleanly.
@@ -267,7 +240,6 @@ For v1, auth is the user's responsibility outside Krypton (`claude /login`, `gem
 - **User closes AcpView while a turn is streaming**: `acp_dispose` is called → `SIGTERM`, 2s grace, then `SIGKILL`. Pending oneshots resolve to errors but the AcpView is already gone, so no UI follow-up is needed.
 - **User blurs AcpView (`Esc`) mid-stream then reopens later**: agent keeps streaming into the still-mounted DOM; reopening the tab simply restores focus. (Closing the tab is the only way to terminate the subprocess.)
 - **First-run `npx -y` download exceeds 30s**: initialize timeout fires, surface stderr + npm hint. User can retry; second attempt uses the npx cache and is fast.
-- **No `[acp.*]` table configured**: Command Palette shows a single disabled "Open ACP Agent — no backends configured" row pointing at `krypton.toml`.
 
 ## Open Questions
 

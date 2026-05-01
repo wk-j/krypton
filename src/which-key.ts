@@ -10,66 +10,78 @@ interface KeyEntry {
   key: string;
   label: string;
   effect?: 'important' | 'danger';
+  group?: string;
   /** If set, only show this entry when focused pane matches one of these types.
    *  null in the array means "terminal" (no contentView). */
   contentTypes?: (PaneContentType | null)[];
 }
 
+function groupEntries(group: string, entries: KeyEntry[]): KeyEntry[] {
+  return entries.map((entry) => ({ ...entry, group }));
+}
+
 /** Keybindings per mode — compositor keys are content-type-aware */
 const COMPOSITOR_KEYS: KeyEntry[] = [
-  // ── Window management (always shown) ──
-  { key: 'n', label: 'New Window' },
-  { key: 'x', label: 'Close Window', effect: 'danger' },
-  { key: 'h', label: 'Focus Left' },
-  { key: 'j', label: 'Focus Down' },
-  { key: 'k', label: 'Focus Up' },
-  { key: 'l', label: 'Focus Right' },
-  { key: '1-9', label: 'Focus By Index' },
-  { key: 'f', label: 'Focus Layout' },
-  { key: 'r', label: 'Resize Mode', effect: 'important' },
-  { key: 'm', label: 'Move Mode', effect: 'important' },
-  { key: 'M', label: 'Music Dashboard', effect: 'important' },
-  { key: 's', label: 'Swap Mode', effect: 'important' },
-  { key: 'z', label: 'Maximize', effect: 'important' },
-  { key: 'p', label: 'Pin Window' },
-  { key: 'P', label: 'Profiler HUD', effect: 'important' },
-  { key: 'H', label: 'Hint Mode', effect: 'important' },
-  { key: 'g', label: 'Cycle Shader' },
-  { key: 'G', label: 'Toggle Shaders', effect: 'important' },
+  ...groupEntries('Windows', [
+    { key: 'n', label: 'New Window' },
+    { key: 'x', label: 'Close Window', effect: 'danger' },
+    { key: 'h', label: 'Focus Left' },
+    { key: 'j', label: 'Focus Down' },
+    { key: 'k', label: 'Focus Up' },
+    { key: 'l', label: 'Focus Right' },
+    { key: '1-9', label: 'Focus By Index' },
+    { key: 'f', label: 'Focus Layout' },
+    { key: 'r', label: 'Resize Mode', effect: 'important' },
+    { key: 'm', label: 'Move Mode', effect: 'important' },
+    { key: 's', label: 'Swap Mode', effect: 'important' },
+    { key: 'z', label: 'Maximize', effect: 'important' },
+    { key: 'p', label: 'Pin Window' },
+  ]),
 
-  // ── Tab / pane management (always shown) ──
-  { key: 't', label: 'New Tab' },
-  { key: 'w', label: 'Close Tab', effect: 'danger' },
-  { key: '[', label: 'Previous Tab' },
-  { key: ']', label: 'Next Tab' },
-  { key: 'T', label: 'Move Tab', effect: 'important' },
-  { key: '\\', label: 'Split Vertical' },
-  { key: '-', label: 'Split Horizontal' },
-  { key: 'A-hjkl', label: 'Focus Pane' },
-  { key: 'A-x', label: 'Close Pane', effect: 'danger' },
+  ...groupEntries('Tabs / Panes', [
+    { key: 't', label: 'New Tab' },
+    { key: 'w', label: 'Close Tab', effect: 'danger' },
+    { key: '[', label: 'Previous Tab' },
+    { key: ']', label: 'Next Tab' },
+    { key: 'T', label: 'Move Tab', effect: 'important' },
+    { key: '\\', label: 'Split Vertical' },
+    { key: '-', label: 'Split Horizontal' },
+    { key: 'A-hjkl', label: 'Focus Pane' },
+    { key: 'A-x', label: 'Close Pane', effect: 'danger' },
+  ]),
 
-  // ── Content views ──
-  { key: 'b', label: 'File Manager', effect: 'important' },
-  { key: 'u', label: 'Vault Viewer', effect: 'important' },
-  { key: 'e', label: 'Pencil', effect: 'important' },
-  { key: 'q', label: 'Hurl Client', effect: 'important' },
+  ...groupEntries('Apps', [
+    { key: 'b', label: 'File Manager', effect: 'important' },
+    { key: 'u', label: 'Vault Viewer', effect: 'important' },
+    { key: 'e', label: 'Pencil', effect: 'important' },
+    { key: 'q', label: 'Hurl Client', effect: 'important' },
+    { key: 'M', label: 'Music Dashboard', effect: 'important' },
+    { key: 'P', label: 'Profiler HUD', effect: 'important' },
+    { key: 'H', label: 'Hint Mode', effect: 'important' },
+  ]),
 
-  // ── AI agent ──
-  { key: 'a', label: 'AI Agent', effect: 'important' },
-  { key: 'A', label: 'Claude ACP', effect: 'important' },
-  { key: 'E', label: 'Gemini ACP', effect: 'important' },
+  ...groupEntries('AI', [
+    { key: 'a', label: 'AI Agent', effect: 'important' },
+    { key: 'A', label: 'Claude ACP', effect: 'important' },
+    { key: 'E', label: 'Gemini ACP', effect: 'important' },
+    { key: 'I', label: 'Codex ACP', effect: 'important' },
+  ]),
 
-  // ── Terminal-only ──
-  { key: 'v', label: 'Select Mode', contentTypes: [null] },
-  { key: 'V', label: 'Select Lines', contentTypes: [null] },
-  { key: 'd', label: 'Git Diff', effect: 'important', contentTypes: [null] },
-  { key: 'D', label: 'Git Diff Staged', effect: 'important', contentTypes: [null] },
-  { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: [null] },
-  { key: 'c', label: 'Clone SSH Tab', contentTypes: [null] },
-  { key: 'C', label: 'Clone SSH Window', contentTypes: [null] },
+  ...groupEntries('Terminal', [
+    { key: 'v', label: 'Select Mode', contentTypes: [null] },
+    { key: 'V', label: 'Select Lines', contentTypes: [null] },
+    { key: 'd', label: 'Git Diff', effect: 'important', contentTypes: [null] },
+    { key: 'D', label: 'Git Diff Staged', effect: 'important', contentTypes: [null] },
+    { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: [null] },
+    { key: 'c', label: 'Clone SSH Tab', contentTypes: [null] },
+    { key: 'C', label: 'Clone SSH Window', contentTypes: [null] },
+    { key: 'g', label: 'Cycle Shader' },
+    { key: 'G', label: 'Toggle Shaders', effect: 'important' },
+  ]),
 
-  // ── Markdown viewer ──
-  { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: ['markdown'] },
+  ...groupEntries('Markdown', [
+    { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: ['markdown'] },
+  ]),
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [
@@ -211,9 +223,17 @@ export class WhichKey {
     this.title.textContent = titleText;
     this.keyList.innerHTML = '';
 
-    const sortedEntries = [...entries].sort((a, b) => a.label.localeCompare(b.label));
+    let currentGroup: string | undefined;
 
-    for (const entry of sortedEntries) {
+    for (const entry of entries) {
+      if (entry.group && entry.group !== currentGroup) {
+        currentGroup = entry.group;
+        const header = document.createElement('div');
+        header.className = 'krypton-whichkey__group';
+        header.textContent = entry.group;
+        this.keyList.appendChild(header);
+      }
+
       const row = document.createElement('div');
       row.className = 'krypton-whichkey__entry';
       if (entry.effect) {
