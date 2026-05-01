@@ -86,6 +86,15 @@
   color: rgba(216, 232, 216, 0.78);
 }
 
+.acp-view__msg-body--streaming {
+  white-space: normal;
+}
+
+.acp-view__stream-line {
+  min-height: 1.6em;
+  will-change: transform, opacity, filter;
+}
+
 .acp-view__stream-cursor {
   display: inline;
   color: var(--agent-accent, #8effb0);

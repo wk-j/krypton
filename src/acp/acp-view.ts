@@ -4,6 +4,7 @@
 
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
+import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { createPatch, diffLines } from 'diff';
@@ -127,6 +128,13 @@ interface StagedImage {
   mimeType: string;
 }
 
+interface StreamBlock {
+  container: HTMLElement;
+  rendered: HTMLElement;
+  raw: string;
+  renderedLineCount: number;
+}
+
 const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -155,8 +163,8 @@ export class AcpView implements ContentView {
   private usage: UsageInfo | null = null;
   private sessionId: string | null = null;
 
-  private currentAssistant: { container: HTMLElement; rendered: HTMLElement; raw: string } | null = null;
-  private currentThought: { container: HTMLElement; rendered: HTMLElement; raw: string } | null = null;
+  private currentAssistant: StreamBlock | null = null;
+  private currentThought: StreamBlock | null = null;
   private toolBlocks = new Map<string, ToolBlock>();
   private permissionBlocks = new Map<number, PermissionBlock>();
   private focusedPermissionId: number | null = null;
@@ -444,7 +452,7 @@ export class AcpView implements ContentView {
     this.renderStagingArea();
   }
 
-  private ensureAssistantBlock(): { rendered: HTMLElement } {
+  private ensureAssistantBlock(): StreamBlock {
     if (this.currentAssistant) return this.currentAssistant;
     const container = document.createElement('div');
     container.className = 'acp-view__msg acp-view__msg--assistant';
@@ -456,11 +464,11 @@ export class AcpView implements ContentView {
     container.appendChild(label);
     container.appendChild(body);
     this.messagesEl.appendChild(container);
-    this.currentAssistant = { container, rendered: body, raw: '' };
+    this.currentAssistant = { container, rendered: body, raw: '', renderedLineCount: 0 };
     return this.currentAssistant;
   }
 
-  private ensureThoughtBlock(): { rendered: HTMLElement } {
+  private ensureThoughtBlock(): StreamBlock {
     if (this.currentThought) return this.currentThought;
     const container = document.createElement('div');
     container.className = 'acp-view__msg acp-view__msg--thought';
@@ -472,22 +480,84 @@ export class AcpView implements ContentView {
     container.appendChild(label);
     container.appendChild(body);
     this.messagesEl.appendChild(container);
-    this.currentThought = { container, rendered: body, raw: '' };
+    this.currentThought = { container, rendered: body, raw: '', renderedLineCount: 0 };
     return this.currentThought;
+  }
+
+  private renderStreamingText(block: StreamBlock, markdownClass: boolean): void {
+    const el = block.rendered;
+    const maxWidth = el.clientWidth;
+    if (maxWidth <= 0) {
+      el.textContent = block.raw;
+      this.appendInlineCursor(el);
+      return;
+    }
+
+    const cs = getComputedStyle(el);
+    const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    let lineHeight = parseFloat(cs.lineHeight);
+    if (!Number.isFinite(lineHeight)) {
+      lineHeight = (parseFloat(cs.fontSize) || 14) * 1.6;
+    }
+
+    const prepared = prepareWithSegments(block.raw, font, { whiteSpace: 'pre-wrap' });
+    const { lines } = layoutWithLines(prepared, maxWidth, lineHeight);
+    const previousLineCount = block.renderedLineCount;
+
+    el.classList.toggle('acp-view__msg-body--streaming', true);
+    el.classList.toggle('acp-view__msg-body--markdown', markdownClass);
+    el.textContent = '';
+
+    for (let i = 0; i < lines.length; i++) {
+      const lineEl = document.createElement('div');
+      lineEl.className = 'acp-view__stream-line';
+      lineEl.textContent = lines[i].text || '\u00a0';
+      el.appendChild(lineEl);
+
+      if (i >= previousLineCount) {
+        lineEl.animate(
+          [
+            { opacity: 0, transform: 'translateY(4px)', filter: 'blur(2px)' },
+            { opacity: 1, transform: 'translateY(0)', filter: 'blur(0)' },
+          ],
+          { duration: 140, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+        );
+      }
+    }
+
+    block.renderedLineCount = lines.length;
+    this.appendInlineCursor(el);
+  }
+
+  private renderFinalAssistantMarkdown(block: StreamBlock): void {
+    const el = block.rendered;
+    el.classList.remove('acp-view__msg-body--streaming');
+    el.classList.add('acp-view__msg-body--markdown');
+    try {
+      el.innerHTML = md.parse(block.raw, { async: false }) as string;
+    } catch {
+      el.textContent = block.raw;
+    }
+    block.renderedLineCount = 0;
   }
 
   private flushMarkdown(streaming = true): void {
     if (this.currentAssistant) {
-      try {
-        this.currentAssistant.rendered.innerHTML = md.parse(this.currentAssistant.raw, { async: false }) as string;
-      } catch {
-        this.currentAssistant.rendered.textContent = this.currentAssistant.raw;
+      if (streaming) {
+        this.renderStreamingText(this.currentAssistant, true);
+      } else {
+        this.renderFinalAssistantMarkdown(this.currentAssistant);
       }
-      if (streaming) this.appendInlineCursor(this.currentAssistant.rendered);
     }
     if (this.currentThought) {
-      this.currentThought.rendered.textContent = this.currentThought.raw;
-      if (streaming) this.appendInlineCursor(this.currentThought.rendered);
+      if (streaming) {
+        this.renderStreamingText(this.currentThought, false);
+      } else {
+        const el = this.currentThought.rendered;
+        el.classList.remove('acp-view__msg-body--streaming');
+        el.textContent = this.currentThought.raw;
+        this.currentThought.renderedLineCount = 0;
+      }
     }
     this.scrollToBottom();
   }
@@ -790,8 +860,7 @@ export class AcpView implements ContentView {
     switch (e.type) {
       case 'message_chunk': {
         if (this.currentThought) {
-          this.currentThought.rendered.querySelector('.acp-view__stream-cursor')?.remove();
-          this.currentThought = null;
+          this.sealStreamingBlocks();
         }
         this.ensureAssistantBlock();
         this.currentAssistant!.raw += e.text;
@@ -800,8 +869,7 @@ export class AcpView implements ContentView {
       }
       case 'thought_chunk': {
         if (this.currentAssistant) {
-          this.currentAssistant.rendered.querySelector('.acp-view__stream-cursor')?.remove();
-          this.currentAssistant = null;
+          this.sealStreamingBlocks();
         }
         this.ensureThoughtBlock();
         this.currentThought!.raw += e.text;
@@ -828,9 +896,8 @@ export class AcpView implements ContentView {
         this.updateStatus();
         break;
       case 'stop':
+        this.sealStreamingBlocks();
         this.turnActive = false;
-        this.currentAssistant = null;
-        this.currentThought = null;
         this.updateStatus();
         if (e.stopReason !== 'end_turn') {
           this.appendSystemMessage(`turn ended: ${e.stopReason}`);
