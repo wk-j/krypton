@@ -65,6 +65,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'A', label: 'Claude ACP', effect: 'important' },
     { key: 'E', label: 'Gemini ACP', effect: 'important' },
     { key: 'I', label: 'Codex ACP', effect: 'important' },
+    { key: 'Y', label: 'ACP Harness', effect: 'important' },
   ]),
 
   ...groupEntries('Terminal', [

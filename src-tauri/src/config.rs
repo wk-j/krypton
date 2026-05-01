@@ -47,6 +47,7 @@ pub struct KryptonConfig {
     pub vault: VaultConfig,
     pub hurl: HurlConfig,
     pub pencil: PencilConfig,
+    pub acp_harness: AcpHarnessConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -467,6 +468,13 @@ pub struct PencilConfig {
     pub dir: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AcpHarnessConfig {
+    pub idle_flash_sound: bool,
+    pub memory_footer: bool,
+}
+
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
@@ -503,6 +511,15 @@ impl Default for AgentConfig {
                     vision: false,
                 },
             ],
+        }
+    }
+}
+
+impl Default for AcpHarnessConfig {
+    fn default() -> Self {
+        Self {
+            idle_flash_sound: true,
+            memory_footer: true,
         }
     }
 }

@@ -41,12 +41,14 @@ interface RawAcpEvent {
 
 export class AcpClient {
   private session: number;
+  private backend: string;
   private unlisten: UnlistenFn | null = null;
   private listeners: Array<(e: AcpEvent) => void> = [];
   private disposed = false;
 
-  private constructor(session: number) {
+  private constructor(session: number, backend: string) {
     this.session = session;
+    this.backend = backend;
   }
 
   static async listBackends(): Promise<AcpBackendDescriptor[]> {
@@ -55,11 +57,19 @@ export class AcpClient {
 
   static async spawn(backendId: string, cwd: string | null): Promise<AcpClient> {
     const session = await invoke<number>('acp_spawn', { backendId, cwd });
-    const client = new AcpClient(session);
+    const client = new AcpClient(session, backendId);
     client.unlisten = await listen<RawAcpEvent>(`acp-event-${session}`, (ev) => {
       client.handleRaw(ev.payload);
     });
     return client;
+  }
+
+  get sessionId(): number {
+    return this.session;
+  }
+
+  get backendId(): string {
+    return this.backend;
   }
 
   async initialize(): Promise<AgentInfo> {

@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-04-24 (Matrix animation glyph atlas — fillText removed from hot path, restored 60 fps)
+> Last updated: 2026-05-01 (ACP Harness view — multi-lane ACP orchestration with tab-local shared memory)
 
 ## Overview
 
@@ -14,13 +14,14 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 10/11 |
-| M8 — Polish | In Progress | 16/17 |
+| M8 — Polish | In Progress | 17/18 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
 
 ## Recent Landings
 
+- **ACP Harness view (Leader Y)** — multi-lane ACP orchestration tab that spawns the default same-project roster (Codex-1, Claude-1, Gemini-1 when installed), routes prompts to one active lane, displays a lane dashboard plus command center, handles per-lane permissions, and keeps tab-local shared memory extracted from completed tool observations and optional `MEMORY:` footer bullets. See `docs/72-acp-harness-view.md`.
 - **Pencil window (Leader e)** — embed `@excalidraw/excalidraw` as a new content view to open and edit `.excalidraw` files in-app. React + Excalidraw are lazy-loaded so the main bundle is unaffected. Picker scans `[pencil] dir` recursively (mtime sorted) with "+ New drawing" first row; opening the same file twice refocuses the existing tab. Autosave is debounced (800 ms) via `serializeAsJSON`; `Cmd+S` flushes immediately; atomic temp+rename in Rust. Theme follows Krypton bg luminance. See `docs/71-pencil-window.md`.
 - **ACP agent windows (Leader A)** — second, parallel agent window backed by the [Agent Client Protocol](https://agentclientprotocol.com). Spawns built-in external adapters (Claude Code, Gemini CLI, Codex) over newline-delimited JSON-RPC and surfaces tool calls, plans, thoughts, and inline permission prompts. Lives in `src/acp/` + `src-tauri/src/acp.rs`; the existing pi-agent at `src/agent/` is untouched. See `docs/69-acp-agent-support.md`.
 - **Quick file search (Cmd+O)** — global modal backed by `fff-search` with long-lived per-project pickers (LRU 8), persistent LMDB frecency, and `.git`-aware root resolution. Enter copies the relative path to the clipboard, Cmd+Enter copies the absolute path — never auto-pasted, so behavior is uniform across terminal/agent/hurl/markdown windows. **Tab toggles into grep mode** (content search reusing the same picker; copies `path:line:col`). See `docs/68-quick-file-search.md`.
@@ -143,6 +144,7 @@
 - [x] Agent image attachment — paste (Cmd+V) or drag-drop images into agent windows. Up to 4 images staged as thumbnails above the input line, sent as multi-part `UserMessage` to vision-capable models. Vision gated by `vision = true` in TOML model preset. Non-vision models warned at submit time. Images stripped from JSONL session persistence (placeholder `[N images attached]` saved instead). See `docs/62-agent-image-attachment.md`.
 - [x] Matrix animation CPU burn fix — OffscreenCanvas `fillText` on macOS WebKit has no glyph cache and IPCs per draw, so matrix/brainwave renderers were burning ~50–60% CPU per window when Claude was processing. Two fixes: (1) per-renderer frame cap in `animation-worker.ts` (matrix/brainwave/circuit-trace at 30 fps, flame at 60) — ~2× CPU reduction for the expensive renderers; (2) idle-timeout safety net in `claude-hooks.ts` that auto-stops the animation 60 s after the last hook event, preventing orphaned animations when `Stop`/`SessionEnd` hooks are dropped (crash, Ctrl+C, HTTP failure). See `docs/64-matrix-animation-cpu-burn.md`.
 - [x] Agent `@path` fuzzy file search — typing `@` in the agent window's prompt input opens a fuzzy-ranked file picker scoped to the active `projectDir`. Uses the existing `search_files` Tauri command (respects `.gitignore`, caps 50k entries) cached per directory with 10 s TTL and shared with the Smart Prompt Dialog. `@` must be at start-of-line or preceded by whitespace. Tab/Enter accept, Esc dismisses, arrow keys navigate the dropdown. Takes precedence over the slash-command autocomplete; reuses the amber-phosphor dropdown aesthetic. Implemented in `src/agent/agent-view.ts` (`updateMentionState`, `rankMentionFiles`, `renderMentionPopup`, `acceptMention`) with matching CSS in `src/styles/agent.css`.
+- [x] ACP Harness view — `Leader Y` / command palette opens a multi-lane ACP content tab for the focused CWD. The harness owns independent ACP clients, per-lane drafts and permissions, active-lane-only prompt dispatch, dashboard transcript rendering, and tab-local shared memory via `src/acp/acp-harness-memory.ts`. See `docs/72-acp-harness-view.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 

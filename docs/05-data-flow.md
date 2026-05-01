@@ -104,8 +104,35 @@
    - F       -> maximize/restore focused window
    - G       -> cycle shader preset on focused pane (none → crt → hologram → ...)
    - Shift+G -> toggle shaders on/off globally
+   - Shift+Y -> open ACP Harness for the focused working directory
    - Escape  -> cancel, return to Normal mode
 5. After action executes, Input Router returns to Normal mode
+```
+
+## ACP Harness Flow
+
+```
+1. User opens ACP Harness via Leader Y or the command palette.
+2. Compositor resolves the focused working directory with getFocusedCwd().
+3. AcpHarnessView lists ACP backends and spawns the default lane roster
+   (Claude-1, Claude-2, Codex-1 when those backends are installed) with the
+   same cwd.
+4. Each lane owns one AcpClient and listens to its own acp-event-<session>
+   stream. Lanes render into a shared dashboard, but prompts are dispatched
+   only to the active tab in the command center.
+5. On Enter, the active lane's draft is wrapped with optional shared memory
+   from other lanes and the MEMORY footer, then sent through acp_prompt.
+6. session/update notifications append transcript rows and tool observations.
+   Completed edit/diff-bearing updates and execute updates are buffered as
+   tab-local memory candidates.
+7. When session/prompt returns, the harness parses any final MEMORY block,
+   filters/deduplicates candidates, appends surviving entries to the in-memory
+   feed, and clears turn-scoped accept-all/reject-all permission flags.
+8. Permission requests pre-empt only the affected lane's composer. The user
+   switches to that tab and resolves with a/A/r/R/Esc; responses call the
+   existing acp_permission_response command.
+9. Closing the harness disposes every lane client and drops transcripts,
+   pending tool observations, file-touch warnings, and shared memory.
 ```
 
 ## Resize Mode Flow (e.g., Leader then R)

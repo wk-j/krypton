@@ -833,6 +833,15 @@ export class InputRouter {
         }
         break;
 
+      // Y — open ACP Harness
+      case 'y':
+        if (e.shiftKey) {
+          this.compositor.openAcpHarnessView().then(() => this.toNormal());
+        } else {
+          this.toNormal();
+        }
+        break;
+
       // b — open file manager (browse)
       case 'b':
         this.compositor.openFileManager().then(() => this.toNormal());

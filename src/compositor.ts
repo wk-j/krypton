@@ -2268,6 +2268,19 @@ export class Compositor {
     await this.createContentTab(`ACP  ${displayName}`, view);
   }
 
+  /**
+   * Open the ACP Harness view. The harness owns several independent ACP
+   * subprocesses for the focused working directory and routes one prompt at a
+   * time to the active lane.
+   */
+  async openAcpHarnessView(): Promise<void> {
+    const { AcpHarnessView } = await import('./acp/acp-harness-view');
+    const projectDir = await this.getFocusedCwd();
+    const view = new AcpHarnessView(projectDir);
+    view.onClose(() => this.closeTab());
+    await this.createContentTab('ACP Harness', view);
+  }
+
   // ─── Inline AI Overlay ──────────────────────────────────────────────
 
   /**

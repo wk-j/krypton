@@ -267,6 +267,13 @@ max_tokens = 8192
 # context_window = 128000
 # max_tokens = 16384
 
+# --- ACP Harness ---
+# Multi-lane ACP orchestration view opened with Leader Y.
+
+[acp_harness]
+idle_flash_sound = true        # play soft cue when a busy lane becomes idle with a draft
+memory_footer = true           # append MEMORY footer for automatic shared-memory extraction
+
 # --- Context Extensions ---
 # Built-in extensions that activate when specific processes are detected
 # running in terminal panes. Currently includes: Java Resource Monitor.
@@ -417,6 +424,15 @@ ACP agent backends are built into Krypton rather than configured in `krypton.tom
 | Codex | `codex-acp` |
 
 Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup as needed). See `docs/69-acp-agent-support.md` for the full design.
+
+### ACP Harness Configuration
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[acp_harness]` | `idle_flash_sound` | bool | `true` | Reserved for the soft cue when an active lane returns idle while its draft is non-empty |
+| `[acp_harness]` | `memory_footer` | bool | `true` | Append the MEMORY footer to each harness prompt so agents can publish short shared-memory bullets |
+
+The ACP Harness roster is code-defined in v1: Codex, Claude, and Gemini lanes are attempted in that order when those backends are installed. Codex is the default active lane when available. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
 
 ### Hooks Configuration
 

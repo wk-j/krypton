@@ -149,8 +149,9 @@ Default roster:
 
 ```ts
 const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
-  { backendId: 'claude', displayName: 'Claude', count: 2 },
   { backendId: 'codex', displayName: 'Codex', count: 1 },
+  { backendId: 'claude', displayName: 'Claude', count: 1 },
+  { backendId: 'gemini', displayName: 'Gemini', count: 1 },
 ];
 ```
 
@@ -349,7 +350,9 @@ The harness has two surfaces stacked vertically:
 1. **Dashboard** (top, read-only) — renders all activity for every lane. No input is accepted on this surface.
 2. **Command Center** (bottom, input-only) — tab strip + composer. One tab per lane. The active tab determines which lane is expanded on the dashboard and which lane will receive the next prompt.
 
-The **memory drawer** is an overlay (`v`) that covers the dashboard. The command center stays visible and reachable while the drawer is open.
+The **memory drawer** is an overlay (`Esc`, then `v`) that covers the dashboard. The command center stays visible and reachable while the drawer is open.
+
+The **help overlay** is toggled with `Esc`, then `?`. It covers the dashboard, keeps the command center visible, and lists lane control, permission, memory, transcript, and hash-command keys. It closes with `Esc`, `?`, or `q`.
 
 There is no global permission queue strip, no broadcast/target mode, no marked-mode, no lane fullscreen mode. Each of those surfaces was removed because the dashboard/command-center split makes them redundant or unsafe.
 
@@ -364,13 +367,13 @@ DOM shape:
   </div>
   <div class="acp-harness__dashboard">
     <div class="acp-harness__lane acp-harness__lane--collapsed">
-      <header class="acp-harness__lane-head">[1] ● Claude-1 …</header>
+      <header class="acp-harness__lane-head">[1] ● Codex-1 …</header>
     </div>
     <div class="acp-harness__lane acp-harness__lane--collapsed">
-      <header class="acp-harness__lane-head">[2] ○ Claude-2 …</header>
+      <header class="acp-harness__lane-head">[2] ○ Claude-1 …</header>
     </div>
     <section class="acp-harness__lane acp-harness__lane--active">
-      <header class="acp-harness__lane-head">[3] ● Codex-1 …</header>
+      <header class="acp-harness__lane-head">[3] ● Gemini-1 …</header>
       <div class="acp-harness__lane-body"><!-- scrollable transcript --></div>
     </section>
     <div class="acp-harness__lane acp-harness__lane--collapsed acp-harness__lane--permission">
@@ -383,9 +386,9 @@ DOM shape:
   </aside>
   <div class="acp-harness__command-center">
     <nav class="acp-harness__tab-strip">
-      <button class="acp-harness__tab">[1] Claude-1</button>
-      <button class="acp-harness__tab">[2] Claude-2</button>
-      <button class="acp-harness__tab acp-harness__tab--active">[3] Codex-1</button>
+      <button class="acp-harness__tab acp-harness__tab--active">[1] Codex-1</button>
+      <button class="acp-harness__tab">[2] Claude-1</button>
+      <button class="acp-harness__tab">[3] Gemini-1</button>
       <button class="acp-harness__tab acp-harness__tab--permission">[!4] Gemini-1</button>
     </nav>
     <div class="acp-harness__composer">
@@ -560,28 +563,30 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | Key | Context | Action |
 |-----|---------|--------|
 | `Leader Y` | Compositor mode | Open ACP Harness. |
-| `1`–`9` | Composer text mode | Switch to lane tab N (changes the active dashboard lane). |
 | `Tab` / `Shift+Tab` | Composer text mode | Cycle to next/previous lane tab. |
 | `Enter` | Composer text mode | Send prompt to active tab's lane. |
 | `Shift+Enter` | Composer text mode | Insert newline. |
 | `#` | Composer text mode | Open hash-command autocomplete. |
 | `Tab` / `Enter` | Hash autocomplete | Accept selected command. |
 | `Esc` | Hash autocomplete | Dismiss popup (text preserved). |
+| `?` | Transcript scroll focus | Toggle help overlay. |
+| `Esc` / `?` / `q` | Help overlay open | Close help overlay. |
 | `Ctrl+C` | Composer text mode, active lane busy | Cancel active lane. |
-| `Esc` | Composer text mode | If memory drawer open → close drawer. Else → move focus to active lane transcript scroll. |
+| `Esc` | Composer text mode | Enter transcript/command focus. Composer is disabled until `i` or `Esc` returns to input. |
 | `a` | Composer permission mode | Accept the focused permission. |
 | `A` | Composer permission mode | Accept-all-from-this-lane for the **current `session/prompt` turn only**; clears when the turn returns. |
 | `r` | Composer permission mode | Reject the focused permission. |
 | `R` | Composer permission mode | Reject-all-from-this-lane for the **current `session/prompt` turn only**; clears when the turn returns. |
 | `Esc` | Composer permission mode | Cancel pending permission (rejects). |
-| `v` | Harness | Toggle memory drawer overlay. |
+| `v` | Transcript scroll focus | Toggle memory drawer overlay. |
 | `j` / `k` | Memory drawer open | Move cursor row. |
 | `g` / `G` | Memory drawer open | Jump cursor to top/bottom of list. |
 | `Esc` | Memory drawer open | Close drawer (composer draft preserved). |
 | `j` / `k` | Transcript scroll focus | Scroll active lane transcript line by line. |
+| `1`–`9` | Transcript scroll focus | Switch to lane tab N without inserting text. |
 | `g` / `G` | Transcript scroll focus | Jump to top/bottom of active lane transcript. |
 | `Ctrl+u` / `Ctrl+d` | Transcript scroll focus | Page up/down active lane transcript. |
-| Any printable key | Transcript scroll focus | Return focus to composer (key is passed to the composer as input). |
+| `i` / `Esc` | Transcript scroll focus | Return to composer input. |
 | `q` | Transcript scroll focus | Close harness tab. |
 
 Memory mutations are not bound to dedicated keys; they execute through `#mem` commands in the composer. This keeps the keybinding surface narrow and the input rule consistent (input always in the command center).

@@ -836,6 +836,13 @@ export class CommandPalette {
     });
 
     // Dynamic: ACP agent backends. Claude, Gemini, and Codex are built in.
+    this.actions.push({
+      id: 'acp.harness.open',
+      label: 'Open ACP Harness',
+      category: 'Window',
+      keybinding: 'Leader Shift y',
+      execute: () => c.openAcpHarnessView(),
+    });
     for (const b of this.acpBackends) {
       const kb =
         b.id === 'claude'

@@ -145,6 +145,11 @@ export interface MusicConfig {
   visualizer_opacity: number;
 }
 
+export interface AcpHarnessConfig {
+  idle_flash_sound: boolean;
+  memory_footer: boolean;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -160,6 +165,7 @@ export interface KryptonConfig {
   extensions: ExtensionsConfig;
   hooks: HooksConfig;
   music: MusicConfig;
+  acp_harness: AcpHarnessConfig;
 }
 
 /** Load configuration from the Rust backend */
