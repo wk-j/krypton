@@ -723,7 +723,7 @@ export class AcpView implements ContentView {
     }
     entry.el.className = `acp-view__tool acp-view__tool--${status}${focused ? ' acp-view__tool--focused' : ''}`;
     const statusGlyph = status === 'completed' ? '✓' : status === 'failed' ? '✗' : status === 'in_progress' ? '⟳' : '·';
-    const body = renderToolBody(c.content, diff);
+    const body = renderToolBody(c, diff, focused);
     entry.el.innerHTML =
       `<div class="acp-view__tool-header">` +
         `<span class="acp-view__tool-status">${statusGlyph}</span>` +
@@ -1338,13 +1338,17 @@ function unifiedDiff(path: string, oldText: string, newText: string): string {
 }
 
 const TOOL_BODY_LINE_CAP = 16;
+const TOOL_DIFF_LINE_CAP = 24;
 
 function renderToolBody(
-  content: ToolCallContent[] | undefined,
+  call: ToolCall,
   diff: { path: string; oldText: string | null; newText: string } | null,
+  focused: boolean,
 ): string {
   if (diff) return renderDiffPreview(diff.oldText ?? '', diff.newText ?? '');
-  if (!content || content.length === 0) return '';
+  const content = call.content;
+  const rawOutput = renderRawToolOutput(call.rawOutput, focused || call.status === 'failed');
+  if (!content || content.length === 0) return rawOutput;
   const parts: string[] = [];
   for (const c of content) {
     if (c.type === 'content' && c.content) {
@@ -1354,6 +1358,7 @@ function renderToolBody(
       parts.push(`<div class="acp-view__tool-meta">terminal · ${esc(c.terminalId)}</div>`);
     }
   }
+  if (rawOutput && (parts.length === 0 || focused || call.status === 'failed')) parts.push(rawOutput);
   return parts.join('');
 }
 
@@ -1364,12 +1369,45 @@ function contentBlockText(block: ContentBlock): string {
   return '';
 }
 
-function renderTextPreview(text: string): string {
+function renderTextPreview(text: string, lineCap = TOOL_BODY_LINE_CAP): string {
   const lines = text.replace(/\s+$/, '').split('\n');
-  const visible = lines.slice(0, TOOL_BODY_LINE_CAP);
+  const visible = lines.slice(0, lineCap);
   const hidden = lines.length - visible.length;
   const more = hidden > 0 ? `\n<span class="acp-view__tool-more">… ${hidden} more line${hidden === 1 ? '' : 's'}</span>` : '';
   return `<pre class="acp-view__tool-body">${esc(visible.join('\n'))}${more}</pre>`;
+}
+
+function renderRawToolOutput(value: unknown, expanded: boolean): string {
+  const text = stringifyToolValue(value);
+  if (!text) return '';
+  const label = expanded ? 'output' : 'output preview';
+  const lineCap = expanded ? TOOL_BODY_LINE_CAP : 4;
+  return `<div class="acp-view__tool-output-label">${label}</div>${renderTextPreview(text, lineCap)}`;
+}
+
+function stringifyToolValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trimEnd();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stringifyToolValue(item))
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['output', 'stdout', 'stderr', 'content', 'text', 'message']) {
+      const nested = stringifyToolValue(record[key]);
+      if (nested) return nested;
+    }
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
 }
 
 function renderDiffPreview(oldText: string, newText: string): string {
@@ -1377,12 +1415,26 @@ function renderDiffPreview(oldText: string, newText: string): string {
   const parts = diffLines(oldText, newText);
 
   // Expand into per-line tagged entries: 'add' | 'del' | 'ctx'
-  type Row = { kind: 'add' | 'del' | 'ctx'; text: string };
+  type Row = { kind: 'add' | 'del' | 'ctx'; text: string; oldLine: number | null; newLine: number | null };
   const rows: Row[] = [];
+  let oldLine = 1;
+  let newLine = 1;
   for (const p of parts) {
     const lines = stripTrailingNewline(p.value).split('\n');
     const kind: Row['kind'] = p.added ? 'add' : p.removed ? 'del' : 'ctx';
-    for (const text of lines) rows.push({ kind, text });
+    for (const text of lines) {
+      if (kind === 'add') {
+        rows.push({ kind, text, oldLine: null, newLine });
+        newLine++;
+      } else if (kind === 'del') {
+        rows.push({ kind, text, oldLine, newLine: null });
+        oldLine++;
+      } else {
+        rows.push({ kind, text, oldLine, newLine });
+        oldLine++;
+        newLine++;
+      }
+    }
   }
 
   // Mark which context rows to keep (within CONTEXT of any change)
@@ -1404,10 +1456,10 @@ function renderDiffPreview(oldText: string, newText: string): string {
       inGap = true;
       continue;
     }
-    if (inGap && !firstHunk) html.push('<span class="acp-view__diff-line acp-view__diff-line--hunk">⋯</span>');
+    if (inGap && !firstHunk) html.push(renderDiffGap());
     inGap = false;
     firstHunk = false;
-    if (emitted >= TOOL_BODY_LINE_CAP) {
+    if (emitted >= TOOL_DIFF_LINE_CAP) {
       truncated = true;
       break;
     }
@@ -1416,22 +1468,39 @@ function renderDiffPreview(oldText: string, newText: string): string {
   }
 
   if (html.length === 0) {
-    html.push('<span class="acp-view__tool-meta">no textual changes</span>');
+    html.push('<div class="acp-view__tool-meta">no textual changes</div>');
   }
 
   let keptCount = 0;
   for (let i = 0; i < keep.length; i++) if (keep[i]) keptCount++;
   const moreLines = keptCount - emitted;
   if (truncated && moreLines > 0) {
-    html.push(`<span class="acp-view__tool-more">… ${moreLines} more line${moreLines === 1 ? '' : 's'} · [o] open</span>`);
+    html.push(`<div class="acp-view__tool-more">… ${moreLines} more line${moreLines === 1 ? '' : 's'} · [o] open full diff</div>`);
   }
-  return `<pre class="acp-view__tool-body acp-view__tool-body--diff">${html.join('\n')}</pre>`;
+  return `<div class="acp-view__tool-body acp-view__tool-body--diff">${html.join('')}</div>`;
 }
 
-function renderDiffRow(row: { kind: 'add' | 'del' | 'ctx'; text: string }): string {
-  if (row.kind === 'add') return `<span class="acp-view__diff-line acp-view__diff-line--add">+${esc(row.text)}</span>`;
-  if (row.kind === 'del') return `<span class="acp-view__diff-line acp-view__diff-line--del">−${esc(row.text)}</span>`;
-  return `<span class="acp-view__diff-line acp-view__diff-line--ctx"> ${esc(row.text)}</span>`;
+function renderDiffGap(): string {
+  return (
+    '<div class="acp-view__diff-line acp-view__diff-line--hunk">' +
+      '<span class="acp-view__diff-num"></span>' +
+      '<span class="acp-view__diff-num"></span>' +
+      '<span class="acp-view__diff-mark">⋯</span>' +
+      '<span class="acp-view__diff-text">context omitted</span>' +
+    '</div>'
+  );
+}
+
+function renderDiffRow(row: { kind: 'add' | 'del' | 'ctx'; text: string; oldLine: number | null; newLine: number | null }): string {
+  const mark = row.kind === 'add' ? '+' : row.kind === 'del' ? '−' : ' ';
+  return (
+    `<div class="acp-view__diff-line acp-view__diff-line--${row.kind}">` +
+      `<span class="acp-view__diff-num">${row.oldLine ?? ''}</span>` +
+      `<span class="acp-view__diff-num">${row.newLine ?? ''}</span>` +
+      `<span class="acp-view__diff-mark">${mark}</span>` +
+      `<span class="acp-view__diff-text">${esc(row.text)}</span>` +
+    `</div>`
+  );
 }
 
 function stripTrailingNewline(s: string): string {
