@@ -5,13 +5,17 @@ import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { AcpClient } from './client';
-import { loadConfig } from '../config';
 import type {
   AcpBackendDescriptor,
   AcpEvent,
+  AcpMcpServerDescriptor,
   AgentInfo,
   ContentBlock,
+  HarnessMemoryEntry,
+  HarnessMemorySession,
   PermissionOption,
   PlanEntry,
   StopReason,
@@ -20,24 +24,11 @@ import type {
   UsageInfo,
 } from './types';
 import type { ContentView, PaneContentType } from '../types';
-import {
-  MEMORY_FOOTER,
-  appendMemoryEntries,
-  createSharedMemory,
-  dedupeFooterAgainstTools,
-  deleteMemory,
-  extractFooterMemory,
-  extractModifiedPath,
-  extractionFromTool,
-  pinMemory,
-  renderMemorySelection,
-  type HarnessMemoryEntry,
-  type HarnessSharedMemory,
-  type PendingExtraction,
-} from './acp-harness-memory';
+import { extractModifiedPath } from './acp-harness-memory';
 
 type HarnessLaneStatus = 'starting' | 'idle' | 'busy' | 'needs_permission' | 'error' | 'stopped';
 type ComposerFocus = 'text' | 'transcript';
+type PendingExtraction = never;
 
 interface HarnessPermission {
   requestId: number;
@@ -122,7 +113,10 @@ export class AcpHarnessView implements ContentView {
   private projectDir: string | null;
   private lanes: HarnessLane[] = [];
   private activeLaneId = '';
-  private memory: HarnessSharedMemory;
+  private memoryEntries: HarnessMemoryEntry[] = [];
+  private harnessMemoryId: string | null = null;
+  private harnessMemoryPort: number | null = null;
+  private memoryUnlisten: UnlistenFn | null = null;
   private fileTouchMap = new Map<string, FileTouchRecord>();
   private memoryDrawerOpen = false;
   private helpOpen = false;
@@ -130,7 +124,6 @@ export class AcpHarnessView implements ContentView {
   private focus: ComposerFocus = 'text';
   private chip: string | null = null;
   private chipTimer: number | null = null;
-  private memoryFooterEnabled = true;
   private systemRows: string[] = ['loading ACP backends...'];
   private closeCb: (() => void) | null = null;
 
@@ -146,7 +139,6 @@ export class AcpHarnessView implements ContentView {
 
   constructor(projectDir: string | null = null) {
     this.projectDir = projectDir;
-    this.memory = createSharedMemory(projectDir);
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
@@ -235,6 +227,13 @@ export class AcpHarnessView implements ContentView {
       if (lane.client) void lane.client.dispose();
       lane.client = null;
     }
+    if (this.memoryUnlisten) {
+      this.memoryUnlisten();
+      this.memoryUnlisten = null;
+    }
+    if (this.harnessMemoryId) {
+      void invoke('dispose_harness_memory', { harnessId: this.harnessMemoryId });
+    }
   }
 
   private buildDOM(): void {
@@ -285,14 +284,9 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async start(): Promise<void> {
-    try {
-      const config = await loadConfig();
-      this.memoryFooterEnabled = config.acp_harness?.memory_footer ?? true;
-    } catch {
-      this.memoryFooterEnabled = true;
-    }
     let backends: AcpBackendDescriptor[] = [];
     try {
+      await this.initializeHarnessMemory();
       backends = await AcpClient.listBackends();
       this.systemRows = [];
     } catch (e) {
@@ -314,6 +308,29 @@ export class AcpHarnessView implements ContentView {
     }
     if (this.lanes.length === 0) this.systemRows.push('no ACP backends available');
     this.render();
+  }
+
+  private async initializeHarnessMemory(): Promise<void> {
+    const session = await invoke<HarnessMemorySession>('create_harness_memory');
+    this.harnessMemoryId = session.harnessId;
+    this.harnessMemoryPort = session.hookPort;
+    this.memoryUnlisten = await listen<{ harnessId: string }>('acp-harness-memory-changed', (event) => {
+      if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMemory();
+    });
+    await this.refreshMemory();
+  }
+
+  private async refreshMemory(): Promise<void> {
+    if (!this.harnessMemoryId) return;
+    try {
+      this.memoryEntries = await invoke<HarnessMemoryEntry[]>('list_harness_memory', {
+        harnessId: this.harnessMemoryId,
+      });
+      this.renderMemory();
+      this.renderComposer();
+    } catch (e) {
+      this.flashChip(`memory unavailable: ${String(e)}`);
+    }
   }
 
   private createLane(index: number, backendId: string, displayName: string): HarnessLane {
@@ -349,7 +366,7 @@ export class AcpHarnessView implements ContentView {
     lane.error = null;
     this.render();
     try {
-      const client = await AcpClient.spawn(lane.backendId, this.projectDir);
+      const client = await AcpClient.spawn(lane.backendId, this.projectDir, this.memoryServerForLane(lane));
       lane.client = client;
       client.onEvent((event) => this.onLaneEvent(lane, event));
       const info: AgentInfo = await client.initialize();
@@ -363,6 +380,18 @@ export class AcpHarnessView implements ContentView {
       this.appendTranscript(lane, 'system', `error: ${String(e)}`);
     }
     this.render();
+  }
+
+  private memoryServerForLane(lane: HarnessLane): AcpMcpServerDescriptor[] {
+    if (!this.harnessMemoryId || !this.harnessMemoryPort) return [];
+    const harness = encodeURIComponent(this.harnessMemoryId);
+    const laneLabel = encodeURIComponent(lane.displayName);
+    return [{
+      name: 'krypton-harness-memory',
+      type: 'http',
+      url: `http://127.0.0.1:${this.harnessMemoryPort}/mcp/harness/${harness}/lane/${laneLabel}`,
+      headers: {},
+    }];
   }
 
   private onLaneEvent(lane: HarnessLane, event: AcpEvent): void {
@@ -379,7 +408,8 @@ export class AcpHarnessView implements ContentView {
         break;
       case 'tool_call_update':
         this.renderTool(lane, event.update);
-        this.observeTool(lane, event.update);
+        this.observeFileTouch(lane, event.update);
+        if (isMemoryTool(event.update)) void this.refreshMemory();
         break;
       case 'plan':
         this.sealStreaming(lane);
@@ -394,6 +424,7 @@ export class AcpHarnessView implements ContentView {
         break;
       case 'stop':
         this.finishTurn(lane, event.stopReason);
+        void this.refreshMemory();
         break;
       case 'error':
         lane.status = 'error';
@@ -442,20 +473,20 @@ export class AcpHarnessView implements ContentView {
   }
 
   private buildPromptBlocks(lane: HarnessLane, userText: string): ContentBlock[] {
-    const selection = renderMemorySelection(this.memory, lane.id, userText);
     const userBlock: ContentBlock = {
       type: 'text',
-      text: this.memoryFooterEnabled ? `${userText}\n\n${MEMORY_FOOTER}` : userText,
+      text: userText,
     };
-    if (!selection.packet) return [userBlock];
+    const packet = this.renderPromptMemoryPacket();
+    if (!packet) return [userBlock];
     if (lane.supportsEmbeddedContext) {
       return [
         {
           type: 'resource',
           resource: {
-            uri: 'krypton://acp-harness/shared-memory.md',
+            uri: 'krypton://acp-harness/memory.md',
             mimeType: 'text/markdown',
-            text: selection.packet,
+            text: packet,
           },
         },
         userBlock,
@@ -464,34 +495,30 @@ export class AcpHarnessView implements ContentView {
     return [
       {
         type: 'text',
-        text: `Shared project memory from other agents in this Krypton harness. Use as read-only context.\n\n${selection.packet}`,
+        text: packet,
       },
       userBlock,
     ];
   }
 
+  private renderPromptMemoryPacket(): string {
+    const recent = this.memoryEntries
+      .slice()
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 10);
+    const lines = recent.map((entry) => `- [${entry.id}] ${entry.summary}`);
+    return [
+      '# Krypton harness memory',
+      'Tab-local memory is managed through the MCP tools memory_create, memory_update, memory_delete, memory_search, and memory_get.',
+      'Use summaries as context. Call memory_get when a summary matters and you need the full detail. Create or update memory only for reusable facts.',
+      lines.length ? '' : null,
+      lines.length ? lines.join('\n') : null,
+    ].filter((line): line is string => line !== null).join('\n');
+  }
+
   private finishTurn(lane: HarnessLane, stopReason: StopReason): void {
-    const assistant = lane.currentAssistantId
-      ? lane.transcript.find((item) => item.id === lane.currentAssistantId)
-      : null;
-    let footerExtractions: PendingExtraction[] = [];
-    let footerFound = false;
-    if (assistant && stopReason !== 'cancelled') {
-      const parsed = extractFooterMemory(assistant.text);
-      assistant.text = parsed.stripped;
-      footerExtractions = parsed.extractions;
-      footerFound = parsed.found;
-    }
     this.sealStreaming(lane);
-    if (stopReason !== 'cancelled') {
-      const extractions = dedupeFooterAgainstTools(footerExtractions, lane.pendingTurnExtractions);
-      const appended = appendMemoryEntries(this.memory, lane.id, lane.displayName, extractions);
-      if (appended.length > 0) {
-        this.appendTranscript(lane, 'memory', `+${appended.length} memory${appended.length === 1 ? '' : ' entries'}`);
-      } else if (footerFound) {
-        this.appendTranscript(lane, 'memory', '+0 memory');
-      }
-    } else {
+    if (stopReason === 'cancelled') {
       this.appendTranscript(lane, 'system', 'turn cancelled');
     }
     lane.pendingTurnExtractions = [];
@@ -507,11 +534,7 @@ export class AcpHarnessView implements ContentView {
     if (lane.draft.trim()) this.flashChip('lane idle - Enter to send');
   }
 
-  private observeTool(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
-    const extraction = extractionFromTool(lane.displayName, call);
-    if (!extraction) return;
-    if (lane.pendingTurnExtractions.some((item) => item.text === extraction.text)) return;
-    lane.pendingTurnExtractions.push(extraction);
+  private observeFileTouch(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
     const path = extractModifiedPath(call);
     if (path && call.status === 'completed') {
       this.fileTouchMap.set(path, {
@@ -611,21 +634,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (parts[0] === '#mem') {
-      const action = parts[1];
-      const id = parts[2] ?? this.memoryCursorRowId ?? '';
-      if (!id) {
-        this.flashChip('memory id required');
-        return;
-      }
-      if (action === 'pin' || action === 'unpin') {
-        const ok = pinMemory(this.memory, id, action === 'pin');
-        this.flashChip(ok ? `${id} ${action === 'pin' ? 'pinned' : 'unpinned'}` : 'memory missing');
-      } else if (action === 'delete') {
-        const result = deleteMemory(this.memory, id);
-        this.flashChip(result === 'pinned' ? 'pinned - #mem unpin first' : result === 'deleted' ? `${id} deleted` : 'memory missing');
-      } else {
-        this.flashChip('unknown #mem command');
-      }
+      this.flashChip('memory is agent-managed');
       this.setDraft(lane, '', 0);
       this.render();
       return;
@@ -704,8 +713,7 @@ export class AcpHarnessView implements ContentView {
     this.memoryOverlayEl.hidden = !this.memoryDrawerOpen;
     const head = this.memoryOverlayEl.querySelector('.acp-harness__memory-head');
     if (head) {
-      const pinned = this.memory.entries.filter((entry) => entry.pinned).length;
-      head.textContent = `Memory · ${this.memory.entries.length} entries (${pinned} pinned)`;
+      head.textContent = `Memory · ${this.memoryEntries.length} entries`;
     }
     this.memoryPanelEl.innerHTML = '';
     const rows = this.sortedMemoryRows();
@@ -721,12 +729,14 @@ export class AcpHarnessView implements ContentView {
     }
     for (const entry of rows) {
       const row = document.createElement('div');
-      row.className = `acp-harness__memory-row${entry.id === this.memoryCursorRowId ? ' acp-harness__memory-row--cursor' : ''}${entry.pinned ? ' acp-harness__memory-row--pinned' : ''}`;
+      const selected = entry.id === this.memoryCursorRowId;
+      row.className = `acp-harness__memory-row${selected ? ' acp-harness__memory-row--cursor' : ''}`;
       row.innerHTML =
-        `<span class="acp-harness__memory-id">${entry.pinned ? 'Pinned ' : ''}${esc(entry.id)}</span>` +
-        `<span class="acp-harness__memory-source" style="--acp-memory-accent:${esc(laneAccentForLabel(entry.sourceLabel))}">${esc(entry.sourceLabel)}</span>` +
-        `<span class="acp-harness__memory-text">${esc(entry.text)}</span>` +
-        `<span class="acp-harness__memory-kind">${entry.source === 'agent_footer' ? 'agent' : 'tool'}</span>`;
+        `<span class="acp-harness__memory-id">${esc(entry.id)}</span>` +
+        `<span class="acp-harness__memory-source" style="--acp-memory-accent:${esc(laneAccentForLabel(entry.updatedBy))}">${esc(entry.updatedBy)}</span>` +
+        `<span class="acp-harness__memory-text">${esc(entry.summary)}</span>` +
+        `<span class="acp-harness__memory-kind">${esc(formatShortTime(entry.updatedAt))}</span>` +
+        (selected ? `<div class="acp-harness__memory-detail">${esc(entry.detail)}</div>` : '');
       this.memoryPanelEl.appendChild(row);
     }
   }
@@ -745,10 +755,9 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     this.composerEl.className = `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}`;
-    const selection = renderMemorySelection(this.memory, lane.id, lane.draft);
     const chip = this.chip ?? (this.focus === 'transcript'
       ? 'command mode: 1-9 lanes · v memory · ? help · i/Esc input'
-      : `memory: ${selection.selected.length}/${selection.total}`);
+      : `memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`);
     const before = lane.draft.slice(0, lane.cursor);
     const after = lane.draft.slice(lane.cursor);
     this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
@@ -798,8 +807,7 @@ export class AcpHarnessView implements ContentView {
             <dt>Esc, then v</dt><dd>Toggle memory drawer</dd>
             <dt>j / k</dt><dd>Move memory cursor</dd>
             <dt>g / G</dt><dd>Top / bottom of memory list</dd>
-            <dt>#mem pin</dt><dd>Pin cursor entry</dd>
-            <dt>#mem delete M3</dt><dd>Delete an entry by id</dd>
+            <dt>Agents</dt><dd>Create, update, delete, search, and fetch detail through MCP tools</dd>
           </dl>
         </section>
         <section class="acp-harness__help-section">
@@ -819,13 +827,12 @@ export class AcpHarnessView implements ContentView {
           <dl>
             <dt>#cancel</dt><dd>Cancel active lane, same as Ctrl+C</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
-            <dt>#mem unpin M3</dt><dd>Unpin memory entry</dd>
-            <dt>#mem delete M3</dt><dd>Delete unpinned memory entry</dd>
+            <dt>#mem</dt><dd>Show that memory is agent-managed</dd>
           </dl>
         </section>
         <section class="acp-harness__help-section acp-harness__help-section--wide">
           <h3>Model</h3>
-          <p>Each lane is a separate ACP subprocess in the same project directory. Prompts go only to the active lane. Shared memory is tab-local and injected from other lanes only.</p>
+          <p>Each lane is a separate ACP subprocess in the same project directory. Prompts go only to the active lane. Memory is tab-local, read-only for humans, and managed by agents through MCP tools.</p>
         </section>
       </div>
     `;
@@ -1030,10 +1037,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private sortedMemoryRows(): HarnessMemoryEntry[] {
-    return this.memory.entries.slice().sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      return b.createdAt - a.createdAt;
-    });
+    return this.memoryEntries.slice().sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   private moveMemoryCursor(key: string): void {
@@ -1344,6 +1348,12 @@ function extractRawToolName(rawInput: unknown): string {
   return '';
 }
 
+function isMemoryTool(call: ToolCall | ToolCallUpdate): boolean {
+  const rawName = extractRawToolName(call.rawInput).toLowerCase();
+  const title = (call.title ?? '').toLowerCase();
+  return rawName.startsWith('memory_') || title.includes('memory_');
+}
+
 function cleanToolTitle(title: string | undefined, fallback: string): string {
   const value = title?.trim() ?? '';
   if (!value || value.toLowerCase() === 'tool' || value.toLowerCase() === fallback) return '';
@@ -1478,6 +1488,12 @@ function getHomeLikePrefix(): string | null {
 function formatAge(ms: number): string {
   const minutes = Math.max(1, Math.round(ms / 60000));
   return minutes < 60 ? `${minutes}m` : `${Math.round(minutes / 60)}h`;
+}
+
+function formatShortTime(epochMs: number): string {
+  const age = Date.now() - epochMs;
+  if (age >= 0 && age < 24 * 60 * 60 * 1000) return `${formatAge(age)} ago`;
+  return new Date(epochMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function shortId(id: string): string {

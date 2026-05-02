@@ -81,6 +81,28 @@ export interface AcpBackendDescriptor {
   command: string;
 }
 
+export interface AcpMcpServerDescriptor {
+  name: string;
+  type: 'http';
+  url: string;
+  headers?: Record<string, string>;
+}
+
+export interface HarnessMemoryEntry {
+  id: string;
+  summary: string;
+  detail: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface HarnessMemorySession {
+  harnessId: string;
+  hookPort: number;
+}
+
 export interface UsageInfo {
   used?: number;
   size?: number;

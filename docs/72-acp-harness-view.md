@@ -1,6 +1,6 @@
 # ACP Harness View — Implementation Spec
 
-> Status: Ready for implementation
+> Status: Implemented
 > Date: 2026-05-01
 > Milestone: M8 — Polish
 
@@ -15,7 +15,9 @@ Add an `AcpHarnessView` content view that owns multiple `AcpClient` instances, a
 1. **Dashboard** (top, read-only) — lists every lane and renders all activity: status, transcripts, tool calls, permission requests, errors. No input is accepted here.
 2. **Command Center** (bottom, input-only) — a tab strip with one tab per lane plus a composer for the active tab. The active tab determines which lane is expanded on the dashboard and which lane will receive the next prompt.
 
-One prompt has exactly one destination lane: the active tab. There is no broadcast, multi-target dispatch, marked-mode, or "all idle" target. The harness owns a **shared memory feed** that is **auto-curated** — agents coordinate indirectly through it without any user effort. The harness extracts memory automatically from each lane's turn through two parallel paths: (1) deterministic observation of `session/update` tool calls (edits, write-like diffs, command runs) and (2) opportunistic parsing of an optional `MEMORY:` block that the agent appends to its response in reply to a fixed footer instruction. Memory is a flat tab-local list, capped at 50 entries; pinned entries survive cap eviction. Every prompt injects entries from **other lanes only** (the active lane's own contributions are skipped because they are already in its session history). The user does not author, pull, or curate memory in the default flow; pinning and deletion exist solely as escape hatches. Permission requests pre-empt the affected tab's composer with a minimal options banner (`a/A/r/R/Esc`); the request detail (operation, path, size, diff preview, and any cross-lane file-touch warnings) lives in the lane transcript on the dashboard. `A`/`R` ("accept/reject all") are scoped to the current `session/prompt` turn only and clear automatically when the turn returns.
+One prompt has exactly one destination lane: the active tab. There is no broadcast, multi-target dispatch, marked-mode, or "all idle" target. The harness owns a tab-local memory board, but memory lifecycle now belongs to ACP agents through a lane-scoped HTTP MCP server on Krypton's existing localhost hook server. The human observes the current board and can expand details, but cannot create, update, delete, pin, restore, or audit memories. Each prompt injects short guidance and the latest 10 summaries; full details are pulled explicitly by agents with `memory_get`. Permission requests pre-empt the affected tab's composer with a minimal options banner (`a/A/r/R/Esc`); the request detail (operation, path, size, diff preview, and any cross-lane file-touch warnings) lives in the lane transcript on the dashboard. `A`/`R` ("accept/reject all") are scoped to the current `session/prompt` turn only and clear automatically when the turn returns.
+
+Memory details are specified in `docs/73-acp-harness-mcp-memory.md`. Older heuristic memory extraction from tool observations and `MEMORY:` response footers is no longer part of the harness memory flow.
 
 ## Research
 

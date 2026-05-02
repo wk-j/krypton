@@ -135,6 +135,8 @@ struct AcpClient {
     /// Working directory the child was spawned in — also reported as project root
     /// in `session/new`. Falls back to the host process cwd when None.
     cwd: RwLock<Option<String>>,
+    /// MCP servers passed through to `session/new`.
+    mcp_servers: RwLock<Vec<Value>>,
     /// Latch: once true, no more events fire.
     disposed: std::sync::atomic::AtomicBool,
 }
@@ -154,6 +156,7 @@ impl AcpClient {
             stderr_buf: Mutex::new(String::new()),
             child: Mutex::new(None),
             cwd: RwLock::new(None),
+            mcp_servers: RwLock::new(Vec::new()),
             disposed: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -308,15 +311,15 @@ async fn dispatch_message(client: &Arc<AcpClient>, app: &AppHandle, value: Value
 
     if has_id {
         // Response to one of our requests.
-        let id = value
-            .get("id")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(u64::MAX);
+        let id = value.get("id").and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
         let mut pending = client.pending.lock().await;
         if let Some(tx) = pending.remove(&id) {
             let _ = tx.send(value);
         } else {
-            log::debug!("[acp:{}] response for unknown id {id}", client.krypton_session);
+            log::debug!(
+                "[acp:{}] response for unknown id {id}",
+                client.krypton_session
+            );
         }
         return;
     }
@@ -356,14 +359,12 @@ async fn handle_inbound_request(
             let result = match std::fs::read_to_string(&path) {
                 Ok(content) => Ok(json!({ "content": content })),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    log::debug!(
-                        "[acp] fs/read_text_file: {path} not found, returning empty"
-                    );
+                    log::debug!("[acp] fs/read_text_file: {path} not found, returning empty");
                     Ok(json!({ "content": "" }))
                 }
-                Err(e) => Err(
-                    json!({ "code": -32000, "message": format!("fs/read_text_file: {e}") }),
-                ),
+                Err(e) => {
+                    Err(json!({ "code": -32000, "message": format!("fs/read_text_file: {e}") }))
+                }
             };
             let _ = client.reply(id, result).await;
         }
@@ -511,7 +512,11 @@ where
         match reader.read_line(&mut line).await {
             Ok(0) => break,
             Ok(_) => {
-                log::debug!("[acp:{}] stderr: {}", client.krypton_session, line.trim_end());
+                log::debug!(
+                    "[acp:{}] stderr: {}",
+                    client.krypton_session,
+                    line.trim_end()
+                );
                 client.append_stderr(&line).await;
             }
             Err(_) => break,
@@ -565,12 +570,10 @@ impl Default for AcpRegistry {
 pub fn acp_list_backends() -> Result<Vec<AcpBackendDescriptor>, String> {
     let mut out: Vec<AcpBackendDescriptor> = builtin_backends()
         .iter()
-        .map(|(id, b)| {
-            AcpBackendDescriptor {
-                id: (*id).to_string(),
-                display_name: b.display_name.clone(),
-                command: b.command.clone(),
-            }
+        .map(|(id, b)| AcpBackendDescriptor {
+            id: (*id).to_string(),
+            display_name: b.display_name.clone(),
+            command: b.command.clone(),
         })
         .collect();
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -581,6 +584,7 @@ pub fn acp_list_backends() -> Result<Vec<AcpBackendDescriptor>, String> {
 pub async fn acp_spawn(
     backend_id: String,
     cwd: Option<String>,
+    mcp_servers: Option<Vec<Value>>,
     app: AppHandle,
     registry: State<'_, Arc<AcpRegistry>>,
 ) -> Result<u64, String> {
@@ -604,9 +608,13 @@ pub async fn acp_spawn(
         cmd.current_dir(d);
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn {} {}: {e}", backend.command, backend.args.join(" ")))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        format!(
+            "Failed to spawn {} {}: {e}",
+            backend.command,
+            backend.args.join(" ")
+        )
+    })?;
 
     let stdin = child
         .stdin
@@ -625,6 +633,9 @@ pub async fn acp_spawn(
     let client = Arc::new(AcpClient::new(session, backend_id.clone(), display_name));
     if let Ok(mut g) = client.cwd.write() {
         *g = cwd.clone();
+    }
+    if let Ok(mut g) = client.mcp_servers.write() {
+        *g = mcp_servers.unwrap_or_default();
     }
     {
         let mut g = client.stdin.lock().await;
@@ -703,12 +714,16 @@ pub async fn acp_initialize(
     // Project root for session/new: the cwd we spawned the child with, falling
     // back to the host process cwd. Without this, the agent treats `/` as the
     // project root and reads/writes happen at filesystem root.
-    let session_cwd = client
-        .cwd
+    let session_cwd = client.cwd.read().ok().and_then(|g| g.clone()).or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+    });
+    let mcp_servers = client
+        .mcp_servers
         .read()
-        .ok()
-        .and_then(|g| g.clone())
-        .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()));
+        .map(|g| g.clone())
+        .unwrap_or_default();
 
     let new_session = tokio::time::timeout(
         Duration::from_secs(30),
@@ -716,7 +731,7 @@ pub async fn acp_initialize(
             "session/new",
             json!({
                 "cwd": session_cwd,
-                "mcpServers": [],
+                "mcpServers": mcp_servers,
             }),
         ),
     )
@@ -765,10 +780,7 @@ pub async fn acp_prompt(
 }
 
 #[tauri::command]
-pub async fn acp_cancel(
-    session: u64,
-    registry: State<'_, Arc<AcpRegistry>>,
-) -> Result<(), String> {
+pub async fn acp_cancel(session: u64, registry: State<'_, Arc<AcpRegistry>>) -> Result<(), String> {
     let client = registry
         .get(session)
         .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
@@ -827,8 +839,7 @@ pub async fn acp_dispose(
                 }
             }
         }
-        let wait_result =
-            tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+        let wait_result = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
         if wait_result.is_err() {
             let _ = child.start_kill();
             let _ = child.wait().await;
@@ -853,7 +864,14 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
     if stderr.is_empty() {
         format!("Adapter `{backend_id}` failed to start.")
     } else {
-        let tail: String = stderr.chars().rev().take(2048).collect::<Vec<_>>().into_iter().rev().collect();
+        let tail: String = stderr
+            .chars()
+            .rev()
+            .take(2048)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
         tail
     }
 }

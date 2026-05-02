@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   AcpBackendDescriptor,
+  AcpMcpServerDescriptor,
   AcpEvent,
   AgentInfo,
   ContentBlock,
@@ -55,8 +56,12 @@ export class AcpClient {
     return invoke<AcpBackendDescriptor[]>('acp_list_backends');
   }
 
-  static async spawn(backendId: string, cwd: string | null): Promise<AcpClient> {
-    const session = await invoke<number>('acp_spawn', { backendId, cwd });
+  static async spawn(
+    backendId: string,
+    cwd: string | null,
+    mcpServers: AcpMcpServerDescriptor[] = [],
+  ): Promise<AcpClient> {
+    const session = await invoke<number>('acp_spawn', { backendId, cwd, mcpServers });
     const client = new AcpClient(session, backendId);
     client.unlisten = await listen<RawAcpEvent>(`acp-event-${session}`, (ev) => {
       client.handleRaw(ev.payload);

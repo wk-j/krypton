@@ -6,6 +6,13 @@ use crate::theme::{FullTheme, ThemeEngine};
 use std::sync::{Arc, RwLock};
 use tauri::{AppHandle, Manager, State};
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessMemorySession {
+    pub harness_id: String,
+    pub hook_port: u16,
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_pty(
@@ -179,6 +186,38 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| format!("write_file mkdir: {e}"))?;
     }
     std::fs::write(&path, content).map_err(|e| format!("write_file: {e}"))
+}
+
+#[tauri::command]
+pub fn create_harness_memory(
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<HarnessMemorySession, String> {
+    let hook_port = hook_server.get_port();
+    if hook_port == 0 {
+        return Err("Krypton hook server is not running".to_string());
+    }
+    let harness_id = hook_server.create_harness_memory();
+    Ok(HarnessMemorySession {
+        harness_id,
+        hook_port,
+    })
+}
+
+#[tauri::command]
+pub fn list_harness_memory(
+    harness_id: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<Vec<crate::hook_server::HarnessMemoryEntry>, String> {
+    hook_server.list_harness_memory(&harness_id)
+}
+
+#[tauri::command]
+pub fn dispose_harness_memory(
+    harness_id: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.dispose_harness_memory(&harness_id);
+    Ok(())
 }
 
 #[tauri::command]

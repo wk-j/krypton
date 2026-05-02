@@ -114,25 +114,31 @@
 ```
 1. User opens ACP Harness via Leader Y or the command palette.
 2. Compositor resolves the focused working directory with getFocusedCwd().
-3. AcpHarnessView lists ACP backends and spawns the default lane roster
+3. AcpHarnessView creates a tab-local memory store through
+   create_harness_memory(), which reuses the running localhost hook server.
+4. AcpHarnessView lists ACP backends and spawns the default lane roster
    (Claude-1, Claude-2, Codex-1 when those backends are installed) with the
    same cwd.
-4. Each lane owns one AcpClient and listens to its own acp-event-<session>
-   stream. Lanes render into a shared dashboard, but prompts are dispatched
-   only to the active tab in the command center.
-5. On Enter, the active lane's draft is wrapped with optional shared memory
-   from other lanes and the MEMORY footer, then sent through acp_prompt.
-6. session/update notifications append transcript rows and tool observations.
-   Completed edit/diff-bearing updates and execute updates are buffered as
-   tab-local memory candidates.
-7. When session/prompt returns, the harness parses any final MEMORY block,
-   filters/deduplicates candidates, appends surviving entries to the in-memory
-   feed, and clears turn-scoped accept-all/reject-all permission flags.
-8. Permission requests pre-empt only the affected lane's composer. The user
+5. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
+   in session/new.mcpServers, and listens to its own acp-event-<session> stream.
+   Lanes render into a shared dashboard, but prompts are dispatched only to the
+   active tab in the command center.
+6. On Enter, the active lane's draft is sent through acp_prompt with short
+   guidance and the latest 10 memory summaries. Full memory detail is never
+   injected automatically; agents call memory_get when needed.
+7. MCP-capable agents call memory_create, memory_update, memory_delete,
+   memory_search, and memory_get against
+   /mcp/harness/<harnessId>/lane/<laneLabel>. The hook server validates limits,
+   mutates the tab-local store, and emits a memory-changed event so the harness
+   refreshes the read-only board.
+8. session/update notifications append transcript rows and maintain
+   file-touch warnings for permission context. Memory is not inferred from
+   tool observations or assistant footers.
+9. Permission requests pre-empt only the affected lane's composer. The user
    switches to that tab and resolves with a/A/r/R/Esc; responses call the
    existing acp_permission_response command.
-9. Closing the harness disposes every lane client and drops transcripts,
-   pending tool observations, file-touch warnings, and shared memory.
+10. Closing the harness disposes every lane client, calls dispose_harness_memory(),
+    and drops transcripts, file-touch warnings, and tab-local memory.
 ```
 
 ## Resize Mode Flow (e.g., Leader then R)
