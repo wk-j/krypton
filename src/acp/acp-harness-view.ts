@@ -1275,12 +1275,16 @@ function renderLaneHead(lane: HarnessLane, active: boolean): string {
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
     );
   }
+  const cancelHint = lane.status === 'busy' || lane.status === 'needs_permission'
+    ? `<span class="acp-harness__lane-cancel-hint">⌃C cancel</span>`
+    : '';
   return (
     `<span class="acp-harness__lane-index">${lane.index}</span>` +
     `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
     `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
-    `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
+    `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>` +
+    cancelHint
   );
 }
 
