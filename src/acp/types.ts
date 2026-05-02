@@ -81,11 +81,16 @@ export interface AcpBackendDescriptor {
   command: string;
 }
 
+export interface AcpHttpHeader {
+  name: string;
+  value: string;
+}
+
 export interface AcpMcpServerDescriptor {
   name: string;
   type: 'http';
   url: string;
-  headers?: Record<string, string>;
+  headers: AcpHttpHeader[];
 }
 
 export interface HarnessMemoryEntry {

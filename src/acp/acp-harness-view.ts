@@ -78,7 +78,10 @@ interface HarnessLane {
   toolTranscriptIds: Map<string, string>;
   toolCalls: Map<string, ToolCall | ToolCallUpdate>;
   seenTranscriptIds: Set<string>;
+  stickToBottom: boolean;
 }
+
+const STICK_THRESHOLD_PX = 32;
 
 interface HarnessSpawnSpec {
   backendId: string;
@@ -134,8 +137,8 @@ export class AcpHarnessView implements ContentView {
   private helpOverlayEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private pretextRaf = false;
-  private pendingTranscriptScroll: 'bottom' | number | null = null;
-  private transcriptScrollToken = 0;
+  private scrollRaf = false;
+  private suppressScrollListener = false;
 
   constructor(projectDir: string | null = null) {
     this.projectDir = projectDir;
@@ -219,7 +222,7 @@ export class AcpHarnessView implements ContentView {
 
   onResize(_width: number, _height: number): void {
     this.schedulePretextLayout();
-    this.scrollActiveTranscriptToBottom();
+    this.scheduleStickyScroll();
   }
 
   dispose(): void {
@@ -245,6 +248,15 @@ export class AcpHarnessView implements ContentView {
     body.className = 'acp-harness__body';
     this.dashboardEl = document.createElement('div');
     this.dashboardEl.className = 'acp-harness__dashboard';
+    this.dashboardEl.addEventListener(
+      'scroll',
+      (e: Event) => {
+        if (e.target instanceof HTMLElement && e.target.classList.contains('acp-harness__lane-body')) {
+          this.onTranscriptScroll();
+        }
+      },
+      true,
+    );
     body.appendChild(this.dashboardEl);
 
     this.memoryOverlayEl = document.createElement('aside');
@@ -358,6 +370,7 @@ export class AcpHarnessView implements ContentView {
       toolTranscriptIds: new Map(),
       toolCalls: new Map(),
       seenTranscriptIds: new Set(),
+      stickToBottom: true,
     };
   }
 
@@ -390,7 +403,7 @@ export class AcpHarnessView implements ContentView {
       name: 'krypton-harness-memory',
       type: 'http',
       url: `http://127.0.0.1:${this.harnessMemoryPort}/mcp/harness/${harness}/lane/${laneLabel}`,
-      headers: {},
+      headers: [],
     }];
   }
 
@@ -643,15 +656,13 @@ export class AcpHarnessView implements ContentView {
   }
 
   private render(): void {
-    const previousScroll = this.captureActiveTranscriptScroll();
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.renderTopbar();
     this.renderDashboard();
     this.renderMemory();
     this.renderHelp();
     this.renderComposer();
-    if (previousScroll.atBottom) this.queueActiveTranscriptScroll('bottom');
-    else if (previousScroll.scrollTop !== null) this.queueActiveTranscriptScroll(previousScroll.scrollTop);
+    this.scheduleStickyScroll();
   }
 
   private renderTopbar(): void {
@@ -1064,43 +1075,42 @@ export class AcpHarnessView implements ContentView {
   }
 
   private scrollActiveTranscriptToBottom(): void {
-    const body = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
-    if (body) body.scrollTop = body.scrollHeight;
-    this.queueActiveTranscriptScroll('bottom');
+    const lane = this.activeLane();
+    if (lane) lane.stickToBottom = true;
+    this.scheduleStickyScroll();
   }
 
-  private captureActiveTranscriptScroll(): { atBottom: boolean; scrollTop: number | null } {
-    const body = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
-    if (!body) return { atBottom: true, scrollTop: null };
-    const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
-    return { atBottom: distance <= 24, scrollTop: body.scrollTop };
-  }
-
-  private queueActiveTranscriptScroll(target: 'bottom' | number): void {
-    this.pendingTranscriptScroll = target;
-    const token = ++this.transcriptScrollToken;
-    this.applyQueuedTranscriptScroll(token, 3);
-  }
-
-  private applyQueuedTranscriptScroll(token: number, framesRemaining: number): void {
+  private scheduleStickyScroll(): void {
+    if (this.scrollRaf) return;
+    this.scrollRaf = true;
     requestAnimationFrame(() => {
-      if (token !== this.transcriptScrollToken) return;
-      this.applyPendingTranscriptScroll();
-      if (framesRemaining > 0) {
-        this.applyQueuedTranscriptScroll(token, framesRemaining - 1);
-      } else if (token === this.transcriptScrollToken) {
-        this.pendingTranscriptScroll = null;
-      }
+      this.scrollRaf = false;
+      this.applyStickyScroll();
+      requestAnimationFrame(() => this.applyStickyScroll());
     });
   }
 
-  private applyPendingTranscriptScroll(): void {
-    const target = this.pendingTranscriptScroll;
-    if (target === null) return;
-    const body = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
+  private applyStickyScroll(): void {
+    const lane = this.activeLane();
+    if (!lane || !lane.stickToBottom) return;
+    const body = this.activeTranscriptBody();
     if (!body) return;
-    if (target === 'bottom') body.scrollTop = body.scrollHeight;
-    else body.scrollTop = target;
+    this.suppressScrollListener = true;
+    body.scrollTop = body.scrollHeight;
+    this.suppressScrollListener = false;
+  }
+
+  private activeTranscriptBody(): HTMLElement | null {
+    return this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
+  }
+
+  private onTranscriptScroll(): void {
+    if (this.suppressScrollListener) return;
+    const lane = this.activeLane();
+    const body = this.activeTranscriptBody();
+    if (!lane || !body) return;
+    const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
+    lane.stickToBottom = distance <= STICK_THRESHOLD_PX;
   }
 
   private schedulePretextLayout(): void {
@@ -1109,7 +1119,7 @@ export class AcpHarnessView implements ContentView {
     requestAnimationFrame(() => {
       this.pretextRaf = false;
       this.layoutPretextRows();
-      this.applyPendingTranscriptScroll();
+      this.applyStickyScroll();
     });
   }
 
