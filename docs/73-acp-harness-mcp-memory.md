@@ -192,12 +192,11 @@ No new config in v1. MCP memory is the harness default once implemented.
 
 ## Open Questions
 
-None. The simple v1 intentionally accepts no auth, no persistence, no audit, no fallback extraction, and no non-MCP lane memory.
+None. The simple v1 intentionally accepts no auth, no audit, no fallback extraction, and no non-MCP lane memory. **Persistence is implemented per project directory.**
 
 ## Out of Scope
 
 - Stdio MCP shim or separate sidecar MCP process.
-- Persistent project/global memory.
 - Audit log, restore, undo, or human editing.
 - Footer memory extraction.
 - Tool-observation memory extraction.

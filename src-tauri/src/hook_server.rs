@@ -11,9 +11,11 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::path::{Path as StdPath, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
@@ -185,12 +187,139 @@ impl HookServer {
         *self.port.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    pub fn create_harness_memory(&self) -> String {
+    pub fn create_harness_memory(&self, project_dir: Option<String>) -> String {
         let seq = self.next_harness_id.fetch_add(1, Ordering::Relaxed);
         let harness_id = format!("hm-{seq}");
+
+        let persistence_path = project_dir
+            .as_ref()
+            .and_then(|dir| get_persistence_path(dir));
+        let mut lanes = HashMap::new();
+
+        if let Some(ref path) = persistence_path {
+            if path.exists() {
+                match std::fs::read_to_string(path) {
+                    Ok(content) => match serde_json::from_str::<PersistedMemory>(&content) {
+                        Ok(persisted) => {
+                            if persisted.version == 1 {
+                                lanes = persisted.lanes;
+                                log::info!(
+                                    "Loaded persisted memory for project: {}",
+                                    persisted.project_dir
+                                );
+                            } else {
+                                log::warn!("Unsupported memory version: {}", persisted.version);
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to parse persisted memory at {}: {e}",
+                                path.display()
+                            );
+                            let broken_path =
+                                path.with_extension(format!("json.broken-{}", now_ms()));
+                            let _ = std::fs::rename(path, broken_path);
+                        }
+                    },
+                    Err(e) => {
+                        log::warn!("Failed to read persisted memory at {}: {e}", path.display());
+                    }
+                }
+            }
+        }
+
+        let store = HarnessMemoryStore {
+            lanes,
+            persistence_path,
+            project_dir,
+            save_pending: Arc::new(AtomicBool::new(false)),
+        };
+
         let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
-        memories.insert(harness_id.clone(), HarnessMemoryStore::default());
+        memories.insert(harness_id.clone(), store);
         harness_id
+    }
+
+    fn schedule_save(self: &Arc<Self>, harness_id: &str) {
+        let memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
+        let store = match memories.get(harness_id) {
+            Some(s) => s,
+            None => return,
+        };
+
+        if store.persistence_path.is_none() {
+            return;
+        }
+
+        if store.save_pending.swap(true, Ordering::SeqCst) {
+            // Already a save pending
+            return;
+        }
+
+        let persistence_path = store.persistence_path.clone().unwrap();
+        let project_dir = store.project_dir.clone().unwrap_or_default();
+        let save_pending = store.save_pending.clone();
+        let harness_id = harness_id.to_string();
+        let self_clone = self.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            save_pending.store(false, Ordering::SeqCst);
+
+            // Snapshot lanes under lock AFTER the sleep to get the latest state
+            let lanes = {
+                let memories = self_clone
+                    .memories
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                match memories.get(&harness_id) {
+                    Some(store) => store.lanes.clone(),
+                    None => return,
+                }
+            };
+
+            let persisted = PersistedMemory {
+                version: 1,
+                project_dir,
+                saved_at: now_ms(),
+                lanes,
+            };
+
+            let tmp_path = persistence_path.with_extension("json.tmp");
+            match serde_json::to_string_pretty(&persisted) {
+                Ok(json) => {
+                    if let Err(e) = std::fs::write(&tmp_path, json) {
+                        log::warn!("Failed to write memory tmp file: {e}");
+                        return;
+                    }
+                    if let Err(e) = std::fs::rename(&tmp_path, &persistence_path) {
+                        log::warn!("Failed to rename memory file: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to serialize memory: {e}");
+                }
+            }
+        });
+    }
+
+    pub fn clear_harness_memory_lane(
+        self: &Arc<Self>,
+        harness_id: &str,
+        lane: &str,
+    ) -> Result<(), String> {
+        let mut memories = self
+            .memories
+            .lock()
+            .map_err(|e| format!("memory lock poisoned: {e}"))?;
+        let store = memories
+            .get_mut(harness_id)
+            .ok_or_else(|| format!("Unknown harness memory: {harness_id}"))?;
+
+        store.lanes.remove(lane);
+        drop(memories);
+        self.schedule_save(harness_id);
+        Ok(())
     }
 
     pub fn list_harness_memory(&self, harness_id: &str) -> Result<Vec<HarnessMemoryEntry>, String> {
@@ -288,13 +417,26 @@ pub struct HarnessMemoryEntry {
     pub updated_at: u64,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedMemory {
+    version: u32,
+    project_dir: String,
+    saved_at: u64,
+    lanes: HashMap<String, LaneMemoryDoc>,
+}
+
 #[derive(Debug, Default)]
 struct HarnessMemoryStore {
     /// Key: lane label. One document per lane that has set memory.
     lanes: HashMap<String, LaneMemoryDoc>,
+    persistence_path: Option<PathBuf>,
+    project_dir: Option<String>,
+    save_pending: Arc<AtomicBool>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LaneMemoryDoc {
     summary: String,
     detail: String,
@@ -421,7 +563,7 @@ fn handle_memory_tool_call(
 }
 
 fn memory_set(
-    hook_server: &HookServer,
+    hook_server: &Arc<HookServer>,
     harness_id: &str,
     lane_label: &str,
     arguments: Value,
@@ -455,6 +597,8 @@ fn memory_set(
 
     if summary_empty {
         store.lanes.remove(lane_label);
+        drop(memories);
+        hook_server.schedule_save(harness_id);
         return Ok(json!({ "lane": lane_label, "cleared": true }));
     }
 
@@ -464,6 +608,8 @@ fn memory_set(
         updated_at: now_ms(),
     };
     store.lanes.insert(lane_label.to_string(), doc.clone());
+    drop(memories);
+    hook_server.schedule_save(harness_id);
     Ok(json!({
         "entry": {
             "lane": lane_label,
@@ -475,7 +621,7 @@ fn memory_set(
 }
 
 fn memory_get(
-    hook_server: &HookServer,
+    hook_server: &Arc<HookServer>,
     harness_id: &str,
     arguments: Value,
 ) -> Result<Value, String> {
@@ -500,7 +646,7 @@ fn memory_get(
     }
 }
 
-fn memory_list(hook_server: &HookServer, harness_id: &str) -> Result<Value, String> {
+fn memory_list(hook_server: &Arc<HookServer>, harness_id: &str) -> Result<Value, String> {
     let memories = hook_server
         .memories
         .lock()
@@ -572,6 +718,23 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or_default()
+}
+
+fn get_persistence_path(project_dir: &str) -> Option<PathBuf> {
+    let canonical = StdPath::new(project_dir)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(project_dir));
+    let mut hasher = Sha256::new();
+    hasher.update(canonical.to_string_lossy().as_bytes());
+    let hash = format!("{:x}", hasher.finalize());
+    let hash_prefix = &hash[..16];
+
+    let config_dir = dirs::home_dir()?.join(".config").join("krypton");
+    let memory_dir = config_dir.join("acp-harness-memory");
+    if !memory_dir.exists() {
+        let _ = std::fs::create_dir_all(&memory_dir);
+    }
+    Some(memory_dir.join(format!("{}.json", hash_prefix)))
 }
 
 /// Start the HTTP hook server on a dedicated tokio runtime.

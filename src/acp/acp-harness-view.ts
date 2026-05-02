@@ -392,7 +392,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async initializeHarnessMemory(): Promise<void> {
-    const session = await invoke<HarnessMemorySession>('create_harness_memory');
+    const projectDir = this.projectDir || await invoke<string>('get_app_cwd').catch(() => null);
+    const session = await invoke<HarnessMemorySession>('create_harness_memory', { projectDir });
     this.harnessMemoryId = session.harnessId;
     this.harnessMemoryPort = session.hookPort;
     this.memoryUnlisten = await listen<{ harnessId: string }>('acp-harness-memory-changed', (event) => {

@@ -205,7 +205,9 @@ pub async fn quick_search_query(
     let q_tracker = q_tracker_guard.as_ref();
 
     let result = picker.fuzzy_search(&parsed, q_tracker, opts);
-    let indexing = picker.is_scanning.load(std::sync::atomic::Ordering::Relaxed);
+    let indexing = picker
+        .is_scanning
+        .load(std::sync::atomic::Ordering::Relaxed);
     let indexed_count = picker.get_files().len();
 
     let hits: Vec<QuickSearchHit> = result
@@ -269,7 +271,9 @@ pub async fn quick_grep_query(
         let picker = guard.as_ref().ok_or("picker not initialized")?;
         return Ok(QuickGrepResponse {
             hits: Vec::new(),
-            indexing: picker.is_scanning.load(std::sync::atomic::Ordering::Relaxed),
+            indexing: picker
+                .is_scanning
+                .load(std::sync::atomic::Ordering::Relaxed),
             indexed_count: picker.get_files().len(),
             root,
             regex_fallback_error: None,
@@ -287,7 +291,9 @@ pub async fn quick_grep_query(
     let picker = guard.as_ref().ok_or("picker not initialized")?;
 
     let result = picker.grep(&parsed, &opts);
-    let indexing = picker.is_scanning.load(std::sync::atomic::Ordering::Relaxed);
+    let indexing = picker
+        .is_scanning
+        .load(std::sync::atomic::Ordering::Relaxed);
     let indexed_count = picker.get_files().len();
 
     let hits: Vec<QuickGrepHit> = result

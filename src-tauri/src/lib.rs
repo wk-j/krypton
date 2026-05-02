@@ -105,6 +105,8 @@ pub fn run() {
             commands::read_file,
             commands::write_file,
             commands::create_harness_memory,
+            commands::clear_harness_memory_lane,
+            commands::get_app_cwd,
             commands::list_harness_memory,
             commands::dispose_harness_memory,
             commands::list_harness_mcp_stats,

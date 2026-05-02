@@ -197,17 +197,34 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn create_harness_memory(
+    project_dir: Option<String>,
     hook_server: State<'_, Arc<HookServer>>,
 ) -> Result<HarnessMemorySession, String> {
     let hook_port = hook_server.get_port();
     if hook_port == 0 {
         return Err("Krypton hook server is not running".to_string());
     }
-    let harness_id = hook_server.create_harness_memory();
+    let harness_id = hook_server.create_harness_memory(project_dir);
     Ok(HarnessMemorySession {
         harness_id,
         hook_port,
     })
+}
+
+#[tauri::command]
+pub fn clear_harness_memory_lane(
+    harness_id: String,
+    lane: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.clear_harness_memory_lane(&harness_id, &lane)
+}
+
+#[tauri::command]
+pub fn get_app_cwd() -> Result<String, String> {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| format!("get_app_cwd: {e}"))
 }
 
 #[tauri::command]
@@ -421,11 +438,7 @@ fn run_command_blocking(
 }
 
 #[tauri::command]
-pub async fn run_shell(
-    id: String,
-    command: String,
-    cwd: Option<String>,
-) -> Result<String, String> {
+pub async fn run_shell(id: String, command: String, cwd: Option<String>) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || run_shell_blocking(&id, &command, cwd.as_deref()))
         .await
         .map_err(|e| format!("Task join error: {e}"))?
@@ -440,10 +453,7 @@ pub fn kill_shell(id: String) -> Result<(), String> {
     #[cfg(unix)]
     unsafe {
         if libc::kill(pid as libc::pid_t, libc::SIGTERM) != 0 {
-            return Err(format!(
-                "kill failed: {}",
-                std::io::Error::last_os_error()
-            ));
+            return Err(format!("kill failed: {}", std::io::Error::last_os_error()));
         }
     }
     #[cfg(windows)]
@@ -471,10 +481,7 @@ fn run_shell_blocking(id: &str, command: &str, cwd: Option<&str>) -> Result<Stri
         .spawn()
         .map_err(|e| format!("Failed to spawn shell: {e}"))?;
     let pid = child.id();
-    shell_pids()
-        .lock()
-        .unwrap()
-        .insert(id.to_string(), pid);
+    shell_pids().lock().unwrap().insert(id.to_string(), pid);
 
     let mut stdout_pipe = child.stdout.take();
     let mut stderr_pipe = child.stderr.take();
@@ -518,9 +525,18 @@ fn run_shell_blocking(id: &str, command: &str, cwd: Option<&str>) -> Result<Stri
     if status.success() {
         Ok(combined)
     } else if let Some(signal) = signal_label(&status) {
-        Err(format!("{signal}{}", if combined.is_empty() { String::new() } else { format!("\n{combined}") }))
+        Err(format!(
+            "{signal}{}",
+            if combined.is_empty() {
+                String::new()
+            } else {
+                format!("\n{combined}")
+            }
+        ))
     } else {
-        let code = status.code().map_or("signal".to_string(), |c| c.to_string());
+        let code = status
+            .code()
+            .map_or("signal".to_string(), |c| c.to_string());
         if combined.is_empty() {
             Err(format!("exit code {code}"))
         } else {

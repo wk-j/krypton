@@ -33,12 +33,12 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 | Zed | First-class ACP host. `~/.config/zed/settings.json` `agent_servers` block (`command`, `args`, `env`). | Reference implementation; protocol authors. |
 | Neovim (`acp.nvim`, CodeCompanion) | Spawns `npx @agentclientprotocol/claude-agent-acp` or `gemini --experimental-acp`, renders chunks in a buffer. | Confirms stdio adapter pattern is the norm. |
 | IntelliJ "Gemini CLI Companion" | Launches `gemini --experimental-acp`, JSON-RPC over stdio, modal permission prompts. | Validates Gemini CLI ACP mode for IDE-style hosts. |
-| OpenCode ACP | Launches `opencode acp` as an ACP-compatible subprocess over stdio JSON-RPC. | Validates OpenCode as a code-defined backend alongside Claude, Gemini, and Codex. |
+| OpenCode ACP | Launches `opencode acp` as an ACP-compatible subprocess over stdio JSON-RPC, then selects `zai-coding-plan/glm-5.1` through ACP session configuration. | Validates OpenCode as a code-defined backend alongside Claude, Gemini, and Codex, with Krypton selecting its default lane model without writing OpenCode config files. |
 | Emacs `acp.el` | Minimal ACP client; line-delimited framing in a non-Node host. | Reference for non-JS implementation. |
 
 **Krypton delta** — Match Zed's TOML-style backend declaration (familiar to ACP users). Diverge by routing every UI surface through a keyboard-first window in our own compositor (no popups), single-key inline permission prompts, and cyberpunk chrome consistent with the rest of Krypton.
 
-Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; its CLI documentation confirms `opencode auth login` for provider credentials.
+Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; Krypton selects `zai-coding-plan/glm-5.1` after `session/new` via `session/set_config_option` with `session/set_model` fallback, and OpenCode's CLI documentation confirms `opencode auth login` for provider credentials.
 
 ## Affected Files
 
@@ -69,7 +69,7 @@ ACP backends are code-defined, not configured in `krypton.toml`.
 | `claude` | `npx -y @agentclientprotocol/claude-agent-acp` |
 | `gemini` | `gemini --experimental-acp` |
 | `codex` | `codex-acp` |
-| `opencode` | `opencode acp` |
+| `opencode` | `opencode acp` + `session/set_config_option model=zai-coding-plan/glm-5.1` |
 
 **PATH for spawned adapters.** macOS GUI apps launched from `/Applications` inherit only `/usr/bin:/bin:/usr/sbin:/sbin`, so `gemini` (Homebrew) and `npx` (nvm) are typically invisible. At app start, run `sh -lc 'printenv PATH'` once, cache the result in a `OnceCell<String>`, and pass it via `Command::env("PATH", cached)` for every ACP spawn. Reuses the same login-shell trick already used by `get_env_var`.
 

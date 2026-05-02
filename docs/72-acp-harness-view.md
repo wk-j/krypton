@@ -343,7 +343,7 @@ Total memory entries are capped at **50**. Pinned entries are kept; the oldest u
 9. When the turn returns (stop reason ≠ `cancelled`): (a) the harness scans the assistant's final text for a `MEMORY:` block, strips it from the rendered transcript, parses bullets into `agent_footer` extractions; (b) buffered tool observations are deduplicated against agent-footer extractions (footer wins on ≥80% similarity); (c) every surviving extraction passes through the **path filter** — entries that match the deny-list are dropped silently; (d) the remaining extractions are appended to the memory feed and a `+N memory` badge is rendered at the strip site (or at turn end if no block was found but observations occurred).
 10. Permission requests move that lane to `needs_permission` and pre-empt that tab's composer with the options banner. The lane transcript holds the request detail (operation, path, size, diff preview) and a cross-lane warning when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. The user must switch to that tab to read context, then resolve via `a/A/r/R/Esc`. `A`/`R` apply only for the current `session/prompt` turn; both flags clear when that turn returns.
 11. `Ctrl+C` (or `#cancel`) in the composer cancels the active lane only. On cancel, buffered `PendingExtraction` records for that turn are dropped — partial turns do not contribute memory.
-12. Closing the tab disposes every client and drops all in-memory state (transcripts, memory entries, file-touch map, pending extractions). Nothing is persisted to disk.
+12. Closing the tab disposes every client and drops all in-memory state (transcripts, file-touch map, pending extractions). **Memory entries are persisted to disk per project directory.** See `docs/76-acp-harness-memory-persistence.md`.
 ```
 
 ### UI Changes
@@ -670,7 +670,6 @@ Assumptions for v1:
 - **Configurable path deny-list.** v1 ships a hard-coded list (ssh/aws/gnupg/.env/credentials/keys). Custom blacklists via TOML are a v2 concern.
 - **Read-tool observation.** Read calls are never extracted, regardless of file size or path. Other lanes coordinate on edits, write-like diffs, and command runs only.
 - **Full command-line capture in `execute` observations.** Only the first whitespace-delimited token (e.g. `cargo`, `npm`, `curl`) and the exit code/status are captured — full argv is dropped to reduce inadvertent secret leakage from CLI flags.
-- **Memory persistence to disk.** No `~/.config/krypton/acp-harness-memory/*.json`; no namespace keys; no repo-vs-worktree choice; no lockfile; no atomic write. Memory lives in tab state only.
 - **Memory center / derived summary.** No second layer above the entry list. Selection at dispatch time is the only "view" of memory.
 - **Memory kinds / decision tier.** Entries have no `kind` field. Pinning is the only durability signal; everything else is just a flat entry.
 - **Memory injection modes.** No `auto` / `agent_select` / `pinned_only` / `manual` / `off` switching. A single deterministic rule (other-lane pinned + filepath match + recent unpinned, ~2k char cap) is always used.
@@ -703,7 +702,7 @@ Assumptions for v1:
 - [Agent Client Protocol schema](https://agentclientprotocol.com/protocol/schema) — confirmed initialize capabilities, cancellation semantics, session list/close capabilities, and `_meta` extensibility.
 - [Agent Client Protocol content](https://agentclientprotocol.com/protocol/content) — confirmed embedded resource content blocks as the preferred way to include contextual resources in prompts.
 - [Agent Client Protocol extensibility](https://agentclientprotocol.com/protocol/extensibility) — confirmed `_meta` and custom `_` methods exist, but adapter support is optional.
-- [OpenCode ACP support](https://opencode.ai/docs/acp/) — confirmed `opencode acp` as the stdio ACP subprocess command.
+- [OpenCode ACP support](https://opencode.ai/docs/acp/) — confirmed `opencode acp` as the stdio ACP subprocess command; Krypton's built-in OpenCode lane selects `zai-coding-plan/glm-5.1` through ACP session configuration after `session/new`.
 - [Zed external agents](https://zed.dev/docs/ai/external-agents) — prior art for UI-hosted ACP subprocesses, custom agent configuration, built-in Claude/Codex/Gemini/OpenCode support, and ACP debugging.
 - [Claude Code power-user tips](https://support.claude.com/en/articles/14554000-claude-code-power-user-tips) — prior art for running multiple coding sessions in parallel and the trade-off of worktree isolation.
 - [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) — prior art for separate contexts, background subagents, and agent management UI.

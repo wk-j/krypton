@@ -20,6 +20,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
 
+const OPENCODE_DEFAULT_MODEL: &str = "zai-coding-plan/glm-5.1";
+
 // ─── Cached PATH ───────────────────────────────────────────────────
 
 static CACHED_LOGIN_PATH: OnceLock<String> = OnceLock::new();
@@ -755,12 +757,59 @@ pub async fn acp_initialize(
         *g = Some(acp_session_id.clone());
     }
 
+    if client.backend_id == "opencode" {
+        set_opencode_default_model(&client, &acp_session_id).await?;
+    }
+
     Ok(AgentInfo {
         agent_protocol_version: proto,
         auth_methods,
         agent_capabilities: capabilities,
         session_id: acp_session_id,
     })
+}
+
+async fn set_opencode_default_model(
+    client: &AcpClient,
+    acp_session_id: &str,
+) -> Result<(), String> {
+    let config_result = tokio::time::timeout(
+        Duration::from_secs(10),
+        client.request(
+            "session/set_config_option",
+            json!({
+                "sessionId": acp_session_id,
+                "configId": "model",
+                "value": OPENCODE_DEFAULT_MODEL,
+            }),
+        ),
+    )
+    .await
+    .map_err(|_| "session/set_config_option timed out".to_string())?;
+
+    match config_result {
+        Ok(_) => Ok(()),
+        Err(config_err) => {
+            let model_result = tokio::time::timeout(
+                Duration::from_secs(10),
+                client.request(
+                    "session/set_model",
+                    json!({
+                        "sessionId": acp_session_id,
+                        "modelId": OPENCODE_DEFAULT_MODEL,
+                    }),
+                ),
+            )
+            .await
+            .map_err(|_| "session/set_model timed out".to_string())?;
+
+            model_result.map(|_| ()).map_err(|model_err| {
+                format!(
+                    "failed to select OpenCode model {OPENCODE_DEFAULT_MODEL}: {config_err}; fallback {model_err}"
+                )
+            })
+        }
+    }
 }
 
 #[tauri::command]

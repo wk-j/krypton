@@ -3,6 +3,7 @@ status: Implemented
 date: 2026-05-02
 milestone: M8 — Polish
 supersedes: docs/73-acp-harness-mcp-memory.md
+extended_by: docs/76-acp-harness-memory-persistence.md
 ---
 
 # ACP Harness Lane-Owned Memory — Implementation Spec
@@ -104,16 +105,18 @@ entry entirely.
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/hook_server.rs` | Replace store, tool descriptors, handlers; ownership check on `memory_set` (lane label from URL); list/get over `lanes` map. |
-| `src-tauri/src/commands.rs` | `list_harness_memory` returns `Vec<{ lane, summary, detail, updatedAt }>`. |
+| `src-tauri/src/hook_server.rs` | Replace store, tool descriptors, handlers; ownership check on `memory_set` (lane label from URL); list/get over `lanes` map. **Added debounced atomic persistence to disk.** |
+| `src-tauri/src/commands.rs` | `list_harness_memory` returns `Vec<{ lane, summary, detail, updatedAt }>`. **Added `create_harness_memory(project_dir)` and `clear_harness_memory_lane`.** |
 | `src/acp/types.ts` | Replace `HarnessMemoryEntry` shape (`lane` instead of `id`). |
-| `src/acp/acp-harness-view.ts` | Minimal prompt injection above; observer board grouped by lane with lane accent. |
+| `src/acp/acp-harness-view.ts` | Minimal prompt injection above; observer board grouped by lane with lane accent. **Passes `projectDir` for persistence.** |
 | `src/styles/acp-harness.css` | Per-lane row styling. |
 | `docs/73-acp-harness-mcp-memory.md` | Add `superseded_by: docs/75-acp-harness-lane-memory.md`. |
 | `docs/05-data-flow.md` | Update memory-flow steps. |
 | `docs/PROGRESS.md` | Tick the milestone entry. |
 
-No new Tauri commands. No ACP-layer changes. No persistence.
+## Persistence
+
+Lane memory is persisted to disk per project directory. See `docs/76-acp-harness-memory-persistence.md` for details.
 
 ## Edge Cases
 
@@ -126,7 +129,6 @@ No new Tauri commands. No ACP-layer changes. No persistence.
 
 ## Out of Scope
 
-- Persistent / cross-tab / project-global memory.
 - Audit log, undo, restore, human editing.
 - Full-text search.
 - Per-lane caps (one document, bounded by `detail` max).

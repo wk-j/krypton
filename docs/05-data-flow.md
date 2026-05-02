@@ -114,35 +114,43 @@
 ```
 1. User opens ACP Harness via Leader Y or the command palette.
 2. Compositor resolves the focused working directory with getFocusedCwd().
-3. AcpHarnessView creates a tab-local memory store through
-   create_harness_memory(), which reuses the running localhost hook server.
-4. AcpHarnessView lists ACP backends and spawns the default lane roster
+3. AcpHarnessView invokes get_app_cwd() to get the canonical project path.
+4. AcpHarnessView creates a tab-local memory store through
+   create_harness_memory(projectDir). The Rust backend:
+   a. Resolves a persistence path: ~/.config/krypton/acp-harness-memory/<hash>.json.
+   b. Hash is first 16 chars of SHA-256 over canonical project path.
+   c. If file exists, loads lane memory documents into RAM (continuity).
+   d. Returns harnessId and hook server port to frontend.
+5. AcpHarnessView lists ACP backends and spawns the default lane roster
    (Codex-1, Claude-1, Gemini-1, OpenCode-1 when those backends are installed)
-   with the same cwd.
-5. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
+   with the same cwd. After `session/new`, OpenCode lanes receive
+   `session/set_config_option` to select `zai-coding-plan/glm-5.1`.
+6. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
    Lanes render into a shared dashboard, but prompts are dispatched only to the
    active tab in the command center.
-6. On Enter, the active lane's draft is sent through acp_prompt with a minimal
+7. On Enter, the active lane's draft is sent through acp_prompt with a minimal
    memory packet: the lane's own label, the full lane roster for the harness,
    and the lane's own current memory summary (or "empty"). No other-lane
    summaries are injected — agents call memory_list when curious.
-7. MCP-capable agents call memory_set, memory_get, and memory_list against
-   /mcp/harness/<harnessId>/lane/<laneLabel>. Each lane owns exactly one
-   memory document; memory_set overwrites the caller's own document (empty
-   strings clear it) and is the only write path. memory_get reads any lane's
-   document by label; memory_list lists all lanes' summaries. The hook server
-   emits a memory-changed event so the harness refreshes the read-only board.
-8. session/update notifications append transcript rows and maintain
-   file-touch warnings for permission context. Memory is not inferred from
-   tool observations or assistant footers.
-9. Permission requests pre-empt only the affected lane's composer. The user
-   switches to that tab and resolves with a/A/r/R/Esc; responses call the
-   existing acp_permission_response command.
-10. Closing the harness disposes every lane client, calls dispose_harness_memory(),
-    and drops transcripts, file-touch warnings, and tab-local memory.
+8. MCP-capable agents call memory_set, memory_get, and memory_list against
+   /mcp/harness/<harnessId>/lane/<laneLabel>.
+   a. memory_set overwrites the caller's own document in RAM.
+   b. On every set/clear, the hook server schedules a debounced (500ms) save.
+   c. Save is atomic: serialize -> write .tmp -> rename to final .json.
+   d. memory_get reads any lane's document by label from RAM.
+   e. memory_list lists all lanes' summaries from RAM.
+9. The hook server emits a memory-changed event so the harness refreshes the read-only board.
+10. session/update notifications append transcript rows and maintain
+    file-touch warnings for permission context. Memory is not inferred from
+    tool observations or assistant footers.
+11. Permission requests pre-empt only the affected lane's composer. The user
+    switches to that tab and resolves with a/A/r/R/Esc; responses call the
+    existing acp_permission_response command.
+12. Closing the harness disposes every lane client, calls dispose_harness_memory(),
+    and drops transcripts and file-touch warnings. Persistent memory stays on
+    disk for the next harness session in this directory.
 ```
-
 ## Resize Mode Flow (e.g., Leader then R)
 
 ```
