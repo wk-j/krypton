@@ -446,7 +446,7 @@ Each keyboard type provides a **press** (key-down) and **release** (key-up) soun
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-ACP-001 | The system shall support opening single external ACP agent tabs for built-in backends such as Claude, Gemini, and Codex. | Should |
+| FR-ACP-001 | The system shall support opening single external ACP agent tabs for built-in backends such as Claude, Gemini, Codex, and OpenCode. | Should |
 | FR-ACP-002 | The system shall support opening an ACP Harness view via keyboard (`Leader Y`) and command palette. | Should |
 | FR-ACP-003 | The ACP Harness shall spawn multiple independent ACP subprocess lanes for the focused working directory when the corresponding backends are installed. | Should |
 | FR-ACP-004 | The ACP Harness shall route each prompt to exactly one active lane and shall not broadcast prompts to multiple lanes. | Must |

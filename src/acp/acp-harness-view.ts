@@ -105,6 +105,7 @@ const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
   { backendId: 'codex', displayName: 'Codex', count: 1 },
   { backendId: 'claude', displayName: 'Claude', count: 1 },
   { backendId: 'gemini', displayName: 'Gemini', count: 1 },
+  { backendId: 'opencode', displayName: 'OpenCode', count: 1 },
 ];
 
 const FILE_TOUCH_WINDOW_MS = 10 * 60 * 1000;
@@ -1433,6 +1434,7 @@ function laneAccentForLabel(label: string): string {
   if (/codex/i.test(label)) return laneAccent(1);
   if (/claude/i.test(label)) return laneAccent(2);
   if (/gemini/i.test(label)) return laneAccent(3);
+  if (/opencode/i.test(label)) return laneAccent(4);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }

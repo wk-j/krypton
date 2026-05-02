@@ -835,7 +835,7 @@ export class CommandPalette {
       execute: () => c.toggleHookToasts(),
     });
 
-    // Dynamic: ACP agent backends. Claude, Gemini, and Codex are built in.
+    // Dynamic: ACP agent backends. Claude, Gemini, Codex, and OpenCode are built in.
     this.actions.push({
       id: 'acp.harness.open',
       label: 'Open ACP Harness',

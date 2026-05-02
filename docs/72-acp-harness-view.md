@@ -154,6 +154,7 @@ const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
   { backendId: 'codex', displayName: 'Codex', count: 1 },
   { backendId: 'claude', displayName: 'Claude', count: 1 },
   { backendId: 'gemini', displayName: 'Gemini', count: 1 },
+  { backendId: 'opencode', displayName: 'OpenCode', count: 1 },
 ];
 ```
 
@@ -702,7 +703,8 @@ Assumptions for v1:
 - [Agent Client Protocol schema](https://agentclientprotocol.com/protocol/schema) — confirmed initialize capabilities, cancellation semantics, session list/close capabilities, and `_meta` extensibility.
 - [Agent Client Protocol content](https://agentclientprotocol.com/protocol/content) — confirmed embedded resource content blocks as the preferred way to include contextual resources in prompts.
 - [Agent Client Protocol extensibility](https://agentclientprotocol.com/protocol/extensibility) — confirmed `_meta` and custom `_` methods exist, but adapter support is optional.
-- [Zed external agents](https://zed.dev/docs/ai/external-agents) — prior art for UI-hosted ACP subprocesses, custom agent configuration, built-in Claude/Codex/Gemini support, and ACP debugging.
+- [OpenCode ACP support](https://opencode.ai/docs/acp/) — confirmed `opencode acp` as the stdio ACP subprocess command.
+- [Zed external agents](https://zed.dev/docs/ai/external-agents) — prior art for UI-hosted ACP subprocesses, custom agent configuration, built-in Claude/Codex/Gemini/OpenCode support, and ACP debugging.
 - [Claude Code power-user tips](https://support.claude.com/en/articles/14554000-claude-code-power-user-tips) — prior art for running multiple coding sessions in parallel and the trade-off of worktree isolation.
 - [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) — prior art for separate contexts, background subagents, and agent management UI.
 - [Claude Code memory](https://code.claude.com/docs/en/memory) — prior art for visible project memory and auto memory loaded as session context.

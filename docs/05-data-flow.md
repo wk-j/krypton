@@ -117,8 +117,8 @@
 3. AcpHarnessView creates a tab-local memory store through
    create_harness_memory(), which reuses the running localhost hook server.
 4. AcpHarnessView lists ACP backends and spawns the default lane roster
-   (Claude-1, Claude-2, Codex-1 when those backends are installed) with the
-   same cwd.
+   (Codex-1, Claude-1, Gemini-1, OpenCode-1 when those backends are installed)
+   with the same cwd.
 5. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
    Lanes render into a shared dashboard, but prompts are dispatched only to the

@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-01 (ACP Harness view — multi-lane ACP orchestration with tab-local shared memory)
+> Last updated: 2026-05-02 (OpenCode ACP backend in agent windows and harness roster)
 
 ## Overview
 
@@ -21,9 +21,9 @@
 
 ## Recent Landings
 
-- **ACP Harness view (Leader Y)** — multi-lane ACP orchestration tab that spawns the default same-project roster (Codex-1, Claude-1, Gemini-1 when installed), routes prompts to one active lane, displays a lane dashboard plus command center, handles per-lane permissions, and keeps tab-local shared memory extracted from completed tool observations and optional `MEMORY:` footer bullets. See `docs/72-acp-harness-view.md`.
+- **ACP Harness view (Leader Y)** — multi-lane ACP orchestration tab that spawns the default same-project roster (Codex-1, Claude-1, Gemini-1, OpenCode-1 when installed), routes prompts to one active lane, displays a lane dashboard plus command center, handles per-lane permissions, and keeps tab-local shared memory extracted from completed tool observations and optional `MEMORY:` footer bullets. See `docs/72-acp-harness-view.md`.
 - **Pencil window (Leader e)** — embed `@excalidraw/excalidraw` as a new content view to open and edit `.excalidraw` files in-app. React + Excalidraw are lazy-loaded so the main bundle is unaffected. Picker scans `[pencil] dir` recursively (mtime sorted) with "+ New drawing" first row; opening the same file twice refocuses the existing tab. Autosave is debounced (800 ms) via `serializeAsJSON`; `Cmd+S` flushes immediately; atomic temp+rename in Rust. Theme follows Krypton bg luminance. See `docs/71-pencil-window.md`.
-- **ACP agent windows (Leader A)** — second, parallel agent window backed by the [Agent Client Protocol](https://agentclientprotocol.com). Spawns built-in external adapters (Claude Code, Gemini CLI, Codex) over newline-delimited JSON-RPC and surfaces tool calls, plans, thoughts, and inline permission prompts. Lives in `src/acp/` + `src-tauri/src/acp.rs`; the existing pi-agent at `src/agent/` is untouched. See `docs/69-acp-agent-support.md`.
+- **ACP agent windows (Leader A)** — second, parallel agent window backed by the [Agent Client Protocol](https://agentclientprotocol.com). Spawns built-in external adapters (Claude Code, Gemini CLI, Codex, OpenCode) over newline-delimited JSON-RPC and surfaces tool calls, plans, thoughts, and inline permission prompts. Lives in `src/acp/` + `src-tauri/src/acp.rs`; the existing pi-agent at `src/agent/` is untouched. See `docs/69-acp-agent-support.md`.
 - **Quick file search (Cmd+O)** — global modal backed by `fff-search` with long-lived per-project pickers (LRU 8), persistent LMDB frecency, and `.git`-aware root resolution. Enter copies the relative path to the clipboard, Cmd+Enter copies the absolute path — never auto-pasted, so behavior is uniform across terminal/agent/hurl/markdown windows. **Tab toggles into grep mode** (content search reusing the same picker; copies `path:line:col`). See `docs/68-quick-file-search.md`.
 - **Matrix glyph atlas** — per-frame `fillText` replaced with `drawImage` blits from a pre-rasterized `OffscreenCanvas`. Eliminates CoreText/GPU-process IPC from the hot path; matrix runs at 60 fps with single-digit CPU. See `docs/67-matrix-glyph-atlas.md`, `docs/64-matrix-animation-cpu-burn.md` (Phase 2).
 - **Hurl client window** — keyboard-driven `.hurl` runner with tree sidebar, streaming output, per-file cache, and persistent sidebar state. See `docs/65-hurl-client-window.md`.

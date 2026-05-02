@@ -86,6 +86,14 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "Codex".to_string(),
             },
         ),
+        (
+            "opencode",
+            AcpBackend {
+                command: "opencode".to_string(),
+                args: vec!["acp".to_string()],
+                display_name: "OpenCode".to_string(),
+            },
+        ),
     ]
 }
 
@@ -857,6 +865,9 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
     }
     if s.contains("gemini auth") || s.contains("please authenticate") {
         return "Run `gemini auth login` in a terminal, then retry.".to_string();
+    }
+    if backend_id == "opencode" && (s.contains("api key") || s.contains("auth")) {
+        return "Run `opencode auth login` in a terminal or configure OpenCode credentials, then retry.".to_string();
     }
     if s.contains("npm err") || s.contains("enoent") {
         return "Check network or install the adapter manually: `npm i -g @agentclientprotocol/claude-agent-acp`.".to_string();

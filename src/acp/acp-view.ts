@@ -1,5 +1,5 @@
 // Krypton — ACP Agent View.
-// ContentView that drives an external ACP agent subprocess (Claude Code, Gemini CLI).
+// ContentView that drives an external ACP agent subprocess (Claude Code, Gemini CLI, OpenCode).
 // Standalone — does NOT share code with src/agent/agent-view.ts on purpose.
 
 import { Marked } from 'marked';
