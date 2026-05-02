@@ -838,10 +838,8 @@ export class AcpHarnessView implements ContentView {
 
   private renderTool(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
     if (!call.toolCallId) return;
-    const path = extractModifiedPath(call);
-    const title = path ? `${call.kind ?? 'tool'} ${path}` : call.title ?? call.kind ?? 'tool';
     const status = call.status ?? 'pending';
-    const text = `${statusGlyph(status)} ${title}${path ? '' : renderToolOutputHint(call.rawOutput)}`;
+    const text = `${statusGlyph(status)} ${renderToolSummary(call)}`;
     const existingId = lane.toolTranscriptIds.get(call.toolCallId);
     const existing = existingId ? lane.transcript.find((item) => item.id === existingId) : null;
     if (existing) {
@@ -1233,14 +1231,117 @@ function statusGlyph(status: string): string {
   return '·';
 }
 
-function renderToolOutputHint(rawOutput: unknown): string {
-  if (!rawOutput) return '';
-  if (typeof rawOutput === 'object') {
-    const record = rawOutput as Record<string, unknown>;
-    const code = record.exitCode ?? record.exit_code ?? record.code;
-    if (typeof code === 'number') return ` exit ${code}`;
+function renderToolSummary(call: ToolCall | ToolCallUpdate): string {
+  const kind = call.kind ?? 'tool';
+  const path = extractModifiedPath(call);
+  const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
+  const subject = command || path || cleanToolTitle(call.title, kind) || kind;
+  const result = renderToolResult(call);
+  const label = subject === kind ? kind : `${kind} ${subject}`;
+  return result ? `${label} -> ${result}` : label;
+}
+
+function cleanToolTitle(title: string | undefined, fallback: string): string {
+  const value = title?.trim() ?? '';
+  if (!value || value.toLowerCase() === 'tool' || value.toLowerCase() === fallback) return '';
+  if (/^tool\s+exit\s+\d+$/i.test(value)) return '';
+  return value;
+}
+
+function extractCommandLine(rawInput: unknown): string {
+  if (typeof rawInput === 'object' && rawInput) {
+    const record = rawInput as Record<string, unknown>;
+    for (const key of ['command', 'cmd']) {
+      if (typeof record[key] === 'string') return truncateInline(record[key], 96);
+    }
+    if (Array.isArray(record.argv)) {
+      const argv = record.argv.filter((part): part is string => typeof part === 'string');
+      if (argv.length > 0) return truncateInline(argv.join(' '), 96);
+    }
   }
   return '';
+}
+
+function renderToolResult(call: ToolCall | ToolCallUpdate): string {
+  const parts: string[] = [];
+  const exit = extractToolExit(call.rawOutput);
+  if (exit) parts.push(exit);
+  const output = toolOutputPreview(call.rawOutput) || toolContentPreview(call.content);
+  if (output) parts.push(output);
+  if (parts.length > 0) return parts.join(' · ');
+  return call.status === 'failed' ? 'failed' : '';
+}
+
+function extractToolExit(rawOutput: unknown): string {
+  if (typeof rawOutput !== 'object' || !rawOutput) return '';
+  const record = rawOutput as Record<string, unknown>;
+  for (const key of ['exitCode', 'exit_code', 'code']) {
+    if (typeof record[key] === 'number') return `exit ${record[key]}`;
+  }
+  return '';
+}
+
+function toolOutputPreview(rawOutput: unknown): string {
+  if (typeof rawOutput === 'object' && rawOutput) {
+    const record = rawOutput as Record<string, unknown>;
+    for (const key of ['summary', 'stdout', 'stderr', 'output', 'content', 'text', 'message']) {
+      const preview = compactPreview(stringifyToolValue(record[key]));
+      if (preview) return preview;
+    }
+    return '';
+  }
+  return compactPreview(stringifyToolValue(rawOutput));
+}
+
+function toolContentPreview(content: ToolCall['content']): string {
+  for (const item of content ?? []) {
+    if (item.type === 'diff' && item.path) return item.path;
+    if (item.type === 'terminal' && item.terminalId) return `terminal ${item.terminalId}`;
+    if (item.type === 'content' && item.content) {
+      const preview = compactPreview(contentBlockText(item.content));
+      if (preview) return preview;
+    }
+  }
+  return '';
+}
+
+function contentBlockText(block: ContentBlock): string {
+  if (block.type === 'text') return block.text;
+  if (block.type === 'resource' && block.resource.text) return block.resource.text;
+  if (block.type === 'resource_link') return block.uri;
+  return '';
+}
+
+function stringifyToolValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => stringifyToolValue(item)).filter(Boolean).join(' ');
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['summary', 'stdout', 'stderr', 'output', 'content', 'text', 'message']) {
+      const nested = stringifyToolValue(record[key]);
+      if (nested) return nested;
+    }
+  }
+  return '';
+}
+
+function compactPreview(value: string): string {
+  const firstLine = value
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0) ?? '';
+  return truncateInline(firstLine, 120);
+}
+
+function truncateInline(value: string, max: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
 }
 
 function abbreviatePath(path: string): string {
