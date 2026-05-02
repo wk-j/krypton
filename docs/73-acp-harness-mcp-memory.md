@@ -101,6 +101,14 @@ Tool behavior:
 - `memory_get` returns full detail.
 - Any MCP-enabled lane can update/delete any memory.
 
+Tool guidance:
+
+- Store memory only when future agents would lose important context if the turn ended now.
+- `memory_create` is for information future agents need and cannot reliably recover from the repo, git history, or current user prompt.
+- Good cases: user-approved decisions, draft specs/plans not yet in docs, exact partial-work status, root-cause analysis, repro steps, non-obvious gotchas, or links between conversation decisions and repo files.
+- Do not create memory for normal chat summaries, generic progress updates, information already present in docs/code, private scratch notes, or facts that can be cheaply rediscovered.
+- `memory_update` is for materially changed decisions/status or old handoffs that would mislead future agents. Prefer updating a relevant entry over creating duplicates.
+
 ### API / Commands
 
 New Tauri commands:
@@ -151,9 +159,9 @@ Every MCP-enabled lane receives short guidance with the prompt:
 
 ```text
 Use Krypton memory tools when useful:
-- create memory for durable project facts/decisions
-- update/delete stale or wrong memory
-- search/get memory before relying on uncertain details
+- create memory only when future agents would lose important context without it
+- update memory when recorded decisions/status materially change
+- search/get memory before relying on uncertain prior work
 Keep summaries short; put full context in detail.
 ```
 

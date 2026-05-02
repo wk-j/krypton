@@ -615,7 +615,7 @@ fn memory_tool_descriptors() -> Value {
     json!([
         {
             "name": "memory_create",
-            "description": "Save a durable artifact to the shared agent workspace for this harness tab. Use for handoffs to other agents (specs, plans, decision logs, RCAs, partial-work status, project gotchas) — not for personal scratch notes. `summary` is the search headline; `detail` is the full artifact written for an agent with zero prior context.",
+            "description": "Persist cross-agent handoff context for this harness tab. Call only when future agents would lose important context if this turn ended now, and when the information cannot reliably be recovered from the repo, git history, or current user prompt. Good cases: user-approved decisions, draft specs/plans not yet in docs, exact partial-work status, root-cause analysis, repro steps, non-obvious gotchas, or links between conversation decisions and repo files. Do not call for normal chat summaries, generic progress updates, information already present in docs/code, private scratch notes, or facts that can be cheaply rediscovered. `summary` is the search headline; `detail` is the full artifact written for an agent with zero prior context.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -627,7 +627,7 @@ fn memory_tool_descriptors() -> Value {
         },
         {
             "name": "memory_update",
-            "description": "Update an existing Krypton harness memory by id.",
+            "description": "Update an existing Krypton harness memory by id only when its old content would mislead a future agent or when a recorded decision/status has materially changed. Prefer updating an existing relevant memory over creating duplicates.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

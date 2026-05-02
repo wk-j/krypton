@@ -124,13 +124,16 @@
    Lanes render into a shared dashboard, but prompts are dispatched only to the
    active tab in the command center.
 6. On Enter, the active lane's draft is sent through acp_prompt with short
-   guidance and the latest 10 memory summaries. Full memory detail is never
-   injected automatically; agents call memory_get when needed.
+   anti-context-loss memory guidance and the latest 10 memory summaries. Full
+   memory detail is never injected automatically; agents call memory_get when
+   needed.
 7. MCP-capable agents call memory_create, memory_update, memory_delete,
    memory_search, and memory_get against
    /mcp/harness/<harnessId>/lane/<laneLabel>. The hook server validates limits,
    mutates the tab-local store, and emits a memory-changed event so the harness
-   refreshes the read-only board.
+   refreshes the read-only board. Agents are instructed to create memory only
+   when future agents would lose important context without it, and to update
+   existing memory when recorded decisions/status materially change.
 8. session/update notifications append transcript rows and maintain
    file-touch warnings for permission context. Memory is not inferred from
    tool observations or assistant footers.
