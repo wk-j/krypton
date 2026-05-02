@@ -14,6 +14,7 @@ import type {
   AcpMcpServerDescriptor,
   AgentInfo,
   ContentBlock,
+  HarnessMcpLaneStats,
   HarnessMemoryEntry,
   HarnessMemorySession,
   PermissionOption,
@@ -40,7 +41,7 @@ interface HarnessPermission {
 
 interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'permission' | 'restart' | 'memory';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'permission' | 'restart' | 'memory' | 'shell';
   text: string;
   status?: string;
   diff?: { title: string; unified: string };
@@ -89,6 +90,7 @@ interface HarnessLane {
   toolCalls: Map<string, ToolCall | ToolCallUpdate>;
   seenTranscriptIds: Set<string>;
   stickToBottom: boolean;
+  pendingShellId: string | null;
 }
 
 const STICK_THRESHOLD_PX = 32;
@@ -130,6 +132,8 @@ export class AcpHarnessView implements ContentView {
   private harnessMemoryId: string | null = null;
   private harnessMemoryPort: number | null = null;
   private memoryUnlisten: UnlistenFn | null = null;
+  private mcpStatsByLane = new Map<string, HarnessMcpLaneStats>();
+  private mcpUnlisten: UnlistenFn | null = null;
   private fileTouchMap = new Map<string, FileTouchRecord>();
   private memoryDrawerOpen = false;
   private helpOpen = false;
@@ -200,13 +204,20 @@ export class AcpHarnessView implements ContentView {
 
     if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      if (lane.status === 'busy' || lane.status === 'needs_permission') void this.cancelLane(lane);
+      if (lane.pendingShellId) void this.cancelShell(lane);
+      else if (lane.status === 'busy' || lane.status === 'needs_permission') void this.cancelLane(lane);
       else this.setDraft(lane, '', 0);
       return true;
     }
 
     if (e.key === 'v' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
       return false;
+    }
+
+    if ((e.key === 'm' || e.key === 'M') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      this.toggleMemoryDrawer(!this.memoryDrawerOpen);
+      return true;
     }
 
     if (e.key === 'Tab') {
@@ -243,6 +254,10 @@ export class AcpHarnessView implements ContentView {
     if (this.memoryUnlisten) {
       this.memoryUnlisten();
       this.memoryUnlisten = null;
+    }
+    if (this.mcpUnlisten) {
+      this.mcpUnlisten();
+      this.mcpUnlisten = null;
     }
     if (this.harnessMemoryId) {
       void invoke('dispose_harness_memory', { harnessId: this.harnessMemoryId });
@@ -339,7 +354,25 @@ export class AcpHarnessView implements ContentView {
     this.memoryUnlisten = await listen<{ harnessId: string }>('acp-harness-memory-changed', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMemory();
     });
+    this.mcpUnlisten = await listen<{ harnessId: string; laneLabel: string }>('acp-harness-mcp-touched', (event) => {
+      if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMcpStats();
+    });
     await this.refreshMemory();
+    await this.refreshMcpStats();
+  }
+
+  private async refreshMcpStats(): Promise<void> {
+    if (!this.harnessMemoryId) return;
+    try {
+      const stats = await invoke<HarnessMcpLaneStats[]>('list_harness_mcp_stats', {
+        harnessId: this.harnessMemoryId,
+      });
+      this.mcpStatsByLane.clear();
+      for (const entry of stats) this.mcpStatsByLane.set(entry.laneLabel, entry);
+      this.render();
+    } catch {
+      // ignore — stats are diagnostic only
+    }
   }
 
   private async refreshMemory(): Promise<void> {
@@ -381,6 +414,7 @@ export class AcpHarnessView implements ContentView {
       toolCalls: new Map(),
       seenTranscriptIds: new Set(),
       stickToBottom: true,
+      pendingShellId: null,
     };
   }
 
@@ -468,6 +502,17 @@ export class AcpHarnessView implements ContentView {
       await this.runHashCommand(lane, text);
       return;
     }
+    if (text.startsWith('!')) {
+      const command = text.slice(1).trim();
+      this.setDraft(lane, '', 0);
+      this.render();
+      if (!command) {
+        this.flashChip('empty shell command');
+        return;
+      }
+      await this.runShellCommand(lane, command);
+      return;
+    }
     if (!lane.client || lane.status === 'starting' || lane.status === 'error' || lane.status === 'stopped') {
       this.flashChip(`lane ${lane.status}`);
       return;
@@ -531,10 +576,28 @@ export class AcpHarnessView implements ContentView {
       .slice(0, 10);
     const lines = recent.map((entry) => `- [${entry.id}] ${entry.summary}`);
     return [
-      '# Krypton harness memory',
-      'Tab-local memory is managed through the MCP tools memory_create, memory_update, memory_delete, memory_search, and memory_get.',
-      'Use summaries as context. Call memory_get when a summary matters and you need the full detail. Create or update memory only for reusable facts.',
+      '# Krypton harness memory — shared agent workspace',
+      'This memory is a handoff channel between agents in this tab. You and other agents (Claude, Codex, Gemini, ...) all read and write the same store. Treat it as a shared whiteboard, not a personal notebook.',
+      '',
+      'Tools: memory_search, memory_get, memory_create, memory_update, memory_delete.',
+      '',
+      'When to SEARCH (memory_search):',
+      '- At the start of a task, search the user\'s keywords — a previous agent may have left a spec, plan, or notes.',
+      '- When the user says "implement the spec", "follow what we discussed", "continue", or references prior work, search before asking.',
+      '- Call memory_get to fetch full detail when a summary looks relevant.',
+      '',
+      'When to SAVE (memory_create / memory_update):',
+      '- You produced a durable artifact another agent should consume: spec, design doc, implementation plan, decision log, repro steps, root-cause analysis.',
+      '- You finished partial work and the next agent needs to know what is done and what remains.',
+      '- You discovered a non-obvious project constraint or gotcha that future agents would re-trip on.',
+      '- Format: `summary` is the search headline another agent would type ("auth refactor spec", "PTY resize bug RCA"). `detail` is the full artifact, written for an agent with zero prior context.',
+      '',
+      'When NOT to save:',
+      '- Conversation chatter, acknowledgements, or mid-turn state.',
+      '- Anything already in the repo (code, docs, git history) — point to the path instead.',
+      '- One-off task progress (use the agent\'s own todo/plan system).',
       lines.length ? '' : null,
+      lines.length ? '## Existing memories (summaries)' : null,
       lines.length ? lines.join('\n') : null,
     ].filter((line): line is string => line !== null).join('\n');
   }
@@ -663,7 +726,81 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
+    if (parts[0] === '#mcp') {
+      this.setDraft(lane, '', 0);
+      await this.printMcpStatus(lane);
+      this.render();
+      return;
+    }
     this.flashChip('unknown command');
+  }
+
+  private async printMcpStatus(lane: HarnessLane): Promise<void> {
+    await this.refreshMcpStats();
+    const lines: string[] = [];
+    if (!this.harnessMemoryId || !this.harnessMemoryPort) {
+      lines.push('mcp: harness memory not initialized');
+    } else {
+      lines.push(`mcp endpoint: http://127.0.0.1:${this.harnessMemoryPort}/mcp/harness/${this.harnessMemoryId}/lane/<laneLabel>`);
+      lines.push('');
+      lines.push('lane                  init  list  call  last');
+      for (const l of this.lanes) {
+        const s = this.mcpStatsByLane.get(l.displayName);
+        const init = s?.initializeCount ?? 0;
+        const list = s?.toolsListCount ?? 0;
+        const call = s?.toolsCallCount ?? 0;
+        const last = s?.lastSeenAt ? formatShortTime(s.lastSeenAt) : '—';
+        const flag = list > 0 ? '✓' : '—';
+        lines.push(
+          `${flag} ${l.displayName.padEnd(20).slice(0, 20)} ${String(init).padStart(4)}  ${String(list).padStart(4)}  ${String(call).padStart(4)}  ${last}`,
+        );
+      }
+      lines.push('');
+      lines.push('✓ = adapter listed tools at least once. — = adapter never queried this lane.');
+    }
+    this.appendTranscript(lane, 'system', lines.join('\n'));
+  }
+
+  private async runShellCommand(lane: HarnessLane, command: string): Promise<void> {
+    if (lane.pendingShellId) {
+      this.flashChip('shell already running');
+      return;
+    }
+    const id = makeId();
+    const item = this.appendTranscript(lane, 'shell', `$ ${command}\n…`);
+    item.status = 'pending';
+    lane.pendingShellId = id;
+    this.render();
+    let output: string;
+    let status: 'completed' | 'failed';
+    try {
+      const result = await invoke<string>('run_shell', {
+        id,
+        command,
+        cwd: this.projectDir,
+      });
+      output = result;
+      status = 'completed';
+    } catch (e) {
+      output = String(e);
+      status = 'failed';
+    }
+    if (lane.pendingShellId === id) lane.pendingShellId = null;
+    const trimmed = output.replace(/\s+$/, '');
+    item.text = trimmed ? `$ ${command}\n${trimmed}` : `$ ${command}`;
+    item.status = status;
+    this.render();
+  }
+
+  private async cancelShell(lane: HarnessLane): Promise<void> {
+    const id = lane.pendingShellId;
+    if (!id) return;
+    try {
+      await invoke('kill_shell', { id });
+    } catch (e) {
+      this.appendTranscript(lane, 'system', `kill_shell failed: ${String(e)}`);
+      this.render();
+    }
   }
 
   private render(): void {
@@ -702,7 +839,7 @@ export class AcpHarnessView implements ContentView {
       laneEl.style.setProperty('--acp-lane-accent', lane.accent);
       const head = document.createElement('header');
       head.className = 'acp-harness__lane-head';
-      head.innerHTML = renderLaneHead(lane, active);
+      head.innerHTML = renderLaneHead(lane, active, this.mcpStatsByLane.get(lane.displayName) ?? null);
       laneEl.appendChild(head);
       if (active) {
         const stats = document.createElement('div');
@@ -778,7 +915,7 @@ export class AcpHarnessView implements ContentView {
     }
     this.composerEl.className = `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}`;
     const chip = this.chip ?? (this.focus === 'transcript'
-      ? 'command mode: 1-9 lanes · v memory · ? help · i/Esc input'
+      ? 'command mode: 1-9 lanes · ^M memory · ? help · i/Esc input'
       : `memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`);
     const before = lane.draft.slice(0, lane.cursor);
     const after = lane.draft.slice(lane.cursor);
@@ -826,7 +963,8 @@ export class AcpHarnessView implements ContentView {
         <section class="acp-harness__help-section">
           <h3>Memory</h3>
           <dl>
-            <dt>Esc, then v</dt><dd>Toggle memory drawer</dd>
+            <dt>Ctrl+M</dt><dd>Toggle memory drawer</dd>
+            <dt>q / Esc</dt><dd>Close memory drawer</dd>
             <dt>j / k</dt><dd>Move memory cursor</dd>
             <dt>g / G</dt><dd>Top / bottom of memory list</dd>
             <dt>Agents</dt><dd>Create, update, delete, search, and fetch detail through MCP tools</dd>
@@ -850,6 +988,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#cancel</dt><dd>Cancel active lane, same as Ctrl+C</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
             <dt>#mem</dt><dd>Show that memory is agent-managed</dd>
+            <dt>!cmd</dt><dd>Run shell command in project cwd, output goes to transcript</dd>
           </dl>
         </section>
         <section class="acp-harness__help-section acp-harness__help-section--wide">
@@ -925,7 +1064,12 @@ export class AcpHarnessView implements ContentView {
   }
 
   private handleMemoryKey(e: KeyboardEvent): boolean {
-    if (e.key === 'Escape' || e.key === 'v') {
+    if (e.key === 'Escape' || (e.key === 'q' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+      e.preventDefault();
+      this.toggleMemoryDrawer(false);
+      return true;
+    }
+    if ((e.key === 'm' || e.key === 'M') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
       e.preventDefault();
       this.toggleMemoryDrawer(false);
       return true;
@@ -955,11 +1099,6 @@ export class AcpHarnessView implements ContentView {
         this.element.classList.add('acp-harness--transcript-focus');
         return true;
       }
-    }
-    if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      this.toggleMemoryDrawer(true);
-      return true;
     }
     if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
@@ -1266,26 +1405,39 @@ function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
   }
 }
 
-function renderLaneHead(lane: HarnessLane, active: boolean): string {
+function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneStats | null): string {
+  const mcpChip = renderMcpChip(mcp);
   if (!active) {
     return (
-      `<span class="acp-harness__lane-index">${lane.index}</span>` +
       `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
       `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
+      mcpChip +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
     );
   }
-  const cancelHint = lane.status === 'busy' || lane.status === 'needs_permission'
+  const cancelHint = lane.status === 'busy' || lane.status === 'needs_permission' || lane.pendingShellId
     ? `<span class="acp-harness__lane-cancel-hint">⌃C cancel</span>`
     : '';
   return (
-    `<span class="acp-harness__lane-index">${lane.index}</span>` +
     `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
     `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
+    mcpChip +
     `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>` +
     cancelHint
   );
+}
+
+function renderMcpChip(mcp: HarnessMcpLaneStats | null): string {
+  if (!mcp || mcp.toolsListCount === 0) {
+    const title = mcp
+      ? `MCP descriptor sent; adapter has not called tools/list. init=${mcp.initializeCount}`
+      : 'MCP descriptor sent; adapter has not contacted the server.';
+    return `<span class="acp-harness__lane-mcp acp-harness__lane-mcp--off" title="${esc(title)}">mcp —</span>`;
+  }
+  const title = `tools/list ${mcp.toolsListCount} · tools/call ${mcp.toolsCallCount}` +
+    (mcp.lastMethod ? ` · last ${mcp.lastMethod}` : '');
+  return `<span class="acp-harness__lane-mcp acp-harness__lane-mcp--on" title="${esc(title)}">mcp ✓${mcp.toolsCallCount > 0 ? ` ${mcp.toolsCallCount}` : ''}</span>`;
 }
 
 function laneAccent(index: number): string {
@@ -1361,6 +1513,7 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'assistant': return 'agent';
     case 'permission': return 'perm';
     case 'memory': return 'mem';
+    case 'shell': return 'sh';
     default: return kind;
   }
 }
@@ -1544,14 +1697,24 @@ function stringifyToolValue(value: unknown): string {
 }
 
 function boundedOutputLines(value: string, maxLines: number): string {
-  const lines = value
+  const kept = value
     .replace(/\r/g, '')
     .split('\n')
-    .map((line) => line.trim())
+    .map((line) => line.replace(/\s+$/, ''))
     .filter((line) => line.length > 0)
-    .slice(0, maxLines)
-    .map((line) => truncateInline(line, 140));
-  return lines.join('\n');
+    .slice(0, maxLines);
+  let minIndent = Infinity;
+  for (const line of kept) {
+    const match = line.match(/^[ \t]*/);
+    const indent = match ? match[0].length : 0;
+    if (indent < minIndent) minIndent = indent;
+    if (minIndent === 0) break;
+  }
+  if (!Number.isFinite(minIndent)) minIndent = 0;
+  return kept
+    .map((line) => line.slice(minIndent))
+    .map((line) => (line.length > 140 ? `${line.slice(0, 139).trimEnd()}…` : line))
+    .join('\n');
 }
 
 function truncateInline(value: string, max: number): string {

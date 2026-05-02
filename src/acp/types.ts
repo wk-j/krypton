@@ -108,6 +108,15 @@ export interface HarnessMemorySession {
   hookPort: number;
 }
 
+export interface HarnessMcpLaneStats {
+  laneLabel: string;
+  initializeCount: number;
+  toolsListCount: number;
+  toolsCallCount: number;
+  lastMethod: string | null;
+  lastSeenAt: number;
+}
+
 export interface UsageInfo {
   used?: number;
   size?: number;

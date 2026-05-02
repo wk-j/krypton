@@ -99,7 +99,7 @@
 .acp-harness__lane-head {
   height: 28px;
   display: grid;
-  grid-template-columns: 2ch 2ch minmax(10ch, 18ch) auto minmax(0, 1fr) auto;
+  grid-template-columns: 2ch minmax(10ch, 18ch) auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
@@ -109,14 +109,8 @@
   letter-spacing: 0.02em;
 }
 
-.acp-harness__lane-index,
 .acp-harness__lane-symbol {
   color: rgba(216, 232, 216, 0.48);
-}
-
-.acp-harness__lane-index {
-  color: var(--acp-lane-accent, rgba(216, 232, 216, 0.68));
-  font-weight: 700;
 }
 
 .acp-harness__lane-name {
@@ -144,6 +138,25 @@
   font-size: 0.82em;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.acp-harness__lane-mcp {
+  flex: 0 0 auto;
+  justify-self: start;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.66em;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.acp-harness__lane-mcp--on {
+  color: rgba(216, 232, 216, 0.42);
+}
+
+.acp-harness__lane-mcp--off {
+  color: rgba(216, 232, 216, 0.36);
 }
 
 .acp-harness__lane-cancel-hint {
@@ -247,8 +260,29 @@
 .acp-harness__msg--system .acp-harness__msg-body,
 .acp-harness__msg--memory .acp-harness__msg-body,
 .acp-harness__msg--restart .acp-harness__msg-body,
-.acp-harness__msg--permission .acp-harness__msg-body {
+.acp-harness__msg--permission .acp-harness__msg-body,
+.acp-harness__msg--shell .acp-harness__msg-body {
   font-size: 0.88em;
+}
+
+.acp-harness__msg--shell .acp-harness__msg-label {
+  color: #ffd166;
+}
+
+.acp-harness__msg--shell .acp-harness__msg-body {
+  white-space: pre-wrap;
+  color: rgba(216, 232, 216, 0.92);
+  border-left: 2px solid rgba(255, 209, 102, 0.5);
+  padding-left: 8px;
+}
+
+.acp-harness__msg--shell.acp-harness__msg--failed .acp-harness__msg-body {
+  border-left-color: rgba(255, 107, 139, 0.6);
+  color: rgba(255, 200, 210, 0.92);
+}
+
+.acp-harness__msg--shell.acp-harness__msg--pending .acp-harness__msg-body {
+  opacity: 0.75;
 }
 
 .acp-harness__tool {
@@ -264,6 +298,7 @@
   align-items: baseline;
   gap: 8px;
   line-height: 1.4;
+  font-size: var(--krypton-font-size, 13px);
 }
 
 .acp-harness__tool-glyph {
@@ -287,7 +322,8 @@
 
 .acp-harness__tool-kind {
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
+  font-size: 0.78em;
   color: rgba(216, 232, 216, 0.6);
   border: 1px solid rgba(216, 232, 216, 0.18);
   border-radius: 2px;
@@ -355,6 +391,7 @@
 
 .acp-harness__msg-body--markdown {
   white-space: normal;
+  color: #eaf3ea;
 }
 
 .acp-harness__msg-body--markdown > :first-child {
@@ -369,6 +406,43 @@
   margin: 0 0 0.45em;
 }
 
+.acp-harness__msg-body--markdown h1,
+.acp-harness__msg-body--markdown h2,
+.acp-harness__msg-body--markdown h3,
+.acp-harness__msg-body--markdown h4,
+.acp-harness__msg-body--markdown h5,
+.acp-harness__msg-body--markdown h6 {
+  margin: 0.7em 0 0.35em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--agent-user, #6dd0ff);
+  line-height: 1.2;
+}
+
+.acp-harness__msg-body--markdown h1 {
+  font-size: 1.35em;
+  color: #b9f5ff;
+  border-bottom: 1px solid rgba(109, 208, 255, 0.35);
+  padding-bottom: 0.15em;
+}
+
+.acp-harness__msg-body--markdown h2 {
+  font-size: 1.18em;
+  color: #6dd0ff;
+}
+
+.acp-harness__msg-body--markdown h3 {
+  font-size: 1.06em;
+  color: var(--agent-accent, #8effb0);
+}
+
+.acp-harness__msg-body--markdown h4 {
+  font-size: 1em;
+  color: #c4ffd6;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .acp-harness__msg-body--markdown ul,
 .acp-harness__msg-body--markdown ol {
   margin: 0.25em 0 0.55em;
@@ -379,16 +453,46 @@
   margin: 0.12em 0;
 }
 
+.acp-harness__msg-body--markdown ul li::marker {
+  color: var(--agent-accent, #8effb0);
+}
+
+.acp-harness__msg-body--markdown ol li::marker {
+  color: var(--agent-user, #6dd0ff);
+  font-weight: 700;
+}
+
+.acp-harness__msg-body--markdown strong {
+  color: #fff7c2;
+  font-weight: 700;
+}
+
+.acp-harness__msg-body--markdown em {
+  color: #d6b8ff;
+  font-style: italic;
+}
+
 .acp-harness__msg-body--markdown code {
   color: var(--agent-accent, #8effb0);
+  background: rgba(142, 255, 176, 0.1);
+  padding: 0.05em 0.4ch;
+  border-radius: 2px;
   font-family: var(--agent-font, monospace);
 }
 
 .acp-harness__msg-body--markdown pre {
-  margin: 0.4em 0;
-  padding: 6px 8px;
+  margin: 0.5em 0;
+  padding: 8px 10px;
   overflow-x: auto;
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(0, 0, 0, 0.42);
+  border-left: 2px solid var(--agent-accent, #8effb0);
+  border-radius: 2px;
+}
+
+.acp-harness__msg-body--markdown pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
 }
 
 .acp-harness__msg-body--markdown a {
@@ -398,13 +502,44 @@
   text-underline-offset: 3px;
 }
 
+.acp-harness__msg-body--markdown a:hover {
+  color: #b9f5ff;
+  text-decoration-color: #b9f5ff;
+}
+
 .acp-harness__msg-body--markdown blockquote {
-  margin: 0.35em 0;
-  padding-left: 1.2ch;
-  color: rgba(216, 232, 216, 0.62);
-  text-decoration: underline;
-  text-decoration-color: rgba(216, 232, 216, 0.18);
-  text-underline-offset: 4px;
+  margin: 0.4em 0;
+  padding: 0.2em 0.8ch;
+  border-left: 3px solid rgba(214, 184, 255, 0.55);
+  background: rgba(214, 184, 255, 0.06);
+  color: #e6dcff;
+  font-style: italic;
+}
+
+.acp-harness__msg-body--markdown hr {
+  border: 0;
+  border-top: 1px dashed rgba(109, 208, 255, 0.4);
+  margin: 0.8em 0;
+}
+
+.acp-harness__msg-body--markdown table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.95em;
+}
+
+.acp-harness__msg-body--markdown th,
+.acp-harness__msg-body--markdown td {
+  padding: 4px 8px;
+  border: 1px solid rgba(109, 208, 255, 0.25);
+  text-align: left;
+}
+
+.acp-harness__msg-body--markdown th {
+  background: rgba(109, 208, 255, 0.12);
+  color: var(--agent-user, #6dd0ff);
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .acp-harness__msg--user .acp-harness__msg-label,

@@ -154,6 +154,7 @@ pub struct HookServer {
     pub port: std::sync::Mutex<u16>,
     pub shutdown_tx: std::sync::Mutex<Option<oneshot::Sender<()>>>,
     memories: std::sync::Mutex<HashMap<String, HarnessMemoryStore>>,
+    mcp_stats: std::sync::Mutex<HashMap<String, HashMap<String, McpLaneStats>>>,
     next_harness_id: AtomicU64,
 }
 
@@ -163,6 +164,7 @@ impl Default for HookServer {
             port: std::sync::Mutex::new(0),
             shutdown_tx: std::sync::Mutex::new(None),
             memories: std::sync::Mutex::new(HashMap::new()),
+            mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
         }
     }
@@ -174,6 +176,7 @@ impl HookServer {
             port: std::sync::Mutex::new(0),
             shutdown_tx: std::sync::Mutex::new(None),
             memories: std::sync::Mutex::new(HashMap::new()),
+            mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
         }
     }
@@ -204,7 +207,65 @@ impl HookServer {
     pub fn dispose_harness_memory(&self, harness_id: &str) {
         let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
         memories.remove(harness_id);
+        let mut stats = self.mcp_stats.lock().unwrap_or_else(|e| e.into_inner());
+        stats.remove(harness_id);
     }
+
+    pub fn list_harness_mcp_stats(&self, harness_id: &str) -> Vec<McpLaneStatsEntry> {
+        let stats = self.mcp_stats.lock().unwrap_or_else(|e| e.into_inner());
+        stats
+            .get(harness_id)
+            .map(|lanes| {
+                let mut out: Vec<McpLaneStatsEntry> = lanes
+                    .iter()
+                    .map(|(label, s)| McpLaneStatsEntry {
+                        lane_label: label.clone(),
+                        initialize_count: s.initialize_count,
+                        tools_list_count: s.tools_list_count,
+                        tools_call_count: s.tools_call_count,
+                        last_method: s.last_method.clone(),
+                        last_seen_at: s.last_seen_at,
+                    })
+                    .collect();
+                out.sort_by(|a, b| a.lane_label.cmp(&b.lane_label));
+                out
+            })
+            .unwrap_or_default()
+    }
+
+    fn record_mcp_request(&self, harness_id: &str, lane_label: &str, method: &str) {
+        let mut stats = self.mcp_stats.lock().unwrap_or_else(|e| e.into_inner());
+        let lanes = stats.entry(harness_id.to_string()).or_default();
+        let entry = lanes.entry(lane_label.to_string()).or_default();
+        match method {
+            "initialize" => entry.initialize_count += 1,
+            "tools/list" => entry.tools_list_count += 1,
+            "tools/call" => entry.tools_call_count += 1,
+            _ => {}
+        }
+        entry.last_method = Some(method.to_string());
+        entry.last_seen_at = now_ms();
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+struct McpLaneStats {
+    initialize_count: u64,
+    tools_list_count: u64,
+    tools_call_count: u64,
+    last_method: Option<String>,
+    last_seen_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpLaneStatsEntry {
+    pub lane_label: String,
+    pub initialize_count: u64,
+    pub tools_list_count: u64,
+    pub tools_call_count: u64,
+    pub last_method: Option<String>,
+    pub last_seen_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -259,7 +320,24 @@ async fn handle_harness_memory_mcp(
     let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
     if id.is_none() && method == "notifications/initialized" {
+        state
+            .hook_server
+            .record_mcp_request(&harness_id, &lane_label, "notifications/initialized");
+        let _ = state.app_handle.emit(
+            "acp-harness-mcp-touched",
+            json!({ "harnessId": harness_id, "laneLabel": lane_label }),
+        );
         return StatusCode::ACCEPTED.into_response();
+    }
+
+    if !method.is_empty() {
+        state
+            .hook_server
+            .record_mcp_request(&harness_id, &lane_label, method);
+        let _ = state.app_handle.emit(
+            "acp-harness-mcp-touched",
+            json!({ "harnessId": harness_id, "laneLabel": lane_label }),
+        );
     }
 
     let result = match method {
@@ -537,7 +615,7 @@ fn memory_tool_descriptors() -> Value {
     json!([
         {
             "name": "memory_create",
-            "description": "Create one tab-local Krypton harness memory. Use a short summary and full detail.",
+            "description": "Save a durable artifact to the shared agent workspace for this harness tab. Use for handoffs to other agents (specs, plans, decision logs, RCAs, partial-work status, project gotchas) — not for personal scratch notes. `summary` is the search headline; `detail` is the full artifact written for an agent with zero prior context.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -571,7 +649,7 @@ fn memory_tool_descriptors() -> Value {
         },
         {
             "name": "memory_search",
-            "description": "Search memory summaries and details. Results contain summaries only; call memory_get for full detail.",
+            "description": "Search the shared agent workspace for prior artifacts left by other agents in this tab. Run this at the start of a task or whenever the user references prior work (\"the spec\", \"what we discussed\", \"continue\"). Returns summaries; call memory_get for full detail.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

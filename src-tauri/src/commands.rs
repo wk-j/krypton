@@ -3,8 +3,15 @@ use crate::hook_server::HookServer;
 use crate::pty::PtyManager;
 use crate::ssh::SshManager;
 use crate::theme::{FullTheme, ThemeEngine};
-use std::sync::{Arc, RwLock};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use tauri::{AppHandle, Manager, State};
+
+static SHELL_PIDS: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+
+fn shell_pids() -> &'static Mutex<HashMap<String, u32>> {
+    SHELL_PIDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -221,6 +228,14 @@ pub fn dispose_harness_memory(
 }
 
 #[tauri::command]
+pub fn list_harness_mcp_stats(
+    harness_id: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<Vec<crate::hook_server::McpLaneStatsEntry>, String> {
+    Ok(hook_server.list_harness_mcp_stats(&harness_id))
+}
+
+#[tauri::command]
 pub fn save_temp_image(data: String, mime_type: String) -> Result<String, String> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD
@@ -403,6 +418,131 @@ fn run_command_blocking(
             Err(combined)
         }
     }
+}
+
+#[tauri::command]
+pub async fn run_shell(
+    id: String,
+    command: String,
+    cwd: Option<String>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || run_shell_blocking(&id, &command, cwd.as_deref()))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
+#[tauri::command]
+pub fn kill_shell(id: String) -> Result<(), String> {
+    let pid = shell_pids().lock().unwrap().remove(&id);
+    let Some(pid) = pid else {
+        return Err(format!("no shell with id {id}"));
+    };
+    #[cfg(unix)]
+    unsafe {
+        if libc::kill(pid as libc::pid_t, libc::SIGTERM) != 0 {
+            return Err(format!(
+                "kill failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output()
+            .map_err(|e| format!("taskkill failed: {e}"))?;
+    }
+    Ok(())
+}
+
+fn run_shell_blocking(id: &str, command: &str, cwd: Option<&str>) -> Result<String, String> {
+    use std::io::Read;
+
+    let mut cmd = std::process::Command::new("sh");
+    cmd.arg("-c").arg(command);
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn shell: {e}"))?;
+    let pid = child.id();
+    shell_pids()
+        .lock()
+        .unwrap()
+        .insert(id.to_string(), pid);
+
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
+    let stdout_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(s) = stdout_pipe.as_mut() {
+            let _ = s.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let stderr_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(s) = stderr_pipe.as_mut() {
+            let _ = s.read_to_end(&mut buf);
+        }
+        buf
+    });
+
+    let status_result = child.wait();
+    shell_pids().lock().unwrap().remove(id);
+    let stdout_bytes = stdout_thread.join().unwrap_or_default();
+    let stderr_bytes = stderr_thread.join().unwrap_or_default();
+
+    let status = status_result.map_err(|e| format!("wait failed: {e}"))?;
+
+    let total_len = stdout_bytes.len() + stderr_bytes.len();
+    if total_len > 10 * 1024 * 1024 {
+        return Err("Shell output exceeded 10 MB limit".to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&stdout_bytes);
+    let stderr = String::from_utf8_lossy(&stderr_bytes);
+    let mut combined = stdout.into_owned();
+    if !stderr.is_empty() {
+        if !combined.is_empty() && !combined.ends_with('\n') {
+            combined.push('\n');
+        }
+        combined.push_str(&stderr);
+    }
+
+    if status.success() {
+        Ok(combined)
+    } else if let Some(signal) = signal_label(&status) {
+        Err(format!("{signal}{}", if combined.is_empty() { String::new() } else { format!("\n{combined}") }))
+    } else {
+        let code = status.code().map_or("signal".to_string(), |c| c.to_string());
+        if combined.is_empty() {
+            Err(format!("exit code {code}"))
+        } else {
+            Err(combined)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn signal_label(status: &std::process::ExitStatus) -> Option<String> {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal().map(|s| match s {
+        libc::SIGTERM => "terminated (SIGTERM)".to_string(),
+        libc::SIGKILL => "killed (SIGKILL)".to_string(),
+        libc::SIGINT => "interrupted (SIGINT)".to_string(),
+        other => format!("signal {other}"),
+    })
+}
+
+#[cfg(not(unix))]
+fn signal_label(_status: &std::process::ExitStatus) -> Option<String> {
+    None
 }
 
 /// Execute a read-only SQL query against a SQLite database and return rows as JSON.
