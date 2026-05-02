@@ -57,6 +57,14 @@ interface ToolPayload {
   sections: Array<{ label: string; text: string }>;
 }
 
+interface StagedImage {
+  data: string;
+  mimeType: string;
+}
+
+const MAX_STAGED_IMAGES = 4;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
 interface FileTouchRecord {
   path: string;
   laneId: string;
@@ -91,6 +99,8 @@ interface HarnessLane {
   seenTranscriptIds: Set<string>;
   stickToBottom: boolean;
   pendingShellId: string | null;
+  stagedImages: StagedImage[];
+  supportsImages: boolean;
 }
 
 const STICK_THRESHOLD_PX = 32;
@@ -193,6 +203,7 @@ export class AcpHarnessView implements ContentView {
       e.preventDefault();
       if (this.helpOpen) this.toggleHelp(false);
       else if (this.memoryDrawerOpen) this.toggleMemoryDrawer(false);
+      else if (lane.stagedImages.length > 0) this.clearStagedImages(lane);
       else this.enterTranscriptFocus();
       return true;
     }
@@ -209,10 +220,6 @@ export class AcpHarnessView implements ContentView {
       else if (lane.status === 'busy' || lane.status === 'needs_permission') void this.cancelLane(lane);
       else this.setDraft(lane, '', 0);
       return true;
-    }
-
-    if (e.key === 'v' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
-      return false;
     }
 
     if ((e.key === 'm' || e.key === 'M') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
@@ -314,10 +321,46 @@ export class AcpHarnessView implements ContentView {
       if (this.helpOpen || this.memoryDrawerOpen) return;
       const lane = this.activeLane();
       if (!lane || lane.pendingPermissions.length > 0) return;
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith('image/')) {
+            e.preventDefault();
+            const file = item.getAsFile();
+            if (file) this.stageImageFile(lane, file);
+            return;
+          }
+        }
+      }
       const text = e.clipboardData?.getData('text');
       if (!text) return;
       e.preventDefault();
       this.insertDraft(lane, text);
+    });
+
+    this.element.addEventListener('dragover', (e: DragEvent) => {
+      if (!e.dataTransfer) return;
+      const hasFile = Array.from(e.dataTransfer.items ?? []).some((i) => i.kind === 'file');
+      if (!hasFile) return;
+      e.preventDefault();
+      this.element.classList.add('acp-harness--drag-over');
+    });
+    this.element.addEventListener('dragleave', (e: DragEvent) => {
+      if (e.target === this.element) this.element.classList.remove('acp-harness--drag-over');
+    });
+    this.element.addEventListener('drop', (e: DragEvent) => {
+      e.preventDefault();
+      this.element.classList.remove('acp-harness--drag-over');
+      const lane = this.activeLane();
+      if (!lane || lane.pendingPermissions.length > 0) return;
+      const files = e.dataTransfer?.files;
+      if (!files) return;
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('image/')) {
+          this.stageImageFile(lane, file);
+          break;
+        }
+      }
     });
   }
 
@@ -416,6 +459,8 @@ export class AcpHarnessView implements ContentView {
       seenTranscriptIds: new Set(),
       stickToBottom: true,
       pendingShellId: null,
+      stagedImages: [],
+      supportsImages: false,
     };
   }
 
@@ -430,6 +475,7 @@ export class AcpHarnessView implements ContentView {
       const info: AgentInfo = await client.initialize();
       lane.sessionId = info.session_id ?? null;
       lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
+      lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
       lane.status = 'idle';
       this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
     } catch (e) {
@@ -498,7 +544,8 @@ export class AcpHarnessView implements ContentView {
     const lane = this.activeLane();
     if (!lane) return;
     const text = lane.draft.trim();
-    if (!text) return;
+    const hasImages = lane.stagedImages.length > 0;
+    if (!text && !hasImages) return;
     if (text.startsWith('#')) {
       await this.runHashCommand(lane, text);
       return;
@@ -522,13 +569,16 @@ export class AcpHarnessView implements ContentView {
       this.flashChip('lane busy');
       return;
     }
+    const images = lane.stagedImages.slice();
     this.setDraft(lane, '', 0);
-    this.appendTranscript(lane, 'user', text);
+    lane.stagedImages = [];
+    const transcriptText = text || (images.length > 0 ? `[${images.length} image${images.length === 1 ? '' : 's'}]` : '');
+    this.appendTranscript(lane, 'user', transcriptText);
     lane.status = 'busy';
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
-    const blocks = this.buildPromptBlocks(lane, text);
+    const blocks = this.buildPromptBlocks(lane, text, images);
     this.render();
     try {
       await lane.client.prompt(blocks);
@@ -541,13 +591,17 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  private buildPromptBlocks(lane: HarnessLane, userText: string): ContentBlock[] {
-    const userBlock: ContentBlock = {
-      type: 'text',
-      text: userText,
-    };
+  private buildPromptBlocks(lane: HarnessLane, userText: string, images: StagedImage[] = []): ContentBlock[] {
+    const imageBlocks: ContentBlock[] = images.map((img) => ({
+      type: 'image',
+      data: img.data,
+      mimeType: img.mimeType,
+    }));
+    const userBlocks: ContentBlock[] = [];
+    if (userText) userBlocks.push({ type: 'text', text: userText });
+    const tail = [...imageBlocks, ...userBlocks];
     const packet = this.renderPromptMemoryPacket(lane);
-    if (!packet) return [userBlock];
+    if (!packet) return tail;
     if (lane.supportsEmbeddedContext) {
       return [
         {
@@ -558,27 +612,40 @@ export class AcpHarnessView implements ContentView {
             text: packet,
           },
         },
-        userBlock,
+        ...tail,
       ];
     }
     return [
-      {
-        type: 'text',
-        text: packet,
-      },
-      userBlock,
+      { type: 'text', text: packet },
+      ...tail,
     ];
   }
 
   private renderPromptMemoryPacket(lane: HarnessLane): string {
     const self = lane.displayName;
     const roster = this.lanes.map((l) => l.displayName).join(', ');
-    const own = this.memoryEntries.find((entry) => entry.lane === self);
-    const ownSummary = own ? own.summary : 'empty';
-    return [
+    const lines: string[] = [
       `You are lane ${self}. Lanes: ${roster}.`,
-      `Your memory: ${ownSummary}.`,
-    ].join('\n');
+      'You can write only your own memory (memory_set); you can read any lane (memory_get / memory_list).',
+      '',
+    ];
+    for (const laneInfo of this.lanes) {
+      const name = laneInfo.displayName;
+      const entry = this.memoryEntries.find((m) => m.lane === name);
+      const tag = name === self ? '(you, read/write)' : '(read-only)';
+      lines.push(`## ${name} ${tag}`);
+      if (!entry || (!entry.summary && !entry.detail)) {
+        lines.push('empty');
+      } else {
+        if (entry.summary) lines.push(entry.summary);
+        if (entry.detail) {
+          lines.push('');
+          lines.push(entry.detail);
+        }
+      }
+      lines.push('');
+    }
+    return lines.join('\n').trimEnd();
   }
 
   private finishTurn(lane: HarnessLane, stopReason: StopReason): void {
@@ -898,8 +965,17 @@ export class AcpHarnessView implements ContentView {
     const before = lane.draft.slice(0, lane.cursor);
     const after = lane.draft.slice(lane.cursor);
     this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
+    let staging = '';
+    if (lane.stagedImages.length > 0) {
+      const thumbs = lane.stagedImages
+        .map((img) => `<img class="acp-harness__staged-thumb" src="data:${img.mimeType};base64,${img.data}" />`)
+        .join('');
+      const hint = `${lane.stagedImages.length} image${lane.stagedImages.length === 1 ? '' : 's'} · Esc to clear`;
+      staging = `<div class="acp-harness__staging">${thumbs}<span class="acp-harness__staging-hint">${esc(hint)}</span></div>`;
+    }
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-meta"><span class="acp-harness__memory-chip">${esc(chip)}</span></div>` +
+      staging +
       `<div class="acp-harness__input-line">` +
       `<span class="acp-harness__lane-tag">${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__prompt">›</span>` +
@@ -1126,6 +1202,35 @@ export class AcpHarnessView implements ContentView {
 
   private insertDraft(lane: HarnessLane, text: string): void {
     this.setDraft(lane, lane.draft.slice(0, lane.cursor) + text + lane.draft.slice(lane.cursor), lane.cursor + text.length);
+  }
+
+  private stageImageFile(lane: HarnessLane, file: File): void {
+    if (lane.stagedImages.length >= MAX_STAGED_IMAGES) {
+      this.flashChip(`max ${MAX_STAGED_IMAGES} images per message`);
+      return;
+    }
+    if (!lane.supportsImages) {
+      this.flashChip(`${lane.displayName} did not advertise image support; sending anyway`);
+    }
+    const reader = new FileReader();
+    reader.onload = (): void => {
+      const dataUrl = reader.result as string;
+      const commaIdx = dataUrl.indexOf(',');
+      const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+      if (base64.length > MAX_IMAGE_BYTES * 1.34) {
+        this.flashChip('image too large (max 5MB)');
+        return;
+      }
+      lane.stagedImages.push({ data: base64, mimeType: file.type });
+      this.renderComposer();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  private clearStagedImages(lane: HarnessLane): void {
+    if (lane.stagedImages.length === 0) return;
+    lane.stagedImages = [];
+    this.renderComposer();
   }
 
   private setDraft(lane: HarnessLane, text: string, cursor: number): void {
