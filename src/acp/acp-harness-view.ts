@@ -142,6 +142,7 @@ export class AcpHarnessView implements ContentView {
   private composerEl!: HTMLElement;
   private pretextRaf = false;
   private pendingTranscriptScroll: 'bottom' | number | null = null;
+  private transcriptScrollToken = 0;
 
   constructor(projectDir: string | null = null) {
     this.projectDir = projectDir;
@@ -1061,6 +1062,7 @@ export class AcpHarnessView implements ContentView {
   private scrollActiveTranscriptToBottom(): void {
     const body = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
     if (body) body.scrollTop = body.scrollHeight;
+    this.queueActiveTranscriptScroll('bottom');
   }
 
   private captureActiveTranscriptScroll(): { atBottom: boolean; scrollTop: number | null } {
@@ -1072,7 +1074,20 @@ export class AcpHarnessView implements ContentView {
 
   private queueActiveTranscriptScroll(target: 'bottom' | number): void {
     this.pendingTranscriptScroll = target;
-    requestAnimationFrame(() => this.applyPendingTranscriptScroll());
+    const token = ++this.transcriptScrollToken;
+    this.applyQueuedTranscriptScroll(token, 3);
+  }
+
+  private applyQueuedTranscriptScroll(token: number, framesRemaining: number): void {
+    requestAnimationFrame(() => {
+      if (token !== this.transcriptScrollToken) return;
+      this.applyPendingTranscriptScroll();
+      if (framesRemaining > 0) {
+        this.applyQueuedTranscriptScroll(token, framesRemaining - 1);
+      } else if (token === this.transcriptScrollToken) {
+        this.pendingTranscriptScroll = null;
+      }
+    });
   }
 
   private applyPendingTranscriptScroll(): void {
@@ -1091,7 +1106,6 @@ export class AcpHarnessView implements ContentView {
       this.pretextRaf = false;
       this.layoutPretextRows();
       this.applyPendingTranscriptScroll();
-      this.pendingTranscriptScroll = null;
     });
   }
 
