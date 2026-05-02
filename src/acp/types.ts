@@ -94,12 +94,9 @@ export interface AcpMcpServerDescriptor {
 }
 
 export interface HarnessMemoryEntry {
-  id: string;
+  lane: string;
   summary: string;
   detail: string;
-  createdBy: string;
-  updatedBy: string;
-  createdAt: number;
   updatedAt: number;
 }
 

@@ -1,5 +1,5 @@
 ---
-status: Draft
+status: Implemented
 date: 2026-05-02
 milestone: M8 — Polish
 supersedes: docs/73-acp-harness-mcp-memory.md

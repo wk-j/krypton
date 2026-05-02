@@ -123,17 +123,16 @@
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
    Lanes render into a shared dashboard, but prompts are dispatched only to the
    active tab in the command center.
-6. On Enter, the active lane's draft is sent through acp_prompt with short
-   anti-context-loss memory guidance and the latest 10 memory summaries. Full
-   memory detail is never injected automatically; agents call memory_get when
-   needed.
-7. MCP-capable agents call memory_create, memory_update, memory_delete,
-   memory_search, and memory_get against
-   /mcp/harness/<harnessId>/lane/<laneLabel>. The hook server validates limits,
-   mutates the tab-local store, and emits a memory-changed event so the harness
-   refreshes the read-only board. Agents are instructed to create memory only
-   when future agents would lose important context without it, and to update
-   existing memory when recorded decisions/status materially change.
+6. On Enter, the active lane's draft is sent through acp_prompt with a minimal
+   memory packet: the lane's own label, the full lane roster for the harness,
+   and the lane's own current memory summary (or "empty"). No other-lane
+   summaries are injected — agents call memory_list when curious.
+7. MCP-capable agents call memory_set, memory_get, and memory_list against
+   /mcp/harness/<harnessId>/lane/<laneLabel>. Each lane owns exactly one
+   memory document; memory_set overwrites the caller's own document (empty
+   strings clear it) and is the only write path. memory_get reads any lane's
+   document by label; memory_list lists all lanes' summaries. The hook server
+   emits a memory-changed event so the harness refreshes the read-only board.
 8. session/update notifications append transcript rows and maintain
    file-touch warnings for permission context. Memory is not inferred from
    tool observations or assistant footers.

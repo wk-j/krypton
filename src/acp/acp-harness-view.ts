@@ -545,7 +545,7 @@ export class AcpHarnessView implements ContentView {
       type: 'text',
       text: userText,
     };
-    const packet = this.renderPromptMemoryPacket();
+    const packet = this.renderPromptMemoryPacket(lane);
     if (!packet) return [userBlock];
     if (lane.supportsEmbeddedContext) {
       return [
@@ -569,39 +569,15 @@ export class AcpHarnessView implements ContentView {
     ];
   }
 
-  private renderPromptMemoryPacket(): string {
-    const recent = this.memoryEntries
-      .slice()
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 10);
-    const lines = recent.map((entry) => `- [${entry.id}] ${entry.summary}`);
+  private renderPromptMemoryPacket(lane: HarnessLane): string {
+    const self = lane.displayName;
+    const roster = this.lanes.map((l) => l.displayName).join(', ');
+    const own = this.memoryEntries.find((entry) => entry.lane === self);
+    const ownSummary = own ? own.summary : 'empty';
     return [
-      '# Krypton harness memory — shared agent workspace',
-      'This memory is a handoff channel between agents in this tab. You and other agents (Claude, Codex, Gemini, ...) all read and write the same store. Treat it as a shared whiteboard, not a personal notebook.',
-      '',
-      'Tools: memory_search, memory_get, memory_create, memory_update, memory_delete.',
-      '',
-      'When to SEARCH (memory_search):',
-      '- At the start of a task, search the user\'s keywords — a previous agent may have left a spec, plan, or notes.',
-      '- When the user says "implement the spec", "follow what we discussed", "continue", or references prior work, search before asking.',
-      '- Call memory_get to fetch full detail when a summary looks relevant.',
-      '',
-      'When to SAVE (memory_create / memory_update):',
-      '- Store memory only when future agents would lose important context if this turn ended now.',
-      '- Call memory_create only for information future agents need and cannot reliably recover from the repo, git history, or current user prompt.',
-      '- Good cases: user-approved decisions, draft specs/plans not yet in docs, exact partial-work status, root-cause analysis, repro steps, non-obvious gotchas, or links between conversation decisions and repo files.',
-      '- Call memory_update only when an existing handoff would mislead a future agent or when a recorded decision/status materially changed. Prefer updating a relevant memory over creating duplicates.',
-      '- Format: `summary` is the search headline another agent would type ("auth refactor spec", "PTY resize bug RCA"). `detail` is the full artifact, written for an agent with zero prior context.',
-      '',
-      'When NOT to save:',
-      '- Conversation chatter, acknowledgements, or mid-turn state.',
-      '- Anything already in the repo (code, docs, git history) — point to the path instead.',
-      '- One-off task progress (use the agent\'s own todo/plan system).',
-      '- Private scratch notes or facts that can be cheaply rediscovered.',
-      lines.length ? '' : null,
-      lines.length ? '## Existing memories (summaries)' : null,
-      lines.length ? lines.join('\n') : null,
-    ].filter((line): line is string => line !== null).join('\n');
+      `You are lane ${self}. Lanes: ${roster}.`,
+      `Your memory: ${ownSummary}.`,
+    ].join('\n');
   }
 
   private finishTurn(lane: HarnessLane, stopReason: StopReason): void {
@@ -885,16 +861,15 @@ export class AcpHarnessView implements ContentView {
       this.memoryPanelEl.appendChild(empty);
       return;
     }
-    if (!this.memoryCursorRowId || !rows.some((entry) => entry.id === this.memoryCursorRowId)) {
-      this.memoryCursorRowId = rows[0]?.id ?? null;
+    if (!this.memoryCursorRowId || !rows.some((entry) => entry.lane === this.memoryCursorRowId)) {
+      this.memoryCursorRowId = rows[0]?.lane ?? null;
     }
     for (const entry of rows) {
       const row = document.createElement('div');
-      const selected = entry.id === this.memoryCursorRowId;
+      const selected = entry.lane === this.memoryCursorRowId;
       row.className = `acp-harness__memory-row${selected ? ' acp-harness__memory-row--cursor' : ''}`;
       row.innerHTML =
-        `<span class="acp-harness__memory-id">${esc(entry.id)}</span>` +
-        `<span class="acp-harness__memory-source" style="--acp-memory-accent:${esc(laneAccentForLabel(entry.updatedBy))}">${esc(entry.updatedBy)}</span>` +
+        `<span class="acp-harness__memory-source" style="--acp-memory-accent:${esc(laneAccentForLabel(entry.lane))}">${esc(entry.lane)}</span>` +
         `<span class="acp-harness__memory-text">${esc(entry.summary)}</span>` +
         `<span class="acp-harness__memory-kind">${esc(formatShortTime(entry.updatedAt))}</span>` +
         (selected ? `<div class="acp-harness__memory-detail">${esc(entry.detail)}</div>` : '');
@@ -1206,13 +1181,13 @@ export class AcpHarnessView implements ContentView {
   private moveMemoryCursor(key: string): void {
     const rows = this.sortedMemoryRows();
     if (rows.length === 0) return;
-    const current = rows.findIndex((entry) => entry.id === this.memoryCursorRowId);
+    const current = rows.findIndex((entry) => entry.lane === this.memoryCursorRowId);
     let next = current < 0 ? 0 : current;
     if (key === 'j') next = Math.min(rows.length - 1, next + 1);
     else if (key === 'k') next = Math.max(0, next - 1);
     else if (key === 'g') next = 0;
     else if (key === 'G') next = rows.length - 1;
-    this.memoryCursorRowId = rows[next].id;
+    this.memoryCursorRowId = rows[next].lane;
     this.renderMemory();
   }
 

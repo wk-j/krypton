@@ -1,6 +1,6 @@
 # ACP Harness MCP Memory — Implementation Spec
 
-> Status: Implemented
+> Status: Superseded by [docs/75-acp-harness-lane-memory.md](75-acp-harness-lane-memory.md)
 > Date: 2026-05-02
 > Milestone: M8 — Polish
 
