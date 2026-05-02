@@ -85,6 +85,7 @@ interface HarnessLane {
   currentAssistantId: string | null;
   currentThoughtId: string | null;
   toolTranscriptIds: Map<string, string>;
+  toolCalls: Map<string, ToolCall | ToolCallUpdate>;
   seenTranscriptIds: Set<string>;
 }
 
@@ -140,6 +141,7 @@ export class AcpHarnessView implements ContentView {
   private helpOverlayEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private pretextRaf = false;
+  private pendingTranscriptScroll: 'bottom' | number | null = null;
 
   constructor(projectDir: string | null = null) {
     this.projectDir = projectDir;
@@ -195,6 +197,10 @@ export class AcpHarnessView implements ContentView {
       if (lane.status === 'busy' || lane.status === 'needs_permission') void this.cancelLane(lane);
       else this.setDraft(lane, '', 0);
       return true;
+    }
+
+    if (e.key === 'v' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+      return false;
     }
 
     if (e.key === 'Tab') {
@@ -265,6 +271,16 @@ export class AcpHarnessView implements ContentView {
     this.composerEl.className = 'acp-harness__composer';
     commandCenter.appendChild(this.composerEl);
     this.element.appendChild(commandCenter);
+
+    this.element.addEventListener('paste', (e: ClipboardEvent) => {
+      if (this.helpOpen || this.memoryDrawerOpen) return;
+      const lane = this.activeLane();
+      if (!lane || lane.pendingPermissions.length > 0) return;
+      const text = e.clipboardData?.getData('text');
+      if (!text) return;
+      e.preventDefault();
+      this.insertDraft(lane, text);
+    });
   }
 
   private async start(): Promise<void> {
@@ -322,6 +338,7 @@ export class AcpHarnessView implements ContentView {
       currentAssistantId: null,
       currentThoughtId: null,
       toolTranscriptIds: new Map(),
+      toolCalls: new Map(),
       seenTranscriptIds: new Set(),
     };
   }
@@ -616,12 +633,15 @@ export class AcpHarnessView implements ContentView {
   }
 
   private render(): void {
+    const previousScroll = this.captureActiveTranscriptScroll();
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.renderTopbar();
     this.renderDashboard();
     this.renderMemory();
     this.renderHelp();
     this.renderComposer();
+    if (previousScroll.atBottom) this.queueActiveTranscriptScroll('bottom');
+    else if (previousScroll.scrollTop !== null) this.queueActiveTranscriptScroll(previousScroll.scrollTop);
   }
 
   private renderTopbar(): void {
@@ -838,9 +858,14 @@ export class AcpHarnessView implements ContentView {
 
   private renderTool(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
     if (!call.toolCallId) return;
-    const status = call.status ?? 'pending';
-    const text = `${statusGlyph(status)} ${renderToolSummary(call)}`;
-    const existingId = lane.toolTranscriptIds.get(call.toolCallId);
+    const merged = mergeToolCall(lane.toolCalls.get(call.toolCallId), call);
+    lane.toolCalls.set(call.toolCallId, merged);
+    const status = merged.status ?? 'pending';
+    const output = renderToolOutputBlock(merged);
+    const text = output
+      ? `${statusGlyph(status)} ${renderToolSummary(merged)}\n${output}`
+      : `${statusGlyph(status)} ${renderToolSummary(merged)}`;
+    const existingId = lane.toolTranscriptIds.get(merged.toolCallId);
     const existing = existingId ? lane.transcript.find((item) => item.id === existingId) : null;
     if (existing) {
       existing.text = text;
@@ -849,7 +874,7 @@ export class AcpHarnessView implements ContentView {
     }
     const item = this.appendTranscript(lane, 'tool', text);
     item.status = status;
-    lane.toolTranscriptIds.set(call.toolCallId, item.id);
+    lane.toolTranscriptIds.set(merged.toolCallId, item.id);
   }
 
   private renderPlan(lane: HarnessLane, entries: PlanEntry[]): void {
@@ -1038,12 +1063,35 @@ export class AcpHarnessView implements ContentView {
     if (body) body.scrollTop = body.scrollHeight;
   }
 
+  private captureActiveTranscriptScroll(): { atBottom: boolean; scrollTop: number | null } {
+    const body = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
+    if (!body) return { atBottom: true, scrollTop: null };
+    const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
+    return { atBottom: distance <= 24, scrollTop: body.scrollTop };
+  }
+
+  private queueActiveTranscriptScroll(target: 'bottom' | number): void {
+    this.pendingTranscriptScroll = target;
+    requestAnimationFrame(() => this.applyPendingTranscriptScroll());
+  }
+
+  private applyPendingTranscriptScroll(): void {
+    const target = this.pendingTranscriptScroll;
+    if (target === null) return;
+    const body = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
+    if (!body) return;
+    if (target === 'bottom') body.scrollTop = body.scrollHeight;
+    else body.scrollTop = target;
+  }
+
   private schedulePretextLayout(): void {
     if (this.pretextRaf) return;
     this.pretextRaf = true;
     requestAnimationFrame(() => {
       this.pretextRaf = false;
       this.layoutPretextRows();
+      this.applyPendingTranscriptScroll();
+      this.pendingTranscriptScroll = null;
     });
   }
 
@@ -1113,7 +1161,7 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
 }
 
 function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
-  return kind === 'thought' || kind === 'user';
+  return kind !== 'assistant';
 }
 
 function renderLaneHead(lane: HarnessLane, active: boolean): string {
@@ -1231,14 +1279,55 @@ function statusGlyph(status: string): string {
   return '·';
 }
 
+function mergeToolCall(
+  previous: ToolCall | ToolCallUpdate | undefined,
+  next: ToolCall | ToolCallUpdate,
+): ToolCall | ToolCallUpdate {
+  return {
+    ...previous,
+    ...next,
+    title: next.title ?? previous?.title,
+    kind: next.kind ?? previous?.kind,
+    content: next.content ?? previous?.content,
+    locations: next.locations ?? previous?.locations,
+    rawInput: next.rawInput ?? previous?.rawInput,
+    rawOutput: next.rawOutput ?? previous?.rawOutput,
+  };
+}
+
 function renderToolSummary(call: ToolCall | ToolCallUpdate): string {
-  const kind = call.kind ?? 'tool';
+  const kind = inferToolLabel(call);
   const path = extractModifiedPath(call);
   const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
   const subject = command || path || cleanToolTitle(call.title, kind) || kind;
   const result = renderToolResult(call);
   const label = subject === kind ? kind : `${kind} ${subject}`;
   return result ? `${label} -> ${result}` : label;
+}
+
+function inferToolLabel(call: ToolCall | ToolCallUpdate): string {
+  const kind = call.kind;
+  if (kind && kind !== 'other') return kind;
+  if (extractCommandLine(call.rawInput)) return 'execute';
+  const rawName = extractRawToolName(call.rawInput);
+  if (rawName) return rawName;
+  const title = cleanToolTitle(call.title, 'tool').toLowerCase();
+  if (/^(bash|shell|terminal|run|exec|execute|command)\b/.test(title)) return 'execute';
+  if (/^(edit|write|create|modify|patch)\b/.test(title)) return 'edit';
+  if (/^(read|open|cat)\b/.test(title)) return 'read';
+  if (/^(search|grep|rg|find)\b/.test(title)) return 'search';
+  if (/^(fetch|web|http)\b/.test(title)) return 'fetch';
+  return title || 'tool';
+}
+
+function extractRawToolName(rawInput: unknown): string {
+  if (typeof rawInput !== 'object' || !rawInput) return '';
+  const record = rawInput as Record<string, unknown>;
+  for (const key of ['toolName', 'tool_name', 'name', 'tool', 'type']) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return truncateInline(value, 40);
+  }
+  return '';
 }
 
 function cleanToolTitle(title: string | undefined, fallback: string): string {
@@ -1263,12 +1352,8 @@ function extractCommandLine(rawInput: unknown): string {
 }
 
 function renderToolResult(call: ToolCall | ToolCallUpdate): string {
-  const parts: string[] = [];
   const exit = extractToolExit(call.rawOutput);
-  if (exit) parts.push(exit);
-  const output = toolOutputPreview(call.rawOutput) || toolContentPreview(call.content);
-  if (output) parts.push(output);
-  if (parts.length > 0) return parts.join(' · ');
+  if (exit) return exit;
   return call.status === 'failed' ? 'failed' : '';
 }
 
@@ -1281,28 +1366,45 @@ function extractToolExit(rawOutput: unknown): string {
   return '';
 }
 
-function toolOutputPreview(rawOutput: unknown): string {
-  if (typeof rawOutput === 'object' && rawOutput) {
-    const record = rawOutput as Record<string, unknown>;
-    for (const key of ['summary', 'stdout', 'stderr', 'output', 'content', 'text', 'message']) {
-      const preview = compactPreview(stringifyToolValue(record[key]));
-      if (preview) return preview;
-    }
-    return '';
+function renderToolOutputBlock(call: ToolCall | ToolCallUpdate): string {
+  const raw = rawOutputSections(call.rawOutput);
+  const content = raw.length > 0 ? [] : contentOutputSections(call.content);
+  const sections = raw.length > 0 ? raw : content;
+  const lines: string[] = [];
+  for (const section of sections) {
+    const preview = boundedOutputLines(section.text, 6);
+    if (!preview) continue;
+    lines.push(`${section.label}: ${preview}`);
+    if (lines.length >= 8) break;
   }
-  return compactPreview(stringifyToolValue(rawOutput));
+  return lines.join('\n');
 }
 
-function toolContentPreview(content: ToolCall['content']): string {
+function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: string }> {
+  if (typeof rawOutput === 'object' && rawOutput) {
+    const record = rawOutput as Record<string, unknown>;
+    const sections: Array<{ label: string; text: string }> = [];
+    for (const key of ['summary', 'stdout', 'stderr', 'output', 'content', 'text', 'message']) {
+      const text = stringifyToolValue(record[key]);
+      if (text) sections.push({ label: key, text });
+    }
+    return sections;
+  }
+  const text = stringifyToolValue(rawOutput);
+  return text ? [{ label: 'output', text }] : [];
+}
+
+function contentOutputSections(content: ToolCall['content']): Array<{ label: string; text: string }> {
+  const sections: Array<{ label: string; text: string }> = [];
   for (const item of content ?? []) {
-    if (item.type === 'diff' && item.path) return item.path;
-    if (item.type === 'terminal' && item.terminalId) return `terminal ${item.terminalId}`;
+    if (item.type === 'diff' && item.path) sections.push({ label: 'diff', text: item.path });
+    if (item.type === 'terminal' && item.terminalId) sections.push({ label: 'terminal', text: item.terminalId });
     if (item.type === 'content' && item.content) {
-      const preview = compactPreview(contentBlockText(item.content));
-      if (preview) return preview;
+      const text = contentBlockText(item.content);
+      if (text) sections.push({ label: 'content', text });
     }
   }
-  return '';
+  return sections;
 }
 
 function contentBlockText(block: ContentBlock): string {
@@ -1329,13 +1431,15 @@ function stringifyToolValue(value: unknown): string {
   return '';
 }
 
-function compactPreview(value: string): string {
-  const firstLine = value
+function boundedOutputLines(value: string, maxLines: number): string {
+  const lines = value
     .replace(/\r/g, '')
     .split('\n')
     .map((line) => line.trim())
-    .find((line) => line.length > 0) ?? '';
-  return truncateInline(firstLine, 120);
+    .filter((line) => line.length > 0)
+    .slice(0, maxLines)
+    .map((line) => truncateInline(line, 140));
+  return lines.join('\n');
 }
 
 function truncateInline(value: string, max: number): string {

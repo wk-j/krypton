@@ -230,7 +230,8 @@
 }
 
 .acp-harness__pretext-line {
-  min-height: 1.35em;
+  min-height: 1.45em;
+  white-space: pre;
 }
 
 .acp-harness__msg-body--markdown {
