@@ -44,6 +44,16 @@ interface HarnessTranscriptItem {
   text: string;
   status?: string;
   diff?: { title: string; unified: string };
+  tool?: ToolPayload;
+}
+
+interface ToolPayload {
+  glyph: string;
+  status: string;
+  kind: string;
+  subject: string;
+  result: string;
+  sections: Array<{ label: string; text: string }>;
 }
 
 interface FileTouchRecord {
@@ -580,7 +590,7 @@ export class AcpHarnessView implements ContentView {
     }
     lane.pendingPermissions.shift();
     const label = option?.name ?? (action === 'accept' ? 'accepted' : 'rejected');
-    permission.resolvedLabel = `${action === 'accept' ? 'accepted' : 'rejected'}${auto ? ' (auto for remainder of this turn)' : ''}: ${label}`;
+    permission.resolvedLabel = `${action === 'accept' ? '✓' : '✗'} ${label}${auto ? ' (auto-turn)' : ''}`;
     permission.auto = auto;
     this.appendTranscript(lane, 'permission', permission.resolvedLabel);
     try {
@@ -595,12 +605,13 @@ export class AcpHarnessView implements ContentView {
   private describePermission(lane: HarnessLane, permission: HarnessPermission): string {
     const call = permission.toolCall;
     const path = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? call.title ?? 'unknown target';
-    const lines = [`permission required`, `operation: ${call.kind ?? 'tool'}`, `path: ${path}`];
+    const op = call.kind ?? 'tool';
+    let line = `${op} ${path}`;
     const touch = this.fileTouchMap.get(path);
     if (touch && touch.laneId !== lane.id && Date.now() - touch.at <= FILE_TOUCH_WINDOW_MS) {
-      lines.push(`also touched by ${touch.laneDisplayName} ${formatAge(Date.now() - touch.at)} ago (${touch.toolKind})`);
+      line += ` · also ${touch.laneDisplayName} ${formatAge(Date.now() - touch.at)} ago`;
     }
-    return lines.join('\n');
+    return line;
   }
 
   private async cancelLane(lane: HarnessLane): Promise<void> {
@@ -696,7 +707,7 @@ export class AcpHarnessView implements ContentView {
       if (active) {
         const stats = document.createElement('div');
         stats.className = 'acp-harness__lane-stats';
-        stats.innerHTML = renderLaneStats(lane);
+        stats.innerHTML = renderLaneStats(lane, this.projectDir);
         laneEl.appendChild(stats);
         const body = document.createElement('div');
         body.className = 'acp-harness__lane-body';
@@ -880,19 +891,19 @@ export class AcpHarnessView implements ContentView {
     const merged = mergeToolCall(lane.toolCalls.get(call.toolCallId), call);
     lane.toolCalls.set(call.toolCallId, merged);
     const status = merged.status ?? 'pending';
-    const output = renderToolOutputBlock(merged);
-    const text = output
-      ? `${statusGlyph(status)} ${renderToolSummary(merged)}\n${output}`
-      : `${statusGlyph(status)} ${renderToolSummary(merged)}`;
+    const tool = buildToolPayload(merged, status);
+    const text = tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
     const existingId = lane.toolTranscriptIds.get(merged.toolCallId);
     const existing = existingId ? lane.transcript.find((item) => item.id === existingId) : null;
     if (existing) {
       existing.text = text;
       existing.status = status;
+      existing.tool = tool;
       return;
     }
     const item = this.appendTranscript(lane, 'tool', text);
     item.status = status;
+    item.tool = tool;
     lane.toolTranscriptIds.set(merged.toolCallId, item.id);
   }
 
@@ -1176,6 +1187,9 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
     } catch {
       body.textContent = item.text;
     }
+  } else if (item.kind === 'tool' && item.tool) {
+    body.classList.add('acp-harness__tool');
+    renderToolBody(body, item.tool);
   } else if (usesPretext(item.kind)) {
     body.dataset.pretext = 'true';
     body.dataset.rawText = item.text;
@@ -1189,7 +1203,67 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
 }
 
 function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
-  return kind !== 'assistant';
+  return kind !== 'assistant' && kind !== 'tool';
+}
+
+function buildToolPayload(call: ToolCall | ToolCallUpdate, status: string): ToolPayload {
+  const kind = inferToolLabel(call);
+  const path = extractModifiedPath(call);
+  const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
+  const subject = command || path || cleanToolTitle(call.title, kind) || '';
+  const exit = extractToolExit(call.rawOutput);
+  const result = exit || (status === 'failed' ? 'failed' : '');
+  const raw = rawOutputSections(call.rawOutput);
+  const sections = raw.length > 0 ? raw : contentOutputSections(call.content);
+  const trimmed = sections
+    .map((s) => ({ label: s.label, text: boundedOutputLines(s.text, 6) }))
+    .filter((s) => s.text)
+    .slice(0, 4);
+  return { glyph: statusGlyph(status), status, kind, subject, result, sections: trimmed };
+}
+
+function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
+  const head = document.createElement('div');
+  head.className = 'acp-harness__tool-head';
+  const glyph = document.createElement('span');
+  glyph.className = `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status}`;
+  glyph.textContent = tool.glyph;
+  head.appendChild(glyph);
+  const kind = document.createElement('span');
+  kind.className = 'acp-harness__tool-kind';
+  kind.textContent = tool.kind;
+  head.appendChild(kind);
+  if (tool.subject) {
+    const subject = document.createElement('span');
+    subject.className = 'acp-harness__tool-subject';
+    subject.textContent = tool.subject;
+    head.appendChild(subject);
+  }
+  if (tool.result) {
+    const result = document.createElement('span');
+    result.className = `acp-harness__tool-result acp-harness__tool-result--${tool.status}`;
+    result.textContent = tool.result;
+    head.appendChild(result);
+  }
+  body.appendChild(head);
+  if (tool.sections.length > 0) {
+    const output = document.createElement('div');
+    output.className = 'acp-harness__tool-output';
+    for (const section of tool.sections) {
+      const block = document.createElement('div');
+      block.className = 'acp-harness__tool-section';
+      const label = document.createElement('div');
+      label.className = 'acp-harness__tool-section-label';
+      label.textContent = section.label;
+      const pre = document.createElement('pre');
+      pre.className = 'acp-harness__tool-section-text';
+      pre.textContent = section.text;
+      block.appendChild(label);
+      block.appendChild(pre);
+      output.appendChild(block);
+    }
+    body.appendChild(output);
+  }
 }
 
 function renderLaneHead(lane: HarnessLane, active: boolean): string {
@@ -1230,21 +1304,51 @@ function laneAccentForLabel(label: string): string {
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }
 
-function renderLaneStats(lane: HarnessLane): string {
-  const parts = [
-    `backend ${lane.backendId}`,
-    lane.sessionId ? `session ${shortId(lane.sessionId)}` : 'session pending',
-    `${lane.transcript.length} rows`,
-  ];
-  if (lane.pendingPermissions.length > 0) parts.push(`${lane.pendingPermissions.length} permission`);
-  if (lane.usage) {
-    if (typeof lane.usage.used === 'number') parts.push(`${formatCount(lane.usage.used)} ctx`);
-    else if (typeof lane.usage.inputTokens === 'number' || typeof lane.usage.outputTokens === 'number') {
-      parts.push(`in ${formatCount(lane.usage.inputTokens ?? 0)} / out ${formatCount(lane.usage.outputTokens ?? 0)}`);
+function renderLaneStats(lane: HarnessLane, projectDir: string | null): string {
+  const parts: string[] = [];
+  parts.push(lane.backendId);
+  parts.push(lane.sessionId ? `sess ${shortId(lane.sessionId)}` : 'sess pending');
+  if (projectDir) parts.push(basename(projectDir));
+
+  const usage = lane.usage;
+  if (usage) {
+    if (typeof usage.used === 'number') {
+      if (typeof usage.size === 'number' && usage.size > 0) {
+        const pct = Math.round((usage.used / usage.size) * 100);
+        parts.push(`ctx ${formatCount(usage.used)}/${formatCount(usage.size)} (${pct}%)`);
+      } else {
+        parts.push(`ctx ${formatCount(usage.used)}`);
+      }
     }
-    if (lane.usage.cost) parts.push(`${lane.usage.cost.amount.toFixed(4)} ${lane.usage.cost.currency}`);
+    if (typeof usage.cachedReadTokens === 'number' || typeof usage.cachedWriteTokens === 'number') {
+      const r = usage.cachedReadTokens ?? 0;
+      const w = usage.cachedWriteTokens ?? 0;
+      parts.push(`cache ${formatCount(r)}↓ ${formatCount(w)}↑`);
+    }
+    if (typeof usage.inputTokens === 'number' || typeof usage.outputTokens === 'number') {
+      parts.push(`in ${formatCount(usage.inputTokens ?? 0)} out ${formatCount(usage.outputTokens ?? 0)}`);
+    }
+    if (usage.cost) parts.push(`$${usage.cost.amount.toFixed(4)} ${usage.cost.currency}`);
   }
+
+  if (lane.toolCalls.size > 0) parts.push(`${lane.toolCalls.size} tools`);
+  parts.push(`${lane.transcript.length} rows`);
+  if (lane.pendingPermissions.length > 0) parts.push(`${lane.pendingPermissions.length} perm`);
+  if (lane.acceptAllForTurn) parts.push('accept-all');
+  if (lane.rejectAllForTurn) parts.push('reject-all');
+  if (lane.error) parts.push(`err: ${truncate(lane.error, 48)}`);
+
   return parts.map((part) => `<span>${esc(part)}</span>`).join('');
+}
+
+function basename(path: string): string {
+  const trimmed = path.replace(/\/+$/, '');
+  const idx = trimmed.lastIndexOf('/');
+  return idx === -1 ? trimmed : trimmed.slice(idx + 1) || trimmed;
+}
+
+function truncate(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
 function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
@@ -1323,16 +1427,6 @@ function mergeToolCall(
   };
 }
 
-function renderToolSummary(call: ToolCall | ToolCallUpdate): string {
-  const kind = inferToolLabel(call);
-  const path = extractModifiedPath(call);
-  const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
-  const subject = command || path || cleanToolTitle(call.title, kind) || kind;
-  const result = renderToolResult(call);
-  const label = subject === kind ? kind : `${kind} ${subject}`;
-  return result ? `${label} -> ${result}` : label;
-}
-
 function inferToolLabel(call: ToolCall | ToolCallUpdate): string {
   const kind = call.kind;
   if (kind && kind !== 'other') return kind;
@@ -1385,12 +1479,6 @@ function extractCommandLine(rawInput: unknown): string {
   return '';
 }
 
-function renderToolResult(call: ToolCall | ToolCallUpdate): string {
-  const exit = extractToolExit(call.rawOutput);
-  if (exit) return exit;
-  return call.status === 'failed' ? 'failed' : '';
-}
-
 function extractToolExit(rawOutput: unknown): string {
   if (typeof rawOutput !== 'object' || !rawOutput) return '';
   const record = rawOutput as Record<string, unknown>;
@@ -1398,20 +1486,6 @@ function extractToolExit(rawOutput: unknown): string {
     if (typeof record[key] === 'number') return `exit ${record[key]}`;
   }
   return '';
-}
-
-function renderToolOutputBlock(call: ToolCall | ToolCallUpdate): string {
-  const raw = rawOutputSections(call.rawOutput);
-  const content = raw.length > 0 ? [] : contentOutputSections(call.content);
-  const sections = raw.length > 0 ? raw : content;
-  const lines: string[] = [];
-  for (const section of sections) {
-    const preview = boundedOutputLines(section.text, 6);
-    if (!preview) continue;
-    lines.push(`${section.label}: ${preview}`);
-    if (lines.length >= 8) break;
-  }
-  return lines.join('\n');
 }
 
 function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: string }> {
