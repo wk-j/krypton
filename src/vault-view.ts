@@ -1,6 +1,6 @@
 import type { ContentView, PaneContentType } from './types';
 import type { VaultIndex, VaultFile } from './vault-parser';
-import { buildVaultIndex, readVaultFile } from './vault-parser';
+import { buildVaultIndex, parseHeadingsForFile, readVaultFile } from './vault-parser';
 
 type SidebarMode = 'files' | 'backlinks' | 'outline' | 'tags';
 type FileSortField = 'title' | 'updated' | 'modified' | 'name' | 'type';
@@ -9,6 +9,8 @@ type FileSortOrder = 'asc' | 'desc';
 export class VaultContentView implements ContentView {
   readonly type: PaneContentType = 'vault';
   readonly element: HTMLElement;
+
+  private static indexCache = new Map<string, VaultIndex>();
 
   private vaultRoot: string;
   private index: VaultIndex | null = null;
@@ -153,13 +155,25 @@ export class VaultContentView implements ContentView {
     this.expandPath = expandPath;
   }
 
+  private async ensureIndex(): Promise<void> {
+    const cached = VaultContentView.indexCache.get(this.vaultRoot);
+    if (cached) {
+      this.index = cached;
+      return;
+    }
+    this.index = await buildVaultIndex(this.vaultRoot);
+    VaultContentView.indexCache.set(this.vaultRoot, this.index);
+  }
+
   private async init(): Promise<void> {
     this.statusBarEl.textContent = 'INDEXING VAULT...';
-    this.index = await buildVaultIndex(this.vaultRoot);
+    await this.ensureIndex();
     this.renderSidebarList();
 
-    const fileCount = this.index.files.size;
-    const linkCount = [...this.index.backlinks.values()].reduce((sum, arr) => sum + arr.length, 0);
+    const index = this.index;
+    if (!index) return;
+    const fileCount = index.files.size;
+    const linkCount = [...index.backlinks.values()].reduce((sum, arr) => sum + arr.length, 0);
     this.statusBarEl.textContent = `FILES: ${fileCount}  LINKS: ${linkCount}`;
 
     if (fileCount > 0) {
@@ -167,7 +181,7 @@ export class VaultContentView implements ContentView {
       if (readme) {
         this.openFile(readme);
       } else {
-        const first = [...this.index.files.keys()][0];
+        const first = [...index.files.keys()][0];
         this.openFile(first);
       }
     }
@@ -436,6 +450,10 @@ export class VaultContentView implements ContentView {
     this.breadcrumbEl.textContent = file.title;
 
     const content = await readVaultFile(file.path);
+    if (!file.headingsLoaded) {
+      file.headings = parseHeadingsForFile(content);
+      file.headingsLoaded = true;
+    }
     this.renderMarkdown(content, file);
     this.updateStatusBar(file);
     this.renderSidebarList();
@@ -1046,6 +1064,7 @@ export class VaultContentView implements ContentView {
   private async reload(): Promise<void> {
     this.statusBarEl.textContent = 'RELOADING...';
     this.index = await buildVaultIndex(this.vaultRoot);
+    VaultContentView.indexCache.set(this.vaultRoot, this.index);
     this.renderSidebarList();
     if (this.currentFile) {
       await this.openFile(this.currentFile);

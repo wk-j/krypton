@@ -1052,6 +1052,31 @@ pub fn search_files(root: String, show_hidden: bool) -> Result<Vec<String>, Stri
     Ok(files)
 }
 
+/// Bulk-read multiple files. Returns one entry per input path in the same order.
+/// Empty string on read failure or join error. Invalid UTF-8 is decoded with
+/// `String::from_utf8_lossy` to preserve replacement-char semantics from the
+/// existing `cat`-based readVaultFile path.
+#[tauri::command]
+pub async fn read_vault_files(paths: Vec<String>) -> Vec<String> {
+    use tokio::task;
+
+    let handles: Vec<_> = paths
+        .into_iter()
+        .map(|p| {
+            task::spawn_blocking(move || match std::fs::read(&p) {
+                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                Err(_) => String::new(),
+            })
+        })
+        .collect();
+
+    let mut out = Vec::with_capacity(handles.len());
+    for h in handles {
+        out.push(h.await.unwrap_or_default());
+    }
+    out
+}
+
 /// Return modification time (seconds since Unix epoch) for each absolute path.
 /// Missing/unreadable entries return 0.
 #[tauri::command]

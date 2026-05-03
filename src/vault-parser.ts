@@ -22,6 +22,7 @@ export interface VaultFile {
   tags: string[];
   frontmatterTags: string[];
   headings: Heading[];
+  headingsLoaded: boolean;
   modifiedAt: number;
   contentUpdatedAt: number;
 }
@@ -118,17 +119,23 @@ function parseFrontmatterTags(fm: Record<string, unknown>): string[] {
     .filter((t) => t.length > 0);
 }
 
-function resolveWikilinkTarget(target: string, fileMap: Map<string, VaultFile>): string {
-  const normalized = target.toLowerCase().replace(/\.md$/, '');
-
-  for (const [path, file] of fileMap) {
-    const fileBase = path.replace(/\.md$/, '').toLowerCase();
-    if (fileBase === normalized || fileBase.endsWith('/' + normalized)) {
-      return file.relativePath;
+function buildSlugMap(files: Map<string, VaultFile>): Map<string, string> {
+  const slug = new Map<string, string>();
+  for (const [, file] of files) {
+    const base = file.relativePath.replace(/\.md$/, '').toLowerCase();
+    if (!slug.has(base)) slug.set(base, file.relativePath);
+    const segments = base.split('/');
+    for (let i = 1; i < segments.length; i++) {
+      const suffix = segments.slice(i).join('/');
+      if (!slug.has(suffix)) slug.set(suffix, file.relativePath);
     }
   }
+  return slug;
+}
 
-  return target;
+function resolveWikilinkTarget(target: string, slug: Map<string, string>): string {
+  const normalized = target.toLowerCase().replace(/\.md$/, '');
+  return slug.get(normalized) ?? target;
 }
 
 export async function listVaultFiles(root: string): Promise<string[]> {
@@ -159,6 +166,18 @@ export async function readVaultFile(path: string): Promise<string> {
   }
 }
 
+export async function readVaultFiles(paths: string[]): Promise<string[]> {
+  try {
+    return await invoke<string[]>('read_vault_files', { paths });
+  } catch {
+    return paths.map(() => '');
+  }
+}
+
+export function parseHeadingsForFile(content: string): Heading[] {
+  return parseHeadings(content);
+}
+
 function parseVaultFile(absolutePath: string, root: string, content: string): VaultFile {
   const relativePath = absolutePath.startsWith(root)
     ? absolutePath.slice(root.length).replace(/^\//, '')
@@ -182,7 +201,8 @@ function parseVaultFile(absolutePath: string, root: string, content: string): Va
     wikilinks: parseWikilinks(body),
     tags: allTags,
     frontmatterTags: fmTags,
-    headings: parseHeadings(body),
+    headings: [],
+    headingsLoaded: false,
     modifiedAt: 0,
     contentUpdatedAt: parseFrontmatterDate(frontmatter),
   };
@@ -202,28 +222,25 @@ function parseFrontmatterDate(fm: Record<string, unknown>): number {
 
 export async function buildVaultIndex(root: string): Promise<VaultIndex> {
   const filePaths = await listVaultFiles(root);
+  const [contents, mtimes] = await Promise.all([
+    readVaultFiles(filePaths),
+    invoke<number[]>('stat_files', { paths: filePaths }).catch(() => [] as number[]),
+  ]);
+
   const files = new Map<string, VaultFile>();
-  const backlinks = new Map<string, string[]>();
-  const tags = new Map<string, string[]>();
-
-  let mtimes: number[] = [];
-  try {
-    mtimes = await invoke<number[]>('stat_files', { paths: filePaths });
-  } catch {
-    mtimes = [];
-  }
-
   for (let i = 0; i < filePaths.length; i++) {
-    const absPath = filePaths[i];
-    const content = await readVaultFile(absPath);
-    const file = parseVaultFile(absPath, root, content);
+    const file = parseVaultFile(filePaths[i], root, contents[i] ?? '');
     file.modifiedAt = mtimes[i] ?? 0;
     files.set(file.relativePath, file);
   }
 
+  const slug = buildSlugMap(files);
+  const backlinks = new Map<string, string[]>();
+  const tags = new Map<string, string[]>();
+
   for (const [, file] of files) {
     for (const link of file.wikilinks) {
-      link.target = resolveWikilinkTarget(link.target, files);
+      link.target = resolveWikilinkTarget(link.target, slug);
       const existing = backlinks.get(link.target) ?? [];
       existing.push(file.relativePath);
       backlinks.set(link.target, existing);

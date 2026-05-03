@@ -105,6 +105,7 @@ pub fn run() {
             commands::list_directory,
             commands::search_files,
             commands::stat_files,
+            commands::read_vault_files,
             commands::read_file,
             commands::write_file,
             commands::create_harness_memory,
