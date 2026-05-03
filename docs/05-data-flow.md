@@ -115,17 +115,22 @@
 1. User opens ACP Harness via Leader Y or the command palette.
 2. Compositor resolves the focused working directory with getFocusedCwd().
 3. AcpHarnessView invokes get_app_cwd() to get the canonical project path.
-4. AcpHarnessView creates a tab-local memory store through
+4. AcpHarnessView resolves the current Git branch for the composer status line with
+   run_command("git", ["branch", "--show-current"], cwd). If the branch is
+   empty, it tries run_command("git", ["rev-parse", "--short", "HEAD"], cwd)
+   and displays detached state as `HEAD <sha>`. Non-Git directories omit the
+   branch segment.
+5. AcpHarnessView creates a tab-local memory store through
    create_harness_memory(projectDir). The Rust backend:
    a. Resolves a persistence path: ~/.config/krypton/acp-harness-memory/<hash>.json.
    b. Hash is first 16 chars of SHA-256 over canonical project path.
    c. If file exists, loads lane memory documents into RAM (continuity).
    d. Returns harnessId and hook server port to frontend.
-5. AcpHarnessView lists ACP backends and spawns the default lane roster
+6. AcpHarnessView lists ACP backends and spawns the default lane roster
    (Codex-1, Claude-1, Gemini-1, OpenCode-1 when those backends are installed)
    with the same cwd. After `session/new`, OpenCode lanes receive
    `session/set_config_option` to select `zai-coding-plan/glm-5.1`.
-6. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
+7. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
    Lanes render into a shared dashboard, but prompts are dispatched only to the
    active tab in the command center.
@@ -159,8 +164,10 @@
     Ctrl+Shift+S screen capture. For global capture, main.ts invokes
     capture_screen only when the focused content type is acp_harness, then
     routes the PNG through Compositor.stageCapturedImageOnFocusedContent().
-    The harness sends staged images as embedded ACP image blocks on the next
-    prompt and clears them after dispatch.
+    Pasted and dropped images are first saved through save_temp_image. The
+    harness sends staged images as embedded ACP image blocks with base64 data
+    plus a file:// URI to the saved path on the next prompt, then clears the
+    transient composer thumbnails after dispatch.
 14. Closing the harness disposes every lane client, calls dispose_harness_memory(),
     and drops transcripts and file-touch warnings. Persistent memory stays on
     disk for the next harness session in this directory.

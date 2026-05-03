@@ -249,7 +249,7 @@ function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] 
 9. When the turn returns, pending permissions and turn-scoped accept/reject-all flags clear. Cancelled turns do not modify memory unless the agent already called MCP memory tools before cancellation.
 10. Permission requests for the built-in memory MCP tools are auto-allowed and append a `memory auto-allow` transcript row without entering permission mode. Other permission requests move that lane to `needs_permission` and pre-empt that tab's composer with the options banner. The lane transcript holds the request detail (operation, path, size, diff preview) and a cross-lane warning when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. The user must switch to that tab to read context, then resolve via `a/A/r/R/Esc`. `A`/`R` apply only for the current `session/prompt` turn; both flags clear when that turn returns.
 11. `Ctrl+C` (or `#cancel`) in the composer cancels the active lane only. `#new` starts a fresh active-lane session after awaiting old-client disposal; `#new!` also clears the active lane's persisted memory; `#mem clear` clears memory without replacing the session.
-12. Pasted, dropped, and global screen-captured images stage in the active lane composer (up to 4 images, 5 MB each). On submit they are sent as embedded ACP image content blocks alongside the draft text.
+12. Pasted, dropped, and global screen-captured images stage in the active lane composer (up to 4 images, 5 MB each). Each staged image renders as a compact placeholder chip with thumbnail, filename/type label, and an `x` remove button; `Esc` still clears all staged images. Pasted and dropped images are saved under Krypton's temp image directory; global captures reuse the `capture_screen` file path. On submit they are sent as embedded ACP image content blocks with base64 data plus a `file://` URI to the saved path alongside the draft text.
 13. Closing the tab disposes every client and drops all in-memory UI state (transcripts, file-touch map, pending permissions, staged images). **Memory documents are persisted to disk per project directory.** See `docs/76-acp-harness-memory-persistence.md`.
 ```
 
@@ -260,7 +260,7 @@ The harness has two surfaces stacked vertically:
 1. **Dashboard** (top, read-only) — renders all activity for every lane. No input is accepted on this surface.
 2. **Command Center** (bottom, input-only) — tab strip + composer. One tab per lane. The active tab determines which lane is expanded on the dashboard and which lane will receive the next prompt.
 
-The **memory drawer** is an overlay (`Esc`, then `v`) that covers the dashboard. The command center stays visible and reachable while the drawer is open.
+The **memory drawer** is an overlay (`Ctrl+M`) that covers the dashboard. The command center stays visible and reachable while the drawer is open.
 
 The **help overlay** is toggled with `Esc`, then `?`. It covers the dashboard, keeps the command center visible, and lists lane control, permission, memory, transcript, and hash-command keys. It closes with `Esc`, `?`, or `q`.
 
@@ -304,6 +304,7 @@ DOM shape:
     <div class="acp-harness__composer">
       <div class="acp-harness__composer-meta">
         <span class="acp-harness__memory-chip">memory: 3/21</span>
+        <span class="acp-harness__project-status">~/project on main</span>
       </div>
       <span class="acp-harness__prompt">›</span>
       <span class="acp-harness__input"></span>
@@ -355,7 +356,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   Status uses symbol + text + color together; never color alone.
 
 - The **active lane** fills the remaining viewport. Its body is internally scrollable. Collapsed rows above and below the active lane stay anchored.
-- The active lane body shows the full per-lane transcript: user prompts, assistant text, thoughts, tool calls and summaries, plan updates, permission requests and resolutions, usage snapshots, and system rows. Tool rows show diff/output preview inline (collapsible). Long assistant text truncates at ~12 lines with a `[…]` expand affordance. The transcript scrolls within the lane body.
+- The active lane body shows the full per-lane transcript: user prompts, assistant text, thoughts, tool calls and summaries, plan updates, permission requests and resolutions, usage snapshots, and system rows. Tool rows show diff/output preview inline (collapsible) as plain monospace glow text, not syntax-highlighted code. Long assistant text truncates at ~12 lines with a `[…]` expand affordance. The transcript scrolls within the lane body.
 - Permission requests appear inline in the transcript at the time they arrive, framed by a clear divider:
 
   ```text
@@ -452,10 +453,10 @@ Hash-command autocomplete:
 
 #### Memory drawer overlay
 
-- Toggled with `v`. Closes with `Esc`.
-- Overlays the dashboard. The command center stays visible and reachable; `#mem clear` runs while the drawer is open and effects appear immediately.
+- Toggled with `Ctrl+M`. Closes with `Esc` or `Ctrl+M`.
+- Overlays the dashboard. The command center stays visible for lane context, but the composer input line is hidden and ordinary typing is captured by the drawer until it closes. Run commands such as `#mem clear` after closing the drawer.
 - Single list view — no tabs. Rows are sorted newest-first by lane document update time.
-- The drawer maintains a **cursor row** moved with `j`/`k`; current human commands do not target individual rows.
+- The drawer maintains a **cursor row** moved with `Ctrl+N`/`Ctrl+P`, `ArrowUp`/`ArrowDown`, `PageUp`/`PageDown`, or `Home`/`End`; clicking a row selects it. Current human commands do not target individual rows.
 - Rows show `<lane> <summary>`, and the selected row expands to show that lane's full memory detail.
 - The drawer is **read-only display**. Lane memory documents are managed by agents through MCP; humans can clear only the active lane's document with `#mem clear`.
 - The drawer never auto-scrolls away from the row the user is reviewing. New entries appended during a review do not move the cursor.
@@ -467,6 +468,7 @@ Memory injection preview:
 
 Same-project notice:
 
+- The composer meta/status line shows the harness working directory and, when the directory is in a Git repository, the current branch. Detached HEAD state is displayed as `HEAD <sha>`. Non-Git directories show only the cwd.
 - When more than one lane is idle or busy in the same `projectDir`, the topbar adds a small `shared cwd` segment. This is informational, never modal, and does not block dispatch. (Per-lane file-touch warnings already cover the actual collision risk during write requests.)
 
 ### Keybindings
@@ -491,10 +493,12 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `r` | Composer permission mode | Reject the focused permission. |
 | `R` | Composer permission mode | Reject-all-from-this-lane for the **current `session/prompt` turn only**; clears when the turn returns. |
 | `Esc` | Composer permission mode | Cancel pending permission (rejects). |
-| `v` | Transcript scroll focus | Toggle memory drawer overlay. |
-| `j` / `k` | Memory drawer open | Move cursor row. |
-| `g` / `G` | Memory drawer open | Jump cursor to top/bottom of list. |
-| `Esc` | Memory drawer open | Close drawer (composer draft preserved). |
+| `Ctrl+M` / `Cmd+M` | Composer or transcript context | Toggle memory drawer overlay. |
+| `Ctrl+N` / `Ctrl+P`, `ArrowDown` / `ArrowUp`, `PageDown` / `PageUp` | Memory drawer open | Move cursor row. |
+| `Home` / `End` | Memory drawer open | Jump cursor to top/bottom of list. |
+| Click row | Memory drawer open | Select memory row. |
+| `Esc` / `Ctrl+M` / `Cmd+M` | Memory drawer open | Close drawer (composer draft preserved). |
+| Other text input | Memory drawer open | Ignored; composer draft is unchanged. |
 | `j` / `k` | Transcript scroll focus | Scroll active lane transcript line by line. |
 | `1`–`9` | Transcript scroll focus | Switch to lane tab N without inserting text. |
 | `g` / `G` | Transcript scroll focus | Jump to top/bottom of active lane transcript. |
@@ -543,7 +547,7 @@ No TOML keys are wired for the harness. The default roster is code-defined, and 
 - **Backend list lacks a default roster backend:** omit that backend and add a system row to the harness header (e.g. `Codex backend not installed — skipped`). If zero lanes spawn, harness opens with an empty dashboard and a single banner `no ACP backends available`. v1 does not auto-fall-back to a different backend.
 - **Same project write conflicts:** v1 does not lock or prevent them. The topbar `shared cwd` segment and per-permission `also touched by …` warnings are the only signals. Users should drive write-heavy work through one lane.
 - **Drawer cursor row is on a row that gets removed (cap overflow):** snap the cursor to the nearest surviving row.
-- **Image paste/drop/screen capture:** images stage only for the active lane. If the lane has a pending permission prompt, the user must resolve it before staging another image. If the active backend does not advertise image support, the harness shows a warning chip but still sends the image because some ACP adapters under-report capabilities.
+- **Image paste/drop/screen capture:** images stage only for the active lane. If the lane has a pending permission prompt, the user must resolve it before staging another image. If the active backend does not advertise image support, the harness shows a warning chip but still sends the image because some ACP adapters under-report capabilities. The visible placeholder chip is transient, individually removable before submit, and clears after submit; the ACP image block still carries a local `file://` URI for adapters that need a filesystem path.
 
 ## Open Questions
 

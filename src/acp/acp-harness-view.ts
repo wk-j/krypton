@@ -5,6 +5,7 @@ import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
+import 'highlight.js/styles/github-dark.css';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { AcpClient } from './client';
@@ -60,6 +61,7 @@ interface ToolPayload {
 interface StagedImage {
   data: string;
   mimeType: string;
+  path: string | null;
 }
 
 const MAX_STAGED_IMAGES = 4;
@@ -167,6 +169,9 @@ export class AcpHarnessView implements ContentView {
   private memoryEntries: HarnessMemoryEntry[] = [];
   private harnessMemoryId: string | null = null;
   private harnessMemoryPort: number | null = null;
+  private gitBranch: string | null = null;
+  private gitBranchLoading = false;
+  private gitBranchProjectDir: string | null = null;
   private memoryUnlisten: UnlistenFn | null = null;
   private mcpStatsByLane = new Map<string, HarnessMcpLaneStats>();
   private mcpUnlisten: UnlistenFn | null = null;
@@ -199,6 +204,7 @@ export class AcpHarnessView implements ContentView {
     this.element.tabIndex = 0;
     this.buildDOM();
     this.render();
+    void this.refreshGitBranch();
     void this.start();
   }
 
@@ -315,7 +321,7 @@ export class AcpHarnessView implements ContentView {
       this.flashChip('resolve permission before staging capture');
       return true;
     }
-    const staged = this.stageImageData(lane, image.data, image.mimeType);
+    const staged = this.stageImageData(lane, image.data, image.mimeType, image.path);
     if (staged) this.flashChip('screen capture staged');
     return true;
   }
@@ -349,6 +355,16 @@ export class AcpHarnessView implements ContentView {
     this.memoryOverlayEl.appendChild(memoryHead);
     this.memoryPanelEl = document.createElement('section');
     this.memoryPanelEl.className = 'acp-harness__memory-panel';
+    this.memoryPanelEl.addEventListener('click', (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const row = target.closest<HTMLElement>('[data-memory-lane]');
+      if (!row) return;
+      const lane = row.dataset.memoryLane;
+      if (!lane) return;
+      this.memoryCursorRowId = lane;
+      this.renderMemory();
+    });
     this.memoryOverlayEl.appendChild(this.memoryPanelEl);
     body.appendChild(this.memoryOverlayEl);
 
@@ -362,6 +378,18 @@ export class AcpHarnessView implements ContentView {
     commandCenter.className = 'acp-harness__command-center';
     this.composerEl = document.createElement('div');
     this.composerEl.className = 'acp-harness__composer';
+    this.composerEl.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      const button = target.closest<HTMLButtonElement>('[data-remove-staged-image]');
+      if (!button) return;
+      const lane = this.activeLane();
+      if (!lane) return;
+      const index = Number(button.dataset.removeStagedImage);
+      if (!Number.isInteger(index)) return;
+      e.preventDefault();
+      this.removeStagedImage(lane, index);
+    });
     commandCenter.appendChild(this.composerEl);
     this.element.appendChild(commandCenter);
 
@@ -452,6 +480,44 @@ export class AcpHarnessView implements ContentView {
     });
     await this.refreshMemory();
     await this.refreshMcpStats();
+  }
+
+  private async refreshGitBranch(): Promise<void> {
+    const cwd = this.projectDir;
+    this.gitBranch = null;
+    this.gitBranchProjectDir = cwd;
+    this.gitBranchLoading = Boolean(cwd);
+    this.render();
+    if (!cwd) {
+      this.gitBranchLoading = false;
+      return;
+    }
+
+    let branch: string | null = null;
+    try {
+      const rawBranch = await invoke<string>('run_command', {
+        program: 'git',
+        args: ['branch', '--show-current'],
+        cwd,
+      });
+      branch = rawBranch.trim() || null;
+      if (!branch) {
+        const rawHead = await invoke<string>('run_command', {
+          program: 'git',
+          args: ['rev-parse', '--short', 'HEAD'],
+          cwd,
+        });
+        const head = rawHead.trim();
+        if (head) branch = `HEAD ${head}`;
+      }
+    } catch {
+      branch = null;
+    }
+
+    if (this.gitBranchProjectDir !== cwd) return;
+    this.gitBranch = branch;
+    this.gitBranchLoading = false;
+    this.render();
   }
 
   private async refreshMcpStats(): Promise<void> {
@@ -662,6 +728,7 @@ export class AcpHarnessView implements ContentView {
       type: 'image',
       data: img.data,
       mimeType: img.mimeType,
+      ...(img.path ? { uri: pathToFileUri(img.path) } : {}),
     }));
     const userBlocks: ContentBlock[] = [];
     if (userText) userBlocks.push({ type: 'text', text: userText });
@@ -1019,6 +1086,7 @@ export class AcpHarnessView implements ContentView {
   private render(): void {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
+    this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
     this.renderTopbar();
     this.renderDashboard();
     this.renderMemory();
@@ -1133,6 +1201,7 @@ export class AcpHarnessView implements ContentView {
       const row = document.createElement('div');
       const selected = entry.lane === this.memoryCursorRowId;
       row.className = `acp-harness__memory-row${selected ? ' acp-harness__memory-row--cursor' : ''}`;
+      row.dataset.memoryLane = entry.lane;
       row.innerHTML =
         `<span class="acp-harness__memory-source" style="--acp-memory-accent:${esc(laneAccentForLabel(entry.lane))}">${esc(entry.lane)}</span>` +
         `<span class="acp-harness__memory-text">${esc(entry.summary)}</span>` +
@@ -1155,29 +1224,52 @@ export class AcpHarnessView implements ContentView {
         `<div class="acp-harness__permission-options">a accept &nbsp;&nbsp; A accept-all-turn &nbsp;&nbsp; r reject &nbsp;&nbsp; R reject-all-turn &nbsp;&nbsp; Esc cancel</div>`;
       return;
     }
-    this.composerEl.className = `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}`;
+    this.composerEl.className =
+      `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}` +
+      `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}`;
     const chip = this.chip ?? (this.focus === 'transcript'
       ? 'command mode: 1-9 lanes · ^M memory · ? help · i/Esc input'
       : `memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`);
+    const projectStatus = this.renderComposerProjectStatus();
     const before = lane.draft.slice(0, lane.cursor);
     const after = lane.draft.slice(lane.cursor);
     this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
     let staging = '';
     if (lane.stagedImages.length > 0) {
-      const thumbs = lane.stagedImages
-        .map((img) => `<img class="acp-harness__staged-thumb" src="data:${img.mimeType};base64,${img.data}" />`)
+      const chips = lane.stagedImages
+        .map((img, index) => {
+          const label = img.path ? basename(img.path) : img.mimeType;
+          return (
+            `<div class="acp-harness__staged-image">` +
+            `<img class="acp-harness__staged-thumb" src="data:${img.mimeType};base64,${img.data}" alt="" />` +
+            `<span class="acp-harness__staged-label">${esc(label)}</span>` +
+            `<button class="acp-harness__staged-remove" type="button" data-remove-staged-image="${index}" title="Remove image">x</button>` +
+            `</div>`
+          );
+        })
         .join('');
       const hint = `${lane.stagedImages.length} image${lane.stagedImages.length === 1 ? '' : 's'} · Esc to clear`;
-      staging = `<div class="acp-harness__staging">${thumbs}<span class="acp-harness__staging-hint">${esc(hint)}</span></div>`;
+      staging = `<div class="acp-harness__staging">${chips}<span class="acp-harness__staging-hint">${esc(hint)}</span></div>`;
     }
     this.composerEl.innerHTML =
-      `<div class="acp-harness__composer-meta"><span class="acp-harness__memory-chip">${esc(chip)}</span></div>` +
+      `<div class="acp-harness__composer-meta">` +
+      `<span class="acp-harness__memory-chip">${esc(chip)}</span>` +
+      projectStatus +
+      `</div>` +
       staging +
       `<div class="acp-harness__input-line">` +
       `<span class="acp-harness__lane-tag">${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__prompt">›</span>` +
       `<span class="acp-harness__input">${esc(before)}<span class="acp-harness__caret">█</span>${esc(after)}</span>` +
       `<span class="acp-harness__help-hint">? help</span></div>`;
+  }
+
+  private renderComposerProjectStatus(): string {
+    const cwd = this.projectDir ? abbreviatePath(this.projectDir) : 'no cwd';
+    const branch = this.gitBranchLoading ? '...' : this.gitBranch;
+    const branchText = branch ? ` on ${branch}` : '';
+    const title = this.projectDir ? `${this.projectDir}${this.gitBranch ? ` on ${this.gitBranch}` : ''}` : '';
+    return `<span class="acp-harness__project-status" title="${esc(title)}">${esc(cwd)}${esc(branchText)}</span>`;
   }
 
   private renderHelp(): void {
@@ -1320,7 +1412,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private handleMemoryKey(e: KeyboardEvent): boolean {
-    if (e.key === 'Escape' || (e.key === 'q' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+    if (e.key === 'Escape') {
       e.preventDefault();
       this.toggleMemoryDrawer(false);
       return true;
@@ -1335,12 +1427,20 @@ export class AcpHarnessView implements ContentView {
       this.toggleHelp(true);
       return true;
     }
-    if (['j', 'k', 'g', 'G'].includes(e.key)) {
+    if (this.isMemoryCursorKey(e)) {
       e.preventDefault();
       this.moveMemoryCursor(e.key);
       return true;
     }
-    return false;
+    e.preventDefault();
+    return true;
+  }
+
+  private isMemoryCursorKey(e: KeyboardEvent): boolean {
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'].includes(e.key)) {
+      return true;
+    }
+    return e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'n' || e.key === 'p');
   }
 
   private handleTranscriptKey(e: KeyboardEvent): boolean {
@@ -1412,12 +1512,29 @@ export class AcpHarnessView implements ContentView {
       const dataUrl = reader.result as string;
       const commaIdx = dataUrl.indexOf(',');
       const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
-      this.stageImageData(lane, base64, file.type);
+      void this.stageImageDataFromFile(lane, base64, file.type);
     };
     reader.readAsDataURL(file);
   }
 
-  private stageImageData(lane: HarnessLane, data: string, mimeType: string): boolean {
+  private async stageImageDataFromFile(lane: HarnessLane, data: string, mimeType: string): Promise<void> {
+    if (lane.stagedImages.length >= MAX_STAGED_IMAGES) {
+      this.flashChip(`max ${MAX_STAGED_IMAGES} images per message`);
+      return;
+    }
+    if (data.length > MAX_IMAGE_BYTES * 1.34) {
+      this.flashChip('image too large (max 5MB)');
+      return;
+    }
+    try {
+      const path = await invoke<string>('save_temp_image', { data, mimeType });
+      this.stageImageData(lane, data, mimeType, path);
+    } catch (e) {
+      this.flashChip(`image save failed: ${String(e)}`);
+    }
+  }
+
+  private canStageImage(lane: HarnessLane, data: string): boolean {
     if (lane.stagedImages.length >= MAX_STAGED_IMAGES) {
       this.flashChip(`max ${MAX_STAGED_IMAGES} images per message`);
       return false;
@@ -1429,7 +1546,12 @@ export class AcpHarnessView implements ContentView {
       this.flashChip('image too large (max 5MB)');
       return false;
     }
-    lane.stagedImages.push({ data, mimeType });
+    return true;
+  }
+
+  private stageImageData(lane: HarnessLane, data: string, mimeType: string, path: string | null): boolean {
+    if (!this.canStageImage(lane, data)) return false;
+    lane.stagedImages.push({ data, mimeType, path });
     this.renderComposer();
     return true;
   }
@@ -1437,6 +1559,12 @@ export class AcpHarnessView implements ContentView {
   private clearStagedImages(lane: HarnessLane): void {
     if (lane.stagedImages.length === 0) return;
     lane.stagedImages = [];
+    this.renderComposer();
+  }
+
+  private removeStagedImage(lane: HarnessLane, index: number): void {
+    if (index < 0 || index >= lane.stagedImages.length) return;
+    lane.stagedImages.splice(index, 1);
     this.renderComposer();
   }
 
@@ -1502,10 +1630,10 @@ export class AcpHarnessView implements ContentView {
     if (rows.length === 0) return;
     const current = rows.findIndex((entry) => entry.lane === this.memoryCursorRowId);
     let next = current < 0 ? 0 : current;
-    if (key === 'j') next = Math.min(rows.length - 1, next + 1);
-    else if (key === 'k') next = Math.max(0, next - 1);
-    else if (key === 'g') next = 0;
-    else if (key === 'G') next = rows.length - 1;
+    if (key === 'n' || key === 'ArrowDown' || key === 'PageDown') next = Math.min(rows.length - 1, next + 1);
+    else if (key === 'p' || key === 'ArrowUp' || key === 'PageUp') next = Math.max(0, next - 1);
+    else if (key === 'Home') next = 0;
+    else if (key === 'End') next = rows.length - 1;
     this.memoryCursorRowId = rows[next].lane;
     this.renderMemory();
   }
@@ -2005,7 +2133,8 @@ function extractToolExit(rawOutput: unknown): string {
   if (typeof rawOutput !== 'object' || !rawOutput) return '';
   const record = rawOutput as Record<string, unknown>;
   for (const key of ['exitCode', 'exit_code', 'code']) {
-    if (typeof record[key] === 'number') return `exit ${record[key]}`;
+    const value = record[key];
+    if (typeof value === 'number') return value === 0 ? '' : `exit ${value}`;
   }
   return '';
 }
@@ -2094,6 +2223,11 @@ function abbreviatePath(path: string): string {
   const parts = p.split('/').filter(Boolean);
   if (parts.length <= 3) return p;
   return `${p.startsWith('~') ? '~/' : '/'}.../${parts.slice(-2).join('/')}`;
+}
+
+function pathToFileUri(path: string): string {
+  if (path.startsWith('file://')) return path;
+  return `file://${path.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
 }
 
 function getHomeLikePrefix(): string | null {

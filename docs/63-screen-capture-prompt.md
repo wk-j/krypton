@@ -25,7 +25,7 @@ Inside Krypton, `Cmd+Shift+K` continues to work unchanged (existing in-app bindi
 - `tauri-plugin-globalshortcut` (Tauri v2) — registers OS-level hotkeys via `app.handle().plugin(tauri_plugin_globalshortcut::Builder::new().build())`. Callbacks fire on a Rust thread; emit a Tauri event to the frontend to trigger JS.
 - `imageThumbs: Map<string, string>` — `path → dataUrl`. Existing map; already used by paste/drop flow.
 - `open()` clears `imageThumbs` — queue drain must happen *after* `imageThumbs.clear()`, inside `open()`.
-- `ContentView.stageCapturedImage(image)` — optional focused-content hook. The ACP Harness implements it by reusing the same staged-image path as paste/drop so screenshots become embedded ACP image blocks, not `@path` text references.
+- `ContentView.stageCapturedImage(image)` — optional focused-content hook. The ACP Harness implements it by reusing the same staged-image path as paste/drop so screenshots become embedded ACP image blocks with a local file URI, not `@path` text references.
 - `base64 = "0.22"` and `tokio` (with `rt-multi-thread`) already in `Cargo.toml`. Use `tokio::task::spawn_blocking` for the blocking `screencapture` call — no new tokio features needed.
 - `Cmd+Shift+K` toggle at `input-router.ts:437` — `Ctrl+Shift+K` global matches same toggle semantics.
 - `Ctrl+Shift+K` and `Ctrl+Shift+S` — confirmed free. OS-level global shortcuts are consumed before xterm sees them; no `customKeyHandler` changes needed.
@@ -172,7 +172,7 @@ No user config is exposed. The current `tauri.conf.json` does not reference a cu
 ## Edge Cases
 
 - **Cancel capture (Esc):** `capture_screen` returns `null`. Krypton untouched, queue unchanged.
-- **ACP Harness focused:** capture stages into the active lane as an embedded image block; it does not open the prompt dialog and does not insert an `@path` draft reference.
+- **ACP Harness focused:** capture stages into the active lane as an embedded image block with base64 data and a `file://` URI for the saved PNG; it does not open the prompt dialog and does not insert an `@path` draft reference.
 - **ACP Harness overlay or permission prompt active:** harness handles the capture event with a chip (`close overlay to stage capture` or `resolve permission before staging capture`) and does not fall back to the prompt dialog.
 - **Capture while dialog open:** `stageDiskImage` fires immediately; thumbnail appears in strip.
 - **Capture while dialog closed:** pushed to `captureQueue`; appears when dialog next opens via `Ctrl+Shift+K`.
