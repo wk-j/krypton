@@ -147,7 +147,15 @@
 11. Permission requests pre-empt only the affected lane's composer. The user
     switches to that tab and resolves with a/A/r/R/Esc; responses call the
     existing acp_permission_response command.
-12. Closing the harness disposes every lane client, calls dispose_harness_memory(),
+12. Hash commands are handled locally by the harness before prompt dispatch:
+    a. #cancel sends acp_cancel for the active lane.
+    b. #restart respawns an error/stopped active lane without clearing transcript.
+    c. #new awaits disposal of the active lane client, clears lane UI state,
+       increments a spawn epoch, and spawns the same backend in the same cwd.
+    d. #new! first clears that lane's persisted memory document through
+       clear_harness_memory_lane, then follows the #new flow.
+    e. #mem clear clears the active lane memory document for future prompts only.
+13. Closing the harness disposes every lane client, calls dispose_harness_memory(),
     and drops transcripts and file-touch warnings. Persistent memory stays on
     disk for the next harness session in this directory.
 ```

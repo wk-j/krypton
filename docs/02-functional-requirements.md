@@ -450,6 +450,6 @@ Each keyboard type provides a **press** (key-down) and **release** (key-up) soun
 | FR-ACP-002 | The system shall support opening an ACP Harness view via keyboard (`Leader Y`) and command palette. | Should |
 | FR-ACP-003 | The ACP Harness shall spawn multiple independent ACP subprocess lanes for the focused working directory when the corresponding backends are installed. | Should |
 | FR-ACP-004 | The ACP Harness shall route each prompt to exactly one active lane and shall not broadcast prompts to multiple lanes. | Must |
-| FR-ACP-005 | The ACP Harness shall expose keyboard controls for lane switching, prompt submission, cancellation, permission resolution, transcript scrolling, memory drawer navigation, and in-view help. | Must |
-| FR-ACP-006 | The ACP Harness shall maintain tab-local shared memory extracted from completed tool observations and optional `MEMORY:` footer bullets, then inject selected other-lane entries into future prompts. | Should |
-| FR-ACP-007 | The ACP Harness shall keep shared memory in process memory only; closing the harness tab drops transcripts, memory, and lane state. | Should |
+| FR-ACP-005 | The ACP Harness shall expose keyboard controls for lane switching, prompt submission, cancellation, fresh active-lane sessions, permission resolution, transcript scrolling, memory drawer navigation, and in-view help. | Must |
+| FR-ACP-006 | The ACP Harness shall expose lane-scoped MCP memory tools, render lane memory as a read-only human board, and inject the current harness memory packet into future prompts. | Should |
+| FR-ACP-007 | The ACP Harness shall persist lane memory per project directory while dropping transcripts, subprocesses, and lane UI state when the harness tab closes. | Should |

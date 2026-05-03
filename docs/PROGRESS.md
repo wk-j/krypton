@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-02 (OpenCode ACP default model selected by Krypton)
+> Last updated: 2026-05-03 (ACP Harness fresh-session commands)
 
 ## Overview
 
@@ -14,15 +14,16 @@
 | M5 — Tabs & Panes | Complete | 6/6 |
 | M6 — Config, Theming & Custom Themes | In Progress | 7/9 |
 | M7 — Sound Effects | In Progress | 10/11 |
-| M8 — Polish | In Progress | 17/18 |
+| M8 — Polish | In Progress | 18/19 |
 | M9 — Release | Not Started | 0/4 |
 
 ---
 
 ## Recent Landings
 
+- **ACP Harness fresh-session commands** — harness hash commands now include `#new` for a fresh active-lane ACP session, `#new!` for fresh session plus active-lane memory clear, and `#mem clear` for clearing only the active lane's persisted memory document. Fresh sessions await old-client disposal and use a lane spawn epoch plus disposed-event guard to ignore late updates from replaced subprocesses. See `docs/79-acp-harness-fresh-session-commands.md`.
 - **Vault view perf** — cold-open path drops from 346 IPC roundtrips to 3 by replacing the per-file `cat` loop with a single bulk `read_vault_files` Rust command (parallel `tokio::spawn_blocking` + lossy UTF-8 decode), pre-building a suffix-aware `slugMap` for O(1) wikilink resolution, and deferring heading parsing from index time to `openFile()` (gated by a `headingsLoaded` flag). A static `indexCache` keyed by `vaultRoot` skips re-indexing on reopen; explicit `r` reload always rebuilds and overwrites. See `docs/78-vault-view-perf.md`.
-- **ACP Harness view (Leader Y)** — multi-lane ACP orchestration tab that spawns the default same-project roster (Codex-1, Claude-1, Gemini-1, OpenCode-1 when installed), routes prompts to one active lane, displays a lane dashboard plus command center, handles per-lane permissions, and keeps tab-local shared memory extracted from completed tool observations and optional `MEMORY:` footer bullets. Built-in OpenCode lanes select `zai-coding-plan/glm-5.1` through ACP session configuration so Krypton owns the default lane model. See `docs/72-acp-harness-view.md`.
+- **ACP Harness view (Leader Y)** — multi-lane ACP orchestration tab that spawns the default same-project roster (Codex-1, Claude-1, Gemini-1, OpenCode-1 when installed), routes prompts to one active lane, displays a lane dashboard plus command center, handles per-lane permissions, and keeps project-scoped MCP lane memory visible in a read-only board. Built-in OpenCode lanes select `zai-coding-plan/glm-5.1` through ACP session configuration so Krypton owns the default lane model. See `docs/72-acp-harness-view.md`.
 - **Pencil window (Leader e)** — embed `@excalidraw/excalidraw` as a new content view to open and edit `.excalidraw` files in-app. React + Excalidraw are lazy-loaded so the main bundle is unaffected. Picker scans `[pencil] dir` recursively (mtime sorted) with "+ New drawing" first row; opening the same file twice refocuses the existing tab. Autosave is debounced (800 ms) via `serializeAsJSON`; `Cmd+S` flushes immediately; atomic temp+rename in Rust. Theme follows Krypton bg luminance. See `docs/71-pencil-window.md`.
 - **ACP agent windows (Leader A)** — second, parallel agent window backed by the [Agent Client Protocol](https://agentclientprotocol.com). Spawns built-in external adapters (Claude Code, Gemini CLI, Codex, OpenCode) over newline-delimited JSON-RPC and surfaces tool calls, plans, thoughts, and inline permission prompts. Lives in `src/acp/` + `src-tauri/src/acp.rs`; the existing pi-agent at `src/agent/` is untouched. See `docs/69-acp-agent-support.md`.
 - **Quick file search (Cmd+O)** — global modal backed by `fff-search` with long-lived per-project pickers (LRU 8), persistent LMDB frecency, and `.git`-aware root resolution. Enter copies the relative path to the clipboard, Cmd+Enter copies the absolute path — never auto-pasted, so behavior is uniform across terminal/agent/hurl/markdown windows. **Tab toggles into grep mode** (content search reusing the same picker; copies `path:line:col`). See `docs/68-quick-file-search.md`.
@@ -148,6 +149,7 @@
 - [x] ACP Harness view — `Leader Y` / command palette opens a multi-lane ACP content tab for the focused CWD. The harness owns independent ACP clients, per-lane drafts and permissions, active-lane-only prompt dispatch, and dashboard transcript rendering. See `docs/72-acp-harness-view.md`.
 - [x] ACP Harness MCP memory — the harness creates a tab-local memory store on the existing localhost hook server, passes lane-scoped HTTP MCP descriptors through ACP `session/new.mcpServers`, injects latest summaries, and renders a read-only observer memory board while agents manage create/update/delete/search/get themselves. See `docs/73-acp-harness-mcp-memory.md`.
 - [x] ACP Harness memory persistence — lane memory is saved to per-project-dir JSON files under `~/.config/krypton/acp-harness-memory/` and restored on next harness creation for the same directory. Debounced atomic writes on change. See `docs/76-acp-harness-memory-persistence.md`.
+- [x] ACP Harness fresh-session commands — `#new` starts a fresh active-lane ACP session while preserving memory, `#new!` also clears that lane's persisted memory, and `#mem clear` clears active lane memory without replacing the session. See `docs/79-acp-harness-fresh-session-commands.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 

@@ -85,6 +85,7 @@ interface HarnessLane {
   cursor: number;
   pendingPermissions: HarnessPermission[];
   transcript: HarnessTranscriptItem[];
+  spawnEpoch: number;
   usage: UsageInfo | null;
   sessionId: string | null;
   supportsEmbeddedContext: boolean;
@@ -128,6 +129,7 @@ const LANE_DEFAULTS = {
   status: 'starting' as const,
   draft: '',
   cursor: 0,
+  spawnEpoch: 0,
   usage: null,
   sessionId: null,
   supportsEmbeddedContext: false,
@@ -474,20 +476,37 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async spawnLane(lane: HarnessLane): Promise<void> {
+    const spawnEpoch = lane.spawnEpoch;
     lane.status = 'starting';
     lane.error = null;
     this.render();
+    let client: AcpClient | null = null;
     try {
-      const client = await AcpClient.spawn(lane.backendId, this.projectDir, this.memoryServerForLane(lane));
+      client = await AcpClient.spawn(lane.backendId, this.projectDir, this.memoryServerForLane(lane));
+      if (lane.spawnEpoch !== spawnEpoch) {
+        await client.dispose();
+        return;
+      }
       lane.client = client;
-      client.onEvent((event) => this.onLaneEvent(lane, event));
+      client.onEvent((event) => {
+        if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) return;
+        this.onLaneEvent(lane, event);
+      });
       const info: AgentInfo = await client.initialize();
+      if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
+        await client.dispose();
+        return;
+      }
       lane.sessionId = info.session_id ?? null;
       lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
       lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
       lane.status = 'idle';
       this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
     } catch (e) {
+      if (lane.spawnEpoch !== spawnEpoch) {
+        if (client) await client.dispose();
+        return;
+      }
       lane.status = 'error';
       lane.error = String(e);
       this.appendTranscript(lane, 'system', `error: ${String(e)}`);
@@ -763,8 +782,83 @@ export class AcpHarnessView implements ContentView {
     await this.spawnLane(lane);
   }
 
+  private async newLaneSession(lane: HarnessLane, options: { clearMemory: boolean }): Promise<void> {
+    if (lane.status === 'busy' || lane.status === 'needs_permission') {
+      this.flashChip('lane busy - #cancel first');
+      return;
+    }
+    if (lane.status === 'starting') {
+      this.flashChip('lane starting');
+      return;
+    }
+    if (options.clearMemory && !this.harnessMemoryId) {
+      this.flashChip('memory unavailable - use #new');
+      return;
+    }
+    if (options.clearMemory) {
+      try {
+        await this.clearActiveLaneMemory(lane, false);
+      } catch (e) {
+        this.flashChip(`memory clear failed: ${errorText(e)}`);
+        return;
+      }
+    }
+    if (lane.pendingShellId) await this.cancelShell(lane);
+    lane.spawnEpoch += 1;
+    if (lane.client) {
+      await lane.client.dispose();
+      lane.client = null;
+    }
+    lane.status = 'starting';
+    lane.draft = '';
+    lane.cursor = 0;
+    lane.pendingPermissions = [];
+    lane.pendingTurnExtractions = [];
+    lane.stagedImages = [];
+    lane.transcript = [{ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` }];
+    lane.usage = null;
+    lane.sessionId = null;
+    lane.supportsEmbeddedContext = false;
+    lane.supportsImages = false;
+    lane.error = null;
+    lane.acceptAllForTurn = false;
+    lane.rejectAllForTurn = false;
+    lane.currentAssistantId = null;
+    lane.currentThoughtId = null;
+    lane.toolTranscriptIds = new Map();
+    lane.toolCalls = new Map();
+    lane.seenTranscriptIds = new Set();
+    lane.stickToBottom = true;
+    lane.pendingShellId = null;
+    this.render();
+    await this.spawnLane(lane);
+  }
+
+  private async clearActiveLaneMemory(lane: HarnessLane, showSuccess = true): Promise<void> {
+    if (!this.harnessMemoryId) {
+      throw new Error('memory unavailable');
+    }
+    await invoke('clear_harness_memory_lane', {
+      harnessId: this.harnessMemoryId,
+      lane: lane.displayName,
+    });
+    await this.refreshMemory();
+    await this.refreshMcpStats();
+    if (showSuccess) this.flashChip(`memory cleared for ${lane.displayName}`);
+  }
+
   private async runHashCommand(lane: HarnessLane, text: string): Promise<void> {
     const parts = text.trim().split(/\s+/);
+    if (parts[0] === '#new') {
+      this.setDraft(lane, '', 0);
+      await this.newLaneSession(lane, { clearMemory: false });
+      return;
+    }
+    if (parts[0] === '#new!') {
+      this.setDraft(lane, '', 0);
+      await this.newLaneSession(lane, { clearMemory: true });
+      return;
+    }
     if (parts[0] === '#cancel') {
       await this.cancelLane(lane);
       this.setDraft(lane, '', 0);
@@ -776,9 +870,17 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (parts[0] === '#mem') {
-      this.flashChip('memory is agent-managed');
       this.setDraft(lane, '', 0);
-      this.render();
+      if (parts[1] === 'clear') {
+        try {
+          await this.clearActiveLaneMemory(lane);
+        } catch (e) {
+          this.flashChip(errorText(e));
+        }
+        this.render();
+        return;
+      }
+      this.flashChip('memory commands: #mem clear, #mcp, Ctrl+M drawer');
       return;
     }
     if (parts[0] === '#mcp') {
@@ -891,7 +993,7 @@ export class AcpHarnessView implements ContentView {
       const active = lane.id === this.activeLaneId;
       const laneEl = document.createElement(active ? 'section' : 'div');
       laneEl.className = `acp-harness__lane ${active ? 'acp-harness__lane--active' : 'acp-harness__lane--collapsed'} acp-harness__lane--${lane.status}`;
-      laneEl.style.setProperty('--acp-lane-accent', lane.accent);
+      laneEl.style.setProperty('--acp-lane-accent', active ? lane.accent : 'rgba(216, 232, 216, 0.42)');
       const head = document.createElement('header');
       head.className = 'acp-harness__lane-head';
       head.innerHTML = renderLaneHead(lane, active, this.mcpStatsByLane.get(lane.displayName) ?? null);
@@ -1049,8 +1151,12 @@ export class AcpHarnessView implements ContentView {
           <h3>Commands</h3>
           <dl>
             <dt>#cancel</dt><dd>Cancel active lane, same as Ctrl+C</dd>
+            <dt>#new</dt><dd>Start fresh active lane, keep memory</dd>
+            <dt>#new!</dt><dd>Start fresh active lane and clear its memory</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
-            <dt>#mem</dt><dd>Show that memory is agent-managed</dd>
+            <dt>#mem</dt><dd>Show memory command hint</dd>
+            <dt>#mem clear</dt><dd>Clear active lane memory only</dd>
+            <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
             <dt>!cmd</dt><dd>Run shell command in project cwd, output goes to transcript</dd>
           </dl>
         </section>
@@ -1397,6 +1503,10 @@ function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'r
     return options.find((option) => option.kind === 'allow_once') ?? options.find((option) => option.kind === 'allow_always') ?? null;
   }
   return options.find((option) => option.kind === 'reject_once') ?? options.find((option) => option.kind === 'reject_always') ?? null;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, streaming: boolean): HTMLElement {

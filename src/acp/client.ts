@@ -136,6 +136,7 @@ export class AcpClient {
   }
 
   private handleRaw(raw: RawAcpEvent): void {
+    if (this.disposed) return;
     let event: AcpEvent | null = null;
     switch (raw.type) {
       case 'session_update': {
