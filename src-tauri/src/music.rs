@@ -11,13 +11,12 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
+use crate::config::MusicConfig;
+use crate::util::emit::EmitExt;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 use serde::Serialize;
-use tauri::Emitter;
-
-use crate::config::MusicConfig;
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -643,7 +642,7 @@ fn music_audio_thread(
                     {
                         last_position_time = now;
                         let pos = playback_offset_secs + start.elapsed().as_secs_f64();
-                        let _ = app_handle.emit(
+                        app_handle.emit_or_log(
                             "music-position",
                             serde_json::json!({ "position_secs": pos }),
                         );
@@ -664,7 +663,7 @@ fn music_audio_thread(
                                     smooth_bins[i] = smooth_bins[i] * 0.85 + raw * 0.15;
                                 }
                             }
-                            let _ = app_handle.emit(
+                            app_handle.emit_or_log(
                                 "music-fft",
                                 FftData {
                                     bins: smooth_bins.clone(),
@@ -752,7 +751,7 @@ fn play_track(
 }
 
 fn emit_state(app_handle: &tauri::AppHandle, state: &PlaybackState) {
-    let _ = app_handle.emit("music-state-changed", state);
+    app_handle.emit_or_log("music-state-changed", state);
 }
 
 fn expand_tilde(path: &str) -> String {

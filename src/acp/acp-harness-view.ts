@@ -120,6 +120,27 @@ const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
 
 const FILE_TOUCH_WINDOW_MS = 10 * 60 * 1000;
 
+// Immutable defaults shared across all lanes. Mutable containers (arrays,
+// Maps, Sets) MUST NOT live here — createLane() instantiates fresh ones
+// per lane to prevent reference aliasing.
+const LANE_DEFAULTS = {
+  client: null,
+  status: 'starting' as const,
+  draft: '',
+  cursor: 0,
+  usage: null,
+  sessionId: null,
+  supportsEmbeddedContext: false,
+  error: null,
+  acceptAllForTurn: false,
+  rejectAllForTurn: false,
+  currentAssistantId: null,
+  currentThoughtId: null,
+  stickToBottom: true,
+  pendingShellId: null,
+  supportsImages: false,
+};
+
 const md = new Marked(
   markedHighlight({
     langPrefix: 'hljs language-',
@@ -435,33 +456,20 @@ export class AcpHarnessView implements ContentView {
 
   private createLane(index: number, backendId: string, displayName: string): HarnessLane {
     return {
+      ...LANE_DEFAULTS,
       id: `${backendId}-${index}`,
       index,
       backendId,
       displayName,
       accent: laneAccent(index),
-      client: null,
-      status: 'starting',
-      draft: '',
-      cursor: 0,
+      // Per-lane mutable containers — each lane needs fresh instances:
       pendingPermissions: [],
-      transcript: [{ id: makeId(), kind: 'system', text: `starting ${displayName}...` }],
-      usage: null,
-      sessionId: null,
-      supportsEmbeddedContext: false,
-      error: null,
-      acceptAllForTurn: false,
-      rejectAllForTurn: false,
       pendingTurnExtractions: [],
-      currentAssistantId: null,
-      currentThoughtId: null,
+      stagedImages: [],
+      transcript: [{ id: makeId(), kind: 'system', text: `starting ${displayName}...` }],
       toolTranscriptIds: new Map(),
       toolCalls: new Map(),
       seenTranscriptIds: new Set(),
-      stickToBottom: true,
-      pendingShellId: null,
-      stagedImages: [],
-      supportsImages: false,
     };
   }
 

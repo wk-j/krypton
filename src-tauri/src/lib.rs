@@ -11,9 +11,12 @@ mod session;
 pub mod sound;
 pub mod ssh;
 pub mod theme;
+pub mod util;
 
 use std::sync::{Arc, Mutex, RwLock};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
+
+use crate::util::emit::EmitExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -57,10 +60,10 @@ pub fn run() {
                     }
                     match shortcut.key {
                         Code::KeyK => {
-                            let _ = app.emit("prompt-dialog-requested", ());
+                            app.emit_or_log("prompt-dialog-requested", ());
                         }
                         Code::KeyS => {
-                            let _ = app.emit("capture-requested", ());
+                            app.emit_or_log("capture-requested", ());
                         }
                         Code::Digit0 => {
                             // Panic recenter: recover an invisible/offscreen window.
@@ -453,7 +456,7 @@ fn start_process_poller(
                     process: current,
                     previous: previous.clone(),
                 };
-                let _ = app_handle.emit("process-changed", &payload);
+                app_handle.emit_or_log("process-changed", &payload);
             }
 
             last_known.insert(sid, current_name);

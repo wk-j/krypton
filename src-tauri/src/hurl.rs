@@ -11,7 +11,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
+
+use crate::util::emit::EmitExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
@@ -444,7 +446,7 @@ pub async fn hurl_run(
         // snapshot using a fresh read of process streams? We don't have
         // them here. Instead, the frontend calls hurl_save_cache below
         // with its captured output. We only emit the finished event.
-        let _ = app_for_wait.emit(
+        app_for_wait.emit_or_log(
             "hurl-finished",
             HurlFinishedEvent {
                 run_id,
@@ -482,7 +484,7 @@ where
                     }
                     Ok(None) => {
                         if !pending.is_empty() {
-                            let _ = app.emit("hurl-output", HurlOutputEvent {
+                            app.emit_or_log("hurl-output", HurlOutputEvent {
                                 run_id, stream, chunk: std::mem::take(&mut pending),
                             });
                         }
@@ -493,7 +495,7 @@ where
             }
             _ = &mut sleep => {
                 if !pending.is_empty() {
-                    let _ = app.emit("hurl-output", HurlOutputEvent {
+                    app.emit_or_log("hurl-output", HurlOutputEvent {
                         run_id, stream, chunk: std::mem::take(&mut pending),
                     });
                 }

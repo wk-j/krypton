@@ -5,7 +5,9 @@
 // view mounts so they stay out of the main bundle.
 
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { type UnlistenFn } from '@tauri-apps/api/event';
+
+import { setupListener } from './util/listener';
 
 import type { ContentView, PaneContentType } from './types';
 
@@ -231,7 +233,7 @@ export class PencilContentView implements ContentView {
       );
 
       // 3. Subscribe to theme changes.
-      this.themeUnlisten = await listen('theme-changed', () => {
+      this.themeUnlisten = await setupListener('theme-changed', () => {
         this.applyThemeToExcalidraw();
       });
     } catch (e) {

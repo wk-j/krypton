@@ -1,6 +1,6 @@
 # Infrastructure Deduplication — Implementation Spec
 
-> Status: Approved
+> Status: Implemented
 > Date: 2026-05-03
 > Milestone: Cross-cutting / tech debt
 

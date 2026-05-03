@@ -15,7 +15,9 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
+
+use crate::util::emit::EmitExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
@@ -244,7 +246,7 @@ impl AcpClient {
         if self.disposed.load(Ordering::Relaxed) {
             return;
         }
-        let _ = app.emit(&self.event_name(), payload);
+        app.emit_or_log(&self.event_name(), payload);
     }
 
     async fn append_stderr(&self, chunk: &str) {

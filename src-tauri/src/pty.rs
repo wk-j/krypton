@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Mutex;
 use std::thread;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+
+use crate::util::emit::EmitExt;
 
 // ─── Process Detection Types ──────────────────────────────────────
 
@@ -372,7 +374,7 @@ impl PtyManager {
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
-                        let _ = handle.emit("pty-exit", sid);
+                        handle.emit_or_log("pty-exit", sid);
                         break;
                     }
                     Ok(n) => {
@@ -382,14 +384,14 @@ impl PtyManager {
                         let progress_events = osc_parser.feed(&data);
                         for mut payload in progress_events {
                             payload.session_id = sid;
-                            let _ = handle.emit("pty-progress", payload);
+                            handle.emit_or_log("pty-progress", payload);
                         }
 
-                        let _ = handle.emit("pty-output", (sid, data));
+                        handle.emit_or_log("pty-output", (sid, data));
                     }
                     Err(e) => {
                         log::error!("PTY read error for session {sid}: {e}");
-                        let _ = handle.emit("pty-exit", sid);
+                        handle.emit_or_log("pty-exit", sid);
                         break;
                     }
                 }

@@ -8,6 +8,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 
+import { setCssVars } from './util/css-vars';
+
 import {
   WindowId,
   SessionId,
@@ -331,34 +333,15 @@ export class Compositor {
     this.lineHeight = config.font.line_height;
 
     // Expose cell height for CSS overlays (e.g. top-line glow)
-    document.documentElement.style.setProperty(
-      '--krypton-terminal-cell-height',
-      `${this.fontSize * this.lineHeight}px`
-    );
-    document.documentElement.style.setProperty(
-      '--krypton-font-family',
-      this.fontFamily
-    );
-    document.documentElement.style.setProperty(
-      '--krypton-font-size',
-      `${this.fontSize}px`
-    );
-    document.documentElement.style.setProperty(
-      '--krypton-chrome-font-size',
-      `${Math.round(this.fontSize * 0.786)}px`
-    );
-    document.documentElement.style.setProperty(
-      '--krypton-line-height',
-      `${this.lineHeight}`
-    );
-    document.documentElement.style.setProperty(
-      '--krypton-content-line-height',
-      `${this.lineHeight}`
-    );
-    document.documentElement.style.setProperty(
-      '--krypton-prose-line-height',
-      `${this.lineHeight}`
-    );
+    setCssVars(document.documentElement, {
+      '--krypton-terminal-cell-height': `${this.fontSize * this.lineHeight}px`,
+      '--krypton-font-family': this.fontFamily,
+      '--krypton-font-size': `${this.fontSize}px`,
+      '--krypton-chrome-font-size': `${Math.round(this.fontSize * 0.786)}px`,
+      '--krypton-line-height': `${this.lineHeight}`,
+      '--krypton-content-line-height': `${this.lineHeight}`,
+      '--krypton-prose-line-height': `${this.lineHeight}`,
+    });
 
     // Terminal
     this.scrollbackLines = config.terminal.scrollback_lines;

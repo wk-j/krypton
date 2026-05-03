@@ -3,7 +3,9 @@
 // `acp-event-<session>` notifications. One AcpClient per AcpView.
 
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { type UnlistenFn } from '@tauri-apps/api/event';
+
+import { setupListener } from '../util/listener';
 import type {
   AcpBackendDescriptor,
   AcpMcpServerDescriptor,
@@ -63,8 +65,8 @@ export class AcpClient {
   ): Promise<AcpClient> {
     const session = await invoke<number>('acp_spawn', { backendId, cwd, mcpServers });
     const client = new AcpClient(session, backendId);
-    client.unlisten = await listen<RawAcpEvent>(`acp-event-${session}`, (ev) => {
-      client.handleRaw(ev.payload);
+    client.unlisten = await setupListener<RawAcpEvent>(`acp-event-${session}`, (payload) => {
+      client.handleRaw(payload);
     });
     return client;
   }

@@ -14,6 +14,8 @@ use std::time::Instant;
 
 use rodio::{Decoder, OutputStream, Sink};
 
+use crate::util::lock::lock_mutex;
+
 use crate::config::SoundConfig;
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -388,13 +390,9 @@ impl SoundEngine {
 
 #[tauri::command]
 pub fn sound_play(event: String, state: tauri::State<'_, SoundEngineState>) -> Result<(), String> {
-    match state.lock() {
-        Ok(mut engine) => {
-            engine.play(&event);
-            Ok(())
-        }
-        Err(e) => Err(format!("Sound engine lock poisoned: {e}")),
-    }
+    let mut engine = lock_mutex(state.inner(), "Sound engine")?;
+    engine.play(&event);
+    Ok(())
 }
 
 #[tauri::command]
@@ -402,13 +400,9 @@ pub fn sound_play_keypress(
     key: String,
     state: tauri::State<'_, SoundEngineState>,
 ) -> Result<(), String> {
-    match state.lock() {
-        Ok(mut engine) => {
-            engine.play_keypress(&key);
-            Ok(())
-        }
-        Err(e) => Err(format!("Sound engine lock poisoned: {e}")),
-    }
+    let mut engine = lock_mutex(state.inner(), "Sound engine")?;
+    engine.play_keypress(&key);
+    Ok(())
 }
 
 #[tauri::command]
@@ -416,13 +410,9 @@ pub fn sound_apply_config(
     config: SoundConfig,
     state: tauri::State<'_, SoundEngineState>,
 ) -> Result<(), String> {
-    match state.lock() {
-        Ok(mut engine) => {
-            engine.apply_config(config);
-            Ok(())
-        }
-        Err(e) => Err(format!("Sound engine lock poisoned: {e}")),
-    }
+    let mut engine = lock_mutex(state.inner(), "Sound engine")?;
+    engine.apply_config(config);
+    Ok(())
 }
 
 #[tauri::command]
@@ -430,19 +420,13 @@ pub fn sound_load_pack(
     pack: String,
     state: tauri::State<'_, SoundEngineState>,
 ) -> Result<(), String> {
-    match state.lock() {
-        Ok(mut engine) => {
-            engine.load_pack(&pack);
-            Ok(())
-        }
-        Err(e) => Err(format!("Sound engine lock poisoned: {e}")),
-    }
+    let mut engine = lock_mutex(state.inner(), "Sound engine")?;
+    engine.load_pack(&pack);
+    Ok(())
 }
 
 #[tauri::command]
 pub fn sound_get_packs(state: tauri::State<'_, SoundEngineState>) -> Result<SoundPackInfo, String> {
-    match state.lock() {
-        Ok(engine) => Ok(engine.get_packs()),
-        Err(e) => Err(format!("Sound engine lock poisoned: {e}")),
-    }
+    let engine = lock_mutex(state.inner(), "Sound engine")?;
+    Ok(engine.get_packs())
 }

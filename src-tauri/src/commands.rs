@@ -3,6 +3,8 @@ use crate::hook_server::HookServer;
 use crate::pty::PtyManager;
 use crate::ssh::SshManager;
 use crate::theme::{FullTheme, ThemeEngine};
+use crate::util::fs_err::IoErrExt;
+use crate::util::lock::{lock_read, lock_write};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use tauri::{AppHandle, Manager, State};
@@ -32,9 +34,7 @@ pub fn spawn_pty(
     shell: Option<String>,
     shell_args: Option<Vec<String>>,
 ) -> Result<u32, String> {
-    let cfg = config
-        .read()
-        .map_err(|e| format!("Config lock poisoned: {e}"))?;
+    let cfg = lock_read(&config, "Config")?;
     // Use provided shell/args, fall back to config, fall back to $SHELL
     let program = shell
         .filter(|s| !s.is_empty())
@@ -72,9 +72,7 @@ pub fn resize_pty(
 
 #[tauri::command]
 pub fn get_config(config: State<'_, Arc<RwLock<KryptonConfig>>>) -> Result<KryptonConfig, String> {
-    let cfg = config
-        .read()
-        .map_err(|e| format!("Config lock poisoned: {e}"))?;
+    let cfg = lock_read(&config, "Config")?;
     Ok((*cfg).clone())
 }
 
@@ -85,9 +83,7 @@ pub fn get_theme(
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
     theme_engine: State<'_, Arc<ThemeEngine>>,
 ) -> Result<FullTheme, String> {
-    let cfg = config
-        .read()
-        .map_err(|e| format!("Config lock poisoned: {e}"))?;
+    let cfg = lock_read(&config, "Config")?;
     let mut theme = theme_engine.resolve(&cfg.theme.name)?;
     theme_engine.apply_config_overrides(&mut theme, &cfg.theme.colors);
     Ok(theme)
@@ -119,9 +115,7 @@ pub fn reload_config(
 
     // Update the shared config
     {
-        let mut cfg = config
-            .write()
-            .map_err(|e| format!("Config lock poisoned: {e}"))?;
+        let mut cfg = lock_write(&config, "Config")?;
         *cfg = new_config;
     }
 
@@ -182,7 +176,7 @@ pub fn find_java_server_for_session(
 /// Used by the AI agent tool to inspect source files.
 #[tauri::command]
 pub fn read_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| format!("read_file: {e}"))
+    std::fs::read_to_string(&path).with_op("read_file")
 }
 
 /// Write a string to a file, creating parent directories if needed.
@@ -190,9 +184,9 @@ pub fn read_file(path: String) -> Result<String, String> {
 #[tauri::command]
 pub fn write_file(path: String, content: String) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("write_file mkdir: {e}"))?;
+        std::fs::create_dir_all(parent).with_op("write_file mkdir")?;
     }
-    std::fs::write(&path, content).map_err(|e| format!("write_file: {e}"))
+    std::fs::write(&path, content).with_op("write_file")
 }
 
 #[tauri::command]
@@ -267,13 +261,13 @@ pub fn save_temp_image(data: String, mime_type: String) -> Result<String, String
         _ => "png",
     };
     let dir = std::path::PathBuf::from("/tmp/krypton-prompt-images");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("save_temp_image mkdir: {e}"))?;
+    std::fs::create_dir_all(&dir).with_op("save_temp_image mkdir")?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
     let path = dir.join(format!("{ts}.{ext}"));
-    std::fs::write(&path, bytes).map_err(|e| format!("save_temp_image write: {e}"))?;
+    std::fs::write(&path, bytes).with_op("save_temp_image write")?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -291,7 +285,7 @@ pub struct CaptureResult {
 pub async fn capture_screen() -> Result<Option<CaptureResult>, String> {
     use base64::Engine;
     let dir = std::path::PathBuf::from("/tmp/krypton-prompt-images");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("capture_screen mkdir: {e}"))?;
+    std::fs::create_dir_all(&dir).with_op("capture_screen mkdir")?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -363,9 +357,7 @@ pub fn get_env_var(name: String) -> Option<String> {
 pub fn get_default_shell(
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
 ) -> Result<(String, Vec<String>), String> {
-    let cfg = config
-        .read()
-        .map_err(|e| format!("Config lock poisoned: {e}"))?;
+    let cfg = lock_read(&config, "Config")?;
     Ok((cfg.shell.program.clone(), cfg.shell.args.clone()))
 }
 
@@ -760,9 +752,7 @@ pub fn set_agent_active(
     name: String,
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
 ) -> Result<(), String> {
-    let mut cfg = config
-        .write()
-        .map_err(|e| format!("Config lock poisoned: {e}"))?;
+    let mut cfg = lock_write(&config, "Config")?;
     if !cfg.agent.models.iter().any(|m| m.name == name) {
         return Err(format!("Unknown model preset \"{name}\""));
     }

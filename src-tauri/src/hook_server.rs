@@ -18,8 +18,10 @@ use std::path::{Path as StdPath, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tokio::sync::oneshot;
+
+use crate::util::emit::EmitExt;
 
 /// Hook event received from Claude Code via HTTP POST.
 /// Common fields are explicit; event-specific fields live in `extra`.
@@ -457,9 +459,7 @@ async fn handle_hook(
         event.tool_name
     );
 
-    if let Err(e) = state.app_handle.emit("claude-hook", &event) {
-        log::error!("Failed to emit claude-hook event: {e}");
-    }
+    state.app_handle.emit_or_log("claude-hook", &event);
 
     StatusCode::OK
 }
@@ -477,7 +477,7 @@ async fn handle_harness_memory_mcp(
         state
             .hook_server
             .record_mcp_request(&harness_id, &lane_label, "notifications/initialized");
-        let _ = state.app_handle.emit(
+        state.app_handle.emit_or_log(
             "acp-harness-mcp-touched",
             json!({ "harnessId": harness_id, "laneLabel": lane_label }),
         );
@@ -488,7 +488,7 @@ async fn handle_harness_memory_mcp(
         state
             .hook_server
             .record_mcp_request(&harness_id, &lane_label, method);
-        let _ = state.app_handle.emit(
+        state.app_handle.emit_or_log(
             "acp-harness-mcp-touched",
             json!({ "harnessId": harness_id, "laneLabel": lane_label }),
         );
@@ -547,7 +547,7 @@ fn handle_memory_tool_call(
 
     let is_error = outcome.is_err();
     if !is_error && name == "memory_set" {
-        let _ = state.app_handle.emit(
+        state.app_handle.emit_or_log(
             "acp-harness-memory-changed",
             json!({ "harnessId": harness_id }),
         );
@@ -793,7 +793,7 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
             log::info!("Claude Code hook server listening on 127.0.0.1:{actual_port}");
 
             // Emit server-ready event so frontend knows the port
-            let _ = app_handle.emit("claude-hook-server-ready", actual_port);
+            app_handle.emit_or_log("claude-hook-server-ready", actual_port);
 
             // Set up graceful shutdown
             let (tx, rx) = oneshot::channel::<()>();
