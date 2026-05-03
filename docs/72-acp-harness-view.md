@@ -244,7 +244,7 @@ function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] 
 4. Each lane registers its own client.onEvent() callback and initializes independently.
 5. User selects an active tab (default is lane 1) and types a prompt, a hash command, or resolves a permission.
 6. For a normal prompt, harness builds the memory packet from current lane documents and prepends it via embedded resource or text block.
-7. Harness dispatches the prompt to the active tab's lane only. If the active lane is busy, dispatch is rejected with an inline composer chip `lane busy`; the prompt is not queued. When the lane transitions busy→idle and the composer still holds a non-empty draft, the chip flashes `lane idle — Enter to send` for 2 seconds; dispatch remains manual.
+7. Harness dispatches the prompt to the active tab's lane only. While the turn is running, the composer chip shows `<lane> running · m:ss · Ctrl+C cancel` and updates once per second. If the active lane is busy, dispatch is rejected with an inline composer chip `lane busy`; the prompt is not queued. When the lane transitions busy→idle and the composer still holds a non-empty draft, the chip flashes `lane idle — Enter to send` for 2 seconds; dispatch remains manual.
 8. While the turn streams: each lane renders stream/tool/plan/usage updates into its dashboard transcript. Completed `edit` calls and completed diff-bearing `write_like` tool updates update `fileTouchMap[path] = {laneId, laneDisplayName, toolKind, at}` (overwriting older entries). Memory tool calls trigger a memory-board refresh.
 9. When the turn returns, pending permissions and turn-scoped accept/reject-all flags clear. Cancelled turns do not modify memory unless the agent already called MCP memory tools before cancellation.
 10. Permission requests for the built-in memory MCP tools are auto-allowed and append a `memory auto-allow` transcript row without entering permission mode. Other permission requests move that lane to `needs_permission` and pre-empt that tab's composer with the options banner. The lane transcript holds the request detail (operation, path, size, diff preview) and a cross-lane warning when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. The user must switch to that tab to read context, then resolve via `a/A/r/R/Esc`. `A`/`R` apply only for the current `session/prompt` turn; both flags clear when that turn returns.
@@ -283,7 +283,7 @@ DOM shape:
       <header class="acp-harness__lane-head">[2] ○ Claude-1 …</header>
     </div>
     <section class="acp-harness__lane acp-harness__lane--active">
-      <header class="acp-harness__lane-head">[3] ● Gemini-1 …</header>
+      <header class="acp-harness__lane-head">[3] ● OpenCode-1 zai-coding-plan/glm-5.1 …</header>
       <div class="acp-harness__lane-body"><!-- scrollable transcript --></div>
     </section>
     <div class="acp-harness__lane acp-harness__lane--collapsed acp-harness__lane--permission">
@@ -331,7 +331,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
 - **Collapsed lane row** is exactly one line:
 
   ```text
-  [N] <symbol> <Name>   <activity-or-status>
+  [N] <symbol> <Name> [model-if-known] <activity-or-status>
   ```
 
   Status symbols:
@@ -344,7 +344,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   × error
   ```
 
-  The `<activity-or-status>` slot is the latest tool/assistant activity by default (`editing src/acp/client.ts`, `reading src/layout.ts`, `running cargo test`, `thinking…`, or the most recent assistant text truncated to ~40 chars). When status is `needs_permission` or `error`, the slot is replaced by the blocking detail (`perm: write src/styles/acp.css`, `error: spawn failed`).
+  The optional model chip is rendered only when Krypton can determine the active lane model from ACP metadata or from a model Krypton explicitly selected for that backend; unknown models are hidden, not shown as `unknown`. The `<activity-or-status>` slot is the latest tool/assistant activity by default (`editing src/acp/client.ts`, `reading src/layout.ts`, `running cargo test`, `thinking…`, or the most recent assistant text truncated to ~40 chars). When status is `needs_permission` or `error`, the slot is replaced by the blocking detail (`perm: write src/styles/acp.css`, `error: spawn failed`).
 
   Color rules:
 
@@ -356,7 +356,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   Status uses symbol + text + color together; never color alone.
 
 - The **active lane** fills the remaining viewport. Its body is internally scrollable. Collapsed rows above and below the active lane stay anchored.
-- The active lane body shows the full per-lane transcript: user prompts, assistant text, thoughts, tool calls and summaries, plan updates, permission requests and resolutions, usage snapshots, and system rows. Tool rows show diff/output preview inline (collapsible) as plain monospace glow text, not syntax-highlighted code. Long assistant text truncates at ~12 lines with a `[…]` expand affordance. The transcript scrolls within the lane body.
+- The active lane body shows the full per-lane transcript: user prompts, assistant text, thoughts, tool calls and summaries, plan updates, permission requests and resolutions, usage snapshots, and system rows. Tool rows show diff/output preview inline (collapsible) as plain monospace text, not syntax-highlighted code. Output groups use label-specific text colors and text-shadow glow only; the group container does not add a background glow. Long assistant text truncates at ~12 lines with a `[…]` expand affordance. The transcript scrolls within the lane body.
 - Permission requests appear inline in the transcript at the time they arrive, framed by a clear divider:
 
   ```text
@@ -386,7 +386,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   - `×N` prefix on tabs whose lane is errored (error color).
   - `●N` (subtle) when busy, optional; status is primarily on the dashboard row.
 - **Per-tab draft preservation**: each lane's tab keeps its own composer draft. Switching tabs swaps the visible composer to that tab's draft; nothing is lost. Drafts are tab-local only and are dropped when the harness closes.
-- **Memory chip** (`memory: 3/3`) sits above the composer line. Counts show up to 10 displayed lane summaries over total lane summaries.
+- **Memory chip** (`memory: 3/3`) sits above the composer line. Counts show up to 10 displayed lane summaries over total lane summaries. During an active turn it changes to `<lane> running · m:ss · Ctrl+C cancel` with a subtle lane-accent pulse so long silent agent runs still show liveness and the cancel affordance.
 - The composer has no target chip, no broadcast warning border, and no marked-mode indicator. The active tab is always the destination.
 
 Composer text mode:
@@ -396,6 +396,7 @@ Composer text mode:
 - `Shift+Enter` inserts a newline.
 - Composer auto-grows up to 6 lines, then scrolls internally.
 - If the active lane is busy, `Enter` shows an inline chip `lane busy` and does not dispatch. The prompt is not queued.
+- While the active lane is busy, the composer chip updates every second with elapsed runtime and `Ctrl+C cancel`. The timer clears when the turn stops, errors, or the lane is restarted.
 - **Idle flash**: when the active lane transitions `busy → idle` and the composer holds a non-empty draft, the chip flashes `lane idle — Enter to send` for 2 seconds, then returns to the memory chip. The prompt is **not** auto-dispatched; the user must press Enter. An optional sound cue (single soft tick from the existing sound engine) plays in parallel; this can be disabled in config.
 - `Esc` with non-empty input does not discard text. Behavior:
   1. If the memory drawer is open, `Esc` closes the drawer.

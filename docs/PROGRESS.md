@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-03 (ACP Harness memory drawer selection)
+> Last updated: 2026-05-04 (ACP Harness lane model chip)
 
 ## Overview
 
@@ -21,7 +21,9 @@
 
 ## Recent Landings
 
-- **ACP Harness tool output glow text** — tool output excerpts now render as plain monospace text with a subtle lane-accent glow instead of syntax-highlighted markup. Assistant markdown code highlighting is unchanged. See `docs/72-acp-harness-view.md`.
+- **ACP Harness lane model chip** — lane headers now show a compact model chip only when Krypton can determine the model from ACP metadata or from an explicitly selected backend model such as OpenCode's `zai-coding-plan/glm-5.1`; unknown models are hidden. See `docs/72-acp-harness-view.md`.
+- **ACP Harness busy composer liveness** — while the active lane is running a prompt, the composer chip now shows `<lane> running · m:ss · Ctrl+C cancel`, updates once per second, and uses a subtle lane-accent pulse so long silent agent turns do not look frozen. The timer clears on stop, error, or lane restart. See `docs/72-acp-harness-view.md`.
+- **ACP Harness tool output glow text** — tool output excerpts now render as plain monospace text with label-specific text colors and text-shadow glow instead of syntax-highlighted markup or background glow panels. Assistant markdown code highlighting is unchanged. See `docs/72-acp-harness-view.md`.
 - **ACP Harness memory drawer selection** — memory rows in the harness drawer can now be selected by click, `Ctrl+N`/`Ctrl+P`, arrow keys, page keys, and Home/End. While the drawer is open, the composer input line is hidden and ordinary typing is captured so drafts do not change underneath the memory view. The drawer docs now match the implemented `Ctrl+M` / `Cmd+M` toggle. See `docs/72-acp-harness-view.md`.
 - **ACP Harness composer cwd + branch and image file URIs** — the harness composer status line now shows the project working directory plus the current Git branch when the project directory is inside a repository. Detached HEAD displays as `HEAD <sha>` and non-Git directories show only the cwd. Staged pasted/dropped/captured images now render as removable placeholder chips and send ACP image blocks with base64 data plus a local `file://` URI to the saved image path. See `docs/72-acp-harness-view.md`.
 - **ACP Harness screen capture staging** — global `Ctrl+Shift+S` now routes captured PNGs into the focused ACP Harness instead of the smart prompt dialog when the harness view is active. The capture is staged in the active lane composer through the same image path as paste/drop and is sent as an embedded ACP image content block on the next prompt. Non-harness focus keeps the previous prompt-dialog queue behavior. See `docs/63-screen-capture-prompt.md` and `docs/72-acp-harness-view.md`.

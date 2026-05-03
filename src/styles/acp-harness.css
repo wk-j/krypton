@@ -99,7 +99,7 @@
 .acp-harness__lane-head {
   height: 28px;
   display: grid;
-  grid-template-columns: 2ch minmax(10ch, 18ch) auto auto minmax(0, 1fr) auto;
+  grid-template-columns: 2ch minmax(10ch, 18ch) auto auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
@@ -131,6 +131,24 @@
   letter-spacing: 0.06em;
   text-decoration: none;
   text-transform: uppercase;
+}
+
+.acp-harness__lane-model {
+  justify-self: start;
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, #8effb0) 32%, transparent);
+  border-radius: 2px;
+  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 62%, rgba(216, 232, 216, 0.68));
+  font-size: 0.66em;
+  letter-spacing: 0.04em;
+  text-shadow:
+    0 0 6px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 20%, transparent),
+    0 0 12px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 8%, transparent);
+  white-space: nowrap;
 }
 
 .acp-harness__lane-activity {
@@ -356,9 +374,8 @@
   flex-direction: column;
   gap: 4px;
   margin-left: calc(1.4ch + 8px);
-  padding: 4px 8px;
+  padding: 4px 0 4px 8px;
   border-left: 2px solid rgba(216, 232, 216, 0.12);
-  background: rgba(216, 232, 216, 0.03);
 }
 
 .acp-harness__tool-section {
@@ -371,7 +388,10 @@
   font-size: 0.7em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(216, 232, 216, 0.4);
+  color: color-mix(in srgb, var(--acp-tool-section-color, rgba(216, 232, 216, 0.48)) 72%, rgba(216, 232, 216, 0.42));
+  text-shadow:
+    0 0 6px color-mix(in srgb, var(--acp-tool-section-color, rgba(216, 232, 216, 0.48)) 24%, transparent),
+    0 0 12px color-mix(in srgb, var(--acp-tool-section-color, rgba(216, 232, 216, 0.48)) 10%, transparent);
 }
 
 .acp-harness__tool-section-text {
@@ -379,12 +399,40 @@
   font-family: var(--agent-font, monospace);
   font-size: 0.92em;
   line-height: 1.4;
-  color: rgba(216, 232, 216, 0.86);
+  color: color-mix(in srgb, var(--acp-tool-section-color, rgba(216, 232, 216, 0.86)) 82%, rgba(216, 232, 216, 0.86));
   text-shadow:
-    0 0 6px rgba(109, 208, 255, 0.16),
-    0 0 12px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 14%, transparent);
+    0 0 6px color-mix(in srgb, var(--acp-tool-section-color, rgba(109, 208, 255, 0.78)) 24%, transparent),
+    0 0 12px color-mix(in srgb, var(--acp-tool-section-color, var(--acp-lane-accent, #8effb0)) 12%, transparent);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.acp-harness__tool-section--summary {
+  --acp-tool-section-color: #8effb0;
+}
+
+.acp-harness__tool-section--output {
+  --acp-tool-section-color: #6dd0ff;
+}
+
+.acp-harness__tool-section--error {
+  --acp-tool-section-color: #ff6b8b;
+}
+
+.acp-harness__tool-section--diff {
+  --acp-tool-section-color: #ffd166;
+}
+
+.acp-harness__tool-section--terminal {
+  --acp-tool-section-color: #c77dff;
+}
+
+.acp-harness__tool-section--content {
+  --acp-tool-section-color: #b8e0ff;
+}
+
+.acp-harness__tool-section--default {
+  --acp-tool-section-color: var(--acp-lane-accent, #8effb0);
 }
 
 .acp-harness__pretext-line {
@@ -894,6 +942,25 @@
 
 .acp-harness__memory-chip {
   flex: 0 0 auto;
+}
+
+.acp-harness__memory-chip--running {
+  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 78%, rgba(216, 232, 216, 0.86));
+  text-shadow:
+    0 0 8px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 34%, transparent),
+    0 0 14px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 14%, transparent);
+  animation: acp-harness-running-chip 2.4s ease-in-out infinite;
+}
+
+@keyframes acp-harness-running-chip {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+
+  50% {
+    opacity: 1;
+  }
 }
 
 .acp-harness__project-status {

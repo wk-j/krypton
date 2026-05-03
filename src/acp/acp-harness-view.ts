@@ -92,6 +92,7 @@ interface HarnessLane {
   spawnEpoch: number;
   usage: UsageInfo | null;
   sessionId: string | null;
+  modelName: string | null;
   supportsEmbeddedContext: boolean;
   error: string | null;
   acceptAllForTurn: boolean;
@@ -106,6 +107,7 @@ interface HarnessLane {
   pendingShellId: string | null;
   stagedImages: StagedImage[];
   supportsImages: boolean;
+  activeTurnStartedAt: number | null;
 }
 
 const STICK_THRESHOLD_PX = 32;
@@ -123,6 +125,7 @@ const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
   { backendId: 'opencode', displayName: 'OpenCode', count: 1 },
 ];
 
+const OPENCODE_DEFAULT_MODEL = 'zai-coding-plan/glm-5.1';
 const FILE_TOUCH_WINDOW_MS = 10 * 60 * 1000;
 
 // Immutable defaults shared across all lanes. Mutable containers (arrays,
@@ -136,6 +139,7 @@ const LANE_DEFAULTS = {
   spawnEpoch: 0,
   usage: null,
   sessionId: null,
+  modelName: null,
   supportsEmbeddedContext: false,
   error: null,
   acceptAllForTurn: false,
@@ -145,6 +149,7 @@ const LANE_DEFAULTS = {
   stickToBottom: true,
   pendingShellId: null,
   supportsImages: false,
+  activeTurnStartedAt: null,
 };
 
 const md = new Marked(
@@ -183,6 +188,7 @@ export class AcpHarnessView implements ContentView {
   private focus: ComposerFocus = 'text';
   private chip: string | null = null;
   private chipTimer: number | null = null;
+  private composerTickTimer: number | null = null;
   private systemRows: string[] = ['loading ACP backends...'];
   private closeCb: (() => void) | null = null;
 
@@ -293,6 +299,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   dispose(): void {
+    this.stopComposerTick();
     for (const lane of this.lanes) {
       if (lane.client) void lane.client.dispose();
       lane.client = null;
@@ -589,6 +596,7 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       lane.sessionId = info.session_id ?? null;
+      lane.modelName = inferLaneModelName(lane.backendId, info);
       lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
       lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
       lane.status = 'idle';
@@ -652,7 +660,9 @@ export class AcpHarnessView implements ContentView {
       case 'error':
         lane.status = 'error';
         lane.error = event.message;
+        lane.activeTurnStartedAt = null;
         lane.pendingTurnExtractions = [];
+        this.updateComposerTick();
         this.appendTranscript(lane, 'system', `error: ${event.message}`);
         break;
     }
@@ -694,17 +704,21 @@ export class AcpHarnessView implements ContentView {
     const transcriptText = text || (images.length > 0 ? `[${images.length} image${images.length === 1 ? '' : 's'}]` : '');
     this.appendTranscript(lane, 'user', transcriptText);
     lane.status = 'busy';
+    lane.activeTurnStartedAt = Date.now();
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
     const blocks = this.buildPromptBlocks(lane, text, images);
+    this.updateComposerTick();
     this.render();
     try {
       await lane.client.prompt(blocks);
     } catch (e) {
       lane.status = 'error';
       lane.error = String(e);
+      lane.activeTurnStartedAt = null;
       lane.pendingTurnExtractions = [];
+      this.updateComposerTick();
       this.appendTranscript(lane, 'system', `prompt failed: ${String(e)}`);
       this.render();
     }
@@ -791,8 +805,10 @@ export class AcpHarnessView implements ContentView {
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
     lane.status = lane.error ? 'error' : 'idle';
+    lane.activeTurnStartedAt = null;
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
+    this.updateComposerTick();
     if (stopReason !== 'end_turn' && stopReason !== 'cancelled') {
       this.appendTranscript(lane, 'system', `turn ended: ${stopReason}`);
     }
@@ -941,6 +957,7 @@ export class AcpHarnessView implements ContentView {
     lane.transcript = [{ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` }];
     lane.usage = null;
     lane.sessionId = null;
+    lane.modelName = null;
     lane.supportsEmbeddedContext = false;
     lane.supportsImages = false;
     lane.error = null;
@@ -953,6 +970,8 @@ export class AcpHarnessView implements ContentView {
     lane.seenTranscriptIds = new Set();
     lane.stickToBottom = true;
     lane.pendingShellId = null;
+    lane.activeTurnStartedAt = null;
+    this.updateComposerTick();
     this.render();
     await this.spawnLane(lane);
   }
@@ -1227,9 +1246,8 @@ export class AcpHarnessView implements ContentView {
     this.composerEl.className =
       `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}` +
       `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}`;
-    const chip = this.chip ?? (this.focus === 'transcript'
-      ? 'command mode: 1-9 lanes · ^M memory · ? help · i/Esc input'
-      : `memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`);
+    const chip = this.chip ?? this.composerStatusChip(lane);
+    const chipClass = `acp-harness__memory-chip${!this.chip && lane.status === 'busy' ? ' acp-harness__memory-chip--running' : ''}`;
     const projectStatus = this.renderComposerProjectStatus();
     const before = lane.draft.slice(0, lane.cursor);
     const after = lane.draft.slice(lane.cursor);
@@ -1253,7 +1271,7 @@ export class AcpHarnessView implements ContentView {
     }
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-meta">` +
-      `<span class="acp-harness__memory-chip">${esc(chip)}</span>` +
+      `<span class="${chipClass}">${esc(chip)}</span>` +
       projectStatus +
       `</div>` +
       staging +
@@ -1262,6 +1280,30 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-harness__prompt">›</span>` +
       `<span class="acp-harness__input">${esc(before)}<span class="acp-harness__caret">█</span>${esc(after)}</span>` +
       `<span class="acp-harness__help-hint">? help</span></div>`;
+  }
+
+  private composerStatusChip(lane: HarnessLane): string {
+    if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · ? help · i/Esc input';
+    if (lane.status === 'busy') {
+      const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
+      return `${lane.displayName} running${elapsed} · Ctrl+C cancel`;
+    }
+    return `memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`;
+  }
+
+  private updateComposerTick(): void {
+    const shouldTick = this.lanes.some((lane) => lane.status === 'busy' && lane.activeTurnStartedAt !== null);
+    if (shouldTick && this.composerTickTimer === null) {
+      this.composerTickTimer = window.setInterval(() => this.renderComposer(), 1000);
+    } else if (!shouldTick) {
+      this.stopComposerTick();
+    }
+  }
+
+  private stopComposerTick(): void {
+    if (this.composerTickTimer === null) return;
+    window.clearInterval(this.composerTickTimer);
+    this.composerTickTimer = null;
   }
 
   private renderComposerProjectStatus(): string {
@@ -1754,11 +1796,34 @@ function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'r
 
 function harnessMemoryPermissionToolName(permission: HarnessPermission): string | null {
   const call = permission.toolCall;
-  if (call.kind && call.kind !== 'read' && call.kind !== 'other') return null;
+  const structuredToolName = structuredMemoryToolNameFromUnknown(call.rawInput);
+  if (structuredToolName) return structuredToolName;
   const rawToolName = memoryToolNameFromUnknown(call.rawInput);
   const titleToolName = memoryToolNameFromString(call.title);
   if (rawToolName && containsHarnessMemoryServerMarker(call.rawInput)) return rawToolName;
   if (titleToolName && containsHarnessMemoryServerMarker(call.title)) return titleToolName;
+  return null;
+}
+
+function structuredMemoryToolNameFromUnknown(value: unknown, depth = 0): string | null {
+  if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return null;
+  if (!value || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const match = structuredMemoryToolNameFromUnknown(item, depth + 1);
+      if (match) return match;
+    }
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ['name', 'toolName', 'tool_name', 'tool']) {
+    const value = record[key];
+    if (typeof value === 'string' && HARNESS_MEMORY_TOOL_NAMES.has(value)) return value;
+  }
+  for (const item of Object.values(record)) {
+    const match = structuredMemoryToolNameFromUnknown(item, depth + 1);
+    if (match) return match;
+  }
   return null;
 }
 
@@ -1882,7 +1947,8 @@ function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
     output.className = 'acp-harness__tool-output';
     for (const section of tool.sections) {
       const block = document.createElement('div');
-      block.className = 'acp-harness__tool-section';
+      const tone = toolSectionTone(section.label);
+      block.className = `acp-harness__tool-section acp-harness__tool-section--${tone}`;
       const label = document.createElement('div');
       label.className = 'acp-harness__tool-section-label';
       label.textContent = section.label;
@@ -1897,12 +1963,53 @@ function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
   }
 }
 
+function toolSectionTone(label: string): string {
+  const normalized = label.toLowerCase();
+  if (normalized === 'stderr' || normalized === 'error' || normalized === 'message') return 'error';
+  if (normalized === 'stdout' || normalized === 'output' || normalized === 'text') return 'output';
+  if (normalized === 'summary') return 'summary';
+  if (normalized === 'diff') return 'diff';
+  if (normalized === 'terminal') return 'terminal';
+  if (normalized === 'content') return 'content';
+  return 'default';
+}
+
+function inferLaneModelName(backendId: string, info: AgentInfo): string | null {
+  const reported = findModelName(info.agent_capabilities);
+  if (reported) return reported;
+  if (backendId === 'opencode') return OPENCODE_DEFAULT_MODEL;
+  return null;
+}
+
+function findModelName(value: unknown, depth = 0): string | null {
+  if (depth > 8 || !value || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const match = findModelName(item, depth + 1);
+      if (match) return match;
+    }
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ['model', 'modelId', 'model_id', 'selectedModel', 'selected_model', 'activeModel', 'active_model', 'defaultModel', 'default_model']) {
+    const candidate = record[key];
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  for (const item of Object.values(record)) {
+    const match = findModelName(item, depth + 1);
+    if (match) return match;
+  }
+  return null;
+}
+
 function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneStats | null): string {
   const mcpChip = renderMcpChip(mcp);
+  const modelChip = renderModelChip(lane.modelName);
   if (!active) {
     return (
       `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
       `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
+      modelChip +
       mcpChip +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
     );
@@ -1914,10 +2021,16 @@ function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneS
     `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
     `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
+    modelChip +
     mcpChip +
     `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>` +
     cancelHint
   );
+}
+
+function renderModelChip(modelName: string | null): string {
+  if (!modelName) return '';
+  return `<span class="acp-harness__lane-model" title="model ${esc(modelName)}">${esc(modelName)}</span>`;
 }
 
 function renderMcpChip(mcp: HarnessMcpLaneStats | null): string {
@@ -2238,6 +2351,13 @@ function getHomeLikePrefix(): string | null {
 function formatAge(ms: number): string {
   const minutes = Math.max(1, Math.round(ms / 60000));
   return minutes < 60 ? `${minutes}m` : `${Math.round(minutes / 60)}h`;
+}
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function formatShortTime(epochMs: number): string {
