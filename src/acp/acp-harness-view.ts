@@ -1192,9 +1192,21 @@ export class AcpHarnessView implements ContentView {
       `acp-harness__rail-entry acp-harness__rail-entry--${lane.status}` +
       (active ? ' acp-harness__rail-entry--active' : '');
     entry.style.setProperty('--acp-lane-accent', lane.accent);
+    const toolCount = lane.toolCalls.size;
+    const ctxUsed = typeof lane.usage?.used === 'number' ? lane.usage!.used : null;
+    const toolLabel = toolCount > 0 ? formatCount(toolCount) : '—';
+    const ctxLabel = ctxUsed !== null ? formatCount(ctxUsed) : '—';
+    const toolTitle = `${toolCount} tool call${toolCount === 1 ? '' : 's'}`;
+    const ctxTitle = ctxUsed !== null
+      ? (typeof lane.usage?.size === 'number' && lane.usage!.size! > 0
+          ? `context ${ctxUsed}/${lane.usage!.size} tokens`
+          : `context ${ctxUsed} tokens`)
+      : 'context tokens unknown';
     entry.innerHTML =
       `<span class="acp-harness__rail-dot"></span>` +
-      `<span class="acp-harness__rail-name">${esc(lane.displayName)}</span>`;
+      `<span class="acp-harness__rail-name">${esc(lane.displayName)}</span>` +
+      `<span class="acp-harness__rail-metric acp-harness__rail-metric--tools" title="${esc(toolTitle)}">${esc(toolLabel)}</span>` +
+      `<span class="acp-harness__rail-metric acp-harness__rail-metric--ctx" title="${esc(ctxTitle)}">${esc(ctxLabel)}</span>`;
     return entry;
   }
 

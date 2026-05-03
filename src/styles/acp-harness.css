@@ -92,12 +92,12 @@
   background:
     linear-gradient(
       90deg,
-      color-mix(in srgb, var(--acp-lane-accent, var(--krypton-window-accent, #0cf)) 9%, transparent) 0,
-      transparent 96px
+      color-mix(in srgb, var(--acp-lane-accent, var(--krypton-window-accent, #0cf)) 3.5%, transparent) 0,
+      transparent 64px
     ),
     rgba(6, 10, 18, 0.48);
   box-shadow:
-    inset 10px 0 18px -10px color-mix(in srgb, var(--acp-lane-accent, var(--krypton-window-accent, #0cf)) 35%, transparent),
+    inset 6px 0 12px -10px color-mix(in srgb, var(--acp-lane-accent, var(--krypton-window-accent, #0cf)) 14%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.025),
     inset 0 -1px 0 rgba(0, 204, 255, 0.045);
 }
@@ -612,7 +612,7 @@
 }
 
 .acp-harness__msg--assistant {
-  border-left-color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 38%, transparent);
+  border-left-color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 10%, transparent);
 }
 
 .acp-harness__msg--thought .acp-harness__msg-body {
@@ -950,21 +950,6 @@
 
 .acp-harness__memory-chip--running {
   color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 78%, rgba(216, 232, 216, 0.86));
-  text-shadow:
-    0 0 8px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 34%, transparent),
-    0 0 14px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 14%, transparent);
-  animation: acp-harness-running-chip 2.4s ease-in-out infinite;
-}
-
-@keyframes acp-harness-running-chip {
-  0%,
-  100% {
-    opacity: 0.72;
-  }
-
-  50% {
-    opacity: 1;
-  }
 }
 
 .acp-harness__project-status {
@@ -1151,8 +1136,8 @@
   flex-direction: column;
   gap: 2px;
   padding: 8px 0;
-  border-right: 1px solid rgba(0, 204, 255, 0.1);
-  background: rgba(2, 5, 10, 0.32);
+  border-right: none;
+  background: rgba(2, 5, 10, 0.18);
   overflow-y: auto;
   min-height: 0;
 }
@@ -1166,7 +1151,8 @@
 }
 
 .acp-harness__rail-entry {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
@@ -1174,6 +1160,25 @@
   border-left: 2px solid transparent;
   letter-spacing: 0.04em;
   white-space: nowrap;
+}
+
+.acp-harness__rail-metric {
+  justify-self: end;
+  font-size: 0.74em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(216, 232, 216, 0.42);
+  letter-spacing: 0.02em;
+}
+
+.acp-harness__rail-metric--tools {
+  min-width: 3ch;
+  text-align: right;
+}
+
+.acp-harness__rail-metric--ctx {
+  min-width: 4ch;
+  text-align: right;
+  color: rgba(216, 232, 216, 0.5);
 }
 
 .acp-harness__rail-entry--active {
