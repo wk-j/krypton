@@ -228,6 +228,11 @@ export class AcpHarnessView implements ContentView {
       this.toggleZenMode();
       return true;
     }
+    if ((e.key === 'n' || e.key === 'N' || e.key === 'p' || e.key === 'P') && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      this.activateLaneByDelta(e.key === 'n' || e.key === 'N' ? 1 : -1);
+      return true;
+    }
     if (this.helpOpen) {
       e.preventDefault();
       if (e.key === 'Escape' || e.key === '?' || e.key === 'q') this.toggleHelp(false);
@@ -1337,6 +1342,7 @@ export class AcpHarnessView implements ContentView {
           <h3>Lane Control</h3>
           <dl>
             <dt>Tab / Shift+Tab</dt><dd>Next / previous lane</dd>
+            <dt>Ctrl+N / Ctrl+P</dt><dd>Next / previous lane (zen + dashboard)</dd>
             <dt>Esc, then 1-9</dt><dd>Switch lane in transcript mode</dd>
             <dt>Esc, then ?</dt><dd>Open help</dd>
             <dt>Tab buttons</dt><dd>Click a lane directly</dd>
