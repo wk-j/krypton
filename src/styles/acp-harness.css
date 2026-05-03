@@ -992,3 +992,90 @@
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   ZEN MODE — toggleable focused layout (spec 80)
+   ═══════════════════════════════════════════════════════════════ */
+
+.acp-harness--zen .acp-harness__title {
+  display: none;
+}
+
+.acp-harness--zen .acp-harness__dashboard {
+  display: grid;
+  grid-template-columns: clamp(180px, 14vw, 240px) 1fr;
+  gap: 0;
+}
+
+.acp-harness__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-right: 1px solid rgba(0, 204, 255, 0.1);
+  background: rgba(2, 5, 10, 0.32);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.acp-harness__body-cell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.acp-harness__rail-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: rgba(216, 232, 216, 0.6);
+  border-left: 2px solid transparent;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.acp-harness__rail-entry--active {
+  color: var(--acp-lane-accent, #8effb0);
+  border-left-color: var(--acp-lane-accent, #8effb0);
+  background: rgba(0, 204, 255, 0.04);
+}
+
+.acp-harness__rail-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(216, 232, 216, 0.42);
+  flex: 0 0 auto;
+}
+
+.acp-harness__rail-entry--busy .acp-harness__rail-dot {
+  background: var(--krypton-window-accent, #0cf);
+  box-shadow: 0 0 6px rgba(0, 204, 255, 0.6);
+}
+
+.acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
+  background: #ffd166;
+}
+
+.acp-harness__rail-entry--error .acp-harness__rail-dot {
+  background: #ff6b8b;
+}
+
+.acp-harness--zen .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot,
+.acp-harness--zen .acp-harness__rail-entry--error .acp-harness__rail-dot {
+  animation: acp-harness-zen-attention 1.2s ease-in-out infinite;
+}
+
+@keyframes acp-harness-zen-attention {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+.acp-harness__rail-name {
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

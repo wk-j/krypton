@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-03 (ACP Harness fresh-session commands)
+> Last updated: 2026-05-03 (ACP Harness Zen Mode)
 
 ## Overview
 
@@ -21,6 +21,8 @@
 
 ## Recent Landings
 
+- **ACP Harness Zen Mode** — toggleable focused layout (`Cmd+.`) collapses inactive lanes into a thin left status rail (status dot + lane name only) while the active lane keeps its full transcript on the right. The harness title hides; cwd and global counts stay. Per-project preference persists via `localStorage`. Inactive lanes that need permission or have errored pulse their rail dot via a single keyframe — no extra DOM, no layered effects. Composer, tool rows, memory peek, and active lane body are unchanged. See `docs/80-acp-harness-zen-mode.md`.
+- **ACP Harness memory MCP auto-allow** — built-in `krypton-harness-memory` MCP permission prompts for `memory_set`, `memory_get`, and `memory_list` are now auto-allowed by default and logged in the lane transcript, keeping the memory board agent-managed while leaving non-memory tool permissions on the explicit composer flow. See `docs/72-acp-harness-view.md` and `docs/73-acp-harness-mcp-memory.md`.
 - **ACP Harness fresh-session commands** — harness hash commands now include `#new` for a fresh active-lane ACP session, `#new!` for fresh session plus active-lane memory clear, and `#mem clear` for clearing only the active lane's persisted memory document. Fresh sessions await old-client disposal and use a lane spawn epoch plus disposed-event guard to ignore late updates from replaced subprocesses. See `docs/79-acp-harness-fresh-session-commands.md`.
 - **Vault view perf** — cold-open path drops from 346 IPC roundtrips to 3 by replacing the per-file `cat` loop with a single bulk `read_vault_files` Rust command (parallel `tokio::spawn_blocking` + lossy UTF-8 decode), pre-building a suffix-aware `slugMap` for O(1) wikilink resolution, and deferring heading parsing from index time to `openFile()` (gated by a `headingsLoaded` flag). A static `indexCache` keyed by `vaultRoot` skips re-indexing on reopen; explicit `r` reload always rebuilds and overwrites. See `docs/78-vault-view-perf.md`.
 - **ACP Harness view (Leader Y)** — multi-lane ACP orchestration tab that spawns the default same-project roster (Codex-1, Claude-1, Gemini-1, OpenCode-1 when installed), routes prompts to one active lane, displays a lane dashboard plus command center, handles per-lane permissions, and keeps project-scoped MCP lane memory visible in a read-only board. Built-in OpenCode lanes select `zai-coding-plan/glm-5.1` through ACP session configuration so Krypton owns the default lane model. See `docs/72-acp-harness-view.md`.

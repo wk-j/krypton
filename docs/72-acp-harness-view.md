@@ -189,6 +189,8 @@ Memory is a per-project set of lane-owned markdown-like documents. The harness c
 
 The human surface is intentionally smaller: the memory drawer is read-only, and `#mem clear` clears only the active lane's persisted document. The harness no longer extracts memory from tool observations or `MEMORY:` assistant footers.
 
+Krypton auto-allows ACP permission prompts for the built-in `krypton-harness-memory` MCP tools (`memory_set`, `memory_get`, and `memory_list`) because that tool surface is lane-scoped, tab-local, and intentionally agent-managed. Other ACP tool permission requests still use the normal composer pre-empt flow.
+
 #### Memory clearing (escape hatch only)
 
 Lane memory is an agent-managed document. The user has one optional command to recover from stale or bad lane memory:
@@ -244,7 +246,7 @@ function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] 
 7. Harness dispatches the prompt to the active tab's lane only. If the active lane is busy, dispatch is rejected with an inline composer chip `lane busy`; the prompt is not queued. When the lane transitions busy→idle and the composer still holds a non-empty draft, the chip flashes `lane idle — Enter to send` for 2 seconds; dispatch remains manual.
 8. While the turn streams: each lane renders stream/tool/plan/usage updates into its dashboard transcript. Completed `edit` calls and completed diff-bearing `write_like` tool updates update `fileTouchMap[path] = {laneId, laneDisplayName, toolKind, at}` (overwriting older entries). Memory tool calls trigger a memory-board refresh.
 9. When the turn returns, pending permissions and turn-scoped accept/reject-all flags clear. Cancelled turns do not modify memory unless the agent already called MCP memory tools before cancellation.
-10. Permission requests move that lane to `needs_permission` and pre-empt that tab's composer with the options banner. The lane transcript holds the request detail (operation, path, size, diff preview) and a cross-lane warning when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. The user must switch to that tab to read context, then resolve via `a/A/r/R/Esc`. `A`/`R` apply only for the current `session/prompt` turn; both flags clear when that turn returns.
+10. Permission requests for the built-in memory MCP tools are auto-allowed and append a `memory auto-allow` transcript row without entering permission mode. Other permission requests move that lane to `needs_permission` and pre-empt that tab's composer with the options banner. The lane transcript holds the request detail (operation, path, size, diff preview) and a cross-lane warning when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. The user must switch to that tab to read context, then resolve via `a/A/r/R/Esc`. `A`/`R` apply only for the current `session/prompt` turn; both flags clear when that turn returns.
 11. `Ctrl+C` (or `#cancel`) in the composer cancels the active lane only. `#new` starts a fresh active-lane session after awaiting old-client disposal; `#new!` also clears the active lane's persisted memory; `#mem clear` clears memory without replacing the session.
 12. Closing the tab disposes every client and drops all in-memory UI state (transcripts, file-touch map, pending permissions). **Memory documents are persisted to disk per project directory.** See `docs/76-acp-harness-memory-persistence.md`.
 ```
@@ -409,12 +411,13 @@ When the active tab's lane has a pending permission, the composer pre-empts text
 ```
 
 - The banner does **not** include path, diff, or size. That detail (and the cross-lane file-touch warning, when applicable) lives in the active lane's transcript on the dashboard. The user is expected to read context there before responding.
-- `A` and `R` are **turn-scoped**: they apply only to subsequent permission requests in the current `session/prompt` turn, and both `acceptAllForTurn` / `rejectAllForTurn` flags clear automatically when the turn returns. There is no harness-wide or session-wide "always accept". Each new turn starts with `a/r` only.
+- Built-in memory MCP permissions do not show this banner. The harness automatically chooses the first allow option for `memory_set`, `memory_get`, and `memory_list`, then appends a transcript row such as `✓ memory_set (memory auto-allow)`.
+- `A` and `R` are **turn-scoped** for non-memory permissions: they apply only to subsequent permission requests in the current `session/prompt` turn, and both `acceptAllForTurn` / `rejectAllForTurn` flags clear automatically when the turn returns. There is no harness-wide or session-wide "always accept" for filesystem, process, or other non-memory tools. Each new turn starts with `a/r` only.
 - Any draft text the user had typed before the request arrived is preserved and re-displayed when the composer returns to text mode.
 - If multiple permission requests are queued for the same lane, the composer stays in pre-empt mode and walks them in order; the lane transcript shows each request and resolution row. When `acceptAllForTurn` (or `rejectAllForTurn`) is set, the harness resolves subsequent requests automatically without re-displaying the banner; each auto-resolution still appends a `✓/✗ accepted/rejected (auto for remainder of this turn)` row to the lane transcript.
 - If a permission request arrives for a non-active tab, only that tab's composer enters pre-empt mode internally. The currently active tab's composer is unaffected. The tab strip shows `!N` to draw the user to switch.
 - Switching to a tab whose composer is in permission mode immediately shows the banner; switching back to a text-mode tab restores its draft.
-- There is no "approve permission from another tab" shortcut. Resolving a permission requires switching to its tab. This is an intentional safety property.
+- There is no "approve permission from another tab" shortcut for prompted permissions. Resolving a non-memory permission requires switching to its tab. This is an intentional safety property.
 
 Permission option mapping:
 
@@ -496,6 +499,7 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `Ctrl+u` / `Ctrl+d` | Transcript scroll focus | Page up/down active lane transcript. |
 | `i` / `Esc` | Transcript scroll focus | Return to composer input. |
 | `q` | Transcript scroll focus | Close harness tab. |
+| `Cmd+.` | Any composer/transcript context | Toggle Zen Mode (collapses inactive lanes into a left rail; active lane fills the body). Persisted per project. See `docs/80-acp-harness-zen-mode.md`. |
 
 Memory mutations are not bound to dedicated keys; active-lane memory clearing executes through `#mem clear` in the composer. This keeps the keybinding surface narrow and the input rule consistent (input always in the command center).
 
@@ -525,7 +529,7 @@ No TOML keys are wired for the harness. The default roster is code-defined, and 
 - **Late events after fresh session:** `AcpClient` drops raw events after `dispose()`, and harness lane callbacks compare both spawn epoch and client identity before mutating state.
 - **`#mem clear` during active work:** clears the active lane's memory document for future prompt packets only. Any prompt already sent may still contain the old memory snapshot.
 - **User presses Enter while active lane is busy:** show inline composer chip `lane busy`; do not dispatch and do not queue. User must wait for the lane to return to idle (or `Ctrl+C` to cancel). On busy→idle transition with non-empty draft, chip flashes `lane idle — Enter to send` for 2s + optional sound cue; dispatch is still manual.
-- **Permission arrives for a non-active tab:** that tab's composer enters permission mode internally; the active tab's composer is unaffected. The tab strip shows `!N` and the dashboard collapsed row turns warning-colored. The user must switch to the tab to resolve. There is no cross-tab approve shortcut by design.
+- **Permission arrives for a non-active tab:** memory MCP permissions are auto-allowed in place. Other permissions put that tab's composer in permission mode internally; the active tab's composer is unaffected. The tab strip shows `!N` and the dashboard collapsed row turns warning-colored. The user must switch to the tab to resolve. There is no cross-tab approve shortcut by design.
 - **Multiple permissions on the same lane:** the lane's composer pre-empts and walks them in order; lane transcript shows resolution rows for each. If `acceptAllForTurn` / `rejectAllForTurn` is set, subsequent requests resolve automatically until the turn returns; each auto-resolution still appends a transcript row.
 - **Multiple permissions across different lanes:** each affected tab independently sits in permission mode. The user resolves them by switching tabs in any order they prefer.
 - **Permission arrives while user is mid-typing in that tab:** composer pre-empts; the draft text is preserved and re-displayed when the composer returns to text mode.
@@ -567,7 +571,7 @@ Assumptions for v1:
 - **Cross-lane file lock or write coordination.** `fileTouchMap` is informational only; the harness never blocks a permission based on another lane's recent writes.
 - **Standing per-lane permission grants.** `A`/`R` are scoped to the current `session/prompt` turn. There is no harness-wide or session-lifetime auto-accept.
 - **Lane fullscreen mode.** The active lane already fills the dashboard's remaining viewport with internal scroll.
-- **Cross-tab permission resolution.** Resolving a permission requires switching to its tab; this is intentional so context is read before approval.
+- **Cross-tab permission resolution for non-memory tools.** Resolving a prompted permission requires switching to its tab; this is intentional so context is read before approval.
 - **Global permission queue strip.** Permission is per-tab pre-empt; tab strip badges and dashboard row colors carry the urgency signal.
 - **Per-lane focus on the dashboard.** The dashboard is read-only; lane "focus" is implicit through the active tab.
 - Git worktree creation, branch management, or merge orchestration.

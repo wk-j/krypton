@@ -64,6 +64,8 @@ interface StagedImage {
 
 const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MEMORY_PERMISSION_SCAN_DEPTH = 8;
+const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
 
 interface FileTouchRecord {
   path: string;
@@ -171,6 +173,7 @@ export class AcpHarnessView implements ContentView {
   private fileTouchMap = new Map<string, FileTouchRecord>();
   private memoryDrawerOpen = false;
   private helpOpen = false;
+  private zenMode = false;
   private memoryCursorRowId: string | null = null;
   private focus: ComposerFocus = 'text';
   private chip: string | null = null;
@@ -190,6 +193,7 @@ export class AcpHarnessView implements ContentView {
 
   constructor(projectDir: string | null = null) {
     this.projectDir = projectDir;
+    this.zenMode = readZenModePreference(projectDir);
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
@@ -207,6 +211,11 @@ export class AcpHarnessView implements ContentView {
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
+    if (e.key === '.' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      this.toggleZenMode();
+      return true;
+    }
     if (this.helpOpen) {
       e.preventDefault();
       if (e.key === 'Escape' || e.key === '?' || e.key === 'q') this.toggleHelp(false);
@@ -259,7 +268,7 @@ export class AcpHarnessView implements ContentView {
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      void this.submitActiveLane();
+      void this.submitActiveLane().catch((error: unknown) => this.handleSubmitError(error));
       return true;
     }
 
@@ -619,6 +628,19 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  private handleSubmitError(error: unknown): void {
+    const message = errorText(error);
+    const lane = this.activeLane();
+    console.warn('[AcpHarnessView] submit failed:', error);
+    if (lane?.status === 'starting') {
+      lane.status = 'error';
+      lane.error = message;
+      this.appendTranscript(lane, 'system', `command failed: ${message}`);
+    }
+    this.flashChip(message);
+    this.render();
+  }
+
   private buildPromptBlocks(lane: HarnessLane, userText: string, images: StagedImage[] = []): ContentBlock[] {
     const imageBlocks: ContentBlock[] = images.map((img) => ({
       type: 'image',
@@ -709,6 +731,11 @@ export class AcpHarnessView implements ContentView {
 
   private addPermission(lane: HarnessLane, requestId: number, toolCall: ToolCall, options: PermissionOption[]): void {
     const permission: HarnessPermission = { requestId, toolCall, options };
+    const memoryToolName = harnessMemoryPermissionToolName(permission);
+    if (memoryToolName && pickPermissionOption(permission.options, 'accept')) {
+      void this.resolveMemoryPermission(lane, permission, memoryToolName);
+      return;
+    }
     lane.pendingPermissions.push(permission);
     lane.status = 'needs_permission';
     this.appendTranscript(lane, 'permission', this.describePermission(lane, permission));
@@ -736,6 +763,19 @@ export class AcpHarnessView implements ContentView {
       this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
     }
     if (lane.pendingPermissions.length === 0 && lane.status === 'needs_permission') lane.status = 'busy';
+    this.render();
+  }
+
+  private async resolveMemoryPermission(lane: HarnessLane, permission: HarnessPermission, toolName: string): Promise<void> {
+    if (!lane.client) return;
+    const option = pickPermissionOption(permission.options, 'accept');
+    if (!option) return;
+    try {
+      await lane.client.respondPermission(permission.requestId, option.optionId);
+      this.appendTranscript(lane, 'permission', `✓ ${toolName} (memory auto-allow)`);
+    } catch (e) {
+      this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+    }
     this.render();
   }
 
@@ -962,6 +1002,7 @@ export class AcpHarnessView implements ContentView {
 
   private render(): void {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
+    this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.renderTopbar();
     this.renderDashboard();
     this.renderMemory();
@@ -989,8 +1030,25 @@ export class AcpHarnessView implements ContentView {
       this.dashboardEl.appendChild(empty);
       return;
     }
+
+    let railEl: HTMLElement | null = null;
+    let bodyCell: HTMLElement | null = null;
+    if (this.zenMode) {
+      railEl = document.createElement('aside');
+      railEl.className = 'acp-harness__rail';
+      bodyCell = document.createElement('div');
+      bodyCell.className = 'acp-harness__body-cell';
+      this.dashboardEl.appendChild(railEl);
+      this.dashboardEl.appendChild(bodyCell);
+      for (const lane of this.lanes) {
+        const active = lane.id === this.activeLaneId;
+        railEl.appendChild(this.renderRailEntry(lane, active));
+      }
+    }
+
     for (const lane of this.lanes) {
       const active = lane.id === this.activeLaneId;
+      if (this.zenMode && !active) continue;
       const laneEl = document.createElement(active ? 'section' : 'div');
       laneEl.className = `acp-harness__lane ${active ? 'acp-harness__lane--active' : 'acp-harness__lane--collapsed'} acp-harness__lane--${lane.status}`;
       laneEl.style.setProperty('--acp-lane-accent', active ? lane.accent : 'rgba(216, 232, 216, 0.42)');
@@ -1020,9 +1078,21 @@ export class AcpHarnessView implements ContentView {
         }
         laneEl.appendChild(body);
       }
-      this.dashboardEl.appendChild(laneEl);
+      (bodyCell ?? this.dashboardEl).appendChild(laneEl);
     }
     this.schedulePretextLayout();
+  }
+
+  private renderRailEntry(lane: HarnessLane, active: boolean): HTMLElement {
+    const entry = document.createElement('div');
+    entry.className =
+      `acp-harness__rail-entry acp-harness__rail-entry--${lane.status}` +
+      (active ? ' acp-harness__rail-entry--active' : '');
+    entry.style.setProperty('--acp-lane-accent', lane.accent);
+    entry.innerHTML =
+      `<span class="acp-harness__rail-dot"></span>` +
+      `<span class="acp-harness__rail-name">${esc(lane.displayName)}</span>`;
+    return entry;
   }
 
   private renderMemory(): void {
@@ -1113,6 +1183,7 @@ export class AcpHarnessView implements ContentView {
             <dt>Enter</dt><dd>Send prompt to active lane only</dd>
             <dt>Shift+Enter</dt><dd>Insert newline</dd>
             <dt>Ctrl+C</dt><dd>Cancel active busy lane</dd>
+            <dt>Cmd+.</dt><dd>Toggle Zen Mode</dd>
           </dl>
         </section>
         <section class="acp-harness__help-section">
@@ -1395,6 +1466,12 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
+  private toggleZenMode(): void {
+    this.zenMode = !this.zenMode;
+    writeZenModePreference(this.projectDir, this.zenMode);
+    this.render();
+  }
+
   private sortedMemoryRows(): HarnessMemoryEntry[] {
     return this.memoryEntries.slice().sort((a, b) => b.updatedAt - a.updatedAt);
   }
@@ -1498,11 +1575,75 @@ export class AcpHarnessView implements ContentView {
   }
 }
 
+function zenModeStorageKey(projectDir: string | null): string {
+  return `krypton:acp-harness:zen:${projectDir ?? ''}`;
+}
+
+function readZenModePreference(projectDir: string | null): boolean {
+  try {
+    return localStorage.getItem(zenModeStorageKey(projectDir)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeZenModePreference(projectDir: string | null, value: boolean): void {
+  try {
+    if (value) localStorage.setItem(zenModeStorageKey(projectDir), '1');
+    else localStorage.removeItem(zenModeStorageKey(projectDir));
+  } catch {
+    // localStorage unavailable — preference simply won't persist
+  }
+}
+
 function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'reject'): PermissionOption | null {
   if (action === 'accept') {
     return options.find((option) => option.kind === 'allow_once') ?? options.find((option) => option.kind === 'allow_always') ?? null;
   }
   return options.find((option) => option.kind === 'reject_once') ?? options.find((option) => option.kind === 'reject_always') ?? null;
+}
+
+function harnessMemoryPermissionToolName(permission: HarnessPermission): string | null {
+  const call = permission.toolCall;
+  if (call.kind && call.kind !== 'read' && call.kind !== 'other') return null;
+  const rawToolName = memoryToolNameFromUnknown(call.rawInput);
+  const titleToolName = memoryToolNameFromString(call.title);
+  if (rawToolName && containsHarnessMemoryServerMarker(call.rawInput)) return rawToolName;
+  if (titleToolName && containsHarnessMemoryServerMarker(call.title)) return titleToolName;
+  return null;
+}
+
+function memoryToolNameFromUnknown(value: unknown, depth = 0): string | null {
+  if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return null;
+  if (typeof value === 'string') return memoryToolNameFromString(value);
+  if (!value || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const match = memoryToolNameFromUnknown(item, depth + 1);
+      if (match) return match;
+    }
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ['name', 'toolName', 'tool_name', 'tool', 'title']) {
+    const match = memoryToolNameFromUnknown(record[key], depth + 1);
+    if (match) return match;
+  }
+  return null;
+}
+
+function memoryToolNameFromString(value: string | undefined): string | null {
+  if (!value) return null;
+  const match = value.match(/\b(memory_set|memory_get|memory_list)\b/);
+  return match && HARNESS_MEMORY_TOOL_NAMES.has(match[1]) ? match[1] : null;
+}
+
+function containsHarnessMemoryServerMarker(value: unknown, depth = 0): boolean {
+  if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return false;
+  if (typeof value === 'string') return value.includes('krypton-harness-memory') || value.includes('/mcp/harness/');
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some((item) => containsHarnessMemoryServerMarker(item, depth + 1));
+  return Object.values(value as Record<string, unknown>).some((item) => containsHarnessMemoryServerMarker(item, depth + 1));
 }
 
 function errorText(error: unknown): string {

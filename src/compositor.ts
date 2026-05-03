@@ -3083,7 +3083,11 @@ export class Compositor {
 
     const tab = win.tabs[win.activeTabIndex];
     const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
-    if (pane) pane.terminal?.focus();
+    if (pane?.contentView) {
+      pane.contentView.element.focus();
+    } else if (pane?.terminal) {
+      pane.terminal.focus();
+    }
 
     // Tab wrappers stay mounted (CSS visibility toggle, no DOM detach/reattach),
     // so fit can run immediately without waiting for reflow.

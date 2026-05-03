@@ -10,7 +10,7 @@ The current ACP harness memory is indirect: Krypton infers memory from tool obse
 
 ## Solution
 
-Expose a Krypton-owned memory tool server to ACP lanes through `session/new.mcpServers`, reusing Krypton's existing localhost hook HTTP server instead of spawning a separate MCP process. Memory is tab-local, stored in the running Krypton instance under a `harnessId`, and mutated only through MCP-style memory tools. The human UI shows active memory summaries and expandable details, but does not approve, edit, restore, or audit memory changes.
+Expose a Krypton-owned memory tool server to ACP lanes through `session/new.mcpServers`, reusing Krypton's existing localhost hook HTTP server instead of spawning a separate MCP process. Memory is tab-local, stored in the running Krypton instance under a `harnessId`, and mutated only through MCP-style memory tools. The human UI shows active memory summaries and expandable details, but does not approve, edit, restore, or audit memory changes. If an ACP adapter asks for permission before calling the built-in memory MCP tools, the harness auto-allows `memory_set`, `memory_get`, and `memory_list` by default and records the auto-allow in the lane transcript.
 
 ## Research
 
