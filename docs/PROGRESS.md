@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-03 (ACP Harness Zen Mode)
+> Last updated: 2026-05-03 (ACP Harness screen capture staging)
 
 ## Overview
 
@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **ACP Harness screen capture staging** — global `Ctrl+Shift+S` now routes captured PNGs into the focused ACP Harness instead of the smart prompt dialog when the harness view is active. The capture is staged in the active lane composer through the same image path as paste/drop and is sent as an embedded ACP image content block on the next prompt. Non-harness focus keeps the previous prompt-dialog queue behavior. See `docs/63-screen-capture-prompt.md` and `docs/72-acp-harness-view.md`.
 - **ACP Harness Zen Mode** — toggleable focused layout (`Cmd+.`) collapses inactive lanes into a thin left status rail (status dot + lane name only) while the active lane keeps its full transcript on the right. The harness title hides; cwd and global counts stay. Per-project preference persists via `localStorage`. Inactive lanes that need permission or have errored pulse their rail dot via a single keyframe — no extra DOM, no layered effects. Composer, tool rows, memory peek, and active lane body are unchanged. See `docs/80-acp-harness-zen-mode.md`.
 - **ACP Harness memory MCP auto-allow** — built-in `krypton-harness-memory` MCP permission prompts for `memory_set`, `memory_get`, and `memory_list` are now auto-allowed by default and logged in the lane transcript, keeping the memory board agent-managed while leaving non-memory tool permissions on the explicit composer flow. See `docs/72-acp-harness-view.md` and `docs/73-acp-harness-mcp-memory.md`.
 - **ACP Harness fresh-session commands** — harness hash commands now include `#new` for a fresh active-lane ACP session, `#new!` for fresh session plus active-lane memory clear, and `#mem clear` for clearing only the active lane's persisted memory document. Fresh sessions await old-client disposal and use a lane spawn epoch plus disposed-event guard to ignore late updates from replaced subprocesses. See `docs/79-acp-harness-fresh-session-commands.md`.

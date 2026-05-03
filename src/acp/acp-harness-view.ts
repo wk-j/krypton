@@ -24,7 +24,7 @@ import type {
   ToolCallUpdate,
   UsageInfo,
 } from './types';
-import type { ContentView, PaneContentType } from '../types';
+import type { CapturedImage, ContentView, PaneContentType } from '../types';
 import { extractModifiedPath } from './acp-harness-memory';
 
 type HarnessLaneStatus = 'starting' | 'idle' | 'busy' | 'needs_permission' | 'error' | 'stopped';
@@ -302,6 +302,22 @@ export class AcpHarnessView implements ContentView {
     if (this.harnessMemoryId) {
       void invoke('dispose_harness_memory', { harnessId: this.harnessMemoryId });
     }
+  }
+
+  stageCapturedImage(image: CapturedImage): boolean {
+    const lane = this.activeLane();
+    if (!lane) return false;
+    if (this.helpOpen || this.memoryDrawerOpen) {
+      this.flashChip('close overlay to stage capture');
+      return true;
+    }
+    if (lane.pendingPermissions.length > 0) {
+      this.flashChip('resolve permission before staging capture');
+      return true;
+    }
+    const staged = this.stageImageData(lane, image.data, image.mimeType);
+    if (staged) this.flashChip('screen capture staged');
+    return true;
   }
 
   private buildDOM(): void {
@@ -1391,26 +1407,31 @@ export class AcpHarnessView implements ContentView {
   }
 
   private stageImageFile(lane: HarnessLane, file: File): void {
-    if (lane.stagedImages.length >= MAX_STAGED_IMAGES) {
-      this.flashChip(`max ${MAX_STAGED_IMAGES} images per message`);
-      return;
-    }
-    if (!lane.supportsImages) {
-      this.flashChip(`${lane.displayName} did not advertise image support; sending anyway`);
-    }
     const reader = new FileReader();
     reader.onload = (): void => {
       const dataUrl = reader.result as string;
       const commaIdx = dataUrl.indexOf(',');
       const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
-      if (base64.length > MAX_IMAGE_BYTES * 1.34) {
-        this.flashChip('image too large (max 5MB)');
-        return;
-      }
-      lane.stagedImages.push({ data: base64, mimeType: file.type });
-      this.renderComposer();
+      this.stageImageData(lane, base64, file.type);
     };
     reader.readAsDataURL(file);
+  }
+
+  private stageImageData(lane: HarnessLane, data: string, mimeType: string): boolean {
+    if (lane.stagedImages.length >= MAX_STAGED_IMAGES) {
+      this.flashChip(`max ${MAX_STAGED_IMAGES} images per message`);
+      return false;
+    }
+    if (!lane.supportsImages) {
+      this.flashChip(`${lane.displayName} did not advertise image support; sending anyway`);
+    }
+    if (data.length > MAX_IMAGE_BYTES * 1.34) {
+      this.flashChip('image too large (max 5MB)');
+      return false;
+    }
+    lane.stagedImages.push({ data, mimeType });
+    this.renderComposer();
+    return true;
   }
 
   private clearStagedImages(lane: HarnessLane): void {

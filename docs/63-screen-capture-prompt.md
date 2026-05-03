@@ -1,4 +1,4 @@
-# Screen Capture to Prompt Dialog — Implementation Spec
+# Screen Capture Routing — Implementation Spec
 
 > Status: Implemented
 > Date: 2026-04-16
@@ -6,7 +6,7 @@
 
 ## Problem
 
-Users want to capture a screenshot from any app and send it to the Claude prompt dialog without switching to Krypton first. Today they must use a separate tool, save to disk, switch to Krypton, open the dialog, and type `@path` manually.
+Users want to capture a screenshot from any app and send it to the currently relevant AI surface without switching through external tools. The default target is the Claude prompt dialog; when the ACP Harness is the active content view, the capture should stage in the active harness lane composer.
 
 ## Solution
 
@@ -15,7 +15,7 @@ Two global OS-level shortcuts registered via `tauri-plugin-globalshortcut`:
 - **`Ctrl+Shift+K`** — open/close the prompt dialog from anywhere; brings Krypton to front
 - **`Ctrl+Shift+S`** — silent screen capture from anywhere; Krypton stays in background
 
-`Ctrl+Shift+S` invokes `screencapture -x -i` (macOS native crosshair), which overlays on top of everything including Krypton. No window hide/show — Krypton state is never touched during capture. Captures made while the dialog is closed queue silently on `PromptDialog.captureQueue` and are drained automatically when the dialog next opens.
+`Ctrl+Shift+S` invokes `screencapture -x -i` (macOS native crosshair), which overlays on top of everything including Krypton. No window hide/show — Krypton state is never touched during capture. If the focused pane is an ACP Harness view, the captured PNG is staged directly in the active lane's composer through `ContentView.stageCapturedImage()`. Otherwise captures made while the prompt dialog is closed queue silently on `PromptDialog.captureQueue` and are drained automatically when the dialog next opens.
 
 Inside Krypton, `Cmd+Shift+K` continues to work unchanged (existing in-app binding).
 
@@ -25,6 +25,7 @@ Inside Krypton, `Cmd+Shift+K` continues to work unchanged (existing in-app bindi
 - `tauri-plugin-globalshortcut` (Tauri v2) — registers OS-level hotkeys via `app.handle().plugin(tauri_plugin_globalshortcut::Builder::new().build())`. Callbacks fire on a Rust thread; emit a Tauri event to the frontend to trigger JS.
 - `imageThumbs: Map<string, string>` — `path → dataUrl`. Existing map; already used by paste/drop flow.
 - `open()` clears `imageThumbs` — queue drain must happen *after* `imageThumbs.clear()`, inside `open()`.
+- `ContentView.stageCapturedImage(image)` — optional focused-content hook. The ACP Harness implements it by reusing the same staged-image path as paste/drop so screenshots become embedded ACP image blocks, not `@path` text references.
 - `base64 = "0.22"` and `tokio` (with `rt-multi-thread`) already in `Cargo.toml`. Use `tokio::task::spawn_blocking` for the blocking `screencapture` call — no new tokio features needed.
 - `Cmd+Shift+K` toggle at `input-router.ts:437` — `Ctrl+Shift+K` global matches same toggle semantics.
 - `Ctrl+Shift+K` and `Ctrl+Shift+S` — confirmed free. OS-level global shortcuts are consumed before xterm sees them; no `customKeyHandler` changes needed.
@@ -32,7 +33,7 @@ Inside Krypton, `Cmd+Shift+K` continues to work unchanged (existing in-app bindi
 **macOS `screencapture`:**
 - `screencapture -x -i -t png <path>` — system crosshair overlay appears above all windows. `-x` suppresses shutter sound. Exits when user confirms or presses Esc. No file written on cancel.
 - Cancellation: file absent or zero-byte after return.
-- Screen Recording TCC permission required in bundled app — add `NSScreenRecordingUsageDescription` to `tauri.conf.json` `bundle.macOS.info`.
+- Screen Recording TCC permission is required in bundled apps. Krypton currently relies on macOS's generic permission prompt; no custom `Info.plist` override is wired.
 
 ## Prior Art
 
@@ -52,13 +53,28 @@ Inside Krypton, `Cmd+Shift+K` continues to work unchanged (existing in-app bindi
 | `src-tauri/Cargo.toml` | Add `tauri-plugin-globalshortcut = "2"` |
 | `src-tauri/src/lib.rs` | Register plugin; register `Ctrl+Shift+K` and `Ctrl+Shift+S` shortcuts; emit events |
 | `src-tauri/src/commands.rs` | Add `capture_screen()` async command (no window param) |
-| `src-tauri/tauri.conf.json` | Add `bundle.macOS.info.NSScreenRecordingUsageDescription`; add global shortcut capability |
+| `src/types.ts` | Add optional `ContentView.stageCapturedImage()` hook and captured-image payload type |
+| `src/compositor.ts` | Route captured images into the focused content view when supported |
+| `src/acp/acp-harness-view.ts` | Stage captured PNGs in the active lane composer |
 | `src/prompt-dialog.ts` | Add `captureQueue`; drain in `open()`; add `captureAndStage()` and `stageDiskImage()` |
-| `src/main.ts` | Listen for `capture-requested` and `prompt-dialog-requested` events |
+| `src/main.ts` | Listen for `capture-requested` and route to focused ACP Harness or prompt dialog |
 
 ## Design
 
 ### Data Structures
+
+```typescript
+// src/types.ts
+interface CapturedImage {
+  path: string;
+  data: string;
+  mimeType: string;
+}
+
+interface ContentView {
+  stageCapturedImage?(image: CapturedImage): boolean;
+}
+```
 
 ```typescript
 // src/prompt-dialog.ts — new field
@@ -93,14 +109,19 @@ Global shortcut events emitted from Rust → frontend:
 **`Ctrl+Shift+S` (capture, any app):**
 ```
 1. OS fires global shortcut → Rust callback → app.emit("capture-requested", ())
-2. Frontend listener calls promptDialog.captureAndStage()
-3. captureAndStage(): invoke<CaptureResult | null>('capture_screen')
-4. Rust capture_screen():
+2. Frontend listener checks compositor.getFocusedContentType()
+3. If focused content is ACP Harness:
+   a. invoke<CaptureResult | null>('capture_screen')
+   b. on success, call compositor.stageCapturedImageOnFocusedContent({ path, data, mimeType: 'image/png' })
+   c. AcpHarnessView.stageCapturedImage() stages the image in the active lane composer
+4. Otherwise, frontend listener calls promptDialog.captureAndStage()
+5. captureAndStage(): invoke<CaptureResult | null>('capture_screen')
+6. Rust capture_screen():
    a. create_dir_all("/tmp/krypton-prompt-images")
    b. spawn_blocking: screencapture -x -i -t png <ts>.png   ← blocks until user done
    c. if file absent or empty → return Ok(None)
    d. fs::read → base64::encode → return Ok(Some(CaptureResult { path, data }))
-5. Frontend receives result:
+7. Prompt-dialog fallback receives result:
    a. if result === null → return  (user cancelled, Krypton untouched)
    b. const dataUrl = `data:image/png;base64,${result.data}`
    c. if dialog is open: stageDiskImage(path, dataUrl) → renderStaging(); autoGrow()
@@ -146,11 +167,13 @@ Reuses existing `insertAtCursor` and `renderStaging` unchanged.
 
 ### Configuration
 
-Add `NSScreenRecordingUsageDescription` to a custom `Info.plist` file referenced via `bundle.macOS.infoPlist` in `tauri.conf.json`. The key is cosmetic — it provides a description string in macOS's TCC permission dialog. Without it the feature still works; macOS shows a generic dialog on first use. This requires creating a custom plist file (the field takes a path, not inline JSON).
+No user config is exposed. The current `tauri.conf.json` does not reference a custom macOS `Info.plist`, so first-use Screen Recording permission uses macOS's generic prompt wording.
 
 ## Edge Cases
 
 - **Cancel capture (Esc):** `capture_screen` returns `null`. Krypton untouched, queue unchanged.
+- **ACP Harness focused:** capture stages into the active lane as an embedded image block; it does not open the prompt dialog and does not insert an `@path` draft reference.
+- **ACP Harness overlay or permission prompt active:** harness handles the capture event with a chip (`close overlay to stage capture` or `resolve permission before staging capture`) and does not fall back to the prompt dialog.
 - **Capture while dialog open:** `stageDiskImage` fires immediately; thumbnail appears in strip.
 - **Capture while dialog closed:** pushed to `captureQueue`; appears when dialog next opens via `Ctrl+Shift+K`.
 - **Queue overflow (>4 captures before opening dialog):** only first 4 drained on open; excess discarded silently. Max 4 matches existing paste/drop limit.

@@ -155,7 +155,13 @@
     d. #new! first clears that lane's persisted memory document through
        clear_harness_memory_lane, then follows the #new flow.
     e. #mem clear clears the active lane memory document for future prompts only.
-13. Closing the harness disposes every lane client, calls dispose_harness_memory(),
+13. Images stage in the active lane composer from paste, drop, or global
+    Ctrl+Shift+S screen capture. For global capture, main.ts invokes
+    capture_screen only when the focused content type is acp_harness, then
+    routes the PNG through Compositor.stageCapturedImageOnFocusedContent().
+    The harness sends staged images as embedded ACP image blocks on the next
+    prompt and clears them after dispatch.
+14. Closing the harness disposes every lane client, calls dispose_harness_memory(),
     and drops transcripts and file-touch warnings. Persistent memory stays on
     disk for the next harness session in this directory.
 ```

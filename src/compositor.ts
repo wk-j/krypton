@@ -32,6 +32,7 @@ import {
   type ProcessChangedEvent,
   type ProcessInfo,
   type ProcessCandidate,
+  type CapturedImage,
 } from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
 import { AnimationEngine, BoundsSnapshot } from './animation';
@@ -720,6 +721,12 @@ export class Compositor {
   getFocusedContentType(): PaneContentType | null {
     const pane = this.getFocusedPane();
     return pane?.contentView?.type ?? null;
+  }
+
+  /** Stage a global screen capture into the focused content view, when supported. */
+  stageCapturedImageOnFocusedContent(image: CapturedImage): boolean {
+    const pane = this.getFocusedPane();
+    return pane?.contentView?.stageCapturedImage?.(image) ?? false;
   }
 
   private getFocusedPane(): Pane | null {

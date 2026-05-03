@@ -109,6 +109,13 @@ export interface WindowBounds {
 /** Content types that can live inside a pane */
 export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'acp' | 'acp_harness' | 'context' | 'file_manager' | 'vault' | 'hurl' | 'pencil';
 
+/** PNG/JPEG image captured outside the DOM and staged into a content view. */
+export interface CapturedImage {
+  path: string;
+  data: string;
+  mimeType: string;
+}
+
 /** Interface for non-terminal content views */
 export interface ContentView {
   type: PaneContentType;
@@ -121,6 +128,8 @@ export interface ContentView {
   onResize?(width: number, height: number): void;
   /** Optional working directory associated with this content view */
   getWorkingDirectory?(): string | null;
+  /** Optional staging hook for global screen-capture images. */
+  stageCapturedImage?(image: CapturedImage): boolean;
 }
 
 /** A leaf pane — hosts one xterm.js terminal + PTY session, or a content view */

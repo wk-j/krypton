@@ -166,6 +166,7 @@ client.prompt(blocks: ContentBlock[]): Promise<StopReason>;
 client.cancel(): Promise<void>;
 client.respondPermission(requestId: number, optionId: string | null): Promise<void>;
 client.dispose(): Promise<void>;
+view.stageCapturedImage(image: CapturedImage): boolean;
 
 create_harness_memory(projectDir: Option<String>): HarnessMemorySession;
 list_harness_memory(harnessId: String): HarnessMemoryEntry[];
@@ -248,7 +249,8 @@ function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] 
 9. When the turn returns, pending permissions and turn-scoped accept/reject-all flags clear. Cancelled turns do not modify memory unless the agent already called MCP memory tools before cancellation.
 10. Permission requests for the built-in memory MCP tools are auto-allowed and append a `memory auto-allow` transcript row without entering permission mode. Other permission requests move that lane to `needs_permission` and pre-empt that tab's composer with the options banner. The lane transcript holds the request detail (operation, path, size, diff preview) and a cross-lane warning when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. The user must switch to that tab to read context, then resolve via `a/A/r/R/Esc`. `A`/`R` apply only for the current `session/prompt` turn; both flags clear when that turn returns.
 11. `Ctrl+C` (or `#cancel`) in the composer cancels the active lane only. `#new` starts a fresh active-lane session after awaiting old-client disposal; `#new!` also clears the active lane's persisted memory; `#mem clear` clears memory without replacing the session.
-12. Closing the tab disposes every client and drops all in-memory UI state (transcripts, file-touch map, pending permissions). **Memory documents are persisted to disk per project directory.** See `docs/76-acp-harness-memory-persistence.md`.
+12. Pasted, dropped, and global screen-captured images stage in the active lane composer (up to 4 images, 5 MB each). On submit they are sent as embedded ACP image content blocks alongside the draft text.
+13. Closing the tab disposes every client and drops all in-memory UI state (transcripts, file-touch map, pending permissions, staged images). **Memory documents are persisted to disk per project directory.** See `docs/76-acp-harness-memory-persistence.md`.
 ```
 
 ### UI Changes
@@ -541,7 +543,7 @@ No TOML keys are wired for the harness. The default roster is code-defined, and 
 - **Backend list lacks a default roster backend:** omit that backend and add a system row to the harness header (e.g. `Codex backend not installed — skipped`). If zero lanes spawn, harness opens with an empty dashboard and a single banner `no ACP backends available`. v1 does not auto-fall-back to a different backend.
 - **Same project write conflicts:** v1 does not lock or prevent them. The topbar `shared cwd` segment and per-permission `also touched by …` warnings are the only signals. Users should drive write-heavy work through one lane.
 - **Drawer cursor row is on a row that gets removed (cap overflow):** snap the cursor to the nearest surviving row.
-- **Image paste/drop:** out of scope for harness v1; text prompts and memory resource/text blocks only.
+- **Image paste/drop/screen capture:** images stage only for the active lane. If the lane has a pending permission prompt, the user must resolve it before staging another image. If the active backend does not advertise image support, the harness shows a warning chip but still sends the image because some ACP adapters under-report capabilities.
 
 ## Open Questions
 

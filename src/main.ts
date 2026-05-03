@@ -4,6 +4,7 @@
 import '@xterm/xterm/css/xterm.css';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke } from './profiler/ipc';
 import { Compositor } from './compositor';
 import { InputRouter } from './input-router';
 import { WhichKey } from './which-key';
@@ -18,6 +19,11 @@ import { createCursorTrail } from './cursor-trail';
 import { ClaudeHookManager } from './claude-hooks';
 import { NotificationController } from './notification';
 import { MusicPlayer } from './music';
+
+interface CaptureResult {
+  path: string;
+  data: string;
+}
 
 async function main(): Promise<void> {
   const workspace = document.getElementById('krypton-workspace');
@@ -84,7 +90,25 @@ async function main(): Promise<void> {
 
   // Global shortcut events emitted from Rust (Ctrl+Shift+K / Ctrl+Shift+S).
   // These fire even when Krypton is not focused.
-  void listen('capture-requested', () => void promptDialog.captureAndStage());
+  void listen('capture-requested', () => {
+    if (compositor.getFocusedContentType() !== 'acp_harness') {
+      void promptDialog.captureAndStage();
+      return;
+    }
+    void (async (): Promise<void> => {
+      try {
+        const result = await invoke<CaptureResult | null>('capture_screen');
+        if (result === null) return;
+        compositor.stageCapturedImageOnFocusedContent({
+          path: result.path,
+          data: result.data,
+          mimeType: 'image/png',
+        });
+      } catch (e) {
+        console.error('[Krypton] capture_screen failed:', e);
+      }
+    })();
+  });
   void listen('prompt-dialog-requested', async () => {
     if (promptDialog.isVisible) {
       promptDialog.close();
