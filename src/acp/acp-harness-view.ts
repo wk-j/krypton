@@ -26,6 +26,7 @@ import type {
   UsageInfo,
 } from './types';
 import type { CapturedImage, ContentView, PaneContentType } from '../types';
+import { loadConfig, type LaneModelConfig } from '../config';
 import { extractModifiedPath } from './acp-harness-memory';
 
 type HarnessLaneStatus = 'starting' | 'idle' | 'busy' | 'needs_permission' | 'error' | 'stopped';
@@ -190,6 +191,7 @@ export class AcpHarnessView implements ContentView {
   private chipTimer: number | null = null;
   private composerTickTimer: number | null = null;
   private systemRows: string[] = ['loading ACP backends...'];
+  private laneModels: Record<string, LaneModelConfig> = {};
   private closeCb: (() => void) | null = null;
 
   private topbarEl!: HTMLElement;
@@ -456,6 +458,12 @@ export class AcpHarnessView implements ContentView {
     let backends: AcpBackendDescriptor[] = [];
     try {
       await this.initializeHarnessMemory();
+      try {
+        const cfg = await loadConfig();
+        this.laneModels = cfg.acp_harness?.lane_models ?? {};
+      } catch {
+        this.laneModels = {};
+      }
       backends = await AcpClient.listBackends();
       this.systemRows = [];
     } catch (e) {
@@ -601,7 +609,7 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       lane.sessionId = info.session_id ?? null;
-      lane.modelName = inferLaneModelName(lane.backendId, info);
+      lane.modelName = inferLaneModelName(lane.backendId, info, this.laneModels);
       lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
       lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
       lane.status = 'idle';
@@ -1990,7 +1998,13 @@ function toolSectionTone(label: string): string {
   return 'default';
 }
 
-function inferLaneModelName(backendId: string, info: AgentInfo): string | null {
+function inferLaneModelName(
+  backendId: string,
+  info: AgentInfo,
+  laneModels: Record<string, LaneModelConfig>,
+): string | null {
+  const configured = laneModels[backendId]?.active;
+  if (configured && configured.length > 0) return configured;
   const reported = findModelName(info.agent_capabilities);
   if (reported) return reported;
   if (backendId === 'opencode') return OPENCODE_DEFAULT_MODEL;

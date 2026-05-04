@@ -149,6 +149,11 @@ struct AcpClient {
     cwd: RwLock<Option<String>>,
     /// MCP servers passed through to `session/new`.
     mcp_servers: RwLock<Vec<Value>>,
+    /// Model id chosen by the user via `acp_harness.lane_models` config — used
+    /// after `session/new` for backends that accept a model selection over ACP
+    /// (currently OpenCode). For backends that take a CLI flag (Gemini), the
+    /// override is applied to spawn args before the client is created.
+    model_override: RwLock<Option<String>>,
     /// Latch: once true, no more events fire.
     disposed: std::sync::atomic::AtomicBool,
 }
@@ -169,6 +174,7 @@ impl AcpClient {
             child: Mutex::new(None),
             cwd: RwLock::new(None),
             mcp_servers: RwLock::new(Vec::new()),
+            model_override: RwLock::new(None),
             disposed: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -599,8 +605,9 @@ pub async fn acp_spawn(
     mcp_servers: Option<Vec<Value>>,
     app: AppHandle,
     registry: State<'_, Arc<AcpRegistry>>,
+    config: State<'_, Arc<RwLock<crate::config::KryptonConfig>>>,
 ) -> Result<u64, String> {
-    let backend =
+    let mut backend =
         resolve_backend(&backend_id).ok_or_else(|| format!("Unknown ACP backend: {backend_id}"))?;
 
     let display_name = if backend.display_name.is_empty() {
@@ -608,6 +615,22 @@ pub async fn acp_spawn(
     } else {
         backend.display_name.clone()
     };
+
+    // Resolve configured active model for this backend (empty string = unset).
+    let configured_model: Option<String> = config
+        .read()
+        .ok()
+        .and_then(|cfg| cfg.acp_harness.lane_models.get(&backend_id).cloned())
+        .map(|m| m.active)
+        .filter(|s| !s.is_empty());
+
+    // Backends that take the model via CLI flag — apply before spawn.
+    if let Some(ref model) = configured_model {
+        if backend_id == "gemini" {
+            backend.args.push("--model".to_string());
+            backend.args.push(model.clone());
+        }
+    }
 
     let mut cmd = Command::new(&backend.command);
     cmd.args(&backend.args)
@@ -648,6 +671,9 @@ pub async fn acp_spawn(
     }
     if let Ok(mut g) = client.mcp_servers.write() {
         *g = mcp_servers.unwrap_or_default();
+    }
+    if let Ok(mut g) = client.model_override.write() {
+        *g = configured_model.clone();
     }
     {
         let mut g = client.stdin.lock().await;
@@ -775,6 +801,13 @@ async fn set_opencode_default_model(
     client: &AcpClient,
     acp_session_id: &str,
 ) -> Result<(), String> {
+    let model = client
+        .model_override
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_else(|| OPENCODE_DEFAULT_MODEL.to_string());
+
     let config_result = tokio::time::timeout(
         Duration::from_secs(10),
         client.request(
@@ -782,7 +815,7 @@ async fn set_opencode_default_model(
             json!({
                 "sessionId": acp_session_id,
                 "configId": "model",
-                "value": OPENCODE_DEFAULT_MODEL,
+                "value": &model,
             }),
         ),
     )
@@ -798,7 +831,7 @@ async fn set_opencode_default_model(
                     "session/set_model",
                     json!({
                         "sessionId": acp_session_id,
-                        "modelId": OPENCODE_DEFAULT_MODEL,
+                        "modelId": &model,
                     }),
                 ),
             )
@@ -807,7 +840,7 @@ async fn set_opencode_default_model(
 
             model_result.map(|_| ()).map_err(|model_err| {
                 format!(
-                    "failed to select OpenCode model {OPENCODE_DEFAULT_MODEL}: {config_err}; fallback {model_err}"
+                    "failed to select OpenCode model {model}: {config_err}; fallback {model_err}"
                 )
             })
         }

@@ -145,9 +145,17 @@ export interface MusicConfig {
   visualizer_opacity: number;
 }
 
+export interface LaneModelConfig {
+  active: string;
+  models: string[];
+}
+
 export interface AcpHarnessConfig {
   idle_flash_sound: boolean;
   memory_footer: boolean;
+  /** Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
+   * `claude`, `codex`). Empty `active` means use the adapter default. */
+  lane_models: Record<string, LaneModelConfig>;
 }
 
 export interface KryptonConfig {

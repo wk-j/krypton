@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **ACP Harness configurable lane models** — `acp_harness.lane_models.<backend>` in `krypton.toml` now declares an `active` model id (and optional `models` allow-list) per backend. Krypton applies `active` to Gemini at spawn via `--model` and to OpenCode after `session/new` via `session/set_config_option` (with `session/set_model` fallback). Empty/missing keeps the existing adapter default. The lane model chip prefers the configured active value over agent-reported metadata. Switching from the UI is not yet implemented. See `docs/06-configuration.md` and `docs/72-acp-harness-view.md`.
 - **ACP Harness lane model chip** — lane headers now show a compact model chip only when Krypton can determine the model from ACP metadata or from an explicitly selected backend model such as OpenCode's `zai-coding-plan/glm-5.1`; unknown models are hidden. See `docs/72-acp-harness-view.md`.
 - **ACP Harness busy composer liveness** — while the active lane is running a prompt, the composer chip now shows `<lane> running · m:ss · Ctrl+C cancel`, updates once per second, and uses a subtle lane-accent pulse so long silent agent turns do not look frozen. The timer clears on stop, error, or lane restart. See `docs/72-acp-harness-view.md`.
 - **ACP Harness tool output glow text** — tool output excerpts now render as plain monospace text with label-specific text colors and text-shadow glow instead of syntax-highlighted markup or background glow panels. Assistant markdown code highlighting is unchanged. See `docs/72-acp-harness-view.md`.

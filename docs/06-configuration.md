@@ -431,8 +431,28 @@ Krypton resolves these commands through `PATH`; macOS GUI launches use a cached 
 |---------|-----|------|---------|-------------|
 | `[acp_harness]` | `idle_flash_sound` | bool | `true` | Reserved for the soft cue when an active lane returns idle while its draft is non-empty |
 | `[acp_harness]` | `memory_footer` | bool | `true` | Append the MEMORY footer to each harness prompt so agents can publish short shared-memory bullets |
+| `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id passed at spawn for the given backend. Empty = use the adapter default |
+| `[acp_harness.lane_models.<backend>]` | `models` | array | `[]` | Informational allow-list shown in the lane model chip / future picker (not enforced) |
 
 The ACP Harness roster is code-defined in v1: Codex, Claude, and Gemini lanes are attempted in that order when those backends are installed. Codex is the default active lane when available. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
+
+**Lane model selection.** `<backend>` keys match the ACP backend ids: `gemini`, `opencode`, `claude`, `codex`. Krypton applies `active` only for backends that support model selection in v1:
+
+- **Gemini** — passes `--model <active>` as a CLI flag at spawn. Changing the model requires respawning the lane.
+- **OpenCode** — sends `session/set_config_option {model}` (with `session/set_model` fallback) right after `session/new`. If `active` is empty, Krypton falls back to the historical default `zai-coding-plan/glm-5.1`.
+- **Claude / Codex** — `active` is accepted in the schema but ignored at spawn (those adapters do not honour a model flag in v1). The value still drives the lane model chip if present.
+
+Example:
+
+```toml
+[acp_harness.lane_models.gemini]
+active = "gemini-2.5-pro"
+models = ["gemini-2.5-pro", "gemini-2.5-flash"]
+
+[acp_harness.lane_models.opencode]
+active = "anthropic/claude-sonnet-4-5"
+models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-5"]
+```
 
 ### Hooks Configuration
 
