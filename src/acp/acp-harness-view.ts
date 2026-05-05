@@ -138,6 +138,7 @@ const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
   { backendId: 'claude', displayName: 'Claude', count: 1 },
   { backendId: 'gemini', displayName: 'Gemini', count: 1 },
   { backendId: 'opencode', displayName: 'OpenCode', count: 1 },
+  { backendId: 'pi-acp', displayName: 'Pi', count: 1 },
 ];
 
 const OPENCODE_DEFAULT_MODEL = 'zai-coding-plan/glm-5.1';
@@ -622,8 +623,10 @@ export class AcpHarnessView implements ContentView {
       const projectDirForLane = this.projectDir;
       const info: AgentInfo = await client.initialize(async (caps) => {
         // Claude Code's adapter loads `.mcp.json` natively — re-injecting via
-        // ACP would duplicate every entry. Other lanes get the bridged list.
-        if (lane.backendId === 'claude') return undefined;
+        // ACP would duplicate every entry. Pi has no MCP host at all (by
+        // design), so the bridge has nowhere to land for Pi-1. Both lanes
+        // skip the bridge for opposite reasons.
+        if (lane.backendId === 'claude' || lane.backendId === 'pi-acp') return undefined;
         const projectServers = await loadProjectMcpServers(projectDirForLane);
         if (projectServers.length === 0) return undefined;
         const mcpCaps = (caps as { mcpCapabilities?: AcpMcpCapabilities } | null)?.mcpCapabilities;
@@ -653,6 +656,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   private memoryServerForLane(lane: HarnessLane): AcpMcpServerDescriptor[] {
+    // Pi has no MCP host — emit nothing rather than ship an unreachable URL.
+    if (lane.backendId === 'pi-acp') return [];
     if (!this.harnessMemoryId || !this.harnessMemoryPort) return [];
     const harness = encodeURIComponent(this.harnessMemoryId);
     const laneLabel = encodeURIComponent(lane.displayName);
@@ -2117,12 +2122,14 @@ function findModelName(value: unknown, depth = 0): string | null {
 function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneStats | null): string {
   const mcpChip = renderMcpChip(mcp);
   const modelChip = renderModelChip(lane.modelName);
+  const sandboxChip = renderSandboxChip(lane);
   if (!active) {
     return (
       `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
       `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
       modelChip +
       mcpChip +
+      sandboxChip +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
     );
   }
@@ -2135,9 +2142,18 @@ function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneS
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
     modelChip +
     mcpChip +
+    sandboxChip +
     `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>` +
     cancelHint
   );
+}
+
+function renderSandboxChip(lane: HarnessLane): string {
+  // Pi has no permission gate by design; edits and bash run immediately.
+  // Surface the safety delta on the lane chip so it isn't a hidden footgun.
+  if (lane.backendId !== 'pi-acp') return '';
+  const title = 'No permission gate — Pi runs edits and shell commands immediately. Use a sandboxed cwd or container if untrusted.';
+  return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">⚠ unsandboxed</span>`;
 }
 
 function renderModelChip(modelName: string | null): string {
@@ -2174,6 +2190,7 @@ function laneAccentForLabel(label: string): string {
   if (/claude/i.test(label)) return laneAccent(2);
   if (/gemini/i.test(label)) return laneAccent(3);
   if (/opencode/i.test(label)) return laneAccent(4);
+  if (/^pi(-|$)/i.test(label)) return laneAccent(5);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }

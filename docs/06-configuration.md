@@ -415,15 +415,41 @@ To switch models, change `active` to the name of another preset. Changes take ef
 
 ### ACP Agent Backends
 
-ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, and `codex`.
+ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, and `pi-acp`.
 
 | Backend | Command |
 |---------|---------|
 | Claude | `npx -y @agentclientprotocol/claude-agent-acp` |
 | Gemini | `gemini --experimental-acp` |
 | Codex | `codex-acp` |
+| OpenCode | `opencode acp` |
+| Pi | `pi-acp` |
 
-Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup as needed). See `docs/69-acp-agent-support.md` for the full design.
+Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars).
+
+**Pi lane prerequisites.** The Pi-1 lane uses the third-party [`pi-acp`](https://github.com/svkozak/pi-acp) adapter to drive the [`pi`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) coding agent. Install both globally:
+
+```sh
+npm install -g @mariozechner/pi-coding-agent
+npm install -g pi-acp
+```
+
+Configure the model provider via either an API-key env var (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) exported before launching Krypton, or run `pi /login` once outside Krypton for OAuth subscriptions (Claude Pro/Max, ChatGPT Plus, Copilot). The harness does not provide a TTY for pi's interactive OAuth flow, so OAuth must be initiated outside Krypton.
+
+Optional pi settings in `~/.pi/agent/settings.json`:
+
+- `"quietStartup": true` — suppress pi-acp's startup banner in the lane transcript.
+- Set env `PI_OFFLINE=1` to disable pi's update checks and install telemetry.
+
+**Pi-1 caveats.** Unlike the other four lanes, Pi-1 deliberately:
+
+- Skips the project `.mcp.json` bridge — pi has no MCP host by design.
+- Skips the per-lane `krypton-harness-memory` server — same reason. Memory drawer entries from Pi-1 are not produced.
+- Bypasses the permission rail — pi runs `bash`, `edit`, `write` immediately. The lane chip shows `⚠ unsandboxed` to make the safety delta visible. Run inside a sandboxed cwd or container if working with untrusted prompts.
+
+Pi auto-loads `AGENTS.md` and `CLAUDE.md` walking up from `cwd`, so project context is shared with the other lanes for free.
+
+See `docs/69-acp-agent-support.md` for the original ACP design and `docs/84-acp-pi-lane.md` for the Pi-1 lane spec.
 
 ### ACP Harness Configuration
 

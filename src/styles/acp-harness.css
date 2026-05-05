@@ -105,7 +105,7 @@
 .acp-harness__lane-head {
   height: 28px;
   display: grid;
-  grid-template-columns: 2ch minmax(10ch, 18ch) auto auto auto minmax(0, 1fr) auto;
+  grid-template-columns: 2ch minmax(10ch, 18ch) auto auto auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
@@ -159,8 +159,22 @@
   white-space: nowrap;
 }
 
-.acp-harness__lane-activity {
+.acp-harness__lane-sandbox {
   grid-column: 6;
+  flex: 0 0 auto;
+  justify-self: start;
+  padding: 0 5px;
+  border: 1px solid rgba(255, 170, 102, 0.55);
+  border-radius: 2px;
+  color: rgba(255, 196, 140, 0.78);
+  font-size: 0.66em;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-shadow: none;
+}
+
+.acp-harness__lane-activity {
+  grid-column: 7;
   color: rgba(216, 232, 216, 0.48);
   font-size: 0.82em;
   overflow: hidden;
@@ -188,7 +202,7 @@
 }
 
 .acp-harness__lane-cancel-hint {
-  grid-column: 7;
+  grid-column: 8;
   flex: 0 0 auto;
   justify-self: start;
   margin-left: 0.6em;
