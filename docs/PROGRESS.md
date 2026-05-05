@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-04 (ACP Harness lane model chip)
+> Last updated: 2026-05-05 (Global hint mode)
 
 ## Overview
 
@@ -21,7 +21,12 @@
 
 ## Recent Landings
 
+- **Global hint mode for DOM views** — `Leader Shift+H` now works on every focused pane: terminal panes use the existing xterm buffer scanner, content views (markdown, hurl, vault, diff, pencil, file manager, ACP harness, agent) use a new DOM scanner that walks visible text nodes, runs the configured `[hints]` regex rules, and overlays labels via `Range.getClientRects()` + `position: fixed`. `Open` and `Copy` actions behave identically; `Paste` falls back to `Copy` in DOM mode (no PTY target). The `Cmd+Shift+H` global accelerator stays terminal-only to avoid colliding with text inputs in DOM views. See `docs/82-global-hint-mode.md`.
+- **Global copy-on-select** — any text selection in a DOM view (markdown viewer, hurl client, diff view, vault view, ACP harness, agent view, dashboards, etc.) now auto-copies to the clipboard on `mouseup` or navigation `keyup`, matching the existing terminal-pane behavior. Selections inside `<input>`, `<textarea>`, or `[contenteditable]` are skipped to preserve editing semantics; xterm canvases are unaffected because their selection is not part of the DOM Selection API. See `docs/81-global-copy-on-select.md`.
+- **ACP Harness memory drawer key capture** — `Ctrl+N` / `Ctrl+P` are now handled by the open memory drawer before global lane-switch routing, so they move the selected memory row instead of leaking to the main harness view. The cursor helper also normalizes the key value for stable `n/p` handling. See `docs/72-acp-harness-view.md`.
+- **ACP Harness permission confirmation liveness** — accepting or rejecting a prompted non-memory ACP permission now immediately appends the resolution row and returns the lane composer to busy state before awaiting the permission-response IPC. If the reply fails, the same permission is restored for retry. This prevents a slow adapter reply from leaving the permission banner looking stuck after confirmation. See `docs/72-acp-harness-view.md`.
 - **ACP Harness configurable lane models** — `acp_harness.lane_models.<backend>` in `krypton.toml` now declares an `active` model id (and optional `models` allow-list) per backend. Krypton applies `active` to Gemini at spawn via `--model` and to OpenCode after `session/new` via `session/set_config_option` (with `session/set_model` fallback). Empty/missing keeps the existing adapter default. The lane model chip prefers the configured active value over agent-reported metadata. Switching from the UI is not yet implemented. See `docs/06-configuration.md` and `docs/72-acp-harness-view.md`.
+- **ACP Harness image transcript indicator** — submitted user transcript rows now show a compact image-count attachment chip when the turn included pasted, dropped, or screen-captured images. The prompt still sends full ACP image blocks with base64 data and `file://` URIs; transcript history stores only the count so long sessions do not retain thumbnail payloads. See `docs/72-acp-harness-view.md`.
 - **ACP Harness lane model chip** — lane headers now show a compact model chip only when Krypton can determine the model from ACP metadata or from an explicitly selected backend model such as OpenCode's `zai-coding-plan/glm-5.1`; unknown models are hidden. See `docs/72-acp-harness-view.md`.
 - **ACP Harness busy composer liveness** — while the active lane is running a prompt, the composer chip now shows `<lane> running · m:ss · Ctrl+C cancel`, updates once per second, and uses a subtle lane-accent pulse so long silent agent turns do not look frozen. The timer clears on stop, error, or lane restart. See `docs/72-acp-harness-view.md`.
 - **ACP Harness tool output glow text** — tool output excerpts now render as plain monospace text with label-specific text colors and text-shadow glow instead of syntax-highlighted markup or background glow panels. Assistant markdown code highlighting is unchanged. See `docs/72-acp-harness-view.md`.

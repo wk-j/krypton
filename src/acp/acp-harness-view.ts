@@ -45,9 +45,17 @@ interface HarnessTranscriptItem {
   id: string;
   kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'permission' | 'restart' | 'memory' | 'shell';
   text: string;
+  imageCount?: number;
   status?: string;
   diff?: { title: string; unified: string };
   tool?: ToolPayload;
+  permission?: PermissionPayload;
+}
+
+interface PermissionPayload {
+  kind: string;
+  subject: string;
+  suffix?: string;
 }
 
 interface ToolPayload {
@@ -230,17 +238,17 @@ export class AcpHarnessView implements ContentView {
       this.toggleZenMode();
       return true;
     }
-    if ((e.key === 'n' || e.key === 'N' || e.key === 'p' || e.key === 'P') && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-      e.preventDefault();
-      this.activateLaneByDelta(e.key === 'n' || e.key === 'N' ? 1 : -1);
-      return true;
-    }
     if (this.helpOpen) {
       e.preventDefault();
       if (e.key === 'Escape' || e.key === '?' || e.key === 'q') this.toggleHelp(false);
       return true;
     }
     if (this.memoryDrawerOpen && this.handleMemoryKey(e)) return true;
+    if ((e.key === 'n' || e.key === 'N' || e.key === 'p' || e.key === 'P') && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      this.activateLaneByDelta(e.key === 'n' || e.key === 'N' ? 1 : -1);
+      return true;
+    }
     if (this.focus === 'transcript' && this.handleTranscriptKey(e)) return true;
 
     const lane = this.activeLane();
@@ -714,8 +722,7 @@ export class AcpHarnessView implements ContentView {
     const images = lane.stagedImages.slice();
     this.setDraft(lane, '', 0);
     lane.stagedImages = [];
-    const transcriptText = text || (images.length > 0 ? `[${images.length} image${images.length === 1 ? '' : 's'}]` : '');
-    this.appendTranscript(lane, 'user', transcriptText);
+    this.appendTranscript(lane, 'user', text, { imageCount: images.length });
     lane.status = 'busy';
     lane.activeTurnStartedAt = Date.now();
     lane.pendingTurnExtractions = [];
@@ -850,7 +857,10 @@ export class AcpHarnessView implements ContentView {
     }
     lane.pendingPermissions.push(permission);
     lane.status = 'needs_permission';
-    this.appendTranscript(lane, 'permission', this.describePermission(lane, permission));
+    const payload = this.describePermission(lane, permission);
+    const text = payload.suffix ? `${payload.kind} ${payload.subject} ${payload.suffix}` : `${payload.kind} ${payload.subject}`;
+    const item = this.appendTranscript(lane, 'permission', text);
+    item.permission = payload;
     if (lane.acceptAllForTurn || lane.rejectAllForTurn) {
       void this.resolvePermission(lane, lane.rejectAllForTurn ? 'reject' : 'accept', true);
     }
@@ -869,12 +879,19 @@ export class AcpHarnessView implements ContentView {
     permission.resolvedLabel = `${action === 'accept' ? '✓' : '✗'} ${label}${auto ? ' (auto-turn)' : ''}`;
     permission.auto = auto;
     this.appendTranscript(lane, 'permission', permission.resolvedLabel);
+    if (lane.pendingPermissions.length === 0 && lane.status === 'needs_permission') lane.status = 'busy';
+    this.updateComposerTick();
+    this.render();
     try {
       await lane.client.respondPermission(permission.requestId, option?.optionId ?? null);
     } catch (e) {
+      lane.pendingPermissions.unshift(permission);
+      lane.status = 'needs_permission';
       this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+      this.updateComposerTick();
+      this.render();
+      return;
     }
-    if (lane.pendingPermissions.length === 0 && lane.status === 'needs_permission') lane.status = 'busy';
     this.render();
   }
 
@@ -891,16 +908,16 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  private describePermission(lane: HarnessLane, permission: HarnessPermission): string {
+  private describePermission(lane: HarnessLane, permission: HarnessPermission): PermissionPayload {
     const call = permission.toolCall;
-    const path = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? call.title ?? 'unknown target';
-    const op = call.kind ?? 'tool';
-    let line = `${op} ${path}`;
-    const touch = this.fileTouchMap.get(path);
+    const subject = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? call.title ?? 'unknown target';
+    const kind = inferToolLabel(call);
+    let suffix: string | undefined;
+    const touch = this.fileTouchMap.get(subject);
     if (touch && touch.laneId !== lane.id && Date.now() - touch.at <= FILE_TOUCH_WINDOW_MS) {
-      line += ` · also ${touch.laneDisplayName} ${formatAge(Date.now() - touch.at)} ago`;
+      suffix = `· also ${touch.laneDisplayName} ${formatAge(Date.now() - touch.at)} ago`;
     }
-    return line;
+    return { kind, subject, suffix };
   }
 
   private async cancelLane(lane: HarnessLane): Promise<void> {
@@ -1413,8 +1430,13 @@ export class AcpHarnessView implements ContentView {
     `;
   }
 
-  private appendTranscript(lane: HarnessLane, kind: HarnessTranscriptItem['kind'], text: string): HarnessTranscriptItem {
-    const item = { id: makeId(), kind, text };
+  private appendTranscript(
+    lane: HarnessLane,
+    kind: HarnessTranscriptItem['kind'],
+    text: string,
+    metadata: Pick<HarnessTranscriptItem, 'imageCount'> = {},
+  ): HarnessTranscriptItem {
+    const item = { id: makeId(), kind, text, ...metadata };
     lane.transcript.push(item);
     if (lane.transcript.length > 300) {
       const dropped = lane.transcript.shift();
@@ -1506,7 +1528,8 @@ export class AcpHarnessView implements ContentView {
     if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'].includes(e.key)) {
       return true;
     }
-    return e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'n' || e.key === 'p');
+    const key = e.key.toLowerCase();
+    return e.ctrlKey && !e.metaKey && !e.altKey && (key === 'n' || key === 'p');
   }
 
   private handleTranscriptKey(e: KeyboardEvent): boolean {
@@ -1696,8 +1719,9 @@ export class AcpHarnessView implements ContentView {
     if (rows.length === 0) return;
     const current = rows.findIndex((entry) => entry.lane === this.memoryCursorRowId);
     let next = current < 0 ? 0 : current;
-    if (key === 'n' || key === 'ArrowDown' || key === 'PageDown') next = Math.min(rows.length - 1, next + 1);
-    else if (key === 'p' || key === 'ArrowUp' || key === 'PageUp') next = Math.max(0, next - 1);
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey === 'n' || key === 'ArrowDown' || key === 'PageDown') next = Math.min(rows.length - 1, next + 1);
+    else if (normalizedKey === 'p' || key === 'ArrowUp' || key === 'PageUp') next = Math.max(0, next - 1);
     else if (key === 'Home') next = 0;
     else if (key === 'End') next = rows.length - 1;
     this.memoryCursorRowId = rows[next].lane;
@@ -1910,6 +1934,17 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   } else if (item.kind === 'tool' && item.tool) {
     body.classList.add('acp-harness__tool');
     renderToolBody(body, item.tool);
+  } else if (item.kind === 'permission' && item.permission) {
+    body.classList.add('acp-harness__perm');
+    renderPermissionBody(body, item.permission);
+  } else if (item.kind === 'user' && item.imageCount && item.imageCount > 0) {
+    if (item.text) {
+      const textEl = document.createElement('div');
+      textEl.className = 'acp-harness__msg-text';
+      textEl.textContent = item.text;
+      body.appendChild(textEl);
+    }
+    body.appendChild(renderImageAttachmentChip(item.imageCount));
   } else if (usesPretext(item.kind)) {
     body.dataset.pretext = 'true';
     body.dataset.rawText = item.text;
@@ -1920,6 +1955,34 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   el.appendChild(label);
   el.appendChild(body);
   return el;
+}
+
+function renderPermissionBody(body: HTMLElement, perm: PermissionPayload): void {
+  const head = document.createElement('div');
+  head.className = 'acp-harness__perm-head';
+  const kind = document.createElement('span');
+  kind.className = 'acp-harness__tool-kind';
+  kind.textContent = perm.kind;
+  head.appendChild(kind);
+  const subject = document.createElement('span');
+  subject.className = 'acp-harness__tool-subject';
+  subject.textContent = perm.subject;
+  head.appendChild(subject);
+  if (perm.suffix) {
+    const suffix = document.createElement('span');
+    suffix.className = 'acp-harness__perm-suffix';
+    suffix.textContent = perm.suffix;
+    head.appendChild(suffix);
+  }
+  body.appendChild(head);
+}
+
+function renderImageAttachmentChip(count: number): HTMLElement {
+  const chip = document.createElement('div');
+  chip.className = 'acp-harness__msg-attachment';
+  chip.title = `${count} image${count === 1 ? '' : 's'} attached`;
+  chip.textContent = `▧ ${count} image${count === 1 ? '' : 's'}`;
+  return chip;
 }
 
 function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {

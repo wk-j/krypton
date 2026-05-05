@@ -249,7 +249,7 @@ function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] 
 9. When the turn returns, pending permissions and turn-scoped accept/reject-all flags clear. Cancelled turns do not modify memory unless the agent already called MCP memory tools before cancellation.
 10. Permission requests for the built-in memory MCP tools are auto-allowed and append a `memory auto-allow` transcript row without entering permission mode. Other permission requests move that lane to `needs_permission` and pre-empt that tab's composer with the options banner. The lane transcript holds the request detail (operation, path, size, diff preview) and a cross-lane warning when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. The user must switch to that tab to read context, then resolve via `a/A/r/R/Esc`. `A`/`R` apply only for the current `session/prompt` turn; both flags clear when that turn returns.
 11. `Ctrl+C` (or `#cancel`) in the composer cancels the active lane only. `#new` starts a fresh active-lane session after awaiting old-client disposal; `#new!` also clears the active lane's persisted memory; `#mem clear` clears memory without replacing the session.
-12. Pasted, dropped, and global screen-captured images stage in the active lane composer (up to 4 images, 5 MB each). Each staged image renders as a compact placeholder chip with thumbnail, filename/type label, and an `x` remove button; `Esc` still clears all staged images. Pasted and dropped images are saved under Krypton's temp image directory; global captures reuse the `capture_screen` file path. On submit they are sent as embedded ACP image content blocks with base64 data plus a `file://` URI to the saved path alongside the draft text.
+12. Pasted, dropped, and global screen-captured images stage in the active lane composer (up to 4 images, 5 MB each). Each staged image renders as a compact placeholder chip with thumbnail, filename/type label, and an `x` remove button; `Esc` still clears all staged images. Pasted and dropped images are saved under Krypton's temp image directory; global captures reuse the `capture_screen` file path. On submit they are sent as embedded ACP image content blocks with base64 data plus a `file://` URI to the saved path alongside the draft text. The submitted user transcript row keeps the chat text and adds a compact image-count attachment chip, so the transcript shows that the turn included images without retaining base64 thumbnails in history.
 13. Closing the tab disposes every client and drops all in-memory UI state (transcripts, file-touch map, pending permissions, staged images). **Memory documents are persisted to disk per project directory.** See `docs/76-acp-harness-memory-persistence.md`.
 ```
 
@@ -431,6 +431,7 @@ Permission option mapping:
 - `R` sets `rejectAllForTurn = true` and resolves the current request with the first `reject_once` option. If `reject_once` is absent, use `reject_always`; if no reject option exists, call `respondPermission(requestId, null)`.
 - `Esc` always rejects/cancels the focused request by using the same mapping as `r`.
 - When `acceptAllForTurn` or `rejectAllForTurn` auto-resolves a later request, use the same option lookup against that later request's own `PermissionOption[]`; if the required option is missing, fall back as above and append the actual option label to the transcript resolution row.
+- After a permission key is accepted, the harness immediately appends the resolution row and returns the lane to `busy` before awaiting the ACP permission-response IPC. If that IPC fails, the same permission is restored and the composer re-enters permission mode so the user can retry.
 
 Hash-command autocomplete:
 
@@ -457,7 +458,7 @@ Hash-command autocomplete:
 - Toggled with `Ctrl+M`. Closes with `Esc` or `Ctrl+M`.
 - Overlays the dashboard. The command center stays visible for lane context, but the composer input line is hidden and ordinary typing is captured by the drawer until it closes. Run commands such as `#mem clear` after closing the drawer.
 - Single list view — no tabs. Rows are sorted newest-first by lane document update time.
-- The drawer maintains a **cursor row** moved with `Ctrl+N`/`Ctrl+P`, `ArrowUp`/`ArrowDown`, `PageUp`/`PageDown`, or `Home`/`End`; clicking a row selects it. Current human commands do not target individual rows.
+- The drawer maintains a **cursor row** moved with `Ctrl+N`/`Ctrl+P`, `ArrowUp`/`ArrowDown`, `PageUp`/`PageDown`, or `Home`/`End`; clicking a row selects it. While the drawer is open, these keys are captured before global lane-switch shortcuts so `Ctrl+N`/`Ctrl+P` move memory rows instead of changing lanes. Current human commands do not target individual rows.
 - Rows show `<lane> <summary>`, and the selected row expands to show that lane's full memory detail.
 - The drawer is **read-only display**. Lane memory documents are managed by agents through MCP; humans can clear only the active lane's document with `#mem clear`.
 - The drawer never auto-scrolls away from the row the user is reviewing. New entries appended during a review do not move the cursor.

@@ -116,10 +116,12 @@
 }
 
 .acp-harness__lane-symbol {
+  grid-column: 1;
   color: rgba(216, 232, 216, 0.48);
 }
 
 .acp-harness__lane-name {
+  grid-column: 2;
   color: var(--acp-lane-accent, rgba(216, 232, 216, 0.86));
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -130,6 +132,7 @@
 }
 
 .acp-harness__lane-status {
+  grid-column: 3;
   justify-self: start;
   padding: 0;
   color: rgba(216, 232, 216, 0.62);
@@ -140,6 +143,7 @@
 }
 
 .acp-harness__lane-model {
+  grid-column: 4;
   justify-self: start;
   min-width: 0;
   max-width: 24ch;
@@ -156,6 +160,7 @@
 }
 
 .acp-harness__lane-activity {
+  grid-column: 6;
   color: rgba(216, 232, 216, 0.48);
   font-size: 0.82em;
   overflow: hidden;
@@ -163,6 +168,7 @@
 }
 
 .acp-harness__lane-mcp {
+  grid-column: 5;
   flex: 0 0 auto;
   justify-self: start;
   padding: 0 5px;
@@ -182,7 +188,9 @@
 }
 
 .acp-harness__lane-cancel-hint {
+  grid-column: 7;
   flex: 0 0 auto;
+  justify-self: start;
   margin-left: 0.6em;
   padding: 0 6px;
   border: 1px solid rgba(255, 209, 102, 0.45);
@@ -275,6 +283,31 @@
   line-height: 1.45;
   color: rgba(216, 232, 216, 0.8);
   overflow-wrap: anywhere;
+}
+
+.acp-harness__msg-text {
+  min-width: 0;
+}
+
+.acp-harness__msg-attachment {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border: 1px solid rgba(109, 208, 255, 0.26);
+  border-radius: 2px;
+  color: rgba(109, 208, 255, 0.78);
+  background: rgba(109, 208, 255, 0.045);
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 8px rgba(109, 208, 255, 0.18);
+}
+
+.acp-harness__msg-body > .acp-harness__msg-attachment:first-child {
+  margin-top: 0;
 }
 
 .acp-harness__msg--tool .acp-harness__msg-body,
@@ -639,6 +672,19 @@
 
 .acp-harness__msg--permission .acp-harness__msg-body {
   color: #ffd166;
+}
+
+.acp-harness__perm-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 1.4;
+  font-size: var(--krypton-font-size, 13px);
+}
+
+.acp-harness__perm-suffix {
+  color: rgba(216, 232, 216, 0.55);
 }
 
 .acp-harness__msg--memory .acp-harness__msg-body {
