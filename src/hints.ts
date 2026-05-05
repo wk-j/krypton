@@ -25,6 +25,22 @@ interface HintMatch {
   label: string;
 }
 
+/** A single match found by the DOM scanner. Coordinates are viewport-relative. */
+interface DomHintMatch {
+  /** Viewport-relative x of the start of the match (px). */
+  viewportX: number;
+  /** Viewport-relative y of the start of the match (px). */
+  viewportY: number;
+  /** The matched text content */
+  text: string;
+  /** Which rule produced this match */
+  rule: HintRule;
+  /** The assigned keyboard label */
+  label: string;
+}
+
+type HintScanMode = 'terminal' | 'dom';
+
 /** Default hints config used when no config is loaded */
 const DEFAULT_HINTS_CONFIG: HintsConfig = {
   alphabet: 'asdfghjklqweruiop',
@@ -85,7 +101,9 @@ function generateLabels(alphabet: string, count: number): string[] {
 export class HintController {
   private config: HintsConfig = DEFAULT_HINTS_CONFIG;
   private active = false;
+  private scanMode: HintScanMode = 'terminal';
   private matches: HintMatch[] = [];
+  private domMatches: DomHintMatch[] = [];
   private typedChars = '';
   private overlayEl: HTMLElement | null = null;
   private toastEl: HTMLElement | null = null;
@@ -118,6 +136,7 @@ export class HintController {
   enter(terminal: Terminal): boolean {
     if (this.active) return false;
 
+    this.scanMode = 'terminal';
     this.terminal = terminal;
     this.typedChars = '';
 
@@ -152,10 +171,41 @@ export class HintController {
     return true;
   }
 
+  /**
+   * Enter hint mode for a DOM subtree. Walks visible text nodes inside
+   * `rootEl`, runs the configured regex rules, and overlays labels.
+   * Returns true if at least one match was found.
+   */
+  enterDom(rootEl: HTMLElement): boolean {
+    if (this.active) return false;
+
+    this.scanMode = 'dom';
+    this.terminal = null;
+    this.terminalContainer = null;
+    this.typedChars = '';
+
+    this.domMatches = this.scanDom(rootEl);
+
+    if (this.domMatches.length === 0) {
+      this.showToast('No hints found');
+      return false;
+    }
+
+    const labels = generateLabels(this.config.alphabet, this.domMatches.length);
+    for (let i = 0; i < this.domMatches.length; i++) {
+      this.domMatches[i].label = labels[i];
+    }
+
+    this.renderDomOverlay();
+    this.active = true;
+    return true;
+  }
+
   /** Exit hint mode and clean up */
   exit(): void {
     this.active = false;
     this.matches = [];
+    this.domMatches = [];
     this.typedChars = '';
     this.terminal = null;
     this.terminalContainer = null;
@@ -192,15 +242,17 @@ export class HintController {
     this.updateOverlay();
 
     // Check for exact match
-    const exactMatch = this.matches.find((m) => m.label === this.typedChars);
+    const all: Array<{ label: string; text: string; rule: HintRule }> =
+      this.scanMode === 'terminal' ? this.matches : this.domMatches;
+    const exactMatch = all.find((m) => m.label === this.typedChars);
     if (exactMatch) {
-      this.executeAction(exactMatch);
+      this.executeActionForText(exactMatch.text, exactMatch.rule);
       this.exit();
       return 'selected';
     }
 
     // Check if any labels still match the prefix
-    const hasPrefix = this.matches.some((m) => m.label.startsWith(this.typedChars));
+    const hasPrefix = all.some((m) => m.label.startsWith(this.typedChars));
     if (!hasPrefix) {
       // No labels match — exit
       this.exit();
@@ -445,11 +497,139 @@ export class HintController {
     }
   }
 
+  // ─── DOM Scanner ──────────────────────────────────────────────
+
+  /**
+   * Walk visible text nodes inside `rootEl`, run the configured regex rules,
+   * and return matches with viewport-relative coordinates.
+   */
+  private scanDom(rootEl: HTMLElement): DomHintMatch[] {
+    const containerRect = rootEl.getBoundingClientRect();
+    const enabledRules = this.config.rules.filter((r) => r.enabled);
+    if (enabledRules.length === 0) return [];
+
+    const SKIP_SELECTOR =
+      'input, textarea, [contenteditable=""], [contenteditable="true"], script, style, [aria-hidden="true"], .krypton-hint-overlay, .krypton-hint, .krypton-hint-toast';
+
+    const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        const parent = (node as Text).parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        if (parent.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+        // Skip hidden subtrees (display:none, visibility:hidden ancestor).
+        if (parent.offsetParent === null && parent.tagName !== 'BODY') {
+          return NodeFilter.FILTER_REJECT;
+        }
+        if (!(node.textContent ?? '').trim()) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    const results: DomHintMatch[] = [];
+    let node: Node | null = walker.nextNode();
+    while (node) {
+      const text = node.textContent ?? '';
+      for (const rule of enabledRules) {
+        let regex: RegExp;
+        try {
+          regex = new RegExp(rule.regex, 'g');
+        } catch {
+          console.warn(`[HintController] Invalid regex for rule "${rule.name}": ${rule.regex}`);
+          continue;
+        }
+
+        let m: RegExpExecArray | null;
+        while ((m = regex.exec(text)) !== null) {
+          if (m[0].length === 0) {
+            regex.lastIndex++;
+            continue;
+          }
+          let matched = m[0];
+          matched = this.stripTrailingPunctuation(matched);
+          if (matched.length === 0) continue;
+
+          const range = document.createRange();
+          try {
+            range.setStart(node, m.index);
+            range.setEnd(node, m.index + matched.length);
+          } catch {
+            continue;
+          }
+          const rects = range.getClientRects();
+          if (rects.length === 0) continue;
+          const rect = rects[0];
+          if (rect.width === 0 || rect.height === 0) continue;
+
+          // Visibility filter: keep only matches whose first rect is inside
+          // the container's viewport rect. A small slack handles sub-pixel
+          // rounding at the edges.
+          const slack = 2;
+          if (
+            rect.bottom < containerRect.top - slack ||
+            rect.top > containerRect.bottom + slack ||
+            rect.right < containerRect.left - slack ||
+            rect.left > containerRect.right + slack
+          ) {
+            continue;
+          }
+
+          results.push({
+            viewportX: rect.left,
+            viewportY: rect.top,
+            text: matched,
+            rule,
+            label: '',
+          });
+        }
+      }
+      node = walker.nextNode();
+    }
+
+    // Sort by visual top-to-bottom, left-to-right so labels read sensibly.
+    results.sort((a, b) => a.viewportY - b.viewportY || a.viewportX - b.viewportX);
+    return results;
+  }
+
+  /**
+   * Render label overlays for DOM matches. The overlay is appended to
+   * document.body and uses position: fixed so it stacks above the view
+   * without requiring a positioned ancestor.
+   */
+  private renderDomOverlay(): void {
+    this.removeOverlay();
+
+    this.overlayEl = document.createElement('div');
+    this.overlayEl.className = 'krypton-hint-overlay krypton-hint-overlay--dom';
+    this.overlayEl.style.position = 'fixed';
+    this.overlayEl.style.top = '0';
+    this.overlayEl.style.left = '0';
+    this.overlayEl.style.width = '100%';
+    this.overlayEl.style.height = '100%';
+    this.overlayEl.style.pointerEvents = 'none';
+    this.overlayEl.style.zIndex = '999';
+
+    for (const m of this.domMatches) {
+      const hintEl = document.createElement('div');
+      hintEl.className = 'krypton-hint';
+      hintEl.style.position = 'absolute';
+      hintEl.style.left = `${m.viewportX}px`;
+      hintEl.style.top = `${m.viewportY}px`;
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'krypton-hint__label';
+      labelEl.textContent = m.label;
+      hintEl.appendChild(labelEl);
+      hintEl.dataset.label = m.label;
+      this.overlayEl.appendChild(hintEl);
+    }
+
+    document.body.appendChild(this.overlayEl);
+  }
+
   // ─── Action Execution ─────────────────────────────────────────
 
-  private executeAction(match: HintMatch): void {
-    const text = match.text;
-    const action = match.rule.action;
+  private executeActionForText(text: string, rule: HintRule): void {
+    const action = rule.action;
 
     switch (action) {
       case 'Copy':
@@ -465,12 +645,15 @@ export class HintController {
         break;
 
       case 'Paste':
-        // Write the matched text to the terminal's PTY input
-        if (this.terminal) {
-          // The terminal's onData handler writes to PTY, but we need the session ID.
-          // Instead, use the clipboard -> paste approach or direct write.
-          // For now, use the xterm paste API which triggers onData.
+        // Paste only makes sense for terminal panes (writes to the PTY via
+        // xterm's paste API which triggers onData). For DOM panes there is
+        // no PTY target, so fall back to Copy.
+        if (this.scanMode === 'terminal' && this.terminal) {
           this.terminal.paste(text);
+        } else {
+          navigator.clipboard.writeText(text).catch((err) => {
+            console.error('[HintController] Paste fallback (Copy) failed:', err);
+          });
         }
         break;
     }

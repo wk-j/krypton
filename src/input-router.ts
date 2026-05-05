@@ -1092,20 +1092,32 @@ export class InputRouter {
   // ─── Hint Mode ─────────────────────────────────────────────────
 
   private enterHintMode(): void {
-    console.log('[InputRouter] enterHintMode called');
-    const terminal = this.compositor.getActiveTerminal();
-    console.log('[InputRouter] active terminal:', terminal ? 'found' : 'null');
-    if (!terminal) {
-      this.toNormal();
-      return;
+    // Prefer the focused pane: if it's a terminal pane, scan the xterm
+    // buffer; if it hosts a content view, scan that view's DOM subtree.
+    // This makes Leader Shift+H work uniformly across markdown, hurl,
+    // vault, diff, pencil, file-manager, ACP harness, agent, etc.
+    // See docs/82-global-hint-mode.md.
+    const pane = this.compositor.getFocusedPanePublic();
+
+    let found = false;
+    if (pane?.terminal) {
+      this.compositor.soundEngine.play('hint.activate');
+      found = this.hints.enter(pane.terminal);
+    } else if (pane?.contentView?.element) {
+      this.compositor.soundEngine.play('hint.activate');
+      found = this.hints.enterDom(pane.contentView.element);
+    } else {
+      // Fall back to the global active terminal (handles Quick Terminal).
+      const terminal = this.compositor.getActiveTerminal();
+      if (terminal) {
+        this.compositor.soundEngine.play('hint.activate');
+        found = this.hints.enter(terminal);
+      }
     }
-    this.compositor.soundEngine.play('hint.activate');
-    const found = this.hints.enter(terminal);
-    console.log('[InputRouter] hint mode entered:', found);
+
     if (found) {
       this.setMode(Mode.Hint);
     } else {
-      // No matches — toast shown by HintController, stay/return to Normal
       this.toNormal();
     }
   }
