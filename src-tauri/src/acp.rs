@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tauri::{AppHandle, State};
 
@@ -23,34 +23,6 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
 
 const OPENCODE_DEFAULT_MODEL: &str = "zai-coding-plan/glm-5.1";
-
-// ─── Cached PATH ───────────────────────────────────────────────────
-
-static CACHED_LOGIN_PATH: OnceLock<String> = OnceLock::new();
-
-/// Resolve PATH from a login shell (so Homebrew `gemini`, nvm `npx`, etc. are
-/// visible to GUI launches). Cached for the life of the process.
-fn cached_login_path() -> String {
-    CACHED_LOGIN_PATH
-        .get_or_init(|| {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-            let output = std::process::Command::new(&shell)
-                .args(["-l", "-c", "printenv PATH"])
-                .output();
-            match output {
-                Ok(out) => {
-                    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if s.is_empty() {
-                        std::env::var("PATH").unwrap_or_default()
-                    } else {
-                        s
-                    }
-                }
-                Err(_) => std::env::var("PATH").unwrap_or_default(),
-            }
-        })
-        .clone()
-}
 
 // ─── Built-in backends ─────────────────────────────────────────────
 
@@ -96,6 +68,14 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 command: "opencode".to_string(),
                 args: vec!["acp".to_string()],
                 display_name: "OpenCode".to_string(),
+            },
+        ),
+        (
+            "pi-acp",
+            AcpBackend {
+                command: "pi-acp".to_string(),
+                args: vec![],
+                display_name: "Pi".to_string(),
             },
         ),
     ]
@@ -648,7 +628,7 @@ pub async fn acp_spawn(
 
     let mut cmd = Command::new(&backend.command);
     cmd.args(&backend.args)
-        .env("PATH", cached_login_path())
+        .envs(crate::pty::cached_login_env().iter())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
