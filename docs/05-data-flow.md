@@ -19,7 +19,7 @@
    - **Normal mode?** -> forward to focused window's xterm.js -> xterm.js encodes and emits `onData`
    - **Compositor/Resize/Move/Swap mode?** -> execute compositor command (focus, resize, move, etc.)
    - **Selection mode?** -> navigate virtual cursor, expand/toggle selection, yank
-   - **Hint mode?** -> filter/match labels, execute action on match (open/copy/paste)
+   - **Hint mode?** -> filter/match labels, execute action on match (file path -> Helix tab, otherwise open/copy/paste)
    - **Dashboard mode?** -> delegate to active dashboard's `onKeyDown()` handler; Escape closes the dashboard
    - **Command palette / Search mode?** -> route to overlay's text input handler
 3. **If forwarded to PTY**: Tauri `invoke("write_to_pty", { window_id, data })` via IPC
@@ -30,6 +30,7 @@
 8. **Backend emits event** -> Tauri event `pty-output` pushes raw bytes to frontend (scoped by session_id)
 9. **xterm.js renders** -> xterm.js parses VT sequences and updates the window's terminal canvas
 10. **Progress UI** -> If `pty-progress` was emitted, the compositor updates the target window's content-area gauge (large translucent SVG arc centered behind terminal text) and titlebar scanline sweep animation
+11. **PTY exits** -> Backend emits `pty-exit` when either the PTY reader hits EOF/error or the owning child process exits. Compositor clears progress and closes the matching pane/tab; if an exit arrives before the frontend has registered the new session, it is held briefly and replayed after registration.
 
 ## Quick Terminal Toggle Flow (e.g., user presses Cmd+I)
 

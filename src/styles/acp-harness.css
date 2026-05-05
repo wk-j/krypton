@@ -1024,7 +1024,22 @@
 
 .acp-harness__prompt {
   flex: 0 0 auto;
+  position: relative;
+  width: 1ch;
+  text-align: center;
+  color: transparent;
+}
+
+.acp-harness__prompt::before {
+  content: '\2807';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+  animation: acp-harness-lane-spin 0.8s steps(1, end) infinite;
+  animation-play-state: paused;
 }
 
 .acp-harness__input {
@@ -1038,13 +1053,16 @@
   color: rgba(216, 232, 216, 0.42);
 }
 
-.acp-harness__composer--command .acp-harness__prompt {
+.acp-harness__composer--command .acp-harness__prompt::before {
   color: #ffd166;
-  text-decoration: none;
 }
 
 .acp-harness__composer--command .acp-harness__caret {
   display: none;
+}
+
+.acp-harness__composer--running .acp-harness__prompt::before {
+  animation-play-state: running;
 }
 
 .acp-harness__composer--memory .acp-harness__input-line {

@@ -6,7 +6,7 @@
 
 ## Overview
 
-Hint mode scans the visible terminal buffer for configurable regex patterns (URLs, file paths, emails, etc.), overlays short keyboard labels on each match, and lets the user type a label to act on the match (open, copy, or paste). Inspired by [Rio Terminal hints](https://rioterm.com/docs/features/hints).
+Hint mode scans the visible terminal buffer or focused DOM content view for configurable regex patterns (URLs, file paths, emails, etc.), overlays short keyboard labels on each match, and lets the user type a label to act on the match. File path hints open in Helix in a new tab; other rules use their configured action (open, copy, or paste). Inspired by [Rio Terminal hints](https://rioterm.com/docs/features/hints).
 
 ## User Flow
 
@@ -16,7 +16,7 @@ Hint mode scans the visible terminal buffer for configurable regex patterns (URL
 4. Each match gets a short label (e.g., `a`, `s`, `d`, `f`, `aa`, `as`, ...) rendered as a floating overlay on top of the terminal
 5. User types the label characters — as they type, non-matching labels fade out
 6. When a label is fully matched:
-   - The configured action fires (open URL, copy to clipboard, etc.)
+   - File path hints open in Helix in a new tab; other hints fire their configured action (open URL, copy to clipboard, etc.)
    - Mode returns to Normal
 7. `Escape` cancels hint mode at any time
 
@@ -106,9 +106,11 @@ Each hint rule has an `action` that fires when a label is selected:
 | `"Open"` | Open matched text via Tauri `shell.open()` (opens URLs in browser, files in default app) |
 | `"Paste"` | Write matched text to the terminal's PTY input |
 
+The built-in `filepath` rule is a special case: selecting a file path creates a new terminal tab in the focused window with `hx` as the tab's PTY process and passes the path as an argument. This keeps the path out of the clipboard while opening it in the keyboard editor. Relative paths resolve against the focused pane's working directory because the Helix tab inherits that cwd. When Helix exits, the PTY exits and Krypton closes the tab automatically.
+
 Default action per built-in pattern:
 - URLs → `"Open"`
-- File paths → `"Copy"`
+- File paths → open in Helix in a new tab
 - Emails → `"Copy"`
 
 ### Built-in Patterns
@@ -118,7 +120,7 @@ Ship three built-in hint rules (active by default):
 | Name | Regex | Action | Description |
 |------|-------|--------|-------------|
 | `url` | `(https?://\|ftp://)[^\x00-\x1F\x7F-\x9F<>"\\s{}\^⟨⟩\x60\\\\]+` | Open | HTTP/HTTPS/FTP URLs |
-| `filepath` | `~?/?(?:[\\w@.-]+/)+[\\w@.-]+` | Copy | Unix-style file paths |
+| `filepath` | `~?/?(?:[\\w@.-]+/)+[\\w@.-]+` | Helix tab | Unix-style file paths |
 | `email` | `[\\w.+-]+@[\\w.-]+\\.[a-zA-Z]{2,}` | Copy | Email addresses |
 
 Users can override or add patterns via config (see Configuration section).
@@ -245,5 +247,5 @@ When in `Mode.Hint`, WhichKey shows:
 - Multi-line pattern matching
 - Mouse interaction with hints
 - `persist` mode (staying in hint mode after a selection)
-- Custom external commands as actions (only Copy/Open/Paste)
+- Configurable external commands as actions (only built-in `filepath` opens Helix)
 - Per-rule keybinding to activate specific pattern types

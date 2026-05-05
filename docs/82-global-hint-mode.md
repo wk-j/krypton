@@ -19,7 +19,7 @@ Split `HintController` into two scanners that share one overlay/keyboard-input l
 - DOM Range API: `document.createRange()` + `range.getClientRects()` returns one rect per visual line for a wrapped match, exactly what we need to position a single label at the start of the match.
 - `IntersectionObserver` is overkill for this one-shot scan; a viewport check (`rect.top >= containerRect.top && rect.bottom <= containerRect.bottom + slack`) is simpler and matches the "only visible" requirement.
 - `TreeWalker` with `NodeFilter.SHOW_TEXT` is the standard way to enumerate text nodes; we skip text whose parent is `<script>`, `<style>`, an editable element (`input`, `textarea`, `[contenteditable]`), or any element with `aria-hidden="true"`. Editable skip is consistent with the copy-on-select guard from spec 81.
-- Krypton's existing terminal hint actions are `Open` (invoke `open_url`), `Copy` (`navigator.clipboard.writeText`), `Paste` (`terminal.paste`). For DOM scans, `Paste` has no terminal target — fall back to `Copy` so configured rules don't crash.
+- Krypton's terminal hint actions are `Open` (invoke `open_url`), `Copy` (`navigator.clipboard.writeText`), and `Paste` (`terminal.paste`). The built-in `filepath` rule bypasses clipboard and opens Helix in a new tab through the shared editor opener. For DOM scans, `Paste` has no terminal target — fall back to `Copy` so configured rules don't crash.
 
 ## Prior Art
 
@@ -126,6 +126,8 @@ class HintController {
 | Copy        | `navigator.clipboard.writeText(text)` | identical |
 | Paste       | `terminal.paste(text)` | fallback to Copy + console warning (no terminal target) |
 
+Special case: the built-in `filepath` rule ignores the configured `Copy` action and calls `openInHelixTab()`, which creates a new tab in the focused window with `hx` as the tab's PTY process. This matches Quick File Search's primary open behavior, keeps path hints from mutating the clipboard, and lets the tab close automatically when Helix exits.
+
 ### Input Router Changes
 
 ```ts
@@ -162,7 +164,7 @@ The global `Cmd+Shift+H` handler (`input-router.ts:515`) stays as-is — it's al
       → regex per rule; build Ranges; filter visible
       → assign labels; render overlay (position: fixed)
 5. Mode = Hint; subsequent keys go to handleHintKey → HintController.handleKey
-6. On selection: action fires (Open/Copy/Paste→Copy), exit
+6. On selection: `filepath` opens in Helix; otherwise the action fires (Open/Copy/Paste→Copy), exit
 ```
 
 ### Keybindings

@@ -52,9 +52,10 @@ known root immediately surfaces the user's most-used files.
 - **Existing `search_files` command** (`src-tauri/src/commands.rs:825`,
   consumed by file-manager `Ctrl+F`): synchronous `ignore`-crate walk. Kept
   unchanged — it serves a different surface.
-- **CWD discovery**: `get_pty_cwd(session_id)` already exists; frontend passes
-  the focused window's session id to derive the search root. For non-PTY
-  windows the focused window's saved CWD or `$HOME` is used.
+- **CWD discovery**: frontend asks the compositor for the focused working
+  directory. Terminal panes resolve through `get_pty_cwd(session_id)`;
+  content views resolve through `ContentView.getWorkingDirectory()`, so
+  surfaces like the ACP harness search the project they were opened for.
 - **Dialog patterns in repo**: `command-palette.ts` (Cmd+Shift+P) and
   `prompt-dialog.ts` are the established overlay patterns; both wire into
   `InputRouter` via `setX()` + a dedicated `Mode.X`. We follow the same shape:
@@ -125,8 +126,8 @@ fn resolve_search_root(cwd: PathBuf) -> PathBuf {
 }
 ```
 
-Frontend resolves CWD via `get_pty_cwd(focused_session_id)` (fallback
-`$HOME`), then sends raw CWD to the backend, which canonicalizes and walks up.
+Frontend resolves CWD through the compositor (fallback `$HOME`), then sends raw
+CWD to the backend, which canonicalizes and walks up.
 
 ### Picker cache (LRU, cap = 8)
 
@@ -369,18 +370,16 @@ window.
 
 Behavior:
 
-- Calls `compositor.createTab()` (which now returns the new tab's
-  `sessionId`), inheriting cwd from the focused window's PTY — same as
-  `Cmd+T`.
-- Subscribes to `pty-output` for the new sessionId; on the **first** byte
-  (= shell prompt is up) sends `hx '<absolute>'\r` via `write_to_pty`.
-  Falls back to a 400 ms timeout if the shell stays silent (rare — only
-  exotic rc files).
-- Path is always **absolute**, single-quoted (POSIX `'…'` with inner `'`
-  escaped as `'\''`) — works across bash/zsh/fish, safe for spaces and
-  shell metacharacters.
-- In **grep mode** the hit's `:line:col` is appended after the close-quote
-  so Helix jumps to the matching position (`hx '/path/file.ts':123:5`).
+- Calls the shared Helix opener, which creates a terminal tab whose PTY
+  process is `hx`, inheriting cwd from the focused pane or content view.
+- Path is passed as an argv entry, not typed into a shell. This avoids shell
+  quoting concerns and means Helix exit is also PTY exit.
+- In **grep mode** the hit's `:line:col` is appended to the file argument so
+  Helix jumps to the matching position (`hx /path/file.ts:123:5`).
+- When Helix exits, Krypton's normal `pty-exit` cleanup closes the editor tab
+  automatically instead of leaving a shell behind. `pty-exit` is driven by a
+  direct backend child-process wait, not only PTY EOF, so Quick File Search
+  editor tabs close reliably when `hx` exits.
 - `quick_search_record_pick` is fired (frecency boost), the row flashes and
   the same `select`/`execute` sound plays as the clipboard actions, then
   the dialog closes and returns to Normal.
@@ -396,9 +395,9 @@ Behavior:
 - Pre-indexing on app startup (cold start handled by background scan + status
   bar feedback)
 - Replacing or modifying file-manager `Ctrl+F` (doc 57 stays as-is)
-- Auto-paste in arbitrary windows / shell injection across PTYs — the only
-  PTY write is into the freshly-spawned tab from `Enter` (open in Helix).
-  Clipboard remains the sink for `Ctrl+E` / `Cmd+Enter`.
+- Auto-paste in arbitrary windows / shell injection across PTYs — opening in
+  Helix spawns `hx` directly as the new tab's PTY process. Clipboard remains
+  the sink for `Ctrl+E` / `Cmd+Enter`.
 
 ## Resources
 

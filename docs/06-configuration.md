@@ -469,10 +469,10 @@ models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-
 | `[hints]` | `alphabet` | string | `"asdfghjklqweruiop"` | Characters used for hint label generation (should be easy to type) |
 | `[[hints.rules]]` | `name` | string | — | Unique identifier for the rule |
 | `[[hints.rules]]` | `regex` | string | — | Regular expression pattern to match in terminal content |
-| `[[hints.rules]]` | `action` | string | `"Copy"` | Action on selection: `"Copy"`, `"Open"`, or `"Paste"` |
+| `[[hints.rules]]` | `action` | string | `"Copy"` | Action on selection: `"Copy"`, `"Open"`, or `"Paste"`; the built-in `filepath` rule opens Helix in a new tab instead of copying |
 | `[[hints.rules]]` | `enabled` | bool | `true` | Whether this rule is active |
 
-Built-in rules (active by default): `url` (Open), `filepath` (Copy), `email` (Copy).
+Built-in rules (active by default): `url` (Open), `filepath` (open in Helix tab), `email` (Copy).
 
 ### Sound Configuration
 

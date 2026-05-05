@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-05 (Global hint mode)
+> Last updated: 2026-05-05 (Hint file paths open in Helix)
 
 ## Overview
 
@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **Hint file paths open in Helix** — selecting the built-in `filepath` hint now opens a terminal tab running `hx <path>` directly instead of copying the path to the clipboard. Quick File Search and hint mode share the same editor opener, so relative paths inherit the focused pane or content-view cwd and the tab closes automatically when Helix exits instead of returning to a shell. The backend now emits `pty-exit` from a direct child-process wait as well as PTY reader EOF/error, making direct editor tab cleanup reliable. URL/email/custom hints keep their configured `Open`/`Copy`/`Paste` behavior. See `docs/12-hint-mode.md` and `docs/82-global-hint-mode.md`.
 - **Global hint mode for DOM views** — `Leader Shift+H` now works on every focused pane: terminal panes use the existing xterm buffer scanner, content views (markdown, hurl, vault, diff, pencil, file manager, ACP harness, agent) use a new DOM scanner that walks visible text nodes, runs the configured `[hints]` regex rules, and overlays labels via `Range.getClientRects()` + `position: fixed`. `Open` and `Copy` actions behave identically; `Paste` falls back to `Copy` in DOM mode (no PTY target). The `Cmd+Shift+H` global accelerator stays terminal-only to avoid colliding with text inputs in DOM views. See `docs/82-global-hint-mode.md`.
 - **Global copy-on-select** — any text selection in a DOM view (markdown viewer, hurl client, diff view, vault view, ACP harness, agent view, dashboards, etc.) now auto-copies to the clipboard on `mouseup` or navigation `keyup`, matching the existing terminal-pane behavior. Selections inside `<input>`, `<textarea>`, or `[contenteditable]` are skipped to preserve editing semantics; xterm canvases are unaffected because their selection is not part of the DOM Selection API. See `docs/81-global-copy-on-select.md`.
 - **ACP Harness memory drawer key capture** — `Ctrl+N` / `Ctrl+P` are now handled by the open memory drawer before global lane-switch routing, so they move the selected memory row instead of leaking to the main harness view. The cursor helper also normalizes the key value for stable `n/p` handling. See `docs/72-acp-harness-view.md`.

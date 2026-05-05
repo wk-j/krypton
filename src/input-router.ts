@@ -24,7 +24,7 @@ export class InputRouter {
   private compositor: Compositor;
   private modeChangeCallbacks: ModeChangeCallback[] = [];
   private selection: SelectionController = new SelectionController();
-  private hints: HintController = new HintController();
+  private hints: HintController;
   private commandPalette: CommandPalette | null = null;
   private dashboardManager: DashboardManager | null = null;
   private musicPlayer: MusicPlayer | null = null;
@@ -33,6 +33,7 @@ export class InputRouter {
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
+    this.hints = new HintController(compositor);
     this.hints.onExit(() => {
       this.toNormal();
     });

@@ -9,8 +9,8 @@
 // See docs/68-quick-file-search.md.
 
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { Compositor } from './compositor';
+import { openInHelixTab } from './editor-open';
 import type { QuickGrepHit, QuickGrepResponse, QuickSearchHit, QuickSearchResponse } from './types';
 
 type SearchMode = 'file' | 'grep';
@@ -184,14 +184,11 @@ export class QuickFileSearch {
   // ─── private ──────────────────────────────────────────────
 
   private async resolveCwd(): Promise<string> {
-    const sessionId = this.compositor.getFocusedSessionId();
-    if (sessionId !== null) {
-      try {
-        const cwd = await invoke<string | null>('get_pty_cwd', { sessionId });
-        if (cwd) return cwd;
-      } catch {
-        // fall through
-      }
+    try {
+      const cwd = await this.compositor.getFocusedWorkingDirectory();
+      if (cwd) return cwd;
+    } catch {
+      // fall through
     }
     // Fallback: $HOME (resolve via backend by canonicalizing ".")
     return '.';
@@ -393,24 +390,19 @@ export class QuickFileSearch {
       absolute = hit.absolute;
     }
 
-    const quoted = shellQuote(absolute);
-    const suffix = line !== null ? `:${line}:${col}` : '';
-    const command = `hx ${quoted}${suffix}\r`;
-
-    let sessionId: number | null;
-    try {
-      sessionId = await this.compositor.createTab();
-    } catch (e) {
-      console.error('[QuickFileSearch] createTab failed:', e);
+    const result = await openInHelixTab(this.compositor, {
+      path: absolute,
+      line,
+      col,
+    });
+    if (result === 'create-tab-failed') {
       this.statusBar.textContent = 'open failed: createTab';
       return;
     }
-    if (sessionId === null) {
+    if (result === 'no-focused-window') {
       this.statusBar.textContent = 'open failed: no focused window';
       return;
     }
-
-    void this.writeWhenReady(sessionId, command);
 
     invoke('quick_search_record_pick', { absolute }).catch((e) => {
       console.warn('[QuickFileSearch] record_pick failed:', e);
@@ -419,44 +411,6 @@ export class QuickFileSearch {
     this.compositor.soundEngine.play('command_palette.execute');
     this.flashSelected('helix');
     window.setTimeout(() => this.close(), FLASH_MS);
-  }
-
-  /** Wait for the new tab's shell to print its first byte (= prompt ready),
-   *  then send the command. Falls back to a 400ms timeout if the shell
-   *  stays silent (rare — only weird custom rc files). */
-  private async writeWhenReady(sessionId: number, command: string): Promise<void> {
-    const bytes = Array.from(new TextEncoder().encode(command));
-    let fired = false;
-    const send = (): void => {
-      if (fired) return;
-      fired = true;
-      invoke('write_to_pty', { sessionId, data: bytes }).catch((e) => {
-        console.error('[QuickFileSearch] write_to_pty failed:', e);
-      });
-    };
-
-    let unlisten: (() => void) | null = null;
-    try {
-      unlisten = await listen<[number, number[]]>('pty-output', (event) => {
-        const [sid] = event.payload;
-        if (sid !== sessionId) return;
-        send();
-        unlisten?.();
-        unlisten = null;
-      });
-    } catch (e) {
-      console.error('[QuickFileSearch] listen failed:', e);
-      send();
-      return;
-    }
-
-    window.setTimeout(() => {
-      if (!fired) {
-        send();
-        unlisten?.();
-        unlisten = null;
-      }
-    }, 400);
   }
 
   private flashSelected(kind: 'relative' | 'absolute' | 'helix'): void {
@@ -570,12 +524,6 @@ function splitPath(p: string): { dir: string; name: string } {
   const idx = p.lastIndexOf('/');
   if (idx < 0) return { dir: '', name: p };
   return { dir: p.slice(0, idx + 1), name: p.slice(idx + 1) };
-}
-
-/** POSIX single-quote quoting — wraps in `'…'` and escapes inner `'` as `'\''`.
- *  Safe across bash/zsh/fish for paths with spaces, `$`, `*`, `'`, etc. */
-function shellQuote(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
 function abbreviatePath(p: string): string {

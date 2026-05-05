@@ -3,8 +3,11 @@
 // overlays keyboard labels on matches, and executes actions when a label
 // is selected. Inspired by Rio Terminal hints.
 
-import { invoke } from './profiler/ipc';
 import type { Terminal } from '@xterm/xterm';
+
+import { openInHelixTab } from './editor-open';
+import { invoke } from './profiler/ipc';
+import type { Compositor } from './compositor';
 import type { HintsConfig, HintRule } from './config';
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -99,6 +102,7 @@ function generateLabels(alphabet: string, count: number): string[] {
 // ─── Hint Controller ──────────────────────────────────────────────
 
 export class HintController {
+  private compositor: Compositor;
   private config: HintsConfig = DEFAULT_HINTS_CONFIG;
   private active = false;
   private scanMode: HintScanMode = 'terminal';
@@ -113,6 +117,10 @@ export class HintController {
 
   /** Callbacks for when hint mode should exit */
   private exitCallbacks: Array<() => void> = [];
+
+  constructor(compositor: Compositor) {
+    this.compositor = compositor;
+  }
 
   /** Register callback for hint mode exit (so InputRouter returns to Normal) */
   onExit(cb: () => void): void {
@@ -629,6 +637,13 @@ export class HintController {
   // ─── Action Execution ─────────────────────────────────────────
 
   private executeActionForText(text: string, rule: HintRule): void {
+    if (rule.name === 'filepath') {
+      openInHelixTab(this.compositor, { path: text }).catch((err) => {
+        console.error('[HintController] Failed to open file in Helix:', err);
+      });
+      return;
+    }
+
     const action = rule.action;
 
     switch (action) {

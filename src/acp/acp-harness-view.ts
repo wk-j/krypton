@@ -1285,7 +1285,8 @@ export class AcpHarnessView implements ContentView {
     }
     this.composerEl.className =
       `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}` +
-      `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}`;
+      `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}` +
+      `${lane.status === 'busy' ? ' acp-harness__composer--running' : ''}`;
     const chip = this.chip ?? this.composerStatusChip(lane);
     const chipClass = `acp-harness__memory-chip${!this.chip && lane.status === 'busy' ? ' acp-harness__memory-chip--running' : ''}`;
     const projectStatus = this.renderComposerProjectStatus();

@@ -323,7 +323,7 @@ impl PtyManager {
             }
         }
 
-        let child = pair
+        let mut child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn shell: {e}"))?;
@@ -395,6 +395,22 @@ impl PtyManager {
                         break;
                     }
                 }
+            }
+        });
+
+        // Track the owning child process directly as well as PTY EOF. This
+        // makes close-on-exit reliable for editor tabs that run a full-screen
+        // app like `hx` directly instead of a persistent shell.
+        let handle = app_handle.clone();
+        let sid = session_id;
+        thread::spawn(move || match child.wait() {
+            Ok(status) => {
+                log::info!("PTY child for session {sid} exited with status {status:?}");
+                handle.emit_or_log("pty-exit", sid);
+            }
+            Err(e) => {
+                log::error!("Failed to wait for PTY child {sid}: {e}");
+                handle.emit_or_log("pty-exit", sid);
             }
         });
 

@@ -181,6 +181,8 @@ function nextPaneId(): PaneId {
 export class Compositor {
   private windows: Map<WindowId, KryptonWindow> = new Map();
   private sessionMap: Map<SessionId, SessionLocation> = new Map();
+  private pendingExitedSessions: Set<SessionId> = new Set();
+  private handledExitedSessions: Set<SessionId> = new Set();
   private focusedWindowId: WindowId | null = null;
   /** ID of the dedicated AI agent window (at most one at a time) */
   private workspace: HTMLElement;
@@ -664,10 +666,16 @@ export class Compositor {
       });
       pane.sessionId = sessionId;
       this.sessionMap.set(sessionId, { windowId, tabId, paneId: pane.id });
+      this.closePaneIfSessionAlreadyExited(sessionId);
     } catch (e) {
       console.error(`Failed to spawn PTY for pane ${pane.id}:`, e);
       pane.terminal.write('\r\n\x1b[31mFailed to spawn shell.\x1b[0m\r\n');
     }
+  }
+
+  private closePaneIfSessionAlreadyExited(sessionId: SessionId): void {
+    if (!this.pendingExitedSessions.delete(sessionId)) return;
+    this.handlePtyExit(sessionId);
   }
 
   /** Find a pane by ID within a pane tree */
@@ -721,6 +729,10 @@ export class Compositor {
   getFocusedContentType(): PaneContentType | null {
     const pane = this.getFocusedPane();
     return pane?.contentView?.type ?? null;
+  }
+
+  hasFocusedWindow(): boolean {
+    return this.focusedWindowId !== null && this.windows.has(this.focusedWindowId);
   }
 
   /** Stage a global screen capture into the focused content view, when supported. */
@@ -2001,10 +2013,10 @@ export class Compositor {
    * Spawn a new tab running `<editor> <filePath>` in `fileDir`. Used by the
    * Hurl view's `e` key.
    */
-  private async openEditorTab(fileDir: string, editor: string, filePath: string): Promise<void> {
-    if (!this.focusedWindowId) return;
+  async openEditorTab(fileDir: string | null, editor: string, filePath: string): Promise<boolean> {
+    if (!this.focusedWindowId) return false;
     const win = this.windows.get(this.focusedWindowId);
-    if (!win) return;
+    if (!win) return false;
 
     const tabId = nextTabId();
     const wrapper = this.createTabWrapper(win.contentElement);
@@ -2041,13 +2053,26 @@ export class Compositor {
         });
         pane.sessionId = sessionId;
         this.sessionMap.set(sessionId, { windowId: win.id, tabId, paneId: pane.id });
+        this.closePaneIfSessionAlreadyExited(sessionId);
       } catch (e) {
         console.error(`Failed to spawn editor: ${String(e)}`);
+        const failedTabIndex = win.tabs.findIndex((t) => t.id === tabId);
+        if (failedTabIndex >= 0) {
+          this.closeTabByIndex(win, failedTabIndex);
+        }
+        return false;
       }
     }
     this.wirePaneInput(pane);
     pane.terminal?.focus();
     this.sound.play('tab.create');
+    return true;
+  }
+
+  async openHelixTab(filePath: string, line?: number | null, col?: number | null): Promise<boolean> {
+    const suffix = line !== undefined && line !== null ? `:${line}:${col ?? 1}` : '';
+    const cwd = await this.getFocusedCwd();
+    return this.openEditorTab(cwd, 'hx', `${filePath}${suffix}`);
   }
 
   /**
@@ -2706,6 +2731,11 @@ export class Compositor {
     }
     const pane = this.getFocusedPane();
     return pane?.sessionId ?? null;
+  }
+
+  /** Resolve the focused terminal/content view working directory. */
+  async getFocusedWorkingDirectory(): Promise<string | null> {
+    return this.getFocusedCwd();
   }
 
   /** Get the currently focused pane (public accessor for input routing) */
@@ -4477,47 +4507,7 @@ export class Compositor {
     });
 
     listen<number>('pty-exit', (event) => {
-      const sid = event.payload;
-      this.progressGauge.clearSession(sid);
-
-      // Quick Terminal PTY exited — hide, clean up, recreate on next toggle
-      if (this.qtSessionId === sid) {
-        this.qtSessionId = null;
-        this.sound.play('terminal.exit');
-        this.destroyQuickTerminal();
-        return;
-      }
-
-      // Look up which pane this session belongs to
-      const loc = this.sessionMap.get(sid);
-      if (!loc) return;
-      this.sessionMap.delete(sid);
-
-      const win = this.windows.get(loc.windowId);
-      if (!win) return;
-
-      this.sound.play('terminal.exit');
-
-      // Find the tab and close the pane
-      const tabIndex = win.tabs.findIndex((t) => t.id === loc.tabId);
-      if (tabIndex < 0) return;
-      const tab = win.tabs[tabIndex];
-      const panes = this.collectPanes(tab.paneTree);
-
-      if (panes.length === 1) {
-        // Last pane in tab — close the tab
-        if (win.tabs.length === 1) {
-          // Last tab in window — close window
-          const statusEl = this.findPtyStatus(win.element);
-          if (statusEl) statusEl.textContent = 'pty // exited';
-          this.closeWindow(win.id);
-        } else {
-          this.closeTabByIndex(win, tabIndex);
-        }
-      } else {
-        // Close just this pane within the tab
-        this.closePaneInTab(tab, loc.paneId, win);
-      }
+      this.handlePtyExit(event.payload);
     });
 
     // ─── Progress Bar (OSC 9;4) ────────────────────────────────────
@@ -4536,6 +4526,55 @@ export class Compositor {
         this.progressGauge.handleProgress(sid, state, progress, loc.windowId);
       }
     });
+  }
+
+  private handlePtyExit(sid: SessionId): void {
+    if (this.handledExitedSessions.has(sid)) return;
+    this.progressGauge.clearSession(sid);
+
+    // Quick Terminal PTY exited — hide, clean up, recreate on next toggle
+    if (this.qtSessionId === sid) {
+      this.handledExitedSessions.add(sid);
+      this.qtSessionId = null;
+      this.sound.play('terminal.exit');
+      this.destroyQuickTerminal();
+      return;
+    }
+
+    // Look up which pane this session belongs to
+    const loc = this.sessionMap.get(sid);
+    if (!loc) {
+      this.pendingExitedSessions.add(sid);
+      return;
+    }
+    this.handledExitedSessions.add(sid);
+    this.sessionMap.delete(sid);
+
+    const win = this.windows.get(loc.windowId);
+    if (!win) return;
+
+    this.sound.play('terminal.exit');
+
+    // Find the tab and close the pane
+    const tabIndex = win.tabs.findIndex((t) => t.id === loc.tabId);
+    if (tabIndex < 0) return;
+    const tab = win.tabs[tabIndex];
+    const panes = this.collectPanes(tab.paneTree);
+
+    if (panes.length === 1) {
+      // Last pane in tab — close the tab
+      if (win.tabs.length === 1) {
+        // Last tab in window — close window
+        const statusEl = this.findPtyStatus(win.element);
+        if (statusEl) statusEl.textContent = 'pty // exited';
+        this.closeWindow(win.id);
+      } else {
+        this.closeTabByIndex(win, tabIndex);
+      }
+    } else {
+      // Close just this pane within the tab
+      this.closePaneInTab(tab, loc.paneId, win);
+    }
   }
 
   /**
