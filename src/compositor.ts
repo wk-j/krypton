@@ -181,6 +181,11 @@ function nextPaneId(): PaneId {
 export class Compositor {
   private windows: Map<WindowId, KryptonWindow> = new Map();
   private sessionMap: Map<SessionId, SessionLocation> = new Map();
+  /** pty-output bytes that arrived before sessionMap/qtSessionId was registered.
+   *  Backend reader thread starts emitting before `spawn_pty` returns, so DA1
+   *  query bytes from a fast-starting shell can race the IPC reply. Drained by
+   *  flushPendingPtyOutput once the route is known. */
+  private pendingPtyOutput: Map<SessionId, Uint8Array[]> = new Map();
   private pendingExitedSessions: Set<SessionId> = new Set();
   private handledExitedSessions: Set<SessionId> = new Set();
   private focusedWindowId: WindowId | null = null;
@@ -614,7 +619,7 @@ export class Compositor {
       console.log('[krypton:shaders] Shader skipped — enabled:', this.shaderConfig.enabled, 'preset:', this.shaderConfig.preset);
     }
 
-    return { id: paneId, sessionId: null, terminal, fitAddon, element: el, shaderInstance, contentView: null };
+    return { id: paneId, sessionId: null, terminal, fitAddon, element: el, shaderInstance, contentView: null, pendingInput: [] };
   }
 
   /** Copy-on-select: copy terminal selection to clipboard when text is selected */
@@ -629,16 +634,22 @@ export class Compositor {
     });
   }
 
-  /** Wire a pane's terminal to a PTY session */
+  /** Wire a pane's terminal to a PTY session.
+   *  Call BEFORE spawnPaneSession so xterm.js replies (e.g. fish's DA1 query
+   *  sent at shell startup) are buffered into pane.pendingInput and flushed
+   *  by flushPendingInput once spawn_pty resolves. */
   private wirePaneInput(pane: Pane): void {
     if (!pane.terminal) return;
+    const encoder = new TextEncoder();
     pane.terminal.onData((data: string) => {
+      const bytes = encoder.encode(data);
       if (pane.sessionId !== null) {
-        const encoder = new TextEncoder();
         invoke('write_to_pty', {
           sessionId: pane.sessionId,
-          data: Array.from(encoder.encode(data)),
+          data: Array.from(bytes),
         }).catch((e: unknown) => console.error('Write to PTY failed:', e));
+      } else {
+        for (const b of bytes) pane.pendingInput.push(b);
       }
     });
     // Keypress sound on actual keyboard input only (not mouse reporting)
@@ -666,11 +677,49 @@ export class Compositor {
       });
       pane.sessionId = sessionId;
       this.sessionMap.set(sessionId, { windowId, tabId, paneId: pane.id });
+      this.flushPendingPtyOutput(sessionId, pane.terminal);
+      this.flushPendingInput(pane);
       this.closePaneIfSessionAlreadyExited(sessionId);
     } catch (e) {
       console.error(`Failed to spawn PTY for pane ${pane.id}:`, e);
       pane.terminal.write('\r\n\x1b[31mFailed to spawn shell.\x1b[0m\r\n');
     }
+  }
+
+  /** Cap on buffered pty-output bytes per sid before route is known. */
+  private static readonly PENDING_PTY_OUTPUT_CAP = 64 * 1024;
+
+  /** Append a pty-output chunk to the per-sid pending buffer, capped. */
+  private bufferPendingPtyOutput(sid: SessionId, data: number[]): void {
+    let buf = this.pendingPtyOutput.get(sid);
+    if (!buf) {
+      buf = [];
+      this.pendingPtyOutput.set(sid, buf);
+    }
+    let total = 0;
+    for (const c of buf) total += c.length;
+    if (total >= Compositor.PENDING_PTY_OUTPUT_CAP) return;
+    buf.push(new Uint8Array(data));
+  }
+
+  /** Drain pending pty-output for a sid into the given xterm terminal. */
+  private flushPendingPtyOutput(sid: SessionId, terminal: Terminal | null): void {
+    const buf = this.pendingPtyOutput.get(sid);
+    if (!buf) return;
+    this.pendingPtyOutput.delete(sid);
+    if (!terminal) return;
+    for (const chunk of buf) terminal.write(chunk);
+  }
+
+  /** Drain bytes that xterm.js produced before sessionId was set. */
+  private flushPendingInput(pane: Pane): void {
+    if (pane.sessionId === null || pane.pendingInput.length === 0) return;
+    const data = pane.pendingInput;
+    pane.pendingInput = [];
+    invoke('write_to_pty', {
+      sessionId: pane.sessionId,
+      data,
+    }).catch((e: unknown) => console.error('Flush pending input failed:', e));
   }
 
   private closePaneIfSessionAlreadyExited(sessionId: SessionId): void {
@@ -1418,9 +1467,10 @@ export class Compositor {
       }
     });
 
-    // Spawn PTY for the first pane
-    await this.spawnPaneSession(pane, id, tabId, cwd);
+    // Wire input BEFORE spawning so xterm.js replies (e.g. fish DA1 reply)
+    // emitted during shell startup are buffered and flushed.
     this.wirePaneInput(pane);
+    await this.spawnPaneSession(pane, id, tabId, cwd);
 
     if (pane.sessionId !== null) {
       label.textContent = `session_${String(pane.sessionId).padStart(2, '0')}`;
@@ -1542,6 +1592,7 @@ export class Compositor {
       element: paneEl,
       shaderInstance: null,
       contentView,
+      pendingInput: [],
     };
 
     const tabId = nextTabId();
@@ -2042,6 +2093,8 @@ export class Compositor {
     await this.nextFrame();
     this.fitWindow(win.id);
 
+    // Wire input BEFORE spawn so xterm.js replies during editor startup are buffered.
+    this.wirePaneInput(pane);
     if (pane.terminal) {
       try {
         const sessionId = await invoke<number>('spawn_pty', {
@@ -2053,6 +2106,8 @@ export class Compositor {
         });
         pane.sessionId = sessionId;
         this.sessionMap.set(sessionId, { windowId: win.id, tabId, paneId: pane.id });
+        this.flushPendingPtyOutput(sessionId, pane.terminal);
+        this.flushPendingInput(pane);
         this.closePaneIfSessionAlreadyExited(sessionId);
       } catch (e) {
         console.error(`Failed to spawn editor: ${String(e)}`);
@@ -2063,7 +2118,6 @@ export class Compositor {
         return false;
       }
     }
-    this.wirePaneInput(pane);
     pane.terminal?.focus();
     this.sound.play('tab.create');
     return true;
@@ -2970,9 +3024,9 @@ export class Compositor {
     await this.nextFrame();
     this.fitWindow(win.id);
 
-    // Spawn PTY and wire input
-    await this.spawnPaneSession(pane, win.id, tabId, cwd);
+    // Wire input BEFORE spawn so xterm.js replies during startup are buffered.
     this.wirePaneInput(pane);
+    await this.spawnPaneSession(pane, win.id, tabId, cwd);
 
     // Title change listener
     pane.terminal?.onTitleChange((title: string) => {
@@ -3035,6 +3089,7 @@ export class Compositor {
       element: paneEl,
       shaderInstance: null,
       contentView,
+      pendingInput: [],
     };
 
     const tabNum = win.tabs.length + 1;
@@ -3254,9 +3309,9 @@ export class Compositor {
     const allPanes = this.collectPanes(tab.paneTree);
     const newPane = allPanes[allPanes.length - 1];
 
-    // Spawn PTY and wire
-    await this.spawnPaneSession(newPane, win.id, tab.id, cwd);
+    // Wire input BEFORE spawn so xterm.js replies during startup are buffered.
     this.wirePaneInput(newPane);
+    await this.spawnPaneSession(newPane, win.id, tab.id, cwd);
 
     // Title change listener for new pane
     newPane.terminal?.onTitleChange((title: string) => {
@@ -3724,6 +3779,22 @@ export class Compositor {
       );
     }
 
+    // Wire input BEFORE spawn so xterm.js replies during shell startup
+    // (e.g. fish's DA1 reply) are buffered and flushed once sessionId is set.
+    const qtPendingInput: number[] = [];
+    const qtEncoder = new TextEncoder();
+    terminal.onData((data: string) => {
+      const bytes = qtEncoder.encode(data);
+      if (this.qtSessionId !== null) {
+        invoke('write_to_pty', {
+          sessionId: this.qtSessionId,
+          data: Array.from(bytes),
+        }).catch((e) => console.error('QT write to PTY failed:', e));
+      } else {
+        for (const b of bytes) qtPendingInput.push(b);
+      }
+    });
+
     // Spawn PTY for Quick Terminal — inherit CWD from focused window
     const inheritedCwd = await this.getFocusedCwd();
     try {
@@ -3735,6 +3806,15 @@ export class Compositor {
       this.qtSessionId = sessionId;
       qtPtyStatus.textContent = 'pty // active';
 
+      // Drain backend pty-output that arrived before this sid was registered.
+      this.flushPendingPtyOutput(sessionId, terminal);
+
+      if (qtPendingInput.length > 0) {
+        const drained = qtPendingInput.splice(0);
+        invoke('write_to_pty', { sessionId, data: drained })
+          .catch((e) => console.error('QT flush pending input failed:', e));
+      }
+
       // Fetch initial CWD for Quick Terminal
       this.updateWindowCwd(sessionId, qtPtyStatus);
     } catch (e) {
@@ -3743,16 +3823,6 @@ export class Compositor {
       qtPtyStatus.textContent = 'pty // failed';
     }
 
-    // Wire input: xterm -> PTY
-    terminal.onData((data: string) => {
-      if (this.qtSessionId !== null) {
-        const encoder = new TextEncoder();
-        invoke('write_to_pty', {
-          sessionId: this.qtSessionId,
-          data: Array.from(encoder.encode(data)),
-        }).catch((e) => console.error('QT write to PTY failed:', e));
-      }
-    });
     // Keypress sound on actual keyboard input only (not mouse reporting)
     terminal.onKey(({ domEvent }) => {
       this.sound.playKeypress('press', domEvent.key);
@@ -4503,10 +4573,16 @@ export class Compositor {
             }
           }
         }
+        return;
       }
+
+      // No route yet — backend reader emitted before spawn_pty's IPC reply
+      // registered the sid. Buffer up to PENDING_PTY_OUTPUT_CAP bytes per sid.
+      this.bufferPendingPtyOutput(sid, data);
     });
 
     listen<number>('pty-exit', (event) => {
+      this.pendingPtyOutput.delete(event.payload);
       this.handlePtyExit(event.payload);
     });
 
@@ -4651,6 +4727,8 @@ export class Compositor {
       await this.nextFrame();
       this.fitWindow(win.id);
 
+      // Wire input BEFORE spawn so xterm.js replies during shell startup are buffered.
+      this.wirePaneInput(pane);
       // Spawn cloned SSH PTY with the probed remote CWD
       const newSessionId = await invoke<number>('clone_ssh_session', {
         sessionId,
@@ -4660,7 +4738,8 @@ export class Compositor {
       });
       pane.sessionId = newSessionId;
       this.sessionMap.set(newSessionId, { windowId: win.id, tabId, paneId: pane.id });
-      this.wirePaneInput(pane);
+      this.flushPendingPtyOutput(newSessionId, pane.terminal);
+      this.flushPendingInput(pane);
 
       // Update titlebar
       const ptyStatus = this.findPtyStatus(win.element);
@@ -4730,6 +4809,7 @@ export class Compositor {
         tabId: activeTab.id,
         paneId: pane.id,
       });
+      this.flushPendingPtyOutput(newSessionId, pane.terminal);
 
       // Update titlebar to show SSH info
       const ptyStatus = this.findPtyStatus(win.element);

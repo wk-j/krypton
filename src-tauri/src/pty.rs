@@ -1,11 +1,62 @@
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use tauri::AppHandle;
 
 use crate::util::emit::EmitExt;
+
+static CACHED_LOGIN_PATH: OnceLock<String> = OnceLock::new();
+static CACHED_LOGIN_ENV: OnceLock<HashMap<String, String>> = OnceLock::new();
+
+/// Resolve PATH from the user's login shell. macOS GUI launches often receive a
+/// sparse PATH, which breaks direct PTY spawns such as `hx`.
+fn cached_login_path() -> String {
+    CACHED_LOGIN_PATH
+        .get_or_init(|| {
+            cached_login_env()
+                .get("PATH")
+                .cloned()
+                .unwrap_or_else(|| std::env::var("PATH").unwrap_or_default())
+        })
+        .clone()
+}
+
+/// Capture the user's login-shell environment once, by spawning
+/// `$SHELL -lc '/usr/bin/env -0'` and parsing the NUL-separated output.
+///
+/// macOS GUI apps don't inherit env vars set in shell rc files (fish's
+/// `config.fish`, `~/.zprofile`, etc.). When Krypton spawns a non-shell
+/// command directly into a PTY (e.g. `hx <file>`), that child sees only
+/// the sparse GUI environment — `EDITOR`, `JAVA_HOME`, `XDG_*`, language
+/// server paths, etc. are missing. This function runs the user's shell
+/// once as a login shell so all rc files execute, then snapshots the
+/// resulting environment for re-use on every PTY spawn.
+pub(crate) fn cached_login_env() -> &'static HashMap<String, String> {
+    CACHED_LOGIN_ENV.get_or_init(|| {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        // `/usr/bin/env -0` works on macOS (BSD env) and Linux (GNU env);
+        // NUL separator preserves values that contain newlines.
+        let output = std::process::Command::new(&shell)
+            .args(["-l", "-c", "/usr/bin/env -0"])
+            .output();
+        let mut map = HashMap::new();
+        if let Ok(out) = output {
+            for entry in out.stdout.split(|&b| b == 0) {
+                if entry.is_empty() {
+                    continue;
+                }
+                if let Ok(s) = std::str::from_utf8(entry) {
+                    if let Some((k, v)) = s.split_once('=') {
+                        map.insert(k.to_string(), v.to_string());
+                    }
+                }
+            }
+        }
+        map
+    })
+}
 
 // ─── Process Detection Types ──────────────────────────────────────
 
@@ -303,15 +354,30 @@ impl PtyManager {
             cmd.arg(arg);
         }
 
+        // Inject the user's full login-shell environment. Crucial for non-shell
+        // commands (e.g. `hx`) spawned directly: without this, they don't see
+        // anything set in fish/zsh rc files (EDITOR, JAVA_HOME, XDG_*, LSP
+        // paths, etc.). Skip vars we override below + ones that should be
+        // re-derived per process (PWD/OLDPWD/SHLVL).
+        let login_env = cached_login_env();
+        for (k, v) in login_env {
+            match k.as_str() {
+                "TERM" | "COLORTERM" | "PWD" | "OLDPWD" | "SHLVL" | "_" => continue,
+                _ => cmd.env(k, v),
+            }
+        }
+
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        cmd.env("PATH", cached_login_path());
 
-        // Ensure UTF-8 locale is set — macOS GUI apps don't inherit shell env vars,
-        // so LANG may be unset, causing tmux and other apps to mishandle Unicode.
-        if std::env::var("LANG").unwrap_or_default().is_empty() {
+        // Ensure UTF-8 locale is set — fall back if login env didn't provide it.
+        if !login_env.contains_key("LANG") && std::env::var("LANG").unwrap_or_default().is_empty() {
             cmd.env("LANG", "en_US.UTF-8");
         }
-        if std::env::var("LC_ALL").unwrap_or_default().is_empty() {
+        if !login_env.contains_key("LC_ALL")
+            && std::env::var("LC_ALL").unwrap_or_default().is_empty()
+        {
             cmd.env("LC_ALL", "en_US.UTF-8");
         }
 

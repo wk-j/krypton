@@ -141,6 +141,9 @@ export interface Pane {
   element: HTMLElement;
   shaderInstance: ShaderInstance | null;
   contentView: ContentView | null;
+  /** Bytes produced by xterm.js (e.g. DA1 reply) before sessionId is assigned.
+   *  Drained by flushPendingInput once spawn_pty resolves. */
+  pendingInput: number[];
 }
 
 /** Binary tree node for pane splits */
