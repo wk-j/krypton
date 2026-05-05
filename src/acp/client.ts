@@ -79,8 +79,33 @@ export class AcpClient {
     return this.backend;
   }
 
-  async initialize(): Promise<AgentInfo> {
-    return invoke<AgentInfo>('acp_initialize', { session: this.session });
+  /** Run `initialize` → optional capability-dependent MCP injection → `session/new`.
+   *  If `onInitialized` is supplied, the result it returns replaces the MCP server
+   *  list seeded at spawn time. Returning `undefined` keeps the seeded list. */
+  async initialize(
+    onInitialized?: (caps: unknown) => Promise<AcpMcpServerDescriptor[] | undefined>,
+  ): Promise<AgentInfo> {
+    const init = await invoke<{
+      agent_protocol_version: number;
+      auth_methods: unknown[];
+      agent_capabilities: unknown;
+    }>('acp_initialize', { session: this.session });
+    if (onInitialized) {
+      const servers = await onInitialized(init.agent_capabilities);
+      if (servers !== undefined) {
+        await invoke('acp_set_mcp_servers', {
+          session: this.session,
+          mcpServers: servers,
+        });
+      }
+    }
+    const sn = await invoke<{ session_id: string }>('acp_session_new', { session: this.session });
+    return {
+      agent_protocol_version: init.agent_protocol_version,
+      auth_methods: init.auth_methods,
+      agent_capabilities: init.agent_capabilities,
+      session_id: sn.session_id,
+    } as AgentInfo;
   }
 
   onEvent(cb: (e: AcpEvent) => void): () => void {

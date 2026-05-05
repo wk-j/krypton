@@ -86,11 +86,40 @@ export interface AcpHttpHeader {
   value: string;
 }
 
-export interface AcpMcpServerDescriptor {
+export interface AcpEnvVar {
+  name: string;
+  value: string;
+}
+
+export interface AcpMcpServerStdio {
+  name: string;
+  type?: 'stdio';
+  command: string;
+  args: string[];
+  env: AcpEnvVar[];
+}
+
+export interface AcpMcpServerHttp {
   name: string;
   type: 'http';
   url: string;
   headers: AcpHttpHeader[];
+}
+
+export interface AcpMcpServerSse {
+  name: string;
+  type: 'sse';
+  url: string;
+  headers: AcpHttpHeader[];
+}
+
+export type AcpMcpServerDescriptor = AcpMcpServerStdio | AcpMcpServerHttp | AcpMcpServerSse;
+
+/** Subset of `agentCapabilities.mcpCapabilities` from the `initialize` response.
+ *  Used by the harness to skip http/sse servers when an adapter doesn't advertise them. */
+export interface AcpMcpCapabilities {
+  http?: boolean;
+  sse?: boolean;
 }
 
 export interface HarnessMemoryEntry {

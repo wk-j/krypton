@@ -12,6 +12,7 @@ import { AcpClient } from './client';
 import type {
   AcpBackendDescriptor,
   AcpEvent,
+  AcpMcpCapabilities,
   AcpMcpServerDescriptor,
   AgentInfo,
   ContentBlock,
@@ -28,6 +29,11 @@ import type {
 import type { CapturedImage, ContentView, PaneContentType } from '../types';
 import { loadConfig, type LaneModelConfig } from '../config';
 import { extractModifiedPath } from './acp-harness-memory';
+import {
+  loadProjectMcpServers,
+  filterByCapability,
+  dedupeByName,
+} from './mcp-bridge';
 
 type HarnessLaneStatus = 'starting' | 'idle' | 'busy' | 'needs_permission' | 'error' | 'stopped';
 type ComposerFocus = 'text' | 'transcript';
@@ -601,6 +607,8 @@ export class AcpHarnessView implements ContentView {
     this.render();
     let client: AcpClient | null = null;
     try {
+      // Seed with the memory server only. Project `.mcp.json` servers are
+      // injected after `initialize` so we can capability-gate http/sse.
       client = await AcpClient.spawn(lane.backendId, this.projectDir, this.memoryServerForLane(lane));
       if (lane.spawnEpoch !== spawnEpoch) {
         await client.dispose();
@@ -611,7 +619,17 @@ export class AcpHarnessView implements ContentView {
         if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) return;
         this.onLaneEvent(lane, event);
       });
-      const info: AgentInfo = await client.initialize();
+      const projectDirForLane = this.projectDir;
+      const info: AgentInfo = await client.initialize(async (caps) => {
+        // Claude Code's adapter loads `.mcp.json` natively — re-injecting via
+        // ACP would duplicate every entry. Other lanes get the bridged list.
+        if (lane.backendId === 'claude') return undefined;
+        const projectServers = await loadProjectMcpServers(projectDirForLane);
+        if (projectServers.length === 0) return undefined;
+        const mcpCaps = (caps as { mcpCapabilities?: AcpMcpCapabilities } | null)?.mcpCapabilities;
+        const gated = filterByCapability(projectServers, mcpCaps);
+        return dedupeByName(gated, this.memoryServerForLane(lane));
+      });
       if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
         await client.dispose();
         return;

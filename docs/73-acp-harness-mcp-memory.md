@@ -1,6 +1,7 @@
 # ACP Harness MCP Memory — Implementation Spec
 
 > Status: Superseded by [docs/75-acp-harness-lane-memory.md](75-acp-harness-lane-memory.md)
+> Related: [docs/83-acp-shared-mcp-config.md](83-acp-shared-mcp-config.md) — shared `.mcp.json` bridge for non-Claude lanes (memory server is appended after the bridged list).
 > Date: 2026-05-02
 > Milestone: M8 — Polish
 

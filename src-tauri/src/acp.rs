@@ -125,6 +125,20 @@ pub struct AgentInfo {
     pub session_id: String,
 }
 
+/// Result of `acp_initialize` (no session_id yet — session/new is a separate
+/// step so the frontend can inject capability-gated MCP servers between).
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentInitInfo {
+    pub agent_protocol_version: i64,
+    pub auth_methods: Vec<Value>,
+    pub agent_capabilities: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentSessionInfo {
+    pub session_id: String,
+}
+
 // ─── AcpClient ─────────────────────────────────────────────────────
 
 struct AcpClient {
@@ -705,7 +719,7 @@ pub async fn acp_spawn(
 pub async fn acp_initialize(
     session: u64,
     registry: State<'_, Arc<AcpRegistry>>,
-) -> Result<AgentInfo, String> {
+) -> Result<AgentInitInfo, String> {
     let client = registry
         .get(session)
         .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
@@ -749,6 +763,40 @@ pub async fn acp_initialize(
         *g = Some(capabilities.clone());
     }
 
+    Ok(AgentInitInfo {
+        agent_protocol_version: proto,
+        auth_methods,
+        agent_capabilities: capabilities,
+    })
+}
+
+/// Replace the `mcpServers` list that `acp_session_new` will forward to the
+/// agent. Must be called between `acp_initialize` and `acp_session_new` if the
+/// frontend wants to inject capability-gated servers.
+#[tauri::command]
+pub async fn acp_set_mcp_servers(
+    session: u64,
+    mcp_servers: Vec<Value>,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<(), String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    if let Ok(mut g) = client.mcp_servers.write() {
+        *g = mcp_servers;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn acp_session_new(
+    session: u64,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<AgentSessionInfo, String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+
     // Project root for session/new: the cwd we spawned the child with, falling
     // back to the host process cwd. Without this, the agent treats `/` as the
     // project root and reads/writes happen at filesystem root.
@@ -789,10 +837,7 @@ pub async fn acp_initialize(
         set_opencode_default_model(&client, &acp_session_id).await?;
     }
 
-    Ok(AgentInfo {
-        agent_protocol_version: proto,
-        auth_methods,
-        agent_capabilities: capabilities,
+    Ok(AgentSessionInfo {
         session_id: acp_session_id,
     })
 }
@@ -938,6 +983,28 @@ pub async fn acp_dispose(
         }
     }
     Ok(())
+}
+
+// ─── Cross-lane MCP config bridge ──────────────────────────────────
+
+/// Read a UTF-8 file. Returns Ok(None) if the file is missing (NOT an error,
+/// since `.mcp.json` is optional). Returns Err on permission/IO/encoding
+/// errors. JSON parsing happens on the frontend.
+#[tauri::command]
+pub async fn read_mcp_config_file(path: String) -> Result<Option<String>, String> {
+    match tokio::fs::read_to_string(&path).await {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("read {path}: {e}")),
+    }
+}
+
+/// Expose the cached login-shell environment to the frontend so it can expand
+/// `${VAR}` placeholders in `.mcp.json` the same way Claude Code's native
+/// loader does.
+#[tauri::command]
+pub fn acp_login_env() -> HashMap<String, String> {
+    crate::pty::cached_login_env().clone()
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────

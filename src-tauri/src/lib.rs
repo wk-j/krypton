@@ -167,10 +167,14 @@ pub fn run() {
             acp::acp_list_backends,
             acp::acp_spawn,
             acp::acp_initialize,
+            acp::acp_set_mcp_servers,
+            acp::acp_session_new,
             acp::acp_prompt,
             acp::acp_cancel,
             acp::acp_permission_response,
             acp::acp_dispose,
+            acp::read_mcp_config_file,
+            acp::acp_login_env,
             pencil::read_pencil_file,
             pencil::write_pencil_file,
             pencil::scan_pencil_dir,
@@ -180,6 +184,10 @@ pub fn run() {
             // similar post-mortem bugs are diagnosable from ~/Library/Logs/Krypton/.
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
+                    .clear_targets()
+                    .target(tauri_plugin_log::Target::new(
+                        tauri_plugin_log::TargetKind::LogDir { file_name: None },
+                    ))
                     .level(log::LevelFilter::Info)
                     .build(),
             )?;
