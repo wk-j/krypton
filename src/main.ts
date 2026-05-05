@@ -19,6 +19,7 @@ import { createCursorTrail } from './cursor-trail';
 import { ClaudeHookManager } from './claude-hooks';
 import { NotificationController } from './notification';
 import { MusicPlayer } from './music';
+import { installGlobalCopyOnSelect } from './copy-on-select';
 
 interface CaptureResult {
   path: string;
@@ -53,6 +54,11 @@ async function main(): Promise<void> {
   } catch (e) {
     console.error('[Krypton] Failed to load config, using defaults:', e);
   }
+
+  // Global copy-on-select: any text selection in a DOM view auto-copies to
+  // the clipboard. Editable elements and xterm canvases are skipped — the
+  // terminal pane keeps its own xterm-side handler. See docs/81-global-copy-on-select.md.
+  installGlobalCopyOnSelect();
 
   // Initialize compositor
   const compositor = new Compositor(workspace);
