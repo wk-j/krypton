@@ -415,7 +415,7 @@ To switch models, change `active` to the name of another preset. Changes take ef
 
 ### ACP Agent Backends
 
-ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, and `pi-acp`.
+ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, `pi-acp`, and `droid`.
 
 | Backend | Command |
 |---------|---------|
@@ -424,8 +424,9 @@ ACP agent backends are built into Krypton rather than configured in `krypton.tom
 | Codex | `codex-acp` |
 | OpenCode | `opencode acp` |
 | Pi | `pi-acp` |
+| Droid | `droid exec --output-format acp` |
 
-Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars).
+Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow).
 
 **Pi lane prerequisites.** The Pi-1 lane uses the third-party [`pi-acp`](https://github.com/svkozak/pi-acp) adapter to drive the [`pi`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) coding agent. Install both globally:
 
@@ -449,7 +450,16 @@ Optional pi settings in `~/.pi/agent/settings.json`:
 
 Pi auto-loads `AGENTS.md` and `CLAUDE.md` walking up from `cwd`, so project context is shared with the other lanes for free.
 
-See `docs/69-acp-agent-support.md` for the original ACP design and `docs/84-acp-pi-lane.md` for the Pi-1 lane spec.
+**Droid lane prerequisites.** The Droid-1 lane uses Factory's official [`droid`](https://docs.factory.ai/cli/getting-started/overview) CLI in native ACP mode (`droid exec --output-format acp`) — no third-party adapter is required. Install Factory's CLI per their docs, then either:
+
+- Export `FACTORY_API_KEY=fk-...` in your login shell (Krypton's full login-env injection forwards it to the lane subprocess), **or**
+- Run `droid` once outside Krypton to complete the device-code OAuth flow. Krypton does not provide a TTY for the device-code prompt.
+
+Optional: pin a model for the Droid lane via `acp_harness.lane_models.droid.active` (passed to `droid` as `-m <id>` at spawn). Default model is `claude-opus-4-7`.
+
+Unlike Pi-1, Droid-1 is a **regular lane**: the `.mcp.json` bridge applies, the per-lane `krypton-harness-memory` server is wired in, and the permission rail engages on tool calls beyond Droid's current autonomy level. No `⚠ unsandboxed` chip.
+
+See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-lane.md` for Pi-1, and `docs/86-acp-droid-lane.md` for Droid-1.
 
 ### ACP Harness Configuration
 
@@ -466,7 +476,8 @@ The ACP Harness roster is code-defined in v1: Codex, Claude, and Gemini lanes ar
 
 - **Gemini** — passes `--model <active>` as a CLI flag at spawn. Changing the model requires respawning the lane.
 - **OpenCode** — sends `session/set_config_option {model}` (with `session/set_model` fallback) right after `session/new`. If `active` is empty, Krypton falls back to the historical default `zai-coding-plan/glm-5.1`.
-- **Claude / Codex** — `active` is accepted in the schema but ignored at spawn (those adapters do not honour a model flag in v1). The value still drives the lane model chip if present.
+- **Droid** — passes `-m <active>` to `droid exec` at spawn. Default if unset is Factory's `claude-opus-4-7`. Changing the model requires respawning the lane.
+- **Claude / Codex / Pi** — `active` is accepted in the schema but ignored at spawn (those adapters do not honour a model flag in v1). The value still drives the lane model chip if present.
 
 Example:
 

@@ -78,6 +78,18 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "Pi".to_string(),
             },
         ),
+        (
+            "droid",
+            AcpBackend {
+                command: "droid".to_string(),
+                args: vec![
+                    "exec".to_string(),
+                    "--output-format".to_string(),
+                    "acp".to_string(),
+                ],
+                display_name: "Droid".to_string(),
+            },
+        ),
     ]
 }
 
@@ -622,6 +634,9 @@ pub async fn acp_spawn(
     if let Some(ref model) = configured_model {
         if backend_id == "gemini" {
             backend.args.push("--model".to_string());
+            backend.args.push(model.clone());
+        } else if backend_id == "droid" {
+            backend.args.push("-m".to_string());
             backend.args.push(model.clone());
         }
     }

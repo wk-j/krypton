@@ -17,7 +17,8 @@
 2. **Input Router checks mode**:
    - **Global hotkey?** (e.g., `Cmd+I`, `Cmd+Shift+H`) -> execute immediately (toggle Quick Terminal, enter hint mode, etc.)
    - **Normal mode?** -> forward to focused window's xterm.js -> xterm.js encodes and emits `onData`
-   - **Compositor/Resize/Move/Swap mode?** -> execute compositor command (focus, resize, move, etc.)
+   - **Compositor mode?** -> dispatch a focused content-view local leader action if the focused view owns the normalized key; otherwise execute the existing global compositor command (focus, resize, move, etc.)
+   - **Resize/Move/Swap mode?** -> execute mode command (resize, move, swap, etc.)
    - **Selection mode?** -> navigate virtual cursor, expand/toggle selection, yank
    - **Hint mode?** -> filter/match labels, execute action on match (file path -> Helix tab, otherwise open/copy/paste)
    - **Dashboard mode?** -> delegate to active dashboard's `onKeyDown()` handler; Escape closes the dashboard
@@ -93,8 +94,10 @@
 ```
 1. User presses Leader key (Cmd+P)
 2. Input Router enters Compositor mode
-3. UI shows mode indicator (e.g., "COMPOSITOR" badge)
-4. User presses next key:
+3. Input Router gathers focused content-view leader bindings, if the pane has a content view
+4. UI shows mode indicator / which-key entries. Enabled local view entries are appended under their view group.
+5. User presses next key:
+   - Leader key owned by focused view -> run local binding, then return to Normal
    - H/J/K/L -> focus window in that direction
    - 1/2/3   -> focus window by index
    - N       -> create new window
@@ -107,7 +110,7 @@
    - Shift+G -> toggle shaders on/off globally
    - Shift+Y -> open ACP Harness for the focused working directory
    - Escape  -> cancel, return to Normal mode
-5. After action executes, Input Router returns to Normal mode
+6. After action executes, Input Router returns to Normal mode
 ```
 
 ## ACP Harness Flow

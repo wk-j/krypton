@@ -139,6 +139,7 @@ const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
   { backendId: 'gemini', displayName: 'Gemini', count: 1 },
   { backendId: 'opencode', displayName: 'OpenCode', count: 1 },
   { backendId: 'pi-acp', displayName: 'Pi', count: 1 },
+  { backendId: 'droid', displayName: 'Droid', count: 1 },
 ];
 
 const OPENCODE_DEFAULT_MODEL = 'zai-coding-plan/glm-5.1';
@@ -2191,6 +2192,7 @@ function laneAccentForLabel(label: string): string {
   if (/gemini/i.test(label)) return laneAccent(3);
   if (/opencode/i.test(label)) return laneAccent(4);
   if (/^pi(-|$)/i.test(label)) return laneAccent(5);
+  if (/droid/i.test(label)) return laneAccent(6);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }
