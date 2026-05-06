@@ -172,6 +172,7 @@ pub fn run() {
             acp::acp_prompt,
             acp::acp_cancel,
             acp::acp_permission_response,
+            acp::acp_fs_write_response,
             acp::acp_dispose,
             acp::read_mcp_config_file,
             acp::acp_login_env,
@@ -305,8 +306,19 @@ pub fn run() {
                 _ => {}
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
+                // Tear down ACP adapters synchronously on exit so their child
+                // process groups (including MCP servers) don't outlive the app
+                // and get reparented to launchd.
+                let registry = app.state::<Arc<acp::AcpRegistry>>().inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    acp::dispose_all(&registry).await;
+                });
+            }
+        });
 }
 
 /// Apply fullscreen geometry to the main window, covering the current monitor.

@@ -9,7 +9,10 @@ import 'highlight.js/styles/github-dark.css';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { AcpClient } from './client';
+import { renderDiffPreview } from './diff-render';
 import type {
+  AcpAgentMode,
+  AcpAvailableCommand,
   AcpBackendDescriptor,
   AcpEvent,
   AcpMcpCapabilities,
@@ -49,13 +52,30 @@ interface HarnessPermission {
 
 interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'permission' | 'restart' | 'memory' | 'shell';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review';
   text: string;
   imageCount?: number;
   status?: string;
   diff?: { title: string; unified: string };
   tool?: ToolPayload;
   permission?: PermissionPayload;
+  fsActivity?: FsActivityPayload;
+  fsReview?: FsWriteReviewPayload;
+}
+
+interface FsWriteReviewPayload {
+  requestId: number;
+  path: string;
+  oldText: string;
+  newText: string;
+  resolved?: 'accepted' | 'rejected';
+}
+
+interface FsActivityPayload {
+  method: 'read' | 'write';
+  path: string;
+  ok: boolean;
+  error?: string;
 }
 
 interface PermissionPayload {
@@ -71,6 +91,7 @@ interface ToolPayload {
   subject: string;
   result: string;
   sections: Array<{ label: string; text: string }>;
+  diffs: Array<{ path: string; oldText: string; newText: string }>;
 }
 
 interface StagedImage {
@@ -123,6 +144,11 @@ interface HarnessLane {
   stagedImages: StagedImage[];
   supportsImages: boolean;
   activeTurnStartedAt: number | null;
+  availableCommands: AcpAvailableCommand[];
+  modesById: Map<string, AcpAgentMode>;
+  currentMode: AcpAgentMode | null;
+  slashPaletteIndex: number;
+  slashPaletteDismissed: boolean;
 }
 
 const STICK_THRESHOLD_PX = 32;
@@ -167,6 +193,9 @@ const LANE_DEFAULTS = {
   pendingShellId: null,
   supportsImages: false,
   activeTurnStartedAt: null,
+  currentMode: null,
+  slashPaletteIndex: 0,
+  slashPaletteDismissed: false,
 };
 
 const md = new Marked(
@@ -266,6 +295,11 @@ export class AcpHarnessView implements ContentView {
       return this.handlePermissionKey(e, lane);
     }
 
+    const pendingReview = this.firstUnresolvedFsReview(lane);
+    if (pendingReview) {
+      return this.handleFsReviewKey(e, lane, pendingReview);
+    }
+
     if (e.key === 'Escape') {
       e.preventDefault();
       if (this.helpOpen) this.toggleHelp(false);
@@ -307,10 +341,42 @@ export class AcpHarnessView implements ContentView {
       return true;
     }
 
+    if (this.handleSlashPaletteKey(e, lane)) return true;
     if (this.handleEditingKey(e, lane)) return true;
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       this.insertDraft(lane, e.key);
+      return true;
+    }
+    return false;
+  }
+
+  private handleSlashPaletteKey(e: KeyboardEvent, lane: HarnessLane): boolean {
+    if (!slashPaletteVisible(lane)) return false;
+    const matches = filteredSlashCommands(lane);
+    if (matches.length === 0) return false;
+    if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
+      e.preventDefault();
+      lane.slashPaletteIndex = (lane.slashPaletteIndex + 1) % matches.length;
+      this.renderComposer();
+      return true;
+    }
+    if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
+      e.preventDefault();
+      lane.slashPaletteIndex = (lane.slashPaletteIndex - 1 + matches.length) % matches.length;
+      this.renderComposer();
+      return true;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      const cmd = matches[Math.max(0, Math.min(lane.slashPaletteIndex, matches.length - 1))];
+      if (cmd) this.setDraft(lane, `/${cmd.name} `, cmd.name.length + 2);
+      return true;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      lane.slashPaletteDismissed = true;
+      this.renderComposer();
       return true;
     }
     return false;
@@ -599,6 +665,8 @@ export class AcpHarnessView implements ContentView {
       toolTranscriptIds: new Map(),
       toolCalls: new Map(),
       seenTranscriptIds: new Set(),
+      availableCommands: [],
+      modesById: new Map(),
     };
   }
 
@@ -642,6 +710,21 @@ export class AcpHarnessView implements ContentView {
       lane.modelName = inferLaneModelName(lane.backendId, info, this.laneModels);
       lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
       lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
+      const availableModes = (info.agent_capabilities as { availableModes?: unknown } | null)?.availableModes;
+      if (Array.isArray(availableModes)) {
+        for (const m of availableModes) {
+          if (m && typeof m === 'object') {
+            const mode = m as { id?: unknown; name?: unknown; description?: unknown };
+            if (typeof mode.id === 'string') {
+              lane.modesById.set(mode.id, {
+                id: mode.id,
+                name: typeof mode.name === 'string' ? mode.name : mode.id,
+                description: typeof mode.description === 'string' ? mode.description : undefined,
+              });
+            }
+          }
+        }
+      }
       lane.status = 'idle';
       this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
     } catch (e) {
@@ -697,6 +780,21 @@ export class AcpHarnessView implements ContentView {
         break;
       case 'usage':
         lane.usage = mergeUsage(lane.usage, event.usage);
+        break;
+      case 'available_commands':
+        lane.availableCommands = event.commands;
+        if (lane.slashPaletteIndex >= event.commands.length) lane.slashPaletteIndex = 0;
+        break;
+      case 'mode_update': {
+        const known = lane.modesById.get(event.modeId);
+        lane.currentMode = known ?? { id: event.modeId, name: event.modeId };
+        break;
+      }
+      case 'fs_activity':
+        this.appendFsActivity(lane, event.method, event.path, event.ok, event.error);
+        break;
+      case 'fs_write_pending':
+        this.appendFsWriteReview(lane, event.requestId, event.path, event.oldText, event.newText);
         break;
       case 'stop':
         this.finishTurn(lane, event.stopReason);
@@ -1334,12 +1432,14 @@ export class AcpHarnessView implements ContentView {
       const hint = `${lane.stagedImages.length} image${lane.stagedImages.length === 1 ? '' : 's'} · Esc to clear`;
       staging = `<div class="acp-harness__staging">${chips}<span class="acp-harness__staging-hint">${esc(hint)}</span></div>`;
     }
+    const palette = renderSlashPalette(lane);
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-meta">` +
       `<span class="${chipClass}">${esc(chip)}</span>` +
       projectStatus +
       `</div>` +
       staging +
+      palette +
       `<div class="acp-harness__input-line">` +
       `<span class="acp-harness__lane-tag">${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__prompt">›</span>` +
@@ -1470,6 +1570,62 @@ export class AcpHarnessView implements ContentView {
     return item;
   }
 
+  private appendFsActivity(
+    lane: HarnessLane,
+    method: 'read' | 'write',
+    path: string,
+    ok: boolean,
+    error: string | undefined,
+  ): void {
+    this.sealStreaming(lane);
+    const item = this.appendTranscript(lane, 'fs_activity', '');
+    item.fsActivity = { method, path, ok, error };
+  }
+
+  private appendFsWriteReview(
+    lane: HarnessLane,
+    requestId: number,
+    path: string,
+    oldText: string,
+    newText: string,
+  ): void {
+    this.sealStreaming(lane);
+    const item = this.appendTranscript(lane, 'fs_write_review', '');
+    item.fsReview = { requestId, path, oldText, newText };
+    if (lane.acceptAllForTurn || lane.rejectAllForTurn) {
+      void this.resolveFsWriteReview(lane, item.id, lane.rejectAllForTurn ? 'rejected' : 'accepted', true);
+    }
+  }
+
+  private async resolveFsWriteReview(
+    lane: HarnessLane,
+    itemId: string,
+    decision: 'accepted' | 'rejected',
+    auto: boolean,
+  ): Promise<void> {
+    const item = lane.transcript.find((t) => t.id === itemId);
+    if (!item || !item.fsReview || item.fsReview.resolved) return;
+    if (!lane.client) return;
+    item.fsReview.resolved = decision;
+    this.render();
+    try {
+      await lane.client.respondFsWrite(item.fsReview.requestId, decision === 'accepted');
+    } catch (e) {
+      this.appendTranscript(lane, 'system', `fs_write reply failed: ${String(e)}`);
+    }
+    if (auto) {
+      // No-op; flag set externally for accept-all/reject-all bulk flows.
+    }
+    this.render();
+  }
+
+  private firstUnresolvedFsReview(lane: HarnessLane): HarnessTranscriptItem | null {
+    for (const item of lane.transcript) {
+      if (item.kind === 'fs_write_review' && item.fsReview && !item.fsReview.resolved) return item;
+    }
+    return null;
+  }
+
   private appendStreaming(lane: HarnessLane, kind: 'assistant' | 'thought', text: string): void {
     const currentId = kind === 'assistant' ? lane.currentAssistantId : lane.currentThoughtId;
     let item = currentId ? lane.transcript.find((entry) => entry.id === currentId) : null;
@@ -1510,6 +1666,19 @@ export class AcpHarnessView implements ContentView {
   private renderPlan(lane: HarnessLane, entries: PlanEntry[]): void {
     const text = entries.map((entry) => `${entry.status === 'completed' ? '[x]' : entry.status === 'in_progress' ? '[~]' : '[ ]'} ${entry.content}`).join('\n');
     this.appendTranscript(lane, 'plan', text);
+  }
+
+  private handleFsReviewKey(e: KeyboardEvent, lane: HarnessLane, item: HarnessTranscriptItem): boolean {
+    if (!item.fsReview) return false;
+    if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R' || e.key === 'Escape') {
+      e.preventDefault();
+      const reject = e.key === 'r' || e.key === 'R' || e.key === 'Escape';
+      if (e.key === 'A') lane.acceptAllForTurn = true;
+      if (e.key === 'R') lane.rejectAllForTurn = true;
+      void this.resolveFsWriteReview(lane, item.id, reject ? 'rejected' : 'accepted', e.key === 'A' || e.key === 'R');
+      return true;
+    }
+    return true;
   }
 
   private handlePermissionKey(e: KeyboardEvent, lane: HarnessLane): boolean {
@@ -1686,6 +1855,11 @@ export class AcpHarnessView implements ContentView {
     lane.draft = text;
     lane.cursor = Math.max(0, Math.min(cursor, text.length));
     this.focus = 'text';
+    // Reset the palette's transient state on every draft change. Index returns to
+    // the top of the (re-)filtered list; an Esc-dismiss only suppresses the palette
+    // until the user types again.
+    lane.slashPaletteIndex = 0;
+    lane.slashPaletteDismissed = false;
     this.renderComposer();
   }
 
@@ -1962,6 +2136,14 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   } else if (item.kind === 'permission' && item.permission) {
     body.classList.add('acp-harness__perm');
     renderPermissionBody(body, item.permission);
+  } else if (item.kind === 'fs_activity' && item.fsActivity) {
+    body.classList.add('acp-harness__fs-activity');
+    if (!item.fsActivity.ok) body.classList.add('acp-harness__fs-activity--err');
+    renderFsActivityBody(body, item.fsActivity);
+  } else if (item.kind === 'fs_write_review' && item.fsReview) {
+    body.classList.add('acp-harness__fs-review');
+    if (item.fsReview.resolved) body.classList.add('acp-harness__fs-review--resolved');
+    renderFsWriteReviewBody(body, item.fsReview);
   } else if (item.kind === 'user' && item.imageCount && item.imageCount > 0) {
     if (item.text) {
       const textEl = document.createElement('div');
@@ -1980,6 +2162,76 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   el.appendChild(label);
   el.appendChild(body);
   return el;
+}
+
+function renderFsActivityBody(body: HTMLElement, payload: FsActivityPayload): void {
+  const icon = document.createElement('span');
+  icon.className = 'acp-harness__fs-activity-icon';
+  icon.textContent = payload.ok ? (payload.method === 'read' ? '📖' : '✏️') : '✗';
+  body.appendChild(icon);
+
+  const verb = document.createElement('span');
+  verb.className = 'acp-harness__fs-activity-verb';
+  verb.textContent = payload.ok
+    ? (payload.method === 'read' ? 'read' : 'wrote')
+    : `${payload.method} failed`;
+  body.appendChild(verb);
+
+  const path = document.createElement('span');
+  path.className = 'acp-harness__fs-activity-path';
+  path.textContent = payload.path || '«empty»';
+  path.title = payload.path;
+  body.appendChild(path);
+
+  if (payload.error) {
+    const err = document.createElement('span');
+    err.className = 'acp-harness__fs-activity-error';
+    err.textContent = payload.error;
+    body.appendChild(err);
+  }
+}
+
+function renderFsWriteReviewBody(body: HTMLElement, payload: FsWriteReviewPayload): void {
+  const head = document.createElement('div');
+  head.className = 'acp-harness__fs-review-head';
+  const verb = document.createElement('span');
+  verb.className = 'acp-harness__fs-review-verb';
+  verb.textContent = '✏️ write';
+  head.appendChild(verb);
+  const path = document.createElement('span');
+  path.className = 'acp-harness__fs-review-path';
+  path.textContent = payload.path || '«empty»';
+  path.title = payload.path;
+  head.appendChild(path);
+  body.appendChild(head);
+
+  const diff = document.createElement('div');
+  diff.className = 'acp-harness__tool-diff';
+  diff.innerHTML = renderDiffPreview(payload.oldText, payload.newText, { cssPrefix: 'acp-harness' });
+  body.appendChild(diff);
+
+  if (payload.resolved) {
+    const stamp = document.createElement('div');
+    stamp.className = `acp-harness__fs-review-resolved acp-harness__fs-review-resolved--${payload.resolved}`;
+    stamp.textContent = payload.resolved === 'accepted' ? '✓ accepted' : '✗ rejected';
+    body.appendChild(stamp);
+  } else {
+    const actions = document.createElement('div');
+    actions.className = 'acp-harness__fs-review-actions';
+    const accept = document.createElement('span');
+    accept.className = 'acp-harness__fs-review-action acp-harness__fs-review-action--accept';
+    accept.textContent = '[a] accept';
+    actions.appendChild(accept);
+    const reject = document.createElement('span');
+    reject.className = 'acp-harness__fs-review-action acp-harness__fs-review-action--reject';
+    reject.textContent = '[r] reject';
+    actions.appendChild(reject);
+    const acceptAll = document.createElement('span');
+    acceptAll.className = 'acp-harness__fs-review-action acp-harness__fs-review-action--accept-all';
+    acceptAll.textContent = '[A] accept all';
+    actions.appendChild(acceptAll);
+    body.appendChild(actions);
+  }
 }
 
 function renderPermissionBody(body: HTMLElement, perm: PermissionPayload): void {
@@ -2011,7 +2263,7 @@ function renderImageAttachmentChip(count: number): HTMLElement {
 }
 
 function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
-  return kind !== 'assistant' && kind !== 'tool';
+  return kind !== 'assistant' && kind !== 'tool' && kind !== 'fs_activity' && kind !== 'fs_write_review';
 }
 
 function buildToolPayload(call: ToolCall | ToolCallUpdate, status: string): ToolPayload {
@@ -2027,7 +2279,22 @@ function buildToolPayload(call: ToolCall | ToolCallUpdate, status: string): Tool
     .map((s) => ({ label: s.label, text: boundedOutputLines(s.text, 6) }))
     .filter((s) => s.text)
     .slice(0, 4);
-  return { glyph: statusGlyph(status), status, kind, subject, result, sections: trimmed };
+  const diffs = extractToolDiffs(call.content);
+  return { glyph: statusGlyph(status), status, kind, subject, result, sections: trimmed, diffs };
+}
+
+function extractToolDiffs(content: ToolCall['content']): Array<{ path: string; oldText: string; newText: string }> {
+  const out: Array<{ path: string; oldText: string; newText: string }> = [];
+  for (const item of content ?? []) {
+    if (item.type === 'diff' && (item.newText !== undefined || item.oldText !== undefined)) {
+      out.push({
+        path: item.path ?? '',
+        oldText: item.oldText ?? '',
+        newText: item.newText ?? '',
+      });
+    }
+  }
+  return out;
 }
 
 function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
@@ -2072,6 +2339,25 @@ function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
       output.appendChild(block);
     }
     body.appendChild(output);
+  }
+  if (tool.diffs.length > 0) {
+    const wrap = document.createElement('div');
+    wrap.className = 'acp-harness__tool-diffs';
+    for (const d of tool.diffs) {
+      const block = document.createElement('div');
+      block.className = 'acp-harness__tool-diff';
+      if (d.path) {
+        const path = document.createElement('div');
+        path.className = 'acp-harness__tool-diff-path';
+        path.textContent = d.path;
+        block.appendChild(path);
+      }
+      const inner = document.createElement('div');
+      inner.innerHTML = renderDiffPreview(d.oldText, d.newText, { cssPrefix: 'acp-harness' });
+      block.appendChild(inner);
+      wrap.appendChild(block);
+    }
+    body.appendChild(wrap);
   }
 }
 
@@ -2123,12 +2409,14 @@ function findModelName(value: unknown, depth = 0): string | null {
 function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneStats | null): string {
   const mcpChip = renderMcpChip(mcp);
   const modelChip = renderModelChip(lane.modelName);
+  const modeChip = renderModeChip(lane);
   const sandboxChip = renderSandboxChip(lane);
   if (!active) {
     return (
       `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
       `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
       modelChip +
+      modeChip +
       mcpChip +
       sandboxChip +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
@@ -2142,11 +2430,20 @@ function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneS
     `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
     modelChip +
+    modeChip +
     mcpChip +
     sandboxChip +
     `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>` +
     cancelHint
   );
+}
+
+function renderModeChip(lane: HarnessLane): string {
+  if (!lane.currentMode) return '';
+  const title = lane.currentMode.description
+    ? `${lane.currentMode.name} — ${lane.currentMode.description}`
+    : `mode ${lane.currentMode.id}`;
+  return `<span class="acp-harness__lane-mode" title="${esc(title)}">${esc(lane.currentMode.name)}</span>`;
 }
 
 function renderSandboxChip(lane: HarnessLane): string {
@@ -2172,6 +2469,48 @@ function renderMcpChip(mcp: HarnessMcpLaneStats | null): string {
   const title = `tools/list ${mcp.toolsListCount} · tools/call ${mcp.toolsCallCount}` +
     (mcp.lastMethod ? ` · last ${mcp.lastMethod}` : '');
   return `<span class="acp-harness__lane-mcp acp-harness__lane-mcp--on" title="${esc(title)}">mcp ✓${mcp.toolsCallCount > 0 ? ` ${mcp.toolsCallCount}` : ''}</span>`;
+}
+
+const SLASH_PALETTE_REGEX = /^\/[a-zA-Z0-9_-]*$/;
+
+function slashPaletteVisible(lane: HarnessLane): boolean {
+  if (lane.slashPaletteDismissed) return false;
+  if (lane.availableCommands.length === 0) return false;
+  return SLASH_PALETTE_REGEX.test(lane.draft);
+}
+
+function filteredSlashCommands(lane: HarnessLane): AcpAvailableCommand[] {
+  const match = lane.draft.match(SLASH_PALETTE_REGEX);
+  if (!match) return [];
+  const prefix = lane.draft.slice(1).toLowerCase();
+  return lane.availableCommands.filter((c) => c.name.toLowerCase().startsWith(prefix));
+}
+
+function renderSlashPalette(lane: HarnessLane): string {
+  if (!slashPaletteVisible(lane)) return '';
+  const matches = filteredSlashCommands(lane);
+  if (matches.length === 0) return '';
+  const safeIndex = Math.max(0, Math.min(lane.slashPaletteIndex, matches.length - 1));
+  const rows = matches
+    .map((cmd, i) => {
+      const sel = i === safeIndex ? ' acp-harness__slash-palette-row--selected' : '';
+      const desc = cmd.description ? `<span class="acp-harness__slash-palette-desc">${esc(cmd.description)}</span>` : '';
+      const hint = cmd.inputHint ? `<span class="acp-harness__slash-palette-hint">${esc(cmd.inputHint)}</span>` : '';
+      return (
+        `<div class="acp-harness__slash-palette-row${sel}">` +
+        `<span class="acp-harness__slash-palette-name">/${esc(cmd.name)}</span>` +
+        hint +
+        desc +
+        `</div>`
+      );
+    })
+    .join('');
+  return (
+    `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
+    `<div class="acp-harness__slash-palette-meta">↑↓ select · Enter/Tab insert · Esc dismiss</div>` +
+    rows +
+    `</div>`
+  );
 }
 
 function laneAccent(index: number): string {
@@ -2251,6 +2590,7 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'permission': return 'perm';
     case 'memory': return 'mem';
     case 'shell': return 'sh';
+    case 'fs_activity': return 'fs';
     default: return kind;
   }
 }
@@ -2400,7 +2740,7 @@ function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: str
 function contentOutputSections(content: ToolCall['content']): Array<{ label: string; text: string }> {
   const sections: Array<{ label: string; text: string }> = [];
   for (const item of content ?? []) {
-    if (item.type === 'diff' && item.path) sections.push({ label: 'diff', text: item.path });
+    // 'diff' items are rendered by extractToolDiffs/renderToolBody as HTML blocks.
     if (item.type === 'terminal' && item.terminalId) sections.push({ label: 'terminal', text: item.terminalId });
     if (item.type === 'content' && item.content) {
       const text = contentBlockText(item.content);

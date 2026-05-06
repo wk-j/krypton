@@ -105,7 +105,7 @@
 .acp-harness__lane-head {
   height: 28px;
   display: grid;
-  grid-template-columns: 2ch minmax(10ch, 18ch) auto auto auto auto minmax(0, 1fr) auto;
+  grid-template-columns: 2ch minmax(10ch, 18ch) auto auto auto auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
@@ -159,8 +159,24 @@
   white-space: nowrap;
 }
 
+.acp-harness__lane-mode {
+  grid-column: 5;
+  justify-self: start;
+  padding: 0 5px;
+  border: 1px solid color-mix(in oklab, #c77dff 35%, transparent);
+  border-radius: 2px;
+  color: color-mix(in oklab, #c77dff 88%, white 12%);
+  font-size: 0.66em;
+  letter-spacing: 0.04em;
+  text-shadow: none;
+  white-space: nowrap;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .acp-harness__lane-sandbox {
-  grid-column: 6;
+  grid-column: 7;
   flex: 0 0 auto;
   justify-self: start;
   padding: 0 5px;
@@ -174,7 +190,7 @@
 }
 
 .acp-harness__lane-activity {
-  grid-column: 7;
+  grid-column: 8;
   color: rgba(216, 232, 216, 0.48);
   font-size: 0.82em;
   overflow: hidden;
@@ -182,7 +198,7 @@
 }
 
 .acp-harness__lane-mcp {
-  grid-column: 5;
+  grid-column: 6;
   flex: 0 0 auto;
   justify-self: start;
   padding: 0 5px;
@@ -202,7 +218,7 @@
 }
 
 .acp-harness__lane-cancel-hint {
-  grid-column: 8;
+  grid-column: 9;
   flex: 0 0 auto;
   justify-self: start;
   margin-left: 0.6em;
@@ -1301,3 +1317,310 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Spec 87 — slash command palette */
+.acp-harness__slash-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 6px;
+  padding: 4px 0;
+  background: color-mix(in srgb, var(--krypton-bg-elev, #0c1018) 92%, black);
+  border: 1px solid color-mix(in oklab, #c77dff 30%, transparent);
+  border-radius: 3px;
+  font-size: 0.78em;
+}
+
+.acp-harness__slash-palette-meta {
+  padding: 2px 8px;
+  color: rgba(216, 232, 216, 0.42);
+  font-size: 0.78em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.acp-harness__slash-palette-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 8px;
+  color: rgba(216, 232, 216, 0.78);
+}
+
+.acp-harness__slash-palette-row--selected {
+  background: color-mix(in oklab, #c77dff 22%, transparent);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.acp-harness__slash-palette-name {
+  flex: 0 0 auto;
+  color: color-mix(in oklab, #c77dff 80%, white 20%);
+  font-weight: 600;
+}
+
+.acp-harness__slash-palette-hint {
+  flex: 0 0 auto;
+  color: rgba(216, 232, 216, 0.46);
+  font-style: italic;
+}
+
+.acp-harness__slash-palette-desc {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(216, 232, 216, 0.6);
+  max-width: 60ch;
+}
+
+/* Spec 88 — fs activity chip */
+.acp-harness__fs-activity {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.85em;
+  color: rgba(216, 232, 216, 0.62);
+}
+
+.acp-harness__fs-activity--err {
+  color: #ff8b8b;
+}
+
+.acp-harness__fs-activity-icon {
+  flex: 0 0 auto;
+}
+
+.acp-harness__fs-activity-verb {
+  flex: 0 0 auto;
+  width: 6ch;
+  display: inline-block;
+  color: rgba(216, 232, 216, 0.5);
+}
+
+.acp-harness__fs-activity--err .acp-harness__fs-activity-verb {
+  color: #ff8b8b;
+}
+
+.acp-harness__fs-activity-path {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-harness__fs-activity-error {
+  flex: 0 0 auto;
+  color: #ff8b8b;
+  font-style: italic;
+}
+
+/* Spec 87 — slash command palette */
+.acp-harness__slash-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 6px;
+  padding: 4px 0;
+  background: color-mix(in srgb, var(--krypton-bg-elev, #0c1018) 92%, black);
+  border: 1px solid color-mix(in oklab, #c77dff 30%, transparent);
+  border-radius: 3px;
+  font-size: 0.78em;
+}
+
+.acp-harness__slash-palette-meta {
+  padding: 2px 8px;
+  color: rgba(216, 232, 216, 0.42);
+  font-size: 0.78em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.acp-harness__slash-palette-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 8px;
+  color: rgba(216, 232, 216, 0.78);
+}
+
+.acp-harness__slash-palette-row--selected {
+  background: color-mix(in oklab, #c77dff 22%, transparent);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.acp-harness__slash-palette-name {
+  flex: 0 0 auto;
+  color: color-mix(in oklab, #c77dff 80%, white 20%);
+  font-weight: 600;
+}
+
+.acp-harness__slash-palette-hint {
+  flex: 0 0 auto;
+  color: rgba(216, 232, 216, 0.46);
+  font-style: italic;
+}
+
+.acp-harness__slash-palette-desc {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(216, 232, 216, 0.6);
+  max-width: 60ch;
+}
+
+/* Spec 88 — fs activity chip */
+.acp-harness__fs-activity {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.85em;
+  color: rgba(216, 232, 216, 0.62);
+}
+
+.acp-harness__fs-activity--err {
+  color: #ff8b8b;
+}
+
+.acp-harness__fs-activity-icon {
+  flex: 0 0 auto;
+}
+
+.acp-harness__fs-activity-verb {
+  flex: 0 0 auto;
+  width: 6ch;
+  display: inline-block;
+  color: rgba(216, 232, 216, 0.5);
+}
+
+.acp-harness__fs-activity--err .acp-harness__fs-activity-verb {
+  color: #ff8b8b;
+}
+
+.acp-harness__fs-activity-path {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-harness__fs-activity-error {
+  flex: 0 0 auto;
+  color: #ff8b8b;
+  font-style: italic;
+}
+
+/* Spec 89 — diff preview (tool_call.content[].diff and fs_write_review) */
+.acp-harness__tool-diffs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.acp-harness__tool-diff {
+  border: 1px solid rgba(216, 232, 216, 0.08);
+  border-radius: 4px;
+  padding: 4px 0;
+  background: rgba(0, 0, 0, 0.18);
+  overflow: auto;
+}
+.acp-harness__tool-diff-path {
+  padding: 2px 8px 4px;
+  font-family: var(--agent-font, monospace);
+  font-size: 0.92em;
+  color: rgba(216, 232, 216, 0.5);
+  border-bottom: 1px solid rgba(216, 232, 216, 0.06);
+  margin-bottom: 4px;
+}
+.acp-harness__tool-body--diff {
+  font-family: var(--agent-font, monospace);
+  font-size: 0.92em;
+  line-height: 1.4;
+}
+.acp-harness__diff-line {
+  display: grid;
+  grid-template-columns: 4ch 4ch 2ch minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: baseline;
+  min-width: max-content;
+  padding: 0 6px;
+  white-space: pre;
+}
+.acp-harness__diff-line--add {
+  color: #8effb0;
+  background: rgba(142, 255, 176, 0.05);
+}
+.acp-harness__diff-line--del {
+  color: #ff8b8b;
+  background: rgba(255, 109, 138, 0.06);
+}
+.acp-harness__diff-line--ctx { opacity: 0.55; }
+.acp-harness__diff-line--hunk {
+  color: rgba(216, 232, 216, 0.38);
+  background: rgba(216, 232, 216, 0.03);
+}
+.acp-harness__diff-num {
+  color: rgba(216, 232, 216, 0.28);
+  text-align: right;
+  user-select: none;
+}
+.acp-harness__diff-mark {
+  text-align: center;
+  user-select: none;
+}
+.acp-harness__diff-text {
+  min-width: 0;
+}
+.acp-harness__tool-meta {
+  padding: 4px 8px;
+  font-size: 0.92em;
+  color: rgba(216, 232, 216, 0.45);
+  font-style: italic;
+}
+.acp-harness__tool-more {
+  display: block;
+  padding: 4px 8px;
+  font-size: 0.88em;
+  color: rgba(216, 232, 216, 0.4);
+  font-style: italic;
+}
+
+/* Spec 89 — fs/write_text_file gated review card */
+.acp-harness__fs-review {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.acp-harness__fs-review-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.85em;
+  color: rgba(216, 232, 216, 0.85);
+}
+.acp-harness__fs-review-verb {
+  color: rgba(216, 232, 216, 0.5);
+}
+.acp-harness__fs-review-path {
+  color: rgba(216, 232, 216, 0.85);
+}
+.acp-harness__fs-review-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.82em;
+}
+.acp-harness__fs-review-action--accept { color: #8effb0; }
+.acp-harness__fs-review-action--reject { color: #ff8b8b; }
+.acp-harness__fs-review-action--accept-all { color: rgba(142, 255, 176, 0.55); }
+.acp-harness__fs-review--resolved { opacity: 0.6; }
+.acp-harness__fs-review-resolved {
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.82em;
+}
+.acp-harness__fs-review-resolved--accepted { color: #8effb0; }
+.acp-harness__fs-review-resolved--rejected { color: #ff8b8b; }

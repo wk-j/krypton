@@ -7,6 +7,7 @@ import { type UnlistenFn } from '@tauri-apps/api/event';
 
 import { setupListener } from '../util/listener';
 import type {
+  AcpAvailableCommand,
   AcpBackendDescriptor,
   AcpMcpServerDescriptor,
   AcpEvent,
@@ -21,7 +22,7 @@ import type {
 } from './types';
 
 interface RawAcpEvent {
-  type: 'session_update' | 'permission_request' | 'stop' | 'error';
+  type: 'session_update' | 'permission_request' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending';
   // session_update:
   kind?: string;
   update?: {
@@ -40,6 +41,14 @@ interface RawAcpEvent {
   stopReason?: StopReason;
   // error:
   message?: string;
+  // fs_activity:
+  method?: 'read' | 'write';
+  path?: string;
+  ok?: boolean;
+  error?: string;
+  // fs_write_pending:
+  oldText?: string;
+  newText?: string;
 }
 
 export class AcpClient {
@@ -146,6 +155,14 @@ export class AcpClient {
     });
   }
 
+  async respondFsWrite(requestId: number, accept: boolean): Promise<void> {
+    await invoke('acp_fs_write_response', {
+      session: this.session,
+      requestId,
+      accept,
+    });
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
@@ -203,7 +220,47 @@ export class AcpClient {
             event = { type: 'usage', usage };
             break;
           }
+          case 'available_commands_update': {
+            const raw = (update.availableCommands as Array<Record<string, unknown>> | undefined) ?? [];
+            const commands: AcpAvailableCommand[] = raw
+              .map((c) => {
+                const input = c.input as { hint?: string } | undefined;
+                return {
+                  name: typeof c.name === 'string' ? c.name : '',
+                  description: typeof c.description === 'string' ? c.description : undefined,
+                  inputHint: typeof input?.hint === 'string' ? input.hint : undefined,
+                };
+              })
+              .filter((c) => c.name.length > 0);
+            event = { type: 'available_commands', commands };
+            break;
+          }
+          case 'current_mode_update': {
+            const modeId = typeof update.currentModeId === 'string' ? update.currentModeId : '';
+            event = { type: 'mode_update', modeId };
+            break;
+          }
         }
+        break;
+      }
+      case 'fs_activity': {
+        event = {
+          type: 'fs_activity',
+          method: raw.method === 'write' ? 'write' : 'read',
+          path: typeof raw.path === 'string' ? raw.path : '',
+          ok: Boolean(raw.ok),
+          error: typeof raw.error === 'string' ? raw.error : undefined,
+        };
+        break;
+      }
+      case 'fs_write_pending': {
+        event = {
+          type: 'fs_write_pending',
+          requestId: raw.requestId ?? 0,
+          path: typeof raw.path === 'string' ? raw.path : '',
+          oldText: typeof raw.oldText === 'string' ? raw.oldText : '',
+          newText: typeof raw.newText === 'string' ? raw.newText : '',
+        };
         break;
       }
       case 'permission_request': {

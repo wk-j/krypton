@@ -7,9 +7,10 @@ import { markedHighlight } from 'marked-highlight';
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
-import { createPatch, diffLines } from 'diff';
+import { createPatch } from 'diff';
 import { invoke } from '../profiler/ipc';
 import { AcpClient } from './client';
+import { renderDiffPreview as sharedRenderDiffPreview, countDiff as sharedCountDiff } from './diff-render';
 import type {
   AcpEvent,
   ContentBlock,
@@ -1324,13 +1325,7 @@ function extractDiff(content: ToolCallContent[] | undefined): { path: string; ol
 }
 
 function countDiff(oldText: string, newText: string): { added: number; removed: number } {
-  let added = 0;
-  let removed = 0;
-  for (const part of diffLines(oldText, newText)) {
-    if (part.added) added += part.count ?? 0;
-    else if (part.removed) removed += part.count ?? 0;
-  }
-  return { added, removed };
+  return sharedCountDiff(oldText, newText);
 }
 
 function unifiedDiff(path: string, oldText: string, newText: string): string {
@@ -1411,100 +1406,7 @@ function stringifyToolValue(value: unknown): string {
 }
 
 function renderDiffPreview(oldText: string, newText: string): string {
-  const CONTEXT = 2;
-  const parts = diffLines(oldText, newText);
-
-  // Expand into per-line tagged entries: 'add' | 'del' | 'ctx'
-  type Row = { kind: 'add' | 'del' | 'ctx'; text: string; oldLine: number | null; newLine: number | null };
-  const rows: Row[] = [];
-  let oldLine = 1;
-  let newLine = 1;
-  for (const p of parts) {
-    const lines = stripTrailingNewline(p.value).split('\n');
-    const kind: Row['kind'] = p.added ? 'add' : p.removed ? 'del' : 'ctx';
-    for (const text of lines) {
-      if (kind === 'add') {
-        rows.push({ kind, text, oldLine: null, newLine });
-        newLine++;
-      } else if (kind === 'del') {
-        rows.push({ kind, text, oldLine, newLine: null });
-        oldLine++;
-      } else {
-        rows.push({ kind, text, oldLine, newLine });
-        oldLine++;
-        newLine++;
-      }
-    }
-  }
-
-  // Mark which context rows to keep (within CONTEXT of any change)
-  const keep = new Array<boolean>(rows.length).fill(false);
-  for (let i = 0; i < rows.length; i++) {
-    if (rows[i].kind !== 'ctx') {
-      for (let j = Math.max(0, i - CONTEXT); j <= Math.min(rows.length - 1, i + CONTEXT); j++) keep[j] = true;
-    }
-  }
-
-  // Walk through, emitting kept rows. Insert a hunk separator on gaps. Cap total output.
-  const html: string[] = [];
-  let emitted = 0;
-  let truncated = false;
-  let inGap = false;
-  let firstHunk = true;
-  for (let i = 0; i < rows.length; i++) {
-    if (!keep[i]) {
-      inGap = true;
-      continue;
-    }
-    if (inGap && !firstHunk) html.push(renderDiffGap());
-    inGap = false;
-    firstHunk = false;
-    if (emitted >= TOOL_DIFF_LINE_CAP) {
-      truncated = true;
-      break;
-    }
-    html.push(renderDiffRow(rows[i]));
-    emitted++;
-  }
-
-  if (html.length === 0) {
-    html.push('<div class="acp-view__tool-meta">no textual changes</div>');
-  }
-
-  let keptCount = 0;
-  for (let i = 0; i < keep.length; i++) if (keep[i]) keptCount++;
-  const moreLines = keptCount - emitted;
-  if (truncated && moreLines > 0) {
-    html.push(`<div class="acp-view__tool-more">… ${moreLines} more line${moreLines === 1 ? '' : 's'} · [o] open full diff</div>`);
-  }
-  return `<div class="acp-view__tool-body acp-view__tool-body--diff">${html.join('')}</div>`;
-}
-
-function renderDiffGap(): string {
-  return (
-    '<div class="acp-view__diff-line acp-view__diff-line--hunk">' +
-      '<span class="acp-view__diff-num"></span>' +
-      '<span class="acp-view__diff-num"></span>' +
-      '<span class="acp-view__diff-mark">⋯</span>' +
-      '<span class="acp-view__diff-text">context omitted</span>' +
-    '</div>'
-  );
-}
-
-function renderDiffRow(row: { kind: 'add' | 'del' | 'ctx'; text: string; oldLine: number | null; newLine: number | null }): string {
-  const mark = row.kind === 'add' ? '+' : row.kind === 'del' ? '−' : ' ';
-  return (
-    `<div class="acp-view__diff-line acp-view__diff-line--${row.kind}">` +
-      `<span class="acp-view__diff-num">${row.oldLine ?? ''}</span>` +
-      `<span class="acp-view__diff-num">${row.newLine ?? ''}</span>` +
-      `<span class="acp-view__diff-mark">${mark}</span>` +
-      `<span class="acp-view__diff-text">${esc(row.text)}</span>` +
-    `</div>`
-  );
-}
-
-function stripTrailingNewline(s: string): string {
-  return s.endsWith('\n') ? s.slice(0, -1) : s;
+  return sharedRenderDiffPreview(oldText, newText, { lineCap: TOOL_DIFF_LINE_CAP, cssPrefix: 'acp-view' });
 }
 
 function keyForPermissionKind(kind: PermissionOption['kind']): string {

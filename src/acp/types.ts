@@ -153,6 +153,18 @@ export interface UsageInfo {
   cachedWriteTokens?: number;
 }
 
+export interface AcpAvailableCommand {
+  name: string;
+  description?: string;
+  inputHint?: string;
+}
+
+export interface AcpAgentMode {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export type AcpEvent =
   | { type: 'message_chunk'; text: string }
   | { type: 'thought_chunk'; text: string }
@@ -161,5 +173,9 @@ export type AcpEvent =
   | { type: 'plan'; entries: PlanEntry[] }
   | { type: 'permission_request'; requestId: number; toolCall: ToolCall; options: PermissionOption[] }
   | { type: 'usage'; usage: UsageInfo }
+  | { type: 'available_commands'; commands: AcpAvailableCommand[] }
+  | { type: 'mode_update'; modeId: string }
+  | { type: 'fs_activity'; method: 'read' | 'write'; path: string; ok: boolean; error?: string }
+  | { type: 'fs_write_pending'; requestId: number; path: string; oldText: string; newText: string }
   | { type: 'stop'; stopReason: StopReason }
   | { type: 'error'; message: string };

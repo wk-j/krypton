@@ -141,6 +141,8 @@ struct AcpClient {
     stdin: Mutex<Option<ChildStdin>>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
     perm_pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
+    /// fs/write_text_file requests parked while waiting for user accept/reject.
+    fs_write_pending: Mutex<HashMap<u64, FsWriteCtx>>,
     next_id: AtomicU64,
     /// Set after `initialize` completes. Notification before this point is rare.
     agent_capabilities: RwLock<Option<Value>>,
@@ -173,6 +175,7 @@ impl AcpClient {
             stdin: Mutex::new(None),
             pending: Mutex::new(HashMap::new()),
             perm_pending: Mutex::new(HashMap::new()),
+            fs_write_pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             agent_capabilities: RwLock::new(None),
             acp_session_id: RwLock::new(None),
@@ -366,6 +369,81 @@ async fn dispatch_message(client: &Arc<AcpClient>, app: &AppHandle, value: Value
     );
 }
 
+/// Reject fs/* requests that escape the lane's project root. When `cwd` is unset
+/// (rare — fallback session), we pass through without enforcement.
+async fn validate_fs_path(client: &Arc<AcpClient>, raw_path: &str) -> Result<(), Value> {
+    if raw_path.is_empty() {
+        return Err(json!({ "code": -32602, "message": "Empty path" }));
+    }
+    let cwd_opt = match client.cwd.read() {
+        Ok(g) => g.clone(),
+        Err(_) => return Ok(()),
+    };
+    let Some(cwd) = cwd_opt else {
+        return Ok(());
+    };
+    let root = match std::fs::canonicalize(&cwd) {
+        Ok(p) => p,
+        Err(_) => return Ok(()),
+    };
+    let candidate = std::path::PathBuf::from(raw_path);
+    let abs = if candidate.is_absolute() {
+        candidate
+    } else {
+        root.join(&candidate)
+    };
+    // Canonicalize the deepest existing ancestor to resolve symlinks / normalize.
+    let mut probe = abs.clone();
+    let resolved = loop {
+        match std::fs::canonicalize(&probe) {
+            Ok(p) => {
+                let suffix = abs.strip_prefix(&probe).unwrap_or(std::path::Path::new(""));
+                break p.join(suffix);
+            }
+            Err(_) => match probe.parent() {
+                Some(parent) => probe = parent.to_path_buf(),
+                None => break abs.clone(),
+            },
+        }
+    };
+    if !resolved.starts_with(&root) {
+        return Err(json!({
+            "code": -32602,
+            "message": format!("Path outside project root: {}", raw_path),
+        }));
+    }
+    Ok(())
+}
+
+/// Context held while a fs/write_text_file request waits for the user's decision.
+struct FsWriteCtx {
+    reply: oneshot::Sender<Result<Value, Value>>,
+    path: String,
+    new_content: String,
+}
+
+fn emit_fs_activity(
+    client: &Arc<AcpClient>,
+    app: &AppHandle,
+    method: &str,
+    path: &str,
+    ok: bool,
+    error: Option<&str>,
+) {
+    let mut payload = json!({
+        "type": "fs_activity",
+        "method": method,
+        "path": path,
+        "ok": ok,
+    });
+    if let Some(msg) = error {
+        if let Some(map) = payload.as_object_mut() {
+            map.insert("error".to_string(), json!(msg));
+        }
+    }
+    client.emit_event(app, payload);
+}
+
 async fn handle_inbound_request(
     client: Arc<AcpClient>,
     app: AppHandle,
@@ -380,13 +458,31 @@ async fn handle_inbound_request(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            if let Err(err) = validate_fs_path(&client, &path).await {
+                let msg = err
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("path scope")
+                    .to_string();
+                emit_fs_activity(&client, &app, "read", &path, false, Some(&msg));
+                let _ = client.reply(id, Err(err)).await;
+                return;
+            }
             let result = match std::fs::read_to_string(&path) {
-                Ok(content) => Ok(json!({ "content": content })),
+                Ok(content) => {
+                    emit_fs_activity(&client, &app, "read", &path, true, None);
+                    Ok(json!({ "content": content }))
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     log::debug!("[acp] fs/read_text_file: {path} not found, returning empty");
+                    // NotFound returns empty content per existing behavior; surface
+                    // it as a successful read so users still see the access attempt.
+                    emit_fs_activity(&client, &app, "read", &path, true, None);
                     Ok(json!({ "content": "" }))
                 }
                 Err(e) => {
+                    let msg = format!("{e}");
+                    emit_fs_activity(&client, &app, "read", &path, false, Some(&msg));
                     Err(json!({ "code": -32000, "message": format!("fs/read_text_file: {e}") }))
                 }
             };
@@ -403,15 +499,61 @@ async fn handle_inbound_request(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let result: Result<Value, Value> = (|| {
-                if let Some(parent) = std::path::Path::new(&path).parent() {
-                    std::fs::create_dir_all(parent)
-                        .map_err(|e| json!({"code": -32000, "message": format!("mkdir: {e}")}))?;
+            // Path scoping (Spec 89 Phase C): reject paths outside the lane's project root.
+            if let Err(err) = validate_fs_path(&client, &path).await {
+                let msg = err
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("path scope")
+                    .to_string();
+                emit_fs_activity(&client, &app, "write", &path, false, Some(&msg));
+                let _ = client.reply(id, Err(err)).await;
+                return;
+            }
+            // Compute oldText against current disk content for the diff preview.
+            let old_text = std::fs::read_to_string(&path).unwrap_or_default();
+            let request_id = id.as_u64().unwrap_or(0);
+            let (tx, rx) = oneshot::channel::<Result<Value, Value>>();
+            {
+                let mut pending = client.fs_write_pending.lock().await;
+                pending.insert(
+                    request_id,
+                    FsWriteCtx {
+                        reply: tx,
+                        path: path.clone(),
+                        new_content: content.clone(),
+                    },
+                );
+            }
+            client.emit_event(
+                &app,
+                json!({
+                    "type": "fs_write_pending",
+                    "requestId": request_id,
+                    "path": path,
+                    "oldText": old_text,
+                    "newText": content,
+                }),
+            );
+            // Wait for frontend decision via acp_fs_write_response.
+            let outcome = rx.await;
+            let result: Result<Value, Value> = match outcome {
+                Ok(decision) => decision,
+                Err(_) => Err(
+                    json!({ "code": -32000, "message": "fs/write_text_file: decision channel dropped" }),
+                ),
+            };
+            match &result {
+                Ok(_) => emit_fs_activity(&client, &app, "write", &path, true, None),
+                Err(err) => {
+                    let msg = err
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "write failed".to_string());
+                    emit_fs_activity(&client, &app, "write", &path, false, Some(&msg));
                 }
-                std::fs::write(&path, content)
-                    .map_err(|e| json!({"code": -32000, "message": format!("write: {e}")}))?;
-                Ok(json!({}))
-            })();
+            }
             let _ = client.reply(id, result).await;
         }
         "session/request_permission" => {
@@ -512,6 +654,10 @@ async fn finalize_disconnect(client: &Arc<AcpClient>, app: &AppHandle) {
         let mut perm = client.perm_pending.lock().await;
         perm.clear();
     }
+    {
+        let mut writes = client.fs_write_pending.lock().await;
+        writes.clear();
+    }
     if !client.disposed.load(Ordering::Relaxed) {
         client.emit_event(
             app,
@@ -579,6 +725,16 @@ impl AcpRegistry {
 
     fn remove(&self, session: u64) -> Option<Arc<AcpClient>> {
         self.clients.write().ok()?.remove(&session)
+    }
+
+    /// Drain all sessions and return them. Used on app shutdown to ensure
+    /// every spawned adapter (and its MCP grandchildren via process-group
+    /// signal) is torn down rather than reparented to launchd.
+    fn drain(&self) -> Vec<(u64, Arc<AcpClient>)> {
+        match self.clients.write() {
+            Ok(mut map) => map.drain().collect(),
+            Err(_) => Vec::new(),
+        }
     }
 }
 
@@ -648,6 +804,12 @@ pub async fn acp_spawn(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // Put the adapter into its own process group so we can signal the entire
+    // tree (adapter + grandchild MCP servers) at once on dispose. Without this
+    // the MCP servers it spawns get reparented to launchd if the adapter dies
+    // ungracefully, leaving zombies. See acp_dispose.
+    #[cfg(unix)]
+    cmd.process_group(0);
     if let Some(d) = cwd.as_ref() {
         cmd.current_dir(d);
     }
@@ -947,6 +1109,43 @@ pub async fn acp_permission_response(
 }
 
 #[tauri::command]
+pub async fn acp_fs_write_response(
+    session: u64,
+    request_id: u64,
+    accept: bool,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<(), String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    let ctx = {
+        let mut pending = client.fs_write_pending.lock().await;
+        pending.remove(&request_id)
+    };
+    let Some(ctx) = ctx else {
+        return Ok(());
+    };
+    let outcome: Result<Value, Value> = if accept {
+        if let Some(parent) = std::path::Path::new(&ctx.path).parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                let _ = ctx.reply.send(Err(
+                    json!({ "code": -32000, "message": format!("mkdir: {e}") }),
+                ));
+                return Ok(());
+            }
+        }
+        match std::fs::write(&ctx.path, &ctx.new_content) {
+            Ok(_) => Ok(json!({})),
+            Err(e) => Err(json!({ "code": -32000, "message": format!("write: {e}") })),
+        }
+    } else {
+        Err(json!({ "code": -32000, "message": "User rejected the write" }))
+    };
+    let _ = ctx.reply.send(outcome);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn acp_dispose(
     session: u64,
     registry: State<'_, Arc<AcpRegistry>>,
@@ -954,30 +1153,56 @@ pub async fn acp_dispose(
     let Some(client) = registry.remove(session) else {
         return Ok(());
     };
+    dispose_client(&client).await;
+    Ok(())
+}
+
+/// Drain every registered session and tear each one down. Used on app exit
+/// so adapters (and their MCP grandchildren via the process-group signal)
+/// don't get reparented to launchd.
+pub async fn dispose_all(registry: &AcpRegistry) {
+    let drained = registry.drain();
+    for (_session, client) in drained {
+        dispose_client(&client).await;
+    }
+}
+
+/// Tear down an `AcpClient`: signal its process group (adapter + MCP
+/// grandchildren) with SIGTERM, then SIGKILL on timeout. Used by both the
+/// per-session `acp_dispose` command and the app-shutdown drain.
+async fn dispose_client(client: &AcpClient) {
     client.disposed.store(true, Ordering::Relaxed);
     // Drop stdin to signal EOF.
     {
         let mut g = client.stdin.lock().await;
         *g = None;
     }
-    // Try graceful exit, then SIGKILL.
     let mut child_guard = client.child.lock().await;
     if let Some(mut child) = child_guard.take() {
         #[cfg(unix)]
         {
             if let Some(pid) = child.id() {
+                // Negative pid = signal whole process group (cleans up
+                // grandchildren like MCP servers spawned by the adapter).
                 unsafe {
-                    libc::kill(pid as i32, libc::SIGTERM);
+                    libc::kill(-(pid as i32), libc::SIGTERM);
                 }
             }
         }
         let wait_result = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
         if wait_result.is_err() {
+            #[cfg(unix)]
+            {
+                if let Some(pid) = child.id() {
+                    unsafe {
+                        libc::kill(-(pid as i32), libc::SIGKILL);
+                    }
+                }
+            }
             let _ = child.start_kill();
             let _ = child.wait().await;
         }
     }
-    Ok(())
 }
 
 // ─── Cross-lane MCP config bridge ──────────────────────────────────

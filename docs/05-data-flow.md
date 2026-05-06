@@ -175,6 +175,50 @@
 14. Closing the harness disposes every lane client, calls dispose_harness_memory(),
     and drops transcripts and file-touch warnings. Persistent memory stays on
     disk for the next harness session in this directory.
+15. Per-lane slash commands and mode chip:
+    a. After session/new the agent sends an available_commands_update; Rust
+       forwards it on acp-event-<session> with kind "available_commands_update".
+    b. The TS dispatcher (src/acp/client.ts) emits an `available_commands` event;
+       the harness stores it on `lane.availableCommands`. When the user's draft
+       starts with `/` and matches `^\/[a-zA-Z0-9_-]*$`, the composer renders a
+       palette popup filtered by the typed prefix.
+    c. ↑/↓ moves selection, Enter/Tab inserts `/<name> ` at the cursor, Esc
+       dismisses for the current draft.
+    d. current_mode_update follows the same path; modes are looked up against
+       agentCapabilities.availableModes captured during initialize, and the lane
+       head paints `renderModeChip()` between the model and MCP chips.
+16. fs/* activity surfacing:
+    a. When the agent calls fs/read_text_file or fs/write_text_file as an inbound
+       JSON-RPC request, src-tauri/src/acp.rs handles the I/O locally, then
+       calls emit_fs_activity() before replying.
+    b. emit_fs_activity emits an `fs_activity` payload on acp-event-<session>
+       with method/path/ok/error fields.
+    c. The TS dispatcher converts it into an `fs_activity` AcpEvent; the harness
+       appends a transcript item rendered as a `📖 read` / `✏️ wrote` /
+       `✗ failed` chip showing the path. NotFound reads still render as ok=true
+       (returning empty content matches existing wire semantics).
+17. fs/write_text_file gated review (Spec 89):
+    a. validate_fs_path(client, path) canonicalizes the requested path against
+       the lane's project root and rejects anything that escapes; the rejection
+       still emits an fs_activity error chip.
+    b. If the path passes scoping, the handler reads the current disk content
+       as oldText, parks a oneshot::Sender<Result<Value, Value>> in
+       fs_write_pending keyed by the JSON-RPC id, and emits an `fs_write_pending`
+       event { requestId, path, oldText, newText }.
+    c. The frontend appends a transcript item with kind 'fs_write_review';
+       renderFsWriteReviewBody renders the unified diff via the shared
+       renderDiffPreview helper plus an inline accept/reject action row.
+    d. User presses 'a' (accept), 'r' (reject), 'A' (accept-all-this-turn), or
+       'R' (reject-all-this-turn). The harness invokes acp_fs_write_response,
+       which pops the parked sender; accept performs std::fs::write and replies
+       Ok({}), reject replies an error with code -32000.
+    e. The Rust handler then emits fs_activity (success or rejection) so the
+       visibility log records the outcome.
+18. tool_call.content[].diff rendering (Spec 89):
+    Whenever a tool_call or tool_call_update arrives with a content entry of
+    type 'diff' (oldText + newText), buildToolPayload extracts it into
+    ToolPayload.diffs; renderToolBody emits the unified +/- diff via the shared
+    renderDiffPreview helper using the `acp-harness` CSS prefix.
 ```
 ## Resize Mode Flow (e.g., Leader then R)
 
