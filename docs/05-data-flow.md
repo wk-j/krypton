@@ -219,6 +219,21 @@
     type 'diff' (oldText + newText), buildToolPayload extracts it into
     ToolPayload.diffs; renderToolBody emits the unified +/- diff via the shared
     renderDiffPreview helper using the `acp-harness` CSS prefix.
+19. Plan tracking pinned panel (Spec 90):
+    a. session/update { sessionUpdate: 'plan' } already flows from Rust through
+       client.ts as an AcpEvent { type: 'plan', entries }.
+    b. The harness handler stores entries on lane.plan (replacing any prior
+       plan) and calls renderPlanPanel(lane). It does NOT append a transcript
+       item; the legacy inline `appendTranscript('plan', ...)` was removed.
+    c. renderPlanPanel paints into a single floating `.acp-harness__plan`
+       element mounted inside `.acp-harness__body` (top-right, z-index below
+       memory/help overlays). Header shows `// plan` + `done/total`; rows
+       render `[ ]/[~]/[x]` plus content with status colors and a left-border
+       priority accent.
+    d. render() calls renderPlanPanel(activeLane()) every pass so lane switch
+       repaints from the active lane's stored plan.
+    e. `p` in transcript focus toggles lane.planCollapsed. #restart, #new,
+       and #new! null lane.plan and reset planCollapsed.
 ```
 ## Resize Mode Flow (e.g., Leader then R)
 

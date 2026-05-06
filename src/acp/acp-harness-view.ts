@@ -52,7 +52,7 @@ interface HarnessPermission {
 
 interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review';
   text: string;
   imageCount?: number;
   status?: string;
@@ -149,6 +149,8 @@ interface HarnessLane {
   currentMode: AcpAgentMode | null;
   slashPaletteIndex: number;
   slashPaletteDismissed: boolean;
+  plan: PlanEntry[] | null;
+  planCollapsed: boolean;
 }
 
 const STICK_THRESHOLD_PX = 32;
@@ -196,6 +198,8 @@ const LANE_DEFAULTS = {
   currentMode: null,
   slashPaletteIndex: 0,
   slashPaletteDismissed: false,
+  plan: null,
+  planCollapsed: false,
 };
 
 const md = new Marked(
@@ -244,6 +248,7 @@ export class AcpHarnessView implements ContentView {
   private memoryOverlayEl!: HTMLElement;
   private memoryPanelEl!: HTMLElement;
   private helpOverlayEl!: HTMLElement;
+  private planEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private pretextRaf = false;
   private scrollRaf = false;
@@ -468,6 +473,12 @@ export class AcpHarnessView implements ContentView {
     this.helpOverlayEl.className = 'acp-harness__help-overlay';
     this.helpOverlayEl.hidden = true;
     body.appendChild(this.helpOverlayEl);
+
+    this.planEl = document.createElement('aside');
+    this.planEl.className = 'acp-harness__plan';
+    this.planEl.hidden = true;
+    body.appendChild(this.planEl);
+
     this.element.appendChild(body);
 
     const commandCenter = document.createElement('div');
@@ -1069,6 +1080,8 @@ export class AcpHarnessView implements ContentView {
     lane.rejectAllForTurn = false;
     lane.sessionId = null;
     lane.error = null;
+    lane.plan = null;
+    lane.planCollapsed = false;
     this.appendTranscript(lane, 'restart', '--- session restarted ---');
     await this.spawnLane(lane);
   }
@@ -1123,6 +1136,8 @@ export class AcpHarnessView implements ContentView {
     lane.stickToBottom = true;
     lane.pendingShellId = null;
     lane.activeTurnStartedAt = null;
+    lane.plan = null;
+    lane.planCollapsed = false;
     this.updateComposerTick();
     this.render();
     await this.spawnLane(lane);
@@ -1262,6 +1277,7 @@ export class AcpHarnessView implements ContentView {
     this.renderDashboard();
     this.renderMemory();
     this.renderHelp();
+    this.renderPlanPanel(this.activeLane());
     this.renderComposer();
     this.scheduleStickyScroll();
   }
@@ -1664,8 +1680,47 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderPlan(lane: HarnessLane, entries: PlanEntry[]): void {
-    const text = entries.map((entry) => `${entry.status === 'completed' ? '[x]' : entry.status === 'in_progress' ? '[~]' : '[ ]'} ${entry.content}`).join('\n');
-    this.appendTranscript(lane, 'plan', text);
+    lane.plan = entries;
+    this.renderPlanPanel(lane);
+  }
+
+  private renderPlanPanel(lane: HarnessLane | null): void {
+    if (!lane || !lane.plan || lane.plan.length === 0) {
+      this.planEl.hidden = true;
+      this.planEl.innerHTML = '';
+      return;
+    }
+    const entries = lane.plan;
+    const done = entries.filter((e) => e.status === 'completed').length;
+    const total = entries.length;
+    const collapsed = lane.planCollapsed;
+    const hint = collapsed ? 'p expand' : 'p collapse';
+    const header =
+      `<div class="acp-harness__plan-header">` +
+      `<span class="acp-harness__plan-title">// plan</span>` +
+      `<span class="acp-harness__plan-progress">${done}/${total} done</span>` +
+      `<span class="acp-harness__plan-hint">${hint}</span>` +
+      `</div>`;
+    const rows = entries
+      .map((entry) => {
+        const mark = entry.status === 'completed' ? '[x]' : entry.status === 'in_progress' ? '[~]' : '[ ]';
+        const cls =
+          `acp-harness__plan-entry acp-harness__plan-entry--${entry.status}` +
+          (entry.priority ? ` acp-harness__plan-entry--${entry.priority}` : '');
+        return (
+          `<div class="${cls}">` +
+          `<span class="acp-harness__plan-entry-mark">${mark}</span>` +
+          `<span class="acp-harness__plan-entry-text">${esc(entry.content)}</span>` +
+          `</div>`
+        );
+      })
+      .join('');
+    const entriesBlock = collapsed
+      ? ''
+      : `<div class="acp-harness__plan-entries">${rows}</div>`;
+    this.planEl.innerHTML = header + entriesBlock;
+    this.planEl.classList.toggle('acp-harness__plan--collapsed', collapsed);
+    this.planEl.hidden = false;
   }
 
   private handleFsReviewKey(e: KeyboardEvent, lane: HarnessLane, item: HarnessTranscriptItem): boolean {
@@ -1749,6 +1804,15 @@ export class AcpHarnessView implements ContentView {
     if (e.key === 'g') { e.preventDefault(); body.scrollTop = 0; return true; }
     if (e.key === 'G') { e.preventDefault(); body.scrollTop = body.scrollHeight; return true; }
     if (e.key === 'q') { e.preventDefault(); this.closeCb?.(); return true; }
+    if (e.key === 'p' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const lane = this.activeLane();
+      if (lane && lane.plan && lane.plan.length > 0) {
+        e.preventDefault();
+        lane.planCollapsed = !lane.planCollapsed;
+        this.renderPlanPanel(lane);
+        return true;
+      }
+    }
     if (e.key === 'Escape' || e.key === 'i') { e.preventDefault(); this.focus = 'text'; this.render(); return true; }
     if ((e.key === 'd' && e.ctrlKey) || e.key === 'PageDown') { e.preventDefault(); body.scrollBy({ top: body.clientHeight * 0.5, behavior: 'instant' }); return true; }
     if ((e.key === 'u' && e.ctrlKey) || e.key === 'PageUp') { e.preventDefault(); body.scrollBy({ top: -body.clientHeight * 0.5, behavior: 'instant' }); return true; }
