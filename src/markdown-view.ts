@@ -9,9 +9,13 @@ import { invoke } from './profiler/ipc';
 
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 
-import type { ContentView, PaneContentType } from './types';
+import type { ContentView, LeaderKeyBinding, LeaderKeySpec, PaneContentType } from './types';
 import type { MarkdownViewAI } from './markdown-view-ai';
 import type { MarkdownViewContext } from './markdown-view-ai';
+
+export const MARKDOWN_LEADER_KEYS: readonly LeaderKeySpec[] = [
+  { key: ';', label: 'Link Hints', group: 'Markdown', effect: 'important' },
+];
 
 /** List .md files in a directory, respecting .gitignore when possible. */
 export async function listMarkdownFiles(cwd: string): Promise<string[]> {
@@ -68,6 +72,14 @@ export class MarkdownContentView implements ContentView {
     return this.cwd;
   }
 
+  getLeaderKeyBindings(): LeaderKeyBinding[] {
+    return MARKDOWN_LEADER_KEYS.map((spec) => ({
+      ...spec,
+      run: () => this.enterLinkHintMode(),
+      isEnabled: () => this.hasPreviewLinks() && !this.isFilterActive && this.aiOverlay === null,
+      disabledReason: () => 'No links available',
+    }));
+  }
 
   // DOM elements
   private sidebar: HTMLElement;
@@ -863,6 +875,10 @@ export class MarkdownContentView implements ContentView {
   }
 
   // ── Link Hint Mode ──
+
+  private hasPreviewLinks(): boolean {
+    return this.previewContent.querySelector('a[href]') !== null;
+  }
 
   private static generateHintLabels(count: number): string[] {
     const chars = 'asdfghjkl';

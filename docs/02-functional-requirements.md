@@ -60,6 +60,7 @@
 | FR-INP-002 | The system shall support a **leader key** (configurable, default: `Ctrl+Space`) that activates compositor mode, where subsequent keypresses control windows/workspaces instead of being sent to the PTY. | Must |
 | FR-INP-003 | The system shall support a **command palette** (triggered via keybinding, default: `CmdOrCtrl+Shift+P`) that lists all available actions, filterable by typing. | Must |
 | FR-INP-004 | The system shall support configurable keybindings for all actions via the configuration file. | Must |
+| FR-INP-005 | The leader key system shall support focused content-view leader actions through static view-owned metadata and runtime bindings. Global and local leader keys shall be validated during development so they do not conflict. | Must |
 
 ### 3.5.2 Terminal Input
 

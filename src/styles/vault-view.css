@@ -907,11 +907,6 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.krypton-vault-picker__item:hover {
-  color: var(--vault-text);
-  background: var(--vault-ghost);
-}
-
 .krypton-vault-picker__item--selected {
   color: var(--vault-text);
   background: var(--vault-ghost);

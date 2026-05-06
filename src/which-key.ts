@@ -2,7 +2,7 @@
 // Helix-style modal popup that shows available keybindings
 // when entering a non-Normal mode.
 
-import type { PaneContentType } from './types';
+import type { LeaderKeyBinding, PaneContentType } from './types';
 import { Mode } from './types';
 
 /** A single keybinding entry displayed in the popup */
@@ -14,6 +14,15 @@ interface KeyEntry {
   /** If set, only show this entry when focused pane matches one of these types.
    *  null in the array means "terminal" (no contentView). */
   contentTypes?: (PaneContentType | null)[];
+}
+
+function leaderBindingsToEntries(bindings: LeaderKeyBinding[]): KeyEntry[] {
+  return bindings.map((binding) => ({
+    key: binding.key,
+    label: binding.label,
+    group: binding.group,
+    effect: binding.effect,
+  }));
 }
 
 function groupEntries(group: string, entries: KeyEntry[]): KeyEntry[] {
@@ -176,7 +185,11 @@ export class WhichKey {
   }
 
   /** Update the popup for the given mode and focused content type */
-  setMode(mode: Mode, contentType: PaneContentType | null = null): void {
+  setMode(
+    mode: Mode,
+    contentType: PaneContentType | null = null,
+    focusedLeaderKeys: LeaderKeyBinding[] = [],
+  ): void {
     if (mode === Mode.Normal) {
       this.hide();
       return;
@@ -187,7 +200,10 @@ export class WhichKey {
 
     switch (mode) {
       case Mode.Compositor:
-        entries = filterByContentType(COMPOSITOR_KEYS, contentType);
+        entries = [
+          ...filterByContentType(COMPOSITOR_KEYS, contentType),
+          ...leaderBindingsToEntries(focusedLeaderKeys),
+        ];
         titleText = contentType
           ? `Compositor · ${contentType}`
           : 'Compositor';

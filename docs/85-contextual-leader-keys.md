@@ -1,6 +1,6 @@
 # Contextual Leader Keys — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-05-06
 > Milestone: M4 — Keyboard System & Workspaces
 

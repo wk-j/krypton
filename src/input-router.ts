@@ -12,12 +12,17 @@ import { CommandPalette } from './command-palette';
 import { DashboardManager } from './dashboard';
 import { PromptDialog } from './prompt-dialog';
 import { QuickFileSearch } from './quick-file-search';
+import { GLOBAL_LEADER_RESERVED_KEYS, normalizeLeaderKeyEvent } from './leader-keys';
 
 import type { MusicPlayer } from './music';
-import type { PaneContentType } from './types';
+import type { LeaderKeyBinding, PaneContentType } from './types';
 
 /** Callback for mode changes */
-type ModeChangeCallback = (mode: Mode, contentType: PaneContentType | null) => void;
+type ModeChangeCallback = (
+  mode: Mode,
+  contentType: PaneContentType | null,
+  leaderKeys: LeaderKeyBinding[],
+) => void;
 
 export class InputRouter {
   private mode: Mode = Mode.Normal;
@@ -287,8 +292,9 @@ export class InputRouter {
     }
 
     const contentType = this.compositor.getFocusedContentType();
+    const leaderKeys = mode === Mode.Compositor ? this.getEnabledFocusedLeaderKeyBindings() : [];
     for (const cb of this.modeChangeCallbacks) {
-      cb(mode, contentType);
+      cb(mode, contentType, leaderKeys);
     }
   }
 
@@ -643,6 +649,10 @@ export class InputRouter {
       return;
     }
 
+    if (this.handleFocusedLeaderKey(e)) {
+      return;
+    }
+
     const key = e.key.toLowerCase();
 
     switch (key) {
@@ -821,7 +831,11 @@ export class InputRouter {
         if (e.shiftKey) {
           this.compositor.openAcpView('gemini', 'Gemini').then(() => this.toNormal());
         } else {
-          this.compositor.openPencil().then(() => this.toNormal());
+          // Exit Compositor before openPencil shows its file-picker overlay:
+          // the picker's document-capture keydown listener is shadowed by the
+          // router's own capture handler, which would steal j/k/Enter/Esc.
+          this.toNormal();
+          void this.compositor.openPencil();
         }
         break;
 
@@ -896,6 +910,52 @@ export class InputRouter {
         this.toNormal();
         break;
     }
+  }
+
+  private getFocusedLeaderKeyBindings(): LeaderKeyBinding[] {
+    const pane = this.compositor.getFocusedPanePublic();
+    return pane?.contentView?.getLeaderKeyBindings?.() ?? [];
+  }
+
+  private getEnabledFocusedLeaderKeyBindings(): LeaderKeyBinding[] {
+    return this.getFocusedLeaderKeyBindings().filter((binding) => binding.isEnabled?.() ?? true);
+  }
+
+  private handleFocusedLeaderKey(e: KeyboardEvent): boolean {
+    const key = normalizeLeaderKeyEvent(e);
+    if (key === null) return false;
+
+    const binding = this.getFocusedLeaderKeyBindings().find((candidate) => candidate.key === key);
+    if (!binding) return false;
+
+    if (GLOBAL_LEADER_RESERVED_KEYS.has(key)) {
+      console.error(`[InputRouter] Local leader key "${key}" conflicts with a global leader key`);
+      return false;
+    }
+
+    if (!(binding.isEnabled?.() ?? true)) {
+      const reason = binding.disabledReason?.() ?? 'Action unavailable';
+      this.compositor.notifications?.warn(reason, { label: 'KEY' });
+      this.toNormal();
+      return true;
+    }
+
+    try {
+      const result = binding.run();
+      if (result instanceof Promise) {
+        result.catch((err: unknown) => {
+          console.error(`[InputRouter] Leader action "${binding.key}" failed:`, err);
+          const message = err instanceof Error ? err.message : String(err);
+          this.compositor.notifications?.error(message, { label: 'KEY' });
+        });
+      }
+    } catch (err) {
+      console.error(`[InputRouter] Leader action "${binding.key}" failed:`, err);
+      const message = err instanceof Error ? err.message : String(err);
+      this.compositor.notifications?.error(message, { label: 'KEY' });
+    }
+    this.toNormal();
+    return true;
   }
 
   /** Enter Selection mode, optionally line-wise (Shift+V) */

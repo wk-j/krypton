@@ -116,6 +116,24 @@ export interface CapturedImage {
   mimeType: string;
 }
 
+/** Canonical one-key leader binding id, such as "o", "O", "[", or "Alt+h". */
+export type LeaderKeyId = string;
+
+/** Static leader key metadata. Exported by views for conflict validation. */
+export interface LeaderKeySpec {
+  key: LeaderKeyId;
+  label: string;
+  group?: string;
+  effect?: 'important' | 'danger';
+}
+
+/** Runtime leader key binding owned by a focused content view. */
+export interface LeaderKeyBinding extends LeaderKeySpec {
+  run(): void | Promise<void>;
+  isEnabled?(): boolean;
+  disabledReason?(): string;
+}
+
 /** Interface for non-terminal content views */
 export interface ContentView {
   type: PaneContentType;
@@ -130,6 +148,8 @@ export interface ContentView {
   getWorkingDirectory?(): string | null;
   /** Optional staging hook for global screen-capture images. */
   stageCapturedImage?(image: CapturedImage): boolean;
+  /** Optional focused-view leader key bindings. Keys must not conflict with global leader keys. */
+  getLeaderKeyBindings?(): LeaderKeyBinding[];
 }
 
 /** A leaf pane — hosts one xterm.js terminal + PTY session, or a content view */
