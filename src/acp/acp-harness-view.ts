@@ -146,6 +146,8 @@ interface HarnessLane {
   toolTranscriptIds: Map<string, string>;
   toolCalls: Map<string, ToolCall | ToolCallUpdate>;
   seenTranscriptIds: Set<string>;
+  assistantBlockCounts: Map<string, number>;
+  pretextLineCounts: Map<string, number>;
   stickToBottom: boolean;
   pendingShellId: string | null;
   stagedImages: StagedImage[];
@@ -631,6 +633,9 @@ export class AcpHarnessView implements ContentView {
       this.systemRows = [`backend list failed: ${String(e)}`];
     }
     this.render();
+    if (this.lanes.length === 0 && this.pickerEntries.some((e) => e.id === 'claude')) {
+      await this.addLane('claude');
+    }
   }
 
   private async initializeHarnessMemory(): Promise<void> {
@@ -729,6 +734,8 @@ export class AcpHarnessView implements ContentView {
       toolTranscriptIds: new Map(),
       toolCalls: new Map(),
       seenTranscriptIds: new Set(),
+      assistantBlockCounts: new Map(),
+      pretextLineCounts: new Map(),
       availableCommands: [],
       modesById: new Map(),
     };
@@ -1283,6 +1290,8 @@ export class AcpHarnessView implements ContentView {
     lane.toolTranscriptIds = new Map();
     lane.toolCalls = new Map();
     lane.seenTranscriptIds = new Set();
+    lane.assistantBlockCounts = new Map();
+    lane.pretextLineCounts = new Map();
     lane.stickToBottom = true;
     lane.pendingShellId = null;
     lane.activeTurnStartedAt = null;
@@ -1527,7 +1536,21 @@ export class AcpHarnessView implements ContentView {
           for (const item of lane.transcript) {
             const isNew = !lane.seenTranscriptIds.has(item.id);
             const streaming = item.id === lane.currentAssistantId || item.id === lane.currentThoughtId;
-            body.appendChild(renderTranscriptItem(item, isNew, streaming));
+            const itemEl = renderTranscriptItem(item, isNew, streaming);
+            body.appendChild(itemEl);
+            if (item.kind === 'assistant') {
+              const mdBody = itemEl.querySelector<HTMLElement>('.acp-harness__msg-body--markdown');
+              if (mdBody) {
+                const prevCount = lane.assistantBlockCounts.get(item.id) ?? 0;
+                const blocks = mdBody.children;
+                for (let i = prevCount; i < blocks.length; i++) {
+                  const child = blocks[i] as HTMLElement;
+                  child.dataset.anim = 'in';
+                  child.style.setProperty('--i', String(Math.min(i - prevCount, 24)));
+                }
+                lane.assistantBlockCounts.set(item.id, blocks.length);
+              }
+            }
             lane.seenTranscriptIds.add(item.id);
           }
         }
@@ -1852,7 +1875,11 @@ export class AcpHarnessView implements ContentView {
     lane.transcript.push(item);
     if (lane.transcript.length > 300) {
       const dropped = lane.transcript.shift();
-      if (dropped) lane.seenTranscriptIds.delete(dropped.id);
+      if (dropped) {
+        lane.seenTranscriptIds.delete(dropped.id);
+        lane.assistantBlockCounts.delete(dropped.id);
+        lane.pretextLineCounts.delete(dropped.id);
+      }
     }
     return item;
   }
@@ -2322,6 +2349,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private layoutPretextRows(): void {
+    const lane = this.activeLane();
     const rows = this.dashboardEl.querySelectorAll<HTMLElement>('.acp-harness__msg-body[data-pretext="true"]');
     for (const row of rows) {
       const raw = row.dataset.rawText ?? '';
@@ -2331,16 +2359,24 @@ export class AcpHarnessView implements ContentView {
       const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
       let lineHeight = parseFloat(cs.lineHeight);
       if (!Number.isFinite(lineHeight)) lineHeight = (parseFloat(cs.fontSize) || 13) * 1.35;
+      const rowId = row.dataset.rowId ?? '';
+      const prevCount = lane && rowId ? lane.pretextLineCounts.get(rowId) ?? 0 : 0;
       try {
         const prepared = prepareWithSegments(raw, font, { whiteSpace: 'pre-wrap' });
         const { lines } = layoutWithLines(prepared, width, lineHeight);
         row.textContent = '';
-        for (const line of lines) {
+        for (let i = 0; i < lines.length; i++) {
           const lineEl = document.createElement('div');
           lineEl.className = 'acp-harness__pretext-line';
-          lineEl.textContent = line.text || '\u00a0';
+          lineEl.textContent = lines[i].text || '\u00a0';
+          if (i >= prevCount) {
+            lineEl.dataset.anim = 'in';
+            const stagger = Math.min(i - prevCount, 24);
+            lineEl.style.setProperty('--i', String(stagger));
+          }
           row.appendChild(lineEl);
         }
+        if (lane && rowId) lane.pretextLineCounts.set(rowId, lines.length);
       } catch {
         row.textContent = raw;
       }
@@ -2490,6 +2526,7 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   } else if (usesPretext(item.kind)) {
     body.dataset.pretext = 'true';
     body.dataset.rawText = item.text;
+    body.dataset.rowId = item.id;
     body.textContent = item.text;
   } else {
     body.textContent = item.text;

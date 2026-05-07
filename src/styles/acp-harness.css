@@ -85,7 +85,7 @@
 .acp-harness__lane-name {
   grid-column: 2;
   color: var(--acp-lane-accent, rgba(216, 232, 216, 0.86));
-  font-weight: 700;
+  font-weight: normal;
   letter-spacing: 0.02em;
   text-transform: none;
   overflow: hidden;
@@ -616,6 +616,19 @@
 .acp-harness__pretext-line {
   min-height: 1.45em;
   white-space: pre;
+}
+
+@keyframes acp-harness-line-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .acp-harness__pretext-line[data-anim="in"],
+  .acp-harness__msg-body--markdown > [data-anim="in"] {
+    animation: acp-harness-line-in 180ms ease-out both;
+    animation-delay: calc(var(--i, 0) * 14ms);
+  }
 }
 
 .acp-harness__msg-body--markdown {
@@ -1158,7 +1171,7 @@
 .acp-harness__lane-tag {
   flex: 0 0 auto;
   color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
-  font-weight: 700;
+  font-weight: normal;
   letter-spacing: 0.03em;
   text-transform: none;
 }

@@ -9,7 +9,12 @@ dev:
 	npx tauri dev
 
 # Build production app bundle
+# Pre-clean stale DMGs: hdiutil convert refuses to overwrite, so a previous
+# failed bundle leaves Krypton_*.dmg / rw.*.dmg that break the next run.
 build:
+	rm -f src-tauri/target/release/bundle/macos/Krypton_*.dmg \
+	      src-tauri/target/release/bundle/macos/rw.*.dmg \
+	      src-tauri/target/release/bundle/dmg/Krypton_*.dmg
 	npx tauri build
 
 # Build and install to /Applications
