@@ -17,44 +17,6 @@
   outline: none;
 }
 
-.acp-harness__topbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 28px;
-  padding: 5px 10px;
-  color: rgba(216, 232, 216, 0.78);
-  white-space: nowrap;
-  border-bottom: 1px solid rgba(0, 204, 255, 0.1);
-  background: rgba(2, 5, 10, 0.44);
-}
-
-.acp-harness__title {
-  color: var(--agent-accent, #8effb0);
-  letter-spacing: 0.08em;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.acp-harness__cwd,
-.acp-harness__counts {
-  font-size: 0.78em;
-  letter-spacing: 0.02em;
-}
-
-.acp-harness__cwd {
-  color: rgba(109, 208, 255, 0.74);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.acp-harness__counts {
-  margin-left: auto;
-  color: rgba(216, 232, 216, 0.46);
-}
-
 .acp-harness__body {
   position: relative;
   flex: 1 1 0;
@@ -1363,10 +1325,6 @@
 /* ═══════════════════════════════════════════════════════════════
    ZEN MODE — toggleable focused layout (spec 80)
    ═══════════════════════════════════════════════════════════════ */
-
-.acp-harness--zen .acp-harness__title {
-  display: none;
-}
 
 .acp-harness--zen .acp-harness__dashboard {
   display: grid;

@@ -263,7 +263,6 @@ export class AcpHarnessView implements ContentView {
   private laneModels: Record<string, LaneModelConfig> = {};
   private closeCb: (() => void) | null = null;
 
-  private topbarEl!: HTMLElement;
   private dashboardEl!: HTMLElement;
   private memoryOverlayEl!: HTMLElement;
   private memoryPanelEl!: HTMLElement;
@@ -287,6 +286,9 @@ export class AcpHarnessView implements ContentView {
     void this.refreshGitBranch();
     void this.start();
     this.startMetricsTick();
+    void loadHomeDir().then((home) => {
+      if (home) this.render();
+    });
   }
 
   getWorkingDirectory(): string | null {
@@ -346,6 +348,10 @@ export class AcpHarnessView implements ContentView {
     }
     if (this.memoryDrawerOpen && this.handleMemoryKey(e)) return true;
     if ((e.key === 'n' || e.key === 'N' || e.key === 'p' || e.key === 'P') && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      const composerLane = this.focus === 'text' ? this.activeLane() : null;
+      if (composerLane && slashPaletteVisible(composerLane)) {
+        return this.handleSlashPaletteKey(e, composerLane);
+      }
       e.preventDefault();
       this.activateLaneByDelta(e.key === 'n' || e.key === 'N' ? 1 : -1);
       return true;
@@ -482,10 +488,6 @@ export class AcpHarnessView implements ContentView {
   }
 
   private buildDOM(): void {
-    this.topbarEl = document.createElement('div');
-    this.topbarEl.className = 'acp-harness__topbar';
-    this.element.appendChild(this.topbarEl);
-
     const body = document.createElement('div');
     body.className = 'acp-harness__body';
     this.dashboardEl = document.createElement('div');
@@ -1421,7 +1423,6 @@ export class AcpHarnessView implements ContentView {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
-    this.renderTopbar();
     this.renderDashboard();
     this.renderMemory();
     this.renderHelp();
@@ -1465,16 +1466,6 @@ export class AcpHarnessView implements ContentView {
       `<span>j/k move · enter spawn · esc cancel</span>` +
       `</header>` +
       `<ul class="acp-harness__picker-list">${rows}</ul>${empty}`;
-  }
-
-  private renderTopbar(): void {
-    const counts = countStatuses(this.lanes);
-    const cwd = this.projectDir ? abbreviatePath(this.projectDir) : 'no cwd';
-    const shared = this.lanes.filter((lane) => lane.status === 'idle' || lane.status === 'busy').length > 1 ? ' · shared cwd' : '';
-    this.topbarEl.innerHTML =
-      `<span class="acp-harness__title">ACP Harness</span>` +
-      `<span class="acp-harness__cwd" title="${esc(this.projectDir ?? '')}">${esc(cwd)}</span>` +
-      `<span class="acp-harness__counts">${counts.idle} idle · ${counts.busy} busy · ${counts.permission} perm · ${counts.error} error${shared}</span>`;
   }
 
   private renderDashboard(): void {
@@ -2933,7 +2924,7 @@ function renderSlashPalette(lane: HarnessLane): string {
     .join('');
   return (
     `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
-    `<div class="acp-harness__slash-palette-meta">↑↓ select · Enter/Tab insert · Esc dismiss</div>` +
+    `<div class="acp-harness__slash-palette-meta">↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss</div>` +
     rows +
     `</div>`
   );
@@ -3023,15 +3014,6 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
 
 function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {
   return { ...(prev ?? {}), ...next };
-}
-
-function countStatuses(lanes: HarnessLane[]): { idle: number; busy: number; permission: number; error: number } {
-  return {
-    idle: lanes.filter((lane) => lane.status === 'idle').length,
-    busy: lanes.filter((lane) => lane.status === 'busy' || lane.status === 'starting').length,
-    permission: lanes.filter((lane) => lane.status === 'needs_permission').length,
-    error: lanes.filter((lane) => lane.status === 'error').length,
-  };
 }
 
 function laneActivity(lane: HarnessLane): string {
@@ -3240,7 +3222,25 @@ function pathToFileUri(path: string): string {
   return `file://${path.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
 }
 
+let cachedHomeDir: string | null = null;
+let homeDirLoad: Promise<string | null> | null = null;
+
+function loadHomeDir(): Promise<string | null> {
+  if (cachedHomeDir) return Promise.resolve(cachedHomeDir);
+  if (!homeDirLoad) {
+    homeDirLoad = invoke<string | null>('get_env_var', { name: 'HOME' })
+      .then((value) => {
+        const trimmed = value ? value.replace(/\/+$/, '') : null;
+        cachedHomeDir = trimmed || null;
+        return cachedHomeDir;
+      })
+      .catch(() => null);
+  }
+  return homeDirLoad;
+}
+
 function getHomeLikePrefix(): string | null {
+  if (cachedHomeDir) return cachedHomeDir;
   const match = location.pathname.match(/^\/Users\/[^/]+/);
   return match ? match[0] : null;
 }

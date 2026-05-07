@@ -171,15 +171,10 @@
     0 8px 32px rgba(0, 0, 0, 0.4);
   /* Hidden by default — toggled via JS */
   display: none;
-  /* 3D floating — perspective() in transform so it affects THIS element */
-  transform-origin: center top !important;
-  transform-style: preserve-3d;
 }
 
 .krypton-quick-terminal.krypton-quick-terminal--visible {
   display: flex;
-  /* Resting 3D float: tilted slightly toward viewer, pushed forward in Z */
-  transform: perspective(800px) rotateX(1.5deg) translateZ(20px);
   box-shadow:
     0 20px 60px rgba(0, 0, 0, 0.6),
     0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.12)),
