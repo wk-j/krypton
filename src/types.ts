@@ -417,6 +417,26 @@ export interface JavaServerInfo {
   cmdline: string[];
 }
 
+/** Per-process metric within an ACP lane's process tree. */
+export interface AcpLaneProcMetric {
+  pid: number;
+  parent_pid: number | null;
+  name: string;
+  cpu_percent: number;
+  rss_mb: number;
+}
+
+/** Aggregate + per-process resource metrics for one ACP lane. */
+export interface AcpLaneMetrics {
+  session: number;
+  root_pid: number;
+  root_alive: boolean;
+  total_cpu_percent: number;
+  total_rss_mb: number;
+  proc_count: number;
+  processes: AcpLaneProcMetric[];
+}
+
 /** Java process resource statistics (from backend get_java_stats command) */
 export interface JavaStats {
   heap_used_mb: number;

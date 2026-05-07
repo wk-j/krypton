@@ -29,7 +29,14 @@ import type {
   ToolCallUpdate,
   UsageInfo,
 } from './types';
-import type { CapturedImage, ContentView, PaneContentType } from '../types';
+import type {
+  AcpLaneMetrics,
+  CapturedImage,
+  ContentView,
+  LeaderKeyBinding,
+  LeaderKeySpec,
+  PaneContentType,
+} from '../types';
 import { loadConfig, type LaneModelConfig } from '../config';
 import { extractModifiedPath } from './acp-harness-memory';
 import {
@@ -155,20 +162,26 @@ interface HarnessLane {
 
 const STICK_THRESHOLD_PX = 32;
 
-interface HarnessSpawnSpec {
-  backendId: string;
-  displayName: string;
-  count: number;
-}
+const METRICS_POLL_MS = 2000;
 
-const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
-  { backendId: 'codex', displayName: 'Codex', count: 1 },
-  { backendId: 'claude', displayName: 'Claude', count: 1 },
-  { backendId: 'gemini', displayName: 'Gemini', count: 1 },
-  { backendId: 'opencode', displayName: 'OpenCode', count: 1 },
-  { backendId: 'pi-acp', displayName: 'Pi', count: 1 },
-  { backendId: 'droid', displayName: 'Droid', count: 1 },
+export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
+  { key: '+', label: 'Add Lane', group: 'Harness' },
+  { key: '_', label: 'Close Active Lane', group: 'Harness', effect: 'danger' },
+  { key: '=', label: 'Lane Metrics', group: 'Harness' },
 ];
+
+const BACKEND_LABELS: Record<string, string> = {
+  codex: 'Codex',
+  claude: 'Claude',
+  gemini: 'Gemini',
+  opencode: 'OpenCode',
+  'pi-acp': 'Pi',
+  droid: 'Droid',
+};
+
+function backendLabel(backendId: string): string {
+  return BACKEND_LABELS[backendId] ?? backendId.charAt(0).toUpperCase() + backendId.slice(1);
+}
 
 const OPENCODE_DEFAULT_MODEL = 'zai-coding-plan/glm-5.1';
 const FILE_TOUCH_WINDOW_MS = 10 * 60 * 1000;
@@ -239,6 +252,13 @@ export class AcpHarnessView implements ContentView {
   private chip: string | null = null;
   private chipTimer: number | null = null;
   private composerTickTimer: number | null = null;
+  private metricsBySession = new Map<number, AcpLaneMetrics>();
+  private metricsTimer: number | null = null;
+  private metricsPanelOpen = false;
+  private pickerOpen = false;
+  private pickerCursor = 0;
+  private pickerEntries: AcpBackendDescriptor[] = [];
+  private nextLaneIndex = 1;
   private systemRows: string[] = ['loading ACP backends...'];
   private laneModels: Record<string, LaneModelConfig> = {};
   private closeCb: (() => void) | null = null;
@@ -248,6 +268,8 @@ export class AcpHarnessView implements ContentView {
   private memoryOverlayEl!: HTMLElement;
   private memoryPanelEl!: HTMLElement;
   private helpOverlayEl!: HTMLElement;
+  private metricsOverlayEl!: HTMLElement;
+  private pickerEl!: HTMLElement;
   private planEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private pretextRaf = false;
@@ -264,6 +286,7 @@ export class AcpHarnessView implements ContentView {
     this.render();
     void this.refreshGitBranch();
     void this.start();
+    this.startMetricsTick();
   }
 
   getWorkingDirectory(): string | null {
@@ -272,6 +295,32 @@ export class AcpHarnessView implements ContentView {
 
   onClose(cb: () => void): void {
     this.closeCb = cb;
+  }
+
+  getLeaderKeyBindings(): LeaderKeyBinding[] {
+    return [
+      {
+        key: '+',
+        label: 'Add Lane',
+        group: 'Harness',
+        run: () => this.openLanePicker(),
+      },
+      {
+        key: '_',
+        label: 'Close Active Lane',
+        group: 'Harness',
+        effect: 'danger',
+        run: () => this.closeActiveLane(),
+        isEnabled: () => this.lanes.length > 0,
+        disabledReason: () => 'no active lane',
+      },
+      {
+        key: '=',
+        label: 'Lane Metrics',
+        group: 'Harness',
+        run: () => this.toggleMetricsPanel(),
+      },
+    ];
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
@@ -283,6 +332,16 @@ export class AcpHarnessView implements ContentView {
     if (this.helpOpen) {
       e.preventDefault();
       if (e.key === 'Escape' || e.key === '?' || e.key === 'q') this.toggleHelp(false);
+      return true;
+    }
+    if (this.pickerOpen) {
+      e.preventDefault();
+      this.handlePickerKey(e);
+      return true;
+    }
+    if (this.metricsPanelOpen && e.key === 'Escape') {
+      e.preventDefault();
+      this.toggleMetricsPanel(false);
       return true;
     }
     if (this.memoryDrawerOpen && this.handleMemoryKey(e)) return true;
@@ -331,12 +390,6 @@ export class AcpHarnessView implements ContentView {
     if ((e.key === 'm' || e.key === 'M') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
       e.preventDefault();
       this.toggleMemoryDrawer(!this.memoryDrawerOpen);
-      return true;
-    }
-
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      this.activateLaneByDelta(e.shiftKey ? -1 : 1);
       return true;
     }
 
@@ -394,6 +447,7 @@ export class AcpHarnessView implements ContentView {
 
   dispose(): void {
     this.stopComposerTick();
+    this.stopMetricsTick();
     for (const lane of this.lanes) {
       if (lane.client) void lane.client.dispose();
       lane.client = null;
@@ -474,10 +528,20 @@ export class AcpHarnessView implements ContentView {
     this.helpOverlayEl.hidden = true;
     body.appendChild(this.helpOverlayEl);
 
+    this.metricsOverlayEl = document.createElement('aside');
+    this.metricsOverlayEl.className = 'acp-harness__metrics-overlay';
+    this.metricsOverlayEl.hidden = true;
+    body.appendChild(this.metricsOverlayEl);
+
     this.planEl = document.createElement('aside');
     this.planEl.className = 'acp-harness__plan';
     this.planEl.hidden = true;
     body.appendChild(this.planEl);
+
+    this.pickerEl = document.createElement('aside');
+    this.pickerEl.className = 'acp-harness__picker';
+    this.pickerEl.hidden = true;
+    body.appendChild(this.pickerEl);
 
     this.element.appendChild(body);
 
@@ -548,7 +612,6 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async start(): Promise<void> {
-    let backends: AcpBackendDescriptor[] = [];
     try {
       await this.initializeHarnessMemory();
       try {
@@ -557,26 +620,14 @@ export class AcpHarnessView implements ContentView {
       } catch {
         this.laneModels = {};
       }
-      backends = await AcpClient.listBackends();
-      this.systemRows = [];
+      this.pickerEntries = await AcpClient.listBackends();
+      this.systemRows = [
+        'no lanes running',
+        'press Cmd+P then + to add a lane',
+      ];
     } catch (e) {
       this.systemRows = [`backend list failed: ${String(e)}`];
     }
-    const backendIds = new Set(backends.map((backend) => backend.id));
-    let index = 1;
-    for (const spec of DEFAULT_HARNESS_SPAWN) {
-      if (!backendIds.has(spec.backendId)) {
-        this.systemRows.push(`${spec.displayName} backend not installed - skipped`);
-        continue;
-      }
-      for (let i = 0; i < spec.count; i++) {
-        const lane = this.createLane(index++, spec.backendId, `${spec.displayName}-${i + 1}`);
-        this.lanes.push(lane);
-        if (!this.activeLaneId) this.activeLaneId = lane.id;
-        this.spawnLane(lane);
-      }
-    }
-    if (this.lanes.length === 0) this.systemRows.push('no ACP backends available');
     this.render();
   }
 
@@ -1053,6 +1104,103 @@ export class AcpHarnessView implements ContentView {
     return { kind, subject, suffix };
   }
 
+  private async openLanePicker(): Promise<void> {
+    try {
+      this.pickerEntries = await AcpClient.listBackends();
+    } catch (e) {
+      this.flashChip(`backend list failed: ${String(e)}`);
+      return;
+    }
+    if (this.pickerEntries.length === 0) {
+      this.flashChip('no ACP backends installed');
+      return;
+    }
+    this.pickerOpen = true;
+    this.pickerCursor = 0;
+    this.helpOpen = false;
+    this.memoryDrawerOpen = false;
+    this.render();
+  }
+
+  private closeLanePicker(): void {
+    if (!this.pickerOpen) return;
+    this.pickerOpen = false;
+    this.render();
+  }
+
+  private handlePickerKey(e: KeyboardEvent): void {
+    const total = this.pickerEntries.length;
+    if (e.key === 'Escape' || e.key === 'q') {
+      this.closeLanePicker();
+      return;
+    }
+    if (total === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      this.pickerCursor = (this.pickerCursor + 1) % total;
+      this.renderPicker();
+      return;
+    }
+    if (e.key === 'ArrowUp' || e.key === 'k') {
+      this.pickerCursor = (this.pickerCursor - 1 + total) % total;
+      this.renderPicker();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const entry = this.pickerEntries[this.pickerCursor];
+      if (entry) {
+        this.closeLanePicker();
+        void this.addLane(entry.id);
+      }
+      return;
+    }
+  }
+
+  private async addLane(backendId: string): Promise<void> {
+    const label = backendLabel(backendId);
+    const existing = this.lanes.filter((l) => l.backendId === backendId).length;
+    const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${existing + 1}`);
+    this.lanes.push(lane);
+    if (!this.activeLaneId) this.activeLaneId = lane.id;
+    this.render();
+    await this.spawnLane(lane);
+  }
+
+  private async closeActiveLane(): Promise<void> {
+    const lane = this.activeLane();
+    if (!lane) return;
+    lane.spawnEpoch += 1;
+    if (lane.client) {
+      try {
+        await lane.client.dispose();
+      } catch {
+        // ignore — best-effort teardown
+      }
+      lane.client = null;
+    }
+    if (lane.pendingShellId) {
+      try {
+        await this.cancelShell(lane);
+      } catch {
+        // ignore
+      }
+    }
+    const index = this.lanes.findIndex((l) => l.id === lane.id);
+    if (index !== -1) this.lanes.splice(index, 1);
+    this.mcpStatsByLane.delete(lane.displayName);
+    if (this.lanes.length === 0) {
+      this.activeLaneId = '';
+      this.systemRows = [
+        'no lanes running',
+        'press Cmd+P then + to add a lane',
+      ];
+    } else {
+      const next = this.lanes[Math.min(index, this.lanes.length - 1)] ?? this.lanes[0];
+      this.activeLaneId = next.id;
+    }
+    this.flashChip(`closed ${lane.displayName}`);
+    this.render();
+  }
+
   private async cancelLane(lane: HarnessLane): Promise<void> {
     if (!lane.client) return;
     lane.pendingTurnExtractions = [];
@@ -1278,8 +1426,45 @@ export class AcpHarnessView implements ContentView {
     this.renderMemory();
     this.renderHelp();
     this.renderPlanPanel(this.activeLane());
+    this.renderPicker();
     this.renderComposer();
     this.scheduleStickyScroll();
+  }
+
+  private renderPicker(): void {
+    this.pickerEl.hidden = !this.pickerOpen;
+    if (!this.pickerOpen) {
+      this.pickerEl.innerHTML = '';
+      return;
+    }
+    const total = this.pickerEntries.length;
+    const cursor = total === 0 ? 0 : Math.max(0, Math.min(this.pickerCursor, total - 1));
+    const counts = new Map<string, number>();
+    for (const lane of this.lanes) {
+      counts.set(lane.backendId, (counts.get(lane.backendId) ?? 0) + 1);
+    }
+    const rows = this.pickerEntries
+      .map((entry, i) => {
+        const label = backendLabel(entry.id);
+        const running = counts.get(entry.id) ?? 0;
+        const runningSuffix = running > 0 ? ` <span class="acp-harness__picker-count">·${running} running</span>` : '';
+        const active = i === cursor ? ' acp-harness__picker-row--active' : '';
+        return `<li class="acp-harness__picker-row${active}" data-picker-index="${i}">` +
+          `<span class="acp-harness__picker-label">${esc(label)}</span>` +
+          `<span class="acp-harness__picker-id">${esc(entry.id)}</span>` +
+          runningSuffix +
+          `</li>`;
+      })
+      .join('');
+    const empty = total === 0
+      ? '<div class="acp-harness__picker-empty">no ACP backends installed</div>'
+      : '';
+    this.pickerEl.innerHTML =
+      `<header class="acp-harness__picker-head">` +
+      `<span>// add lane</span>` +
+      `<span>j/k move · enter spawn · esc cancel</span>` +
+      `</header>` +
+      `<ul class="acp-harness__picker-list">${rows}</ul>${empty}`;
   }
 
   private renderTopbar(): void {
@@ -1322,10 +1507,18 @@ export class AcpHarnessView implements ContentView {
       if (this.zenMode && !active) continue;
       const laneEl = document.createElement(active ? 'section' : 'div');
       laneEl.className = `acp-harness__lane ${active ? 'acp-harness__lane--active' : 'acp-harness__lane--collapsed'} acp-harness__lane--${lane.status}`;
+      laneEl.dataset.laneId = lane.id;
       laneEl.style.setProperty('--acp-lane-accent', active ? lane.accent : 'rgba(216, 232, 216, 0.42)');
       const head = document.createElement('header');
       head.className = 'acp-harness__lane-head';
-      head.innerHTML = renderLaneHead(lane, active, this.mcpStatsByLane.get(lane.displayName) ?? null);
+      const laneSession = lane.client?.sessionId ?? null;
+      const laneMetrics = laneSession !== null ? this.metricsBySession.get(laneSession) ?? null : null;
+      head.innerHTML = renderLaneHead(
+        lane,
+        active,
+        this.mcpStatsByLane.get(lane.displayName) ?? null,
+        laneMetrics,
+      );
       laneEl.appendChild(head);
       if (active) {
         const stats = document.createElement('div');
@@ -1487,6 +1680,91 @@ export class AcpHarnessView implements ContentView {
     this.composerTickTimer = null;
   }
 
+  private startMetricsTick(): void {
+    if (this.metricsTimer !== null) return;
+    void this.pollMetrics();
+    this.metricsTimer = window.setInterval(() => void this.pollMetrics(), METRICS_POLL_MS);
+  }
+
+  private stopMetricsTick(): void {
+    if (this.metricsTimer === null) return;
+    window.clearInterval(this.metricsTimer);
+    this.metricsTimer = null;
+  }
+
+  private async pollMetrics(): Promise<void> {
+    let entries: AcpLaneMetrics[];
+    try {
+      entries = await invoke<AcpLaneMetrics[]>('acp_get_lane_metrics');
+    } catch {
+      return;
+    }
+    const next = new Map<number, AcpLaneMetrics>();
+    for (const m of entries) next.set(m.session, m);
+    this.metricsBySession = next;
+    // Lightweight refresh — only redraw chips and the breakdown panel,
+    // not the whole transcript (which would thrash on every tick).
+    this.refreshMetricsRender();
+  }
+
+  private refreshMetricsRender(): void {
+    for (const lane of this.lanes) {
+      const sessionId = lane.client?.sessionId ?? null;
+      const m = sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null;
+      const head = this.dashboardEl.querySelector<HTMLElement>(
+        `[data-lane-id="${CSS.escape(lane.id)}"] .acp-harness__lane-head`,
+      );
+      if (head) {
+        const active = lane.id === this.activeLaneId;
+        head.innerHTML = renderLaneHead(
+          lane,
+          active,
+          this.mcpStatsByLane.get(lane.displayName) ?? null,
+          m,
+        );
+      }
+    }
+    if (this.metricsPanelOpen) this.renderMetricsPanel();
+  }
+
+  private toggleMetricsPanel(open?: boolean): void {
+    const next = open ?? !this.metricsPanelOpen;
+    if (next === this.metricsPanelOpen) return;
+    this.metricsPanelOpen = next;
+    this.renderMetricsPanel();
+  }
+
+  private renderMetricsPanel(): void {
+    this.metricsOverlayEl.hidden = !this.metricsPanelOpen;
+    if (!this.metricsPanelOpen) return;
+    const rows: string[] = [];
+    rows.push(
+      `<header class="acp-harness__metrics-head">` +
+        `<span class="acp-harness__metrics-title">Lane Resource Usage</span>` +
+        `<span class="acp-harness__metrics-hint">Esc to close · refreshes every ${(METRICS_POLL_MS / 1000).toFixed(0)}s</span>` +
+      `</header>`,
+    );
+    for (const lane of this.lanes) {
+      const sessionId = lane.client?.sessionId ?? null;
+      const m = sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null;
+      rows.push(this.renderMetricsLaneBlock(lane, m));
+    }
+    this.metricsOverlayEl.innerHTML = rows.join('');
+  }
+
+  private renderMetricsLaneBlock(lane: HarnessLane, m: AcpLaneMetrics | null): string {
+    const head =
+      `<div class="acp-harness__metrics-lane-head">` +
+      `<span class="acp-harness__metrics-lane-name">${esc(lane.displayName)}</span>` +
+      (m && m.root_alive
+        ? `<span class="acp-harness__metrics-lane-totals">Σ ${formatCpu(m.total_cpu_percent)} · ${formatRss(m.total_rss_mb)} · ${m.proc_count} proc</span>`
+        : `<span class="acp-harness__metrics-lane-totals acp-harness__metrics-lane-totals--dim">no live process</span>`) +
+      `</div>`;
+    if (!m || !m.root_alive || m.proc_count === 0) return `<section class="acp-harness__metrics-lane">${head}</section>`;
+    const tree = renderProcessTree(m);
+    return `<section class="acp-harness__metrics-lane">${head}${tree}</section>`;
+  }
+
   private renderComposerProjectStatus(): string {
     const cwd = this.projectDir ? abbreviatePath(this.projectDir) : 'no cwd';
     const branch = this.gitBranchLoading ? '...' : this.gitBranch;
@@ -1507,8 +1785,10 @@ export class AcpHarnessView implements ContentView {
         <section class="acp-harness__help-section">
           <h3>Lane Control</h3>
           <dl>
-            <dt>Tab / Shift+Tab</dt><dd>Next / previous lane</dd>
-            <dt>Ctrl+N / Ctrl+P</dt><dd>Next / previous lane (zen + dashboard)</dd>
+            <dt>Cmd+P then +</dt><dd>Add lane (open backend picker)</dd>
+            <dt>Cmd+P then _</dt><dd>Close active lane</dd>
+            <dt>Cmd+P then =</dt><dd>Toggle lane metrics overlay</dd>
+            <dt>Ctrl+N / Ctrl+P</dt><dd>Next / previous lane</dd>
             <dt>Esc, then 1-9</dt><dd>Switch lane in transcript mode</dd>
             <dt>Esc, then ?</dt><dd>Open help</dd>
             <dt>Tab buttons</dt><dd>Click a lane directly</dd>
@@ -2470,11 +2750,17 @@ function findModelName(value: unknown, depth = 0): string | null {
   return null;
 }
 
-function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneStats | null): string {
+function renderLaneHead(
+  lane: HarnessLane,
+  active: boolean,
+  mcp: HarnessMcpLaneStats | null,
+  metrics: AcpLaneMetrics | null,
+): string {
   const mcpChip = renderMcpChip(mcp);
   const modelChip = renderModelChip(lane.modelName);
   const modeChip = renderModeChip(lane);
   const sandboxChip = renderSandboxChip(lane);
+  const metricsChip = renderMetricsChip(metrics);
   if (!active) {
     return (
       `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
@@ -2483,6 +2769,7 @@ function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneS
       modeChip +
       mcpChip +
       sandboxChip +
+      metricsChip +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
     );
   }
@@ -2497,9 +2784,84 @@ function renderLaneHead(lane: HarnessLane, active: boolean, mcp: HarnessMcpLaneS
     modeChip +
     mcpChip +
     sandboxChip +
+    metricsChip +
     `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>` +
     cancelHint
   );
+}
+
+function renderMetricsChip(metrics: AcpLaneMetrics | null): string {
+  if (!metrics || !metrics.root_alive || metrics.proc_count === 0) return '';
+  const cpu = formatCpu(metrics.total_cpu_percent);
+  const rss = formatRss(metrics.total_rss_mb);
+  const bucket = metricsBucket(metrics.total_cpu_percent);
+  const title = `pid ${metrics.root_pid} · adapter + ${metrics.proc_count - 1} children · ⌘P m for breakdown`;
+  return (
+    `<span class="acp-harness__lane-metrics acp-harness__lane-metrics--${bucket}" title="${esc(title)}">` +
+    `<span class="acp-harness__lane-metrics-cpu">${esc(cpu)}</span>` +
+    `<span class="acp-harness__lane-metrics-rss">${esc(rss)}</span>` +
+    `</span>`
+  );
+}
+
+function formatCpu(pct: number): string {
+  if (!Number.isFinite(pct)) return '--';
+  if (pct >= 100) return `${pct.toFixed(0)}%`;
+  if (pct >= 10) return `${pct.toFixed(0)}%`;
+  return `${pct.toFixed(1)}%`;
+}
+
+function formatRss(mb: number): string {
+  if (!Number.isFinite(mb) || mb <= 0) return '--';
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)}G`;
+  return `${mb.toFixed(0)}M`;
+}
+
+function renderProcessTree(m: AcpLaneMetrics): string {
+  // Build parent → children map and render BFS-tree from root.
+  const childrenByParent = new Map<number, number[]>();
+  for (const p of m.processes) {
+    if (p.parent_pid !== null && p.parent_pid !== undefined) {
+      const arr = childrenByParent.get(p.parent_pid) ?? [];
+      arr.push(p.pid);
+      childrenByParent.set(p.parent_pid, arr);
+    }
+  }
+  const byPid = new Map<number, AcpLaneMetrics['processes'][number]>();
+  for (const p of m.processes) byPid.set(p.pid, p);
+
+  const lines: string[] = [];
+  const walk = (pid: number, depth: number, isLast: boolean, prefix: string): void => {
+    const p = byPid.get(pid);
+    if (!p) return;
+    const branch = depth === 0 ? '' : isLast ? '└─ ' : '├─ ';
+    const label = depth === 0 ? 'ADAPTER' : esc(p.name);
+    lines.push(
+      `<div class="acp-harness__metrics-row">` +
+        `<span class="acp-harness__metrics-tree">${esc(prefix + branch)}</span>` +
+        `<span class="acp-harness__metrics-name">${label}</span>` +
+        `<span class="acp-harness__metrics-pid">pid ${p.pid}</span>` +
+        `<span class="acp-harness__metrics-cpu">${esc(formatCpu(p.cpu_percent))}</span>` +
+        `<span class="acp-harness__metrics-rss">${esc(formatRss(p.rss_mb))}</span>` +
+      `</div>`,
+    );
+    const kids = childrenByParent.get(pid) ?? [];
+    const visibleKids = kids.filter((k) => byPid.has(k));
+    visibleKids.forEach((kid, i) => {
+      const last = i === visibleKids.length - 1;
+      const nextPrefix = depth === 0 ? '' : prefix + (isLast ? '   ' : '│  ');
+      walk(kid, depth + 1, last, nextPrefix);
+    });
+  };
+  walk(m.root_pid, 0, true, '');
+  return `<div class="acp-harness__metrics-tree-block">${lines.join('')}</div>`;
+}
+
+function metricsBucket(cpu: number): 'idle' | 'warm' | 'hot' | 'crit' {
+  if (cpu > 95) return 'crit';
+  if (cpu > 80) return 'hot';
+  if (cpu > 60) return 'warm';
+  return 'idle';
 }
 
 function renderModeChip(lane: HarnessLane): string {

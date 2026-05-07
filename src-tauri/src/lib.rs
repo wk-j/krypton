@@ -5,6 +5,7 @@ pub mod hook_server;
 pub mod hurl;
 pub mod music;
 pub mod pencil;
+mod process_metrics;
 mod pty;
 mod quick_search;
 mod session;
@@ -85,6 +86,7 @@ pub fn run() {
         .manage(hurl_state)
         .manage(quick_search::QuickSearchState::new())
         .manage(Arc::new(acp::AcpRegistry::new()))
+        .manage(Arc::new(process_metrics::MetricsSampler::new()))
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
@@ -174,6 +176,7 @@ pub fn run() {
             acp::acp_permission_response,
             acp::acp_fs_write_response,
             acp::acp_dispose,
+            acp::acp_get_lane_metrics,
             acp::read_mcp_config_file,
             acp::acp_login_env,
             pencil::read_pencil_file,

@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tauri::{AppHandle, State};
@@ -152,6 +152,10 @@ struct AcpClient {
     stderr_buf: Mutex<String>,
     /// Holds the child handle so we can SIGTERM/SIGKILL it; None after dispose.
     child: Mutex<Option<Child>>,
+    /// PID of the spawned adapter, set right after `cmd.spawn()`. 0 = unset
+    /// (pre-spawn or post-dispose). Read by the metrics sampler to walk the
+    /// adapter's process tree without taking the `child` mutex.
+    child_pid: AtomicU32,
     /// Working directory the child was spawned in — also reported as project root
     /// in `session/new`. Falls back to the host process cwd when None.
     cwd: RwLock<Option<String>>,
@@ -181,6 +185,7 @@ impl AcpClient {
             acp_session_id: RwLock::new(None),
             stderr_buf: Mutex::new(String::new()),
             child: Mutex::new(None),
+            child_pid: AtomicU32::new(0),
             cwd: RwLock::new(None),
             mcp_servers: RwLock::new(Vec::new()),
             model_override: RwLock::new(None),
@@ -727,6 +732,25 @@ impl AcpRegistry {
         self.clients.write().ok()?.remove(&session)
     }
 
+    /// Snapshot of (session, child_pid) pairs for live lanes with a known PID.
+    /// Used by the metrics sampler — does not hold the registry lock across
+    /// sysinfo work.
+    fn snapshot_pids(&self) -> Vec<(u64, u32)> {
+        let Ok(map) = self.clients.read() else {
+            return Vec::new();
+        };
+        map.iter()
+            .filter_map(|(session, client)| {
+                let pid = client.child_pid.load(Ordering::Relaxed);
+                if pid == 0 {
+                    None
+                } else {
+                    Some((*session, pid))
+                }
+            })
+            .collect()
+    }
+
     /// Drain all sessions and return them. Used on app shutdown to ensure
     /// every spawned adapter (and its MCP grandchildren via process-group
     /// signal) is torn down rather than reparented to launchd.
@@ -837,6 +861,9 @@ pub async fn acp_spawn(
 
     let session = registry.allocate_session();
     let client = Arc::new(AcpClient::new(session, backend_id.clone(), display_name));
+    if let Some(pid) = child.id() {
+        client.child_pid.store(pid, Ordering::Relaxed);
+    }
     if let Ok(mut g) = client.cwd.write() {
         *g = cwd.clone();
     }
@@ -1172,6 +1199,7 @@ pub async fn dispose_all(registry: &AcpRegistry) {
 /// per-session `acp_dispose` command and the app-shutdown drain.
 async fn dispose_client(client: &AcpClient) {
     client.disposed.store(true, Ordering::Relaxed);
+    client.child_pid.store(0, Ordering::Relaxed);
     // Drop stdin to signal EOF.
     {
         let mut g = client.stdin.lock().await;
@@ -1203,6 +1231,45 @@ async fn dispose_client(client: &AcpClient) {
             let _ = child.wait().await;
         }
     }
+}
+
+// ─── Lane resource metrics ─────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AcpLaneMetrics {
+    pub session: u64,
+    pub root_pid: u32,
+    pub root_alive: bool,
+    pub total_cpu_percent: f64,
+    pub total_rss_mb: f64,
+    pub proc_count: u32,
+    pub processes: Vec<crate::process_metrics::ProcMetric>,
+}
+
+#[tauri::command]
+pub fn acp_get_lane_metrics(
+    registry: State<'_, Arc<AcpRegistry>>,
+    sampler: State<'_, Arc<crate::process_metrics::MetricsSampler>>,
+) -> Result<Vec<AcpLaneMetrics>, String> {
+    let pairs = registry.snapshot_pids();
+    if pairs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let roots: Vec<u32> = pairs.iter().map(|(_, pid)| *pid).collect();
+    let trees = sampler.collect(&roots);
+    Ok(pairs
+        .into_iter()
+        .zip(trees)
+        .map(|((session, _), t)| AcpLaneMetrics {
+            session,
+            root_pid: t.root_pid,
+            root_alive: t.root_alive,
+            total_cpu_percent: t.total_cpu_percent,
+            total_rss_mb: t.total_rss_mb,
+            proc_count: t.proc_count,
+            processes: t.processes,
+        })
+        .collect())
 }
 
 // ─── Cross-lane MCP config bridge ──────────────────────────────────

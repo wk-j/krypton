@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { GLOBAL_LEADER_RESERVED_KEYS, validateLocalLeaderKeys } from './leader-keys';
 import { MARKDOWN_LEADER_KEYS } from './markdown-view';
+import { ACP_HARNESS_LEADER_KEYS } from './acp/acp-harness-view';
 
 import type { LeaderKeyConflictGroup } from './leader-keys';
 
 const LOCAL_LEADER_KEY_GROUPS: readonly LeaderKeyConflictGroup[] = [
   { owner: 'markdown', keys: MARKDOWN_LEADER_KEYS },
+  { owner: 'acp-harness', keys: ACP_HARNESS_LEADER_KEYS },
 ];
 
 describe('leader key metadata', () => {

@@ -137,18 +137,7 @@ interface HarnessMemoryEntry {
 }
 ```
 
-Default roster:
-
-```ts
-const DEFAULT_HARNESS_SPAWN: HarnessSpawnSpec[] = [
-  { backendId: 'codex', displayName: 'Codex', count: 1 },
-  { backendId: 'claude', displayName: 'Claude', count: 1 },
-  { backendId: 'gemini', displayName: 'Gemini', count: 1 },
-  { backendId: 'opencode', displayName: 'OpenCode', count: 1 },
-];
-```
-
-The first version keeps this code-defined. Configurable rosters are out of scope until the workflow proves useful.
+Default roster: **none.** The harness boots empty (`lanes = []`) and the user spawns lanes on demand via the lane-picker leader key (`Cmd+P → +`). Backend display names are mapped through `BACKEND_LABELS` (`codex` → "Codex", `claude` → "Claude", `gemini` → "Gemini", `opencode` → "OpenCode", `pi-acp` → "Pi", `droid` → "Droid"); unknown backend ids fall back to a capitalized form. See `docs/92-acp-lane-picker.md` for the picker UI and lane lifecycle. Earlier versions auto-spawned every installed backend on view open — that path was removed because it forked 6 long-running ACP subprocesses before the user typed anything.
 
 ### API / Commands
 
@@ -508,6 +497,7 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `i` / `Esc` | Transcript scroll focus | Return to composer input. |
 | `q` | Transcript scroll focus | Close harness tab. |
 | `Cmd+.` | Any composer/transcript context | Toggle Zen Mode (collapses inactive lanes into a left rail; active lane fills the body). Persisted per project. See `docs/80-acp-harness-zen-mode.md`. |
+| `Cmd+P → m` | Harness focused | Toggle lane resource metrics overlay (CPU/RSS tree per lane). See `docs/91-acp-lane-resource-metrics.md`. |
 
 Memory mutations are not bound to dedicated keys; active-lane memory clearing executes through `#mem clear` in the composer. This keeps the keybinding surface narrow and the input rule consistent (input always in the command center).
 
