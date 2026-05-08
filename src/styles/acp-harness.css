@@ -547,6 +547,22 @@
   color: #ff6b8b;
 }
 
+.acp-harness__tool-timer {
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+  color: rgba(216, 232, 216, 0.45);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.acp-harness__tool-timer--in_progress {
+  color: #ffd166;
+}
+
+.acp-harness__tool-timer--failed {
+  color: rgba(255, 107, 139, 0.7);
+}
+
 .acp-harness__tool-output {
   display: flex;
   flex-direction: column;

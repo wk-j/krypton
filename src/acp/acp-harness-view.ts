@@ -72,6 +72,8 @@ interface HarnessTranscriptItem {
   status?: string;
   diff?: { title: string; unified: string };
   tool?: ToolPayload;
+  toolStartedAt?: number;
+  toolEndedAt?: number;
   permission?: PermissionPayload;
   fsActivity?: FsActivityPayload;
   fsReview?: FsWriteReviewPayload;
@@ -106,6 +108,8 @@ interface ToolPayload {
   result: string;
   sections: Array<{ label: string; text: string }>;
   diffs: Array<{ path: string; oldText: string; newText: string }>;
+  startedAt?: number;
+  endedAt?: number;
 }
 
 interface StagedImage {
@@ -261,6 +265,7 @@ export class AcpHarnessView implements ContentView {
   private chip: string | null = null;
   private chipTimer: number | null = null;
   private composerTickTimer: number | null = null;
+  private toolTickTimer: number | null = null;
   private metricsBySession = new Map<number, AcpLaneMetrics>();
   private metricsTimer: number | null = null;
   private metricsPanelOpen = false;
@@ -464,6 +469,10 @@ export class AcpHarnessView implements ContentView {
   dispose(): void {
     this.stopComposerTick();
     this.stopMetricsTick();
+    if (this.toolTickTimer !== null) {
+      window.clearInterval(this.toolTickTimer);
+      this.toolTickTimer = null;
+    }
     for (const lane of this.lanes) {
       if (lane.client) void lane.client.dispose();
       lane.client = null;
@@ -1823,6 +1832,29 @@ export class AcpHarnessView implements ContentView {
     this.composerTickTimer = null;
   }
 
+  private updateToolTick(): void {
+    const hasActive = this.lanes.some((lane) =>
+      lane.transcript.some((item) => item.kind === 'tool' && item.toolStartedAt !== undefined && item.toolEndedAt === undefined),
+    );
+    if (hasActive && this.toolTickTimer === null) {
+      this.toolTickTimer = window.setInterval(() => this.tickToolTimers(), 500);
+    } else if (!hasActive && this.toolTickTimer !== null) {
+      window.clearInterval(this.toolTickTimer);
+      this.toolTickTimer = null;
+    }
+  }
+
+  private tickToolTimers(): void {
+    const now = performance.now();
+    const nodes = this.dashboardEl.querySelectorAll<HTMLElement>('.acp-harness__tool-timer');
+    for (const node of nodes) {
+      if (node.dataset.endedAt !== undefined) continue;
+      const startedAt = Number(node.dataset.startedAt);
+      if (!Number.isFinite(startedAt)) continue;
+      node.textContent = formatToolElapsed(now - startedAt);
+    }
+  }
+
   private startMetricsTick(): void {
     if (this.metricsTimer !== null) return;
     void this.pollMetrics();
@@ -2088,20 +2120,20 @@ export class AcpHarnessView implements ContentView {
     const merged = mergeToolCall(lane.toolCalls.get(call.toolCallId), call);
     lane.toolCalls.set(call.toolCallId, merged);
     const status = merged.status ?? 'pending';
-    const tool = buildToolPayload(merged, status);
-    const text = tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
     const existingId = lane.toolTranscriptIds.get(merged.toolCallId);
     const existing = existingId ? lane.transcript.find((item) => item.id === existingId) : null;
-    if (existing) {
-      existing.text = text;
-      existing.status = status;
-      existing.tool = tool;
-      return;
+    const target = existing ?? this.appendTranscript(lane, 'tool', '');
+    if (target.toolStartedAt === undefined) target.toolStartedAt = performance.now();
+    if (isTerminalToolStatus(status) && target.toolEndedAt === undefined) {
+      target.toolEndedAt = performance.now();
     }
-    const item = this.appendTranscript(lane, 'tool', text);
-    item.status = status;
-    item.tool = tool;
-    lane.toolTranscriptIds.set(merged.toolCallId, item.id);
+    const tool = buildToolPayload(merged, status, target.toolStartedAt, target.toolEndedAt);
+    const text = tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
+    target.text = text;
+    target.status = status;
+    target.tool = tool;
+    if (!existing) lane.toolTranscriptIds.set(merged.toolCallId, target.id);
+    this.updateToolTick();
   }
 
   private renderPlan(lane: HarnessLane, entries: PlanEntry[]): void {
@@ -2844,7 +2876,12 @@ function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
   return kind !== 'assistant' && kind !== 'tool' && kind !== 'fs_activity' && kind !== 'fs_write_review';
 }
 
-function buildToolPayload(call: ToolCall | ToolCallUpdate, status: string): ToolPayload {
+function buildToolPayload(
+  call: ToolCall | ToolCallUpdate,
+  status: string,
+  startedAt?: number,
+  endedAt?: number,
+): ToolPayload {
   const kind = inferToolLabel(call);
   const path = extractModifiedPath(call);
   const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
@@ -2858,7 +2895,21 @@ function buildToolPayload(call: ToolCall | ToolCallUpdate, status: string): Tool
     .filter((s) => s.text)
     .slice(0, 4);
   const diffs = extractToolDiffs(call.content);
-  return { glyph: statusGlyph(status), status, kind, subject, result, sections: trimmed, diffs };
+  return { glyph: statusGlyph(status), status, kind, subject, result, sections: trimmed, diffs, startedAt, endedAt };
+}
+
+function isTerminalToolStatus(status: string): boolean {
+  return status === 'completed' || status === 'failed' || status === 'canceled';
+}
+
+function formatToolElapsed(ms: number): string {
+  if (ms < 0) return '';
+  if (ms < 1000) return `${Math.round(ms / 100) * 100}ms`;
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.floor((ms % 60_000) / 1000);
+  return `${m}m ${s}s`;
 }
 
 function extractToolDiffs(content: ToolCall['content']): Array<{ path: string; oldText: string; newText: string }> {
@@ -2897,6 +2948,18 @@ function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
     result.className = `acp-harness__tool-result acp-harness__tool-result--${tool.status}`;
     result.textContent = tool.result;
     head.appendChild(result);
+  }
+  if (tool.startedAt !== undefined) {
+    const timer = document.createElement('span');
+    timer.className = `acp-harness__tool-timer acp-harness__tool-timer--${tool.status}`;
+    timer.dataset.startedAt = String(tool.startedAt);
+    if (tool.endedAt !== undefined) {
+      timer.dataset.endedAt = String(tool.endedAt);
+      timer.textContent = formatToolElapsed(tool.endedAt - tool.startedAt);
+    } else {
+      timer.textContent = formatToolElapsed(performance.now() - tool.startedAt);
+    }
+    head.appendChild(timer);
   }
   body.appendChild(head);
   if (tool.sections.length > 0) {
