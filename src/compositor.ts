@@ -1846,11 +1846,118 @@ export class Compositor {
 
     const view = new PencilContentView(path, container);
     view.setNotifier((message) => this.showNotification(message));
+    view.setOpenDrawingHandler(() => this.openPencilInCurrentView(view));
+    view.setNewDrawingHandler(() => this.createPencilDrawing(view.getWorkingDirectory()));
 
     const base = (path.split('/').pop() ?? 'pencil').replace(/\.excalidraw$/, '');
     await this.createContentTab(`PENCIL // ${base}`, view);
 
     view.onTitleChange((newName) => this.retitleFocusedTab(`PENCIL // ${newName}`));
+  }
+
+  /** Prompt for a new Pencil drawing and open it, defaulting to the focused drawing's directory. */
+  async createPencilDrawing(rootDir?: string): Promise<void> {
+    let dir = rootDir ?? '';
+    if (!dir) {
+      type PencilCfg = { dir?: string };
+      try {
+        const cfg = await invoke<{ pencil?: PencilCfg }>('get_config');
+        dir = cfg.pencil?.dir ?? '';
+      } catch (e) {
+        console.error('[Pencil] failed to read config:', e);
+      }
+    }
+    if (!dir) {
+      this.showNotification('No pencil dir configured — set [pencil] dir in krypton.toml');
+      return;
+    }
+
+    const expandedDir = await this.expandVaultPath(dir);
+    const path = await this.promptPencilFileName(expandedDir);
+    if (!path) return;
+    await this.openPencil(path);
+  }
+
+  /** Pick an existing drawing and replace the currently focused Pencil view. */
+  async openPencilInCurrentView(
+    currentView: ContentView & { getWorkingDirectory(): string | null; filePath?: string },
+  ): Promise<void> {
+    const currentDir = currentView.getWorkingDirectory();
+    if (!currentDir) {
+      this.showNotification('No Pencil directory available');
+      return;
+    }
+    const rootDir = await this.expandVaultPath(currentDir);
+    let entries: Array<{ path: string; modified_ms: number }> = [];
+    try {
+      entries = await invoke<Array<{ path: string; modified_ms: number }>>('scan_pencil_dir', {
+        dir: rootDir,
+      });
+    } catch (e) {
+      this.showNotification(`Pencil: scan failed — ${e}`);
+      return;
+    }
+    const path = await this.pickPencilFile(rootDir, entries, { allowNew: false });
+    if (!path) return;
+    await this.replacePencilView(currentView, path);
+  }
+
+  private async replacePencilView(
+    currentView: ContentView & { filePath?: string },
+    path: string,
+  ): Promise<void> {
+    let target:
+      | { winId: WindowId; win: KryptonWindow; tab: Tab; tabIndex: number; pane: Pane }
+      | null = null;
+    for (const [winId, win] of this.windows) {
+      for (let tabIndex = 0; tabIndex < win.tabs.length; tabIndex++) {
+        const tab = win.tabs[tabIndex];
+        for (const pane of this.collectPanes(tab.paneTree)) {
+          if (pane.contentView === currentView) {
+            target = { winId, win, tab, tabIndex, pane };
+            break;
+          }
+        }
+        if (target) break;
+      }
+      if (target) break;
+    }
+
+    if (!target || target.pane.contentView?.type !== 'pencil') {
+      this.showNotification('No focused Pencil view');
+      return;
+    }
+
+    const currentPath = currentView.filePath;
+    if (currentPath === path) return;
+
+    const { PencilContentView } = await import('./pencil-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const nextView = new PencilContentView(path, container);
+    nextView.setNotifier((message) => this.showNotification(message));
+    nextView.setOpenDrawingHandler(() => this.openPencilInCurrentView(nextView));
+    nextView.setNewDrawingHandler(() => this.createPencilDrawing(nextView.getWorkingDirectory()));
+
+    const previousView = target.pane.contentView;
+    previousView.dispose();
+    previousView.element.remove();
+    target.pane.contentView = nextView;
+    target.pane.element.insertBefore(nextView.element, target.pane.element.firstChild);
+
+    const base = (path.split('/').pop() ?? 'pencil').replace(/\.excalidraw$/, '');
+    target.tab.title = `PENCIL // ${base}`;
+    const titleEl = target.tab.element.querySelector('.krypton-tab__title');
+    if (titleEl) titleEl.textContent = target.tab.title;
+    nextView.onTitleChange((newName) => this.retitleFocusedTab(`PENCIL // ${newName}`));
+
+    this.focusWindow(target.winId);
+    target.win.activeTabIndex = target.tabIndex;
+    this.showActiveTab(target.win);
+    await this.nextFrame();
+    this.fitWindow(target.win.id);
+    nextView.element.focus();
   }
 
   /** Return true and refocus if any tab in any window holds a PencilContentView for `filePath`. */
@@ -1882,14 +1989,24 @@ export class Compositor {
     return new Date(ms).toISOString().slice(0, 10);
   }
 
+  private dirname(path: string): string {
+    const idx = path.lastIndexOf('/');
+    return idx >= 0 ? path.slice(0, idx) : '';
+  }
+
+  private basename(path: string): string {
+    return path.split('/').pop() ?? path;
+  }
+
   /** Picker for the Pencil window. Shows "+ New drawing" first, then entries (mtime sorted). */
   private pickPencilFile(
     rootDir: string,
     entries: Array<{ path: string; modified_ms: number }>,
+    options: { allowNew?: boolean } = {},
   ): Promise<string | null> {
     return new Promise((resolve) => {
       type Row = { kind: 'new' } | { kind: 'file'; path: string; rel: string; mtime: number };
-      const rows: Row[] = [{ kind: 'new' }];
+      const rows: Row[] = options.allowNew === false ? [] : [{ kind: 'new' }];
       const stripPrefix = (p: string): string =>
         p.startsWith(rootDir + '/') ? p.slice(rootDir.length + 1) : p;
       for (const e of entries) {
@@ -1903,7 +2020,7 @@ export class Compositor {
 
       const title = document.createElement('div');
       title.className = 'krypton-vault-picker__title';
-      title.textContent = 'OPEN .EXCALIDRAW';
+      title.textContent = options.allowNew === false ? 'OPEN DRAWING HERE' : 'OPEN .EXCALIDRAW';
       panel.appendChild(title);
 
       const list = document.createElement('div');
@@ -1943,7 +2060,9 @@ export class Compositor {
 
       const hint = document.createElement('div');
       hint.className = 'krypton-vault-picker__hint';
-      hint.textContent = 'j/k  select    Enter  open    Esc  cancel';
+      hint.textContent = rows.length === 0
+        ? 'No drawings found    Esc  cancel'
+        : 'j/k  select    Enter  open    r  rename    Esc  cancel';
       panel.appendChild(hint);
 
       overlay.appendChild(panel);
@@ -1993,6 +2112,74 @@ export class Compositor {
         setTimeout(() => input.focus(), 0);
       };
 
+      const promptRename = (): void => {
+        const r = rows[selected];
+        if (!r || r.kind !== 'file') return;
+        list.innerHTML = '';
+        const inputWrap = document.createElement('div');
+        inputWrap.className = 'krypton-vault-picker__item krypton-vault-picker__item--selected';
+        const label = document.createElement('span');
+        label.className = 'krypton-vault-picker__name';
+        label.textContent = 'Rename';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'krypton-pencil-prompt-input';
+        input.value = this.basename(r.path).replace(/\.excalidraw$/, '');
+        input.style.cssText =
+          'flex:1;background:transparent;border:none;outline:none;color:inherit;font:inherit;padding:2px 6px;';
+        inputWrap.appendChild(label);
+        inputWrap.appendChild(input);
+        list.appendChild(inputWrap);
+        title.textContent = 'RENAME DRAWING';
+        hint.textContent = 'Enter  rename    Esc  back';
+        document.removeEventListener('keydown', onKey, true);
+        input.addEventListener('keydown', (ev) => {
+          ev.stopPropagation();
+          if (ev.key === 'Escape') {
+            ev.preventDefault();
+            title.textContent = options.allowNew === false ? 'OPEN DRAWING HERE' : 'OPEN .EXCALIDRAW';
+            hint.textContent = 'j/k  select    Enter  open    r  rename    Esc  cancel';
+            render();
+            document.addEventListener('keydown', onKey, true);
+            return;
+          }
+          if (ev.key !== 'Enter') return;
+          ev.preventDefault();
+          const name = input.value.trim();
+          if (!name) return;
+          const safe = name.endsWith('.excalidraw') ? name : `${name}.excalidraw`;
+          const nextPath = `${this.dirname(r.path)}/${safe}`;
+          if (nextPath === r.path) {
+            title.textContent = options.allowNew === false ? 'OPEN DRAWING HERE' : 'OPEN .EXCALIDRAW';
+            hint.textContent = 'j/k  select    Enter  open    r  rename    Esc  cancel';
+            render();
+            document.addEventListener('keydown', onKey, true);
+            return;
+          }
+          void invoke('rename_pencil_file', { fromPath: r.path, toPath: nextPath })
+            .then(() => {
+              r.path = nextPath;
+              r.rel = stripPrefix(nextPath);
+              r.mtime = Date.now();
+              title.textContent = options.allowNew === false ? 'OPEN DRAWING HERE' : 'OPEN .EXCALIDRAW';
+              hint.textContent = 'j/k  select    Enter  open    r  rename    Esc  cancel';
+              render();
+              document.addEventListener('keydown', onKey, true);
+            })
+            .catch((e: unknown) => {
+              this.showNotification(`Pencil: rename failed — ${e}`);
+              title.textContent = options.allowNew === false ? 'OPEN DRAWING HERE' : 'OPEN .EXCALIDRAW';
+              hint.textContent = 'j/k  select    Enter  open    r  rename    Esc  cancel';
+              render();
+              document.addEventListener('keydown', onKey, true);
+            });
+        });
+        setTimeout(() => {
+          input.focus();
+          input.select();
+        }, 0);
+      };
+
       const commit = (): void => {
         const r = rows[selected];
         if (!r) return;
@@ -2015,7 +2202,14 @@ export class Compositor {
         if (ev.key === 'Enter') {
           ev.preventDefault();
           ev.stopPropagation();
+          if (rows.length === 0) return;
           commit();
+          return;
+        }
+        if (ev.key === 'r') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          promptRename();
           return;
         }
         if (ev.key === 'j' || ev.key === 'ArrowDown') {
@@ -2034,6 +2228,68 @@ export class Compositor {
         }
       };
       document.addEventListener('keydown', onKey, true);
+    });
+  }
+
+  private promptPencilFileName(rootDir: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'krypton-vault-picker-overlay';
+      const panel = document.createElement('div');
+      panel.className = 'krypton-vault-picker';
+
+      const title = document.createElement('div');
+      title.className = 'krypton-vault-picker__title';
+      title.textContent = 'NEW DRAWING';
+      panel.appendChild(title);
+
+      const list = document.createElement('div');
+      list.className = 'krypton-vault-picker__list';
+      panel.appendChild(list);
+
+      const inputWrap = document.createElement('div');
+      inputWrap.className = 'krypton-vault-picker__item krypton-vault-picker__item--selected';
+      const label = document.createElement('span');
+      label.className = 'krypton-vault-picker__name';
+      label.textContent = 'Name';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'krypton-pencil-prompt-input';
+      input.placeholder = 'sketch';
+      input.style.cssText =
+        'flex:1;background:transparent;border:none;outline:none;color:inherit;font:inherit;padding:2px 6px;';
+      inputWrap.appendChild(label);
+      inputWrap.appendChild(input);
+      list.appendChild(inputWrap);
+
+      const hint = document.createElement('div');
+      hint.className = 'krypton-vault-picker__hint';
+      hint.textContent = 'Enter  create    Esc  cancel';
+      panel.appendChild(hint);
+
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+
+      const cleanup = (): void => {
+        overlay.remove();
+      };
+
+      input.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          cleanup();
+          resolve(null);
+        } else if (ev.key === 'Enter') {
+          ev.preventDefault();
+          const name = input.value.trim();
+          if (!name) return;
+          const safe = name.endsWith('.excalidraw') ? name : `${name}.excalidraw`;
+          cleanup();
+          resolve(`${rootDir}/${safe}`);
+        }
+      });
+      setTimeout(() => input.focus(), 0);
     });
   }
 

@@ -97,7 +97,7 @@
 3. Input Router gathers focused content-view leader bindings, if the pane has a content view
 4. UI shows mode indicator / which-key entries. Enabled local view entries are appended under their view group.
 5. User presses next key:
-   - Leader key owned by focused view -> run local binding, then return to Normal
+   - Leader key owned by focused view -> run local binding, then return to Normal; for example, focused Pencil view owns `/` to replace the current tab with an existing drawing from the current directory, and `?` to prompt for a new `.excalidraw` file in that directory
    - H/J/K/L -> focus window in that direction
    - 1/2/3   -> focus window by index
    - N       -> create new window
@@ -111,6 +111,17 @@
    - Shift+Y -> open ACP Harness for the focused working directory
    - Escape  -> cancel, return to Normal mode
 6. After action executes, Input Router returns to Normal mode
+```
+
+## Pencil Picker Rename Flow
+
+```
+1. User opens a Pencil picker via Leader e or focused Pencil Leader /
+2. User highlights an existing .excalidraw row and presses r
+3. Picker swaps the list for an inline rename prompt
+4. Enter invokes rename_pencil_file({ fromPath, toPath })
+5. Rust validates source/destination extensions, rejects missing source or existing destination, then renames the file
+6. Frontend updates the picker row in place; Enter opens the renamed file, Escape returns to the picker
 ```
 
 ## ACP Harness Flow

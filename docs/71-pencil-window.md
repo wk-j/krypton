@@ -12,9 +12,9 @@ Krypton has no way to view or edit hand-drawn diagrams. Users who keep architect
 
 Add a new `PencilContentView` implementing the existing `ContentView` interface and registered as a new `PaneContentType` (`'pencil'`). The view embeds the official `@excalidraw/excalidraw` React component inside a `ReactDOM` root that lives in the view's container element. React, ReactDOM, and Excalidraw are **lazy-loaded** via dynamic `import()` so they are absent from Krypton's main bundle.
 
-The compositor exposes `openPencil(filePath?)`. With no path it reads `[pencil] dir` from `krypton.toml`, scans recursively for `.excalidraw` files, and shows a fuzzy picker (mtime-sorted) with a synthetic "New drawing" row at the top. With a path it opens the file directly (used by future quick-file-search routing). If the file is already open in another Pencil tab, that tab is refocused instead of creating a new one.
+The compositor exposes `openPencil(filePath?)`. With no path it reads `[pencil] dir` from `krypton.toml`, scans recursively for `.excalidraw` files, and shows a fuzzy picker (mtime-sorted) with a synthetic "New drawing" row at the top. With a path it opens the file directly (used by future quick-file-search routing). If the file is already open in another Pencil tab, that tab is refocused instead of creating a new one. A focused Pencil view also exposes local leader `/` ("Open Drawing Here") to replace the current Pencil tab with an existing drawing from the current directory, and local leader `?` ("New Drawing") to prompt for a new `.excalidraw` file in the current drawing's directory.
 
-File IO uses two new Tauri commands `read_pencil_file` / `write_pencil_file` (atomic temp+rename). Save is autosave-on-change (800 ms debounced) plus `Cmd+S` to flush immediately. Theme follows Krypton's background luminance (light/dark switch) — no separate config option.
+File IO uses Tauri commands `read_pencil_file` / `write_pencil_file` (atomic temp+rename), `scan_pencil_dir`, and `rename_pencil_file`. Save is autosave-on-change (800 ms debounced) plus `Cmd+S` to flush immediately. Theme follows Krypton's background luminance (light/dark switch) — no separate config option.
 
 ## Research
 
@@ -54,19 +54,20 @@ File IO uses two new Tauri commands `read_pencil_file` / `write_pencil_file` (at
 
 | File | Change |
 |------|--------|
-| `src/pencil-view.ts` | **New** — `PencilContentView` class, lazy React mount, IO, dirty tracking, autosave |
+| `src/pencil-view.ts` | **New** — `PencilContentView` class, lazy React mount, IO, dirty tracking, autosave, local leader metadata |
 | `src/styles/pencil-view.css` | **New** — `.krypton-pencil` chrome (statusbar + canvas container) |
 | `src/styles/index.css` | Import `pencil-view.css` and `@excalidraw/excalidraw/index.css` |
 | `src/types.ts` | Add `'pencil'` to `PaneContentType` |
-| `src/compositor.ts` | Add `openPencil(filePath?: string)` with picker + refocus logic |
+| `src/compositor.ts` | Add `openPencil(filePath?: string)` with picker + refocus logic, `openPencilInCurrentView()` replace flow, and `createPencilDrawing()` prompt flow |
 | `src/command-palette.ts` | Register `pencil.open` action with `Leader e` |
-| `src-tauri/src/pencil.rs` | **New** — `read_pencil_file`, `write_pencil_file`, `scan_pencil_dir` |
-| `src-tauri/src/lib.rs` | Register the three commands in `invoke_handler!` |
+| `src-tauri/src/pencil.rs` | **New** — `read_pencil_file`, `write_pencil_file`, `rename_pencil_file`, `scan_pencil_dir` |
+| `src-tauri/src/lib.rs` | Register the Pencil commands in `invoke_handler!` |
 | `src-tauri/src/config.rs` | Add `[pencil]` section: `dir: Option<PathBuf>` |
 | `package.json` | Add `react@^19`, `react-dom@^19`, `@excalidraw/excalidraw`; devDeps `@types/react`, `@types/react-dom` |
 | `docs/PROGRESS.md` | Note Pencil window milestone |
 | `docs/04-architecture.md` | Add Pencil view to module list |
 | `docs/06-configuration.md` | Document `[pencil] dir` |
+| `src/leader-keys.test.ts` | Validate Pencil local leader key metadata |
 
 ## Design
 
@@ -124,6 +125,10 @@ pub async fn write_pencil_file(path: String, contents: String) -> Result<(), Str
 // writes to `<path>.tmp` then renames atomically.
 
 #[tauri::command]
+pub async fn rename_pencil_file(from_path: String, to_path: String) -> Result<(), String>;
+// Renames an existing `.excalidraw` file without overwriting an existing destination.
+
+#[tauri::command]
 pub async fn scan_pencil_dir(dir: String) -> Result<Vec<PencilEntry>, String>;
 #[derive(serde::Serialize)]
 pub struct PencilEntry { pub path: String, pub modified_ms: u64 }
@@ -156,6 +161,33 @@ If unset and user invokes `Leader e`: `showNotification('No pencil dir configure
    - Existing file → openPencil(absolutePath)
    - "New drawing" → promptDialog for name → resolve to <dir>/<name>.excalidraw
      → openPencil(resolvedPath)  (will open existing content if file already exists — Q11)
+```
+
+**Create from focused Pencil view (Leader ?):**
+```
+1. Focused PencilContentView exposes local leader `?`
+2. InputRouter dispatches the local binding in Compositor mode
+3. compositor.createPencilDrawing(currentDrawingDir) prompts for a file name
+4. Resolve to <currentDrawingDir>/<name>.excalidraw
+5. openPencil(resolvedPath) opens the new empty scene, or refocuses if already open
+```
+
+**Open existing drawing in the focused Pencil tab (Leader /):**
+```
+1. Focused PencilContentView exposes local leader `/`
+2. InputRouter dispatches the local binding in Compositor mode
+3. compositor.openPencilInCurrentView(currentView) scans currentDrawingDir for `.excalidraw` files
+4. Existing-only picker resolves a selected absolute path
+5. replacePencilView(currentView, path) disposes the old PencilContentView, mounts a new one in the same pane, and retitles the same tab
+```
+
+**Rename from a Pencil picker:**
+```
+1. User highlights an existing file row in either Pencil picker
+2. `r` switches the row into a single-line rename prompt
+3. Enter invokes `rename_pencil_file({ fromPath, toPath })`
+4. On success, the picker row updates in place and stays selected; Enter then opens the renamed file
+5. On conflict or IO failure, the picker stays open and shows a notification
 ```
 
 **openPencil(absolutePath) — direct entry:**
@@ -224,6 +256,9 @@ If unset and user invokes `Leader e`: `showNotification('No pencil dir configure
 | Key | Context | Action |
 |-----|---------|--------|
 | `Leader e` | Compositor mode | Open Pencil picker (or notification if no dir) |
+| `Leader /` | Focused Pencil view | Open an existing drawing in the current Pencil tab |
+| `Leader ?` | Focused Pencil view | Create a new drawing in the current drawing's directory |
+| `r` | Pencil picker | Rename the selected existing drawing |
 | `Cmd+S` | Pencil view focused | Force immediate save |
 
 All other keys flow through to Excalidraw (its tool shortcuts: V/R/A/D/T/E, Cmd+Z/Shift+Z, Cmd+A, Delete, arrows, +/-, Esc). Krypton globals (Leader, Cmd+I, Cmd+Shift+P, Cmd+O, Cmd+1..9, etc.) are handled by input-router before content view.

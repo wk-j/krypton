@@ -2,6 +2,7 @@
 // Read/write `.excalidraw` JSON files atomically and scan a configured
 // directory for the picker. See docs/71-pencil-window.md.
 
+use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -68,6 +69,37 @@ pub async fn write_pencil_file(path: String, contents: String) -> Result<(), Str
 }
 
 #[tauri::command]
+pub async fn rename_pencil_file(from_path: String, to_path: String) -> Result<(), String> {
+    let from = expand_tilde(&from_path);
+    let to = expand_tilde(&to_path);
+
+    if from.extension().and_then(|e| e.to_str()) != Some("excalidraw") {
+        return Err("source must be a .excalidraw file".to_string());
+    }
+    if to.extension().and_then(|e| e.to_str()) != Some("excalidraw") {
+        return Err("destination must be a .excalidraw file".to_string());
+    }
+    if !from.exists() {
+        return Err(format!("source does not exist: {}", from.display()));
+    }
+    if to.exists() {
+        return Err(format!("destination already exists: {}", to.display()));
+    }
+    if let Some(parent) = to.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("mkdir failed: {e}"))?;
+        }
+    }
+
+    fs::rename(&from, &to)
+        .await
+        .map_err(|e| format!("rename failed: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn scan_pencil_dir(dir: String) -> Result<Vec<PencilEntry>, String> {
     let root = expand_tilde(&dir);
     if !root.exists() {
@@ -75,7 +107,7 @@ pub async fn scan_pencil_dir(dir: String) -> Result<Vec<PencilEntry>, String> {
     }
     let mut out = Vec::new();
     walk(&root, &mut out).map_err(|e| format!("scan failed: {e}"))?;
-    out.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    out.sort_by_key(|entry| Reverse(entry.modified_ms));
     Ok(out)
 }
 

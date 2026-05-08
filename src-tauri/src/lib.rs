@@ -181,6 +181,7 @@ pub fn run() {
             acp::acp_login_env,
             pencil::read_pencil_file,
             pencil::write_pencil_file,
+            pencil::rename_pencil_file,
             pencil::scan_pencil_dir,
         ])
         .setup(move |app| {

@@ -9,7 +9,7 @@ import { type UnlistenFn } from '@tauri-apps/api/event';
 
 import { setupListener } from './util/listener';
 
-import type { ContentView, PaneContentType } from './types';
+import type { ContentView, LeaderKeyBinding, LeaderKeySpec, PaneContentType } from './types';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -32,6 +32,11 @@ const EMPTY_SCENE = (): ExcalidrawScene => ({
 });
 
 const AUTOSAVE_DEBOUNCE_MS = 800;
+
+export const PENCIL_LEADER_KEYS: readonly LeaderKeySpec[] = [
+  { key: '/', label: 'Open Drawing Here', group: 'Pencil', effect: 'important' },
+  { key: '?', label: 'New Drawing', group: 'Pencil', effect: 'important' },
+];
 
 export class PencilContentView implements ContentView {
   readonly type: PaneContentType = 'pencil';
@@ -57,6 +62,8 @@ export class PencilContentView implements ContentView {
 
   private titleCb: ((name: string) => void) | null = null;
   private notifyCb: ((message: string) => void) | null = null;
+  private openDrawingCb: (() => void | Promise<void>) | null = null;
+  private newDrawingCb: (() => void | Promise<void>) | null = null;
 
   constructor(filePath: string, container: HTMLElement) {
     this.filePath = filePath;
@@ -101,9 +108,29 @@ export class PencilContentView implements ContentView {
     this.notifyCb = cb;
   }
 
+  setOpenDrawingHandler(cb: () => void | Promise<void>): void {
+    this.openDrawingCb = cb;
+  }
+
+  setNewDrawingHandler(cb: () => void | Promise<void>): void {
+    this.newDrawingCb = cb;
+  }
+
   getWorkingDirectory(): string {
     const idx = this.filePath.lastIndexOf('/');
     return idx >= 0 ? this.filePath.slice(0, idx) : this.filePath;
+  }
+
+  getLeaderKeyBindings(): LeaderKeyBinding[] {
+    return PENCIL_LEADER_KEYS.map((spec) => ({
+      ...spec,
+      run: () => {
+        if (spec.key === '/') return this.openDrawingCb?.();
+        return this.newDrawingCb?.();
+      },
+      isEnabled: () => spec.key === '/' ? this.openDrawingCb !== null : this.newDrawingCb !== null,
+      disabledReason: () => spec.key === '/' ? 'Open drawing unavailable' : 'New drawing unavailable',
+    }));
   }
 
   onResize(): void {

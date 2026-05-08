@@ -295,7 +295,7 @@ The Config Manager (`src-tauri/src/config.rs`) handles loading and serving the T
 - **Config path**: `~/.config/krypton/krypton.toml` on all platforms (resolved via `dirs::home_dir()`).
 - **First-run behavior**: If the config file doesn't exist, the directory is created and a default config is written.
 - **Parse errors**: Logged and silently fall back to defaults (app still starts).
-- **IPC**: `get_config` Tauri command returns the full `KryptonConfig` to the frontend on startup. `run_command` Tauri command runs a short-lived process (non-PTY) and returns stdout, used by overlay dashboards to gather data (e.g., `git status --porcelain`, `git branch --show-current`). `query_sqlite` Tauri command executes read-only SQL queries against a specified SQLite database and returns rows as JSON objects, used by the OpenCode dashboard to read session/message/token data.
+- **IPC**: `get_config` Tauri command returns the full `KryptonConfig` to the frontend on startup. `run_command` Tauri command runs a short-lived process (non-PTY) and returns stdout, used by overlay dashboards to gather data (e.g., `git status --porcelain`, `git branch --show-current`). `query_sqlite` Tauri command executes read-only SQL queries against a specified SQLite database and returns rows as JSON objects, used by the OpenCode dashboard to read session/message/token data. Pencil uses dedicated file IPC (`read_pencil_file`, `write_pencil_file`, `rename_pencil_file`, `scan_pencil_dir`) so drawing IO and picker rename do not shell out.
 - **Shell config**: `spawn_pty` command accepts optional `shell`/`shell_args` params from the frontend, falling back to config values, then `$SHELL`.
 - **Exit detection**: each PTY session has a reader thread for output/progress events and a child wait thread for lifecycle events. Either PTY EOF/error or child exit emits `pty-exit`; the frontend de-duplicates duplicate exit events.
 
@@ -362,7 +362,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 
 **Compositor single-action keys (in Compositor mode):**
 
-Focused content views may add local leader actions by implementing `ContentView.getLeaderKeyBindings()`. Each view exports static `LeaderKeySpec` metadata beside the view implementation; `src/leader-keys.ts` owns canonical key normalization and the global reserved-key list. `src/leader-keys.test.ts` imports all local metadata and fails if any local key conflicts with a global key or another local key. Disabled local bindings are hidden from which-key and never fall back to global behavior.
+Focused content views may add local leader actions by implementing `ContentView.getLeaderKeyBindings()`. Each view exports static `LeaderKeySpec` metadata beside the view implementation; `src/leader-keys.ts` owns canonical key normalization and the global reserved-key list. `src/leader-keys.test.ts` imports all local metadata and fails if any local key conflicts with a global key or another local key. Disabled local bindings are hidden from which-key and never fall back to global behavior. Current local bindings include Markdown `;` for link hints, ACP Harness `+`/`_`/`=` for lane lifecycle and metrics, and Pencil `/` to open an existing drawing in the focused tab plus `?` for creating a new drawing beside the focused file.
 
 | Key | Action |
 |-----|--------|
