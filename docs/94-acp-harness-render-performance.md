@@ -74,16 +74,14 @@ Per-paragraph and per-line stagger reveal animations were removed entirely:
   per-lane counters were deleted. Row-level entrance, caret blink, busy
   pulse, and streaming pulse animations are unaffected.
 
-Off-screen transcript rows skip layout and paint:
-
-- `.acp-harness__msg` sets `content-visibility: auto` with
-  `contain-intrinsic-size: auto 48px`, so rows scrolled outside the viewport
-  do not pay layout, style, or paint cost. The `auto` keyword lets the
-  browser remember the last measured size, keeping scroll position stable.
-- `.acp-harness__msg--streaming { content-visibility: visible }` forces the
-  actively mutating row to render every frame; otherwise, a streaming row
-  scrolled near the boundary would flicker each time it crossed the
-  visibility threshold.
+Off-screen render skipping (`content-visibility: auto`) was attempted but
+reverted: the `contain-intrinsic-size: auto 48px` placeholder undersized
+not-yet-painted rows, so `body.scrollHeight` was below the true content
+height. `body.scrollTop = body.scrollHeight` then settled above the real
+bottom, breaking sticky auto-scroll during streaming. The lesson matches
+the stagger-reveal removal: optimizations whose measurements lag the
+streaming DOM lifecycle break user-visible behavior — delete rather than
+fight.
 
 No backend or protocol changes were required.
 
