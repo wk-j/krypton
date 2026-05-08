@@ -131,6 +131,28 @@ pub struct AgentSessionInfo {
     pub session_id: String,
 }
 
+fn client_session_cwd(client: &AcpClient) -> Option<String> {
+    client.cwd.read().ok().and_then(|g| g.clone()).or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+    })
+}
+
+fn client_mcp_servers(client: &AcpClient) -> Vec<Value> {
+    client
+        .mcp_servers
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default()
+}
+
+fn set_client_session_id(client: &AcpClient, session_id: &str) {
+    if let Ok(mut g) = client.acp_session_id.write() {
+        *g = Some(session_id.to_string());
+    }
+}
+
 // ─── AcpClient ─────────────────────────────────────────────────────
 
 struct AcpClient {
@@ -616,13 +638,15 @@ fn handle_notification(client: &Arc<AcpClient>, app: &AppHandle, method: &str, p
             let update = params.get("update").cloned().unwrap_or(Value::Null);
             match update_kind {
                 "agent_message_chunk"
+                | "user_message_chunk"
                 | "agent_thought_chunk"
                 | "tool_call"
                 | "tool_call_update"
                 | "plan"
                 | "usage_update"
                 | "available_commands_update"
-                | "current_mode_update" => {
+                | "current_mode_update"
+                | "session_info_update" => {
                     client.emit_event(
                         app,
                         json!({
@@ -984,16 +1008,8 @@ pub async fn acp_session_new(
     // Project root for session/new: the cwd we spawned the child with, falling
     // back to the host process cwd. Without this, the agent treats `/` as the
     // project root and reads/writes happen at filesystem root.
-    let session_cwd = client.cwd.read().ok().and_then(|g| g.clone()).or_else(|| {
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.to_string_lossy().to_string())
-    });
-    let mcp_servers = client
-        .mcp_servers
-        .read()
-        .map(|g| g.clone())
-        .unwrap_or_default();
+    let session_cwd = client_session_cwd(&client);
+    let mcp_servers = client_mcp_servers(&client);
 
     let new_session = tokio::time::timeout(
         Duration::from_secs(30),
@@ -1013,9 +1029,7 @@ pub async fn acp_session_new(
         .and_then(|v| v.as_str())
         .ok_or_else(|| "session/new: missing sessionId".to_string())?
         .to_string();
-    if let Ok(mut g) = client.acp_session_id.write() {
-        *g = Some(acp_session_id.clone());
-    }
+    set_client_session_id(&client, &acp_session_id);
 
     if client.backend_id == "opencode" {
         set_opencode_default_model(&client, &acp_session_id).await?;
@@ -1024,6 +1038,71 @@ pub async fn acp_session_new(
     Ok(AgentSessionInfo {
         session_id: acp_session_id,
     })
+}
+
+#[tauri::command]
+pub async fn acp_session_list(
+    session: u64,
+    cwd: Option<String>,
+    cursor: Option<String>,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<Value, String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    let mut params = serde_json::Map::new();
+    if let Some(cwd) = cwd {
+        params.insert("cwd".to_string(), json!(cwd));
+    }
+    if let Some(cursor) = cursor {
+        params.insert("cursor".to_string(), json!(cursor));
+    }
+    client.request("session/list", Value::Object(params)).await
+}
+
+async fn acp_session_restore(
+    client: Arc<AcpClient>,
+    method: &str,
+    session_id: String,
+) -> Result<AgentSessionInfo, String> {
+    set_client_session_id(&client, &session_id);
+    let session_cwd = client_session_cwd(&client);
+    let mcp_servers = client_mcp_servers(&client);
+    client
+        .request(
+            method,
+            json!({
+                "sessionId": &session_id,
+                "cwd": session_cwd,
+                "mcpServers": mcp_servers,
+            }),
+        )
+        .await?;
+    Ok(AgentSessionInfo { session_id })
+}
+
+#[tauri::command]
+pub async fn acp_session_resume(
+    session: u64,
+    session_id: String,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<AgentSessionInfo, String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    acp_session_restore(client, "session/resume", session_id).await
+}
+
+#[tauri::command]
+pub async fn acp_session_load(
+    session: u64,
+    session_id: String,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<AgentSessionInfo, String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    acp_session_restore(client, "session/load", session_id).await
 }
 
 async fn set_opencode_default_model(

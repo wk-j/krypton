@@ -17,7 +17,10 @@ import type {
   AcpEvent,
   AcpMcpCapabilities,
   AcpMcpServerDescriptor,
+  AcpSessionCapabilities,
+  AcpSessionInfo,
   AgentInfo,
+  AgentInitInfo,
   ContentBlock,
   HarnessMcpLaneStats,
   HarnessMemoryEntry,
@@ -153,6 +156,7 @@ interface HarnessLane {
   acceptAllForTurn: boolean;
   rejectAllForTurn: boolean;
   pendingTurnExtractions: PendingExtraction[];
+  currentUserId: string | null;
   currentAssistantId: string | null;
   currentThoughtId: string | null;
   toolTranscriptIds: Map<string, string>;
@@ -180,6 +184,20 @@ interface TranscriptScrollAnchor {
   offsetTop: number;
 }
 
+interface SessionPickerState {
+  open: boolean;
+  phase: 'sessions' | 'backend' | 'loading' | 'error';
+  backendCursor: number;
+  sessionCursor: number;
+  backendId: string | null;
+  probeClient: AcpClient | null;
+  initInfo: AgentInitInfo | null;
+  capabilities: AcpSessionCapabilities | null;
+  sessions: AcpSessionInfo[];
+  nextCursor: string | null;
+  error: string | null;
+}
+
 const STICK_THRESHOLD_PX = 32;
 
 const METRICS_POLL_MS = 2000;
@@ -188,6 +206,7 @@ export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
   { key: '+', label: 'Add Lane', group: 'Harness' },
   { key: '_', label: 'Close Active Lane', group: 'Harness', effect: 'danger' },
   { key: '=', label: 'Lane Metrics', group: 'Harness' },
+  { key: '0', label: 'Resume Session', group: 'Harness', effect: 'important' },
 ];
 
 const BACKEND_LABELS: Record<string, string> = {
@@ -222,6 +241,7 @@ const LANE_DEFAULTS = {
   error: null,
   acceptAllForTurn: false,
   rejectAllForTurn: false,
+  currentUserId: null,
   currentAssistantId: null,
   currentThoughtId: null,
   stickToBottom: true,
@@ -282,6 +302,20 @@ export class AcpHarnessView implements ContentView {
   private pickerOpen = false;
   private pickerCursor = 0;
   private pickerEntries: AcpBackendDescriptor[] = [];
+  private sessionPickerEl!: HTMLElement;
+  private sessionPicker: SessionPickerState = {
+    open: false,
+    phase: 'loading',
+    backendCursor: 0,
+    sessionCursor: 0,
+    backendId: null,
+    probeClient: null,
+    initInfo: null,
+    capabilities: null,
+    sessions: [],
+    nextCursor: null,
+    error: null,
+  };
   private nextLaneIndex = 1;
   private systemRows: string[] = ['loading ACP backends...'];
   private laneModels: Record<string, LaneModelConfig> = {};
@@ -350,6 +384,13 @@ export class AcpHarnessView implements ContentView {
         group: 'Harness',
         run: () => this.toggleMetricsPanel(),
       },
+      {
+        key: '0',
+        label: 'Resume Session',
+        group: 'Harness',
+        effect: 'important',
+        run: () => this.openSessionPicker(),
+      },
     ];
   }
 
@@ -362,6 +403,11 @@ export class AcpHarnessView implements ContentView {
     if (this.helpOpen) {
       e.preventDefault();
       if (e.key === 'Escape' || e.key === '?' || e.key === 'q') this.toggleHelp(false);
+      return true;
+    }
+    if (this.sessionPicker.open) {
+      e.preventDefault();
+      void this.handleSessionPickerKey(e);
       return true;
     }
     if (this.pickerOpen) {
@@ -591,6 +637,11 @@ export class AcpHarnessView implements ContentView {
     this.pickerEl.hidden = true;
     body.appendChild(this.pickerEl);
 
+    this.sessionPickerEl = document.createElement('aside');
+    this.sessionPickerEl.className = 'acp-harness__session-picker';
+    this.sessionPickerEl.hidden = true;
+    body.appendChild(this.sessionPickerEl);
+
     this.element.appendChild(body);
 
     const commandCenter = document.createElement('div');
@@ -802,42 +853,15 @@ export class AcpHarnessView implements ContentView {
         if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) return;
         this.onLaneEvent(lane, event);
       });
-      const projectDirForLane = this.projectDir;
       const info: AgentInfo = await client.initialize(async (caps) => {
-        // Claude Code's adapter loads `.mcp.json` natively — re-injecting via
-        // ACP would duplicate every entry. Pi has no MCP host at all (by
-        // design), so the bridge has nowhere to land for Pi-1. Both lanes
-        // skip the bridge for opposite reasons.
-        if (lane.backendId === 'claude' || lane.backendId === 'pi-acp') return undefined;
-        const projectServers = await loadProjectMcpServers(projectDirForLane);
-        if (projectServers.length === 0) return undefined;
-        const mcpCaps = (caps as { mcpCapabilities?: AcpMcpCapabilities } | null)?.mcpCapabilities;
-        const gated = filterByCapability(projectServers, mcpCaps);
-        return dedupeByName(gated, this.memoryServerForLane(lane));
+        return this.mcpServersForLane(lane, caps);
       });
       if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
         await client.dispose();
         return;
       }
       lane.sessionId = info.session_id ?? null;
-      lane.modelName = inferLaneModelName(lane.backendId, info, this.laneModels);
-      lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
-      lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
-      const availableModes = (info.agent_capabilities as { availableModes?: unknown } | null)?.availableModes;
-      if (Array.isArray(availableModes)) {
-        for (const m of availableModes) {
-          if (m && typeof m === 'object') {
-            const mode = m as { id?: unknown; name?: unknown; description?: unknown };
-            if (typeof mode.id === 'string') {
-              lane.modesById.set(mode.id, {
-                id: mode.id,
-                name: typeof mode.name === 'string' ? mode.name : mode.id,
-                description: typeof mode.description === 'string' ? mode.description : undefined,
-              });
-            }
-          }
-        }
-      }
+      this.configureLaneFromInfo(lane, info);
       lane.status = 'idle';
       this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
     } catch (e) {
@@ -866,9 +890,48 @@ export class AcpHarnessView implements ContentView {
     }];
   }
 
+  private async mcpServersForLane(lane: HarnessLane, caps: unknown): Promise<AcpMcpServerDescriptor[] | undefined> {
+    const memoryServers = this.memoryServerForLane(lane);
+    // Claude Code's adapter loads `.mcp.json` natively — re-injecting via
+    // ACP would duplicate every entry. Pi has no MCP host at all (by design),
+    // so the bridge has nowhere to land for Pi-1. Both lanes skip the bridge
+    // for opposite reasons.
+    if (lane.backendId === 'claude' || lane.backendId === 'pi-acp') return memoryServers;
+    const projectServers = await loadProjectMcpServers(this.projectDir);
+    if (projectServers.length === 0) return memoryServers;
+    const mcpCaps = (caps as { mcpCapabilities?: AcpMcpCapabilities } | null)?.mcpCapabilities;
+    const gated = filterByCapability(projectServers, mcpCaps);
+    return dedupeByName(gated, memoryServers);
+  }
+
+  private configureLaneFromInfo(lane: HarnessLane, info: AgentInfo | AgentInitInfo): void {
+    lane.modelName = inferLaneModelName(lane.backendId, info, this.laneModels);
+    lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
+    lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
+    lane.modesById = new Map();
+    const availableModes = (info.agent_capabilities as { availableModes?: unknown } | null)?.availableModes;
+    if (Array.isArray(availableModes)) {
+      for (const m of availableModes) {
+        if (m && typeof m === 'object') {
+          const mode = m as { id?: unknown; name?: unknown; description?: unknown };
+          if (typeof mode.id === 'string') {
+            lane.modesById.set(mode.id, {
+              id: mode.id,
+              name: typeof mode.name === 'string' ? mode.name : mode.id,
+              description: typeof mode.description === 'string' ? mode.description : undefined,
+            });
+          }
+        }
+      }
+    }
+  }
+
   private onLaneEvent(lane: HarnessLane, event: AcpEvent): void {
     let needsRender = true;
     switch (event.type) {
+      case 'user_message_chunk':
+        this.appendStreaming(lane, 'user', event.text);
+        break;
       case 'message_chunk':
         this.appendStreaming(lane, 'assistant', event.text);
         break;
@@ -1014,7 +1077,7 @@ export class AcpHarnessView implements ContentView {
         {
           type: 'resource',
           resource: {
-            uri: 'krypton://acp-harness/memory.md',
+            uri: 'krypton://acp-harness/lane-context.md',
             mimeType: 'text/markdown',
             text: packet,
           },
@@ -1031,28 +1094,18 @@ export class AcpHarnessView implements ContentView {
   private renderPromptMemoryPacket(lane: HarnessLane): string {
     const self = lane.displayName;
     const roster = this.lanes.map((l) => l.displayName).join(', ');
-    const lines: string[] = [
-      `You are lane ${self}. Lanes: ${roster}.`,
-      'You can write only your own memory (memory_set); you can read any lane (memory_get / memory_list).',
-      '',
-    ];
-    for (const laneInfo of this.lanes) {
-      const name = laneInfo.displayName;
-      const entry = this.memoryEntries.find((m) => m.lane === name);
-      const tag = name === self ? '(you, read/write)' : '(read-only)';
-      lines.push(`## ${name} ${tag}`);
-      if (!entry || (!entry.summary && !entry.detail)) {
-        lines.push('empty');
-      } else {
-        if (entry.summary) lines.push(entry.summary);
-        if (entry.detail) {
-          lines.push('');
-          lines.push(entry.detail);
-        }
-      }
-      lines.push('');
+    const hasPeers = this.lanes.length > 1;
+    const lines: string[] = [`You are lane ${self}. Lanes: ${roster}.`];
+    if (hasPeers) {
+      lines.push(
+        'Shared memory is available through the krypton-harness-memory MCP server: call memory_list to see which lanes have entries, memory_get { lane } to read another lane, and memory_set { summary, detail } to update your own. Writes go to your own lane automatically; you cannot write to other lanes.',
+      );
+    } else {
+      lines.push(
+        'Shared memory is available through the krypton-harness-memory MCP server: call memory_set { summary, detail } to record state for future turns and memory_get { lane } / memory_list to read it back.',
+      );
     }
-    return lines.join('\n').trimEnd();
+    return lines.join('\n');
   }
 
   private finishTurn(lane: HarnessLane, stopReason: StopReason): void {
@@ -1211,6 +1264,267 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  private async openSessionPicker(): Promise<void> {
+    this.closeLanePicker();
+    this.helpOpen = false;
+    this.memoryDrawerOpen = false;
+    if (this.pickerEntries.length === 0) {
+      try {
+        this.pickerEntries = await AcpClient.listBackends();
+      } catch (e) {
+        this.flashChip(`backend list failed: ${errorText(e)}`);
+        return;
+      }
+    }
+    const active = this.activeLane();
+    if (!active) {
+      this.sessionPicker = {
+        ...this.emptySessionPickerState(),
+        open: true,
+        phase: 'backend',
+      };
+      this.render();
+      return;
+    }
+    this.sessionPicker = {
+      ...this.emptySessionPickerState(),
+      open: true,
+      phase: 'loading',
+      backendId: active.backendId,
+      backendCursor: Math.max(0, this.pickerEntries.findIndex((entry) => entry.id === active.backendId)),
+    };
+    this.render();
+    await this.loadSessionPickerBackend(active.backendId);
+  }
+
+  private emptySessionPickerState(): SessionPickerState {
+    return {
+      open: false,
+      phase: 'loading',
+      backendCursor: 0,
+      sessionCursor: 0,
+      backendId: null,
+      probeClient: null,
+      initInfo: null,
+      capabilities: null,
+      sessions: [],
+      nextCursor: null,
+      error: null,
+    };
+  }
+
+  private async closeSessionPicker(disposeProbe = true): Promise<void> {
+    const client = this.sessionPicker.probeClient;
+    this.sessionPicker = this.emptySessionPickerState();
+    if (disposeProbe && client) {
+      try {
+        await client.dispose();
+      } catch {
+        // ignore — best-effort teardown
+      }
+    }
+    this.render();
+  }
+
+  private async handleSessionPickerKey(e: KeyboardEvent): Promise<void> {
+    const state = this.sessionPicker;
+    if (e.key === 'Escape' || e.key === 'q') {
+      await this.closeSessionPicker();
+      return;
+    }
+    if (state.phase === 'loading') return;
+    if (state.phase === 'backend') {
+      this.handleSessionBackendKey(e);
+      return;
+    }
+    if (e.key === 'b') {
+      if (state.probeClient) {
+        await state.probeClient.dispose();
+      }
+      this.sessionPicker = {
+        ...this.emptySessionPickerState(),
+        open: true,
+        phase: 'backend',
+        backendCursor: Math.max(0, this.pickerEntries.findIndex((entry) => entry.id === state.backendId)),
+      };
+      this.renderSessionPicker();
+      return;
+    }
+    if (e.key === 'n' && state.backendId) {
+      const backendId = state.backendId;
+      await this.closeSessionPicker();
+      void this.addLane(backendId);
+      return;
+    }
+    if (e.key === 'PageDown' && state.nextCursor && state.backendId) {
+      await this.loadMoreSessions();
+      return;
+    }
+    const total = state.sessions.length;
+    if (total === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      state.sessionCursor = (state.sessionCursor + 1) % total;
+      this.renderSessionPicker();
+      return;
+    }
+    if (e.key === 'ArrowUp' || e.key === 'k') {
+      state.sessionCursor = (state.sessionCursor - 1 + total) % total;
+      this.renderSessionPicker();
+      return;
+    }
+    if (e.key === 'Enter') {
+      await this.startSelectedSession();
+    }
+  }
+
+  private handleSessionBackendKey(e: KeyboardEvent): void {
+    const total = this.pickerEntries.length;
+    if (total === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      this.sessionPicker.backendCursor = (this.sessionPicker.backendCursor + 1) % total;
+      this.renderSessionPicker();
+      return;
+    }
+    if (e.key === 'ArrowUp' || e.key === 'k') {
+      this.sessionPicker.backendCursor = (this.sessionPicker.backendCursor - 1 + total) % total;
+      this.renderSessionPicker();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const entry = this.pickerEntries[this.sessionPicker.backendCursor];
+      if (entry) void this.loadSessionPickerBackend(entry.id);
+    }
+  }
+
+  private async loadSessionPickerBackend(backendId: string): Promise<void> {
+    if (this.sessionPicker.probeClient) {
+      await this.sessionPicker.probeClient.dispose();
+    }
+    this.sessionPicker = {
+      ...this.emptySessionPickerState(),
+      open: true,
+      phase: 'loading',
+      backendId,
+      backendCursor: Math.max(0, this.pickerEntries.findIndex((entry) => entry.id === backendId)),
+    };
+    this.render();
+    let client: AcpClient | null = null;
+    try {
+      client = await AcpClient.spawn(backendId, this.projectDir, []);
+      const init = await client.initializeOnly();
+      const capabilities = sessionCapabilitiesFromAgent(init.agent_capabilities);
+      if (!capabilities.canList) {
+        await client.dispose();
+        client = null;
+        this.sessionPicker = {
+          ...this.emptySessionPickerState(),
+          open: true,
+          phase: 'error',
+          backendId,
+          backendCursor: this.sessionPicker.backendCursor,
+          capabilities,
+          error: `${backendLabel(backendId)} does not support session/list`,
+        };
+        this.render();
+        return;
+      }
+      const list = await client.listSessions(this.projectDir);
+      this.sessionPicker = {
+        ...this.emptySessionPickerState(),
+        open: true,
+        phase: 'sessions',
+        backendId,
+        backendCursor: this.sessionPicker.backendCursor,
+        probeClient: client,
+        initInfo: init,
+        capabilities,
+        sessions: filterSessionsForProject(list.sessions, this.projectDir),
+        nextCursor: list.nextCursor ?? null,
+      };
+      client = null;
+    } catch (e) {
+      if (client) await client.dispose();
+      this.sessionPicker = {
+        ...this.emptySessionPickerState(),
+        open: true,
+        phase: 'error',
+        backendId,
+        backendCursor: Math.max(0, this.pickerEntries.findIndex((entry) => entry.id === backendId)),
+        error: errorText(e),
+      };
+    }
+    this.render();
+  }
+
+  private async loadMoreSessions(): Promise<void> {
+    const state = this.sessionPicker;
+    if (!state.probeClient || !state.nextCursor) return;
+    try {
+      const list = await state.probeClient.listSessions(this.projectDir, state.nextCursor);
+      state.sessions = state.sessions.concat(filterSessionsForProject(list.sessions, this.projectDir));
+      state.nextCursor = list.nextCursor ?? null;
+      this.renderSessionPicker();
+    } catch (e) {
+      state.error = errorText(e);
+      this.renderSessionPicker();
+    }
+  }
+
+  private async startSelectedSession(): Promise<void> {
+    const state = this.sessionPicker;
+    const session = state.sessions[state.sessionCursor];
+    const client = state.probeClient;
+    const init = state.initInfo;
+    const capabilities = state.capabilities;
+    if (!session || !client || !init || !capabilities || !state.backendId) return;
+    const mode: 'resume' | 'load' | null = capabilities.canResume ? 'resume' : capabilities.canLoad ? 'load' : null;
+    if (!mode) {
+      state.error = 'selected backend can list sessions but cannot resume or load them';
+      this.renderSessionPicker();
+      return;
+    }
+    const label = backendLabel(state.backendId);
+    const existing = this.lanes.filter((l) => l.backendId === state.backendId).length;
+    const lane = this.createLane(this.nextLaneIndex++, state.backendId, `${label}-${existing + 1}`);
+    lane.client = client;
+    lane.status = 'starting';
+    lane.transcript = [{ id: makeId(), kind: 'system', text: `${mode === 'resume' ? 'resuming' : 'loading'} ${shortId(session.sessionId)}...` }];
+    this.lanes.push(lane);
+    this.activateLane(lane.id);
+    this.sessionPicker.probeClient = null;
+    await this.closeSessionPicker(false);
+    const spawnEpoch = lane.spawnEpoch;
+    client.onEvent((event) => {
+      if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) return;
+      this.onLaneEvent(lane, event);
+    });
+    try {
+      const servers = await this.mcpServersForLane(lane, init.agent_capabilities);
+      await client.setMcpServers(servers ?? []);
+      const info = mode === 'resume'
+        ? await client.resumeSession(session.sessionId)
+        : await client.loadSession(session.sessionId);
+      if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
+        await client.dispose();
+        return;
+      }
+      lane.sessionId = info.session_id;
+      this.configureLaneFromInfo(lane, init);
+      lane.status = 'idle';
+      this.sealStreaming(lane);
+      this.appendTranscript(lane, 'system', `${mode === 'resume' ? 'resumed' : 'loaded'} ${shortId(session.sessionId)}.`);
+    } catch (e) {
+      if (lane.spawnEpoch !== spawnEpoch) {
+        await client.dispose();
+        return;
+      }
+      lane.status = 'error';
+      lane.error = errorText(e);
+      this.appendTranscript(lane, 'system', `session ${mode} failed: ${errorText(e)}`);
+    }
+    this.render();
+  }
+
   private async addLane(backendId: string): Promise<void> {
     const label = backendLabel(backendId);
     const existing = this.lanes.filter((l) => l.backendId === backendId).length;
@@ -1331,6 +1645,7 @@ export class AcpHarnessView implements ContentView {
     lane.error = null;
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
+    lane.currentUserId = null;
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
     lane.toolTranscriptIds = new Map();
@@ -1482,6 +1797,7 @@ export class AcpHarnessView implements ContentView {
     this.renderHelp();
     this.renderPlanPanel(this.activeLane());
     this.renderPicker();
+    this.renderSessionPicker();
     this.renderComposer();
     this.scheduleStickyScroll();
   }
@@ -1645,6 +1961,82 @@ export class AcpHarnessView implements ContentView {
       `<span>j/k move · enter spawn · esc cancel</span>` +
       `</header>` +
       `<ul class="acp-harness__picker-list">${rows}</ul>${empty}`;
+  }
+
+  private renderSessionPicker(): void {
+    const state = this.sessionPicker;
+    this.sessionPickerEl.hidden = !state.open;
+    if (!state.open) {
+      this.sessionPickerEl.innerHTML = '';
+      return;
+    }
+    const backendName = state.backendId ? backendLabel(state.backendId) : 'backend';
+    if (state.phase === 'backend') {
+      const rows = this.pickerEntries.map((entry, i) => {
+        const active = i === state.backendCursor ? ' acp-harness__session-row--active' : '';
+        const running = this.lanes.filter((lane) => lane.backendId === entry.id).length;
+        return `<li class="acp-harness__session-row${active}" data-session-backend="${esc(entry.id)}">` +
+          `<span class="acp-harness__session-title">${esc(backendLabel(entry.id))}</span>` +
+          `<span class="acp-harness__session-meta">${esc(entry.id)}</span>` +
+          `<span class="acp-harness__session-action">${running > 0 ? `${running} running` : 'select'}</span>` +
+          `</li>`;
+      }).join('');
+      this.sessionPickerEl.innerHTML =
+        `<header class="acp-harness__session-head">` +
+        `<span>// resume session</span>` +
+        `<span>j/k move · enter list · esc cancel</span>` +
+        `</header>` +
+        `<ul class="acp-harness__session-list">${rows}</ul>`;
+      return;
+    }
+    if (state.phase === 'loading') {
+      this.sessionPickerEl.innerHTML =
+        `<header class="acp-harness__session-head">` +
+        `<span>// ${esc(backendName)} sessions</span>` +
+        `<span>initializing...</span>` +
+        `</header>` +
+        `<div class="acp-harness__session-empty">loading sessions</div>`;
+      return;
+    }
+    if (state.phase === 'error') {
+      this.sessionPickerEl.innerHTML =
+        `<header class="acp-harness__session-head">` +
+        `<span>// ${esc(backendName)} sessions</span>` +
+        `<span>b switch backend · n fresh · esc cancel</span>` +
+        `</header>` +
+        `<div class="acp-harness__session-empty">${esc(state.error ?? 'session list unavailable')}</div>`;
+      return;
+    }
+    const capabilities = state.capabilities;
+    const canOpen = !!capabilities && (capabilities.canResume || capabilities.canLoad);
+    const action = capabilities?.canResume ? 'resume' : capabilities?.canLoad ? 'load' : 'list only';
+    const rows = state.sessions.map((session, i) => {
+      const active = i === state.sessionCursor ? ' acp-harness__session-row--active' : '';
+      const disabled = canOpen ? '' : ' acp-harness__session-row--disabled';
+      const title = session.title?.trim() || 'untitled session';
+      const metaParts = [shortId(session.sessionId)];
+      const updated = formatSessionUpdatedAt(session.updatedAt);
+      if (updated) metaParts.push(updated);
+      if (session.cwd && this.projectDir && normalizePathForCompare(session.cwd) !== normalizePathForCompare(this.projectDir)) {
+        metaParts.push(session.cwd);
+      }
+      return `<li class="acp-harness__session-row${active}${disabled}">` +
+        `<span class="acp-harness__session-title">${esc(title)}</span>` +
+        `<span class="acp-harness__session-meta">${esc(metaParts.join(' · '))}</span>` +
+        `<span class="acp-harness__session-action">${esc(action)}</span>` +
+        `</li>`;
+    }).join('');
+    const empty = state.sessions.length === 0
+      ? '<div class="acp-harness__session-empty">no sessions for this project</div>'
+      : '';
+    const pageHint = state.nextCursor ? ' · PageDown more' : '';
+    const error = state.error ? `<div class="acp-harness__session-error">${esc(state.error)}</div>` : '';
+    this.sessionPickerEl.innerHTML =
+      `<header class="acp-harness__session-head">` +
+      `<span>// ${esc(backendName)} sessions</span>` +
+      `<span>enter ${esc(action)} · b backend · n fresh${pageHint} · esc cancel</span>` +
+      `</header>` +
+      `<ul class="acp-harness__session-list">${rows}</ul>${empty}${error}`;
   }
 
   private renderDashboard(): void {
@@ -1996,6 +2388,7 @@ export class AcpHarnessView implements ContentView {
             <dt>Cmd+P then +</dt><dd>Add lane (open backend picker)</dd>
             <dt>Cmd+P then _</dt><dd>Close active lane</dd>
             <dt>Cmd+P then =</dt><dd>Toggle lane metrics overlay</dd>
+            <dt>Cmd+P then 0</dt><dd>Resume/load a project session for the active backend</dd>
             <dt>Ctrl+N / Ctrl+P</dt><dd>Next / previous lane</dd>
             <dt>Esc, then 1-9</dt><dd>Switch lane in transcript mode</dd>
             <dt>Esc, then ?</dt><dd>Open help</dd>
@@ -2149,18 +2542,27 @@ export class AcpHarnessView implements ContentView {
     return null;
   }
 
-  private appendStreaming(lane: HarnessLane, kind: 'assistant' | 'thought', text: string): void {
-    const currentId = kind === 'assistant' ? lane.currentAssistantId : lane.currentThoughtId;
+  private appendStreaming(lane: HarnessLane, kind: 'user' | 'assistant' | 'thought', text: string): void {
+    if (kind !== 'user') lane.currentUserId = null;
+    if (kind !== 'assistant') lane.currentAssistantId = null;
+    if (kind !== 'thought') lane.currentThoughtId = null;
+    const currentId = kind === 'user'
+      ? lane.currentUserId
+      : kind === 'assistant'
+        ? lane.currentAssistantId
+        : lane.currentThoughtId;
     let item = currentId ? lane.transcript.find((entry) => entry.id === currentId) : null;
     if (!item) {
       item = this.appendTranscript(lane, kind, '');
-      if (kind === 'assistant') lane.currentAssistantId = item.id;
+      if (kind === 'user') lane.currentUserId = item.id;
+      else if (kind === 'assistant') lane.currentAssistantId = item.id;
       else lane.currentThoughtId = item.id;
     }
     item.text += text;
   }
 
   private sealStreaming(lane: HarnessLane): void {
+    lane.currentUserId = null;
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
   }
@@ -3229,7 +3631,7 @@ function toolSectionTone(label: string): string {
 
 function inferLaneModelName(
   backendId: string,
-  info: AgentInfo,
+  info: AgentInfo | AgentInitInfo,
   laneModels: Record<string, LaneModelConfig>,
 ): string | null {
   const configured = laneModels[backendId]?.active;
@@ -3781,6 +4183,32 @@ function formatShortTime(epochMs: number): string {
   const age = Date.now() - epochMs;
   if (age >= 0 && age < 24 * 60 * 60 * 1000) return `${formatAge(age)} ago`;
   return new Date(epochMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatSessionUpdatedAt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return value;
+  return formatShortTime(ms);
+}
+
+function normalizePathForCompare(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function filterSessionsForProject(sessions: AcpSessionInfo[], projectDir: string | null): AcpSessionInfo[] {
+  if (!projectDir) return sessions;
+  const project = normalizePathForCompare(projectDir);
+  return sessions.filter((session) => !session.cwd || normalizePathForCompare(session.cwd) === project);
+}
+
+function sessionCapabilitiesFromAgent(caps: AgentInitInfo['agent_capabilities']): AcpSessionCapabilities {
+  const sessionCaps = caps.sessionCapabilities;
+  return {
+    canList: Boolean(sessionCaps?.list),
+    canResume: Boolean(sessionCaps?.resume),
+    canLoad: caps.loadSession === true,
+  };
 }
 
 function shortId(id: string): string {

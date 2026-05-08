@@ -9,9 +9,12 @@ import { setupListener } from '../util/listener';
 import type {
   AcpAvailableCommand,
   AcpBackendDescriptor,
+  AcpSessionListResult,
   AcpMcpServerDescriptor,
   AcpEvent,
   AgentInfo,
+  AgentInitInfo,
+  AgentSessionInfo,
   ContentBlock,
   PermissionOption,
   PlanEntry,
@@ -94,27 +97,57 @@ export class AcpClient {
   async initialize(
     onInitialized?: (caps: unknown) => Promise<AcpMcpServerDescriptor[] | undefined>,
   ): Promise<AgentInfo> {
-    const init = await invoke<{
-      agent_protocol_version: number;
-      auth_methods: unknown[];
-      agent_capabilities: unknown;
-    }>('acp_initialize', { session: this.session });
+    const init = await this.initializeOnly();
     if (onInitialized) {
       const servers = await onInitialized(init.agent_capabilities);
       if (servers !== undefined) {
-        await invoke('acp_set_mcp_servers', {
-          session: this.session,
-          mcpServers: servers,
-        });
+        await this.setMcpServers(servers);
       }
     }
-    const sn = await invoke<{ session_id: string }>('acp_session_new', { session: this.session });
+    const sn = await this.sessionNew();
     return {
       agent_protocol_version: init.agent_protocol_version,
       auth_methods: init.auth_methods,
       agent_capabilities: init.agent_capabilities,
       session_id: sn.session_id,
     } as AgentInfo;
+  }
+
+  async initializeOnly(): Promise<AgentInitInfo> {
+    return invoke<AgentInitInfo>('acp_initialize', { session: this.session });
+  }
+
+  async setMcpServers(mcpServers: AcpMcpServerDescriptor[]): Promise<void> {
+    await invoke('acp_set_mcp_servers', {
+      session: this.session,
+      mcpServers,
+    });
+  }
+
+  async sessionNew(): Promise<AgentSessionInfo> {
+    return invoke<AgentSessionInfo>('acp_session_new', { session: this.session });
+  }
+
+  async listSessions(cwd: string | null, cursor?: string | null): Promise<AcpSessionListResult> {
+    return invoke<AcpSessionListResult>('acp_session_list', {
+      session: this.session,
+      cwd,
+      cursor: cursor ?? null,
+    });
+  }
+
+  async resumeSession(sessionId: string): Promise<AgentSessionInfo> {
+    return invoke<AgentSessionInfo>('acp_session_resume', {
+      session: this.session,
+      sessionId,
+    });
+  }
+
+  async loadSession(sessionId: string): Promise<AgentSessionInfo> {
+    return invoke<AgentSessionInfo>('acp_session_load', {
+      session: this.session,
+      sessionId,
+    });
   }
 
   onEvent(cb: (e: AcpEvent) => void): () => void {
@@ -189,6 +222,9 @@ export class AcpClient {
           [k: string]: unknown;
         };
         switch (raw.kind) {
+          case 'user_message_chunk':
+            event = { type: 'user_message_chunk', text: extractText(update.content) };
+            break;
           case 'agent_message_chunk':
             event = { type: 'message_chunk', text: extractText(update.content) };
             break;

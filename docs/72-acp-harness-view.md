@@ -24,7 +24,7 @@ Memory details are specified in `docs/73-acp-harness-mcp-memory.md`. Older heuri
 - ACP is already a process-per-session model in Krypton: `AcpRegistry` keys clients by `krypton_session`, emits `acp-event-<session>`, and `AcpClient` wraps one backend subprocess. This supports multiple simultaneous agents without backend protocol changes.
 - The ACP protocol defines `session/prompt` as one outstanding prompt turn that streams `session/update` notifications and ends when `session/prompt` returns a stop reason. Harness dispatch must therefore skip or queue busy lanes instead of sending concurrent prompts to one ACP session.
 - ACP `session/cancel` is a notification; agents may still send final updates before returning `cancelled`. Harness lanes must stay visible until the stop event, not immediately mark cancelled on keypress.
-- ACP content blocks include embedded resources for prompt context when an agent advertises `promptCapabilities.embeddedContext`. For agents that do not advertise it, the memory snapshot can still be injected as a leading text block.
+- ACP content blocks include embedded resources for prompt context when an agent advertises `promptCapabilities.embeddedContext`. For agents that do not advertise it, the same lane-context stub is delivered as a leading text block. (Memory bodies are pulled on demand via MCP — see Spec 98.)
 - ACP `_meta` and extension methods exist, but relying on custom `_krypton/*` methods would require each external ACP adapter to implement them. The harness should stay adapter-agnostic and use prompt content instead.
 - Claude Code memory prior art separates project instructions (`CLAUDE.md`) from auto memory. For Krypton, shared harness memory should be a transparent markdown-like board scoped to the harness/project, not hidden provider-specific memory.
 - Claude Code auto memory only loads a bounded entrypoint at session start and expects detailed notes to be read on demand. Krypton should mirror that constraint by injecting only relevant memory entries per prompt, not the full board.
@@ -191,34 +191,30 @@ There are **no** commands for adding, editing, pinning, deleting individual rows
 
 ### Injection
 
-Every prompt is prefixed with a memory packet containing the active lane label, the full lane roster, and the current memory document for each lane. Agents can read details on demand through MCP tools. There are no injection modes.
+Every prompt is prefixed with a short **lane-context stub** (~60–90 tokens) containing only the active lane label, the lane roster, and a one-line nudge describing the `krypton-harness-memory` MCP tools (`memory_list`, `memory_get`, `memory_set`). Memory bodies (summary + detail) are **not** injected — agents pull them on demand through MCP. See `docs/98-acp-harness-memory-on-demand.md` for rationale.
 
 Prompt block construction:
 
 ```ts
 function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] {
-  const snapshot = renderPromptMemoryPacket(lane);
+  const stub = renderPromptMemoryPacket(lane);
   const userBlock: ContentBlock = { type: 'text', text: userText };
-  if (!snapshot) return [userBlock];
+  if (!stub) return [userBlock];
   if (laneSupportsEmbeddedContext(lane)) {
     return [
       {
         type: 'resource',
         resource: {
-            uri: 'krypton://acp-harness/memory.md',
+          uri: 'krypton://acp-harness/lane-context.md',
           mimeType: 'text/markdown',
-          text: snapshot,
+          text: stub,
         },
       },
       userBlock,
     ];
   }
   return [
-    {
-      type: 'text',
-      text:
-        snapshot,
-    },
+    { type: 'text', text: stub },
     userBlock,
   ];
 }
@@ -232,7 +228,7 @@ function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] 
 3. AcpHarnessView calls AcpClient.listBackends(), then spawns the default roster with that same projectDir.
 4. Each lane registers its own client.onEvent() callback and initializes independently.
 5. User selects an active tab (default is lane 1) and types a prompt, a hash command, or resolves a permission.
-6. For a normal prompt, harness builds the memory packet from current lane documents and prepends it via embedded resource or text block.
+6. For a normal prompt, harness builds the lane-context stub (identity + roster + MCP-tools nudge) and prepends it via embedded resource or text block. Memory bodies are not injected; agents fetch them via `memory_list` / `memory_get` (Spec 98).
 7. Harness dispatches the prompt to the active tab's lane only. While the turn is running, the composer chip shows `<lane> running · m:ss · Ctrl+C cancel` and updates once per second. If the active lane is busy, dispatch is rejected with an inline composer chip `lane busy`; the prompt is not queued. When the lane transitions busy→idle and the composer still holds a non-empty draft, the chip flashes `lane idle — Enter to send` for 2 seconds; dispatch remains manual.
 8. While the turn streams: each lane renders stream/tool/plan/usage updates into its dashboard transcript. Completed `edit` calls and completed diff-bearing `write_like` tool updates update `fileTouchMap[path] = {laneId, laneDisplayName, toolKind, at}` (overwriting older entries). Memory tool calls trigger a memory-board refresh.
 9. When the turn returns, pending permissions and turn-scoped accept/reject-all flags clear. Cancelled turns do not modify memory unless the agent already called MCP memory tools before cancellation.
@@ -497,7 +493,10 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `i` / `Esc` | Transcript scroll focus | Return to composer input. |
 | `q` | Transcript scroll focus | Close harness tab. |
 | `Cmd+.` | Any composer/transcript context | Toggle Zen Mode (collapses inactive lanes into a left rail; active lane fills the body). Persisted per project. See `docs/80-acp-harness-zen-mode.md`. |
-| `Cmd+P → m` | Harness focused | Toggle lane resource metrics overlay (CPU/RSS tree per lane). See `docs/91-acp-lane-resource-metrics.md`. |
+| `Cmd+P → +` | Harness focused | Open lane picker and spawn a fresh backend lane. |
+| `Cmd+P → _` | Harness focused | Close and dispose the active lane. |
+| `Cmd+P → =` | Harness focused | Toggle lane resource metrics overlay (CPU/RSS tree per lane). See `docs/91-acp-lane-resource-metrics.md`. |
+| `Cmd+P → 0` | Harness focused | Open the active backend's project session picker; resume when `session/resume` is available, otherwise load when `loadSession` is available. |
 
 Memory mutations are not bound to dedicated keys; active-lane memory clearing executes through `#mem clear` in the composer. This keeps the keybinding surface narrow and the input rule consistent (input always in the command center).
 
@@ -525,7 +524,7 @@ No TOML keys are wired for the harness. The default roster is code-defined, and 
 - **`#new` command:** runs only when the active lane is idle, error, or stopped. It awaits disposal of the old ACP client, clears visible lane state and mutable containers, increments the lane spawn epoch, and starts the same backend in the same project directory. Harness memory is preserved.
 - **`#new!` command:** performs `#new` only after clearing the active lane's persisted memory document. If memory is unavailable or clearing fails, the fresh session is refused so the destructive suffix never degrades silently.
 - **Late events after fresh session:** `AcpClient` drops raw events after `dispose()`, and harness lane callbacks compare both spawn epoch and client identity before mutating state.
-- **`#mem clear` during active work:** clears the active lane's memory document for future prompt packets only. Any prompt already sent may still contain the old memory snapshot.
+- **`#mem clear` during active work:** clears the active lane's memory document immediately. Subsequent prompts only carry the lane-context stub, so the cleared body is gone for any future `memory_get` call. In-flight turns that already fetched memory keep the old snapshot in agent context until that turn ends.
 - **User presses Enter while active lane is busy:** show inline composer chip `lane busy`; do not dispatch and do not queue. User must wait for the lane to return to idle (or `Ctrl+C` to cancel). On busy→idle transition with non-empty draft, chip flashes `lane idle — Enter to send` for 2s + optional sound cue; dispatch is still manual.
 - **Permission arrives for a non-active tab:** built-in memory MCP permissions are auto-allowed in place only when the permission payload identifies Krypton's `krypton-harness-memory` server (including namespaced `krypton_harness_memory` tool ids, rendered `Tool: krypton-harness-memory/memory_set` labels, or `/mcp/harness/` endpoint URLs). Other permissions put that tab's composer in permission mode internally; the active tab's composer is unaffected. The tab strip shows `!N` and the dashboard collapsed row turns warning-colored. The user must switch to the tab to resolve. There is no cross-tab approve shortcut by design.
 - **Multiple permissions on the same lane:** the lane's composer pre-empts and walks them in order; lane transcript shows resolution rows for each. If `acceptAllForTurn` / `rejectAllForTurn` is set, subsequent requests resolve automatically until the turn returns; each auto-resolution still appends a transcript row.
@@ -560,7 +559,7 @@ Assumptions for v1:
 - **Configurable memory persistence.** Memory persistence is always enabled for project-scoped harness memory.
 - **Memory center / derived summary.** No second layer above the entry list. Selection at dispatch time is the only "view" of memory.
 - **Memory kinds / decision tier.** Lane memory is a summary/detail document, not a typed entry stream with decision states.
-- **Memory injection modes.** No `auto` / `agent_select` / `pinned_only` / `manual` / `off` switching. The current harness memory packet is always sent before the user prompt.
+- **Memory injection modes.** No `auto` / `agent_select` / `pinned_only` / `manual` / `off` switching. The lane-context stub is always sent before the user prompt; memory bodies are always pulled on demand by the agent via MCP (Spec 98).
 - **`agent_select` preflight.** No two-step prompt that asks the LLM to choose memory IDs.
 - **Compaction.** No fold-into-summary, no `#mem compact`, no stale rules. Each lane owns one summary/detail document.
 - **Conflict / pending-decision flows.** No `pending_decision`, `conflict`, or `resolution_proposal` states. No `#mem approve` / `#mem reject`. Conflicts are resolved by asking agents to update memory or clearing a lane document.
@@ -573,8 +572,7 @@ Assumptions for v1:
 - **Global permission queue strip.** Permission is per-tab pre-empt; tab strip badges and dashboard row colors carry the urgency signal.
 - **Per-lane focus on the dashboard.** The dashboard is read-only; lane "focus" is implicit through the active tab.
 - Git worktree creation, branch management, or merge orchestration.
-- New Rust ACP protocol capabilities.
-- ACP `session/load`, `session/list`, or transcript persistence.
+- ACP `session/close`, manual resume by pasted session id, session delete/archive/fork, or Krypton-side transcript persistence.
 - Writing to `CLAUDE.md`, `AGENTS.md`, provider auto-memory folders, or other agent-native memory stores.
 - Custom `_krypton/*` ACP extension methods for memory.
 - Mid-turn memory retrieval by the agent.

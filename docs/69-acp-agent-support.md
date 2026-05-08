@@ -253,13 +253,13 @@ None.
 
 - Touching `src/agent/` (pi-agent), `docs/42-pi-agent-integration.md`, or any pi-agent behavior.
 - ACP `terminal/*` methods (agent-spawned long-running terminals).
-- ACP `session/load` (resumption).
+- ACP `session/load` / `session/list` / `session/resume` in the standalone ACP Agent window. The ACP Harness implements project-scoped session list/resume separately in `docs/97-acp-harness-session-resume.md`.
 - Implementing `authenticate` JSON-RPC flow inside Krypton.
 - MCP server exposure from Krypton to ACP agents (`mcpCapabilities.http`/`sse`).
 - Auto-installing missing adapters. Document the install command, don't run it.
 - Switching backend on a live ACP window (open a new window instead).
 - Sharing message history between pi-agent and ACP windows.
-- Persisting transcripts on the Krypton side. Adapters keep their own session history (Claude Code in `~/.claude/`, Gemini CLI in its own store); duplicating that in Krypton without `session/load` would be a misleading pseudo-resumption.
+- Persisting transcripts on the Krypton side. Adapters keep their own session history (Claude Code in `~/.claude/`, Gemini CLI in its own store); the harness can load/resume adapter-native sessions through ACP, but Krypton still does not duplicate transcript persistence locally.
 - Krypton-side memory of `allow_always` / `reject_always` permission choices. Adapters own permission memory; the chosen `optionId` is forwarded verbatim and forgotten.
 - `@`-mention file picker in the input field. v1 ships text-only input; the picker is a possible v2 addition once we see how often users want it.
 

@@ -70,9 +70,40 @@ export interface AgentInfo {
   auth_methods: unknown[];
   agent_capabilities: {
     promptCapabilities?: { image?: boolean; audio?: boolean; embeddedContext?: boolean };
+    sessionCapabilities?: { list?: unknown; resume?: unknown; close?: unknown };
+    loadSession?: boolean;
     [k: string]: unknown;
   };
   session_id: string;
+}
+
+export interface AgentInitInfo {
+  agent_protocol_version: number;
+  auth_methods: unknown[];
+  agent_capabilities: AgentInfo['agent_capabilities'];
+}
+
+export interface AgentSessionInfo {
+  session_id: string;
+}
+
+export interface AcpSessionCapabilities {
+  canList: boolean;
+  canResume: boolean;
+  canLoad: boolean;
+}
+
+export interface AcpSessionInfo {
+  sessionId: string;
+  cwd: string;
+  title?: string | null;
+  updatedAt?: string | null;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface AcpSessionListResult {
+  sessions: AcpSessionInfo[];
+  nextCursor?: string | null;
 }
 
 export interface AcpBackendDescriptor {
@@ -166,6 +197,7 @@ export interface AcpAgentMode {
 }
 
 export type AcpEvent =
+  | { type: 'user_message_chunk'; text: string }
   | { type: 'message_chunk'; text: string }
   | { type: 'thought_chunk'; text: string }
   | { type: 'tool_call'; call: ToolCall }

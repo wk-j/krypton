@@ -149,10 +149,11 @@
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
    Lanes render into a shared dashboard, but prompts are dispatched only to the
    active tab in the command center.
-7. On Enter, the active lane's draft is sent through acp_prompt with a minimal
-   memory packet: the lane's own label, the full lane roster for the harness,
-   and the lane's own current memory summary (or "empty"). No other-lane
-   summaries are injected — agents call memory_list when curious.
+7. On Enter, the active lane's draft is sent through acp_prompt with a short
+   lane-context stub: the lane's own label, the full lane roster, and a
+   one-line nudge describing the krypton-harness-memory MCP tools. Memory
+   bodies (summary + detail) are not injected — agents call memory_list /
+   memory_get on demand (Spec 98).
 8. MCP-capable agents call memory_set, memory_get, and memory_list against
    /mcp/harness/<harnessId>/lane/<laneLabel>.
    a. memory_set overwrites the caller's own document in RAM.
@@ -175,7 +176,27 @@
     d. #new! first clears that lane's persisted memory document through
        clear_harness_memory_lane, then follows the #new flow.
     e. #mem clear clears the active lane memory document for future prompts only.
-13. Images stage in the active lane composer from paste, drop, or global
+13. Session resume picker:
+    a. `Cmd+P → 0` opens the session picker. If an active lane exists, the
+       picker auto-selects that lane's backend; otherwise it opens backend
+       selection first.
+    b. The picker spawns a short-lived AcpClient probe for the selected backend,
+       calls `acp_initialize`, and gates actions on
+       `sessionCapabilities.list`, `sessionCapabilities.resume`, and
+       top-level `loadSession`.
+    c. If list is supported, the probe calls `session/list` with `cwd =
+       projectDir`; the frontend filters returned sessions by cwd again when
+       the agent includes cwd metadata.
+    d. Selecting a session creates a new harness lane and attaches the probe
+       client plus its event listener before calling `session/resume` or
+       `session/load`. This ordering is required because `session/load` replays
+       history as `session/update` notifications while the request is still
+       pending.
+    e. Resume/load sends the same capability-gated `.mcp.json` bridge and
+       `krypton-harness-memory` MCP descriptors as fresh lanes. `session/load`
+       replayed `user_message_chunk` and assistant/tool updates flow through
+       the same transcript renderer as live turns.
+14. Images stage in the active lane composer from paste, drop, or global
     Ctrl+Shift+S screen capture. For global capture, main.ts invokes
     capture_screen only when the focused content type is acp_harness, then
     routes the PNG through Compositor.stageCapturedImageOnFocusedContent().
@@ -183,10 +204,10 @@
     harness sends staged images as embedded ACP image blocks with base64 data
     plus a file:// URI to the saved path on the next prompt, then clears the
     transient composer thumbnails after dispatch.
-14. Closing the harness disposes every lane client, calls dispose_harness_memory(),
+15. Closing the harness disposes every lane client, calls dispose_harness_memory(),
     and drops transcripts and file-touch warnings. Persistent memory stays on
     disk for the next harness session in this directory.
-15. Per-lane slash commands and mode chip:
+16. Per-lane slash commands and mode chip:
     a. After session/new the agent sends an available_commands_update; Rust
        forwards it on acp-event-<session> with kind "available_commands_update".
     b. The TS dispatcher (src/acp/client.ts) emits an `available_commands` event;
@@ -198,7 +219,7 @@
     d. current_mode_update follows the same path; modes are looked up against
        agentCapabilities.availableModes captured during initialize, and the lane
        head paints `renderModeChip()` between the model and MCP chips.
-16. fs/* activity surfacing:
+17. fs/* activity surfacing:
     a. When the agent calls fs/read_text_file or fs/write_text_file as an inbound
        JSON-RPC request, src-tauri/src/acp.rs handles the I/O locally, then
        calls emit_fs_activity() before replying.
@@ -208,7 +229,7 @@
        appends a transcript item rendered as a `📖 read` / `✏️ wrote` /
        `✗ failed` chip showing the path. NotFound reads still render as ok=true
        (returning empty content matches existing wire semantics).
-17. fs/write_text_file gated review (Spec 89):
+18. fs/write_text_file gated review (Spec 89):
     a. validate_fs_path(client, path) canonicalizes the requested path against
        the lane's project root and rejects anything that escapes; the rejection
        still emits an fs_activity error chip.
@@ -225,12 +246,12 @@
        Ok({}), reject replies an error with code -32000.
     e. The Rust handler then emits fs_activity (success or rejection) so the
        visibility log records the outcome.
-18. tool_call.content[].diff rendering (Spec 89):
+19. tool_call.content[].diff rendering (Spec 89):
     Whenever a tool_call or tool_call_update arrives with a content entry of
     type 'diff' (oldText + newText), buildToolPayload extracts it into
     ToolPayload.diffs; renderToolBody emits the unified +/- diff via the shared
     renderDiffPreview helper using the `acp-harness` CSS prefix.
-19. Plan tracking pinned panel (Spec 90):
+20. Plan tracking pinned panel (Spec 90):
     a. session/update { sessionUpdate: 'plan' } already flows from Rust through
        client.ts as an AcpEvent { type: 'plan', entries }.
     b. The harness handler stores entries on lane.plan (replacing any prior
@@ -245,7 +266,7 @@
        repaints from the active lane's stored plan.
     e. `p` in transcript focus toggles lane.planCollapsed. #restart, #new,
        and #new! null lane.plan and reset planCollapsed.
-20. Harness event render batching (Spec 94):
+21. Harness event render batching (Spec 94):
     a. ACP event handlers mutate lane state synchronously, but expensive
        transcript/dashboard refreshes call scheduleRender() instead of render().
     b. scheduleRender() keeps one pending requestAnimationFrame callback, so
