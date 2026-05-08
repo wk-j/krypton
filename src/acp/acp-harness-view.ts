@@ -154,6 +154,7 @@ interface HarnessLane {
   toolCalls: Map<string, ToolCall | ToolCallUpdate>;
   seenTranscriptIds: Set<string>;
   stickToBottom: boolean;
+  savedScrollTop: number;
   pendingShellId: string | null;
   stagedImages: StagedImage[];
   supportsImages: boolean;
@@ -212,6 +213,7 @@ const LANE_DEFAULTS = {
   currentAssistantId: null,
   currentThoughtId: null,
   stickToBottom: true,
+  savedScrollTop: 0,
   pendingShellId: null,
   supportsImages: false,
   activeTurnStartedAt: null,
@@ -1605,6 +1607,18 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderDashboard(): void {
+    // Preserve the active lane body's DOM identity across the rebuild so the
+    // browser's real scroll position and any in-flight streaming layout stay
+    // intact. Detach before clearing dashboardEl, reattach inside the new
+    // active lane shell. renderActiveTranscript then diffs its children.
+    const prevBody = this.activeTranscriptBody();
+    const prevBodyLaneId =
+      prevBody?.dataset.laneId ?? prevBody?.parentElement?.dataset.laneId ?? null;
+    if (prevBody) {
+      prevBody.dataset.laneId = prevBodyLaneId ?? prevBody.dataset.laneId ?? '';
+      prevBody.parentElement?.removeChild(prevBody);
+    }
+
     this.dashboardEl.innerHTML = '';
     if (this.lanes.length === 0) {
       const empty = document.createElement('div');
@@ -1652,27 +1666,28 @@ export class AcpHarnessView implements ContentView {
         stats.className = 'acp-harness__lane-stats';
         stats.innerHTML = renderLaneStats(lane, this.projectDir);
         laneEl.appendChild(stats);
-        const body = document.createElement('div');
-        body.className = 'acp-harness__lane-body';
-        if (lane.transcript.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'acp-harness__transcript-empty';
-          empty.textContent = 'lane transcript will appear here';
-          body.appendChild(empty);
+        let body: HTMLElement;
+        if (prevBody && prevBodyLaneId === lane.id) {
+          body = prevBody;
         } else {
-          for (const item of lane.transcript) {
-            const isNew = !lane.seenTranscriptIds.has(item.id);
-            const streaming = item.id === lane.currentAssistantId || item.id === lane.currentThoughtId;
-            const itemEl = renderTranscriptItem(item, isNew, streaming);
-            body.appendChild(itemEl);
-            lane.seenTranscriptIds.add(item.id);
-          }
+          body = document.createElement('div');
+          body.className = 'acp-harness__lane-body';
+          body.dataset.laneId = lane.id;
         }
         laneEl.appendChild(body);
       }
       (bodyCell ?? this.dashboardEl).appendChild(laneEl);
     }
-    this.schedulePretextLayout();
+    const activeLane = this.activeLane();
+    if (activeLane) this.renderActiveTranscript(activeLane);
+    if (activeLane && activeLane.stickToBottom) {
+      const body = this.activeTranscriptBody();
+      if (body) {
+        this.suppressScrollListener = true;
+        body.scrollTop = body.scrollHeight;
+        this.suppressScrollListener = false;
+      }
+    }
   }
 
   private renderRailEntry(lane: HarnessLane, active: boolean): HTMLElement {
@@ -2211,8 +2226,20 @@ export class AcpHarnessView implements ContentView {
     }
     if (e.key === 'j') { e.preventDefault(); body.scrollBy({ top: 24, behavior: 'instant' }); return true; }
     if (e.key === 'k') { e.preventDefault(); body.scrollBy({ top: -24, behavior: 'instant' }); return true; }
-    if (e.key === 'g') { e.preventDefault(); body.scrollTop = 0; return true; }
-    if (e.key === 'G') { e.preventDefault(); body.scrollTop = body.scrollHeight; return true; }
+    if (e.key === 'g') {
+      e.preventDefault();
+      body.scrollTop = 0;
+      const lane = this.activeLane();
+      if (lane) { lane.stickToBottom = false; lane.savedScrollTop = 0; }
+      return true;
+    }
+    if (e.key === 'G') {
+      e.preventDefault();
+      const lane = this.activeLane();
+      if (lane) lane.stickToBottom = true;
+      this.scheduleStickyScroll();
+      return true;
+    }
     if (e.key === 'q') { e.preventDefault(); this.closeCb?.(); return true; }
     if (e.key === 'p' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const lane = this.activeLane();
@@ -2423,17 +2450,26 @@ export class AcpHarnessView implements ContentView {
     requestAnimationFrame(() => {
       this.scrollRaf = false;
       this.applyStickyScroll();
-      requestAnimationFrame(() => this.applyStickyScroll());
+      requestAnimationFrame(() => {
+        this.applyStickyScroll();
+        requestAnimationFrame(() => this.applyStickyScroll());
+      });
     });
   }
 
   private applyStickyScroll(): void {
     const lane = this.activeLane();
-    if (!lane || !lane.stickToBottom) return;
+    if (!lane) return;
     const body = this.activeTranscriptBody();
     if (!body) return;
     this.suppressScrollListener = true;
-    body.scrollTop = body.scrollHeight;
+    if (lane.stickToBottom) {
+      body.scrollTop = body.scrollHeight;
+    } else if (body.scrollTop === 0 && lane.savedScrollTop > 0) {
+      body.scrollTop = lane.savedScrollTop;
+    } else {
+      lane.savedScrollTop = body.scrollTop;
+    }
     this.suppressScrollListener = false;
   }
 
@@ -2448,6 +2484,7 @@ export class AcpHarnessView implements ContentView {
     if (!lane || !body) return;
     const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
     lane.stickToBottom = distance <= STICK_THRESHOLD_PX;
+    lane.savedScrollTop = body.scrollTop;
   }
 
   private schedulePretextLayout(): void {

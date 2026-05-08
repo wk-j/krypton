@@ -1255,14 +1255,6 @@
   animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
 }
 
-.acp-harness__msg--streaming .acp-harness__msg-body::after {
-  content: '\2581';
-  display: inline-block;
-  margin-left: 2px;
-  color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
-  animation: acp-harness-caret 1s step-end infinite;
-}
-
 @keyframes acp-harness-streaming-pulse {
   0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
@@ -1748,7 +1740,7 @@
   padding: 8px 10px 10px;
   background: rgba(4, 8, 13, 0.88);
   font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
-  font-size: 0.82em;
+  font-size: 0.95em;
   color: rgba(216, 232, 216, 0.85);
   pointer-events: auto;
 }
