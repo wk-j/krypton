@@ -402,8 +402,8 @@
   display: grid;
   grid-template-columns: 7.5ch minmax(0, 1fr);
   align-items: start;
-  gap: 8px;
-  padding: 2px 0 2px 6px;
+  gap: 6px;
+  padding: 1px 0 1px 4px;
   border-left: 2px solid transparent;
 }
 
@@ -421,7 +421,7 @@
 .acp-harness__msg-body {
   min-width: 0;
   white-space: pre-wrap;
-  line-height: 1.45;
+  line-height: 1.36;
   color: rgba(216, 232, 216, 0.8);
   overflow-wrap: anywhere;
 }
@@ -632,7 +632,7 @@
 }
 
 .acp-harness__msg-body--markdown p {
-  margin: 0 0 0.45em;
+  margin: 0 0 0.3em;
 }
 
 .acp-harness__msg-body--markdown h1,
@@ -674,7 +674,7 @@
 
 .acp-harness__msg-body--markdown ul,
 .acp-harness__msg-body--markdown ol {
-  margin: 0.25em 0 0.55em;
+  margin: 0.15em 0 0.35em;
   padding-left: 2ch;
 }
 
@@ -710,8 +710,9 @@
 }
 
 .acp-harness__msg-body--markdown pre {
-  margin: 0.5em 0;
-  padding: 8px 10px;
+  margin: 0.25em 0;
+  padding: 4px 8px;
+  line-height: 1.28;
   overflow-x: auto;
   background: rgba(0, 0, 0, 0.42);
   border-left: 2px solid var(--agent-accent, #8effb0);
@@ -737,8 +738,8 @@
 }
 
 .acp-harness__msg-body--markdown blockquote {
-  margin: 0.4em 0;
-  padding: 0.2em 0.8ch;
+  margin: 0.25em 0;
+  padding: 0.1em 0.6ch;
   border-left: 3px solid rgba(214, 184, 255, 0.55);
   background: rgba(214, 184, 255, 0.06);
   color: #e6dcff;
