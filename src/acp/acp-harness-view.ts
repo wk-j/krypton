@@ -159,6 +159,7 @@ interface HarnessLane {
   seenTranscriptIds: Set<string>;
   stickToBottom: boolean;
   savedScrollTop: number;
+  savedScrollAnchor: TranscriptScrollAnchor | null;
   pendingShellId: string | null;
   stagedImages: StagedImage[];
   supportsImages: boolean;
@@ -170,6 +171,12 @@ interface HarnessLane {
   slashPaletteDismissed: boolean;
   plan: PlanEntry[] | null;
   planCollapsed: boolean;
+  lastKilled: string;
+}
+
+interface TranscriptScrollAnchor {
+  msgId: string;
+  offsetTop: number;
 }
 
 const STICK_THRESHOLD_PX = 32;
@@ -218,6 +225,7 @@ const LANE_DEFAULTS = {
   currentThoughtId: null,
   stickToBottom: true,
   savedScrollTop: 0,
+  savedScrollAnchor: null,
   pendingShellId: null,
   supportsImages: false,
   activeTurnStartedAt: null,
@@ -226,6 +234,7 @@ const LANE_DEFAULTS = {
   slashPaletteDismissed: false,
   plan: null,
   planCollapsed: false,
+  lastKilled: '',
 };
 
 const md = new Marked(
@@ -289,6 +298,9 @@ export class AcpHarnessView implements ContentView {
   private scrollRaf = false;
   private renderRaf = false;
   private suppressScrollListener = false;
+  private transcriptResizeObserver: ResizeObserver | null = null;
+  private observedTranscriptBody: HTMLElement | null = null;
+  private observedTranscriptRows = new Set<HTMLElement>();
 
   constructor(projectDir: string | null = null) {
     this.projectDir = projectDir;
@@ -371,6 +383,14 @@ export class AcpHarnessView implements ContentView {
       this.activateLaneByDelta(e.key === 'n' || e.key === 'N' ? 1 : -1);
       return true;
     }
+    if ((e.key === 'J' || e.key === 'K') && e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey) {
+      const body = this.activeTranscriptBody();
+      if (body) {
+        e.preventDefault();
+        body.scrollBy({ top: e.key === 'J' ? 60 : -60, behavior: 'instant' });
+        return true;
+      }
+    }
     if (this.focus === 'transcript' && this.handleTranscriptKey(e)) return true;
 
     const lane = this.activeLane();
@@ -394,7 +414,7 @@ export class AcpHarnessView implements ContentView {
       return true;
     }
 
-    if (e.key === 'w' && (e.metaKey || e.ctrlKey)) {
+    if (e.key === 'w' && e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
       this.closeCb?.();
       return true;
@@ -484,6 +504,12 @@ export class AcpHarnessView implements ContentView {
     if (this.mcpUnlisten) {
       this.mcpUnlisten();
       this.mcpUnlisten = null;
+    }
+    if (this.transcriptResizeObserver) {
+      this.transcriptResizeObserver.disconnect();
+      this.transcriptResizeObserver = null;
+      this.observedTranscriptBody = null;
+      this.observedTranscriptRows.clear();
     }
     if (this.harnessMemoryId) {
       void invoke('dispose_harness_memory', { harnessId: this.harnessMemoryId });
@@ -1189,8 +1215,7 @@ export class AcpHarnessView implements ContentView {
     const existing = this.lanes.filter((l) => l.backendId === backendId).length;
     const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${existing + 1}`);
     this.lanes.push(lane);
-    if (!this.activeLaneId) this.activeLaneId = lane.id;
-    this.render();
+    this.activateLane(lane.id);
     await this.spawnLane(lane);
   }
 
@@ -1518,6 +1543,7 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
+    const anchor = lane.stickToBottom ? null : this.captureTranscriptScrollAnchor(body);
     const existing = new Map<string, HTMLElement>();
     for (const el of body.querySelectorAll<HTMLElement>('.acp-harness__msg[data-msg-id]')) {
       const id = el.dataset.msgId;
@@ -1567,6 +1593,11 @@ export class AcpHarnessView implements ContentView {
     for (const [id, el] of existing) {
       if (!expected.has(id)) el.remove();
     }
+    if (anchor) {
+      this.restoreTranscriptScrollAnchor(body, anchor);
+      lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
+    }
+    this.observeActiveTranscriptBody();
     this.schedulePretextLayout();
   }
 
@@ -1689,6 +1720,7 @@ export class AcpHarnessView implements ContentView {
     }
     const activeLane = this.activeLane();
     if (activeLane) this.renderActiveTranscript(activeLane);
+    this.observeActiveTranscriptBody();
     if (activeLane && activeLane.stickToBottom) {
       const body = this.activeTranscriptBody();
       if (body) {
@@ -1970,7 +2002,24 @@ export class AcpHarnessView implements ContentView {
             <dt>Enter</dt><dd>Send prompt to active lane only</dd>
             <dt>Shift+Enter</dt><dd>Insert newline</dd>
             <dt>Ctrl+C</dt><dd>Cancel active busy lane</dd>
+            <dt>Ctrl+Shift+J / Ctrl+Shift+K</dt><dd>Scroll transcript down / up (works in composer)</dd>
+            <dt>Cmd+W</dt><dd>Close harness tab</dd>
             <dt>Cmd+.</dt><dd>Toggle Zen Mode</dd>
+          </dl>
+        </section>
+        <section class="acp-harness__help-section">
+          <h3>Composer (readline)</h3>
+          <dl>
+            <dt>Ctrl+A / Ctrl+E</dt><dd>Begin / end of line</dd>
+            <dt>Ctrl+B / Ctrl+F</dt><dd>Char back / forward</dd>
+            <dt>Ctrl+Left / Ctrl+Right</dt><dd>Word back / forward</dd>
+            <dt>Ctrl+H</dt><dd>Backspace</dd>
+            <dt>Ctrl+D</dt><dd>Delete char forward</dd>
+            <dt>Ctrl+W</dt><dd>Delete word backward (kill)</dd>
+            <dt>Ctrl+U</dt><dd>Kill to start of line</dd>
+            <dt>Ctrl+K</dt><dd>Kill to end of line</dd>
+            <dt>Ctrl+Y</dt><dd>Yank last killed text</dd>
+            <dt>Ctrl+T</dt><dd>Transpose chars around cursor</dd>
           </dl>
         </section>
         <section class="acp-harness__help-section">
@@ -2313,9 +2362,71 @@ export class AcpHarnessView implements ContentView {
       if (pos < len) this.setDraft(lane, lane.draft.slice(0, pos) + lane.draft.slice(pos + 1), pos);
       return true;
     }
-    if (ctrlOnly && e.key === 'u') { e.preventDefault(); this.setDraft(lane, lane.draft.slice(pos), 0); return true; }
-    if (ctrlOnly && e.key === 'k') { e.preventDefault(); this.setDraft(lane, lane.draft.slice(0, pos), pos); return true; }
+    if (ctrlOnly && e.key === 'b') { e.preventDefault(); this.setDraftCursor(lane, pos - 1); return true; }
+    if (ctrlOnly && e.key === 'f') { e.preventDefault(); this.setDraftCursor(lane, pos + 1); return true; }
+    if (ctrlOnly && e.key === 'ArrowLeft') { e.preventDefault(); this.setDraftCursor(lane, this.wordBackward(lane.draft, pos)); return true; }
+    if (ctrlOnly && e.key === 'ArrowRight') { e.preventDefault(); this.setDraftCursor(lane, this.wordForward(lane.draft, pos)); return true; }
+    if (ctrlOnly && e.key === 'h') {
+      e.preventDefault();
+      if (pos > 0) this.setDraft(lane, lane.draft.slice(0, pos - 1) + lane.draft.slice(pos), pos - 1);
+      return true;
+    }
+    if (ctrlOnly && e.key === 'd') {
+      e.preventDefault();
+      if (pos < len) this.setDraft(lane, lane.draft.slice(0, pos) + lane.draft.slice(pos + 1), pos);
+      return true;
+    }
+    if (ctrlOnly && e.key === 't') {
+      e.preventDefault();
+      if (len >= 2 && pos > 0) {
+        const i = pos === len ? pos - 2 : pos - 1;
+        const swapped = lane.draft.slice(0, i) + lane.draft[i + 1] + lane.draft[i] + lane.draft.slice(i + 2);
+        const newCursor = pos === len ? pos : pos + 1;
+        this.setDraft(lane, swapped, newCursor);
+      }
+      return true;
+    }
+    if (ctrlOnly && e.key === 'u') {
+      e.preventDefault();
+      if (pos > 0) lane.lastKilled = lane.draft.slice(0, pos);
+      this.setDraft(lane, lane.draft.slice(pos), 0);
+      return true;
+    }
+    if (ctrlOnly && e.key === 'k') {
+      e.preventDefault();
+      if (pos < len) lane.lastKilled = lane.draft.slice(pos);
+      this.setDraft(lane, lane.draft.slice(0, pos), pos);
+      return true;
+    }
+    if (ctrlOnly && e.key === 'w') {
+      e.preventDefault();
+      const start = this.wordBackward(lane.draft, pos);
+      if (start < pos) {
+        lane.lastKilled = lane.draft.slice(start, pos);
+        this.setDraft(lane, lane.draft.slice(0, start) + lane.draft.slice(pos), start);
+      }
+      return true;
+    }
+    if (ctrlOnly && e.key === 'y') {
+      e.preventDefault();
+      if (lane.lastKilled) this.insertDraft(lane, lane.lastKilled);
+      return true;
+    }
     return false;
+  }
+
+  private wordBackward(text: string, pos: number): number {
+    let i = pos;
+    while (i > 0 && !/\w/.test(text[i - 1])) i--;
+    while (i > 0 && /\w/.test(text[i - 1])) i--;
+    return i;
+  }
+
+  private wordForward(text: string, pos: number): number {
+    let i = pos;
+    while (i < text.length && !/\w/.test(text[i])) i++;
+    while (i < text.length && /\w/.test(text[i])) i++;
+    return i;
   }
 
   private insertDraft(lane: HarnessLane, text: string): void {
@@ -2509,6 +2620,86 @@ export class AcpHarnessView implements ContentView {
     return this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
   }
 
+  private captureTranscriptScrollAnchor(body: HTMLElement): TranscriptScrollAnchor | null {
+    const bodyRect = body.getBoundingClientRect();
+    for (const msg of body.querySelectorAll<HTMLElement>('.acp-harness__msg[data-msg-id]')) {
+      const rect = msg.getBoundingClientRect();
+      if (rect.bottom <= bodyRect.top) continue;
+      const msgId = msg.dataset.msgId;
+      if (!msgId) continue;
+      return {
+        msgId,
+        offsetTop: rect.top - bodyRect.top,
+      };
+    }
+    return null;
+  }
+
+  private restoreTranscriptScrollAnchor(body: HTMLElement, anchor: TranscriptScrollAnchor): void {
+    const msg = body.querySelector<HTMLElement>(
+      `.acp-harness__msg[data-msg-id="${CSS.escape(anchor.msgId)}"]`,
+    );
+    if (!msg) return;
+    const bodyRect = body.getBoundingClientRect();
+    const rect = msg.getBoundingClientRect();
+    const delta = rect.top - bodyRect.top - anchor.offsetTop;
+    if (Math.abs(delta) < 0.5) return;
+    this.suppressScrollListener = true;
+    body.scrollTop += delta;
+    const lane = this.activeLane();
+    if (lane) {
+      lane.savedScrollTop = body.scrollTop;
+      lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
+    }
+    this.suppressScrollListener = false;
+  }
+
+  private observeActiveTranscriptBody(): void {
+    const body = this.activeTranscriptBody();
+    if (!this.transcriptResizeObserver) {
+      this.transcriptResizeObserver = new ResizeObserver(() => {
+        const lane = this.activeLane();
+        const activeBody = this.activeTranscriptBody();
+        if (!lane || !activeBody) return;
+        if (lane.stickToBottom) {
+          this.applyStickyScroll();
+          return;
+        }
+        if (lane.savedScrollAnchor) {
+          this.restoreTranscriptScrollAnchor(activeBody, lane.savedScrollAnchor);
+        }
+      });
+    }
+    if (body === this.observedTranscriptBody) {
+      this.refreshObservedTranscriptRows(body);
+      return;
+    }
+    if (this.observedTranscriptBody) this.transcriptResizeObserver.unobserve(this.observedTranscriptBody);
+    for (const row of this.observedTranscriptRows) {
+      this.transcriptResizeObserver.unobserve(row);
+    }
+    this.observedTranscriptRows.clear();
+    this.observedTranscriptBody = body;
+    if (body) this.transcriptResizeObserver.observe(body);
+    this.refreshObservedTranscriptRows(body);
+  }
+
+  private refreshObservedTranscriptRows(body: HTMLElement | null): void {
+    if (!this.transcriptResizeObserver) return;
+    for (const row of this.observedTranscriptRows) {
+      if (!body || !body.contains(row)) {
+        this.transcriptResizeObserver.unobserve(row);
+        this.observedTranscriptRows.delete(row);
+      }
+    }
+    if (!body) return;
+    for (const row of body.querySelectorAll<HTMLElement>('.acp-harness__msg[data-msg-id]')) {
+      if (this.observedTranscriptRows.has(row)) continue;
+      this.transcriptResizeObserver.observe(row);
+      this.observedTranscriptRows.add(row);
+    }
+  }
+
   private onTranscriptScroll(): void {
     if (this.suppressScrollListener) return;
     const lane = this.activeLane();
@@ -2517,6 +2708,7 @@ export class AcpHarnessView implements ContentView {
     const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
     lane.stickToBottom = distance <= STICK_THRESHOLD_PX;
     lane.savedScrollTop = body.scrollTop;
+    lane.savedScrollAnchor = lane.stickToBottom ? null : this.captureTranscriptScrollAnchor(body);
   }
 
   private schedulePretextLayout(): void {
@@ -2524,7 +2716,16 @@ export class AcpHarnessView implements ContentView {
     this.pretextRaf = true;
     requestAnimationFrame(() => {
       this.pretextRaf = false;
+      const lane = this.activeLane();
+      const body = this.activeTranscriptBody();
+      const anchor = lane && body && !lane.stickToBottom
+        ? this.captureTranscriptScrollAnchor(body)
+        : null;
       this.layoutPretextRows();
+      if (body && anchor) {
+        this.restoreTranscriptScrollAnchor(body, anchor);
+        if (lane) lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
+      }
       this.applyStickyScroll();
     });
   }
