@@ -1681,6 +1681,39 @@ export class Compositor {
       return;
     }
 
+    // Append diffs for untracked files (only in unstaged view — staged view
+    // by definition cannot contain untracked files).
+    if (!options?.staged) {
+      try {
+        const untrackedRaw = await invoke<string>('run_command', {
+          program: 'git',
+          args: ['ls-files', '--others', '--exclude-standard', '-z'],
+          cwd,
+        });
+        const untracked = untrackedRaw.split('\0').filter((p) => p.length > 0);
+        for (const path of untracked) {
+          // `git diff --no-index` exits 1 when files differ — run_command
+          // surfaces the diff payload as the Err string, so use that as output.
+          let fileDiff = '';
+          try {
+            fileDiff = await invoke<string>('run_command', {
+              program: 'git',
+              args: ['diff', '--no-index', '--', '/dev/null', path],
+              cwd,
+            });
+          } catch (e) {
+            fileDiff = typeof e === 'string' ? e : '';
+          }
+          if (fileDiff) {
+            if (diffOutput.length > 0 && !diffOutput.endsWith('\n')) diffOutput += '\n';
+            diffOutput += fileDiff;
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to enumerate untracked files for diff view:', e);
+      }
+    }
+
     const { DiffContentView } = await import('./diff-view');
     const container = document.createElement('div');
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
