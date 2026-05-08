@@ -405,6 +405,12 @@
   gap: 8px;
   padding: 2px 0 2px 6px;
   border-left: 2px solid transparent;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+}
+
+.acp-harness__msg--streaming {
+  content-visibility: visible;
 }
 
 .acp-harness__msg-label {
@@ -616,19 +622,6 @@
 .acp-harness__pretext-line {
   min-height: 1.45em;
   white-space: pre;
-}
-
-@keyframes acp-harness-line-in {
-  from { opacity: 0; transform: translateY(2px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .acp-harness__pretext-line[data-anim="in"],
-  .acp-harness__msg-body--markdown > [data-anim="in"] {
-    animation: acp-harness-line-in 180ms ease-out both;
-    animation-delay: calc(var(--i, 0) * 14ms);
-  }
 }
 
 .acp-harness__msg-body--markdown {
@@ -1759,7 +1752,6 @@
   gap: 6px;
   padding: 8px 10px 10px;
   background: rgba(4, 8, 13, 0.88);
-  border-left: 1px solid rgba(0, 204, 255, 0.32);
   font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
   font-size: 0.82em;
   color: rgba(216, 232, 216, 0.85);

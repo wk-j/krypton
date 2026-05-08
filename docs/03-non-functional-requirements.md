@@ -10,6 +10,13 @@
 | NFR-PERF-004 | Idle CPU usage (single session, no output) | < 1% |
 | NFR-PERF-005 | Memory usage per session (idle) | < 50 MB |
 
+ACP harness transcript rendering supports these targets by batching
+event-driven full renders with `requestAnimationFrame` and caching per-row
+assistant markdown/pretext layout work for unchanged visible transcript rows.
+This keeps high-volume agent streams from repeating markdown parsing and line
+measurement work for old chat history on every chunk. See
+`docs/94-acp-harness-render-performance.md`.
+
 ## 4.2 Reliability
 
 | ID | Requirement |

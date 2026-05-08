@@ -61,6 +61,13 @@ interface HarnessTranscriptItem {
   id: string;
   kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review';
   text: string;
+  markdownSource?: string;
+  markdownHtml?: string;
+  pretextSource?: string;
+  pretextWidth?: number;
+  pretextFont?: string;
+  pretextLineHeight?: number;
+  pretextLines?: string[];
   imageCount?: number;
   status?: string;
   diff?: { title: string; unified: string };
@@ -146,8 +153,6 @@ interface HarnessLane {
   toolTranscriptIds: Map<string, string>;
   toolCalls: Map<string, ToolCall | ToolCallUpdate>;
   seenTranscriptIds: Set<string>;
-  assistantBlockCounts: Map<string, number>;
-  pretextLineCounts: Map<string, number>;
   stickToBottom: boolean;
   pendingShellId: string | null;
   stagedImages: StagedImage[];
@@ -275,6 +280,7 @@ export class AcpHarnessView implements ContentView {
   private composerEl!: HTMLElement;
   private pretextRaf = false;
   private scrollRaf = false;
+  private renderRaf = false;
   private suppressScrollListener = false;
 
   constructor(projectDir: string | null = null) {
@@ -734,8 +740,6 @@ export class AcpHarnessView implements ContentView {
       toolTranscriptIds: new Map(),
       toolCalls: new Map(),
       seenTranscriptIds: new Set(),
-      assistantBlockCounts: new Map(),
-      pretextLineCounts: new Map(),
       availableCommands: [],
       modesById: new Map(),
     };
@@ -825,6 +829,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private onLaneEvent(lane: HarnessLane, event: AcpEvent): void {
+    let needsRender = true;
     switch (event.type) {
       case 'message_chunk':
         this.appendStreaming(lane, 'assistant', event.text);
@@ -855,10 +860,14 @@ export class AcpHarnessView implements ContentView {
       case 'available_commands':
         lane.availableCommands = event.commands;
         if (lane.slashPaletteIndex >= event.commands.length) lane.slashPaletteIndex = 0;
+        this.renderComposer();
+        needsRender = false;
         break;
       case 'mode_update': {
         const known = lane.modesById.get(event.modeId);
         lane.currentMode = known ?? { id: event.modeId, name: event.modeId };
+        this.refreshMetricsRender();
+        needsRender = false;
         break;
       }
       case 'fs_activity':
@@ -880,7 +889,7 @@ export class AcpHarnessView implements ContentView {
         this.appendTranscript(lane, 'system', `error: ${event.message}`);
         break;
     }
-    this.render();
+    if (needsRender) this.scheduleLaneRender(lane);
   }
 
   private async submitActiveLane(): Promise<void> {
@@ -1290,8 +1299,6 @@ export class AcpHarnessView implements ContentView {
     lane.toolTranscriptIds = new Map();
     lane.toolCalls = new Map();
     lane.seenTranscriptIds = new Set();
-    lane.assistantBlockCounts = new Map();
-    lane.pretextLineCounts = new Map();
     lane.stickToBottom = true;
     lane.pendingShellId = null;
     lane.activeTurnStartedAt = null;
@@ -1429,6 +1436,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private render(): void {
+    this.renderRaf = false;
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
@@ -1439,6 +1447,125 @@ export class AcpHarnessView implements ContentView {
     this.renderPicker();
     this.renderComposer();
     this.scheduleStickyScroll();
+  }
+
+  private scheduleLaneRender(lane: HarnessLane): void {
+    if (lane.id !== this.activeLaneId) {
+      this.refreshMetricsRender();
+      return;
+    }
+    if (this.renderRaf) return;
+    this.renderRaf = true;
+    requestAnimationFrame(() => {
+      this.renderRaf = false;
+      this.renderActiveLane(lane);
+    });
+  }
+
+  private renderActiveLane(lane: HarnessLane): void {
+    if (lane.id !== this.activeLaneId) {
+      this.render();
+      return;
+    }
+    this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
+    this.element.classList.toggle('acp-harness--zen', this.zenMode);
+    this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
+    this.renderActiveLaneChrome(lane);
+    this.renderActiveTranscript(lane);
+    this.renderPlanPanel(lane);
+    this.renderComposer();
+    this.scheduleStickyScroll();
+  }
+
+  private renderActiveLaneChrome(lane: HarnessLane): void {
+    const laneEl = this.dashboardEl.querySelector<HTMLElement>(`[data-lane-id="${CSS.escape(lane.id)}"]`);
+    if (!laneEl) {
+      this.render();
+      return;
+    }
+    laneEl.className = `acp-harness__lane acp-harness__lane--active acp-harness__lane--${lane.status}`;
+    laneEl.style.setProperty('--acp-lane-accent', lane.accent);
+    const head = laneEl.querySelector<HTMLElement>('.acp-harness__lane-head');
+    if (head) {
+      const laneSession = lane.client?.sessionId ?? null;
+      const laneMetrics = laneSession !== null ? this.metricsBySession.get(laneSession) ?? null : null;
+      head.innerHTML = renderLaneHead(
+        lane,
+        true,
+        this.mcpStatsByLane.get(lane.displayName) ?? null,
+        laneMetrics,
+      );
+    }
+    const stats = laneEl.querySelector<HTMLElement>('.acp-harness__lane-stats');
+    if (stats) stats.innerHTML = renderLaneStats(lane, this.projectDir);
+    if (this.zenMode) this.refreshZenRail();
+  }
+
+  private renderActiveTranscript(lane: HarnessLane): void {
+    const body = this.activeTranscriptBody();
+    if (!body) {
+      this.render();
+      return;
+    }
+    const existing = new Map<string, HTMLElement>();
+    for (const el of body.querySelectorAll<HTMLElement>('.acp-harness__msg[data-msg-id]')) {
+      const id = el.dataset.msgId;
+      if (id) existing.set(id, el);
+    }
+    const expected = new Set<string>();
+    if (lane.transcript.length === 0) {
+      body.innerHTML = '';
+      const empty = document.createElement('div');
+      empty.className = 'acp-harness__transcript-empty';
+      empty.textContent = 'lane transcript will appear here';
+      body.appendChild(empty);
+      return;
+    }
+    const empty = body.querySelector('.acp-harness__transcript-empty');
+    if (empty) empty.remove();
+    let previous: ChildNode | null = null;
+    for (const item of lane.transcript) {
+      expected.add(item.id);
+      const streaming = item.id === lane.currentAssistantId || item.id === lane.currentThoughtId;
+      const isNew = !lane.seenTranscriptIds.has(item.id);
+      const current = existing.get(item.id) ?? null;
+      const signature = transcriptRenderSignature(item, streaming);
+      if (current) {
+        if (current.dataset.renderSignature === signature) {
+          previous = current;
+        } else {
+          const next = renderTranscriptItem(item, false, streaming);
+          if (streaming) {
+            current.className = next.className;
+            current.dataset.renderSignature = signature;
+            current.replaceChildren(...Array.from(next.childNodes));
+            previous = current;
+          } else {
+            current.replaceWith(next);
+            previous = next;
+          }
+        }
+      } else {
+        const next = renderTranscriptItem(item, isNew, streaming);
+        if (previous?.nextSibling) body.insertBefore(next, previous.nextSibling);
+        else body.appendChild(next);
+        previous = next;
+      }
+      lane.seenTranscriptIds.add(item.id);
+    }
+    for (const [id, el] of existing) {
+      if (!expected.has(id)) el.remove();
+    }
+    this.schedulePretextLayout();
+  }
+
+  private refreshZenRail(): void {
+    const railEl = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__rail');
+    if (!railEl) return;
+    railEl.replaceChildren();
+    for (const lane of this.lanes) {
+      railEl.appendChild(this.renderRailEntry(lane, lane.id === this.activeLaneId));
+    }
   }
 
   private renderPicker(): void {
@@ -1538,19 +1665,6 @@ export class AcpHarnessView implements ContentView {
             const streaming = item.id === lane.currentAssistantId || item.id === lane.currentThoughtId;
             const itemEl = renderTranscriptItem(item, isNew, streaming);
             body.appendChild(itemEl);
-            if (item.kind === 'assistant') {
-              const mdBody = itemEl.querySelector<HTMLElement>('.acp-harness__msg-body--markdown');
-              if (mdBody) {
-                const prevCount = lane.assistantBlockCounts.get(item.id) ?? 0;
-                const blocks = mdBody.children;
-                for (let i = prevCount; i < blocks.length; i++) {
-                  const child = blocks[i] as HTMLElement;
-                  child.dataset.anim = 'in';
-                  child.style.setProperty('--i', String(Math.min(i - prevCount, 24)));
-                }
-                lane.assistantBlockCounts.set(item.id, blocks.length);
-              }
-            }
             lane.seenTranscriptIds.add(item.id);
           }
         }
@@ -1877,8 +1991,6 @@ export class AcpHarnessView implements ContentView {
       const dropped = lane.transcript.shift();
       if (dropped) {
         lane.seenTranscriptIds.delete(dropped.id);
-        lane.assistantBlockCounts.delete(dropped.id);
-        lane.pretextLineCounts.delete(dropped.id);
       }
     }
     return item;
@@ -2350,6 +2462,7 @@ export class AcpHarnessView implements ContentView {
 
   private layoutPretextRows(): void {
     const lane = this.activeLane();
+    const itemById = lane ? new Map(lane.transcript.map((entry) => [entry.id, entry])) : null;
     const rows = this.dashboardEl.querySelectorAll<HTMLElement>('.acp-harness__msg-body[data-pretext="true"]');
     for (const row of rows) {
       const raw = row.dataset.rawText ?? '';
@@ -2360,23 +2473,35 @@ export class AcpHarnessView implements ContentView {
       let lineHeight = parseFloat(cs.lineHeight);
       if (!Number.isFinite(lineHeight)) lineHeight = (parseFloat(cs.fontSize) || 13) * 1.35;
       const rowId = row.dataset.rowId ?? '';
-      const prevCount = lane && rowId ? lane.pretextLineCounts.get(rowId) ?? 0 : 0;
       try {
-        const prepared = prepareWithSegments(raw, font, { whiteSpace: 'pre-wrap' });
-        const { lines } = layoutWithLines(prepared, width, lineHeight);
+        const item = rowId ? itemById?.get(rowId) ?? null : null;
+        let lineTexts = item?.pretextLines;
+        if (
+          !item ||
+          item.pretextSource !== raw ||
+          item.pretextWidth !== width ||
+          item.pretextFont !== font ||
+          item.pretextLineHeight !== lineHeight ||
+          !lineTexts
+        ) {
+          const prepared = prepareWithSegments(raw, font, { whiteSpace: 'pre-wrap' });
+          const { lines } = layoutWithLines(prepared, width, lineHeight);
+          lineTexts = lines.map((line) => line.text || '\u00a0');
+          if (item) {
+            item.pretextSource = raw;
+            item.pretextWidth = width;
+            item.pretextFont = font;
+            item.pretextLineHeight = lineHeight;
+            item.pretextLines = lineTexts;
+          }
+        }
         row.textContent = '';
-        for (let i = 0; i < lines.length; i++) {
+        for (let i = 0; i < lineTexts.length; i++) {
           const lineEl = document.createElement('div');
           lineEl.className = 'acp-harness__pretext-line';
-          lineEl.textContent = lines[i].text || '\u00a0';
-          if (i >= prevCount) {
-            lineEl.dataset.anim = 'in';
-            const stagger = Math.min(i - prevCount, 24);
-            lineEl.style.setProperty('--i', String(stagger));
-          }
+          lineEl.textContent = lineTexts[i];
           row.appendChild(lineEl);
         }
-        if (lane && rowId) lane.pretextLineCounts.set(rowId, lines.length);
       } catch {
         row.textContent = raw;
       }
@@ -2489,6 +2614,8 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
     `${item.status ? ` acp-harness__msg--${item.status}` : ''}` +
     `${isNew ? ' acp-harness__msg--enter' : ''}` +
     `${streaming ? ' acp-harness__msg--streaming' : ''}`;
+  el.dataset.msgId = item.id;
+  el.dataset.renderSignature = transcriptRenderSignature(item, streaming);
   const label = document.createElement('div');
   label.className = 'acp-harness__msg-label';
   label.textContent = transcriptLabel(item.kind);
@@ -2496,9 +2623,18 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   body.className = 'acp-harness__msg-body';
   if (item.kind === 'assistant') {
     body.classList.add('acp-harness__msg-body--markdown');
-    try {
-      body.innerHTML = md.parse(item.text, { async: false }) as string;
-    } catch {
+    if (item.markdownSource !== item.text || item.markdownHtml === undefined) {
+      try {
+        item.markdownHtml = md.parse(item.text, { async: false }) as string;
+        item.markdownSource = item.text;
+      } catch {
+        item.markdownHtml = undefined;
+        item.markdownSource = undefined;
+      }
+    }
+    if (item.markdownHtml !== undefined) {
+      body.innerHTML = item.markdownHtml;
+    } else {
       body.textContent = item.text;
     }
   } else if (item.kind === 'tool' && item.tool) {
@@ -2534,6 +2670,39 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   el.appendChild(label);
   el.appendChild(body);
   return el;
+}
+
+function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boolean): string {
+  const tool = item.tool
+    ? [
+      item.tool.status,
+      item.tool.kind,
+      item.tool.subject,
+      item.tool.result,
+      item.tool.sections.map((section) => `${section.label}:${section.text}`).join('\u001f'),
+      item.tool.diffs.map((diff) => `${diff.path}:${diff.oldText}:${diff.newText}`).join('\u001f'),
+    ].join('\u001e')
+    : '';
+  const permission = item.permission
+    ? `${item.permission.kind}\u001e${item.permission.subject}\u001e${item.permission.suffix ?? ''}`
+    : '';
+  const fsActivity = item.fsActivity
+    ? `${item.fsActivity.method}\u001e${item.fsActivity.path}\u001e${item.fsActivity.ok}\u001e${item.fsActivity.error ?? ''}`
+    : '';
+  const fsReview = item.fsReview
+    ? `${item.fsReview.path}\u001e${item.fsReview.oldText}\u001e${item.fsReview.newText}\u001e${item.fsReview.resolved ?? ''}`
+    : '';
+  return [
+    item.kind,
+    item.status ?? '',
+    item.text,
+    item.imageCount ?? '',
+    streaming ? '1' : '0',
+    tool,
+    permission,
+    fsActivity,
+    fsReview,
+  ].join('\u001d');
 }
 
 function renderFsActivityBody(body: HTMLElement, payload: FsActivityPayload): void {

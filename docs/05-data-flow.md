@@ -234,6 +234,19 @@
        repaints from the active lane's stored plan.
     e. `p` in transcript focus toggles lane.planCollapsed. #restart, #new,
        and #new! null lane.plan and reset planCollapsed.
+20. Harness event render batching (Spec 94):
+    a. ACP event handlers mutate lane state synchronously, but expensive
+       transcript/dashboard refreshes call scheduleRender() instead of render().
+    b. scheduleRender() keeps one pending requestAnimationFrame callback, so
+       multiple message_chunk, thought_chunk, tool_call_update, and similar
+       events arriving in one frame coalesce into one full render pass.
+    c. available_commands does not rebuild the transcript; it updates the active
+       composer so slash-command palette state can change immediately.
+    d. mode_update does not rebuild the transcript; it refreshes lane heads via
+       the existing lightweight header refresh path.
+    e. Full renders still rebuild the active lane DOM, but assistant rows reuse
+       cached markdown HTML and pretext rows reuse cached line layouts until
+       their source text or layout metrics change.
 ```
 ## Resize Mode Flow (e.g., Leader then R)
 
