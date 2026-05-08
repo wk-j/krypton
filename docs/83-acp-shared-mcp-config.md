@@ -178,7 +178,7 @@ Steps 2c-2f can be hoisted out of the loop and computed once per harness boot fo
 
 ### Permissions
 
-Servers loaded from `.mcp.json` will trigger `permission_request` events for each tool call. The harness's existing auto-allow only matches `krypton-harness-memory` (per Codex-1's review). Bridged servers will prompt the user normally. **Do not** attempt to auto-allow them in this spec — that is a separate trust decision (see Out of Scope).
+Servers loaded from `.mcp.json` will trigger `permission_request` events for each tool call. The harness's existing auto-allow only matches the built-in `krypton-harness-memory` server (`krypton-harness-memory`, `krypton_harness_memory`, or `/mcp/harness/` markers plus one of the three memory tool names). Bridged servers will prompt the user normally even if they expose same-named tools. **Do not** attempt to auto-allow them in this spec — that is a separate trust decision (see Out of Scope).
 
 ## Edge Cases
 

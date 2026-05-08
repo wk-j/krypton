@@ -122,6 +122,7 @@ const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MEMORY_PERMISSION_SCAN_DEPTH = 8;
 const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
+const HARNESS_MEMORY_SERVER_MARKERS = ['krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
 interface FileTouchRecord {
   path: string;
@@ -2807,15 +2808,14 @@ function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'r
   return options.find((option) => option.kind === 'reject_once') ?? options.find((option) => option.kind === 'reject_always') ?? null;
 }
 
-function harnessMemoryPermissionToolName(permission: HarnessPermission): string | null {
+export function harnessMemoryPermissionToolName(permission: Pick<HarnessPermission, 'toolCall'>): string | null {
   const call = permission.toolCall;
-  const structuredToolName = structuredMemoryToolNameFromUnknown(call.rawInput);
-  if (structuredToolName) return structuredToolName;
-  const rawToolName = memoryToolNameFromUnknown(call.rawInput);
-  const titleToolName = memoryToolNameFromString(call.title);
-  if (rawToolName && containsHarnessMemoryServerMarker(call.rawInput)) return rawToolName;
-  if (titleToolName && containsHarnessMemoryServerMarker(call.title)) return titleToolName;
-  return null;
+  if (!containsHarnessMemoryServerMarker(call)) return null;
+  return structuredMemoryToolNameFromUnknown(call.rawInput)
+    ?? memoryToolNameFromUnknown(call.rawInput)
+    ?? memoryToolNameFromString(call.title)
+    ?? memoryToolNameFromUnknown(call.content)
+    ?? null;
 }
 
 function structuredMemoryToolNameFromUnknown(value: unknown, depth = 0): string | null {
@@ -2831,7 +2831,10 @@ function structuredMemoryToolNameFromUnknown(value: unknown, depth = 0): string 
   const record = value as Record<string, unknown>;
   for (const key of ['name', 'toolName', 'tool_name', 'tool']) {
     const value = record[key];
-    if (typeof value === 'string' && HARNESS_MEMORY_TOOL_NAMES.has(value)) return value;
+    if (typeof value === 'string') {
+      const match = memoryToolNameFromString(value);
+      if (match) return match;
+    }
   }
   for (const item of Object.values(record)) {
     const match = structuredMemoryToolNameFromUnknown(item, depth + 1);
@@ -2852,8 +2855,14 @@ function memoryToolNameFromUnknown(value: unknown, depth = 0): string | null {
     return null;
   }
   const record = value as Record<string, unknown>;
-  for (const key of ['name', 'toolName', 'tool_name', 'tool', 'title']) {
+  for (const key of ['name', 'toolName', 'tool_name', 'tool', 'title', 'text']) {
     const match = memoryToolNameFromUnknown(record[key], depth + 1);
+    if (match) return match;
+  }
+  const content = record.content;
+  if (typeof content === 'string') return memoryToolNameFromString(content);
+  if (content && typeof content === 'object') {
+    const match = memoryToolNameFromUnknown(content, depth + 1);
     if (match) return match;
   }
   return null;
@@ -2861,13 +2870,17 @@ function memoryToolNameFromUnknown(value: unknown, depth = 0): string | null {
 
 function memoryToolNameFromString(value: string | undefined): string | null {
   if (!value) return null;
-  const match = value.match(/\b(memory_set|memory_get|memory_list)\b/);
+  const normalized = value.toLowerCase();
+  for (const toolName of HARNESS_MEMORY_TOOL_NAMES) {
+    if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
+  }
+  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list)(?:$|[^a-z0-9_])/);
   return match && HARNESS_MEMORY_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 
 function containsHarnessMemoryServerMarker(value: unknown, depth = 0): boolean {
   if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return false;
-  if (typeof value === 'string') return value.includes('krypton-harness-memory') || value.includes('/mcp/harness/');
+  if (typeof value === 'string') return HARNESS_MEMORY_SERVER_MARKERS.some((marker) => value.includes(marker));
   if (!value || typeof value !== 'object') return false;
   if (Array.isArray(value)) return value.some((item) => containsHarnessMemoryServerMarker(item, depth + 1));
   return Object.values(value as Record<string, unknown>).some((item) => containsHarnessMemoryServerMarker(item, depth + 1));
