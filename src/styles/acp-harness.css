@@ -671,6 +671,76 @@
   font-size: 0.88em;
 }
 
+.acp-harness__tool-rich--unidiff {
+  gap: 1px;
+}
+
+.acp-harness__tool-diff-file {
+  margin-top: 4px;
+  color: rgba(109, 208, 255, 0.9);
+  font-size: 0.84em;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow:
+    0 0 6px rgba(109, 208, 255, 0.2),
+    0 0 12px rgba(109, 208, 255, 0.08);
+  white-space: nowrap;
+}
+
+.acp-harness__tool-diff-file:first-child {
+  margin-top: 0;
+}
+
+.acp-harness__tool-diff-line {
+  display: grid;
+  grid-template-columns: 3.2ch minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  min-height: 1.35em;
+  align-items: baseline;
+}
+
+.acp-harness__tool-diff-mark {
+  justify-self: end;
+  color: rgba(216, 232, 216, 0.32);
+  font-size: 0.78em;
+  font-weight: 700;
+}
+
+.acp-harness__tool-diff-text {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(216, 232, 216, 0.7);
+  text-overflow: ellipsis;
+  text-shadow: 0 0 6px rgba(216, 232, 216, 0.08);
+  white-space: nowrap;
+}
+
+.acp-harness__tool-diff-line--hunk .acp-harness__tool-diff-mark,
+.acp-harness__tool-diff-line--hunk .acp-harness__tool-diff-text {
+  color: rgba(214, 184, 255, 0.82);
+  text-shadow:
+    0 0 6px rgba(214, 184, 255, 0.18),
+    0 0 12px rgba(214, 184, 255, 0.08);
+}
+
+.acp-harness__tool-diff-line--add .acp-harness__tool-diff-mark,
+.acp-harness__tool-diff-line--add .acp-harness__tool-diff-text {
+  color: rgba(142, 255, 176, 0.78);
+  text-shadow: 0 0 6px rgba(142, 255, 176, 0.14);
+}
+
+.acp-harness__tool-diff-line--del .acp-harness__tool-diff-mark,
+.acp-harness__tool-diff-line--del .acp-harness__tool-diff-text {
+  color: rgba(255, 107, 139, 0.76);
+  text-shadow: 0 0 6px rgba(255, 107, 139, 0.14);
+}
+
+.acp-harness__tool-diff-line--meta .acp-harness__tool-diff-text {
+  color: rgba(216, 232, 216, 0.42);
+}
+
 .acp-harness__tool-status-row {
   grid-template-columns: 4ch minmax(0, 1fr);
   gap: 8px;

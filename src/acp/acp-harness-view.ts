@@ -3542,7 +3542,7 @@ function buildToolPayload(
   const result = exit || (status === 'failed' ? 'failed' : '');
   const raw = rawOutputSections(call.rawOutput);
   const sections = raw.length > 0 ? raw : contentOutputSections(call.content);
-  const sectionLineLimit = kind === 'execute' ? 12 : 6;
+  const sectionLineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
   const trimmed = sections
     .map((s) => ({ label: s.label, text: boundedOutputLines(s.text, sectionLineLimit) }))
     .filter((s) => s.text)
@@ -3671,11 +3671,18 @@ function renderRichExecuteSection(tool: ToolPayload, section: { label: string; t
     const rows = parseGitDiffStat(section.text);
     if (rows.length > 0) return renderGitDiffStat(rows, section.text);
   }
+  if (isGitDiffCommand(tool.command) && section.text.includes('diff --git')) {
+    return renderUnifiedGitDiff(section.text);
+  }
   if (/\bgit\s+status\s+--short\b/.test(tool.command)) {
     const rows = parseGitStatusShort(section.text);
     if (rows.length > 0) return renderGitStatusShort(rows);
   }
   return null;
+}
+
+function isGitDiffCommand(command: string): boolean {
+  return /\bgit\s+diff\b/.test(command);
 }
 
 function parseGitDiffStat(text: string): Array<{ path: string; changes: number; plus: number; minus: number }> {
@@ -3724,6 +3731,63 @@ function renderGitDiffStat(rows: Array<{ path: string; changes: number; plus: nu
     block.appendChild(more);
   }
   return block;
+}
+
+function renderUnifiedGitDiff(text: string): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--unidiff';
+  const lines = text.split('\n').filter((line) => line.length > 0);
+  for (const line of lines) {
+    if (line.startsWith('diff --git ')) {
+      const file = document.createElement('div');
+      file.className = 'acp-harness__tool-diff-file';
+      file.textContent = gitDiffFileLabel(line);
+      block.appendChild(file);
+      continue;
+    }
+    const row = document.createElement('div');
+    row.className = `acp-harness__tool-diff-line acp-harness__tool-diff-line--${gitDiffLineTone(line)}`;
+    const mark = document.createElement('span');
+    mark.className = 'acp-harness__tool-diff-mark';
+    mark.textContent = gitDiffLineMark(line);
+    const body = document.createElement('span');
+    body.className = 'acp-harness__tool-diff-text';
+    body.textContent = gitDiffLineText(line);
+    row.append(mark, body);
+    block.appendChild(row);
+  }
+  return block;
+}
+
+function gitDiffFileLabel(line: string): string {
+  const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+  if (!match) return line.replace(/^diff --git\s+/, '');
+  const oldPath = match[1] ?? '';
+  const newPath = match[2] ?? '';
+  return oldPath === newPath ? newPath : `${oldPath} -> ${newPath}`;
+}
+
+function gitDiffLineTone(line: string): string {
+  if (line.startsWith('@@')) return 'hunk';
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return 'meta';
+  if (line.startsWith('+')) return 'add';
+  if (line.startsWith('-')) return 'del';
+  return 'context';
+}
+
+function gitDiffLineMark(line: string): string {
+  if (line.startsWith('@@')) return '@@';
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return '·';
+  if (line.startsWith('+')) return '+';
+  if (line.startsWith('-')) return '-';
+  return '';
+}
+
+function gitDiffLineText(line: string): string {
+  if (line.startsWith('@@')) return line;
+  if (line.startsWith('+++') || line.startsWith('---')) return line.slice(4);
+  if (line.startsWith('+') || line.startsWith('-')) return line.slice(1);
+  return line.trimStart();
 }
 
 function parseGitStatusShort(text: string): Array<{ index: string; worktree: string; path: string }> {
