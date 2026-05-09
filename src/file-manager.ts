@@ -258,7 +258,7 @@ export class FileManagerView implements ContentView {
   private searchUpdateRaf: number | null = null;
 
   private homeDir = '/';
-  private listFlex = 30;
+  private listWidthPx = 333;
   private cellHeight = 20;
 
   // DOM elements
@@ -912,9 +912,14 @@ export class FileManagerView implements ContentView {
   }
 
   private resizeSplit(delta: number): void {
-    this.listFlex = Math.max(15, Math.min(85, this.listFlex + delta));
-    this.listEl.style.flex = String(this.listFlex);
-    this.previewEl.style.flex = String(100 - this.listFlex);
+    const bodyWidth = this.bodyEl.clientWidth || 1200;
+    const minWidth = Math.round(bodyWidth * 0.15);
+    const maxWidth = Math.round(bodyWidth * 0.85);
+    const stepPx = Math.max(24, Math.round(bodyWidth * Math.abs(delta) / 100));
+    const direction = delta < 0 ? -1 : 1;
+    this.listWidthPx = Math.max(minWidth, Math.min(maxWidth, this.listWidthPx + direction * stepPx));
+    this.listEl.style.flex = `0 0 ${this.listWidthPx}px`;
+    this.previewEl.style.flex = '1 1 0';
   }
 
   private clearPreview(): void {

@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-08 (ACP harness on-demand memory)
+> Last updated: 2026-05-09 (file manager selected row)
 
 ## Overview
 
@@ -21,6 +21,9 @@
 
 ## Recent Landings
 
+- **File manager selected row simplified** — The file manager keeps a plain selected-row background for keyboard navigation, but removes the cursor chrome around it: no leading pipe, `>` marker, glow animation, shifted directory icon, cursor-specific type-color overrides, or boosted age/size styling. See `docs/52-file-manager.md`.
+- **File manager 333px sidebar** — The file manager now starts with a fixed 333px file-list pane and lets the preview fill the remaining width. Local `H` / `L` resizing stays pixel-based from that baseline, using roughly 5% body-width increments with the existing 15%-85% guardrails. See `docs/52-file-manager.md`.
+- **File manager text selection** — The file manager view no longer inherits `user-select: none` across the whole browser. Breadcrumbs, file names, status text, and preview content can now be selected with the mouse and participate in the global copy-on-select flow, while decorative mark/icon/age-bar columns remain non-selectable so copied list text stays clean. See `docs/52-file-manager.md`.
 - **ACP harness on-demand memory** — `session/prompt` no longer carries the full per-lane memory body. Each prompt is now prefixed only with a short lane-context stub (~60–90 tokens) containing the active lane label, the lane roster, and a one-line nudge describing the `krypton-harness-memory` MCP tools (`memory_list`, `memory_get`, `memory_set`). Agents call those tools on demand instead of receiving the snapshot every turn. The leading resource block's URI changed from `krypton://acp-harness/memory.md` to `krypton://acp-harness/lane-context.md`, which also makes Codex `session/list` titles use the user's first text block instead of the literal memory URI for every session. Pi lanes still get the stub as a text block but cannot call MCP tools (no MCP host), which is acceptable. See `docs/98-acp-harness-memory-on-demand.md`.
 - **ACP harness session list/resume** — `Cmd+P → 0` in the ACP Harness now opens a project-scoped session picker for the active lane's backend. The picker initializes only that backend, calls `session/list` with the harness project directory, and opens the selected historical session in a new lane using `session/resume` when advertised or `session/load` as a fallback. `session/load` replayed `user_message_chunk` and assistant/tool updates flow through the normal transcript renderer, and resume/load sessions receive the same capability-gated `.mcp.json` bridge plus `krypton-harness-memory` MCP descriptors as fresh lanes. See `docs/97-acp-harness-session-resume.md`.
 - **ACP built-in memory auto-approval** — memory permission prompts now recognize Codex-style namespaced built-in tool ids such as `mcp__krypton_harness_memory__memory_set`, rendered permission labels such as `Tool: krypton-harness-memory/memory_set`, and uppercase titles such as `MEMORY_SET`, as well as the existing `/mcp/harness/` endpoint marker. Auto-approval still requires both a built-in memory marker and one of `memory_set`, `memory_get`, or `memory_list`, so same-named third-party or `.mcp.json` tools continue through the normal permission UI. See `docs/96-acp-built-in-memory-auto-approval.md`.

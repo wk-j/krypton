@@ -144,6 +144,8 @@ No new IPC events needed — directory listing is request/response. File preview
 | `A` | Create new file (prompts name in status bar) |
 | `M` | Create new directory (mkdir, prompts name) |
 | `p` | Open preview panel toggle (show/hide right pane) |
+| `H` | Narrow the file list pane |
+| `L` | Widen the file list pane |
 | `~` | Jump to home directory |
 | `-` | Jump back in directory history |
 | `o` | Open file in a new terminal tab (runs `$EDITOR <file>`) |
@@ -159,7 +161,7 @@ No new IPC events needed — directory listing is request/response. File preview
 │  ▸ src-tauri/        │  or directory summary        │
 │  ▸ docs/             │                              │
 │  ▸ node_modules/     │  package.json                │
-│  ● package.json ◄    │  {                           │
+│  ● package.json      │  {                           │
 │    tsconfig.json     │    "name": "krypton",        │
 │    vite.config.ts    │    "version": "0.1.0",       │
 │    Makefile          │    ...                       │
@@ -171,8 +173,9 @@ No new IPC events needed — directory listing is request/response. File preview
 
 - `▸` prefix for directories, no prefix for files
 - `●` marker for marked/selected files
-- `◄` cursor indicator on focused row
-- Left panel: 60% width, right panel: 40% width (preview)
+- Keyboard navigation highlights the selected row with a plain background, without cursor glyphs or pipe chrome
+- Left panel: 333px initial width, right panel fills the remaining space (preview)
+- `H` / `L` resize the left panel in roughly 5% viewport-width increments, clamped between 15% and 85% of the file manager body
 - Status bar: item count, marked count, sort info, permissions + size of cursor item
 
 **DOM structure:**
@@ -196,7 +199,9 @@ No new IPC events needed — directory listing is request/response. File preview
 
 ### CSS Approach
 
-All colors via `--krypton-*` CSS custom properties. BEM naming with `.krypton-file-manager` block. Monospace font matching terminal. Cursor row highlighted with accent-colored left border and subtle background. Directories rendered in accent color. Marked files get a distinct marker glyph. No scroll bars — virtual scrolling with visible row count calculated from container height and line height.
+All colors via `--krypton-*` CSS custom properties. BEM naming with `.krypton-file-manager` block. Monospace font matching terminal. The selected row uses a plain subtle background only; cursor glyphs, pipe chrome, pulse animations, and cursor-specific type-color overrides are omitted. Directories render in accent color. Marked files get a distinct marker glyph. No scroll bars — virtual scrolling with visible row count calculated from container height and line height.
+
+The file manager surface allows native text selection across the breadcrumb, file list, status line, and preview content so global copy-on-select can copy visible paths, names, and preview text. Decorative columns such as mark glyphs, file icons, and age bars remain non-selectable to keep copied list text focused on content.
 
 ## Edge Cases
 

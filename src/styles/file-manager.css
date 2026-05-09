@@ -6,7 +6,6 @@
   --fm-amber-rgb: 255, 179, 0;
   --fm-amber-dim: #cc8800;
   --fm-amber-bright: #ffd54f;
-  --fm-phosphor: #ff9800;
   --fm-warm-white: #e8d5b0;
   --fm-warm-dim: #a89070;
   --fm-panel-bg: rgba(20, 14, 8, 0.5);
@@ -24,8 +23,8 @@
   font-size: var(--krypton-font-size, 14px);
   overflow: hidden;
   contain: content;
-  -webkit-user-select: none;
-  user-select: none;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* CRT scanline overlay */
@@ -73,14 +72,14 @@
 }
 
 .krypton-file-manager__list {
-  flex: 30;
+  flex: 0 0 333px;
   overflow: hidden;
   min-width: 0;
   contain: layout;
 }
 
 .krypton-file-manager__preview {
-  flex: 70;
+  flex: 1 1 0;
   overflow: hidden;
   border-left: 2px solid var(--fm-border-strong);
   min-width: 0;
@@ -333,16 +332,6 @@
 
 /* ─── List Items ─── */
 
-@keyframes fm-phosphor-pulse {
-  0%, 100% { opacity: 0.85; }
-  50% { opacity: 1; }
-}
-
-@keyframes fm-cursor-glow {
-  0%, 100% { text-shadow: 0 0 8px rgba(255, 179, 0, 0.5); }
-  50% { text-shadow: 0 0 14px rgba(255, 179, 0, 0.8); }
-}
-
 .krypton-file-manager__item {
   display: flex;
   align-items: center;
@@ -361,32 +350,9 @@
   background: rgba(var(--fm-amber-rgb), 0.015);
 }
 
-/* ── Cursor: phosphor block highlight with left pipe ── */
-
-.krypton-file-manager__item--cursor {
-  background: rgba(var(--fm-amber-rgb), 0.10);
-  border-left: 3px solid var(--fm-amber);
-  padding-left: 5px;
-  animation: fm-phosphor-pulse 2.5s ease-in-out infinite;
-}
-
-.krypton-file-manager__item--cursor::before {
-  content: '>';
-  position: absolute;
-  left: 8px;
-  color: var(--fm-amber);
-  font-weight: 700;
-  animation: fm-cursor-glow 2s ease-in-out infinite;
-  pointer-events: none;
-}
-
-.krypton-file-manager__item--cursor .krypton-file-manager__mark {
-  margin-left: 0;
-}
-
-.krypton-file-manager__item--cursor .krypton-file-manager__name {
-  color: var(--fm-amber-bright);
-  text-shadow: 0 0 10px rgba(var(--fm-amber-rgb), 0.4);
+/* Selected row highlight only; cursor chrome stays hidden. */
+.krypton-file-manager__item.krypton-file-manager__item--cursor {
+  background: rgba(var(--fm-amber-rgb), 0.14) !important;
 }
 
 /* ── Directory styling ── */
@@ -400,11 +366,6 @@
   color: var(--fm-amber);
   opacity: 0.7;
   transition: transform 0.15s ease;
-}
-
-.krypton-file-manager__item--cursor.krypton-file-manager__item--dir .krypton-file-manager__icon {
-  opacity: 1;
-  transform: translateX(1px);
 }
 
 /* ── Symlink ── */
@@ -453,17 +414,6 @@
 .krypton-file-manager__item--ft-script .krypton-file-manager__name { color: #d4e157; }
 .krypton-file-manager__item--ft-script .krypton-file-manager__icon { color: #d4e157; opacity: 0.6; }
 
-/* Cursor row: keep type colour but brighten it */
-.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-code .krypton-file-manager__name { color: #81d4fa; text-shadow: 0 0 8px rgba(79, 195, 247, 0.4); }
-.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-config .krypton-file-manager__name { color: #ce93d8; text-shadow: 0 0 8px rgba(179, 157, 219, 0.4); }
-.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-markup .krypton-file-manager__name { color: #80cbc4; text-shadow: 0 0 8px rgba(77, 182, 172, 0.4); }
-.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-doc .krypton-file-manager__name { color: #a5d6a7; text-shadow: 0 0 8px rgba(129, 199, 132, 0.4); }
-.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-image .krypton-file-manager__name { color: #f48fb1; text-shadow: 0 0 8px rgba(240, 98, 146, 0.4); }
-.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-media .krypton-file-manager__name { color: #ff8a65; text-shadow: 0 0 8px rgba(255, 112, 67, 0.4); }
-.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-archive .krypton-file-manager__name { color: #ffb74d; text-shadow: 0 0 8px rgba(255, 167, 38, 0.4); }
-.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-data .krypton-file-manager__name { color: #90a4ae; text-shadow: 0 0 8px rgba(120, 144, 156, 0.4); }
-.krypton-file-manager__item--cursor.krypton-file-manager__item--ft-script .krypton-file-manager__name { color: #e6ee9c; text-shadow: 0 0 8px rgba(212, 225, 87, 0.4); }
-
 /* ── Marked items ── */
 
 .krypton-file-manager__item--marked .krypton-file-manager__mark {
@@ -477,6 +427,8 @@
   flex-shrink: 0;
   width: 1.2em;
   color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .krypton-file-manager__icon {
@@ -484,6 +436,8 @@
   width: 1.2em;
   color: var(--fm-warm-dim);
   opacity: 0.5;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .krypton-file-manager__name {
@@ -506,17 +460,14 @@
   align-self: center;
   display: flex;
   justify-content: flex-end;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .krypton-file-manager__age-fill {
   height: 100%;
   background: var(--fm-amber);
   border-radius: 1px;
-}
-
-.krypton-file-manager__item--cursor .krypton-file-manager__age-fill {
-  background: var(--fm-amber-bright);
-  box-shadow: 0 0 4px rgba(var(--fm-amber-rgb), 0.4);
 }
 
 .krypton-file-manager__size {
@@ -537,18 +488,6 @@
 .krypton-file-manager__size--mega {
   color: #e57a3a;
   opacity: 0.6;
-}
-
-.krypton-file-manager__item--cursor .krypton-file-manager__size {
-  opacity: 0.7;
-  color: var(--fm-amber-dim);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .krypton-file-manager__item--cursor {
-    animation: none;
-    background: rgba(var(--fm-amber-rgb), 0.12);
-  }
 }
 
 .krypton-file-manager__empty {
