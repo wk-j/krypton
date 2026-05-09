@@ -157,6 +157,7 @@ struct HookServerState {
 pub struct HookServer {
     pub port: std::sync::Mutex<u16>,
     pub shutdown_tx: std::sync::Mutex<Option<oneshot::Sender<()>>>,
+    last_error: std::sync::Mutex<Option<String>>,
     memories: std::sync::Mutex<HashMap<String, HarnessMemoryStore>>,
     mcp_stats: std::sync::Mutex<HashMap<String, HashMap<String, McpLaneStats>>>,
     next_harness_id: AtomicU64,
@@ -167,6 +168,7 @@ impl Default for HookServer {
         Self {
             port: std::sync::Mutex::new(0),
             shutdown_tx: std::sync::Mutex::new(None),
+            last_error: std::sync::Mutex::new(None),
             memories: std::sync::Mutex::new(HashMap::new()),
             mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
@@ -179,6 +181,7 @@ impl HookServer {
         Self {
             port: std::sync::Mutex::new(0),
             shutdown_tx: std::sync::Mutex::new(None),
+            last_error: std::sync::Mutex::new(None),
             memories: std::sync::Mutex::new(HashMap::new()),
             mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
@@ -187,6 +190,26 @@ impl HookServer {
 
     pub fn get_port(&self) -> u16 {
         *self.port.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn unavailable_reason(&self) -> String {
+        self.last_error
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or_else(|| "Krypton hook server is not running".to_string())
+    }
+
+    fn set_error(&self, error: String) {
+        if let Ok(mut last_error) = self.last_error.lock() {
+            *last_error = Some(error);
+        }
+    }
+
+    fn clear_error(&self) {
+        if let Ok(mut last_error) = self.last_error.lock() {
+            *last_error = None;
+        }
     }
 
     pub fn create_harness_memory(&self, project_dir: Option<String>) -> String {
@@ -749,7 +772,9 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
         {
             Ok(rt) => rt,
             Err(e) => {
-                log::error!("Failed to create tokio runtime for hook server: {e}");
+                let error = format!("Failed to create tokio runtime for hook server: {e}");
+                hook_server.set_error(error.clone());
+                log::error!("{error}");
                 return;
             }
         };
@@ -772,7 +797,9 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
             let listener = match tokio::net::TcpListener::bind(addr).await {
                 Ok(l) => l,
                 Err(e) => {
-                    log::error!("Failed to bind hook server on {addr}: {e}");
+                    let error = format!("Failed to bind hook server on {addr}: {e}");
+                    hook_server.set_error(error.clone());
+                    log::error!("{error}");
                     return;
                 }
             };
@@ -780,7 +807,9 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
             let actual_port = match listener.local_addr() {
                 Ok(a) => a.port(),
                 Err(e) => {
-                    log::error!("Failed to get local address: {e}");
+                    let error = format!("Failed to get local address for hook server: {e}");
+                    hook_server.set_error(error.clone());
+                    log::error!("{error}");
                     return;
                 }
             };
@@ -789,6 +818,7 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
             if let Ok(mut p) = hook_server.port.lock() {
                 *p = actual_port;
             }
+            hook_server.clear_error();
 
             log::info!("Claude Code hook server listening on 127.0.0.1:{actual_port}");
 
@@ -807,7 +837,12 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 })
                 .await
                 .unwrap_or_else(|e| {
-                    log::error!("Hook server error: {e}");
+                    let error = format!("Hook server error: {e}");
+                    hook_server.set_error(error.clone());
+                    if let Ok(mut p) = hook_server.port.lock() {
+                        *p = 0;
+                    }
+                    log::error!("{error}");
                 });
         });
     });

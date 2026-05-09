@@ -196,7 +196,7 @@ pub fn create_harness_memory(
 ) -> Result<HarnessMemorySession, String> {
     let hook_port = hook_server.get_port();
     if hook_port == 0 {
-        return Err("Krypton hook server is not running".to_string());
+        return Err(hook_server.unavailable_reason());
     }
     let harness_id = hook_server.create_harness_memory(project_dir);
     Ok(HarnessMemorySession {
@@ -768,7 +768,7 @@ pub fn get_hook_server_config_snippet(
 ) -> Result<String, String> {
     let port = hook_server.get_port();
     if port == 0 {
-        return Err("Hook server is not running".to_string());
+        return Err(hook_server.unavailable_reason());
     }
 
     let snippet = serde_json::json!({

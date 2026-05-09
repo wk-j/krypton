@@ -143,8 +143,8 @@ No token/auth in v1. The server remains bound to `127.0.0.1`.
 ```
 1. User opens ACP Harness.
 2. AcpHarnessView calls create_harness_memory(projectDir).
-3. Rust creates a tab-local memory store and returns harnessId + hookPort.
-4. Each lane gets an MCP server descriptor pointing at /mcp/harness/<harnessId>/lane/<laneLabel>.
+3. Rust creates a tab-local memory store and returns harnessId + hookPort. If the global localhost hook server did not start, the command returns the recorded startup error; the harness shows memory as unavailable and continues without memory MCP servers.
+4. Each lane gets an MCP server descriptor pointing at /mcp/harness/<harnessId>/lane/<laneLabel> when memory is available.
 5. During session/new, acp.rs includes that descriptor in mcpServers.
 6. If the ACP adapter supports this HTTP MCP descriptor, the model sees memory tools.
 7. Agent calls memory_create/update/delete/search/get.
@@ -184,6 +184,7 @@ No new config in v1. MCP memory is the harness default once implemented.
 ## Edge Cases
 
 - **Adapter does not support the HTTP MCP descriptor:** lane runs normally with memory off. It does not receive latest summary injection.
+- **Hook server failed to start:** ACP Harness still lists backends and runs lanes. The composer and memory drawer show memory unavailable, `#mcp` prints the startup error, and no `krypton-harness-memory` MCP descriptor is passed to lanes.
 - **Memory cap reached:** create succeeds after auto-evicting oldest active entry by `updatedAt`.
 - **Duplicate summary:** create fails with `duplicate_summary`.
 - **Oversized entry:** create/update fails with `summary_too_long` or `detail_too_long`.

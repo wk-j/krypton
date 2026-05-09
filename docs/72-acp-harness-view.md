@@ -19,6 +19,8 @@ One prompt has exactly one destination lane: the active tab. There is no broadca
 
 Memory details are specified in `docs/73-acp-harness-mcp-memory.md`. Older heuristic memory extraction from tool observations and `MEMORY:` response footers is no longer part of the harness memory flow.
 
+If the localhost hook server cannot start, harness memory setup surfaces the recorded startup reason from the backend state. Fixed-port conflicts therefore show the failed bind address and OS error rather than the generic "Krypton hook server is not running" fallback. Hook server failure does not block the ACP Harness itself: the view continues to list and spawn ACP lanes, the composer and memory drawer show memory as unavailable, and lanes run without the `krypton-harness-memory` MCP server.
+
 ## Research
 
 - ACP is already a process-per-session model in Krypton: `AcpRegistry` keys clients by `krypton_session`, emits `acp-event-<session>`, and `AcpClient` wraps one backend subprocess. This supports multiple simultaneous agents without backend protocol changes.
@@ -171,7 +173,7 @@ openAcpHarnessView(): Promise<void>;
 
 ### Shared Memory Model
 
-Memory is a per-project set of lane-owned markdown-like documents. The harness creates one memory store through `create_harness_memory(projectDir)` and passes each ACP lane a lane-scoped HTTP MCP endpoint. Agents manage memory with MCP tools:
+Memory is a per-project set of lane-owned markdown-like documents. The harness attempts to create one memory store through `create_harness_memory(projectDir)` and passes each ACP lane a lane-scoped HTTP MCP endpoint when available. If the global localhost hook server is unavailable, memory is disabled for that harness tab but ACP backend listing, lane spawning, prompts, permissions, and transcripts continue normally. Agents manage memory with MCP tools when the endpoint exists:
 
 - `memory_set` overwrites the caller's own summary/detail document.
 - `memory_get` reads any lane's full document by lane label.
@@ -225,17 +227,18 @@ function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] 
 ```
 1. User opens ACP Harness from command palette or compositor shortcut.
 2. Compositor resolves projectDir through getFocusedCwd().
-3. AcpHarnessView calls AcpClient.listBackends(), then spawns the default roster with that same projectDir.
-4. Each lane registers its own client.onEvent() callback and initializes independently.
-5. User selects an active tab (default is lane 1) and types a prompt, a hash command, or resolves a permission.
-6. For a normal prompt, harness builds the lane-context stub (identity + roster + MCP-tools nudge) and prepends it via embedded resource or text block. Memory bodies are not injected; agents fetch them via `memory_list` / `memory_get` (Spec 98).
-7. Harness dispatches the prompt to the active tab's lane only. While the turn is running, the composer chip shows `<lane> running · m:ss · Ctrl+C cancel` and updates once per second. If the active lane is busy, dispatch is rejected with an inline composer chip `lane busy`; the prompt is not queued. When the lane transitions busy→idle and the composer still holds a non-empty draft, the chip flashes `lane idle — Enter to send` for 2 seconds; dispatch remains manual.
-8. While the turn streams: each lane renders stream/tool/plan/usage updates into its dashboard transcript. Completed `edit` calls and completed diff-bearing `write_like` tool updates update `fileTouchMap[path] = {laneId, laneDisplayName, toolKind, at}` (overwriting older entries). Memory tool calls trigger a memory-board refresh.
-9. When the turn returns, pending permissions and turn-scoped accept/reject-all flags clear. Cancelled turns do not modify memory unless the agent already called MCP memory tools before cancellation.
-10. Permission requests for the built-in memory MCP tools are auto-allowed and append a `memory auto-allow` transcript row without entering permission mode. Other permission requests move that lane to `needs_permission` and pre-empt that tab's composer with the options banner. The lane transcript holds the request detail (operation, path, size, diff preview) and a cross-lane warning when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. The user must switch to that tab to read context, then resolve via `a/A/r/R/Esc`. `A`/`R` apply only for the current `session/prompt` turn; both flags clear when that turn returns.
-11. `Ctrl+C` (or `#cancel`) in the composer cancels the active lane only. `#new` starts a fresh active-lane session after awaiting old-client disposal; `#new!` also clears the active lane's persisted memory; `#mem clear` clears memory without replacing the session.
-12. Pasted, dropped, and global screen-captured images stage in the active lane composer (up to 4 images, 5 MB each). Each staged image renders as a compact placeholder chip with thumbnail, filename/type label, and an `x` remove button; `Esc` still clears all staged images. Pasted and dropped images are saved under Krypton's temp image directory; global captures reuse the `capture_screen` file path. On submit they are sent as embedded ACP image content blocks with base64 data plus a `file://` URI to the saved path alongside the draft text. The submitted user transcript row keeps the chat text and adds a compact image-count attachment chip, so the transcript shows that the turn included images without retaining base64 thumbnails in history.
-13. Closing the tab disposes every client and drops all in-memory UI state (transcripts, file-touch map, pending permissions, staged images). **Memory documents are persisted to disk per project directory.** See `docs/76-acp-harness-memory-persistence.md`.
+3. AcpHarnessView attempts `create_harness_memory(projectDir)`. Failure records a memory warning and leaves MCP server descriptors empty; it does not abort harness startup.
+4. AcpHarnessView calls AcpClient.listBackends(), then spawns the default roster with that same projectDir.
+5. Each lane registers its own client.onEvent() callback and initializes independently.
+6. User selects an active tab (default is lane 1) and types a prompt, a hash command, or resolves a permission.
+7. For a normal prompt, harness builds the lane-context stub (identity + roster + MCP-tools nudge when memory exists, or a memory-unavailable note when it does not) and prepends it via embedded resource or text block. Memory bodies are not injected; agents fetch them via `memory_list` / `memory_get` only when MCP memory is available (Spec 98).
+8. Harness dispatches the prompt to the active tab's lane only. While the turn is running, the composer chip shows `<lane> running · m:ss · Ctrl+C cancel` and updates once per second. If the active lane is busy, dispatch is rejected with an inline composer chip `lane busy`; the prompt is not queued. When the lane transitions busy→idle and the composer still holds a non-empty draft, the chip flashes `lane idle — Enter to send` for 2 seconds; dispatch remains manual.
+9. While the turn streams: each lane renders stream/tool/plan/usage updates into its dashboard transcript. Completed `edit` calls and completed diff-bearing `write_like` tool updates update `fileTouchMap[path] = {laneId, laneDisplayName, toolKind, at}` (overwriting older entries). Memory tool calls trigger a memory-board refresh.
+10. When the turn returns, pending permissions and turn-scoped accept/reject-all flags clear. Cancelled turns do not modify memory unless the agent already called MCP memory tools before cancellation.
+11. Permission requests for the built-in memory MCP tools are auto-allowed and append a `memory auto-allow` transcript row without entering permission mode. Other permission requests move that lane to `needs_permission` and pre-empt that tab's composer with the options banner. The lane transcript holds the request detail (operation, path, size, diff preview) and a cross-lane warning when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. The user must switch to that tab to read context, then resolve via `a/A/r/R/Esc`. `A`/`R` apply only for the current `session/prompt` turn; both flags clear when that turn returns.
+12. `Ctrl+C` (or `#cancel`) in the composer cancels the active lane only. `#new` starts a fresh active-lane session after awaiting old-client disposal; `#new!` also clears the active lane's persisted memory when memory is available; `#mem clear` clears memory without replacing the session.
+13. Pasted, dropped, and global screen-captured images stage in the active lane composer (up to 4 images, 5 MB each). Each staged image renders as a compact placeholder chip with thumbnail, filename/type label, and an `x` remove button; `Esc` still clears all staged images. Pasted and dropped images are saved under Krypton's temp image directory; global captures reuse the `capture_screen` file path. On submit they are sent as embedded ACP image content blocks with base64 data plus a `file://` URI to the saved path alongside the draft text. The submitted user transcript row keeps the chat text and adds a compact image-count attachment chip, so the transcript shows that the turn included images without retaining base64 thumbnails in history.
+14. Closing the tab disposes every client and drops all in-memory UI state (transcripts, file-touch map, pending permissions, staged images). **Memory documents are persisted to disk per project directory when memory was available.** See `docs/76-acp-harness-memory-persistence.md`.
 ```
 
 ### UI Changes
@@ -341,7 +344,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   Status uses symbol + text + color together; never color alone.
 
 - The **active lane** fills the remaining viewport. Its body is internally scrollable. Collapsed rows above and below the active lane stay anchored.
-- The active lane body shows the full per-lane transcript: user prompts, assistant text, thoughts, tool calls and summaries, plan updates, permission requests and resolutions, usage snapshots, and system rows. Tool rows show diff/output preview inline (collapsible) as plain monospace text, not syntax-highlighted code. Output groups use label-specific text colors and text-shadow glow only; the group container does not add a background glow. Long assistant text truncates at ~12 lines with a `[…]` expand affordance. The transcript scrolls within the lane body.
+- The active lane body shows the full per-lane transcript: user prompts, assistant text, thoughts, tool calls and summaries, plan updates, permission requests and resolutions, usage snapshots, and system rows. Tool rows show diff/output preview inline as plain monospace text, not syntax-highlighted code. Output groups use label-specific text colors and text-shadow glow only; the group container does not add a background glow. Execute-tool output can render structured summaries for recognized command output: `git diff --stat` becomes per-file mini bars, and `git status --short` becomes status badges plus paths. Unknown output keeps the generic labeled text sections. Long assistant text truncates at ~12 lines with a `[…]` expand affordance. The transcript scrolls within the lane body.
 - Permission requests appear inline in the transcript at the time they arrive, framed by a clear divider:
 
   ```text

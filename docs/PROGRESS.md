@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-09 (agent compact tool labels)
+> Last updated: 2026-05-09 (ACP harness rich tool output)
 
 ## Overview
 
@@ -21,6 +21,9 @@
 
 ## Recent Landings
 
+- **ACP Harness rich tool output** — Execute-tool rows now keep a compact command header but render recognized Git outputs as structured console widgets: `git diff --stat` becomes per-file mini change bars and `git status --short` becomes status badges with paths. Generic stdout/stderr remains available as labeled monospace sections with reduced glow so command headers stay readable. See `docs/72-acp-harness-view.md`.
+- **ACP Harness memory degradation** — ACP Harness startup now treats the global hook server/memory MCP endpoint as optional. If `create_harness_memory` fails, the view records the startup error as a warning, still lists ACP backends, still spawns lanes, omits the `krypton-harness-memory` MCP descriptor, shows `memory off` in the composer and memory drawer, and has `#mcp` print the concrete startup error. See `docs/72-acp-harness-view.md` and `docs/73-acp-harness-mcp-memory.md`.
+- **Hook server startup diagnostics** — The hook server state now records the concrete startup failure, including fixed-port bind errors such as `Failed to bind hook server on 127.0.0.1:64732: ...`. ACP Harness memory creation and hook-config snippet requests report that saved reason instead of the generic "Krypton hook server is not running" message when the port never became available. See `docs/72-acp-harness-view.md`.
 - **Agent view compact tool labels** — Tool-row indicators such as `< BASH >` now use chrome-sized typography and tighter header spacing, while command text/output remains at the normal content font size. See `docs/42-pi-agent-integration.md`.
 - **Agent view static cursors** — The pi agent view keeps the visible streaming and input block cursors, but removes their blink animations by deleting the cursor keyframes and animation declarations. See `docs/42-pi-agent-integration.md`.
 - **File manager selected row simplified** — The file manager keeps a plain selected-row background for keyboard navigation, but removes the cursor chrome around it: no leading pipe, `>` marker, glow animation, shifted directory icon, cursor-specific type-color overrides, or boosted age/size styling. See `docs/52-file-manager.md`.

@@ -108,6 +108,7 @@ interface ToolPayload {
   status: string;
   kind: string;
   subject: string;
+  command: string;
   result: string;
   sections: Array<{ label: string; text: string }>;
   diffs: Array<{ path: string; oldText: string; newText: string }>;
@@ -280,6 +281,7 @@ export class AcpHarnessView implements ContentView {
   private memoryEntries: HarnessMemoryEntry[] = [];
   private harnessMemoryId: string | null = null;
   private harnessMemoryPort: number | null = null;
+  private harnessMemoryWarning: string | null = null;
   private gitBranch: string | null = null;
   private gitBranchLoading = false;
   private gitBranchProjectDir: string | null = null;
@@ -713,19 +715,32 @@ export class AcpHarnessView implements ContentView {
   private async start(): Promise<void> {
     try {
       await this.initializeHarnessMemory();
-      try {
-        const cfg = await loadConfig();
-        this.laneModels = cfg.acp_harness?.lane_models ?? {};
-      } catch {
-        this.laneModels = {};
-      }
+    } catch (e) {
+      this.harnessMemoryId = null;
+      this.harnessMemoryPort = null;
+      this.harnessMemoryWarning = errorText(e);
+      this.memoryEntries = [];
+    }
+
+    try {
+      const cfg = await loadConfig();
+      this.laneModels = cfg.acp_harness?.lane_models ?? {};
+    } catch {
+      this.laneModels = {};
+    }
+
+    try {
       this.pickerEntries = await AcpClient.listBackends();
       this.systemRows = [
+        ...(this.harnessMemoryWarning ? [`memory warning: ${this.harnessMemoryWarning}`] : []),
         'no lanes running',
         'press Cmd+P then + to add a lane',
       ];
     } catch (e) {
-      this.systemRows = [`backend list failed: ${String(e)}`];
+      this.systemRows = [
+        ...(this.harnessMemoryWarning ? [`memory warning: ${this.harnessMemoryWarning}`] : []),
+        `backend list failed: ${errorText(e)}`,
+      ];
     }
     this.render();
     if (this.lanes.length === 0 && this.pickerEntries.some((e) => e.id === 'claude')) {
@@ -738,6 +753,7 @@ export class AcpHarnessView implements ContentView {
     const session = await invoke<HarnessMemorySession>('create_harness_memory', { projectDir });
     this.harnessMemoryId = session.harnessId;
     this.harnessMemoryPort = session.hookPort;
+    this.harnessMemoryWarning = null;
     this.memoryUnlisten = await listen<{ harnessId: string }>('acp-harness-memory-changed', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMemory();
     });
@@ -864,6 +880,9 @@ export class AcpHarnessView implements ContentView {
       this.configureLaneFromInfo(lane, info);
       lane.status = 'idle';
       this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
+      if (this.harnessMemoryWarning) {
+        this.appendTranscript(lane, 'system', `warning: harness memory unavailable: ${this.harnessMemoryWarning}`);
+      }
     } catch (e) {
       if (lane.spawnEpoch !== spawnEpoch) {
         if (client) await client.dispose();
@@ -1096,6 +1115,10 @@ export class AcpHarnessView implements ContentView {
     const roster = this.lanes.map((l) => l.displayName).join(', ');
     const hasPeers = this.lanes.length > 1;
     const lines: string[] = [`You are lane ${self}. Lanes: ${roster}.`];
+    if (!this.harnessMemoryId || !this.harnessMemoryPort) {
+      lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
+      return lines.join('\n');
+    }
     if (hasPeers) {
       lines.push(
         'Shared memory is available through the krypton-harness-memory MCP server: call memory_list to see which lanes have entries, memory_get { lane } to read another lane, and memory_set { summary, detail } to update your own. Writes go to your own lane automatically; you cannot write to other lanes.',
@@ -1559,6 +1582,7 @@ export class AcpHarnessView implements ContentView {
     if (this.lanes.length === 0) {
       this.activeLaneId = '';
       this.systemRows = [
+        ...(this.harnessMemoryWarning ? [`memory warning: ${this.harnessMemoryWarning}`] : []),
         'no lanes running',
         'press Cmd+P then + to add a lane',
       ];
@@ -1613,7 +1637,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (options.clearMemory && !this.harnessMemoryId) {
-      this.flashChip('memory unavailable - use #new');
+      this.flashChip(this.harnessMemoryWarning ? `memory unavailable: ${truncate(this.harnessMemoryWarning, 72)}` : 'memory unavailable - use #new');
       return;
     }
     if (options.clearMemory) {
@@ -1723,7 +1747,8 @@ export class AcpHarnessView implements ContentView {
     await this.refreshMcpStats();
     const lines: string[] = [];
     if (!this.harnessMemoryId || !this.harnessMemoryPort) {
-      lines.push('mcp: harness memory not initialized');
+      lines.push(`mcp: harness memory unavailable${this.harnessMemoryWarning ? ` - ${this.harnessMemoryWarning}` : ''}`);
+      lines.push('lanes continue without the krypton-harness-memory MCP server');
     } else {
       lines.push(`mcp endpoint: http://127.0.0.1:${this.harnessMemoryPort}/mcp/harness/${this.harnessMemoryId}/lane/<laneLabel>`);
       lines.push('');
@@ -2150,9 +2175,18 @@ export class AcpHarnessView implements ContentView {
     this.memoryOverlayEl.hidden = !this.memoryDrawerOpen;
     const head = this.memoryOverlayEl.querySelector('.acp-harness__memory-head');
     if (head) {
-      head.textContent = `Memory · ${this.memoryEntries.length} entries`;
+      head.textContent = this.harnessMemoryWarning
+        ? 'Memory · unavailable'
+        : `Memory · ${this.memoryEntries.length} entries`;
     }
     this.memoryPanelEl.innerHTML = '';
+    if (this.harnessMemoryWarning) {
+      const empty = document.createElement('div');
+      empty.className = 'acp-harness__memory-empty';
+      empty.textContent = `memory unavailable: ${this.harnessMemoryWarning}`;
+      this.memoryPanelEl.appendChild(empty);
+      return;
+    }
     const rows = this.sortedMemoryRows();
     if (rows.length === 0) {
       const empty = document.createElement('div');
@@ -2239,6 +2273,7 @@ export class AcpHarnessView implements ContentView {
       const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
       return `${lane.displayName} running${elapsed} · Ctrl+C cancel`;
     }
+    if (this.harnessMemoryWarning) return `memory off: ${truncate(this.harnessMemoryWarning, 64)}`;
     return `memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`;
   }
 
@@ -3363,6 +3398,7 @@ function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boole
       item.tool.status,
       item.tool.kind,
       item.tool.subject,
+      item.tool.command,
       item.tool.result,
       item.tool.sections.map((section) => `${section.label}:${section.text}`).join('\u001f'),
       item.tool.diffs.map((diff) => `${diff.path}:${diff.oldText}:${diff.newText}`).join('\u001f'),
@@ -3506,12 +3542,13 @@ function buildToolPayload(
   const result = exit || (status === 'failed' ? 'failed' : '');
   const raw = rawOutputSections(call.rawOutput);
   const sections = raw.length > 0 ? raw : contentOutputSections(call.content);
+  const sectionLineLimit = kind === 'execute' ? 12 : 6;
   const trimmed = sections
-    .map((s) => ({ label: s.label, text: boundedOutputLines(s.text, 6) }))
+    .map((s) => ({ label: s.label, text: boundedOutputLines(s.text, sectionLineLimit) }))
     .filter((s) => s.text)
     .slice(0, 4);
   const diffs = extractToolDiffs(call.content);
-  return { glyph: statusGlyph(status), status, kind, subject, result, sections: trimmed, diffs, startedAt, endedAt };
+  return { glyph: statusGlyph(status), status, kind, subject, command, result, sections: trimmed, diffs, startedAt, endedAt };
 }
 
 function isTerminalToolStatus(status: string): boolean {
@@ -3579,23 +3616,7 @@ function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
   }
   body.appendChild(head);
   if (tool.sections.length > 0) {
-    const output = document.createElement('div');
-    output.className = 'acp-harness__tool-output';
-    for (const section of tool.sections) {
-      const block = document.createElement('div');
-      const tone = toolSectionTone(section.label);
-      block.className = `acp-harness__tool-section acp-harness__tool-section--${tone}`;
-      const label = document.createElement('div');
-      label.className = 'acp-harness__tool-section-label';
-      label.textContent = section.label;
-      const pre = document.createElement('pre');
-      pre.className = 'acp-harness__tool-section-text';
-      pre.textContent = section.text;
-      block.appendChild(label);
-      block.appendChild(pre);
-      output.appendChild(block);
-    }
-    body.appendChild(output);
+    body.appendChild(renderToolOutput(tool));
   }
   if (tool.diffs.length > 0) {
     const wrap = document.createElement('div');
@@ -3616,6 +3637,133 @@ function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
     }
     body.appendChild(wrap);
   }
+}
+
+function renderToolOutput(tool: ToolPayload): HTMLElement {
+  const output = document.createElement('div');
+  output.className = 'acp-harness__tool-output';
+  for (const section of tool.sections) {
+    const rich = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
+    output.appendChild(rich ?? renderPlainToolSection(section));
+  }
+  return output;
+}
+
+function renderPlainToolSection(section: { label: string; text: string }): HTMLElement {
+  const block = document.createElement('div');
+  const tone = toolSectionTone(section.label);
+  block.className = `acp-harness__tool-section acp-harness__tool-section--${tone}`;
+  const label = document.createElement('div');
+  label.className = 'acp-harness__tool-section-label';
+  label.textContent = section.label;
+  const pre = document.createElement('pre');
+  pre.className = 'acp-harness__tool-section-text';
+  pre.textContent = section.text;
+  block.appendChild(label);
+  block.appendChild(pre);
+  return block;
+}
+
+function renderRichExecuteSection(tool: ToolPayload, section: { label: string; text: string }): HTMLElement | null {
+  const label = section.label.toLowerCase();
+  if (label !== 'stdout' && label !== 'output') return null;
+  if (/\bgit\s+diff\s+--stat\b/.test(tool.command)) {
+    const rows = parseGitDiffStat(section.text);
+    if (rows.length > 0) return renderGitDiffStat(rows, section.text);
+  }
+  if (/\bgit\s+status\s+--short\b/.test(tool.command)) {
+    const rows = parseGitStatusShort(section.text);
+    if (rows.length > 0) return renderGitStatusShort(rows);
+  }
+  return null;
+}
+
+function parseGitDiffStat(text: string): Array<{ path: string; changes: number; plus: number; minus: number }> {
+  const rows: Array<{ path: string; changes: number; plus: number; minus: number }> = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line || /\d+\s+files?\s+changed/.test(line)) continue;
+    const match = line.match(/^(.+?)\s+\|\s+(\d+)\s+([+\-]+)$/);
+    if (!match) continue;
+    const marks = match[3] ?? '';
+    rows.push({
+      path: match[1]?.trim() ?? '',
+      changes: Number(match[2] ?? 0),
+      plus: (marks.match(/\+/g) ?? []).length,
+      minus: (marks.match(/-/g) ?? []).length,
+    });
+  }
+  return rows.slice(0, 8);
+}
+
+function renderGitDiffStat(rows: Array<{ path: string; changes: number; plus: number; minus: number }>, source: string): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--diffstat';
+  const total = Math.max(1, ...rows.map((row) => row.changes));
+  for (const row of rows) {
+    const item = document.createElement('div');
+    item.className = 'acp-harness__tool-stat-row';
+    const path = document.createElement('span');
+    path.className = 'acp-harness__tool-stat-path';
+    path.textContent = row.path;
+    const count = document.createElement('span');
+    count.className = 'acp-harness__tool-stat-count';
+    count.textContent = String(row.changes);
+    const bar = document.createElement('span');
+    bar.className = 'acp-harness__tool-stat-bar';
+    bar.style.setProperty('--stat-plus-width', `${(row.plus / total) * 100}%`);
+    bar.style.setProperty('--stat-minus-width', `${(row.minus / total) * 100}%`);
+    item.append(path, count, bar);
+    block.appendChild(item);
+  }
+  const omitted = source.split('\n').filter((line) => line.trim() && !/\d+\s+files?\s+changed/.test(line)).length - rows.length;
+  if (omitted > 0) {
+    const more = document.createElement('div');
+    more.className = 'acp-harness__tool-rich-more';
+    more.textContent = `${omitted} more file${omitted === 1 ? '' : 's'}`;
+    block.appendChild(more);
+  }
+  return block;
+}
+
+function parseGitStatusShort(text: string): Array<{ index: string; worktree: string; path: string }> {
+  const rows: Array<{ index: string; worktree: string; path: string }> = [];
+  for (const raw of text.split('\n')) {
+    if (!raw.trim()) continue;
+    const match = raw.match(/^(.)(.)\s+(.+)$/);
+    if (!match) continue;
+    rows.push({
+      index: match[1] ?? ' ',
+      worktree: match[2] ?? ' ',
+      path: match[3] ?? '',
+    });
+  }
+  return rows.slice(0, 10);
+}
+
+function renderGitStatusShort(rows: Array<{ index: string; worktree: string; path: string }>): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--gitstatus';
+  for (const row of rows) {
+    const item = document.createElement('div');
+    item.className = 'acp-harness__tool-status-row';
+    const badge = document.createElement('span');
+    badge.className = `acp-harness__tool-status-badge acp-harness__tool-status-badge--${gitStatusTone(row.index, row.worktree)}`;
+    badge.textContent = `${row.index}${row.worktree}`.trim() || 'M';
+    const path = document.createElement('span');
+    path.className = 'acp-harness__tool-status-path';
+    path.textContent = row.path;
+    item.append(badge, path);
+    block.appendChild(item);
+  }
+  return block;
+}
+
+function gitStatusTone(index: string, worktree: string): string {
+  if (index === '?' || worktree === '?') return 'new';
+  if (index === 'D' || worktree === 'D') return 'deleted';
+  if (index === 'A' || worktree === 'A') return 'added';
+  return 'modified';
 }
 
 function toolSectionTone(label: string): string {
