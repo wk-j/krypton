@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-09 (file manager selected row)
+> Last updated: 2026-05-09 (agent compact tool labels)
 
 ## Overview
 
@@ -21,6 +21,8 @@
 
 ## Recent Landings
 
+- **Agent view compact tool labels** — Tool-row indicators such as `< BASH >` now use chrome-sized typography and tighter header spacing, while command text/output remains at the normal content font size. See `docs/42-pi-agent-integration.md`.
+- **Agent view static cursors** — The pi agent view keeps the visible streaming and input block cursors, but removes their blink animations by deleting the cursor keyframes and animation declarations. See `docs/42-pi-agent-integration.md`.
 - **File manager selected row simplified** — The file manager keeps a plain selected-row background for keyboard navigation, but removes the cursor chrome around it: no leading pipe, `>` marker, glow animation, shifted directory icon, cursor-specific type-color overrides, or boosted age/size styling. See `docs/52-file-manager.md`.
 - **File manager 333px sidebar** — The file manager now starts with a fixed 333px file-list pane and lets the preview fill the remaining width. Local `H` / `L` resizing stays pixel-based from that baseline, using roughly 5% body-width increments with the existing 15%-85% guardrails. See `docs/52-file-manager.md`.
 - **File manager text selection** — The file manager view no longer inherits `user-select: none` across the whole browser. Breadcrumbs, file names, status text, and preview content can now be selected with the mouse and participate in the global copy-on-select flow, while decorative mark/icon/age-bar columns remain non-selectable so copied list text stays clean. See `docs/52-file-manager.md`.

@@ -150,22 +150,22 @@ Sessions are stored as JSON files on the local filesystem, scoped per project di
     .agent-view__msg.agent-view__msg--assistant
       .agent-view__msg-label                   ← "AI" (12px)
       .agent-view__msg-body                    ← streamed delta by delta
-      .agent-view__stream-cursor               ← blinking "▋", removed on agent_end
+      .agent-view__stream-cursor               ← static "▋", removed on agent_end
     .agent-view__msg.agent-view__msg--shell     ← shell command (! prefix)
       .agent-view__msg-label--shell             ← "SH" green badge
       .agent-view__msg-body                     ← "$ <command>"
     .agent-view__shell-result                   ← output (20-line cap, pre-wrap)
     .agent-view__shell-result--error            ← red variant for non-zero exit
     .agent-view__tool-row                      ← tool execution row (13px)
-      .agent-view__tool-icon                   ← spinning braille → "✓"/"✗"
-      .agent-view__tool-name                   ← e.g. "bash"
+      .agent-view__tool-icon                   ← compact spinner → "✓"/"✗"
+      .agent-view__tool-name                   ← compact uppercase label, e.g. "bash"
       .agent-view__tool-args                   ← truncated args, dim
       .agent-view__tool-result                 ← output text, max 10 lines + "N more"
     .agent-view__error                         ← red error message (14px)
   .agent-view__state-hint                      ← scroll mode hint, visible only in scroll state
   .agent-view__input-row                       ← fixed at bottom, dimmed while running
     .agent-view__prompt-glyph                  ← "❯" or spinner glyph
-    .agent-view__input-display                 ← manual text rendering with cursor
+    .agent-view__input-display                 ← manual text rendering with static cursor
 ```
 
 Font sizes: body 15px, labels 12px, tools/results 13px, errors 14px, hints 12px.

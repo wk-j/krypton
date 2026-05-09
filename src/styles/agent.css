@@ -695,23 +695,12 @@
   letter-spacing: 0.02em;
 }
 
-/* ═══ Streaming cursor — amber block blink ═══════════════════ */
+/* ═══ Streaming cursor — static amber block ══════════════════ */
 
 .agent-view__stream-cursor {
   display: inline;
   color: var(--agent-primary);
   text-shadow: 0 0 10px rgba(var(--agent-primary-rgb), 0.6);
-  animation: amber-cursor-blink 1s step-end infinite;
-}
-
-@keyframes amber-cursor-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
-}
-
-@keyframes agent-cursor-pulse {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
 }
 
 /* ═══ Tool execution rows — telemetry readout ════════════════ */
@@ -728,8 +717,8 @@
 
 .agent-view__tool-header {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 6px;
 }
 
 .agent-view__tool-command {
@@ -750,6 +739,7 @@
   color: rgba(var(--agent-blue-rgb), 0.8);
   width: 1.2ch;
   flex-shrink: 0;
+  font-size: var(--krypton-chrome-font-size, 11px);
   text-shadow: 0 0 6px rgba(var(--agent-blue-rgb), 0.3);
 }
 
@@ -774,10 +764,10 @@
 
 .agent-view__tool-name {
   color: var(--agent-blue);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.14em;
   text-shadow: 0 0 8px rgba(var(--agent-blue-rgb), 0.35);
 }
 
@@ -1026,12 +1016,11 @@
   outline: none;
 }
 
-/* Input cursor — amber phosphor blink */
+/* Input cursor — static amber phosphor block */
 .agent-view__input-cursor {
   display: inline;
   color: var(--agent-primary);
   text-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.6);
-  animation: agent-cursor-pulse 0.8s step-end infinite;
 }
 
 /* ─── Autocomplete dropdown ──────────────────────────────────── */
