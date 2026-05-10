@@ -319,7 +319,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
 - **Collapsed lane row** is exactly one line:
 
   ```text
-  [N] <symbol> <Name> [model-if-known] <activity-or-status>
+  [N] <symbol> <Name> <status> [metadata-chips] <activity-or-status>
   ```
 
   Status symbols:
@@ -332,7 +332,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   × error
   ```
 
-  The optional model chip is rendered only when Krypton can determine the active lane model. Resolution order: (1) `acp_harness.lane_models.<backend>.active` from `krypton.toml` if set; (2) model fields advertised by the agent in `agent_capabilities`; (3) for OpenCode only, the historical default `zai-coding-plan/glm-5.1`. Unknown models are hidden, not shown as `unknown`. See `docs/06-configuration.md` for the per-backend `lane_models` schema. The `<activity-or-status>` slot is the latest tool/assistant activity by default (`editing src/acp/client.ts`, `reading src/layout.ts`, `running cargo test`, `thinking…`, or the most recent assistant text truncated to ~40 chars). When status is `needs_permission` or `error`, the slot is replaced by the blocking detail (`perm: write src/styles/acp.css`, `error: spawn failed`).
+  Metadata chips (model, mode, MCP, sandbox, metrics) render as a compact flowing group and do not reserve space when absent. The optional model chip is rendered only when Krypton can determine the active lane model. Resolution order: (1) `acp_harness.lane_models.<backend>.active` from `krypton.toml` if set; (2) model fields advertised by the agent in `agent_capabilities`; (3) for OpenCode only, the historical default `zai-coding-plan/glm-5.1`. Unknown models are hidden, not shown as `unknown`. See `docs/06-configuration.md` for the per-backend `lane_models` schema. The `<activity-or-status>` slot is the latest tool/assistant activity by default (`editing src/acp/client.ts`, `reading src/layout.ts`, `running cargo test`, `thinking…`, or the most recent assistant text truncated to ~40 chars). When status is `needs_permission` or `error`, the slot is replaced by the blocking detail (`perm: write src/styles/acp.css`, `error: spawn failed`).
 
   Color rules:
 

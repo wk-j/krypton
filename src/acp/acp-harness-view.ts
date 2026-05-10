@@ -3886,15 +3886,16 @@ function renderLaneHead(
   const modeChip = renderModeChip(lane);
   const sandboxChip = renderSandboxChip(lane);
   const metricsChip = renderMetricsChip(metrics);
+  const chipGroup = modelChip + modeChip + mcpChip + sandboxChip + metricsChip;
+  const chips = chipGroup
+    ? `<span class="acp-harness__lane-chips">${chipGroup}</span>`
+    : '';
   if (!active) {
     return (
       `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
       `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
-      modelChip +
-      modeChip +
-      mcpChip +
-      sandboxChip +
-      metricsChip +
+      `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
+      chips +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
     );
   }
@@ -3905,11 +3906,7 @@ function renderLaneHead(
     `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
     `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
-    modelChip +
-    modeChip +
-    mcpChip +
-    sandboxChip +
-    metricsChip +
+    chips +
     `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>` +
     cancelHint
   );

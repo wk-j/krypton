@@ -67,7 +67,7 @@
 .acp-harness__lane-head {
   height: 28px;
   display: grid;
-  grid-template-columns: 2ch minmax(10ch, 18ch) auto auto auto auto auto auto minmax(0, 1fr) auto;
+  grid-template-columns: 2ch max-content max-content max-content minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
@@ -84,8 +84,10 @@
 
 .acp-harness__lane-name {
   grid-column: 2;
+  max-width: 18ch;
   color: var(--acp-lane-accent, rgba(216, 232, 216, 0.86));
   font-weight: normal;
+  font-size: 0.92em;
   letter-spacing: 0.02em;
   text-transform: none;
   overflow: hidden;
@@ -98,14 +100,22 @@
   justify-self: start;
   padding: 0;
   color: rgba(216, 232, 216, 0.62);
-  font-size: 0.78em;
+  font-size: 0.74em;
   letter-spacing: 0.06em;
   text-decoration: none;
   text-transform: uppercase;
 }
 
-.acp-harness__lane-model {
+.acp-harness__lane-chips {
   grid-column: 4;
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.acp-harness__lane-model {
   justify-self: start;
   min-width: 0;
   max-width: 24ch;
@@ -115,20 +125,19 @@
   border: 1px solid rgba(216, 232, 216, 0.16);
   border-radius: 2px;
   color: rgba(216, 232, 216, 0.46);
-  font-size: 0.66em;
+  font-size: 0.72em;
   letter-spacing: 0.04em;
   text-shadow: none;
   white-space: nowrap;
 }
 
 .acp-harness__lane-mode {
-  grid-column: 5;
   justify-self: start;
   padding: 0 5px;
   border: 1px solid color-mix(in oklab, #c77dff 35%, transparent);
   border-radius: 2px;
   color: color-mix(in oklab, #c77dff 88%, white 12%);
-  font-size: 0.66em;
+  font-size: 0.72em;
   letter-spacing: 0.04em;
   text-shadow: none;
   white-space: nowrap;
@@ -138,21 +147,20 @@
 }
 
 .acp-harness__lane-sandbox {
-  grid-column: 7;
   flex: 0 0 auto;
   justify-self: start;
   padding: 0 5px;
   border: 1px solid rgba(255, 170, 102, 0.55);
   border-radius: 2px;
   color: rgba(255, 196, 140, 0.78);
-  font-size: 0.66em;
+  font-size: 0.72em;
   letter-spacing: 0.04em;
   white-space: nowrap;
   text-shadow: none;
 }
 
 .acp-harness__lane-activity {
-  grid-column: 9;
+  grid-column: 5;
   color: rgba(216, 232, 216, 0.48);
   font-size: 0.82em;
   overflow: hidden;
@@ -160,13 +168,12 @@
 }
 
 .acp-harness__lane-mcp {
-  grid-column: 6;
   flex: 0 0 auto;
   justify-self: start;
   padding: 0 5px;
   border: 1px solid currentColor;
   border-radius: 2px;
-  font-size: 0.66em;
+  font-size: 0.72em;
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
@@ -180,7 +187,6 @@
 }
 
 .acp-harness__lane-metrics {
-  grid-column: 8;
   flex: 0 0 auto;
   justify-self: start;
   display: inline-flex;
@@ -188,7 +194,7 @@
   padding: 0 5px;
   border: 1px solid rgba(216, 232, 216, 0.16);
   border-radius: 2px;
-  font-size: 0.66em;
+  font-size: 0.72em;
   letter-spacing: 0.04em;
   white-space: nowrap;
   text-shadow: none;
@@ -327,7 +333,7 @@
 }
 
 .acp-harness__lane-cancel-hint {
-  grid-column: 10;
+  grid-column: 6;
   flex: 0 0 auto;
   justify-self: start;
   margin-left: 0.6em;
