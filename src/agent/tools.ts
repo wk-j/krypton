@@ -8,6 +8,29 @@ import { Type, type Static } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import { loadSkillContent, type SkillMeta } from './skills';
 
+export interface WriteApprovalRequest {
+  id: string;
+  path: string;
+  resolvedPath: string;
+  oldContent: string;
+  newContent: string;
+  diff?: string;
+}
+
+export type WriteApprovalHandler = (request: WriteApprovalRequest) => Promise<boolean>;
+
+export type BashRisk = 'write' | 'git' | 'network' | 'script' | 'unknown';
+
+export interface BashApprovalRequest {
+  id: string;
+  command: string;
+  cwd: string | null;
+  risk: BashRisk;
+  reason: string;
+}
+
+export type BashApprovalHandler = (request: BashApprovalRequest) => Promise<boolean>;
+
 // ─── Parameter schemas ────────────────────────────────────────────
 
 const ReadFileSchema = Type.Object({
@@ -57,7 +80,155 @@ async function getShell(): Promise<[string, string[]]> {
   return cachedShell;
 }
 
-export function createKryptonTools(projectDir: string | null, skills?: SkillMeta[]): AgentTool[] {
+function tokenizeShellSegment(segment: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | '\'' | null = null;
+  let escaped = false;
+
+  for (const ch of segment) {
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && quote !== '\'') {
+      escaped = true;
+      continue;
+    }
+    if ((ch === '"' || ch === '\'') && (!quote || quote === ch)) {
+      quote = quote ? null : ch;
+      continue;
+    }
+    if (!quote && /\s/.test(ch)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+    current += ch;
+  }
+
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+function splitShellSegments(command: string): string[] {
+  const segments: string[] = [];
+  let current = '';
+  let quote: '"' | '\'' | null = null;
+  let escaped = false;
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    const next = command[i + 1];
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && quote !== '\'') {
+      current += ch;
+      escaped = true;
+      continue;
+    }
+    if ((ch === '"' || ch === '\'') && (!quote || quote === ch)) {
+      quote = quote ? null : ch;
+      current += ch;
+      continue;
+    }
+    if (!quote && ((ch === '&' && next === '&') || (ch === '|' && next === '|') || ch === ';' || ch === '|')) {
+      if (current.trim()) segments.push(current.trim());
+      current = '';
+      if ((ch === '&' && next === '&') || (ch === '|' && next === '|')) i++;
+      continue;
+    }
+    current += ch;
+  }
+
+  if (current.trim()) segments.push(current.trim());
+  return segments;
+}
+
+function classifyBashCommand(command: string): { needsApproval: boolean; risk: BashRisk; reason: string } {
+  const trimmed = command.trim();
+  if (!trimmed) return { needsApproval: false, risk: 'unknown', reason: 'Empty command.' };
+
+  if (/(^|[^<])>{1,2}|&>|<</.test(trimmed)) {
+    return { needsApproval: true, risk: 'write', reason: 'Uses shell redirection or heredoc.' };
+  }
+
+  const segments = splitShellSegments(trimmed);
+  if (segments.length === 0) {
+    return { needsApproval: true, risk: 'unknown', reason: 'Unable to parse command.' };
+  }
+
+  const readOnly = new Set([
+    'awk', 'cat', 'date', 'du', 'echo', 'env', 'find', 'git', 'grep', 'head',
+    'ls', 'nl', 'pwd', 'rg', 'sed', 'tail', 'tree', 'wc', 'which', 'whoami',
+  ]);
+  const alwaysWrite = new Set([
+    'chmod', 'chown', 'cp', 'dd', 'install', 'ln', 'mkdir', 'mv', 'perl',
+    'rm', 'rmdir', 'rsync', 'sed', 'tee', 'touch', 'truncate',
+  ]);
+  const scriptRunners = new Set(['bash', 'bun', 'deno', 'node', 'npx', 'python', 'python3', 'ruby', 'sh', 'tsx', 'zsh']);
+  const networkInstallers = new Set(['brew', 'cargo', 'curl', 'go', 'npm', 'pnpm', 'pip', 'pip3', 'uv', 'wget', 'yarn']);
+  const safeGit = new Set(['branch', 'diff', 'log', 'rev-parse', 'show', 'status']);
+  const safeNpm = new Set(['test']);
+
+  for (const segment of segments) {
+    const tokens = tokenizeShellSegment(segment);
+    if (tokens.length === 0) continue;
+    const cmd = tokens[0];
+    const args = tokens.slice(1);
+
+    if (cmd === 'git') {
+      const sub = args.find((arg) => !arg.startsWith('-')) ?? '';
+      if (!safeGit.has(sub)) {
+        return { needsApproval: true, risk: 'git', reason: `git ${sub || '(unknown)'} can change repository state.` };
+      }
+      continue;
+    }
+
+    if (cmd === 'npm') {
+      const sub = args.find((arg) => !arg.startsWith('-')) ?? '';
+      if (!safeNpm.has(sub)) {
+        return { needsApproval: true, risk: 'network', reason: `npm ${sub || '(unknown)'} may modify dependencies or run scripts.` };
+      }
+      continue;
+    }
+
+    if (cmd === 'sed' && args.some((arg) => arg === '-i' || arg.startsWith('-i'))) {
+      return { needsApproval: true, risk: 'write', reason: 'sed -i edits files in place.' };
+    }
+
+    if (alwaysWrite.has(cmd) && cmd !== 'sed') {
+      return { needsApproval: true, risk: 'write', reason: `${cmd} can modify files.` };
+    }
+
+    if (scriptRunners.has(cmd)) {
+      return { needsApproval: true, risk: 'script', reason: `${cmd} can execute arbitrary code.` };
+    }
+
+    if (networkInstallers.has(cmd)) {
+      return { needsApproval: true, risk: 'network', reason: `${cmd} may access the network or modify dependencies.` };
+    }
+
+    if (!readOnly.has(cmd)) {
+      return { needsApproval: true, risk: 'unknown', reason: `${cmd} is not in the read-only allowlist.` };
+    }
+  }
+
+  return { needsApproval: false, risk: 'unknown', reason: 'Read-only allowlisted command.' };
+}
+
+export function createKryptonTools(
+  projectDir: string | null,
+  skills?: SkillMeta[],
+  writeApproval?: WriteApprovalHandler,
+  bashApproval?: BashApprovalHandler,
+): AgentTool[] {
   const readFileTool: AgentTool<typeof ReadFileSchema, string> = {
     name: 'read_file',
     label: 'Read File',
@@ -90,8 +261,6 @@ export function createKryptonTools(projectDir: string | null, skills?: SkillMeta
         hasDiff = params.content.length <= 50 * 1024;
       }
 
-      await invoke('write_file', { path: resolved, content: params.content });
-
       const result: AgentToolResult<string> & { diff?: string; filePath?: string } = {
         content: [{ type: 'text', text: `Written: ${params.path}` }],
         details: `Written: ${params.path}`,
@@ -107,6 +276,22 @@ export function createKryptonTools(projectDir: string | null, skills?: SkillMeta
         }
       }
 
+      if (writeApproval) {
+        const accepted = await writeApproval({
+          id: _id,
+          path: params.path,
+          resolvedPath: resolved,
+          oldContent,
+          newContent: params.content,
+          diff: result.diff,
+        });
+        if (!accepted) {
+          throw new Error(`User rejected write_file for ${params.path}`);
+        }
+      }
+
+      await invoke('write_file', { path: resolved, content: params.content });
+
       return result;
     },
   };
@@ -118,11 +303,25 @@ export function createKryptonTools(projectDir: string | null, skills?: SkillMeta
     parameters: BashSchema,
     async execute(_id: string, rawParams: unknown): Promise<AgentToolResult<string>> {
       const params = rawParams as Static<typeof BashSchema>;
+      const cwd = params.cwd ?? projectDir ?? null;
+      const classification = classifyBashCommand(params.command);
+      if (bashApproval && classification.needsApproval) {
+        const accepted = await bashApproval({
+          id: _id,
+          command: params.command,
+          cwd,
+          risk: classification.risk,
+          reason: classification.reason,
+        });
+        if (!accepted) {
+          throw new Error(`User rejected bash command: ${params.command}`);
+        }
+      }
       const [program, shellArgs] = await getShell();
       const output = await invoke<string>('run_command', {
         program,
         args: [...shellArgs, '-c', params.command],
-        cwd: params.cwd ?? projectDir ?? null,
+        cwd,
       });
       return text(output || '(no output)');
     },

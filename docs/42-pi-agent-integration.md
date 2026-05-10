@@ -18,7 +18,7 @@ Embed `@mariozechner/pi-agent-core` directly in the TypeScript frontend (the lib
 |------|--------|
 | `src/types.ts` | Add `'agent'` to `PaneContentType` union |
 | `src/agent/agent.ts` | `AgentController`: wraps pi-agent-core `Agent`, lazy init, `prompt()`, `abort()`, CWD-aware system prompt |
-| `src/agent/tools.ts` | CWD-aware tool factories: `read_file`, `write_file`, `bash` via `createKryptonTools(projectDir)` |
+| `src/agent/tools.ts` | CWD-aware tool factories: `read_file`, approval-gated `write_file`, approval-classified `bash` via `createKryptonTools(projectDir)` |
 | `src/agent/session.ts` | Per-project session persistence to `<projectDir>/.krypton/agent-session.json` via Tauri `read_file`/`write_file` |
 | `src/agent/agent-view.ts` | `AgentView` implementing `ContentView`: message list DOM, streaming renderer, manual keyboard input |
 | `src/agent/index.ts` | Re-exports public API |
@@ -40,8 +40,8 @@ Tools are created via `createKryptonTools(projectDir)` factory, which closes ove
 | Tool | Description | CWD behavior |
 |------|-------------|-------------|
 | `read_file` | Read file contents via Tauri `read_file` command | Relative paths resolved against `projectDir` |
-| `write_file` | Write/overwrite file via Tauri `write_file` command | Relative paths resolved against `projectDir` |
-| `bash` | Run shell command via Tauri `run_command` | `cwd` defaults to `projectDir` if not specified by LLM |
+| `write_file` | Propose a write/overwrite, wait for AgentView approval, then write via Tauri `write_file` command | Relative paths resolved against `projectDir` |
+| `bash` | Classify a shell command, ask for approval when risky, then run via Tauri `run_command` | `cwd` defaults to `projectDir` if not specified by LLM |
 
 ### Session Persistence
 
@@ -69,7 +69,7 @@ Sessions are stored as JSON files on the local filesystem, scoped per project di
 5. AgentView.onKeyDown intercepts Enter → calls submit()
 6. submit() routes by prefix:
    - `!<cmd>` → executeShellCommand(cmd): invokes get_default_shell + run_command IPC, renders output inline
-   - `/<cmd>` → handleSlashCommand(): /help, /new, /context, /model, etc.
+   - `/<cmd>` → handleSlashCommand(): /help, /new, /context, /model, /check, etc.
    - Otherwise → agentController.prompt(text, onEvent)
 7. AgentController (lazy init on first prompt):
    a. Reads ZAI_API_KEY via Tauri get_env_var
@@ -79,11 +79,13 @@ Sessions are stored as JSON files on the local filesystem, scoped per project di
 8. agent.subscribe() maps AgentEvent → simplified AgentEventType
 9. On message_update (text_delta): AgentView appends delta text to DOM
 10. On tool_execution_start: AgentView inserts tool row (name + spinner)
-11. On tool_execution_end: AgentView updates tool row (checkmark/cross + result)
-12. On agent_end: saveCurrentSession() writes to <projectDir>/.krypton/agent-session.json
-13. On error: error message displayed inline in red
-14. User presses Ctrl+C → AgentController.abort()
-15. Tab closed via q (scroll mode) → AgentView.dispose() → abort + persist session
+11. If the tool is `write_file`, the tool reads existing content, computes a diff, and awaits AgentView approval before invoking the backend write. AgentView renders an inline write review row; `a` accepts, `r` rejects, `A`/`R` apply to later writes in the same turn.
+12. If the tool is `bash`, the tool classifies the shell command. Read-only allowlisted commands run immediately; risky or unknown commands render an inline command review row and wait for the same `a`/`r`/`A`/`R` approval keys before execution.
+13. On tool_execution_end: AgentView updates tool row (checkmark/cross + result)
+14. On agent_end: saveCurrentSession() writes to <projectDir>/.krypton/agent-session.json
+15. On error: error message displayed inline in red
+16. User presses Ctrl+C → pending writes/commands are rejected, then AgentController.abort()
+17. Tab closed via q (scroll mode) → AgentView.dispose() → abort + persist session
 ```
 
 ### Keyboard Architecture
@@ -108,6 +110,11 @@ Sessions are stored as JSON files on the local filesystem, scoped per project di
 | `Up` (empty input) | Recall previous sent prompt |
 | `Down` (empty input) | Recall next prompt in history |
 | `Ctrl+C` | Abort running turn; clear input if idle |
+| `a` / `r` | Accept/reject pending `write_file` review while one is visible |
+| `A` / `R` | Accept/reject all later `write_file` reviews in the current turn |
+| `a` / `r` | Run/block pending risky `bash` command while one is visible |
+| `A` / `R` | Run/block all later risky `bash` commands in the current turn |
+| `f` | Send the last failing `/check` output back to the agent when idle |
 | `Ctrl+W` | Delete word before cursor in input |
 | `Cmd+V` / `Ctrl+V` | Paste from clipboard |
 | `Backspace` / `Delete` | Delete character |
@@ -122,6 +129,15 @@ Sessions are stored as JSON files on the local filesystem, scoped per project di
 | Input | Action |
 |-------|--------|
 | `!<command>` | Execute shell command directly in `projectDir` (e.g., `!ls -la`, `!git status`). Output displayed inline with 20-line cap. Uses `get_default_shell` + `run_command` IPC — combined stdout+stderr, non-zero exit shown as error. |
+
+**Check command**
+
+| Input | Action |
+|-------|--------|
+| `/check` | Detect and run the narrowest project check command: `npm run check`, `npm run typecheck`, `npm test`, `cargo check`, or `go test ./...`. |
+| `/fixcheck` | Send the last failing `/check` output back to the agent as a follow-up prompt. |
+
+Detection order is intentionally narrow: `package.json` scripts `check`, `typecheck`, then `test`; then `Cargo.toml`; then `go.mod`. If none match, `/check` prints a no-command message and does not run anything.
 
 **Scroll state (Escape from empty input)**
 

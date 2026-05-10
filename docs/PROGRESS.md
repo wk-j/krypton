@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-09 (ACP harness rich tool output)
+> Last updated: 2026-05-11 (Agent check command)
 
 ## Overview
 
@@ -21,6 +21,9 @@
 
 ## Recent Landings
 
+- **Agent `/check` command** — AgentView now has a user-owned validation loop. `/check` detects the narrowest project command from marker files (`package.json` scripts `check`/`typecheck`/`test`, `Cargo.toml`, `go.mod`), runs it directly through `run_command`, renders output inline, and stores failing output so `f` or `/fixcheck` sends command + output back to the agent as a follow-up prompt. See `docs/101-agent-check-command.md` and `docs/42-pi-agent-integration.md`.
+- **Agent bash approval** — The embedded pi-agent `bash` tool now classifies commands before execution. A small read-only allowlist runs immediately; redirection/heredocs, known mutators, Git state changes, package/network tools, script runners, and unknown commands render an inline COMMAND REVIEW row with risk/reason/cwd and wait for `a`/`r`/`A`/`R`. Rejected commands do not execute and return a tool error. See `docs/100-agent-bash-approval.md` and `docs/42-pi-agent-integration.md`.
+- **Agent write approval** — The embedded pi-agent view now gates `write_file` before disk mutation. The tool reads old content, computes the existing inline diff preview when under the size cap, waits for AgentView approval, and only writes after `a`/`A`; `r`/`R` rejects without touching disk and returns a tool error to the model. `Ctrl+C` rejects pending writes before aborting. See `docs/99-agent-write-approval.md` and `docs/42-pi-agent-integration.md`.
 - **ACP Harness rich tool output** — Execute-tool rows now keep a compact command header but render recognized Git outputs as structured console widgets: unified `git diff` output becomes compact file/hunk/add/delete rows, `git diff --stat` becomes per-file mini change bars, and `git status --short` becomes status badges with paths. Generic stdout/stderr remains available as labeled monospace sections with reduced glow so command headers stay readable. See `docs/72-acp-harness-view.md`.
 - **ACP Harness memory degradation** — ACP Harness startup now treats the global hook server/memory MCP endpoint as optional. If `create_harness_memory` fails, the view records the startup error as a warning, still lists ACP backends, still spawns lanes, omits the `krypton-harness-memory` MCP descriptor, shows `memory off` in the composer and memory drawer, and has `#mcp` print the concrete startup error. See `docs/72-acp-harness-view.md` and `docs/73-acp-harness-mcp-memory.md`.
 - **Hook server startup diagnostics** — The hook server state now records the concrete startup failure, including fixed-port bind errors such as `Failed to bind hook server on 127.0.0.1:64732: ...`. ACP Harness memory creation and hook-config snippet requests report that saved reason instead of the generic "Krypton hook server is not running" message when the port never became available. See `docs/72-acp-harness-view.md`.

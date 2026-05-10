@@ -2578,16 +2578,9 @@ export class Compositor {
   async openAgentView(): Promise<void> {
     const { AgentView } = await import('./agent/agent-view');
 
-    // Resolve CWD from focused terminal for per-project session and tool scoping
-    const focusedPane = this.getFocusedPane();
-    let projectDir: string | null = null;
-    if (focusedPane?.sessionId !== null && focusedPane?.sessionId !== undefined) {
-      try {
-        projectDir = await invoke<string>('get_pty_cwd', { sessionId: focusedPane.sessionId });
-      } catch {
-        // CWD unavailable — fall back to no project scoping
-      }
-    }
+    // Resolve CWD from the focused pane for per-project session and tool scoping.
+    // This handles both terminals and content views such as the ACP Harness.
+    const projectDir = await this.getFocusedCwd();
 
     const agentView = new AgentView();
     agentView.setProjectDir(projectDir);

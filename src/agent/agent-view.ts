@@ -7,6 +7,7 @@ import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { AgentController, type AgentEventType, type ImageContent } from './agent';
+import type { BashApprovalRequest, WriteApprovalRequest } from './tools';
 import type { ContentView, PaneContentType } from '../types';
 import { invoke } from '../profiler/ipc';
 
@@ -67,6 +68,28 @@ function highlightMatches(text: string, indices: number[]): string {
 interface CachedFileIndex {
   files: string[];
   fetchedAt: number;
+}
+
+interface PendingWriteApproval {
+  id: string;
+  row: HTMLElement;
+  request: WriteApprovalRequest;
+  resolve: (accepted: boolean) => void;
+  resolved: boolean;
+}
+
+interface PendingCommandApproval {
+  id: string;
+  row: HTMLElement;
+  request: BashApprovalRequest;
+  resolve: (accepted: boolean) => void;
+  resolved: boolean;
+}
+
+interface CheckCommand {
+  label: string;
+  program: string;
+  args: string[];
 }
 
 const fileIndexCache = new Map<string, CachedFileIndex>();
@@ -174,12 +197,27 @@ export class AgentView implements ContentView {
   private stagedImages: ImageContent[] = [];
   private stagingAreaEl!: HTMLElement;
 
+  // write_file approval gate
+  private pendingWriteApprovals: PendingWriteApproval[] = [];
+  private acceptAllWritesForTurn = false;
+  private rejectAllWritesForTurn = false;
+
+  // bash approval gate
+  private pendingCommandApprovals: PendingCommandApproval[] = [];
+  private acceptAllCommandsForTurn = false;
+  private rejectAllCommandsForTurn = false;
+
+  // Last failing /check output, ready to send back to the agent.
+  private lastCheckFailurePrompt: string | null = null;
+
   // Message virtualization — collapse off-screen messages to reduce DOM complexity
   private virtualObserver: IntersectionObserver | null = null;
   private collapsedMessages = new Map<HTMLElement, { html: string; height: number }>();
 
   constructor() {
     this.controller = new AgentController();
+    this.controller.setWriteApprovalHandler((request) => this.requestWriteApproval(request));
+    this.controller.setBashApprovalHandler((request) => this.requestCommandApproval(request));
 
     this.element = document.createElement('div');
     this.element.className = 'agent-view';
@@ -612,6 +650,8 @@ export class AgentView implements ContentView {
   }
 
   private renderDiffPreview(row: HTMLElement, diff: string): void {
+    row.querySelector('.agent-view__diff-preview')?.remove();
+
     const preview = document.createElement('div');
     preview.className = 'agent-view__diff-preview';
 
@@ -672,6 +712,310 @@ export class AgentView implements ContentView {
     preview.appendChild(summary);
 
     row.appendChild(preview);
+  }
+
+  private requestWriteApproval(request: WriteApprovalRequest): Promise<boolean> {
+    if (this.acceptAllWritesForTurn) {
+      this.appendWriteApprovalDom(request, true, 'accepted');
+      this.scrollToBottom();
+      return Promise.resolve(true);
+    }
+    if (this.rejectAllWritesForTurn) {
+      this.appendWriteApprovalDom(request, true, 'rejected');
+      this.scrollToBottom();
+      return Promise.resolve(false);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const row = this.appendWriteApprovalDom(request, false);
+      this.pendingWriteApprovals.push({
+        id: request.id,
+        row,
+        request,
+        resolve,
+        resolved: false,
+      });
+      this.scrollToBottom();
+    });
+  }
+
+  private appendWriteApprovalDom(
+    request: WriteApprovalRequest,
+    auto: boolean,
+    resolved?: 'accepted' | 'rejected',
+  ): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'agent-view__write-review';
+    if (resolved) row.classList.add(`agent-view__write-review--${resolved}`);
+    row.dataset.writeApprovalId = request.id;
+
+    const header = document.createElement('div');
+    header.className = 'agent-view__write-review-header';
+
+    const title = document.createElement('span');
+    title.className = 'agent-view__write-review-title';
+    title.textContent = 'WRITE REVIEW';
+
+    const path = document.createElement('span');
+    path.className = 'agent-view__write-review-path';
+    path.textContent = request.path;
+
+    header.appendChild(title);
+    header.appendChild(path);
+    row.appendChild(header);
+
+    if (request.diff) {
+      row.dataset.diff = request.diff;
+      row.dataset.filePath = request.path;
+      row.classList.add('agent-view__tool-row--has-diff');
+      this.renderDiffPreview(row, request.diff);
+    } else {
+      const note = document.createElement('div');
+      note.className = 'agent-view__write-review-note';
+      note.textContent = 'Diff unavailable; review the target path before accepting.';
+      row.appendChild(note);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'agent-view__write-review-actions';
+    row.appendChild(actions);
+
+    this.messagesEl.appendChild(row);
+    this.observeMessage(row);
+    this.renderWriteApprovalActions(row, auto, resolved);
+    return row;
+  }
+
+  private renderWriteApprovalActions(
+    row: HTMLElement,
+    auto: boolean,
+    resolved?: 'accepted' | 'rejected',
+  ): void {
+    const actions = row.querySelector<HTMLElement>('.agent-view__write-review-actions');
+    if (!actions) return;
+    actions.innerHTML = '';
+
+    if (resolved) {
+      const stamp = document.createElement('span');
+      stamp.className = 'agent-view__write-review-stamp';
+      stamp.textContent = `${resolved.toUpperCase()}${auto ? ' BY TURN RULE' : ''}`;
+      actions.appendChild(stamp);
+      return;
+    }
+
+    const accept = document.createElement('button');
+    accept.className = 'agent-view__write-review-button agent-view__write-review-button--accept';
+    accept.type = 'button';
+    accept.textContent = 'a accept';
+    accept.addEventListener('click', () => this.resolveOldestWriteApproval(true, false));
+
+    const reject = document.createElement('button');
+    reject.className = 'agent-view__write-review-button agent-view__write-review-button--reject';
+    reject.type = 'button';
+    reject.textContent = 'r reject';
+    reject.addEventListener('click', () => this.resolveOldestWriteApproval(false, false));
+
+    const hint = document.createElement('span');
+    hint.className = 'agent-view__write-review-hint';
+    hint.textContent = 'keys: a/r  A/R for turn';
+
+    actions.appendChild(accept);
+    actions.appendChild(reject);
+    actions.appendChild(hint);
+  }
+
+  private resolveOldestWriteApproval(accepted: boolean, applyToTurn: boolean): boolean {
+    const pending = this.pendingWriteApprovals.find((p) => !p.resolved);
+    if (!pending) return false;
+
+    if (applyToTurn) {
+      this.acceptAllWritesForTurn = accepted;
+      this.rejectAllWritesForTurn = !accepted;
+    }
+
+    pending.resolved = true;
+    pending.row.classList.add(`agent-view__write-review--${accepted ? 'accepted' : 'rejected'}`);
+    this.renderWriteApprovalActions(
+      pending.row,
+      applyToTurn,
+      accepted ? 'accepted' : 'rejected',
+    );
+    pending.resolve(accepted);
+    return true;
+  }
+
+  private rejectPendingWrites(reason: string): void {
+    for (const pending of this.pendingWriteApprovals) {
+      if (pending.resolved) continue;
+      pending.resolved = true;
+      pending.row.classList.add('agent-view__write-review--rejected');
+      this.renderWriteApprovalActions(pending.row, false, 'rejected');
+      pending.resolve(false);
+    }
+    if (reason) this.showSystemMessage(reason);
+  }
+
+  private handleWriteApprovalKey(e: KeyboardEvent): boolean {
+    if (!this.pendingWriteApprovals.some((p) => !p.resolved)) return false;
+    if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      return this.resolveOldestWriteApproval(true, e.key === 'A');
+    }
+    if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      return this.resolveOldestWriteApproval(false, e.key === 'R');
+    }
+    return false;
+  }
+
+  private requestCommandApproval(request: BashApprovalRequest): Promise<boolean> {
+    if (this.acceptAllCommandsForTurn) {
+      this.appendCommandApprovalDom(request, true, 'accepted');
+      this.scrollToBottom();
+      return Promise.resolve(true);
+    }
+    if (this.rejectAllCommandsForTurn) {
+      this.appendCommandApprovalDom(request, true, 'rejected');
+      this.scrollToBottom();
+      return Promise.resolve(false);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const row = this.appendCommandApprovalDom(request, false);
+      this.pendingCommandApprovals.push({
+        id: request.id,
+        row,
+        request,
+        resolve,
+        resolved: false,
+      });
+      this.scrollToBottom();
+    });
+  }
+
+  private appendCommandApprovalDom(
+    request: BashApprovalRequest,
+    auto: boolean,
+    resolved?: 'accepted' | 'rejected',
+  ): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'agent-view__write-review agent-view__command-review';
+    if (resolved) row.classList.add(`agent-view__write-review--${resolved}`);
+    row.dataset.commandApprovalId = request.id;
+
+    const header = document.createElement('div');
+    header.className = 'agent-view__write-review-header';
+
+    const title = document.createElement('span');
+    title.className = 'agent-view__write-review-title agent-view__command-review-title';
+    title.textContent = 'COMMAND REVIEW';
+
+    const risk = document.createElement('span');
+    risk.className = 'agent-view__command-review-risk';
+    risk.textContent = request.risk;
+
+    header.appendChild(title);
+    header.appendChild(risk);
+    row.appendChild(header);
+
+    const command = document.createElement('div');
+    command.className = 'agent-view__command-review-command';
+    command.textContent = request.command;
+    row.appendChild(command);
+
+    const reason = document.createElement('div');
+    reason.className = 'agent-view__write-review-note';
+    reason.textContent = request.cwd
+      ? `${request.reason} cwd: ${request.cwd}`
+      : request.reason;
+    row.appendChild(reason);
+
+    const actions = document.createElement('div');
+    actions.className = 'agent-view__write-review-actions';
+    row.appendChild(actions);
+
+    this.messagesEl.appendChild(row);
+    this.observeMessage(row);
+    this.renderCommandApprovalActions(row, auto, resolved);
+    return row;
+  }
+
+  private renderCommandApprovalActions(
+    row: HTMLElement,
+    auto: boolean,
+    resolved?: 'accepted' | 'rejected',
+  ): void {
+    const actions = row.querySelector<HTMLElement>('.agent-view__write-review-actions');
+    if (!actions) return;
+    actions.innerHTML = '';
+
+    if (resolved) {
+      const stamp = document.createElement('span');
+      stamp.className = 'agent-view__write-review-stamp';
+      stamp.textContent = `${resolved.toUpperCase()}${auto ? ' BY TURN RULE' : ''}`;
+      actions.appendChild(stamp);
+      return;
+    }
+
+    const accept = document.createElement('button');
+    accept.className = 'agent-view__write-review-button agent-view__write-review-button--accept';
+    accept.type = 'button';
+    accept.textContent = 'a run';
+    accept.addEventListener('click', () => this.resolveOldestCommandApproval(true, false));
+
+    const reject = document.createElement('button');
+    reject.className = 'agent-view__write-review-button agent-view__write-review-button--reject';
+    reject.type = 'button';
+    reject.textContent = 'r block';
+    reject.addEventListener('click', () => this.resolveOldestCommandApproval(false, false));
+
+    const hint = document.createElement('span');
+    hint.className = 'agent-view__write-review-hint';
+    hint.textContent = 'keys: a/r  A/R for commands this turn';
+
+    actions.appendChild(accept);
+    actions.appendChild(reject);
+    actions.appendChild(hint);
+  }
+
+  private resolveOldestCommandApproval(accepted: boolean, applyToTurn: boolean): boolean {
+    const pending = this.pendingCommandApprovals.find((p) => !p.resolved);
+    if (!pending) return false;
+
+    if (applyToTurn) {
+      this.acceptAllCommandsForTurn = accepted;
+      this.rejectAllCommandsForTurn = !accepted;
+    }
+
+    pending.resolved = true;
+    pending.row.classList.add(`agent-view__write-review--${accepted ? 'accepted' : 'rejected'}`);
+    this.renderCommandApprovalActions(
+      pending.row,
+      applyToTurn,
+      accepted ? 'accepted' : 'rejected',
+    );
+    pending.resolve(accepted);
+    return true;
+  }
+
+  private rejectPendingCommands(reason: string): void {
+    for (const pending of this.pendingCommandApprovals) {
+      if (pending.resolved) continue;
+      pending.resolved = true;
+      pending.row.classList.add('agent-view__write-review--rejected');
+      this.renderCommandApprovalActions(pending.row, false, 'rejected');
+      pending.resolve(false);
+    }
+    if (reason) this.showSystemMessage(reason);
+  }
+
+  private handleCommandApprovalKey(e: KeyboardEvent): boolean {
+    if (!this.pendingCommandApprovals.some((p) => !p.resolved)) return false;
+    if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      return this.resolveOldestCommandApproval(true, e.key === 'A');
+    }
+    if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      return this.resolveOldestCommandApproval(false, e.key === 'R');
+    }
+    return false;
   }
 
   private appendShellCommandDom(command: string): HTMLElement {
@@ -926,6 +1270,10 @@ export class AgentView implements ContentView {
   private handleAgentEvent(e: AgentEventType): void {
     switch (e.type) {
       case 'agent_start':
+        this.acceptAllWritesForTurn = false;
+        this.rejectAllWritesForTurn = false;
+        this.acceptAllCommandsForTurn = false;
+        this.rejectAllCommandsForTurn = false;
         this.startSpinner();
         this.promptGlyphEl.textContent = SPINNER_FRAMES[0];
         this.inputRowEl.classList.add('agent-view__input-row--busy');
@@ -1054,6 +1402,119 @@ export class AgentView implements ContentView {
     }
   }
 
+  private async readProjectFile(path: string): Promise<string | null> {
+    if (!this.projectDir) return null;
+    try {
+      return await invoke<string>('read_file', { path: `${this.projectDir}/${path}` });
+    } catch {
+      return null;
+    }
+  }
+
+  private async detectCheckCommand(): Promise<CheckCommand | null> {
+    const packageJson = await this.readProjectFile('package.json');
+    if (packageJson) {
+      try {
+        const parsed = JSON.parse(packageJson) as { scripts?: Record<string, unknown> };
+        const scripts = parsed.scripts ?? {};
+        if (typeof scripts.check === 'string') {
+          return { label: 'npm run check', program: 'npm', args: ['run', 'check'] };
+        }
+        if (typeof scripts.typecheck === 'string') {
+          return { label: 'npm run typecheck', program: 'npm', args: ['run', 'typecheck'] };
+        }
+        if (typeof scripts.test === 'string') {
+          return { label: 'npm test', program: 'npm', args: ['test'] };
+        }
+      } catch {
+        return null;
+      }
+    }
+
+    if (await this.readProjectFile('Cargo.toml')) {
+      return { label: 'cargo check', program: 'cargo', args: ['check'] };
+    }
+
+    if (await this.readProjectFile('go.mod')) {
+      return { label: 'go test ./...', program: 'go', args: ['test', './...'] };
+    }
+
+    return null;
+  }
+
+  private async runCheckCommand(): Promise<void> {
+    if (!this.projectDir) {
+      this.showSystemMessage('No project directory for /check.');
+      return;
+    }
+
+    const command = await this.detectCheckCommand();
+    if (!command) {
+      this.showSystemMessage('No check command detected.\nLooked for package.json scripts: check, typecheck, test; Cargo.toml; go.mod.');
+      return;
+    }
+
+    this.lastCheckFailurePrompt = null;
+    this.appendShellCommandDom(command.label);
+    this.scrollToBottom();
+
+    try {
+      const output = await invoke<string>('run_command', {
+        program: command.program,
+        args: command.args,
+        cwd: this.projectDir,
+      });
+      this.appendShellResultDom(output || 'Check passed.', false);
+    } catch (e) {
+      const output = e instanceof Error ? e.message : String(e);
+      this.lastCheckFailurePrompt =
+        `The project check failed.\n\nCommand:\n${command.label}\n\nOutput:\n${output}\n\nPlease fix the failing check.`;
+      this.appendCheckFailureDom(command.label, output);
+    }
+  }
+
+  private appendCheckFailureDom(command: string, output: string): void {
+    this.appendShellResultDom(`Check failed:\n${output}`, true);
+
+    const row = document.createElement('div');
+    row.className = 'agent-view__check-actions';
+
+    const label = document.createElement('span');
+    label.className = 'agent-view__check-actions-label';
+    label.textContent = `${command} failed`;
+
+    const button = document.createElement('button');
+    button.className = 'agent-view__check-actions-button';
+    button.type = 'button';
+    button.textContent = 'f send to agent';
+    button.addEventListener('click', () => {
+      void this.sendLastCheckFailureToAgent();
+    });
+
+    row.appendChild(label);
+    row.appendChild(button);
+    this.messagesEl.appendChild(row);
+    this.scrollToBottom();
+  }
+
+  private async sendLastCheckFailureToAgent(): Promise<void> {
+    const prompt = this.lastCheckFailurePrompt;
+    if (!prompt || this.controller.isRunning) return;
+
+    this.lastCheckFailurePrompt = null;
+    this.appendUserMessageDom(prompt);
+    this.scrollToBottom();
+    this.startSpinner();
+    this.startTimer();
+    this.inputRowEl.classList.add('agent-view__input-row--busy');
+
+    try {
+      await this.controller.prompt(prompt, (e) => this.handleAgentEvent(e));
+    } catch (e) {
+      this.handleAgentEvent({ type: 'error', message: `Unexpected error: ${e}` });
+    }
+  }
+
   // ─── Slash commands ──────────────────────────────────────────────
 
   private static readonly COMMANDS: Record<string, { description: string; usage?: string }> = {
@@ -1062,6 +1523,8 @@ export class AgentView implements ContentView {
     '/skills':  { description: 'List discovered skills' },
     '/skill':   { description: 'Force-activate a skill for the next prompt', usage: '/skill <name>' },
     '/context': { description: 'Open context inspector (view LLM messages, system prompt, tools)' },
+    '/check':   { description: 'Run detected project check command' },
+    '/fixcheck': { description: 'Send last failing /check output to the agent' },
     '/model':   { description: 'Show current model or switch preset', usage: '/model [name]' },
     '/system':  { description: 'Show current system prompt' },
     '/tools':   { description: 'List registered tools' },
@@ -1089,6 +1552,14 @@ export class AgentView implements ContentView {
 
       case '/context':
         this.contextCallback?.(this.controller);
+        return true;
+
+      case '/check':
+        void this.runCheckCommand();
+        return true;
+
+      case '/fixcheck':
+        void this.sendLastCheckFailureToAgent();
         return true;
 
       case '/skills': {
@@ -1203,6 +1674,8 @@ export class AgentView implements ContentView {
 
       case '/abort':
         if (this.controller.isRunning) {
+          this.rejectPendingWrites('Pending file writes rejected.');
+          this.rejectPendingCommands('Pending shell commands rejected.');
           this.controller.abort();
           this.stopSpinner();
           this.promptGlyphEl.textContent = '❯';
@@ -1376,6 +1849,20 @@ export class AgentView implements ContentView {
   // ─── Keyboard ────────────────────────────────────────────────────
 
   onKeyDown(e: KeyboardEvent): boolean {
+    if (this.handleWriteApprovalKey(e)) return true;
+    if (this.handleCommandApprovalKey(e)) return true;
+    if (
+      this.lastCheckFailurePrompt &&
+      !this.controller.isRunning &&
+      this.inputText === '' &&
+      (e.key === 'f' || e.key === 'F') &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey
+    ) {
+      void this.sendLastCheckFailureToAgent();
+      return true;
+    }
     if (this.state === 'input') {
       return this.handleInputKey(e);
     }
@@ -1471,6 +1958,8 @@ export class AgentView implements ContentView {
     // Abort (Ctrl+C) — clear input + staged images if idle, abort if running
     if (e.code === 'KeyC' && e.ctrlKey && !e.metaKey && !e.altKey) {
       if (this.controller.isRunning) {
+        this.rejectPendingWrites('Pending file writes rejected.');
+        this.rejectPendingCommands('Pending shell commands rejected.');
         this.controller.abort();
         this.stopSpinner();
         this.promptGlyphEl.textContent = '❯';

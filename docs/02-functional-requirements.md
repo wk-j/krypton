@@ -446,7 +446,20 @@ Each keyboard type provides a **press** (key-down) and **release** (key-up) soun
 | FR-OC-007 | Pressing `r` inside the OpenCode Dashboard shall refresh all data. | Should |
 | FR-OC-008 | If the OpenCode database is not found, the dashboard shall display an error message with the expected path. | Must |
 
-## 3.16 ACP Agent Orchestration
+## 3.16 Pi Agent View
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-AGENT-001 | The pi-agent view shall open as a keyboard-driven content tab and route prompts to the embedded `AgentController`. | Should |
+| FR-AGENT-002 | The pi-agent `write_file` tool shall show a diff review before writing to disk when AgentView provides an approval handler. | Must |
+| FR-AGENT-003 | Pending write reviews shall be resolvable from the keyboard with `a` accept, `r` reject, `A` accept-all-this-turn, and `R` reject-all-this-turn. | Must |
+| FR-AGENT-004 | Rejected pi-agent writes shall not modify files and shall return an error to the running agent turn. | Must |
+| FR-AGENT-005 | The pi-agent `bash` tool shall classify commands and require approval for risky or unknown commands before execution. | Must |
+| FR-AGENT-006 | Pending command reviews shall be resolvable from the keyboard with `a` run, `r` block, `A` run-all-this-turn, and `R` block-all-this-turn. | Must |
+| FR-AGENT-007 | The pi-agent view shall provide `/check` to detect and run a narrow project validation command without invoking the agent's bash tool. | Should |
+| FR-AGENT-008 | After a failing `/check`, the pi-agent view shall allow sending the captured failure output back to the agent with `f` or `/fixcheck`. | Should |
+
+## 3.17 ACP Agent Orchestration
 
 | ID | Requirement | Priority |
 |----|-------------|----------|

@@ -124,6 +124,63 @@
 6. Frontend updates the picker row in place; Enter opens the renamed file, Escape returns to the picker
 ```
 
+## Pi Agent Write Approval Flow
+
+```
+1. User prompts the pi-agent view to change a file.
+2. AgentController runs the embedded pi-agent turn with CWD-aware tools from createKryptonTools().
+3. The model calls write_file({ path, content }).
+4. tools.ts resolves the path against projectDir, reads current file content, and computes a unified diff when old+new content is under the preview cap.
+5. tools.ts awaits the WriteApprovalHandler registered by AgentView instead of invoking write_file immediately.
+6. AgentView appends a WRITE REVIEW row to the transcript:
+   a. diff preview when available;
+   b. `a` / `r` actions for this write;
+   c. `A` / `R` actions for later writes in the same turn.
+7. If accepted, tools.ts invokes the backend write_file command and returns the normal tool result with diff metadata.
+8. If rejected, tools.ts throws a tool error and does not write to disk.
+9. pi-agent-core emits tool_execution_end; AgentView finalizes the tool row as success or error.
+10. Ctrl+C while a write is pending rejects pending writes before aborting the agent run.
+```
+
+## Pi Agent Bash Approval Flow
+
+```
+1. User prompts the pi-agent view to run a shell command.
+2. AgentController runs the embedded pi-agent turn with CWD-aware tools from createKryptonTools().
+3. The model calls bash({ command, cwd? }).
+4. tools.ts classifies the command before invoking run_command:
+   a. read-only allowlisted commands run immediately;
+   b. shell redirection/heredocs require approval;
+   c. known mutators, Git state changes, package/network tools, script runners, and unknown commands require approval.
+5. If approval is required, tools.ts awaits the BashApprovalHandler registered by AgentView.
+6. AgentView appends a COMMAND REVIEW row with the command, cwd, risk class, and reason.
+7. `a` runs this command, `r` blocks it, `A` runs all later risky commands in the turn, and `R` blocks all later risky commands in the turn.
+8. If accepted, tools.ts invokes run_command with the user's default shell and the chosen cwd.
+9. If rejected, tools.ts throws a tool error and does not execute the command.
+10. Ctrl+C while a command is pending rejects pending commands before aborting the agent run.
+```
+
+## Pi Agent Check Command Flow
+
+```
+1. User types /check in AgentView.
+2. AgentView reads project marker files via read_file:
+   a. package.json;
+   b. Cargo.toml;
+   c. go.mod.
+3. AgentView selects the first matching narrow command:
+   a. package.json scripts.check -> npm run check;
+   b. scripts.typecheck -> npm run typecheck;
+   c. scripts.test -> npm test;
+   d. Cargo.toml -> cargo check;
+   e. go.mod -> go test ./...
+4. AgentView invokes run_command(program, args, cwd = projectDir) directly.
+5. Success renders shell-style output in the AgentView transcript.
+6. Failure renders shell-style error output and stores a follow-up prompt containing command + output.
+7. User presses f or runs /fixcheck while the agent is idle.
+8. AgentView sends the stored failure prompt to AgentController as a normal user prompt.
+```
+
 ## ACP Harness Flow
 
 ```

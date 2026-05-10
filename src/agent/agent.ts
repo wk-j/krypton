@@ -5,7 +5,11 @@
 
 import { invoke } from '../profiler/ipc';
 import { collector } from '../profiler/metrics';
-import { createKryptonTools } from './tools';
+import {
+  createKryptonTools,
+  type BashApprovalHandler,
+  type WriteApprovalHandler,
+} from './tools';
 import {
   createSession,
   continueRecentSession,
@@ -97,6 +101,10 @@ export class AgentController {
   // Active model preset (set by switchModel or lazy init)
   private activePreset: AgentModelPreset | null = null;
 
+  // Optional UI gate for write_file tool calls.
+  private writeApprovalHandler: WriteApprovalHandler | null = null;
+  private bashApprovalHandler: BashApprovalHandler | null = null;
+
   // Skills
   private skillIndex: SkillMeta[] = [];
   private skillsDiscovered = false;
@@ -123,6 +131,14 @@ export class AgentController {
 
   setProjectDir(dir: string | null): void {
     this.projectDir = dir;
+  }
+
+  setWriteApprovalHandler(handler: WriteApprovalHandler | null): void {
+    this.writeApprovalHandler = handler;
+  }
+
+  setBashApprovalHandler(handler: BashApprovalHandler | null): void {
+    this.bashApprovalHandler = handler;
   }
 
   // Optional override for the system prompt (used by inline AI overlay)
@@ -178,7 +194,12 @@ export class AgentController {
       initialState: {
         systemPrompt: this.buildBasePrompt(),
         model,
-        tools: createKryptonTools(this.projectDir, this.skillIndex),
+        tools: createKryptonTools(
+          this.projectDir,
+          this.skillIndex,
+          this.writeApprovalHandler ?? undefined,
+          this.bashApprovalHandler ?? undefined,
+        ),
       },
       getApiKey,
       toolExecution: 'sequential',
