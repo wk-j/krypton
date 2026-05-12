@@ -107,7 +107,17 @@ export interface WindowBounds {
 }
 
 /** Content types that can live inside a pane */
-export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'acp' | 'acp_harness' | 'context' | 'file_manager' | 'vault' | 'hurl' | 'pencil';
+export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'acp' | 'acp_harness' | 'context' | 'file_manager' | 'vault' | 'hurl' | 'pencil' | 'webview';
+
+/** Runtime state mirrored from a backend child webview (see docs/102-webview-windows.md). */
+export type WebviewId = number;
+export interface WebviewState {
+  id: WebviewId;
+  url: string;
+  pendingUrl: string | null;
+  title: string;
+  loading: boolean;
+}
 
 /** PNG/JPEG image captured outside the DOM and staged into a content view. */
 export interface CapturedImage {
@@ -140,6 +150,8 @@ export interface ContentView {
   element: HTMLElement;
   /** Handle keyboard input when this pane is focused. Return true if handled. */
   onKeyDown(e: KeyboardEvent): boolean;
+  /** Optional focus hook for content views with focus outside the host DOM. */
+  focusView?(): void;
   /** Clean up resources */
   dispose(): void;
   /** Called when pane is resized */

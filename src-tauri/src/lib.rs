@@ -13,6 +13,7 @@ pub mod sound;
 pub mod ssh;
 pub mod theme;
 pub mod util;
+pub mod webview;
 
 use std::sync::{Arc, Mutex, RwLock};
 use tauri::Manager;
@@ -86,6 +87,7 @@ pub fn run() {
         .manage(hurl_state)
         .manage(quick_search::QuickSearchState::new())
         .manage(Arc::new(acp::AcpRegistry::new()))
+        .manage(Arc::new(webview::WebviewRegistry::new()))
         .manage(Arc::new(process_metrics::MetricsSampler::new()))
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
@@ -186,6 +188,18 @@ pub fn run() {
             pencil::write_pencil_file,
             pencil::rename_pencil_file,
             pencil::scan_pencil_dir,
+            webview::spawn_webview,
+            webview::navigate_webview,
+            webview::resize_webview,
+            webview::set_webview_visible,
+            webview::focus_webview,
+            webview::close_webview,
+            webview::webview_back,
+            webview::webview_forward,
+            webview::webview_reload,
+            webview::forward_chord,
+            webview::forward_action,
+            webview::forward_title,
         ])
         .setup(move |app| {
             // File logging is enabled in release too, so invisible-window and
@@ -211,18 +225,10 @@ pub fn run() {
             let _ = window.set_always_on_top(false);
 
             // Register global shortcuts:
-            //   Ctrl+Shift+K = prompt dialog
             //   Ctrl+Shift+S = screen capture
             //   Ctrl+Shift+0 = panic recenter (recover invisible/offscreen window)
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
-                app.handle()
-                    .global_shortcut()
-                    .register(Shortcut::new(
-                        Some(Modifiers::CONTROL | Modifiers::SHIFT),
-                        Code::KeyK,
-                    ))
-                    .unwrap_or_else(|e| log::warn!("Failed to register Ctrl+Shift+K: {e}"));
                 app.handle()
                     .global_shortcut()
                     .register(Shortcut::new(

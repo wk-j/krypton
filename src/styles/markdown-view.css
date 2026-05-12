@@ -271,6 +271,16 @@
   font-weight: 700;
 }
 
+.krypton-md__preview-content li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.2em;
+}
+
+.krypton-md__preview-content li > input[type="checkbox"] {
+  margin-right: 0.4em;
+  accent-color: var(--krypton-accent, #00ccff);
+}
+
 .krypton-md__preview-content table {
   border-collapse: collapse;
   width: 100%;

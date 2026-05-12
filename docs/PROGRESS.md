@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **In-app webview panes** — A new `webview` content type joins terminal/agent/vault as a first-class pane. External URL clicks from vault notes, markdown viewer, and the `f` hint mode now open as an in-app browser tab with cyberpunk chrome (address bar, back/forward/reload, loading bar) surrounding a native Tauri v2 child webview. Bridge script in the child page forwards leader chords (`Cmd+P`, `Cmd+L`, `Cmd+R`, `Cmd+[`/`]`, `Cmd+1..9`, `Cmd+W`) back to the host so the compositor stays reachable. Shift-clicking a link keeps the old "open in system browser" behavior. See `docs/102-webview-windows.md`.
 - **Agent `/check` command** — AgentView now has a user-owned validation loop. `/check` detects the narrowest project command from marker files (`package.json` scripts `check`/`typecheck`/`test`, `Cargo.toml`, `go.mod`), runs it directly through `run_command`, renders output inline, and stores failing output so `f` or `/fixcheck` sends command + output back to the agent as a follow-up prompt. See `docs/101-agent-check-command.md` and `docs/42-pi-agent-integration.md`.
 - **Agent bash approval** — The embedded pi-agent `bash` tool now classifies commands before execution. A small read-only allowlist runs immediately; redirection/heredocs, known mutators, Git state changes, package/network tools, script runners, and unknown commands render an inline COMMAND REVIEW row with risk/reason/cwd and wait for `a`/`r`/`A`/`R`. Rejected commands do not execute and return a tool error. See `docs/100-agent-bash-approval.md` and `docs/42-pi-agent-integration.md`.
 - **Agent write approval** — The embedded pi-agent view now gates `write_file` before disk mutation. The tool reads old content, computes the existing inline diff preview when under the size cap, waits for AgentView approval, and only writes after `a`/`A`; `r`/`R` rejects without touching disk and returns a tool error to the model. `Ctrl+C` rejects pending writes before aborting. See `docs/99-agent-write-approval.md` and `docs/42-pi-agent-integration.md`.
@@ -113,6 +114,7 @@
 - [x] Ship built-in workspace presets — Focus Layout: focused window left (full height), remaining stacked right; toggle via `Leader f`
 - [x] Pin windows — `Leader p` toggles pin on focused window; pinned windows stick to right column in Focus layout, skipped during focus cycling; visual indicator (diamond icon) in title bar; pin/unpin sound effects; CSS class `krypton-window--pinned`
 - [ ] Responsive recalculation on screen resolution change — basic version done, needs testing
+- [x] Webview content type — in-app browser panes via Tauri child webviews (see `docs/102-webview-windows.md`)
 
 ## M4 — Keyboard System & Workspaces (Week 12-15)
 

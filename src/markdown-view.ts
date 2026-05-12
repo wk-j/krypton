@@ -6,6 +6,7 @@ import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { invoke } from './profiler/ipc';
+import { openExternalUrl } from './external-url';
 
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 
@@ -113,10 +114,16 @@ export class MarkdownContentView implements ContentView {
   // AI overlay
   private aiOverlay: MarkdownViewAI | null = null;
 
-  constructor(files: string[], cwd: string, container: HTMLElement) {
+  constructor(files: string[], cwd: string, container: HTMLElement, initialFile?: string) {
     this.files = files.sort();
     this.filteredFiles = [...this.files];
     this.cwd = cwd;
+    // If initialFile is given, ensure it appears in the sidebar even when
+    // it wasn't part of the discovered list (e.g., absolute path from hint).
+    if (initialFile && !this.files.includes(initialFile)) {
+      this.files = [initialFile, ...this.files];
+      this.filteredFiles = [...this.files];
+    }
 
     this.element = document.createElement('div');
     this.element.className = 'krypton-md';
@@ -165,8 +172,16 @@ export class MarkdownContentView implements ContentView {
     // Render file list
     this.renderFileList();
 
-    // Auto-select first file
-    if (this.files.length > 0) {
+    // Auto-select initial / first file
+    if (initialFile) {
+      const idx = this.filteredFiles.indexOf(initialFile);
+      if (idx >= 0) {
+        this.selectedIndex = idx;
+        this.renderFileList();
+      }
+      this.loadFile(initialFile);
+      this.setFocus('preview');
+    } else if (this.files.length > 0) {
       this.loadFile(this.files[0]);
     } else {
       this.previewContent.innerHTML = '<div class="krypton-md__empty">No markdown files found</div>';
@@ -184,9 +199,7 @@ export class MarkdownContentView implements ContentView {
         if (href.endsWith('.md') && !href.includes('://')) {
           this.navigateToLocalMd(href);
         } else {
-          invoke('open_url', { url: href }).catch(() => {
-            console.error('Failed to open URL:', href);
-          });
+          openExternalUrl(href, { external: e.shiftKey });
         }
       }
     });
@@ -949,9 +962,7 @@ export class MarkdownContentView implements ContentView {
         if (href.endsWith('.md') && !href.includes('://')) {
           this.navigateToLocalMd(href);
         } else {
-          invoke('open_url', { url: href }).catch(() => {
-            console.error('Failed to open URL:', href);
-          });
+          openExternalUrl(href);
         }
       }
       return true;

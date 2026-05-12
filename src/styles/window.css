@@ -182,17 +182,10 @@
   flex-shrink: 0;
   height: var(--krypton-tab-height, 28px);
   padding: 0 6px;
-  gap: 2px;
+  gap: 0;
   align-items: stretch;
-  background:
-    repeating-linear-gradient(
-      90deg,
-      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02) 0px,
-      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02) 1px,
-      transparent 1px,
-      transparent 4px
-    );
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  background: transparent;
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
   overflow: hidden;
 }
 
@@ -204,105 +197,31 @@
 .krypton-tab {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: 8px;
+  padding: 0 14px;
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
   position: relative;
   overflow: hidden;
-  transition: background 0.2s ease;
+  transition: color 0.15s ease;
 }
 
-/* Diagonal separator between tabs */
-.krypton-tab + .krypton-tab::before {
-  content: '';
-  position: absolute;
-  left: -1px;
-  top: 20%;
-  bottom: 20%;
-  width: 1px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
-  transform: rotate(12deg);
-}
-
-/* Active tab styling */
-.krypton-tab--active {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.07);
-  clip-path: polygon(4px 0%, calc(100% - 4px) 0%, 100% 100%, 0% 100%);
-  border-left: 2px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
-  animation: krypton-tab-pulse 3s ease-in-out infinite;
-}
-
-@keyframes krypton-tab-pulse {
-  0%, 100% {
-    background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05);
-    border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-    box-shadow: inset 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.05);
-  }
-  50% {
-    background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
-    border-left-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
-    box-shadow: inset 0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
-  }
-}
-
-/* Active tab bottom accent line with glow */
+/* Active tab: a single thin bottom rule, no glow, no animation */
 .krypton-tab--active::after {
   content: '';
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
-  box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-  animation: krypton-tab-glow 3s ease-in-out infinite;
+  height: 1px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
 }
 
-@keyframes krypton-tab-glow {
-  0%, 100% {
-    box-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
-    opacity: 0.6;
-  }
-  50% {
-    box-shadow: 0 0 16px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
-    opacity: 1;
-  }
-}
-
-/* Animated scan line on active tab */
-.krypton-tab--active::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15),
-    transparent
-  );
-  animation: krypton-tab-scan 4s linear infinite;
-  pointer-events: none;
-  z-index: 1;
-}
-
-@keyframes krypton-tab-scan {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(350%); }
-}
-
-/* Inactive tab hover */
-.krypton-tab:not(.krypton-tab--active):hover {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
-}
-
+/* Inactive tab hover — just lift the text a hair */
 .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title,
 .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__index {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
 }
 
 /* ─── Tab Index ─── */
@@ -319,20 +238,20 @@
 }
 
 .krypton-tab--active .krypton-tab__index {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.55);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
 }
 
 /* ─── Tab Dot (status indicator) ─── */
 .krypton-tab__dot {
-  width: 4px;
-  height: 4px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
   flex-shrink: 0;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.18);
 }
 
 .krypton-tab--active .krypton-tab__dot {
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
-  box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
 }
 
 /* ─── Tab Title ─── */
@@ -349,9 +268,8 @@
 }
 
 .krypton-tab--active .krypton-tab__title {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
-  font-weight: 600;
-  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.95);
+  font-weight: 500;
 }
 
 /* ─── Window content area (body + sidebar) ─── */

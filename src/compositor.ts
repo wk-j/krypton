@@ -50,6 +50,16 @@ import type { NotificationController } from './notification';
 import { installPerspectiveMouseFix } from './perspective-fix';
 import { ProgressGauge } from './progress-gauge';
 import { probeRemoteCwd, type SshConnectionInfo } from './ssh-session';
+import { WebviewContentView } from './webview-view';
+
+function webviewTitleForUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `WEB // ${u.hostname}`;
+  } catch {
+    return 'WEB // ?';
+  }
+}
 
 /** Replace the alpha channel of an rgba() color string.
  *  e.g. replaceAlpha('rgba(6, 10, 18, 0.5)', 0.8) → 'rgba(6, 10, 18, 0.8)' */
@@ -957,6 +967,14 @@ export class Compositor {
     }
   }
 
+  private focusContentView(contentView: ContentView): void {
+    if (contentView.focusView) {
+      contentView.focusView();
+      return;
+    }
+    contentView.element.focus();
+  }
+
   /** Remove pane-tree elements from a content area, keeping HUD overlays */
   private clearPaneTree(contentEl: HTMLElement): void {
     const toRemove: Element[] = [];
@@ -1633,7 +1651,7 @@ export class Compositor {
     this.sound.play('window.create');
 
     // Focus the content view
-    contentView.element.focus();
+    this.focusContentView(contentView);
 
     el.addEventListener('mousedown', () => {
       this.focusWindow(id);
@@ -1736,23 +1754,27 @@ export class Compositor {
   /**
    * Open a markdown viewer window listing .md files from the focused terminal's CWD.
    */
-  async openMarkdownView(): Promise<void> {
+  async openMarkdownView(initialFile?: string): Promise<void> {
     const cwd = await this.getFocusedCwd() ?? undefined;
-    if (!await this.isGitRepo(cwd ?? null)) {
+    // Skip the git-repo gate when caller targets a specific file (e.g.,
+    // opening a .md from hint mode outside a git repo).
+    if (!initialFile && !await this.isGitRepo(cwd ?? null)) {
       this.showNotification('Not a git repository — markdown viewer unavailable');
       return;
     }
 
     const { listMarkdownFiles, MarkdownContentView } = await import('./markdown-view');
-    const files = await listMarkdownFiles(cwd ?? '.');
-    if (files.length === 0) {
+    const files = initialFile && !(await this.isGitRepo(cwd ?? null))
+      ? []
+      : await listMarkdownFiles(cwd ?? '.');
+    if (!initialFile && files.length === 0) {
       console.error('No markdown files found');
     }
 
     const container = document.createElement('div');
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
 
-    const mdView = new MarkdownContentView(files, cwd ?? '.', container);
+    const mdView = new MarkdownContentView(files, cwd ?? '.', container, initialFile);
 
     // Use the last path component of CWD as title
     const dirName = (cwd ?? '.').split('/').filter(Boolean).pop() ?? 'docs';
@@ -3128,7 +3150,7 @@ export class Compositor {
     const pane = this.getFocusedPane();
     if (pane) {
       if (pane.contentView) {
-        pane.contentView.element.focus();
+        this.focusContentView(pane.contentView);
       } else {
         pane.terminal?.focus();
       }
@@ -3394,8 +3416,51 @@ export class Compositor {
     await this.nextFrame();
     this.fitWindow(win.id);
 
-    contentView.element.focus();
+    this.focusContentView(contentView);
     this.sound.play('tab.create');
+  }
+
+  /** Open a URL in an in-app webview pane (feature 102). */
+  async openWebview(url: string): Promise<void> {
+    if (!this.focusedWindowId) {
+      console.warn('openWebview: no focused window');
+      return;
+    }
+    const title = webviewTitleForUrl(url);
+    const view = new WebviewContentView(url);
+    view.onOpenInNewPane = (newUrl: string) => {
+      void this.openWebview(newUrl);
+    };
+    await this.createContentTab(title, view);
+  }
+
+  /** Hide all in-app webviews; used before opening overlays that native
+   *  child webviews would otherwise occlude (palette, dashboard, hints). */
+  suspendAllWebviews(): void {
+    this.forEachWebviewView((v) => v.suspend());
+  }
+
+  /** Restore previously-suspended webviews. Bounds are re-synced. */
+  resumeAllWebviews(): void {
+    this.forEachWebviewView((v) => v.resume());
+  }
+
+  private forEachWebviewView(fn: (view: WebviewContentView) => void): void {
+    for (const win of this.windows.values()) {
+      for (const tab of win.tabs) {
+        this.walkPaneTreeForWebviews(tab.paneTree, fn);
+      }
+    }
+  }
+
+  private walkPaneTreeForWebviews(node: PaneNode, fn: (view: WebviewContentView) => void): void {
+    if (node.type === 'leaf') {
+      const v = node.pane.contentView;
+      if (v instanceof WebviewContentView) fn(v);
+    } else {
+      this.walkPaneTreeForWebviews(node.first, fn);
+      this.walkPaneTreeForWebviews(node.second, fn);
+    }
   }
 
   /** Close the active tab in the focused window */
@@ -3438,7 +3503,7 @@ export class Compositor {
       const newTab = win.tabs[win.activeTabIndex];
       const pane = this.findPaneInTree(newTab.paneTree, newTab.focusedPaneId);
       if (pane?.contentView) {
-        pane.contentView.element.focus();
+        this.focusContentView(pane.contentView);
       } else if (pane?.terminal) {
         pane.terminal.focus();
       }
@@ -3458,7 +3523,7 @@ export class Compositor {
     const tab = win.tabs[win.activeTabIndex];
     const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
     if (pane?.contentView) {
-      pane.contentView.element.focus();
+      this.focusContentView(pane.contentView);
     } else if (pane?.terminal) {
       pane.terminal.focus();
     }
@@ -3897,7 +3962,7 @@ export class Compositor {
         const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
         if (pane) {
           if (pane.contentView) {
-            pane.contentView.element.focus();
+            this.focusContentView(pane.contentView);
           } else {
             pane.terminal?.focus();
           }

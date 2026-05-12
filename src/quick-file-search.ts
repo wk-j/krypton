@@ -390,27 +390,27 @@ export class QuickFileSearch {
       absolute = hit.absolute;
     }
 
-    const result = await openInHelixTab(this.compositor, {
-      path: absolute,
-      line,
-      col,
-    });
-    if (result === 'create-tab-failed') {
-      this.statusBar.textContent = 'open failed: createTab';
-      return;
-    }
-    if (result === 'no-focused-window') {
+    // Close the dialog BEFORE awaiting spawn so InputRouter exits
+    // QuickFileSearch mode immediately and keystrokes flow to the new hx tab.
+    // Otherwise the dialog stays visible during spawn_pty (and an extra
+    // 100ms flash), making the app feel stuck.
+    if (!this.compositor.hasFocusedWindow()) {
       this.statusBar.textContent = 'open failed: no focused window';
       return;
     }
 
+    this.compositor.soundEngine.play('command_palette.execute');
+    this.close();
+
+    void openInHelixTab(this.compositor, { path: absolute, line, col }).then((result) => {
+      if (result !== 'opened') {
+        console.warn(`[QuickFileSearch] openInHelixTab: ${result}`);
+      }
+    });
+
     invoke('quick_search_record_pick', { absolute }).catch((e) => {
       console.warn('[QuickFileSearch] record_pick failed:', e);
     });
-
-    this.compositor.soundEngine.play('command_palette.execute');
-    this.flashSelected('helix');
-    window.setTimeout(() => this.close(), FLASH_MS);
   }
 
   private flashSelected(kind: 'relative' | 'absolute' | 'helix'): void {

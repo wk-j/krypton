@@ -20,6 +20,7 @@ import { ClaudeHookManager } from './claude-hooks';
 import { NotificationController } from './notification';
 import { MusicPlayer } from './music';
 import { installGlobalCopyOnSelect } from './copy-on-select';
+import { registerExternalUrlHandler } from './external-url';
 
 interface CaptureResult {
   path: string;
@@ -62,6 +63,10 @@ async function main(): Promise<void> {
 
   // Initialize compositor
   const compositor = new Compositor(workspace);
+
+  // Route external URL clicks to in-app webview panes (feature 102). Views
+  // call openExternalUrl({external: true}) to bypass for Shift+click.
+  registerExternalUrlHandler((url) => compositor.openWebview(url));
 
   // Connect theme engine to compositor (updates terminals on theme change)
   compositor.setThemeEngine(themeEngine);

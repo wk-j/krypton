@@ -291,6 +291,16 @@ export class InputRouter {
       this.compositor.soundEngine.play('mode.exit');
     }
 
+    // Hide native child webviews while any non-Normal mode is active.
+    // Native subviews render above DOM, so leader/palette/dashboard/hint
+    // overlays would otherwise be occluded. Hiding the webview also gives
+    // up firstResponder so plain keys reach the host input router again.
+    if (prevMode === Mode.Normal && mode !== Mode.Normal) {
+      this.compositor.suspendAllWebviews();
+    } else if (prevMode !== Mode.Normal && mode === Mode.Normal) {
+      this.compositor.resumeAllWebviews();
+    }
+
     const contentType = this.compositor.getFocusedContentType();
     const leaderKeys = mode === Mode.Compositor ? this.getEnabledFocusedLeaderKeyBindings() : [];
     for (const cb of this.modeChangeCallbacks) {

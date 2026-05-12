@@ -1,6 +1,7 @@
 import type { ContentView, PaneContentType } from './types';
 import type { VaultIndex, VaultFile } from './vault-parser';
 import { buildVaultIndex, parseHeadingsForFile, readVaultFile } from './vault-parser';
+import { openExternalUrl } from './external-url';
 
 type SidebarMode = 'files' | 'backlinks' | 'outline' | 'tags';
 type FileSortField = 'title' | 'updated' | 'modified' | 'name' | 'type';
@@ -482,7 +483,13 @@ export class VaultContentView implements ContentView {
 
     article.querySelectorAll('a').forEach((a) => {
       const href = a.getAttribute('href');
-      if (href && !href.includes('://')) {
+      if (!href) return;
+      if (href.includes('://')) {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          openExternalUrl(href, { external: e.shiftKey });
+        });
+      } else {
         a.addEventListener('click', (e) => {
           e.preventDefault();
           const target = href.replace(/\.md$/, '');
@@ -817,9 +824,14 @@ export class VaultContentView implements ContentView {
       const href = match.getAttribute('href');
       this.exitLinkHintMode();
       if (href) {
-        const resolved = this.resolveLink(href);
-        if (resolved) {
-          this.openFile(resolved);
+        if (href.includes('://')) {
+          openExternalUrl(href);
+        } else {
+          const target = href.replace(/\.md$/, '');
+          const resolved = this.resolveLink(target);
+          if (resolved) {
+            this.openFile(resolved);
+          }
         }
       }
       return true;

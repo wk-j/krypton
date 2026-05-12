@@ -522,6 +522,20 @@ Config/theme keys `blur`, `backdrop_blur` remain in parsers for forward compatib
 
 See also: `docs/16-terminal-shaders.md` for related visual rendering.
 
+### Webview Panes (Platform Gotcha)
+
+> Implemented: 2026-05-11
+
+In-app webview panes (`PaneContentType = 'webview'`) embed a Tauri v2 child `Webview` via `Window::add_child` (gated behind the `unstable` Cargo feature). Native child webviews are `NSView` / `HWND` subviews and therefore **render above all host DOM unconditionally** on every platform. Three implications shape the implementation in `src-tauri/src/webview.rs` and `src/webview-view.ts`:
+
+1. **Chrome insets rather than overlays.** The cyberpunk address bar / loading bar live in DOM at the top of the pane; the native webview is positioned to fill the area below them. DOM corner accents and glow overlays surround the webview rect rather than covering it.
+2. **Overlays must hide the webview.** Anything that needs to draw on top of the pane area (command palette, dashboard, hint mode, workspace transitions) calls `compositor.suspendAllWebviews()` to issue `set_webview_visible(false)` on every child webview, then `resumeAllWebviews()` afterwards. Pane rects that go to 0×0 (hidden tab, other workspace) auto-hide because the `ResizeObserver` pipeline reports a zero rect and emits `set_webview_visible(false)` instead of `resize_webview`.
+3. **Keyboard escape via injected bridge.** When a child webview has focus, key events go to its renderer, not the host. The `WebviewBuilder::initialization_script` injects a capture-phase listener that catches Krypton leader chords (`Cmd+P`, `Cmd+L`, `Cmd+R`, `Cmd+[`/`]`, `Cmd+1..9`, `Cmd+W`) and forwards them via the `forward_chord` command. The Rust handler takes focus back to the main window and re-emits the chord as a `chord-from-webview` event that the input-router pipeline replays as a synthetic `KeyboardEvent`.
+
+`WebviewBuilder::transparent` is documented as **"Not implemented" on macOS/iOS** — webview rects always render opaque. Pages cannot composite alpha with DOM behind them, which is why the chrome surrounds rather than overlays.
+
+See `docs/102-webview-windows.md` for the full spec.
+
 ### Tauri Commands
 
 | Command | Parameters | Purpose |

@@ -6,7 +6,7 @@
 import type { Terminal } from '@xterm/xterm';
 
 import { openInHelixTab } from './editor-open';
-import { invoke } from './profiler/ipc';
+import { openExternalUrl } from './external-url';
 import type { Compositor } from './compositor';
 import type { HintsConfig, HintRule } from './config';
 
@@ -638,6 +638,13 @@ export class HintController {
 
   private executeActionForText(text: string, rule: HintRule): void {
     if (rule.name === 'filepath') {
+      // Markdown files open in the in-app viewer instead of Helix.
+      if (/\.md$/i.test(text)) {
+        this.compositor.openMarkdownView(text).catch((err) => {
+          console.error('[HintController] Failed to open markdown viewer:', err);
+        });
+        return;
+      }
       openInHelixTab(this.compositor, { path: text }).catch((err) => {
         console.error('[HintController] Failed to open file in Helix:', err);
       });
@@ -654,9 +661,7 @@ export class HintController {
         break;
 
       case 'Open':
-        invoke('open_url', { url: text }).catch((err) => {
-          console.error('[HintController] Failed to open URL:', err);
-        });
+        openExternalUrl(text);
         break;
 
       case 'Paste':
