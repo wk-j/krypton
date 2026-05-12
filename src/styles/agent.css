@@ -697,141 +697,23 @@
 
 /* ═══ Write approval gate ════════════════════════════════════ */
 
-.agent-view__write-review {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.24);
-  border-left: 2px solid rgba(var(--agent-primary-rgb), 0.75);
-  background: rgba(var(--agent-primary-rgb), 0.045);
-  box-shadow: inset 0 0 18px rgba(var(--agent-primary-rgb), 0.025);
-  animation: msg-boot 0.35s ease-out;
+.agent-view__msg--review .agent-view__msg-label {
+  color: rgba(var(--agent-gold-rgb, 220, 180, 80), 0.9);
 }
 
-.agent-view__write-review--accepted {
-  border-left-color: rgba(var(--agent-green-rgb), 0.9);
-  background: rgba(var(--agent-green-rgb), 0.035);
+.agent-view__msg--review-accepted .agent-view__msg-label,
+.agent-view__msg--review-accepted .agent-view__msg-review-prompt {
+  color: rgba(var(--agent-green-rgb), 0.85);
 }
 
-.agent-view__write-review--rejected {
-  border-left-color: rgba(var(--agent-red-rgb), 0.9);
-  background: rgba(var(--agent-red-rgb), 0.035);
+.agent-view__msg--review-rejected .agent-view__msg-label,
+.agent-view__msg--review-rejected .agent-view__msg-review-prompt {
+  color: rgba(var(--agent-red-rgb), 0.85);
 }
 
-.agent-view__write-review-header {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
-}
-
-.agent-view__write-review-title {
-  flex: 0 0 auto;
-  color: var(--agent-primary);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  text-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.35);
-}
-
-.agent-view__write-review-title::before {
-  content: '!';
-  margin-right: 6px;
-  color: var(--agent-gold);
-}
-
-.agent-view__write-review-path {
-  min-width: 0;
-  color: rgba(var(--agent-text-rgb), 0.75);
-  font-size: var(--krypton-font-size);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.agent-view__write-review-note {
-  color: rgba(var(--agent-text-rgb), 0.45);
-  font-size: var(--krypton-font-size);
-}
-
-.agent-view__write-review-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-}
-
-.agent-view__write-review-button {
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.22);
-  background: rgba(var(--agent-primary-rgb), 0.055);
-  color: rgba(var(--agent-text-rgb), 0.78);
-  font-family: var(--agent-font);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 4px 8px;
-}
-
-.agent-view__write-review-button--accept {
-  border-color: rgba(var(--agent-green-rgb), 0.35);
-  color: var(--agent-green);
-}
-
-.agent-view__write-review-button--reject {
-  border-color: rgba(var(--agent-red-rgb), 0.35);
-  color: var(--agent-red);
-}
-
-.agent-view__write-review-hint,
-.agent-view__write-review-stamp {
-  color: rgba(var(--agent-text-rgb), 0.35);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.agent-view__write-review--accepted .agent-view__write-review-stamp {
-  color: rgba(var(--agent-green-rgb), 0.8);
-}
-
-.agent-view__write-review--rejected .agent-view__write-review-stamp {
-  color: rgba(var(--agent-red-rgb), 0.8);
-}
-
-.agent-view__command-review {
-  border-left-color: rgba(var(--agent-blue-rgb), 0.85);
-  background: rgba(var(--agent-blue-rgb), 0.035);
-}
-
-.agent-view__command-review-title::before {
-  content: '$';
-  color: var(--agent-blue);
-}
-
-.agent-view__command-review-risk {
-  flex: 0 0 auto;
-  padding: 1px 6px;
-  border: 1px solid rgba(var(--agent-blue-rgb), 0.28);
-  color: rgba(var(--agent-blue-rgb), 0.85);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.agent-view__command-review-command {
-  margin-left: 0;
-  padding: 4px 8px;
-  border: 1px solid rgba(var(--agent-blue-rgb), 0.12);
-  background: rgba(var(--agent-blue-rgb), 0.035);
-  color: rgba(var(--agent-text-rgb), 0.82);
-  font-family: var(--agent-font);
-  font-size: var(--krypton-font-size);
-  line-height: var(--krypton-content-line-height, 1.5);
-  white-space: pre-wrap;
-  word-break: break-word;
+.agent-view__msg-review-command {
+  margin-top: 2px;
+  color: rgba(var(--agent-text-rgb), 0.92);
 }
 
 .agent-view__check-actions {

@@ -745,40 +745,30 @@ export class AgentView implements ContentView {
     resolved?: 'accepted' | 'rejected',
   ): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'agent-view__write-review';
-    if (resolved) row.classList.add(`agent-view__write-review--${resolved}`);
+    row.className = 'agent-view__msg agent-view__msg--review';
+    if (resolved) row.classList.add(`agent-view__msg--review-${resolved}`);
     row.dataset.writeApprovalId = request.id;
+    row.dataset.filePath = request.path;
+    row.dataset.hasDiff = request.diff ? '1' : '0';
 
-    const header = document.createElement('div');
-    header.className = 'agent-view__write-review-header';
+    const label = document.createElement('span');
+    label.className = 'agent-view__msg-label';
+    label.textContent = 'WRITE';
+    row.appendChild(label);
 
-    const title = document.createElement('span');
-    title.className = 'agent-view__write-review-title';
-    title.textContent = 'WRITE REVIEW';
+    const body = document.createElement('div');
+    body.className = 'agent-view__msg-body';
+    row.appendChild(body);
 
-    const path = document.createElement('span');
-    path.className = 'agent-view__write-review-path';
-    path.textContent = request.path;
-
-    header.appendChild(title);
-    header.appendChild(path);
-    row.appendChild(header);
+    const prompt = document.createElement('div');
+    prompt.className = 'agent-view__msg-review-prompt';
+    body.appendChild(prompt);
 
     if (request.diff) {
       row.dataset.diff = request.diff;
-      row.dataset.filePath = request.path;
       row.classList.add('agent-view__tool-row--has-diff');
-      this.renderDiffPreview(row, request.diff);
-    } else {
-      const note = document.createElement('div');
-      note.className = 'agent-view__write-review-note';
-      note.textContent = 'Diff unavailable; review the target path before accepting.';
-      row.appendChild(note);
+      this.renderDiffPreview(body, request.diff);
     }
-
-    const actions = document.createElement('div');
-    actions.className = 'agent-view__write-review-actions';
-    row.appendChild(actions);
 
     this.messagesEl.appendChild(row);
     this.observeMessage(row);
@@ -791,37 +781,15 @@ export class AgentView implements ContentView {
     auto: boolean,
     resolved?: 'accepted' | 'rejected',
   ): void {
-    const actions = row.querySelector<HTMLElement>('.agent-view__write-review-actions');
-    if (!actions) return;
-    actions.innerHTML = '';
-
+    const prompt = row.querySelector<HTMLElement>('.agent-view__msg-review-prompt');
+    if (!prompt) return;
+    const path = row.dataset.filePath ?? '';
+    const noDiff = row.dataset.hasDiff === '0' ? '  (no diff)' : '';
     if (resolved) {
-      const stamp = document.createElement('span');
-      stamp.className = 'agent-view__write-review-stamp';
-      stamp.textContent = `${resolved.toUpperCase()}${auto ? ' BY TURN RULE' : ''}`;
-      actions.appendChild(stamp);
-      return;
+      prompt.textContent = `${path}${noDiff}  → ${resolved}${auto ? ' (turn)' : ''}`;
+    } else {
+      prompt.textContent = `${path}${noDiff}  [a]ccept  [r]eject  · A/R = whole turn`;
     }
-
-    const accept = document.createElement('button');
-    accept.className = 'agent-view__write-review-button agent-view__write-review-button--accept';
-    accept.type = 'button';
-    accept.textContent = 'a accept';
-    accept.addEventListener('click', () => this.resolveOldestWriteApproval(true, false));
-
-    const reject = document.createElement('button');
-    reject.className = 'agent-view__write-review-button agent-view__write-review-button--reject';
-    reject.type = 'button';
-    reject.textContent = 'r reject';
-    reject.addEventListener('click', () => this.resolveOldestWriteApproval(false, false));
-
-    const hint = document.createElement('span');
-    hint.className = 'agent-view__write-review-hint';
-    hint.textContent = 'keys: a/r  A/R for turn';
-
-    actions.appendChild(accept);
-    actions.appendChild(reject);
-    actions.appendChild(hint);
   }
 
   private resolveOldestWriteApproval(accepted: boolean, applyToTurn: boolean): boolean {
@@ -848,7 +816,7 @@ export class AgentView implements ContentView {
     for (const pending of this.pendingWriteApprovals) {
       if (pending.resolved) continue;
       pending.resolved = true;
-      pending.row.classList.add('agent-view__write-review--rejected');
+      pending.row.classList.add('agent-view__msg--review-rejected');
       this.renderWriteApprovalActions(pending.row, false, 'rejected');
       pending.resolve(false);
     }
@@ -897,40 +865,30 @@ export class AgentView implements ContentView {
     resolved?: 'accepted' | 'rejected',
   ): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'agent-view__write-review agent-view__command-review';
-    if (resolved) row.classList.add(`agent-view__write-review--${resolved}`);
+    row.className = 'agent-view__msg agent-view__msg--review';
+    if (resolved) row.classList.add(`agent-view__msg--review-${resolved}`);
     row.dataset.commandApprovalId = request.id;
+    row.dataset.risk = request.risk;
+    row.dataset.cwd = request.cwd ?? '';
+    row.dataset.reason = request.reason;
 
-    const header = document.createElement('div');
-    header.className = 'agent-view__write-review-header';
+    const label = document.createElement('span');
+    label.className = 'agent-view__msg-label';
+    label.textContent = 'CMD';
+    row.appendChild(label);
 
-    const title = document.createElement('span');
-    title.className = 'agent-view__write-review-title agent-view__command-review-title';
-    title.textContent = 'COMMAND REVIEW';
+    const body = document.createElement('div');
+    body.className = 'agent-view__msg-body';
+    row.appendChild(body);
 
-    const risk = document.createElement('span');
-    risk.className = 'agent-view__command-review-risk';
-    risk.textContent = request.risk;
-
-    header.appendChild(title);
-    header.appendChild(risk);
-    row.appendChild(header);
+    const prompt = document.createElement('div');
+    prompt.className = 'agent-view__msg-review-prompt';
+    body.appendChild(prompt);
 
     const command = document.createElement('div');
-    command.className = 'agent-view__command-review-command';
+    command.className = 'agent-view__msg-review-command';
     command.textContent = request.command;
-    row.appendChild(command);
-
-    const reason = document.createElement('div');
-    reason.className = 'agent-view__write-review-note';
-    reason.textContent = request.cwd
-      ? `${request.reason} cwd: ${request.cwd}`
-      : request.reason;
-    row.appendChild(reason);
-
-    const actions = document.createElement('div');
-    actions.className = 'agent-view__write-review-actions';
-    row.appendChild(actions);
+    body.appendChild(command);
 
     this.messagesEl.appendChild(row);
     this.observeMessage(row);
@@ -943,37 +901,17 @@ export class AgentView implements ContentView {
     auto: boolean,
     resolved?: 'accepted' | 'rejected',
   ): void {
-    const actions = row.querySelector<HTMLElement>('.agent-view__write-review-actions');
-    if (!actions) return;
-    actions.innerHTML = '';
-
+    const prompt = row.querySelector<HTMLElement>('.agent-view__msg-review-prompt');
+    if (!prompt) return;
+    const risk = row.dataset.risk ?? '';
+    const cwd = row.dataset.cwd ? `  cwd: ${row.dataset.cwd}` : '';
+    const reason = row.dataset.reason ?? '';
+    const meta = `[${risk}]${cwd}  ${reason}`.trimEnd();
     if (resolved) {
-      const stamp = document.createElement('span');
-      stamp.className = 'agent-view__write-review-stamp';
-      stamp.textContent = `${resolved.toUpperCase()}${auto ? ' BY TURN RULE' : ''}`;
-      actions.appendChild(stamp);
-      return;
+      prompt.textContent = `${meta}  → ${resolved}${auto ? ' (turn)' : ''}`;
+    } else {
+      prompt.textContent = `${meta}  [a]run  [r]block  · A/R = whole turn`;
     }
-
-    const accept = document.createElement('button');
-    accept.className = 'agent-view__write-review-button agent-view__write-review-button--accept';
-    accept.type = 'button';
-    accept.textContent = 'a run';
-    accept.addEventListener('click', () => this.resolveOldestCommandApproval(true, false));
-
-    const reject = document.createElement('button');
-    reject.className = 'agent-view__write-review-button agent-view__write-review-button--reject';
-    reject.type = 'button';
-    reject.textContent = 'r block';
-    reject.addEventListener('click', () => this.resolveOldestCommandApproval(false, false));
-
-    const hint = document.createElement('span');
-    hint.className = 'agent-view__write-review-hint';
-    hint.textContent = 'keys: a/r  A/R for commands this turn';
-
-    actions.appendChild(accept);
-    actions.appendChild(reject);
-    actions.appendChild(hint);
   }
 
   private resolveOldestCommandApproval(accepted: boolean, applyToTurn: boolean): boolean {
@@ -1000,7 +938,7 @@ export class AgentView implements ContentView {
     for (const pending of this.pendingCommandApprovals) {
       if (pending.resolved) continue;
       pending.resolved = true;
-      pending.row.classList.add('agent-view__write-review--rejected');
+      pending.row.classList.add('agent-view__msg--review-rejected');
       this.renderCommandApprovalActions(pending.row, false, 'rejected');
       pending.resolve(false);
     }
