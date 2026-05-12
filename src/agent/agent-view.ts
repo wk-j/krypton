@@ -785,11 +785,12 @@ export class AgentView implements ContentView {
     if (!prompt) return;
     const path = row.dataset.filePath ?? '';
     const noDiff = row.dataset.hasDiff === '0' ? '  (no diff)' : '';
-    if (resolved) {
-      prompt.textContent = `${path}${noDiff}  → ${resolved}${auto ? ' (turn)' : ''}`;
-    } else {
-      prompt.textContent = `${path}${noDiff}  [a]ccept  [r]eject  · A/R = whole turn`;
-    }
+    prompt.innerHTML = '';
+    const subject = document.createElement('span');
+    subject.className = 'agent-view__msg-review-subject';
+    subject.textContent = `${path}${noDiff}`;
+    prompt.appendChild(subject);
+    prompt.appendChild(this.buildReviewActionsSpan('write', auto, resolved));
   }
 
   private resolveOldestWriteApproval(accepted: boolean, applyToTurn: boolean): boolean {
@@ -802,7 +803,7 @@ export class AgentView implements ContentView {
     }
 
     pending.resolved = true;
-    pending.row.classList.add(`agent-view__write-review--${accepted ? 'accepted' : 'rejected'}`);
+    pending.row.classList.add(`agent-view__msg--review-${accepted ? 'accepted' : 'rejected'}`);
     this.renderWriteApprovalActions(
       pending.row,
       applyToTurn,
@@ -906,12 +907,41 @@ export class AgentView implements ContentView {
     const risk = row.dataset.risk ?? '';
     const cwd = row.dataset.cwd ? `  cwd: ${row.dataset.cwd}` : '';
     const reason = row.dataset.reason ?? '';
-    const meta = `[${risk}]${cwd}  ${reason}`.trimEnd();
+    prompt.innerHTML = '';
+    const subject = document.createElement('span');
+    subject.className = 'agent-view__msg-review-subject';
+    subject.textContent = `[${risk}]${cwd}  ${reason}`.trimEnd();
+    prompt.appendChild(subject);
+    prompt.appendChild(this.buildReviewActionsSpan('command', auto, resolved));
+  }
+
+  private buildReviewActionsSpan(
+    kind: 'write' | 'command',
+    auto: boolean,
+    resolved?: 'accepted' | 'rejected',
+  ): HTMLElement {
+    const wrap = document.createElement('span');
+    wrap.className = 'agent-view__msg-review-actions';
     if (resolved) {
-      prompt.textContent = `${meta}  → ${resolved}${auto ? ' (turn)' : ''}`;
-    } else {
-      prompt.textContent = `${meta}  [a]run  [r]block  · A/R = whole turn`;
+      wrap.classList.add(`agent-view__msg-review-actions--${resolved}`);
+      wrap.textContent = `→ ${resolved}${auto ? ' (turn)' : ''}`;
+      return wrap;
     }
+    const accept = kind === 'write' ? '[a]ccept' : '[a]run';
+    const reject = kind === 'write' ? '[r]eject' : '[r]block';
+    const a = document.createElement('span');
+    a.className = 'agent-view__msg-review-key agent-view__msg-review-key--accept';
+    a.textContent = accept;
+    const r = document.createElement('span');
+    r.className = 'agent-view__msg-review-key agent-view__msg-review-key--reject';
+    r.textContent = reject;
+    const hint = document.createElement('span');
+    hint.className = 'agent-view__msg-review-hint';
+    hint.textContent = 'A/R = whole turn';
+    wrap.appendChild(a);
+    wrap.appendChild(r);
+    wrap.appendChild(hint);
+    return wrap;
   }
 
   private resolveOldestCommandApproval(accepted: boolean, applyToTurn: boolean): boolean {
@@ -924,7 +954,7 @@ export class AgentView implements ContentView {
     }
 
     pending.resolved = true;
-    pending.row.classList.add(`agent-view__write-review--${accepted ? 'accepted' : 'rejected'}`);
+    pending.row.classList.add(`agent-view__msg--review-${accepted ? 'accepted' : 'rejected'}`);
     this.renderCommandApprovalActions(
       pending.row,
       applyToTurn,

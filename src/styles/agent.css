@@ -501,8 +501,6 @@
 .agent-view__msg-body--markdown h4 {
   margin: 0.7em 0 0.25em;
   color: var(--agent-primary);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
   text-shadow:
     0 0 8px rgba(var(--agent-primary-rgb), 0.4),
     0 0 25px rgba(var(--agent-primary-rgb), 0.12);
@@ -513,7 +511,6 @@
   font-size: 1.25em;
   padding-bottom: 0.3em;
   border-bottom: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-  letter-spacing: 0.2em;
 }
 
 /* Decorative rule under h1 */
@@ -701,14 +698,58 @@
   color: rgba(var(--agent-gold-rgb, 220, 180, 80), 0.9);
 }
 
-.agent-view__msg--review-accepted .agent-view__msg-label,
-.agent-view__msg--review-accepted .agent-view__msg-review-prompt {
+.agent-view__msg--review-accepted .agent-view__msg-label {
   color: rgba(var(--agent-green-rgb), 0.85);
 }
 
-.agent-view__msg--review-rejected .agent-view__msg-label,
-.agent-view__msg--review-rejected .agent-view__msg-review-prompt {
+.agent-view__msg--review-rejected .agent-view__msg-label {
   color: rgba(var(--agent-red-rgb), 0.85);
+}
+
+.agent-view__msg-review-subject {
+  color: rgba(var(--agent-text-rgb), 0.85);
+}
+
+.agent-view__msg-review-actions {
+  margin-left: 12px;
+  display: inline-flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.agent-view__msg-review-key {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+.agent-view__msg-review-key--accept {
+  color: var(--agent-green);
+  text-shadow: 0 0 6px rgba(var(--agent-green-rgb), 0.4);
+}
+
+.agent-view__msg-review-key--reject {
+  color: var(--agent-red);
+  text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.4);
+}
+
+.agent-view__msg-review-hint {
+  color: rgba(var(--agent-text-rgb), 0.4);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-view__msg-review-actions--accepted {
+  color: var(--agent-green);
+  text-shadow: 0 0 6px rgba(var(--agent-green-rgb), 0.4);
+  font-weight: 700;
+}
+
+.agent-view__msg-review-actions--rejected {
+  color: var(--agent-red);
+  text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.4);
+  font-weight: 700;
 }
 
 .agent-view__msg-review-command {
