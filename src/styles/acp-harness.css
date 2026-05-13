@@ -487,6 +487,26 @@
   opacity: 0.75;
 }
 
+.acp-harness__msg--hidden-indicator {
+  display: block;
+  opacity: 0.55;
+  font-size: 0.78em;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.acp-harness__msg--hidden-indicator .acp-harness__msg-label {
+  display: none;
+}
+
+.acp-harness__msg--hidden-indicator .acp-harness__msg-body {
+  color: rgba(216, 232, 216, 0.6);
+  border-left: 1px dashed rgba(216, 232, 216, 0.25);
+  padding-left: 8px;
+}
+
 .acp-harness__tool {
   display: flex;
   flex-direction: column;

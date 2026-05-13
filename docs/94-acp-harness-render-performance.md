@@ -94,3 +94,13 @@ No backend or protocol changes were required.
 
 Those remain future options if Krypton needs history far beyond the current
 300-row active transcript cap.
+
+## Followup
+
+Spec 103 (`docs/103-acp-harness-transcript-window.md`) revisits the "DOM
+virtualization" non-goal with a lighter approach: render only a tail window
+of `lane.transcript` (default 60 rows), and surface hidden rows through a
+muted indicator at the top of the transcript that the user can expand with
+`Ctrl+H`. The caching introduced here is reused unchanged — the slice
+operates on the same `HarnessTranscriptItem` array whose markdown and
+pretext caches survive across renders.

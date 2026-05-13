@@ -500,6 +500,7 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `Cmd+P → _` | Harness focused | Close and dispose the active lane. |
 | `Cmd+P → =` | Harness focused | Toggle lane resource metrics overlay (CPU/RSS tree per lane). See `docs/91-acp-lane-resource-metrics.md`. |
 | `Cmd+P → 0` | Harness focused | Open the active backend's project session picker; resume when `session/resume` is available, otherwise load when `loadSession` is available. |
+| `Ctrl+H` | Any composer/transcript context | Expand the active lane's transcript visible window by 60 rows. When the window reaches the total row count it snaps to "all"; pressing once more wraps back to 60. Older rows are removed from the DOM; a muted indicator row at the top of the transcript shows the hidden count. Per-lane setting, resets on `#new`/`#new!`/`#restart`. See `docs/103-acp-harness-transcript-window.md`. |
 
 Memory mutations are not bound to dedicated keys; active-lane memory clearing executes through `#mem clear` in the composer. This keeps the keybinding surface narrow and the input rule consistent (input always in the command center).
 

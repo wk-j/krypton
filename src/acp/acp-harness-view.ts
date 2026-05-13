@@ -178,6 +178,7 @@ interface HarnessLane {
   plan: PlanEntry[] | null;
   planCollapsed: boolean;
   lastKilled: string;
+  transcriptWindow: number;
 }
 
 interface TranscriptScrollAnchor {
@@ -226,6 +227,12 @@ function backendLabel(backendId: string): string {
 const OPENCODE_DEFAULT_MODEL = 'zai-coding-plan/glm-5.1';
 const FILE_TOUCH_WINDOW_MS = 10 * 60 * 1000;
 
+// Tail-window rendering. Only the last N transcript rows render into the DOM
+// to keep `renderActiveTranscript()` cheap on long sessions. See Spec 103.
+const TRANSCRIPT_WINDOW_STEP = 60;
+const TRANSCRIPT_WINDOW_DEFAULT = TRANSCRIPT_WINDOW_STEP;
+const HIDDEN_INDICATOR_ID = '__hidden_indicator__';
+
 // Immutable defaults shared across all lanes. Mutable containers (arrays,
 // Maps, Sets) MUST NOT live here — createLane() instantiates fresh ones
 // per lane to prevent reference aliasing.
@@ -257,6 +264,7 @@ const LANE_DEFAULTS = {
   plan: null,
   planCollapsed: false,
   lastKilled: '',
+  transcriptWindow: TRANSCRIPT_WINDOW_DEFAULT,
 };
 
 const md = new Marked(
@@ -437,6 +445,14 @@ export class AcpHarnessView implements ContentView {
       if (body) {
         e.preventDefault();
         body.scrollBy({ top: e.key === 'J' ? 60 : -60, behavior: 'instant' });
+        return true;
+      }
+    }
+    if ((e.key === 'h' || e.key === 'H') && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      const lane = this.activeLane();
+      if (lane) {
+        e.preventDefault();
+        this.expandTranscriptWindow(lane);
         return true;
       }
     }
@@ -1680,6 +1696,7 @@ export class AcpHarnessView implements ContentView {
     lane.activeTurnStartedAt = null;
     lane.plan = null;
     lane.planCollapsed = false;
+    lane.transcriptWindow = TRANSCRIPT_WINDOW_DEFAULT;
     this.updateComposerTick();
     this.render();
     await this.spawnLane(lane);
@@ -1879,6 +1896,25 @@ export class AcpHarnessView implements ContentView {
     if (this.zenMode) this.refreshZenRail();
   }
 
+  private expandTranscriptWindow(lane: HarnessLane): void {
+    const total = lane.transcript.length;
+    const current = lane.transcriptWindow;
+    let next: number;
+    if (!Number.isFinite(current)) {
+      next = TRANSCRIPT_WINDOW_DEFAULT;
+    } else {
+      const candidate = current + TRANSCRIPT_WINDOW_STEP;
+      next = candidate >= total ? Number.POSITIVE_INFINITY : candidate;
+    }
+    lane.transcriptWindow = next;
+    // Suppress row-entrance animations for rows that are about to enter the
+    // DOM because the window grew — they're not "new" to the conversation.
+    for (const item of lane.transcript) lane.seenTranscriptIds.add(item.id);
+    const label = Number.isFinite(next) ? `transcript window: ${next} rows` : 'transcript window: all rows';
+    this.flashChip(label);
+    this.scheduleLaneRender(lane);
+  }
+
   private renderActiveTranscript(lane: HarnessLane): void {
     const body = this.activeTranscriptBody();
     if (!body) {
@@ -1902,18 +1938,36 @@ export class AcpHarnessView implements ContentView {
     }
     const empty = body.querySelector('.acp-harness__transcript-empty');
     if (empty) empty.remove();
+    const total = lane.transcript.length;
+    const windowSize = lane.transcriptWindow;
+    const start = Number.isFinite(windowSize) ? Math.max(0, total - windowSize) : 0;
+    const hidden = start;
+    const itemsToRender: HarnessTranscriptItem[] = [];
+    if (hidden > 0) {
+      itemsToRender.push({
+        id: HIDDEN_INDICATOR_ID,
+        kind: 'system',
+        text: `↑ ${hidden} earlier row${hidden === 1 ? '' : 's'} hidden — Ctrl+H show ${TRANSCRIPT_WINDOW_STEP} more`,
+      });
+      // Keep the indicator visually static (no row-entrance fade) even on
+      // its first appearance.
+      lane.seenTranscriptIds.add(HIDDEN_INDICATOR_ID);
+    }
+    for (let i = start; i < total; i++) itemsToRender.push(lane.transcript[i]);
     let previous: ChildNode | null = null;
-    for (const item of lane.transcript) {
+    for (const item of itemsToRender) {
       expected.add(item.id);
       const streaming = item.id === lane.currentAssistantId || item.id === lane.currentThoughtId;
       const isNew = !lane.seenTranscriptIds.has(item.id);
       const current = existing.get(item.id) ?? null;
       const signature = transcriptRenderSignature(item, streaming);
+      const isIndicator = item.id === HIDDEN_INDICATOR_ID;
       if (current) {
         if (current.dataset.renderSignature === signature) {
           previous = current;
         } else {
           const next = renderTranscriptItem(item, false, streaming);
+          if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
           if (streaming) {
             current.className = next.className;
             current.dataset.renderSignature = signature;
@@ -1926,6 +1980,7 @@ export class AcpHarnessView implements ContentView {
         }
       } else {
         const next = renderTranscriptItem(item, isNew, streaming);
+        if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
         if (previous?.nextSibling) body.insertBefore(next, previous.nextSibling);
         else body.appendChild(next);
         previous = next;
