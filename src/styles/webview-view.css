@@ -136,6 +136,6 @@
   color: var(--krypton-danger, #ff6b6b);
   font-size: 11px;
   border: 1px dashed var(--krypton-danger, #ff6b6b);
-  border-radius: 3px;
+  border-radius: 2px;
   background: rgba(40, 0, 0, 0.3);
 }

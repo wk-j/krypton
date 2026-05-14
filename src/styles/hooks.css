@@ -227,7 +227,7 @@
   align-items: center;
   justify-content: center;
   border: 2px solid rgba(var(--card-accent), 0.3);
-  border-radius: 3px;
+  border-radius: 2px;
   font-size: var(--krypton-font-size);
   color: rgba(var(--card-accent), 0.8);
   background: rgba(var(--card-accent), 0.04);

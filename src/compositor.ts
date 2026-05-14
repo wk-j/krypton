@@ -5192,7 +5192,7 @@ export class Compositor {
     toast.textContent = message;
     toast.style.cssText = `
       position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
-      padding: 8px 20px; border-radius: 6px; z-index: 9999;
+      padding: 8px 20px; border-radius: 2px; z-index: 9999;
       font-family: var(--krypton-font-family, monospace);
       font-size: 13px; color: var(--krypton-ui-text, #c0c5ce);
       background: var(--krypton-ui-bg, rgba(30, 40, 50, 0.95));

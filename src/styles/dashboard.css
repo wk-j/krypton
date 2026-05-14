@@ -76,7 +76,7 @@
   gap: 4px;
   padding: 4px 10px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 2px;
   background: none;
   color: rgba(255, 255, 255, 0.35);
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
@@ -103,7 +103,7 @@
   justify-content: center;
   min-width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.06);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
@@ -137,7 +137,7 @@
 .krypton-dashboard__close {
   background: none;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  border-radius: 2px;
   color: rgba(255, 255, 255, 0.4);
   font-size: var(--krypton-chrome-font-size, 11px);
   line-height: 1;
@@ -204,7 +204,7 @@
   color: var(--krypton-ansi-red, #ff3a5c);
   padding: 12px;
   border: 1px solid rgba(255, 58, 92, 0.2);
-  border-radius: 4px;
+  border-radius: 2px;
   background: rgba(255, 58, 92, 0.05);
 }
 
@@ -215,7 +215,7 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border-radius: 4px;
+  border-radius: 2px;
   background: rgba(0, 200, 255, 0.08);
   border: 1px solid rgba(0, 200, 255, 0.15);
   color: var(--krypton-ansi-cyan, #0cf);
@@ -236,7 +236,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -278,7 +278,7 @@
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  border-radius: 3px;
+  border-radius: 2px;
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
@@ -335,7 +335,7 @@
   color: rgba(255, 255, 255, 0.4);
   margin-bottom: 12px;
   padding: 6px 10px;
-  border-radius: 4px;
+  border-radius: 2px;
   background: rgba(0, 200, 255, 0.04);
   border: 1px solid rgba(0, 200, 255, 0.08);
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
@@ -353,7 +353,7 @@
   flex-direction: column;
   align-items: center;
   padding: 12px 8px;
-  border-radius: 6px;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -405,7 +405,7 @@
   gap: 8px;
   padding: 6px 8px;
   align-items: center;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 .krypton-oc__session-row:hover:not(.krypton-oc__session-row--header) {
@@ -490,7 +490,7 @@
   padding: 5px 8px;
   align-items: center;
   font-size: var(--krypton-chrome-font-size, 11px);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 .krypton-oc__usage-row:hover {
@@ -581,7 +581,7 @@
 
 .krypton-oc__session-rows::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 .krypton-oc__session-rows::-webkit-scrollbar-thumb:hover {

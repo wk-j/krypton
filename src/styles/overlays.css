@@ -217,7 +217,7 @@
   max-width: 90vw;
   background: var(--krypton-palette-bg, rgba(6, 10, 18, 0.92));
   border: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.4));
-  border-radius: 4px;
+  border-radius: 2px;
   box-shadow:
     0 0 30px rgba(0, 200, 255, 0.08),
     0 8px 32px rgba(0, 0, 0, 0.5);
@@ -358,7 +358,7 @@
   flex-direction: column;
   background: var(--krypton-prompt-bg, rgba(8, 6, 14, 0.94));
   border: 1px solid var(--krypton-prompt-border, rgba(199, 125, 255, 0.45));
-  border-radius: 4px;
+  border-radius: 2px;
   box-shadow:
     0 0 30px rgba(199, 125, 255, 0.1),
     0 8px 32px rgba(0, 0, 0, 0.55);
@@ -652,7 +652,7 @@
   width: 40px;
   height: 40px;
   object-fit: cover;
-  border-radius: 3px;
+  border-radius: 2px;
   border: 1px solid rgba(199, 125, 255, 0.3);
 }
 

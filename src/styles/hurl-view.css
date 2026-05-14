@@ -348,7 +348,7 @@
   max-width: 70%;
   background: var(--hurl-panel);
   border: 1px solid var(--hurl-border-active);
-  border-radius: 3px;
+  border-radius: 2px;
   padding: 10px 0 8px;
   z-index: 100;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -402,7 +402,7 @@
   max-height: 80%;
   background: var(--hurl-panel);
   border: 1px solid var(--hurl-border-active);
-  border-radius: 3px;
+  border-radius: 2px;
   padding: 12px 0 8px;
   z-index: 110;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);

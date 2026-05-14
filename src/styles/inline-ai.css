@@ -132,14 +132,14 @@
   font-size: var(--krypton-font-size);
   background: rgba(0, 200, 255, 0.08);
   border: 1px solid rgba(0, 200, 255, 0.15);
-  border-radius: 3px;
+  border-radius: 2px;
   padding: 1px 4px;
   color: #0cf;
 }
 .krypton-inline-ai__command--answer pre {
   background: rgba(6, 10, 18, 0.6);
   border: 1px solid rgba(0, 200, 255, 0.15);
-  border-radius: 3px;
+  border-radius: 2px;
   padding: 6px 8px;
   margin: 0.4em 0;
   overflow-x: auto;
