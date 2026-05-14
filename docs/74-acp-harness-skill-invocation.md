@@ -75,7 +75,7 @@ const dirs = [
 ];
 ```
 
-Project-level entries win on name collision (existing precedence already handles this via the `seen` set; we just prepend user-global so it's processed first and overridden by later dirs). Verify with a quick test that `~/.claude/skills/caveman` shows up in a project that also has `.claude/skills/cyberpunk-aesthetic`.
+Project-level entries win on name collision (existing precedence already handles this via the `seen` set; we just prepend user-global so it's processed first and overridden by later dirs). Verify with a quick test that `~/.claude/skills/caveman` shows up in a project that also has `.claude/skills/perf-checklist`.
 
 ### Picker state
 

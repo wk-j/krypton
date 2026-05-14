@@ -184,7 +184,7 @@ CSS additions echo existing chip patterns:
   left: 0; right: 0;
   background: var(--krypton-bg-elev, #0c1018);
   border: 1px solid var(--krypton-border, #1f2a3a);
-  /* scanline overlay omitted for brevity — match cyberpunk-aesthetic skill */
+  /* scanline overlay omitted for brevity — match DESIGN.md */
 }
 ```
 

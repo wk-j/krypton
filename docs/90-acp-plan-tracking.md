@@ -175,7 +175,7 @@ None. No new IPC.
 - Translucent background (e.g., `rgba(<surface>, 0.92)`) with the standard cyberpunk border + faint outer glow. **No `backdrop-filter`** (platform gotcha — freezes WKWebView).
 - `pointer-events: auto` on the panel, `none` on a wrapping ghost layer if needed (not expected — panel is keyboard-only, no clicks).
 
-**Visual rules** (consistent with cyberpunk-aesthetic skill + existing fs-review card):
+**Visual rules** (consistent with `DESIGN.md` + existing fs-review card):
 - `--pending`: dim foreground, faint border.
 - `--in-progress`: amber accent (reuse `--krypton-warning` family), subtle pulse on the mark.
 - `--completed`: green accent (reuse `--krypton-success` family), strikethrough on text.

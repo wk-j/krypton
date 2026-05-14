@@ -264,7 +264,7 @@ New DOM under each webview pane:
     .krypton-webview-loading-bar  ← thin animated bar above host while loading
 ```
 
-The chrome occupies the top ~28px of the pane content area; `.krypton-webview-host` fills the remaining rect and is what we measure with `ResizeObserver`. Cyberpunk styling matches existing panes (`/cyberpunk-aesthetic` skill conventions): corner accents on the outer pane, neon green/cyan border per theme accent, scanline overlay omitted inside the host area (no DOM there).
+The chrome occupies the top ~28px of the pane content area; `.krypton-webview-host` fills the remaining rect and is what we measure with `ResizeObserver`. Cyberpunk styling matches existing panes (per `DESIGN.md`): corner accents on the outer pane, neon green/cyan border per theme accent, scanline overlay omitted inside the host area (no DOM there).
 
 ### Configuration
 
