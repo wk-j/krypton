@@ -1,16 +1,16 @@
-/* ─── File Manager — Cassette Futurism ─── */
-/* Alien/Nostromo terminal: amber phosphor, industrial chrome, CRT warmth */
+/* ─── File Manager — Krypton Dark cyberpunk ─── */
+/* Scoped --fm-* tokens remap to the cyan/slate Krypton Dark palette (see DESIGN.md). */
 
 .krypton-file-manager {
-  --fm-amber: #ffb300;
-  --fm-amber-rgb: 255, 179, 0;
-  --fm-amber-dim: #cc8800;
-  --fm-amber-bright: #ffd54f;
-  --fm-warm-white: #e8d5b0;
-  --fm-warm-dim: #a89070;
-  --fm-panel-bg: rgba(20, 14, 8, 0.5);
-  --fm-border: rgba(255, 179, 0, 0.18);
-  --fm-border-strong: rgba(255, 179, 0, 0.35);
+  --fm-amber: #0cf;
+  --fm-amber-rgb: 0, 204, 255;
+  --fm-amber-dim: #0099b3;
+  --fm-amber-bright: #33ddff;
+  --fm-warm-white: #b0c4d8;
+  --fm-warm-dim: #6c7e92;
+  --fm-panel-bg: rgba(6, 10, 18, 0.5);
+  --fm-border: rgba(0, 204, 255, 0.15);
+  --fm-border-strong: rgba(0, 204, 255, 0.4);
 
   position: relative;
   display: flex;
@@ -36,8 +36,8 @@
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 0, 0, 0.06) 2px,
-    rgba(0, 0, 0, 0.06) 4px
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
   );
   pointer-events: none;
   z-index: 9999;
