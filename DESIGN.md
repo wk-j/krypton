@@ -196,4 +196,9 @@ Breaking this order — for example, an opaque modal over a translucent palette 
 
 The rules above describe the *core* Krypton Dark identity. They are intentionally tight because the product's brand depends on consistency across a long-running, always-on, full-screen surface that the user lives inside.
 
-If you are building something fundamentally different in character (a Retro-Futurism mode, a Diegetic HUD overlay, a Cassette-Futurism nostalgia skin), do not bend Krypton Dark — define a new theme TOML with its own tokens. The chrome architecture supports it. What must *not* happen is partial drift: a rounded corner here, an opaque modal there, a single-layer shadow somewhere else. That reads as bugs, not style.
+If you are building something fundamentally different in character, do not bend Krypton Dark — define a new aesthetic in its own scoped per-view CSS file (e.g. `src/styles/vault-view.css`) and document it as a sibling `DESIGN.{name}.md` at the repo root. The codebase currently ships two alternatives:
+
+- **`DESIGN.nasa.md`** — NASA Mission Control retro-futurism (Vault Viewer, `.krypton-vault`)
+- **`DESIGN.amber.md`** — Warm amber phosphor / cassette futurism (Agent view, `.krypton-agent`)
+
+What must *not* happen is partial drift inside Krypton Dark surfaces: a rounded corner here, an opaque modal there, a single-layer shadow somewhere else. That reads as bugs, not style.
