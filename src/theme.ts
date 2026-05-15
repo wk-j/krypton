@@ -4,6 +4,16 @@
 
 import { invoke } from './profiler/ipc';
 
+/** Parse a "#rrggbb" hex string into a "r, g, b" triplet suitable for rgba(). */
+function hexToRgb(hex: string): string {
+  const h = hex.replace('#', '').trim();
+  if (h.length !== 6) return '0, 0, 0';
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `${r}, ${g}, ${b}`;
+}
+
 // ─── Theme Data Types (mirrors Rust FullTheme) ───────────────────
 
 export interface ThemeMeta {
@@ -255,6 +265,7 @@ export class FrontendThemeEngine {
 
   /** Apply a full theme — sets CSS custom properties and notifies callbacks */
   apply(theme: FullTheme): void {
+
     this.currentTheme = theme;
     this.setCssProperties(theme);
     for (const cb of this.changeCallbacks) {
@@ -273,6 +284,34 @@ export class FrontendThemeEngine {
     s('--krypton-bg', theme.colors.background);
     s('--krypton-cursor', theme.colors.cursor);
     s('--krypton-selection', theme.colors.selection);
+
+    // RGB triplets — let components compose rgba(var(--krypton-*-rgb), α)
+    // without hard-coding hex. The primary accent rgb tracks the focused
+    // corner-accent color, which is the canonical brand cyan per DESIGN.md.
+    s('--krypton-accent-rgb', hexToRgb(theme.focused.corner_accent_color));
+    s('--krypton-fg-rgb', hexToRgb(theme.colors.foreground));
+    s('--krypton-bg-rgb', hexToRgb(theme.colors.background));
+    s('--krypton-danger-rgb', hexToRgb(theme.colors.red));
+    s('--krypton-warning-rgb', hexToRgb(theme.colors.yellow));
+    s('--krypton-success-rgb', hexToRgb(theme.colors.bright_green));
+    s('--krypton-special-rgb', hexToRgb(theme.colors.magenta));
+    s('--krypton-info-rgb', hexToRgb(theme.colors.blue));
+
+    // Opacity tier scale — see DESIGN.md § The Opacity Scale.
+    s('--krypton-opacity-ghost', '0.04');
+    s('--krypton-opacity-inactive', '0.15');
+    s('--krypton-opacity-hover', '0.4');
+    s('--krypton-opacity-active', '0.7');
+    s('--krypton-opacity-neon', '1');
+
+    // Z-index ladder — see DESIGN.md § Elevation.
+    s('--krypton-z-window', '100');
+    s('--krypton-z-window-focused', '110');
+    s('--krypton-z-edge-glow', '200');
+    s('--krypton-z-overlay', '1000');
+    s('--krypton-z-modal', '2000');
+    s('--krypton-z-toast', '3000');
+    s('--krypton-z-hint', '4000');
     s('--krypton-ansi-0', theme.colors.black);
     s('--krypton-ansi-1', theme.colors.red);
     s('--krypton-ansi-2', theme.colors.green);
