@@ -64,6 +64,25 @@
   box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
 }
 
+/* Breathing peak — focused window's corner accents pulse subtly.
+   DESIGN.md § Motion: breathingPulse 3s ease-in-out infinite. */
+@keyframes krypton-corner-breathing {
+  0%, 100% { box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6); }
+  50%      { box-shadow: 0 0 10px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9); }
+}
+
+.krypton-window--focused .krypton-window__corner::before,
+.krypton-window--focused .krypton-window__corner::after {
+  animation: krypton-corner-breathing 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .krypton-window--focused .krypton-window__corner::before,
+  .krypton-window--focused .krypton-window__corner::after {
+    animation: none;
+  }
+}
+
 /* Top-left corner */
 .krypton-window__corner--tl {
   top: -1px;
@@ -149,6 +168,39 @@
   background: var(--krypton-titlebar-bg, transparent);
   -webkit-user-select: none;
   user-select: none;
+  position: relative;
+  overflow: hidden;
+}
+
+/* One-shot scan-wipe ack — flashed by compositor.flashAck(viewId) after
+   palette commit, hint pick, dialog OK. 400ms linear, single iteration.
+   Distinct from the infinite progress sweep used during OSC 9;4 progress. */
+@keyframes krypton-ack-wipe {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+.krypton-window__titlebar--ack::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 50%,
+    transparent 100%
+  );
+  animation: krypton-ack-wipe 400ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .krypton-window__titlebar--ack::after {
+    animation: none;
+  }
 }
 
 .krypton-window__label-group {
@@ -230,6 +282,31 @@
   right: 0;
   height: 1px;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
+}
+
+/* Per-role tab chamfer (DESIGN.md § Geometry — angled clip-paths on active tab).
+   Different pane roles get different chamfer offsets so the user can identify
+   pane type with peripheral vision. Values are in px (height = 28px tab). */
+.krypton-tab[data-role='terminal']     { --krypton-tab-chamfer: 4px; }
+.krypton-tab[data-role='agent']        { --krypton-tab-chamfer: 8px; }
+.krypton-tab[data-role='acp_harness']  { --krypton-tab-chamfer: 8px; }
+.krypton-tab[data-role='acp']          { --krypton-tab-chamfer: 8px; }
+.krypton-tab[data-role='diff']         { --krypton-tab-chamfer: 4px; }
+.krypton-tab[data-role='markdown']     { --krypton-tab-chamfer: 4px; }
+.krypton-tab[data-role='vault']        { --krypton-tab-chamfer: 2px; }
+.krypton-tab[data-role='webview']      { --krypton-tab-chamfer: 6px; }
+.krypton-tab[data-role='file_manager'] { --krypton-tab-chamfer: 0px; }
+.krypton-tab[data-role='context']      { --krypton-tab-chamfer: 4px; }
+.krypton-tab[data-role='hurl']         { --krypton-tab-chamfer: 6px; }
+.krypton-tab[data-role='pencil']       { --krypton-tab-chamfer: 4px; }
+
+.krypton-tab--active {
+  clip-path: polygon(
+    var(--krypton-tab-chamfer, 4px) 0,
+    calc(100% - var(--krypton-tab-chamfer, 4px)) 0,
+    100% 100%,
+    0 100%
+  );
 }
 
 /* Inactive tab hover — just lift the text a hair */

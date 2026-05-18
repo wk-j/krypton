@@ -825,6 +825,28 @@ export class Compositor {
     return this.getFocusedPane()?.viewId ?? null;
   }
 
+  /** One-shot scan-wipe ack across the titlebar of the window containing
+   *  the given viewId (or the focused window if omitted). Used by palette
+   *  commit, hint pick, dialog confirm. Auto-cleans on animationend. */
+  flashAck(viewId?: string): void {
+    const targetViewId = viewId ?? this.getFocusedViewId();
+    if (!targetViewId) return;
+    const info = this.findPaneInfoByViewId(targetViewId);
+    if (!info) return;
+    const titlebar = info.win.element.querySelector<HTMLElement>('.krypton-window__titlebar');
+    if (!titlebar) return;
+    // Restart the animation if already running by removing-then-adding the class
+    // in a microtask so the browser sees the modifier toggle.
+    titlebar.classList.remove('krypton-window__titlebar--ack');
+    void titlebar.offsetWidth;
+    titlebar.classList.add('krypton-window__titlebar--ack');
+    const cleanup = (): void => {
+      titlebar.classList.remove('krypton-window__titlebar--ack');
+      titlebar.removeEventListener('animationend', cleanup);
+    };
+    titlebar.addEventListener('animationend', cleanup);
+  }
+
   /** Look up the current address of a view by its viewId. */
   addressOf(viewId: string): ViewAddress | null {
     const info = this.findPaneInfoByViewId(viewId);
@@ -1012,10 +1034,15 @@ export class Compositor {
     const shouldShow = this.tabsConfig.always_show_tabbar || win.tabs.length > 1;
     win.tabBarElement.classList.toggle('krypton-window__tabbar--visible', shouldShow);
 
-    // Update active indicators
+    // Update active indicators + role attribute used by per-role tab chamfer.
     const tabEls = win.tabBarElement.querySelectorAll('.krypton-tab');
     tabEls.forEach((el, i) => {
       el.classList.toggle('krypton-tab--active', i === win.activeTabIndex);
+      const tab = win.tabs[i];
+      if (!tab) return;
+      const focused = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
+      const role: PaneContentType = focused?.contentView?.type ?? 'terminal';
+      (el as HTMLElement).dataset.role = role;
     });
   }
 

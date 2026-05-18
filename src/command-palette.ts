@@ -436,6 +436,10 @@ export class CommandPalette {
 
     for (const cb of this.onCloseCallbacks) cb();
 
+    // Visual ack on the focused window's titlebar — silent confirmation that
+    // the palette commit landed. See docs/104-chrome-signal-upgrades.md.
+    this.compositor.flashAck();
+
     // Execute the action (may be async)
     const result = action.execute();
     if (result instanceof Promise) {
