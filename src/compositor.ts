@@ -809,6 +809,22 @@ export class Compositor {
     return null;
   }
 
+  /** Look up the DOM element of a window by id. Used by ViewBus subscribers
+   *  (e.g. chrome-signals) that need to write CSS state on the chrome. */
+  getWindowElement(windowId: WindowId): HTMLElement | null {
+    return this.windows.get(windowId)?.element ?? null;
+  }
+
+  /** Look up the DOM element of a pane by its viewId. */
+  getPaneElement(viewId: string): HTMLElement | null {
+    return this.findPaneInfoByViewId(viewId)?.pane.element ?? null;
+  }
+
+  /** Returns the viewId of the currently focused pane (focused window's active tab's focused pane). */
+  getFocusedViewId(): string | null {
+    return this.getFocusedPane()?.viewId ?? null;
+  }
+
   /** Look up the current address of a view by its viewId. */
   addressOf(viewId: string): ViewAddress | null {
     const info = this.findPaneInfoByViewId(viewId);

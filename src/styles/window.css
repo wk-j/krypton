@@ -32,6 +32,20 @@
   box-shadow: 0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
 }
 
+/* ─── Signal-state chrome — drives corner accent + border tint via the focused
+   pane's view:state signal. See docs/104-chrome-signal-upgrades.md and
+   docs/105-view-protocol.md. The override re-targets --krypton-window-accent-rgb
+   for descendants (corners, border, header accent, edge glow) — no per-element
+   rule changes needed. */
+.krypton-window[data-signal='ok']      { --krypton-window-accent-rgb: var(--krypton-success-rgb); }
+.krypton-window[data-signal='warn']    { --krypton-window-accent-rgb: var(--krypton-warning-rgb); }
+.krypton-window[data-signal='err']     { --krypton-window-accent-rgb: var(--krypton-danger-rgb); }
+.krypton-window[data-signal='special'] { --krypton-window-accent-rgb: var(--krypton-special-rgb); }
+.krypton-window[data-signal='needs_attention'] { --krypton-window-accent-rgb: var(--krypton-warning-rgb); }
+/* 'busy' and 'normal' use the default primary; explicit rule kept for completeness */
+.krypton-window[data-signal='busy'],
+.krypton-window[data-signal='normal']  { /* default primary */ }
+
 /* ─── Corner accents ─── */
 /* Small glowing L-shapes at each corner */
 .krypton-window__corner {

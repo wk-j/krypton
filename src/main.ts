@@ -22,6 +22,7 @@ import { MusicPlayer } from './music';
 import { installGlobalCopyOnSelect } from './copy-on-select';
 import { getViewBus } from './view-bus';
 import { startPtyBridge } from './pty-bridge';
+import { startChromeSignals } from './chrome-signals';
 
 interface CaptureResult {
   path: string;
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
   // signals emitted while the initial window is created. See docs/105-view-protocol.md.
   const bus = getViewBus();
   compositor.attachToBus(bus);
+  startChromeSignals(bus, compositor);
   try {
     await startPtyBridge(bus, compositor);
   } catch (e) {
