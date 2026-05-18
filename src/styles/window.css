@@ -455,6 +455,9 @@
     transparent 100%
   );
   opacity: var(--krypton-glow-intensity, 0.8);
+  /* Smooth the 5 Hz throughput-driven opacity updates from chrome-signals so
+     command output reads as a gentle pulse instead of a flicker. */
+  transition: opacity 250ms ease-out;
   mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   pointer-events: none;

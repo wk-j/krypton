@@ -683,6 +683,43 @@ export class Compositor {
     this.wireCopyOnSelect(pane.terminal);
   }
 
+  /** Subscribe to xterm.js OSC 0/2 title-change events with dedupe + debounce.
+   *  Shells emit a title change on every preexec AND precmd hook, so running a
+   *  fast command produces a "cwd → cmd → cwd" sequence in <100ms — visible as
+   *  a text flicker. We coalesce within a short window and only paint the last
+   *  value after the burst settles. Genuine title changes (cd into a new dir)
+   *  appear after the debounce delay (imperceptible). `format` runs first;
+   *  `shouldApply` gates writes by external state. */
+  private wireTitleSync(
+    terminal: Terminal,
+    apply: (styled: string) => void,
+    options?: {
+      format?: (raw: string) => string;
+      shouldApply?: () => boolean;
+    },
+  ): void {
+    const DEBOUNCE_MS = 120;
+    let last = '';
+    let pending: string | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const flush = (): void => {
+      timer = null;
+      if (pending === null || pending === last) return;
+      last = pending;
+      apply(pending);
+      pending = null;
+    };
+    terminal.onTitleChange((title: string) => {
+      if (!title) return;
+      if (options?.shouldApply && !options.shouldApply()) return;
+      const styled = options?.format ? options.format(title) : title;
+      if (styled === last) return;
+      pending = styled;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(flush, DEBOUNCE_MS);
+    });
+  }
+
   /** Spawn a PTY for a pane and register it in the session map */
   private async spawnPaneSession(
     pane: Pane,
@@ -1615,17 +1652,20 @@ export class Compositor {
     this.sound.play('window.create');
 
     // Listen for shell title changes (OSC 0/2 sequences)
-    pane.terminal!.onTitleChange((title: string) => {
-      if (title) {
-        const styled = this.claudeHookManager
-          ? this.claudeHookManager.formatTerminalTitle(title)
-          : title;
+    this.wireTitleSync(
+      pane.terminal!,
+      (styled) => {
         label.textContent = styled;
         tab.title = styled;
         const titleEl = tab.element.querySelector('.krypton-tab__title');
         if (titleEl) titleEl.textContent = styled;
-      }
-    });
+      },
+      {
+        format: this.claudeHookManager
+          ? (raw) => this.claudeHookManager!.formatTerminalTitle(raw)
+          : undefined,
+      },
+    );
 
     // Wire input BEFORE spawning so xterm.js replies (e.g. fish DA1 reply)
     // emitted during shell startup are buffered and flushed.
@@ -3476,13 +3516,13 @@ export class Compositor {
     await this.spawnPaneSession(pane, win.id, tabId, cwd);
 
     // Title change listener
-    pane.terminal?.onTitleChange((title: string) => {
-      if (title) {
-        tab.title = title;
+    if (pane.terminal) {
+      this.wireTitleSync(pane.terminal, (styled) => {
+        tab.title = styled;
         const titleEl = tab.element.querySelector('.krypton-tab__title');
-        if (titleEl) titleEl.textContent = title;
-      }
-    });
+        if (titleEl) titleEl.textContent = styled;
+      });
+    }
 
     pane.terminal?.focus();
     this.sound.play('tab.create');
@@ -3805,11 +3845,15 @@ export class Compositor {
     await this.spawnPaneSession(newPane, win.id, tab.id, cwd);
 
     // Title change listener for new pane
-    newPane.terminal?.onTitleChange((title: string) => {
-      if (title && tab.focusedPaneId === newPane.id) {
-        tab.title = title;
-      }
-    });
+    if (newPane.terminal) {
+      this.wireTitleSync(
+        newPane.terminal,
+        (styled) => {
+          tab.title = styled;
+        },
+        { shouldApply: () => tab.focusedPaneId === newPane.id },
+      );
+    }
 
     tab.focusedPaneId = newPane.id;
 
@@ -4253,10 +4297,8 @@ export class Compositor {
     }
 
     // Listen for shell title changes (OSC 0/2 sequences)
-    terminal.onTitleChange((title: string) => {
-      if (title) {
-        label.textContent = title;
-      }
+    this.wireTitleSync(terminal, (styled) => {
+      label.textContent = styled;
     });
 
     this.qtTerminal = { terminal, fitAddon };
@@ -5238,11 +5280,9 @@ export class Compositor {
         ptyStatus.textContent = `SSH: ${info.user}@${info.host}`;
       }
 
-      pane.terminal!.onTitleChange((title: string) => {
-        if (title) {
-          tab.title = title;
-          titleSpan.textContent = title;
-        }
+      this.wireTitleSync(pane.terminal!, (styled) => {
+        tab.title = styled;
+        titleSpan.textContent = styled;
       });
 
       pane.terminal?.focus();
