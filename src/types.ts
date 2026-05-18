@@ -167,6 +167,10 @@ export interface ContentView {
 /** A leaf pane — hosts one xterm.js terminal + PTY session, or a content view */
 export interface Pane {
   id: PaneId;
+  /** Stable runtime UUID for the ViewBus address. New value on each pane create,
+   *  and again when the pane's contentType is swapped in place. Not persisted.
+   *  See docs/105-view-protocol.md. */
+  viewId: string;
   sessionId: SessionId | null;
   terminal: Terminal | null;
   fitAddon: FitAddon | null;

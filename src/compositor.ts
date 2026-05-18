@@ -51,6 +51,8 @@ import { installPerspectiveMouseFix } from './perspective-fix';
 import { ProgressGauge } from './progress-gauge';
 import { probeRemoteCwd, type SshConnectionInfo } from './ssh-session';
 import { WebviewContentView } from './webview-view';
+import type { ViewBus } from './view-bus';
+import { SYSTEM_SOURCE, type ViewAddress } from './view-bus-types';
 
 function webviewTitleForUrl(url: string): string {
   try {
@@ -629,7 +631,17 @@ export class Compositor {
       console.log('[krypton:shaders] Shader skipped — enabled:', this.shaderConfig.enabled, 'preset:', this.shaderConfig.preset);
     }
 
-    return { id: paneId, sessionId: null, terminal, fitAddon, element: el, shaderInstance, contentView: null, pendingInput: [] };
+    return {
+      id: paneId,
+      viewId: crypto.randomUUID(),
+      sessionId: null,
+      terminal,
+      fitAddon,
+      element: el,
+      shaderInstance,
+      contentView: null,
+      pendingInput: [],
+    };
   }
 
   /** Copy-on-select: copy terminal selection to clipboard when text is selected */
@@ -760,6 +772,93 @@ export class Compositor {
     if (!pane) return null;
 
     return { paneId: pane.id, element: pane.element };
+  }
+
+  /** ViewBus integration — returns the bus address of a pane that hosts the
+   *  given PTY session. Implements pty-bridge's AddressResolver. */
+  addressFromSession(sessionId: SessionId): ViewAddress | null {
+    const loc = this.sessionMap.get(sessionId);
+    if (!loc) return null;
+    const win = this.windows.get(loc.windowId);
+    if (!win) return null;
+    const tab = win.tabs.find((t) => t.id === loc.tabId);
+    if (!tab) return null;
+    const pane = this.findPaneInTree(tab.paneTree, loc.paneId);
+    if (!pane) return null;
+    return {
+      viewId: pane.viewId,
+      role: pane.contentView?.type ?? 'terminal',
+      windowId: loc.windowId,
+      tabId: loc.tabId,
+      paneId: loc.paneId,
+    };
+  }
+
+  /** ViewBus integration — find a pane (and its containing tab/window) by viewId.
+   *  O(panes) walk; called from infrequent intent handlers, not the hot path. */
+  private findPaneInfoByViewId(
+    viewId: string,
+  ): { pane: Pane; tab: Tab; win: KryptonWindow } | null {
+    for (const win of this.windows.values()) {
+      for (const tab of win.tabs) {
+        for (const pane of this.collectPanes(tab.paneTree)) {
+          if (pane.viewId === viewId) return { pane, tab, win };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Look up the current address of a view by its viewId. */
+  addressOf(viewId: string): ViewAddress | null {
+    const info = this.findPaneInfoByViewId(viewId);
+    if (!info) return null;
+    return {
+      viewId,
+      role: info.pane.contentView?.type ?? 'terminal',
+      windowId: info.win.id,
+      tabId: info.tab.id,
+      paneId: info.pane.id,
+    };
+  }
+
+  /** ViewBus integration — attach bridges + intent handlers to a bus.
+   *  Call once at boot, before windows are created so the bus catches the
+   *  initial focus-change. See docs/105-view-protocol.md § Compositor ↔ Bus. */
+  attachToBus(bus: ViewBus): void {
+    this.onFocusChange((id) => {
+      bus.publishSignal({
+        kind: 'system:focus-change',
+        source: SYSTEM_SOURCE,
+        value: { windowId: id },
+      });
+    });
+    this.onRelayout(() => {
+      bus.publishSignal({
+        kind: 'system:relayout',
+        source: SYSTEM_SOURCE,
+        value: {},
+      });
+    });
+
+    bus.onIntent({ kind: 'pane:focus' }, (intent) => {
+      const info = this.findPaneInfoByViewId(intent.payload.viewId);
+      if (!info) return { consumed: false };
+      this.focusWindow(info.win.id);
+      const idx = info.win.tabs.indexOf(info.tab);
+      if (idx >= 0) info.win.activeTabIndex = idx;
+      info.tab.focusedPaneId = info.pane.id;
+      info.pane.terminal?.focus();
+      info.pane.contentView?.focusView?.();
+      return { consumed: true };
+    });
+
+    bus.onIntent({ kind: 'pane:close' }, (intent) => {
+      const info = this.findPaneInfoByViewId(intent.payload.viewId);
+      if (!info) return { consumed: false };
+      this.closePaneInTab(info.tab, info.pane.id, info.win);
+      return { consumed: true };
+    });
   }
 
   /** Re-fit a single pane by ID (triggers addon-fit + resize_pty). */
@@ -1604,6 +1703,7 @@ export class Compositor {
 
     const pane: Pane = {
       id: paneId,
+      viewId: crypto.randomUUID(),
       sessionId: null,
       terminal: null,
       fitAddon: null,
@@ -3387,6 +3487,7 @@ export class Compositor {
 
     const pane: Pane = {
       id: paneId,
+      viewId: crypto.randomUUID(),
       sessionId: null,
       terminal: null,
       fitAddon: null,

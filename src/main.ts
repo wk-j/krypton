@@ -20,6 +20,8 @@ import { ClaudeHookManager } from './claude-hooks';
 import { NotificationController } from './notification';
 import { MusicPlayer } from './music';
 import { installGlobalCopyOnSelect } from './copy-on-select';
+import { getViewBus } from './view-bus';
+import { startPtyBridge } from './pty-bridge';
 
 interface CaptureResult {
   path: string;
@@ -65,6 +67,17 @@ async function main(): Promise<void> {
 
   // Connect theme engine to compositor (updates terminals on theme change)
   compositor.setThemeEngine(themeEngine);
+
+  // ViewBus — pub/sub channel for cross-view state and intents.
+  // Attached *before* applyConfig so the bus catches the first focus/relayout
+  // signals emitted while the initial window is created. See docs/105-view-protocol.md.
+  const bus = getViewBus();
+  compositor.attachToBus(bus);
+  try {
+    await startPtyBridge(bus, compositor);
+  } catch (e) {
+    console.error('[Krypton] Failed to start PTY bridge:', e);
+  }
 
   // Apply config if loaded
   if (config) {
