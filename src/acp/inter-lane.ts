@@ -54,6 +54,14 @@ export interface LaneHost {
 interface PendingSend {
   envelopeId: string;
   toLaneId: string;
+  sentAt: number;
+}
+
+export interface PendingPeerSummary {
+  toLaneId: string;
+  toDisplayName: string;
+  envelopeId: string;
+  sentAt: number;
 }
 
 const REPLY_HINT =
@@ -93,6 +101,16 @@ export class InterLaneCoordinator {
     return this.inbox(laneId).depth();
   }
 
+  pendingPeersFor(laneId: string): PendingPeerSummary[] {
+    const pending = this.pending.get(laneId) ?? [];
+    return pending.map((p) => ({
+      toLaneId: p.toLaneId,
+      toDisplayName: this.host.getLane(p.toLaneId)?.displayName ?? p.toLaneId,
+      envelopeId: p.envelopeId,
+      sentAt: p.sentAt,
+    }));
+  }
+
   deliver(env: InterLaneEnvelope): DeliveryResult {
     if (env.fromLaneId === env.toLaneId) {
       return { delivered: false, reason: 'self_send' };
@@ -111,7 +129,7 @@ export class InterLaneCoordinator {
     }
 
     this.inbox(env.toLaneId).push(env);
-    this.trackPending(env.fromLaneId, env.id, env.toLaneId);
+    this.trackPending(env.fromLaneId, env.id, env.toLaneId, env.sentAt);
 
     const sender = this.host.getLane(env.fromLaneId);
     if (sender) {
@@ -246,9 +264,9 @@ export class InterLaneCoordinator {
     return inbox;
   }
 
-  private trackPending(senderId: string, envelopeId: string, toLaneId: string): void {
+  private trackPending(senderId: string, envelopeId: string, toLaneId: string, sentAt: number): void {
     const list = this.pending.get(senderId) ?? [];
-    list.push({ envelopeId, toLaneId });
+    list.push({ envelopeId, toLaneId, sentAt });
     this.pending.set(senderId, list);
   }
 

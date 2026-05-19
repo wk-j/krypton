@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-08
 > Milestone: M8 — Polish
+> Note: Spec 107 extends this detector into a harness-wide memory/peer taxonomy while preserving the built-in-server-marker safety rule described here for third-party tools.
 
 ## Problem
 
@@ -14,8 +15,8 @@ Keep memory auto-approval, but make the detector require both an allowed memory 
 
 ## Research
 
-- `src/acp/acp-harness-view.ts` already defines `HARNESS_MEMORY_TOOL_NAMES` and auto-resolves matching permission requests in `addPermission()`.
-- `harnessMemoryPermissionToolName()` had three detection paths. It missed namespaced tool identifiers such as `mcp__krypton_harness_memory__memory_set` because underscores prevent the old word-boundary regex from matching `memory_set`.
+- `src/acp/acp-harness-view.ts` defines the harness auto-allow tool taxonomy and auto-resolves matching permission requests in `addPermission()`.
+- The original `harnessMemoryPermissionToolName()` detector had three detection paths. It missed namespaced tool identifiers such as `mcp__krypton_harness_memory__memory_set` because underscores prevent the old word-boundary regex from matching `memory_set`. Spec 107 later renamed the helper to `harnessAutoAllowToolName()` when peer tools joined the same harness policy.
 - ACP permission display payloads can expose the usable tool identity in `ToolCall.content[].content.text` instead of structured `rawInput`, for example `Tool: krypton-harness-memory/memory_set`.
 - The structured detector also needed to keep the same built-in-server-marker requirement as the raw/title string paths.
 - `src-tauri/src/hook_server.rs` exposes the built-in HTTP MCP endpoint at `POST /mcp/harness/:harness_id/lane/:lane_label` and reports server name `krypton-harness-memory`.
@@ -36,9 +37,9 @@ Keep memory auto-approval, but make the detector require both an allowed memory 
 
 | File | Change |
 |------|--------|
-| `src/acp/acp-harness-view.ts` | Tighten `harnessMemoryPermissionToolName()` so every accepted path requires a built-in server marker, and support namespaced built-in memory tool names. |
+| `src/acp/acp-harness-view.ts` | Tighten the harness auto-allow detector so every accepted path requires a built-in server marker, and support namespaced built-in memory tool names. |
 | `src/acp/acp-harness-view.test.ts` | Add focused Vitest coverage for built-in memory auto-approval detection. |
-| `docs/72-acp-harness-view.md` | Clarify that memory auto-allow applies only when the permission request identifies Krypton's built-in memory MCP server. |
+| `docs/72-acp-harness-view.md` | Clarify that harness auto-allow applies only when the permission request identifies Krypton's built-in harness MCP server. |
 | `docs/83-acp-shared-mcp-config.md` | Optionally tighten wording that `.mcp.json` tools with memory-like names still prompt. |
 | `docs/PROGRESS.md` | Add a Recent Landings note after implementation. |
 
@@ -77,11 +78,11 @@ All other requests, including a third-party MCP server that also exposes `memory
 ```
 1. ACP adapter sends session/request_permission.
 2. AcpClient emits permission_request to AcpHarnessView.
-3. addPermission() calls harnessMemoryPermissionToolName().
+3. addPermission() calls the harness auto-allow detector.
 4. Detector scans toolCall.rawInput, toolCall.title, and toolCall.content text.
 5. If allowed memory tool + built-in marker are both present:
    5a. resolveMemoryPermission() sends allow_once/allow_always option.
-   5b. Transcript logs "memory auto-allow".
+   5b. Transcript logs a structured permission card with the harness auto-allow reason.
 6. Otherwise the permission is queued and rendered in the composer.
 ```
 

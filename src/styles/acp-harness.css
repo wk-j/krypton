@@ -1116,7 +1116,26 @@
   color: #ffd166;
 }
 
-.acp-harness__perm-head {
+.acp-harness__perm-card {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+  border-left: 2px solid rgba(255, 209, 102, 0.56);
+  background: rgba(255, 176, 0, 0.045);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.12);
+}
+
+.acp-harness__perm-card[data-decision='auto_allowed'],
+.acp-harness__perm-card[data-decision='accepted'] {
+  border-left-color: rgba(142, 255, 176, 0.52);
+}
+
+.acp-harness__perm-card[data-decision='rejected'],
+.acp-harness__perm-card[data-decision='failed'] {
+  border-left-color: rgba(255, 107, 139, 0.7);
+}
+
+.acp-harness__perm-row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1125,8 +1144,52 @@
   font-size: var(--krypton-font-size, 13px);
 }
 
+.acp-harness__perm-family,
+.acp-harness__perm-decision {
+  color: rgba(255, 209, 102, 0.72);
+  font-size: 0.78em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.acp-harness__perm-tool {
+  color: #ffd166;
+  text-shadow: 0 0 8px rgba(255, 209, 102, 0.24);
+}
+
+.acp-harness__perm-subject {
+  min-width: 0;
+  max-width: 34em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(216, 232, 216, 0.92);
+}
+
+.acp-harness__perm-decision {
+  margin-left: auto;
+}
+
 .acp-harness__perm-suffix {
   color: rgba(216, 232, 216, 0.55);
+}
+
+.acp-harness__perm-reason,
+.acp-harness__perm-preview,
+.acp-harness__perm-actions {
+  color: rgba(216, 232, 216, 0.62);
+  font-size: 0.86em;
+  line-height: 1.35;
+}
+
+.acp-harness__perm-preview {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acp-harness__perm-actions {
+  color: rgba(255, 209, 102, 0.75);
 }
 
 .acp-harness__msg--memory .acp-harness__msg-body {

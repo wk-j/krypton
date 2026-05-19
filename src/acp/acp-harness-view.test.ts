@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { harnessMemoryPermissionToolName } from './acp-harness-view';
+import { harnessAutoAllowToolName } from './acp-harness-view';
 
 import type { ToolCall } from './types';
 
@@ -13,9 +13,9 @@ function permissionFor(toolCall: Partial<ToolCall>): { toolCall: ToolCall } {
   };
 }
 
-describe('ACP harness memory permission detection', () => {
+describe('ACP harness auto-allow permission detection', () => {
   it('accepts Codex-style namespaced built-in memory tool names', () => {
-    expect(harnessMemoryPermissionToolName(permissionFor({
+    expect(harnessAutoAllowToolName(permissionFor({
       title: 'mcp__krypton_harness_memory__memory_set',
       rawInput: {
         toolName: 'mcp__krypton_harness_memory__memory_set',
@@ -25,7 +25,7 @@ describe('ACP harness memory permission detection', () => {
   });
 
   it('accepts built-in memory endpoint markers with plain tool names', () => {
-    expect(harnessMemoryPermissionToolName(permissionFor({
+    expect(harnessAutoAllowToolName(permissionFor({
       title: 'memory_get',
       rawInput: {
         name: 'memory_get',
@@ -35,7 +35,7 @@ describe('ACP harness memory permission detection', () => {
   });
 
   it('accepts rendered ACP memory tool labels from permission content', () => {
-    expect(harnessMemoryPermissionToolName(permissionFor({
+    expect(harnessAutoAllowToolName(permissionFor({
       title: 'MEMORY_SET',
       content: [{
         type: 'content',
@@ -52,7 +52,7 @@ describe('ACP harness memory permission detection', () => {
   });
 
   it('rejects memory-like tool names without a built-in memory marker', () => {
-    expect(harnessMemoryPermissionToolName(permissionFor({
+    expect(harnessAutoAllowToolName(permissionFor({
       title: 'memory_set',
       rawInput: {
         name: 'memory_set',
@@ -62,12 +62,49 @@ describe('ACP harness memory permission detection', () => {
   });
 
   it('rejects non-memory tools even when the built-in marker is present', () => {
-    expect(harnessMemoryPermissionToolName(permissionFor({
+    expect(harnessAutoAllowToolName(permissionFor({
       title: 'mcp__krypton_harness_memory__shell_run',
       rawInput: {
         name: 'shell_run',
         server: 'krypton_harness_memory',
       },
     }))).toBeNull();
+  });
+
+  it('accepts Codex-style underscored bus namespace for peer_send', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__krypton_harness_bus__peer_send',
+      rawInput: {
+        toolName: 'mcp__krypton_harness_bus__peer_send',
+        arguments: { to_lane: 'Claude-1', message: 'hi', done: false },
+      },
+    }))).toBe('peer_send');
+  });
+
+  it('accepts peer_list under the hyphenated bus marker', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'peer_list',
+      rawInput: {
+        name: 'peer_list',
+        server: 'krypton-harness-bus',
+      },
+    }))).toBe('peer_list');
+  });
+
+  it('accepts peer_send detected via fallback regex on content text', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'PEER_SEND',
+      content: [{
+        type: 'content',
+        content: {
+          type: 'text',
+          text: 'Tool: krypton-harness-bus/peer_send',
+        },
+      }],
+      rawInput: {
+        to_lane: 'Codex-1',
+        message: 'hi',
+      },
+    }))).toBe('peer_send');
   });
 });

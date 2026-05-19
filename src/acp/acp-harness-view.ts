@@ -36,7 +36,7 @@ import type {
   UsageInfo,
 } from './types';
 import { LaneBus } from './lane-bus';
-import { InterLaneCoordinator, type LaneHost } from './inter-lane';
+import { InterLaneCoordinator, type LaneHost, type PendingPeerSummary } from './inter-lane';
 import type {
   AcpLaneMetrics,
   CapturedImage,
@@ -62,6 +62,7 @@ interface HarnessPermission {
   options: PermissionOption[];
   resolvedLabel?: string;
   auto?: boolean;
+  transcriptItem?: HarnessTranscriptItem;
 }
 
 interface HarnessTranscriptItem {
@@ -109,10 +110,22 @@ interface FsActivityPayload {
   error?: string;
 }
 
+type HarnessToolFamily = 'memory' | 'peer';
+type PermissionDecision = 'pending' | 'accepted' | 'rejected' | 'auto_allowed' | 'failed';
+
 interface PermissionPayload {
+  id: number;
+  toolName: string;
+  toolFamily: HarnessToolFamily | 'agent' | 'shell' | 'file' | 'other';
+  serverName: string | null;
   kind: string;
   subject: string;
   suffix?: string;
+  argsPreview: string;
+  options: Array<{ optionId: string; name: string; action: 'accept' | 'reject' | 'other' }>;
+  decision: PermissionDecision;
+  decisionLabel?: string;
+  autoReason?: string;
 }
 
 interface ToolPayload {
@@ -137,12 +150,13 @@ interface StagedImage {
 const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MEMORY_PERMISSION_SCAN_DEPTH = 8;
-const HARNESS_BUS_TOOL_NAMES = new Set([
-  'memory_set', 'memory_get', 'memory_list',
-  'peer_send', 'peer_list',
+const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
+const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
+const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
+  ...HARNESS_MEMORY_TOOL_NAMES,
+  ...HARNESS_PEER_TOOL_NAMES,
 ]);
-const HARNESS_MEMORY_TOOL_NAMES = HARNESS_BUS_TOOL_NAMES; // back-compat alias
-const HARNESS_MEMORY_SERVER_MARKERS = ['krypton-harness-bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
+const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
 interface FileTouchRecord {
   path: string;
@@ -656,7 +670,7 @@ export class AcpHarnessView implements ContentView {
     if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       if (lane.pendingShellId) void this.cancelShell(lane);
-      else if (lane.status === 'busy' || lane.status === 'needs_permission') void this.cancelLane(lane);
+      else if (lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer') void this.cancelLane(lane);
       else this.setDraft(lane, '', 0);
       return true;
     }
@@ -1242,7 +1256,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (lane.status === 'awaiting_peer') {
-      this.flashChip('lane awaiting peer — #cancel first');
+      this.flashChip(`${awaitingPeerText(this.coordinator.pendingPeersFor(lane.id))} first`);
       return;
     }
     const images = lane.stagedImages.slice();
@@ -1378,17 +1392,16 @@ export class AcpHarnessView implements ContentView {
 
   private addPermission(lane: HarnessLane, requestId: number, toolCall: ToolCall, options: PermissionOption[]): void {
     const permission: HarnessPermission = { requestId, toolCall, options };
-    const memoryToolName = harnessMemoryPermissionToolName(permission);
-    if (memoryToolName && pickPermissionOption(permission.options, 'accept')) {
-      void this.resolveMemoryPermission(lane, permission, memoryToolName);
+    const payload = this.describePermission(lane, permission);
+    const item = this.appendPermissionTranscript(lane, permission, payload);
+    permission.transcriptItem = item;
+    const harnessToolName = harnessAutoAllowToolName(permission);
+    if (harnessToolName && pickPermissionOption(permission.options, 'accept')) {
+      void this.resolveHarnessPermission(lane, permission, harnessToolName);
       return;
     }
     lane.pendingPermissions.push(permission);
     this.setLaneStatus(lane, 'needs_permission');
-    const payload = this.describePermission(lane, permission);
-    const text = payload.suffix ? `${payload.kind} ${payload.subject} ${payload.suffix}` : `${payload.kind} ${payload.subject}`;
-    const item = this.appendTranscript(lane, 'permission', text);
-    item.permission = payload;
     if (lane.acceptAllForTurn || lane.rejectAllForTurn) {
       void this.resolvePermission(lane, lane.rejectAllForTurn ? 'reject' : 'accept', true);
     }
@@ -1406,7 +1419,7 @@ export class AcpHarnessView implements ContentView {
     const label = option?.name ?? (action === 'accept' ? 'accepted' : 'rejected');
     permission.resolvedLabel = `${action === 'accept' ? '✓' : '✗'} ${label}${auto ? ' (auto-turn)' : ''}`;
     permission.auto = auto;
-    this.appendTranscript(lane, 'permission', permission.resolvedLabel);
+    this.updatePermissionDecision(permission, action === 'accept' ? 'accepted' : 'rejected', permission.resolvedLabel);
     if (lane.pendingPermissions.length === 0 && lane.status === 'needs_permission') this.setLaneStatus(lane, 'busy');
     this.updateComposerTick();
     this.render();
@@ -1415,6 +1428,7 @@ export class AcpHarnessView implements ContentView {
     } catch (e) {
       lane.pendingPermissions.unshift(permission);
       this.setLaneStatus(lane, 'needs_permission');
+      this.updatePermissionDecision(permission, 'failed', 'permission reply failed');
       this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
       this.updateComposerTick();
       this.render();
@@ -1423,14 +1437,19 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  private async resolveMemoryPermission(lane: HarnessLane, permission: HarnessPermission, toolName: string): Promise<void> {
+  private async resolveHarnessPermission(lane: HarnessLane, permission: HarnessPermission, toolName: string): Promise<void> {
     if (!lane.client) return;
     const option = pickPermissionOption(permission.options, 'accept');
     if (!option) return;
+    const family = harnessToolFamily(toolName);
     try {
       await lane.client.respondPermission(permission.requestId, option.optionId);
-      this.appendTranscript(lane, 'permission', `✓ ${toolName} (memory auto-allow)`);
+      const reason = family === 'peer'
+        ? 'matched harness peer auto-allow rule'
+        : 'matched harness memory auto-allow rule';
+      this.updatePermissionDecision(permission, 'auto_allowed', `✓ ${toolName} (harness auto-allow)`, reason);
     } catch (e) {
+      this.updatePermissionDecision(permission, 'failed', 'permission reply failed');
       this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
     }
     this.render();
@@ -1440,12 +1459,54 @@ export class AcpHarnessView implements ContentView {
     const call = permission.toolCall;
     const subject = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? call.title ?? 'unknown target';
     const kind = inferToolLabel(call);
+    const toolName = harnessAutoAllowToolName(permission) ?? (cleanToolTitle(call.title, kind) || call.title || kind);
+    const family = harnessToolFamily(toolName);
     let suffix: string | undefined;
     const touch = this.fileTouchMap.get(subject);
     if (touch && touch.laneId !== lane.id && Date.now() - touch.at <= FILE_TOUCH_WINDOW_MS) {
       suffix = `· also ${touch.laneDisplayName} ${formatAge(Date.now() - touch.at)} ago`;
     }
-    return { kind, subject, suffix };
+    return {
+      id: permission.requestId,
+      toolName,
+      toolFamily: family ?? permissionToolFamily(kind),
+      serverName: extractHarnessServerName(call),
+      kind,
+      subject,
+      suffix,
+      argsPreview: permissionArgsPreview(call.rawInput),
+      options: permission.options.map((option) => ({
+        optionId: option.optionId,
+        name: option.name,
+        action: option.kind.startsWith('allow') ? 'accept' : option.kind.startsWith('reject') ? 'reject' : 'other',
+      })),
+      decision: 'pending',
+    };
+  }
+
+  private appendPermissionTranscript(
+    lane: HarnessLane,
+    permission: HarnessPermission,
+    payload: PermissionPayload,
+  ): HarnessTranscriptItem {
+    const text = payload.suffix ? `${payload.kind} ${payload.subject} ${payload.suffix}` : `${payload.kind} ${payload.subject}`;
+    const item = this.appendTranscript(lane, 'permission', text);
+    item.permission = payload;
+    permission.transcriptItem = item;
+    return item;
+  }
+
+  private updatePermissionDecision(
+    permission: HarnessPermission,
+    decision: PermissionDecision,
+    label: string,
+    autoReason?: string,
+  ): void {
+    const payload = permission.transcriptItem?.permission;
+    if (!payload) return;
+    payload.decision = decision;
+    payload.decisionLabel = label;
+    payload.autoReason = autoReason;
   }
 
   private async openLanePicker(): Promise<void> {
@@ -1857,7 +1918,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async newLaneSession(lane: HarnessLane, options: { clearMemory: boolean }): Promise<void> {
-    if (lane.status === 'busy' || lane.status === 'needs_permission') {
+    if (lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer') {
       this.flashChip('lane busy - #cancel first');
       return;
     }
@@ -2103,6 +2164,7 @@ export class AcpHarnessView implements ContentView {
         this.mcpStatsByLane.get(lane.displayName) ?? null,
         laneMetrics,
         this.coordinator.inboxDepth(lane.id),
+        this.coordinator.pendingPeersFor(lane.id),
       );
     }
     const stats = laneEl.querySelector<HTMLElement>('.acp-harness__lane-stats');
@@ -2387,6 +2449,7 @@ export class AcpHarnessView implements ContentView {
         this.mcpStatsByLane.get(lane.displayName) ?? null,
         laneMetrics,
         this.coordinator.inboxDepth(lane.id),
+        this.coordinator.pendingPeersFor(lane.id),
       );
       laneEl.appendChild(head);
       if (active) {
@@ -2543,6 +2606,7 @@ export class AcpHarnessView implements ContentView {
       const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
       return `${lane.displayName} running${elapsed} · Ctrl+C cancel`;
     }
+    if (lane.status === 'awaiting_peer') return `${lane.displayName} ${awaitingPeerText(this.coordinator.pendingPeersFor(lane.id))}`;
     if (this.harnessMemoryWarning) return `memory off: ${truncate(this.harnessMemoryWarning, 64)}`;
     return `memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`;
   }
@@ -2627,6 +2691,7 @@ export class AcpHarnessView implements ContentView {
           this.mcpStatsByLane.get(lane.displayName) ?? null,
           m,
           this.coordinator.inboxDepth(lane.id),
+          this.coordinator.pendingPeersFor(lane.id),
         );
       }
     }
@@ -3572,22 +3637,22 @@ function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'r
   return options.find((option) => option.kind === 'reject_once') ?? options.find((option) => option.kind === 'reject_always') ?? null;
 }
 
-export function harnessMemoryPermissionToolName(permission: Pick<HarnessPermission, 'toolCall'>): string | null {
+export function harnessAutoAllowToolName(permission: Pick<HarnessPermission, 'toolCall'>): string | null {
   const call = permission.toolCall;
-  if (!containsHarnessMemoryServerMarker(call)) return null;
-  return structuredMemoryToolNameFromUnknown(call.rawInput)
-    ?? memoryToolNameFromUnknown(call.rawInput)
-    ?? memoryToolNameFromString(call.title)
-    ?? memoryToolNameFromUnknown(call.content)
+  if (!containsHarnessServerMarker(call)) return null;
+  return structuredHarnessToolNameFromUnknown(call.rawInput)
+    ?? harnessToolNameFromUnknown(call.rawInput)
+    ?? harnessToolNameFromString(call.title)
+    ?? harnessToolNameFromUnknown(call.content)
     ?? null;
 }
 
-function structuredMemoryToolNameFromUnknown(value: unknown, depth = 0): string | null {
+function structuredHarnessToolNameFromUnknown(value: unknown, depth = 0): string | null {
   if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return null;
   if (!value || typeof value !== 'object') return null;
   if (Array.isArray(value)) {
     for (const item of value) {
-      const match = structuredMemoryToolNameFromUnknown(item, depth + 1);
+      const match = structuredHarnessToolNameFromUnknown(item, depth + 1);
       if (match) return match;
     }
     return null;
@@ -3596,58 +3661,127 @@ function structuredMemoryToolNameFromUnknown(value: unknown, depth = 0): string 
   for (const key of ['name', 'toolName', 'tool_name', 'tool']) {
     const value = record[key];
     if (typeof value === 'string') {
-      const match = memoryToolNameFromString(value);
+      const match = harnessToolNameFromString(value);
       if (match) return match;
     }
   }
   for (const item of Object.values(record)) {
-    const match = structuredMemoryToolNameFromUnknown(item, depth + 1);
+    const match = structuredHarnessToolNameFromUnknown(item, depth + 1);
     if (match) return match;
   }
   return null;
 }
 
-function memoryToolNameFromUnknown(value: unknown, depth = 0): string | null {
+function harnessToolNameFromUnknown(value: unknown, depth = 0): string | null {
   if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return null;
-  if (typeof value === 'string') return memoryToolNameFromString(value);
+  if (typeof value === 'string') return harnessToolNameFromString(value);
   if (!value || typeof value !== 'object') return null;
   if (Array.isArray(value)) {
     for (const item of value) {
-      const match = memoryToolNameFromUnknown(item, depth + 1);
+      const match = harnessToolNameFromUnknown(item, depth + 1);
       if (match) return match;
     }
     return null;
   }
   const record = value as Record<string, unknown>;
   for (const key of ['name', 'toolName', 'tool_name', 'tool', 'title', 'text']) {
-    const match = memoryToolNameFromUnknown(record[key], depth + 1);
+    const match = harnessToolNameFromUnknown(record[key], depth + 1);
     if (match) return match;
   }
   const content = record.content;
-  if (typeof content === 'string') return memoryToolNameFromString(content);
+  if (typeof content === 'string') return harnessToolNameFromString(content);
   if (content && typeof content === 'object') {
-    const match = memoryToolNameFromUnknown(content, depth + 1);
+    const match = harnessToolNameFromUnknown(content, depth + 1);
     if (match) return match;
   }
   return null;
 }
 
-function memoryToolNameFromString(value: string | undefined): string | null {
+function harnessToolNameFromString(value: string | undefined): string | null {
   if (!value) return null;
   const normalized = value.toLowerCase();
-  for (const toolName of HARNESS_MEMORY_TOOL_NAMES) {
+  for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list)(?:$|[^a-z0-9_])/);
-  return match && HARNESS_MEMORY_TOOL_NAMES.has(match[1]) ? match[1] : null;
+  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list)(?:$|[^a-z0-9_])/);
+  return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 
-function containsHarnessMemoryServerMarker(value: unknown, depth = 0): boolean {
+function harnessToolFamily(toolName: string): HarnessToolFamily | null {
+  if (HARNESS_MEMORY_TOOL_NAMES.has(toolName)) return 'memory';
+  if (HARNESS_PEER_TOOL_NAMES.has(toolName)) return 'peer';
+  return null;
+}
+
+function permissionToolFamily(kind: string): PermissionPayload['toolFamily'] {
+  if (kind === 'execute') return 'shell';
+  if (kind === 'edit' || kind === 'delete' || kind === 'move' || kind === 'write') return 'file';
+  if (kind === 'read' || kind === 'search') return 'file';
+  if (kind === 'think' || kind === 'fetch') return 'agent';
+  return 'other';
+}
+
+function extractHarnessServerName(call: ToolCall): string | null {
+  return stringValueForKeys(call.rawInput, ['server', 'serverName', 'server_name', 'serverUrl', 'server_url'])
+    ?? stringValueForKeys(call, ['server', 'serverName', 'server_name'])
+    ?? null;
+}
+
+function stringValueForKeys(value: unknown, keys: string[], depth = 0): string | null {
+  if (depth > 4 || !value || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const match = stringValueForKeys(item, keys, depth + 1);
+      if (match) return match;
+    }
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const candidate = record[key];
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  for (const item of Object.values(record)) {
+    const match = stringValueForKeys(item, keys, depth + 1);
+    if (match) return match;
+  }
+  return null;
+}
+
+function permissionArgsPreview(value: unknown): string {
+  const args = extractToolArguments(value);
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return boundedInlineValue(args ?? value);
+  const parts: string[] = [];
+  for (const [key, raw] of Object.entries(args as Record<string, unknown>)) {
+    if (parts.length >= 4) break;
+    parts.push(`${key}: ${boundedInlineValue(raw, 42)}`);
+  }
+  return truncate(parts.join(' · '), 140);
+}
+
+function extractToolArguments(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  return record.arguments ?? record.args ?? record.input ?? value;
+}
+
+function boundedInlineValue(value: unknown, max = 140): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return truncate(value.replace(/\s+/g, ' ').trim(), max);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return truncate(JSON.stringify(value).replace(/\s+/g, ' '), max);
+  } catch {
+    return truncate(String(value), max);
+  }
+}
+
+function containsHarnessServerMarker(value: unknown, depth = 0): boolean {
   if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return false;
-  if (typeof value === 'string') return HARNESS_MEMORY_SERVER_MARKERS.some((marker) => value.includes(marker));
+  if (typeof value === 'string') return HARNESS_SERVER_MARKERS.some((marker) => value.includes(marker));
   if (!value || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.some((item) => containsHarnessMemoryServerMarker(item, depth + 1));
-  return Object.values(value as Record<string, unknown>).some((item) => containsHarnessMemoryServerMarker(item, depth + 1));
+  if (Array.isArray(value)) return value.some((item) => containsHarnessServerMarker(item, depth + 1));
+  return Object.values(value as Record<string, unknown>).some((item) => containsHarnessServerMarker(item, depth + 1));
 }
 
 function errorText(error: unknown): string {
@@ -3736,7 +3870,20 @@ function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boole
     ].join('\u001e')
     : '';
   const permission = item.permission
-    ? `${item.permission.kind}\u001e${item.permission.subject}\u001e${item.permission.suffix ?? ''}`
+    ? [
+      item.permission.id,
+      item.permission.toolName,
+      item.permission.toolFamily,
+      item.permission.serverName ?? '',
+      item.permission.kind,
+      item.permission.subject,
+      item.permission.suffix ?? '',
+      item.permission.argsPreview,
+      item.permission.options.map((option) => `${option.name}:${option.action}`).join('\u001f'),
+      item.permission.decision,
+      item.permission.decisionLabel ?? '',
+      item.permission.autoReason ?? '',
+    ].join('\u001e')
     : '';
   const fsActivity = item.fsActivity
     ? `${item.fsActivity.method}\u001e${item.fsActivity.path}\u001e${item.fsActivity.ok}\u001e${item.fsActivity.error ?? ''}`
@@ -3828,23 +3975,68 @@ function renderFsWriteReviewBody(body: HTMLElement, payload: FsWriteReviewPayloa
 }
 
 function renderPermissionBody(body: HTMLElement, perm: PermissionPayload): void {
+  const card = document.createElement('div');
+  card.className = 'acp-harness__perm-card';
+  card.dataset.decision = perm.decision;
   const head = document.createElement('div');
-  head.className = 'acp-harness__perm-head';
-  const kind = document.createElement('span');
-  kind.className = 'acp-harness__tool-kind';
-  kind.textContent = perm.kind;
-  head.appendChild(kind);
+  head.className = 'acp-harness__perm-row';
+  const family = document.createElement('span');
+  family.className = 'acp-harness__perm-family';
+  family.textContent = perm.toolFamily;
+  head.appendChild(family);
+  const tool = document.createElement('span');
+  tool.className = 'acp-harness__perm-tool';
+  tool.textContent = perm.toolName;
+  head.appendChild(tool);
   const subject = document.createElement('span');
-  subject.className = 'acp-harness__tool-subject';
+  subject.className = 'acp-harness__perm-subject';
   subject.textContent = perm.subject;
+  subject.title = perm.subject;
   head.appendChild(subject);
+  const decision = document.createElement('span');
+  decision.className = 'acp-harness__perm-decision';
+  decision.textContent = permissionDecisionLabel(perm);
+  head.appendChild(decision);
+  card.appendChild(head);
   if (perm.suffix) {
     const suffix = document.createElement('span');
     suffix.className = 'acp-harness__perm-suffix';
     suffix.textContent = perm.suffix;
-    head.appendChild(suffix);
+    card.appendChild(suffix);
   }
-  body.appendChild(head);
+  if (perm.autoReason) {
+    const reason = document.createElement('div');
+    reason.className = 'acp-harness__perm-reason';
+    reason.textContent = perm.autoReason;
+    card.appendChild(reason);
+  }
+  if (perm.argsPreview) {
+    const preview = document.createElement('div');
+    preview.className = 'acp-harness__perm-preview';
+    preview.textContent = perm.argsPreview;
+    card.appendChild(preview);
+  }
+  if (perm.decision === 'pending') {
+    const actions = document.createElement('div');
+    actions.className = 'acp-harness__perm-actions';
+    const labels = perm.options
+      .filter((option) => option.action === 'accept' || option.action === 'reject')
+      .map((option) => option.action === 'accept' ? 'a accept' : 'r reject');
+    actions.textContent = Array.from(new Set(labels)).join(' · ');
+    card.appendChild(actions);
+  }
+  body.appendChild(card);
+}
+
+function permissionDecisionLabel(perm: PermissionPayload): string {
+  if (perm.decisionLabel) return perm.decisionLabel;
+  switch (perm.decision) {
+    case 'pending': return 'pending';
+    case 'accepted': return 'accepted';
+    case 'rejected': return 'rejected';
+    case 'auto_allowed': return 'auto-allowed';
+    case 'failed': return 'failed';
+  }
 }
 
 function renderImageAttachmentChip(count: number): HTMLElement {
@@ -4212,6 +4404,7 @@ function renderLaneHead(
   mcp: HarnessMcpLaneStats | null,
   metrics: AcpLaneMetrics | null,
   inboxDepth: number,
+  pendingPeers: PendingPeerSummary[],
 ): string {
   const mcpChip = renderMcpChip(mcp);
   const modelChip = renderModelChip(lane.modelName);
@@ -4232,7 +4425,7 @@ function renderLaneHead(
       `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
       inboxChip +
       chips +
-      `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
+      `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>`
     );
   }
   const cancelHint = lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer' || lane.pendingShellId
@@ -4244,7 +4437,7 @@ function renderLaneHead(
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
     inboxChip +
     chips +
-    `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>` +
+    `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>` +
     cancelHint
   );
 }
@@ -4511,13 +4704,28 @@ function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {
   return { ...(prev ?? {}), ...next };
 }
 
-function laneActivity(lane: HarnessLane): string {
+function laneActivity(lane: HarnessLane, pendingPeers: PendingPeerSummary[] = []): string {
   if (lane.status === 'error') return `error: ${lane.error ?? 'failed'}`;
   if (lane.status === 'needs_permission') return `perm: ${lane.pendingPermissions[0]?.toolCall.title ?? 'required'}`;
-  if (lane.status === 'awaiting_peer') return 'awaiting peer reply';
+  if (lane.status === 'awaiting_peer') return awaitingPeerText(pendingPeers);
   const latest = lane.transcript[lane.transcript.length - 1];
   if (!latest) return lane.status;
   return latest.text.replace(/\s+/g, ' ').slice(0, 60);
+}
+
+function awaitingPeerText(pendingPeers: PendingPeerSummary[]): string {
+  if (pendingPeers.length === 0) return 'awaiting peer reply · #cancel';
+  const oldest = pendingPeers.reduce((min, peer) => peer.sentAt < min.sentAt ? peer : min, pendingPeers[0]);
+  const age = formatAwaitingPeerAge(Date.now() - oldest.sentAt);
+  if (pendingPeers.length === 1) return `awaiting ${oldest.toDisplayName} · ${age} · #cancel`;
+  return `awaiting ${pendingPeers.length} peers · ${age} · #cancel`;
+}
+
+function formatAwaitingPeerAge(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 60_000) return '<1m';
+  if (ms < 5 * 60_000) return '1m+';
+  if (ms < 15 * 60_000) return '5m+';
+  return '15m+';
 }
 
 function statusSymbol(status: HarnessLaneStatus): string {

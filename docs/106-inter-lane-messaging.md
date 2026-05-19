@@ -31,9 +31,9 @@ Key findings from `src/acp/acp-harness-view.ts`, `src/acp/client.ts`, `src-tauri
 
 - **Lane status enum already exists** (`acp-harness-view.ts:51`): `'starting' | 'idle' | 'busy' | 'needs_permission' | 'error' | 'stopped'`. We add `'awaiting_peer'`. Transitions today happen in `spawnLane()` and `onLaneEvent()` (line 971) but emit nothing; we add a `LaneBus.emit('lane:status', …)` at each transition.
 - **Prompts only flow from UI composer** (`acp-harness-view.ts:1086`, `client.prompt(blocks)`). There is no programmatic entrypoint. We add one that respects the same turn-start bookkeeping (`activeTurnStartedAt`, `pendingTurnExtractions`, `acceptAllForTurn`/`rejectAllForTurn` reset semantics).
-- **"Lane busy" today = hard reject** (`flashChip('lane busy')` at line 1070). Same pattern reused for `awaiting_peer`: composer rejects with `"lane awaiting peer — #cancel first"`. Programmatic enqueue (inbox drain) does not flow through the composer and is unaffected.
+- **"Lane busy" today = hard reject** (`flashChip('lane busy')` at line 1070). Same pattern reused for `awaiting_peer`: composer rejects with an inline chip that identifies the pending peer target and `#cancel`. Programmatic enqueue (inbox drain) does not flow through the composer and is unaffected.
 - **MCP host already runs** at `hook_server.rs:215+` on localhost. The memory tools live at `/mcp/harness/<harnessId>/lane/<laneLabel>` (`hook_server.rs:490`). We add two more tools to the same endpoint and rename the server `krypton-harness-bus`. No new transport.
-- **Auto-allow precedent**: Spec 96 silently approves `memory_set` / `memory_get` / `memory_list` via `HARNESS_MEMORY_TOOL_NAMES` (`acp-harness-view.ts:128`). `peer_send` and `peer_list` join the same set (renamed `HARNESS_BUS_TOOL_NAMES`).
+- **Auto-allow precedent**: Spec 96 silently approved `memory_set` / `memory_get` / `memory_list`. The implementation now splits the detector into memory tools and peer tools, then combines them under `HARNESS_AUTO_ALLOW_TOOL_NAMES`; `peer_send` and `peer_list` are auto-allowed but rendered as auditable permission cards.
 - **`#cancel` exists** as the current cancel-active-turn affordance (line 1661). We hook into the same path so cancelling a lane in `awaiting_peer` clears the bus state and notifies the peer.
 - **Per-project isolation**: harness state is keyed by project-dir hash (`hook_server.rs:258`). Inter-lane messages share the same scope — lanes in different projects never see each other, by construction.
 
@@ -61,7 +61,7 @@ Key findings from `src/acp/acp-harness-view.ts`, `src/acp/client.ts`, `src-tauri
 | `src/acp/lane-bus.ts` | **New.** Typed event emitter. |
 | `src/acp/lane-inbox.ts` | **New.** Per-lane FIFO queue. |
 | `src/acp/inter-lane.ts` | **New.** Coordinator: deliver, listLanes, drain-on-idle, awaiting_peer state. |
-| `src/acp/acp-harness-view.ts` | Add `'awaiting_peer'` to status enum; emit LaneBus events at every status mutation; add `enqueueSystemPrompt()`; render lane-row indicator + inbox badge; render `inter_lane` transcript rows; reject composer submit in `awaiting_peer`; rename `HARNESS_MEMORY_TOOL_NAMES` → `HARNESS_BUS_TOOL_NAMES` and add `peer_send`, `peer_list`. |
+| `src/acp/acp-harness-view.ts` | Add `'awaiting_peer'` to status enum; emit LaneBus events at every status mutation; add `enqueueSystemPrompt()`; render lane-row indicator + inbox badge; render `inter_lane` transcript rows; reject composer submit in `awaiting_peer`; split memory/peer auto-allow tool taxonomy and add `peer_send`, `peer_list`. |
 | `src/acp/acp-harness-memory.ts` | Listen for `acp-inter-lane-message` event; route into coordinator. |
 | `src/acp/types.ts` | Add `InterLaneEnvelope`, `LaneSummary`, `LaneStatusEvent`; extend `HarnessLaneStatus`. |
 | `src-tauri/src/hook_server.rs` | Add `peer_send` + `peer_list` tools next to memory tools; rename server `krypton-harness-bus`; emit `acp-inter-lane-message` Tauri event on `peer_send`. |
@@ -236,7 +236,7 @@ Tool return on success:
 
 Tool return on failure: `{ delivered: false, reason: "self_send" | "unknown_lane" | "lane_stopped" }`.
 
-Both tool names join `HARNESS_BUS_TOOL_NAMES` and auto-allow alongside the memory tools (`acp-harness-view.ts:128`, `hook_server.rs:572`).
+Both tool names join the combined harness auto-allow set alongside the memory tools and render an auditable permission card (`acp-harness-view.ts`, `hook_server.rs`).
 
 ### Data Flow
 
@@ -261,7 +261,7 @@ All changes appear **only** when a conversation is active. Lane sidebar is verti
 
 - **Lane-row status icon** (left side, vertical sidebar): the existing dot/spinner is replaced when status is `awaiting_peer`. Same accent colour as the lane to stay flat; just a different glyph (e.g. `⏳`). No layered effects (per `feedback_no_layered_ui`).
 - **Inbox depth chip** (right side of lane row): `▼N` rendered when `inbox.depth() > 0`. Hidden otherwise. One flat chip, no glow.
-- **Composer reject in `awaiting_peer`**: flash chip `"lane awaiting peer — #cancel first"`. Reuses existing `flashChip()` path.
+- **Composer reject in `awaiting_peer`**: flash chip identifies the pending peer target/age, for example `"awaiting Claude-1 · <1m · #cancel first"`. Reuses existing `flashChip()` path and coarse age buckets; no persistent timer is added.
 - **`inter_lane` transcript rows** in *both* lanes when an envelope is delivered/received. Payload: `{ direction: 'in'|'out', peer: laneId, peerDisplayName, message, done }`. Single flat row, distinct accent on the left edge (no nested boxes).
 - **No new keybindings.** Conversation is initiated by user prompting one lane in plain language; cancellation is the existing `#cancel`.
 - **No new panels, modals, or dashboards.**
