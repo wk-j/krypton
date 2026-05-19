@@ -20,7 +20,15 @@ import { LaneInbox } from './lane-inbox';
 
 export type DeliveryResult =
   | { delivered: true; envelopeId: string; queuedDepth: number; hint: string }
-  | { delivered: false; reason: 'self_send' | 'unknown_lane' | 'lane_stopped' };
+  | {
+      delivered: false;
+      reason:
+        | 'self_send'
+        | 'unknown_lane'
+        | 'unknown_sender'
+        | 'lane_stopped'
+        | 'conversation_cancelled';
+    };
 
 export interface LaneHost {
   /** Enumerate all live (non-stopped) lanes. */
@@ -55,6 +63,14 @@ export class InterLaneCoordinator {
   private inboxes = new Map<string, LaneInbox>();
   /** Per-sender list of envelopes awaiting a reply. */
   private pending = new Map<string, PendingSend[]>();
+  /**
+   * Cancelled conversations awaiting acknowledgement by the peer.
+   * Key: `${cancellerLaneId}::${peerLaneId}` — drops any future envelope
+   * from peer to canceller until the peer drains its cancellation notice.
+   * Without this, a peer that was busy when the canceller ran #cancel can
+   * still deliver a late reply back into the cancelled lane.
+   */
+  private cancelledPairs = new Set<string>();
 
   constructor(
     private readonly bus: LaneBus,
@@ -85,6 +101,13 @@ export class InterLaneCoordinator {
     if (!recipient) return { delivered: false, reason: 'unknown_lane' };
     if (recipient.status === 'stopped' || recipient.status === 'error') {
       return { delivered: false, reason: 'lane_stopped' };
+    }
+    // Drop late replies from a peer whose cancellation we have already
+    // queued. The cancellation envelope is still in the peer's inbox waiting
+    // to drain; envelopes from that peer back to the canceller are no-ops
+    // until the peer acknowledges the cancellation.
+    if (this.cancelledPairs.has(this.pairKey(env.toLaneId, env.fromLaneId))) {
+      return { delivered: false, reason: 'conversation_cancelled' };
     }
 
     this.inbox(env.toLaneId).push(env);
@@ -136,21 +159,41 @@ export class InterLaneCoordinator {
     for (const peerId of peers) {
       const peer = this.host.getLane(peerId);
       if (!peer) continue;
+      // Tombstone the (canceller → peer) pair so any late reply from the
+      // peer is dropped until it has consumed the cancellation notice.
+      this.cancelledPairs.add(this.pairKey(laneId, peerId));
       this.host.appendSystemNotice(peerId, `peer ${senderName} cancelled`);
+      this.notifyPeerOfTermination(peerId, senderName, 'cancelled');
     }
   }
 
-  /** A lane was closed (stopped). Clean up its inbox + pending bookkeeping. */
-  onLaneClosed(laneId: string): void {
+  private pairKey(cancellerLaneId: string, peerLaneId: string): string {
+    return `${cancellerLaneId}::${peerLaneId}`;
+  }
+
+  /**
+   * A lane was closed (stopped). Clean up its inbox + pending bookkeeping.
+   * `displayName` must be passed in by the caller — by the time we get here,
+   * the lane has already been removed from the host registry, so
+   * `host.getLane(laneId)` would return null and we'd fall back to raw ids.
+   */
+  onLaneClosed(laneId: string, displayName: string): void {
     this.inboxes.delete(laneId);
+    // Drop any tombstones referencing this lane in either position.
+    for (const key of this.cancelledPairs) {
+      const [a, b] = key.split('::');
+      if (a === laneId || b === laneId) this.cancelledPairs.delete(key);
+    }
     // Anyone who had pending sends *to* this lane: notify them.
     for (const [senderId, sends] of this.pending.entries()) {
       const remaining = sends.filter((s) => s.toLaneId !== laneId);
       if (remaining.length !== sends.length) {
         if (remaining.length === 0) this.pending.delete(senderId);
         else this.pending.set(senderId, remaining);
-        const closed = laneId;
-        this.host.appendSystemNotice(senderId, `peer ${closed} closed`);
+        this.host.appendSystemNotice(senderId, `peer ${displayName} closed`);
+        // Inject a synthesized prompt into the peer's session so the agent
+        // learns of the closure in-context (not just as a transcript row).
+        this.notifyPeerOfTermination(senderId, displayName, 'closed');
         // Bring sender out of awaiting_peer if they were stuck on this peer.
         const senderInfo = this.host.getLane(senderId);
         if (senderInfo?.status === 'awaiting_peer' && remaining.length === 0) {
@@ -158,6 +201,37 @@ export class InterLaneCoordinator {
         }
       }
     }
+  }
+
+  /**
+   * Inject a synthesized system prompt into the peer's session so the agent
+   * learns of cancellation/closure in-context (not just as a transcript row).
+   * Drained on the peer's next idle transition.
+   */
+  private notifyPeerOfTermination(
+    peerLaneId: string,
+    senderName: string,
+    kind: 'cancelled' | 'closed',
+  ): void {
+    const peer = this.host.getLane(peerLaneId);
+    if (!peer) return;
+    if (peer.status === 'stopped' || peer.status === 'error') return;
+    const verb = kind === 'cancelled' ? 'cancelled the conversation' : 'closed (lane stopped)';
+    const text =
+      `[inter-lane] harness: peer ${senderName} ${verb}. ` +
+      'Do NOT call peer_send to that lane again for this exchange. End your turn after acknowledging.';
+    // Queue as a synthetic envelope so it drains via the normal idle path
+    // and merges with any other queued envelopes into a single user-turn.
+    this.inbox(peerLaneId).push({
+      id: `env-synth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      fromLaneId: '__harness__',
+      toLaneId: peerLaneId,
+      message: text,
+      done: true,
+      sentAt: Date.now(),
+      harnessId: '__harness__',
+    });
+    if (peer.status === 'idle') this.drain(peerLaneId);
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -200,7 +274,7 @@ export class InterLaneCoordinator {
       const { laneId, next } = event.payload;
       if (next === 'idle') this.drain(laneId);
     } else if (event.type === 'lane:closed') {
-      this.onLaneClosed(event.payload.laneId);
+      this.onLaneClosed(event.payload.laneId, event.payload.displayName);
     }
   }
 
@@ -212,7 +286,14 @@ export class InterLaneCoordinator {
     if (!recipient) return;
 
     // Render the inbound rows in the recipient's transcript first.
+    let drainedHarnessNotice = false;
     for (const env of envelopes) {
+      if (env.fromLaneId === '__harness__') {
+        // Synthetic — notice already rendered as a system row. Mark that the
+        // peer has now seen the cancellation/closure prompt.
+        drainedHarnessNotice = true;
+        continue;
+      }
       const sender = this.host.getLane(env.fromLaneId);
       const senderName = sender?.displayName ?? env.fromLaneId;
       this.host.appendInterLaneRow(
@@ -225,6 +306,14 @@ export class InterLaneCoordinator {
       // The reply satisfies the sender's pending entry.
       this.clearPendingFromPeer(laneId, env.fromLaneId);
     }
+    if (drainedHarnessNotice) {
+      // Any cancelled-pair tombstones targeting this lane are now obsolete —
+      // the peer (us) has acknowledged the cancellation notice.
+      const suffix = `::${laneId}`;
+      for (const key of this.cancelledPairs) {
+        if (key.endsWith(suffix)) this.cancelledPairs.delete(key);
+      }
+    }
 
     const text = this.composePrompt(envelopes);
     this.host.enqueueSystemPrompt(laneId, text);
@@ -233,6 +322,11 @@ export class InterLaneCoordinator {
   private composePrompt(envelopes: InterLaneEnvelope[]): string {
     const parts: string[] = [];
     for (const env of envelopes) {
+      if (env.fromLaneId === '__harness__') {
+        // Synthetic notice — message is already self-describing.
+        parts.push(env.message);
+        continue;
+      }
       const sender = this.host.getLane(env.fromLaneId);
       const senderName = sender?.displayName ?? env.fromLaneId;
       parts.push(`[inter-lane] From ${senderName} (id: ${env.id}):\n\n${env.message}`);

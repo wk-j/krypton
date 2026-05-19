@@ -1,6 +1,6 @@
 # Chrome Signal Upgrades — Implementation Spec
 
-> Status: Draft
+> Status: Draft (revised 2026-05-18 to match Krypton's mode-based input system)
 > Date: 2026-05-18
 > Milestone: Post-M-current polish
 
@@ -19,7 +19,8 @@ Codebase findings (paths and selectors):
 - **Corner accents** exist (`src/styles/window.css:35–107`, classes `.krypton-window__corner--{tl,tr,bl,br}`) but only the *border color* responds to focus, not the brackets themselves. They are already keyed to CSS custom properties via `box-shadow`.
 - **Edge glow** is implemented (`src/styles/window.css:349–383`, class `.krypton-glow-overlay`) at fixed intensity. No coupling to PTY output rate.
 - **Tab chamfer** is described in `DESIGN.md:244` ("angled clip-paths … chamfered top corners") but `.krypton-tab--active` currently only paints a 1px bottom rule (`window.css:196–273`). No clip-path is applied. Pane role is already on the DOM via `data-content-type` (agent, vault, shell, etc.).
-- **Workspace switch** has animation styles (`Slide`, `Crossfade`, `Morph`) declared in `src/types.ts:220` but no transient on-screen indicator. Leader chord state lives in `src/leader-keys.ts` and `src/which-key.ts`; whichkey shows next-key chips but no large display-typography readout.
+- **Mode entry** is driven by `src/input-router.ts` (`setMode()`) with modes Normal / Compositor / Resize / Move / Swap / Selection / Hint / TabMove / CommandPalette / Dashboard. `which-key.ts` shows a next-key popup immediately on mode entry, but there is no large display-typography readout of the mode name itself. Krypton is **mode-based, not chord-based** — there is no multi-key chord prefix state (e.g. Helix-style `Space → f → r`), so a "chord pending" trigger does not exist; the closest analog is the mode entry moment.
+- **Workspace switching** is *not yet implemented* — `#krypton-workspace` is a single DOM container, not a multi-workspace state machine. Sound event `workspace.switch` is declared in `sound.ts:22` but never fired. Animation styles (`Slide`, `Crossfade`, `Morph`) declared in `src/types.ts:220` are unused. Any workspace-related trigger must be deferred until that feature lands.
 - **Titlebar** (`compositor.ts:1347–1379`) has `.krypton-window__label-group` (left), optional center Claude-tool indicator, and `.krypton-window__pty-status` (right). The right side is a free single text node. No HUD numerics surfaced today; process metrics are not piped into the titlebar.
 - **Scan wipe** keyframes `krypton-scanline-sweep` exist (`src/styles/progress.css:152–192`) but only as an *infinite* sweep on the OSC 9;4 progress state. No one-shot ack pattern yet.
 - **Breathing pulse** has multiple task-specific variants (`hooks.css:274,462,479`) but no generic `--krypton-motion-breathing` token consumer, and no "peak shift to brightCyan" pattern.
@@ -48,10 +49,9 @@ Alternatives ruled out:
 | File | Change |
 |------|--------|
 | `src/styles/window.css` | Add state modifier rules for `.krypton-window__corner` (color/glow); add `--krypton-edge-intensity` CSS var consumed by `.krypton-glow-overlay`; add `clip-path` rule on `.krypton-tab--active` with `data-role` switch; add `.krypton-window__hud` block; add `.krypton-window__titlebar--ack` one-shot rule and `krypton-ack-wipe` keyframes; add `krypton-breathing` keyframes that target `--krypton-color-primary-shift` |
-| `src/styles/overlay.css` *(or new `src/styles/display-flash.css` imported from `main.ts`)* | `.krypton-display-flash` element used by workspace switch + leader chord |
-| `src/compositor.ts` | (a) read PTY-output activity rate per window → write `--krypton-edge-intensity`; (b) add `data-role` to tabs (`shell` \| `agent` \| `quick` \| `vault` \| `webview`); (c) build `.krypton-window__hud` DOM in `renderTitlebar()`; (d) expose `flashAck(windowId)` that adds/removes `--ack` class on titlebar; (e) call `showDisplayFlash(text, ms)` on workspace switch |
-| `src/input-router.ts` | Call `showDisplayFlash(chordSoFar)` when leader chord enters waiting state for >120ms; clear on chord resolution |
-| `src/leader-keys.ts` | Expose current chord string getter (already partly there) |
+| `src/styles/overlays.css` *(or new `src/styles/display-flash.css` imported from `main.ts`)* | `.krypton-display-flash` element used by mode entry (and later, workspace switch) |
+| `src/compositor.ts` | (a) read PTY-output activity rate per window → write `--krypton-edge-intensity`; (b) add `data-role` to tabs (`shell` \| `agent` \| `quick` \| `vault` \| `webview`); (c) build `.krypton-window__hud` DOM in `renderTitlebar()`; (d) expose `flashAck(windowId)` that adds/removes `--ack` class on titlebar |
+| `src/input-router.ts` | In `setMode()`, schedule `showDisplayFlash(modeName)` after 120ms for non-Normal modes; cancel if the mode exits before the timeout fires (so single-action keys that pop straight back to Normal stay silent) |
 | `src/window-state.ts` *(or wherever window state enum lives)* | Add `signalState: 'normal' \| 'ok' \| 'warn' \| 'err' \| 'special'` on `WindowState` |
 | `src-tauri/src/pty.rs` | Emit lightweight `pty-activity` event (bytes since last tick, 200ms tick) for the edge-glow coupling — *only if not already inferable from existing `pty-output` event volume on the frontend* (verify before adding) |
 | `docs/PROGRESS.md` | Tick off the seven upgrades |
@@ -99,7 +99,7 @@ type PaneRole = 'shell' | 'agent' | 'quick' | 'vault' | 'webview';
 
 **3. Per-role tab chamfer.** `.krypton-tab--active` gains `clip-path: polygon(…)` with the angle controlled by `--krypton-tab-chamfer`. Defaults: shell 12°, agent 24°, quick 0° (flat top), vault 6°, webview 18°. Driven by `[data-role="…"]` on the tab DOM (set in `compositor.ts` where tabs are rendered).
 
-**4. Display-typography moments.** A single shared `<div class="krypton-display-flash">` mounted in `index.html`; `showDisplayFlash(text, ms)` sets text, adds `--visible` modifier, removes after `ms`. Used by: workspace switch (e.g. `"WS 03"` for 400ms) and leader chord wait (`"⌘P → r"` while chord is pending). Display typography is `display` tier from `DESIGN.md` (28px / 0.2em uppercase). Centered with `position: fixed; inset: 0; display: grid; place-items: center; z-index: var(--krypton-z-hint)`. Pointer-events none.
+**4. Display-typography moments.** A single shared `<div class="krypton-display-flash">` mounted in `index.html`; `showDisplayFlash(text, ms)` sets text, adds `--visible` modifier, removes after `ms`. Used by **mode entry**: 120ms after entering a non-Normal mode (Compositor / Resize / Move / Swap / Hint / TabMove), flash the mode name in display typography for 400ms — e.g. `"RESIZE"`, `"HINT"`. If the mode exits before the 120ms timeout (single-action Compositor keys that auto-return to Normal), no flash fires. Workspace-switch flash (`"WS 03"`) is **deferred** until workspace switching is implemented; the same `showDisplayFlash()` API will be reused. Display typography is `display` tier from `DESIGN.md` (28px / 0.2em uppercase). Centered with `position: fixed; inset: 0; display: grid; place-items: center; z-index: var(--krypton-z-hint)`. Pointer-events none. Coexists with the which-key popup (which sits in a corner) — the flash is centered display-typography, the popup is corner key-list, no visual conflict.
 
 **5. HUD numerics row.** Replace `.krypton-window__pty-status` with `.krypton-window__hud` containing four micro-readouts: `[UP 00:14:22]  [B/s 4.2K]  [PID 38421]  [EXIT —]`. Each readout uses label typography (11px / 0.08em uppercase) with `font-variant-numeric: tabular-nums`. Values update at 1Hz max via `requestAnimationFrame`-throttled writes. PTY status text moves into a tooltip on the leftmost readout. Below 320px window width, HUD collapses to just `B/s`.
 
@@ -126,7 +126,7 @@ No new Tauri commands. Possibly one new event:
 
 ### Keybindings
 
-No new keybindings. Display flash on workspace switch reuses existing workspace-switch keys; leader chord flash reuses existing chord state machine.
+No new keybindings. Display flash piggybacks on the existing mode state machine in `input-router.ts` (`setMode()` is the single entry point for every mode transition). When workspace switching ships later, its existing keys will also call `showDisplayFlash()` — no new keys at that time either.
 
 ### UI Changes
 
@@ -146,7 +146,7 @@ state_corner_colors = true        # default true; off → corners always primary
 edge_glow_dynamic = true          # default true; off → fixed 0.35
 tab_chamfer_by_role = true        # default true; off → uniform 12° on all
 hud_numerics = true               # default true; off → fall back to PTY status text
-display_flash = true              # default true; off → no workspace/chord flash
+display_flash = true              # default true; off → no mode-entry flash
 breathing_peak_shift = true       # default true; off → no brightCyan peak
 ```
 
@@ -166,7 +166,7 @@ All default to on. The toggles exist mainly to let users with `prefers-reduced-m
 
 1. **Throughput source.** Is the existing `pty-output` event payload size sufficient to derive bytes/s on the frontend, or do we need a new `pty-activity` event? Verify during implementation. *Resolution:* if frontend can measure, skip the Rust change entirely.
 2. **`@property` support for breathing colour interpolation.** macOS WKWebView supports `@property` in recent versions, but the fallback is acceptable — proceed with the fallback by default and add `@property` registration as a progressive enhancement.
-3. **Order of merge.** Suggested order: (6) ack-wipe → (1) state corners → (4) display flash → (7) breathing peak → (3) tab chamfer → (5) HUD numerics → (2) dynamic edge glow. Each is a separate PR.
+3. **Order of merge.** Original suggested order was (6) → (1) → (4) → (7) → (3) → (5) → (2). As of 2026-05-18, upgrades 1, 2, 3, 6, 7 are already merged (see commits `c1ec1d6`, `2b0c1e4`, `454f78c`). Remaining: (4) display flash and (5) HUD numerics. (5) is the higher-value next step since all of its data sources already exist; (4) ships the singleton infra now and re-wires the workspace-switch trigger once workspaces land.
 
 ## Out of Scope
 
@@ -184,7 +184,7 @@ All default to on. The toggles exist mainly to let users with `prefers-reduced-m
 - `src/styles/window.css` — current corner/edge/tab CSS
 - `src/styles/progress.css` — existing `krypton-scanline-sweep` keyframes to model the one-shot ack on
 - `src/compositor.ts` — titlebar render, tab render, window lifecycle
-- `src/input-router.ts` & `src/leader-keys.ts` & `src/which-key.ts` — chord state machine
+- `src/input-router.ts` (`setMode()`) & `src/which-key.ts` — mode state machine (Krypton is mode-based, not chord-based)
 - [CSS `@property` (MDN)](https://developer.mozilla.org/en-US/docs/Web/CSS/@property) — used for the breathing colour interpolation enhancement
 - [W3C `prefers-reduced-motion`](https://www.w3.org/TR/mediaqueries-5/#prefers-reduced-motion) — drives the reduced-motion branch
 - iTerm2 status bar docs, Kitty tab-bar docs, WezTerm status-bar docs — surveyed for prior-art table above (no external links cited; behavior observed directly in the apps)

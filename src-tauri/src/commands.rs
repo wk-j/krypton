@@ -238,6 +238,27 @@ pub fn dispose_harness_memory(
     Ok(())
 }
 
+/// Frontend reply for an in-flight bus tool call (peer_send, peer_list).
+/// `request_id` matches the value Rust emitted on the request event;
+/// `result` is the value the agent will receive as the tool result.
+#[tauri::command]
+pub fn acp_bus_reply(
+    request_id: String,
+    result: serde_json::Value,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    let completed = hook_server.complete_bus_reply(&request_id, result);
+    if !completed {
+        // Not fatal: the Rust side may have already timed out and dropped
+        // the sender. Log so we can spot frontend / Rust drift.
+        log::warn!(
+            "acp_bus_reply: no pending request {} (already timed out or unknown id)",
+            request_id
+        );
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn list_harness_mcp_stats(
     harness_id: String,

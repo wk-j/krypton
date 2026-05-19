@@ -161,6 +161,9 @@ pub struct HookServer {
     memories: std::sync::Mutex<HashMap<String, HarnessMemoryStore>>,
     mcp_stats: std::sync::Mutex<HashMap<String, HashMap<String, McpLaneStats>>>,
     next_harness_id: AtomicU64,
+    /// In-flight bus requests awaiting a frontend reply (peer_send, peer_list).
+    /// Keyed by requestId. Sender is consumed on reply.
+    pending_bus_replies: std::sync::Mutex<HashMap<String, oneshot::Sender<Value>>>,
 }
 
 impl Default for HookServer {
@@ -172,6 +175,7 @@ impl Default for HookServer {
             memories: std::sync::Mutex::new(HashMap::new()),
             mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
+            pending_bus_replies: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }
@@ -185,6 +189,43 @@ impl HookServer {
             memories: std::sync::Mutex::new(HashMap::new()),
             mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
+            pending_bus_replies: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Register a oneshot for a bus request awaiting a frontend reply.
+    fn register_bus_reply(&self, request_id: String) -> oneshot::Receiver<Value> {
+        let (tx, rx) = oneshot::channel();
+        let mut map = self
+            .pending_bus_replies
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        map.insert(request_id, tx);
+        rx
+    }
+
+    /// Drop a registered oneshot without firing it (e.g., on timeout).
+    fn drop_bus_reply(&self, request_id: &str) {
+        let mut map = self
+            .pending_bus_replies
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        map.remove(request_id);
+    }
+
+    /// Complete a pending bus request with a frontend-supplied value.
+    /// Called by the `acp_bus_reply` Tauri command.
+    pub fn complete_bus_reply(&self, request_id: &str, value: Value) -> bool {
+        let sender = {
+            let mut map = self
+                .pending_bus_replies
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            map.remove(request_id)
+        };
+        match sender {
+            Some(tx) => tx.send(value).is_ok(),
+            None => false,
         }
     }
 
@@ -529,7 +570,7 @@ async fn handle_harness_memory_mcp(
         "tools/list" => Ok(json!({ "tools": bus_tool_descriptors() })),
         "tools/call" => {
             let params = request.get("params").cloned().unwrap_or(Value::Null);
-            handle_bus_tool_call(&state, &harness_id, &lane_label, params)
+            handle_bus_tool_call(&state, &harness_id, &lane_label, params).await
         }
         "" => Err(json!({ "code": -32600, "message": "Missing method" })),
         other => Err(json!({ "code": -32601, "message": format!("Method not found: {other}") })),
@@ -547,7 +588,7 @@ async fn handle_harness_memory_mcp(
     }
 }
 
-fn handle_bus_tool_call(
+async fn handle_bus_tool_call(
     state: &HookServerState,
     harness_id: &str,
     lane_label: &str,
@@ -565,8 +606,8 @@ fn handle_bus_tool_call(
         "memory_set" => memory_set(&state.hook_server, harness_id, lane_label, arguments),
         "memory_get" => memory_get(&state.hook_server, harness_id, arguments),
         "memory_list" => memory_list(&state.hook_server, harness_id),
-        "peer_send" => peer_send(&state.app_handle, harness_id, lane_label, arguments),
-        "peer_list" => peer_list(&state.app_handle, harness_id),
+        "peer_send" => peer_send(state, harness_id, lane_label, arguments).await,
+        "peer_list" => peer_list(state, harness_id).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -587,10 +628,15 @@ fn handle_bus_tool_call(
     }))
 }
 
-/// peer_send — emit an `acp-inter-lane-message` Tauri event for the frontend.
-/// The frontend coordinator handles routing/inbox; the Rust side is fire-and-forget.
-fn peer_send(
-    app_handle: &AppHandle,
+/// Timeout for the frontend round-trip on bus tools (peer_send, peer_list).
+/// Generous because the frontend may be mid-render or animating.
+const BUS_REPLY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(2500);
+
+/// peer_send — emit an `acp-inter-lane-message` Tauri event and await the
+/// frontend coordinator's delivery outcome. The frontend is the authority on
+/// lane registry / inbox state.
+async fn peer_send(
+    state: &HookServerState,
     harness_id: &str,
     from_lane: &str,
     arguments: Value,
@@ -616,27 +662,54 @@ fn peer_send(
         "done": done,
         "sentAt": now_ms(),
         "harnessId": harness_id,
+        "requestId": envelope_id,
     });
-    app_handle.emit_or_log("acp-inter-lane-message", envelope);
-    Ok(json!({
-        "delivered": true,
-        "envelopeId": envelope_id,
-        "hint": "End your turn now. The reply (if any) will arrive as a new user message.",
-    }))
+    let rx = state.hook_server.register_bus_reply(envelope_id.clone());
+    state
+        .app_handle
+        .emit_or_log("acp-inter-lane-message", envelope);
+    let reply = match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(_)) => {
+            // Sender dropped (e.g., frontend listener missing) — treat as failure.
+            return Err("peer_send: frontend coordinator did not respond".to_string());
+        }
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&envelope_id);
+            return Err("peer_send: frontend reply timed out".to_string());
+        }
+    };
+    if reply
+        .get("delivered")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        Ok(reply)
+    } else {
+        let reason = reply
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("delivery_failed");
+        Err(format!("peer_send failed: {reason}"))
+    }
 }
 
-/// peer_list — agent asks the harness for live peer lanes.
-/// The actual list is owned by the frontend; we return a sentinel value
-/// that prompts the agent to call again after the frontend pushes an update.
-/// For now this returns a static hint; future work: round-trip via Tauri.
-fn peer_list(app_handle: &AppHandle, harness_id: &str) -> Result<Value, String> {
-    app_handle.emit_or_log(
+/// peer_list — request the frontend's live lane summary list and return it.
+async fn peer_list(state: &HookServerState, harness_id: &str) -> Result<Value, String> {
+    let request_id = format!("plist-{}-{}", now_ms(), rand_suffix());
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state.app_handle.emit_or_log(
         "acp-peer-list-requested",
-        json!({ "harnessId": harness_id }),
+        json!({ "harnessId": harness_id, "requestId": request_id }),
     );
-    Ok(json!({
-        "hint": "Use the lane display name as it appears in this tab (e.g., 'Claude-2'). The harness routes by that name.",
-    }))
+    match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(_)) => Err("peer_list: frontend coordinator did not respond".to_string()),
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            Err("peer_list: frontend reply timed out".to_string())
+        }
+    }
 }
 
 fn rand_suffix() -> String {

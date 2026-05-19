@@ -310,6 +310,7 @@ export class AcpHarnessView implements ContentView {
   private laneBus = new LaneBus();
   private coordinator!: InterLaneCoordinator;
   private interLaneUnlisten: UnlistenFn | null = null;
+  private peerListUnlisten: UnlistenFn | null = null;
   private memoryEntries: HarnessMemoryEntry[] = [];
   private harnessMemoryId: string | null = null;
   private harnessMemoryPort: number | null = null;
@@ -474,21 +475,58 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async subscribeInterLaneBridge(): Promise<void> {
-    this.interLaneUnlisten = await listen<InterLaneEnvelope>(
+    this.interLaneUnlisten = await listen<InterLaneEnvelope & { requestId?: string }>(
       'acp-inter-lane-message',
       (e) => {
+        const env = e.payload;
+        const requestId = env.requestId;
+        // Tauri events are app-wide. Rust always tags envelopes with `harnessId`;
+        // accept only those that match this harness AFTER it has been initialized.
+        // A still-initializing harness (harnessMemoryId === null) must NOT consume
+        // the bus reply — otherwise it would race the correct harness and drop its
+        // legitimate response (Rust removes the oneshot on first reply).
+        if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) {
+          return;
+        }
+        const reply = (result: unknown): void => {
+          if (!requestId) return;
+          void invoke('acp_bus_reply', { requestId, result }).catch((err) => {
+            console.warn('acp_bus_reply failed', err);
+          });
+        };
         // The Rust side addresses lanes by display name; translate to
         // internal lane ids before handing to the coordinator.
-        const env = e.payload;
         const fromLane = this.lanes.find((l) => l.displayName === env.fromLaneId);
         const toLane = this.lanes.find((l) => l.displayName === env.toLaneId);
-        if (!fromLane) return;
+        if (!fromLane) {
+          reply({ delivered: false, reason: 'unknown_sender' });
+          return;
+        }
         const translated: InterLaneEnvelope = {
           ...env,
           fromLaneId: fromLane.id,
           toLaneId: toLane ? toLane.id : env.toLaneId,
         };
-        this.coordinator.deliver(translated);
+        const result = this.coordinator.deliver(translated);
+        reply(result);
+      },
+    );
+    this.peerListUnlisten = await listen<{ harnessId?: string; requestId?: string }>(
+      'acp-peer-list-requested',
+      (e) => {
+        const { harnessId, requestId } = e.payload;
+        if (!requestId) return;
+        // Strict harness filter — same reasoning as the inter-lane listener.
+        if (!this.harnessMemoryId || harnessId !== this.harnessMemoryId) {
+          return;
+        }
+        const lanes = this.coordinator.listLanes();
+        void invoke('acp_bus_reply', {
+          requestId,
+          result: { lanes, count: lanes.length },
+        }).catch((err) => {
+          console.warn('acp_bus_reply (peer_list) failed', err);
+        });
       },
     );
   }
@@ -700,6 +738,10 @@ export class AcpHarnessView implements ContentView {
     if (this.interLaneUnlisten) {
       this.interLaneUnlisten();
       this.interLaneUnlisten = null;
+    }
+    if (this.peerListUnlisten) {
+      this.peerListUnlisten();
+      this.peerListUnlisten = null;
     }
     if (this.mcpUnlisten) {
       this.mcpUnlisten();
@@ -1285,6 +1327,9 @@ export class AcpHarnessView implements ContentView {
       lines.push(
         'Shared memory is available through the krypton-harness-memory MCP server: call memory_list to see which lanes have entries, memory_get { lane } to read another lane, and memory_set { summary, detail } to update your own. Writes go to your own lane automatically; you cannot write to other lanes.',
       );
+      lines.push(
+        'Inter-lane peering: when the user asks you to consult, ask, or peer with another lane, call peer_send { to_lane, message, done } (use the display name shown above; recipient processes on its next idle turn). Use peer_list to see live peer lanes and their inbox depths. End your turn after peer_send; the reply (if any) arrives as a new user message. Never peer proactively.',
+      );
     } else {
       lines.push(
         'Shared memory is available through the krypton-harness-memory MCP server: call memory_set { summary, detail } to record state for future turns and memory_get { lane } / memory_list to read it back.',
@@ -1746,7 +1791,10 @@ export class AcpHarnessView implements ContentView {
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
     this.mcpStatsByLane.delete(lane.displayName);
-    this.laneBus.emit({ type: 'lane:closed', payload: { laneId: lane.id } });
+    this.laneBus.emit({
+      type: 'lane:closed',
+      payload: { laneId: lane.id, displayName: lane.displayName },
+    });
     if (this.lanes.length === 0) {
       this.activeLaneId = '';
       this.systemRows = [
@@ -1765,9 +1813,13 @@ export class AcpHarnessView implements ContentView {
   private async cancelLane(lane: HarnessLane): Promise<void> {
     // Cancelling a lane mid-peer-conversation closes the conversation
     // from this lane's side — notify the peer(s).
+    const wasAwaitingPeer = lane.status === 'awaiting_peer';
     this.coordinator.cancelConversationsFor(lane.id);
-    if (lane.status === 'awaiting_peer') {
+    if (wasAwaitingPeer) {
+      // No active ACP prompt — clearing peer state is enough.
       this.setLaneStatus(lane, 'idle');
+      this.render();
+      return;
     }
     if (!lane.client) {
       this.render();

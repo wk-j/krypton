@@ -213,6 +213,8 @@ export interface InterLaneEnvelope {
   message: string;
   done: boolean;
   sentAt: number;
+  /** Rust-side harness scope tag. Used by the bridge to drop cross-harness leakage. */
+  harnessId?: string;
 }
 
 export interface LaneSummary {
@@ -234,7 +236,7 @@ export interface LaneStatusEvent {
 export type LaneBusEvent =
   | { type: 'lane:status'; payload: LaneStatusEvent }
   | { type: 'lane:spawned'; payload: { laneId: string } }
-  | { type: 'lane:closed'; payload: { laneId: string } };
+  | { type: 'lane:closed'; payload: { laneId: string; displayName: string } };
 
 export type AcpEvent =
   | { type: 'user_message_chunk'; text: string }

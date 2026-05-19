@@ -293,6 +293,39 @@ All changes appear **only** when a conversation is active. Lane sidebar is verti
 - **Agent-initiated peer review** (agent decides on its own to consult another lane). User-directed only in this spec.
 - **Telemetry / token-cost tracking** for inter-lane traffic.
 
+## Implementation Addendum — Round-Trip Protocol (2026-05-19)
+
+Initial implementation made `peer_send` / `peer_list` **fire-and-forget**: Rust emitted a Tauri event and returned `delivered: true` immediately, ignoring the frontend coordinator's actual outcome. This silently masked `self_send`, `unknown_lane`, `lane_stopped`, and cross-harness leakage failures and was identified during peer review. It is replaced by a synchronous round-trip:
+
+**peer_send (Rust → Frontend → Rust)**
+
+1. `hook_server.rs::peer_send` builds the envelope, **registers a `oneshot::Sender` keyed by `envelopeId`** in `HookServer::pending_bus_replies`.
+2. Emits `acp-inter-lane-message` with `requestId === envelopeId` in the payload.
+3. Awaits the oneshot with a `BUS_REPLY_TIMEOUT` of 2500ms.
+4. `acp-harness-view.ts::subscribeInterLaneBridge` listener:
+   - Drops envelopes where `env.harnessId !== this.harnessMemoryId` (cross-harness filter).
+   - Translates display names → internal lane ids.
+   - Calls `coordinator.deliver(translated)` and obtains a real `DeliveryResult`.
+   - Invokes Tauri command `acp_bus_reply({ requestId, result })` to complete the oneshot.
+5. Rust receives the `DeliveryResult` and returns it to the MCP client. Non-`delivered:true` results become MCP tool errors with the reason string.
+
+**peer_list (Rust → Frontend → Rust)**
+
+Same shape: Rust generates a `plist-<ts>-<rand>` requestId, emits `acp-peer-list-requested`, awaits the oneshot. Frontend listener (`peerListUnlisten`) calls `coordinator.listLanes()` and replies with `{ lanes: LaneSummary[], count }`.
+
+**Tauri surface**
+
+- New command `commands::acp_bus_reply { request_id, result }` (registered in `lib.rs`) → `HookServer::complete_bus_reply()`.
+- `HookServer::pending_bus_replies: Mutex<HashMap<String, oneshot::Sender<Value>>>` holds the in-flight registry.
+- `register_bus_reply` / `drop_bus_reply` / `complete_bus_reply` are the only access points.
+
+**Other corrections in the same pass**
+
+- **#cancel / peer close**: `InterLaneCoordinator.cancelConversationsFor` and `onLaneClosed` now synthesize an envelope with `fromLaneId: '__harness__'` into the peer's inbox so the peer agent learns of termination in-context. `composePrompt` and `drain` special-case `__harness__` envelopes to skip the standard `[inter-lane] From X` framing and `inter_lane` transcript row (the system notice already handles the UI side).
+- **awaiting_peer cancel path**: `cancelLane` returns after `setLaneStatus(idle)` for an `awaiting_peer` lane — no ACP `session/cancel` call (there is no active prompt).
+- **Prompt context**: `renderPromptMemoryPacket` advertises `peer_send` / `peer_list` when `hasPeers`.
+- **`InterLaneEnvelope.harnessId`**: added as optional field on the TS type to match the Rust-side scope tag.
+
 ## Resources
 
 - `src/acp/acp-harness-view.ts:51,128,876–971,1070,1086,1661` — lane state machine, auto-allow constants, prompt dispatch, cancel.
