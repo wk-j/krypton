@@ -20,8 +20,40 @@ use tauri::Manager;
 
 use crate::util::emit::EmitExt;
 
+/// Reserve fds 0/1/2 with `/dev/null` when launched as a macOS GUI bundle.
+///
+/// When the app is started via Finder/Dock/launchd, stdin/stdout/stderr are
+/// closed. Any subsequent `open(2)` (notably `posix_openpt` inside
+/// `portable-pty::openpty`) returns the lowest free fd — i.e. 0, 1, or 2. The
+/// PTY master end then occupies stderr; later `log::info!` / `tracing::warn!`
+/// / `eprintln!` calls from Krypton or its deps write to fd 2, which is the
+/// **master** side of a child shell's PTY. That looks to the slave (fish/zsh)
+/// like keyboard input, and the shell tries to execute each log line as a
+/// command. Reserving 0/1/2 with `/dev/null` forces `openpty` to allocate
+/// fds ≥ 3 and keeps standard streams harmless.
+#[cfg(unix)]
+fn ensure_std_fds() {
+    unsafe {
+        let null = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR);
+        if null < 0 {
+            return;
+        }
+        for target in 0..=2 {
+            if libc::fcntl(target, libc::F_GETFD) == -1 {
+                libc::dup2(null, target);
+            }
+        }
+        if null > 2 {
+            libc::close(null);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(unix)]
+    ensure_std_fds();
+
     let pty_manager = Arc::new(pty::PtyManager::new());
     let pty_manager_for_poller = pty_manager.clone();
 
@@ -117,6 +149,7 @@ pub fn run() {
             commands::get_app_cwd,
             commands::list_harness_memory,
             commands::dispose_harness_memory,
+            commands::acp_bus_reply,
             commands::list_harness_mcp_stats,
             commands::save_temp_image,
             commands::capture_screen,

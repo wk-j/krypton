@@ -538,6 +538,21 @@ In-app webview panes (`PaneContentType = 'webview'`) embed a Tauri v2 child `Web
 
 See `docs/102-webview-windows.md` for the full spec.
 
+### macOS GUI Bundle stdio Hijacks PTY Master (Platform Gotcha)
+
+> Implemented: 2026-05-18
+
+When Krypton is launched as a macOS `.app` bundle (Finder, Dock, `open -a`, launchd), the process starts with **fds 0/1/2 closed** — GUI apps don't have an inherited terminal. The kernel's `open(2)` always returns the lowest free fd, so the very first `posix_openpt()` inside `portable-pty::PtySystem::openpty()` (called from `pty.rs::PtyManager::spawn_pty`) returns master fds `0`, `1`, or `2`. That means the PTY **master** end occupies what Rust believes is stderr.
+
+Any subsequent `log::info!`, `tracing::warn!`, `eprintln!`, panic message, or third-party diagnostic (e.g. `fff_search::background_watcher` failing to start an FSEvent stream, `tauri_plugin_log` falling back to stderr) writes to fd 2 — which is the master side of the freshly-spawned shell's PTY. Writes to the master flow into the slave as if they were keystrokes, so fish/zsh tries to execute each log line as a command and emits `Unknown command: '[2026-…][app_lib::hook_server][INFO] …'`.
+
+**Fix:** `lib.rs::ensure_std_fds()` runs at the top of `run()` (Unix only) and `dup2(/dev/null)` into any of fds 0/1/2 that are not already open. With those slots reserved, `openpty()` allocates the master at fd ≥ 3 and standard streams stay harmless.
+
+Symptoms that point at this bug recurring:
+- Newly-opened terminal panes show pasted-in log lines on startup
+- Shell complains `Unknown command: '[…][app_lib::…][…]'` or `Unsupported use of '='`
+- Only the first one or two panes after launch are affected — once a master grabs fds 0/1/2, later `openpty()` calls land on fd ≥ 3
+
 ### Tauri Commands
 
 | Command | Parameters | Purpose |
