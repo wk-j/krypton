@@ -683,6 +683,44 @@ export class CommandPalette {
       execute: () => c.openAgentView(),
     });
 
+    // ── ACP Harness ──
+    this.register({
+      id: 'acp.peek.show',
+      label: 'ACP: Show Lane Peek',
+      category: 'ACP',
+      execute: () => c.showAcpLanePeek(),
+    });
+    this.register({
+      id: 'acp.peek.hide',
+      label: 'ACP: Hide Lane Peek',
+      category: 'ACP',
+      execute: () => c.hideAcpLanePeek(),
+    });
+    this.register({
+      id: 'acp.peek.next',
+      label: 'ACP: Peek Next Lane',
+      category: 'ACP',
+      execute: () => c.peekAcpLaneByDelta(1),
+    });
+    this.register({
+      id: 'acp.peek.prev',
+      label: 'ACP: Peek Previous Lane',
+      category: 'ACP',
+      execute: () => c.peekAcpLaneByDelta(-1),
+    });
+    this.register({
+      id: 'acp.peek.activate',
+      label: 'ACP: Activate Peeked Lane',
+      category: 'ACP',
+      execute: () => c.activateAcpPeekedLane(),
+    });
+    this.register({
+      id: 'acp.peek.unlock',
+      label: 'ACP: Unlock Lane Peek',
+      category: 'ACP',
+      execute: () => c.unlockAcpLanePeek(),
+    });
+
     // ── Markdown Viewer ──
     this.register({
       id: 'markdown.open',

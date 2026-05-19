@@ -457,6 +457,68 @@
   scrollbar-width: thin;
 }
 
+.acp-harness__lane-peek {
+  position: absolute;
+  top: calc(var(--acp-lane-head-height, 28px) + 36px);
+  right: 12px;
+  z-index: 3;
+  width: min(34ch, calc(100% - 24px));
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--acp-lane-accent, #8effb0) 52%, transparent);
+  background: rgba(5, 9, 16, 0.92);
+  box-shadow:
+    inset 0 0 0 1px rgba(216, 232, 216, 0.08),
+    0 0 18px rgba(0, 0, 0, 0.24);
+  color: rgba(216, 232, 216, 0.82);
+  /* Slice 1 is read-only and keyboard-controlled through the palette. */
+  pointer-events: none;
+}
+
+.acp-harness__lane-peek-head,
+.acp-harness__lane-peek-row {
+  display: grid;
+  grid-template-columns: 8ch minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  align-items: baseline;
+}
+
+.acp-harness__lane-peek-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(216, 232, 216, 0.08);
+}
+
+.acp-harness__lane-peek-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--acp-lane-accent, #8effb0);
+}
+
+.acp-harness__lane-peek-status,
+.acp-harness__lane-peek-label {
+  color: rgba(255, 209, 102, 0.68);
+  font-size: 0.78em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.acp-harness__lane-peek-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .acp-harness__lane-peek {
+    display: none;
+  }
+}
+
 .acp-harness__lane-stats {
   flex: 0 0 auto;
   display: flex;

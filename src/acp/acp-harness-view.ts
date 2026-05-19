@@ -69,6 +69,7 @@ interface HarnessTranscriptItem {
   id: string;
   kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane';
   text: string;
+  createdAt?: number;
   markdownSource?: string;
   markdownHtml?: string;
   pretextSource?: string;
@@ -147,9 +148,62 @@ interface StagedImage {
   path: string | null;
 }
 
+interface LanePeekState {
+  visible: boolean;
+  dismissedAt: number | null;
+  dismissedPriority: number | null;
+  lockedLaneId: string | null;
+  currentLaneId: string | null;
+  currentReasonKey: string | null;
+  selectedAt: number;
+}
+
+export type LanePeekPayload =
+  | { kind: 'permission'; toolName: string; subject: string; decision: string }
+  | { kind: 'peer'; direction: 'in' | 'out' | 'awaiting'; peerDisplayName: string; ageLabel: string }
+  | { kind: 'error'; message: string }
+  | { kind: 'activity'; label: string; ageLabel: string }
+  | null;
+
+export interface LanePeekSummary {
+  status: HarnessLaneStatus;
+  headline: string;
+  detail: string | null;
+  payload: LanePeekPayload;
+}
+
+export interface LanePeekCandidate {
+  laneId: string;
+  displayName: string;
+  priority: number;
+  direct: boolean;
+  reasonKey: string;
+  reasonLabel: string;
+  summary: LanePeekSummary;
+  at: number;
+  visualIndex: number;
+}
+
+export interface LanePeekSnapshot {
+  laneId: string;
+  displayName: string;
+  status: HarnessLaneStatus;
+  active: boolean;
+  stopped: boolean;
+  visualIndex: number;
+  inboxDepth: number;
+  pendingPeers: PendingPeerSummary[];
+  latestInterLane: { direction: 'in' | 'out'; peerId: string; peerDisplayName: string; at: number; message: string } | null;
+  latestPermission: { toolName: string; subject: string; decision: string; at: number } | null;
+  latestMeaningful: { kind: HarnessTranscriptItem['kind']; label: string; at: number } | null;
+  error: string | null;
+}
+
 const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MEMORY_PERMISSION_SCAN_DEPTH = 8;
+const LANE_PEEK_DWELL_MS = 8_000;
+const LANE_PEEK_RECENT_MS = 5 * 60_000;
 const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
 const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
@@ -336,6 +390,15 @@ export class AcpHarnessView implements ContentView {
   private mcpStatsByLane = new Map<string, HarnessMcpLaneStats>();
   private mcpUnlisten: UnlistenFn | null = null;
   private fileTouchMap = new Map<string, FileTouchRecord>();
+  private lanePeek: LanePeekState = {
+    visible: true,
+    dismissedAt: null,
+    dismissedPriority: null,
+    lockedLaneId: null,
+    currentLaneId: null,
+    currentReasonKey: null,
+    selectedAt: 0,
+  };
   private memoryDrawerOpen = false;
   private helpOpen = false;
   private zenMode = false;
@@ -657,6 +720,7 @@ export class AcpHarnessView implements ContentView {
       if (this.helpOpen) this.toggleHelp(false);
       else if (this.memoryDrawerOpen) this.toggleMemoryDrawer(false);
       else if (lane.stagedImages.length > 0) this.clearStagedImages(lane);
+      else if (this.lanePeek.visible && this.lanePeek.currentLaneId) this.hideLanePeek();
       else this.enterTranscriptFocus();
       return true;
     }
@@ -786,6 +850,82 @@ export class AcpHarnessView implements ContentView {
     const staged = this.stageImageData(lane, image.data, image.mimeType, image.path);
     if (staged) this.flashChip('screen capture staged');
     return true;
+  }
+
+  showLanePeek(): void {
+    const candidate = this.bestLanePeekCandidate({ force: true });
+    if (!candidate) {
+      this.flashChip('no lane peek candidate');
+      return;
+    }
+    this.lanePeek.visible = true;
+    this.lanePeek.dismissedAt = null;
+    this.lanePeek.dismissedPriority = null;
+    this.lanePeek.lockedLaneId = null;
+    this.applyLanePeekCandidate(candidate, true);
+    this.render();
+  }
+
+  hideLanePeek(): void {
+    const current = this.lanePeekCandidates().find((candidate) => candidate.laneId === this.lanePeek.currentLaneId) ?? null;
+    this.lanePeek.visible = false;
+    this.lanePeek.dismissedAt = Date.now();
+    this.lanePeek.dismissedPriority = current?.priority ?? null;
+    this.lanePeek.lockedLaneId = null;
+    this.render();
+  }
+
+  unlockLanePeek(): void {
+    this.lanePeek.lockedLaneId = null;
+    this.lanePeek.dismissedAt = null;
+    this.lanePeek.dismissedPriority = null;
+    this.lanePeek.visible = true;
+    this.render();
+  }
+
+  peekLaneByDelta(delta: number): void {
+    const candidates = this.lanePeekCandidates();
+    if (candidates.length === 0) {
+      this.flashChip('no lane peek candidate');
+      return;
+    }
+    if (candidates.length === 1) {
+      this.lanePeek.visible = true;
+      this.lanePeek.dismissedAt = null;
+      this.lanePeek.dismissedPriority = null;
+      this.lanePeek.lockedLaneId = null;
+      this.applyLanePeekCandidate(candidates[0], true);
+      this.flashChip('only one lane peek candidate');
+      this.render();
+      return;
+    }
+    const current = this.lanePeek.currentLaneId;
+    const index = Math.max(0, candidates.findIndex((candidate) => candidate.laneId === current));
+    const next = candidates[(index + delta + candidates.length) % candidates.length];
+    this.lanePeek.visible = true;
+    this.lanePeek.dismissedAt = null;
+    this.lanePeek.dismissedPriority = null;
+    this.lanePeek.lockedLaneId = next.laneId;
+    this.applyLanePeekCandidate(next, true);
+    this.render();
+  }
+
+  activatePeekedLane(): void {
+    const laneId = this.lanePeek.currentLaneId;
+    if (!laneId || laneId === this.activeLaneId) {
+      this.flashChip('no peeked lane');
+      return;
+    }
+    if (!this.lanes.some((lane) => lane.id === laneId)) {
+      this.flashChip('peeked lane gone');
+      this.lanePeek.currentLaneId = null;
+      this.lanePeek.lockedLaneId = null;
+      this.render();
+      return;
+    }
+    this.lanePeek.visible = false;
+    this.lanePeek.lockedLaneId = null;
+    this.activateLane(laneId);
   }
 
   private buildDOM(): void {
@@ -2141,6 +2281,7 @@ export class AcpHarnessView implements ContentView {
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
     this.renderActiveLaneChrome(lane);
     this.renderActiveTranscript(lane);
+    this.renderLanePeek();
     this.renderPlanPanel(lane);
     this.renderComposer();
     this.scheduleStickyScroll();
@@ -2272,6 +2413,76 @@ export class AcpHarnessView implements ContentView {
     }
     this.observeActiveTranscriptBody();
     this.schedulePretextLayout();
+  }
+
+  private renderLanePeek(): void {
+    const host = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active');
+    if (!host) return;
+    const existing = host.querySelector<HTMLElement>(':scope > .acp-harness__lane-peek');
+    const candidate = this.bestLanePeekCandidate();
+    if (!candidate || !this.lanePeek.visible) {
+      existing?.remove();
+      return;
+    }
+    this.applyLanePeekCandidate(candidate, false);
+    const next = renderLanePeek(candidate, this.lanePeek.lockedLaneId === candidate.laneId);
+    if (existing) existing.replaceWith(next);
+    else host.appendChild(next);
+  }
+
+  private bestLanePeekCandidate(options: { force?: boolean } = {}): LanePeekCandidate | null {
+    const candidates = this.lanePeekCandidates();
+    const best = selectLanePeekCandidate(
+      candidates,
+      {
+        currentLaneId: this.lanePeek.currentLaneId,
+        lockedLaneId: this.lanePeek.lockedLaneId,
+        selectedAt: this.lanePeek.selectedAt,
+        dismissedAt: options.force ? null : this.lanePeek.dismissedAt,
+        dismissedPriority: options.force ? null : this.lanePeek.dismissedPriority,
+      },
+      Date.now(),
+    );
+    if (!best) return null;
+    if (!options.force && !this.lanePeek.visible && this.lanePeek.dismissedAt !== null) {
+      this.lanePeek.visible = true;
+      this.lanePeek.dismissedAt = null;
+      this.lanePeek.dismissedPriority = null;
+    }
+    return best;
+  }
+
+  private lanePeekCandidates(): LanePeekCandidate[] {
+    return buildLanePeekCandidates(this.lanePeekSnapshots(), Date.now());
+  }
+
+  private lanePeekSnapshots(): LanePeekSnapshot[] {
+    return this.lanes.map((lane, index) => ({
+      laneId: lane.id,
+      displayName: lane.displayName,
+      status: lane.status,
+      active: lane.id === this.activeLaneId,
+      stopped: lane.status === 'stopped',
+      visualIndex: index,
+      inboxDepth: this.coordinator.inboxDepth(lane.id),
+      pendingPeers: this.coordinator.pendingPeersFor(lane.id),
+      latestInterLane: latestInterLaneForPeek(lane),
+      latestPermission: latestPermissionForPeek(lane),
+      latestMeaningful: latestMeaningfulForPeek(lane),
+      error: lane.error,
+    }));
+  }
+
+  private applyLanePeekCandidate(candidate: LanePeekCandidate, force: boolean): void {
+    if (
+      force ||
+      this.lanePeek.currentLaneId !== candidate.laneId ||
+      this.lanePeek.currentReasonKey !== candidate.reasonKey
+    ) {
+      this.lanePeek.currentLaneId = candidate.laneId;
+      this.lanePeek.currentReasonKey = candidate.reasonKey;
+      this.lanePeek.selectedAt = Date.now();
+    }
   }
 
   private refreshZenRail(): void {
@@ -2470,7 +2681,10 @@ export class AcpHarnessView implements ContentView {
       (bodyCell ?? this.dashboardEl).appendChild(laneEl);
     }
     const activeLane = this.activeLane();
-    if (activeLane) this.renderActiveTranscript(activeLane);
+    if (activeLane) {
+      this.renderActiveTranscript(activeLane);
+      this.renderLanePeek();
+    }
     this.observeActiveTranscriptBody();
     if (activeLane && activeLane.stickToBottom) {
       const body = this.activeTranscriptBody();
@@ -2696,6 +2910,7 @@ export class AcpHarnessView implements ContentView {
       }
     }
     if (this.metricsPanelOpen) this.renderMetricsPanel();
+    this.renderLanePeek();
   }
 
   private toggleMetricsPanel(open?: boolean): void {
@@ -2846,7 +3061,7 @@ export class AcpHarnessView implements ContentView {
     text: string,
     metadata: Pick<HarnessTranscriptItem, 'imageCount'> = {},
   ): HarnessTranscriptItem {
-    const item = { id: makeId(), kind, text, ...metadata };
+    const item: HarnessTranscriptItem = { id: makeId(), kind, text, createdAt: Date.now(), ...metadata };
     lane.transcript.push(item);
     if (lane.transcript.length > 300) {
       const dropped = lane.transcript.shift();
@@ -3349,6 +3564,12 @@ export class AcpHarnessView implements ContentView {
   private activateLane(id: string): void {
     this.activeLaneId = id;
     this.focus = 'text';
+    this.lanePeek.visible = true;
+    this.lanePeek.dismissedAt = null;
+    this.lanePeek.dismissedPriority = null;
+    this.lanePeek.lockedLaneId = null;
+    this.lanePeek.currentLaneId = null;
+    this.lanePeek.currentReasonKey = null;
     this.render();
     this.scrollActiveTranscriptToBottom();
   }
@@ -4698,6 +4919,317 @@ function renderInterLaneBody(body: HTMLElement, item: HarnessTranscriptItem): vo
   message.className = 'acp-harness__inter-lane-message';
   message.textContent = messageText;
   body.appendChild(message);
+}
+
+function renderLanePeek(candidate: LanePeekCandidate, locked: boolean): HTMLElement {
+  const el = document.createElement('aside');
+  el.className = 'acp-harness__lane-peek';
+  el.dataset.reason = candidate.reasonKey;
+  el.innerHTML =
+    `<header class="acp-harness__lane-peek-head">` +
+      `<span class="acp-harness__lane-peek-name">${esc(candidate.displayName)}</span>` +
+      `<span class="acp-harness__lane-peek-status">${esc(statusLabel(candidate.summary.status))}${locked ? ' · locked' : ''}</span>` +
+    `</header>` +
+    `<div class="acp-harness__lane-peek-row">` +
+      `<span class="acp-harness__lane-peek-label">reason</span>` +
+      `<span class="acp-harness__lane-peek-value">${esc(candidate.reasonLabel)}</span>` +
+    `</div>` +
+    `<div class="acp-harness__lane-peek-row">` +
+      `<span class="acp-harness__lane-peek-label">state</span>` +
+      `<span class="acp-harness__lane-peek-value">${esc(candidate.summary.headline)}</span>` +
+    `</div>` +
+    renderLanePeekDetail(candidate.summary);
+  return el;
+}
+
+function renderLanePeekDetail(summary: LanePeekSummary): string {
+  if (summary.payload?.kind === 'permission') {
+    return (
+      `<div class="acp-harness__lane-peek-row">` +
+        `<span class="acp-harness__lane-peek-label">perm</span>` +
+        `<span class="acp-harness__lane-peek-value">${esc(summary.payload.toolName)} · ${esc(truncate(summary.payload.subject, 42))}</span>` +
+      `</div>`
+    );
+  }
+  if (summary.payload?.kind === 'peer') {
+    return (
+      `<div class="acp-harness__lane-peek-row">` +
+        `<span class="acp-harness__lane-peek-label">peer</span>` +
+        `<span class="acp-harness__lane-peek-value">${esc(summary.payload.direction)} ${esc(summary.payload.peerDisplayName)} · ${esc(summary.payload.ageLabel)}</span>` +
+      `</div>`
+    );
+  }
+  if (summary.payload?.kind === 'error') {
+    return (
+      `<div class="acp-harness__lane-peek-row">` +
+        `<span class="acp-harness__lane-peek-label">error</span>` +
+        `<span class="acp-harness__lane-peek-value">${esc(truncate(summary.payload.message, 52))}</span>` +
+      `</div>`
+    );
+  }
+  if (summary.payload?.kind === 'activity') {
+    return (
+      `<div class="acp-harness__lane-peek-row">` +
+        `<span class="acp-harness__lane-peek-label">last</span>` +
+        `<span class="acp-harness__lane-peek-value">${esc(truncate(summary.payload.label, 52))} · ${esc(summary.payload.ageLabel)}</span>` +
+      `</div>`
+    );
+  }
+  if (!summary.detail) return '';
+  return (
+    `<div class="acp-harness__lane-peek-row">` +
+      `<span class="acp-harness__lane-peek-label">detail</span>` +
+      `<span class="acp-harness__lane-peek-value">${esc(truncate(summary.detail, 52))}</span>` +
+    `</div>`
+  );
+}
+
+export function buildLanePeekCandidates(snapshots: LanePeekSnapshot[], now: number): LanePeekCandidate[] {
+  const active = snapshots.find((lane) => lane.active);
+  if (!active) return [];
+  const byId = new Map(snapshots.map((lane) => [lane.laneId, lane]));
+  const candidates = new Map<string, LanePeekCandidate>();
+  const add = (candidate: LanePeekCandidate): void => {
+    const prev = candidates.get(candidate.laneId);
+    if (!prev || compareLanePeekCandidates(candidate, prev) < 0) candidates.set(candidate.laneId, candidate);
+  };
+  const oldestPendingPeer = active.pendingPeers.reduce<PendingPeerSummary | null>(
+    (oldest, peer) => !oldest || peer.sentAt < oldest.sentAt ? peer : oldest,
+    null,
+  );
+  if (oldestPendingPeer) {
+    const lane = byId.get(oldestPendingPeer.toLaneId);
+    if (lane && laneCanPeek(lane)) {
+      add(makePeerCandidate(lane, 10, true, 'awaiting-peer', 'awaiting reply', 'awaiting', active.displayName, oldestPendingPeer.sentAt, now));
+    }
+  }
+  if (active.latestInterLane?.direction === 'in') {
+    const lane = byId.get(active.latestInterLane.peerId);
+    if (lane && laneCanPeek(lane)) {
+      add(makePeerCandidate(lane, 20, true, 'inbound-peer', 'peer message', 'in', active.displayName, active.latestInterLane.at, now));
+    }
+  }
+  if (active.latestInterLane?.direction === 'out') {
+    const lane = byId.get(active.latestInterLane.peerId);
+    if (lane && laneCanPeek(lane) && (lane.status === 'busy' || lane.status === 'awaiting_peer' || now - active.latestInterLane.at <= LANE_PEEK_RECENT_MS)) {
+      add(makePeerCandidate(lane, 30, true, 'peer-counterpart', 'peer counterpart', 'out', active.displayName, active.latestInterLane.at, now));
+    }
+  }
+  const activeText = `${active.latestMeaningful?.label ?? ''} ${active.latestInterLane?.message ?? ''}`.toLowerCase();
+  for (const lane of snapshots) {
+    if (!laneCanPeek(lane)) continue;
+    if (lane.latestPermission && lane.status === 'needs_permission' && pathMatchesText(lane.latestPermission.subject, activeText)) {
+      add(makePermissionCandidate(lane, 40, true, 'related-permission', 'related permission', lane.latestPermission));
+    }
+    if (lane.status === 'error') add(makeErrorCandidate(lane, 50, false, 'lane-error', 'lane error', now));
+    if (lane.status === 'needs_permission' && lane.latestPermission) {
+      add(makePermissionCandidate(lane, 60, false, 'lane-permission', 'permission required', lane.latestPermission));
+    }
+    if (lane.inboxDepth > 0) add(makeActivityCandidate(lane, 70, false, 'lane-inbox', 'inbox pending', `inbox ${lane.inboxDepth}`, now, now));
+    if (lane.latestMeaningful && now - lane.latestMeaningful.at <= LANE_PEEK_RECENT_MS) {
+      add(makeActivityCandidate(lane, 80, false, 'recent-activity', 'recent activity', lane.latestMeaningful.label, lane.latestMeaningful.at, now));
+    }
+  }
+  return Array.from(candidates.values()).sort(compareLanePeekCandidates);
+}
+
+export function selectLanePeekCandidate(
+  candidates: LanePeekCandidate[],
+  state: Pick<LanePeekState, 'currentLaneId' | 'lockedLaneId' | 'selectedAt' | 'dismissedAt' | 'dismissedPriority'>,
+  now: number,
+): LanePeekCandidate | null {
+  if (candidates.length === 0) return null;
+  if (state.lockedLaneId) {
+    const locked = candidates.find((candidate) => candidate.laneId === state.lockedLaneId);
+    if (locked) return locked;
+  }
+  const best = candidates[0];
+  const current = candidates.find((candidate) => candidate.laneId === state.currentLaneId) ?? null;
+  if (state.dismissedAt !== null && state.dismissedPriority !== null && best.priority >= state.dismissedPriority) return null;
+  if (!current || current.laneId === best.laneId) return best;
+  const dwellMet = now - state.selectedAt >= LANE_PEEK_DWELL_MS;
+  const strongPreempt = best.priority <= current.priority - 20;
+  return dwellMet || strongPreempt ? best : current;
+}
+
+function laneCanPeek(lane: LanePeekSnapshot): boolean {
+  return !lane.active && !lane.stopped;
+}
+
+function compareLanePeekCandidates(a: LanePeekCandidate, b: LanePeekCandidate): number {
+  if (a.priority !== b.priority) return a.priority - b.priority;
+  if (a.direct !== b.direct) return a.direct ? -1 : 1;
+  if (a.at !== b.at) return b.at - a.at;
+  if (a.visualIndex !== b.visualIndex) return a.visualIndex - b.visualIndex;
+  return a.laneId.localeCompare(b.laneId);
+}
+
+function makePeerCandidate(
+  lane: LanePeekSnapshot,
+  priority: number,
+  direct: boolean,
+  reasonKey: string,
+  reasonLabel: string,
+  direction: 'in' | 'out' | 'awaiting',
+  peerDisplayName: string,
+  at: number,
+  now: number,
+): LanePeekCandidate {
+  return {
+    laneId: lane.laneId,
+    displayName: lane.displayName,
+    priority,
+    direct,
+    reasonKey,
+    reasonLabel,
+    at,
+    visualIndex: lane.visualIndex,
+    summary: {
+      status: lane.status,
+      headline: statusLabel(lane.status),
+      detail: null,
+      payload: { kind: 'peer', direction, peerDisplayName, ageLabel: formatCoarseAge(now - at) },
+    },
+  };
+}
+
+function makePermissionCandidate(
+  lane: LanePeekSnapshot,
+  priority: number,
+  direct: boolean,
+  reasonKey: string,
+  reasonLabel: string,
+  permission: NonNullable<LanePeekSnapshot['latestPermission']>,
+): LanePeekCandidate {
+  return {
+    laneId: lane.laneId,
+    displayName: lane.displayName,
+    priority,
+    direct,
+    reasonKey,
+    reasonLabel,
+    at: permission.at,
+    visualIndex: lane.visualIndex,
+    summary: {
+      status: lane.status,
+      headline: 'permission required',
+      detail: permission.subject,
+      payload: { kind: 'permission', toolName: permission.toolName, subject: permission.subject, decision: permission.decision },
+    },
+  };
+}
+
+function makeErrorCandidate(lane: LanePeekSnapshot, priority: number, direct: boolean, reasonKey: string, reasonLabel: string, now: number): LanePeekCandidate {
+  return {
+    laneId: lane.laneId,
+    displayName: lane.displayName,
+    priority,
+    direct,
+    reasonKey,
+    reasonLabel,
+    at: now,
+    visualIndex: lane.visualIndex,
+    summary: {
+      status: lane.status,
+      headline: 'error',
+      detail: lane.error,
+      payload: { kind: 'error', message: lane.error ?? 'failed' },
+    },
+  };
+}
+
+function makeActivityCandidate(
+  lane: LanePeekSnapshot,
+  priority: number,
+  direct: boolean,
+  reasonKey: string,
+  reasonLabel: string,
+  label: string,
+  at: number,
+  now: number,
+): LanePeekCandidate {
+  return {
+    laneId: lane.laneId,
+    displayName: lane.displayName,
+    priority,
+    direct,
+    reasonKey,
+    reasonLabel,
+    at,
+    visualIndex: lane.visualIndex,
+    summary: {
+      status: lane.status,
+      headline: statusLabel(lane.status),
+      detail: label,
+      payload: { kind: 'activity', label, ageLabel: formatCoarseAge(now - at) },
+    },
+  };
+}
+
+function pathMatchesText(path: string, text: string): boolean {
+  if (!path || !text) return false;
+  const normalized = path.toLowerCase();
+  const base = basename(path).toLowerCase();
+  return text.includes(normalized) || (base.length > 2 && text.includes(base));
+}
+
+function latestInterLaneForPeek(lane: HarnessLane): LanePeekSnapshot['latestInterLane'] {
+  for (let i = lane.transcript.length - 1; i >= 0; i--) {
+    const item = lane.transcript[i];
+    if (item.kind !== 'inter_lane' || !item.interLane) continue;
+    return {
+      direction: item.interLane.direction,
+      peerId: item.interLane.peerId,
+      peerDisplayName: item.interLane.peerDisplayName,
+      at: item.createdAt ?? Date.now(),
+      message: item.text,
+    };
+  }
+  return null;
+}
+
+function latestPermissionForPeek(lane: HarnessLane): LanePeekSnapshot['latestPermission'] {
+  const permission = lane.pendingPermissions[0]?.transcriptItem?.permission;
+  if (permission) {
+    return {
+      toolName: permission.toolName,
+      subject: permission.subject,
+      decision: permission.decision,
+      at: Date.now(),
+    };
+  }
+  for (let i = lane.transcript.length - 1; i >= 0; i--) {
+    const item = lane.transcript[i];
+    if (item.kind === 'permission' && item.permission) {
+      return {
+        toolName: item.permission.toolName,
+        subject: item.permission.subject,
+        decision: item.permission.decision,
+        at: item.createdAt ?? Date.now(),
+      };
+    }
+  }
+  return null;
+}
+
+function latestMeaningfulForPeek(lane: HarnessLane): LanePeekSnapshot['latestMeaningful'] {
+  for (let i = lane.transcript.length - 1; i >= 0; i--) {
+    const item = lane.transcript[i];
+    if (!['tool', 'permission', 'inter_lane', 'shell', 'fs_activity', 'fs_write_review'].includes(item.kind)) continue;
+    return {
+      kind: item.kind,
+      label: item.text.replace(/\s+/g, ' ').trim(),
+      at: item.createdAt ?? Date.now(),
+    };
+  }
+  return null;
+}
+
+function formatCoarseAge(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 60_000) return '<1m';
+  if (ms < 5 * 60_000) return '1m+';
+  if (ms < 15 * 60_000) return '5m+';
+  return '15m+';
 }
 
 function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {

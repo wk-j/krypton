@@ -54,6 +54,23 @@ import { WebviewContentView } from './webview-view';
 import type { ViewBus } from './view-bus';
 import { SYSTEM_SOURCE, type ViewAddress } from './view-bus-types';
 
+interface AcpLanePeekCommands {
+  showLanePeek(): void;
+  hideLanePeek(): void;
+  unlockLanePeek(): void;
+  peekLaneByDelta(delta: number): void;
+  activatePeekedLane(): void;
+}
+
+function hasAcpLanePeekCommands(value: ContentView | null | undefined): value is ContentView & AcpLanePeekCommands {
+  return !!value
+    && typeof (value as Partial<AcpLanePeekCommands>).showLanePeek === 'function'
+    && typeof (value as Partial<AcpLanePeekCommands>).hideLanePeek === 'function'
+    && typeof (value as Partial<AcpLanePeekCommands>).unlockLanePeek === 'function'
+    && typeof (value as Partial<AcpLanePeekCommands>).peekLaneByDelta === 'function'
+    && typeof (value as Partial<AcpLanePeekCommands>).activatePeekedLane === 'function';
+}
+
 function webviewTitleForUrl(url: string): string {
   try {
     const u = new URL(url);
@@ -962,6 +979,31 @@ export class Compositor {
   getFocusedContentType(): PaneContentType | null {
     const pane = this.getFocusedPane();
     return pane?.contentView?.type ?? null;
+  }
+
+  showAcpLanePeek(): void {
+    const view = this.getFocusedPane()?.contentView;
+    if (hasAcpLanePeekCommands(view)) view.showLanePeek();
+  }
+
+  hideAcpLanePeek(): void {
+    const view = this.getFocusedPane()?.contentView;
+    if (hasAcpLanePeekCommands(view)) view.hideLanePeek();
+  }
+
+  unlockAcpLanePeek(): void {
+    const view = this.getFocusedPane()?.contentView;
+    if (hasAcpLanePeekCommands(view)) view.unlockLanePeek();
+  }
+
+  peekAcpLaneByDelta(delta: number): void {
+    const view = this.getFocusedPane()?.contentView;
+    if (hasAcpLanePeekCommands(view)) view.peekLaneByDelta(delta);
+  }
+
+  activateAcpPeekedLane(): void {
+    const view = this.getFocusedPane()?.contentView;
+    if (hasAcpLanePeekCommands(view)) view.activatePeekedLane();
   }
 
   hasFocusedWindow(): boolean {

@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-19 (ACP harness transcript readability)
+> Last updated: 2026-05-19 (ACP contextual lane peek)
 
 ## Overview
 
@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **ACP contextual lane peek** — The ACP harness now shows a hideable, non-blocking peek for one automatically selected non-active lane. Candidate ranking is lane-local and context-driven: direct peer waits/messages first, then related permissions, non-active errors/permissions/inbox, then recent meaningful activity. The peek shows only lane name, status, reason, and one compact payload; it never becomes a global mixed-lane overview or mini-transcript. Command palette actions can show/hide, cycle, unlock, or activate the peeked lane, and `Esc` hides it only when a permission prompt does not own `Esc`. See `docs/109-acp-contextual-lane-peek.md`.
 - **ACP Harness transcript readability** — Permission rows now render as structured cards instead of string-only transcript lines. The harness splits built-in MCP auto-allow taxonomy into memory tools (`memory_set/get/list`) and peer tools (`peer_send/list`), while keeping both auto-allowed under the user-directed harness policy. Auto-allowed cards show the matched rule (`matched harness memory/peer auto-allow rule`), manual decisions mutate the original permission card in place, and failed permission replies mark the same card failed before logging the error. `awaiting_peer` lane activity now names the pending peer with coarse age buckets (`<1m`, `1m+`, `5m+`, `15m+`) and `#cancel` guidance without adding a persistent timer. See `docs/107-acp-harness-transcript-readability.md`.
 - **ACP Harness Peering (inter-lane messaging)** — Lanes in the same harness can now hold user-directed peer-review conversations. New primitives: `LaneBus` (status event emitter), `LaneInbox` (per-lane FIFO), `InterLaneCoordinator` (drain-on-idle, awaiting_peer transitions). MCP tools `peer_send` + `peer_list` on the renamed `krypton-harness-bus` MCP server (auto-allowed alongside memory tools). New lane status `awaiting_peer` blocks the composer with pending-peer guidance and `#cancel`. No watchdogs, no budgets, no config — user controls lifecycle via `#cancel`. See `docs/106-inter-lane-messaging.md`.
 - **ACP Harness transcript window** — Long sessions no longer pay a full O(transcript) render cost every frame. `AcpHarnessView.renderActiveTranscript()` now slices `lane.transcript` to a tail window (default 60 rows) and the existing diff cleanup loop removes older rows from the DOM. A muted indicator row at the top of the transcript shows the hidden count (`↑ N earlier rows hidden — Ctrl+H show 60 more`). `Ctrl+H` grows each lane's window by 60 rows; when the window reaches the total it snaps to "all" and the next press wraps back to 60. The setting is per-lane, resets on `#new`/`#new!`/`#restart`, and is not persisted across restarts. Pure frontend — no agent context impact. See `docs/103-acp-harness-transcript-window.md`.

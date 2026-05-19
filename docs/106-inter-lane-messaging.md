@@ -263,6 +263,7 @@ All changes appear **only** when a conversation is active. Lane sidebar is verti
 - **Inbox depth chip** (right side of lane row): `▼N` rendered when `inbox.depth() > 0`. Hidden otherwise. One flat chip, no glow.
 - **Composer reject in `awaiting_peer`**: flash chip identifies the pending peer target/age, for example `"awaiting Claude-1 · <1m · #cancel first"`. Reuses existing `flashChip()` path and coarse age buckets; no persistent timer is added.
 - **`inter_lane` transcript rows** in *both* lanes when an envelope is delivered/received. Payload: `{ direction: 'in'|'out', peer: laneId, peerDisplayName, message, done }`. Single flat row, distinct accent on the left edge (no nested boxes).
+- **Contextual lane peek**: when the active lane is waiting on, receiving from, or recently coordinating with a non-active peer lane, the harness can show a hideable peek for that single peer lane. The peek is read-only and lane-local; it does not create a global mixed-lane overview and does not replace lane switching.
 - **No new keybindings.** Conversation is initiated by user prompting one lane in plain language; cancellation is the existing `#cancel`.
 - **No new panels, modals, or dashboards.**
 

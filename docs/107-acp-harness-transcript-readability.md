@@ -228,6 +228,7 @@ That keeps pending, accepted, rejected, auto-allowed, and failed states on one r
 - **Large raw input:** Preview is bounded; expanded detail is bounded to a fixed number of key/value rows. Full raw JSON is not dumped into the transcript.
 - **Auto-allow reply fails:** Same card becomes `failed`; append a system row only for the error detail.
 - **Multiple pending permissions:** Each permission gets its own card. Composer actions still apply to the first pending permission, matching current behavior.
+- **Contextual lane peek:** the peek may summarize one permission card from a non-active lane, but it does not expand permission details or duplicate full raw arguments. Full permission context remains in that lane's transcript card. See `docs/109-acp-contextual-lane-peek.md`.
 - **Adapter emits only text content:** Fallback regex detection remains, but the card marks `serverName: null` and uses `autoReason` from the fallback source.
 - **Reduced motion:** No new animations are required. Existing row entrance behavior remains.
 - **Transparent WKWebView:** No `backdrop-filter`; cards use alpha backgrounds and borders only.

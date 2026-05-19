@@ -168,6 +168,10 @@ All default to on. The toggles exist mainly to let users with `prefers-reduced-m
 2. **`@property` support for breathing colour interpolation.** macOS WKWebView supports `@property` in recent versions, but the fallback is acceptable — proceed with the fallback by default and add `@property` registration as a progressive enhancement.
 3. **Order of merge.** Original suggested order was (6) → (1) → (4) → (7) → (3) → (5) → (2). As of 2026-05-18, upgrades 1, 2, 3, 6, 7 are already merged (see commits `c1ec1d6`, `2b0c1e4`, `454f78c`). Remaining: (4) display flash and (5) HUD numerics. (5) is the higher-value next step since all of its data sources already exist; (4) ships the singleton infra now and re-wires the workspace-switch trigger once workspaces land.
 
+## UI Improvement Backlog
+
+App-wide UI improvement candidates live in `docs/108-overall-ui-improvements.md`. This document stays scoped to chrome signal behavior: window chrome, state communication, HUD readouts, and display moments.
+
 ## Out of Scope
 
 - Adding new colours to the palette beyond the existing semantic tokens
