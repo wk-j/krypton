@@ -451,6 +451,9 @@ export class AcpHarnessView implements ContentView {
   private metricsOverlayEl!: HTMLElement;
   private pickerEl!: HTMLElement;
   private planEl!: HTMLElement;
+  private laneRailEl!: HTMLElement;
+  private planSlotEl!: HTMLElement;
+  private peekSlotEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private pretextRaf = false;
   private scrollRaf = false;
@@ -990,7 +993,20 @@ export class AcpHarnessView implements ContentView {
     this.planEl = document.createElement('aside');
     this.planEl.className = 'acp-harness__plan';
     this.planEl.hidden = true;
-    body.appendChild(this.planEl);
+
+    this.laneRailEl = document.createElement('div');
+    this.laneRailEl.className = 'acp-harness__lane-rail';
+    this.planSlotEl = document.createElement('div');
+    this.planSlotEl.className = 'acp-harness__lane-rail__slot';
+    this.planSlotEl.dataset.slot = 'plan';
+    this.planSlotEl.hidden = true;
+    this.planSlotEl.appendChild(this.planEl);
+    this.laneRailEl.appendChild(this.planSlotEl);
+    this.peekSlotEl = document.createElement('div');
+    this.peekSlotEl.className = 'acp-harness__lane-rail__slot';
+    this.peekSlotEl.dataset.slot = 'peek';
+    this.peekSlotEl.hidden = true;
+    this.laneRailEl.appendChild(this.peekSlotEl);
 
     this.pickerEl = document.createElement('aside');
     this.pickerEl.className = 'acp-harness__picker';
@@ -2427,20 +2443,19 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderLanePeek(): void {
-    const host = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active');
-    if (!host) return;
-    const existing = host.querySelector<HTMLElement>(':scope > .acp-harness__lane-peek');
+    const slot = this.peekSlotEl;
     const snapshots = this.lanePeekSnapshots();
     const candidate = this.bestLanePeekCandidate({ snapshots });
     if (!candidate || !this.lanePeek.visible) {
-      existing?.remove();
+      slot.replaceChildren();
+      slot.hidden = true;
       return;
     }
     this.applyLanePeekCandidate(candidate, false);
     const snapshot = snapshots.find((s) => s.laneId === candidate.laneId) ?? null;
     const next = renderLanePeek(candidate, snapshot, this.lanePeek.lockedLaneId === candidate.laneId);
-    if (existing) existing.replaceWith(next);
-    else host.appendChild(next);
+    slot.replaceChildren(next);
+    slot.hidden = false;
   }
 
   private bestLanePeekCandidate(options: { force?: boolean; snapshots?: LanePeekSnapshot[] } = {}): LanePeekCandidate | null {
@@ -2706,6 +2721,8 @@ export class AcpHarnessView implements ContentView {
           body.dataset.laneId = lane.id;
         }
         laneEl.appendChild(body);
+        this.laneRailEl.parentElement?.removeChild(this.laneRailEl);
+        laneEl.appendChild(this.laneRailEl);
       }
       (bodyCell ?? this.dashboardEl).appendChild(laneEl);
     }
@@ -3212,6 +3229,7 @@ export class AcpHarnessView implements ContentView {
     if (!lane || !lane.plan || lane.plan.length === 0) {
       this.planEl.hidden = true;
       this.planEl.innerHTML = '';
+      this.planSlotEl.hidden = true;
       return;
     }
     const entries = lane.plan;
@@ -3273,6 +3291,7 @@ export class AcpHarnessView implements ContentView {
     this.planEl.innerHTML = header + bar + entriesBlock + footer;
     this.planEl.classList.toggle('acp-harness__plan--collapsed', collapsed);
     this.planEl.hidden = false;
+    this.planSlotEl.hidden = false;
   }
 
   private handleFsReviewKey(e: KeyboardEvent, lane: HarnessLane, item: HarnessTranscriptItem): boolean {

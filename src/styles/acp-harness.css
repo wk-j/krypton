@@ -437,9 +437,12 @@
 }
 
 .acp-harness__inter-lane-message {
-  white-space: pre-wrap;
   word-break: break-word;
   color: rgba(216, 232, 216, 0.92);
+}
+
+.acp-harness__inter-lane-message:not(.acp-harness__msg-body--markdown) {
+  white-space: pre-wrap;
 }
 
 .acp-harness__inter-lane-message.acp-harness__msg-body--markdown ul,
@@ -465,12 +468,39 @@
   scrollbar-width: thin;
 }
 
-.acp-harness__lane-peek {
+.acp-harness__lane-rail {
   position: absolute;
-  top: calc(var(--acp-lane-head-height, 28px) + 36px);
+  top: 36px;
   right: 12px;
-  z-index: 3;
-  width: min(44ch, calc(100% - 24px));
+  width: clamp(220px, 28%, 320px);
+  max-height: calc(100% - 36px - 56px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.acp-harness__lane-rail__slot {
+  pointer-events: auto;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 50%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.acp-harness__lane-rail__slot[hidden] {
+  display: none;
+}
+
+.acp-harness__lane-rail__slot--primary { max-height: 70%; }
+.acp-harness__lane-rail__slot--compact { max-height: 96px; }
+
+.acp-harness__lane-peek {
+  width: 100%;
   display: grid;
   gap: 3px;
   padding: 8px 10px 7px;
@@ -481,7 +511,7 @@
     inset 0 0 0 1px rgba(216, 232, 216, 0.08),
     0 0 18px rgba(0, 0, 0, 0.24);
   color: rgba(216, 232, 216, 0.92);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .acp-harness__lane-peek[data-priority="high"] { --acp-peek-accent: #ff8b8b; }
@@ -596,12 +626,6 @@
 }
 .acp-harness__lane-peek-chip--hot b {
   color: #ff8b8b;
-}
-
-@media (max-width: 560px) {
-  .acp-harness__lane-peek {
-    display: none;
-  }
 }
 
 .acp-harness__lane-stats {
@@ -2238,12 +2262,8 @@
 .acp-harness__fs-review-resolved--rejected { color: #ff8b8b; }
 
 .acp-harness__plan {
-  position: absolute;
-  top: 40px;
-  right: 16px;
-  z-index: 1;
-  width: clamp(240px, 28vw, 360px);
-  max-height: calc(100% - 56px);
+  position: relative;
+  width: 100%;
   display: flex;
   flex-direction: column;
   background:

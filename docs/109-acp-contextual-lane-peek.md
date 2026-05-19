@@ -162,10 +162,10 @@ Default behavior:
 
 Placement:
 
-- The peek is positioned inside the active ACP lane shell, anchored top-right over the transcript region.
+- The peek lives inside the **lane rail overlay** (`.acp-harness__lane-rail` — see `docs/111-harness-right-rail.md`), anchored top-right of the active lane and stacked below the plan slot.
+- The rail container handles positioning (`position: absolute`, no `backdrop-filter`); the peek itself is a normal flex-flow child of its rail slot.
 - It must not cover the composer, permission banner, or lane header.
-- It reserves no permanent vertical transcript space.
-- It uses `position: absolute` inside the active lane shell and no `backdrop-filter`.
+- It reserves no permanent vertical transcript space (the rail is an overlay, not a reserved column).
 - It must not compete with #104 titlebar HUD; the peek lives inside ACP content, while #104 HUD lives in native window chrome/titlebar.
 
 Shape:

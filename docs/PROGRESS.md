@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-19 (Context-aware command palette)
+> Last updated: 2026-05-20 (ACP harness right rail)
 
 ## Overview
 
@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **ACP harness right rail** — Active-lane plan strip and contextual lane peek no longer overlap. Both now live inside a single `.acp-harness__lane-rail` overlay container anchored top-right of the active lane, stacking vertically via flex column with explicit slot caps (`--primary` / default / `--compact`). The rail is an overlay (`position: absolute`, `pointer-events: none` with `auto` on slots) — it does not reserve transcript width. Plan element is reparented from the harness body into the rail's plan slot; peek is rendered into the rail's peek slot. The legacy `@media (max-width: 560px)` rule hiding peek at narrow widths is removed; the rail container layout absorbs that case. Metrics overlay stays floating (out of scope for v1). See `docs/111-harness-right-rail.md`.
 - **Context-aware command palette** — `Cmd+Shift+P` now opens with a "Context" section pinned above the static list. Sourced from the focused pane's `ContentView` via an optional `getPaletteActions?(ctx)` capability. The ACP harness is the v1 contributor and exposes lane-status-conditional actions (cancel, restart, switch lane, open memory drawer) with keybinding hints. Static list ordering and fuzzy match are unchanged when the user types; the section header is hidden while filtering. Sync throws inside palette `execute()` are now caught. See `docs/110-context-aware-command-palette.md`.
 - **ACP contextual lane peek** — The ACP harness now shows a hideable, non-blocking peek for one automatically selected non-active lane. Candidate ranking is lane-local and context-driven: direct peer waits/messages first, then related permissions, non-active errors/permissions/inbox, then recent meaningful activity. The peek shows only lane name, status, reason, and one compact payload; it never becomes a global mixed-lane overview or mini-transcript. Command palette actions can show/hide, cycle, unlock, or activate the peeked lane, and `Esc` hides it only when a permission prompt does not own `Esc`. See `docs/109-acp-contextual-lane-peek.md`.
 - **ACP Harness transcript readability** — Permission rows now render as structured cards instead of string-only transcript lines. The harness splits built-in MCP auto-allow taxonomy into memory tools (`memory_set/get/list`) and peer tools (`peer_send/list`), while keeping both auto-allowed under the user-directed harness policy. Auto-allowed cards show the matched rule (`matched harness memory/peer auto-allow rule`), manual decisions mutate the original permission card in place, and failed permission replies mark the same card failed before logging the error. `awaiting_peer` lane activity now names the pending peer with coarse age buckets (`<1m`, `1m+`, `5m+`, `15m+`) and `#cancel` guidance without adding a persistent timer. See `docs/107-acp-harness-transcript-readability.md`.
