@@ -641,26 +641,26 @@
   right: 0;
   top: 0;
   bottom: 0;
-  width: 3px;
+  width: 6px;
   z-index: 10;
   pointer-events: none;
   display: flex;
   flex-direction: column-reverse;
-  gap: 2px;
+  gap: 3px;
   justify-content: flex-start;
   align-items: flex-end;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
   overflow: hidden;
 }
 
 .krypton-activity-trace__tick {
-  width: 3px;
-  height: 6px;
+  width: 6px;
+  height: 10px;
   flex-shrink: 0;
   border-radius: 1px;
   opacity: 1;
   transition: opacity 1s linear, transform 0.3s ease;
-  box-shadow: 0 0 4px currentColor;
+  box-shadow: 0 0 6px currentColor;
 }
 
 /* Tool-type tick colors */
