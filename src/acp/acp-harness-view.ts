@@ -5045,8 +5045,12 @@ function renderInterLaneBody(body: HTMLElement, item: HarnessTranscriptItem): vo
     ? item.text.slice(item.text.indexOf('\n') + 1)
     : item.text;
   const message = document.createElement('div');
-  message.className = 'acp-harness__inter-lane-message';
-  message.textContent = messageText;
+  message.className = 'acp-harness__inter-lane-message acp-harness__msg-body--markdown';
+  try {
+    message.innerHTML = md.parse(messageText, { async: false }) as string;
+  } catch {
+    message.textContent = messageText;
+  }
   body.appendChild(message);
 }
 
