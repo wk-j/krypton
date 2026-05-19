@@ -5,15 +5,9 @@
 import { invoke } from './profiler/ipc';
 import { Compositor } from './compositor';
 import type { DashboardShortcut } from './types';
+import type { PaletteAction, PaletteContext, PaletteSection } from './palette-types';
 
-/** A single action in the command palette registry */
-interface PaletteAction {
-  id: string;
-  label: string;
-  category: string;
-  keybinding?: string;
-  execute: () => unknown;
-}
+export type { PaletteAction, PaletteContext, PaletteSection } from './palette-types';
 
 /** Fuzzy match result with scoring and match indices */
 interface FuzzyResult {
@@ -337,11 +331,27 @@ export class CommandPalette {
       return;
     }
 
+    const queryEmpty = this.input.value.trim().length === 0;
+    let lastSection: PaletteSection | null = null;
+
     for (let i = 0; i < this.filtered.length; i++) {
       const { action, matchIndices } = this.filtered[i];
+      const section: PaletteSection = action.section ?? 'static';
+
+      // Section headers — only when query is empty and section changes to a labeled one.
+      if (queryEmpty && section !== lastSection && section === 'context') {
+        const header = document.createElement('div');
+        header.className = 'krypton-palette__section-header';
+        header.textContent = 'Context';
+        this.resultsList.appendChild(header);
+      }
+      lastSection = section;
 
       const item = document.createElement('div');
       item.className = 'krypton-palette__item';
+      if (section === 'context') {
+        item.classList.add('krypton-palette__item--section-context');
+      }
       if (i === this.selectedIndex) {
         item.classList.add('krypton-palette__item--selected');
       }
@@ -440,10 +450,15 @@ export class CommandPalette {
     // the palette commit landed. See docs/104-chrome-signal-upgrades.md.
     this.compositor.flashAck();
 
-    // Execute the action (may be async)
-    const result = action.execute();
+    let result: unknown;
+    try {
+      result = action.execute();
+    } catch (err) {
+      console.error(`[CommandPalette] Action "${action.id}" threw:`, err);
+      return;
+    }
     if (result instanceof Promise) {
-      result.catch((err) => console.error(`[CommandPalette] Action "${action.id}" failed:`, err));
+      result.catch((err) => console.error(`[CommandPalette] Action "${action.id}" rejected:`, err));
     }
   }
 
@@ -839,9 +854,27 @@ export class CommandPalette {
    * based on current compositor state. Called each time the palette opens.
    */
   private rebuildActions(): void {
-    this.actions = [...this.staticActions];
-
     const c = this.compositor;
+
+    // Contextual section — focused view contributes via getPaletteActions?
+    const ctx: PaletteContext = {
+      focusedViewId: c.getFocusedViewId(),
+      focusedContentType: c.getFocusedContentType(),
+    };
+    const focusedView = c.getFocusedPanePublic()?.contentView ?? null;
+    let contextual: readonly PaletteAction[] = [];
+    try {
+      contextual = focusedView?.getPaletteActions?.(ctx) ?? [];
+    } catch (e) {
+      console.warn('[CommandPalette] getPaletteActions threw:', e);
+      contextual = [];
+    }
+    const contextualTagged: PaletteAction[] = contextual.map((a) => ({
+      ...a,
+      section: 'context' as const,
+    }));
+
+    this.actions = [...contextualTagged, ...this.staticActions];
 
     // Dynamic: "Unpin: <window label>" for each pinned window
     for (const { id, label } of c.pinnedWindows) {

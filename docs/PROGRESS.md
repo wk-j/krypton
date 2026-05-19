@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-19 (ACP contextual lane peek)
+> Last updated: 2026-05-19 (Context-aware command palette)
 
 ## Overview
 
@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **Context-aware command palette** — `Cmd+Shift+P` now opens with a "Context" section pinned above the static list. Sourced from the focused pane's `ContentView` via an optional `getPaletteActions?(ctx)` capability. The ACP harness is the v1 contributor and exposes lane-status-conditional actions (cancel, restart, switch lane, open memory drawer) with keybinding hints. Static list ordering and fuzzy match are unchanged when the user types; the section header is hidden while filtering. Sync throws inside palette `execute()` are now caught. See `docs/110-context-aware-command-palette.md`.
 - **ACP contextual lane peek** — The ACP harness now shows a hideable, non-blocking peek for one automatically selected non-active lane. Candidate ranking is lane-local and context-driven: direct peer waits/messages first, then related permissions, non-active errors/permissions/inbox, then recent meaningful activity. The peek shows only lane name, status, reason, and one compact payload; it never becomes a global mixed-lane overview or mini-transcript. Command palette actions can show/hide, cycle, unlock, or activate the peeked lane, and `Esc` hides it only when a permission prompt does not own `Esc`. See `docs/109-acp-contextual-lane-peek.md`.
 - **ACP Harness transcript readability** — Permission rows now render as structured cards instead of string-only transcript lines. The harness splits built-in MCP auto-allow taxonomy into memory tools (`memory_set/get/list`) and peer tools (`peer_send/list`), while keeping both auto-allowed under the user-directed harness policy. Auto-allowed cards show the matched rule (`matched harness memory/peer auto-allow rule`), manual decisions mutate the original permission card in place, and failed permission replies mark the same card failed before logging the error. `awaiting_peer` lane activity now names the pending peer with coarse age buckets (`<1m`, `1m+`, `5m+`, `15m+`) and `#cancel` guidance without adding a persistent timer. See `docs/107-acp-harness-transcript-readability.md`.
 - **ACP Harness Peering (inter-lane messaging)** — Lanes in the same harness can now hold user-directed peer-review conversations. New primitives: `LaneBus` (status event emitter), `LaneInbox` (per-lane FIFO), `InterLaneCoordinator` (drain-on-idle, awaiting_peer transitions). MCP tools `peer_send` + `peer_list` on the renamed `krypton-harness-bus` MCP server (auto-allowed alongside memory tools). New lane status `awaiting_peer` blocks the composer with pending-peer guidance and `#cancel`. No watchdogs, no budgets, no config — user controls lifecycle via `#cancel`. See `docs/106-inter-lane-messaging.md`.

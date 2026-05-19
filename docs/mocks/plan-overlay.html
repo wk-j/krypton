@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Plan overlay mock</title>
+<style>
+  :root {
+    --bg:           #04080d;
+    --frame:        rgba(0, 204, 255, 0.28);
+    --frame-strong: rgba(0, 204, 255, 0.55);
+    --ink:          rgba(216, 232, 216, 0.92);
+    --ink-dim:      rgba(216, 232, 216, 0.55);
+    --ink-faint:    rgba(216, 232, 216, 0.32);
+    --cyan:         #00ccff;
+    --amber:        #ffd27a;
+    --green:        #8effb0;
+    --red:          #ff8b8b;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(0, 204, 255, 0.05), transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(255, 139, 139, 0.04), transparent 50%),
+      #02060a;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    padding: 32px;
+    box-sizing: border-box;
+  }
+  .label { color: var(--ink-faint); font-size: 11px; letter-spacing: 0.08em; margin-bottom: 8px; }
+  .stage {
+    position: relative;
+    background: rgba(4, 8, 13, 0.6);
+    border: 1px dashed rgba(216, 232, 216, 0.08);
+    min-height: 460px;
+  }
+
+  /* ───────── current (CLI-ish) ───────── */
+
+  .cur {
+    position: absolute;
+    top: 16px; right: 16px;
+    width: 300px;
+    padding: 8px 10px 10px;
+    background: rgba(4, 8, 13, 0.88);
+    font-family: var(--mono);
+    color: rgba(216, 232, 216, 0.85);
+  }
+  .cur__hd { display: flex; gap: 10px; align-items: baseline; }
+  .cur__title { color: rgba(0, 204, 255, 0.78); }
+  .cur__prog { margin-left: auto; color: var(--ink-dim); }
+  .cur__hint { color: var(--ink-faint); font-size: 0.92em; }
+  .cur__entries { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+  .cur__row { display: flex; gap: 7px; padding-left: 6px; border-left: 2px solid transparent; line-height: 1.35; }
+  .cur__row--done { color: rgba(142, 255, 176, 0.7); }
+  .cur__row--done .cur__mark { color: var(--green); }
+  .cur__row--done .cur__txt { text-decoration: line-through; text-decoration-color: rgba(142, 255, 176, 0.4); }
+  .cur__row--prog { color: var(--amber); }
+  .cur__row--prog .cur__mark { color: var(--amber); }
+  .cur__row--pend { color: var(--ink-dim); }
+  .cur__row--high { border-left-color: rgba(255, 139, 139, 0.55); }
+  .cur__row--med  { border-left-color: rgba(0, 204, 255, 0.32); }
+  .cur__row--low  { border-left-color: rgba(216, 232, 216, 0.18); }
+  .cur__mark { color: var(--ink-dim); flex: 0 0 auto; }
+
+  /* ───────── new (rich HUD) ───────── */
+
+  .pl {
+    position: absolute;
+    top: 16px; right: 16px;
+    width: 320px;
+    max-height: calc(100% - 32px);
+    padding: 0;
+    background:
+      linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
+    border: 1px solid var(--frame);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    font-family: var(--mono);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+  }
+  /* corner brackets — single layer per corner */
+  .pl::before, .pl::after {
+    content: "";
+    position: absolute;
+    width: 10px; height: 10px;
+    border: 1px solid var(--frame-strong);
+    pointer-events: none;
+  }
+  .pl::before { top: -1px; left: -1px;  border-right: 0; border-bottom: 0; }
+  .pl::after  { top: -1px; right: -1px; border-left: 0;  border-bottom: 0; }
+
+  .pl__hd {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 12px 7px;
+    border-bottom: 1px solid rgba(0, 204, 255, 0.12);
+  }
+  .pl__title {
+    color: var(--cyan);
+    letter-spacing: 0.06em;
+    font-size: 11px;
+  }
+  .pl__title::before { content: "▸ "; opacity: 0.6; }
+  .pl__step {
+    color: var(--ink-dim);
+    font-size: 11px;
+  }
+  .pl__step b { color: var(--amber); font-weight: normal; }
+  .pl__count {
+    margin-left: auto;
+    color: var(--ink-faint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .pl__count b { color: var(--green); font-weight: normal; }
+
+  /* progress segments */
+  .pl__bar {
+    display: flex;
+    gap: 2px;
+    padding: 6px 12px 8px;
+    border-bottom: 1px solid rgba(0, 204, 255, 0.08);
+  }
+  .pl__seg {
+    flex: 1 1 0;
+    height: 4px;
+    background: rgba(216, 232, 216, 0.08);
+    border-radius: 1px;
+  }
+  .pl__seg--done { background: var(--green); box-shadow: 0 0 4px rgba(142, 255, 176, 0.4); }
+  .pl__seg--prog {
+    background: var(--amber);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.45; }
+  }
+
+  /* entries — timeline */
+  .pl__entries {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 8px 12px 10px;
+    display: flex;
+    flex-direction: column;
+  }
+  .pl__row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    gap: 10px;
+    align-items: start;
+    padding: 5px 0 5px 0;
+    line-height: 1.35;
+  }
+  /* connector line between dots */
+  .pl__row + .pl__row::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: -4px;
+    bottom: calc(100% - 9px);
+    width: 1px;
+    background: rgba(0, 204, 255, 0.18);
+  }
+  .pl__dot {
+    width: 9px; height: 9px;
+    margin-top: 4px;
+    border-radius: 50%;
+    border: 1px solid var(--ink-faint);
+    background: transparent;
+    justify-self: center;
+  }
+  .pl__row--done  .pl__dot { background: var(--green); border-color: var(--green); }
+  .pl__row--prog  .pl__dot {
+    background: var(--amber);
+    border-color: var(--amber);
+    box-shadow: 0 0 0 3px rgba(255, 210, 122, 0.18);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .pl__row--pend  .pl__dot { border-color: var(--ink-dim); }
+
+  .pl__txt {
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+  .pl__row--done  .pl__txt { color: var(--ink-dim); text-decoration: line-through; text-decoration-color: rgba(142, 255, 176, 0.3); }
+  .pl__row--prog  .pl__txt { color: var(--amber); }
+  .pl__row--pend  .pl__txt { color: var(--ink-dim); }
+
+  .pl__tag {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    padding: 1px 5px;
+    margin-top: 3px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    opacity: 0.75;
+    align-self: start;
+  }
+  .pl__tag--high { color: var(--red); }
+  .pl__tag--med  { color: var(--cyan); }
+  .pl__tag--low  { color: var(--ink-faint); }
+
+  .pl__ft {
+    border-top: 1px solid rgba(0, 204, 255, 0.12);
+    padding: 6px 12px;
+    display: flex;
+    gap: 12px;
+    color: var(--ink-faint);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+  }
+  .pl__key { color: var(--ink-dim); }
+  .pl__key b { color: var(--cyan); font-weight: normal; }
+</style>
+</head>
+<body>
+
+<div>
+  <div class="label">// current</div>
+  <div class="stage">
+    <aside class="cur">
+      <div class="cur__hd">
+        <span class="cur__title">// plan</span>
+        <span class="cur__prog">3/7 done</span>
+        <span class="cur__hint">p collapse</span>
+      </div>
+      <div class="cur__entries">
+        <div class="cur__row cur__row--done cur__row--med"><span class="cur__mark">[x]</span><span class="cur__txt">read acp-harness-view.ts plan section</span></div>
+        <div class="cur__row cur__row--done cur__row--med"><span class="cur__mark">[x]</span><span class="cur__txt">inspect existing css selectors</span></div>
+        <div class="cur__row cur__row--done cur__row--low"><span class="cur__mark">[x]</span><span class="cur__txt">sketch progress segments</span></div>
+        <div class="cur__row cur__row--prog cur__row--high"><span class="cur__mark">[~]</span><span class="cur__txt">render timeline dots with pulse on in_progress</span></div>
+        <div class="cur__row cur__row--pend cur__row--high"><span class="cur__mark">[ ]</span><span class="cur__txt">wire priority chip on right edge</span></div>
+        <div class="cur__row cur__row--pend cur__row--med"><span class="cur__mark">[ ]</span><span class="cur__txt">corner brackets via single pseudo per corner</span></div>
+        <div class="cur__row cur__row--pend cur__row--low"><span class="cur__mark">[ ]</span><span class="cur__txt">collapse animation tuning</span></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div>
+  <div class="label">// proposed</div>
+  <div class="stage">
+    <aside class="pl">
+      <div class="pl__hd">
+        <span class="pl__title">plan</span>
+        <span class="pl__step">step <b>4</b> of 7</span>
+        <span class="pl__count"><b>3</b>/7</span>
+      </div>
+      <div class="pl__bar">
+        <span class="pl__seg pl__seg--done"></span>
+        <span class="pl__seg pl__seg--done"></span>
+        <span class="pl__seg pl__seg--done"></span>
+        <span class="pl__seg pl__seg--prog"></span>
+        <span class="pl__seg"></span>
+        <span class="pl__seg"></span>
+        <span class="pl__seg"></span>
+      </div>
+      <div class="pl__entries">
+        <div class="pl__row pl__row--done">
+          <span class="pl__dot"></span>
+          <span class="pl__txt">read acp-harness-view.ts plan section</span>
+          <span class="pl__tag pl__tag--med">med</span>
+        </div>
+        <div class="pl__row pl__row--done">
+          <span class="pl__dot"></span>
+          <span class="pl__txt">inspect existing css selectors</span>
+          <span class="pl__tag pl__tag--med">med</span>
+        </div>
+        <div class="pl__row pl__row--done">
+          <span class="pl__dot"></span>
+          <span class="pl__txt">sketch progress segments</span>
+          <span class="pl__tag pl__tag--low">low</span>
+        </div>
+        <div class="pl__row pl__row--prog">
+          <span class="pl__dot"></span>
+          <span class="pl__txt">render timeline dots with pulse on in_progress</span>
+          <span class="pl__tag pl__tag--high">high</span>
+        </div>
+        <div class="pl__row pl__row--pend">
+          <span class="pl__dot"></span>
+          <span class="pl__txt">wire priority chip on right edge</span>
+          <span class="pl__tag pl__tag--high">high</span>
+        </div>
+        <div class="pl__row pl__row--pend">
+          <span class="pl__dot"></span>
+          <span class="pl__txt">corner brackets via single pseudo per corner</span>
+          <span class="pl__tag pl__tag--med">med</span>
+        </div>
+        <div class="pl__row pl__row--pend">
+          <span class="pl__dot"></span>
+          <span class="pl__txt">collapse animation tuning</span>
+          <span class="pl__tag pl__tag--low">low</span>
+        </div>
+      </div>
+      <div class="pl__ft">
+        <span class="pl__key"><b>p</b> collapse</span>
+        <span class="pl__key"><b>esc</b> dismiss</span>
+      </div>
+    </aside>
+  </div>
+</div>
+
+</body>
+</html>

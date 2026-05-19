@@ -45,6 +45,7 @@ import type {
   LeaderKeySpec,
   PaneContentType,
 } from '../types';
+import type { PaletteAction, PaletteContext } from '../palette-types';
 import { loadConfig, type LaneModelConfig } from '../config';
 import { extractModifiedPath } from './acp-harness-memory';
 import {
@@ -197,6 +198,16 @@ export interface LanePeekSnapshot {
   latestPermission: { toolName: string; subject: string; decision: string; at: number } | null;
   latestMeaningful: { kind: HarnessTranscriptItem['kind']; label: string; at: number } | null;
   error: string | null;
+  // Derived fields used by render; all optional to keep buildLanePeekCandidates pure-testable.
+  modelName?: string | null;
+  usage?: UsageInfo | null;
+  metrics?: AcpLaneMetrics | null;
+  mcp?: HarnessMcpLaneStats | null;
+  plan?: { done: number; total: number; activeText: string | null } | null;
+  activeTool?: { name: string; subject: string | null; startedAt: number } | null;
+  activeTurnStartedAt?: number | null;
+  recentFiles?: string[];
+  pendingShell?: boolean;
 }
 
 const MAX_STAGED_IMAGES = 4;
@@ -2419,19 +2430,22 @@ export class AcpHarnessView implements ContentView {
     const host = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active');
     if (!host) return;
     const existing = host.querySelector<HTMLElement>(':scope > .acp-harness__lane-peek');
-    const candidate = this.bestLanePeekCandidate();
+    const snapshots = this.lanePeekSnapshots();
+    const candidate = this.bestLanePeekCandidate({ snapshots });
     if (!candidate || !this.lanePeek.visible) {
       existing?.remove();
       return;
     }
     this.applyLanePeekCandidate(candidate, false);
-    const next = renderLanePeek(candidate, this.lanePeek.lockedLaneId === candidate.laneId);
+    const snapshot = snapshots.find((s) => s.laneId === candidate.laneId) ?? null;
+    const next = renderLanePeek(candidate, snapshot, this.lanePeek.lockedLaneId === candidate.laneId);
     if (existing) existing.replaceWith(next);
     else host.appendChild(next);
   }
 
-  private bestLanePeekCandidate(options: { force?: boolean } = {}): LanePeekCandidate | null {
-    const candidates = this.lanePeekCandidates();
+  private bestLanePeekCandidate(options: { force?: boolean; snapshots?: LanePeekSnapshot[] } = {}): LanePeekCandidate | null {
+    const snapshots = options.snapshots ?? this.lanePeekSnapshots();
+    const candidates = buildLanePeekCandidates(snapshots, Date.now());
     const best = selectLanePeekCandidate(
       candidates,
       {
@@ -2457,20 +2471,35 @@ export class AcpHarnessView implements ContentView {
   }
 
   private lanePeekSnapshots(): LanePeekSnapshot[] {
-    return this.lanes.map((lane, index) => ({
-      laneId: lane.id,
-      displayName: lane.displayName,
-      status: lane.status,
-      active: lane.id === this.activeLaneId,
-      stopped: lane.status === 'stopped',
-      visualIndex: index,
-      inboxDepth: this.coordinator.inboxDepth(lane.id),
-      pendingPeers: this.coordinator.pendingPeersFor(lane.id),
-      latestInterLane: latestInterLaneForPeek(lane),
-      latestPermission: latestPermissionForPeek(lane),
-      latestMeaningful: latestMeaningfulForPeek(lane),
-      error: lane.error,
-    }));
+    const now = Date.now();
+    return this.lanes.map((lane, index) => {
+      const sessionId = lane.client?.sessionId ?? null;
+      const metrics = sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null;
+      const mcp = this.mcpStatsByLane.get(lane.displayName) ?? null;
+      return {
+        laneId: lane.id,
+        displayName: lane.displayName,
+        status: lane.status,
+        active: lane.id === this.activeLaneId,
+        stopped: lane.status === 'stopped',
+        visualIndex: index,
+        inboxDepth: this.coordinator.inboxDepth(lane.id),
+        pendingPeers: this.coordinator.pendingPeersFor(lane.id),
+        latestInterLane: latestInterLaneForPeek(lane),
+        latestPermission: latestPermissionForPeek(lane),
+        latestMeaningful: latestMeaningfulForPeek(lane),
+        error: lane.error,
+        modelName: lane.modelName,
+        usage: lane.usage,
+        metrics,
+        mcp,
+        plan: derivePlanForPeek(lane),
+        activeTool: deriveActiveToolForPeek(lane, now),
+        activeTurnStartedAt: lane.activeTurnStartedAt,
+        recentFiles: deriveRecentFilesForPeek(lane.id, this.fileTouchMap, now),
+        pendingShell: lane.pendingShellId !== null,
+      };
+    });
   }
 
   private applyLanePeekCandidate(candidate: LanePeekCandidate, force: boolean): void {
@@ -3188,24 +3217,46 @@ export class AcpHarnessView implements ContentView {
     const entries = lane.plan;
     const done = entries.filter((e) => e.status === 'completed').length;
     const total = entries.length;
+    const activeIdx = entries.findIndex((e) => e.status === 'in_progress');
+    const stepNum = activeIdx >= 0 ? activeIdx + 1 : done < total ? done + 1 : total;
     const collapsed = lane.planCollapsed;
-    const hint = collapsed ? 'p expand' : 'p collapse';
+
     const header =
       `<div class="acp-harness__plan-header">` +
-      `<span class="acp-harness__plan-title">// plan</span>` +
-      `<span class="acp-harness__plan-progress">${done}/${total} done</span>` +
-      `<span class="acp-harness__plan-hint">${hint}</span>` +
+      `<span class="acp-harness__plan-title">plan</span>` +
+      `<span class="acp-harness__plan-step">step <b>${stepNum}</b> of ${total}</span>` +
+      `<span class="acp-harness__plan-count"><b>${done}</b>/${total}</span>` +
       `</div>`;
+
+    const segs = entries
+      .map((e) => {
+        const cls =
+          e.status === 'completed'
+            ? 'acp-harness__plan-seg acp-harness__plan-seg--done'
+            : e.status === 'in_progress'
+              ? 'acp-harness__plan-seg acp-harness__plan-seg--prog'
+              : 'acp-harness__plan-seg';
+        return `<span class="${cls}"></span>`;
+      })
+      .join('');
+    const bar = `<div class="acp-harness__plan-bar">${segs}</div>`;
+
+    const priorityLabel: Record<'low' | 'medium' | 'high', string> = {
+      low: 'low',
+      medium: 'med',
+      high: 'high',
+    };
     const rows = entries
       .map((entry) => {
-        const mark = entry.status === 'completed' ? '[x]' : entry.status === 'in_progress' ? '[~]' : '[ ]';
-        const cls =
-          `acp-harness__plan-entry acp-harness__plan-entry--${entry.status}` +
-          (entry.priority ? ` acp-harness__plan-entry--${entry.priority}` : '');
+        const cls = `acp-harness__plan-entry acp-harness__plan-entry--${entry.status}`;
+        const tag = entry.priority
+          ? `<span class="acp-harness__plan-tag acp-harness__plan-tag--${entry.priority}">${priorityLabel[entry.priority]}</span>`
+          : `<span class="acp-harness__plan-tag-spacer"></span>`;
         return (
           `<div class="${cls}">` +
-          `<span class="acp-harness__plan-entry-mark">${mark}</span>` +
+          `<span class="acp-harness__plan-dot"></span>` +
           `<span class="acp-harness__plan-entry-text">${esc(entry.content)}</span>` +
+          tag +
           `</div>`
         );
       })
@@ -3213,7 +3264,13 @@ export class AcpHarnessView implements ContentView {
     const entriesBlock = collapsed
       ? ''
       : `<div class="acp-harness__plan-entries">${rows}</div>`;
-    this.planEl.innerHTML = header + entriesBlock;
+
+    const footer =
+      `<div class="acp-harness__plan-footer">` +
+      `<span class="acp-harness__plan-key"><b>p</b> ${collapsed ? 'expand' : 'collapse'}</span>` +
+      `</div>`;
+
+    this.planEl.innerHTML = header + bar + entriesBlock + footer;
     this.planEl.classList.toggle('acp-harness__plan--collapsed', collapsed);
     this.planEl.hidden = false;
   }
@@ -3559,6 +3616,78 @@ export class AcpHarnessView implements ContentView {
 
   private activeLane(): HarnessLane | null {
     return this.lanes.find((lane) => lane.id === this.activeLaneId) ?? null;
+  }
+
+  // ─── Palette contributor ─────────────────────────────────────────────
+  // Public, thin wrappers around private lane operations so the command
+  // palette can invoke them. Closures capture `this`, not lane objects —
+  // lane state is re-read at execute time and fails soft if it has gone.
+  public cancelActiveLane(): void {
+    const lane = this.activeLane();
+    if (!lane) return;
+    if (lane.pendingShellId) {
+      void this.cancelShell(lane);
+      return;
+    }
+    if (lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer') {
+      void this.cancelLane(lane);
+    }
+  }
+  public restartActiveLane(): void {
+    const lane = this.activeLane();
+    if (lane) void this.restartLane(lane);
+  }
+  public cycleActiveLane(delta: number): void {
+    this.activateLaneByDelta(delta);
+  }
+  public showMemoryDrawer(): void {
+    if (!this.memoryDrawerOpen) this.toggleMemoryDrawer(true);
+  }
+
+  getPaletteActions(_ctx: PaletteContext): readonly PaletteAction[] {
+    const lane = this.activeLane();
+    if (!lane) return [];
+    const out: PaletteAction[] = [];
+
+    if (
+      lane.pendingShellId ||
+      lane.status === 'busy' ||
+      lane.status === 'needs_permission' ||
+      lane.status === 'awaiting_peer'
+    ) {
+      out.push({
+        id: 'acp.harness.cancel',
+        label: 'Cancel Current Turn',
+        category: 'ACP Harness',
+        keybinding: 'Ctrl+C',
+        execute: () => this.cancelActiveLane(),
+      });
+    }
+    if (lane.status === 'error' || lane.status === 'stopped') {
+      out.push({
+        id: 'acp.harness.restart',
+        label: 'Restart Lane Session',
+        category: 'ACP Harness',
+        execute: () => this.restartActiveLane(),
+      });
+    }
+    if (this.lanes.length > 1) {
+      out.push({
+        id: 'acp.harness.switch-lane',
+        label: `Switch Lane (current: ${lane.displayName})`,
+        category: 'ACP Harness',
+        keybinding: 'Ctrl+n',
+        execute: () => this.cycleActiveLane(1),
+      });
+    }
+    out.push({
+      id: 'acp.harness.show-memory',
+      label: 'Open Lane Memory Drawer',
+      category: 'ACP Harness',
+      keybinding: 'Ctrl+M',
+      execute: () => this.showMemoryDrawer(),
+    });
+    return out;
   }
 
   private activateLane(id: string): void {
@@ -4921,67 +5050,147 @@ function renderInterLaneBody(body: HTMLElement, item: HarnessTranscriptItem): vo
   body.appendChild(message);
 }
 
-function renderLanePeek(candidate: LanePeekCandidate, locked: boolean): HTMLElement {
+function lanePeekPriorityClass(candidate: LanePeekCandidate): 'high' | 'warn' | 'info' {
+  const kind = candidate.summary.payload?.kind;
+  if (kind === 'permission' || kind === 'error') return 'high';
+  if (candidate.summary.status === 'busy' || candidate.summary.status === 'awaiting_peer') return 'warn';
+  if (candidate.reasonKey === 'lane-shell') return 'warn';
+  return 'info';
+}
+
+function renderLanePeekEventRow(candidate: LanePeekCandidate): string {
+  const payload = candidate.summary.payload;
+  let text = candidate.reasonLabel;
+  let meta = '';
+  if (payload?.kind === 'permission') {
+    text = `▸ approve <b>${esc(payload.toolName)}</b>`;
+    meta = esc(truncateInline(payload.subject, 36));
+  } else if (payload?.kind === 'peer') {
+    const verb = payload.direction === 'in' ? 'message from' : payload.direction === 'out' ? 'sent to' : 'awaiting';
+    text = `▸ ${esc(verb)} <b>${esc(payload.peerDisplayName)}</b>`;
+    meta = esc(payload.ageLabel);
+  } else if (payload?.kind === 'error') {
+    text = `▸ <b>${esc(truncateInline(payload.message, 32))}</b>`;
+  } else if (payload?.kind === 'activity') {
+    text = `▸ ${esc(truncateInline(payload.label, 36))}`;
+    meta = esc(payload.ageLabel);
+  } else {
+    text = `▸ ${esc(candidate.reasonLabel)}`;
+  }
+  return (
+    `<div class="acp-harness__lane-peek-event">` +
+      `<span class="acp-harness__lane-peek-event-text">${text}</span>` +
+      (meta ? `<span class="acp-harness__lane-peek-event-meta">${meta}</span>` : '') +
+    `</div>`
+  );
+}
+
+function renderLanePeekRow(prefix: string, value: string): string {
+  return (
+    `<div class="acp-harness__lane-peek-row">` +
+      `<span class="acp-harness__lane-peek-prefix">${esc(prefix)}</span>` +
+      `<span class="acp-harness__lane-peek-value">${value}</span>` +
+    `</div>`
+  );
+}
+
+function renderLanePeekPlanRow(plan: NonNullable<LanePeekSnapshot['plan']>): string {
+  const text = plan.activeText ? truncateInline(plan.activeText, 32) : 'all done';
+  return (
+    `<div class="acp-harness__lane-peek-row">` +
+      `<span class="acp-harness__lane-peek-prefix">plan</span>` +
+      `<span class="acp-harness__lane-peek-plan">` +
+        `<span class="acp-harness__lane-peek-plan-count">${plan.done}/${plan.total}</span>` +
+        `<span class="acp-harness__lane-peek-plan-text">${esc(text)}</span>` +
+      `</span>` +
+    `</div>`
+  );
+}
+
+function renderLanePeekStatChips(snapshot: LanePeekSnapshot): string {
+  const chips: string[] = [];
+  if (snapshot.modelName) chips.push(`<span class="acp-harness__lane-peek-chip">${esc(snapshot.modelName)}</span>`);
+  const usage = snapshot.usage;
+  if (usage && typeof usage.used === 'number') {
+    const used = formatCount(usage.used);
+    if (typeof usage.size === 'number' && usage.size > 0) {
+      chips.push(`<span class="acp-harness__lane-peek-chip"><b>${esc(used)}</b>/${esc(formatCount(usage.size))}</span>`);
+    } else {
+      chips.push(`<span class="acp-harness__lane-peek-chip"><b>${esc(used)}</b> ctx</span>`);
+    }
+  }
+  const m = snapshot.metrics;
+  if (m && m.proc_count > 0) {
+    const hot = m.total_cpu_percent >= 80 || m.total_rss_mb >= 1500;
+    const cls = hot ? 'acp-harness__lane-peek-chip acp-harness__lane-peek-chip--hot' : 'acp-harness__lane-peek-chip';
+    const cpu = Math.round(m.total_cpu_percent);
+    const mem = m.total_rss_mb >= 1024 ? `${(m.total_rss_mb / 1024).toFixed(1)}G` : `${Math.round(m.total_rss_mb)}M`;
+    chips.push(`<span class="${cls}"><b>${cpu}%</b> ${esc(mem)}</span>`);
+  }
+  const mcp = snapshot.mcp;
+  if (mcp && mcp.toolsCallCount > 0) {
+    chips.push(`<span class="acp-harness__lane-peek-chip">mcp <b>${mcp.toolsCallCount}</b></span>`);
+  }
+  if (chips.length === 0) return '';
+  return `<footer class="acp-harness__lane-peek-foot">${chips.join('')}</footer>`;
+}
+
+function lanePeekAgeLabel(snapshot: LanePeekSnapshot, candidate: LanePeekCandidate, now: number): string {
+  if (snapshot.status === 'busy' && snapshot.activeTurnStartedAt) {
+    return formatElapsed(now - snapshot.activeTurnStartedAt);
+  }
+  const at = candidate.at;
+  if (!at) return '';
+  return formatCoarseAge(now - at);
+}
+
+function renderLanePeek(
+  candidate: LanePeekCandidate,
+  snapshot: LanePeekSnapshot | null,
+  locked: boolean,
+): HTMLElement {
   const el = document.createElement('aside');
   el.className = 'acp-harness__lane-peek';
   el.dataset.reason = candidate.reasonKey;
-  el.innerHTML =
+  el.dataset.priority = lanePeekPriorityClass(candidate);
+  const now = Date.now();
+  const age = snapshot ? lanePeekAgeLabel(snapshot, candidate, now) : '';
+  const statusText = `${statusLabel(candidate.summary.status)}${locked ? ' · locked' : ''}`;
+  let html =
     `<header class="acp-harness__lane-peek-head">` +
       `<span class="acp-harness__lane-peek-name">${esc(candidate.displayName)}</span>` +
-      `<span class="acp-harness__lane-peek-status">${esc(statusLabel(candidate.summary.status))}${locked ? ' · locked' : ''}</span>` +
+      `<span class="acp-harness__lane-peek-status">${esc(statusText)}</span>` +
+      (age ? `<span class="acp-harness__lane-peek-age">${esc(age)}</span>` : '') +
     `</header>` +
-    `<div class="acp-harness__lane-peek-row">` +
-      `<span class="acp-harness__lane-peek-label">reason</span>` +
-      `<span class="acp-harness__lane-peek-value">${esc(candidate.reasonLabel)}</span>` +
-    `</div>` +
-    `<div class="acp-harness__lane-peek-row">` +
-      `<span class="acp-harness__lane-peek-label">state</span>` +
-      `<span class="acp-harness__lane-peek-value">${esc(candidate.summary.headline)}</span>` +
-    `</div>` +
-    renderLanePeekDetail(candidate.summary);
-  return el;
-}
+    renderLanePeekEventRow(candidate);
 
-function renderLanePeekDetail(summary: LanePeekSummary): string {
-  if (summary.payload?.kind === 'permission') {
-    return (
-      `<div class="acp-harness__lane-peek-row">` +
-        `<span class="acp-harness__lane-peek-label">perm</span>` +
-        `<span class="acp-harness__lane-peek-value">${esc(summary.payload.toolName)} · ${esc(truncate(summary.payload.subject, 42))}</span>` +
-      `</div>`
-    );
+  if (snapshot?.plan) html += renderLanePeekPlanRow(snapshot.plan);
+
+  if (snapshot?.pendingShell && candidate.reasonKey !== 'lane-shell') {
+    html += renderLanePeekRow('shell', '<b>running</b>');
   }
-  if (summary.payload?.kind === 'peer') {
-    return (
-      `<div class="acp-harness__lane-peek-row">` +
-        `<span class="acp-harness__lane-peek-label">peer</span>` +
-        `<span class="acp-harness__lane-peek-value">${esc(summary.payload.direction)} ${esc(summary.payload.peerDisplayName)} · ${esc(summary.payload.ageLabel)}</span>` +
-      `</div>`
-    );
+
+  if (snapshot?.activeTool && snapshot.status === 'busy') {
+    const subject = snapshot.activeTool.subject ? ` · ${esc(snapshot.activeTool.subject)}` : '';
+    html += renderLanePeekRow('tool', `<b>${esc(snapshot.activeTool.name)}</b>${subject}`);
+  } else if (snapshot?.latestMeaningful && candidate.summary.payload?.kind !== 'activity') {
+    const label = truncateInline(snapshot.latestMeaningful.label, 40);
+    html += renderLanePeekRow('last', esc(label));
   }
-  if (summary.payload?.kind === 'error') {
-    return (
-      `<div class="acp-harness__lane-peek-row">` +
-        `<span class="acp-harness__lane-peek-label">error</span>` +
-        `<span class="acp-harness__lane-peek-value">${esc(truncate(summary.payload.message, 52))}</span>` +
-      `</div>`
-    );
+
+  if (snapshot?.recentFiles && snapshot.recentFiles.length > 0) {
+    const files = snapshot.recentFiles.map((p) => basename(p)).join(', ');
+    html += renderLanePeekRow('files', esc(truncateInline(files, 40)));
   }
-  if (summary.payload?.kind === 'activity') {
-    return (
-      `<div class="acp-harness__lane-peek-row">` +
-        `<span class="acp-harness__lane-peek-label">last</span>` +
-        `<span class="acp-harness__lane-peek-value">${esc(truncate(summary.payload.label, 52))} · ${esc(summary.payload.ageLabel)}</span>` +
-      `</div>`
-    );
+
+  if (snapshot && snapshot.inboxDepth > 0) {
+    html += renderLanePeekRow('inbox', `<b>${snapshot.inboxDepth}</b> pending`);
   }
-  if (!summary.detail) return '';
-  return (
-    `<div class="acp-harness__lane-peek-row">` +
-      `<span class="acp-harness__lane-peek-label">detail</span>` +
-      `<span class="acp-harness__lane-peek-value">${esc(truncate(summary.detail, 52))}</span>` +
-    `</div>`
-  );
+
+  if (snapshot) html += renderLanePeekStatChips(snapshot);
+
+  el.innerHTML = html;
+  return el;
 }
 
 export function buildLanePeekCandidates(snapshots: LanePeekSnapshot[], now: number): LanePeekCandidate[] {
@@ -5024,6 +5233,9 @@ export function buildLanePeekCandidates(snapshots: LanePeekSnapshot[], now: numb
     if (lane.status === 'error') add(makeErrorCandidate(lane, 50, false, 'lane-error', 'lane error', now));
     if (lane.status === 'needs_permission' && lane.latestPermission) {
       add(makePermissionCandidate(lane, 60, false, 'lane-permission', 'permission required', lane.latestPermission));
+    }
+    if (lane.pendingShell) {
+      add(makeActivityCandidate(lane, 65, false, 'lane-shell', 'shell running', 'shell command running', now, now));
     }
     if (lane.inboxDepth > 0) add(makeActivityCandidate(lane, 70, false, 'lane-inbox', 'inbox pending', `inbox ${lane.inboxDepth}`, now, now));
     if (lane.latestMeaningful && now - lane.latestMeaningful.at <= LANE_PEEK_RECENT_MS) {
@@ -5223,6 +5435,40 @@ function latestMeaningfulForPeek(lane: HarnessLane): LanePeekSnapshot['latestMea
     };
   }
   return null;
+}
+
+function derivePlanForPeek(lane: HarnessLane): LanePeekSnapshot['plan'] {
+  if (!lane.plan || lane.plan.length === 0) return null;
+  const total = lane.plan.length;
+  const done = lane.plan.filter((entry) => entry.status === 'completed').length;
+  const active = lane.plan.find((entry) => entry.status === 'in_progress');
+  const next = lane.plan.find((entry) => entry.status === 'pending');
+  const activeText = active?.content ?? next?.content ?? null;
+  return { done, total, activeText: activeText ? activeText.replace(/\s+/g, ' ').trim() : null };
+}
+
+function deriveActiveToolForPeek(lane: HarnessLane, now: number): LanePeekSnapshot['activeTool'] {
+  // Pick the oldest still-pending/in_progress tool — the likely blocking call. Map iteration
+  // is insertion order so the first match is also the oldest.
+  for (const call of lane.toolCalls.values()) {
+    if (call.status !== 'in_progress' && call.status !== 'pending') continue;
+    const name = call.title?.replace(/\s+/g, ' ').trim() || (call.kind ?? 'tool');
+    const loc = call.locations?.[0]?.path ?? null;
+    const subject = loc ? basename(loc) : null;
+    return { name, subject, startedAt: lane.activeTurnStartedAt ?? now };
+  }
+  return null;
+}
+
+function deriveRecentFilesForPeek(laneId: string, touchMap: Map<string, FileTouchRecord>, now: number): string[] {
+  const mine: FileTouchRecord[] = [];
+  for (const rec of touchMap.values()) {
+    if (rec.laneId !== laneId) continue;
+    if (now - rec.at > FILE_TOUCH_WINDOW_MS) continue;
+    mine.push(rec);
+  }
+  mine.sort((a, b) => b.at - a.at);
+  return mine.slice(0, 2).map((r) => r.path);
 }
 
 function formatCoarseAge(ms: number): string {

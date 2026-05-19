@@ -162,6 +162,10 @@ export interface ContentView {
   stageCapturedImage?(image: CapturedImage): boolean;
   /** Optional focused-view leader key bindings. Keys must not conflict with global leader keys. */
   getLeaderKeyBindings?(): LeaderKeyBinding[];
+  /** Contribute palette actions for the "Context" section. Called synchronously
+   *  on every palette open. Must be pure — no side effects, no async, no DOM
+   *  mutation. Omit actions that cannot run; do NOT return disabled rows. */
+  getPaletteActions?(ctx: import('./palette-types').PaletteContext): readonly import('./palette-types').PaletteAction[];
 }
 
 /** A leaf pane — hosts one xterm.js terminal + PTY session, or a content view */

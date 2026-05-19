@@ -58,14 +58,14 @@ The dedicated implementation spec is `docs/109-acp-contextual-lane-peek.md`.
 Shipped:
 
 1. **ACP contextual lane activity peek** — hidden lane state can now be inspected through a contextual single-lane peek.
+2. **Context-aware command palette** — focused view contributes a "Context" section via the optional `ContentView.getPaletteActions?` capability; ACP harness is the v1 contributor. See `docs/110-context-aware-command-palette.md`.
 
 Recommended next:
 
 1. **ACP transcript row focus** — creates the keyboard model needed for richer transcript interactions.
 2. **Permission detail expansion** — builds directly on structured permission cards.
-3. **Context-aware command palette** — improves app-wide command discovery after view-specific workflows are clearer.
-4. **Chrome HUD numerics** — completes the next concrete chrome-signal slice from `docs/104-chrome-signal-upgrades.md`.
-5. **Display typography moments** — polish after the higher-information surfaces are improved.
+3. **Chrome HUD numerics** — completes the next concrete chrome-signal slice from `docs/104-chrome-signal-upgrades.md`.
+4. **Display typography moments** — polish after the higher-information surfaces are improved.
 
 ## Relationship To Existing Docs
 

@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Lane peek redesign mock</title>
+<style>
+  :root {
+    --bg:        #02060a;
+    --ink:       rgba(216, 232, 216, 0.92);
+    --ink-dim:   rgba(216, 232, 216, 0.6);
+    --ink-faint: rgba(216, 232, 216, 0.38);
+    --cyan:      #00ccff;
+    --green:     #8effb0;
+    --amber:     #ffd27a;
+    --red:       #ff8b8b;
+    --frame:     rgba(0, 204, 255, 0.22);
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(0, 204, 255, 0.05), transparent 40%),
+      var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 32px;
+    box-sizing: border-box;
+  }
+  h1 { font-size: 13px; color: var(--ink-faint); font-weight: normal; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  .stage { margin-bottom: 8px; }
+  .stage h2 { font-size: 11px; color: var(--ink-faint); font-weight: normal; letter-spacing: 0.06em; margin: 0 0 8px; }
+  .stage-note { color: var(--ink-faint); font-size: 11px; margin-top: 8px; }
+
+  /* ───────── before (current) ───────── */
+  .cur {
+    width: 34ch;
+    display: grid;
+    gap: 4px;
+    padding: 8px 10px;
+    border-left: 2px solid color-mix(in srgb, var(--green) 52%, transparent);
+    background: rgba(5, 9, 16, 0.92);
+    box-shadow: inset 0 0 0 1px rgba(216, 232, 216, 0.08), 0 0 18px rgba(0, 0, 0, 0.24);
+    color: rgba(216, 232, 216, 0.82);
+  }
+  .cur__head, .cur__row { display: grid; grid-template-columns: 8ch minmax(0, 1fr); gap: 8px; align-items: baseline; }
+  .cur__head { grid-template-columns: minmax(0, 1fr) auto; padding-bottom: 2px; border-bottom: 1px solid rgba(216, 232, 216, 0.08); }
+  .cur__name { color: var(--cyan); }
+  .cur__status, .cur__label { color: rgba(255, 209, 102, 0.68); font-size: 0.78em; letter-spacing: 0.08em; text-transform: uppercase; }
+  .cur__value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ───────── new (action card) ───────── */
+  .pk {
+    width: 44ch;
+    display: grid;
+    gap: 3px;
+    padding: 8px 10px 7px;
+    border-left: 2px solid var(--accent, var(--green));
+    background:
+      linear-gradient(180deg, rgba(8, 14, 22, 0.95) 0%, rgba(4, 8, 13, 0.95) 100%);
+    box-shadow:
+      inset 0 0 0 1px rgba(216, 232, 216, 0.08),
+      0 0 18px rgba(0, 0, 0, 0.24);
+    color: var(--ink);
+  }
+  .pk[data-priority="high"] { --accent: var(--red); }
+  .pk[data-priority="warn"] { --accent: var(--amber); }
+  .pk[data-priority="info"] { --accent: var(--green); }
+
+  /* header */
+  .pk__hd {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(216, 232, 216, 0.08);
+    margin-bottom: 3px;
+  }
+  .pk__name { color: var(--cyan); flex: 0 0 auto; }
+  .pk__status {
+    color: var(--accent, var(--green));
+    font-size: 0.78em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .pk__age { color: var(--ink-faint); font-size: 0.82em; margin-left: auto; }
+
+  /* primary event — visually weighted, accent-tinted */
+  .pk__event {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding: 2px 0;
+    color: var(--accent, var(--ink));
+  }
+  .pk__event-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pk__event-meta { color: var(--ink-faint); font-size: 0.85em; }
+
+  /* generic rows — no uppercase label, soft prefix instead */
+  .pk__row {
+    display: grid;
+    grid-template-columns: 7ch minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+    color: var(--ink);
+    font-size: 0.95em;
+  }
+  .pk__row-prefix { color: var(--ink-faint); font-size: 0.85em; }
+  .pk__row-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pk__row-value b { color: var(--amber); font-weight: normal; }
+  .pk__row-value em { color: var(--ink-dim); font-style: normal; }
+
+  /* plan mini-progress chip */
+  .pk__plan {
+    display: grid;
+    grid-template-columns: 7ch minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+  }
+  .pk__plan-bar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px;
+    align-items: center;
+  }
+  .pk__plan-count { color: var(--green); font-variant-numeric: tabular-nums; font-size: 0.85em; }
+  .pk__plan-text { color: var(--amber); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* footer: chips */
+  .pk__ft {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-top: 5px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(216, 232, 216, 0.08);
+    font-size: 0.78em;
+    color: var(--ink-faint);
+    letter-spacing: 0.03em;
+  }
+  .pk__chip b { color: var(--ink-dim); font-weight: normal; }
+  .pk__chip--hot   b { color: var(--red); }
+  .pk__chip--warm  b { color: var(--amber); }
+</style>
+</head>
+<body>
+
+<h1>// lane peek — current vs proposed</h1>
+
+<div class="grid">
+
+  <!-- ───── CURRENT ───── -->
+  <div>
+    <div class="stage">
+      <h2>// current — peer message arrived</h2>
+      <div class="cur">
+        <div class="cur__head">
+          <span class="cur__name">Codex-1</span>
+          <span class="cur__status">idle</span>
+        </div>
+        <div class="cur__row"><span class="cur__label">reason</span><span class="cur__value">peer message</span></div>
+        <div class="cur__row"><span class="cur__label">state</span><span class="cur__value">idle</span></div>
+        <div class="cur__row"><span class="cur__label">peer</span><span class="cur__value">in Claude-1 · 1m+</span></div>
+      </div>
+      <div class="stage-note">3 rows tell the same fact. No info about what Codex-1 is, was, or will do.</div>
+    </div>
+  </div>
+
+  <!-- ───── PROPOSED ───── -->
+  <div>
+
+    <div class="stage">
+      <h2>// proposed — idle, peer message inbound</h2>
+      <aside class="pk" data-priority="info">
+        <div class="pk__hd">
+          <span class="pk__name">Codex-1</span>
+          <span class="pk__status">idle</span>
+          <span class="pk__age">1m+</span>
+        </div>
+        <div class="pk__event">
+          <span class="pk__event-text">▸ peer message from <b style="color:var(--cyan)">Claude-1</b></span>
+          <span class="pk__event-meta">“Consult — design ideas for…”</span>
+        </div>
+        <div class="pk__row">
+          <span class="pk__row-prefix">last</span>
+          <span class="pk__row-value"><em>agent:</em> I found two risks with the timeline conn…</span>
+        </div>
+        <div class="pk__plan">
+          <span class="pk__row-prefix">plan</span>
+          <span class="pk__plan-bar">
+            <span class="pk__plan-count">3/4</span>
+            <span class="pk__plan-text">run TS checks</span>
+          </span>
+        </div>
+        <div class="pk__row">
+          <span class="pk__row-prefix">files</span>
+          <span class="pk__row-value">hints.ts, acp-harness-view.ts</span>
+        </div>
+        <div class="pk__ft">
+          <span class="pk__chip">claude-opus-4-7</span>
+          <span class="pk__chip"><b>18k</b> ctx</span>
+          <span class="pk__chip"><b>4%</b> 612M</span>
+          <span class="pk__chip">mcp <b>3</b></span>
+        </div>
+      </aside>
+      <div class="stage-note">Event row absorbs reason+peer+state. Below is "what is this lane doing".</div>
+    </div>
+
+    <div class="stage">
+      <h2>// proposed — permission required (high priority)</h2>
+      <aside class="pk" data-priority="high">
+        <div class="pk__hd">
+          <span class="pk__name">Codex-1</span>
+          <span class="pk__status">needs perm</span>
+          <span class="pk__age">15s</span>
+        </div>
+        <div class="pk__event">
+          <span class="pk__event-text">▸ approve <b style="color:var(--red)">edit_file</b></span>
+          <span class="pk__event-meta">src/foo.ts</span>
+        </div>
+        <div class="pk__plan">
+          <span class="pk__row-prefix">plan</span>
+          <span class="pk__plan-bar">
+            <span class="pk__plan-count">2/5</span>
+            <span class="pk__plan-text">wire lane peek snapshot</span>
+          </span>
+        </div>
+        <div class="pk__row">
+          <span class="pk__row-prefix">last</span>
+          <span class="pk__row-value"><em>tool</em> apply_patch · &lt;1m</span>
+        </div>
+        <div class="pk__ft">
+          <span class="pk__chip">claude-opus-4-7</span>
+          <span class="pk__chip"><b>42k</b>/128k</span>
+          <span class="pk__chip pk__chip--warm"><b>hot</b> 180% 2.1G</span>
+        </div>
+      </aside>
+      <div class="stage-note">Red accent + ▸ on event row tells user "act here". Anomalous CPU shown as chip.</div>
+    </div>
+
+    <div class="stage">
+      <h2>// proposed — busy, running tool</h2>
+      <aside class="pk" data-priority="warn">
+        <div class="pk__hd">
+          <span class="pk__name">Codex-1</span>
+          <span class="pk__status">busy</span>
+          <span class="pk__age">2m</span>
+        </div>
+        <div class="pk__event">
+          <span class="pk__event-text">▸ running <b style="color:var(--amber)">shell</b></span>
+          <span class="pk__event-meta">npx tsc --noEmit</span>
+        </div>
+        <div class="pk__plan">
+          <span class="pk__row-prefix">plan</span>
+          <span class="pk__plan-bar">
+            <span class="pk__plan-count">4/7</span>
+            <span class="pk__plan-text">render timeline dots with pulse</span>
+          </span>
+        </div>
+        <div class="pk__row">
+          <span class="pk__row-prefix">files</span>
+          <span class="pk__row-value">acp-harness-view.ts, acp-harness.css</span>
+        </div>
+        <div class="pk__ft">
+          <span class="pk__chip">claude-opus-4-7</span>
+          <span class="pk__chip"><b>52k</b>/128k</span>
+          <span class="pk__chip">mcp <b>12</b></span>
+        </div>
+      </aside>
+      <div class="stage-note">Compact 5 rows. No "last" because active tool is more informative.</div>
+    </div>
+
+    <div class="stage">
+      <h2>// proposed — error</h2>
+      <aside class="pk" data-priority="high">
+        <div class="pk__hd">
+          <span class="pk__name">Codex-1</span>
+          <span class="pk__status">error</span>
+          <span class="pk__age">&lt;1s</span>
+        </div>
+        <div class="pk__event">
+          <span class="pk__event-text">▸ <b style="color:var(--red)">overloaded</b></span>
+          <span class="pk__event-meta">retry in 12s</span>
+        </div>
+        <div class="pk__row">
+          <span class="pk__row-prefix">where</span>
+          <span class="pk__row-value">tool/edit_file · 3rd attempt</span>
+        </div>
+        <div class="pk__ft">
+          <span class="pk__chip">claude-opus-4-7</span>
+          <span class="pk__chip"><b>42k</b>/128k</span>
+        </div>
+      </aside>
+      <div class="stage-note">Drops to 4 rows when nothing else relevant.</div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

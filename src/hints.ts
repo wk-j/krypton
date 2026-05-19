@@ -645,6 +645,11 @@ export class HintController {
         });
         return;
       }
+      // HTML files open in the in-app webview.
+      if (/\.html?$/i.test(text)) {
+        void this.openHtmlInWebview(text);
+        return;
+      }
       openInHelixTab(this.compositor, { path: text }).catch((err) => {
         console.error('[HintController] Failed to open file in Helix:', err);
       });
@@ -676,6 +681,28 @@ export class HintController {
           });
         }
         break;
+    }
+  }
+
+  private async openHtmlInWebview(text: string): Promise<void> {
+    try {
+      if (text.startsWith('file://') || /^https?:\/\//.test(text)) {
+        await this.compositor.openWebview(text);
+        return;
+      }
+      let abs = await this.compositor.expandVaultPath(text);
+      if (!abs.startsWith('/')) {
+        const cwd = await this.compositor.getFocusedWorkingDirectory();
+        if (cwd) {
+          abs = cwd.replace(/\/+$/, '') + '/' + abs;
+        } else {
+          abs = '/' + abs;
+        }
+      }
+      const url = 'file://' + abs.split('/').map((part) => encodeURIComponent(part)).join('/');
+      await this.compositor.openWebview(url);
+    } catch (err) {
+      console.error('[HintController] Failed to open HTML in webview:', err);
     }
   }
 
