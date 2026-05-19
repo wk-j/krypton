@@ -215,6 +215,16 @@ export interface InterLaneEnvelope {
   sentAt: number;
   /** Rust-side harness scope tag. Used by the bridge to drop cross-harness leakage. */
   harnessId?: string;
+  /** spec 112: distinguish peer chat from review-mode envelopes. Default 'peer' when omitted. */
+  kind?: 'peer' | 'review_request';
+  reviewPacket?: ReviewPacket;
+  /**
+   * spec 112: when set, this envelope is only relevant while the named review packet
+   * is still open. Used for harness-injected protocol-retry prompts so that a stale
+   * corrective prompt is dropped if the reviewer already produced an accepted reply
+   * earlier in the same turn (which closes the packet).
+   */
+  reviewPacketId?: string;
 }
 
 export interface LaneSummary {
@@ -231,6 +241,93 @@ export interface LaneStatusEvent {
   prev: HarnessLaneStatus;
   next: HarnessLaneStatus;
   at: number;
+}
+
+// Review Lane Mode (spec 112)
+export type ReviewSeverity = 'block' | 'warn' | 'nit';
+
+export interface ReviewFinding {
+  file: string;
+  line: number;
+  severity: ReviewSeverity;
+  concern: string;
+  suggestedCheck?: string;
+}
+
+export interface ReviewDiffstatEntry {
+  path: string;
+  status: 'M' | 'A' | 'D' | 'R' | '?';
+  added: number;
+  removed: number;
+}
+
+export interface ReviewPatchHunk {
+  path: string;
+  status: 'M' | 'A' | 'D' | 'R' | '?';
+  hunk: string;
+  truncated: boolean;
+}
+
+export interface ReviewUntrackedExcerpt {
+  path: string;
+  head: string;
+}
+
+export interface ReviewCommandSummary {
+  command: string;
+  exitCode: number | null;
+  summary: string;
+  at: number;
+}
+
+export interface ReviewToolSummary {
+  kind: 'read' | 'edit' | 'search' | 'other';
+  subject: string;
+  count: number;
+}
+
+export interface ReviewGitState {
+  repoRoot: string;
+  hasGitRepo: boolean;
+  hasStagedChanges: boolean;
+  hasUnstagedChanges: boolean;
+  partialStagingDetected: boolean;
+  worktreeFingerprint: string;
+  diffstat: ReviewDiffstatEntry[];
+  patchHunks: ReviewPatchHunk[];
+  untrackedExcerpts: ReviewUntrackedExcerpt[];
+}
+
+export interface ReviewPacket {
+  packetId: string;
+  fromLaneId: string;
+  toLaneId: string;
+  intent: string;
+  repoRoot: string;
+  patchBase: 'head';
+  hasStagedChanges: boolean;
+  hasUnstagedChanges: boolean;
+  partialStagingDetected: boolean;
+  worktreeFingerprint: string;
+  diffstat: ReviewDiffstatEntry[];
+  patchHunks: ReviewPatchHunk[];
+  untrackedExcerpts: ReviewUntrackedExcerpt[];
+  commands: ReviewCommandSummary[];
+  toolSummary: ReviewToolSummary[];
+  note?: string;
+  sentAt: number;
+  harnessId?: string;
+}
+
+export interface ReviewReply {
+  packetId: string;
+  fromLaneId: string;
+  toLaneId: string;
+  findings: ReviewFinding[];
+  summary: string;
+  blockedByProtocol?: string;
+  sentAt: number;
+  harnessId?: string;
 }
 
 export type LaneBusEvent =

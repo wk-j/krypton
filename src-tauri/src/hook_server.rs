@@ -608,6 +608,8 @@ async fn handle_bus_tool_call(
         "memory_list" => memory_list(&state.hook_server, harness_id),
         "peer_send" => peer_send(state, harness_id, lane_label, arguments).await,
         "peer_list" => peer_list(state, harness_id).await,
+        "review_request" => review_request(state, harness_id, lane_label, arguments).await,
+        "review_reply" => review_reply(state, harness_id, lane_label, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -710,6 +712,404 @@ async fn peer_list(state: &HookServerState, harness_id: &str) -> Result<Value, S
             Err("peer_list: frontend reply timed out".to_string())
         }
     }
+}
+
+/// review_request — ask the frontend coordinator to assemble the packet
+/// (lane cwd + transcript signals + git state) and deliver to the recipient's
+/// inbox. The frontend listener collects git state via the
+/// `acp_collect_review_git_state` Tauri command — Rust here does not touch
+/// git, so the agent never needs to know or pass `cwd`.
+async fn review_request(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let to_lane = required_string(&arguments, "to_lane")?;
+    if to_lane.trim().is_empty() {
+        return Err("to_lane must be non-empty".to_string());
+    }
+    let note = arguments
+        .get("note")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let packet_id = format!("rev-{}-{}", now_ms(), rand_suffix());
+    let payload = json!({
+        "packetId": packet_id,
+        "fromLaneId": from_lane,
+        "toLaneId": to_lane,
+        "note": note,
+        "sentAt": now_ms(),
+        "harnessId": harness_id,
+        "requestId": packet_id,
+    });
+    let rx = state.hook_server.register_bus_reply(packet_id.clone());
+    state
+        .app_handle
+        .emit_or_log("acp-review-requested", payload);
+    let reply = match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(_)) => {
+            return Err("review_request: frontend coordinator did not respond".to_string());
+        }
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&packet_id);
+            return Err("review_request: frontend reply timed out".to_string());
+        }
+    };
+    if reply
+        .get("delivered")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        Ok(reply)
+    } else {
+        let reason = reply
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("delivery_failed");
+        Err(format!("review_request failed: {reason}"))
+    }
+}
+
+/// review_reply — forward a reviewer's structured findings to the frontend
+/// coordinator for validation + delivery to the requester's inbox.
+async fn review_reply(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let packet_id = required_string(&arguments, "packet_id")?;
+    let summary = arguments
+        .get("summary")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let findings = arguments
+        .get("findings")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let request_id = format!("revreply-{}-{}", now_ms(), rand_suffix());
+    let payload = json!({
+        "packetId": packet_id,
+        "fromLaneId": from_lane,
+        "summary": summary,
+        "findings": findings,
+        "harnessId": harness_id,
+        "requestId": request_id,
+        "sentAt": now_ms(),
+    });
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state
+        .app_handle
+        .emit_or_log("acp-review-reply-requested", payload);
+    match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => {
+            if value
+                .get("delivered")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                Ok(value)
+            } else {
+                let reason = value
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("delivery_failed");
+                Err(format!("review_reply failed: {reason}"))
+            }
+        }
+        Ok(Err(_)) => Err("review_reply: frontend coordinator did not respond".to_string()),
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            Err("review_reply: frontend reply timed out".to_string())
+        }
+    }
+}
+
+/// collect_git_state — run a series of git commands in the lane's cwd and assemble
+/// a JSON payload matching the frontend's ReviewGitState shape. Never panics; on
+/// any failure returns `{ hasGitRepo: false, ... empty }`.
+pub fn collect_git_state_public(cwd: Option<&str>) -> Value {
+    collect_git_state(cwd)
+}
+
+/// Truncate a `&str` to at most `max_bytes` bytes without slicing a UTF-8
+/// multibyte character. Returns the longest valid prefix.
+fn safe_truncate(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+fn collect_git_state(cwd: Option<&str>) -> Value {
+    use std::process::Command;
+
+    const TOTAL_PATCH_CAP: usize = 40_960;
+    const PER_FILE_HUNK_CAP: usize = 8_192;
+    const UNTRACKED_HEAD_LINES: usize = 40;
+    const UNTRACKED_HEAD_BYTES: usize = 4_096;
+
+    let cwd_path = match cwd {
+        Some(c) if !c.is_empty() => StdPath::new(c).to_path_buf(),
+        _ => {
+            return empty_git_state(String::new());
+        }
+    };
+
+    let run = |args: &[&str]| -> Option<String> {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(&cwd_path)
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        String::from_utf8(out.stdout).ok()
+    };
+
+    let repo_root = match run(&["rev-parse", "--show-toplevel"]) {
+        Some(s) => s.trim().to_string(),
+        None => return empty_git_state(cwd_path.to_string_lossy().to_string()),
+    };
+
+    // Use --no-pager + --no-ext-diff + --no-textconv to avoid user diff machinery
+    // (external diff drivers, textconv filters, pagers) stalling the collector.
+    let porcelain = run(&["status", "--porcelain=v1"]).unwrap_or_default();
+    let head_sha = run(&["rev-parse", "HEAD"]).unwrap_or_default();
+    let staged_raw = run(&[
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--cached",
+        "--name-only",
+    ])
+    .unwrap_or_default();
+    let unstaged_raw = run(&["--no-pager", "diff", "--no-ext-diff", "--name-only"]).unwrap_or_default();
+    let numstat_raw = run(&[
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "HEAD",
+        "--numstat",
+    ])
+    .unwrap_or_default();
+
+    let staged_set: std::collections::HashSet<String> = staged_raw
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let unstaged_set: std::collections::HashSet<String> = unstaged_raw
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let partial_staging = staged_set.intersection(&unstaged_set).next().is_some();
+
+    let mut tracked_paths: Vec<(String, char)> = Vec::new();
+    let mut untracked_paths: Vec<String> = Vec::new();
+    for line in porcelain.lines() {
+        if line.len() < 3 {
+            continue;
+        }
+        let xy = &line[..2];
+        let raw_path = line[3..].trim().to_string();
+        // Rename entries come through as "OLD -> NEW"; we only diff against the new path.
+        let path = if let Some(idx) = raw_path.find(" -> ") {
+            raw_path[idx + 4..].to_string()
+        } else {
+            raw_path
+        };
+        if xy == "??" {
+            untracked_paths.push(path);
+        } else {
+            let status = match xy.trim() {
+                "M" | "MM" | "AM" | "RM" => 'M',
+                "A" => 'A',
+                "D" => 'D',
+                "R" | "RD" => 'R',
+                _ => 'M',
+            };
+            tracked_paths.push((path, status));
+        }
+    }
+
+    // numstat: "added\tremoved\tpath"
+    let mut numstat: std::collections::HashMap<String, (u64, u64)> =
+        std::collections::HashMap::new();
+    for line in numstat_raw.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let added = parts[0].parse::<u64>().unwrap_or(0);
+        let removed = parts[1].parse::<u64>().unwrap_or(0);
+        numstat.insert(parts[2].to_string(), (added, removed));
+    }
+
+    let mut diffstat: Vec<Value> = Vec::new();
+    for (path, status) in &tracked_paths {
+        let (added, removed) = numstat.get(path).cloned().unwrap_or((0, 0));
+        diffstat.push(json!({
+            "path": path,
+            "status": status.to_string(),
+            "added": added,
+            "removed": removed,
+        }));
+    }
+    for path in &untracked_paths {
+        diffstat.push(json!({
+            "path": path,
+            "status": "?",
+            "added": 0,
+            "removed": 0,
+        }));
+    }
+
+    let mut total_size: usize = 0;
+    let mut hunks: Vec<Value> = Vec::new();
+    // Sort tracked by best-effort churn (added+removed) desc — bigger churn first.
+    let mut tracked_sorted = tracked_paths.clone();
+    tracked_sorted.sort_by(|a, b| {
+        let (aa, ar) = numstat.get(&a.0).cloned().unwrap_or((0, 0));
+        let (ba, br) = numstat.get(&b.0).cloned().unwrap_or((0, 0));
+        (ba + br).cmp(&(aa + ar))
+    });
+    for (path, status) in &tracked_sorted {
+        if total_size >= TOTAL_PATCH_CAP {
+            hunks.push(json!({
+                "path": path,
+                "status": status.to_string(),
+                "hunk": "",
+                "truncated": true,
+            }));
+            continue;
+        }
+        let raw = run(&[
+            "--no-pager",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "HEAD",
+            "--",
+            path,
+        ])
+        .unwrap_or_default();
+        let (body, truncated) = if raw.len() > PER_FILE_HUNK_CAP {
+            (safe_truncate(&raw, PER_FILE_HUNK_CAP).to_string(), true)
+        } else {
+            (raw, false)
+        };
+        total_size = total_size.saturating_add(body.len());
+        hunks.push(json!({
+            "path": path,
+            "status": status.to_string(),
+            "hunk": body,
+            "truncated": truncated,
+        }));
+    }
+
+    let mut untracked_excerpts: Vec<Value> = Vec::new();
+    for path in &untracked_paths {
+        if total_size >= TOTAL_PATCH_CAP {
+            break;
+        }
+        let full = StdPath::new(&repo_root).join(path);
+        let head = match std::fs::read(&full) {
+            Ok(bytes) => {
+                if bytes.iter().take(2048).any(|b| *b == 0) {
+                    "<binary>".to_string()
+                } else {
+                    let slice = if bytes.len() > UNTRACKED_HEAD_BYTES {
+                        &bytes[..UNTRACKED_HEAD_BYTES]
+                    } else {
+                        &bytes[..]
+                    };
+                    let text = String::from_utf8_lossy(slice);
+                    text.lines()
+                        .take(UNTRACKED_HEAD_LINES)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                }
+            }
+            Err(_) => "<unreadable>".to_string(),
+        };
+        total_size = total_size.saturating_add(head.len());
+        untracked_excerpts.push(json!({ "path": path, "head": head }));
+    }
+
+    let fingerprint_input = {
+        let mut paths_meta: Vec<String> = Vec::new();
+        for (path, _) in &tracked_paths {
+            let full = StdPath::new(&repo_root).join(path);
+            let meta = std::fs::metadata(&full).ok();
+            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let mtime = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            paths_meta.push(format!("{}|{}|{}", path, size, mtime));
+        }
+        for path in &untracked_paths {
+            let full = StdPath::new(&repo_root).join(path);
+            let meta = std::fs::metadata(&full).ok();
+            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let mtime = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            paths_meta.push(format!("{}|{}|{}", path, size, mtime));
+        }
+        paths_meta.sort();
+        format!(
+            "{}\n{}\n{}",
+            head_sha.trim(),
+            porcelain.trim(),
+            paths_meta.join("\n")
+        )
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(fingerprint_input.as_bytes());
+    let fingerprint = format!("{:x}", hasher.finalize());
+
+    json!({
+        "hasGitRepo": true,
+        "repoRoot": repo_root,
+        "hasStagedChanges": !staged_set.is_empty(),
+        "hasUnstagedChanges": !unstaged_set.is_empty(),
+        "partialStagingDetected": partial_staging,
+        "worktreeFingerprint": fingerprint,
+        "diffstat": diffstat,
+        "patchHunks": hunks,
+        "untrackedExcerpts": untracked_excerpts,
+    })
+}
+
+fn empty_git_state(cwd: String) -> Value {
+    json!({
+        "hasGitRepo": false,
+        "repoRoot": cwd,
+        "hasStagedChanges": false,
+        "hasUnstagedChanges": false,
+        "partialStagingDetected": false,
+        "worktreeFingerprint": "<no-git>",
+        "diffstat": [],
+        "patchHunks": [],
+        "untrackedExcerpts": [],
+    })
 }
 
 fn rand_suffix() -> String {
@@ -863,13 +1263,13 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "peer_send",
-            "description": "Send one message to another lane in this harness (peer review / consult). Async — recipient processes it on its next idle turn. After calling this tool, end your turn; the reply (if any) arrives as a new user message. Set done:true when you have nothing substantive to add. Use only when the user explicitly asks you to ask, consult, or peer with another lane — never proactively.",
+            "description": "Send one message to another lane in this harness (peer review / consult). Async — recipient processes it on its next idle turn. After calling this tool, end your turn; the reply (if any) arrives as a new user message. Leave `done` unset (false) when initiating a request, even for a single-round consult — `done:true` silences the recipient and should only be used to close the conversation AFTER you have received their reply. Use only when the user explicitly asks you to ask, consult, or peer with another lane — never proactively.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "to_lane": { "type": "string", "description": "Target lane display name (e.g., 'Claude-2')." },
                     "message": { "type": "string" },
-                    "done": { "type": "boolean", "default": false, "description": "Set true to signal end-of-conversation; recipient will not reply." }
+                    "done": { "type": "boolean", "default": false, "description": "Closes the conversation: when true, the recipient processes the message but will NOT reply. Use only when wrapping up after their reply (e.g. a 'thanks, got it' acknowledgement). When initiating a request and expecting an answer — even a single one — leave this false." }
                 },
                 "required": ["to_lane", "message"]
             }
@@ -878,6 +1278,44 @@ fn bus_tool_descriptors() -> Value {
             "name": "peer_list",
             "description": "Returns guidance on naming sibling lanes. Lanes are addressed by display name (e.g., 'Claude-2', 'Codex-1') as shown in the user's tab.",
             "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "review_request",
+            "description": "Ask another lane to review your recent work. The harness assembles a structured packet (intent + git diff + commands + tool summary) from your lane state — you do not need to paste anything. The reviewer is required to reply with anchored findings via review_reply. After calling this tool, end your turn; the reply arrives as a structured transcript card. Use only when the user explicitly asks for a review — never proactively.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "to_lane": { "type": "string", "description": "Reviewer lane display name (e.g., 'Codex-1')." },
+                    "note": { "type": "string", "description": "Optional one-line hint to the reviewer (focus area, known concerns)." }
+                },
+                "required": ["to_lane"]
+            }
+        },
+        {
+            "name": "review_reply",
+            "description": "Reply to a review packet with structured findings. Each finding requires file + line + severity (block|warn|nit) + concern. Findings with severity 'block' MUST include suggested_check. Use empty findings[] for a clean review. Free-form prose is rejected — use this tool.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "packet_id": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "findings": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "file": { "type": "string" },
+                                "line": { "type": "integer", "minimum": 1 },
+                                "severity": { "enum": ["block", "warn", "nit"] },
+                                "concern": { "type": "string", "maxLength": 200 },
+                                "suggested_check": { "type": "string" }
+                            },
+                            "required": ["file", "line", "severity", "concern"]
+                        }
+                    }
+                },
+                "required": ["packet_id", "summary", "findings"]
+            }
         }
     ])
 }

@@ -36,7 +36,21 @@ import type {
   UsageInfo,
 } from './types';
 import { LaneBus } from './lane-bus';
-import { InterLaneCoordinator, type LaneHost, type PendingPeerSummary } from './inter-lane';
+import { InterLaneCoordinator, type LaneHost, type PendingPeerSummary, type ReviewCardPayload } from './inter-lane';
+import {
+  buildPacket as buildReviewPacket,
+  composeReviewerPrompt,
+  composeMissingToolEnvelope,
+  composeValidationFailEnvelope,
+  validateReply as validateReviewReply,
+  REVIEW_PROTOCOL_MAX_ATTEMPTS,
+} from './review';
+import type {
+  ReviewCommandSummary,
+  ReviewGitState,
+  ReviewPacket,
+  ReviewToolSummary,
+} from './types';
 import type {
   AcpLaneMetrics,
   CapturedImage,
@@ -68,7 +82,7 @@ interface HarnessPermission {
 
 interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'review';
   text: string;
   createdAt?: number;
   markdownSource?: string;
@@ -88,6 +102,7 @@ interface HarnessTranscriptItem {
   fsActivity?: FsActivityPayload;
   fsReview?: FsWriteReviewPayload;
   interLane?: InterLanePayload;
+  review?: ReviewCardPayload;
 }
 
 interface InterLanePayload {
@@ -112,7 +127,7 @@ interface FsActivityPayload {
   error?: string;
 }
 
-type HarnessToolFamily = 'memory' | 'peer';
+type HarnessToolFamily = 'memory' | 'peer' | 'review';
 type PermissionDecision = 'pending' | 'accepted' | 'rejected' | 'auto_allowed' | 'failed';
 
 interface PermissionPayload {
@@ -217,9 +232,11 @@ const LANE_PEEK_DWELL_MS = 8_000;
 const LANE_PEEK_RECENT_MS = 5 * 60_000;
 const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
 const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
+const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_request', 'review_reply']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
   ...HARNESS_PEER_TOOL_NAMES,
+  ...HARNESS_REVIEW_TOOL_NAMES,
 ]);
 const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
@@ -277,6 +294,17 @@ interface HarnessLane {
   promptHistory: string[];
   historyIndex: number | null;
   historySavedDraft: string | null;
+  /** spec 112: timestamp of the last non-protocol-blocked review reply received. */
+  reviewedThrough: number;
+  /** spec 112: per-packet retry counter for protocol-fail loops. */
+  reviewProtocolRetries: Map<string, number>;
+  /**
+   * spec 112: packetIds for which the reviewer called `review_reply` during
+   * the current turn. Used by `checkProseOnlyReviewer` to skip the prose-only
+   * retry path when validation handling already saw a tool call (otherwise
+   * the same turn would burn two attempts off the retry budget).
+   */
+  reviewReplyAttemptsThisTurn: Set<string>;
 }
 
 interface TranscriptScrollAnchor {
@@ -365,6 +393,9 @@ const LANE_DEFAULTS = {
   transcriptWindow: TRANSCRIPT_WINDOW_DEFAULT,
   historyIndex: null,
   historySavedDraft: null,
+  reviewedThrough: 0,
+  reviewProtocolRetries: new Map<string, number>(),
+  reviewReplyAttemptsThisTurn: new Set<string>(),
 };
 
 const md = new Marked(
@@ -390,6 +421,8 @@ export class AcpHarnessView implements ContentView {
   private coordinator!: InterLaneCoordinator;
   private interLaneUnlisten: UnlistenFn | null = null;
   private peerListUnlisten: UnlistenFn | null = null;
+  private reviewRequestedUnlisten: UnlistenFn | null = null;
+  private reviewReplyUnlisten: UnlistenFn | null = null;
   private memoryEntries: HarnessMemoryEntry[] = [];
   private harnessMemoryId: string | null = null;
   private harnessMemoryPort: number | null = null;
@@ -541,6 +574,30 @@ export class AcpHarnessView implements ContentView {
         if (!l) return;
         this.appendTranscript(l, 'system', `[inter-lane] ${text}`);
       },
+      appendReviewCard: (id, payload) => {
+        const l = this.lanes.find((x) => x.id === id);
+        if (!l) return;
+        const block = payload.findings.filter((f) => f.severity === 'block').length;
+        const warn = payload.findings.filter((f) => f.severity === 'warn').length;
+        const nit = payload.findings.filter((f) => f.severity === 'nit').length;
+        const counts = [block ? `${block} block` : null, warn ? `${warn} warn` : null, nit ? `${nit} nit` : null]
+          .filter(Boolean)
+          .join(', ');
+        const header = `review · from ${payload.fromDisplayName} · ${payload.findings.length} finding${
+          payload.findings.length === 1 ? '' : 's'
+        }${counts ? ` (${counts})` : ''}`;
+        const item = this.appendTranscript(l, 'review', `${header}\n${payload.summary}`);
+        item.review = payload;
+        // Advance reviewedThrough only on non-protocol-blocked replies.
+        if (!payload.blockedByProtocol) {
+          l.reviewedThrough = payload.sentAt;
+        }
+        // Settle requester out of awaiting_peer if they were on this packet.
+        if (l.status === 'awaiting_peer') {
+          this.setLaneStatus(l, 'idle');
+        }
+        this.scheduleLaneRender(l);
+      },
     };
   }
 
@@ -550,6 +607,7 @@ export class AcpHarnessView implements ContentView {
     if (lane.status !== 'idle') return;
     this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
+    lane.reviewReplyAttemptsThisTurn.clear();
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
@@ -620,6 +678,412 @@ export class AcpHarnessView implements ContentView {
         });
       },
     );
+
+    // spec 112: review request from an agent via review_request MCP tool.
+    // Rust emits the event WITHOUT git state — the frontend listener collects
+    // it via the acp_collect_review_git_state Tauri command using the lane's
+    // own cwd. The agent never needs to know or pass `cwd`.
+    type ReviewRequestedEvent = {
+      packetId: string;
+      fromLaneId: string; // display name from Rust
+      toLaneId: string;
+      note?: string | null;
+      sentAt: number;
+      harnessId?: string;
+      requestId?: string;
+    };
+    this.reviewRequestedUnlisten = await listen<ReviewRequestedEvent>(
+      'acp-review-requested',
+      (e) => {
+        const env = e.payload;
+        const requestId = env.requestId;
+        if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
+        const reply = (result: unknown): void => {
+          if (!requestId) return;
+          void invoke('acp_bus_reply', { requestId, result }).catch((err) => {
+            console.warn('acp_bus_reply (review_request) failed', err);
+          });
+        };
+        const fromLane = this.lanes.find((l) => l.displayName === env.fromLaneId);
+        const toLane = this.lanes.find((l) => l.displayName === env.toLaneId);
+        if (!fromLane) {
+          reply({ delivered: false, reason: 'unknown_sender' });
+          return;
+        }
+        if (!toLane) {
+          reply({ delivered: false, reason: 'unknown_lane' });
+          return;
+        }
+        void this.collectGitAndDeliverReviewRequest({
+          packetId: env.packetId,
+          fromLane,
+          toLane,
+          note: env.note ?? undefined,
+          sentAt: env.sentAt,
+          harnessId: env.harnessId,
+        }).then(reply);
+      },
+    );
+
+    // spec 112: review reply from a reviewer agent via review_reply MCP tool.
+    type ReviewReplyEvent = {
+      packetId: string;
+      fromLaneId: string;
+      summary: string;
+      findings: unknown;
+      harnessId?: string;
+      requestId?: string;
+      sentAt: number;
+    };
+    this.reviewReplyUnlisten = await listen<ReviewReplyEvent>(
+      'acp-review-reply-requested',
+      (e) => {
+        const env = e.payload;
+        const requestId = env.requestId;
+        if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
+        const reply = (result: unknown): void => {
+          if (!requestId) return;
+          void invoke('acp_bus_reply', { requestId, result }).catch((err) => {
+            console.warn('acp_bus_reply (review_reply) failed', err);
+          });
+        };
+        void this.handleReviewReply(env, reply);
+      },
+    );
+  }
+
+  // spec 112: assemble transcript-derived signals since the given marker.
+  private assembleReviewSignals(
+    lane: HarnessLane,
+    since: number,
+  ): { intent: string; commands: ReviewCommandSummary[]; toolSummary: ReviewToolSummary[] } {
+    const userIntents: string[] = [];
+    const commands: ReviewCommandSummary[] = [];
+    const toolCounts = new Map<ReviewToolSummary['kind'], Map<string, number>>();
+    for (const item of lane.transcript) {
+      if ((item.createdAt ?? 0) <= since) continue;
+      if (item.kind === 'user') {
+        if (item.text.trim().length > 0) userIntents.push(item.text.trim());
+      }
+      if (item.kind === 'tool' && item.tool) {
+        const t = item.tool;
+        const cmd = t.command?.trim();
+        if (cmd && t.kind === 'execute') {
+          // Best-effort exit-code tail parse: look for "exit \d+" or "exit code: \d+".
+          const tail = (t.result || '').slice(-200);
+          const match = tail.match(/exit(?:\s+code)?\s*[:=]?\s*(\d+)/i);
+          const exitCode = match ? parseInt(match[1], 10) : null;
+          commands.push({
+            command: cmd,
+            exitCode,
+            summary: (t.result || '').slice(-400),
+            at: item.createdAt ?? Date.now(),
+          });
+        }
+        const kind: ReviewToolSummary['kind'] =
+          t.kind === 'read'
+            ? 'read'
+            : t.kind === 'edit' || t.kind === 'delete' || t.kind === 'move'
+              ? 'edit'
+              : t.kind === 'search'
+                ? 'search'
+                : 'other';
+        const subject = (t.subject || '').trim() || '(unknown)';
+        if (!toolCounts.has(kind)) toolCounts.set(kind, new Map());
+        const bucket = toolCounts.get(kind)!;
+        bucket.set(subject, (bucket.get(subject) ?? 0) + 1);
+      }
+    }
+    const toolSummary: ReviewToolSummary[] = [];
+    for (const [kind, bucket] of toolCounts.entries()) {
+      // Most-touched subject per kind.
+      let bestSubject = '';
+      let bestCount = 0;
+      let total = 0;
+      for (const [s, c] of bucket.entries()) {
+        total += c;
+        if (c > bestCount) {
+          bestCount = c;
+          bestSubject = s;
+        }
+      }
+      toolSummary.push({ kind, subject: bestSubject, count: total });
+    }
+    return {
+      intent: userIntents.join('\n\n'),
+      commands,
+      toolSummary,
+    };
+  }
+
+  private async collectGitAndDeliverReviewRequest(args: {
+    packetId: string;
+    fromLane: HarnessLane;
+    toLane: HarnessLane;
+    note: string | undefined;
+    sentAt: number;
+    harnessId?: string;
+  }): Promise<{ delivered: boolean; packetId?: string; reason?: string; queuedDepth?: number; hint?: string }> {
+    const cwd = this.projectDir ?? '';
+    if (!cwd) return { delivered: false, reason: 'no_cwd' };
+    let git: (ReviewGitState & { hasGitRepo: boolean }) | null = null;
+    try {
+      git = await invoke<ReviewGitState & { hasGitRepo: boolean }>('acp_collect_review_git_state', { cwd });
+    } catch (err) {
+      console.warn('acp_collect_review_git_state failed', err);
+      return { delivered: false, reason: 'git_collection_failed' };
+    }
+    if (!git?.hasGitRepo) return { delivered: false, reason: 'no_git_repo' };
+    return this.buildAndDeliverReviewRequest({
+      ...args,
+      git,
+    });
+  }
+
+  private buildAndDeliverReviewRequest(args: {
+    packetId: string;
+    fromLane: HarnessLane;
+    toLane: HarnessLane;
+    note: string | undefined;
+    git: ReviewGitState;
+    sentAt: number;
+    harnessId?: string;
+  }): { delivered: boolean; packetId?: string; reason?: string; queuedDepth?: number; hint?: string } {
+    const signals = this.assembleReviewSignals(args.fromLane, args.fromLane.reviewedThrough);
+    const packet: ReviewPacket = buildReviewPacket({
+      packetId: args.packetId,
+      fromLaneId: args.fromLane.id,
+      toLaneId: args.toLane.id,
+      note: args.note,
+      signals,
+      git: args.git,
+      sentAt: args.sentAt,
+      harnessId: args.harnessId,
+    });
+    const prompt = composeReviewerPrompt(packet, args.fromLane.displayName);
+    const result = this.coordinator.deliverReviewRequest(packet, prompt);
+    if (result.delivered) {
+      return {
+        delivered: true,
+        packetId: result.packetId,
+        queuedDepth: result.queuedDepth,
+        hint: result.hint,
+      };
+    }
+    return { delivered: false, reason: result.reason };
+  }
+
+  private async handleReviewReply(
+    env: {
+      packetId: string;
+      fromLaneId: string;
+      summary: string;
+      findings: unknown;
+      sentAt: number;
+    },
+    reply: (result: unknown) => void,
+  ): Promise<void> {
+    const packet = this.coordinator.getOpenReviewPacket(env.packetId);
+    if (!packet) {
+      reply({ delivered: false, reason: 'unknown_packet' });
+      return;
+    }
+    const reviewerLane = this.lanes.find((l) => l.displayName === env.fromLaneId);
+    if (!reviewerLane) {
+      reply({ delivered: false, reason: 'unknown_sender' });
+      return;
+    }
+    // The packet was sent FROM the requester TO the reviewer. So the requester is fromLaneId.
+    const requesterLane = this.lanes.find((l) => l.id === packet.fromLaneId);
+    if (!requesterLane) {
+      reply({ delivered: false, reason: 'unknown_lane' });
+      return;
+    }
+    // Reviewer mismatch guard: the lane sending the reply must be the lane the packet was addressed to.
+    if (reviewerLane.id !== packet.toLaneId) {
+      reply({ delivered: false, reason: 'unauthorized_reviewer' });
+      return;
+    }
+    // Mark that review_reply was attempted for this packet during the current
+    // turn (regardless of validation outcome). `checkProseOnlyReviewer` uses
+    // this to avoid double-counting the same turn as a missing-tool failure.
+    reviewerLane.reviewReplyAttemptsThisTurn.add(env.packetId);
+    const validated = validateReviewReply(
+      { packet_id: env.packetId, summary: env.summary, findings: env.findings },
+      env.packetId,
+      packet.repoRoot,
+    );
+    if (!validated.ok) {
+      // Protocol-retry path. Decide whether reviewer gave us no findings or invalid ones.
+      const retries = reviewerLane.reviewProtocolRetries.get(env.packetId) ?? 0;
+      if (retries + 1 >= REVIEW_PROTOCOL_MAX_ATTEMPTS) {
+        // Budget exhausted — fall through with blockedByProtocol.
+        const payload: ReviewCardPayload = {
+          packetId: env.packetId,
+          fromLaneId: reviewerLane.id,
+          toLaneId: requesterLane.id,
+          fromDisplayName: reviewerLane.displayName,
+          toDisplayName: requesterLane.displayName,
+          findings: validated.cleanedFindings,
+          summary: validated.summary || env.summary || '(no summary)',
+          worktreeMatchAtReceipt: true, // fingerprint check skipped on protocol-fail path
+          blockedByProtocol:
+            validated.errors.length > 0 && validated.errors[0].index >= 0
+              ? `reviewer schema failed after ${REVIEW_PROTOCOL_MAX_ATTEMPTS} attempts`
+              : `reviewer did not use review_reply after ${REVIEW_PROTOCOL_MAX_ATTEMPTS} attempts`,
+          sentAt: env.sentAt,
+        };
+        this.coordinator.deliverReviewReply(payload);
+        reviewerLane.reviewProtocolRetries.delete(env.packetId);
+        reply({ delivered: true, blocked: true });
+        return;
+      }
+      reviewerLane.reviewProtocolRetries.set(env.packetId, retries + 1);
+      // Decide which corrective envelope to send. We don't get a strong "no tool call"
+      // signal from this path (review_reply was invoked or we wouldn't be here), so
+      // schema failures dominate. Reserve composeMissingToolEnvelope for future paths
+      // that detect the agent ended its turn without calling review_reply.
+      const correctionText = composeValidationFailEnvelope(env.packetId, validated.errors);
+      this.coordinator.injectHarnessEnvelope(reviewerLane.id, correctionText, env.packetId);
+      reply({ delivered: false, reason: 'protocol_retry' });
+      return;
+    }
+
+    // Validation passed — recompute worktree fingerprint at receipt.
+    let worktreeMatch = true;
+    try {
+      const cwd = this.projectDir ?? '';
+      if (cwd) {
+        const current = await invoke<{ worktreeFingerprint?: string }>('acp_collect_review_git_state', { cwd });
+        if (current?.worktreeFingerprint) {
+          worktreeMatch = current.worktreeFingerprint === packet.worktreeFingerprint;
+        }
+      }
+    } catch {
+      // If we can't recompute, render the card without the warning rather than blocking the reply.
+    }
+
+    const payload: ReviewCardPayload = {
+      packetId: env.packetId,
+      fromLaneId: reviewerLane.id,
+      toLaneId: requesterLane.id,
+      fromDisplayName: reviewerLane.displayName,
+      toDisplayName: requesterLane.displayName,
+      findings: validated.cleanedFindings,
+      summary: validated.summary,
+      worktreeMatchAtReceipt: worktreeMatch,
+      sentAt: env.sentAt,
+    };
+    const result = this.coordinator.deliverReviewReply(payload);
+    if (result.delivered) reviewerLane.reviewProtocolRetries.delete(env.packetId);
+    reply({ delivered: result.delivered, reason: result.reason });
+  }
+
+  /**
+   * spec 112: detect a reviewer that ended its turn without calling
+   * review_reply (prose-only response). Increment retry counter or, if budget
+   * exhausted, deliver a `blockedByProtocol` reply to the requester.
+   */
+  private async checkProseOnlyReviewer(reviewerLane: HarnessLane): Promise<void> {
+    const packetId = this.coordinator.assignedReviewPacketFor(reviewerLane.id);
+    if (!packetId) return;
+    // If the validation handler already saw a review_reply for this packet
+    // during this turn, the retry counter (if any) was already updated there.
+    // Skip the prose-only path so the same turn doesn't burn two attempts.
+    if (reviewerLane.reviewReplyAttemptsThisTurn.has(packetId)) {
+      reviewerLane.reviewReplyAttemptsThisTurn.delete(packetId);
+      return;
+    }
+    const packet = this.coordinator.getOpenReviewPacket(packetId);
+    if (!packet) {
+      this.coordinator.clearReviewerAssignment(reviewerLane.id);
+      return;
+    }
+    const requesterLane = this.lanes.find((l) => l.id === packet.fromLaneId);
+    if (!requesterLane) return;
+    const retries = reviewerLane.reviewProtocolRetries.get(packetId) ?? 0;
+    if (retries + 1 >= REVIEW_PROTOCOL_MAX_ATTEMPTS) {
+      const payload: ReviewCardPayload = {
+        packetId,
+        fromLaneId: reviewerLane.id,
+        toLaneId: requesterLane.id,
+        fromDisplayName: reviewerLane.displayName,
+        toDisplayName: requesterLane.displayName,
+        findings: [],
+        summary: '(reviewer responded in prose; no structured findings captured)',
+        worktreeMatchAtReceipt: true,
+        blockedByProtocol: `reviewer did not use review_reply after ${REVIEW_PROTOCOL_MAX_ATTEMPTS} attempts`,
+        sentAt: Date.now(),
+      };
+      this.coordinator.deliverReviewReply(payload);
+      reviewerLane.reviewProtocolRetries.delete(packetId);
+      this.coordinator.clearReviewerAssignment(reviewerLane.id);
+      return;
+    }
+    reviewerLane.reviewProtocolRetries.set(packetId, retries + 1);
+    const correctionText = composeMissingToolEnvelope(packetId);
+    this.coordinator.injectHarnessEnvelope(reviewerLane.id, correctionText, packetId);
+  }
+
+  /**
+   * spec 112: user-triggered `#review <lane>` chat command. Bypasses MCP —
+   * frontend collects git state directly and delivers via the coordinator.
+   */
+  private async runReviewCommand(lane: HarnessLane, rest: string[]): Promise<void> {
+    const target = rest[0]?.trim();
+    if (!target) {
+      this.flashChip('#review usage: #review <lane> [note...]');
+      return;
+    }
+    const toLane = this.lanes.find(
+      (l) => l.displayName.toLowerCase() === target.toLowerCase() && l.id !== lane.id,
+    );
+    if (!toLane) {
+      this.flashChip(`#review: unknown lane "${target}"`);
+      return;
+    }
+    if (toLane.status === 'stopped' || toLane.status === 'error') {
+      this.flashChip(`#review: ${toLane.displayName} is ${toLane.status}`);
+      return;
+    }
+    const note = rest.slice(1).join(' ').trim() || undefined;
+    const cwd = this.projectDir ?? '';
+    if (!cwd) {
+      this.flashChip('#review: no working directory');
+      return;
+    }
+    let git: (ReviewGitState & { hasGitRepo: boolean }) | null = null;
+    try {
+      git = await invoke<ReviewGitState & { hasGitRepo: boolean }>('acp_collect_review_git_state', { cwd });
+    } catch (e) {
+      this.flashChip(`#review: git collection failed: ${String(e)}`);
+      return;
+    }
+    if (!git?.hasGitRepo) {
+      this.flashChip('#review: no git repo in lane cwd');
+      return;
+    }
+    const result = this.buildAndDeliverReviewRequest({
+      packetId: `rev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      fromLane: lane,
+      toLane,
+      note,
+      git,
+      sentAt: Date.now(),
+      harnessId: this.harnessMemoryId ?? undefined,
+    });
+    if (!result.delivered) {
+      this.flashChip(`#review failed: ${result.reason}`);
+      return;
+    }
+    this.flashChip(`#review → ${toLane.displayName}`);
+    // Sender goes to awaiting_peer once their turn would end; for user-triggered
+    // review the sender lane is typically idle, so set awaiting_peer immediately.
+    if (lane.status === 'idle') {
+      this.setLaneStatus(lane, 'awaiting_peer');
+    }
+    this.scheduleLaneRender(lane);
+    this.scheduleLaneRender(toLane);
   }
 
   getWorkingDirectory(): string | null {
@@ -830,6 +1294,14 @@ export class AcpHarnessView implements ContentView {
     if (this.interLaneUnlisten) {
       this.interLaneUnlisten();
       this.interLaneUnlisten = null;
+    }
+    if (this.reviewRequestedUnlisten) {
+      this.reviewRequestedUnlisten();
+      this.reviewRequestedUnlisten = null;
+    }
+    if (this.reviewReplyUnlisten) {
+      this.reviewReplyUnlisten();
+      this.reviewReplyUnlisten = null;
     }
     if (this.peerListUnlisten) {
       this.peerListUnlisten();
@@ -1222,6 +1694,8 @@ export class AcpHarnessView implements ContentView {
       availableCommands: [],
       modesById: new Map(),
       promptHistory: [],
+      reviewProtocolRetries: new Map(),
+      reviewReplyAttemptsThisTurn: new Set(),
     };
   }
 
@@ -1432,6 +1906,7 @@ export class AcpHarnessView implements ContentView {
     this.appendTranscript(lane, 'user', text, { imageCount: images.length });
     this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
+    lane.reviewReplyAttemptsThisTurn.clear();
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
@@ -1509,7 +1984,7 @@ export class AcpHarnessView implements ContentView {
         'Shared memory is available through the krypton-harness-memory MCP server: call memory_list to see which lanes have entries, memory_get { lane } to read another lane, and memory_set { summary, detail } to update your own. Writes go to your own lane automatically; you cannot write to other lanes.',
       );
       lines.push(
-        'Inter-lane peering: when the user asks you to consult, ask, or peer with another lane, call peer_send { to_lane, message, done } (use the display name shown above; recipient processes on its next idle turn). Use peer_list to see live peer lanes and their inbox depths. End your turn after peer_send; the reply (if any) arrives as a new user message. Never peer proactively.',
+        'Inter-lane peering: when the user asks you to consult, ask, or peer with another lane, call peer_send { to_lane, message, done } (use the display name shown above; recipient processes on its next idle turn). Use peer_list to see live peer lanes and their inbox depths. End your turn after peer_send; the reply (if any) arrives as a new user message. Leave `done` false when sending a request — `done:true` silences the recipient and is only for closing the conversation after their reply. Never peer proactively.',
       );
     } else {
       lines.push(
@@ -1528,6 +2003,14 @@ export class AcpHarnessView implements ContentView {
     lane.pendingPermissions = [];
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
+    // spec 112: prose-only reviewer detection runs BEFORE the idle transition.
+    // Going idle drains the coordinator's queue, and the drain calls
+    // enqueueSystemPrompt() which clears reviewReplyAttemptsThisTurn — if that
+    // happens first, this check sees an empty set and double-counts a single
+    // invalid review_reply as a missing-tool failure too.
+    if (stopReason === 'end_turn' && !lane.error) {
+      void this.checkProseOnlyReviewer(lane);
+    }
     if (lane.error) {
       this.setLaneStatus(lane, 'error');
     } else {
@@ -2195,6 +2678,12 @@ export class AcpHarnessView implements ContentView {
     if (parts[0] === '#mcp') {
       this.setDraft(lane, '', 0);
       await this.printMcpStatus(lane);
+      this.render();
+      return;
+    }
+    if (parts[0] === '#review') {
+      this.setDraft(lane, '', 0);
+      await this.runReviewCommand(lane, parts.slice(1));
       this.render();
       return;
     }
@@ -3086,6 +3575,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#cancel</dt><dd>Cancel active lane, same as Ctrl+C</dd>
             <dt>#new</dt><dd>Start fresh active lane, keep memory</dd>
             <dt>#new!</dt><dd>Start fresh active lane and clear its memory</dd>
+            <dt>#review &lt;lane&gt; [note]</dt><dd>Ask another lane to review your uncommitted work</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
             <dt>#mem</dt><dd>Show memory command hint</dd>
             <dt>#mem clear</dt><dd>Clear active lane memory only</dd>
@@ -4072,13 +4562,14 @@ function harnessToolNameFromString(value: string | undefined): string | null {
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list|review_request|review_reply)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 
 function harnessToolFamily(toolName: string): HarnessToolFamily | null {
   if (HARNESS_MEMORY_TOOL_NAMES.has(toolName)) return 'memory';
   if (HARNESS_PEER_TOOL_NAMES.has(toolName)) return 'peer';
+  if (HARNESS_REVIEW_TOOL_NAMES.has(toolName)) return 'review';
   return null;
 }
 
@@ -4205,6 +4696,9 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
     body.classList.add('acp-harness__inter-lane');
     body.classList.add(`acp-harness__inter-lane--${item.interLane.direction}`);
     renderInterLaneBody(body, item);
+  } else if (item.kind === 'review' && item.review) {
+    body.classList.add('acp-harness__review-card');
+    renderReviewCardBody(body, item.review);
   } else if (item.kind === 'user' && item.imageCount && item.imageCount > 0) {
     if (item.text) {
       const textEl = document.createElement('div');
@@ -5039,6 +5533,7 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'shell': return 'sh';
     case 'fs_activity': return 'fs';
     case 'inter_lane': return 'peer';
+    case 'review': return 'rev';
     default: return kind;
   }
 }
@@ -5071,6 +5566,84 @@ function renderInterLaneBody(body: HTMLElement, item: HarnessTranscriptItem): vo
     message.textContent = messageText;
   }
   body.appendChild(message);
+}
+
+function renderReviewCardBody(body: HTMLElement, payload: ReviewCardPayload): void {
+  body.dataset.direction = 'received';
+  if (payload.blockedByProtocol) body.classList.add('acp-harness__review-card--blocked');
+
+  // Header line
+  const block = payload.findings.filter((f) => f.severity === 'block').length;
+  const warn = payload.findings.filter((f) => f.severity === 'warn').length;
+  const nit = payload.findings.filter((f) => f.severity === 'nit').length;
+  const counts: string[] = [];
+  if (block) counts.push(`${block} block`);
+  if (warn) counts.push(`${warn} warn`);
+  if (nit) counts.push(`${nit} nit`);
+  const head = document.createElement('div');
+  head.className = 'acp-harness__review-head';
+  head.innerHTML =
+    `<span class="acp-harness__review-arrow">←</span>` +
+    `<span class="acp-harness__review-peer">from ${esc(payload.fromDisplayName)}</span>` +
+    `<span class="acp-harness__review-count">${payload.findings.length} finding${
+      payload.findings.length === 1 ? '' : 's'
+    }${counts.length ? ` (${esc(counts.join(', '))})` : ''}</span>`;
+  body.appendChild(head);
+
+  if (!payload.worktreeMatchAtReceipt) {
+    const banner = document.createElement('div');
+    banner.className = 'acp-harness__review-banner';
+    banner.textContent = 'worktree changed since review request — verify findings against current code';
+    body.appendChild(banner);
+  }
+  if (payload.blockedByProtocol) {
+    const banner = document.createElement('div');
+    banner.className = 'acp-harness__review-banner acp-harness__review-banner--blocked';
+    banner.textContent = `protocol blocked: ${payload.blockedByProtocol}`;
+    body.appendChild(banner);
+  }
+
+  if (payload.summary && payload.summary.trim().length > 0) {
+    const sum = document.createElement('div');
+    sum.className = 'acp-harness__review-summary';
+    sum.textContent = payload.summary;
+    body.appendChild(sum);
+  }
+
+  if (payload.findings.length === 0 && !payload.blockedByProtocol) {
+    const clean = document.createElement('div');
+    clean.className = 'acp-harness__review-clean';
+    clean.textContent = '(clean review — no findings)';
+    body.appendChild(clean);
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'acp-harness__review-findings';
+  for (const f of payload.findings) {
+    const row = document.createElement('div');
+    row.className = `acp-harness__review-finding acp-harness__review-finding--${f.severity}`;
+    const sev = document.createElement('span');
+    sev.className = 'acp-harness__review-sev';
+    sev.textContent = f.severity;
+    const anchor = document.createElement('span');
+    anchor.className = 'acp-harness__review-anchor';
+    anchor.textContent = `${f.file}:${f.line}`;
+    const concern = document.createElement('span');
+    concern.className = 'acp-harness__review-concern';
+    concern.textContent = f.concern;
+    row.appendChild(sev);
+    row.appendChild(anchor);
+    row.appendChild(concern);
+    if (f.suggestedCheck) {
+      const check = document.createElement('div');
+      check.className = 'acp-harness__review-check';
+      check.textContent = `check: ${f.suggestedCheck}`;
+      row.appendChild(check);
+    }
+    list.appendChild(row);
+  }
+  body.appendChild(list);
 }
 
 function lanePeekPriorityClass(candidate: LanePeekCandidate): 'high' | 'warn' | 'info' {

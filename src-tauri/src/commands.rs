@@ -259,6 +259,15 @@ pub fn acp_bus_reply(
     Ok(())
 }
 
+/// spec 112: collect git working-tree state for the Review Lane Mode packet.
+/// Same shape as the value Rust emits on `acp-review-requested`. Frontend uses
+/// this for both user-triggered `#review` (no MCP round-trip) and to recompute
+/// the worktree fingerprint at reply time.
+#[tauri::command]
+pub fn acp_collect_review_git_state(cwd: String) -> Result<serde_json::Value, String> {
+    Ok(crate::hook_server::collect_git_state_public(Some(&cwd)))
+}
+
 #[tauri::command]
 pub fn list_harness_mcp_stats(
     harness_id: String,

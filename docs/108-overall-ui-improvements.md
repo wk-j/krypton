@@ -34,6 +34,9 @@ When an item is selected for implementation, create a dedicated feature document
 10. **Navigation memory** — make recent panes, files, URLs, agents, and commands easier to revisit from the keyboard.
 11. **Visual density tuning** — reduce low-value decoration and improve spacing, hierarchy, and truncation in dense panes.
 12. **Accessibility polish** — improve focus rings, contrast checks, reduced-motion behavior, and screen-reader labels for non-terminal controls.
+13. **Inline diff preview with quick apply/revert** — render agent file edits as a diff inside the transcript row with keyboard actions to revert or stage, removing the round-trip to an external editor or `git`.
+14. **Per-turn repo checkpoints** — snapshot the working tree before and after each agent turn so a single bad turn can be rolled back without manual `git reset`, with retention and cleanup rules.
+15. **Auto-context from active pane** — let the ACP lane attach the file/cursor context of the adjacent terminal or editor pane automatically, reducing manual `@file` references for the most common coding loop.
 
 ## Recommended Next Pick
 
@@ -59,6 +62,7 @@ Shipped:
 
 1. **ACP contextual lane activity peek** — hidden lane state can now be inspected through a contextual single-lane peek.
 2. **Context-aware command palette** — focused view contributes a "Context" section via the optional `ContentView.getPaletteActions?` capability; ACP harness is the v1 contributor. See `docs/110-context-aware-command-palette.md`.
+3. **ACP Review Lane Mode (V0.5)** — `#review <lane>` chat command + `review_request` / `review_reply` MCP tools deliver a structured git packet to a reviewer lane and render anchored findings as a `review` transcript card. See `docs/112-acp-review-lane-mode.md`.
 
 Recommended next:
 

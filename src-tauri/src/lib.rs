@@ -150,6 +150,7 @@ pub fn run() {
             commands::list_harness_memory,
             commands::dispose_harness_memory,
             commands::acp_bus_reply,
+            commands::acp_collect_review_git_state,
             commands::list_harness_mcp_stats,
             commands::save_temp_image,
             commands::capture_screen,

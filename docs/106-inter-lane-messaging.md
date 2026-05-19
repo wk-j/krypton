@@ -294,6 +294,10 @@ All changes appear **only** when a conversation is active. Lane sidebar is verti
 - **Agent-initiated peer review** (agent decides on its own to consult another lane). User-directed only in this spec.
 - **Telemetry / token-cost tracking** for inter-lane traffic.
 
+### Cross-reference
+
+`docs/112-acp-review-lane-mode.md` (Review Lane Mode V0.5) builds on this transport layer: `review_request` and `review_reply` are sibling auto-allowed MCP tools on the `krypton-harness-bus` server. Review packets ride the inbox + drain pipeline introduced here, with `InterLaneEnvelope.kind === 'review_request'` distinguishing them from peer chat. `cancelConversationsFor()` is extended to tombstone in-flight review packets so late `review_reply` envelopes are discarded.
+
 ## Implementation Addendum — Round-Trip Protocol (2026-05-19)
 
 Initial implementation made `peer_send` / `peer_list` **fire-and-forget**: Rust emitted a Tauri event and returned `delivered: true` immediately, ignoring the frontend coordinator's actual outcome. This silently masked `self_send`, `unknown_lane`, `lane_stopped`, and cross-harness leakage failures and was identified during peer review. It is replaced by a synchronous round-trip:
