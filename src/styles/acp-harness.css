@@ -369,6 +369,81 @@
   text-decoration: none;
 }
 
+/* Peering — inter-lane messaging (spec 106) */
+.acp-harness__lane--awaiting_peer .acp-harness__lane-head,
+.acp-harness__tab--awaiting_peer {
+  color: #b8a6ff;
+  text-decoration: none;
+  text-shadow: 0 0 6px rgba(184, 166, 255, 0.22);
+}
+
+.acp-harness__lane--awaiting_peer .acp-harness__lane-symbol {
+  color: #b8a6ff;
+}
+
+.acp-harness__lane-inbox {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: 0.5em;
+  padding: 0 5px;
+  border: 1px solid rgba(184, 166, 255, 0.45);
+  border-radius: 2px;
+  color: #b8a6ff;
+  font-size: 0.7em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.acp-harness__inter-lane {
+  border-left: 2px solid rgba(184, 166, 255, 0.55);
+  padding: 4px 8px 4px 10px;
+  margin: 2px 0;
+  background: rgba(184, 166, 255, 0.04);
+}
+
+.acp-harness__inter-lane--out {
+  border-left-color: rgba(120, 200, 255, 0.55);
+  background: rgba(120, 200, 255, 0.04);
+}
+
+.acp-harness__inter-lane-head {
+  display: flex;
+  gap: 0.6em;
+  align-items: baseline;
+  margin-bottom: 2px;
+  font-size: 0.78em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(184, 166, 255, 0.78);
+}
+
+.acp-harness__inter-lane--out .acp-harness__inter-lane-head {
+  color: rgba(120, 200, 255, 0.78);
+}
+
+.acp-harness__inter-lane-arrow {
+  font-weight: bold;
+  font-size: 1.1em;
+}
+
+.acp-harness__inter-lane-peer {
+  flex: 1 1 auto;
+}
+
+.acp-harness__inter-lane-done {
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.9em;
+}
+
+.acp-harness__inter-lane-message {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: rgba(216, 232, 216, 0.92);
+}
+
 .acp-harness__lane-body {
   flex: 1 1 0;
   min-height: 0;

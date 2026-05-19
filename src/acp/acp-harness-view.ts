@@ -3646,6 +3646,10 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
     body.classList.add('acp-harness__fs-review');
     if (item.fsReview.resolved) body.classList.add('acp-harness__fs-review--resolved');
     renderFsWriteReviewBody(body, item.fsReview);
+  } else if (item.kind === 'inter_lane' && item.interLane) {
+    body.classList.add('acp-harness__inter-lane');
+    body.classList.add(`acp-harness__inter-lane--${item.interLane.direction}`);
+    renderInterLaneBody(body, item);
   } else if (item.kind === 'user' && item.imageCount && item.imageCount > 0) {
     if (item.text) {
       const textEl = document.createElement('div');
@@ -4420,8 +4424,35 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'memory': return 'mem';
     case 'shell': return 'sh';
     case 'fs_activity': return 'fs';
+    case 'inter_lane': return 'peer';
     default: return kind;
   }
+}
+
+function renderInterLaneBody(body: HTMLElement, item: HarnessTranscriptItem): void {
+  if (!item.interLane) return;
+  const { direction, peerDisplayName, done } = item.interLane;
+  body.dataset.direction = direction;
+  const head = document.createElement('div');
+  head.className = 'acp-harness__inter-lane-head';
+  const arrow = direction === 'out' ? '→' : '←';
+  const label = direction === 'out'
+    ? `to ${peerDisplayName}`
+    : `from ${peerDisplayName}`;
+  head.innerHTML =
+    `<span class="acp-harness__inter-lane-arrow">${arrow}</span>` +
+    `<span class="acp-harness__inter-lane-peer">${esc(label)}</span>` +
+    (done ? `<span class="acp-harness__inter-lane-done">done</span>` : '');
+  body.appendChild(head);
+  // The transcript text is "header\nmessage" — strip the header line so the
+  // body only shows the message text.
+  const messageText = item.text.includes('\n')
+    ? item.text.slice(item.text.indexOf('\n') + 1)
+    : item.text;
+  const message = document.createElement('div');
+  message.className = 'acp-harness__inter-lane-message';
+  message.textContent = messageText;
+  body.appendChild(message);
 }
 
 function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {
