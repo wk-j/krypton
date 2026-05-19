@@ -196,6 +196,46 @@ export interface AcpAgentMode {
   description?: string;
 }
 
+// Peering — inter-lane messaging (spec 106)
+export type HarnessLaneStatus =
+  | 'starting'
+  | 'idle'
+  | 'busy'
+  | 'needs_permission'
+  | 'awaiting_peer'
+  | 'error'
+  | 'stopped';
+
+export interface InterLaneEnvelope {
+  id: string;
+  fromLaneId: string;
+  toLaneId: string;
+  message: string;
+  done: boolean;
+  sentAt: number;
+}
+
+export interface LaneSummary {
+  laneId: string;
+  displayName: string;
+  backendId: string;
+  status: HarnessLaneStatus;
+  modelName: string | null;
+  inboxDepth: number;
+}
+
+export interface LaneStatusEvent {
+  laneId: string;
+  prev: HarnessLaneStatus;
+  next: HarnessLaneStatus;
+  at: number;
+}
+
+export type LaneBusEvent =
+  | { type: 'lane:status'; payload: LaneStatusEvent }
+  | { type: 'lane:spawned'; payload: { laneId: string } }
+  | { type: 'lane:closed'; payload: { laneId: string } };
+
 export type AcpEvent =
   | { type: 'user_message_chunk'; text: string }
   | { type: 'message_chunk'; text: string }

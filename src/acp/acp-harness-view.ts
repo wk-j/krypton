@@ -22,9 +22,12 @@ import type {
   AgentInfo,
   AgentInitInfo,
   ContentBlock,
+  HarnessLaneStatus,
   HarnessMcpLaneStats,
   HarnessMemoryEntry,
   HarnessMemorySession,
+  InterLaneEnvelope,
+  LaneSummary,
   PermissionOption,
   PlanEntry,
   StopReason,
@@ -32,6 +35,8 @@ import type {
   ToolCallUpdate,
   UsageInfo,
 } from './types';
+import { LaneBus } from './lane-bus';
+import { InterLaneCoordinator, type LaneHost } from './inter-lane';
 import type {
   AcpLaneMetrics,
   CapturedImage,
@@ -48,7 +53,6 @@ import {
   dedupeByName,
 } from './mcp-bridge';
 
-type HarnessLaneStatus = 'starting' | 'idle' | 'busy' | 'needs_permission' | 'error' | 'stopped';
 type ComposerFocus = 'text' | 'transcript';
 type PendingExtraction = never;
 
@@ -62,7 +66,7 @@ interface HarnessPermission {
 
 interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane';
   text: string;
   markdownSource?: string;
   markdownHtml?: string;
@@ -80,6 +84,14 @@ interface HarnessTranscriptItem {
   permission?: PermissionPayload;
   fsActivity?: FsActivityPayload;
   fsReview?: FsWriteReviewPayload;
+  interLane?: InterLanePayload;
+}
+
+interface InterLanePayload {
+  direction: 'in' | 'out';
+  peerId: string;
+  peerDisplayName: string;
+  done: boolean;
 }
 
 interface FsWriteReviewPayload {
@@ -125,8 +137,12 @@ interface StagedImage {
 const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MEMORY_PERMISSION_SCAN_DEPTH = 8;
-const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
-const HARNESS_MEMORY_SERVER_MARKERS = ['krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
+const HARNESS_BUS_TOOL_NAMES = new Set([
+  'memory_set', 'memory_get', 'memory_list',
+  'peer_send', 'peer_list',
+]);
+const HARNESS_MEMORY_TOOL_NAMES = HARNESS_BUS_TOOL_NAMES; // back-compat alias
+const HARNESS_MEMORY_SERVER_MARKERS = ['krypton-harness-bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
 interface FileTouchRecord {
   path: string;
@@ -179,6 +195,9 @@ interface HarnessLane {
   planCollapsed: boolean;
   lastKilled: string;
   transcriptWindow: number;
+  promptHistory: string[];
+  historyIndex: number | null;
+  historySavedDraft: string | null;
 }
 
 interface TranscriptScrollAnchor {
@@ -265,6 +284,8 @@ const LANE_DEFAULTS = {
   planCollapsed: false,
   lastKilled: '',
   transcriptWindow: TRANSCRIPT_WINDOW_DEFAULT,
+  historyIndex: null,
+  historySavedDraft: null,
 };
 
 const md = new Marked(
@@ -286,6 +307,9 @@ export class AcpHarnessView implements ContentView {
   private projectDir: string | null;
   private lanes: HarnessLane[] = [];
   private activeLaneId = '';
+  private laneBus = new LaneBus();
+  private coordinator!: InterLaneCoordinator;
+  private interLaneUnlisten: UnlistenFn | null = null;
   private memoryEntries: HarnessMemoryEntry[] = [];
   private harnessMemoryId: string | null = null;
   private harnessMemoryPort: number | null = null;
@@ -353,14 +377,120 @@ export class AcpHarnessView implements ContentView {
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
+    this.coordinator = new InterLaneCoordinator(this.laneBus, this.buildLaneHost());
     this.buildDOM();
     this.render();
     void this.refreshGitBranch();
     void this.start();
     this.startMetricsTick();
+    void this.subscribeInterLaneBridge();
     void loadHomeDir().then((home) => {
       if (home) this.render();
     });
+  }
+
+  /** Centralized status mutation. Emits a lane:status event for the bus. */
+  private setLaneStatus(lane: HarnessLane, next: HarnessLaneStatus): void {
+    const prev = lane.status;
+    if (prev === next) return;
+    lane.status = next;
+    this.laneBus.emit({
+      type: 'lane:status',
+      payload: { laneId: lane.id, prev, next, at: Date.now() },
+    });
+  }
+
+  private buildLaneHost(): LaneHost {
+    return {
+      listLanes: () =>
+        this.lanes
+          .filter((l) => l.status !== 'stopped')
+          .map<LaneSummary>((l) => ({
+            laneId: l.id,
+            displayName: l.displayName,
+            backendId: l.backendId,
+            status: l.status,
+            modelName: l.modelName,
+            inboxDepth: 0,
+          })),
+      getLane: (id) => {
+        const l = this.lanes.find((x) => x.id === id);
+        if (!l) return null;
+        return { status: l.status, displayName: l.displayName };
+      },
+      setLaneStatus: (id, next) => {
+        const l = this.lanes.find((x) => x.id === id);
+        if (!l) return;
+        this.setLaneStatus(l, next);
+        this.scheduleLaneRender(l);
+      },
+      enqueueSystemPrompt: (id, text) => {
+        const l = this.lanes.find((x) => x.id === id);
+        if (!l) return;
+        void this.enqueueSystemPrompt(l, text);
+      },
+      appendInterLaneRow: (id, direction, peer, message, done) => {
+        const l = this.lanes.find((x) => x.id === id);
+        if (!l) return;
+        const arrow = direction === 'out' ? '→' : '←';
+        const header = direction === 'out'
+          ? `${arrow} ${peer.displayName}${done ? ' [done]' : ''}`
+          : `${peer.displayName} ${arrow}${done ? ' [done]' : ''}`;
+        const item = this.appendTranscript(l, 'inter_lane', `${header}\n${message}`);
+        item.interLane = {
+          direction,
+          peerId: peer.id,
+          peerDisplayName: peer.displayName,
+          done,
+        };
+      },
+      appendSystemNotice: (id, text) => {
+        const l = this.lanes.find((x) => x.id === id);
+        if (!l) return;
+        this.appendTranscript(l, 'system', `[inter-lane] ${text}`);
+      },
+    };
+  }
+
+  /** Inject a programmatic user-turn (no UI composer involved). */
+  private async enqueueSystemPrompt(lane: HarnessLane, text: string): Promise<void> {
+    if (!lane.client) return;
+    if (lane.status !== 'idle') return;
+    this.setLaneStatus(lane, 'busy');
+    lane.activeTurnStartedAt = Date.now();
+    lane.pendingTurnExtractions = [];
+    lane.currentAssistantId = null;
+    lane.currentThoughtId = null;
+    this.updateComposerTick();
+    this.render();
+    try {
+      await lane.client.prompt([{ type: 'text', text }]);
+    } catch (e) {
+      this.setLaneStatus(lane, 'error');
+      lane.error = String(e);
+      this.appendTranscript(lane, 'system', `error: ${String(e)}`);
+      this.render();
+    }
+  }
+
+  private async subscribeInterLaneBridge(): Promise<void> {
+    this.interLaneUnlisten = await listen<InterLaneEnvelope>(
+      'acp-inter-lane-message',
+      (e) => {
+        // The Rust side addresses lanes by display name; translate to
+        // internal lane ids before handing to the coordinator.
+        const env = e.payload;
+        const fromLane = this.lanes.find((l) => l.displayName === env.fromLaneId);
+        const toLane = this.lanes.find((l) => l.displayName === env.toLaneId);
+        if (!fromLane) return;
+        const translated: InterLaneEnvelope = {
+          ...env,
+          fromLaneId: fromLane.id,
+          toLaneId: toLane ? toLane.id : env.toLaneId,
+        };
+        this.coordinator.deliver(translated);
+      },
+    );
   }
 
   getWorkingDirectory(): string | null {
@@ -506,6 +636,7 @@ export class AcpHarnessView implements ContentView {
     }
 
     if (this.handleSlashPaletteKey(e, lane)) return true;
+    if (this.handleHistoryKey(e, lane)) return true;
     if (this.handleEditingKey(e, lane)) return true;
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
@@ -565,6 +696,10 @@ export class AcpHarnessView implements ContentView {
     if (this.memoryUnlisten) {
       this.memoryUnlisten();
       this.memoryUnlisten = null;
+    }
+    if (this.interLaneUnlisten) {
+      this.interLaneUnlisten();
+      this.interLaneUnlisten = null;
     }
     if (this.mcpUnlisten) {
       this.mcpUnlisten();
@@ -863,12 +998,13 @@ export class AcpHarnessView implements ContentView {
       seenTranscriptIds: new Set(),
       availableCommands: [],
       modesById: new Map(),
+      promptHistory: [],
     };
   }
 
   private async spawnLane(lane: HarnessLane): Promise<void> {
     const spawnEpoch = lane.spawnEpoch;
-    lane.status = 'starting';
+    this.setLaneStatus(lane, 'starting');
     lane.error = null;
     this.render();
     let client: AcpClient | null = null;
@@ -894,7 +1030,7 @@ export class AcpHarnessView implements ContentView {
       }
       lane.sessionId = info.session_id ?? null;
       this.configureLaneFromInfo(lane, info);
-      lane.status = 'idle';
+      this.setLaneStatus(lane, 'idle');
       this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
       if (this.harnessMemoryWarning) {
         this.appendTranscript(lane, 'system', `warning: harness memory unavailable: ${this.harnessMemoryWarning}`);
@@ -904,7 +1040,7 @@ export class AcpHarnessView implements ContentView {
         if (client) await client.dispose();
         return;
       }
-      lane.status = 'error';
+      this.setLaneStatus(lane, 'error');
       lane.error = String(e);
       this.appendTranscript(lane, 'system', `error: ${String(e)}`);
     }
@@ -1017,7 +1153,7 @@ export class AcpHarnessView implements ContentView {
         void this.refreshMemory();
         break;
       case 'error':
-        lane.status = 'error';
+        this.setLaneStatus(lane, 'error');
         lane.error = event.message;
         lane.activeTurnStartedAt = null;
         lane.pendingTurnExtractions = [];
@@ -1034,6 +1170,12 @@ export class AcpHarnessView implements ContentView {
     const text = lane.draft.trim();
     const hasImages = lane.stagedImages.length > 0;
     if (!text && !hasImages) return;
+    if (text && text !== lane.promptHistory[lane.promptHistory.length - 1]) {
+      lane.promptHistory.push(text);
+      if (lane.promptHistory.length > 100) lane.promptHistory.shift();
+    }
+    lane.historyIndex = null;
+    lane.historySavedDraft = null;
     if (text.startsWith('#')) {
       await this.runHashCommand(lane, text);
       return;
@@ -1057,11 +1199,15 @@ export class AcpHarnessView implements ContentView {
       this.flashChip('lane busy');
       return;
     }
+    if (lane.status === 'awaiting_peer') {
+      this.flashChip('lane awaiting peer — #cancel first');
+      return;
+    }
     const images = lane.stagedImages.slice();
     this.setDraft(lane, '', 0);
     lane.stagedImages = [];
     this.appendTranscript(lane, 'user', text, { imageCount: images.length });
-    lane.status = 'busy';
+    this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
@@ -1072,7 +1218,7 @@ export class AcpHarnessView implements ContentView {
     try {
       await lane.client.prompt(blocks);
     } catch (e) {
-      lane.status = 'error';
+      this.setLaneStatus(lane, 'error');
       lane.error = String(e);
       lane.activeTurnStartedAt = null;
       lane.pendingTurnExtractions = [];
@@ -1087,7 +1233,7 @@ export class AcpHarnessView implements ContentView {
     const lane = this.activeLane();
     console.warn('[AcpHarnessView] submit failed:', error);
     if (lane?.status === 'starting') {
-      lane.status = 'error';
+      this.setLaneStatus(lane, 'error');
       lane.error = message;
       this.appendTranscript(lane, 'system', `command failed: ${message}`);
     }
@@ -1156,7 +1302,12 @@ export class AcpHarnessView implements ContentView {
     lane.pendingPermissions = [];
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
-    lane.status = lane.error ? 'error' : 'idle';
+    if (lane.error) {
+      this.setLaneStatus(lane, 'error');
+    } else {
+      const suggested = this.coordinator.onLaneStop(lane.id);
+      this.setLaneStatus(lane, suggested ?? 'idle');
+    }
     lane.activeTurnStartedAt = null;
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
@@ -1188,7 +1339,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     lane.pendingPermissions.push(permission);
-    lane.status = 'needs_permission';
+    this.setLaneStatus(lane, 'needs_permission');
     const payload = this.describePermission(lane, permission);
     const text = payload.suffix ? `${payload.kind} ${payload.subject} ${payload.suffix}` : `${payload.kind} ${payload.subject}`;
     const item = this.appendTranscript(lane, 'permission', text);
@@ -1211,14 +1362,14 @@ export class AcpHarnessView implements ContentView {
     permission.resolvedLabel = `${action === 'accept' ? '✓' : '✗'} ${label}${auto ? ' (auto-turn)' : ''}`;
     permission.auto = auto;
     this.appendTranscript(lane, 'permission', permission.resolvedLabel);
-    if (lane.pendingPermissions.length === 0 && lane.status === 'needs_permission') lane.status = 'busy';
+    if (lane.pendingPermissions.length === 0 && lane.status === 'needs_permission') this.setLaneStatus(lane, 'busy');
     this.updateComposerTick();
     this.render();
     try {
       await lane.client.respondPermission(permission.requestId, option?.optionId ?? null);
     } catch (e) {
       lane.pendingPermissions.unshift(permission);
-      lane.status = 'needs_permission';
+      this.setLaneStatus(lane, 'needs_permission');
       this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
       this.updateComposerTick();
       this.render();
@@ -1526,7 +1677,7 @@ export class AcpHarnessView implements ContentView {
     const existing = this.lanes.filter((l) => l.backendId === state.backendId).length;
     const lane = this.createLane(this.nextLaneIndex++, state.backendId, `${label}-${existing + 1}`);
     lane.client = client;
-    lane.status = 'starting';
+    this.setLaneStatus(lane, 'starting');
     lane.transcript = [{ id: makeId(), kind: 'system', text: `${mode === 'resume' ? 'resuming' : 'loading'} ${shortId(session.sessionId)}...` }];
     this.lanes.push(lane);
     this.activateLane(lane.id);
@@ -1549,7 +1700,7 @@ export class AcpHarnessView implements ContentView {
       }
       lane.sessionId = info.session_id;
       this.configureLaneFromInfo(lane, init);
-      lane.status = 'idle';
+      this.setLaneStatus(lane, 'idle');
       this.sealStreaming(lane);
       this.appendTranscript(lane, 'system', `${mode === 'resume' ? 'resumed' : 'loaded'} ${shortId(session.sessionId)}.`);
     } catch (e) {
@@ -1557,7 +1708,7 @@ export class AcpHarnessView implements ContentView {
         await client.dispose();
         return;
       }
-      lane.status = 'error';
+      this.setLaneStatus(lane, 'error');
       lane.error = errorText(e);
       this.appendTranscript(lane, 'system', `session ${mode} failed: ${errorText(e)}`);
     }
@@ -1595,6 +1746,7 @@ export class AcpHarnessView implements ContentView {
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
     this.mcpStatsByLane.delete(lane.displayName);
+    this.laneBus.emit({ type: 'lane:closed', payload: { laneId: lane.id } });
     if (this.lanes.length === 0) {
       this.activeLaneId = '';
       this.systemRows = [
@@ -1611,7 +1763,16 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async cancelLane(lane: HarnessLane): Promise<void> {
-    if (!lane.client) return;
+    // Cancelling a lane mid-peer-conversation closes the conversation
+    // from this lane's side — notify the peer(s).
+    this.coordinator.cancelConversationsFor(lane.id);
+    if (lane.status === 'awaiting_peer') {
+      this.setLaneStatus(lane, 'idle');
+    }
+    if (!lane.client) {
+      this.render();
+      return;
+    }
     lane.pendingTurnExtractions = [];
     try {
       await lane.client.cancel();
@@ -1670,7 +1831,7 @@ export class AcpHarnessView implements ContentView {
       await lane.client.dispose();
       lane.client = null;
     }
-    lane.status = 'starting';
+    this.setLaneStatus(lane, 'starting');
     lane.draft = '';
     lane.cursor = 0;
     lane.pendingPermissions = [];
@@ -1889,6 +2050,7 @@ export class AcpHarnessView implements ContentView {
         true,
         this.mcpStatsByLane.get(lane.displayName) ?? null,
         laneMetrics,
+        this.coordinator.inboxDepth(lane.id),
       );
     }
     const stats = laneEl.querySelector<HTMLElement>('.acp-harness__lane-stats');
@@ -2172,6 +2334,7 @@ export class AcpHarnessView implements ContentView {
         active,
         this.mcpStatsByLane.get(lane.displayName) ?? null,
         laneMetrics,
+        this.coordinator.inboxDepth(lane.id),
       );
       laneEl.appendChild(head);
       if (active) {
@@ -2411,6 +2574,7 @@ export class AcpHarnessView implements ContentView {
           active,
           this.mcpStatsByLane.get(lane.displayName) ?? null,
           m,
+          this.coordinator.inboxDepth(lane.id),
         );
       }
     }
@@ -2997,7 +3161,63 @@ export class AcpHarnessView implements ContentView {
     // until the user types again.
     lane.slashPaletteIndex = 0;
     lane.slashPaletteDismissed = false;
+    lane.historyIndex = null;
+    lane.historySavedDraft = null;
     this.renderComposer();
+  }
+
+  private applyHistoryDraft(lane: HarnessLane, text: string): void {
+    lane.draft = text;
+    lane.cursor = text.length;
+    this.focus = 'text';
+    lane.slashPaletteIndex = 0;
+    lane.slashPaletteDismissed = false;
+    this.renderComposer();
+  }
+
+  private cursorOnFirstLine(lane: HarnessLane): boolean {
+    return lane.draft.lastIndexOf('\n', lane.cursor - 1) === -1;
+  }
+
+  private cursorOnLastLine(lane: HarnessLane): boolean {
+    return lane.draft.indexOf('\n', lane.cursor) === -1;
+  }
+
+  private handleHistoryKey(e: KeyboardEvent, lane: HarnessLane): boolean {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
+    if (slashPaletteVisible(lane)) return false;
+    if (e.key === 'ArrowUp') {
+      if (lane.promptHistory.length === 0) return false;
+      if (!this.cursorOnFirstLine(lane)) return false;
+      if (lane.historyIndex === null) {
+        lane.historySavedDraft = lane.draft;
+        lane.historyIndex = lane.promptHistory.length - 1;
+      } else if (lane.historyIndex > 0) {
+        lane.historyIndex -= 1;
+      } else {
+        e.preventDefault();
+        return true;
+      }
+      e.preventDefault();
+      this.applyHistoryDraft(lane, lane.promptHistory[lane.historyIndex]);
+      return true;
+    }
+    if (e.key === 'ArrowDown') {
+      if (lane.historyIndex === null) return false;
+      if (!this.cursorOnLastLine(lane)) return false;
+      e.preventDefault();
+      if (lane.historyIndex < lane.promptHistory.length - 1) {
+        lane.historyIndex += 1;
+        this.applyHistoryDraft(lane, lane.promptHistory[lane.historyIndex]);
+      } else {
+        const saved = lane.historySavedDraft ?? '';
+        lane.historyIndex = null;
+        lane.historySavedDraft = null;
+        this.applyHistoryDraft(lane, saved);
+      }
+      return true;
+    }
+    return false;
   }
 
   private setDraftCursor(lane: HarnessLane, cursor: number): void {
@@ -3935,6 +4155,7 @@ function renderLaneHead(
   active: boolean,
   mcp: HarnessMcpLaneStats | null,
   metrics: AcpLaneMetrics | null,
+  inboxDepth: number,
 ): string {
   const mcpChip = renderMcpChip(mcp);
   const modelChip = renderModelChip(lane.modelName);
@@ -3945,22 +4166,27 @@ function renderLaneHead(
   const chips = chipGroup
     ? `<span class="acp-harness__lane-chips">${chipGroup}</span>`
     : '';
+  const inboxChip = inboxDepth > 0
+    ? `<span class="acp-harness__lane-inbox" title="${inboxDepth} pending peer message${inboxDepth === 1 ? '' : 's'}">▼${inboxDepth}</span>`
+    : '';
   if (!active) {
     return (
       `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
       `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
+      inboxChip +
       chips +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>`
     );
   }
-  const cancelHint = lane.status === 'busy' || lane.status === 'needs_permission' || lane.pendingShellId
+  const cancelHint = lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer' || lane.pendingShellId
     ? `<span class="acp-harness__lane-cancel-hint">⌃C cancel</span>`
     : '';
   return (
     `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
     `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
+    inboxChip +
     chips +
     `<span class="acp-harness__lane-activity">${esc(laneActivity(lane))}</span>` +
     cancelHint
@@ -4205,6 +4431,7 @@ function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {
 function laneActivity(lane: HarnessLane): string {
   if (lane.status === 'error') return `error: ${lane.error ?? 'failed'}`;
   if (lane.status === 'needs_permission') return `perm: ${lane.pendingPermissions[0]?.toolCall.title ?? 'required'}`;
+  if (lane.status === 'awaiting_peer') return 'awaiting peer reply';
   const latest = lane.transcript[lane.transcript.length - 1];
   if (!latest) return lane.status;
   return latest.text.replace(/\s+/g, ' ').slice(0, 60);
@@ -4216,6 +4443,7 @@ function statusSymbol(status: HarnessLaneStatus): string {
     case 'idle': return '○';
     case 'busy': return '●';
     case 'needs_permission': return '!';
+    case 'awaiting_peer': return '⇆';
     case 'error': return '×';
     case 'stopped': return '×';
   }
@@ -4227,6 +4455,7 @@ function statusLabel(status: HarnessLaneStatus): string {
     case 'idle': return 'idle';
     case 'busy': return 'busy';
     case 'needs_permission': return 'permission';
+    case 'awaiting_peer': return 'awaiting peer';
     case 'error': return 'error';
     case 'stopped': return 'stopped';
   }

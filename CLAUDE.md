@@ -49,6 +49,7 @@ The app has two halves that communicate over Tauri IPC:
 - **Layout Engine** (`layout.ts`) — Grid (auto-tile balanced grid) and Focus (65/35 split with pinned windows on right) algorithms.
 - **Sound Engine** (`sound.ts`) — thin frontend wrapper that calls Rust backend (`sound.rs`), which uses `rodio` on a dedicated audio thread with WAV packs bundled as Tauri resources.
 - **Animation** (`animation.ts`) — WAAPI-based transitions (morph, slide, crossfade) with keyboard input buffering during animations.
+- **ACP Harness Peering** (`src/acp/lane-bus.ts`, `lane-inbox.ts`, `inter-lane.ts`) — user-directed inter-lane messaging. `LaneBus` emits `lane:status` events on every status mutation (centralized via `setLaneStatus()`). `InterLaneCoordinator` queues envelopes in per-lane inboxes, drains them on the next `idle` transition by injecting programmatic user-turns via `enqueueSystemPrompt()`. Lane status `awaiting_peer` blocks the composer until `#cancel` clears it. MCP tools `peer_send` + `peer_list` on the `krypton-harness-bus` server (renamed memory server). See `docs/106-inter-lane-messaging.md`.
 
 ### IPC Pattern
 
@@ -83,6 +84,7 @@ The app has two halves that communicate over Tauri IPC:
 - **macOS focus fix:** Window must be `always_on_top(true)` then immediately `always_on_top(false)` in setup
 - **Process detection:** Uses `tcgetpgrp()` on Unix; different API on Windows
 - **Environment variables in release:** macOS GUI apps don't inherit shell env vars. `get_env_var` falls back to spawning a login shell with `printenv` (not shell-specific variable syntax) to stay compatible with bash/zsh/fish
+- **macOS GUI bundle starts with fds 0/1/2 closed.** The first `openpty()` would otherwise return master fds 0/1/2, and subsequent `log::*` / `eprintln!` / panic output to stderr would land on a PTY master — appearing as fake keystrokes in the first spawned shell. `lib.rs::ensure_std_fds()` reserves 0/1/2 with `/dev/null` at startup. See `docs/04-architecture.md` "macOS GUI Bundle stdio Hijacks PTY Master"
 - Both `<html>` and `<body>` must have `background: transparent`
 
 ## Code Style

@@ -522,14 +522,14 @@ async fn handle_harness_memory_mcp(
             "protocolVersion": "2025-06-18",
             "capabilities": { "tools": {} },
             "serverInfo": {
-                "name": "krypton-harness-memory",
+                "name": "krypton-harness-bus",
                 "version": env!("CARGO_PKG_VERSION"),
             },
         })),
-        "tools/list" => Ok(json!({ "tools": memory_tool_descriptors() })),
+        "tools/list" => Ok(json!({ "tools": bus_tool_descriptors() })),
         "tools/call" => {
             let params = request.get("params").cloned().unwrap_or(Value::Null);
-            handle_memory_tool_call(&state, &harness_id, &lane_label, params)
+            handle_bus_tool_call(&state, &harness_id, &lane_label, params)
         }
         "" => Err(json!({ "code": -32600, "message": "Missing method" })),
         other => Err(json!({ "code": -32601, "message": format!("Method not found: {other}") })),
@@ -547,7 +547,7 @@ async fn handle_harness_memory_mcp(
     }
 }
 
-fn handle_memory_tool_call(
+fn handle_bus_tool_call(
     state: &HookServerState,
     harness_id: &str,
     lane_label: &str,
@@ -565,7 +565,9 @@ fn handle_memory_tool_call(
         "memory_set" => memory_set(&state.hook_server, harness_id, lane_label, arguments),
         "memory_get" => memory_get(&state.hook_server, harness_id, arguments),
         "memory_list" => memory_list(&state.hook_server, harness_id),
-        other => Err(format!("Unknown memory tool: {other}")),
+        "peer_send" => peer_send(&state.app_handle, harness_id, lane_label, arguments),
+        "peer_list" => peer_list(&state.app_handle, harness_id),
+        other => Err(format!("Unknown bus tool: {other}")),
     };
 
     let is_error = outcome.is_err();
@@ -583,6 +585,67 @@ fn handle_memory_tool_call(
         "content": [{ "type": "text", "text": text }],
         "isError": is_error,
     }))
+}
+
+/// peer_send — emit an `acp-inter-lane-message` Tauri event for the frontend.
+/// The frontend coordinator handles routing/inbox; the Rust side is fire-and-forget.
+fn peer_send(
+    app_handle: &AppHandle,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let to_lane = required_string(&arguments, "to_lane")?;
+    let message = required_string(&arguments, "message")?;
+    let done = arguments
+        .get("done")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if to_lane.trim().is_empty() {
+        return Err("to_lane must be non-empty".to_string());
+    }
+    if message.trim().is_empty() {
+        return Err("message must be non-empty".to_string());
+    }
+    let envelope_id = format!("env-{}-{}", now_ms(), rand_suffix());
+    let envelope = json!({
+        "id": envelope_id,
+        "fromLaneId": from_lane,
+        "toLaneId": to_lane,
+        "message": message,
+        "done": done,
+        "sentAt": now_ms(),
+        "harnessId": harness_id,
+    });
+    app_handle.emit_or_log("acp-inter-lane-message", envelope);
+    Ok(json!({
+        "delivered": true,
+        "envelopeId": envelope_id,
+        "hint": "End your turn now. The reply (if any) will arrive as a new user message.",
+    }))
+}
+
+/// peer_list — agent asks the harness for live peer lanes.
+/// The actual list is owned by the frontend; we return a sentinel value
+/// that prompts the agent to call again after the frontend pushes an update.
+/// For now this returns a static hint; future work: round-trip via Tauri.
+fn peer_list(app_handle: &AppHandle, harness_id: &str) -> Result<Value, String> {
+    app_handle.emit_or_log(
+        "acp-peer-list-requested",
+        json!({ "harnessId": harness_id }),
+    );
+    Ok(json!({
+        "hint": "Use the lane display name as it appears in this tab (e.g., 'Claude-2'). The harness routes by that name.",
+    }))
+}
+
+fn rand_suffix() -> String {
+    use std::time::SystemTime;
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    format!("{:08x}", nanos)
 }
 
 fn memory_set(
@@ -697,7 +760,7 @@ fn memory_list(hook_server: &Arc<HookServer>, harness_id: &str) -> Result<Value,
     Ok(json!({ "entries": entries }))
 }
 
-fn memory_tool_descriptors() -> Value {
+fn bus_tool_descriptors() -> Value {
     json!([
         {
             "name": "memory_set",
@@ -723,6 +786,24 @@ fn memory_tool_descriptors() -> Value {
         {
             "name": "memory_list",
             "description": "List all lanes in this tab and their memory summaries. Use this to discover what other agents are doing.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "peer_send",
+            "description": "Send one message to another lane in this harness (peer review / consult). Async — recipient processes it on its next idle turn. After calling this tool, end your turn; the reply (if any) arrives as a new user message. Set done:true when you have nothing substantive to add. Use only when the user explicitly asks you to ask, consult, or peer with another lane — never proactively.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "to_lane": { "type": "string", "description": "Target lane display name (e.g., 'Claude-2')." },
+                    "message": { "type": "string" },
+                    "done": { "type": "boolean", "default": false, "description": "Set true to signal end-of-conversation; recipient will not reply." }
+                },
+                "required": ["to_lane", "message"]
+            }
+        },
+        {
+            "name": "peer_list",
+            "description": "Returns guidance on naming sibling lanes. Lanes are addressed by display name (e.g., 'Claude-2', 'Codex-1') as shown in the user's tab.",
             "inputSchema": { "type": "object", "properties": {} }
         }
     ])

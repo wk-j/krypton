@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-13 (ACP harness transcript window)
+> Last updated: 2026-05-19 (ACP harness Peering)
 
 ## Overview
 
@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **ACP Harness Peering (inter-lane messaging)** — Lanes in the same harness can now hold user-directed peer-review conversations. New primitives: `LaneBus` (status event emitter), `LaneInbox` (per-lane FIFO), `InterLaneCoordinator` (drain-on-idle, awaiting_peer transitions). MCP tools `peer_send` + `peer_list` on the renamed `krypton-harness-bus` MCP server (auto-allowed alongside memory tools). New lane status `awaiting_peer` blocks the composer with `"lane awaiting peer — #cancel first"`. No watchdogs, no budgets, no config — user controls lifecycle via `#cancel`. See `docs/106-inter-lane-messaging.md`.
 - **ACP Harness transcript window** — Long sessions no longer pay a full O(transcript) render cost every frame. `AcpHarnessView.renderActiveTranscript()` now slices `lane.transcript` to a tail window (default 60 rows) and the existing diff cleanup loop removes older rows from the DOM. A muted indicator row at the top of the transcript shows the hidden count (`↑ N earlier rows hidden — Ctrl+H show 60 more`). `Ctrl+H` grows each lane's window by 60 rows; when the window reaches the total it snaps to "all" and the next press wraps back to 60. The setting is per-lane, resets on `#new`/`#new!`/`#restart`, and is not persisted across restarts. Pure frontend — no agent context impact. See `docs/103-acp-harness-transcript-window.md`.
 - **In-app webview panes** — A new `webview` content type joins terminal/agent/vault as a first-class pane. External URL clicks from vault notes, markdown viewer, and the `f` hint mode now open as an in-app browser tab with cyberpunk chrome (address bar, back/forward/reload, loading bar) surrounding a native Tauri v2 child webview. Bridge script in the child page forwards leader chords (`Cmd+P`, `Cmd+L`, `Cmd+R`, `Cmd+[`/`]`, `Cmd+1..9`, `Cmd+W`) back to the host so the compositor stays reachable. Shift-clicking a link keeps the old "open in system browser" behavior. See `docs/102-webview-windows.md`.
 - **Agent `/check` command** — AgentView now has a user-owned validation loop. `/check` detects the narrowest project command from marker files (`package.json` scripts `check`/`typecheck`/`test`, `Cargo.toml`, `go.mod`), runs it directly through `run_command`, renders output inline, and stores failing output so `f` or `/fixcheck` sends command + output back to the agent as a follow-up prompt. See `docs/101-agent-check-command.md` and `docs/42-pi-agent-integration.md`.
