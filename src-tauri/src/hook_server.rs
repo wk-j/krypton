@@ -773,8 +773,8 @@ async fn review_request(
     }
 }
 
-/// review_reply — forward a reviewer's structured findings to the frontend
-/// coordinator for validation + delivery to the requester's inbox.
+/// review_reply — forward a reviewer's findings to the frontend coordinator
+/// for best-effort cleanup + delivery to the requester's inbox.
 async fn review_reply(
     state: &HookServerState,
     harness_id: &str,
@@ -893,15 +893,10 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
         "--name-only",
     ])
     .unwrap_or_default();
-    let unstaged_raw = run(&["--no-pager", "diff", "--no-ext-diff", "--name-only"]).unwrap_or_default();
-    let numstat_raw = run(&[
-        "--no-pager",
-        "diff",
-        "--no-ext-diff",
-        "HEAD",
-        "--numstat",
-    ])
-    .unwrap_or_default();
+    let unstaged_raw =
+        run(&["--no-pager", "diff", "--no-ext-diff", "--name-only"]).unwrap_or_default();
+    let numstat_raw =
+        run(&["--no-pager", "diff", "--no-ext-diff", "HEAD", "--numstat"]).unwrap_or_default();
 
     let staged_set: std::collections::HashSet<String> = staged_raw
         .lines()
@@ -1281,7 +1276,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "review_request",
-            "description": "Ask another lane to review your recent work. The harness assembles a structured packet (intent + git diff + commands + tool summary) from your lane state — you do not need to paste anything. The reviewer is required to reply with anchored findings via review_reply. After calling this tool, end your turn; the reply arrives as a structured transcript card. Use only when the user explicitly asks for a review — never proactively.",
+            "description": "Ask another lane to review your recent work. The harness assembles a packet (intent + git diff + commands + tool summary) from your lane state. The reviewer should reply with review_reply. After calling this tool, end your turn; the reply arrives as a transcript card. Use only when the user explicitly asks for a review — never proactively.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1293,7 +1288,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "review_reply",
-            "description": "Reply to a review packet with structured findings. Each finding requires file + line + severity (block|warn|nit) + concern. Findings with severity 'block' MUST include suggested_check. Use empty findings[] for a clean review. Free-form prose is rejected — use this tool.",
+            "description": "Reply to a review packet. Use summary plus optional findings. For actionable findings, include file + line + severity (block|warn|nit) + concern; malformed findings are omitted instead of blocking delivery. Use empty or omitted findings for a clean review.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1309,12 +1304,11 @@ fn bus_tool_descriptors() -> Value {
                                 "severity": { "enum": ["block", "warn", "nit"] },
                                 "concern": { "type": "string", "maxLength": 200 },
                                 "suggested_check": { "type": "string" }
-                            },
-                            "required": ["file", "line", "severity", "concern"]
+                            }
                         }
                     }
                 },
-                "required": ["packet_id", "summary", "findings"]
+                "required": ["packet_id"]
             }
         }
     ])

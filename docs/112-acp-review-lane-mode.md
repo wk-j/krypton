@@ -12,11 +12,11 @@ The result: multi-lane coding is not yet *materially* more useful than a single 
 
 ## Solution
 
-Add **Review Lane Mode**: a user-directed protocol where one lane sends a *review packet* to another lane and receives back a *structured findings list*. The harness — not the agent — assembles the packet from existing lane state (recent user intent, transcript commands, git working-tree state). The reviewer is required to reply via a typed tool with mandatory `file:line` anchors; prose-only replies are rejected and re-requested.
+Add **Review Lane Mode**: a user-directed flow where one lane sends a *review packet* to another lane and receives back a best-effort findings list. The harness — not the agent — assembles the packet from existing lane state (recent user intent, transcript commands, git working-tree state). The reviewer should reply via a typed tool, but the requester is never blocked by schema retries: malformed findings are omitted and no-tool replies resolve as a clean summary card.
 
 Two new MCP tools (`review_request`, `review_reply`) sit next to `peer_send` on the existing `krypton-harness-bus` server. Transport reuses the peer envelope + inbox path from Spec 106. A new transcript item kind `review` renders the findings as a card in the requester's lane.
 
-**V0.5 scope** (this spec): user-triggered `#review <lane>` chat command, structured git packet (`repoRoot` + diffstat + capped per-file hunks + untracked excerpts + staging metadata + worktree fingerprint), reviewer prompt, `review_reply` schema with validator + retry budget, review card on requester side. Deferred to V1+: palette action, mirrored card in reviewer lane, structured `evidence` field, automatic unresolved-failure inference, `ToolPayload.exitCode` extension, no-git absolute-path mode, per-finding expansion UI, "fix this finding" round-trip.
+**V0.5 scope** (this spec): user-triggered `#review <lane>` chat command, structured git packet (`repoRoot` + diffstat + capped per-file hunks + untracked excerpts + staging metadata + worktree fingerprint), reviewer prompt, best-effort `review_reply` cleanup, review card on requester side. Deferred to V1+: palette action, mirrored card in reviewer lane, structured `evidence` field, automatic unresolved-failure inference, `ToolPayload.exitCode` extension, no-git absolute-path mode, per-finding expansion UI, "fix this finding" round-trip.
 
 ## Research
 
@@ -31,7 +31,7 @@ Two new MCP tools (`review_request`, `review_reply`) sit next to `peer_send` on 
 - *Overload `peer_send` with a structured payload field* — bloats the most common tool; reviewers can't tell a review request from a chat. Separate tool is clearer.
 - *Reviewer constructs the packet themselves via tool calls* — wastes a turn and lets the reviewer cherry-pick context. Harness-built packets are more consistent and auditable.
 - *Auto-trigger review after every assistant turn* — context rot and noise. Explicit user trigger only, matching the user-directed peering philosophy.
-- *Free-form prose findings with regex parsing* — fragile. Strict tool schema with retry is the only reliable path.
+- *Strict retry protocol for malformed replies* — too brittle for lane-to-lane work. The harness now accepts partial structured data and treats missing structure as a clean summary instead of bouncing private protocol errors between lanes.
 
 ## Prior Art
 
@@ -43,7 +43,7 @@ Two new MCP tools (`review_request`, `review_reply`) sit next to `peer_send` on 
 | Claude Code subagents (`Task`) | Hierarchical: parent agent spawns subagent with isolated context, gets one synthesized reply. | Synthesized prose, no enforced structure. |
 | OpenAI Swarm `handoff` | Single-active-speaker handoff between agents. | Not a review pattern; sequential turn-taking. |
 
-**Krypton delta** — Krypton's lanes are independent, live, user-visible ACP sessions, not subagents. The harness sits *between* them and can enforce protocol (structured packet in, structured findings out) without either agent's cooperation. PR-review bots run on a completed branch; Krypton reviews *uncommitted, in-progress* work on the working tree. No existing terminal emulator implements this — it's novel at this layer.
+**Krypton delta** — Krypton's lanes are independent, live, user-visible ACP sessions, not subagents. The harness sits *between* them and can assemble the packet and clean the reply without requiring either agent to manage diff context. PR-review bots run on a completed branch; Krypton reviews *uncommitted, in-progress* work on the working tree. No existing terminal emulator implements this — it's novel at this layer.
 
 ## Affected Files
 
@@ -110,7 +110,7 @@ export interface ReviewReply {
   packetId: string;
   findings: ReviewFinding[];   // may be empty (= clean review)
   summary: string;             // one paragraph, ≤ 600 chars
-  blockedByProtocol?: string;  // set by harness if reviewer ignored schema twice
+  interruptedReason?: string;  // set only for transport/lane failures such as reviewer closure
 }
 
 export interface ReviewPayload {
@@ -135,7 +135,7 @@ Both auto-allowed (added to `HARNESS_AUTO_ALLOW_TOOL_NAMES`). Both round-trip Ru
 ```json
 {
   "name": "review_request",
-  "description": "Ask another lane to review your recent work. The harness assembles a structured packet (intent + patch + commands + failures) from your lane state — you do not need to paste anything. The reviewer is required to reply with anchored findings via review_reply. After calling this tool, end your turn; the reply arrives as a structured transcript card.",
+  "description": "Ask another lane to review your recent work. The harness assembles a packet (intent + patch + commands + failures) from your lane state. The reviewer should reply with review_reply. After calling this tool, end your turn; the reply arrives as a transcript card.",
   "inputSchema": {
     "type": "object",
     "required": ["to_lane"],
@@ -152,10 +152,10 @@ Both auto-allowed (added to `HARNESS_AUTO_ALLOW_TOOL_NAMES`). Both round-trip Ru
 ```json
 {
   "name": "review_reply",
-  "description": "Reply to a review packet with structured findings. Each finding requires file + line + severity + concern. Use empty findings[] for a clean review. Free-form prose is rejected — use this tool.",
+  "description": "Reply to a review packet. Use summary plus optional findings. For actionable findings, include file + line + severity + concern. Malformed findings are omitted instead of blocking delivery. Use empty or omitted findings for a clean review.",
   "inputSchema": {
     "type": "object",
-    "required": ["packet_id", "summary", "findings"],
+    "required": ["packet_id"],
     "properties": {
       "packet_id": { "type": "string" },
       "summary":   { "type": "string", "maxLength": 600 },
@@ -163,7 +163,6 @@ Both auto-allowed (added to `HARNESS_AUTO_ALLOW_TOOL_NAMES`). Both round-trip Ru
         "type": "array",
         "items": {
           "type": "object",
-          "required": ["file", "line", "severity", "concern"],
           "properties": {
             "file":     { "type": "string" },
             "line":     { "type": "integer", "minimum": 1 },
@@ -206,9 +205,7 @@ Packet assembly is split: **frontend** contributes transcript-derived signals (i
 The frontend keeps two markers per lane:
 
 - `requestedThrough: number` — advanced on every successful `review_request` (gates the in-flight check).
-- `reviewedThrough: number` — advanced only on a non-protocol-blocked reply; this is the marker passed as `since` to packet assembly.
-
-If a review protocol-fails after retry budget, `reviewedThrough` does not advance — the same delta is included in the next review.
+- `reviewedThrough: number` — advanced on reply delivery; this is the marker passed as `since` to packet assembly.
 
 ### Fingerprint Mismatch Detection
 
@@ -255,29 +252,29 @@ The drain coordinator wraps the packet into one ACP user-turn message (parallel 
   - edit: src/foo.rs (×3), src/bar.rs (×1)
   - read: src/baz.rs (×2)
 
-[review request] Reply ONLY by calling review_reply({ packet_id: "<id>", summary, findings: [{ file, line, severity, concern, suggested_check? }, …] }).
-Each finding MUST anchor to a file:line. Empty findings[] = clean review. Prose-only replies are rejected and re-requested.
+[review request] Send the result with review_reply({ packet_id: "<id>", summary, findings }).
+Use findings: [] for a clean review. For actionable findings, include file, line, severity (block | warn | nit), concern, and optional suggested_check. Malformed findings are omitted instead of blocking the reply.
 ```
 
-### Protocol Enforcement
+### Reply Handling
 
-Two distinct failure modes get distinct corrective envelopes; retry budget = 2 in both cases.
+Review replies are treated as best-effort lane messages. The harness validates each finding independently and never sends a protocol retry prompt back to the reviewer.
 
 When the reviewer ends its turn:
 
-1. **Success:** at least one `review_reply` tool call landed with `packet_id` matching the open packet AND the payload passes the validator → packet resolved, findings sent back.
-2. **No tool call** (reviewer wrote prose only): coordinator synthesizes `[review-protocol] Your last reply did not call review_reply. Findings must use the tool. Reply again now.` Retry counter +=1.
-3. **Tool called but validation failed** (missing file/line, severity not in enum, `block` finding without `suggested_check`, etc.): coordinator synthesizes `[review-protocol] Your review_reply was rejected: <validator errors per finding index>. Resubmit via review_reply.` Retry counter +=1.
-4. **Retry budget exhausted (2):** coordinator sends `ReviewReply` to requester with `blockedByProtocol: 'reviewer schema failed after 2 attempts'` (or `'reviewer did not use review_reply after 2 attempts'`), empty findings, and the prose reply (if any) embedded in `summary`.
+1. **Tool called with valid findings:** packet resolves, findings render as a review card, and the findings are injected into the requester lane as a model-visible follow-up turn.
+2. **Tool called with valid and malformed findings:** packet resolves with the cleaned valid findings. The summary notes how many malformed findings or top-level fields were ignored.
+3. **Tool called with no usable findings:** packet resolves as a clean review card with the provided summary, or with `(clean review - no findings)` when no summary is available.
+4. **No tool call:** packet resolves as a clean review card with summary `(reviewer ended without a review_reply tool call)`.
 
-The validator runs **per-finding**; partially valid findings are accepted, invalid ones flagged in the corrective envelope. If at least one valid finding lands AND no invalid ones, treat as success even if reviewer added prose alongside the tool call.
+The validator runs **per-finding**; partially valid findings are accepted and invalid ones are omitted. `interruptedReason` is reserved for transport/lifecycle failures, such as the reviewer lane closing before it can respond.
 
 ### Status Lifecycle
 
-- **Requester:** `busy → awaiting_peer` (existing semantics, exposes packet target in pendingPeers metadata) → `idle` once reply lands.
+- **Requester:** `busy → awaiting_peer` (existing semantics, exposes packet target in pendingPeers metadata) → `idle` once reply lands → `busy` again when non-blocked findings are injected back into the requester lane for action.
 - **Reviewer:** receives via inbox drain like a normal peer message → `idle → busy` for the review turn → `idle` after reply.
 - **`#cancel` on requester:** synthesizes a `harness: review cancelled` envelope into reviewer's inbox; requester clears pending packet → `idle`.
-- **Reviewer lane closes mid-review:** requester gets `ReviewReply` with `blockedByProtocol: 'reviewer lane closed'`, empty findings.
+- **Reviewer lane closes mid-review:** requester gets `ReviewReply` with `interruptedReason: 'reviewer lane closed'`, empty findings.
 
 ### UI
 
@@ -301,9 +298,13 @@ The validator runs **per-finding**; partially valid findings are accepted, inval
 - Header: direction + peer + finding counts grouped by severity.
 - Fingerprint mismatch banner (`worktreeMatchAtReceipt === false`) sits between header and summary.
 - Summary block: reviewer's one-paragraph summary.
-- Findings list: one row per finding, prefix with severity text label (`block`/`warn`/`nit`); not emoji (`feedback_no_uppercase_paths` rules apply to paths).
+- Findings list: one flat row per finding inside the review card, prefix with severity text label (`block`/`warn`/`nit`); rows do not get their own nested box/background.
 - `suggestedCheck` always rendered inline if present (no per-finding expansion UI in V0.5).
 - No mirrored review card in reviewer's transcript (V0.5 cut — reviewer only sees the inbound packet as a peer-style entry).
+
+### Requester Follow-Up
+
+When a review reply contains at least one finding, `InterLaneCoordinator.deliverReviewReply()` also calls `enqueueSystemPrompt()` for the requester lane. The injected turn summarizes the reviewer, packet id, summary, optional worktree-mismatch warning, each finding, and each `suggestedCheck`, then instructs the requester to address the findings directly and not call `review_reply`. Clean reviews and lane-failure cards remain transcript-only because there is no actionable patch feedback to apply.
 
 ### Trigger Surface
 
@@ -336,15 +337,16 @@ Palette action and global keybindings deferred to V1+. The in-flight guard (one 
 5. Codex-1 hits idle → coordinator drains inbox → composes the [review request] prompt with packet
    contents → enqueueSystemPrompt(text) → Codex-1 status idle → busy.
 6. Codex-1 runs review_reply tool → hook_server::review_reply registers oneshot, emits
-   acp-review-reply-requested → frontend coordinator validates each finding
+   acp-review-reply-requested → frontend coordinator cleans each finding
    (file/line/severity/concern required; suggested_check required when severity=='block') →
    calls deliverReviewReply → reply lands as inbox entry for Claude-1. Coordinator recomputes
    worktreeFingerprint at this moment and sets worktreeMatchAtReceipt on the payload.
-7. If review_reply not called OR validation fails: distinct protocol-retry envelope
-   synthesized (see Protocol Enforcement). Stale replies for cancelled packetIds are dropped.
-8. On a non-protocol-blocked reply: reviewedThrough advances to the packet's sentAt.
-   Claude-1 hits idle → drain → review transcript card rendered. Status → idle
-   (no follow-up turn unless user prompts).
+7. If review_reply is not called, the requester receives a clean summary card. If individual
+   findings are malformed, they are omitted and the card summary notes the cleanup. Stale
+   replies for cancelled packetIds are dropped.
+8. On reply delivery: reviewedThrough advances to the packet's sentAt. Claude-1 hits idle →
+   drain → review transcript card rendered. Findings are also injected as a follow-up turn
+   for Claude-1; clean cards remain transcript-only.
 ```
 
 ### Configuration
@@ -354,7 +356,6 @@ No new TOML keys. Feature always on when peering is available and lane cwd is un
 - `TOTAL_PATCH_CAP = 40_960` (40 KB) — combined hunks + untracked excerpts.
 - `PER_FILE_HUNK_CAP = 8_192` (8 KB) — single-file hunk ceiling.
 - `UNTRACKED_HEAD_LINES = 40` / `UNTRACKED_HEAD_BYTES = 4_096`.
-- `REVIEW_PROTOCOL_RETRY_BUDGET = 2`.
 - `INTENT_CAP = 2_000` chars; `COMMAND_RESULT_TAIL = 400` chars.
 
 ## Edge Cases
@@ -369,14 +370,13 @@ No new TOML keys. Feature always on when peering is available and lane cwd is un
 - **Partial staging** (index and worktree differ for same path): captured in packet metadata + reviewer prompt warning; no rejection. Reviewer sees worktree state and is informed it may not match a future commit.
 - **Worktree changed during review:** detected at reply time via fingerprint recomputation; card shows `worktree changed since review request` banner. Findings still rendered; user verifies against current code.
 - **Cancel then immediate re-request:** the cancelled packetId is recorded in a small `cancelledPacketIds` set on the coordinator; any later `review_reply` for that id is dropped silently with a one-line debug log. The new `review_request` proceeds normally after the synchronous in-flight check passes.
-- **Protocol-fail does not advance `reviewedThrough`:** the same delta is included in the next review attempt; no unreviewed work is silently dropped.
 - **Reviewer is same backend** (Claude-1 reviewing Claude-1): blocked at `to_lane === fromLaneId` (existing `self_send` reject in peer transport).
 - **Concurrent review requests** from same requester: V1 allows only one open packet per requester; second `review_request` returns `{ delivered: false, reason: 'review_in_flight' }`.
 - **Multiple findings on same file:line:** allowed; render as separate rows.
 - **Finding file path not in patch:** allowed (reviewer may notice unchanged-but-related issue); no validation against patch files in V1.
-- **Reviewer returns invalid finding** (missing file or non-positive line): rejected per-finding by harness validator; if all findings invalid, treated as prose-only and protocol retry kicks in.
+- **Reviewer returns invalid finding** (missing file or non-positive line): omitted per-finding by harness validator; if all findings are invalid, the card is delivered as a clean review with the reviewer summary.
 - **`#cancel` mid-review:** documented above; clean lifecycle.
-- **Reviewer crashes or errors mid-turn:** treated as protocol failure after retry budget exhausted; requester gets `blockedByProtocol: 'reviewer error'`.
+- **Reviewer crashes or errors mid-turn:** requester gets a lane-failure card when the lane closes; no schema retry is attempted.
 
 ## Open Questions
 
@@ -427,12 +427,12 @@ None. All three previous open questions resolved by user choosing the V0.5 cut (
 - 2026-05-20 — peer review by Codex-1 (lane) on draft v1. Key changes incorporated: patch assembly uses `git status --porcelain` as source of truth (not transcript edit subjects) to catch untracked files / renames / formatter rewrites / shell-generated edits; `repoRoot` normalized via `git rev-parse --show-toplevel`; structured patch cap (diffstat always complete + per-file hunk cap) instead of raw 40 KB truncation; distinct corrective envelopes for "no tool call" vs "validation failed"; `block` severity requires `suggested_check`; `Set<number>` moved out of payload; memory-derived `openQuestions` removed (replaced by explicit `note`).
 - 2026-05-20 — post-implementation peer review by Codex-1 round 3 (against shipped code). Block-level corrections applied:
   - **Routing bug fixed**: `handleReviewReply` was resolving requesterLane via `packet.toLaneId` (the reviewer); now uses `packet.fromLaneId` and verifies `reviewerLane.id === packet.toLaneId` (rejects with `unauthorized_reviewer` on mismatch).
-  - **Prose-only reviewer hook added**: coordinator now tracks `assignedReviewPackets` (reviewer → packetId). `finishTurn` calls a new `checkProseOnlyReviewer` path on `end_turn`; if the reviewer ended its turn without a matching `review_reply`, the harness injects `composeMissingToolEnvelope` and increments the retry counter, or exhausts the budget and delivers `blockedByProtocol`.
+  - **No-tool reviewer hook added**: coordinator now tracks `assignedReviewPackets` (reviewer → packetId). `finishTurn` calls a new `checkProseOnlyReviewer` path on `end_turn`; if the reviewer ended its turn without a matching `review_reply`, the harness resolves the packet with a clean summary card instead of retrying the private protocol.
   - **`cwd` removed from `review_request` schema**: Rust review_request no longer collects git (drops the optional `cwd` argument from the MCP tool); frontend listener resolves the lane's own cwd via `this.projectDir` and calls `acp_collect_review_git_state` directly. Agents now never need to know or pass `cwd`.
   - **UTF-8 safe truncation**: `safe_truncate(s, max_bytes)` walks backwards to the nearest `is_char_boundary`, replacing the panicking `&raw[..PER_FILE_HUNK_CAP]` slice.
   - **Rename parsing**: porcelain entries of the form `OLD -> NEW` now use the NEW path for `git diff HEAD -- <path>` instead of feeding the literal arrow string.
   - **Git flags hardened**: all diff invocations now use `--no-pager --no-ext-diff --no-textconv` to prevent user diff machinery (external drivers, textconv filters, pagers) from stalling the collector.
   - **Path normalization tightened**: validator now requires `file === repoRoot || file.startsWith(repoRoot + '/')` instead of bare `startsWith`, blocking `/repo-rooted-other/...` from being accepted under `/repo`. `..` segments rejected via per-segment check.
-  - **Retry constant renamed** `REVIEW_PROTOCOL_RETRY_BUDGET` → `REVIEW_PROTOCOL_MAX_ATTEMPTS = 2` with doc comment "max total review_reply attempts per packet (initial + retries)" to match observed behavior.
   - **Unused `reviewRequestedThrough` field removed** — `reviewedThrough` alone drives signal assembly.
-- 2026-05-20 — peer review by Codex-1 round 2 (grilled). Spec rescoped to **V0.5** per user direction. Block fixes applied: (1) `hasStagedChanges` / `hasUnstagedChanges` / `partialStagingDetected` packet metadata + reviewer-prompt warning to prevent reviewing pre-staged unrelated work; (2) `evidence` field cut entirely (was declared in TS but not in tool schema/prompt — dead code); (3) `worktreeFingerprint` (sha256 of HEAD + porcelain + changed-path size/mtime) computed at request time and recomputed at reply time to drive a `worktree changed since review request` banner on the review card. Other changes: split markers `requestedThrough` vs `reviewedThrough` so protocol-failed reviews don't silently drop unreviewed work; synchronous in-flight guard before any async git collection; stale-reply discard via `cancelledPacketIds` set; no-git mode rejects request rather than degrading. Deferred to V1+: palette action, mirrored card, evidence schema, unresolved-failure derivation, `ToolPayload.exitCode` extension, no-git absolute-path mode, per-finding expansion, submodule/symlink/mode-change handling.
+- 2026-05-20 — peer review by Codex-1 round 2 (grilled). Spec rescoped to **V0.5** per user direction. Block fixes applied: (1) `hasStagedChanges` / `hasUnstagedChanges` / `partialStagingDetected` packet metadata + reviewer-prompt warning to prevent reviewing pre-staged unrelated work; (2) `evidence` field cut entirely (was declared in TS but not in tool schema/prompt — dead code); (3) `worktreeFingerprint` (sha256 of HEAD + porcelain + changed-path size/mtime) computed at request time and recomputed at reply time to drive a `worktree changed since review request` banner on the review card. Other changes: split markers `requestedThrough` vs `reviewedThrough`; synchronous in-flight guard before any async git collection; stale-reply discard via `cancelledPacketIds` set; no-git mode rejects request rather than degrading. Deferred to V1+: palette action, mirrored card, evidence schema, unresolved-failure derivation, `ToolPayload.exitCode` extension, no-git absolute-path mode, per-finding expansion, submodule/symlink/mode-change handling.
+- 2026-05-20 — follow-up simplification after repeated `protocol blocked: reviewer schema failed after 2 attempts` cards. `handleReviewReply` now always delivers a best-effort card: valid findings are kept, malformed findings are omitted with a summary note, and no usable findings become a clean review. The reviewer prompt and `review_reply` MCP schema were loosened so only `packet_id` is required. Transport/lifecycle failures such as reviewer closure now render as interrupted review cards via `interruptedReason`. Added `src/acp/review.test.ts` coverage for best-effort prompt wording and partial cleanup.

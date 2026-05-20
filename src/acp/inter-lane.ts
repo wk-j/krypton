@@ -59,7 +59,7 @@ export interface ReviewCardPayload {
   findings: ReviewFinding[];
   summary: string;
   worktreeMatchAtReceipt: boolean;
-  blockedByProtocol?: string;
+  interruptedReason?: string;
   sentAt: number;
 }
 
@@ -312,6 +312,9 @@ export class InterLaneCoordinator {
         true,
       );
     }
+    if (!payload.interruptedReason && payload.findings.length > 0) {
+      this.host.enqueueSystemPrompt(payload.toLaneId, this.composeReviewReplyPrompt(payload));
+    }
     return { delivered: true };
   }
 
@@ -325,7 +328,7 @@ export class InterLaneCoordinator {
     return this.assignedReviewPackets.get(reviewerLaneId) ?? null;
   }
 
-  /** Clear the reviewer assignment (called after exhausted retry budget). */
+  /** Clear the reviewer assignment after the review is delivered or cancelled. */
   clearReviewerAssignment(reviewerLaneId: string): void {
     this.assignedReviewPackets.delete(reviewerLaneId);
   }
@@ -447,7 +450,7 @@ export class InterLaneCoordinator {
       }
     }
     // spec 112: review packets involving the closed lane.
-    // Reviewer closed mid-review → deliver blockedByProtocol closure card to
+    // Reviewer closed mid-review → deliver an interrupted review card to
     // the requester. Requester closed → tombstone packet so a late reply from
     // the reviewer is dropped and reviewer-side assignment is cleared.
     for (const [packetId, packet] of [...this.openReviewPackets.entries()]) {
@@ -463,7 +466,7 @@ export class InterLaneCoordinator {
             findings: [],
             summary: '(reviewer lane closed before reply)',
             worktreeMatchAtReceipt: true,
-            blockedByProtocol: 'reviewer lane closed',
+            interruptedReason: 'reviewer lane closed',
             sentAt: Date.now(),
           });
         } else {
@@ -640,5 +643,32 @@ export class InterLaneCoordinator {
       }
     }
     return parts.join('\n\n');
+  }
+
+  private composeReviewReplyPrompt(payload: ReviewCardPayload): string {
+    const lines: string[] = [];
+    lines.push(`[review reply] From ${payload.fromDisplayName} (packet: ${payload.packetId}):`);
+    lines.push('');
+    lines.push(payload.summary.trim() || '(no summary)');
+    if (!payload.worktreeMatchAtReceipt) {
+      lines.push('');
+      lines.push('WARNING: The worktree changed after the review was requested. Verify each finding against the current code before editing.');
+    }
+    lines.push('');
+    lines.push('Findings:');
+    for (const finding of payload.findings) {
+      lines.push(
+        `- ${finding.severity.toUpperCase()} ${finding.file}:${finding.line} - ${finding.concern}`,
+      );
+      if (finding.suggestedCheck) {
+        lines.push(`  check: ${finding.suggestedCheck}`);
+      }
+    }
+    lines.push('');
+    lines.push(
+      'You are the requester lane receiving review feedback. Address these findings directly now. ' +
+        'Do not call review_reply; that tool is only for reviewer lanes.',
+    );
+    return lines.join('\n');
   }
 }

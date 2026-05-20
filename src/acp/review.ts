@@ -1,7 +1,7 @@
 // Review Lane Mode (spec 112) — packet build, prompt composer, reply validator.
 //
-// V0.5 scope: structured git packet + reviewer prompt + per-finding validator with
-// distinct corrective envelopes for missing-tool vs validation-fail.
+// V0.5 scope: structured git packet + reviewer prompt + best-effort
+// per-finding cleanup for review replies.
 
 import type {
   ReviewCommandSummary,
@@ -16,8 +16,6 @@ export const TOTAL_PATCH_CAP = 40_960;
 export const PER_FILE_HUNK_CAP = 8_192;
 export const UNTRACKED_HEAD_LINES = 40;
 export const UNTRACKED_HEAD_BYTES = 4_096;
-/** Maximum total review_reply attempts per packet (initial + retries). */
-export const REVIEW_PROTOCOL_MAX_ATTEMPTS = 2;
 export const INTENT_CAP = 2_000;
 export const COMMAND_RESULT_TAIL = 400;
 export const SUMMARY_CAP = 600;
@@ -142,12 +140,12 @@ export function composeReviewerPrompt(packet: ReviewPacket, fromDisplayName: str
   }
 
   lines.push(
-    '[review request] Reply ONLY by calling review_reply({ packet_id: "' +
+    '[review request] Send the result with review_reply({ packet_id: "' +
       packet.packetId +
-      '", summary, findings: [{ file, line, severity, concern, suggested_check? }, …] }).',
+      '", summary, findings }).',
   );
   lines.push(
-    'Each finding MUST anchor to file + line (1-based, repo-root-relative). Severity is one of block | warn | nit. Findings with severity "block" MUST include suggested_check. Empty findings[] = clean review. Prose-only replies are rejected and re-requested.',
+    'Use findings: [] for a clean review. For actionable findings, include file, line, severity (block | warn | nit), concern, and optional suggested_check. Malformed findings are omitted instead of blocking the reply.',
   );
   return lines.join('\n');
 }
@@ -189,14 +187,12 @@ export function validateReply(
     };
   }
   const summary = typeof obj.summary === 'string' ? obj.summary.slice(0, SUMMARY_CAP) : '';
-  if (summary.trim().length === 0) {
-    errors.push({ index: -1, message: 'summary is required and must be non-empty' });
-  }
-  const findingsRaw = Array.isArray(obj.findings) ? obj.findings : null;
+  const findingsValue = obj.findings;
+  const findingsRaw = findingsValue === undefined ? [] : Array.isArray(findingsValue) ? findingsValue : null;
   if (findingsRaw === null) {
     return {
       ok: false,
-      errors: [{ index: -1, message: 'findings must be an array (use [] for a clean review)' }],
+      errors: [{ index: -1, message: 'findings must be an array when provided' }],
       cleanedFindings: [],
       summary,
     };
@@ -274,22 +270,27 @@ export function validateReply(
   return { ok: errors.length === 0, errors, cleanedFindings: cleaned, summary };
 }
 
-export function composeValidationFailEnvelope(packetId: string, errors: FindingValidationError[]): string {
-  const lines: string[] = [];
-  lines.push(`[review-protocol] Your review_reply for packet ${packetId} was rejected. Resubmit via review_reply.`);
-  lines.push('Errors per finding (index = position in findings[], -1 = top-level):');
-  for (const e of errors.slice(0, 20)) {
-    lines.push(`  [${e.index}] ${e.message}`);
-  }
-  if (errors.length > 20) lines.push(`  …and ${errors.length - 20} more`);
-  return lines.join('\n');
+export function malformedFindingCount(validated: ValidatedReply): number {
+  return validated.errors.filter((e) => e.index >= 0).length;
 }
 
-export function composeMissingToolEnvelope(packetId: string): string {
-  return (
-    `[review-protocol] Your last reply for packet ${packetId} did not call review_reply. ` +
-    `Findings must use the tool, not prose. Reply again now via review_reply.`
-  );
+export function topLevelValidationErrorCount(validated: ValidatedReply): number {
+  return validated.errors.filter((e) => e.index < 0).length;
+}
+
+export function reviewSummaryOrFallback(validated: ValidatedReply, fallback: string = ''): string {
+  const summary = validated.summary.trim() || fallback.trim();
+  if (summary.length > 0) return summary.slice(0, SUMMARY_CAP);
+  if (validated.cleanedFindings.length > 0) {
+    return 'Reviewer returned structured findings without a summary.';
+  }
+  return '(clean review - no findings)';
+}
+
+export function appendReviewValidationSuffix(summary: string, validationSuffix: string): string {
+  if (validationSuffix.length === 0) return summary.slice(0, SUMMARY_CAP);
+  const summaryCap = Math.max(0, SUMMARY_CAP - validationSuffix.length);
+  return `${summary.slice(0, summaryCap)}${validationSuffix}`;
 }
 
 export function buildReply(input: {
@@ -298,7 +299,7 @@ export function buildReply(input: {
   toLaneId: string;
   findings: ReviewFinding[];
   summary: string;
-  blockedByProtocol?: string;
+  interruptedReason?: string;
   sentAt: number;
   harnessId?: string;
 }): ReviewReply {

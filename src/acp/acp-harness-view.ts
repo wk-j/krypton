@@ -40,10 +40,11 @@ import { InterLaneCoordinator, type LaneHost, type PendingPeerSummary, type Revi
 import {
   buildPacket as buildReviewPacket,
   composeReviewerPrompt,
-  composeMissingToolEnvelope,
-  composeValidationFailEnvelope,
+  appendReviewValidationSuffix,
+  malformedFindingCount,
+  reviewSummaryOrFallback,
+  topLevelValidationErrorCount,
   validateReply as validateReviewReply,
-  REVIEW_PROTOCOL_MAX_ATTEMPTS,
 } from './review';
 import type {
   ReviewCommandSummary,
@@ -294,15 +295,12 @@ interface HarnessLane {
   promptHistory: string[];
   historyIndex: number | null;
   historySavedDraft: string | null;
-  /** spec 112: timestamp of the last non-protocol-blocked review reply received. */
+  /** spec 112: timestamp of the last delivered review reply received. */
   reviewedThrough: number;
-  /** spec 112: per-packet retry counter for protocol-fail loops. */
-  reviewProtocolRetries: Map<string, number>;
   /**
    * spec 112: packetIds for which the reviewer called `review_reply` during
-   * the current turn. Used by `checkProseOnlyReviewer` to skip the prose-only
-   * retry path when validation handling already saw a tool call (otherwise
-   * the same turn would burn two attempts off the retry budget).
+   * the current turn. Used by `checkProseOnlyReviewer` so a handled tool call
+   * is not also resolved as a no-tool review.
    */
   reviewReplyAttemptsThisTurn: Set<string>;
 }
@@ -394,7 +392,6 @@ const LANE_DEFAULTS = {
   historyIndex: null,
   historySavedDraft: null,
   reviewedThrough: 0,
-  reviewProtocolRetries: new Map<string, number>(),
   reviewReplyAttemptsThisTurn: new Set<string>(),
 };
 
@@ -588,8 +585,9 @@ export class AcpHarnessView implements ContentView {
         }${counts ? ` (${counts})` : ''}`;
         const item = this.appendTranscript(l, 'review', `${header}\n${payload.summary}`);
         item.review = payload;
-        // Advance reviewedThrough only on non-protocol-blocked replies.
-        if (!payload.blockedByProtocol) {
+        // Advance reviewedThrough on delivered review replies. Lane-failure
+        // cards remain excluded so interrupted reviews can be requested again.
+        if (!payload.interruptedReason) {
           l.reviewedThrough = payload.sentAt;
         }
         // Settle requester out of awaiting_peer if they were on this packet.
@@ -913,43 +911,25 @@ export class AcpHarnessView implements ContentView {
       env.packetId,
       packet.repoRoot,
     );
-    if (!validated.ok) {
-      // Protocol-retry path. Decide whether reviewer gave us no findings or invalid ones.
-      const retries = reviewerLane.reviewProtocolRetries.get(env.packetId) ?? 0;
-      if (retries + 1 >= REVIEW_PROTOCOL_MAX_ATTEMPTS) {
-        // Budget exhausted — fall through with blockedByProtocol.
-        const payload: ReviewCardPayload = {
-          packetId: env.packetId,
-          fromLaneId: reviewerLane.id,
-          toLaneId: requesterLane.id,
-          fromDisplayName: reviewerLane.displayName,
-          toDisplayName: requesterLane.displayName,
-          findings: validated.cleanedFindings,
-          summary: validated.summary || env.summary || '(no summary)',
-          worktreeMatchAtReceipt: true, // fingerprint check skipped on protocol-fail path
-          blockedByProtocol:
-            validated.errors.length > 0 && validated.errors[0].index >= 0
-              ? `reviewer schema failed after ${REVIEW_PROTOCOL_MAX_ATTEMPTS} attempts`
-              : `reviewer did not use review_reply after ${REVIEW_PROTOCOL_MAX_ATTEMPTS} attempts`,
-          sentAt: env.sentAt,
-        };
-        this.coordinator.deliverReviewReply(payload);
-        reviewerLane.reviewProtocolRetries.delete(env.packetId);
-        reply({ delivered: true, blocked: true });
-        return;
-      }
-      reviewerLane.reviewProtocolRetries.set(env.packetId, retries + 1);
-      // Decide which corrective envelope to send. We don't get a strong "no tool call"
-      // signal from this path (review_reply was invoked or we wouldn't be here), so
-      // schema failures dominate. Reserve composeMissingToolEnvelope for future paths
-      // that detect the agent ended its turn without calling review_reply.
-      const correctionText = composeValidationFailEnvelope(env.packetId, validated.errors);
-      this.coordinator.injectHarnessEnvelope(reviewerLane.id, correctionText, env.packetId);
-      reply({ delivered: false, reason: 'protocol_retry' });
-      return;
+    const summary = reviewSummaryOrFallback(validated, env.summary);
+    const malformedFindings = malformedFindingCount(validated);
+    const topLevelErrors = topLevelValidationErrorCount(validated);
+    const validationNotes: string[] = [];
+    if (malformedFindings > 0) {
+      validationNotes.push(`${malformedFindings} malformed finding${malformedFindings === 1 ? '' : 's'} omitted`);
     }
+    if (topLevelErrors > 0) {
+      validationNotes.push(`${topLevelErrors} top-level field${topLevelErrors === 1 ? '' : 's'} ignored`);
+    }
+    const validationSuffix =
+      !validated.ok && validationNotes.length > 0
+        ? ` (${validationNotes.join('; ')}.)`
+        : '';
+    const deliveredSummary = appendReviewValidationSuffix(summary, validationSuffix);
 
-    // Validation passed — recompute worktree fingerprint at receipt.
+    // Review replies are best-effort lane messages. Deliver cleaned findings
+    // when present; otherwise render the reply as a clean review with a summary
+    // instead of retrying a private protocol.
     let worktreeMatch = true;
     try {
       const cwd = this.projectDir ?? '';
@@ -970,26 +950,24 @@ export class AcpHarnessView implements ContentView {
       fromDisplayName: reviewerLane.displayName,
       toDisplayName: requesterLane.displayName,
       findings: validated.cleanedFindings,
-      summary: validated.summary,
+      summary: deliveredSummary,
       worktreeMatchAtReceipt: worktreeMatch,
       sentAt: env.sentAt,
     };
     const result = this.coordinator.deliverReviewReply(payload);
-    if (result.delivered) reviewerLane.reviewProtocolRetries.delete(env.packetId);
     reply({ delivered: result.delivered, reason: result.reason });
   }
 
   /**
    * spec 112: detect a reviewer that ended its turn without calling
-   * review_reply (prose-only response). Increment retry counter or, if budget
-   * exhausted, deliver a `blockedByProtocol` reply to the requester.
+   * review_reply. Resolve the packet with a clean summary instead of injecting
+   * retry prompts; lane-to-lane review should stay simple and non-blocking.
    */
   private async checkProseOnlyReviewer(reviewerLane: HarnessLane): Promise<void> {
     const packetId = this.coordinator.assignedReviewPacketFor(reviewerLane.id);
     if (!packetId) return;
     // If the validation handler already saw a review_reply for this packet
-    // during this turn, the retry counter (if any) was already updated there.
-    // Skip the prose-only path so the same turn doesn't burn two attempts.
+    // during this turn, delivery already happened there.
     if (reviewerLane.reviewReplyAttemptsThisTurn.has(packetId)) {
       reviewerLane.reviewReplyAttemptsThisTurn.delete(packetId);
       return;
@@ -1001,28 +979,19 @@ export class AcpHarnessView implements ContentView {
     }
     const requesterLane = this.lanes.find((l) => l.id === packet.fromLaneId);
     if (!requesterLane) return;
-    const retries = reviewerLane.reviewProtocolRetries.get(packetId) ?? 0;
-    if (retries + 1 >= REVIEW_PROTOCOL_MAX_ATTEMPTS) {
-      const payload: ReviewCardPayload = {
-        packetId,
-        fromLaneId: reviewerLane.id,
-        toLaneId: requesterLane.id,
-        fromDisplayName: reviewerLane.displayName,
-        toDisplayName: requesterLane.displayName,
-        findings: [],
-        summary: '(reviewer responded in prose; no structured findings captured)',
-        worktreeMatchAtReceipt: true,
-        blockedByProtocol: `reviewer did not use review_reply after ${REVIEW_PROTOCOL_MAX_ATTEMPTS} attempts`,
-        sentAt: Date.now(),
-      };
-      this.coordinator.deliverReviewReply(payload);
-      reviewerLane.reviewProtocolRetries.delete(packetId);
-      this.coordinator.clearReviewerAssignment(reviewerLane.id);
-      return;
-    }
-    reviewerLane.reviewProtocolRetries.set(packetId, retries + 1);
-    const correctionText = composeMissingToolEnvelope(packetId);
-    this.coordinator.injectHarnessEnvelope(reviewerLane.id, correctionText, packetId);
+    const payload: ReviewCardPayload = {
+      packetId,
+      fromLaneId: reviewerLane.id,
+      toLaneId: requesterLane.id,
+      fromDisplayName: reviewerLane.displayName,
+      toDisplayName: requesterLane.displayName,
+      findings: [],
+      summary: '(reviewer ended without a review_reply tool call)',
+      worktreeMatchAtReceipt: true,
+      sentAt: Date.now(),
+    };
+    this.coordinator.deliverReviewReply(payload);
+    this.coordinator.clearReviewerAssignment(reviewerLane.id);
   }
 
   /**
@@ -1694,7 +1663,6 @@ export class AcpHarnessView implements ContentView {
       availableCommands: [],
       modesById: new Map(),
       promptHistory: [],
-      reviewProtocolRetries: new Map(),
       reviewReplyAttemptsThisTurn: new Set(),
     };
   }
@@ -2003,11 +1971,11 @@ export class AcpHarnessView implements ContentView {
     lane.pendingPermissions = [];
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
-    // spec 112: prose-only reviewer detection runs BEFORE the idle transition.
+    // spec 112: no-tool reviewer detection runs BEFORE the idle transition.
     // Going idle drains the coordinator's queue, and the drain calls
     // enqueueSystemPrompt() which clears reviewReplyAttemptsThisTurn — if that
-    // happens first, this check sees an empty set and double-counts a single
-    // invalid review_reply as a missing-tool failure too.
+    // happens first, this check can resolve an already-delivered reply as a
+    // missing-tool review too.
     if (stopReason === 'end_turn' && !lane.error) {
       void this.checkProseOnlyReviewer(lane);
     }
@@ -5570,7 +5538,7 @@ function renderInterLaneBody(body: HTMLElement, item: HarnessTranscriptItem): vo
 
 function renderReviewCardBody(body: HTMLElement, payload: ReviewCardPayload): void {
   body.dataset.direction = 'received';
-  if (payload.blockedByProtocol) body.classList.add('acp-harness__review-card--blocked');
+  if (payload.interruptedReason) body.classList.add('acp-harness__review-card--blocked');
 
   // Header line
   const block = payload.findings.filter((f) => f.severity === 'block').length;
@@ -5596,10 +5564,10 @@ function renderReviewCardBody(body: HTMLElement, payload: ReviewCardPayload): vo
     banner.textContent = 'worktree changed since review request — verify findings against current code';
     body.appendChild(banner);
   }
-  if (payload.blockedByProtocol) {
+  if (payload.interruptedReason) {
     const banner = document.createElement('div');
     banner.className = 'acp-harness__review-banner acp-harness__review-banner--blocked';
-    banner.textContent = `protocol blocked: ${payload.blockedByProtocol}`;
+    banner.textContent = `review interrupted: ${payload.interruptedReason}`;
     body.appendChild(banner);
   }
 
@@ -5610,7 +5578,7 @@ function renderReviewCardBody(body: HTMLElement, payload: ReviewCardPayload): vo
     body.appendChild(sum);
   }
 
-  if (payload.findings.length === 0 && !payload.blockedByProtocol) {
+  if (payload.findings.length === 0 && !payload.interruptedReason) {
     const clean = document.createElement('div');
     clean.className = 'acp-harness__review-clean';
     clean.textContent = '(clean review — no findings)';

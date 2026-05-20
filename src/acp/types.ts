@@ -325,7 +325,7 @@ export interface ReviewReply {
   toLaneId: string;
   findings: ReviewFinding[];
   summary: string;
-  blockedByProtocol?: string;
+  interruptedReason?: string;
   sentAt: number;
   harnessId?: string;
 }
