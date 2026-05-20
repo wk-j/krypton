@@ -342,6 +342,7 @@ const BACKEND_LABELS: Record<string, string> = {
   opencode: 'OpenCode',
   'pi-acp': 'Pi',
   droid: 'Droid',
+  cursor: 'Cursor',
 };
 
 function backendLabel(backendId: string): string {
@@ -5356,11 +5357,18 @@ function renderModeChip(lane: HarnessLane): string {
 }
 
 function renderSandboxChip(lane: HarnessLane): string {
-  // Pi has no permission gate by design; edits and bash run immediately.
-  // Surface the safety delta on the lane chip so it isn't a hidden footgun.
-  if (lane.backendId !== 'pi-acp') return '';
-  const title = 'No permission gate — Pi runs edits and shell commands immediately. Use a sandboxed cwd or container if untrusted.';
-  return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">⚠ unsandboxed</span>`;
+  // Surface backend-specific safety caveats directly in the lane chrome:
+  // Pi is known to bypass the permission rail, while Cursor still needs
+  // manual verification of ACP write-permission semantics.
+  if (lane.backendId === 'pi-acp') {
+    const title = 'No permission gate — Pi runs edits and shell commands immediately. Use a sandboxed cwd or container if untrusted.';
+    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">⚠ unsandboxed</span>`;
+  }
+  if (lane.backendId === 'cursor') {
+    const title = 'Cursor ACP write-permission behavior has not been verified yet. Krypton does not pass force/yolo flags, but use a trusted cwd until verified.';
+    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">⚠ permissions unverified</span>`;
+  }
+  return '';
 }
 
 function renderModelChip(modelName: string | null): string {
@@ -5430,6 +5438,7 @@ function laneAccent(index: number): string {
     '#c77dff',
     '#ff6b8b',
     '#5fb3b3',
+    '#ff9f1c',
   ];
   return accents[(index - 1) % accents.length];
 }
@@ -5441,6 +5450,7 @@ function laneAccentForLabel(label: string): string {
   if (/opencode/i.test(label)) return laneAccent(4);
   if (/^pi(-|$)/i.test(label)) return laneAccent(5);
   if (/droid/i.test(label)) return laneAccent(6);
+  if (/cursor/i.test(label)) return laneAccent(7);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }

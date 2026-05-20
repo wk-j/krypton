@@ -90,6 +90,14 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "Droid".to_string(),
             },
         ),
+        (
+            "cursor",
+            AcpBackend {
+                command: "cursor-agent".to_string(),
+                args: vec!["acp".to_string()],
+                display_name: "Cursor".to_string(),
+            },
+        ),
     ]
 }
 
@@ -299,6 +307,10 @@ impl AcpClient {
             let drop = buf.len() - 64 * 1024;
             *buf = buf[drop..].to_string();
         }
+    }
+
+    async fn stderr_snapshot(&self) -> String {
+        self.stderr_buf.lock().await.clone()
     }
 }
 
@@ -863,10 +875,12 @@ pub async fn acp_spawn(
     }
 
     let mut child = cmd.spawn().map_err(|e| {
+        let message = e.to_string();
         format!(
-            "Failed to spawn {} {}: {e}",
+            "Failed to spawn {} {}: {e}. {}",
             backend.command,
-            backend.args.join(" ")
+            backend.args.join(" "),
+            startup_hint(&backend_id, &message)
         )
     })?;
 
@@ -941,17 +955,28 @@ pub async fn acp_initialize(
         "clientInfo": { "name": "krypton", "version": env!("CARGO_PKG_VERSION") },
     });
 
-    let init = tokio::time::timeout(
+    let init = match tokio::time::timeout(
         Duration::from_secs(30),
         client.request("initialize", init_params),
     )
     .await
-    .map_err(|_| {
-        format!(
-            "ACP initialize timed out after 30s. {}",
-            startup_hint(&client.backend_id, "")
-        )
-    })??;
+    {
+        Ok(Ok(init)) => init,
+        Ok(Err(e)) => {
+            let stderr = client.stderr_snapshot().await;
+            return Err(format!(
+                "{e}. {}",
+                startup_hint(&client.backend_id, &stderr)
+            ));
+        }
+        Err(_) => {
+            let stderr = client.stderr_snapshot().await;
+            return Err(format!(
+                "ACP initialize timed out after 30s. {}",
+                startup_hint(&client.backend_id, &stderr)
+            ));
+        }
+    };
 
     let proto = init
         .get("protocolVersion")
@@ -1377,6 +1402,28 @@ pub fn acp_login_env() -> HashMap<String, String> {
 
 fn startup_hint(backend_id: &str, stderr: &str) -> String {
     let s = stderr.to_lowercase();
+    if backend_id == "cursor" {
+        if s.contains("secitemcopymatching failed") {
+            return "Cursor credential lookup failed. Run `cursor-agent login` in a terminal, or set `CURSOR_API_KEY` before launching Krypton.".to_string();
+        }
+        if s.contains("not authenticated")
+            || s.contains("authentication required")
+            || s.contains("please log in")
+            || s.contains("please login")
+            || s.contains("api key")
+            || s.contains("unauthorized")
+        {
+            return "Run `cursor-agent login`, or export `CURSOR_API_KEY` in your login shell."
+                .to_string();
+        }
+        if s.contains("command not found") || s.contains("enoent") || s.contains("no such file") {
+            return "Install Cursor Agent CLI: `curl https://cursor.com/install -fsS | bash`."
+                .to_string();
+        }
+        if stderr.is_empty() {
+            return "Cursor Agent did not return an initialize response and no stderr was captured. First-run auth or install input is a likely cause; try `cursor-agent login` in a terminal, then retry.".to_string();
+        }
+    }
     if s.contains("/login") || s.contains("not authenticated") {
         return "Run `claude /login` in a terminal, then retry.".to_string();
     }
@@ -1401,5 +1448,50 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
             .rev()
             .collect();
         tail
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::startup_hint;
+
+    #[test]
+    fn cursor_startup_hint_prefers_keychain_error_over_auth_hint() {
+        let hint = startup_hint(
+            "cursor",
+            "ERROR: SecItemCopyMatching failed -50; please login again",
+        );
+
+        assert!(hint.contains("Cursor credential lookup failed"));
+    }
+
+    #[test]
+    fn cursor_startup_hint_reports_missing_cli() {
+        let hint = startup_hint("cursor", "No such file or directory (os error 2)");
+
+        assert!(hint.contains("Install Cursor Agent CLI"));
+    }
+
+    #[test]
+    fn cursor_startup_hint_reports_auth_when_explicit() {
+        let hint = startup_hint("cursor", "not authenticated: missing api key");
+
+        assert!(hint.contains("cursor-agent login"));
+    }
+
+    #[test]
+    fn cursor_startup_hint_does_not_treat_bare_login_word_as_auth() {
+        let stderr = "debug: login state cache refreshed";
+        let hint = startup_hint("cursor", stderr);
+
+        assert_eq!(hint, stderr);
+    }
+
+    #[test]
+    fn cursor_startup_hint_empty_stderr_is_non_diagnostic() {
+        let hint = startup_hint("cursor", "");
+
+        assert!(hint.contains("no stderr was captured"));
+        assert!(hint.contains("likely cause"));
     }
 }

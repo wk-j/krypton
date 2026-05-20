@@ -198,10 +198,11 @@
    b. Hash is first 16 chars of SHA-256 over canonical project path.
    c. If file exists, loads lane memory documents into RAM (continuity).
    d. Returns harnessId and hook server port to frontend.
-6. AcpHarnessView lists ACP backends and spawns the default lane roster
-   (Codex-1, Claude-1, Gemini-1, OpenCode-1 when those backends are installed)
-   with the same cwd. After `session/new`, OpenCode lanes receive
-   `session/set_config_option` to select `zai-coding-plan/glm-5.1`.
+6. AcpHarnessView lists ACP backends and starts with an empty roster. The user
+   opens `Cmd+P → +` to spawn installed backends such as Codex, Claude, Gemini,
+   OpenCode, Pi, Droid, or Cursor with the same cwd. After `session/new`,
+   OpenCode lanes receive `session/set_config_option` to select
+   `zai-coding-plan/glm-5.1`.
 7. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
    Lanes render into a shared dashboard, but prompts are dispatched only to the

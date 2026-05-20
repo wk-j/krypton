@@ -1,6 +1,6 @@
 # Cursor Lane (Cursor Agent Native ACP) — Implementation Spec
 
-> Status: Draft
+> Status: Implemented (permission/model verification follow-ups remain)
 > Date: 2026-05-20
 > Milestone: M-ACP — Harness convergence
 
@@ -14,7 +14,7 @@ Add Cursor as a built-in ACP backend using Cursor Agent's native ACP server mode
 
 ## Research
 
-- Local CLI check: `/Users/wk/.local/bin/cursor-agent` exists; `cursor-agent --version` returns `2026.05.16-0338208`.
+- Local CLI check: `/Users/wk/.local/bin/cursor-agent` exists; `cursor-agent --version` returns `2026.05.16-0338208`. This is the known-good baseline for the v1 spec.
 - Local CLI check: `cursor-agent acp --help` reports "Start the Cursor Agent as an ACP (Agent Client Protocol) server". This is the critical finding: Cursor can be a normal ACP subprocess.
 - Local CLI check: `cursor-agent status` fails in this shell with `ERROR: SecItemCopyMatching failed -50`, so startup/auth errors may be Keychain-specific on macOS GUI/sandboxed launches. The lane should surface stderr as normal and docs should recommend `cursor-agent login` or `CURSOR_API_KEY`.
 - Cursor docs describe headless mode via `cursor-agent -p --output-format stream-json`, with NDJSON system/user/assistant/tool/result events. That path is useful for scripts but is not ACP and would require a custom adapter. Rejected for v1.
@@ -44,7 +44,7 @@ Alternatives ruled out:
 | File | Change |
 |------|--------|
 | `src-tauri/src/acp.rs` | Add `("cursor", AcpBackend { command: "cursor-agent", args: ["acp"], display_name: "Cursor" })` to `builtin_backends()`. Add Cursor-specific startup hint for auth/keychain errors. |
-| `src/acp/acp-harness-view.ts` | Add `cursor` to `BACKEND_LABELS`; add a distinct lane accent if current palette mapping does not already cover the extra backend cleanly; confirm Cursor is not skipped by `memoryServerForLane()` or `.mcp.json` bridge. |
+| `src/acp/acp-harness-view.ts` | Add `cursor` to `BACKEND_LABELS`; add a distinct lane accent if current palette mapping does not already cover the extra backend cleanly; confirm Cursor is not skipped by `memoryServerForLane()` or `.mcp.json` bridge; update or explicitly accept the default behavior in `inferLaneModelName()`. |
 | `src/config.ts` | Update lane-model comment to mention `cursor` if needed. No schema change. |
 | `docs/04-architecture.md` | Add Cursor to the ACP lane list and document it as a regular lane. |
 | `docs/05-data-flow.md` | Update ACP Harness Flow backend list if still enumerating supported lanes. |
@@ -89,22 +89,29 @@ Cursor is a regular lane:
 
 - Do not add it to the `pi-acp` no-MCP skip.
 - Do not add it to the `claude` native `.mcp.json` skip unless Cursor's ACP server is proven to load project `.mcp.json` itself.
+- Cursor's documented native MCP file is `.cursor/mcp.json`; if a project has both `.cursor/mcp.json` and `.mcp.json`, implementation verification should confirm Krypton's injected `.mcp.json` servers do not duplicate Cursor-loaded native servers under different names.
 - Let `filterByCapability()` gate HTTP/SSE/stdio MCP servers from `agentCapabilities.mcpCapabilities`.
 - Always include the per-lane `krypton-harness-memory` server when harness memory is available.
 
 ### Permissions
 
-No `--force`, `--yolo`, `--trust`, or `--approve-mcps` flags are passed by default. Cursor's ACP server should raise permission requests when it wants user approval; Krypton's existing permission rail handles them. If Cursor internally prompts or denies before emitting ACP permission requests, the lane transcript surfaces the resulting error.
+No `--force`, `--yolo`, `--trust`, or `--approve-mcps` flags are passed by default. Until Cursor ACP write-permission behavior is manually verified, the lane chrome shows a `⚠ permissions unverified` chip. This is intentionally weaker than Pi's `⚠ unsandboxed` chip because Krypton is not opting Cursor into force/yolo behavior, but it keeps the safety assumption visible.
+
+Follow-up verification should run a scratch-directory probe that asks Cursor ACP to edit a file and verify whether it emits ACP permission requests, denies internally, or applies edits directly. If it emits permission requests or denies before writes, remove the unverified chip. If it applies edits directly, upgrade the v1 UI to an explicit unsandboxed Cursor warning comparable to other autonomy warnings.
 
 ### Startup Diagnostics
+
+Cursor lane startup relies on `cursor-agent acp` taking the non-interactive ACP path. Clean machines may need `cursor-agent login` before Krypton can spawn Cursor successfully; if Cursor starts an installer/auth wizard or waits for stdin, Krypton will not provide an interactive TTY because ACP children use piped stdio. Krypton reuses the initialize timeout so this becomes a visible lane error with a Cursor-specific hint instead of a silent hang. When no stderr is captured, the hint is intentionally phrased as a likely cause rather than a diagnosis.
 
 Extend the existing stderr hint function with Cursor cases:
 
 | stderr substring | Suggested action |
 |------------------|------------------|
 | `SecItemCopyMatching failed` | "Cursor credential lookup failed. Run `cursor-agent login` in a terminal, or set `CURSOR_API_KEY` before launching Krypton." |
-| `not authenticated`, `login`, `api key` | "Run `cursor-agent login`, or export `CURSOR_API_KEY` in your login shell." |
+| `not authenticated`, `authentication required`, `please log in`, `please login`, `api key`, `unauthorized` | "Run `cursor-agent login`, or export `CURSOR_API_KEY` in your login shell." |
 | `cursor-agent: command not found`, `ENOENT` | "Install Cursor Agent CLI: `curl https://cursor.com/install -fsS | bash`." |
+
+Match specific Keychain strings such as `SecItemCopyMatching failed` before generic auth substrings like `api key`, so macOS credential failures receive the correct hint. Do not match the bare word `login`; Cursor can mention login in non-diagnostic log lines.
 
 ### Data Flow
 
@@ -123,7 +130,7 @@ Extend the existing stderr hint function with Cursor cases:
 
 - Lane picker shows `Cursor`.
 - Lane display names follow existing numbering: `Cursor-1`, `Cursor-2`, etc.
-- No special warning chip. Cursor is not treated as unsandboxed in v1 because we do not pass `--force`/`--yolo`.
+- Cursor shows a `⚠ permissions unverified` chip until a scratch-directory permission probe confirms Cursor ACP emits permission requests or denies before writes. Cursor is not treated as unsandboxed solely because we do not pass `--force`/`--yolo`.
 - Session picker (`Cmd+P → 0`) should attempt `session/list` like other lanes. If Cursor does not support it, the existing unsupported-session message is enough.
 
 ### Configuration
@@ -142,15 +149,19 @@ Whether `active` is passed as `--model` depends on implementation verification a
 
 - **`cursor-agent` not on PATH**: spawn fails; lane enters error state with install hint.
 - **Authenticated in a terminal but not visible to GUI launch**: cached login env may not fix Keychain access. Error hint points to `cursor-agent login` and `CURSOR_API_KEY`.
-- **Older Cursor Agent without `acp` command**: spawn may print unknown-command help or exit; initialize timeout/error surfaces. User updates Cursor Agent.
-- **Cursor loads `.cursor/rules`, `AGENTS.md`, and `CLAUDE.md`**: expected. Krypton should not duplicate these as extra prompt blocks.
+- **Older Cursor Agent without `acp` command**: spawn may print unknown-command help or exit; initialize timeout/error surfaces. User updates Cursor Agent. Version `2026.05.16-0338208` is the known-good baseline verified during research.
+- **Interactive first-run prompt**: installer/auth prompts that wait on stdin can block `initialize` forever unless Krypton times out startup and shows the Cursor login/install hint.
+- **Cursor loads `.cursor/rules`, `AGENTS.md`, and `CLAUDE.md`**: expected. Krypton should not duplicate these as extra prompt blocks. When running inside the Krypton repo itself, Cursor may also consume Krypton's Tauri-specific `CLAUDE.md`; this is acceptable but should be remembered during manual verification.
+- **Project defines both `.cursor/mcp.json` and `.mcp.json`**: Cursor may load `.cursor/mcp.json` natively while Krypton injects `.mcp.json` servers through ACP. Verify duplicate server handling before changing the `claude`-only skip rule.
 - **Cursor rejects injected MCP servers**: capability gating should prevent unsupported types; if the agent still rejects a server, lane startup error is surfaced.
 - **Cursor supports ACP but not `session/list`**: session picker shows the existing "does not support session/list" path.
+- **Cursor stderr is noisy**: Cursor may emit logs or ANSI on stderr. Krypton's rolling stderr buffer should still preserve the terminal startup error; if real errors are buried, add a narrow Cursor hint/filter follow-up.
 - **User wants force/yolo behavior**: out of scope for v1; use Cursor's own config or a future explicit Krypton setting.
 
 ## Open Questions
 
-None. The implementation can proceed with native `cursor-agent acp`; model flag forwarding is a verification step during implementation, not a design blocker.
+- Does `cursor-agent acp --model <id>` affect ACP sessions? If yes, wire `acp_harness.lane_models.cursor.active` into the spawn args. If no, keep Cursor model config display-only and document that behavior.
+- Does Cursor ACP emit `session/request_permission` before file writes, deny internally, or mutate directly? Verify with a scratch-directory write probe before deciding that the lane needs no warning chip.
 
 ## Out of Scope
 

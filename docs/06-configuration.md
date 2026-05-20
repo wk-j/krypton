@@ -415,7 +415,7 @@ To switch models, change `active` to the name of another preset. Changes take ef
 
 ### ACP Agent Backends
 
-ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, `pi-acp`, and `droid`.
+ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, `pi-acp`, `droid`, and `cursor`.
 
 | Backend | Command |
 |---------|---------|
@@ -425,8 +425,9 @@ ACP agent backends are built into Krypton rather than configured in `krypton.tom
 | OpenCode | `opencode acp` |
 | Pi | `pi-acp` |
 | Droid | `droid exec --output-format acp` |
+| Cursor | `cursor-agent acp` |
 
-Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow).
+Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`).
 
 **Pi lane prerequisites.** The Pi-1 lane uses the third-party [`pi-acp`](https://github.com/svkozak/pi-acp) adapter to drive the [`pi`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) coding agent. Install both globally:
 
@@ -442,7 +443,7 @@ Optional pi settings in `~/.pi/agent/settings.json`:
 - `"quietStartup": true` — suppress pi-acp's startup banner in the lane transcript.
 - Set env `PI_OFFLINE=1` to disable pi's update checks and install telemetry.
 
-**Pi-1 caveats.** Unlike the other four lanes, Pi-1 deliberately:
+**Pi-1 caveats.** Unlike regular lanes such as Codex, Claude, Gemini, OpenCode, Droid, and Cursor, Pi-1 deliberately:
 
 - Skips the project `.mcp.json` bridge — pi has no MCP host by design.
 - Skips the per-lane `krypton-harness-memory` server — same reason. Memory drawer entries from Pi-1 are not produced.
@@ -459,7 +460,13 @@ Optional: pin a model for the Droid lane via `acp_harness.lane_models.droid.acti
 
 Unlike Pi-1, Droid-1 is a **regular lane**: the `.mcp.json` bridge applies, the per-lane `krypton-harness-memory` server is wired in, and the permission rail engages on tool calls beyond Droid's current autonomy level. No `⚠ unsandboxed` chip.
 
-See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-lane.md` for Pi-1, and `docs/86-acp-droid-lane.md` for Droid-1.
+**Cursor lane prerequisites.** The Cursor lane uses Cursor Agent's native ACP mode (`cursor-agent acp`). Install Cursor Agent per Cursor's CLI docs, then run `cursor-agent login` outside Krypton or export `CURSOR_API_KEY` in the login shell before launching Krypton. Krypton does not provide a TTY for first-run installer/auth prompts, so startup failures include Cursor-specific login, Keychain, and install hints instead of opening an interactive wizard.
+
+Cursor is a **regular lane**: the `.mcp.json` bridge applies, the per-lane `krypton-harness-memory` server is wired in, and no force/yolo flags are passed. Until Cursor ACP write-permission behavior is manually verified, the lane chip shows `⚠ permissions unverified`. Cursor's native `.cursor/mcp.json` may also be loaded by Cursor itself; projects with both `.cursor/mcp.json` and `.mcp.json` should avoid duplicate server names.
+
+Optional: `acp_harness.lane_models.cursor.active` is accepted for the lane model chip, but Krypton does not pass it to Cursor at spawn until `cursor-agent acp --model <id>` is verified for ACP sessions.
+
+See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-lane.md` for Pi-1, `docs/86-acp-droid-lane.md` for Droid-1, and `docs/113-acp-cursor-lane.md` for Cursor.
 
 ### ACP Harness Configuration
 
@@ -470,14 +477,14 @@ See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-
 | `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id passed at spawn for the given backend. Empty = use the adapter default |
 | `[acp_harness.lane_models.<backend>]` | `models` | array | `[]` | Informational allow-list shown in the lane model chip / future picker (not enforced) |
 
-The ACP Harness roster is code-defined in v1: Codex, Claude, and Gemini lanes are attempted in that order when those backends are installed. Codex is the default active lane when available. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
+The ACP Harness backend picker is code-defined in v1: installed built-in backends are listed, and the harness starts with no lanes until the user spawns one via `Cmd+P → +`. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
 
-**Lane model selection.** `<backend>` keys match the ACP backend ids: `gemini`, `opencode`, `claude`, `codex`. Krypton applies `active` only for backends that support model selection in v1:
+**Lane model selection.** `<backend>` keys match the ACP backend ids: `gemini`, `opencode`, `droid`, `cursor`, `claude`, `codex`, and `pi-acp`. Krypton applies `active` only for backends that support model selection in v1:
 
 - **Gemini** — passes `--model <active>` as a CLI flag at spawn. Changing the model requires respawning the lane.
 - **OpenCode** — sends `session/set_config_option {model}` (with `session/set_model` fallback) right after `session/new`. If `active` is empty, Krypton falls back to the historical default `zai-coding-plan/glm-5.1`.
 - **Droid** — passes `-m <active>` to `droid exec` at spawn. Default if unset is Factory's `claude-opus-4-7`. Changing the model requires respawning the lane.
-- **Claude / Codex / Pi** — `active` is accepted in the schema but ignored at spawn (those adapters do not honour a model flag in v1). The value still drives the lane model chip if present.
+- **Cursor / Claude / Codex / Pi** — `active` is accepted in the schema but ignored at spawn (those adapters do not honour a verified model flag in v1). The value still drives the lane model chip if present.
 
 Example:
 

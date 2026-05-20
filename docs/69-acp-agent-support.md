@@ -6,11 +6,11 @@
 
 ## Problem
 
-Krypton's built-in agent (`src/agent/`, pi-agent-core + ZAI `glm-4.7`) works well for users with a ZAI key, but users with active Claude, Gemini CLI, or OpenCode setups can't drive those agents from inside Krypton. The existing pi agent is also stable, well-tuned, and shouldn't be destabilized to bolt on a second backend.
+Krypton's built-in agent (`src/agent/`, pi-agent-core + ZAI `glm-4.7`) works well for users with a ZAI key, but users with active Claude, Gemini CLI, Cursor Agent, or OpenCode setups can't drive those agents from inside Krypton. The existing pi agent is also stable, well-tuned, and shouldn't be destabilized to bolt on a second backend.
 
 ## Solution
 
-Add a **separate, dedicated AI agent window** that speaks the [Agent Client Protocol](https://agentclientprotocol.com) over stdio JSON-RPC to a subprocess (Claude Code, Gemini CLI, Codex, OpenCode, or any future ACP agent). Live in a new `src/acp/` directory and a new Rust module `src-tauri/src/acp.rs`. **Do not touch `src/agent/`** — the pi-agent stays exactly as it is. Two parallel agent-window types coexist: `Leader a` opens the pi agent (unchanged), `Leader A` opens the ACP picker.
+Add a **separate, dedicated AI agent window** that speaks the [Agent Client Protocol](https://agentclientprotocol.com) over stdio JSON-RPC to a subprocess (Claude Code, Gemini CLI, Codex, OpenCode, Cursor Agent, or any future ACP agent). Live in a new `src/acp/` directory and a new Rust module `src-tauri/src/acp.rs`. **Do not touch `src/agent/`** — the pi-agent stays exactly as it is. Two parallel agent-window types coexist: `Leader a` opens the pi agent (unchanged), `Leader A` opens the ACP picker.
 
 ## Research
 
@@ -34,11 +34,12 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 | Neovim (`acp.nvim`, CodeCompanion) | Spawns `npx @agentclientprotocol/claude-agent-acp` or `gemini --experimental-acp`, renders chunks in a buffer. | Confirms stdio adapter pattern is the norm. |
 | IntelliJ "Gemini CLI Companion" | Launches `gemini --experimental-acp`, JSON-RPC over stdio, modal permission prompts. | Validates Gemini CLI ACP mode for IDE-style hosts. |
 | OpenCode ACP | Launches `opencode acp` as an ACP-compatible subprocess over stdio JSON-RPC, then selects `zai-coding-plan/glm-5.1` through ACP session configuration. | Validates OpenCode as a code-defined backend alongside Claude, Gemini, and Codex, with Krypton selecting its default lane model without writing OpenCode config files. |
+| Cursor Agent ACP | Launches `cursor-agent acp` as Cursor Agent's native ACP server over stdio JSON-RPC. | Validates Cursor as a regular built-in backend with no headless NDJSON adapter. |
 | Emacs `acp.el` | Minimal ACP client; line-delimited framing in a non-Node host. | Reference for non-JS implementation. |
 
 **Krypton delta** — Match Zed's TOML-style backend declaration (familiar to ACP users). Diverge by routing every UI surface through a keyboard-first window in our own compositor (no popups), single-key inline permission prompts, and cyberpunk chrome consistent with the rest of Krypton.
 
-Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; Krypton selects `zai-coding-plan/glm-5.1` after `session/new` via `session/set_config_option` with `session/set_model` fallback, and OpenCode's CLI documentation confirms `opencode auth login` for provider credentials.
+Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; Krypton selects `zai-coding-plan/glm-5.1` after `session/new` via `session/set_config_option` with `session/set_model` fallback, and OpenCode's CLI documentation confirms `opencode auth login` for provider credentials. Cursor Agent's local `cursor-agent acp --help` confirms its native ACP subprocess command; Cursor auth remains outside Krypton via `cursor-agent login` or `CURSOR_API_KEY`.
 
 ## Affected Files
 
