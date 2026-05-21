@@ -88,6 +88,10 @@ interface HarnessTranscriptItem {
   createdAt?: number;
   markdownSource?: string;
   markdownHtml?: string;
+  // Spec 114 rev 4: append-only plain streaming. `streamPlainLength` is how
+  // many characters of `text` are already in the body's single TextNode;
+  // markdown is deferred until seal (no mid-stream plain↔HTML swap).
+  streamPlainLength?: number;
   pretextSource?: string;
   pretextWidth?: number;
   pretextFont?: string;
@@ -303,6 +307,14 @@ interface HarnessLane {
    * is not also resolved as a no-tool review.
    */
   reviewReplyAttemptsThisTurn: Set<string>;
+  /**
+   * Spec 114: cached count of tool rows on this lane in
+   * `started but not yet ended` state. Replaces the O(rows) scan inside
+   * `updateToolTick()`. Mutated as a before/after delta in `renderTool()`
+   * and decremented in `appendTranscript()` whenever the 300-row cap shifts
+   * an active tool row out of the transcript.
+   */
+  activeToolCount: number;
 }
 
 interface TranscriptScrollAnchor {
@@ -358,6 +370,14 @@ const TRANSCRIPT_WINDOW_STEP = 60;
 const TRANSCRIPT_WINDOW_DEFAULT = TRANSCRIPT_WINDOW_STEP;
 const HIDDEN_INDICATOR_ID = '__hidden_indicator__';
 
+// Spec 114: dev-only assertion gate. Mirrors the pattern in view-bus.ts
+// to read Vite's `import.meta.env.DEV` without requiring the vite/client
+// ambient types in tsconfig. Stripped to `false` in production bundles
+// so the reduce-over-transcript check never runs.
+const SPEC114_DEV = Boolean(
+  (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV,
+);
+
 // Immutable defaults shared across all lanes. Mutable containers (arrays,
 // Maps, Sets) MUST NOT live here — createLane() instantiates fresh ones
 // per lane to prevent reference aliasing.
@@ -394,6 +414,7 @@ const LANE_DEFAULTS = {
   historySavedDraft: null,
   reviewedThrough: 0,
   reviewReplyAttemptsThisTurn: new Set<string>(),
+  activeToolCount: 0,
 };
 
 const md = new Marked(
@@ -489,7 +510,14 @@ export class AcpHarnessView implements ContentView {
   private pretextRaf = false;
   private scrollRaf = false;
   private renderRaf = false;
+  private streamingBodyRaf = false;
+  // Spec 114: coalesces scroll-event storms into one anchor capture per
+  // frame. Set on scroll; re-reads live state inside the RAF callback so
+  // a lane switch or programmatic scroll between event and frame cannot
+  // write a stale anchor.
+  private scrollHandlerRaf = false;
   private suppressScrollListener = false;
+  private suppressScrollToken = 0;
   private transcriptResizeObserver: ResizeObserver | null = null;
   private observedTranscriptBody: HTMLElement | null = null;
   private observedTranscriptRows = new Set<HTMLElement>();
@@ -555,11 +583,7 @@ export class AcpHarnessView implements ContentView {
       appendInterLaneRow: (id, direction, peer, message, done) => {
         const l = this.lanes.find((x) => x.id === id);
         if (!l) return;
-        const arrow = direction === 'out' ? '→' : '←';
-        const header = direction === 'out'
-          ? `${arrow} ${peer.displayName}${done ? ' [done]' : ''}`
-          : `${peer.displayName} ${arrow}${done ? ' [done]' : ''}`;
-        const item = this.appendTranscript(l, 'inter_lane', `${header}\n${message}`);
+        const item = this.appendTranscript(l, 'inter_lane', message);
         item.interLane = {
           direction,
           peerId: peer.id,
@@ -1768,12 +1792,18 @@ export class AcpHarnessView implements ContentView {
     switch (event.type) {
       case 'user_message_chunk':
         this.appendStreaming(lane, 'user', event.text);
+        this.scheduleStreamingBodyOnly(lane);
+        needsRender = false;
         break;
       case 'message_chunk':
         this.appendStreaming(lane, 'assistant', event.text);
+        this.scheduleStreamingBodyOnly(lane);
+        needsRender = false;
         break;
       case 'thought_chunk':
         this.appendStreaming(lane, 'thought', event.text);
+        this.scheduleStreamingBodyOnly(lane);
+        needsRender = false;
         break;
       case 'tool_call':
         this.sealStreaming(lane);
@@ -2762,6 +2792,34 @@ export class AcpHarnessView implements ContentView {
     });
   }
 
+  private isLaneStreaming(lane: HarnessLane): boolean {
+    return lane.currentAssistantId !== null
+      || lane.currentThoughtId !== null
+      || lane.currentUserId !== null;
+  }
+
+  // Spec 114 rev 4: text chunks update only the transcript body (+ one
+  // sticky scroll write). Lane chrome, composer, peek, and plan are not
+  // rebuilt on every streaming chunk.
+  private scheduleStreamingBodyOnly(lane: HarnessLane): void {
+    if (lane.id !== this.activeLaneId) {
+      this.refreshMetricsRender();
+      return;
+    }
+    if (this.streamingBodyRaf) return;
+    this.streamingBodyRaf = true;
+    requestAnimationFrame(() => {
+      this.streamingBodyRaf = false;
+      if (lane.id !== this.activeLaneId) return;
+      this.renderActiveTranscript(lane);
+      if (this.isLaneStreaming(lane)) {
+        this.applyStickyScroll();
+      } else {
+        this.scheduleStickyScroll();
+      }
+    });
+  }
+
   private renderActiveLane(lane: HarnessLane): void {
     if (lane.id !== this.activeLaneId) {
       this.render();
@@ -2871,6 +2929,31 @@ export class AcpHarnessView implements ContentView {
         item.id === lane.currentUserId;
       const isNew = !lane.seenTranscriptIds.has(item.id);
       const current = existing.get(item.id) ?? null;
+
+      // Spec 114 rev 4: append-only streaming fast path (assistant / thought /
+      // user). Must run BEFORE the signature compare — stable 'stream'
+      // signature would otherwise no-op and freeze visible text.
+      const streamingTextRow =
+        item.id === lane.currentAssistantId ||
+        item.id === lane.currentThoughtId ||
+        item.id === lane.currentUserId;
+      if (
+        current &&
+        streaming &&
+        streamingTextRow &&
+        (item.kind === 'assistant' || item.kind === 'thought' ||
+          (item.kind === 'user' && !(item.imageCount && item.imageCount > 0)))
+      ) {
+        const body = current.querySelector<HTMLElement>('.acp-harness__msg-body');
+        if (body) {
+          updateStreamingTextBody(body, item);
+          current.dataset.renderSignature = 'stream';
+          lane.seenTranscriptIds.add(item.id);
+          previous = current;
+          continue;
+        }
+      }
+
       const signature = transcriptRenderSignature(item, streaming);
       const isIndicator = item.id === HIDDEN_INDICATOR_ID;
       if (current) {
@@ -3202,9 +3285,9 @@ export class AcpHarnessView implements ContentView {
     if (activeLane && activeLane.stickToBottom) {
       const body = this.activeTranscriptBody();
       if (body) {
-        this.suppressScrollListener = true;
+        const token = this.beginProgrammaticScroll();
         body.scrollTop = body.scrollHeight;
-        this.suppressScrollListener = false;
+        this.releaseProgrammaticScroll(token);
       }
     }
   }
@@ -3354,9 +3437,10 @@ export class AcpHarnessView implements ContentView {
   }
 
   private updateToolTick(): void {
-    const hasActive = this.lanes.some((lane) =>
-      lane.transcript.some((item) => item.kind === 'tool' && item.toolStartedAt !== undefined && item.toolEndedAt === undefined),
-    );
+    // Spec 114: O(lanes) instead of O(lanes × rows). Counter mutated as
+    // a before/after delta in `renderTool()` and adjusted on cap-shift
+    // inside `appendTranscript()`.
+    const hasActive = this.lanes.some((lane) => lane.activeToolCount > 0);
     if (hasActive && this.toolTickTimer === null) {
       this.toolTickTimer = window.setInterval(() => this.tickToolTimers(), 500);
     } else if (!hasActive && this.toolTickTimer !== null) {
@@ -3581,6 +3665,22 @@ export class AcpHarnessView implements ContentView {
       const dropped = lane.transcript.shift();
       if (dropped) {
         lane.seenTranscriptIds.delete(dropped.id);
+        // Spec 114: keep `activeToolCount` and the `toolTranscriptIds`
+        // map in sync when the cap shifts a tool row out. Without this,
+        // an active tool dropped from the prefix would leave the
+        // spinner timer running forever and a late toolCall update for
+        // the same id would resurrect a phantom row.
+        if (dropped.kind === 'tool') {
+          const wasActive = dropped.toolStartedAt !== undefined && dropped.toolEndedAt === undefined;
+          if (wasActive && lane.activeToolCount > 0) lane.activeToolCount -= 1;
+          for (const [callId, transcriptId] of lane.toolTranscriptIds) {
+            if (transcriptId === dropped.id) {
+              lane.toolTranscriptIds.delete(callId);
+              break;
+            }
+          }
+          if (SPEC114_DEV) assertActiveToolCount(lane);
+        }
       }
     }
     return item;
@@ -3662,9 +3762,24 @@ export class AcpHarnessView implements ContentView {
   }
 
   private sealStreaming(lane: HarnessLane): void {
+    // Spec 114: capture the assistant id BEFORE nulling so we can find the
+    // row that was just streaming and force a final markdown reparse.
+    const assistantId = lane.currentAssistantId;
     lane.currentUserId = null;
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
+    if (assistantId) {
+      const item = lane.transcript.find((entry) => entry.id === assistantId);
+      if (item) {
+        // Clearing markdownSource forces a single markdown reparse on the
+        // next full render after seal (no mid-stream marked swap).
+        item.markdownSource = undefined;
+        item.streamPlainLength = undefined;
+      }
+    }
+    // Guarantee a final render even on terminal paths that don't append
+    // a follow-up item (no-ops on non-active lanes — pre-existing).
+    this.scheduleLaneRender(lane);
   }
 
   private renderTool(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
@@ -3675,9 +3790,16 @@ export class AcpHarnessView implements ContentView {
     const existingId = lane.toolTranscriptIds.get(merged.toolCallId);
     const existing = existingId ? lane.transcript.find((item) => item.id === existingId) : null;
     const target = existing ?? this.appendTranscript(lane, 'tool', '');
+    // Spec 114: before/after delta on the row's "active" state. A row is
+    // active iff it has a start timestamp but no end timestamp.
+    const wasActive = target.toolStartedAt !== undefined && target.toolEndedAt === undefined;
     if (target.toolStartedAt === undefined) target.toolStartedAt = performance.now();
     if (isTerminalToolStatus(status) && target.toolEndedAt === undefined) {
       target.toolEndedAt = performance.now();
+    }
+    const isActive = target.toolStartedAt !== undefined && target.toolEndedAt === undefined;
+    if (wasActive !== isActive) {
+      lane.activeToolCount += isActive ? 1 : -1;
     }
     const tool = buildToolPayload(merged, status, target.toolStartedAt, target.toolEndedAt);
     const text = tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
@@ -3685,6 +3807,7 @@ export class AcpHarnessView implements ContentView {
     target.status = status;
     target.tool = tool;
     if (!existing) lane.toolTranscriptIds.set(merged.toolCallId, target.id);
+    if (SPEC114_DEV) assertActiveToolCount(lane);
     this.updateToolTick();
   }
 
@@ -4257,9 +4380,12 @@ export class AcpHarnessView implements ContentView {
   private scheduleStickyScroll(): void {
     if (this.scrollRaf) return;
     this.scrollRaf = true;
+    const lane = this.activeLane();
+    const singlePass = lane !== null && this.isLaneStreaming(lane);
     requestAnimationFrame(() => {
       this.scrollRaf = false;
       this.applyStickyScroll();
+      if (singlePass) return;
       requestAnimationFrame(() => {
         this.applyStickyScroll();
         requestAnimationFrame(() => this.applyStickyScroll());
@@ -4272,7 +4398,7 @@ export class AcpHarnessView implements ContentView {
     if (!lane) return;
     const body = this.activeTranscriptBody();
     if (!body) return;
-    this.suppressScrollListener = true;
+    const token = this.beginProgrammaticScroll();
     if (lane.stickToBottom) {
       body.scrollTop = body.scrollHeight;
     } else if (body.scrollTop === 0 && lane.savedScrollTop > 0) {
@@ -4280,7 +4406,7 @@ export class AcpHarnessView implements ContentView {
     } else {
       lane.savedScrollTop = body.scrollTop;
     }
-    this.suppressScrollListener = false;
+    this.releaseProgrammaticScroll(token);
   }
 
   private activeTranscriptBody(): HTMLElement | null {
@@ -4311,14 +4437,14 @@ export class AcpHarnessView implements ContentView {
     const rect = msg.getBoundingClientRect();
     const delta = rect.top - bodyRect.top - anchor.offsetTop;
     if (Math.abs(delta) < 0.5) return;
-    this.suppressScrollListener = true;
+    const token = this.beginProgrammaticScroll();
     body.scrollTop += delta;
     const lane = this.activeLane();
     if (lane) {
       lane.savedScrollTop = body.scrollTop;
       lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
     }
-    this.suppressScrollListener = false;
+    this.releaseProgrammaticScroll(token);
   }
 
   private observeActiveTranscriptBody(): void {
@@ -4368,14 +4494,43 @@ export class AcpHarnessView implements ContentView {
   }
 
   private onTranscriptScroll(): void {
+    // Drop the event at dispatch time when a programmatic scroll is in
+    // flight. Without this, the RAF callback below reads scrollHeight/
+    // scrollTop AFTER a streaming chunk has grown scrollHeight but
+    // BEFORE applyStickyScroll re-pins to the new bottom — distance
+    // exceeds STICK_THRESHOLD_PX and stickToBottom flips to false even
+    // though the user never scrolled.
     if (this.suppressScrollListener) return;
-    const lane = this.activeLane();
-    const body = this.activeTranscriptBody();
-    if (!lane || !body) return;
-    const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
-    lane.stickToBottom = distance <= STICK_THRESHOLD_PX;
-    lane.savedScrollTop = body.scrollTop;
-    lane.savedScrollAnchor = lane.stickToBottom ? null : this.captureTranscriptScrollAnchor(body);
+    if (this.scrollHandlerRaf) return;
+    this.scrollHandlerRaf = true;
+    requestAnimationFrame(() => {
+      this.scrollHandlerRaf = false;
+      if (this.suppressScrollListener) return;
+      const lane = this.activeLane();
+      const body = this.activeTranscriptBody();
+      if (!lane || !body) return;
+      const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
+      lane.stickToBottom = distance <= STICK_THRESHOLD_PX;
+      lane.savedScrollTop = body.scrollTop;
+      lane.savedScrollAnchor = lane.stickToBottom ? null : this.captureTranscriptScrollAnchor(body);
+    });
+  }
+
+  private beginProgrammaticScroll(): number {
+    this.suppressScrollListener = true;
+    return ++this.suppressScrollToken;
+  }
+
+  // Two RAFs covers the browser's async scroll-event dispatch + the
+  // scroll handler's own RAF gate. Token ensures a release scheduled
+  // by an older begin can't open suppression created by a newer one
+  // (the 3-RAF chain in scheduleStickyScroll overlaps releases).
+  private releaseProgrammaticScroll(token: number): void {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (this.suppressScrollToken === token) this.suppressScrollListener = false;
+      });
+    });
   }
 
   private schedulePretextLayout(): void {
@@ -4626,6 +4781,55 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// Spec 114: dev-build assertion that the cached `lane.activeToolCount`
+// matches the actual count of active tool rows. Catches counter drift
+// from missed delta updates or cap-shift bugs. Stripped at build time
+// via `import.meta.env.DEV` so it never runs in release.
+function assertActiveToolCount(lane: HarnessLane): void {
+  const actual = lane.transcript.reduce(
+    (acc, item) =>
+      acc + (item.kind === 'tool' && item.toolStartedAt !== undefined && item.toolEndedAt === undefined ? 1 : 0),
+    0,
+  );
+  if (lane.activeToolCount !== actual) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[spec114] activeToolCount drift on lane ${lane.displayName}: cached=${lane.activeToolCount} actual=${actual}`,
+    );
+  }
+}
+
+// Spec 114 rev 4: append-only update for streaming assistant / thought /
+// user rows. One TextNode grows via appendData; markdown waits for seal.
+function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem): void {
+  if (!body.classList.contains('acp-harness__msg-body--stream-plain')) {
+    body.classList.remove('acp-harness__msg-body--markdown');
+    delete body.dataset.pretext;
+    delete body.dataset.rawText;
+    delete body.dataset.rowId;
+    body.classList.add('acp-harness__msg-body--stream-plain');
+    const seed = document.createTextNode(item.text);
+    body.replaceChildren(seed);
+    item.streamPlainLength = item.text.length;
+    return;
+  }
+  let textNode = body.firstChild;
+  if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+    body.replaceChildren(document.createTextNode(''));
+    textNode = body.firstChild;
+    item.streamPlainLength = 0;
+  }
+  const plain = textNode as Text;
+  const len = item.streamPlainLength ?? 0;
+  if (item.text.length > len) {
+    plain.appendData(item.text.slice(len));
+    item.streamPlainLength = item.text.length;
+  } else if (item.text.length < len) {
+    plain.data = item.text;
+    item.streamPlainLength = item.text.length;
+  }
+}
+
 function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, streaming: boolean): HTMLElement {
   const el = document.createElement('div');
   el.className =
@@ -4641,20 +4845,26 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   const body = document.createElement('div');
   body.className = 'acp-harness__msg-body';
   if (item.kind === 'assistant') {
-    body.classList.add('acp-harness__msg-body--markdown');
-    if (item.markdownSource !== item.text || item.markdownHtml === undefined) {
-      try {
-        item.markdownHtml = md.parse(item.text, { async: false }) as string;
-        item.markdownSource = item.text;
-      } catch {
-        item.markdownHtml = undefined;
-        item.markdownSource = undefined;
-      }
-    }
-    if (item.markdownHtml !== undefined) {
-      body.innerHTML = item.markdownHtml;
+    if (streaming) {
+      body.classList.add('acp-harness__msg-body--stream-plain');
+      body.appendChild(document.createTextNode(item.text));
+      item.streamPlainLength = item.text.length;
     } else {
-      body.textContent = item.text;
+      body.classList.add('acp-harness__msg-body--markdown');
+      if (item.markdownSource !== item.text || item.markdownHtml === undefined) {
+        try {
+          item.markdownHtml = md.parse(item.text, { async: false }) as string;
+          item.markdownSource = item.text;
+        } catch {
+          item.markdownHtml = undefined;
+          item.markdownSource = undefined;
+        }
+      }
+      if (item.markdownHtml !== undefined) {
+        body.innerHTML = item.markdownHtml;
+      } else {
+        body.textContent = item.text;
+      }
     }
   } else if (item.kind === 'tool' && item.tool) {
     body.classList.add('acp-harness__tool');
@@ -4671,9 +4881,16 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
     if (item.fsReview.resolved) body.classList.add('acp-harness__fs-review--resolved');
     renderFsWriteReviewBody(body, item.fsReview);
   } else if (item.kind === 'inter_lane' && item.interLane) {
-    body.classList.add('acp-harness__inter-lane');
-    body.classList.add(`acp-harness__inter-lane--${item.interLane.direction}`);
-    renderInterLaneBody(body, item);
+    const { direction, peerDisplayName, done } = item.interLane;
+    label.textContent = direction === 'out' ? `${peerDisplayName} →` : `← ${peerDisplayName}`;
+    el.classList.add(`acp-harness__msg--peer-${direction}`);
+    if (done) el.classList.add('acp-harness__msg--peer-done');
+    body.classList.add('acp-harness__msg-body--markdown');
+    try {
+      body.innerHTML = md.parse(item.text, { async: false }) as string;
+    } catch {
+      body.textContent = item.text;
+    }
   } else if (item.kind === 'review' && item.review) {
     body.classList.add('acp-harness__review-card');
     renderReviewCardBody(body, item.review);
@@ -4686,14 +4903,13 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
     }
     body.appendChild(renderImageAttachmentChip(item.imageCount));
   } else if (usesPretext(item.kind)) {
-    // While streaming (thought_chunk etc.), skip pretext measurement —
-    // re-running prepareWithSegments + layoutWithLines on every chunk causes
-    // the row height to flip between native wrap and pretext-lines layout,
-    // which reads as visible row shake. Let the browser wrap naturally; once
-    // streaming ends the signature change re-renders this element through
-    // the pretext branch and schedulePretextLayout runs once.
+    // While streaming, use the same append-only plain TextNode path as
+    // assistant (fast path in renderActiveTranscript). Pretext layout runs
+    // once after seal when streaming is false.
     if (streaming) {
-      body.textContent = item.text;
+      body.classList.add('acp-harness__msg-body--stream-plain');
+      body.appendChild(document.createTextNode(item.text));
+      item.streamPlainLength = item.text.length;
     } else {
       body.dataset.pretext = 'true';
       body.dataset.rawText = item.text;
@@ -5533,36 +5749,6 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'review': return 'rev';
     default: return kind;
   }
-}
-
-function renderInterLaneBody(body: HTMLElement, item: HarnessTranscriptItem): void {
-  if (!item.interLane) return;
-  const { direction, peerDisplayName, done } = item.interLane;
-  body.dataset.direction = direction;
-  const head = document.createElement('div');
-  head.className = 'acp-harness__inter-lane-head';
-  const arrow = direction === 'out' ? '→' : '←';
-  const label = direction === 'out'
-    ? `to ${peerDisplayName}`
-    : `from ${peerDisplayName}`;
-  head.innerHTML =
-    `<span class="acp-harness__inter-lane-arrow">${arrow}</span>` +
-    `<span class="acp-harness__inter-lane-peer">${esc(label)}</span>` +
-    (done ? `<span class="acp-harness__inter-lane-done">done</span>` : '');
-  body.appendChild(head);
-  // The transcript text is "header\nmessage" — strip the header line so the
-  // body only shows the message text.
-  const messageText = item.text.includes('\n')
-    ? item.text.slice(item.text.indexOf('\n') + 1)
-    : item.text;
-  const message = document.createElement('div');
-  message.className = 'acp-harness__inter-lane-message acp-harness__msg-body--markdown';
-  try {
-    message.innerHTML = md.parse(messageText, { async: false }) as string;
-  } catch {
-    message.textContent = messageText;
-  }
-  body.appendChild(message);
 }
 
 function renderReviewCardBody(body: HTMLElement, payload: ReviewCardPayload): void {

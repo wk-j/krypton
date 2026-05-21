@@ -312,7 +312,7 @@ export class InterLaneCoordinator {
         true,
       );
     }
-    if (!payload.interruptedReason && payload.findings.length > 0) {
+    if (!payload.interruptedReason) {
       this.host.enqueueSystemPrompt(payload.toLaneId, this.composeReviewReplyPrompt(payload));
     }
     return { delivered: true };
@@ -654,21 +654,29 @@ export class InterLaneCoordinator {
       lines.push('');
       lines.push('WARNING: The worktree changed after the review was requested. Verify each finding against the current code before editing.');
     }
-    lines.push('');
-    lines.push('Findings:');
-    for (const finding of payload.findings) {
-      lines.push(
-        `- ${finding.severity.toUpperCase()} ${finding.file}:${finding.line} - ${finding.concern}`,
-      );
-      if (finding.suggestedCheck) {
-        lines.push(`  check: ${finding.suggestedCheck}`);
+    if (payload.findings.length > 0) {
+      lines.push('');
+      lines.push('Findings:');
+      for (const finding of payload.findings) {
+        lines.push(
+          `- ${finding.severity.toUpperCase()} ${finding.file}:${finding.line} - ${finding.concern}`,
+        );
+        if (finding.suggestedCheck) {
+          lines.push(`  check: ${finding.suggestedCheck}`);
+        }
       }
+      lines.push('');
+      lines.push(
+        'You are the requester lane receiving review feedback. Address these findings directly now. ' +
+          'Do not call review_reply; that tool is only for reviewer lanes.',
+      );
+    } else {
+      lines.push('');
+      lines.push(
+        'You are the requester lane. The reviewer returned no anchored findings — treat the summary above as their full response. ' +
+          'Do not call review_reply; that tool is only for reviewer lanes.',
+      );
     }
-    lines.push('');
-    lines.push(
-      'You are the requester lane receiving review feedback. Address these findings directly now. ' +
-        'Do not call review_reply; that tool is only for reviewer lanes.',
-    );
     return lines.join('\n');
   }
 }

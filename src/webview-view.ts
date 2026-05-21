@@ -247,12 +247,11 @@ export class WebviewContentView implements ContentView {
     if (this.handleForwardedChord && this.handleForwardedChord(key, mods)) return;
 
     const cmd = (mods & 1) !== 0 || (mods & 8) !== 0;
-    if (!cmd) return;
     const shift = (mods & 2) !== 0;
 
     // Webview-local chords only fire without Shift; Cmd+Shift+[ / ] are
     // global tab-switch and must reach the host input router instead.
-    if (!shift) {
+    if (cmd && !shift) {
       switch (key) {
         case 'l':
           this.focusAddressBar();
@@ -269,9 +268,9 @@ export class WebviewContentView implements ContentView {
       }
     }
 
-    // Everything else (Cmd+P, Cmd+W, Cmd+1..9, Cmd+Shift+[ / ]) →
-    // synthesize a KeyboardEvent so the existing input-router pipeline
-    // handles them uniformly.
+    // Everything else (any Cmd/Ctrl chord + bare Escape) → synthesize a
+    // KeyboardEvent so the existing input-router pipeline handles them
+    // uniformly, just like keys from any other host-side view.
     this.dispatchSyntheticChord(key, mods);
   }
 
@@ -450,7 +449,19 @@ function webviewHostForUrl(input: string): string {
 function keyToCode(key: string): string {
   if (/^[a-z]$/i.test(key)) return `Key${key.toUpperCase()}`;
   if (/^[0-9]$/.test(key)) return `Digit${key}`;
-  if (key === '[') return 'BracketLeft';
-  if (key === ']') return 'BracketRight';
+  switch (key) {
+    case '[': return 'BracketLeft';
+    case ']': return 'BracketRight';
+    case ',': return 'Comma';
+    case '.': return 'Period';
+    case '/': return 'Slash';
+    case ';': return 'Semicolon';
+    case "'": return 'Quote';
+    case '`': return 'Backquote';
+    case '-': return 'Minus';
+    case '=': return 'Equal';
+    case '\\': return 'Backslash';
+    case ' ': return 'Space';
+  }
   return key;
 }

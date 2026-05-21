@@ -138,4 +138,31 @@ describe('InterLaneCoordinator review replies', () => {
     });
     expect(lateReply).toEqual({ delivered: false, reason: 'unknown_packet' });
   });
+
+  it('still injects a prompt when the reviewer returns zero findings (clean review)', () => {
+    const host = makeHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    const packet = makePacket();
+    coordinator.deliverReviewRequest(packet, 'review prompt');
+
+    const result = coordinator.deliverReviewReply({
+      packetId: packet.packetId,
+      fromLaneId: packet.toLaneId,
+      toLaneId: packet.fromLaneId,
+      fromDisplayName: 'Claude-1',
+      toDisplayName: 'Codex-1',
+      findings: [],
+      summary: 'Solid direction, but two implementation-facing concerns in the spec.',
+      worktreeMatchAtReceipt: true,
+      sentAt: 200,
+    });
+
+    expect(result.delivered).toBe(true);
+    expect(host.reviewCards).toHaveLength(1);
+    expect(host.prompts).toHaveLength(1);
+    expect(host.prompts[0]?.text).toContain('[review reply] From Claude-1');
+    expect(host.prompts[0]?.text).toContain('Solid direction');
+    expect(host.prompts[0]?.text).toContain('no anchored findings');
+    expect(host.prompts[0]?.text).not.toContain('Findings:');
+  });
 });

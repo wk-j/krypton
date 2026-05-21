@@ -395,63 +395,39 @@
   white-space: nowrap;
 }
 
-.acp-harness__inter-lane {
-  padding: 4px 8px;
-  margin: 2px 0;
-  background: rgba(184, 166, 255, 0.04);
+/* Spec 106 — peer (inter-lane) messages: flat body shape matches assistant.
+   Direction + peer name live in the label slot; tint and dimming come from
+   modifier classes on `.acp-harness__msg`. */
+.acp-harness__msg--inter_lane {
+  grid-template-columns: 11ch minmax(0, 1fr);
 }
 
-.acp-harness__inter-lane--out {
-  background: rgba(120, 200, 255, 0.04);
+.acp-harness__msg--inter_lane .acp-harness__msg-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.74em;
 }
 
-.acp-harness__inter-lane-head {
-  display: flex;
-  gap: 0.6em;
-  align-items: baseline;
-  margin-bottom: 2px;
-  font-size: 0.78em;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.acp-harness__msg--peer-in .acp-harness__msg-label {
   color: rgba(184, 166, 255, 0.78);
 }
 
-.acp-harness__inter-lane--out .acp-harness__inter-lane-head {
+.acp-harness__msg--peer-out .acp-harness__msg-label {
   color: rgba(120, 200, 255, 0.78);
 }
 
-.acp-harness__inter-lane-arrow {
-  font-weight: bold;
-  font-size: 1.1em;
+.acp-harness__msg--peer-done .acp-harness__msg-label {
+  opacity: 0.55;
 }
 
-.acp-harness__inter-lane-peer {
-  flex: 1 1 auto;
+.acp-harness__msg--peer-in .acp-harness__msg-body {
+  padding: 4px 8px;
+  background: rgba(184, 166, 255, 0.04);
 }
 
-.acp-harness__inter-lane-done {
-  padding: 0 4px;
-  border: 1px solid currentColor;
-  border-radius: 2px;
-  font-size: 0.9em;
-}
-
-.acp-harness__inter-lane-message {
-  word-break: break-word;
-  color: rgba(216, 232, 216, 0.92);
-}
-
-.acp-harness__inter-lane-message:not(.acp-harness__msg-body--markdown) {
-  white-space: pre-wrap;
-}
-
-.acp-harness__inter-lane-message.acp-harness__msg-body--markdown li > p:first-child {
-  display: inline;
-  margin: 0;
-}
-
-.acp-harness__inter-lane-message.acp-harness__msg-body--markdown li > p {
-  margin: 0.2em 0 0;
+.acp-harness__msg--peer-out .acp-harness__msg-body {
+  padding: 4px 8px;
+  background: rgba(120, 200, 255, 0.04);
 }
 
 /* spec 112 — Review card */
@@ -580,6 +556,11 @@
   flex-direction: column;
   gap: 3px;
   scrollbar-width: thin;
+  /* Spec 114: isolate paint of the scrolling transcript from adjacent
+     lane chrome. The scroll container is already an overflow boundary
+     so `paint` containment is safe; combined with `layout` it lets the
+     browser skip ancestor reflow when a long message reflows internally. */
+  contain: layout paint;
 }
 
 .acp-harness__lane-rail {
@@ -1199,6 +1180,13 @@
 .acp-harness__msg-body--markdown {
   white-space: normal;
   color: #eaf3ea;
+  contain: layout style;
+}
+
+/* Spec 114 rev 4: append-only plain text while streaming; markdown once at seal. */
+.acp-harness__msg-body--stream-plain {
+  white-space: pre-wrap;
+  color: #eaf3ea;
 }
 
 .acp-harness__msg-body--markdown > :first-child {
@@ -1406,19 +1394,18 @@
   display: grid;
   gap: 4px;
   padding: 6px 8px;
-  border-left: 2px solid rgba(255, 209, 102, 0.56);
   background: rgba(255, 176, 0, 0.045);
   box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.12);
 }
 
-.acp-harness__perm-card[data-decision='auto_allowed'],
-.acp-harness__perm-card[data-decision='accepted'] {
-  border-left-color: rgba(142, 255, 176, 0.52);
+.acp-harness__perm-card[data-decision='auto_allowed'] .acp-harness__perm-decision,
+.acp-harness__perm-card[data-decision='accepted'] .acp-harness__perm-decision {
+  color: #8effb0;
 }
 
-.acp-harness__perm-card[data-decision='rejected'],
-.acp-harness__perm-card[data-decision='failed'] {
-  border-left-color: rgba(255, 107, 139, 0.7);
+.acp-harness__perm-card[data-decision='rejected'] .acp-harness__perm-decision,
+.acp-harness__perm-card[data-decision='failed'] .acp-harness__perm-decision {
+  color: #ff6b8b;
 }
 
 .acp-harness__perm-row {

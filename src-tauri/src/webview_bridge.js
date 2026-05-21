@@ -8,29 +8,48 @@
   if (!tauri) return;
   const ID = __KRYPTON_ID__;
 
-  // ─── Chord forwarding (host leader keys) ───────────────────────────
+  // ─── Chord forwarding (host shortcuts) ─────────────────────────────
   // Match by e.code (physical key) rather than e.key — on macOS, shifted
   // brackets/digits produce '{', '}', '!', etc. so e.key-based matching
-  // misses Cmd+Shift+[ / Cmd+Shift+] / Cmd+Shift+<digit>. The host input
-  // router similarly keys off e.code for these chords.
-  const CODE_TO_CHORD = {
-    KeyP: 'p', KeyL: 'l', KeyW: 'w', KeyR: 'r',
-    Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4', Digit5: '5',
-    Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
+  // misses Cmd+Shift+[ / Cmd+Shift+<digit>. The host input router
+  // similarly keys off e.code for these chords. Forward every Cmd/Ctrl
+  // chord (and bare Escape) so the webview behaves like any other view —
+  // the host input-router decides what to do with the synthesized event.
+  const PUNCT_CODE_TO_CHORD = {
     BracketLeft: '[', BracketRight: ']',
+    Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'",
+    Backquote: '`', Minus: '-', Equal: '=', Backslash: '\\',
+    Space: ' ', Tab: 'Tab', Enter: 'Enter', Escape: 'Escape',
+    Backspace: 'Backspace', Delete: 'Delete',
+    ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown',
+    ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight',
+    Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
   };
-  window.addEventListener('keydown', function (e) {
-    if (!(e.metaKey || e.ctrlKey)) return;
-    const chord = CODE_TO_CHORD[e.code];
-    if (!chord) return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
+  function codeToChord(code) {
+    if (code.length === 4 && code.indexOf('Key') === 0) return code.charAt(3).toLowerCase();
+    if (code.length === 6 && code.indexOf('Digit') === 0) return code.charAt(5);
+    if (code.length === 2 && code.charAt(0) === 'F') return code; // F1..F9
+    if (code.length === 3 && code.charAt(0) === 'F') return code; // F10..F12
+    return PUNCT_CODE_TO_CHORD[code] || null;
+  }
+  function modsMask(e) {
     let mods = 0;
     if (e.metaKey) mods |= 1;
     if (e.shiftKey) mods |= 2;
     if (e.altKey) mods |= 4;
     if (e.ctrlKey) mods |= 8;
-    try { tauri.invoke('forward_chord', { id: ID, key: chord, mods: mods }); } catch (err) {}
+    return mods;
+  }
+  window.addEventListener('keydown', function (e) {
+    const isEscape = e.code === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+    const isModChord = (e.metaKey || e.ctrlKey) && e.code !== 'MetaLeft' && e.code !== 'MetaRight'
+      && e.code !== 'ControlLeft' && e.code !== 'ControlRight';
+    if (!isEscape && !isModChord) return;
+    const chord = codeToChord(e.code);
+    if (!chord) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    try { tauri.invoke('forward_chord', { id: ID, key: chord, mods: modsMask(e) }); } catch (err) {}
   }, true);
 
   // ─── Title forwarding ──────────────────────────────────────────────
