@@ -108,7 +108,7 @@ When `this.planEl` lives inside the rail, its own absolute positioning would con
 | `width: clamp(240px, 28vw, 360px)` | `width: 100%; max-width: none` |
 | `max-height: calc(100% - 56px)` | unset (slot's `max-height` governs) |
 | `.acp-harness__plan-entries { flex:1 1 auto; overflow-y:auto }` (~2359) | unchanged (slot is height-bounded, so this resolves correctly) |
-| `::before / ::after` corner brackets | unchanged (parent is `position: relative`) |
+| `::before / ::after` corner brackets | removed — brackets dropped from both `.acp-harness__plan` and `.acp-harness__lane-peek` (no pseudo-element brackets remain on these elements) |
 
 Same audit for the peek element — list its current absolute-positioning rules (acp-harness.css:468–605) and add a matching set of `.acp-harness__lane-rail .acp-harness__lane-peek { ... }` overrides at implementation time.
 

@@ -1819,6 +1819,12 @@ export class AcpHarnessView implements ContentView {
         void this.refreshMemory();
         break;
       case 'error':
+        // Seal any in-flight streaming row first so its --streaming class and
+        // pretext-deferred state get a clean signature transition. Without
+        // this, a thought/assistant/user row that was streaming when the
+        // error arrived keeps currentThoughtId/AssistantId/UserId set and
+        // stays in native-wrap (no pretext layout) until the next prompt.
+        this.sealStreaming(lane);
         this.setLaneStatus(lane, 'error');
         lane.error = event.message;
         lane.activeTurnStartedAt = null;
@@ -2859,7 +2865,10 @@ export class AcpHarnessView implements ContentView {
     let previous: ChildNode | null = null;
     for (const item of itemsToRender) {
       expected.add(item.id);
-      const streaming = item.id === lane.currentAssistantId || item.id === lane.currentThoughtId;
+      const streaming =
+        item.id === lane.currentAssistantId ||
+        item.id === lane.currentThoughtId ||
+        item.id === lane.currentUserId;
       const isNew = !lane.seenTranscriptIds.has(item.id);
       const current = existing.get(item.id) ?? null;
       const signature = transcriptRenderSignature(item, streaming);
@@ -4677,10 +4686,20 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
     }
     body.appendChild(renderImageAttachmentChip(item.imageCount));
   } else if (usesPretext(item.kind)) {
-    body.dataset.pretext = 'true';
-    body.dataset.rawText = item.text;
-    body.dataset.rowId = item.id;
-    body.textContent = item.text;
+    // While streaming (thought_chunk etc.), skip pretext measurement —
+    // re-running prepareWithSegments + layoutWithLines on every chunk causes
+    // the row height to flip between native wrap and pretext-lines layout,
+    // which reads as visible row shake. Let the browser wrap naturally; once
+    // streaming ends the signature change re-renders this element through
+    // the pretext branch and schedulePretextLayout runs once.
+    if (streaming) {
+      body.textContent = item.text;
+    } else {
+      body.dataset.pretext = 'true';
+      body.dataset.rawText = item.text;
+      body.dataset.rowId = item.id;
+      body.textContent = item.text;
+    }
   } else {
     body.textContent = item.text;
   }
