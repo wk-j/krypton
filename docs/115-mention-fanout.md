@@ -47,7 +47,8 @@ No new MCP tools in V0. No `#command`. No wait-for-all gate.
 | `src/acp/mention-parse.ts` | **New.** Parse `@Lane`, strip body |
 | `src/acp/inter-lane.ts` | `deliverMentionFanOut()`; `expectsReply` gating on `trackPending`; fix `clearPendingFromPeer`; drain rules |
 | `src/acp/types.ts` | `kind: 'mention_request'` on outbound envelopes |
-| `src/acp/acp-harness-view.ts` | Mention branch in `submitActiveLane`; `@` palette; transcript prefix |
+| `src/acp/acp-harness-view.ts` | Mention branch in `submitActiveLane`; `@` autocomplete palette; transcript prefix |
+| `src/acp/mention-palette.ts` | **New.** `@` palette context, filter, insert |
 | `src/acp/inter-lane.test.ts` | Fan-out delivery + per-reply inject + pending clear |
 | `docs/106-inter-lane-messaging.md` | Cross-reference |
 

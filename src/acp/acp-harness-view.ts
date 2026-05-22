@@ -39,6 +39,12 @@ import { LaneBus } from './lane-bus';
 import { InterLaneCoordinator, type LaneHost, type PendingPeerSummary, type ReviewCardPayload } from './inter-lane';
 import { parseMentionFanOut } from './mention-parse';
 import {
+  applyMentionSelection,
+  filteredMentionTargets,
+  mentionPaletteContext,
+  mentionPaletteVisible,
+} from './mention-palette';
+import {
   buildPacket as buildReviewPacket,
   composeReviewerPrompt,
   appendReviewValidationSuffix,
@@ -293,6 +299,8 @@ interface HarnessLane {
   currentMode: AcpAgentMode | null;
   slashPaletteIndex: number;
   slashPaletteDismissed: boolean;
+  mentionPaletteIndex: number;
+  mentionPaletteDismissed: boolean;
   plan: PlanEntry[] | null;
   planCollapsed: boolean;
   lastKilled: string;
@@ -407,6 +415,8 @@ const LANE_DEFAULTS = {
   currentMode: null,
   slashPaletteIndex: 0,
   slashPaletteDismissed: false,
+  mentionPaletteIndex: 0,
+  mentionPaletteDismissed: false,
   plan: null,
   planCollapsed: false,
   lastKilled: '',
@@ -1199,6 +1209,9 @@ export class AcpHarnessView implements ContentView {
     if (this.memoryDrawerOpen && this.handleMemoryKey(e)) return true;
     if ((e.key === 'n' || e.key === 'N' || e.key === 'p' || e.key === 'P') && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       const composerLane = this.focus === 'text' ? this.activeLane() : null;
+      if (composerLane && this.mentionPaletteVisibleFor(composerLane)) {
+        return this.handleMentionPaletteKey(e, composerLane);
+      }
       if (composerLane && slashPaletteVisible(composerLane)) {
         return this.handleSlashPaletteKey(e, composerLane);
       }
@@ -1238,7 +1251,10 @@ export class AcpHarnessView implements ContentView {
 
     if (e.key === 'Escape') {
       e.preventDefault();
-      if (this.helpOpen) this.toggleHelp(false);
+      if (this.mentionPaletteVisibleFor(lane)) {
+        lane.mentionPaletteDismissed = true;
+        this.renderComposer();
+      } else if (this.helpOpen) this.toggleHelp(false);
       else if (this.memoryDrawerOpen) this.toggleMemoryDrawer(false);
       else if (lane.stagedImages.length > 0) this.clearStagedImages(lane);
       else if (this.lanePeek.visible && this.lanePeek.currentLaneId) this.hideLanePeek();
@@ -1266,6 +1282,8 @@ export class AcpHarnessView implements ContentView {
       return true;
     }
 
+    if (this.handleMentionPaletteKey(e, lane)) return true;
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void this.submitActiveLane().catch((error: unknown) => this.handleSubmitError(error));
@@ -1281,6 +1299,90 @@ export class AcpHarnessView implements ContentView {
       return true;
     }
     return false;
+  }
+
+  private mentionRosterNames(): string[] {
+    return this.lanes.map((l) => l.displayName);
+  }
+
+  private mentionPaletteVisibleFor(lane: HarnessLane): boolean {
+    const roster = this.mentionRosterNames().filter((n) => n !== lane.displayName);
+    return mentionPaletteVisible(
+      lane.draft,
+      lane.cursor,
+      lane.mentionPaletteDismissed,
+      roster.length,
+    );
+  }
+
+  private filteredMentionPaletteTargets(lane: HarnessLane): string[] {
+    const ctx = mentionPaletteContext(lane.draft, lane.cursor);
+    if (!ctx) return [];
+    return filteredMentionTargets(this.mentionRosterNames(), lane.displayName, ctx.prefix);
+  }
+
+  private handleMentionPaletteKey(e: KeyboardEvent, lane: HarnessLane): boolean {
+    if (!this.mentionPaletteVisibleFor(lane)) return false;
+    const matches = this.filteredMentionPaletteTargets(lane);
+    if (matches.length === 0) return false;
+    if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
+      e.preventDefault();
+      lane.mentionPaletteIndex = (lane.mentionPaletteIndex + 1) % matches.length;
+      this.renderComposer();
+      return true;
+    }
+    if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
+      e.preventDefault();
+      lane.mentionPaletteIndex = (lane.mentionPaletteIndex - 1 + matches.length) % matches.length;
+      this.renderComposer();
+      return true;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      const pick = matches[Math.max(0, Math.min(lane.mentionPaletteIndex, matches.length - 1))];
+      if (pick) {
+        const next = applyMentionSelection(lane.draft, lane.cursor, pick);
+        lane.mentionPaletteDismissed = false;
+        this.setDraft(lane, next.draft, next.cursor);
+      }
+      return true;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      lane.mentionPaletteDismissed = true;
+      this.renderComposer();
+      return true;
+    }
+    return false;
+  }
+
+  private renderMentionPalette(lane: HarnessLane): string {
+    if (!this.mentionPaletteVisibleFor(lane)) return '';
+    const matches = this.filteredMentionPaletteTargets(lane);
+    if (matches.length === 0) {
+      return (
+        `<div class="acp-harness__slash-palette" data-count="0">` +
+        `<div class="acp-harness__slash-palette-meta">no matching lanes · Esc dismiss</div>` +
+        `</div>`
+      );
+    }
+    const safeIndex = Math.max(0, Math.min(lane.mentionPaletteIndex, matches.length - 1));
+    const rows = matches
+      .map((name, i) => {
+        const sel = i === safeIndex ? ' acp-harness__slash-palette-row--selected' : '';
+        return (
+          `<div class="acp-harness__slash-palette-row${sel}">` +
+          `<span class="acp-harness__slash-palette-name">@${esc(name)}</span>` +
+          `</div>`
+        );
+      })
+      .join('');
+    return (
+      `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
+      `<div class="acp-harness__slash-palette-meta">↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss</div>` +
+      rows +
+      `</div>`
+    );
   }
 
   private handleSlashPaletteKey(e: KeyboardEvent, lane: HarnessLane): boolean {
@@ -3440,6 +3542,7 @@ export class AcpHarnessView implements ContentView {
       const hint = `${lane.stagedImages.length} image${lane.stagedImages.length === 1 ? '' : 's'} · Esc to clear`;
       staging = `<div class="acp-harness__staging">${chips}<span class="acp-harness__staging-hint">${esc(hint)}</span></div>`;
     }
+    const mentionPalette = this.renderMentionPalette(lane);
     const palette = renderSlashPalette(lane);
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-meta">` +
@@ -3447,6 +3550,7 @@ export class AcpHarnessView implements ContentView {
       projectStatus +
       `</div>` +
       staging +
+      mentionPalette +
       palette +
       `<div class="acp-harness__input-line">` +
       `<span class="acp-harness__lane-tag">${esc(lane.displayName)}</span>` +
@@ -4209,6 +4313,8 @@ export class AcpHarnessView implements ContentView {
     // until the user types again.
     lane.slashPaletteIndex = 0;
     lane.slashPaletteDismissed = false;
+    lane.mentionPaletteIndex = 0;
+    lane.mentionPaletteDismissed = false;
     lane.historyIndex = null;
     lane.historySavedDraft = null;
     this.renderComposer();
@@ -4220,6 +4326,8 @@ export class AcpHarnessView implements ContentView {
     this.focus = 'text';
     lane.slashPaletteIndex = 0;
     lane.slashPaletteDismissed = false;
+    lane.mentionPaletteIndex = 0;
+    lane.mentionPaletteDismissed = false;
     this.renderComposer();
   }
 
@@ -4233,7 +4341,7 @@ export class AcpHarnessView implements ContentView {
 
   private handleHistoryKey(e: KeyboardEvent, lane: HarnessLane): boolean {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
-    if (slashPaletteVisible(lane)) return false;
+    if (slashPaletteVisible(lane) || this.mentionPaletteVisibleFor(lane)) return false;
     if (e.key === 'ArrowUp') {
       if (lane.promptHistory.length === 0) return false;
       if (!this.cursorOnFirstLine(lane)) return false;
