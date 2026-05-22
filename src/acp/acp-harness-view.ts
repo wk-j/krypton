@@ -37,6 +37,7 @@ import type {
 } from './types';
 import { LaneBus } from './lane-bus';
 import { InterLaneCoordinator, type LaneHost, type PendingPeerSummary, type ReviewCardPayload } from './inter-lane';
+import { parseMentionFanOut } from './mention-parse';
 import {
   buildPacket as buildReviewPacket,
   composeReviewerPrompt,
@@ -616,18 +617,66 @@ export class AcpHarnessView implements ContentView {
           l.reviewedThrough = payload.sentAt;
         }
         // Settle requester out of awaiting_peer if they were on this packet.
-        if (l.status === 'awaiting_peer') {
-          this.setLaneStatus(l, 'idle');
-        }
+        this.coordinator.recomputePeerStatus(l.id);
         this.scheduleLaneRender(l);
       },
     };
   }
 
+  /** spec 115: @mention fan-out from composer. */
+  private tryMentionFanOut(lane: HarnessLane, text: string, hasImages: boolean): boolean {
+    if (!text.trimStart().startsWith('@')) return false;
+    const roster = this.lanes.map((l) => l.displayName);
+    const parsed = parseMentionFanOut(text, lane.displayName, roster);
+    if ('kind' in parsed) {
+      if (parsed.kind === 'empty_body') return false;
+      if (parsed.kind === 'self_only') {
+        this.flashChip('mention: cannot target only yourself');
+        return true;
+      }
+      this.flashChip(`mention: unknown lane ${parsed.token}`);
+      return true;
+    }
+    if (parsed.targets.length === 0) return false;
+    if (hasImages) {
+      this.flashChip('mention fan-out: images not supported yet');
+      return true;
+    }
+    const targets = parsed.targets
+      .map((displayName) => {
+        const target = this.lanes.find((l) => l.displayName === displayName);
+        return target ? { laneId: target.id, displayName } : null;
+      })
+      .filter((t): t is { laneId: string; displayName: string } => t !== null);
+    if (targets.length === 0) {
+      this.flashChip('mention: no valid target lanes');
+      return true;
+    }
+    const result = this.coordinator.deliverMentionFanOut(
+      lane.id,
+      lane.displayName,
+      targets,
+      parsed.body,
+      this.harnessMemoryId ?? undefined,
+    );
+    this.setDraft(lane, '', 0);
+    const preview = parsed.body.length > 80 ? `${parsed.body.slice(0, 80)}…` : parsed.body;
+    this.appendTranscript(
+      lane,
+      'system',
+      `mention → ${result.delivered.join(', ')}${result.failed.length ? ` · failed: ${result.failed.map((f) => f.displayName).join(', ')}` : ''}\n${preview}`,
+    );
+    if (this.coordinator.pendingPeersFor(lane.id).length > 0) {
+      this.setLaneStatus(lane, 'awaiting_peer');
+    }
+    this.render();
+    return true;
+  }
+
   /** Inject a programmatic user-turn (no UI composer involved). */
   private async enqueueSystemPrompt(lane: HarnessLane, text: string): Promise<void> {
     if (!lane.client) return;
-    if (lane.status !== 'idle') return;
+    if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') return;
     this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
     lane.reviewReplyAttemptsThisTurn.clear();
@@ -1901,11 +1950,9 @@ export class AcpHarnessView implements ContentView {
       this.flashChip('lane busy');
       return;
     }
-    if (lane.status === 'awaiting_peer') {
-      this.flashChip(`${awaitingPeerText(this.coordinator.pendingPeersFor(lane.id))} first`);
-      return;
-    }
     const images = lane.stagedImages.slice();
+    const mentionParsed = this.tryMentionFanOut(lane, text, images.length > 0);
+    if (mentionParsed) return;
     this.setDraft(lane, '', 0);
     lane.stagedImages = [];
     this.appendTranscript(lane, 'user', text, { imageCount: images.length });
@@ -2527,13 +2574,11 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async cancelLane(lane: HarnessLane): Promise<void> {
-    // Cancelling a lane mid-peer-conversation closes the conversation
-    // from this lane's side — notify the peer(s).
-    const wasAwaitingPeer = lane.status === 'awaiting_peer';
-    this.coordinator.cancelConversationsFor(lane.id);
-    if (wasAwaitingPeer) {
-      // No active ACP prompt — clearing peer state is enough.
-      this.setLaneStatus(lane, 'idle');
+    const pending = this.coordinator.pendingPeersFor(lane.id);
+    // spec 116: busy cancel stops the ACP turn only — keep outstanding peer waits.
+    if (lane.status === 'awaiting_peer' || (lane.status === 'idle' && pending.length > 0)) {
+      this.coordinator.cancelConversationsFor(lane.id);
+      this.coordinator.recomputePeerStatus(lane.id);
       this.render();
       return;
     }
@@ -3416,7 +3461,11 @@ export class AcpHarnessView implements ContentView {
       const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
       return `${lane.displayName} running${elapsed} · Ctrl+C cancel`;
     }
-    if (lane.status === 'awaiting_peer') return `${lane.displayName} ${awaitingPeerText(this.coordinator.pendingPeersFor(lane.id))}`;
+    const pending = this.coordinator.pendingPeersFor(lane.id);
+    if (pending.length > 0 && (lane.status === 'awaiting_peer' || lane.status === 'idle')) {
+      return `${lane.displayName} · ${awaitingPeerText(pending)}`;
+    }
+    if (lane.status === 'awaiting_peer') return `${lane.displayName} ${awaitingPeerText(pending)}`;
     if (this.harnessMemoryWarning) return `memory off: ${truncate(this.harnessMemoryWarning, 64)}`;
     return `memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`;
   }

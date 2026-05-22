@@ -1,6 +1,6 @@
 # Mention Fan-Out — Implementation Spec
 
-> Status: Draft (Codex-1 + Claude-1 review incorporated)
+> Status: Implemented
 > Date: 2026-05-22
 > **Depends on:** `docs/116-soft-awaiting-peer.md` (land first, or same PR)
 > Milestone: M-ACP — Harness Multi-Agent

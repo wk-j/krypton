@@ -1,6 +1,6 @@
 # Soft Awaiting Peer — Implementation Spec
 
-> Status: Draft (Codex-1 + Claude-1 review incorporated). **Land before 115** (or same PR).
+> Status: Implemented
 > Date: 2026-05-22
 > Milestone: M-ACP — Harness Multi-Agent
 > Related: `docs/106-inter-lane-messaging.md`, `docs/115-mention-fanout.md`

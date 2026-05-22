@@ -215,9 +215,11 @@ export interface InterLaneEnvelope {
   sentAt: number;
   /** Rust-side harness scope tag. Used by the bridge to drop cross-harness leakage. */
   harnessId?: string;
-  /** spec 112: distinguish peer chat from review-mode envelopes. Default 'peer' when omitted. */
-  kind?: 'peer' | 'review_request';
+  /** spec 112 / 115: peer chat, review, or composer @mention fan-out. */
+  kind?: 'peer' | 'review_request' | 'mention_request';
   reviewPacket?: ReviewPacket;
+  /** spec 115: correlates fan-out replies on the requester. */
+  mentionPacketId?: string;
   /**
    * spec 112: when set, this envelope is only relevant while the named review packet
    * is still open. Used for harness-injected protocol-retry prompts so that a stale

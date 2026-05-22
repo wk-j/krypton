@@ -90,6 +90,7 @@ interface PendingSend {
   envelopeId: string;
   toLaneId: string;
   sentAt: number;
+  mentionPacketId?: string;
 }
 
 export interface PendingPeerSummary {
@@ -101,6 +102,32 @@ export interface PendingPeerSummary {
 
 const REPLY_HINT =
   'End your turn now. The reply (if any) will arrive as a new user message.';
+
+/** spec 116: inbound peer mail may drain while visually awaiting. */
+export function canDrainInbound(status: HarnessLaneStatus): boolean {
+  return status === 'idle' || status === 'awaiting_peer';
+}
+
+function shouldTrackPending(env: InterLaneEnvelope): boolean {
+  if (env.done || env.fromLaneId === '__harness__') return false;
+  if (env.kind === 'review_request' || env.kind === 'mention_request') return true;
+  return !env.done;
+}
+
+function isInboundRequestEnvelope(env: InterLaneEnvelope): boolean {
+  return env.kind === 'review_request' || env.kind === 'mention_request';
+}
+
+export interface MentionFanOutTarget {
+  laneId: string;
+  displayName: string;
+}
+
+export interface MentionFanOutResult {
+  packetId: string;
+  delivered: string[];
+  failed: Array<{ displayName: string; reason: string }>;
+}
 
 export class InterLaneCoordinator {
   private inboxes = new Map<string, LaneInbox>();
@@ -172,7 +199,9 @@ export class InterLaneCoordinator {
     }
 
     this.inbox(env.toLaneId).push(env);
-    this.trackPending(env.fromLaneId, env.id, env.toLaneId, env.sentAt);
+    if (shouldTrackPending(env)) {
+      this.trackPending(env.fromLaneId, env.id, env.toLaneId, env.sentAt, env.mentionPacketId);
+    }
 
     const sender = this.host.getLane(env.fromLaneId);
     if (sender) {
@@ -185,8 +214,7 @@ export class InterLaneCoordinator {
       );
     }
 
-    // If the recipient is already idle, drain right away.
-    if (recipient.status === 'idle') {
+    if (canDrainInbound(recipient.status)) {
       this.drain(env.toLaneId);
     }
 
@@ -254,7 +282,7 @@ export class InterLaneCoordinator {
       false,
     );
 
-    if (recipient.status === 'idle') {
+    if (canDrainInbound(recipient.status)) {
       this.drain(packet.toLaneId);
     }
 
@@ -298,7 +326,7 @@ export class InterLaneCoordinator {
     // is the requester whose pending entry targets the reviewer. The helper
     // reads `pending[fromLaneId]` and filters entries with `toLaneId ===
     // receiverId`, so the arguments are (reviewer, requester) here.
-    this.clearPendingFromPeer(payload.fromLaneId, payload.toLaneId);
+    this.clearPendingFromPeer(payload.toLaneId, payload.fromLaneId, payload.packetId);
 
     if (this.host.appendReviewCard) {
       this.host.appendReviewCard(payload.toLaneId, payload);
@@ -315,7 +343,56 @@ export class InterLaneCoordinator {
     if (!payload.interruptedReason) {
       this.host.enqueueSystemPrompt(payload.toLaneId, this.composeReviewReplyPrompt(payload));
     }
+    this.recomputePeerStatus(payload.toLaneId);
     return { delivered: true };
+  }
+
+  /**
+   * spec 115: fan-out one body to multiple lanes from the composer (@mention).
+   */
+  deliverMentionFanOut(
+    requesterId: string,
+    requesterDisplayName: string,
+    targets: MentionFanOutTarget[],
+    body: string,
+    harnessId?: string,
+  ): MentionFanOutResult {
+    const packetId = `mnt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const delivered: string[] = [];
+    const failed: Array<{ displayName: string; reason: string }> = [];
+    for (const target of targets) {
+      const prompt =
+        `[mention] From ${requesterDisplayName} (packet: ${packetId}):\n\n${body}\n\n` +
+        `Reply with peer_send({ to_lane: "${requesterDisplayName}", message, done: true }). ` +
+        'Use done:true for one-shot mention answers.';
+      const env: InterLaneEnvelope = {
+        id: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        fromLaneId: requesterId,
+        toLaneId: target.laneId,
+        message: prompt,
+        done: false,
+        sentAt: Date.now(),
+        harnessId,
+        kind: 'mention_request',
+        mentionPacketId: packetId,
+      };
+      const result = this.deliver(env);
+      if (result.delivered) {
+        delivered.push(target.displayName);
+      } else {
+        failed.push({ displayName: target.displayName, reason: result.reason });
+      }
+    }
+    return { packetId, delivered, failed };
+  }
+
+  /** spec 116: set idle vs awaiting_peer from pending + in-flight review. */
+  recomputePeerStatus(laneId: string): void {
+    const lane = this.host.getLane(laneId);
+    if (!lane || lane.status === 'busy' || lane.status === 'needs_permission') return;
+    const pending = this.pendingPeersFor(laneId).length;
+    const reviewPending = this.inFlightReviews.has(laneId);
+    this.host.setLaneStatus(laneId, pending > 0 || reviewPending ? 'awaiting_peer' : 'idle');
   }
 
   /** Returns the open ReviewPacket for the given id, or null. */
@@ -350,7 +427,7 @@ export class InterLaneCoordinator {
       harnessId: '__harness__',
       reviewPacketId,
     });
-    if (lane.status === 'idle') this.drain(laneId);
+    if (canDrainInbound(lane.status)) this.drain(laneId);
   }
 
   /** spec 112: returns true if the named review packet is still open. */
@@ -413,6 +490,7 @@ export class InterLaneCoordinator {
       this.host.appendSystemNotice(peerId, `peer ${senderName} cancelled`);
       this.notifyPeerOfTermination(peerId, senderName, 'cancelled');
     }
+    this.recomputePeerStatus(laneId);
   }
 
   private pairKey(cancellerLaneId: string, peerLaneId: string): string {
@@ -442,11 +520,7 @@ export class InterLaneCoordinator {
         // Inject a synthesized prompt into the peer's session so the agent
         // learns of the closure in-context (not just as a transcript row).
         this.notifyPeerOfTermination(senderId, displayName, 'closed');
-        // Bring sender out of awaiting_peer if they were stuck on this peer.
-        const senderInfo = this.host.getLane(senderId);
-        if (senderInfo?.status === 'awaiting_peer' && remaining.length === 0) {
-          this.host.setLaneStatus(senderId, 'idle');
-        }
+        this.recomputePeerStatus(senderId);
       }
     }
     // spec 112: review packets involving the closed lane.
@@ -508,7 +582,7 @@ export class InterLaneCoordinator {
       sentAt: Date.now(),
       harnessId: '__harness__',
     });
-    if (peer.status === 'idle') this.drain(peerLaneId);
+    if (canDrainInbound(peer.status)) this.drain(peerLaneId);
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -523,27 +597,34 @@ export class InterLaneCoordinator {
     return inbox;
   }
 
-  private trackPending(senderId: string, envelopeId: string, toLaneId: string, sentAt: number): void {
+  private trackPending(
+    senderId: string,
+    envelopeId: string,
+    toLaneId: string,
+    sentAt: number,
+    mentionPacketId?: string,
+  ): void {
     const list = this.pending.get(senderId) ?? [];
-    list.push({ envelopeId, toLaneId, sentAt });
+    list.push({ envelopeId, toLaneId, sentAt, mentionPacketId });
     this.pending.set(senderId, list);
   }
 
-  private clearPendingFromPeer(receiverId: string, fromLaneId: string): void {
-    // When `receiverId` receives a reply from `fromLaneId`, fromLaneId's
-    // pending entry (which targeted receiverId) is satisfied.
-    const sends = this.pending.get(fromLaneId);
+  /** Clear requester pending when an inbound reply is drained (spec 115/116). */
+  private clearPendingFromPeer(
+    requesterId: string,
+    replierId: string,
+    envelopeId?: string,
+  ): void {
+    const sends = this.pending.get(requesterId);
     if (!sends) return;
-    const remaining = sends.filter((s) => s.toLaneId !== receiverId);
-    if (remaining.length === 0) this.pending.delete(fromLaneId);
-    else this.pending.set(fromLaneId, remaining);
-
-    const senderInfo = this.host.getLane(fromLaneId);
-    if (senderInfo?.status === 'awaiting_peer' && remaining.length === 0) {
-      // The reply isn't drained into fromLaneId yet — it goes into fromLaneId's
-      // *inbox*. The lane:status → idle drain step will then pick it up.
-      this.host.setLaneStatus(fromLaneId, 'idle');
-    }
+    const remaining = sends.filter((s) => {
+      if (s.toLaneId !== replierId) return true;
+      if (!envelopeId) return false;
+      return s.envelopeId !== envelopeId && s.mentionPacketId !== envelopeId;
+    });
+    if (remaining.length === 0) this.pending.delete(requesterId);
+    else this.pending.set(requesterId, remaining);
+    this.recomputePeerStatus(requesterId);
   }
 
   private onBus(event: LaneBusEvent): void {
@@ -595,10 +676,10 @@ export class InterLaneCoordinator {
         rowMessage,
         env.done,
       );
-      // The reply satisfies the sender's pending entry. (Skipped for review_request:
-      // the requester remains pending until the actual review_reply arrives.)
-      if (env.kind !== 'review_request') {
-        this.clearPendingFromPeer(laneId, env.fromLaneId);
+      // Clear requester pending only on inbound replies — not when draining an
+      // outbound consult the target received (spec 115/116).
+      if (!isInboundRequestEnvelope(env)) {
+        this.clearPendingFromPeer(laneId, env.fromLaneId, env.mentionPacketId);
       }
     }
     if (drainedHarnessNotice) {
@@ -622,14 +703,20 @@ export class InterLaneCoordinator {
         parts.push(env.message);
         continue;
       }
-      if (env.kind === 'review_request') {
-        // Review request: message is the pre-composed reviewer prompt already.
+      if (env.kind === 'review_request' || env.kind === 'mention_request') {
         parts.push(env.message);
         continue;
       }
       const sender = this.host.getLane(env.fromLaneId);
       const senderName = sender?.displayName ?? env.fromLaneId;
-      parts.push(`[inter-lane] From ${senderName} (id: ${env.id}):\n\n${env.message}`);
+      if (env.mentionPacketId) {
+        parts.push(
+          `[mention reply] From ${senderName}:\n\n${env.message}\n\n` +
+            '(Other mentions may still reply separately.)',
+        );
+      } else {
+        parts.push(`[inter-lane] From ${senderName} (id: ${env.id}):\n\n${env.message}`);
+      }
       if (env.done) {
         parts.push(
           `[inter-lane] ${senderName} closed the conversation (done:true). ` +
