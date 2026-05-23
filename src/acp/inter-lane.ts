@@ -29,7 +29,8 @@ export type DeliveryResult =
         | 'unknown_lane'
         | 'unknown_sender'
         | 'lane_stopped'
-        | 'conversation_cancelled';
+        | 'conversation_cancelled'
+        | 'peer_in_flight';
     };
 
 export type ReviewDeliveryResult =
@@ -111,7 +112,7 @@ export function canDrainInbound(status: HarnessLaneStatus): boolean {
 function shouldTrackPending(env: InterLaneEnvelope): boolean {
   if (env.done || env.fromLaneId === '__harness__') return false;
   if (env.kind === 'review_request' || env.kind === 'mention_request') return true;
-  return !env.done;
+  return true;
 }
 
 function isInboundRequestEnvelope(env: InterLaneEnvelope): boolean {
@@ -196,6 +197,9 @@ export class InterLaneCoordinator {
     // until the peer acknowledges the cancellation.
     if (this.cancelledPairs.has(this.pairKey(env.toLaneId, env.fromLaneId))) {
       return { delivered: false, reason: 'conversation_cancelled' };
+    }
+    if (shouldTrackPending(env) && this.hasPendingTo(env.fromLaneId, env.toLaneId)) {
+      return { delivered: false, reason: 'peer_in_flight' };
     }
 
     this.inbox(env.toLaneId).push(env);
@@ -322,10 +326,6 @@ export class InterLaneCoordinator {
     if (reviewerAssigned === payload.packetId) {
       this.assignedReviewPackets.delete(payload.fromLaneId);
     }
-    // payload.fromLaneId is the reviewer (the one replying); payload.toLaneId
-    // is the requester whose pending entry targets the reviewer. The helper
-    // reads `pending[fromLaneId]` and filters entries with `toLaneId ===
-    // receiverId`, so the arguments are (reviewer, requester) here.
     this.clearPendingFromPeer(payload.toLaneId, payload.fromLaneId, payload.packetId);
 
     if (this.host.appendReviewCard) {
@@ -341,7 +341,20 @@ export class InterLaneCoordinator {
       );
     }
     if (!payload.interruptedReason) {
-      this.host.enqueueSystemPrompt(payload.toLaneId, this.composeReviewReplyPrompt(payload));
+      // Queue inject like peer replies so a busy requester (soft awaiting) still
+      // receives the prompt after its current turn ends.
+      this.inbox(payload.toLaneId).push({
+        id: `review-inject-${payload.packetId}`,
+        fromLaneId: '__harness__',
+        toLaneId: payload.toLaneId,
+        message: this.composeReviewReplyPrompt(payload),
+        done: true,
+        sentAt: payload.sentAt,
+        harnessId: '__harness__',
+      });
+      if (canDrainInbound(requester.status)) {
+        this.drain(payload.toLaneId);
+      }
     }
     this.recomputePeerStatus(payload.toLaneId);
     return { delivered: true };
@@ -597,6 +610,11 @@ export class InterLaneCoordinator {
     return inbox;
   }
 
+  private hasPendingTo(senderId: string, toLaneId: string): boolean {
+    const sends = this.pending.get(senderId);
+    return sends?.some((s) => s.toLaneId === toLaneId) ?? false;
+  }
+
   private trackPending(
     senderId: string,
     envelopeId: string,
@@ -617,11 +635,17 @@ export class InterLaneCoordinator {
   ): void {
     const sends = this.pending.get(requesterId);
     if (!sends) return;
-    const remaining = sends.filter((s) => {
-      if (s.toLaneId !== replierId) return true;
-      if (!envelopeId) return false;
-      return s.envelopeId !== envelopeId && s.mentionPacketId !== envelopeId;
-    });
+    let remaining: PendingSend[];
+    if (!envelopeId) {
+      const idx = sends.findIndex((s) => s.toLaneId === replierId);
+      if (idx === -1) return;
+      remaining = sends.filter((_, i) => i !== idx);
+    } else {
+      remaining = sends.filter((s) => {
+        if (s.toLaneId !== replierId) return true;
+        return s.envelopeId !== envelopeId && s.mentionPacketId !== envelopeId;
+      });
+    }
     if (remaining.length === 0) this.pending.delete(requesterId);
     else this.pending.set(requesterId, remaining);
     this.recomputePeerStatus(requesterId);
@@ -630,7 +654,7 @@ export class InterLaneCoordinator {
   private onBus(event: LaneBusEvent): void {
     if (event.type === 'lane:status') {
       const { laneId, next } = event.payload;
-      if (next === 'idle') this.drain(laneId);
+      if (canDrainInbound(next)) this.drain(laneId);
     } else if (event.type === 'lane:closed') {
       this.onLaneClosed(event.payload.laneId, event.payload.displayName);
     }

@@ -39,7 +39,15 @@ export function parseMentionFanOut(
     if (!matched) {
       const rest = text.slice(cursor);
       const loose = rest.match(/^@([A-Za-z][A-Za-z0-9_-]*)/);
-      return { kind: 'unknown_lane', token: loose ? `@${loose[1]}` : '@?' };
+      const token = loose?.[1];
+      if (!token) return { kind: 'unknown_lane', token: '@?' };
+      const ci = rosterDisplayNames.filter((n) => n.toLowerCase() === token.toLowerCase());
+      if (ci.length === 1) matched = ci[0];
+      else return { kind: 'unknown_lane', token: `@${token}` };
+    } else {
+      const ci = rosterDisplayNames.filter((n) => n.toLowerCase() === matched!.toLowerCase());
+      if (ci.length !== 1) return { kind: 'unknown_lane', token: `@${matched}` };
+      matched = ci[0];
     }
     if (!roster.has(matched)) {
       return { kind: 'unknown_lane', token: `@${matched}` };

@@ -76,4 +76,28 @@ describe('InterLaneCoordinator peer pending', () => {
     expect(coordinator.pendingPeersFor('a')).toHaveLength(0);
     expect(host.prompts.some((p) => p.laneId === 'a')).toBe(true);
   });
+
+  it('rejects a second pending send to the same peer', () => {
+    const host = peerHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    const first = coordinator.deliver({
+      id: 'env-1',
+      fromLaneId: 'a',
+      toLaneId: 'b',
+      message: 'first',
+      done: false,
+      sentAt: 1,
+    });
+    expect(first.delivered).toBe(true);
+    const second = coordinator.deliver({
+      id: 'env-2',
+      fromLaneId: 'a',
+      toLaneId: 'b',
+      message: 'second',
+      done: false,
+      sentAt: 2,
+    });
+    expect(second).toEqual({ delivered: false, reason: 'peer_in_flight' });
+    expect(coordinator.pendingPeersFor('a')).toHaveLength(1);
+  });
 });

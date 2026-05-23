@@ -18,4 +18,20 @@ describe('parseMentionFanOut', () => {
     const r = parseMentionFanOut('@Cursor-1 alone', 'Cursor-1', roster);
     expect(r).toEqual({ kind: 'self_only' });
   });
+
+  it('accepts roster display names case-insensitively', () => {
+    const r = parseMentionFanOut('@claude-1 ping', 'Cursor-1', roster);
+    expect(r).toEqual({ targets: ['Claude-1'], body: 'ping' });
+  });
+
+  it('rejects ambiguous case-insensitive roster collision', () => {
+    const ambiguous = ['Cursor-1', 'Claude-1', 'claude-1'];
+    const r = parseMentionFanOut('@claude-1 ping', 'Cursor-1', ambiguous);
+    expect(r).toEqual({ kind: 'unknown_lane', token: '@claude-1' });
+  });
+
+  it('rejects loose token with no roster match', () => {
+    const r = parseMentionFanOut('@nosuch hello', 'Cursor-1', roster);
+    expect(r).toEqual({ kind: 'unknown_lane', token: '@nosuch' });
+  });
 });

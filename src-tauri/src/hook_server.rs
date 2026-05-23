@@ -692,7 +692,13 @@ async fn peer_send(
             .get("reason")
             .and_then(|v| v.as_str())
             .unwrap_or("delivery_failed");
-        Err(format!("peer_send failed: {reason}"))
+        let message = if reason == "peer_in_flight" {
+            "peer_send failed: one outstanding message per target lane; wait for their reply before sending again"
+                .to_string()
+        } else {
+            format!("peer_send failed: {reason}")
+        };
+        Err(message)
     }
 }
 
@@ -1258,7 +1264,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "peer_send",
-            "description": "Send one message to another lane in this harness (peer review / consult). Async — recipient processes it on its next idle turn. After calling this tool, end your turn; the reply (if any) arrives as a new user message. Leave `done` unset (false) when initiating a request, even for a single-round consult — `done:true` silences the recipient and should only be used to close the conversation AFTER you have received their reply. Use only when the user explicitly asks you to ask, consult, or peer with another lane — never proactively.",
+            "description": "Send one message to another lane in this harness (peer review / consult). Async — recipient processes it on its next idle turn. At most one outstanding message per target lane: wait for their reply (or cancel via #cancel) before peer_send to the same target again; a second send returns peer_in_flight. After calling this tool, end your turn; the reply (if any) arrives as a new user message. Leave `done` unset (false) when initiating a request, even for a single-round consult — `done:true` silences the recipient and should only be used to close the conversation AFTER you have received their reply. Use only when the user explicitly asks you to ask, consult, or peer with another lane — never proactively.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

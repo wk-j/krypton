@@ -670,11 +670,21 @@ export class AcpHarnessView implements ContentView {
       this.harnessMemoryId ?? undefined,
     );
     this.setDraft(lane, '', 0);
+    if (result.delivered.length === 0) {
+      const why = result.failed.map((f) => `${f.displayName} (${f.reason})`).join(', ');
+      this.flashChip(`mention failed: ${why || 'no targets'}`);
+      this.render();
+      return true;
+    }
+    if (result.failed.length > 0) {
+      const why = result.failed.map((f) => `${f.displayName} (${f.reason})`).join(', ');
+      this.flashChip(`mention partial: failed ${why}`);
+    }
     const preview = parsed.body.length > 80 ? `${parsed.body.slice(0, 80)}…` : parsed.body;
     this.appendTranscript(
       lane,
       'system',
-      `mention → ${result.delivered.join(', ')}${result.failed.length ? ` · failed: ${result.failed.map((f) => f.displayName).join(', ')}` : ''}\n${preview}`,
+      `mention → ${result.delivered.join(', ')}${result.failed.length ? ` · failed: ${result.failed.map((f) => `${f.displayName} (${f.reason})`).join(', ')}` : ''}\n${preview}`,
     );
     if (this.coordinator.pendingPeersFor(lane.id).length > 0) {
       this.setLaneStatus(lane, 'awaiting_peer');
