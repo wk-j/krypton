@@ -4,6 +4,7 @@
 > Date: 2026-05-22
 > Milestone: ACP harness — performance hardening
 > Builds on: Spec 94 (render batching + caching), Spec 103 (tail-window rendering)
+> Amended (assistant kind only) by: Spec 117 — assistant rows now use optimistic streaming-markdown rendering instead of plain-until-seal. Thought / user rows still follow §1 of this spec.
 
 ## Problem
 

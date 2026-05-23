@@ -30,7 +30,8 @@
     "marked": "^17.0.5",
     "marked-highlight": "^2.2.3",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "streaming-markdown": "^0.2.15"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",

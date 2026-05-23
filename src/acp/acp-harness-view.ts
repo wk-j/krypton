@@ -6,6 +6,7 @@ import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
+import * as smd from 'streaming-markdown';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { AcpClient } from './client';
@@ -98,7 +99,11 @@ interface HarnessTranscriptItem {
   // Spec 114 rev 4: append-only plain streaming. `streamPlainLength` is how
   // many characters of `text` are already in the body's single TextNode;
   // markdown is deferred until seal (no mid-stream plain↔HTML swap).
+  // Spec 117 supersedes this for `kind === 'assistant'` — see streamingMarkdownWritten.
   streamPlainLength?: number;
+  // Spec 117: chars of `item.text` already fed into the lane's streaming-markdown
+  // parser. Transient; cleared by sealStreaming. Only used for assistant rows.
+  streamingMarkdownWritten?: number;
   pretextSource?: string;
   pretextWidth?: number;
   pretextFont?: string;
@@ -324,6 +329,12 @@ interface HarnessLane {
    * an active tool row out of the transcript.
    */
   activeToolCount: number;
+  // Spec 117: streaming-markdown parser bound to the active assistant row's
+  // body. Null between turns. Only one streaming assistant row per lane at a
+  // time (matches currentAssistantId).
+  streamingMarkdownParser: smd.Parser | null;
+  streamingMarkdownBody: HTMLElement | null;
+  streamingMarkdownItemId: string | null;
 }
 
 interface TranscriptScrollAnchor {
@@ -426,6 +437,9 @@ const LANE_DEFAULTS = {
   reviewedThrough: 0,
   reviewReplyAttemptsThisTurn: new Set<string>(),
   activeToolCount: 0,
+  streamingMarkdownParser: null,
+  streamingMarkdownBody: null,
+  streamingMarkdownItemId: null,
 };
 
 const md = new Marked(
@@ -1441,6 +1455,12 @@ export class AcpHarnessView implements ContentView {
     for (const lane of this.lanes) {
       if (lane.client) void lane.client.dispose();
       lane.client = null;
+      // Spec 117: null streaming-markdown fields without calling parser_end —
+      // the body may be detached and parser_end would flush tokens into a
+      // soon-GC'd renderer.
+      lane.streamingMarkdownParser = null;
+      lane.streamingMarkdownBody = null;
+      lane.streamingMarkdownItemId = null;
     }
     if (this.memoryUnlisten) {
       this.memoryUnlisten();
@@ -3077,6 +3097,21 @@ export class AcpHarnessView implements ContentView {
       lane.seenTranscriptIds.add(HIDDEN_INDICATOR_ID);
     }
     for (let i = start; i < total; i++) itemsToRender.push(lane.transcript[i]);
+    // Spec 117: tail-window invariant. The streaming assistant row must be in
+    // itemsToRender while the parser is bound. If it ever falls out (e.g. a
+    // future spec inserts rows after a still-current assistant such that the
+    // window slides past it), tear down the parser to avoid mutating an
+    // orphaned subtree. Dev-build warning only.
+    if (
+      lane.streamingMarkdownParser !== null &&
+      lane.streamingMarkdownItemId !== null &&
+      !itemsToRender.some((entry) => entry.id === lane.streamingMarkdownItemId)
+    ) {
+      console.warn('[spec117] streaming row outside tail window; tearing down parser');
+      lane.streamingMarkdownParser = null;
+      lane.streamingMarkdownBody = null;
+      lane.streamingMarkdownItemId = null;
+    }
     let previous: ChildNode | null = null;
     for (const item of itemsToRender) {
       expected.add(item.id);
@@ -3103,7 +3138,13 @@ export class AcpHarnessView implements ContentView {
       ) {
         const body = current.querySelector<HTMLElement>('.acp-harness__msg-body');
         if (body) {
-          updateStreamingTextBody(body, item);
+          // Spec 117: assistant rows use the streaming-markdown parser; thought
+          // and user rows keep the Spec 114 plain-text appendData path.
+          if (item.kind === 'assistant') {
+            updateStreamingAssistantMarkdownBody(body, item, lane);
+          } else {
+            updateStreamingTextBody(body, item);
+          }
           current.dataset.renderSignature = 'stream';
           lane.seenTranscriptIds.add(item.id);
           previous = current;
@@ -3117,7 +3158,7 @@ export class AcpHarnessView implements ContentView {
         if (current.dataset.renderSignature === signature) {
           previous = current;
         } else {
-          const next = renderTranscriptItem(item, false, streaming);
+          const next = renderTranscriptItem(item, false, streaming, lane);
           if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
           if (streaming) {
             current.className = next.className;
@@ -3130,7 +3171,7 @@ export class AcpHarnessView implements ContentView {
           }
         }
       } else {
-        const next = renderTranscriptItem(item, isNew, streaming);
+        const next = renderTranscriptItem(item, isNew, streaming, lane);
         if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
         if (previous?.nextSibling) body.insertBefore(next, previous.nextSibling);
         else body.appendChild(next);
@@ -3926,7 +3967,7 @@ export class AcpHarnessView implements ContentView {
 
   private sealStreaming(lane: HarnessLane): void {
     // Spec 114: capture the assistant id BEFORE nulling so we can find the
-    // row that was just streaming and force a final markdown reparse.
+    // row that was just streaming.
     const assistantId = lane.currentAssistantId;
     lane.currentUserId = null;
     lane.currentAssistantId = null;
@@ -3934,15 +3975,86 @@ export class AcpHarnessView implements ContentView {
     if (assistantId) {
       const item = lane.transcript.find((entry) => entry.id === assistantId);
       if (item) {
-        // Clearing markdownSource forces a single markdown reparse on the
-        // next full render after seal (no mid-stream marked swap).
-        item.markdownSource = undefined;
+        // Spec 117: seal assistant rows through the streaming-markdown parser
+        // (branch A) or via an offscreen capture if this lane streamed entirely
+        // in the background and never created a parser (branch B). Either way,
+        // populate the markdownSource/markdownHtml cache so future renders skip
+        // marked.parse for this row.
+        this.sealAssistantStreamingMarkdown(lane, item);
         item.streamPlainLength = undefined;
+        item.streamingMarkdownWritten = undefined;
       }
     }
     // Guarantee a final render even on terminal paths that don't append
     // a follow-up item (no-ops on non-active lanes — pre-existing).
     this.scheduleLaneRender(lane);
+  }
+
+  /**
+   * Spec 117 seal path. Drains any residual delta into the streaming-markdown
+   * parser, flushes via parser_end, captures the rendered HTML into the row's
+   * cache, and stabilises the wrapper's renderSignature so the next pass
+   * through renderActiveTranscript() short-circuits to the no-op branch.
+   *
+   * Branch A: lane.streamingMarkdownParser exists (lane was foreground at some
+   * point during the turn). Uses the parser-owned body (may be detached).
+   *
+   * Branch B: no parser ever existed (purely background stream). Builds an
+   * offscreen parser, parses item.text in one shot, captures innerHTML.
+   */
+  private sealAssistantStreamingMarkdown(lane: HarnessLane, item: HarnessTranscriptItem): void {
+    if (
+      lane.streamingMarkdownParser !== null &&
+      lane.streamingMarkdownBody !== null &&
+      lane.streamingMarkdownItemId === item.id
+    ) {
+      const body = lane.streamingMarkdownBody;
+      const parser = lane.streamingMarkdownParser;
+      const written = item.streamingMarkdownWritten ?? 0;
+      // Seal-drain: write any residual delta that accumulated between the
+      // last RAF tick and now (e.g. final ACP chunk + stop event in the same
+      // task, or background lane whose RAF was skipped).
+      if (item.text.length > written) {
+        try {
+          smd.parser_write(parser, item.text.slice(written));
+        } catch (e) {
+          console.warn('[spec117] parser_write during seal failed', e);
+        }
+        item.streamingMarkdownWritten = item.text.length;
+      }
+      try {
+        smd.parser_end(parser);
+      } catch (e) {
+        console.warn('[spec117] parser_end during seal failed', e);
+      }
+      item.markdownHtml = body.innerHTML;
+      item.markdownSource = item.text;
+      // Stabilise signature so the next renderActiveTranscript() pass hits the
+      // no-op branch instead of rebuilding via marked.parse. Only meaningful
+      // when the wrapper is in the live transcript DOM (active lane); for
+      // background lanes the cache populated above is the protection.
+      const wrapper = body.parentElement;
+      if (wrapper && wrapper.dataset.msgId === item.id) {
+        wrapper.dataset.renderSignature = transcriptRenderSignature(item, false);
+      }
+    } else {
+      // Branch B — cold-cache offscreen capture for background-only streams.
+      const offscreen = document.createElement('div');
+      const renderer = makeSafeRenderer(offscreen);
+      const parser = smd.parser(renderer);
+      try {
+        smd.parser_write(parser, item.text);
+        smd.parser_end(parser);
+        item.markdownHtml = offscreen.innerHTML;
+        item.markdownSource = item.text;
+      } catch (e) {
+        console.warn('[spec117] offscreen seal capture failed', e);
+        // Leave cache unset; cold-load path will use marked as a fallback.
+      }
+    }
+    lane.streamingMarkdownParser = null;
+    lane.streamingMarkdownBody = null;
+    lane.streamingMarkdownItemId = null;
   }
 
   private renderTool(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
@@ -4966,8 +5078,130 @@ function assertActiveToolCount(lane: HarnessLane): void {
   }
 }
 
+// Spec 117 sanitisation. streaming-markdown@0.2.15 has no HTML tag tokens
+// (raw HTML in markdown source is written via document.createTextNode in the
+// default renderer, which is XSS-safe), so the only attack surface is URL
+// schemes on LINK / RAW_URL / IMAGE attrs. We allowlist common schemes for
+// HREF/SRC; everything else falls back to '#' (href) or drops the attribute
+// (src). Normalisation strips leading/trailing whitespace and ASCII control
+// chars (0x00-0x1F, 0x7F) — these are the classic bypass vectors.
+const CTRL_RE = /[\x00-\x1F\x7F]/g;
+
+function normalizeUrl(value: string): string {
+  return value.replace(CTRL_RE, '').trim();
+}
+
+function isSafeRelative(value: string): boolean {
+  if (value === '') return true;
+  if (value.startsWith('#') || value.startsWith('/') || value.startsWith('./') || value.startsWith('../')) {
+    return true;
+  }
+  return false;
+}
+
+function sanitizeHref(value: string): string {
+  const v = normalizeUrl(value);
+  if (isSafeRelative(v)) return v;
+  const colon = v.indexOf(':');
+  if (colon === -1) return v; // bare token, treat as relative
+  const scheme = v.slice(0, colon).toLowerCase();
+  if (scheme === 'http' || scheme === 'https' || scheme === 'mailto') return v;
+  return '#';
+}
+
+function sanitizeSrc(value: string): string | null {
+  const v = normalizeUrl(value);
+  if (isSafeRelative(v)) return v;
+  const colon = v.indexOf(':');
+  if (colon === -1) return v;
+  const scheme = v.slice(0, colon).toLowerCase();
+  if (scheme === 'http' || scheme === 'https') return v;
+  return null;
+}
+
+function makeSafeRenderer(root: HTMLElement): smd.Default_Renderer {
+  const base = smd.default_renderer(root);
+  return {
+    data: base.data,
+    add_token: base.add_token,
+    end_token: base.end_token,
+    add_text: base.add_text,
+    set_attr: (data, type, value) => {
+      if (type === smd.HREF) {
+        base.set_attr(data, type, sanitizeHref(value));
+      } else if (type === smd.SRC) {
+        const safe = sanitizeSrc(value);
+        if (safe !== null) base.set_attr(data, type, safe);
+      } else {
+        base.set_attr(data, type, value);
+      }
+    },
+  };
+}
+
+/** Spec 117 shared init: wipe body, set class, install fresh parser/renderer,
+ *  reset lane fields. Called from renderTranscriptItem (first paint) and from
+ *  updateStreamingAssistantMarkdownBody (body rebind / item swap / backtrack). */
+function initLaneStreamingMarkdown(
+  lane: HarnessLane,
+  item: HarnessTranscriptItem,
+  body: HTMLElement,
+): void {
+  body.replaceChildren();
+  body.classList.remove('acp-harness__msg-body--stream-plain');
+  // Apply both --markdown (for typography rules in acp-harness.css) and
+  // --stream-markdown (state indicator for tests / future styling). Avoids a
+  // runtime class swap at seal time.
+  body.classList.add('acp-harness__msg-body--markdown');
+  body.classList.add('acp-harness__msg-body--stream-markdown');
+  delete body.dataset.pretext;
+  delete body.dataset.rawText;
+  delete body.dataset.rowId;
+  const renderer = makeSafeRenderer(body);
+  lane.streamingMarkdownParser = smd.parser(renderer);
+  lane.streamingMarkdownBody = body;
+  lane.streamingMarkdownItemId = item.id;
+  item.streamingMarkdownWritten = 0;
+  item.streamPlainLength = undefined;
+}
+
+/** Spec 117 fast-path body update for the active assistant streaming row.
+ *  Writes only the delta since the last parser_write; honours the
+ *  RAF-only-write invariant (parser_write is called only from this helper
+ *  and from sealAssistantStreamingMarkdown, never from appendStreaming). */
+function updateStreamingAssistantMarkdownBody(
+  body: HTMLElement,
+  item: HarnessTranscriptItem,
+  lane: HarnessLane,
+): void {
+  const written = item.streamingMarkdownWritten ?? 0;
+  // Body rebind, item swap, or first bind via the fast path.
+  if (
+    lane.streamingMarkdownParser === null ||
+    lane.streamingMarkdownBody !== body ||
+    lane.streamingMarkdownItemId !== item.id
+  ) {
+    initLaneStreamingMarkdown(lane, item, body);
+  } else if (item.text.length < written) {
+    // Backtrack — rare; rebuild parser.
+    console.warn('[spec117] streaming text backtracked; rebuilding parser');
+    initLaneStreamingMarkdown(lane, item, body);
+  }
+  const startedAt = item.streamingMarkdownWritten ?? 0;
+  if (item.text.length > startedAt) {
+    try {
+      smd.parser_write(lane.streamingMarkdownParser!, item.text.slice(startedAt));
+    } catch (e) {
+      console.warn('[spec117] parser_write failed', e);
+    }
+    item.streamingMarkdownWritten = item.text.length;
+  }
+}
+
 // Spec 114 rev 4: append-only update for streaming assistant / thought /
 // user rows. One TextNode grows via appendData; markdown waits for seal.
+// Spec 117: assistant rows now use updateStreamingAssistantMarkdownBody; this
+// helper still serves thought / user streaming rows.
 function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem): void {
   if (!body.classList.contains('acp-harness__msg-body--stream-plain')) {
     body.classList.remove('acp-harness__msg-body--markdown');
@@ -4997,7 +5231,7 @@ function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem)
   }
 }
 
-function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, streaming: boolean): HTMLElement {
+function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, streaming: boolean, lane: HarnessLane | null): HTMLElement {
   const el = document.createElement('div');
   el.className =
     `acp-harness__msg acp-harness__msg--${item.kind}` +
@@ -5012,10 +5246,19 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   const body = document.createElement('div');
   body.className = 'acp-harness__msg-body';
   if (item.kind === 'assistant') {
-    if (streaming) {
-      body.classList.add('acp-harness__msg-body--stream-plain');
-      body.appendChild(document.createTextNode(item.text));
-      item.streamPlainLength = item.text.length;
+    if (streaming && lane) {
+      // Spec 117: initialise the lane's streaming-markdown parser bound to this
+      // body and seed it with the current item.text. The fast path in
+      // renderActiveTranscript() takes over from the second chunk onward.
+      initLaneStreamingMarkdown(lane, item, body);
+      if (item.text.length > 0) {
+        try {
+          smd.parser_write(lane.streamingMarkdownParser!, item.text);
+        } catch (e) {
+          console.warn('[spec117] parser_write during first render failed', e);
+        }
+        item.streamingMarkdownWritten = item.text.length;
+      }
     } else {
       body.classList.add('acp-harness__msg-body--markdown');
       if (item.markdownSource !== item.text || item.markdownHtml === undefined) {
