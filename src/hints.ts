@@ -645,9 +645,9 @@ export class HintController {
         });
         return;
       }
-      // HTML files open in the in-app webview.
+      // HTML files open in the default OS browser (in-app webview is buggy).
       if (/\.html?$/i.test(text)) {
-        void this.openHtmlInWebview(text);
+        void this.openHtmlInOsBrowser(text);
         return;
       }
       openInHelixTab(this.compositor, { path: text }).catch((err) => {
@@ -684,10 +684,10 @@ export class HintController {
     }
   }
 
-  private async openHtmlInWebview(text: string): Promise<void> {
+  private async openHtmlInOsBrowser(text: string): Promise<void> {
     try {
       if (text.startsWith('file://') || /^https?:\/\//.test(text)) {
-        await this.compositor.openWebview(text);
+        openExternalUrl(text, { external: true });
         return;
       }
       let abs = await this.compositor.expandVaultPath(text);
@@ -700,9 +700,9 @@ export class HintController {
         }
       }
       const url = 'file://' + abs.split('/').map((part) => encodeURIComponent(part)).join('/');
-      await this.compositor.openWebview(url);
+      openExternalUrl(url, { external: true });
     } catch (err) {
-      console.error('[HintController] Failed to open HTML in webview:', err);
+      console.error('[HintController] Failed to open HTML in OS browser:', err);
     }
   }
 
