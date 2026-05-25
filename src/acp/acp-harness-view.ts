@@ -5787,7 +5787,7 @@ function gitDiffLineText(line: string): string {
   if (line.startsWith('@@')) return line;
   if (line.startsWith('+++') || line.startsWith('---')) return line.slice(4);
   if (line.startsWith('+') || line.startsWith('-')) return line.slice(1);
-  return line.trimStart();
+  return line.startsWith(' ') ? line.slice(1) : line;
 }
 
 function parseGitStatusShort(text: string): Array<{ index: string; worktree: string; path: string }> {

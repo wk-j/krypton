@@ -1087,7 +1087,7 @@
   color: rgba(216, 232, 216, 0.7);
   text-overflow: ellipsis;
   text-shadow: 0 0 6px rgba(216, 232, 216, 0.08);
-  white-space: nowrap;
+  white-space: pre;
 }
 
 .acp-harness__tool-diff-line--hunk .acp-harness__tool-diff-mark,
