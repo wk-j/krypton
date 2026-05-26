@@ -37,7 +37,14 @@ import type {
   UsageInfo,
 } from './types';
 import { LaneBus } from './lane-bus';
-import { InterLaneCoordinator, type LaneHost, type PendingPeerSummary, type ReviewCardPayload } from './inter-lane';
+import {
+  InterLaneCoordinator,
+  type CoordinatorDrainContext,
+  type InterLaneRowChannel,
+  type LaneHost,
+  type PendingPeerSummary,
+  type ReviewCardPayload,
+} from './inter-lane';
 import { parseMentionFanOut } from './mention-parse';
 import {
   applyMentionSelection,
@@ -123,6 +130,8 @@ interface HarnessTranscriptItem {
   fsActivity?: FsActivityPayload;
   fsReview?: FsWriteReviewPayload;
   interLane?: InterLanePayload;
+  /** spec 120: first assistant row after coordinator drain. */
+  replyingToLaneMail?: LaneMailProvenance;
   review?: ReviewCardPayload;
 }
 
@@ -131,6 +140,14 @@ interface InterLanePayload {
   peerId: string;
   peerDisplayName: string;
   done: boolean;
+  envelopeId?: string;
+  channel?: InterLaneRowChannel;
+}
+
+interface LaneMailProvenance {
+  envelopeId: string;
+  peerDisplayName: string;
+  envelopeCount: number;
 }
 
 interface FsWriteReviewPayload {
@@ -343,6 +360,9 @@ interface HarnessLane {
   streamingMarkdownItemId: string | null;
   /** Junie native MCP overlay dir passed to `--mcp-location`. */
   junieMcpOverlayDir: string | null;
+  /** spec 120: set when drain calls enqueueSystemPrompt; cleared on turn end. */
+  pendingCoordinatorDrain: CoordinatorDrainContext | null;
+  coordinatorDrainProvenanceUsed: boolean;
 }
 
 interface TranscriptScrollAnchor {
@@ -450,6 +470,8 @@ const LANE_DEFAULTS = {
   streamingMarkdownBody: null,
   streamingMarkdownItemId: null,
   junieMcpOverlayDir: null,
+  pendingCoordinatorDrain: null,
+  coordinatorDrainProvenanceUsed: false,
 };
 
 const md = new Marked(
@@ -615,12 +637,12 @@ export class AcpHarnessView implements ContentView {
         this.setLaneStatus(l, next);
         this.scheduleLaneRender(l);
       },
-      enqueueSystemPrompt: (id, text) => {
+      enqueueSystemPrompt: (id, text, drain) => {
         const l = this.lanes.find((x) => x.id === id);
         if (!l) return;
-        void this.enqueueSystemPrompt(l, text);
+        void this.enqueueSystemPrompt(l, text, drain);
       },
-      appendInterLaneRow: (id, direction, peer, message, done) => {
+      appendInterLaneRow: (id, direction, peer, message, done, meta) => {
         const l = this.lanes.find((x) => x.id === id);
         if (!l) return;
         const item = this.appendTranscript(l, 'inter_lane', message);
@@ -629,12 +651,16 @@ export class AcpHarnessView implements ContentView {
           peerId: peer.id,
           peerDisplayName: peer.displayName,
           done,
+          envelopeId: meta?.envelopeId,
+          channel: meta?.channel,
         };
+        this.scheduleLaneRender(l);
       },
       appendSystemNotice: (id, text) => {
         const l = this.lanes.find((x) => x.id === id);
         if (!l) return;
         this.appendTranscript(l, 'system', `[inter-lane] ${text}`);
+        this.scheduleLaneRender(l);
       },
       appendReviewCard: (id, payload) => {
         const l = this.lanes.find((x) => x.id === id);
@@ -723,9 +749,15 @@ export class AcpHarnessView implements ContentView {
   }
 
   /** Inject a programmatic user-turn (no UI composer involved). */
-  private async enqueueSystemPrompt(lane: HarnessLane, text: string): Promise<void> {
+  private async enqueueSystemPrompt(
+    lane: HarnessLane,
+    text: string,
+    drain?: CoordinatorDrainContext,
+  ): Promise<void> {
     if (!lane.client) return;
     if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') return;
+    lane.pendingCoordinatorDrain = drain ?? null;
+    lane.coordinatorDrainProvenanceUsed = false;
     this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
     lane.reviewReplyAttemptsThisTurn.clear();
@@ -2248,6 +2280,8 @@ export class AcpHarnessView implements ContentView {
     lane.activeTurnStartedAt = null;
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
+    lane.pendingCoordinatorDrain = null;
+    lane.coordinatorDrainProvenanceUsed = false;
     this.updateComposerTick();
     if (stopReason !== 'end_turn' && stopReason !== 'cancelled') {
       this.appendTranscript(lane, 'system', `turn ended: ${stopReason}`);
@@ -4039,8 +4073,10 @@ export class AcpHarnessView implements ContentView {
     if (!item) {
       item = this.appendTranscript(lane, kind, '');
       if (kind === 'user') lane.currentUserId = item.id;
-      else if (kind === 'assistant') lane.currentAssistantId = item.id;
-      else lane.currentThoughtId = item.id;
+      else if (kind === 'assistant') {
+        lane.currentAssistantId = item.id;
+        applyCoordinatorProvenanceToItem(lane, item);
+      } else lane.currentThoughtId = item.id;
     }
     item.text += text;
   }
@@ -5325,6 +5361,18 @@ function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem)
   }
 }
 
+function applyCoordinatorProvenanceToItem(lane: HarnessLane, item: HarnessTranscriptItem): void {
+  if (item.kind !== 'assistant' || lane.coordinatorDrainProvenanceUsed) return;
+  const drain = lane.pendingCoordinatorDrain;
+  if (!drain?.primaryPeerDisplayName) return;
+  item.replyingToLaneMail = {
+    envelopeId: drain.envelopeIds[0] ?? '',
+    peerDisplayName: drain.primaryPeerDisplayName,
+    envelopeCount: drain.envelopeCount,
+  };
+  lane.coordinatorDrainProvenanceUsed = true;
+}
+
 function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, streaming: boolean, lane: HarnessLane | null): HTMLElement {
   const el = document.createElement('div');
   el.className =
@@ -5340,6 +5388,13 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   const body = document.createElement('div');
   body.className = 'acp-harness__msg-body';
   if (item.kind === 'assistant') {
+    if (lane) applyCoordinatorProvenanceToItem(lane, item);
+    if (item.replyingToLaneMail) {
+      const prov = document.createElement('div');
+      prov.className = 'acp-harness__lane-mail-provenance';
+      prov.textContent = formatLaneMailProvenanceLine(item.replyingToLaneMail);
+      body.appendChild(prov);
+    }
     if (streaming && lane) {
       // Spec 117: initialise the lane's streaming-markdown parser bound to this
       // body and seed it with the current item.text. The fast path in
@@ -5385,16 +5440,16 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
     if (item.fsReview.resolved) body.classList.add('acp-harness__fs-review--resolved');
     renderFsWriteReviewBody(body, item.fsReview);
   } else if (item.kind === 'inter_lane' && item.interLane) {
-    const { direction, peerDisplayName, done } = item.interLane;
-    label.textContent = direction === 'out' ? `${peerDisplayName} →` : `← ${peerDisplayName}`;
-    el.classList.add(`acp-harness__msg--peer-${direction}`);
-    if (done) el.classList.add('acp-harness__msg--peer-done');
-    body.classList.add('acp-harness__msg-body--markdown');
-    try {
-      body.innerHTML = md.parse(item.text, { async: false }) as string;
-    } catch {
-      body.textContent = item.text;
-    }
+    const { direction, done } = item.interLane;
+    label.textContent = 'mail';
+    el.classList.add('acp-harness__msg--inter_lane', `acp-harness__msg--mail-${direction}`);
+    if (done) el.classList.add('acp-harness__msg--mail-done');
+    renderLaneMailBody(body, item.interLane, item.text);
+  } else if (item.kind === 'system' && item.text.startsWith('[inter-lane]')) {
+    label.textContent = 'event';
+    el.classList.add('acp-harness__msg--harness-event');
+    body.classList.add('acp-harness__harness-event-body');
+    body.textContent = item.text.replace(/^\[inter-lane\]\s*/u, '');
   } else if (item.kind === 'review' && item.review) {
     body.classList.add('acp-harness__review-card');
     renderReviewCardBody(body, item.review);
@@ -5462,6 +5517,12 @@ function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boole
   const fsReview = item.fsReview
     ? `${item.fsReview.path}\u001e${item.fsReview.oldText}\u001e${item.fsReview.newText}\u001e${item.fsReview.resolved ?? ''}`
     : '';
+  const interLane = item.interLane
+    ? `${item.interLane.direction}\u001e${item.interLane.peerId}\u001e${item.interLane.peerDisplayName}\u001e${item.interLane.done ? '1' : '0'}\u001e${item.interLane.channel ?? ''}`
+    : '';
+  const provenance = item.replyingToLaneMail
+    ? `${item.replyingToLaneMail.envelopeId}\u001e${item.replyingToLaneMail.peerDisplayName}\u001e${item.replyingToLaneMail.envelopeCount}`
+    : '';
   return [
     item.kind,
     item.status ?? '',
@@ -5472,7 +5533,51 @@ function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boole
     permission,
     fsActivity,
     fsReview,
+    interLane,
+    provenance,
   ].join('\u001d');
+}
+
+/** spec 120 — flat lane-mail body (exported for tests). */
+export function formatLaneMailMetaLine(
+  direction: 'in' | 'out',
+  peerDisplayName: string,
+  done: boolean,
+  channel?: InterLaneRowChannel,
+): string {
+  const arrow = direction === 'in' ? '←' : '→';
+  const rel = direction === 'in' ? 'from' : 'to';
+  const peer = peerDisplayName.toLowerCase();
+  let line = `${arrow} ${rel} ${peer} · lane mail`;
+  if (channel === 'mention') line += ' · mention';
+  else if (channel === 'review') line += ' · review';
+  if (done) line += ' · closed';
+  return line;
+}
+
+export function formatLaneMailProvenanceLine(provenance: LaneMailProvenance): string {
+  const peer = provenance.peerDisplayName.toLowerCase();
+  if (provenance.envelopeCount > 1) {
+    return `↩ replying to lane mail (${provenance.envelopeCount} messages) from ${peer}`;
+  }
+  return `↩ replying to lane mail from ${peer}`;
+}
+
+function renderLaneMailBody(body: HTMLElement, payload: InterLanePayload, message: string): void {
+  body.classList.add('acp-harness__msg-body--lane-mail');
+  const meta = document.createElement('span');
+  meta.className = 'acp-harness__lane-mail-meta';
+  meta.textContent = formatLaneMailMetaLine(
+    payload.direction,
+    payload.peerDisplayName,
+    payload.done,
+    payload.channel,
+  );
+  const text = document.createElement('span');
+  text.className = 'acp-harness__lane-mail-text';
+  text.textContent = message;
+  body.appendChild(meta);
+  body.appendChild(text);
 }
 
 function renderFsActivityBody(body: HTMLElement, payload: FsActivityPayload): void {
@@ -6255,7 +6360,7 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'memory': return 'mem';
     case 'shell': return 'sh';
     case 'fs_activity': return 'fs';
-    case 'inter_lane': return 'peer';
+    case 'inter_lane': return 'mail';
     case 'review': return 'rev';
     default: return kind;
   }
@@ -6572,21 +6677,21 @@ export function buildComposerPeerStrip(
     const body = awaitingPeerText(pendingPeers).replace(/ · #cancel$/, '');
     return (
       `<div class="acp-harness__composer-peer" role="status">` +
-      `⇆ ${esc(body)} · #cancel drops pending peer wait` +
+      `⇆ ${esc(body)} · #cancel drops pending lane-mail wait` +
       `</div>`
     );
   }
   if (inboxDepth > 0) {
     return (
       `<div class="acp-harness__composer-peer" role="status">` +
-      `${esc(`▼${inboxDepth} peer message${inboxDepth === 1 ? '' : 's'} queued`)}` +
+      `${esc(`▼${inboxDepth} lane mail${inboxDepth === 1 ? '' : 's'} queued`)}` +
       `</div>`
     );
   }
   if (laneStatus === 'awaiting_peer') {
     return (
       `<div class="acp-harness__composer-peer" role="status">` +
-      `${esc('awaiting peer · #cancel drops pending peer wait')}` +
+      `${esc('awaiting lane mail · #cancel drops pending wait')}` +
       `</div>`
     );
   }
@@ -6912,7 +7017,7 @@ function laneActivity(lane: HarnessLane, pendingPeers: PendingPeerSummary[] = []
 }
 
 function awaitingPeerText(pendingPeers: PendingPeerSummary[]): string {
-  if (pendingPeers.length === 0) return 'awaiting peer reply · #cancel';
+  if (pendingPeers.length === 0) return 'awaiting lane mail reply · #cancel';
   const oldest = pendingPeers.reduce((min, peer) => peer.sentAt < min.sentAt ? peer : min, pendingPeers[0]);
   const age = formatAwaitingPeerAge(Date.now() - oldest.sentAt);
   if (pendingPeers.length === 1) return `awaiting ${oldest.toDisplayName} · ${age} · #cancel`;

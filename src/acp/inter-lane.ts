@@ -64,6 +64,15 @@ export interface ReviewCardPayload {
   sentAt: number;
 }
 
+/** spec 120: metadata for assistant provenance after coordinator drain. */
+export interface CoordinatorDrainContext {
+  envelopeIds: string[];
+  primaryPeerDisplayName: string | null;
+  envelopeCount: number;
+}
+
+export type InterLaneRowChannel = 'peer' | 'mention' | 'review';
+
 export interface LaneHost {
   /** Enumerate all live (non-stopped) lanes. */
   listLanes(): LaneSummary[];
@@ -72,7 +81,7 @@ export interface LaneHost {
   /** Mutate the lane's status and emit a lane:status event. */
   setLaneStatus(laneId: string, next: HarnessLaneStatus): void;
   /** Inject a programmatic user-turn into the target lane's session. */
-  enqueueSystemPrompt(laneId: string, text: string): void;
+  enqueueSystemPrompt(laneId: string, text: string, drain?: CoordinatorDrainContext): void;
   /** Append an `inter_lane` transcript row to the lane's transcript. */
   appendInterLaneRow(
     laneId: string,
@@ -80,6 +89,7 @@ export interface LaneHost {
     peer: { id: string; displayName: string },
     message: string,
     done: boolean,
+    meta?: { envelopeId?: string; channel?: InterLaneRowChannel },
   ): void;
   /** Surface a synthesized notice (e.g. "peer cancelled") to the user. */
   appendSystemNotice(laneId: string, text: string): void;
@@ -227,6 +237,7 @@ export class InterLaneCoordinator {
         { id: env.toLaneId, displayName: recipient.displayName },
         env.message,
         env.done,
+        { envelopeId: env.id, channel: interLaneRowChannel(env) },
       );
     }
 
@@ -296,6 +307,7 @@ export class InterLaneCoordinator {
       `[review request → ${recipient.displayName}] ${packet.diffstat.length} files; ` +
         `${packet.commands.length} commands; note: ${packet.note ?? '(none)'}`,
       false,
+      { envelopeId: packet.packetId, channel: 'review' },
     );
 
     if (canDrainInbound(recipient.status)) {
@@ -719,6 +731,7 @@ export class InterLaneCoordinator {
         { id: env.fromLaneId, displayName: senderName },
         rowMessage,
         env.done,
+        { envelopeId: env.id, channel: interLaneRowChannel(env) },
       );
       // Clear requester pending only on inbound replies — not when draining an
       // outbound consult the target received (spec 115/116).
@@ -735,8 +748,17 @@ export class InterLaneCoordinator {
       }
     }
 
+    const mailEnvelopes = envelopes.filter((env) => env.fromLaneId !== '__harness__');
+    const firstMail = mailEnvelopes[0];
+    const primaryPeerDisplayName = firstMail
+      ? (this.host.getLane(firstMail.fromLaneId)?.displayName ?? firstMail.fromLaneId)
+      : null;
     const text = this.composePrompt(envelopes, recipientWasInitiator);
-    this.host.enqueueSystemPrompt(laneId, text);
+    this.host.enqueueSystemPrompt(laneId, text, {
+      envelopeIds: mailEnvelopes.map((env) => env.id),
+      primaryPeerDisplayName,
+      envelopeCount: mailEnvelopes.length,
+    });
   }
 
   private composePrompt(
@@ -824,4 +846,10 @@ export class InterLaneCoordinator {
     }
     return lines.join('\n');
   }
+}
+
+function interLaneRowChannel(env: InterLaneEnvelope): InterLaneRowChannel {
+  if (env.kind === 'mention_request') return 'mention';
+  if (env.kind === 'review_request') return 'review';
+  return 'peer';
 }

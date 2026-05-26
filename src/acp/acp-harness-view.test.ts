@@ -7,6 +7,8 @@ import {
   harnessAutoAllowToolName,
   laneAccent,
   laneAccentForLabel,
+  formatLaneMailMetaLine,
+  formatLaneMailProvenanceLine,
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
   type LanePeekSnapshot,
@@ -498,11 +500,11 @@ describe('ACP peer activity UI (spec 118)', () => {
   it('buildComposerPeerStrip emits strip for pending peer with cancel hint', () => {
     expect(buildComposerPeerStrip('awaiting_peer', [
       { toLaneId: 'b', toDisplayName: 'Claude-1', envelopeId: 'e1', sentAt: now - 60_000 },
-    ], 0)).toContain('drops pending peer wait');
+    ], 0)).toContain('drops pending lane-mail wait');
   });
 
   it('buildComposerPeerStrip emits awaiting strip with no pending peer', () => {
-    expect(buildComposerPeerStrip('awaiting_peer', [], 0)).toContain('awaiting peer');
+    expect(buildComposerPeerStrip('awaiting_peer', [], 0)).toContain('awaiting lane mail');
   });
 
   it('buildComposerPeerStrip emits inbox-only strip on an idle lane', () => {
@@ -533,5 +535,24 @@ describe('laneAccentForLabel', () => {
     // entries — otherwise laneAccent(8) wraps modulo to Codex blue.
     const slots = [1, 2, 3, 4, 5, 6, 7, 8].map(laneAccent);
     expect(new Set(slots).size).toBe(8);
+  });
+});
+
+describe('spec 120 lane mail copy', () => {
+  it('formats flat meta lines without nested chrome', () => {
+    expect(formatLaneMailMetaLine('in', 'Codex-1', false)).toBe('← from codex-1 · lane mail');
+    expect(formatLaneMailMetaLine('out', 'Claude-1', true, 'mention')).toBe(
+      '→ to claude-1 · lane mail · mention · closed',
+    );
+  });
+
+  it('formats provenance for multi-envelope drains', () => {
+    expect(
+      formatLaneMailProvenanceLine({
+        envelopeId: 'e1',
+        peerDisplayName: 'Cursor-1',
+        envelopeCount: 2,
+      }),
+    ).toBe('↩ replying to lane mail (2 messages) from cursor-1');
   });
 });

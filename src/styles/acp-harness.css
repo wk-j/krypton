@@ -395,39 +395,64 @@
   white-space: nowrap;
 }
 
-/* Spec 106 — peer (inter-lane) messages: flat body shape matches assistant.
-   Direction + peer name live in the label slot; tint and dimming come from
-   modifier classes on `.acp-harness__msg`. */
-.acp-harness__msg--inter_lane {
-  grid-template-columns: 11ch minmax(0, 1fr);
+/* Spec 120 — lane mail rows: flat body, no nested card, no left-border accent. */
+.acp-harness__msg--mail-in .acp-harness__msg-label {
+  color: rgba(184, 166, 255, 0.88);
 }
 
-.acp-harness__msg--inter_lane .acp-harness__msg-label {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 0.74em;
+.acp-harness__msg--mail-out .acp-harness__msg-label {
+  color: rgba(120, 200, 255, 0.88);
 }
 
-.acp-harness__msg--peer-in .acp-harness__msg-label {
-  color: rgba(184, 166, 255, 0.78);
+.acp-harness__msg--mail-done .acp-harness__msg-body--lane-mail {
+  opacity: 0.82;
 }
 
-.acp-harness__msg--peer-out .acp-harness__msg-label {
-  color: rgba(120, 200, 255, 0.78);
+.acp-harness__msg-body--lane-mail {
+  font-size: 0.9em;
+  color: rgba(216, 232, 216, 0.76);
+  padding: 2px 6px;
+  background: rgba(184, 166, 255, 0.035);
 }
 
-.acp-harness__msg--peer-done .acp-harness__msg-label {
-  opacity: 0.55;
+.acp-harness__msg--mail-out .acp-harness__msg-body--lane-mail {
+  background: rgba(120, 200, 255, 0.03);
 }
 
-.acp-harness__msg--peer-in .acp-harness__msg-body {
-  padding: 4px 8px;
-  background: rgba(184, 166, 255, 0.04);
+.acp-harness__lane-mail-meta {
+  display: block;
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+  color: rgba(184, 166, 255, 0.8);
+  margin-bottom: 3px;
 }
 
-.acp-harness__msg--peer-out .acp-harness__msg-body {
-  padding: 4px 8px;
-  background: rgba(120, 200, 255, 0.04);
+.acp-harness__msg--mail-out .acp-harness__lane-mail-meta {
+  color: rgba(120, 200, 255, 0.8);
+}
+
+.acp-harness__lane-mail-text {
+  display: block;
+  white-space: pre-wrap;
+  color: rgba(216, 232, 216, 0.88);
+}
+
+.acp-harness__msg--harness-event .acp-harness__msg-label {
+  color: rgba(184, 166, 255, 0.75);
+}
+
+.acp-harness__harness-event-body {
+  font-size: 0.86em;
+  color: rgba(184, 166, 255, 0.65);
+  letter-spacing: 0.02em;
+}
+
+.acp-harness__lane-mail-provenance {
+  font-size: 0.78em;
+  font-style: italic;
+  color: rgba(216, 232, 216, 0.45);
+  margin-bottom: 4px;
+  letter-spacing: 0.02em;
 }
 
 /* spec 112 — Review card */

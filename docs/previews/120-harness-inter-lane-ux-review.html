@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spec 120 — Flat lane mail (no border)</title>
+  <style>
+    :root {
+      --bg: #0a0e12;
+      --panel: #0f1419;
+      --text: rgba(216, 232, 216, 0.88);
+      --text-dim: rgba(216, 232, 216, 0.45);
+      --user: #6dd0ff;
+      --agent: #8effb0;
+      --mail-in: #b8a6ff;
+      --mail-out: #78c8ff;
+      --event: rgba(184, 166, 255, 0.65);
+      --border: rgba(109, 208, 255, 0.15);
+      --font: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+      --reject: #ff6b8b;
+      --pick: #8effb0;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px 20px 48px;
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    h1 { font-size: 1.15rem; color: var(--mail-in); margin: 0 0 6px; }
+    h2 {
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--user);
+      margin: 0 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section { max-width: 720px; margin: 0 auto 28px; }
+    .meta { color: var(--text-dim); font-size: 0.85em; margin-bottom: 16px; }
+    .meta a { color: var(--user); }
+    .lead { margin: 0 0 14px; max-width: 72ch; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 12px 14px;
+    }
+
+    .panel--reject { opacity: 0.7; border-color: rgba(255, 107, 139, 0.3); }
+    .panel--pick { border-color: rgba(142, 255, 176, 0.4); }
+
+    .panel h3 {
+      margin: 0 0 8px;
+      font-size: 0.76em;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+    }
+
+    .panel--reject h3 { color: var(--reject); }
+    .panel--pick h3 { color: var(--pick); }
+
+    .transcript { display: flex; flex-direction: column; gap: 6px; }
+
+    /* Harness rows: default transparent border (layout only) */
+    .msg {
+      display: grid;
+      grid-template-columns: 7.5ch minmax(0, 1fr);
+      gap: 6px;
+      padding: 1px 0;
+      border-left: 2px solid transparent;
+      align-items: start;
+    }
+
+    .msg-label {
+      font-size: 0.64em;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: right;
+      color: var(--text-dim);
+      line-height: 1.45;
+    }
+
+    .msg-body { min-width: 0; line-height: 1.36; }
+
+    /* user / agent keep existing border accent in real app */
+    .msg--user { border-left-color: rgba(0, 204, 255, 0.42); }
+    .msg--user .msg-label, .msg--user .msg-body { color: var(--user); }
+    .msg--agent { border-left-color: rgba(142, 255, 176, 0.35); }
+    .msg--agent .msg-label { color: var(--agent); }
+
+    .provenance {
+      font-size: 0.78em;
+      color: var(--text-dim);
+      font-style: italic;
+      margin-bottom: 4px;
+    }
+
+    /* —— rejected: colored left border on mail —— */
+    .msg--mail-bordered { border-left-color: rgba(184, 166, 255, 0.65); }
+
+    /* —— chosen: no border; typography only —— */
+    .msg--mail-in .msg-label { color: var(--mail-in); }
+    .msg--mail-out .msg-label { color: var(--mail-out); }
+
+    .body--lane-mail {
+      font-size: 0.9em;
+      color: rgba(216, 232, 216, 0.76);
+      /* optional: flat tint, no border */
+      padding: 2px 0;
+    }
+
+    .body--lane-mail.tint {
+      background: rgba(184, 166, 255, 0.035);
+      padding: 3px 6px;
+      border-radius: 1px;
+    }
+
+    .msg--mail-out .body--lane-mail.tint {
+      background: rgba(120, 200, 255, 0.03);
+    }
+
+    .lane-mail-meta {
+      display: block;
+      font-size: 0.78em;
+      letter-spacing: 0.04em;
+      color: rgba(184, 166, 255, 0.8);
+      margin-bottom: 3px;
+    }
+
+    .msg--mail-out .lane-mail-meta { color: rgba(120, 200, 255, 0.8); }
+    .lane-mail-meta .hint { color: var(--text-dim); font-style: normal; opacity: 0.85; }
+
+    .lane-mail-text {
+      display: block;
+      white-space: pre-wrap;
+      color: rgba(216, 232, 216, 0.88);
+    }
+
+    .msg--event .msg-label { color: var(--mail-in); opacity: 0.85; }
+
+    .harness-event {
+      font-size: 0.86em;
+      color: var(--event);
+      letter-spacing: 0.02em;
+    }
+
+    .note {
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: rgba(255, 209, 102, 0.06);
+      font-size: 0.84em;
+      color: rgba(255, 220, 180, 0.95);
+    }
+
+    .signals {
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none;
+      font-size: 0.88em;
+      color: var(--text-dim);
+    }
+
+    .signals li { margin: 4px 0; }
+    .signals strong { color: var(--text); font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <section>
+    <h1>Spec 120 — Lane mail (flat, no left border)</h1>
+    <p class="meta">
+      <a href="../120-harness-inter-lane-ux.md">docs/120-harness-inter-lane-ux.md</a>
+      · ไม่ซ้อน container · ไม่ใช้ border ซ้าย
+    </p>
+    <p class="lead">
+      แยก lane mail จาก agent ด้วย <strong>ป้ายคอลัมน์ + บรรทัด meta + โทนสี</strong>
+      ไม่ใช้ border ซ้าย (และไม่ใช้การ์ดซ้อน) · <code>user</code> / <code>agent</code> ในแอปจริงยังใช้ border ตามเดิม
+    </p>
+  </section>
+
+  <section>
+    <h2>ยกเลิก vs เลือก</h2>
+    <div class="grid-2">
+      <div class="panel panel--reject">
+        <h3>Border ซ้ายสีม่วง (ยกเลิก)</h3>
+        <div class="transcript">
+          <div class="msg msg--mail-bordered">
+            <div class="msg-label" style="color:var(--mail-in)">mail</div>
+            <div class="msg-body body--lane-mail">
+              <span class="lane-mail-meta">← from codex-1 <span class="hint">· lane mail</span></span>
+              <span class="lane-mail-text">ข้อความ…</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel panel--pick">
+        <h3>Typography เท่านั้น (เลือก)</h3>
+        <div class="transcript">
+          <div class="msg msg--mail-in">
+            <div class="msg-label">mail</div>
+            <div class="msg-body body--lane-mail">
+              <span class="lane-mail-meta">← from codex-1 <span class="hint">· lane mail</span></span>
+              <span class="lane-mail-text">ข้อความ…</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">ถ้าต้องการเน้นเพิ่มเล็กน้อย: tint พื้นหลังบน <code>body</code> ชั้นเดียว (ไม่มี border) — ดูด้านล่าง</p>
+  </section>
+
+  <section>
+    <h2>ชุดเต็ม (แบบที่จะ implement)</h2>
+    <div class="panel panel--pick">
+      <div class="transcript">
+        <div class="msg msg--mail-in">
+          <div class="msg-label">mail</div>
+          <div class="msg-body body--lane-mail tint">
+            <span class="lane-mail-meta">← from codex-1 <span class="hint">· lane mail</span></span>
+            <span class="lane-mail-text">ช่วย review harness ตาม spec 120</span>
+          </div>
+        </div>
+        <div class="msg msg--event">
+          <div class="msg-label">event</div>
+          <div class="msg-body harness-event">peer codex-1 cancelled</div>
+        </div>
+        <div class="msg msg--agent">
+          <div class="msg-label">agent</div>
+          <div class="msg-body">
+            <div class="provenance">↩ replying to lane mail from codex-1</div>
+            ได้ครับ จะใช้ flat meta + provenance…
+          </div>
+        </div>
+        <div class="msg msg--mail-out">
+          <div class="msg-label">mail</div>
+          <div class="msg-body body--lane-mail tint">
+            <span class="lane-mail-meta">→ to claude-1 <span class="hint">· lane mail</span></span>
+            <span class="lane-mail-text">ส่ง spec ให้แล้ว</span>
+          </div>
+        </div>
+      </div>
+      <ul class="signals">
+        <li><strong>mail</strong> — ป้ายม่วง/ฟ้า + บรรทัด meta</li>
+        <li><strong>event</strong> — ป้าย + ข้อความจาง (ไม่มี border)</li>
+        <li><strong>agent</strong> — border เขียวตามเดิม + provenance บรรทัดเดียว</li>
+        <li><strong>tint</strong> — optional 0.03–0.04 background บน body เท่านั้น</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>DOM (ไม่ซ้อน)</h2>
+    <p class="lead" style="font-size:0.88em;margin:0;font-family:var(--font);color:var(--text-dim)">
+      .acp-harness__msg.acp-harness__msg--inter_lane.acp-harness__msg--mail-in<br>
+      &nbsp;&nbsp;.acp-harness__msg-label → "mail"<br>
+      &nbsp;&nbsp;.acp-harness__msg-body.acp-harness__msg-body--lane-mail<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;span.acp-harness__lane-mail-meta<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;span.acp-harness__lane-mail-text
+    </p>
+  </section>
+
+</body>
+</html>
