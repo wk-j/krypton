@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WorkspaceFooter Prototype</title>
+<style>
+  :root {
+    --bg: #030812;
+    --panel: rgba(6, 12, 22, 0.78);
+    --panel-strong: rgba(7, 18, 30, 0.92);
+    --line: rgba(0, 212, 255, 0.28);
+    --line-soft: rgba(0, 212, 255, 0.12);
+    --cyan: #00d4ff;
+    --cyan-soft: rgba(0, 212, 255, 0.62);
+    --green: #8effb0;
+    --amber: #ffd166;
+    --pink: #ff7ad9;
+    --text: rgba(224, 242, 255, 0.92);
+    --dim: rgba(224, 242, 255, 0.54);
+    --muted: rgba(224, 242, 255, 0.32);
+    --mono: "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+    --footer-activity: rgba(0, 212, 255, 0.18);
+  }
+
+  * { box-sizing: border-box; }
+
+  html,
+  body {
+    margin: 0;
+    min-height: 100%;
+    background:
+      radial-gradient(circle at 12% 16%, rgba(0, 92, 255, 0.22), transparent 30%),
+      linear-gradient(135deg, #06101e 0%, #02050b 52%, #151827 100%);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  body {
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  .toolbar {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    right: 14px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--dim);
+    pointer-events: auto;
+  }
+
+  .toolbar__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--cyan);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .toolbar button {
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    background: rgba(0, 20, 32, 0.84);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .toolbar button[aria-pressed="true"] {
+    color: var(--green);
+    border-color: rgba(142, 255, 176, 0.5);
+  }
+
+  .stage {
+    position: fixed;
+    inset: 0;
+    padding: 58px 22px 42px;
+  }
+
+  .workspace {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border: 1px solid rgba(0, 212, 255, 0.14);
+    background:
+      linear-gradient(90deg, transparent 0, rgba(0, 212, 255, 0.04) 50%, transparent 100%),
+      rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+  }
+
+  .window {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(0, 212, 255, 0.46);
+    background: rgba(2, 8, 16, 0.86);
+    box-shadow: 0 0 18px rgba(0, 212, 255, 0.12);
+  }
+
+  .window--main {
+    left: 26px;
+    top: 26px;
+    bottom: 44px;
+    width: 61%;
+  }
+
+  .window--side-a {
+    right: 26px;
+    top: 26px;
+    width: 31%;
+    height: 42%;
+    border-color: rgba(255, 122, 217, 0.48);
+  }
+
+  .window--side-b {
+    right: 26px;
+    bottom: 44px;
+    width: 31%;
+    height: 42%;
+    border-color: rgba(142, 255, 176, 0.42);
+  }
+
+  .window__title {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    color: var(--cyan);
+    border-bottom: 1px solid var(--line-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .window__dot {
+    width: 7px;
+    height: 7px;
+    background: currentColor;
+  }
+
+  .window__body {
+    flex: 1;
+    padding: 14px;
+    color: rgba(224, 242, 255, 0.78);
+    overflow: hidden;
+  }
+
+  .line {
+    margin: 0 0 8px;
+    white-space: nowrap;
+  }
+
+  .prompt { color: var(--green); }
+  .keyword { color: var(--amber); }
+  .muted { color: var(--muted); }
+
+  .footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 0 12px;
+    border-top: 1px solid rgba(0, 212, 255, 0.32);
+    background: rgba(6, 10, 18, 0.9);
+    color: var(--text);
+    user-select: none;
+    pointer-events: none;
+    box-shadow: 0 -8px 24px rgba(0, 212, 255, 0.08);
+    overflow: hidden;
+  }
+
+  .footer::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, transparent 0%, var(--footer-activity) 42%, transparent 72%);
+    opacity: 0;
+    transform: translateX(-110%);
+  }
+
+  .footer[data-activity="pulse"]::before {
+    animation: footer-activity-sweep 700ms ease-out;
+  }
+
+  @keyframes footer-activity-sweep {
+    0% { opacity: 0; transform: translateX(-110%); }
+    20% { opacity: 0.75; }
+    100% { opacity: 0; transform: translateX(110%); }
+  }
+
+  .footer__left,
+  .footer__center,
+  .footer__right,
+  .footer__music {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .footer__left {
+    flex: 0 1 auto;
+    min-width: 190px;
+  }
+
+  .footer__center {
+    flex: 1 1 auto;
+  }
+
+  .footer__right {
+    flex: 0 1 auto;
+    justify-content: flex-end;
+    max-width: 42%;
+  }
+
+  .footer__music {
+    flex: 0 1 440px;
+    max-width: 44vw;
+  }
+
+  .segment {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--dim);
+  }
+
+  .segment--p0 {
+    color: var(--text);
+  }
+
+  .mode {
+    flex: 0 0 auto;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 7px;
+    border: 1px solid rgba(0, 212, 255, 0.38);
+    color: var(--cyan);
+    background: rgba(0, 212, 255, 0.08);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .mode--changed {
+    animation: mode-snap 360ms ease-out;
+  }
+
+  @keyframes mode-snap {
+    0% {
+      transform: translateY(5px);
+      opacity: 0;
+      box-shadow: 0 0 0 rgba(0, 212, 255, 0);
+    }
+    55% {
+      transform: translateY(0);
+      opacity: 1;
+      box-shadow: 0 0 12px rgba(0, 212, 255, 0.32);
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+      box-shadow: 0 0 0 rgba(0, 212, 255, 0);
+    }
+  }
+
+  .mode--resize,
+  .mode--dashboard {
+    color: var(--amber);
+    border-color: rgba(255, 209, 102, 0.46);
+    background: rgba(255, 209, 102, 0.08);
+  }
+
+  .mode--acp {
+    color: var(--pink);
+    border-color: rgba(255, 122, 217, 0.44);
+    background: rgba(255, 122, 217, 0.08);
+  }
+
+  .role {
+    color: var(--green);
+  }
+
+  .project {
+    color: var(--cyan-soft);
+  }
+
+  .git {
+    color: var(--amber);
+  }
+
+  .hint {
+    color: rgba(142, 255, 176, 0.72);
+  }
+
+  .hint--changed {
+    animation: hint-fade 320ms ease-out;
+  }
+
+  @keyframes hint-fade {
+    0% { opacity: 0; transform: translateX(8px); }
+    100% { opacity: 1; transform: translateX(0); }
+  }
+
+  .music-icon {
+    color: var(--green);
+    flex: 0 0 auto;
+  }
+
+  .footer[data-music="on"] .music-icon {
+    animation: music-blink 1.4s steps(2, end) infinite;
+  }
+
+  @keyframes music-blink {
+    0%, 64% { opacity: 1; }
+    65%, 100% { opacity: 0.45; }
+  }
+
+  .bars {
+    flex: 0 0 56px;
+    height: 18px;
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    align-items: end;
+    gap: 2px;
+  }
+
+  .bars span {
+    display: block;
+    min-height: 3px;
+    background: rgba(0, 212, 255, 0.72);
+    transform-origin: bottom;
+    animation: viz-bounce 900ms ease-in-out infinite;
+  }
+
+  .bars span:nth-child(2n) { animation-duration: 680ms; }
+  .bars span:nth-child(3n) { animation-duration: 760ms; }
+  .bars span:nth-child(4n) { animation-duration: 1040ms; }
+
+  @keyframes viz-bounce {
+    0%, 100% { transform: scaleY(0.62); opacity: 0.58; }
+    50% { transform: scaleY(1); opacity: 1; }
+  }
+
+  .music-track {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text);
+  }
+
+  .music-time {
+    flex: 0 0 auto;
+    color: var(--cyan-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .progress {
+    flex: 0 0 96px;
+    height: 3px;
+    background: rgba(0, 212, 255, 0.14);
+  }
+
+  .progress__fill {
+    width: 54%;
+    height: 100%;
+    background: var(--cyan);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress__fill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+    animation: progress-shimmer 1.6s linear infinite;
+  }
+
+  @keyframes progress-shimmer {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+  }
+
+  .footer[data-density="detail"] .segment--detail {
+    display: inline;
+  }
+
+  .footer[data-density="compact"] .segment--detail {
+    display: none;
+  }
+
+  .footer:not([data-music="on"]) .footer__music {
+    display: none;
+  }
+
+  .footer[data-music="on"] .footer__hint {
+    display: none;
+  }
+
+  .viewport {
+    position: fixed;
+    left: 50%;
+    bottom: 40px;
+    transform: translateX(-50%);
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  body[data-width="narrow"] .stage {
+    width: 620px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  body[data-width="narrow"] .window--side-a,
+  body[data-width="narrow"] .window--side-b {
+    display: none;
+  }
+
+  body[data-width="narrow"] .window--main {
+    width: auto;
+    right: 26px;
+  }
+
+  body[data-width="narrow"] .footer {
+    left: calc(50% - 310px);
+    right: calc(50% - 310px);
+  }
+
+  @media (max-width: 900px) {
+    .segment--p3 { display: none; }
+    .counts { display: none; }
+  }
+
+  @media (max-width: 700px) {
+    .process,
+    .footer__hint { display: none; }
+    .footer__music { max-width: 48vw; }
+  }
+
+  @media (max-width: 520px) {
+    .footer__left {
+      min-width: 0;
+      flex: 0 1 auto;
+    }
+    .role,
+    .segment--p2,
+    .segment--p3,
+    .footer__hint { display: none; }
+    .footer__right {
+      display: flex;
+      min-width: 0;
+      max-width: 50%;
+    }
+    .footer__music {
+      max-width: 100%;
+      flex-basis: 100%;
+    }
+    .bars,
+    .progress {
+      display: none;
+    }
+    .project { max-width: 42vw; }
+  }
+
+  body[data-width="narrow"] .segment--p3,
+  body[data-width="narrow"] .counts {
+    display: none;
+  }
+
+  body[data-width="narrow"] .process {
+    display: none;
+  }
+
+  body[data-width="narrow"] .footer__music {
+    max-width: 45%;
+  }
+
+  body[data-animate="off"] .footer::before,
+  body[data-animate="off"] .mode,
+  body[data-animate="off"] .hint,
+  body[data-animate="off"] .music-icon,
+  body[data-animate="off"] .bars span,
+  body[data-animate="off"] .progress__fill::after {
+    animation: none !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .footer::before,
+    .mode,
+    .hint,
+    .music-icon,
+    .bars span,
+    .progress__fill::after {
+      animation: none !important;
+    }
+  }
+</style>
+</head>
+<body data-width="wide" data-animate="on">
+  <div class="toolbar">
+    <div class="toolbar__title">WorkspaceFooter prototype · one 28px rail, music as a segment</div>
+    <button id="densityBtn" type="button" aria-pressed="false">detail</button>
+    <button id="musicBtn" type="button" aria-pressed="true">music</button>
+    <button id="modeBtn" type="button" aria-pressed="false">mode</button>
+    <button id="activityBtn" type="button" aria-pressed="false">activity</button>
+    <button id="animBtn" type="button" aria-pressed="true">motion</button>
+    <button id="widthBtn" type="button" aria-pressed="false">narrow</button>
+  </div>
+
+  <main class="stage" aria-label="simulated Krypton workspace">
+    <section class="workspace">
+      <div class="window window--main">
+        <div class="window__title"><span class="window__dot"></span> session_03 <span class="muted">~/Source/krypton</span></div>
+        <div class="window__body">
+          <p class="line"><span class="prompt">Codex-1</span> : implement shared footer rail</p>
+          <p class="line">read <span class="keyword">src/music.ts</span> and promote mini-player into footer segment</p>
+          <p class="line muted">footer should not become a second toolbar; it reports state and hints</p>
+          <p class="line">NORMAL | terminal | project | git | process | activity | music</p>
+        </div>
+      </div>
+      <div class="window window--side-a">
+        <div class="window__title"><span class="window__dot"></span> acp_harness</div>
+        <div class="window__body">
+          <p class="line"><span class="prompt">Claude-1</span> idle</p>
+          <p class="line"><span class="prompt">Cursor-1</span> brainstorm complete</p>
+        </div>
+      </div>
+      <div class="window window--side-b">
+        <div class="window__title"><span class="window__dot"></span> music dashboard</div>
+        <div class="window__body">
+          <p class="line">playlist loaded</p>
+          <p class="line muted">mini player becomes footer segment</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="viewport" id="viewportLabel">wide viewport</div>
+
+  <footer class="footer" id="footer" data-density="compact" data-music="on">
+    <div class="footer__left">
+      <span class="mode" id="modeChip">NORMAL</span>
+      <span class="segment segment--p0 role">terminal session_03</span>
+    </div>
+    <div class="footer__center">
+      <span class="segment segment--p1 project">~/Source/krypton</span>
+      <span class="segment segment--p1 git">master *</span>
+      <span class="segment segment--p2 counts">win 3 tab 4 pane 5</span>
+      <span class="segment segment--p2 process">zsh pid 12345</span>
+      <span class="segment segment--p3">io 1.2K/s</span>
+      <span class="segment segment--p3 segment--detail">progress 42%</span>
+    </div>
+    <div class="footer__right">
+      <span class="segment footer__hint hint">Leader v select · Cmd+O files · Cmd+Shift+G git</span>
+      <div class="footer__music" aria-label="music mini player segment">
+        <span class="music-icon">▶</span>
+        <div class="bars" aria-hidden="true">
+          <span style="height: 30%"></span>
+          <span style="height: 72%"></span>
+          <span style="height: 46%"></span>
+          <span style="height: 92%"></span>
+          <span style="height: 58%"></span>
+          <span style="height: 80%"></span>
+          <span style="height: 36%"></span>
+          <span style="height: 64%"></span>
+          <span style="height: 42%"></span>
+        </div>
+        <span class="segment music-track">mach-line-ambient-loop.mp3</span>
+        <span class="music-time">02:14 / 04:10</span>
+        <div class="progress" aria-hidden="true"><div class="progress__fill"></div></div>
+      </div>
+    </div>
+  </footer>
+
+<script>
+  const footer = document.getElementById('footer');
+  const densityBtn = document.getElementById('densityBtn');
+  const musicBtn = document.getElementById('musicBtn');
+  const modeBtn = document.getElementById('modeBtn');
+  const activityBtn = document.getElementById('activityBtn');
+  const animBtn = document.getElementById('animBtn');
+  const widthBtn = document.getElementById('widthBtn');
+  const modeChip = document.getElementById('modeChip');
+  const viewportLabel = document.getElementById('viewportLabel');
+  const hintEl = document.querySelector('.footer__hint');
+  const modes = [
+    { label: 'NORMAL', cls: '', hint: 'Leader v select · Cmd+O files · Cmd+Shift+G git' },
+    { label: 'COMPOSITOR', cls: 'mode--acp', hint: 'n new · h/j/k/l focus · ? details' },
+    { label: 'RESIZE', cls: 'mode--resize', hint: 'arrows adjust · Esc cancel' },
+    { label: 'DASHBOARD', cls: 'mode--dashboard', hint: 'Esc close' },
+  ];
+  let modeIndex = 0;
+
+  function restartAnimation(el, className) {
+    el.classList.remove(className);
+    void el.offsetWidth;
+    el.classList.add(className);
+  }
+
+  function pulseFooter() {
+    footer.dataset.activity = '';
+    void footer.offsetWidth;
+    footer.dataset.activity = 'pulse';
+    window.setTimeout(() => {
+      if (footer.dataset.activity === 'pulse') footer.dataset.activity = '';
+    }, 760);
+  }
+
+  densityBtn.addEventListener('click', () => {
+    const detail = footer.dataset.density !== 'detail';
+    footer.dataset.density = detail ? 'detail' : 'compact';
+    densityBtn.setAttribute('aria-pressed', String(detail));
+    densityBtn.textContent = detail ? 'compact' : 'detail';
+  });
+
+  musicBtn.addEventListener('click', () => {
+    const music = footer.dataset.music !== 'on';
+    footer.dataset.music = music ? 'on' : 'off';
+    musicBtn.setAttribute('aria-pressed', String(music));
+  });
+
+  modeBtn.addEventListener('click', () => {
+    modeIndex = (modeIndex + 1) % modes.length;
+    const mode = modes[modeIndex];
+    modeChip.textContent = mode.label;
+    modeChip.className = `mode ${mode.cls}`.trim();
+    restartAnimation(modeChip, 'mode--changed');
+    hintEl.textContent = mode.hint;
+    restartAnimation(hintEl, 'hint--changed');
+    pulseFooter();
+  });
+
+  activityBtn.addEventListener('click', () => {
+    pulseFooter();
+  });
+
+  animBtn.addEventListener('click', () => {
+    const enabled = document.body.dataset.animate !== 'off';
+    document.body.dataset.animate = enabled ? 'off' : 'on';
+    animBtn.setAttribute('aria-pressed', String(!enabled));
+  });
+
+  widthBtn.addEventListener('click', () => {
+    const narrow = document.body.dataset.width !== 'narrow';
+    document.body.dataset.width = narrow ? 'narrow' : 'wide';
+    widthBtn.setAttribute('aria-pressed', String(narrow));
+    viewportLabel.textContent = narrow ? 'narrow viewport simulation' : 'wide viewport';
+  });
+</script>
+</body>
+</html>
