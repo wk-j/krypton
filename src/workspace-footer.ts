@@ -124,7 +124,6 @@ export class WorkspaceFooter {
   private renderScheduled = false;
   private renderGeneration = 0;
   private focusedViewKey: string | null = null;
-  private lastActivityPulseAt = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(deps: {
@@ -162,10 +161,8 @@ export class WorkspaceFooter {
     this.root.append(this.leftEl, this.centerEl, this.rightEl);
 
     deps.inputRouter.onModeChange((mode) => {
-      const changed = this.mode !== mode;
       this.mode = mode;
       this.refresh('mode');
-      if (changed) this.restartClass(this.root, 'krypton-workspace-footer--mode-change');
     });
   }
 
@@ -182,9 +179,7 @@ export class WorkspaceFooter {
     });
     this.bus.onSignal({ kind: 'view:throughput' }, (s) => {
       if (!this.isFocusedSource(s.source)) return;
-      const prev = this.busState.throughput;
       this.busState.throughput = s.value;
-      if (prev < 1024 && s.value >= 1024) this.pulseActivity();
       this.refresh('bus');
     });
     this.bus.onSignal({ kind: 'view:metrics' }, (s) => {
@@ -199,7 +194,6 @@ export class WorkspaceFooter {
     this.bus.onSignal({ kind: 'view:progress' }, (s) => {
       if (!this.isFocusedSource(s.source)) return;
       this.busState.progress = s.value;
-      this.pulseActivity();
       this.refresh('bus');
     });
     this.bus.onSignal({ kind: 'view:exit' }, (s) => {
@@ -271,8 +265,6 @@ export class WorkspaceFooter {
     this.musicSegment.playing = playing;
     if (this.musicTimeEl) this.musicTimeEl.textContent = time;
     this.musicProgressFillEl.style.width = `${Math.max(0, Math.min(100, progressPct))}%`;
-    this.musicProgressFillEl.classList.toggle('krypton-workspace-footer__music-progress-fill--playing', playing);
-    this.musicIconEl?.classList.toggle('krypton-workspace-footer__music-icon--playing', playing);
   }
 
   refresh(_reason: FooterRefreshReason): void {
@@ -377,7 +369,6 @@ export class WorkspaceFooter {
 
     const icon = this.segment(segment.statusIcon, 'music-icon');
     this.musicIconEl = icon;
-    icon.classList.toggle('krypton-workspace-footer__music-icon--playing', segment.playing);
     const track = this.segment(segment.track, 'music-track');
     const info = this.segment(segment.info, 'music-info');
     const flags = this.segment(segment.flags, 'music-flags');
@@ -386,7 +377,6 @@ export class WorkspaceFooter {
     const progress = document.createElement('div');
     progress.className = 'krypton-workspace-footer__music-progress';
     this.musicProgressFillEl.style.width = `${Math.max(0, Math.min(100, segment.progressPct))}%`;
-    this.musicProgressFillEl.classList.toggle('krypton-workspace-footer__music-progress-fill--playing', segment.playing);
     progress.appendChild(this.musicProgressFillEl);
 
     this.musicEl.appendChild(icon);
@@ -479,17 +469,4 @@ export class WorkspaceFooter {
     }
   }
 
-  private pulseActivity(): void {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const now = performance.now();
-    if (now - this.lastActivityPulseAt < 2000) return;
-    this.lastActivityPulseAt = now;
-    this.restartClass(this.root, 'krypton-workspace-footer--activity');
-  }
-
-  private restartClass(el: HTMLElement, className: string): void {
-    el.classList.remove(className);
-    void el.offsetWidth;
-    el.classList.add(className);
-  }
 }

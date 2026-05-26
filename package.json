@@ -16,8 +16,8 @@
     "@excalidraw/excalidraw": "^0.18.1",
     "@mariozechner/pi-agent-core": "^0.65.2",
     "@mariozechner/pi-ai": "^0.65.2",
-    "@sinclair/typebox": "^0.33.0",
-    "@tauri-apps/api": "^2.10.1",
+    "@sinclair/typebox": "^0.33.22",
+    "@tauri-apps/api": "^2.11.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-unicode11": "^0.9.0",
@@ -27,18 +27,18 @@
     "diff": "^8.0.4",
     "diff2html": "^3.4.56",
     "highlight.js": "^11.11.1",
-    "marked": "^17.0.5",
-    "marked-highlight": "^2.2.3",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5",
+    "marked": "^17.0.6",
+    "marked-highlight": "^2.2.4",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "streaming-markdown": "^0.2.15"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.10.1",
-    "@types/react": "^19.2.14",
+    "@tauri-apps/cli": "^2.11.2",
+    "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
-    "vitest": "^4.1.4"
+    "vite": "^7.3.3",
+    "vitest": "^4.1.7"
   }
 }
