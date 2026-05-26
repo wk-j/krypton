@@ -75,6 +75,10 @@ import {
   loadProjectMcpServers,
   filterByCapability,
   dedupeByName,
+  gcJunieMcpOverlays,
+  removeJunieMcpOverlay,
+  writeJunieMcpOverlay,
+  JUNIE_MCP_CAPABILITIES,
 } from './mcp-bridge';
 
 type ComposerFocus = 'text' | 'transcript';
@@ -247,6 +251,8 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MEMORY_PERMISSION_SCAN_DEPTH = 8;
 const LANE_PEEK_DWELL_MS = 8_000;
 const LANE_PEEK_RECENT_MS = 5 * 60_000;
+/** spec 118 — peer peek tiers: awaiting 10, inbound 20, counterpart 30 */
+export const PEER_PREEMPT_MAX_PRIORITY = 30;
 const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
 const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
 const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_request', 'review_reply']);
@@ -335,6 +341,8 @@ interface HarnessLane {
   streamingMarkdownParser: smd.Parser | null;
   streamingMarkdownBody: HTMLElement | null;
   streamingMarkdownItemId: string | null;
+  /** Junie native MCP overlay dir passed to `--mcp-location`. */
+  junieMcpOverlayDir: string | null;
 }
 
 interface TranscriptScrollAnchor {
@@ -375,6 +383,7 @@ const BACKEND_LABELS: Record<string, string> = {
   'pi-acp': 'Pi',
   droid: 'Droid',
   cursor: 'Cursor',
+  junie: 'Junie',
 };
 
 function backendLabel(backendId: string): string {
@@ -440,6 +449,7 @@ const LANE_DEFAULTS = {
   streamingMarkdownParser: null,
   streamingMarkdownBody: null,
   streamingMarkdownItemId: null,
+  junieMcpOverlayDir: null,
 };
 
 const md = new Marked(
@@ -574,6 +584,11 @@ export class AcpHarnessView implements ContentView {
       type: 'lane:status',
       payload: { laneId: lane.id, prev, next, at: Date.now() },
     });
+    // Composer peer-strip age depends on lane status (busy / awaiting_peer)
+    // and pending peers. Refresh the 1Hz tick whenever status changes so
+    // mention / review / peer_send paths don't have to remember to call this
+    // themselves. Idempotent and cheap.
+    this.updateComposerTick();
   }
 
   private buildLaneHost(): LaneHost {
@@ -1775,6 +1790,11 @@ export class AcpHarnessView implements ContentView {
     this.harnessMemoryId = session.harnessId;
     this.harnessMemoryPort = session.hookPort;
     this.harnessMemoryWarning = null;
+    try {
+      await gcJunieMcpOverlays(session.harnessId);
+    } catch (e) {
+      console.warn('[acp-harness] gc junie mcp overlays failed:', e);
+    }
     this.memoryUnlisten = await listen<{ harnessId: string }>('acp-harness-memory-changed', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMemory();
     });
@@ -1880,9 +1900,22 @@ export class AcpHarnessView implements ContentView {
     this.render();
     let client: AcpClient | null = null;
     try {
-      // Seed with the memory server only. Project `.mcp.json` servers are
-      // injected after `initialize` so we can capability-gate http/sse.
-      client = await AcpClient.spawn(lane.backendId, this.projectDir, this.memoryServerForLane(lane));
+      let seedMcp = this.memoryServerForLane(lane);
+      let junieMcpLocation: string | null = null;
+      if (lane.backendId === 'junie') {
+        seedMcp = [];
+        if (this.harnessMemoryId) {
+          const overlayServers = await this.junieOverlayServersForLane(lane);
+          junieMcpLocation = await writeJunieMcpOverlay(
+            this.harnessMemoryId,
+            lane.displayName,
+            overlayServers,
+          );
+          lane.junieMcpOverlayDir = junieMcpLocation;
+        }
+      }
+      // Non-Junie: seed memory only; project `.mcp.json` is injected after `initialize`.
+      client = await AcpClient.spawn(lane.backendId, this.projectDir, seedMcp, junieMcpLocation);
       if (lane.spawnEpoch !== spawnEpoch) {
         await client.dispose();
         return;
@@ -1918,6 +1951,14 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
+  private async junieOverlayServersForLane(lane: HarnessLane): Promise<AcpMcpServerDescriptor[]> {
+    const memoryServers = this.memoryServerForLane(lane);
+    const projectServers = await loadProjectMcpServers(this.projectDir);
+    if (projectServers.length === 0) return memoryServers;
+    const gated = filterByCapability(projectServers, JUNIE_MCP_CAPABILITIES);
+    return dedupeByName(gated, memoryServers);
+  }
+
   private memoryServerForLane(lane: HarnessLane): AcpMcpServerDescriptor[] {
     // Pi has no MCP host — emit nothing rather than ship an unreachable URL.
     if (lane.backendId === 'pi-acp') return [];
@@ -1938,7 +1979,10 @@ export class AcpHarnessView implements ContentView {
     // ACP would duplicate every entry. Pi has no MCP host at all (by design),
     // so the bridge has nowhere to land for Pi-1. Both lanes skip the bridge
     // for opposite reasons.
-    if (lane.backendId === 'claude' || lane.backendId === 'pi-acp') return memoryServers;
+    // Junie loads MCP via `--mcp-location` overlay; session/new mcpServers is a no-op.
+    if (lane.backendId === 'claude' || lane.backendId === 'pi-acp' || lane.backendId === 'junie') {
+      return lane.backendId === 'junie' ? [] : memoryServers;
+    }
     const projectServers = await loadProjectMcpServers(this.projectDir);
     if (projectServers.length === 0) return memoryServers;
     const mcpCaps = (caps as { mcpCapabilities?: AcpMcpCapabilities } | null)?.mcpCapabilities;
@@ -2683,6 +2727,12 @@ export class AcpHarnessView implements ContentView {
         // ignore
       }
     }
+    if (lane.backendId === 'junie' && this.harnessMemoryId) {
+      void removeJunieMcpOverlay(this.harnessMemoryId, lane.displayName).catch((e) => {
+        console.warn('[acp-harness] remove junie mcp overlay failed:', e);
+      });
+    }
+    lane.junieMcpOverlayDir = null;
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
     this.mcpStatsByLane.delete(lane.displayName);
@@ -3209,6 +3259,11 @@ export class AcpHarnessView implements ContentView {
   private bestLanePeekCandidate(options: { force?: boolean; snapshots?: LanePeekSnapshot[] } = {}): LanePeekCandidate | null {
     const snapshots = options.snapshots ?? this.lanePeekSnapshots();
     const candidates = buildLanePeekCandidates(snapshots, Date.now());
+    if (shouldPreemptPeekDismissal(candidates, this.lanePeek.dismissedAt)) {
+      this.lanePeek.visible = true;
+      this.lanePeek.dismissedAt = null;
+      this.lanePeek.dismissedPriority = null;
+    }
     const best = selectLanePeekCandidate(
       candidates,
       {
@@ -3492,9 +3547,20 @@ export class AcpHarnessView implements ContentView {
 
   private renderRailEntry(lane: HarnessLane, active: boolean): HTMLElement {
     const entry = document.createElement('div');
+    const now = Date.now();
+    const hint = deriveRailPeerHint(
+      {
+        pendingPeers: this.coordinator.pendingPeersFor(lane.id),
+        inboxDepth: this.coordinator.inboxDepth(lane.id),
+        latestInterLane: latestInterLaneForPeek(lane),
+      },
+      (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
+      now,
+    );
     entry.className =
       `acp-harness__rail-entry acp-harness__rail-entry--${lane.status}` +
-      (active ? ' acp-harness__rail-entry--active' : '');
+      (active ? ' acp-harness__rail-entry--active' : '') +
+      (hint.kind !== 'none' ? ` acp-harness__rail-entry--peer-${hint.kind}` : '');
     entry.style.setProperty('--acp-lane-accent', lane.accent);
     const toolCount = lane.toolCalls.size;
     const ctxUsed = typeof lane.usage?.used === 'number' ? lane.usage!.used : null;
@@ -3504,9 +3570,13 @@ export class AcpHarnessView implements ContentView {
     const ctxHtml = ctxUsed !== null
       ? `<span class="acp-harness__rail-metric acp-harness__rail-metric--ctx" title="${esc(typeof lane.usage?.size === 'number' && lane.usage!.size! > 0 ? `context ${ctxUsed}/${lane.usage!.size} tokens` : `context ${ctxUsed} tokens`)}">${esc(formatCount(ctxUsed))}</span>`
       : '';
+    const peerHtml = renderRailPeerSpans(hint);
+    const titleBase = hint.title ? `${hint.title} · ` : '';
+    entry.title = `${titleBase}${statusLabel(lane.status)}`;
     entry.innerHTML =
       `<span class="acp-harness__rail-dot"></span>` +
       `<span class="acp-harness__rail-name">${esc(lane.displayName)}</span>` +
+      peerHtml +
       toolHtml +
       ctxHtml;
     return entry;
@@ -3595,11 +3665,17 @@ export class AcpHarnessView implements ContentView {
     }
     const mentionPalette = this.renderMentionPalette(lane);
     const palette = renderSlashPalette(lane);
+    const peerStrip = buildComposerPeerStrip(
+      lane.status,
+      this.coordinator.pendingPeersFor(lane.id),
+      this.coordinator.inboxDepth(lane.id),
+    );
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-meta">` +
       `<span class="${chipClass}">${esc(chip)}</span>` +
       projectStatus +
       `</div>` +
+      peerStrip +
       staging +
       mentionPalette +
       palette +
@@ -3626,7 +3702,11 @@ export class AcpHarnessView implements ContentView {
   }
 
   private updateComposerTick(): void {
-    const shouldTick = this.lanes.some((lane) => lane.status === 'busy' && lane.activeTurnStartedAt !== null);
+    const shouldTick = this.lanes.some((lane) => {
+      if (lane.status === 'busy' && lane.activeTurnStartedAt !== null) return true;
+      if (this.coordinator.pendingPeersFor(lane.id).length > 0) return true;
+      return lane.status === 'awaiting_peer';
+    });
     if (shouldTick && this.composerTickTimer === null) {
       this.composerTickTimer = window.setInterval(() => this.renderComposer(), 1000);
     } else if (!shouldTick) {
@@ -6013,6 +6093,10 @@ function renderSandboxChip(lane: HarnessLane): string {
     const title = 'Cursor ACP write-permission behavior has not been verified yet. Krypton does not pass force/yolo flags, but use a trusted cwd until verified.';
     return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">⚠ permissions unverified</span>`;
   }
+  if (lane.backendId === 'junie') {
+    const title = 'Junie ACP write-permission behavior has not been verified yet. Krypton does not pass force/yolo/brave flags, but use a trusted cwd until verified.';
+    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">⚠ permissions unverified</span>`;
+  }
   return '';
 }
 
@@ -6075,7 +6159,7 @@ function renderSlashPalette(lane: HarnessLane): string {
   );
 }
 
-function laneAccent(index: number): string {
+export function laneAccent(index: number): string {
   const accents = [
     'var(--krypton-window-accent, #0cf)',
     '#8effb0',
@@ -6084,11 +6168,12 @@ function laneAccent(index: number): string {
     '#ff6b8b',
     '#5fb3b3',
     '#ff9f1c',
+    '#b18cff',
   ];
   return accents[(index - 1) % accents.length];
 }
 
-function laneAccentForLabel(label: string): string {
+export function laneAccentForLabel(label: string): string {
   if (/codex/i.test(label)) return laneAccent(1);
   if (/claude/i.test(label)) return laneAccent(2);
   if (/gemini/i.test(label)) return laneAccent(3);
@@ -6096,6 +6181,7 @@ function laneAccentForLabel(label: string): string {
   if (/^pi(-|$)/i.test(label)) return laneAccent(5);
   if (/droid/i.test(label)) return laneAccent(6);
   if (/cursor/i.test(label)) return laneAccent(7);
+  if (/junie/i.test(label)) return laneAccent(8);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }
@@ -6380,6 +6466,137 @@ function renderLanePeek(
 
   el.innerHTML = html;
   return el;
+}
+
+export interface RailPeerHint {
+  awaitingSuffix: string;
+  inboxSuffix: string;
+  trafficSuffix: string;
+  title: string;
+  kind: 'none' | 'awaiting' | 'inbox' | 'traffic';
+}
+
+export interface DeriveRailPeerHintInput {
+  pendingPeers: PendingPeerSummary[];
+  inboxDepth: number;
+  latestInterLane: LanePeekSnapshot['latestInterLane'];
+}
+
+export function deriveRailPeerHint(
+  input: DeriveRailPeerHintInput,
+  getLaneStatus: (laneId: string) => HarnessLaneStatus | null,
+  now: number,
+): RailPeerHint {
+  const { pendingPeers, inboxDepth, latestInterLane } = input;
+  const titleParts: string[] = [];
+  let awaitingSuffix = '';
+  let inboxSuffix = '';
+  let trafficSuffix = '';
+  if (pendingPeers.length > 0) {
+    awaitingSuffix = '⇆';
+    const oldest = pendingPeers.reduce((min, peer) => (peer.sentAt < min.sentAt ? peer : min), pendingPeers[0]);
+    const age = formatAwaitingPeerAge(now - oldest.sentAt);
+    if (pendingPeers.length === 1) titleParts.push(`awaiting ${oldest.toDisplayName} · ${age}`);
+    else titleParts.push(`awaiting ${pendingPeers.length} peers · ${age}`);
+  }
+  if (inboxDepth > 0) {
+    inboxSuffix = `▼${inboxDepth}`;
+    titleParts.push(`${inboxDepth} peer message${inboxDepth === 1 ? '' : 's'} queued`);
+  }
+  let kind: RailPeerHint['kind'] = 'none';
+  if (pendingPeers.length > 0) kind = 'awaiting';
+  else if (inboxDepth > 0) kind = 'inbox';
+  const hasAwaitingOrInbox = pendingPeers.length > 0 || inboxDepth > 0;
+  if (!hasAwaitingOrInbox && latestInterLane && latestInterLane.peerId !== '__harness__') {
+    const ageMs = now - latestInterLane.at;
+    if (ageMs <= LANE_PEEK_RECENT_MS) {
+      if (latestInterLane.direction === 'in') {
+        trafficSuffix = '←';
+        titleParts.push(`message from ${latestInterLane.peerDisplayName}`);
+        kind = 'traffic';
+      } else {
+        const counterpart = getLaneStatus(latestInterLane.peerId);
+        if (counterpart === 'busy' || counterpart === 'awaiting_peer') {
+          trafficSuffix = '→';
+          titleParts.push(`sent to ${latestInterLane.peerDisplayName}`);
+          kind = 'traffic';
+        }
+      }
+    }
+  }
+  return { awaitingSuffix, inboxSuffix, trafficSuffix, title: titleParts.join(' · '), kind };
+}
+
+/**
+ * spec 118 — emit a single wrapper span around peer glyphs so the rail entry
+ * grid (dot | name | peers | tools | ctx) has stable column placement even
+ * when only some glyphs are present. Returns '' when there are no glyphs;
+ * the wrapper column is `auto` so an absent wrapper collapses to zero width.
+ */
+function renderRailPeerSpans(hint: RailPeerHint): string {
+  let glyphs = '';
+  if (hint.awaitingSuffix) {
+    glyphs += `<span class="acp-harness__rail-peer acp-harness__rail-peer--awaiting">${esc(hint.awaitingSuffix)}</span>`;
+  }
+  if (hint.inboxSuffix) {
+    glyphs += `<span class="acp-harness__rail-peer acp-harness__rail-peer--inbox">${esc(hint.inboxSuffix)}</span>`;
+  }
+  if (hint.trafficSuffix) {
+    glyphs += `<span class="acp-harness__rail-peer acp-harness__rail-peer--traffic">${esc(hint.trafficSuffix)}</span>`;
+  }
+  if (!glyphs) return '';
+  return `<span class="acp-harness__rail-peers">${glyphs}</span>`;
+}
+
+/** spec 118 — composer status strip above input (informational; spec 116 soft awaiting). */
+export function buildComposerPeerStrip(
+  laneStatus: HarnessLaneStatus,
+  pendingPeers: PendingPeerSummary[],
+  inboxDepth: number,
+): string {
+  if (pendingPeers.length > 0) {
+    const body = awaitingPeerText(pendingPeers).replace(/ · #cancel$/, '');
+    return (
+      `<div class="acp-harness__composer-peer" role="status">` +
+      `⇆ ${esc(body)} · #cancel drops pending peer wait` +
+      `</div>`
+    );
+  }
+  if (inboxDepth > 0) {
+    return (
+      `<div class="acp-harness__composer-peer" role="status">` +
+      `${esc(`▼${inboxDepth} peer message${inboxDepth === 1 ? '' : 's'} queued`)}` +
+      `</div>`
+    );
+  }
+  if (laneStatus === 'awaiting_peer') {
+    return (
+      `<div class="acp-harness__composer-peer" role="status">` +
+      `${esc('awaiting peer · #cancel drops pending peer wait')}` +
+      `</div>`
+    );
+  }
+  return '';
+}
+
+/**
+ * spec 118: a direct peer event (priority ≤30 = awaiting / inbound / counterpart)
+ * preempts a prior `Esc` dismissal — but ONLY when that peer event happened
+ * *after* the dismissal. Re-opening the same dismissed candidate on every render
+ * would make Esc useless whenever a peer candidate is sitting in the snapshot.
+ */
+export function shouldPreemptPeekDismissal(
+  candidates: LanePeekCandidate[],
+  dismissedAt: number | null,
+): boolean {
+  if (dismissedAt === null) return false;
+  const top = candidates[0];
+  return !!(
+    top &&
+    top.priority <= PEER_PREEMPT_MAX_PRIORITY &&
+    top.summary.payload?.kind === 'peer' &&
+    top.at > dismissedAt
+  );
 }
 
 export function buildLanePeekCandidates(snapshots: LanePeekSnapshot[], now: number): LanePeekCandidate[] {

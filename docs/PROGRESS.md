@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-22 (ACP Harness Streaming Flicker Fix)
+> Last updated: 2026-05-26 (ACP Junie lane)
 
 ## Overview
 
@@ -21,6 +21,9 @@
 
 ## Recent Landings
 
+- **ACP Harness Junie MCP overlay** — Junie ignores `session/new` MCP injection; Krypton writes per-lane `.junie/mcp/mcp.json` under `~/.config/krypton/runtime/junie/<harness>/<lane>/` and spawns with `--mcp-location <overlayRoot>`. Harness memory + `.mcp.json` bridge use Junie's native loader. See `docs/119-acp-junie-lane.md`.
+- **ACP Harness Junie lane** — JetBrains Junie CLI is now a built-in ACP backend. The lane picker lists `Junie`, spawning `junie --acp true` as a regular lane with the shared `.mcp.json` bridge and per-lane `krypton-harness-memory` server enabled. Junie-specific startup diagnostics cover missing CLI, unknown `--acp` flag (CLI predates ACP mode), explicit auth failures, API key issues, subscription/quota errors, corrupt `~/.junie/config.json`, and empty-stderr timeouts. Junie lanes show `⚠ permissions unverified` until ACP write-permission behavior is manually probed. The `laneAccent` palette grew from 7 to 8 colors to give Junie a distinct slot (avoiding the wrap-to-Codex collision). Auth: `junie` first-run (JetBrains Account), `JUNIE_API_KEY`, `-a/--auth <token>`, or BYOK provider keys forwarded through the cached login env. See `docs/119-acp-junie-lane.md`.
+- **ACP peer activity UI** — Zen-mode lane rail now surfaces peer state (`⇆` awaiting, `▼N` inbox, `←`/`→` recent traffic) on every lane row; the active composer shows an informational peer strip (`#cancel drops pending peer wait`) without blocking input (spec 116). A direct peer peek candidate clears a prior `Esc`-dismiss only when the peer event arrived **after** the dismissal, so hiding the peek stays sticky while an unchanged peer candidate sits in the snapshot. See `docs/118-acp-peer-activity-ui.md`.
 - **ACP Harness streaming flicker fix (rev 4)** — Mid-stream flicker was caused by alternating plain `textContent` and throttled `marked` `innerHTML` (structural snap every ~400ms) plus rebuilding lane chrome on every chunk. Streaming assistant/thought/user rows now append deltas into a single `TextNode` (`streamPlainLength`) with `--stream-plain` until `sealStreaming()`; markdown parses once on the next full render. Text chunks call `scheduleStreamingBodyOnly()` (transcript + one `applyStickyScroll()` only). Sticky scroll uses a single RAF while any lane is streaming. Fast path covers thought/user as well as assistant. See `docs/114-acp-harness-streaming-perf.md`.
 - **ACP Harness streaming performance (rev 1–3)** — Prior work: RAF coalescing, stable `'stream'` signature, `activeToolCount` delta, scroll handler RAF gate, lane-body `contain: layout paint`. Superseded for flicker by rev 4 above.
 - **ACP Cursor lane** — Cursor Agent is now a built-in ACP Harness backend. The lane picker lists `Cursor`, spawning `cursor-agent acp` as a regular lane with the shared `.mcp.json` bridge and per-lane `krypton-harness-memory` server enabled. Cursor-specific startup diagnostics now cover missing CLI installs, Keychain credential lookup failures, and first-run/auth paths that need `cursor-agent login` or `CURSOR_API_KEY` outside Krypton. Cursor lanes show `⚠ permissions unverified` until ACP write-permission behavior is manually probed. Cursor model config is accepted for the lane chip but is not passed as a spawn flag until `cursor-agent acp --model <id>` is verified for ACP sessions. See `docs/113-acp-cursor-lane.md`.

@@ -5,19 +5,24 @@
 use axum::{
     extract::{Path, State as AxumState},
     http::StatusCode,
-    response::IntoResponse,
-    routing::post,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse,
+    },
+    routing::{get, post},
     Json, Router,
 };
+use futures_util::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::{Path as StdPath, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::sync::oneshot;
 
@@ -528,6 +533,27 @@ async fn handle_hook(
     StatusCode::OK
 }
 
+/// GET /mcp/harness/:harness_id/lane/:lane_label — Streamable HTTP SSE channel.
+///
+/// The MCP "Streamable HTTP" transport opens this stream to receive
+/// server-initiated messages. We never push events from here (the server is
+/// pure request/response), so the stream stays idle and only emits SSE
+/// keepalive comments. Junie's Kotlin MCP SDK treats a 405 here as a hard
+/// transport failure even though the spec permits it, so we serve a valid
+/// (but empty) stream instead.
+///
+/// We emit one SSE comment immediately so Junie's client sees bytes before
+/// its initial-response timer fires (verified: a 15s-only keepalive lets
+/// Junie time out at ~3–5s with zero bytes received). After the first
+/// comment, a 5s keepalive keeps the connection warm.
+async fn handle_harness_memory_mcp_sse(
+    Path((_harness_id, _lane_label)): Path<(String, String)>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+    let initial = stream::once(async { Ok::<_, Infallible>(Event::default().comment("ready")) });
+    let s = initial.chain(stream::pending::<Result<Event, Infallible>>());
+    Sse::new(s).keep_alive(KeepAlive::new().interval(Duration::from_secs(5)))
+}
+
 /// POST /mcp/harness/:harness_id/lane/:lane_label — ACP harness memory MCP.
 async fn handle_harness_memory_mcp(
     AxumState(state): AxumState<Arc<HookServerState>>,
@@ -559,14 +585,34 @@ async fn handle_harness_memory_mcp(
     }
 
     let result = match method {
-        "initialize" => Ok(json!({
-            "protocolVersion": "2025-06-18",
-            "capabilities": { "tools": {} },
-            "serverInfo": {
-                "name": "krypton-harness-bus",
-                "version": env!("CARGO_PKG_VERSION"),
-            },
-        })),
+        "initialize" => {
+            // Echo back the client's protocolVersion when we recognize it; the
+            // Kotlin MCP SDK that Junie ships throws `Server's protocol
+            // version is not supported: <ours>` if we unconditionally return
+            // a newer version than what the client requested. Falling back to
+            // the request version (or our default if absent/unknown) keeps
+            // every existing client working — our handler only implements
+            // `tools/list` + `tools/call`, both unchanged across these spec
+            // versions.
+            const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
+                &["2025-06-18", "2025-03-26", "2024-11-05"];
+            const DEFAULT_PROTOCOL_VERSION: &str = "2025-06-18";
+            let requested = request
+                .get("params")
+                .and_then(|p| p.get("protocolVersion"))
+                .and_then(|v| v.as_str());
+            let negotiated = requested
+                .filter(|v| SUPPORTED_PROTOCOL_VERSIONS.contains(v))
+                .unwrap_or(DEFAULT_PROTOCOL_VERSION);
+            Ok(json!({
+                "protocolVersion": negotiated,
+                "capabilities": { "tools": {} },
+                "serverInfo": {
+                    "name": "krypton-harness-bus",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+            }))
+        }
         "tools/list" => Ok(json!({ "tools": bus_tool_descriptors() })),
         "tools/call" => {
             let params = request.get("params").cloned().unwrap_or(Value::Null);
@@ -1381,7 +1427,7 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 .route("/hook", post(handle_hook))
                 .route(
                     "/mcp/harness/{harness_id}/lane/{lane_label}",
-                    post(handle_harness_memory_mcp),
+                    get(handle_harness_memory_mcp_sse).post(handle_harness_memory_mcp),
                 )
                 .with_state(shared);
 

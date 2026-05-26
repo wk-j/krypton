@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>perm-card prototype — minimal rail removal</title>
+<style>
+  :root {
+    --bg: #050a10;
+    --fg: rgba(216, 232, 216, 0.92);
+    --dim: rgba(216, 232, 216, 0.5);
+    --amber: #ffd166;
+    --amber-soft: rgba(255, 209, 102, 0.72);
+    --green: #8effb0;
+    --red: #ff6b8b;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  html, body {
+    margin: 0;
+    padding: 32px 48px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  h2 {
+    color: var(--dim);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin: 32px 0 12px;
+  }
+  .stack { display: grid; gap: 10px; max-width: 880px; }
+  .label {
+    color: var(--dim);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding-left: 4px;
+  }
+
+  /* ─────────────────────────────────────────────
+     BEFORE — current (border-left + bg + inset shadow)
+     ───────────────────────────────────────────── */
+  .v1 .acp-harness__perm-card {
+    display: grid;
+    gap: 4px;
+    padding: 6px 8px;
+    border-left: 2px solid rgba(255, 209, 102, 0.56);
+    background: rgba(255, 176, 0, 0.045);
+    box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.12);
+  }
+  .v1 .acp-harness__perm-card[data-decision='auto_allowed'],
+  .v1 .acp-harness__perm-card[data-decision='accepted'] {
+    border-left-color: rgba(142, 255, 176, 0.52);
+  }
+  .v1 .acp-harness__perm-card[data-decision='rejected'],
+  .v1 .acp-harness__perm-card[data-decision='failed'] {
+    border-left-color: rgba(255, 107, 139, 0.7);
+  }
+
+  /* ─────────────────────────────────────────────
+     AFTER — minimal: drop ONLY the left rail.
+     Keep background tint + inset shadow (the box outline).
+     Color the existing perm-decision span by state.
+     ───────────────────────────────────────────── */
+  .v2 .acp-harness__perm-card {
+    display: grid;
+    gap: 4px;
+    padding: 6px 8px;
+    background: rgba(255, 176, 0, 0.045);
+    box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.12);
+    /* no border-left */
+  }
+  .v2 .acp-harness__perm-card[data-decision='auto_allowed'] .acp-harness__perm-decision,
+  .v2 .acp-harness__perm-card[data-decision='accepted']    .acp-harness__perm-decision {
+    color: var(--green);
+  }
+  .v2 .acp-harness__perm-card[data-decision='rejected']    .acp-harness__perm-decision,
+  .v2 .acp-harness__perm-card[data-decision='failed']      .acp-harness__perm-decision {
+    color: var(--red);
+  }
+
+  /* shared structural styles (copied from acp-harness.css) */
+  .acp-harness__perm-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    line-height: 1.4;
+  }
+  .acp-harness__perm-family,
+  .acp-harness__perm-decision {
+    color: var(--amber-soft);
+    font-size: 0.78em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .acp-harness__perm-tool {
+    color: var(--amber);
+    text-shadow: 0 0 8px rgba(255, 209, 102, 0.24);
+  }
+  .acp-harness__perm-subject {
+    min-width: 0;
+    max-width: 34em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg);
+  }
+  .acp-harness__perm-decision { margin-left: auto; }
+  .acp-harness__perm-actions {
+    color: rgba(255, 209, 102, 0.75);
+    font-size: 0.86em;
+  }
+</style>
+</head>
+<body>
+
+<h2>BEFORE — current (border-left rail)</h2>
+<div class="v1 stack">
+  <div class="label">pending</div>
+  <div class="acp-harness__perm-card" data-decision="pending">
+    <div class="acp-harness__perm-row">
+      <span class="acp-harness__perm-family">FILE</span>
+      <span class="acp-harness__perm-tool">Edit</span>
+      <span class="acp-harness__perm-subject">tli-api/src/test/java/com/bc/dim/api/service/dimui/MetadataServiceTest.java</span>
+      <span class="acp-harness__perm-decision">pending</span>
+    </div>
+    <div class="acp-harness__perm-actions">a accept · r reject</div>
+  </div>
+
+  <div class="label">auto-allowed (the green-edge case)</div>
+  <div class="acp-harness__perm-card" data-decision="auto_allowed">
+    <div class="acp-harness__perm-row">
+      <span class="acp-harness__perm-family">FILE</span>
+      <span class="acp-harness__perm-tool">Edit</span>
+      <span class="acp-harness__perm-subject">tli-api/src/test/java/com/bc/dim/api/service/dimui/MetadataServiceTest.java</span>
+      <span class="acp-harness__perm-decision">auto-allowed</span>
+    </div>
+  </div>
+
+  <div class="label">accepted</div>
+  <div class="acp-harness__perm-card" data-decision="accepted">
+    <div class="acp-harness__perm-row">
+      <span class="acp-harness__perm-family">SHELL</span>
+      <span class="acp-harness__perm-tool">Bash</span>
+      <span class="acp-harness__perm-subject">npm run check</span>
+      <span class="acp-harness__perm-decision">accepted</span>
+    </div>
+  </div>
+
+  <div class="label">rejected</div>
+  <div class="acp-harness__perm-card" data-decision="rejected">
+    <div class="acp-harness__perm-row">
+      <span class="acp-harness__perm-family">FILE</span>
+      <span class="acp-harness__perm-tool">Write</span>
+      <span class="acp-harness__perm-subject">/etc/hosts</span>
+      <span class="acp-harness__perm-decision">rejected</span>
+    </div>
+  </div>
+</div>
+
+<h2>AFTER — minimal (no rail, no bg, no shadow; color decision text only)</h2>
+<div class="v2 stack">
+  <div class="label">pending</div>
+  <div class="acp-harness__perm-card" data-decision="pending">
+    <div class="acp-harness__perm-row">
+      <span class="acp-harness__perm-family">FILE</span>
+      <span class="acp-harness__perm-tool">Edit</span>
+      <span class="acp-harness__perm-subject">tli-api/src/test/java/com/bc/dim/api/service/dimui/MetadataServiceTest.java</span>
+      <span class="acp-harness__perm-decision">pending</span>
+    </div>
+    <div class="acp-harness__perm-actions">a accept · r reject</div>
+  </div>
+
+  <div class="label">auto-allowed</div>
+  <div class="acp-harness__perm-card" data-decision="auto_allowed">
+    <div class="acp-harness__perm-row">
+      <span class="acp-harness__perm-family">FILE</span>
+      <span class="acp-harness__perm-tool">Edit</span>
+      <span class="acp-harness__perm-subject">tli-api/src/test/java/com/bc/dim/api/service/dimui/MetadataServiceTest.java</span>
+      <span class="acp-harness__perm-decision">auto-allowed</span>
+    </div>
+  </div>
+
+  <div class="label">accepted</div>
+  <div class="acp-harness__perm-card" data-decision="accepted">
+    <div class="acp-harness__perm-row">
+      <span class="acp-harness__perm-family">SHELL</span>
+      <span class="acp-harness__perm-tool">Bash</span>
+      <span class="acp-harness__perm-subject">npm run check</span>
+      <span class="acp-harness__perm-decision">accepted</span>
+    </div>
+  </div>
+
+  <div class="label">rejected</div>
+  <div class="acp-harness__perm-card" data-decision="rejected">
+    <div class="acp-harness__perm-row">
+      <span class="acp-harness__perm-family">FILE</span>
+      <span class="acp-harness__perm-tool">Write</span>
+      <span class="acp-harness__perm-subject">/etc/hosts</span>
+      <span class="acp-harness__perm-decision">rejected</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

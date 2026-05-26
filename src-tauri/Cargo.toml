@@ -40,3 +40,4 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "process"
 sha2 = "0.10"
 tower-http = { version = "0.6", features = ["cors"] }
 fff-search = "0.6"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }

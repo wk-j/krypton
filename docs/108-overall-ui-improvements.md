@@ -60,7 +60,7 @@ The dedicated implementation spec is `docs/109-acp-contextual-lane-peek.md`.
 
 Shipped:
 
-1. **ACP contextual lane activity peek** — hidden lane state can now be inspected through a contextual single-lane peek.
+1. **ACP contextual lane activity peek** — hidden lane state can now be inspected through a contextual single-lane peek. Extended in `docs/118-acp-peer-activity-ui.md` with zen rail peer hints (`⇆`, `▼N`, traffic glyphs), composer peer strip, and peek peer preempt so peer events surface without a lane switch.
 2. **Context-aware command palette** — focused view contributes a "Context" section via the optional `ContentView.getPaletteActions?` capability; ACP harness is the v1 contributor. See `docs/110-context-aware-command-palette.md`.
 3. **ACP Review Lane Mode (V0.5)** — `#review <lane>` chat command + `review_request` / `review_reply` MCP tools deliver a structured git packet to a reviewer lane and render anchored findings as a `review` transcript card. See `docs/112-acp-review-lane-mode.md`.
 

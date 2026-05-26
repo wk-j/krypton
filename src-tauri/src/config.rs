@@ -475,11 +475,12 @@ pub struct AcpHarnessConfig {
     pub idle_flash_sound: bool,
     pub memory_footer: bool,
     /// Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
-    /// `claude`, `codex`). `active` is the model passed at spawn (Gemini via
-    /// `--model`, OpenCode via `session/set_config_option`). `models` is an
-    /// informational allow-list shown in the UI; it is not enforced.
-    /// Backends that do not honour a model flag (Claude, Codex in v1) are
-    /// accepted but ignored at spawn — the entry only drives the model chip.
+    /// `claude`, `codex`, `cursor`, `droid`, `junie`). `active` is the model
+    /// passed at spawn (Gemini via `--model`, Droid via `-m`, OpenCode via
+    /// `session/set_config_option`). `models` is an informational allow-list
+    /// shown in the UI; it is not enforced. Backends that do not honour a
+    /// model flag in v1 (Claude, Codex, Cursor, Junie) are accepted but
+    /// ignored at spawn — the entry only drives the model chip.
     pub lane_models: HashMap<String, LaneModelConfig>,
 }
 

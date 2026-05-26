@@ -154,8 +154,9 @@ export interface AcpHarnessConfig {
   idle_flash_sound: boolean;
   memory_footer: boolean;
   /** Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
-   * `droid`, `cursor`, `claude`, `codex`). Empty `active` means use the
-   * adapter default. */
+   * `droid`, `cursor`, `claude`, `codex`, `junie`). Empty `active` means use
+   * the adapter default. Junie is display-only in v1 (the CLI `--model` flag
+   * exists but its effect under `--acp true` is unverified). */
   lane_models: Record<string, LaneModelConfig>;
 }
 

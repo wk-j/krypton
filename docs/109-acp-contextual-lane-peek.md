@@ -132,6 +132,7 @@ To avoid flapping, automatic candidate changes have a minimum dwell:
 - A new candidate can preempt immediately only if its priority is at least 2 levels higher than the current candidate, or if the current candidate becomes invalid.
 - Manual lock disables automatic candidate switching until unlocked, active lane changes, the locked lane becomes active/stopped, or the user dismisses the peek.
 - Dismissal stores the dismissed candidate priority so same-or-lower priority candidates remain suppressed even if the original candidate drops out. Higher-priority candidates can re-open the peek.
+- **Peer dismiss preempt (spec 118)**: when the top-ranked candidate is a direct peer relation (priority ≤30, `payload.kind === 'peer'`), `bestLanePeekCandidate()` clears `dismissedAt` / `dismissedPriority` *before* calling `selectLanePeekCandidate()` — otherwise dismissal at the same priority tier would return `null` and the peek would stay hidden. See `docs/118-acp-peer-activity-ui.md`.
 
 ### Manual Keyboard Surface
 

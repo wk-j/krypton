@@ -25,16 +25,19 @@ interface ClaudeMcpStdio {
 }
 
 interface ClaudeMcpHttp {
-  type: 'http' | 'sse';
+  type?: 'http' | 'sse';
   url: string;
   headers?: Record<string, string>;
 }
 
 type ClaudeMcpServer = ClaudeMcpStdio | ClaudeMcpHttp;
 
-interface ClaudeMcpFile {
+export interface ClaudeMcpFile {
   mcpServers?: Record<string, ClaudeMcpServer>;
 }
+
+/** Junie advertises http+sse in ACP; used when building overlays before initialize. */
+export const JUNIE_MCP_CAPABILITIES: AcpMcpCapabilities = { http: true, sse: true };
 
 let loginEnvPromise: Promise<Record<string, string>> | null = null;
 const projectCache = new Map<string, AcpMcpServerDescriptor[]>();
@@ -259,4 +262,64 @@ export function dedupeByName(
     }
   }
   return out;
+}
+
+function pairsToObject(pairs: Array<{ name: string; value: string }>): Record<string, string> | undefined {
+  if (pairs.length === 0) return undefined;
+  const out: Record<string, string> = {};
+  for (const p of pairs) out[p.name] = p.value;
+  return out;
+}
+
+/** Inverse of `translate()` — Junie/Claude on-disk `mcp.json` shape (object env/headers). */
+export function toClaudeMcpFile(servers: AcpMcpServerDescriptor[]): ClaudeMcpFile {
+  const mcpServers: Record<string, ClaudeMcpServer> = {};
+  for (const s of servers) {
+    const type = s.type ?? 'stdio';
+    if (type === 'stdio') {
+      const stdio = s as AcpMcpServerStdio;
+      const env = pairsToObject(stdio.env);
+      mcpServers[s.name] = {
+        command: stdio.command,
+        ...(stdio.args.length > 0 ? { args: stdio.args } : {}),
+        ...(env ? { env } : {}),
+      };
+      continue;
+    }
+    if (type === 'http' || type === 'sse') {
+      const remote = s as AcpMcpServerHttp | AcpMcpServerSse;
+      const headers = pairsToObject(remote.headers);
+      if (type === 'sse') {
+        mcpServers[s.name] = {
+          type: 'sse',
+          url: remote.url,
+          ...(headers ? { headers } : {}),
+        };
+      } else {
+        mcpServers[s.name] = {
+          url: remote.url,
+          ...(headers ? { headers } : {}),
+        };
+      }
+    }
+  }
+  return { mcpServers };
+}
+
+/** Write `.junie/mcp/mcp.json` under ~/.config/krypton/runtime/junie/<harness>/<lane>/ for `--mcp-location`. */
+export async function writeJunieMcpOverlay(
+  harnessId: string,
+  laneLabel: string,
+  servers: AcpMcpServerDescriptor[],
+): Promise<string> {
+  const content = JSON.stringify(toClaudeMcpFile(servers), null, 2);
+  return invoke<string>('write_junie_mcp_overlay', { harnessId, laneLabel, content });
+}
+
+export async function removeJunieMcpOverlay(harnessId: string, laneLabel: string): Promise<void> {
+  await invoke('remove_junie_mcp_overlay', { harnessId, laneLabel });
+}
+
+export async function gcJunieMcpOverlays(harnessId: string): Promise<void> {
+  await invoke('gc_junie_mcp_overlays', { harnessId });
 }

@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildComposerPeerStrip,
   buildLanePeekCandidates,
+  deriveRailPeerHint,
   harnessAutoAllowToolName,
+  laneAccent,
+  laneAccentForLabel,
   selectLanePeekCandidate,
+  shouldPreemptPeekDismissal,
   type LanePeekSnapshot,
 } from './acp-harness-view';
 
@@ -294,5 +299,208 @@ describe('ACP contextual lane peek ranking', () => {
       laneSnapshot({ laneId: 'codex', active: true }),
       laneSnapshot({ laneId: 'claude', visualIndex: 1 }),
     ], 1_000)).toEqual([]);
+  });
+});
+
+describe('ACP peer activity UI (spec 118)', () => {
+  const now = 100_000;
+
+  it('deriveRailPeerHint awaiting', () => {
+    const hint = deriveRailPeerHint({
+      pendingPeers: [{ toLaneId: 'b', toDisplayName: 'Claude-1', envelopeId: 'e1', sentAt: now - 30_000 }],
+      inboxDepth: 0,
+      latestInterLane: null,
+    }, () => null, now);
+    expect(hint.awaitingSuffix).toBe('⇆');
+    expect(hint.kind).toBe('awaiting');
+    expect(hint.title).toContain('Claude-1');
+  });
+
+  it('deriveRailPeerHint inbox only', () => {
+    const hint = deriveRailPeerHint({
+      pendingPeers: [],
+      inboxDepth: 2,
+      latestInterLane: null,
+    }, () => null, now);
+    expect(hint.inboxSuffix).toBe('▼2');
+    expect(hint.kind).toBe('inbox');
+  });
+
+  it('deriveRailPeerHint pending + inbox', () => {
+    const hint = deriveRailPeerHint({
+      pendingPeers: [{ toLaneId: 'b', toDisplayName: 'B', envelopeId: 'e1', sentAt: now - 1_000 }],
+      inboxDepth: 1,
+      latestInterLane: null,
+    }, () => null, now);
+    expect(hint.awaitingSuffix).toBe('⇆');
+    expect(hint.inboxSuffix).toBe('▼1');
+    expect(hint.title).toContain('peer message');
+    expect(hint.title).toContain('awaiting');
+  });
+
+  it('deriveRailPeerHint inbound traffic', () => {
+    const hint = deriveRailPeerHint({
+      pendingPeers: [],
+      inboxDepth: 0,
+      latestInterLane: {
+        direction: 'in',
+        peerId: 'claude',
+        peerDisplayName: 'Claude-1',
+        at: now - 1_000,
+        message: 'hi',
+      },
+    }, () => null, now);
+    expect(hint.trafficSuffix).toBe('←');
+    expect(hint.kind).toBe('traffic');
+  });
+
+  it('deriveRailPeerHint outbound when counterpart busy', () => {
+    const hint = deriveRailPeerHint({
+      pendingPeers: [],
+      inboxDepth: 0,
+      latestInterLane: {
+        direction: 'out',
+        peerId: 'claude',
+        peerDisplayName: 'Claude-1',
+        at: now - 2_000,
+        message: 'review this',
+      },
+    }, (id) => (id === 'claude' ? 'busy' : null), now);
+    expect(hint.trafficSuffix).toBe('→');
+    expect(hint.kind).toBe('traffic');
+  });
+
+  it('deriveRailPeerHint multi-peer title', () => {
+    const hint = deriveRailPeerHint({
+      pendingPeers: [
+        { toLaneId: 'a', toDisplayName: 'A', envelopeId: 'e1', sentAt: now - 90_000 },
+        { toLaneId: 'b', toDisplayName: 'B', envelopeId: 'e2', sentAt: now - 120_000 },
+      ],
+      inboxDepth: 0,
+      latestInterLane: null,
+    }, () => null, now);
+    expect(hint.title).toContain('2 peers');
+  });
+
+  it('shouldPreemptPeekDismissal fires when a peer event arrives after dismissal', () => {
+    const candidates = buildLanePeekCandidates([
+      laneSnapshot({
+        laneId: 'codex',
+        active: true,
+        status: 'awaiting_peer',
+        pendingPeers: [{ toLaneId: 'claude', toDisplayName: 'Claude-1', envelopeId: 'e1', sentAt: now - 500 }],
+      }),
+      laneSnapshot({ laneId: 'claude', visualIndex: 1, status: 'busy' }),
+    ], now);
+    // candidate.at = sentAt = now - 500; dismissedAt = now - 1_000 → peer is newer → preempt
+    expect(shouldPreemptPeekDismissal(candidates, now - 1_000)).toBe(true);
+  });
+
+  it('shouldPreemptPeekDismissal does NOT fire when the peer candidate predates the dismissal', () => {
+    // Regression: Esc-hide must stick when the visible peer candidate was
+    // already there at dismissal time — otherwise hide is useless while any
+    // peer candidate sits in the snapshot.
+    const candidates = buildLanePeekCandidates([
+      laneSnapshot({
+        laneId: 'codex',
+        active: true,
+        status: 'awaiting_peer',
+        pendingPeers: [{ toLaneId: 'claude', toDisplayName: 'Claude-1', envelopeId: 'e1', sentAt: now - 5_000 }],
+      }),
+      laneSnapshot({ laneId: 'claude', visualIndex: 1, status: 'busy' }),
+    ], now);
+    expect(shouldPreemptPeekDismissal(candidates, now - 1_000)).toBe(false);
+  });
+
+  it('shouldPreemptPeekDismissal does NOT fire when no dismissal is active', () => {
+    const candidates = buildLanePeekCandidates([
+      laneSnapshot({
+        laneId: 'codex',
+        active: true,
+        status: 'awaiting_peer',
+        pendingPeers: [{ toLaneId: 'claude', toDisplayName: 'Claude-1', envelopeId: 'e1', sentAt: now - 500 }],
+      }),
+      laneSnapshot({ laneId: 'claude', visualIndex: 1, status: 'busy' }),
+    ], now);
+    expect(shouldPreemptPeekDismissal(candidates, null)).toBe(false);
+  });
+
+  it('shouldPreemptPeekDismissal false for recent-activity tier', () => {
+    const candidates = buildLanePeekCandidates([
+      laneSnapshot({ laneId: 'codex', active: true }),
+      laneSnapshot({
+        laneId: 'claude',
+        visualIndex: 1,
+        latestMeaningful: { kind: 'tool', label: 'grep', at: now - 1_000 },
+      }),
+    ], now);
+    expect(shouldPreemptPeekDismissal(candidates, now - 5_000)).toBe(false);
+  });
+
+  it('selectLanePeekCandidate returns peer after preempt clears dismiss', () => {
+    const candidates = buildLanePeekCandidates([
+      laneSnapshot({
+        laneId: 'codex',
+        active: true,
+        status: 'awaiting_peer',
+        pendingPeers: [{ toLaneId: 'claude', toDisplayName: 'Claude-1', envelopeId: 'e1', sentAt: now - 500 }],
+      }),
+      laneSnapshot({ laneId: 'claude', visualIndex: 1, status: 'busy' }),
+    ], now);
+    expect(shouldPreemptPeekDismissal(candidates, now - 1_000)).toBe(true);
+    expect(candidates[0]?.priority).toBe(10);
+    const dismissed = {
+      currentLaneId: null,
+      lockedLaneId: null,
+      selectedAt: now,
+      dismissedAt: now - 1_000,
+      dismissedPriority: 10,
+    };
+    expect(selectLanePeekCandidate(candidates, dismissed, now)).toBeNull();
+    expect(selectLanePeekCandidate(candidates, {
+      ...dismissed,
+      dismissedAt: null,
+      dismissedPriority: null,
+    }, now)?.laneId).toBe('claude');
+  });
+
+  it('buildComposerPeerStrip emits strip for pending peer with cancel hint', () => {
+    expect(buildComposerPeerStrip('awaiting_peer', [
+      { toLaneId: 'b', toDisplayName: 'Claude-1', envelopeId: 'e1', sentAt: now - 60_000 },
+    ], 0)).toContain('drops pending peer wait');
+  });
+
+  it('buildComposerPeerStrip emits awaiting strip with no pending peer', () => {
+    expect(buildComposerPeerStrip('awaiting_peer', [], 0)).toContain('awaiting peer');
+  });
+
+  it('buildComposerPeerStrip emits inbox-only strip on an idle lane', () => {
+    const strip = buildComposerPeerStrip('idle', [], 2);
+    expect(strip).toContain('▼2');
+    expect(strip).not.toContain('awaiting');
+  });
+
+  it('buildComposerPeerStrip returns empty for idle + no inbox + no pending', () => {
+    expect(buildComposerPeerStrip('idle', [], 0)).toBe('');
+    expect(buildComposerPeerStrip('busy', [], 0)).toBe('');
+  });
+});
+
+describe('laneAccentForLabel', () => {
+  it('routes Junie-N labels to the 8th palette slot, not the numeric fallback', () => {
+    // Regression for the spec-119 must-fix: without the explicit /junie/i arm
+    // ordered before the -(\d+)$ fallback, 'Junie-1' would match the numeric
+    // tail and resolve to laneAccent(1) — the Codex blue — colliding visually
+    // with Codex-1.
+    expect(laneAccentForLabel('Junie-1')).toBe(laneAccent(8));
+    expect(laneAccentForLabel('Junie-2')).toBe(laneAccent(8));
+    expect(laneAccentForLabel('Junie-1')).not.toBe(laneAccent(1));
+  });
+
+  it('keeps the 8-color palette wider than the 7 named lanes', () => {
+    // Junie occupies slot 8, so the palette must have at least 8 distinct
+    // entries — otherwise laneAccent(8) wraps modulo to Codex blue.
+    const slots = [1, 2, 3, 4, 5, 6, 7, 8].map(laneAccent);
+    expect(new Set(slots).size).toBe(8);
   });
 });

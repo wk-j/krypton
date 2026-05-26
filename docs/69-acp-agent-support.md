@@ -35,11 +35,12 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 | IntelliJ "Gemini CLI Companion" | Launches `gemini --experimental-acp`, JSON-RPC over stdio, modal permission prompts. | Validates Gemini CLI ACP mode for IDE-style hosts. |
 | OpenCode ACP | Launches `opencode acp` as an ACP-compatible subprocess over stdio JSON-RPC, then selects `zai-coding-plan/glm-5.1` through ACP session configuration. | Validates OpenCode as a code-defined backend alongside Claude, Gemini, and Codex, with Krypton selecting its default lane model without writing OpenCode config files. |
 | Cursor Agent ACP | Launches `cursor-agent acp` as Cursor Agent's native ACP server over stdio JSON-RPC. | Validates Cursor as a regular built-in backend with no headless NDJSON adapter. |
+| JetBrains Junie ACP | Launches `junie --acp true` as Junie CLI's native ACP server over stdio JSON-RPC. | Validates Junie as a regular built-in backend; auth via JetBrains Account, `JUNIE_API_KEY`, `--auth <token>`, or BYOK provider keys. |
 | Emacs `acp.el` | Minimal ACP client; line-delimited framing in a non-Node host. | Reference for non-JS implementation. |
 
 **Krypton delta** — Match Zed's TOML-style backend declaration (familiar to ACP users). Diverge by routing every UI surface through a keyboard-first window in our own compositor (no popups), single-key inline permission prompts, and cyberpunk chrome consistent with the rest of Krypton.
 
-Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; Krypton selects `zai-coding-plan/glm-5.1` after `session/new` via `session/set_config_option` with `session/set_model` fallback, and OpenCode's CLI documentation confirms `opencode auth login` for provider credentials. Cursor Agent's local `cursor-agent acp --help` confirms its native ACP subprocess command; Cursor auth remains outside Krypton via `cursor-agent login` or `CURSOR_API_KEY`.
+Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; Krypton selects `zai-coding-plan/glm-5.1` after `session/new` via `session/set_config_option` with `session/set_model` fallback, and OpenCode's CLI documentation confirms `opencode auth login` for provider credentials. Cursor Agent's local `cursor-agent acp --help` confirms its native ACP subprocess command; Cursor auth remains outside Krypton via `cursor-agent login` or `CURSOR_API_KEY`. JetBrains Junie's `junie-cli-acp` documentation confirms `junie --acp true` as the stdio ACP subprocess command; Junie auth remains outside Krypton via `junie` first-run (JetBrains Account), `JUNIE_API_KEY`, `-a/--auth <token>`, or BYOK provider keys forwarded through the cached login env.
 
 ## Affected Files
 

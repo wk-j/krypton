@@ -1683,6 +1683,17 @@
   padding: 5px 10px 7px;
 }
 
+/* spec 118 — peer activity hint (informational; does not block input) */
+.acp-harness__composer-peer {
+  padding: 2px 0 4px;
+  color: #b8a6ff;
+  font-size: 0.74em;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .acp-harness__composer--command {
   background: rgba(255, 209, 102, 0.026);
 }
@@ -1981,8 +1992,11 @@
 }
 
 .acp-harness__rail-entry {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  /* dot | name | peers (optional) | tools (optional) | ctx (optional)
+   * — flex so missing children don't reserve gap space; name absorbs slack
+   * via `flex: 1 1 0`. Previously a 4-col grid wrapped extra children to a
+   * second row when both peer hints and metrics were present (spec 118). */
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
@@ -1992,8 +2006,18 @@
   white-space: nowrap;
 }
 
+.acp-harness__rail-peers {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  max-width: 9ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .acp-harness__rail-metric {
-  justify-self: end;
+  flex: 0 0 auto;
   font-size: 0.74em;
   font-variant-numeric: tabular-nums;
   color: rgba(216, 232, 216, 0.42);
@@ -2030,6 +2054,38 @@
   box-shadow: 0 0 6px rgba(0, 204, 255, 0.6);
 }
 
+/* spec 118 — zen rail peer activity (rail is zen-only today; scope under
+ * --zen so a future rail outside zen mode keeps a neutral dot). */
+.acp-harness--zen .acp-harness__rail-entry--awaiting_peer .acp-harness__rail-dot,
+.acp-harness--zen .acp-harness__rail-entry--peer-awaiting .acp-harness__rail-dot {
+  background: #b8a6ff;
+  box-shadow: 0 0 5px rgba(184, 166, 255, 0.45);
+  animation: acp-harness-zen-attention 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness--zen .acp-harness__rail-entry--awaiting_peer .acp-harness__rail-dot,
+  .acp-harness--zen .acp-harness__rail-entry--peer-awaiting .acp-harness__rail-dot {
+    animation: none;
+  }
+}
+
+.acp-harness__rail-peer {
+  flex: 0 0 auto;
+  font-size: 0.72em;
+  color: #b8a6ff;
+  max-width: 4ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acp-harness__rail-peer--inbox {
+  padding: 0 3px;
+  border: 1px solid rgba(184, 166, 255, 0.45);
+  border-radius: 2px;
+  font-size: 0.68em;
+}
+
 .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
   background: #ffd166;
 }
@@ -2049,6 +2105,8 @@
 }
 
 .acp-harness__rail-name {
+  flex: 1 1 0;
+  min-width: 0;
   font-size: 0.85em;
   overflow: hidden;
   text-overflow: ellipsis;
