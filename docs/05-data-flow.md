@@ -106,11 +106,34 @@
    - M       -> enter Move mode
    - S       -> enter Swap mode (select target window)
    - F       -> maximize/restore focused window
+   - ?       -> toggle WorkspaceFooter compact/detail density
    - G       -> cycle shader preset on focused pane (none → crt → hologram → ...)
    - Shift+G -> toggle shaders on/off globally
    - Shift+Y -> open ACP Harness for the focused working directory
    - Escape  -> cancel, return to Normal mode
 6. After action executes, Input Router returns to Normal mode
+```
+
+## Workspace Footer Flow
+
+```
+1. main.ts creates ViewBus, Compositor, InputRouter, and WorkspaceFooter.
+2. WorkspaceFooter mounts one fixed 28px bottom rail under #krypton-workspace.
+3. InputRouter.onModeChange() updates the footer mode chip and contextual hint.
+4. Compositor focus/relayout callbacks provide focused role/title, CWD, and window/tab/pane counts.
+5. pty-bridge translates existing Tauri events into ViewBus signals:
+   - view:metrics -> foreground process name/pid
+   - view:throughput -> activity bytes/s
+   - view:progress -> progress state/percentage
+   - view:state / view:exit -> focused-view state cleanup
+6. WorkspaceFooter accepts bus fields only when signal.source.viewId matches
+   compositor.getFocusedViewId().
+7. On focused CWD change, WorkspaceFooter debounces git probes through run_command
+   (branch, detached HEAD fallback, porcelain dirty marker) and caches the result.
+8. MusicPlayer no longer owns a fixed mini-player DOM node; it calls
+   WorkspaceFooter.setMusicSegment() with track/time/progress/visualizer state.
+9. Footer renders through requestAnimationFrame so focus, mode, music, and bus
+   updates coalesce into one DOM patch.
 ```
 
 ## Pencil Picker Rename Flow

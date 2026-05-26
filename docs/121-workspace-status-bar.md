@@ -1,6 +1,6 @@
 # Workspace Status Bar — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-05-26
 > Milestone: M8 — Polish
 

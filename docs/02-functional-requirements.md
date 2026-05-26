@@ -98,6 +98,7 @@
 | FR-INP-035 | The system shall support **swapping** two windows' positions via keybinding (e.g., `Leader+S` then select target window). | Should |
 | FR-INP-036 | The system shall support resetting the current workspace to its default layout via keybinding. | Should |
 | FR-INP-037 | The system shall support toggling a **focus layout** (`Leader+F`) where the focused window occupies the left column at full height and remaining windows stack vertically on the right. Changing focus swaps the newly focused window to the left column. New windows replace the current left window, pushing it to the stack. Toggling again returns to the default grid layout. | Should |
+| FR-INP-038 | The system shall support toggling the workspace footer between compact and detail density via keyboard (`Leader ?`) and command palette action. | Should |
 
 ### 3.5.5 Tab Navigation (Keyboard)
 
@@ -149,6 +150,7 @@
 | FR-WS-005 | The system shall support named workspace definitions in the TOML configuration file. | Must |
 | FR-WS-006 | The system shall ship with built-in workspace presets: `single`, `2-column`, `3-column`, `2x2-grid`, `main+sidebar`, `main+bottom`. | Must |
 | FR-WS-007 | User-defined workspaces in config shall override built-in presets of the same name. | Must |
+| FR-WS-008 | The active workspace shall expose a single bottom footer rail for mode, focus, project/git, process/activity, contextual hints, and music playback status. The footer shall remain keyboard-first and shall not require mouse interaction. | Should |
 
 ### 3.8.2 Windows (Terminal Instances)
 

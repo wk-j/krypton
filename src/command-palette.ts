@@ -6,6 +6,7 @@ import { invoke } from './profiler/ipc';
 import { Compositor } from './compositor';
 import type { DashboardShortcut } from './types';
 import type { PaletteAction, PaletteContext, PaletteSection } from './palette-types';
+import type { WorkspaceFooter } from './workspace-footer';
 
 export type { PaletteAction, PaletteContext, PaletteSection } from './palette-types';
 
@@ -80,6 +81,7 @@ export class CommandPalette {
   private selectedIndex = 0;
   private visible = false;
   private compositor: Compositor;
+  private workspaceFooter: WorkspaceFooter | null = null;
 
   /** Callbacks to notify when the palette opens/closes */
   private onOpenCallbacks: Array<() => void> = [];
@@ -138,6 +140,10 @@ export class CommandPalette {
 
     // Register all built-in actions
     this.registerActions();
+  }
+
+  setWorkspaceFooter(footer: WorkspaceFooter): void {
+    this.workspaceFooter = footer;
   }
 
   /** Register a callback for when the palette opens */
@@ -531,6 +537,22 @@ export class CommandPalette {
       keybinding: 'Leader j',
       execute: () => c.focusDirection('down'),
     });
+
+    // ── Workspace footer actions ──
+    this.register({
+      id: 'workspace.footer.toggle-density',
+      label: 'Toggle Workspace Footer Detail',
+      category: 'Workspace',
+      keybinding: 'Leader ?',
+      execute: () => this.workspaceFooter?.toggleDensity(),
+    });
+    this.register({
+      id: 'workspace.footer.toggle-visible',
+      label: 'Toggle Workspace Footer',
+      category: 'Workspace',
+      execute: () => this.workspaceFooter?.toggleVisible(),
+    });
+
     this.register({
       id: 'window.focus-next',
       label: 'Focus Next',

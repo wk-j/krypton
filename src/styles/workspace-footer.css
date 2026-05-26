@@ -1,0 +1,266 @@
+/* ─── Workspace Footer ─────────────────────────────────────────────
+   Shared 28px bottom rail. Music is one segment; workspace status uses the
+   remaining space. No backdrop-filter: transparent WKWebView safety. */
+
+.krypton-workspace-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9000;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  background: rgba(6, 10, 18, 0.9);
+  color: var(--krypton-foreground, #c0c8d4);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  user-select: none;
+  pointer-events: none;
+  box-shadow: 0 -8px 24px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+}
+
+.krypton-workspace-footer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-110%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.18) 42%,
+    transparent 72%
+  );
+}
+
+.krypton-workspace-footer--activity::before {
+  animation: krypton-workspace-footer-activity 700ms ease-out;
+}
+
+@keyframes krypton-workspace-footer-activity {
+  0% { opacity: 0; transform: translateX(-110%); }
+  20% { opacity: 0.75; }
+  100% { opacity: 0; transform: translateX(110%); }
+}
+
+.krypton-workspace-footer__left,
+.krypton-workspace-footer__center,
+.krypton-workspace-footer__right,
+.krypton-workspace-footer__music {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.krypton-workspace-footer__left {
+  flex: 0 1 auto;
+  min-width: 190px;
+}
+
+.krypton-workspace-footer__center {
+  flex: 1 1 auto;
+}
+
+.krypton-workspace-footer__right {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  max-width: 42%;
+}
+
+.krypton-workspace-footer__music {
+  flex: 0 1 440px;
+  max-width: 44vw;
+}
+
+.krypton-workspace-footer__segment {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.62);
+}
+
+.krypton-workspace-footer__segment--p0 {
+  color: var(--krypton-foreground, #c0c8d4);
+}
+
+.krypton-workspace-footer__segment--mode {
+  flex: 0 0 auto;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.38);
+  color: var(--krypton-cyan, #00d4ff);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.krypton-workspace-footer--mode-change .krypton-workspace-footer__segment--mode {
+  animation: krypton-workspace-footer-mode-snap 360ms ease-out;
+}
+
+@keyframes krypton-workspace-footer-mode-snap {
+  0% { transform: translateY(5px); opacity: 0; box-shadow: 0 0 0 rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0); }
+  55% { transform: translateY(0); opacity: 1; box-shadow: 0 0 12px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.32); }
+  100% { transform: translateY(0); opacity: 1; box-shadow: 0 0 0 rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0); }
+}
+
+.krypton-workspace-footer__segment--role {
+  color: var(--krypton-success, #8effb0);
+}
+
+.krypton-workspace-footer__segment--project {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.72);
+}
+
+.krypton-workspace-footer__segment--git,
+.krypton-workspace-footer__segment--music-flags {
+  color: var(--krypton-yellow, #ffcc00);
+}
+
+.krypton-workspace-footer__hint {
+  color: rgba(142, 255, 176, 0.72);
+}
+
+.krypton-workspace-footer[data-density="compact"] .krypton-workspace-footer__segment--detail {
+  display: none;
+}
+
+.krypton-workspace-footer:not([data-music="on"]) .krypton-workspace-footer__music {
+  display: none;
+}
+
+.krypton-workspace-footer[data-music="on"] .krypton-workspace-footer__hint {
+  display: none;
+}
+
+.krypton-workspace-footer__segment--music-icon {
+  color: var(--krypton-success, #8effb0);
+  flex: 0 0 auto;
+}
+
+.krypton-workspace-footer__music-icon--playing {
+  animation: krypton-workspace-footer-music-blink 1.4s steps(2, end) infinite;
+}
+
+@keyframes krypton-workspace-footer-music-blink {
+  0%, 64% { opacity: 1; }
+  65%, 100% { opacity: 0.45; }
+}
+
+.krypton-workspace-footer__segment--music-track {
+  flex: 1 1 auto;
+  color: var(--krypton-foreground, #c0c8d4);
+}
+
+.krypton-workspace-footer__segment--music-info {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+}
+
+.krypton-workspace-footer__segment--music-time {
+  flex: 0 0 auto;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.72);
+  font-variant-numeric: tabular-nums;
+}
+
+.krypton-workspace-footer__music-progress {
+  flex: 0 0 120px;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+}
+
+.krypton-workspace-footer__music-progress-fill {
+  position: relative;
+  height: 100%;
+  background: var(--krypton-cyan, #00d4ff);
+  transition: width 0.5s linear;
+  overflow: hidden;
+}
+
+.krypton-workspace-footer__music-progress-fill--playing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  animation: krypton-workspace-footer-progress-shimmer 1.6s linear infinite;
+}
+
+@keyframes krypton-workspace-footer-progress-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+.krypton-mini-player__viz {
+  width: 120px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .krypton-workspace-footer__segment--p3,
+  .krypton-workspace-footer__segment--counts {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .krypton-workspace-footer__segment--process,
+  .krypton-workspace-footer__hint {
+    display: none;
+  }
+
+  .krypton-workspace-footer__music {
+    max-width: 48vw;
+  }
+}
+
+@media (max-width: 520px) {
+  .krypton-workspace-footer__left {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  .krypton-workspace-footer__segment--role,
+  .krypton-workspace-footer__segment--p2,
+  .krypton-workspace-footer__segment--p3,
+  .krypton-workspace-footer__hint {
+    display: none;
+  }
+
+  .krypton-workspace-footer__right {
+    display: flex;
+    min-width: 0;
+    max-width: 50%;
+  }
+
+  .krypton-workspace-footer__music {
+    max-width: 100%;
+    flex-basis: 100%;
+  }
+
+  .krypton-mini-player__viz,
+  .krypton-workspace-footer__music-progress,
+  .krypton-workspace-footer__segment--music-info {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .krypton-workspace-footer::before,
+  .krypton-workspace-footer__segment--mode,
+  .krypton-workspace-footer__segment--music-icon,
+  .krypton-workspace-footer__music-progress-fill::after {
+    animation: none !important;
+  }
+}

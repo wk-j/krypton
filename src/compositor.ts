@@ -62,6 +62,16 @@ interface AcpLanePeekCommands {
   activatePeekedLane(): void;
 }
 
+export interface FocusedWorkspaceSummary {
+  viewId: string | null;
+  role: PaneContentType | 'quick_terminal' | null;
+  title: string;
+  cwd: string | null;
+  windows: number;
+  tabs: number;
+  panes: number;
+}
+
 function hasAcpLanePeekCommands(value: ContentView | null | undefined): value is ContentView & AcpLanePeekCommands {
   return !!value
     && typeof (value as Partial<AcpLanePeekCommands>).showLanePeek === 'function'
@@ -3318,7 +3328,49 @@ export class Compositor {
 
   /** Resolve the focused terminal/content view working directory. */
   async getFocusedWorkingDirectory(): Promise<string | null> {
+    if (this.qtVisible && this.qtSessionId !== null) {
+      try {
+        return await invoke<string | null>('get_pty_cwd', { sessionId: this.qtSessionId });
+      } catch {
+        return null;
+      }
+    }
     return this.getFocusedCwd();
+  }
+
+  /** Compact focused-view summary for workspace-level HUD surfaces. */
+  getFocusedWorkspaceSummary(): FocusedWorkspaceSummary {
+    const total = this.getWorkspaceCounts();
+    if (this.qtVisible) {
+      return {
+        viewId: null,
+        role: 'quick_terminal',
+        title: 'quick_terminal',
+        cwd: null,
+        ...total,
+      };
+    }
+
+    const pane = this.getFocusedPane();
+    const win = this.focusedWindowId ? this.windows.get(this.focusedWindowId) : null;
+    const tab = win?.tabs[win.activeTabIndex] ?? null;
+    return {
+      viewId: pane?.viewId ?? null,
+      role: pane?.contentView?.type ?? (pane ? 'terminal' : null),
+      title: tab?.title ?? win?.id ?? '',
+      cwd: pane?.contentView?.getWorkingDirectory?.() ?? null,
+      ...total,
+    };
+  }
+
+  private getWorkspaceCounts(): { windows: number; tabs: number; panes: number } {
+    let tabs = 0;
+    let panes = 0;
+    for (const win of this.windows.values()) {
+      tabs += win.tabs.length;
+      for (const tab of win.tabs) panes += this.collectPanes(tab.paneTree).length;
+    }
+    return { windows: this.windows.size, tabs, panes };
   }
 
   /** Get the currently focused pane (public accessor for input routing) */

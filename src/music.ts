@@ -11,6 +11,7 @@ import { OffscreenAnimationProxy, supportsOffscreenCanvas } from './offscreen-an
 
 import type { Compositor } from './compositor';
 import type { DashboardDefinition } from './types';
+import type { WorkspaceFooter } from './workspace-footer';
 
 // ─── Types (mirror Rust) ─────────────────────────────────────────
 
@@ -70,7 +71,7 @@ export class MusicPlayer {
     shuffle: false,
   };
 
-  private miniPlayer: HTMLElement | null = null;
+  private workspaceFooter: WorkspaceFooter | null = null;
   private visualizer: OffscreenAnimationProxy | null = null;
   private visualizerEnabled = true;
   private visualizerOpacity = 0.18;
@@ -92,6 +93,14 @@ export class MusicPlayer {
   // Animated track name state
   private animatedTrackPath = '';
   private trackLineAnimations: Animation[] = [];
+
+  setWorkspaceFooter(footer: WorkspaceFooter): void {
+    this.workspaceFooter = footer;
+    footer.onVisibleChange((visible) => {
+      if (!visible) this.stopMiniViz();
+      else if (this.state.status === 'Playing' && this.state.playlist.length > 0) this.startMiniViz();
+    });
+  }
 
   async init(workspaceEl: HTMLElement, compositor?: Compositor): Promise<void> {
     this.compositor = compositor ?? null;
@@ -297,14 +306,9 @@ export class MusicPlayer {
     }
   }
 
-  // ─── Mini-Player Bar ────────────────────────────────────────
+  // ─── Workspace Footer Music Segment ─────────────────────────
 
   private createMiniPlayer(): void {
-    this.miniPlayer = document.createElement('div');
-    this.miniPlayer.className = 'krypton-mini-player';
-    this.miniPlayer.style.display = 'none';
-    document.body.appendChild(this.miniPlayer);
-
     // Create mini visualizer canvas
     this.miniVizCanvas = document.createElement('canvas');
     this.miniVizCanvas.className = 'krypton-mini-player__viz';
@@ -314,12 +318,14 @@ export class MusicPlayer {
   }
 
   private updateMiniPlayer(): void {
-    if (!this.miniPlayer) return;
+    if (!this.workspaceFooter) return;
 
     const hasTrack = this.state.playlist.length > 0;
-    this.miniPlayer.style.display = hasTrack ? 'flex' : 'none';
-
-    if (!hasTrack) return;
+    if (!hasTrack) {
+      this.workspaceFooter.setMusicSegment(null);
+      this.stopMiniViz();
+      return;
+    }
 
     // Manage visualizer lifecycle
     if (this.state.status === 'Playing') {
@@ -345,24 +351,16 @@ export class MusicPlayer {
     const repeatIcon = this.state.repeat === 'One' ? ' [R1]' : this.state.repeat === 'All' ? ' [R]' : '';
     const shuffleIcon = this.state.shuffle ? ' [S]' : '';
 
-    this.miniPlayer.innerHTML = `
-      <span class="krypton-mini-player__status">${statusIcon}</span>
-      <span class="krypton-mini-player__track">${this.escapeHtml(trackName)}</span>
-      <span class="krypton-mini-player__info">${audioInfo}</span>
-      <span class="krypton-mini-player__flags">${repeatIcon}${shuffleIcon}</span>
-      <span class="krypton-mini-player__time">${time}</span>
-      <div class="krypton-mini-player__progress">
-        <div class="krypton-mini-player__progress-fill" style="width: ${progress}%"></div>
-      </div>
-    `;
-
-    // Insert mini visualizer canvas (between status icon and track name)
-    if (this.miniVizCanvas) {
-      const statusEl = this.miniPlayer.querySelector('.krypton-mini-player__status');
-      if (statusEl) {
-        statusEl.after(this.miniVizCanvas);
-      }
-    }
+    this.workspaceFooter.setMusicSegment({
+      statusIcon,
+      track: trackName,
+      info: audioInfo,
+      flags: `${repeatIcon}${shuffleIcon}`,
+      time,
+      progressPct: progress,
+      playing: this.state.status === 'Playing',
+      visualizer: this.miniVizCanvas ?? undefined,
+    });
 
     // Start/stop mini visualizer animation loop
     if (this.state.status === 'Playing') {
@@ -373,16 +371,14 @@ export class MusicPlayer {
   }
 
   private updateMiniPlayerPosition(): void {
-    if (!this.miniPlayer) return;
-    const timeEl = this.miniPlayer.querySelector('.krypton-mini-player__time');
-    const fillEl = this.miniPlayer.querySelector('.krypton-mini-player__progress-fill') as HTMLElement;
-
-    if (timeEl) {
-      timeEl.textContent = `${formatTime(this.state.position_secs)} / ${formatTime(this.state.duration_secs)}`;
-    }
-    if (fillEl && this.state.duration_secs > 0) {
-      fillEl.style.width = `${(this.state.position_secs / this.state.duration_secs) * 100}%`;
-    }
+    const progress = this.state.duration_secs > 0
+      ? (this.state.position_secs / this.state.duration_secs) * 100
+      : 0;
+    this.workspaceFooter?.updateMusicPosition(
+      `${formatTime(this.state.position_secs)} / ${formatTime(this.state.duration_secs)}`,
+      progress,
+      this.state.status === 'Playing',
+    );
   }
 
   private escapeHtml(str: string): string {
@@ -394,6 +390,7 @@ export class MusicPlayer {
   // ─── Mini Visualizer ───────────────────────────────────────
 
   private startMiniViz(): void {
+    if (!this.workspaceFooter?.isVisible) return;
     if (this.miniVizRaf) return;
     const draw = (): void => {
       this.drawMiniViz();
@@ -796,6 +793,6 @@ export class MusicPlayer {
     this.unlistenPosition?.();
     this.unlistenFft?.();
     this.stopVisualizer();
-    this.miniPlayer?.remove();
+    this.workspaceFooter?.setMusicSegment(null);
   }
 }

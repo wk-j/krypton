@@ -19,6 +19,7 @@ import { createCursorTrail } from './cursor-trail';
 import { ClaudeHookManager } from './claude-hooks';
 import { NotificationController } from './notification';
 import { MusicPlayer } from './music';
+import { WorkspaceFooter } from './workspace-footer';
 import { installGlobalCopyOnSelect } from './copy-on-select';
 import { getViewBus } from './view-bus';
 import { startPtyBridge } from './pty-bridge';
@@ -101,6 +102,17 @@ async function main(): Promise<void> {
   const commandPalette = new CommandPalette(compositor);
   inputRouter.setCommandPalette(commandPalette);
 
+  // Shared workspace footer: mode/focus/project status plus music segment.
+  const workspaceFooter = new WorkspaceFooter({
+    workspace,
+    compositor,
+    inputRouter,
+    bus,
+  });
+  workspaceFooter.start();
+  inputRouter.setWorkspaceFooter(workspaceFooter);
+  commandPalette.setWorkspaceFooter(workspaceFooter);
+
   // Initialize smart prompt dialog (Cmd+Shift+K → dispatch prompt to Claude tab)
   const promptDialog = new PromptDialog(compositor, () => inputRouter.exitPromptDialog());
   inputRouter.setPromptDialog(promptDialog);
@@ -147,6 +159,7 @@ async function main(): Promise<void> {
 
   // Initialize music player
   const musicPlayer = new MusicPlayer();
+  musicPlayer.setWorkspaceFooter(workspaceFooter);
   await musicPlayer.init(workspace, compositor);
   dashboardManager.register(musicPlayer.createDashboard());
   inputRouter.setMusicPlayer(musicPlayer);

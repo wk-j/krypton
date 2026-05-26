@@ -15,6 +15,7 @@ import { QuickFileSearch } from './quick-file-search';
 import { GLOBAL_LEADER_RESERVED_KEYS, normalizeLeaderKeyEvent } from './leader-keys';
 
 import type { MusicPlayer } from './music';
+import type { WorkspaceFooter } from './workspace-footer';
 import type { LeaderKeyBinding, PaneContentType } from './types';
 
 /** Callback for mode changes */
@@ -33,6 +34,7 @@ export class InputRouter {
   private commandPalette: CommandPalette | null = null;
   private dashboardManager: DashboardManager | null = null;
   private musicPlayer: MusicPlayer | null = null;
+  private workspaceFooter: WorkspaceFooter | null = null;
   private promptDialog: PromptDialog | null = null;
   private quickFileSearch: QuickFileSearch | null = null;
 
@@ -177,6 +179,11 @@ export class InputRouter {
   /** Set the music player instance (called after construction) */
   setMusicPlayer(player: MusicPlayer): void {
     this.musicPlayer = player;
+  }
+
+  /** Set the workspace footer controller for footer-specific leader actions. */
+  setWorkspaceFooter(footer: WorkspaceFooter): void {
+    this.workspaceFooter = footer;
   }
 
   /** Check if a key event is the Music shortcut (Cmd+Shift+M) */
@@ -736,6 +743,11 @@ export class InputRouter {
       // Toggle focus layout
       case 'f':
         this.compositor.toggleFocusLayout().then(() => this.toNormal());
+        break;
+
+      // Toggle workspace footer compact/detail density
+      case '?':
+        this.workspaceFooter?.toggleDensity();
         break;
 
       // Toggle maximize
