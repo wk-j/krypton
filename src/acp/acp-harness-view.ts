@@ -4988,14 +4988,28 @@ function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'r
   return options.find((option) => option.kind === 'reject_once') ?? options.find((option) => option.kind === 'reject_always') ?? null;
 }
 
-export function harnessAutoAllowToolName(permission: Pick<HarnessPermission, 'toolCall'>): string | null {
+export function harnessAutoAllowToolName(permission: Pick<HarnessPermission, 'toolCall' | 'options'>): string | null {
   const call = permission.toolCall;
-  if (!containsHarnessServerMarker(call)) return null;
+  const optionNames = (permission.options ?? [])
+    .map((option) => option.name)
+    .filter((name): name is string => typeof name === 'string');
+  const hasServerMarker = containsHarnessServerMarker(call)
+    || optionNames.some((name) => HARNESS_SERVER_MARKERS.some((marker) => name.includes(marker)));
+  if (!hasServerMarker) return null;
   return structuredHarnessToolNameFromUnknown(call.rawInput)
     ?? harnessToolNameFromUnknown(call.rawInput)
     ?? harnessToolNameFromString(call.title)
     ?? harnessToolNameFromUnknown(call.content)
+    ?? harnessToolNameFromOptionLabels(optionNames)
     ?? null;
+}
+
+function harnessToolNameFromOptionLabels(names: string[]): string | null {
+  for (const name of names) {
+    const match = harnessToolNameFromString(name);
+    if (match) return match;
+  }
+  return null;
 }
 
 function structuredHarnessToolNameFromUnknown(value: unknown, depth = 0): string | null {

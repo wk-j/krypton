@@ -202,8 +202,20 @@ export class InterLaneCoordinator {
       return { delivered: false, reason: 'peer_in_flight' };
     }
 
+    // Initiator-owns-lifecycle: only the initiator of a pair may set done:true.
+    // If the recipient already has a pending send toward this sender, the sender
+    // is a replier — coerce their done flag to false and skip pending tracking
+    // (a reply is not a new initiation). Harness-injected envelopes bypass this
+    // rule (they're synthetic close notices).
+    const senderIsReplier =
+      env.fromLaneId !== '__harness__' &&
+      this.hasPendingTo(env.toLaneId, env.fromLaneId);
+    if (senderIsReplier && env.done) {
+      env = { ...env, done: false };
+    }
+
     this.inbox(env.toLaneId).push(env);
-    if (shouldTrackPending(env)) {
+    if (shouldTrackPending(env) && !senderIsReplier) {
       this.trackPending(env.fromLaneId, env.id, env.toLaneId, env.sentAt, env.mentionPacketId);
     }
 
@@ -376,8 +388,8 @@ export class InterLaneCoordinator {
     for (const target of targets) {
       const prompt =
         `[mention] From ${requesterDisplayName} (packet: ${packetId}):\n\n${body}\n\n` +
-        `Reply with peer_send({ to_lane: "${requesterDisplayName}", message, done: true }). ` +
-        'Use done:true for one-shot mention answers.';
+        `Reply with peer_send({ to_lane: "${requesterDisplayName}", message }). ` +
+        'Omit `done` — only the requester may close the conversation.';
       const env: InterLaneEnvelope = {
         id: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         fromLaneId: requesterId,
@@ -677,6 +689,14 @@ export class InterLaneCoordinator {
     );
     if (envelopes.length === 0) return;
 
+    // Capture initiator-vs-callee role per envelope before clearing pending,
+    // so the prompt hint can address the recipient correctly.
+    const recipientWasInitiator = new Map<string, boolean>();
+    for (const env of envelopes) {
+      if (env.fromLaneId === '__harness__') continue;
+      recipientWasInitiator.set(env.id, this.hasPendingTo(laneId, env.fromLaneId));
+    }
+
     // Render the inbound rows in the recipient's transcript first.
     let drainedHarnessNotice = false;
     for (const env of envelopes) {
@@ -715,11 +735,14 @@ export class InterLaneCoordinator {
       }
     }
 
-    const text = this.composePrompt(envelopes);
+    const text = this.composePrompt(envelopes, recipientWasInitiator);
     this.host.enqueueSystemPrompt(laneId, text);
   }
 
-  private composePrompt(envelopes: InterLaneEnvelope[]): string {
+  private composePrompt(
+    envelopes: InterLaneEnvelope[],
+    recipientWasInitiator: Map<string, boolean>,
+  ): string {
     const parts: string[] = [];
     for (const env of envelopes) {
       if (env.fromLaneId === '__harness__') {
@@ -742,14 +765,25 @@ export class InterLaneCoordinator {
         parts.push(`[inter-lane] From ${senderName} (id: ${env.id}):\n\n${env.message}`);
       }
       if (env.done) {
+        // Initiator closed the conversation (the only way done:true survives
+        // delivery — replier dones are coerced to false in deliver()).
         parts.push(
           `[inter-lane] ${senderName} closed the conversation (done:true). ` +
             'Do NOT call peer_send again. End your turn.',
         );
-      } else {
+      } else if (recipientWasInitiator.get(env.id)) {
+        // We started this exchange; the peer just replied. We own the close.
         parts.push(
-          `[inter-lane] Reply by calling peer_send({ to_lane: "${senderName}", message, done }). ` +
-            'Set done:true if you have nothing substantive to add; the conversation ends silently.',
+          `[inter-lane] Reply with peer_send({ to_lane: "${senderName}", message }) to continue, ` +
+            `or peer_send({ to_lane: "${senderName}", message, done: true }) to close the conversation. ` +
+            'Only the original initiator (you) may set done:true.',
+        );
+      } else {
+        // Peer initiated; we are the callee. Reply without done — only the
+        // initiator can close.
+        parts.push(
+          `[inter-lane] Reply by calling peer_send({ to_lane: "${senderName}", message }). ` +
+            'Omit `done` — only the original initiator may close the conversation with done:true.',
         );
       }
     }

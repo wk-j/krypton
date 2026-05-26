@@ -83,13 +83,15 @@ Target drain prompt:
 
 <body>
 
-Reply with peer_send({ to_lane: "Cursor-1", message, done: true }).
-Use done:true for one-shot mention answers so the responder does not enter awaiting_peer.
+Reply with peer_send({ to_lane: "Cursor-1", message }).
+Omit `done` — only the requester (initiator) may close the conversation.
 ```
+
+The responder does not enter `awaiting_peer` because mention replies are detected as replies (the requester has pending toward the responder via the mention packet) and the coordinator skips pending tracking for replies in `deliver()`.
 
 ### Incremental inject (required)
 
-When target replies (`peer_send` with `done:true` → requester inbox):
+When target replies (`peer_send` → requester inbox; `done` omitted, since only the requester/initiator may close):
 
 1. Reply envelope is normal `kind: 'peer'` but carries optional **`mentionPacketId`** (copied from target prompt or correlated in `deliver()` when `cancelledPairs` / open fan-out state matches).
 2. `drain(requester)` when `canDrainInbound` (Spec 116).

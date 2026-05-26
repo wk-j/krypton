@@ -1310,13 +1310,13 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "peer_send",
-            "description": "Send one message to another lane in this harness (peer review / consult). Async — recipient processes it on its next idle turn. At most one outstanding message per target lane: wait for their reply (or cancel via #cancel) before peer_send to the same target again; a second send returns peer_in_flight. After calling this tool, end your turn; the reply (if any) arrives as a new user message. Leave `done` unset (false) when initiating a request, even for a single-round consult — `done:true` silences the recipient and should only be used to close the conversation AFTER you have received their reply. Use only when the user explicitly asks you to ask, consult, or peer with another lane — never proactively.",
+            "description": "Send one message to another lane in this harness (peer review / consult). Async — recipient processes it on its next idle turn. At most one outstanding message per target lane: wait for their reply (or cancel via #cancel) before peer_send to the same target again; a second send returns peer_in_flight. After calling this tool, end your turn; the reply (if any) arrives as a new user message. The original initiator of a pair owns the lifecycle: only the initiator may set `done:true` (as a closing ack after the reply, or as a one-shot fire-and-forget on the very first send). When replying to a peer who messaged you first, omit `done` — the harness will silently coerce it to false. Use only when the user explicitly asks you to ask, consult, or peer with another lane — never proactively.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "to_lane": { "type": "string", "description": "Target lane display name (e.g., 'Claude-2')." },
                     "message": { "type": "string" },
-                    "done": { "type": "boolean", "default": false, "description": "Closes the conversation: when true, the recipient processes the message but will NOT reply. Use only when wrapping up after their reply (e.g. a 'thanks, got it' acknowledgement). When initiating a request and expecting an answer — even a single one — leave this false." }
+                    "done": { "type": "boolean", "default": false, "description": "Closes the conversation: recipient processes the message but will NOT reply. Reserved for the original initiator of the pair — either as a closing ack after receiving their reply, or as a one-shot fire-and-forget on the first send. Repliers must omit this field; the harness coerces replier-side `done:true` to false." }
                 },
                 "required": ["to_lane", "message"]
             }

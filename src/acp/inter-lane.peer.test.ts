@@ -69,12 +69,99 @@ describe('InterLaneCoordinator peer pending', () => {
       fromLaneId: 'b',
       toLaneId: 'a',
       message: 'feedback',
-      done: true,
+      done: false,
       sentAt: 2,
     });
     expect(reply.delivered).toBe(true);
     expect(coordinator.pendingPeersFor('a')).toHaveLength(0);
     expect(host.prompts.some((p) => p.laneId === 'a')).toBe(true);
+  });
+
+  it("coerces a replier's done:true to false (initiator owns lifecycle)", () => {
+    const host = peerHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    // a initiates → a has pending toward b.
+    coordinator.deliver({
+      id: 'env-out',
+      fromLaneId: 'a',
+      toLaneId: 'b',
+      message: 'q',
+      done: false,
+      sentAt: 1,
+    });
+    // b replies with done:true; coordinator must coerce it to false.
+    const reply = coordinator.deliver({
+      id: 'env-in',
+      fromLaneId: 'b',
+      toLaneId: 'a',
+      message: 'answer',
+      done: true,
+      sentAt: 2,
+    });
+    expect(reply.delivered).toBe(true);
+    const aPrompt = host.prompts.find((p) => p.laneId === 'a');
+    expect(aPrompt).toBeDefined();
+    // The "closed the conversation" hint must NOT appear — replier-done was coerced.
+    expect(aPrompt!.text).not.toContain('closed the conversation');
+    // Initiator (a) keeps close authority — drain hint should mention done:true.
+    expect(aPrompt!.text).toContain('done: true');
+  });
+
+  it("honors initiator's closing ack with done:true", () => {
+    const host = peerHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    // a initiates, b replies — exchange now complete, no pending in either direction.
+    coordinator.deliver({
+      id: 'env-1',
+      fromLaneId: 'a',
+      toLaneId: 'b',
+      message: 'q',
+      done: false,
+      sentAt: 1,
+    });
+    coordinator.deliver({
+      id: 'env-2',
+      fromLaneId: 'b',
+      toLaneId: 'a',
+      message: 'answer',
+      done: false,
+      sentAt: 2,
+    });
+    expect(coordinator.pendingPeersFor('a')).toHaveLength(0);
+    // a closes with done:true (no pending exists → a is acting as initiator).
+    const close = coordinator.deliver({
+      id: 'env-3',
+      fromLaneId: 'a',
+      toLaneId: 'b',
+      message: 'thanks',
+      done: true,
+      sentAt: 3,
+    });
+    expect(close.delivered).toBe(true);
+    const bPrompts = host.prompts.filter((p) => p.laneId === 'b');
+    const bClosePrompt = bPrompts[bPrompts.length - 1];
+    expect(bClosePrompt).toBeDefined();
+    expect(bClosePrompt.text).toContain('closed the conversation');
+  });
+
+  it('honors initiator one-shot fire-and-forget with done:true on first send', () => {
+    const host = peerHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    const oneShot = coordinator.deliver({
+      id: 'env-fire',
+      fromLaneId: 'a',
+      toLaneId: 'b',
+      message: 'fyi',
+      done: true,
+      sentAt: 1,
+    });
+    expect(oneShot.delivered).toBe(true);
+    // Recipient prompt should show "closed the conversation".
+    const bPrompt = host.prompts.find((p) => p.laneId === 'b');
+    expect(bPrompt).toBeDefined();
+    expect(bPrompt!.text).toContain('closed the conversation');
+    // No pending tracked (done:true skips pending).
+    expect(coordinator.pendingPeersFor('a')).toHaveLength(0);
   });
 
   it('rejects a second pending send to the same peer', () => {

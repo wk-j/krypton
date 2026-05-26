@@ -11,7 +11,7 @@ The ACP harness should auto-approve only Krypton's built-in lane memory tools, b
 
 ## Solution
 
-Keep memory auto-approval, but make the detector require both an allowed memory tool name and a built-in memory server marker. The accepted markers are the server name `krypton-harness-memory`, the namespaced identifier fragment `krypton_harness_memory`, or the local endpoint path `/mcp/harness/`. Tool name matching covers structured tool ids, title text, and ACP content text, case-insensitively. Requests from `.mcp.json` bridged servers, third-party MCP servers, or arbitrary tools with the same names continue through the normal permission UI.
+Keep memory auto-approval, but make the detector require both an allowed memory tool name and a built-in memory server marker. The accepted markers are the server name `krypton-harness-memory`, the namespaced identifier fragment `krypton_harness_memory`, or the local endpoint path `/mcp/harness/`. Tool name matching covers structured tool ids, title text, ACP content text, and `permission.options[].name` labels, case-insensitively. The option-label path was added so adapters that emit generic prompts (e.g., Junie/JetBrains, where `toolCall.title` is just `"Allow running MCP?"` and the server/tool identity appears only in option labels such as `Always allow ("krypton-harness-memory:peer_send")`) still auto-approve. Requests from `.mcp.json` bridged servers, third-party MCP servers, or arbitrary tools with the same names continue through the normal permission UI.
 
 ## Research
 
@@ -68,10 +68,10 @@ interface MemoryPermissionMatch {
 
 Auto-approve only when both conditions are true:
 
-1. The permission request contains one of `memory_set`, `memory_get`, or `memory_list`.
-2. The same `toolCall` payload contains `krypton-harness-memory`, `krypton_harness_memory`, or `/mcp/harness/`.
+1. The permission request contains one of the allowed built-in tool names (memory: `memory_set`, `memory_get`, `memory_list`; peer: `peer_send`, `peer_list`; review: `review_request`, `review_reply`) somewhere in `toolCall.{rawInput,title,content}` or in any `permission.options[].name`.
+2. The permission request also contains a built-in server marker (`krypton-harness-memory`, `krypton_harness_memory`, `krypton-harness-bus`, `krypton_harness_bus`, or `/mcp/harness/`) somewhere in `toolCall` or in any option label.
 
-All other requests, including a third-party MCP server that also exposes `memory_set`, must enter the existing permission flow.
+All other requests, including a third-party MCP server that also exposes `memory_set` or `peer_send`, must enter the existing permission flow.
 
 ### Data Flow
 
@@ -79,9 +79,9 @@ All other requests, including a third-party MCP server that also exposes `memory
 1. ACP adapter sends session/request_permission.
 2. AcpClient emits permission_request to AcpHarnessView.
 3. addPermission() calls the harness auto-allow detector.
-4. Detector scans toolCall.rawInput, toolCall.title, and toolCall.content text.
-5. If allowed memory tool + built-in marker are both present:
-   5a. resolveMemoryPermission() sends allow_once/allow_always option.
+4. Detector scans toolCall.rawInput, toolCall.title, toolCall.content text, and permission.options[].name labels.
+5. If allowed harness tool + built-in marker are both present:
+   5a. resolveHarnessPermission() sends allow_once/allow_always option.
    5b. Transcript logs a structured permission card with the harness auto-allow reason.
 6. Otherwise the permission is queued and rendered in the composer.
 ```
@@ -95,6 +95,9 @@ Add Vitest cases for:
 - Accept content text containing `Tool: krypton-harness-memory/memory_set` plus uppercase title `MEMORY_SET`.
 - Reject `{ name: 'memory_set' }` with no built-in marker.
 - Reject non-memory tools even when a marker appears.
+- Accept Junie-style payload where `toolCall.title` is generic ("Allow running MCP?") and both the server marker and tool name appear only inside `permission.options[].name`.
+- Reject Junie-style option labels that reference a third-party server, even if a known tool name is present.
+- Reject Junie-style option labels that reference the built-in server with a non-allowed tool (e.g., `shell_run`).
 
 ## Edge Cases
 

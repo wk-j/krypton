@@ -1428,7 +1428,10 @@ fn sanitize_junie_path_component(s: &str) -> String {
         .collect()
 }
 
-fn junie_overlay_lane_dir(harness_id: &str, lane_label: &str) -> Result<std::path::PathBuf, String> {
+fn junie_overlay_lane_dir(
+    harness_id: &str,
+    lane_label: &str,
+) -> Result<std::path::PathBuf, String> {
     let base = crate::config::config_dir()
         .ok_or_else(|| "Could not determine config directory".to_string())?;
     Ok(base
@@ -1460,8 +1463,7 @@ pub fn write_junie_mcp_overlay(
 pub fn remove_junie_mcp_overlay(harness_id: String, lane_label: String) -> Result<(), String> {
     let dir = junie_overlay_lane_dir(&harness_id, &lane_label)?;
     if dir.exists() {
-        std::fs::remove_dir_all(&dir)
-            .map_err(|e| format!("remove {}: {e}", dir.display()))?;
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
     }
     Ok(())
 }
@@ -1717,10 +1719,14 @@ mod tests {
     fn junie_overlay_path_sanitizes_lane_label() {
         let dir = super::junie_overlay_lane_dir("h1", "Junie-1").expect("dir");
         let s = dir.to_string_lossy();
-        assert!(s.contains("runtime/junie/h1/Junie-1") || s.contains("runtime\\junie\\h1\\Junie-1"));
+        assert!(
+            s.contains("runtime/junie/h1/Junie-1") || s.contains("runtime\\junie\\h1\\Junie-1")
+        );
         let mcp_json = dir.join("mcp.json");
-        assert!(mcp_json.to_string_lossy().ends_with("Junie-1/mcp.json")
-            || mcp_json.to_string_lossy().ends_with("Junie-1\\mcp.json"));
+        assert!(
+            mcp_json.to_string_lossy().ends_with("Junie-1/mcp.json")
+                || mcp_json.to_string_lossy().ends_with("Junie-1\\mcp.json")
+        );
     }
 
     #[test]

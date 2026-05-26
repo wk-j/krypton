@@ -12,14 +12,15 @@ import {
   type LanePeekSnapshot,
 } from './acp-harness-view';
 
-import type { ToolCall } from './types';
+import type { PermissionOption, ToolCall } from './types';
 
-function permissionFor(toolCall: Partial<ToolCall>): { toolCall: ToolCall } {
+function permissionFor(toolCall: Partial<ToolCall>, options: PermissionOption[] = []): { toolCall: ToolCall; options: PermissionOption[] } {
   return {
     toolCall: {
       toolCallId: 't1',
       ...toolCall,
     },
+    options,
   };
 }
 
@@ -133,6 +134,36 @@ describe('ACP harness auto-allow permission detection', () => {
         message: 'hi',
       },
     }))).toBe('peer_send');
+  });
+
+  it('accepts Junie-style permission where server + tool name appear only in option labels', () => {
+    expect(harnessAutoAllowToolName(permissionFor(
+      { title: 'Allow running MCP?', kind: 'other' },
+      [
+        { optionId: 'Yes', name: 'Yes', kind: 'allow_once' },
+        { optionId: 'No', name: 'No', kind: 'reject_once' },
+        { optionId: 'always-peer', name: 'Always allow ("krypton-harness-memory:peer_send")', kind: 'allow_always' },
+        { optionId: 'always-all', name: 'Always allow ("krypton-harness-memory:*")', kind: 'allow_always' },
+      ],
+    ))).toBe('peer_send');
+  });
+
+  it('rejects Junie-style permission when option labels reference a third-party server', () => {
+    expect(harnessAutoAllowToolName(permissionFor(
+      { title: 'Allow running MCP?', kind: 'other' },
+      [
+        { optionId: 'a', name: 'Always allow ("third-party-memory:peer_send")', kind: 'allow_always' },
+      ],
+    ))).toBeNull();
+  });
+
+  it('rejects Junie-style permission when option labels carry only the server marker without a known tool', () => {
+    expect(harnessAutoAllowToolName(permissionFor(
+      { title: 'Allow running MCP?', kind: 'other' },
+      [
+        { optionId: 'a', name: 'Always allow ("krypton-harness-memory:shell_run")', kind: 'allow_always' },
+      ],
+    ))).toBeNull();
   });
 });
 

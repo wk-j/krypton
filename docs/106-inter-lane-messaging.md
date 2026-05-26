@@ -171,18 +171,37 @@ When a lane transitions to `idle` *and* its inbox is non-empty, the coordinator 
 
   <message text>
 
-[inter-lane] Reply by calling peer_send({ to_lane: "Claude-1", message, done }).
-Set done:true if you have nothing substantive to add; the conversation ends silently.
+[inter-lane] Reply by calling peer_send({ to_lane: "Claude-1", message }).
+Omit `done` — only the original initiator may close the conversation with done:true.
 ```
 
 The trailing instruction is injected by the coordinator — it survives even if the sender forgets to include it.
 
-If `done: true` was set on the incoming envelope, the trailing line becomes:
+When the recipient was the initiator of the pair (the envelope is a *reply* to them), the trailing line instead reads:
+
+```
+[inter-lane] Reply with peer_send({ to_lane: "Claude-1", message }) to continue,
+or peer_send({ to_lane: "Claude-1", message, done: true }) to close the conversation.
+Only the original initiator (you) may set done:true.
+```
+
+If `done: true` was set on the incoming envelope (initiator closed), the trailing line becomes:
 
 ```
 [inter-lane] Claude-1 closed the conversation (done:true).
 Do NOT call peer_send again. End your turn.
 ```
+
+### Lifecycle Authority
+
+The **initiator of a pair owns the conversation lifecycle**. "Initiator" = the lane that holds an outstanding `PendingSend` toward the peer in the current exchange. After a reply drains and pending clears, the next send starts a fresh exchange whose sender is the new initiator.
+
+- **Initiator** may set `done:true`:
+  1. As a closing ack after receiving the replier's response.
+  2. As a one-shot fire-and-forget on the first send.
+- **Replier** must omit `done`. If a replier passes `done:true`, the coordinator silently coerces it to `false` inside `deliver()` — the conversation continues, and the initiator retains close authority.
+
+This invariant matters because `done:true` is a unilateral lock-out — the recipient sees "Do NOT call peer_send again". Allowing callees to set it lets them terminate exchanges the initiator hadn't intended to close.
 
 ### awaiting_peer transitions
 
@@ -210,7 +229,7 @@ Added to `hook_server.rs` next to memory tools. Server identity renamed to `kryp
 ```json
 {
   "name": "peer_send",
-  "description": "Send one message to another lane in this harness. Async — the recipient processes it on its next idle turn. After calling this tool, end your turn; the reply (if any) will arrive as a new user message. Set done:true when you have nothing more to say.",
+  "description": "Send one message to another lane in this harness. Async — the recipient processes it on its next idle turn. After calling this tool, end your turn; the reply (if any) will arrive as a new user message. The original initiator owns the lifecycle: only the initiator may set done:true (as a closing ack, or as a one-shot fire-and-forget). Repliers must omit done; the coordinator coerces replier-side done:true to false.",
   "inputSchema": {
     "type": "object",
     "required": ["to_lane", "message"],
