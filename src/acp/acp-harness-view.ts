@@ -404,6 +404,7 @@ const BACKEND_LABELS: Record<string, string> = {
   droid: 'Droid',
   cursor: 'Cursor',
   junie: 'Junie',
+  omp: 'OMP',
 };
 
 function backendLabel(backendId: string): string {
@@ -2009,10 +2010,16 @@ export class AcpHarnessView implements ContentView {
     const memoryServers = this.memoryServerForLane(lane);
     // Claude Code's adapter loads `.mcp.json` natively — re-injecting via
     // ACP would duplicate every entry. Pi has no MCP host at all (by design),
-    // so the bridge has nowhere to land for Pi-1. Both lanes skip the bridge
-    // for opposite reasons.
+    // so the bridge has nowhere to land for Pi-1.
     // Junie loads MCP via `--mcp-location` overlay; session/new mcpServers is a no-op.
-    if (lane.backendId === 'claude' || lane.backendId === 'pi-acp' || lane.backendId === 'junie') {
+    // OMP native-loads root `.mcp.json` in ACP mode but still accepts injected
+    // harness memory servers, so skip only the project bridge.
+    if (
+      lane.backendId === 'claude' ||
+      lane.backendId === 'pi-acp' ||
+      lane.backendId === 'junie' ||
+      lane.backendId === 'omp'
+    ) {
       return lane.backendId === 'junie' ? [] : memoryServers;
     }
     const projectServers = await loadProjectMcpServers(this.projectDir);
@@ -6288,6 +6295,7 @@ export function laneAccent(index: number): string {
     '#5fb3b3',
     '#ff9f1c',
     '#b18cff',
+    '#4dd0ff',
   ];
   return accents[(index - 1) % accents.length];
 }
@@ -6301,6 +6309,7 @@ export function laneAccentForLabel(label: string): string {
   if (/droid/i.test(label)) return laneAccent(6);
   if (/cursor/i.test(label)) return laneAccent(7);
   if (/junie/i.test(label)) return laneAccent(8);
+  if (/^omp(-|$)/i.test(label)) return laneAccent(9);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }

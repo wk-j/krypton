@@ -223,13 +223,16 @@
    d. Returns harnessId and hook server port to frontend.
 6. AcpHarnessView lists ACP backends and starts with an empty roster. The user
    opens `Cmd+P → +` to spawn installed backends such as Codex, Claude, Gemini,
-   OpenCode, Pi, Droid, Cursor, or Junie with the same cwd. After `session/new`,
+   OpenCode, Pi, Droid, Cursor, Junie, or OMP with the same cwd. After `session/new`,
    OpenCode lanes receive `session/set_config_option` to select
    `zai-coding-plan/glm-5.1`.
 7. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
    Lanes render into a shared dashboard, but prompts are dispatched only to the
    active tab in the command center.
+   a. OMP lanes skip Krypton's project `.mcp.json` bridge because OMP native-loads
+      root `.mcp.json` in ACP mode; they still receive the per-lane
+      `krypton-harness-memory` MCP server.
 7. On Enter, the active lane's draft is sent through acp_prompt with a short
    lane-context stub: the lane's own label, the full lane roster, and a
    one-line nudge describing the krypton-harness-memory MCP tools. Memory

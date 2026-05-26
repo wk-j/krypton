@@ -10,7 +10,7 @@ Krypton's ACP harness runs four lanes (Claude-1, Codex-1, Gemini-1, OpenCode-1) 
 
 ## Solution
 
-Read `.mcp.json` from the harness `projectDir` on the frontend, translate its object-shaped `env`/`headers` into ACP's array-shaped `{name, value}` entries, expand `${VAR}` against the cached login env, and inject the resulting `McpServer[]` into `session/new` for **non-Claude lanes only** (Claude Code's adapter already loads `.mcp.json` natively — re-injecting would duplicate every server). Capability-gate `http`/`sse` types against `agentCapabilities.mcpCapabilities` advertised in the `initialize` response and skip incompatible servers per lane. The `krypton-harness-memory` server continues to be appended after the bridge list.
+Read `.mcp.json` from the harness `projectDir` on the frontend, translate its object-shaped `env`/`headers` into ACP's array-shaped `{name, value}` entries, expand `${VAR}` against the cached login env, and inject the resulting `McpServer[]` into `session/new` for lanes that need the shared project bridge. Claude Code and OMP load root `.mcp.json` natively, Pi has no MCP host, and Junie uses a native `--mcp-location` overlay, so those backends do not receive the bridged project list through `session/new`. Capability-gate `http`/`sse` types against `agentCapabilities.mcpCapabilities` advertised in the `initialize` response and skip incompatible servers per lane. The `krypton-harness-memory` server continues to be appended when the backend can accept it.
 
 ## Research
 
@@ -39,7 +39,7 @@ Read `.mcp.json` from the harness `projectDir` on the frontend, translate its ob
 | File | Change |
 |------|--------|
 | `src/acp/mcp-bridge.ts` | NEW — read & translate `.mcp.json` to `AcpMcpServerDescriptor[]`. |
-| `src/acp/acp-harness-view.ts` | Call bridge alongside `memoryServerForLane`; merge & dedupe by `name`; skip bridge for `claude` backend. |
+| `src/acp/acp-harness-view.ts` | Call bridge alongside `memoryServerForLane`; merge & dedupe by `name`; skip the project bridge for `claude`, `pi-acp`, `junie`, and `omp` according to each backend's MCP behavior. |
 | `src/types.ts` | Extend `AcpMcpServerDescriptor` only if needed (likely already covers stdio/http/sse). |
 | `src-tauri/src/lib.rs` | Register new command `read_mcp_config_file`. |
 | `src-tauri/src/acp.rs` | Add `read_mcp_config_file(path) -> Result<String, String>` and `acp_get_login_env() -> Result<HashMap<String,String>, String>` (or expose existing cached env). |
@@ -130,7 +130,12 @@ const merged   = dedupeByName([...filtered, ...memory]);
 
 ### Lane skip
 
-`if (lane.backendId === 'claude') return memoryServerForLane(lane);` — Claude Code's adapter already loads `.mcp.json` natively. We still inject the memory server (it isn't in `.mcp.json`).
+Current skip policy:
+
+- `claude` → return `memoryServerForLane(lane)` only; Claude Code's adapter already loads `.mcp.json` natively.
+- `omp` → return `memoryServerForLane(lane)` only; OMP native-loads root `.mcp.json` in ACP mode but still accepts injected harness memory.
+- `pi-acp` → return `[]`; Pi has no MCP host.
+- `junie` → return `[]`; Junie receives memory/project servers through the native `--mcp-location` overlay instead of `session/new`.
 
 ### Spawn-time vs initialize-time
 
@@ -167,7 +172,8 @@ Re-inspection of `acp.rs:705-797`: `acp_initialize` does `initialize` then `sess
    2d. gated ← projectServers
               .filter(s => isSupportedByLane(s, L))   # using info.capabilities
    2e. final ← dedupe([...gated, ...memoryServerForLane(L)])
-   2f. if L.backendId === 'claude': final ← memoryServerForLane(L) only
+   2f. if L.backendId is claude/omp/pi-acp/junie:
+         final ← backend-specific skip policy above
    2g. acp_set_mcp_servers(L.session, final)
    2h. acp_session_new(L.session) → sessionId
 3. Lane is live; tool-list event from agent now includes both .mcp.json

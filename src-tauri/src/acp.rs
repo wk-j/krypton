@@ -106,6 +106,14 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "Junie".to_string(),
             },
         ),
+        (
+            "omp",
+            AcpBackend {
+                command: "omp".to_string(),
+                args: vec!["acp".to_string()],
+                display_name: "OMP".to_string(),
+            },
+        ),
     ]
 }
 
@@ -1546,6 +1554,35 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
             return "Junie did not return an initialize response and no stderr was captured. First-run JetBrains login or install input is a likely cause; run `junie` in a terminal once, then retry.".to_string();
         }
     }
+    if backend_id == "omp" {
+        if s.contains("command not found") || s.contains("enoent") || s.contains("no such file") {
+            return "Install OMP from https://omp.sh, then restart Krypton so the login-shell PATH cache includes `omp`.".to_string();
+        }
+        if s.contains("unknown command acp")
+            || s.contains("unknown command: acp")
+            || s.contains("unknown subcommand acp")
+            || s.contains("unknown subcommand: acp")
+            || s.contains("unrecognized subcommand acp")
+            || s.contains("unrecognized command acp")
+            || s.contains("invalid command acp")
+        {
+            return "Your OMP CLI predates native ACP mode. Run `omp --version` (known-good baseline: `omp/15.4.1`) and update OMP.".to_string();
+        }
+        if s.contains("not authenticated")
+            || s.contains("please log in")
+            || s.contains("please login")
+            || s.contains("authentication required")
+            || s.contains("unauthorized")
+        {
+            return "Run `omp` once in a terminal to complete auth, or export a provider API key such as `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` before launching Krypton.".to_string();
+        }
+        if s.contains("invalid api key") || s.contains("bad token") || s.contains("api key") {
+            return "OMP reports an API key problem. Re-check your provider key in the login shell used to launch Krypton.".to_string();
+        }
+        if stderr.is_empty() {
+            return "OMP did not return an initialize response and no stderr was captured. First-run auth-broker/OAuth or install input is a likely cause; run `omp` once in a terminal, then retry.".to_string();
+        }
+    }
     if s.contains("/login") || s.contains("not authenticated") {
         return "Run `claude /login` in a terminal, then retry.".to_string();
     }
@@ -1713,6 +1750,53 @@ mod tests {
         // Falls through to the generic Claude/auth hint instead of Junie's
         // config-corruption row.
         assert!(!hint.contains("Junie failed to load its config"));
+    }
+
+    #[test]
+    fn omp_startup_hint_reports_missing_cli() {
+        let hint = startup_hint("omp", "No such file or directory (os error 2)");
+
+        assert!(hint.contains("Install OMP"));
+        assert!(hint.contains("omp.sh"));
+    }
+
+    #[test]
+    fn omp_startup_hint_reports_unknown_acp_subcommand() {
+        let hint = startup_hint("omp", "error: unknown command acp");
+
+        assert!(hint.contains("predates native ACP mode"));
+        assert!(hint.contains("omp/15.4.1"));
+    }
+
+    #[test]
+    fn omp_startup_hint_reports_auth_when_explicit() {
+        let hint = startup_hint("omp", "Error: not authenticated: please log in");
+
+        assert!(hint.contains("Run `omp` once"));
+        assert!(hint.contains("ANTHROPIC_API_KEY"));
+    }
+
+    #[test]
+    fn omp_startup_hint_reports_api_key_problem_before_generic_auth() {
+        let hint = startup_hint("omp", "Error: invalid api key");
+
+        assert!(hint.contains("OMP reports an API key problem"));
+        assert!(!hint.contains("claude /login"));
+    }
+
+    #[test]
+    fn omp_startup_hint_empty_stderr_is_non_diagnostic() {
+        let hint = startup_hint("omp", "");
+
+        assert!(hint.contains("no stderr was captured"));
+        assert!(hint.contains("auth-broker/OAuth"));
+    }
+
+    #[test]
+    fn omp_startup_hint_does_not_leak_to_other_backends() {
+        let hint = startup_hint("claude", "omp: unknown command acp");
+
+        assert!(!hint.contains("OMP CLI predates native ACP mode"));
     }
 
     #[test]

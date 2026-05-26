@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-26 (ACP Junie lane)
+> Last updated: 2026-05-26 (ACP OMP lane)
 
 ## Overview
 
@@ -21,6 +21,7 @@
 
 ## Recent Landings
 
+- **ACP Harness OMP lane** — Oh My Pi is now a built-in ACP backend. The lane picker lists `OMP`, spawning `omp acp` with cached login-shell environment injection. OMP accepts `session/new mcpServers` but also native-loads root `.mcp.json`, so Krypton skips the project `.mcp.json` bridge for OMP while still injecting the per-lane `krypton-harness-memory` MCP server. OMP-specific startup diagnostics cover missing CLI installs, old CLIs without native ACP mode, explicit auth failures, API key issues, and empty-stderr first-run/auth-broker stalls. OMP lanes use the normal permission rail and do not show a warning chip in v1. See `docs/122-acp-omp-lane.md`.
 - **WorkspaceFooter status rail** — The old music mini-player no longer owns the full bottom strip. A new `WorkspaceFooter` owns the single fixed 28px workspace rail and renders mode, focused role/title, CWD/git, counts, focused-view process/activity/progress, and contextual hints from `InputRouter`, `Compositor`, existing `ViewBus` signals, and debounced git probes. Music registers as a bounded right-side segment with track/time/progress/mini-visualizer state. `Leader ?` toggles compact/detail density, and command palette actions can toggle detail or visibility. No new `view:status` protocol signal was added. See `docs/121-workspace-status-bar.md`.
 - **ACP Harness Junie auto-allow gap** — `harnessAutoAllowToolName` now also scans `permission.options[].name`, so adapters (Junie/JetBrains) that emit `toolCall.title: "Allow running MCP?"` and surface the server/tool identity only inside option labels like `Always allow ("krypton-harness-memory:peer_send")` auto-approve. The built-in-server-marker + allowed-tool-name AND rule is preserved (third-party servers or non-allowed tools still prompt). Removed the temporary `[perm-debug]` warn/transcript dump in `addPermission()`. See `docs/96-acp-built-in-memory-auto-approval.md`.
 - **ACP Harness Junie MCP overlay** — Junie ignores `session/new` MCP injection; Krypton writes per-lane `.junie/mcp/mcp.json` under `~/.config/krypton/runtime/junie/<harness>/<lane>/` and spawns with `--mcp-location <overlayRoot>`. Harness memory + `.mcp.json` bridge use Junie's native loader. See `docs/119-acp-junie-lane.md`.
