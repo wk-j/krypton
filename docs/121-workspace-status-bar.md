@@ -57,7 +57,7 @@ Alternatives ruled out:
 | `docs/04-architecture.md` | Add a short workspace status bar section. |
 | `docs/05-data-flow.md` | Add data flow for focus/mode/bus signals into the bar. |
 | `docs/PROGRESS.md` | Add landing note when implemented. |
-| `docs/proto-workspace-footer.html` | Static interactive prototype for compact/detail, music-active, mode, and narrow-width states. |
+| `docs/prototypes/workspace-footer.html` | Static interactive prototype for compact/detail, music-active, mode, and narrow-width states.
 
 ## Design
 
@@ -327,7 +327,7 @@ None. The v1 behavior is intentionally read-only and runtime-only.
 - [Kitty configuration: tab bar](https://sw.kovidgoyal.net/kitty/conf/#tab-bar) — terminal tab/status visual density conventions.
 - [Zellij status-bar alias](https://zellij.dev/documentation/status-bar-alias) — full-width bottom status plugin expected to show input modes/status.
 - Cursor-1 inter-lane brainstorm (2026-05-26) — priority tiering, three-zone footer, music-active compression, and implementation cautions.
-- `docs/proto-workspace-footer.html` — static prototype of the proposed 28px shared footer rail and compression states.
+- `docs/prototypes/workspace-footer.html` — static prototype of the proposed 28px shared footer rail and compression states.
 - `docs/104-chrome-signal-upgrades.md` — current chrome signal scope and workspace-switching caveat.
 - `docs/105-view-protocol.md` — existing typed bus used as the status bar data source.
 - `src/input-router.ts`, `src/compositor.ts`, `src/pty-bridge.ts`, `src/chrome-signals.ts` — local data sources and update patterns.
