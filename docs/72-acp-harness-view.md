@@ -117,12 +117,22 @@ interface FileTouchRecord {
   at: number;
 }
 
+interface ProviderErrorPayload {
+  category: 'rate_limit' | 'quota' | 'auth' | 'context' | 'network' | 'provider' | 'unknown';
+  code?: string;
+  headline: string;
+  hint?: string;
+  retryable: boolean;
+  raw: string;
+}
+
 interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'permission' | 'restart' | 'memory' | 'shell';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'plan' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'review' | 'provider_error';
   text: string;
   status?: string;
   diff?: { title: string; unified: string };
+  providerError?: ProviderErrorPayload;
 }
 
 interface HarnessSpawnSpec {
@@ -344,7 +354,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   Status uses symbol + text + color together; never color alone.
 
 - The **active lane** fills the remaining viewport. Its body is internally scrollable. Collapsed rows above and below the active lane stay anchored.
-- The active lane body shows the full per-lane transcript: user prompts, assistant text, thoughts, tool calls and summaries, plan updates, permission requests and resolutions, usage snapshots, and system rows. Tool rows show diff/output preview inline as plain monospace text, not syntax-highlighted code. Output groups use label-specific text colors and text-shadow glow only; the group container does not add a background glow. Execute-tool output can render structured summaries for recognized command output: unified `git diff` output becomes compact file/hunk/add/delete rows, `git diff --stat` becomes per-file mini bars, and `git status --short` becomes status badges plus paths. Unknown output keeps the generic labeled text sections. Long assistant text truncates at ~12 lines with a `[…]` expand affordance. The transcript scrolls within the lane body.
+- The active lane body shows the full per-lane transcript: user prompts, assistant text, thoughts, tool calls and summaries, plan updates, permission requests and resolutions, usage snapshots, and system rows. Tool rows show diff/output preview inline as plain monospace text, not syntax-highlighted code. Output groups use label-specific text colors and text-shadow glow only; the group container does not add a background glow. Execute-tool output can render structured summaries for recognized command output: unified `git diff` output becomes compact file/hunk/add/delete rows, `git diff --stat` becomes per-file mini bars, and `git status --short` becomes status badges plus paths. Unknown output keeps the generic labeled text sections. Short provider/API failures that arrive as assistant text are classified when the stream seals and rewritten into `provider_error` cards with a headline, hint, retryability chip, and collapsed raw details; raw provider diagnostics are not markdown-rendered. Long assistant text truncates at ~12 lines with a `[…]` expand affordance. The transcript scrolls within the lane body.
 - A **contextual lane peek** can appear in the active lane transcript region for one non-active lane. It is a non-blocking, hideable top-right summary, not a global overview: it shows only the automatically selected lane's name, status, reason, and at most one compact payload (permission, peer, error, or recent activity). Selection prioritizes direct peer relations from the active lane, related permissions, non-active errors/permissions/inbox, then recent meaningful activity. Direct peer candidates (priority ≤30) clear a prior user dismiss before selection runs. `Esc` hides the peek only when no permission banner owns `Esc`; command palette actions can show/hide, cycle, unlock, or activate the peeked lane. No placeholder is shown when no non-active lane qualifies.
 - **Peer activity (zen rail + composer)** — in Zen Mode, each left-rail lane row shows compact peer glyphs (`⇆` outstanding send, `▼N` inbox depth, `←`/`→` recent peer traffic). The active composer may show an informational peer strip above the input (`#cancel drops pending peer wait`); it does not block typing while `awaiting_peer` (spec 116). See `docs/118-acp-peer-activity-ui.md`.
 - Permission requests appear inline in the transcript at the time they arrive as dense cards:

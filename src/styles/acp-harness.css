@@ -1389,6 +1389,14 @@
   border-left-color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 10%, transparent);
 }
 
+.acp-harness__msg--provider_error {
+  border-left-color: transparent;
+}
+
+.acp-harness__msg--provider_error .acp-harness__msg-label {
+  color: rgba(255, 209, 102, 0.78);
+}
+
 .acp-harness__msg--thought .acp-harness__msg-body {
   color: rgba(216, 232, 216, 0.52);
   font-style: italic;
@@ -2232,6 +2240,117 @@
   flex: 0 0 auto;
   color: #ff8b8b;
   font-style: italic;
+}
+
+/* Spec 123 — provider/API failure card */
+.acp-harness__provider-error {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 209, 102, 0.34);
+  background:
+    linear-gradient(90deg, rgba(255, 209, 102, 0.09), rgba(109, 208, 255, 0.035)),
+    rgba(10, 16, 24, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.06);
+  color: rgba(216, 232, 216, 0.84);
+  font-size: 0.9em;
+  white-space: normal;
+}
+
+.acp-harness__provider-error--auth,
+.acp-harness__provider-error--quota {
+  border-color: rgba(255, 107, 139, 0.48);
+  background:
+    linear-gradient(90deg, rgba(255, 107, 139, 0.1), rgba(109, 208, 255, 0.03)),
+    rgba(10, 16, 24, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 107, 139, 0.06);
+}
+
+.acp-harness__provider-error--context {
+  border-color: rgba(109, 208, 255, 0.42);
+  background:
+    linear-gradient(90deg, rgba(109, 208, 255, 0.1), rgba(142, 255, 176, 0.03)),
+    rgba(10, 16, 24, 0.9);
+  box-shadow: 0 0 0 1px rgba(109, 208, 255, 0.06);
+}
+
+.acp-harness__provider-error--network,
+.acp-harness__provider-error--provider,
+.acp-harness__provider-error--unknown {
+  border-color: rgba(255, 176, 0, 0.42);
+}
+
+.acp-harness__provider-error-kicker {
+  color: rgba(255, 209, 102, 0.82);
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.76em;
+  letter-spacing: 0.11em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.acp-harness__provider-error-headline {
+  color: rgba(255, 247, 214, 0.96);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.acp-harness__provider-error-hint {
+  color: rgba(216, 232, 216, 0.72);
+  line-height: 1.36;
+}
+
+.acp-harness__provider-error-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.acp-harness__provider-error-chip {
+  border: 1px solid rgba(216, 232, 216, 0.16);
+  color: rgba(216, 232, 216, 0.58);
+  padding: 1px 6px;
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.72em;
+  letter-spacing: 0.07em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.acp-harness__provider-error-chip--retry {
+  border-color: rgba(142, 255, 176, 0.28);
+  color: rgba(142, 255, 176, 0.76);
+}
+
+.acp-harness__provider-error-details {
+  margin-top: 4px;
+  color: rgba(216, 232, 216, 0.58);
+}
+
+.acp-harness__provider-error-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: rgba(109, 208, 255, 0.78);
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.76em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.acp-harness__provider-error-details pre {
+  margin: 7px 0 0;
+  padding: 8px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid rgba(216, 232, 216, 0.1);
+  background: rgba(0, 0, 0, 0.24);
+  color: rgba(216, 232, 216, 0.78);
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.82em;
+  line-height: 1.42;
+  white-space: pre-wrap;
 }
 
 /* Spec 87 — slash command palette */

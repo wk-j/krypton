@@ -184,6 +184,24 @@ export interface UsageInfo {
   cachedWriteTokens?: number;
 }
 
+export type ProviderErrorCategory =
+  | 'rate_limit'
+  | 'quota'
+  | 'auth'
+  | 'context'
+  | 'network'
+  | 'provider'
+  | 'unknown';
+
+export interface ProviderErrorPayload {
+  category: ProviderErrorCategory;
+  code?: string;
+  headline: string;
+  hint?: string;
+  retryable: boolean;
+  raw: string;
+}
+
 export interface AcpAvailableCommand {
   name: string;
   description?: string;
@@ -350,5 +368,6 @@ export type AcpEvent =
   | { type: 'mode_update'; modeId: string }
   | { type: 'fs_activity'; method: 'read' | 'write'; path: string; ok: boolean; error?: string }
   | { type: 'fs_write_pending'; requestId: number; path: string; oldText: string; newText: string }
+  | { type: 'provider_error'; payload: ProviderErrorPayload }
   | { type: 'stop'; stopReason: StopReason }
   | { type: 'error'; message: string };

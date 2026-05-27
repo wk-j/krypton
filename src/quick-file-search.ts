@@ -37,7 +37,6 @@ export class QuickFileSearch {
 
   private queryToken = 0;
   private debounceTimer: number | null = null;
-  private mouseMovedSinceOpen = false;
 
   private onCloseCallback: () => void;
 
@@ -61,10 +60,6 @@ export class QuickFileSearch {
       }
     });
 
-    this.overlay.addEventListener('mousemove', () => {
-      this.mouseMovedSinceOpen = true;
-    });
-
     document.body.appendChild(this.overlay);
   }
 
@@ -79,7 +74,6 @@ export class QuickFileSearch {
     this.grepResults = [];
     this.mode = 'file';
     this.selectedIndex = 0;
-    this.mouseMovedSinceOpen = false;
     this.input.value = '';
     this.input.placeholder = 'find file…';
     this.updateModeBadge();
@@ -484,11 +478,6 @@ export class QuickFileSearch {
       this.selectedIndex = i;
       this.updateSelection();
       void this.acceptSelected(e.metaKey ? 'absolute' : 'relative');
-    });
-    li.addEventListener('mouseenter', () => {
-      if (!this.mouseMovedSinceOpen) return;
-      this.selectedIndex = i;
-      this.updateSelection();
     });
   }
 

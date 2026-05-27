@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-26 (ACP OMP lane)
+> Last updated: 2026-05-27 (ACP provider error rendering)
 
 ## Overview
 
@@ -21,6 +21,8 @@
 
 ## Recent Landings
 
+- **ACP provider error rendering** — ACP Harness assistant streams now classify short provider/API failures such as `resource_exhausted`, 429/rate-limit, quota, auth, context, network, and overload errors when the assistant row seals. Matched rows are rewritten into structured `provider_error` cards with a headline, hint, retryability chip, and collapsed raw details instead of being markdown-rendered as malformed assistant prose. Structured ACP errors and prompt failures also use the same classifier when possible; unclassified errors stay as system rows. See `docs/123-acp-provider-error-rendering.md`.
+- **Quick File Search Helix/input isolation** — Editor tabs opened from Quick File Search still wire xterm input before `spawn_pty`, but no longer flush pre-session xterm.js capability replies into the new `hx` process. Shell panes keep the existing startup reply buffering; direct Helix tabs discard those early bytes so markdown/file search opens cannot inject stray terminal responses as editor input. Quick Search result hover no longer changes selection, preventing pointer movement from racing keyboard navigation; explicit row clicks still accept the row. See `docs/68-quick-file-search.md`.
 - **ACP Harness OMP lane** — Oh My Pi is now a built-in ACP backend. The lane picker lists `OMP`, spawning `omp acp` with cached login-shell environment injection. OMP accepts `session/new mcpServers` but also native-loads root `.mcp.json`, so Krypton skips the project `.mcp.json` bridge for OMP while still injecting the per-lane `krypton-harness-memory` MCP server. OMP-specific startup diagnostics cover missing CLI installs, old CLIs without native ACP mode, explicit auth failures, API key issues, and empty-stderr first-run/auth-broker stalls. OMP lanes use the normal permission rail and do not show a warning chip in v1. See `docs/122-acp-omp-lane.md`.
 - **WorkspaceFooter status rail** — The old music mini-player no longer owns the full bottom strip. A new `WorkspaceFooter` owns the single fixed 28px workspace rail and renders mode, focused role/title, CWD/git, counts, focused-view process/activity/progress, and contextual hints from `InputRouter`, `Compositor`, existing `ViewBus` signals, and debounced git probes. Music registers as a bounded right-side segment with track/time/progress/mini-visualizer state. `Leader ?` toggles compact/detail density, and command palette actions can toggle detail or visibility. No new `view:status` protocol signal was added. See `docs/121-workspace-status-bar.md`.
 - **ACP Harness Junie auto-allow gap** — `harnessAutoAllowToolName` now also scans `permission.options[].name`, so adapters (Junie/JetBrains) that emit `toolCall.title: "Allow running MCP?"` and surface the server/tool identity only inside option labels like `Always allow ("krypton-harness-memory:peer_send")` auto-approve. The built-in-server-marker + allowed-tool-name AND rule is preserved (third-party servers or non-allowed tools still prompt). Removed the temporary `[perm-debug]` warn/transcript dump in `addPermission()`. See `docs/96-acp-built-in-memory-auto-approval.md`.

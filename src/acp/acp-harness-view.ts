@@ -31,6 +31,7 @@ import type {
   LaneSummary,
   PermissionOption,
   PlanEntry,
+  ProviderErrorPayload,
   StopReason,
   ToolCall,
   ToolCallUpdate,
@@ -78,6 +79,7 @@ import type {
 import type { PaletteAction, PaletteContext } from '../palette-types';
 import { loadConfig, type LaneModelConfig } from '../config';
 import { extractModifiedPath } from './acp-harness-memory';
+import { classifyProviderError, shouldAppendProviderError } from './provider-error';
 import {
   loadProjectMcpServers,
   filterByCapability,
@@ -102,7 +104,7 @@ interface HarnessPermission {
 
 interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'review';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'review' | 'provider_error';
   text: string;
   createdAt?: number;
   markdownSource?: string;
@@ -130,6 +132,7 @@ interface HarnessTranscriptItem {
   fsActivity?: FsActivityPayload;
   fsReview?: FsWriteReviewPayload;
   interLane?: InterLanePayload;
+  providerError?: ProviderErrorPayload;
   /** spec 120: first assistant row after coordinator drain. */
   replyingToLaneMail?: LaneMailProvenance;
   review?: ReviewCardPayload;
@@ -2108,6 +2111,10 @@ export class AcpHarnessView implements ContentView {
       case 'fs_write_pending':
         this.appendFsWriteReview(lane, event.requestId, event.path, event.oldText, event.newText);
         break;
+      case 'provider_error':
+        this.sealStreaming(lane);
+        this.appendProviderError(lane, event.payload);
+        break;
       case 'stop':
         this.finishTurn(lane, event.stopReason);
         void this.refreshMemory();
@@ -2123,8 +2130,11 @@ export class AcpHarnessView implements ContentView {
         lane.error = event.message;
         lane.activeTurnStartedAt = null;
         lane.pendingTurnExtractions = [];
+        lane.pendingPermissions = [];
+        lane.acceptAllForTurn = false;
+        lane.rejectAllForTurn = false;
         this.updateComposerTick();
-        this.appendTranscript(lane, 'system', `error: ${event.message}`);
+        this.appendClassifiedError(lane, event.message, `error: ${event.message}`);
         break;
     }
     if (needsRender) this.scheduleLaneRender(lane);
@@ -2183,12 +2193,13 @@ export class AcpHarnessView implements ContentView {
     try {
       await lane.client.prompt(blocks);
     } catch (e) {
+      const message = String(e);
       this.setLaneStatus(lane, 'error');
-      lane.error = String(e);
+      lane.error = message;
       lane.activeTurnStartedAt = null;
       lane.pendingTurnExtractions = [];
       this.updateComposerTick();
-      this.appendTranscript(lane, 'system', `prompt failed: ${String(e)}`);
+      this.appendClassifiedError(lane, message, `prompt failed: ${message}`);
       this.render();
     }
   }
@@ -4023,6 +4034,56 @@ export class AcpHarnessView implements ContentView {
     item.fsActivity = { method, path, ok, error };
   }
 
+  private appendClassifiedError(lane: HarnessLane, raw: string, fallbackText: string): void {
+    this.sealStreaming(lane);
+    const providerError = classifyProviderError(raw, lane.backendId);
+    if (providerError) {
+      this.appendProviderError(lane, providerError);
+      return;
+    }
+    this.appendTranscript(lane, 'system', fallbackText);
+  }
+
+  private appendProviderError(lane: HarnessLane, payload: ProviderErrorPayload): HarnessTranscriptItem {
+    const last = lane.transcript[lane.transcript.length - 1];
+    if (!shouldAppendProviderError(last, payload)) {
+      this.markLaneProviderError(lane, payload);
+      return last as HarnessTranscriptItem;
+    }
+    const item = this.appendTranscript(lane, 'provider_error', payload.headline);
+    item.providerError = payload;
+    this.markLaneProviderError(lane, payload);
+    return item;
+  }
+
+  private convertAssistantRowToProviderError(
+    lane: HarnessLane,
+    item: HarnessTranscriptItem,
+    payload: ProviderErrorPayload,
+  ): void {
+    item.kind = 'provider_error';
+    item.text = payload.headline;
+    item.providerError = payload;
+    item.markdownSource = undefined;
+    item.markdownHtml = undefined;
+    item.streamPlainLength = undefined;
+    item.streamingMarkdownWritten = undefined;
+    item.pretextSource = undefined;
+    item.pretextLines = undefined;
+    this.markLaneProviderError(lane, payload);
+  }
+
+  private markLaneProviderError(lane: HarnessLane, payload: ProviderErrorPayload): void {
+    this.setLaneStatus(lane, 'error');
+    lane.error = payload.headline;
+    lane.activeTurnStartedAt = null;
+    lane.pendingTurnExtractions = [];
+    lane.pendingPermissions = [];
+    lane.acceptAllForTurn = false;
+    lane.rejectAllForTurn = false;
+    this.updateComposerTick();
+  }
+
   private appendFsWriteReview(
     lane: HarnessLane,
     requestId: number,
@@ -4098,6 +4159,15 @@ export class AcpHarnessView implements ContentView {
     if (assistantId) {
       const item = lane.transcript.find((entry) => entry.id === assistantId);
       if (item) {
+        const providerError = classifyProviderError(item.text, lane.backendId);
+        if (providerError) {
+          this.convertAssistantRowToProviderError(lane, item, providerError);
+          lane.streamingMarkdownParser = null;
+          lane.streamingMarkdownBody = null;
+          lane.streamingMarkdownItemId = null;
+          this.scheduleLaneRender(lane);
+          return;
+        }
         // Spec 117: seal assistant rows through the streaming-markdown parser
         // (branch A) or via an offscreen capture if this lane streamed entirely
         // in the background and never created a parser (branch B). Either way,
@@ -5446,6 +5516,10 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
     body.classList.add('acp-harness__fs-review');
     if (item.fsReview.resolved) body.classList.add('acp-harness__fs-review--resolved');
     renderFsWriteReviewBody(body, item.fsReview);
+  } else if (item.kind === 'provider_error' && item.providerError) {
+    body.classList.add('acp-harness__provider-error');
+    body.classList.add(`acp-harness__provider-error--${item.providerError.category}`);
+    renderProviderErrorBody(body, item.providerError);
   } else if (item.kind === 'inter_lane' && item.interLane) {
     const { direction, done } = item.interLane;
     label.textContent = 'mail';
@@ -5524,6 +5598,9 @@ function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boole
   const fsReview = item.fsReview
     ? `${item.fsReview.path}\u001e${item.fsReview.oldText}\u001e${item.fsReview.newText}\u001e${item.fsReview.resolved ?? ''}`
     : '';
+  const providerError = item.providerError
+    ? `${item.providerError.category}\u001e${item.providerError.code ?? ''}\u001e${item.providerError.headline}\u001e${item.providerError.hint ?? ''}\u001e${item.providerError.retryable}\u001e${item.providerError.raw}`
+    : '';
   const interLane = item.interLane
     ? `${item.interLane.direction}\u001e${item.interLane.peerId}\u001e${item.interLane.peerDisplayName}\u001e${item.interLane.done ? '1' : '0'}\u001e${item.interLane.channel ?? ''}`
     : '';
@@ -5540,6 +5617,7 @@ function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boole
     permission,
     fsActivity,
     fsReview,
+    providerError,
     interLane,
     provenance,
   ].join('\u001d');
@@ -5611,6 +5689,61 @@ function renderFsActivityBody(body: HTMLElement, payload: FsActivityPayload): vo
     err.className = 'acp-harness__fs-activity-error';
     err.textContent = payload.error;
     body.appendChild(err);
+  }
+}
+
+function renderProviderErrorBody(body: HTMLElement, payload: ProviderErrorPayload): void {
+  const kicker = document.createElement('div');
+  kicker.className = 'acp-harness__provider-error-kicker';
+  kicker.textContent = providerErrorKicker(payload.category);
+  body.appendChild(kicker);
+
+  const headline = document.createElement('div');
+  headline.className = 'acp-harness__provider-error-headline';
+  headline.textContent = payload.headline;
+  body.appendChild(headline);
+
+  if (payload.hint) {
+    const hint = document.createElement('div');
+    hint.className = 'acp-harness__provider-error-hint';
+    hint.textContent = payload.hint;
+    body.appendChild(hint);
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'acp-harness__provider-error-meta';
+  if (payload.code) {
+    const code = document.createElement('span');
+    code.className = 'acp-harness__provider-error-chip';
+    code.textContent = payload.code;
+    meta.appendChild(code);
+  }
+  const retry = document.createElement('span');
+  retry.className = `acp-harness__provider-error-chip${payload.retryable ? ' acp-harness__provider-error-chip--retry' : ''}`;
+  retry.textContent = payload.retryable ? 'retryable' : 'not retryable';
+  meta.appendChild(retry);
+  body.appendChild(meta);
+
+  const details = document.createElement('details');
+  details.className = 'acp-harness__provider-error-details';
+  const summary = document.createElement('summary');
+  summary.textContent = 'details';
+  details.appendChild(summary);
+  const raw = document.createElement('pre');
+  raw.textContent = payload.raw;
+  details.appendChild(raw);
+  body.appendChild(details);
+}
+
+function providerErrorKicker(category: ProviderErrorPayload['category']): string {
+  switch (category) {
+    case 'rate_limit': return 'agent limit hit';
+    case 'quota': return 'agent quota hit';
+    case 'auth': return 'agent auth failed';
+    case 'context': return 'agent context limit';
+    case 'network': return 'agent network failed';
+    case 'provider': return 'agent provider failed';
+    case 'unknown': return 'agent request failed';
   }
 }
 
@@ -5731,7 +5864,7 @@ function renderImageAttachmentChip(count: number): HTMLElement {
 }
 
 function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
-  return kind !== 'assistant' && kind !== 'tool' && kind !== 'fs_activity' && kind !== 'fs_write_review';
+  return kind !== 'assistant' && kind !== 'tool' && kind !== 'fs_activity' && kind !== 'fs_write_review' && kind !== 'provider_error';
 }
 
 function buildToolPayload(
@@ -6365,6 +6498,7 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
   switch (kind) {
     case 'system': return 'sys';
     case 'assistant': return 'agent';
+    case 'provider_error': return 'agent';
     case 'permission': return 'perm';
     case 'memory': return 'mem';
     case 'shell': return 'sh';

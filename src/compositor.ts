@@ -684,11 +684,13 @@ export class Compositor {
   }
 
   /** Wire a pane's terminal to a PTY session.
-   *  Call BEFORE spawnPaneSession so xterm.js replies (e.g. fish's DA1 query
-   *  sent at shell startup) are buffered into pane.pendingInput and flushed
-   *  by flushPendingInput once spawn_pty resolves. */
-  private wirePaneInput(pane: Pane): void {
+   *  Shell panes call this before spawnPaneSession so xterm.js replies (e.g.
+   *  fish's DA1 query sent at shell startup) are buffered into
+   *  pane.pendingInput and flushed by flushPendingInput once spawn_pty resolves.
+   */
+  private wirePaneInput(pane: Pane, options: { bufferBeforeSession?: boolean } = {}): void {
     if (!pane.terminal) return;
+    const bufferBeforeSession = options.bufferBeforeSession ?? true;
     const encoder = new TextEncoder();
     pane.terminal.onData((data: string) => {
       const bytes = encoder.encode(data);
@@ -697,7 +699,7 @@ export class Compositor {
           sessionId: pane.sessionId,
           data: Array.from(bytes),
         }).catch((e: unknown) => console.error('Write to PTY failed:', e));
-      } else {
+      } else if (bufferBeforeSession) {
         for (const b of bytes) pane.pendingInput.push(b);
       }
     });
@@ -2639,8 +2641,10 @@ export class Compositor {
     await this.nextFrame();
     this.fitWindow(win.id);
 
-    // Wire input BEFORE spawn so xterm.js replies during editor startup are buffered.
-    this.wirePaneInput(pane);
+    // Wire input before spawn, but do not flush pre-session xterm.js replies
+    // into full-screen editor processes. Shell panes need those replies during
+    // startup; editors can interpret them as literal text.
+    this.wirePaneInput(pane, { bufferBeforeSession: false });
     if (pane.terminal) {
       try {
         const sessionId = await invoke<number>('spawn_pty', {

@@ -33,6 +33,26 @@
 10. **Progress UI** -> If `pty-progress` was emitted, the compositor updates the target window's content-area gauge (large translucent SVG arc centered behind terminal text) and titlebar scanline sweep animation
 11. **PTY exits** -> Backend emits `pty-exit` when either the PTY reader hits EOF/error or the owning child process exits. Compositor clears progress and closes the matching pane/tab; if an exit arrives before the frontend has registered the new session, it is held briefly and replayed after registration.
 
+## Quick File Search to Helix Flow
+
+```
+1. User presses Cmd+O -> Input Router enters QuickFileSearch mode.
+2. QuickFileSearch resolves the focused cwd through the compositor and warms
+   the backend quick-search picker for that root.
+3. User selects a hit and presses Enter.
+4. QuickFileSearch closes before awaiting editor spawn, so keyboard routing
+   returns to Normal immediately.
+5. Compositor creates a new terminal tab and spawns `hx` directly with the
+   selected path as argv; grep hits append `:line:col`.
+6. Editor tabs wire xterm input before spawn but disable pre-session input
+   buffering. xterm.js capability replies emitted before `spawn_pty` returns
+   are discarded rather than flushed into Helix as typed text.
+7. Once the backend returns the session id, normal xterm `onData` writes go to
+   `write_to_pty`; Helix output arrives through `pty-output`.
+8. When Helix exits, backend child-process wait emits `pty-exit` and the
+   compositor closes the editor tab.
+```
+
 ## Quick Terminal Toggle Flow (e.g., user presses Cmd+I)
 
 ```
@@ -249,6 +269,12 @@
 10. session/update notifications append transcript rows and maintain
     file-touch warnings for permission context. Memory is not inferred from
     tool observations or assistant footers.
+    a. Short provider/API failures that adapters stringify into
+       `agent_message_chunk` are classified when the assistant stream seals.
+       Matching rows become `provider_error` transcript cards, set the lane
+       error headline, and preserve the raw provider text in collapsed details.
+       Generic structured ACP errors still render as system rows unless they
+       match the same provider-error classifier.
 11. Permission requests pre-empt only the affected lane's composer. The user
     switches to that tab and resolves with a/A/r/R/Esc; responses call the
     existing acp_permission_response command.

@@ -359,6 +359,9 @@ no extra scan/cache cost for grep — the on-disk index is reused.
   as plaintext.
 - **Frecency**: grep picks call `quick_search_record_pick` with the absolute
   path, so heavily-greppped files also get bumped in file-mode rankings.
+- **Mouse behavior**: result rows can be clicked to accept, but hover does not
+  move selection. Keyboard navigation remains the single source of highlighted
+  row focus so pointer movement cannot race arrow-key selection.
 
 ## Open in editor (added post-spec)
 
@@ -374,6 +377,10 @@ Behavior:
   process is `hx`, inheriting cwd from the focused pane or content view.
 - Path is passed as an argv entry, not typed into a shell. This avoids shell
   quoting concerns and means Helix exit is also PTY exit.
+- Editor tabs intentionally do not flush xterm.js replies that are produced
+  before the backend returns the new PTY session id. Shell tabs still buffer
+  and flush those startup replies, but Helix can treat them as literal editor
+  input, so the pre-session editor bytes are discarded.
 - In **grep mode** the hit's `:line:col` is appended to the file argument so
   Helix jumps to the matching position (`hx /path/file.ts:123:5`).
 - When Helix exits, Krypton's normal `pty-exit` cleanup closes the editor tab

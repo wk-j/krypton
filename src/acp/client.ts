@@ -18,6 +18,7 @@ import type {
   ContentBlock,
   PermissionOption,
   PlanEntry,
+  ProviderErrorPayload,
   StopReason,
   ToolCall,
   ToolCallUpdate,
@@ -25,7 +26,7 @@ import type {
 } from './types';
 
 interface RawAcpEvent {
-  type: 'session_update' | 'permission_request' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending';
+  type: 'session_update' | 'permission_request' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending' | 'provider_error';
   // session_update:
   kind?: string;
   update?: {
@@ -52,6 +53,8 @@ interface RawAcpEvent {
   // fs_write_pending:
   oldText?: string;
   newText?: string;
+  // provider_error:
+  payload?: ProviderErrorPayload;
 }
 
 export class AcpClient {
@@ -303,6 +306,10 @@ export class AcpClient {
           oldText: typeof raw.oldText === 'string' ? raw.oldText : '',
           newText: typeof raw.newText === 'string' ? raw.newText : '',
         };
+        break;
+      }
+      case 'provider_error': {
+        if (raw.payload) event = { type: 'provider_error', payload: raw.payload };
         break;
       }
       case 'permission_request': {
