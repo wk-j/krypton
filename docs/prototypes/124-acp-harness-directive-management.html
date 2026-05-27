@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spec 124 - Directive picker dialog</title>
+  <style>
+    :root {
+      --bg: #050910;
+      --surface: rgba(7, 13, 21, 0.96);
+      --text: rgba(226, 238, 226, 0.92);
+      --muted: rgba(226, 238, 226, 0.48);
+      --faint: rgba(226, 238, 226, 0.18);
+      --cyan: #6dd0ff;
+      --green: #8effb0;
+      --purple: #c7a2ff;
+      --amber: #ffd166;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.38;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      background:
+        radial-gradient(circle at 50% 18%, rgba(109, 208, 255, 0.075), transparent 34%),
+        linear-gradient(180deg, rgba(199, 162, 255, 0.035), transparent 42%),
+        #050910;
+    }
+
+    .prototype {
+      width: min(760px, 100%);
+      display: grid;
+      gap: 10px;
+    }
+
+    .caption {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .caption strong {
+      color: var(--cyan);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .caption a {
+      color: var(--green);
+      text-decoration: none;
+    }
+
+    .picker {
+      padding: 16px 18px 12px;
+      background: var(--surface);
+      box-shadow:
+        0 22px 56px rgba(0, 0, 0, 0.52),
+        0 0 0 1px rgba(199, 162, 255, 0.22);
+    }
+
+    .topline {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: baseline;
+      padding-bottom: 12px;
+    }
+
+    .title {
+      min-width: 0;
+      color: var(--purple);
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .target {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .query {
+      display: flex;
+      gap: 9px;
+      align-items: baseline;
+      padding: 7px 0 11px;
+      border-top: 1px solid var(--faint);
+      border-bottom: 1px solid var(--faint);
+      font-size: 15px;
+    }
+
+    .query__prompt {
+      color: var(--cyan);
+    }
+
+    .query__text {
+      color: var(--text);
+    }
+
+    .rows {
+      display: grid;
+      padding: 8px 0 6px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 3ch minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: baseline;
+      min-height: 34px;
+      padding: 5px 0;
+      color: var(--muted);
+    }
+
+    .row--selected {
+      color: var(--text);
+      background: linear-gradient(90deg, rgba(199, 162, 255, 0.09), transparent 72%);
+      box-shadow: 0 0 0 1px rgba(199, 162, 255, 0.1);
+    }
+
+    .row--disabled {
+      opacity: 0.44;
+    }
+
+    .row__icon {
+      color: rgba(199, 162, 255, 0.76);
+      text-align: center;
+      font-size: 14px;
+    }
+
+    .row--selected .row__icon {
+      color: var(--purple);
+    }
+
+    .row__main {
+      min-width: 0;
+      display: grid;
+      gap: 1px;
+    }
+
+    .row__name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .row__desc {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .row__id {
+      color: rgba(199, 162, 255, 0.74);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .detail {
+      display: grid;
+      gap: 6px;
+      padding: 10px 0 12px;
+      border-top: 1px solid var(--faint);
+      border-bottom: 1px solid var(--faint);
+    }
+
+    .detail__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .detail__meta .ok {
+      color: var(--green);
+    }
+
+    .detail__text {
+      margin: 0;
+      max-width: 74ch;
+      color: rgba(226, 238, 226, 0.78);
+      font: inherit;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+
+    .footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 13px;
+      padding-top: 10px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .footer strong {
+      color: var(--amber);
+      font-weight: normal;
+    }
+
+    @media (max-width: 680px) {
+      body { padding: 14px; }
+
+      .caption,
+      .topline,
+      .footer {
+        grid-template-columns: 1fr;
+      }
+
+      .caption,
+      .footer {
+        flex-direction: column;
+      }
+
+      .row {
+        grid-template-columns: 3ch minmax(0, 1fr);
+      }
+
+      .row__id {
+        grid-column: 2;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="prototype">
+    <div class="caption">
+      <strong>Directive picker</strong>
+      <a href="../124-acp-harness-directive-management.md">docs/124-acp-harness-directive-management.md</a>
+    </div>
+
+    <section class="picker" aria-label="Select directive dialog">
+      <div class="topline">
+        <div class="title">Select Directive</div>
+        <div class="target">Codex-1</div>
+      </div>
+
+      <div class="query" aria-label="Directive search field">
+        <span class="query__prompt">&gt;</span>
+        <span class="query__text">codex</span>
+      </div>
+
+      <div class="rows" aria-label="Configured directives">
+        <div class="row row--selected">
+          <div class="row__icon">⌘</div>
+          <div class="row__main">
+            <div class="row__name">Codex Implementation</div>
+            <div class="row__desc">Scoped edits and narrow verification.</div>
+          </div>
+          <div class="row__id">codex-implementation</div>
+        </div>
+
+        <div class="row">
+          <div class="row__icon">?</div>
+          <div class="row__main">
+            <div class="row__name">General Research</div>
+            <div class="row__desc">Explore, summarize, avoid edits.</div>
+          </div>
+          <div class="row__id">research</div>
+        </div>
+
+        <div class="row row--disabled">
+          <div class="row__icon">◇</div>
+          <div class="row__main">
+            <div class="row__name">Claude Review</div>
+            <div class="row__desc">Backend mismatch.</div>
+          </div>
+          <div class="row__id">claude-review</div>
+        </div>
+
+        <div class="row row--disabled">
+          <div class="row__icon">□</div>
+          <div class="row__main">
+            <div class="row__name">Legacy Planner</div>
+            <div class="row__desc">Disabled in config.</div>
+          </div>
+          <div class="row__id">legacy-planner</div>
+        </div>
+      </div>
+
+      <div class="detail" aria-label="Selected directive preview">
+        <div class="detail__meta">
+          <span class="ok">compatible</span>
+          <span>backend codex</span>
+          <span>task implementation</span>
+          <span>~96 tokens</span>
+        </div>
+        <pre class="detail__text">Make scoped edits, follow existing patterns, and run the narrowest useful checks before reporting changed files.</pre>
+      </div>
+
+      <footer class="footer">
+        <span><strong>Enter</strong> apply</span>
+        <span><strong>Backspace</strong> clear</span>
+        <span><strong>Esc</strong> close</span>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>
