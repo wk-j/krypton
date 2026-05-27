@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Krypton — Lane peek + activity heat (doc 109 prototype)</title>
+  <style>
+    :root {
+      --bg: #060a12;
+      --elev: #0c1018;
+      --fg: #b0c4d8;
+      --muted: #6a8aa8;
+      --accent-active: #0cf;
+      --accent-peek: #c77dff;
+      --warn: #e8c547;
+      --danger: #ff3a5c;
+      --border: rgba(12, 255, 255, 0.22);
+      --font: ui-monospace, "SF Mono", Menlo, "JetBrains Mono", monospace;
+      --peek-width: min(360px, 92vw);
+      --bar-h: 10px;
+      --bar-w: 88px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    body {
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent-active);
+      margin: 0 0 8px;
+    }
+
+    .proto-note {
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 20px;
+      border-left: 2px solid var(--border);
+      padding-left: 12px;
+    }
+
+    .proto-note code { color: var(--fg); }
+
+    .proto-stage {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      align-items: flex-start;
+    }
+
+    .proto-transcript {
+      flex: 1 1 280px;
+      min-height: 320px;
+      background: color-mix(in srgb, var(--elev) 94%, black);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 16px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .proto-transcript strong { color: var(--fg); }
+
+    .proto-rail {
+      position: relative;
+      flex: 0 0 var(--peek-width);
+      min-height: 200px;
+    }
+
+    /* Peek card — slice 1 + slice 2 */
+    .proto-lane-peek {
+      background: color-mix(in srgb, var(--elev) 96%, black);
+      border: 1px solid var(--border);
+      box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.4),
+        0 8px 24px rgba(0, 0, 0, 0.35);
+      padding: 10px 12px 12px;
+    }
+
+    .proto-lane-peek__head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .proto-lane-peek__name {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--accent-peek);
+      letter-spacing: 0.02em;
+    }
+
+    .proto-lane-peek__chip {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--warn);
+      white-space: nowrap;
+    }
+
+    .proto-lane-peek__row {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .proto-lane-peek__row--reason { color: var(--fg); margin-top: 4px; }
+    .proto-lane-peek__row--status { color: var(--accent-active); margin-top: 2px; }
+    .proto-lane-peek__row--detail { margin-top: 2px; font-size: 11px; }
+
+    .proto-stat-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .proto-chip {
+      font-size: 10px;
+      padding: 2px 6px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* Heat — slice 2 */
+    .proto-heat {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(12, 255, 255, 0.12);
+    }
+
+    .proto-heat__compact {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 10px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .proto-heat__label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .proto-heat__metric,
+    .proto-heat__window {
+      cursor: pointer;
+      color: var(--accent-active);
+      border-bottom: 1px dashed rgba(12, 255, 255, 0.35);
+      user-select: none;
+    }
+
+    .proto-heat__metric:hover,
+    .proto-heat__window:hover {
+      color: #fff;
+      border-bottom-color: var(--accent-active);
+    }
+
+    .proto-heat__bars {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1 1 200px;
+    }
+
+    .proto-heat__side {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .proto-heat__side-tag {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .proto-heat__side-tag--active { color: var(--accent-active); }
+    .proto-heat__side-tag--peek { color: var(--accent-peek); }
+
+    .proto-heat__track {
+      width: var(--bar-w);
+      height: var(--bar-h);
+      background: rgba(255, 255, 255, 0.06);
+      position: relative;
+    }
+
+    .proto-heat__fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0%;
+      transition: width 0.2s ease, opacity 0.15s ease;
+    }
+
+    .proto-heat__fill--active {
+      background: linear-gradient(90deg, var(--accent-active), color-mix(in srgb, var(--accent-active) 55%, transparent));
+    }
+
+    .proto-heat__fill--peek {
+      background: linear-gradient(90deg, var(--accent-peek), color-mix(in srgb, var(--accent-peek) 55%, transparent));
+    }
+
+    .proto-heat__score {
+      font-size: 11px;
+      font-weight: 600;
+      min-width: 2ch;
+    }
+
+    .proto-heat__delta {
+      font-size: 11px;
+      color: var(--muted);
+      flex: 1 1 100%;
+      min-width: 0;
+    }
+
+    .proto-heat--flash .proto-heat__fill {
+      animation: proto-heat-flash 0.35s ease;
+    }
+
+    @keyframes proto-heat-flash {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .proto-heat--flash .proto-heat__fill { animation: none; }
+      .proto-heat__fill { transition: none; }
+    }
+
+    .proto-heat__expanded {
+      display: none;
+      margin-top: 10px;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .proto-heat__expanded.is-open { display: table; }
+
+    .proto-heat__expanded th,
+    .proto-heat__expanded td {
+      padding: 4px 8px 4px 0;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .proto-heat__expanded th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .proto-heat__expanded td:nth-child(2),
+    .proto-heat__expanded td:nth-child(3) {
+      color: var(--fg);
+    }
+
+    /* Reviewer controls */
+    .proto-controls {
+      margin-top: 28px;
+      max-width: 900px;
+      padding: 14px 16px;
+      background: color-mix(in srgb, var(--elev) 90%, black);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .proto-controls h2 {
+      margin: 0 0 10px;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .proto-controls__row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .proto-controls__row:last-child { margin-bottom: 0; }
+
+    button {
+      font-family: var(--font);
+      font-size: 11px;
+      padding: 6px 10px;
+      background: rgba(12, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      color: var(--fg);
+      cursor: pointer;
+      letter-spacing: 0.04em;
+    }
+
+    button:hover {
+      background: rgba(12, 255, 255, 0.16);
+      color: #fff;
+    }
+
+    button:focus-visible {
+      outline: 1px solid var(--accent-active);
+      outline-offset: 2px;
+    }
+
+    .proto-hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Lane peek + activity heat</h1>
+  <p class="proto-note">
+    Static HTML prototype for <code>docs/109-acp-contextual-lane-peek.md</code> (slice&nbsp;1 peek body + slice&nbsp;2 compact heat strip and expanded rows).
+    Open this file in a browser. Controls below simulate palette actions. No <code>backdrop-filter</code>.
+    Full lane names live in <code>title</code> on the compact row; visible tags are <strong>active</strong> / <strong>peek</strong> per spec.
+  </p>
+
+  <div class="proto-stage">
+    <div class="proto-transcript">
+      <strong>Active lane (mock)</strong><br /><br />
+      Transcript column placeholder. Peek is anchored in the lane rail overlay, not a reserved transcript column.
+    </div>
+
+    <div class="proto-rail">
+      <div class="proto-lane-peek" id="peek">
+        <div class="proto-lane-peek__head">
+          <span class="proto-lane-peek__name" id="peekName">Codex-1</span>
+          <span class="proto-lane-peek__chip" id="peekChip">peer · 1m+</span>
+        </div>
+        <div class="proto-lane-peek__row proto-lane-peek__row--reason" id="peekReason">awaiting reply</div>
+        <div class="proto-lane-peek__row proto-lane-peek__row--status" id="peekStatus">awaiting peer</div>
+        <div class="proto-lane-peek__row proto-lane-peek__row--detail" id="peekDetail">sent review request to Codex-1</div>
+
+        <div class="proto-stat-chips" id="statChips"></div>
+
+        <div class="proto-heat" id="heat" title="Click strip to toggle expanded heat detail">
+          <div class="proto-heat__compact" id="heatCompact">
+            <span class="proto-heat__label">heat</span>
+            <span class="proto-heat__metric" id="metricLabel" title="Cycle metric (click or palette)">auto</span>
+            <span class="proto-heat__label">·</span>
+            <span class="proto-heat__window" id="windowLabel" title="Cycle window (click or palette)">30s</span>
+            <div class="proto-heat__bars">
+              <div class="proto-heat__side" title="Claude-1 — active lane">
+                <span class="proto-heat__side-tag proto-heat__side-tag--active">active</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <div class="proto-heat__track" aria-hidden="true"><div class="proto-heat__fill proto-heat__fill--active" id="barActive"></div></div>
+                  <span class="proto-heat__score" id="scoreActive">72</span>
+                </div>
+              </div>
+              <div class="proto-heat__side" title="Codex-1 — peeked lane">
+                <span class="proto-heat__side-tag proto-heat__side-tag--peek">peek</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <div class="proto-heat__track" aria-hidden="true"><div class="proto-heat__fill proto-heat__fill--peek" id="barPeek"></div></div>
+                  <span class="proto-heat__score" id="scorePeek">31</span>
+                </div>
+              </div>
+            </div>
+            <span class="proto-heat__delta" id="heatDelta">peer 2 vs 1</span>
+          </div>
+          <table class="proto-heat__expanded" id="heatExpanded" aria-label="Expanded heat by metric">
+            <thead>
+              <tr>
+                <th></th>
+                <th>active</th>
+                <th>peek</th>
+              </tr>
+            </thead>
+            <tbody id="heatExpandedBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="proto-controls">
+    <h2>Reviewer controls</h2>
+    <div class="proto-controls__row">
+      <span style="color:var(--muted);font-size:11px;">Scenario:</span>
+      <button type="button" id="btnPeer">Peer relation (default window 30s)</button>
+      <button type="button" id="btnTools">Heavy tools (auto · 5m)</button>
+      <button type="button" id="btnAlerts">Alerts / permission</button>
+    </div>
+    <div class="proto-controls__row">
+      <button type="button" id="btnMetric">Cycle metric</button>
+      <button type="button" id="btnWindow">Cycle window</button>
+      <button type="button" id="btnExpand">Toggle heat detail</button>
+      <button type="button" id="btnFlash">Simulate value change flash</button>
+    </div>
+    <p class="proto-hint">
+      Metric order: auto → tools → tokens → peer → process → alerts → auto.
+      Window order: 30s → 5m → session → 30s. Peer scenario seeds contextual <code>30s</code>; switching scenario resets contextual default until you cycle window.
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      const METRICS = ['auto', 'tools', 'tokens', 'peer', 'process', 'alerts'];
+      const WINDOWS = ['30s', '5m', 'session'];
+
+      /** @type {Record<string, { peerContext: boolean; name: string; chip: string; reason: string; status: string; detail: string; chips: string[]; active: { displayName: string; score: number }; peeked: { displayName: string; score: number }; deltas: Record<string, string>; expandedRows: { key: string; a: string; b: string }[] }>} */
+      const scenarios = {
+        peer: {
+          peerContext: true,
+          name: 'Codex-1',
+          chip: 'peer · 1m+',
+          reason: 'awaiting reply',
+          status: 'awaiting peer',
+          detail: 'sent review request to Codex-1',
+          chips: ['inbox 1', 'MCP 2'],
+          active: { displayName: 'Claude-1', score: 72 },
+          peeked: { displayName: 'Codex-1', score: 31 },
+          deltas: {
+            auto: 'peer 2 vs 1',
+            tools: 'tools 6 vs 2',
+            tokens: 'tokens +12.4k vs +3.1k',
+            peer: 'peer 2 vs 1',
+            process: 'cpu 84% vs 12%',
+            alerts: 'alerts none vs awaiting'
+          },
+          expandedRows: [
+            { key: 'tools', a: '6', b: '2' },
+            { key: 'tokens', a: '+12.4k', b: '+3.1k' },
+            { key: 'peer', a: '2', b: '1' },
+            { key: 'cpu', a: '84%', b: '12%' }
+          ]
+        },
+        tools: {
+          peerContext: false,
+          name: 'Codex-1',
+          chip: 'activity · 30s',
+          reason: 'tool burst',
+          status: 'busy',
+          detail: '12 tool calls since last summary',
+          chips: ['tools 12', 'ctx +4k'],
+          active: { displayName: 'Claude-1', score: 68 },
+          peeked: { displayName: 'Codex-1', score: 40 },
+          deltas: {
+            auto: 'tools 9 vs 3',
+            tools: 'tools 9 vs 3',
+            tokens: 'tokens +8.2k vs +1.0k',
+            peer: 'peer 0 vs 0',
+            process: 'cpu 42% vs 18%',
+            alerts: 'alerts none vs none'
+          },
+          expandedRows: [
+            { key: 'tools', a: '9', b: '3' },
+            { key: 'tokens', a: '+8.2k', b: '+1.0k' },
+            { key: 'peer', a: '0', b: '0' },
+            { key: 'cpu', a: '42%', b: '18%' }
+          ]
+        },
+        alerts: {
+          peerContext: false,
+          name: 'Gemini-1',
+          chip: 'permission',
+          reason: 'needs approval',
+          status: 'needs permission',
+          detail: 'write · src/acp/foo.ts',
+          chips: ['sandbox ro'],
+          active: { displayName: 'Claude-1', score: 12 },
+          peeked: { displayName: 'Gemini-1', score: 88 },
+          deltas: {
+            auto: 'alerts idle vs permission',
+            tools: 'tools 1 vs 4',
+            tokens: 'tokens +200 vs +2.1k',
+            peer: 'peer 0 vs 0',
+            process: 'cpu 5% vs 22%',
+            alerts: 'alerts idle vs permission'
+          },
+          expandedRows: [
+            { key: 'tools', a: '1', b: '4' },
+            { key: 'tokens', a: '+200', b: '+2.1k' },
+            { key: 'peer', a: '0', b: '0' },
+            { key: 'cpu', a: '5%', b: '22%' }
+          ]
+        }
+      };
+
+      let scenarioKey = 'peer';
+      let metricIndex = 0;
+      let windowIndex = 0;
+      let userOverrodeWindow = false;
+      let expanded = false;
+      let contextualDefaultApplied = true;
+
+      const els = {
+        peekName: document.getElementById('peekName'),
+        peekChip: document.getElementById('peekChip'),
+        peekReason: document.getElementById('peekReason'),
+        peekStatus: document.getElementById('peekStatus'),
+        peekDetail: document.getElementById('peekDetail'),
+        statChips: document.getElementById('statChips'),
+        metricLabel: document.getElementById('metricLabel'),
+        windowLabel: document.getElementById('windowLabel'),
+        barActive: document.getElementById('barActive'),
+        barPeek: document.getElementById('barPeek'),
+        scoreActive: document.getElementById('scoreActive'),
+        scorePeek: document.getElementById('scorePeek'),
+        heatDelta: document.getElementById('heatDelta'),
+        heatExpanded: document.getElementById('heatExpanded'),
+        heatExpandedBody: document.getElementById('heatExpandedBody'),
+        heat: document.getElementById('heat'),
+        heatCompact: document.getElementById('heatCompact')
+      };
+
+      function effectiveWindow() {
+        const sc = scenarios[scenarioKey];
+        if (!userOverrodeWindow && sc.peerContext && contextualDefaultApplied) {
+          return '30s';
+        }
+        return WINDOWS[windowIndex];
+      }
+
+      function setScenario(key) {
+        scenarioKey = key;
+        userOverrodeWindow = false;
+        contextualDefaultApplied = true;
+        windowIndex = scenarios[key].peerContext ? 0 : 1;
+        render();
+      }
+
+      function cycleMetric() {
+        metricIndex = (metricIndex + 1) % METRICS.length;
+        render();
+      }
+
+      function cycleWindow() {
+        userOverrodeWindow = true;
+        contextualDefaultApplied = false;
+        windowIndex = (windowIndex + 1) % WINDOWS.length;
+        render();
+      }
+
+      function toggleExpand() {
+        expanded = !expanded;
+        render();
+      }
+
+      function renderStatChips(chips) {
+        els.statChips.innerHTML = chips
+          .map(function (c) { return '<span class="proto-chip">' + escapeHtml(c) + '</span>'; })
+          .join('');
+      }
+
+      function escapeHtml(s) {
+        return s
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function renderExpandedRows(rows) {
+        els.heatExpandedBody.innerHTML = rows
+          .map(function (r) {
+            return (
+              '<tr><th>' +
+              escapeHtml(r.key) +
+              '</th><td>' +
+              escapeHtml(r.a) +
+              '</td><td>' +
+              escapeHtml(r.b) +
+              '</td></tr>'
+            );
+          })
+          .join('');
+      }
+
+      function render() {
+        const sc = scenarios[scenarioKey];
+        const metric = METRICS[metricIndex];
+        const win = effectiveWindow();
+
+        els.peekName.textContent = sc.name;
+        els.peekChip.textContent = sc.chip;
+        els.peekReason.textContent = sc.reason;
+        els.peekStatus.textContent = sc.status;
+        els.peekDetail.textContent = sc.detail;
+        renderStatChips(sc.chips);
+
+        els.metricLabel.textContent = metric;
+        els.windowLabel.textContent = win;
+
+        const deltaKey = metric === 'auto' ? 'auto' : metric;
+        const deltaText = sc.deltas[deltaKey] || sc.deltas.auto;
+
+        els.heatDelta.textContent = deltaText;
+        els.scoreActive.textContent = String(sc.active.score);
+        els.scorePeek.textContent = String(sc.peeked.score);
+        els.barActive.style.width = sc.active.score + '%';
+        els.barPeek.style.width = sc.peeked.score + '%';
+
+        const compactTitle =
+          'Active: ' +
+          sc.active.displayName +
+          ' · Peeked: ' +
+          sc.peeked.displayName +
+          ' · Metric: ' +
+          metric +
+          ' · Window: ' +
+          win;
+        els.heatCompact.setAttribute('title', compactTitle);
+
+        renderExpandedRows(sc.expandedRows);
+        els.heatExpanded.classList.toggle('is-open', expanded);
+      }
+
+      function flash() {
+        els.heat.classList.remove('proto-heat--flash');
+        void els.heat.offsetWidth;
+        els.heat.classList.add('proto-heat--flash');
+        window.setTimeout(function () {
+          els.heat.classList.remove('proto-heat--flash');
+        }, 400);
+      }
+
+      document.getElementById('btnPeer').addEventListener('click', function () { setScenario('peer'); });
+      document.getElementById('btnTools').addEventListener('click', function () { setScenario('tools'); });
+      document.getElementById('btnAlerts').addEventListener('click', function () { setScenario('alerts'); });
+      document.getElementById('btnMetric').addEventListener('click', cycleMetric);
+      document.getElementById('btnWindow').addEventListener('click', cycleWindow);
+      document.getElementById('btnExpand').addEventListener('click', toggleExpand);
+      document.getElementById('btnFlash').addEventListener('click', flash);
+
+      els.metricLabel.addEventListener('click', function (e) {
+        e.stopPropagation();
+        cycleMetric();
+      });
+      els.windowLabel.addEventListener('click', function (e) {
+        e.stopPropagation();
+        cycleWindow();
+      });
+      els.heatCompact.addEventListener('click', function (e) {
+        if (e.target === els.metricLabel || e.target === els.windowLabel) {
+          return;
+        }
+        toggleExpand();
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>

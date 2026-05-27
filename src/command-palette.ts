@@ -757,6 +757,24 @@ export class CommandPalette {
       category: 'ACP',
       execute: () => c.unlockAcpLanePeek(),
     });
+    this.register({
+      id: 'acp.peek.heat.metric',
+      label: 'ACP: Cycle Peek Heat Metric',
+      category: 'ACP',
+      execute: () => c.cycleAcpPeekHeatMetric(),
+    });
+    this.register({
+      id: 'acp.peek.heat.window',
+      label: 'ACP: Cycle Peek Heat Window',
+      category: 'ACP',
+      execute: () => c.cycleAcpPeekHeatWindow(),
+    });
+    this.register({
+      id: 'acp.peek.heat.detail',
+      label: 'ACP: Toggle Peek Heat Detail',
+      category: 'ACP',
+      execute: () => c.toggleAcpPeekHeatDetail(),
+    });
 
     // ── Markdown Viewer ──
     this.register({

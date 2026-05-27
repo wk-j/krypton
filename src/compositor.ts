@@ -60,6 +60,9 @@ interface AcpLanePeekCommands {
   unlockLanePeek(): void;
   peekLaneByDelta(delta: number): void;
   activatePeekedLane(): void;
+  cyclePeekHeatMetric(): void;
+  cyclePeekHeatWindow(): void;
+  togglePeekHeatDetail(): void;
 }
 
 export interface FocusedWorkspaceSummary {
@@ -78,7 +81,10 @@ function hasAcpLanePeekCommands(value: ContentView | null | undefined): value is
     && typeof (value as Partial<AcpLanePeekCommands>).hideLanePeek === 'function'
     && typeof (value as Partial<AcpLanePeekCommands>).unlockLanePeek === 'function'
     && typeof (value as Partial<AcpLanePeekCommands>).peekLaneByDelta === 'function'
-    && typeof (value as Partial<AcpLanePeekCommands>).activatePeekedLane === 'function';
+    && typeof (value as Partial<AcpLanePeekCommands>).activatePeekedLane === 'function'
+    && typeof (value as Partial<AcpLanePeekCommands>).cyclePeekHeatMetric === 'function'
+    && typeof (value as Partial<AcpLanePeekCommands>).cyclePeekHeatWindow === 'function'
+    && typeof (value as Partial<AcpLanePeekCommands>).togglePeekHeatDetail === 'function';
 }
 
 function webviewTitleForUrl(url: string): string {
@@ -1016,6 +1022,21 @@ export class Compositor {
   activateAcpPeekedLane(): void {
     const view = this.getFocusedPane()?.contentView;
     if (hasAcpLanePeekCommands(view)) view.activatePeekedLane();
+  }
+
+  cycleAcpPeekHeatMetric(): void {
+    const view = this.getFocusedPane()?.contentView;
+    if (hasAcpLanePeekCommands(view)) view.cyclePeekHeatMetric();
+  }
+
+  cycleAcpPeekHeatWindow(): void {
+    const view = this.getFocusedPane()?.contentView;
+    if (hasAcpLanePeekCommands(view)) view.cyclePeekHeatWindow();
+  }
+
+  toggleAcpPeekHeatDetail(): void {
+    const view = this.getFocusedPane()?.contentView;
+    if (hasAcpLanePeekCommands(view)) view.togglePeekHeatDetail();
   }
 
   hasFocusedWindow(): boolean {

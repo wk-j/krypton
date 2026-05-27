@@ -3,14 +3,17 @@ import { describe, expect, it } from 'vitest';
 import {
   buildComposerPeerStrip,
   buildLanePeekCandidates,
+  deriveLanePairHeat,
   deriveRailPeerHint,
   harnessAutoAllowToolName,
+  isDirectPeerPeekReasonKey,
   laneAccent,
   laneAccentForLabel,
   formatLaneMailMetaLine,
   formatLaneMailProvenanceLine,
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
+  type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
 } from './acp-harness-view';
 
@@ -516,6 +519,92 @@ describe('ACP peer activity UI (spec 118)', () => {
   it('buildComposerPeerStrip returns empty for idle + no inbox + no pending', () => {
     expect(buildComposerPeerStrip('idle', [], 0)).toBe('');
     expect(buildComposerPeerStrip('busy', [], 0)).toBe('');
+  });
+});
+
+function heatLane(partial: Partial<LanePeekHeatLaneInput> & Pick<LanePeekHeatLaneInput, 'id'>): LanePeekHeatLaneInput {
+  return {
+    displayName: partial.displayName ?? partial.id,
+    status: partial.status ?? 'idle',
+    transcript: partial.transcript ?? [],
+    usage: partial.usage ?? null,
+    pendingShell: partial.pendingShell ?? false,
+    pendingPeerCount: partial.pendingPeerCount ?? 0,
+    metricHistory: partial.metricHistory ?? [],
+    ...partial,
+  };
+}
+
+function heatTx(
+  items: Array<{ kind: 'tool' | 'inter_lane' | 'permission' | 'provider_error'; createdAt: number }>,
+): LanePeekHeatLaneInput['transcript'] {
+  return items.map((x, i) => ({
+    id: `tx-${i}`,
+    kind: x.kind,
+    text: '',
+    createdAt: x.createdAt,
+  })) as LanePeekHeatLaneInput['transcript'];
+}
+
+describe('lane peek heat (slice 109)', () => {
+  const now = 1_720_000_000_000;
+
+  it('isDirectPeerPeekReasonKey marks peer tiers', () => {
+    expect(isDirectPeerPeekReasonKey('awaiting-peer')).toBe(true);
+    expect(isDirectPeerPeekReasonKey('inbound-peer')).toBe(true);
+    expect(isDirectPeerPeekReasonKey('peer-counterpart')).toBe(true);
+    expect(isDirectPeerPeekReasonKey('lane-inbox')).toBe(false);
+  });
+
+  it('deriveLanePairHeat counts tools in 5m window', () => {
+    const active = heatLane({
+      id: 'a',
+      transcript: heatTx([
+        { kind: 'tool', createdAt: now - 1_000 },
+        { kind: 'tool', createdAt: now - 2_000 },
+      ]),
+    });
+    const peeked = heatLane({
+      id: 'b',
+      displayName: 'B',
+      transcript: heatTx([{ kind: 'tool', createdAt: now - 3_000 }]),
+    });
+    const s = deriveLanePairHeat(active, peeked, now, '5m', 'tools');
+    expect(s.active.toolDelta).toBe(2);
+    expect(s.peeked.toolDelta).toBe(1);
+    expect(s.deltaLine).toMatch(/2 vs 1/);
+  });
+
+  it('deriveLanePairHeat tools mode ignores tools older than window', () => {
+    const active = heatLane({
+      id: 'a',
+      transcript: heatTx([{ kind: 'tool', createdAt: now - 400_000 }]),
+    });
+    const peeked = heatLane({ id: 'b', transcript: heatTx([]) });
+    const s = deriveLanePairHeat(active, peeked, now, '5m', 'tools');
+    expect(s.active.toolDelta).toBe(0);
+    expect(s.peeked.toolDelta).toBe(0);
+  });
+
+  it('deriveLanePairHeat peer mode includes pending peer weight in scores', () => {
+    const active = heatLane({
+      id: 'a',
+      pendingPeerCount: 1,
+      transcript: heatTx([]),
+    });
+    const peeked = heatLane({ id: 'b', transcript: heatTx([]) });
+    const s = deriveLanePairHeat(active, peeked, now, '30s', 'peer');
+    expect(s.metric).toBe('peer');
+    expect(s.active.score).toBeGreaterThan(0);
+    expect(s.deltaLine).toMatch(/peer 0 vs 0/);
+  });
+
+  it('deriveLanePairHeat tokens reports unavailable when no usage history', () => {
+    const active = heatLane({ id: 'a', transcript: heatTx([]) });
+    const peeked = heatLane({ id: 'b', transcript: heatTx([]) });
+    const s = deriveLanePairHeat(active, peeked, now, '5m', 'tokens');
+    expect(s.unavailableReason).toContain('usage');
+    expect(s.deltaLine).toBe('tokens --');
   });
 });
 

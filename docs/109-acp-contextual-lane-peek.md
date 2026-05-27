@@ -1,6 +1,6 @@
 # ACP Contextual Lane Peek — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented (slice 1 contextual peek + slice 2 lane-pair activity heat)
 > Date: 2026-05-19
 > Milestone: Post-M-current polish
 
@@ -48,6 +48,16 @@ Terminology: use **peek** throughout. Avoid "overlay" in user-facing labels beca
 | `docs/72-acp-harness-view.md` | Document the peek behavior and keyboard commands after implementation. |
 | `docs/106-inter-lane-messaging.md` | Cross-reference peer-triggered peek behavior after implementation. |
 | `docs/107-acp-harness-transcript-readability.md` | Cross-reference permission-card summaries after implementation. |
+| `docs/PROGRESS.md` | Add landing note after implementation. |
+
+Slice 2 activity heat touches the same frontend files only:
+
+| File | Change |
+|------|--------|
+| `src/acp/acp-harness-view.ts` | Add view-local lane activity samples, lane-pair heat derivation, interactive heat mode/window state, render helpers, and command handlers. |
+| `src/styles/acp-harness.css` | Add compact heat strip, metric selector state, expanded heat rows, and reduced-motion-safe pulse styles. |
+| `src/acp/acp-harness-view.test.ts` | Add heat score, token delta, tool-count windowing, degradation, and keyboard command tests. |
+| `docs/72-acp-harness-view.md` | Document the heat strip after implementation. |
 | `docs/PROGRESS.md` | Add landing note after implementation. |
 
 ## Design
@@ -208,7 +218,224 @@ Peek adds:
 
 Do not remove existing chips in slice 1. Deduplication can happen after user testing.
 
-### Data Flow
+## Slice 2: Interactive Activity Heat
+
+### Goal
+
+Make the peek more interactive without turning it into a global harness dashboard. The user should be able to glance at the **current lane pair** — active lane + peeked lane — and answer:
+
+- Which side is hotter right now?
+- Is the heat mostly tool calls, token/context growth, peer traffic, shell/process load, or permissions/errors?
+- Did the heat happen in the last few seconds, the last few minutes, or across the session?
+
+The heat surface is lane-pair-local. It never summarizes all lanes at once and does not replace lane switching, the resource metrics panel, or transcript inspection.
+
+### State
+
+View-local state on `AcpHarnessView`:
+
+```ts
+type LanePeekHeatMetric = 'auto' | 'tools' | 'tokens' | 'peer' | 'process' | 'alerts';
+type LanePeekHeatWindow = '30s' | '5m' | 'session';
+
+/** Ring-buffer row: poll-aligned CPU/RSS + usage.used for token deltas (not full per-metric tallies). */
+interface LaneActivitySample {
+  at: number;
+  usageUsed: number | null;
+  cpuPercent: number | null;
+  rssMb: number | null;
+}
+
+interface LanePairHeatState {
+  metric: LanePeekHeatMetric;
+  window: LanePeekHeatWindow;
+  expanded: boolean;
+}
+
+interface LanePairHeatSummary {
+  metric: Exclude<LanePeekHeatMetric, 'auto'>;
+  window: LanePeekHeatWindow;
+  active: LaneHeatSide;
+  peeked: LaneHeatSide;
+  pairScore: number; // max(active.score, peeked.score)
+  dominantSide: 'active' | 'peeked' | 'balanced';
+  unavailableReason: string | null;
+  deltaLine: string; // compact summary line under the bars
+}
+
+interface LaneHeatSide {
+  laneId: string;
+  displayName: string;
+  score: number; // 0..100
+  toolDelta: number;
+  tokenDelta: number | null;
+  peerDelta: number;
+  permissionDelta: number;
+  errorDelta: number;
+  cpuPeak: number | null;
+  label: string;
+}
+```
+
+Exported types and `deriveLanePairHeat` live in `src/acp/acp-harness-view.ts` and should match this block.
+
+Samples are in-memory only. Keep a small ring buffer per lane, capped at 10 minutes or 240 samples, whichever is smaller. Each sample records **time, context usage (`used` when present), CPU %, and RSS** from the existing metrics poll path; tool, peer, permission, and error activity for a window are **not** duplicated into every sample — they are derived from transcript tails plus current lane fields (`usage.*`, `mcp.toolsCallCount`, `toolCalls`, pending peer counts, etc.) when computing heat. Session totals should come from monotonic lane state where available and from transcript reconstruction only for event kinds that have timestamps (`tool`, `inter_lane`, `permission`, `provider_error`, `shell`). Do not combine both sources for the same counter in the same window.
+
+### Metric Sources
+
+Use existing frontend state first:
+
+| Metric | Primary source | Notes |
+|--------|----------------|-------|
+| Tool calls | `lane.toolCalls.size`, transcript `tool` rows, MCP `toolsCallCount` deltas | Prefer completed/in-progress event deltas over raw map size when transcript timestamps are available. |
+| Tokens | `lane.usage.inputTokens`, `outputTokens`, `used`, `cachedReadTokens`, `cachedWriteTokens` | Use deltas within the selected window. If only `used` exists, label as context growth. If no usage exists, show `tokens --`. |
+| Peer | `pendingPeers`, `inboxDepth`, recent `inter_lane` rows | Count sends, receives, pending waits, and inbox changes. |
+| Process | `AcpLaneMetrics.total_cpu_percent`, `total_rss_mb` | Reuse the metrics poll. CPU is heat; RSS is supporting detail, not primary heat. |
+| Alerts | permission, error, shell, peer, and busy status | Auto mode can select this blended alert score when blocking/attention state dominates. |
+
+Do not add Rust or ACP protocol changes for slice 2. If an adapter does not emit usage, the UI degrades to tools/peer/process heat and clearly marks tokens unavailable.
+
+Precedence rules:
+
+1. Windowed tool deltas use transcript `tool` rows with timestamps when present.
+2. MCP `toolsCallCount` deltas are the fallback for tool activity when transcript timestamps are missing.
+3. `lane.toolCalls.size` is a session fallback only; do not use it as a 30s/5m delta.
+4. Token deltas use monotonic usage counters between samples. If providers report usage in batches, clamp a single-window token jump to the lane's current `usage.used` and let the next sample settle the display.
+5. Process heat samples at the existing metrics poll interval. A 30s CPU peak is the max observed poll sample in that window, not a sub-second profiler.
+
+For recompute paths that must inspect transcript history, cap tail scans at the newest 200 transcript items per lane. Older activity is represented through the ring buffer or session totals.
+
+### Heat Scoring
+
+Scores are normalized per selected window:
+
+```text
+toolScore     = clamp01(toolDelta / 8)
+tokenScore    = clamp01(log10(max(tokenDelta, 0) + 1) / 4)   // 10k tokens ~= full heat
+peerScore     = clamp01((peerDelta + pendingPeerWeight) / 6)
+processScore  = clamp01(cpuPeak / 100)
+alertScore    = max(permissionBoost, errorBoost, shellBoost, awaitingPeerBoost)
+autoScore     = max(toolScore, tokenScore, peerScore, processScore, alertScore)
+```
+
+Weights and boosts:
+
+- pending peer weight: `2` per outstanding peer wait.
+- tool score: `8` tool events in the selected window is full heat.
+- token score: about `10k` token growth in the selected window is full heat.
+- peer score: about `6` peer events/weighted waits in the selected window is full heat.
+- permission waiting: at least `70`.
+- error: `100`.
+- active shell: at least `55`.
+- awaiting peer: at least `65`.
+
+`auto` resolves to the highest contributing non-zero metric for the current pair. `alerts` is the blended blocking-state metric; use it when permissions, errors, active shells, or peer waits dominate. This keeps command labels distinct: `auto` chooses what to show, while `alerts` is one selectable metric.
+
+Bars show the selected metric's score. In `auto`, bars show the winning metric's score and the delta line names that metric, for example `alerts permission vs idle` or `tools 6 vs 2`. This avoids showing an alert-saturated bar next to an unrelated tool-count label. `pairScore` is the max side score and is used only for CSS intensity; it is not rendered as a third number.
+
+### UI
+
+Add a compact heat strip to the bottom of the peek, above existing stat chips. Default rendering must stay to one line plus one terse delta; expanded rows appear only after `ACP: Toggle Peek Heat Detail` or a click on the strip.
+
+```text
+heat auto · 5m   active ███████░ 72   peek ███░░░░░ 31   tools 6 vs 2
+```
+
+Default compact mode:
+
+1. `heat` prefix.
+2. Current metric and window.
+3. Two side-by-side bars: active lane first, peeked lane second.
+4. One terse delta label for the selected metric, for example `tools 6 vs 2`, `tokens +12.4k vs --`, `peer 2 vs 1`, or `cpu 84% vs 12%`.
+
+Expanded mode adds up to four rows:
+
+```text
+tools   6          2
+tokens  +12.4k     +3.1k
+peer    2          1
+cpu     84%        12%
+```
+
+The expanded rows are still summaries, not transcript rows. No command output, diffs, prompts, or assistant text are embedded.
+
+Visual rules:
+
+- Use existing lane accent colors for each side.
+- Heat bars must have stable dimensions so changing counts does not resize the peek.
+- Use fixed labels `active` and `peek` in compact mode; put full lane names in `title` text and expanded detail to avoid widening the rail unpredictably.
+- Abbreviate large counts with `formatCount()` and keep compact deltas under 24 characters where practical.
+- Use opacity/intensity changes, not blur.
+- No hover-only controls. Tooltips can explain exact numbers, but all actions need command-palette access.
+- Do not rely on color alone: active side is always first, peeked side is always second, and expanded rows include text labels.
+- Respect reduced motion. If a heat value changes, a short opacity flash is allowed only outside `prefers-reduced-motion: reduce`.
+
+### Interaction
+
+Command-palette actions:
+
+| Command | Action |
+|---------|--------|
+| `ACP: Cycle Peek Heat Metric` | `auto → tools → tokens → peer → process → alerts → auto`. |
+| `ACP: Cycle Peek Heat Window` | `30s → 5m → session → 30s`. |
+| `ACP: Toggle Peek Heat Detail` | Expand/collapse the heat rows. |
+
+The commands operate only when a lane peek is visible. If no peek is visible, flash `no lane peek candidate`, matching the existing peek command behavior.
+
+Mouse support is optional and secondary:
+
+- Click metric label cycles metric.
+- Click window label cycles window.
+- Click heat strip toggles expanded detail.
+
+Keyboard behavior remains the contract; mouse interactions cannot be the only way to reach the feature.
+
+### Lane-Pair Semantics
+
+The pair is always:
+
+```text
+active lane  +  currently peeked lane
+```
+
+When the peek candidate changes, heat recomputes immediately for the new pair. Dwell/lock rules still control which lane is peeked; heat never changes lane selection by itself. If a manual lock pins the peek to a lane, heat follows that locked pair.
+
+Default window is `5m`, except direct peer-relation candidates (`awaiting-peer`, `inbound-peer`, `peer-counterpart`) should default to `30s` for the first render of that pair so rapid back-and-forth feels live. User-selected window overrides the contextual default for the rest of the harness session.
+
+For a direct peer relation, the heat strip should emphasize peer/tool/token contrast between the active sender and the peeked recipient. For unrelated permission/error candidates, heat is still useful but secondary to the blocking reason.
+
+### Slice 2 Data Flow
+
+```text
+1. ACP event, transcript append, usage update, MCP stats poll, or process metrics poll arrives.
+2. AcpHarnessView records a LaneActivitySample for the affected lane.
+3. Peek candidate selection chooses the current non-active lane as in slice 1.
+4. deriveLanePairHeat(active, peeked, metric, window, now) computes side summaries.
+5. renderLanePeek() appends compact heat strip; expanded rows render only when enabled.
+6. Command-palette actions mutate metric/window/expanded state and re-render the peek.
+```
+
+Sampling should be debounced to existing render cadence. Do not introduce a high-frequency timer just for heat; reuse ACP event renders and the existing metrics poll.
+
+### Slice 2 Configuration
+
+No TOML config in slice 2. The heat strip is visible when a peek is visible. User-selected metric/window/detail state is session-local and resets with the harness tab.
+
+### Slice 2 Testing
+
+- Tool heat: transcript/tool deltas in a 5-minute window produce expected `toolDelta` and score.
+- Token heat: usage deltas produce expected labels; missing usage renders `tokens --` without `NaN`.
+- Peer heat: pending peer + inbox + `inter_lane` rows contribute to peer score.
+- Process heat: CPU peak drives process score; RSS appears only as supporting detail.
+- Auto metric: picks the strongest available metric and falls back to alerts when only permission/error state exists.
+- Windowing: 30-second, 5-minute, and session windows produce different deltas from the same samples.
+- Pair switch: changing the peeked lane recomputes heat for active+new peeked lane.
+- Manual lock: heat follows the locked peek lane.
+- Commands: cycle metric, cycle window, and toggle detail mutate state and preserve existing peek visibility rules.
+- Alert dominance: permission/error boosts saturate bars while tiny tool deltas remain visible only in expanded rows or non-auto metric modes.
+- Render: heat strip has stable bar dimensions and never renders transcript body content.
+
+### Slice 1 Data Flow
 
 ```text
 1. Lane status, transcript, permission, peer, or inbox state changes.
@@ -220,11 +447,11 @@ Do not remove existing chips in slice 1. Deduplication can happen after user tes
 7. User can hide, cycle, lock, unlock, or activate through command palette / Esc.
 ```
 
-### Configuration
+### Slice 1 Configuration
 
 No TOML config in slice 1. The peek is an ACP harness behavior, session-local and dismissible.
 
-### Testing
+### Slice 1 Testing
 
 - Ranking: each priority produces expected lane.
 - Tie-breakers: recency, current candidate stickiness, visual order.
@@ -277,3 +504,4 @@ None blocking this draft. User approval should focus on whether the automatic ra
 - [Zellij Basic Development](https://zellij.dev/tutorials/basic-functionality/) — keyboard-addressable floating panes and hide/show behavior in a terminal UI.
 - `docs/106-inter-lane-messaging.md` — peering status, awaiting-peer lifecycle, inbox behavior.
 - `docs/107-acp-harness-transcript-readability.md` — structured permission cards and harness event vocabulary.
+- `docs/prototypes/109-lane-peek-heat-prototype.html` — static HTML mock for slice 1 + slice 2 layout and heat interaction (open in a browser).

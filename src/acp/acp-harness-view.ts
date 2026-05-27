@@ -266,6 +266,60 @@ export interface LanePeekSnapshot {
   pendingShell?: boolean;
 }
 
+/** Slice 109 — lane-pair activity heat (peek rail). */
+export type LanePeekHeatMetric = 'auto' | 'tools' | 'tokens' | 'peer' | 'process' | 'alerts';
+export type LanePeekHeatWindow = '30s' | '5m' | 'session';
+
+export interface LaneActivitySample {
+  at: number;
+  usageUsed: number | null;
+  cpuPercent: number | null;
+  rssMb: number | null;
+}
+
+export interface LaneHeatSide {
+  laneId: string;
+  displayName: string;
+  score: number;
+  toolDelta: number;
+  tokenDelta: number | null;
+  peerDelta: number;
+  permissionDelta: number;
+  errorDelta: number;
+  cpuPeak: number | null;
+  label: string;
+}
+
+export interface LanePairHeatSummary {
+  metric: Exclude<LanePeekHeatMetric, 'auto'>;
+  window: LanePeekHeatWindow;
+  active: LaneHeatSide;
+  peeked: LaneHeatSide;
+  pairScore: number;
+  dominantSide: 'active' | 'peeked' | 'balanced';
+  unavailableReason: string | null;
+  deltaLine: string;
+}
+
+/** Transcript + lane-local inputs for heat derivation (tests use minimal objects). */
+export interface LanePeekHeatLaneInput {
+  id: string;
+  displayName: string;
+  status: HarnessLaneStatus;
+  transcript: HarnessTranscriptItem[];
+  usage: UsageInfo | null;
+  pendingShell: boolean;
+  pendingPeerCount: number;
+  metricHistory: LaneActivitySample[];
+}
+
+const LANE_PEEK_HEAT_TAIL = 200;
+const LANE_PEEK_HEAT_SESSION_TAIL = 400;
+const LANE_PEEK_HEAT_RING_MAX = 240;
+const LANE_PEEK_HEAT_RING_MS = 10 * 60_000;
+const LANE_PEEK_HEAT_SAMPLE_MIN_MS = 900;
+const LANE_PEEK_HEAT_PENDING_PEER_WEIGHT = 2;
+
 const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MEMORY_PERMISSION_SCAN_DEPTH = 8;
@@ -523,6 +577,13 @@ export class AcpHarnessView implements ContentView {
     currentReasonKey: null,
     selectedAt: 0,
   };
+  /** Slice 109 — CPU / usage ring samples for peek heat (no extra timers). */
+  private laneMetricHistory = new Map<string, LaneActivitySample[]>();
+  private lanePeekHeatLastGlobalSample = 0;
+  private lanePeekHeatMetric: LanePeekHeatMetric = 'auto';
+  /** null = contextual window (30s for direct peer peek, else 5m). */
+  private lanePeekHeatWindowExplicit: LanePeekHeatWindow | null = null;
+  private lanePeekHeatExpanded = false;
   private memoryDrawerOpen = false;
   private helpOpen = false;
   private zenMode = false;
@@ -1638,6 +1699,43 @@ export class AcpHarnessView implements ContentView {
     this.lanePeek.visible = false;
     this.lanePeek.lockedLaneId = null;
     this.activateLane(laneId);
+  }
+
+  cyclePeekHeatMetric(): void {
+    if (!this.isLanePeekHeatUiAvailable()) {
+      this.flashChip('no lane peek candidate');
+      return;
+    }
+    const order: LanePeekHeatMetric[] = ['auto', 'tools', 'tokens', 'peer', 'process', 'alerts'];
+    const i = order.indexOf(this.lanePeekHeatMetric);
+    this.lanePeekHeatMetric = order[(i + 1) % order.length];
+    this.renderLanePeek();
+  }
+
+  cyclePeekHeatWindow(): void {
+    if (!this.isLanePeekHeatUiAvailable()) {
+      this.flashChip('no lane peek candidate');
+      return;
+    }
+    const cand = this.bestLanePeekCandidate();
+    if (!cand) {
+      this.flashChip('no lane peek candidate');
+      return;
+    }
+    const cur = this.effectivePeekHeatWindow(cand);
+    const order: LanePeekHeatWindow[] = ['30s', '5m', 'session'];
+    const idx = order.indexOf(cur);
+    this.lanePeekHeatWindowExplicit = order[(idx + 1) % order.length];
+    this.renderLanePeek();
+  }
+
+  togglePeekHeatDetail(): void {
+    if (!this.isLanePeekHeatUiAvailable()) {
+      this.flashChip('no lane peek candidate');
+      return;
+    }
+    this.lanePeekHeatExpanded = !this.lanePeekHeatExpanded;
+    this.renderLanePeek();
   }
 
   private buildDOM(): void {
@@ -2788,6 +2886,7 @@ export class AcpHarnessView implements ContentView {
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
     this.mcpStatsByLane.delete(lane.displayName);
+    this.laneMetricHistory.delete(lane.id);
     this.laneBus.emit({
       type: 'lane:closed',
       payload: { laneId: lane.id, displayName: lane.displayName },
@@ -3293,6 +3392,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderLanePeek(): void {
+    const now = Date.now();
+    this.maybeRecordLaneMetricSamples(now);
     const slot = this.peekSlotEl;
     const snapshots = this.lanePeekSnapshots();
     const candidate = this.bestLanePeekCandidate({ snapshots });
@@ -3304,8 +3405,219 @@ export class AcpHarnessView implements ContentView {
     this.applyLanePeekCandidate(candidate, false);
     const snapshot = snapshots.find((s) => s.laneId === candidate.laneId) ?? null;
     const next = renderLanePeek(candidate, snapshot, this.lanePeek.lockedLaneId === candidate.laneId);
+    const heatRoot = next.querySelector<HTMLElement>('.acp-harness__lane-peek-heat-root');
+    const activeLane = this.lanes.find((lane) => lane.id === this.activeLaneId) ?? null;
+    const peekLane = this.lanes.find((lane) => lane.id === candidate.laneId) ?? null;
+    if (heatRoot && activeLane && peekLane) {
+      this.mountLanePeekHeat(heatRoot, candidate, activeLane, peekLane, now);
+    }
     slot.replaceChildren(next);
     slot.hidden = false;
+  }
+
+  private isLanePeekHeatUiAvailable(): boolean {
+    return this.lanePeek.visible && this.bestLanePeekCandidate() !== null;
+  }
+
+  private effectivePeekHeatWindow(candidate: LanePeekCandidate): LanePeekHeatWindow {
+    if (this.lanePeekHeatWindowExplicit !== null) return this.lanePeekHeatWindowExplicit;
+    return isDirectPeerPeekReasonKey(candidate.reasonKey) ? '30s' : '5m';
+  }
+
+  private lanePeekHeatInput(lane: HarnessLane): LanePeekHeatLaneInput {
+    return {
+      id: lane.id,
+      displayName: lane.displayName,
+      status: lane.status,
+      transcript: lane.transcript,
+      usage: lane.usage,
+      pendingShell: lane.pendingShellId !== null,
+      pendingPeerCount: this.coordinator.pendingPeersFor(lane.id).length,
+      metricHistory: this.laneMetricHistory.get(lane.id) ?? [],
+    };
+  }
+
+  private maybeRecordLaneMetricSamples(now: number): void {
+    if (now - this.lanePeekHeatLastGlobalSample < LANE_PEEK_HEAT_SAMPLE_MIN_MS) return;
+    this.lanePeekHeatLastGlobalSample = now;
+    for (const lane of this.lanes) {
+      if (lane.status === 'stopped') continue;
+      this.appendLaneMetricSample(lane, now);
+    }
+  }
+
+  private appendLaneMetricSample(lane: HarnessLane, now: number): void {
+    const sessionId = lane.client?.sessionId ?? null;
+    const m = sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null;
+    const u = lane.usage;
+    const sample: LaneActivitySample = {
+      at: now,
+      usageUsed: typeof u?.used === 'number' && Number.isFinite(u.used) ? u.used : null,
+      cpuPercent:
+        m && Number.isFinite(m.total_cpu_percent) ? Math.max(0, m.total_cpu_percent) : null,
+      rssMb: m && Number.isFinite(m.total_rss_mb) ? m.total_rss_mb : null,
+    };
+    const arr = this.laneMetricHistory.get(lane.id) ?? [];
+    arr.push(sample);
+    while (arr.length > LANE_PEEK_HEAT_RING_MAX || (arr.length > 0 && arr[0].at < now - LANE_PEEK_HEAT_RING_MS)) {
+      arr.shift();
+    }
+    this.laneMetricHistory.set(lane.id, arr);
+  }
+
+  private mountLanePeekHeat(
+    root: HTMLElement,
+    candidate: LanePeekCandidate,
+    activeLane: HarnessLane,
+    peekLane: HarnessLane,
+    now: number,
+  ): void {
+    root.replaceChildren();
+    const win = this.effectivePeekHeatWindow(candidate);
+    const summary = deriveLanePairHeat(
+      this.lanePeekHeatInput(activeLane),
+      this.lanePeekHeatInput(peekLane),
+      now,
+      win,
+      this.lanePeekHeatMetric,
+    );
+    root.style.setProperty('--acp-peek-heat-active', activeLane.accent);
+    root.style.setProperty('--acp-peek-heat-peek', peekLane.accent);
+
+    const wrap = document.createElement('section');
+    wrap.className = 'acp-harness__lane-peek-heat';
+    if (summary.unavailableReason) {
+      wrap.title = summary.unavailableReason;
+    }
+
+    const compact = document.createElement('div');
+    compact.className = 'acp-harness__lane-peek-heat-compact';
+
+    const prefix = document.createElement('span');
+    prefix.className = 'acp-harness__lane-peek-heat-prefix';
+    prefix.textContent = 'heat';
+
+    const metricBtn = document.createElement('button');
+    metricBtn.type = 'button';
+    metricBtn.className = 'acp-harness__lane-peek-heat-cmd';
+    metricBtn.textContent = this.lanePeekHeatMetric;
+    metricBtn.title = 'Cycle peek heat metric (click or command palette)';
+    metricBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.cyclePeekHeatMetric();
+    });
+
+    const sep = document.createElement('span');
+    sep.className = 'acp-harness__lane-peek-heat-sep';
+    sep.textContent = '·';
+
+    const winBtn = document.createElement('button');
+    winBtn.type = 'button';
+    winBtn.className = 'acp-harness__lane-peek-heat-cmd';
+    winBtn.textContent = win;
+    winBtn.title = 'Cycle peek heat time window (click or command palette)';
+    winBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.cyclePeekHeatWindow();
+    });
+
+    const bars = document.createElement('div');
+    bars.className = 'acp-harness__lane-peek-heat-bars';
+
+    const mkSide = (side: LaneHeatSide, which: 'active' | 'peek'): HTMLElement => {
+      const col = document.createElement('div');
+      col.className = 'acp-harness__lane-peek-heat-side';
+      const fullName = which === 'active' ? activeLane.displayName : peekLane.displayName;
+      col.title = `${which === 'active' ? 'Active' : 'Peeked'}: ${fullName}`;
+      const tag = document.createElement('span');
+      tag.className =
+        `acp-harness__lane-peek-heat-tag acp-harness__lane-peek-heat-tag--${which}`;
+      tag.textContent = which === 'active' ? 'active' : 'peek';
+      const row = document.createElement('div');
+      row.className = 'acp-harness__lane-peek-heat-bar-row';
+      const track = document.createElement('div');
+      track.className = 'acp-harness__lane-peek-heat-track';
+      const fill = document.createElement('div');
+      fill.className =
+        `acp-harness__lane-peek-heat-fill acp-harness__lane-peek-heat-fill--${which}`;
+      fill.style.width = `${Math.min(100, Math.max(0, side.score))}%`;
+      track.appendChild(fill);
+      const score = document.createElement('span');
+      score.className = 'acp-harness__lane-peek-heat-score';
+      score.textContent = String(side.score);
+      row.appendChild(track);
+      row.appendChild(score);
+      col.appendChild(tag);
+      col.appendChild(row);
+      return col;
+    };
+
+    bars.appendChild(mkSide(summary.active, 'active'));
+    bars.appendChild(mkSide(summary.peeked, 'peek'));
+
+    const delta = document.createElement('div');
+    delta.className = 'acp-harness__lane-peek-heat-delta';
+    delta.textContent = summary.deltaLine;
+
+    compact.appendChild(prefix);
+    compact.appendChild(metricBtn);
+    compact.appendChild(sep);
+    compact.appendChild(winBtn);
+    compact.appendChild(bars);
+    compact.appendChild(delta);
+
+    compact.addEventListener('click', () => {
+      this.togglePeekHeatDetail();
+    });
+
+    const expanded = document.createElement('div');
+    expanded.className = 'acp-harness__lane-peek-heat-expanded';
+    expanded.hidden = !this.lanePeekHeatExpanded;
+    const table = document.createElement('table');
+    table.className = 'acp-harness__lane-peek-heat-table';
+    const caption = document.createElement('caption');
+    caption.className = 'acp-harness__lane-peek-heat-caption';
+    caption.textContent = 'Heat detail';
+    table.appendChild(caption);
+    const head = document.createElement('tr');
+    for (const label of ['', 'active', 'peek']) {
+      const th = document.createElement('th');
+      th.scope = label === '' ? 'col' : 'col';
+      th.textContent = label;
+      head.appendChild(th);
+    }
+    table.appendChild(head);
+    const tokStr = (s: LaneHeatSide): string => {
+      if (s.tokenDelta === null) return '—';
+      return `+${formatHeatTokenSuffix(s.tokenDelta)}`;
+    };
+    const cpuStr = (s: LaneHeatSide): string => {
+      if (s.cpuPeak === null) return '—';
+      return `${Math.round(s.cpuPeak)}%`;
+    };
+    const addRow = (key: string, a: string, b: string): void => {
+      const tr = document.createElement('tr');
+      const k = document.createElement('th');
+      k.scope = 'row';
+      k.textContent = key;
+      const c1 = document.createElement('td');
+      c1.textContent = a;
+      const c2 = document.createElement('td');
+      c2.textContent = b;
+      tr.appendChild(k);
+      tr.appendChild(c1);
+      tr.appendChild(c2);
+      table.appendChild(tr);
+    };
+    addRow('tools', String(summary.active.toolDelta), String(summary.peeked.toolDelta));
+    addRow('tokens', tokStr(summary.active), tokStr(summary.peeked));
+    addRow('peer', String(summary.active.peerDelta), String(summary.peeked.peerDelta));
+    addRow('cpu', cpuStr(summary.active), cpuStr(summary.peeked));
+    expanded.appendChild(table);
+
+    wrap.appendChild(compact);
+    wrap.appendChild(expanded);
+    root.appendChild(wrap);
   }
 
   private bestLanePeekCandidate(options: { force?: boolean; snapshots?: LanePeekSnapshot[] } = {}): LanePeekCandidate | null {
@@ -6587,6 +6899,266 @@ function renderReviewCardBody(body: HTMLElement, payload: ReviewCardPayload): vo
   body.appendChild(list);
 }
 
+export function isDirectPeerPeekReasonKey(reasonKey: string): boolean {
+  return reasonKey === 'awaiting-peer' || reasonKey === 'inbound-peer' || reasonKey === 'peer-counterpart';
+}
+
+function heatWindowCutoffMs(window: LanePeekHeatWindow, now: number): number {
+  if (window === '30s') return now - 30_000;
+  if (window === '5m') return now - 5 * 60_000;
+  return 0;
+}
+
+function scanTranscriptHeat(
+  transcript: HarnessTranscriptItem[],
+  window: LanePeekHeatWindow,
+  now: number,
+): { tools: number; peerRows: number; permissions: number; errors: number } {
+  const cutoff = heatWindowCutoffMs(window, now);
+  const timed = window !== 'session';
+  const maxItems = window === 'session' ? LANE_PEEK_HEAT_SESSION_TAIL : LANE_PEEK_HEAT_TAIL;
+  let tools = 0;
+  let peerRows = 0;
+  let permissions = 0;
+  let errors = 0;
+  let scanned = 0;
+  for (let i = transcript.length - 1; i >= 0 && scanned < maxItems; i--) {
+    const item = transcript[i];
+    const t = item.createdAt ?? now;
+    if (timed && t < cutoff) break;
+    scanned++;
+    if (item.kind === 'tool') tools++;
+    else if (item.kind === 'inter_lane') peerRows++;
+    else if (item.kind === 'permission') permissions++;
+    else if (item.kind === 'provider_error') errors++;
+  }
+  return { tools, peerRows, permissions, errors };
+}
+
+function tokenDeltaFromHistory(history: LaneActivitySample[], window: LanePeekHeatWindow, now: number): number | null {
+  if (history.length === 0) return null;
+  const last = history[history.length - 1];
+  if (last.usageUsed === null || !Number.isFinite(last.usageUsed)) return null;
+  const cutoff = heatWindowCutoffMs(window, now);
+  let oldest: LaneActivitySample | null = null;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const s = history[i];
+    if (window !== 'session' && s.at < cutoff) break;
+    oldest = s;
+  }
+  if (!oldest || oldest.usageUsed === null || !Number.isFinite(oldest.usageUsed)) return null;
+  const d = last.usageUsed - oldest.usageUsed;
+  return d > 0 ? d : null;
+}
+
+function cpuPeakFromHistory(history: LaneActivitySample[], window: LanePeekHeatWindow, now: number): number | null {
+  const cutoff = heatWindowCutoffMs(window, now);
+  let peak: number | null = null;
+  for (const s of history) {
+    if (window !== 'session' && s.at < cutoff) continue;
+    if (s.cpuPercent === null || !Number.isFinite(s.cpuPercent)) continue;
+    peak = peak === null ? s.cpuPercent : Math.max(peak, s.cpuPercent);
+  }
+  return peak;
+}
+
+function heatAlertBoost(lane: LanePeekHeatLaneInput): number {
+  if (lane.status === 'error') return 100;
+  if (lane.status === 'needs_permission') return 70;
+  if (lane.pendingShell) return 55;
+  if (lane.status === 'awaiting_peer') return 65;
+  return 0;
+}
+
+function heatToolScore100(toolDelta: number): number {
+  return Math.min(100, Math.max(0, (toolDelta / 8) * 100));
+}
+
+function heatTokenScore100(tokenDelta: number | null): number {
+  if (tokenDelta === null || tokenDelta <= 0) return 0;
+  const v = Math.log10(tokenDelta + 1) / 4;
+  return Math.min(100, Math.max(0, v * 100));
+}
+
+function heatPeerScore100(peerRows: number, pendingPeerCount: number): number {
+  const w = pendingPeerCount * LANE_PEEK_HEAT_PENDING_PEER_WEIGHT;
+  const frac = (peerRows + w) / 6;
+  return Math.min(100, Math.max(0, frac * 100));
+}
+
+function heatProcessScore100(cpuPeak: number | null): number {
+  if (cpuPeak === null || !Number.isFinite(cpuPeak)) return 0;
+  return Math.min(100, Math.max(0, cpuPeak));
+}
+
+type HeatConcreteMetric = Exclude<LanePeekHeatMetric, 'auto'>;
+
+function scoreForConcreteMetric(
+  m: HeatConcreteMetric,
+  toolS: number,
+  tokenS: number,
+  peerS: number,
+  procS: number,
+  alertS: number,
+): number {
+  switch (m) {
+    case 'tools':
+      return toolS;
+    case 'tokens':
+      return tokenS;
+    case 'peer':
+      return peerS;
+    case 'process':
+      return procS;
+    case 'alerts':
+      return alertS;
+  }
+}
+
+function heatSideLabel(lane: LanePeekHeatLaneInput): string {
+  return statusLabel(lane.status);
+}
+
+function buildHeatDeltaLine(
+  metric: HeatConcreteMetric,
+  a: LaneHeatSide,
+  b: LaneHeatSide,
+  tokensMissing: boolean,
+): string {
+  if (metric === 'tools') {
+    return `tools ${a.toolDelta} vs ${b.toolDelta}`;
+  }
+  if (metric === 'tokens') {
+    if (tokensMissing) return 'tokens --';
+    const fa = a.tokenDelta === null ? '--' : `+${formatHeatTokenSuffix(a.tokenDelta)}`;
+    const fb = b.tokenDelta === null ? '--' : `+${formatHeatTokenSuffix(b.tokenDelta)}`;
+    return `tokens ${fa} vs ${fb}`;
+  }
+  if (metric === 'peer') {
+    return `peer ${a.peerDelta} vs ${b.peerDelta}`;
+  }
+  if (metric === 'process') {
+    const ca = a.cpuPeak === null ? '--' : `${Math.round(a.cpuPeak)}%`;
+    const cb = b.cpuPeak === null ? '--' : `${Math.round(b.cpuPeak)}%`;
+    return `cpu ${ca} vs ${cb}`;
+  }
+  return `alerts ${a.label} vs ${b.label}`;
+}
+
+function formatHeatTokenSuffix(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+function buildLaneHeatSide(
+  lane: LanePeekHeatLaneInput,
+  window: LanePeekHeatWindow,
+  now: number,
+  metric: HeatConcreteMetric,
+): LaneHeatSide {
+  const scan = scanTranscriptHeat(lane.transcript, window, now);
+  const tokenDelta = tokenDeltaFromHistory(lane.metricHistory, window, now);
+  const cpuPeak = cpuPeakFromHistory(lane.metricHistory, window, now);
+  const alertS = heatAlertBoost(lane);
+  const toolS = heatToolScore100(scan.tools);
+  const tokenS = heatTokenScore100(tokenDelta);
+  const peerS = heatPeerScore100(scan.peerRows, lane.pendingPeerCount);
+  const procS = heatProcessScore100(cpuPeak);
+  const score = Math.round(scoreForConcreteMetric(metric, toolS, tokenS, peerS, procS, alertS));
+  return {
+    laneId: lane.id,
+    displayName: lane.displayName,
+    score,
+    toolDelta: scan.tools,
+    tokenDelta,
+    peerDelta: scan.peerRows,
+    permissionDelta: scan.permissions,
+    errorDelta: scan.errors,
+    cpuPeak,
+    label: heatSideLabel(lane),
+  };
+}
+
+/**
+ * Derives lane-pair heat for the active lane + peeked lane (slice 109).
+ * Pure: callers supply coordinator-derived counts on each `LanePeekHeatLaneInput`.
+ */
+export function deriveLanePairHeat(
+  active: LanePeekHeatLaneInput,
+  peeked: LanePeekHeatLaneInput,
+  now: number,
+  window: LanePeekHeatWindow,
+  metric: LanePeekHeatMetric,
+): LanePairHeatSummary {
+  const scanA = scanTranscriptHeat(active.transcript, window, now);
+  const scanP = scanTranscriptHeat(peeked.transcript, window, now);
+  const tokA = tokenDeltaFromHistory(active.metricHistory, window, now);
+  const tokP = tokenDeltaFromHistory(peeked.metricHistory, window, now);
+  const cpuA = cpuPeakFromHistory(active.metricHistory, window, now);
+  const cpuP = cpuPeakFromHistory(peeked.metricHistory, window, now);
+  const alertA = heatAlertBoost(active);
+  const alertP = heatAlertBoost(peeked);
+  const subA = {
+    toolS: heatToolScore100(scanA.tools),
+    tokenS: heatTokenScore100(tokA),
+    peerS: heatPeerScore100(scanA.peerRows, active.pendingPeerCount),
+    procS: heatProcessScore100(cpuA),
+    alertS: alertA,
+  };
+  const subP = {
+    toolS: heatToolScore100(scanP.tools),
+    tokenS: heatTokenScore100(tokP),
+    peerS: heatPeerScore100(scanP.peerRows, peeked.pendingPeerCount),
+    procS: heatProcessScore100(cpuP),
+    alertS: alertP,
+  };
+
+  let resolved: HeatConcreteMetric;
+  if (metric !== 'auto') {
+    resolved = metric;
+  } else {
+    const cand: HeatConcreteMetric[] = ['tools', 'tokens', 'peer', 'process', 'alerts'];
+    resolved = 'alerts';
+    let best = -1;
+    for (const m of cand) {
+      const va = scoreForConcreteMetric(m, subA.toolS, subA.tokenS, subA.peerS, subA.procS, subA.alertS);
+      const vb = scoreForConcreteMetric(m, subP.toolS, subP.tokenS, subP.peerS, subP.procS, subP.alertS);
+      const vmax = Math.max(va, vb);
+      if (vmax > best) {
+        best = vmax;
+        resolved = m;
+      }
+    }
+  }
+
+  const sideA = buildLaneHeatSide(active, window, now, resolved);
+  const sideP = buildLaneHeatSide(peeked, window, now, resolved);
+  const pairScore = Math.max(sideA.score, sideP.score);
+  let dominant: 'active' | 'peeked' | 'balanced' = 'balanced';
+  if (sideA.score > sideP.score + 5) dominant = 'active';
+  else if (sideP.score > sideA.score + 5) dominant = 'peeked';
+
+  const tokensMissing =
+    resolved === 'tokens' && sideA.tokenDelta === null && sideP.tokenDelta === null;
+  const unavailableReason =
+    resolved === 'tokens' && tokA === null && tokP === null ? 'no usage counters on either lane' : null;
+
+  const deltaLine = buildHeatDeltaLine(resolved, sideA, sideP, tokensMissing);
+
+  return {
+    metric: resolved,
+    window,
+    active: sideA,
+    peeked: sideP,
+    pairScore,
+    dominantSide: dominant,
+    unavailableReason,
+    deltaLine,
+  };
+}
+
 function lanePeekPriorityClass(candidate: LanePeekCandidate): 'high' | 'warn' | 'info' {
   const kind = candidate.summary.payload?.kind;
   if (kind === 'permission' || kind === 'error') return 'high';
@@ -6724,7 +7296,10 @@ function renderLanePeek(
     html += renderLanePeekRow('inbox', `<b>${snapshot.inboxDepth}</b> pending`);
   }
 
-  if (snapshot) html += renderLanePeekStatChips(snapshot);
+  if (snapshot) {
+    html += '<div class="acp-harness__lane-peek-heat-root"></div>';
+    html += renderLanePeekStatChips(snapshot);
+  }
 
   el.innerHTML = html;
   return el;
