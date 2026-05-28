@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spec 124 — Lane rail directive marker (2-line)</title>
+  <style>
+    :root {
+      --bg: #050910;
+      --surface: rgba(7, 13, 21, 0.96);
+      --text: rgba(226, 238, 226, 0.92);
+      --muted: rgba(226, 238, 226, 0.48);
+      --faint: rgba(226, 238, 226, 0.18);
+      --cyan: #6dd0ff;
+      --green: #8effb0;
+      --purple: #c7a2ff;
+      --amber: #ffd166;
+      --rose: #ff8aa8;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.38;
+    }
+
+    body {
+      padding: 28px;
+      background:
+        radial-gradient(circle at 50% 18%, rgba(109, 208, 255, 0.075), transparent 34%),
+        linear-gradient(180deg, rgba(199, 162, 255, 0.035), transparent 42%),
+        #050910;
+    }
+
+    h1 {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin: 0 0 6px;
+    }
+
+    .note {
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 12px;
+      margin: 0 0 20px;
+      border-left: 2px solid rgba(109, 208, 255, 0.22);
+      padding-left: 12px;
+    }
+
+    .note code { color: var(--text); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 18px;
+      max-width: 1100px;
+    }
+
+    .card {
+      display: grid;
+      gap: 8px;
+    }
+
+    .caption {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .caption strong {
+      color: var(--cyan);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .caption em {
+      color: var(--muted);
+      font-style: normal;
+      font-size: 11px;
+    }
+
+    /* ── Rail surface ─────────────────────────────────────────── */
+
+    .rail {
+      width: 100%;
+      max-width: 320px;
+      background: rgba(8, 14, 22, 0.92);
+      border: 1px solid rgba(109, 208, 255, 0.18);
+      padding: 6px 0;
+    }
+
+    /* Two-row grid:
+       col 1 = status dot (8px), col 2 = body (name + meta lines).
+       Row 1 = name + metrics, row 2 = meta line.
+       Metrics live inside row 1 of the body. */
+    .rail-entry {
+      display: grid;
+      grid-template-columns: 8px minmax(0, 1fr);
+      column-gap: 8px;
+      row-gap: 2px;
+      padding: 6px 12px;
+      color: rgba(216, 232, 216, 0.6);
+      border-left: 2px solid transparent;
+      letter-spacing: 0.04em;
+    }
+
+    .rail-entry--active {
+      color: color-mix(in srgb, var(--accent, var(--green)) 55%, rgba(216, 232, 216, 0.78));
+      border-left-color: color-mix(in srgb, var(--accent, var(--green)) 45%, transparent);
+      background: color-mix(in srgb, var(--accent, var(--green)) 6%, transparent);
+    }
+
+    .rail-dot {
+      grid-column: 1;
+      grid-row: 1;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(216, 232, 216, 0.42);
+      align-self: center;
+    }
+
+    .rail-entry--busy .rail-dot {
+      background: var(--cyan);
+      box-shadow: 0 0 6px rgba(109, 208, 255, 0.6);
+    }
+    .rail-entry--needs_permission .rail-dot { background: var(--amber); }
+    .rail-entry--error .rail-dot { background: var(--rose); }
+
+    /* Row 1 of the body — name + metrics on a single flex line. */
+    .rail-head {
+      grid-column: 2;
+      grid-row: 1;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      min-width: 0;
+      white-space: nowrap;
+    }
+
+    .rail-name {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 0.92em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rail-metric {
+      flex: 0 0 auto;
+      font-size: 0.74em;
+      font-variant-numeric: tabular-nums;
+      color: rgba(216, 232, 216, 0.42);
+      letter-spacing: 0.02em;
+    }
+    .rail-metric--tools { min-width: 3ch; text-align: right; }
+    .rail-metric--ctx { min-width: 4ch; text-align: right; color: rgba(216, 232, 216, 0.5); }
+
+    /* Row 2 of the body — meta line: directive (icon + title) or status. */
+    .rail-meta {
+      grid-column: 2;
+      grid-row: 2;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+      font-size: 0.76em;
+      color: rgba(216, 232, 216, 0.46);
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rail-meta__icon {
+      flex: 0 0 auto;
+      width: 1em;
+      text-align: center;
+      color: var(--purple);
+    }
+
+    .rail-meta__title {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: rgba(226, 238, 226, 0.74);
+    }
+
+    .rail-meta__hint {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 0.94em;
+    }
+
+    /* ── State modifiers ────────────────────────────────────── */
+
+    /* Lane has a directive bound — purple inset tint to differentiate at a
+       glance from a directive-less lane. */
+    .rail-entry--directive {
+      background: color-mix(in srgb, var(--purple) 6%, transparent);
+      color: rgba(226, 238, 226, 0.86);
+    }
+    .rail-entry--directive.rail-entry--active {
+      background: color-mix(in srgb, var(--purple) 12%, transparent);
+      border-left-color: color-mix(in srgb, var(--purple) 50%, transparent);
+    }
+
+    /* Pending swap on a busy lane — meta line + icon go amber. */
+    .rail-entry--pending {
+      background: color-mix(in srgb, var(--amber) 5%, transparent);
+    }
+    .rail-entry--pending .rail-meta__icon,
+    .rail-entry--pending .rail-meta__title,
+    .rail-entry--pending .rail-meta__hint {
+      color: var(--amber);
+    }
+
+    /* Pending clear — strike-through icon (clear the bound directive on next send). */
+    .rail-meta__icon--clearing {
+      text-decoration: line-through;
+      text-decoration-color: rgba(255, 209, 102, 0.65);
+    }
+
+    .legend {
+      max-width: 1100px;
+      margin-top: 28px;
+      padding: 12px 16px;
+      background: rgba(8, 14, 22, 0.6);
+      border: 1px solid rgba(109, 208, 255, 0.14);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .legend strong {
+      color: var(--cyan);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Spec 124 — Lane rail · two-line directive marker</h1>
+  <p class="note">
+    Rail rows grow to <strong>two lines</strong>: line 1 keeps the existing
+    dot/name/metrics layout; line 2 is the <em>meta line</em>. When a directive
+    is bound, the meta line shows <code>◇ <em>directive title</em></code> in
+    full so users see the directive <strong>name</strong> at a glance — not
+    just an icon glyph. Lanes without a directive still get a meta line so the
+    row height stays consistent: it shows the status label
+    (<code>idle</code>, <code>busy</code>, <code>needs permission</code>, …).
+    Pending changes on a busy lane (<code>pendingDirectiveChange</code>) turn
+    the meta line amber.
+  </p>
+
+  <div class="grid">
+
+    <!-- A — baseline (today, 1 line) for reference -->
+    <div class="card">
+      <div class="caption"><strong>A · today (1 line)</strong><em>reference</em></div>
+      <div class="rail">
+        <div class="rail-entry rail-entry--active rail-entry--busy" style="--accent: var(--green); grid-template-rows: auto;">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Claude-1</span>
+            <span class="rail-metric rail-metric--tools">6</span>
+            <span class="rail-metric rail-metric--ctx">34.9k</span>
+          </span>
+        </div>
+        <div class="rail-entry" style="grid-template-rows: auto;">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Codex-1</span>
+            <span class="rail-metric rail-metric--ctx">20.0k</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- B — proposed: directive bound + plain lane -->
+    <div class="card">
+      <div class="caption"><strong>B · directive + plain</strong><em>2-line meta</em></div>
+      <div class="rail">
+        <div class="rail-entry rail-entry--active rail-entry--busy rail-entry--directive" style="--accent: var(--green);">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Claude-1</span>
+            <span class="rail-metric rail-metric--tools">6</span>
+            <span class="rail-metric rail-metric--ctx">34.9k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__icon">◇</span>
+            <span class="rail-meta__title">Claude Review</span>
+          </span>
+        </div>
+        <div class="rail-entry">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Codex-1</span>
+            <span class="rail-metric rail-metric--ctx">20.0k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__hint">idle</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- C — both lanes with directive, different ones -->
+    <div class="card">
+      <div class="caption"><strong>C · both directives</strong><em>title visible</em></div>
+      <div class="rail">
+        <div class="rail-entry rail-entry--active rail-entry--busy rail-entry--directive" style="--accent: var(--green);">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Claude-1</span>
+            <span class="rail-metric rail-metric--tools">6</span>
+            <span class="rail-metric rail-metric--ctx">34.9k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__icon">◇</span>
+            <span class="rail-meta__title">Claude Review</span>
+          </span>
+        </div>
+        <div class="rail-entry rail-entry--directive">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Codex-1</span>
+            <span class="rail-metric rail-metric--ctx">20.0k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__icon">⌘</span>
+            <span class="rail-meta__title">Codex Implementation</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- D — pending swap (busy → swap on next send) -->
+    <div class="card">
+      <div class="caption"><strong>D · pending swap</strong><em>busy → next send</em></div>
+      <div class="rail">
+        <div class="rail-entry rail-entry--active rail-entry--busy rail-entry--directive rail-entry--pending" style="--accent: var(--green);">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Claude-1</span>
+            <span class="rail-metric rail-metric--tools">6</span>
+            <span class="rail-metric rail-metric--ctx">34.9k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__icon">◇</span>
+            <span class="rail-meta__title">Claude Review</span>
+            <span class="rail-meta__hint">· next send</span>
+          </span>
+        </div>
+        <div class="rail-entry">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Codex-1</span>
+            <span class="rail-metric rail-metric--ctx">20.0k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__hint">idle</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- E — pending clear (busy → clear next send) -->
+    <div class="card">
+      <div class="caption"><strong>E · pending clear</strong><em>busy → unbind next send</em></div>
+      <div class="rail">
+        <div class="rail-entry rail-entry--active rail-entry--busy rail-entry--directive rail-entry--pending" style="--accent: var(--green);">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Claude-1</span>
+            <span class="rail-metric rail-metric--tools">6</span>
+            <span class="rail-metric rail-metric--ctx">34.9k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__icon rail-meta__icon--clearing">◇</span>
+            <span class="rail-meta__title">Claude Review</span>
+            <span class="rail-meta__hint">· clear next send</span>
+          </span>
+        </div>
+        <div class="rail-entry">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Codex-1</span>
+            <span class="rail-metric rail-metric--ctx">20.0k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__hint">idle</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- F — denser rail: 4 lanes, various states -->
+    <div class="card">
+      <div class="caption"><strong>F · denser rail</strong><em>4 lanes, mixed</em></div>
+      <div class="rail">
+        <div class="rail-entry rail-entry--active rail-entry--busy rail-entry--directive" style="--accent: var(--green);">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Claude-1</span>
+            <span class="rail-metric rail-metric--tools">6</span>
+            <span class="rail-metric rail-metric--ctx">34.9k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__icon">◇</span>
+            <span class="rail-meta__title">Claude Review</span>
+          </span>
+        </div>
+        <div class="rail-entry rail-entry--directive">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Codex-1</span>
+            <span class="rail-metric rail-metric--tools">3</span>
+            <span class="rail-metric rail-metric--ctx">20.0k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__icon">⌘</span>
+            <span class="rail-meta__title">Codex Implementation</span>
+          </span>
+        </div>
+        <div class="rail-entry rail-entry--needs_permission">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">Gemini-1</span>
+            <span class="rail-metric rail-metric--ctx">8.2k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__hint">needs permission</span>
+          </span>
+        </div>
+        <div class="rail-entry rail-entry--directive">
+          <span class="rail-dot"></span>
+          <span class="rail-head">
+            <span class="rail-name">OMP-1</span>
+            <span class="rail-metric rail-metric--ctx">11.4k</span>
+          </span>
+          <span class="rail-meta">
+            <span class="rail-meta__icon">∴</span>
+            <span class="rail-meta__title">Research Notes</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <strong>Meta line rules (priority, top down)</strong><br>
+    1. If <code>activeDirectiveId</code> (or <code>pendingDirectiveChange</code>) → <code>◇ <em>directive.title</em></code>. Title falls back to <code>directive.id</code> when title is empty. Long titles ellipsize.<br>
+    2. Else → status label (<code>idle</code>, <code>busy</code>, <code>needs permission</code>, <code>awaiting peer</code>, <code>error</code>).<br>
+    <br>
+    <strong>Color rules</strong><br>
+    • Plain directive (idle or busy, no pending change): purple icon, neutral title, faint purple row tint.<br>
+    • <code>pendingDirectiveChange</code> on a busy lane: amber icon + title + <code>· next send</code> hint; row gets a faint amber tint.<br>
+    • Pending clear (<code>pendingDirectiveChange = { directiveId: null }</code>): same amber treatment + strike-through on the icon to signal "going away"; the title shown is still the <em>currently bound</em> directive.<br>
+    Pending changes on an idle lane apply immediately, so the amber state only appears for busy/needs-permission/awaiting-peer lanes.
+  </div>
+</body>
+</html>

@@ -2203,18 +2203,88 @@
 }
 
 .acp-harness__rail-entry {
-  /* dot | name | peers (optional) | tools (optional) | ctx (optional)
-   * — flex so missing children don't reserve gap space; name absorbs slack
-   * via `flex: 1 1 0`. Previously a 4-col grid wrapped extra children to a
-   * second row when both peer hints and metrics were present (spec 118). */
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  /* spec 124 — two-row grid:
+   *   col 1 = status dot (8px), col 2 = body
+   *   row 1 = head (name + peer hints + metrics, flex inside)
+   *   row 2 = meta (directive title when bound, status label otherwise)
+   * The meta row always renders so row height stays consistent across lanes. */
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 2px;
   padding: 6px 12px;
   color: rgba(216, 232, 216, 0.6);
   border-left: 2px solid transparent;
   letter-spacing: 0.04em;
+}
+
+.acp-harness__rail-head {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
   white-space: nowrap;
+}
+
+.acp-harness__rail-meta {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.76em;
+  color: rgba(216, 232, 216, 0.46);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.acp-harness__rail-meta__icon {
+  flex: 0 0 auto;
+  width: 1em;
+  text-align: center;
+  color: #c7a2ff;
+}
+
+.acp-harness__rail-meta__icon--clearing {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 209, 102, 0.65);
+}
+
+.acp-harness__rail-meta__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(226, 238, 226, 0.74);
+}
+
+.acp-harness__rail-meta__hint {
+  flex: 0 0 auto;
+  color: rgba(216, 232, 216, 0.42);
+}
+
+.acp-harness__rail-entry--directive {
+  background: color-mix(in srgb, #c7a2ff 6%, transparent);
+  color: rgba(226, 238, 226, 0.86);
+}
+
+.acp-harness__rail-entry--directive.acp-harness__rail-entry--active {
+  background: color-mix(in srgb, #c7a2ff 12%, transparent);
+  border-left-color: color-mix(in srgb, #c7a2ff 50%, transparent);
+}
+
+.acp-harness__rail-entry--pending {
+  background: color-mix(in srgb, #ffd166 5%, transparent);
+}
+
+.acp-harness__rail-entry--pending .acp-harness__rail-meta__icon,
+.acp-harness__rail-entry--pending .acp-harness__rail-meta__title,
+.acp-harness__rail-entry--pending .acp-harness__rail-meta__hint {
+  color: #ffd166;
 }
 
 .acp-harness__rail-peers {
@@ -2253,11 +2323,13 @@
 }
 
 .acp-harness__rail-dot {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: rgba(216, 232, 216, 0.42);
-  flex: 0 0 auto;
 }
 
 .acp-harness__rail-entry--busy .acp-harness__rail-dot {

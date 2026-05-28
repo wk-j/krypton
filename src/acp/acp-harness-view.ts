@@ -4452,7 +4452,7 @@ export class AcpHarnessView implements ContentView {
   private renderRailEntry(lane: HarnessLane, active: boolean): HTMLElement {
     const entry = document.createElement('div');
     const now = Date.now();
-    const hint = deriveRailPeerHint(
+    const peerHint = deriveRailPeerHint(
       {
         pendingPeers: this.coordinator.pendingPeersFor(lane.id),
         inboxDepth: this.coordinator.inboxDepth(lane.id),
@@ -4461,11 +4461,32 @@ export class AcpHarnessView implements ContentView {
       (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
       now,
     );
+
+    // spec 124: directive state for the meta line. A pending change is
+    // shown when it actually differs from the current binding — a swap
+    // (directiveId → different id) or a clear (directiveId → null while a
+    // directive is bound). For a pending clear the meta line keeps showing
+    // the currently bound directive's name (with a strike on the icon) so
+    // the user can see which directive is being removed.
+    const pendingChange = lane.pendingDirectiveChange;
+    const boundDirective = this.directiveById(lane.activeDirectiveId);
+    const swapTarget =
+      pendingChange && pendingChange.directiveId !== null && pendingChange.directiveId !== lane.activeDirectiveId
+        ? this.directiveById(pendingChange.directiveId)
+        : null;
+    const isPendingClear = !!pendingChange && pendingChange.directiveId === null && !!boundDirective;
+    const isPendingSwap = !!swapTarget;
+    const metaDirective = swapTarget ?? boundDirective;
+    const hasDirective = !!metaDirective;
+
     entry.className =
       `acp-harness__rail-entry acp-harness__rail-entry--${lane.status}` +
       (active ? ' acp-harness__rail-entry--active' : '') +
-      (hint.kind !== 'none' ? ` acp-harness__rail-entry--peer-${hint.kind}` : '');
+      (peerHint.kind !== 'none' ? ` acp-harness__rail-entry--peer-${peerHint.kind}` : '') +
+      (hasDirective ? ' acp-harness__rail-entry--directive' : '') +
+      (isPendingSwap || isPendingClear ? ' acp-harness__rail-entry--pending' : '');
     entry.style.setProperty('--acp-lane-accent', lane.accent);
+
     const toolCount = lane.toolCalls.size;
     const ctxUsed = typeof lane.usage?.used === 'number' ? lane.usage!.used : null;
     const toolHtml = toolCount > 0
@@ -4474,15 +4495,47 @@ export class AcpHarnessView implements ContentView {
     const ctxHtml = ctxUsed !== null
       ? `<span class="acp-harness__rail-metric acp-harness__rail-metric--ctx" title="${esc(typeof lane.usage?.size === 'number' && lane.usage!.size! > 0 ? `context ${ctxUsed}/${lane.usage!.size} tokens` : `context ${ctxUsed} tokens`)}">${esc(formatCount(ctxUsed))}</span>`
       : '';
-    const peerHtml = renderRailPeerSpans(hint);
-    const titleBase = hint.title ? `${hint.title} · ` : '';
-    entry.title = `${titleBase}${statusLabel(lane.status)}`;
-    entry.innerHTML =
-      `<span class="acp-harness__rail-dot"></span>` +
+    const peerHtml = renderRailPeerSpans(peerHint);
+    const titleBase = peerHint.title ? `${peerHint.title} · ` : '';
+    const titleDirective = metaDirective
+      ? ` · directive ${metaDirective.id}${isPendingSwap ? ' (next send)' : isPendingClear ? ' (clear next send)' : ''}`
+      : '';
+    entry.title = `${titleBase}${statusLabel(lane.status)}${titleDirective}`;
+
+    const headHtml =
+      `<span class="acp-harness__rail-head">` +
       `<span class="acp-harness__rail-name">${esc(lane.displayName)}</span>` +
       peerHtml +
       toolHtml +
-      ctxHtml;
+      ctxHtml +
+      `</span>`;
+
+    let metaHtml: string;
+    if (metaDirective) {
+      const iconCls = isPendingClear ? ' acp-harness__rail-meta__icon--clearing' : '';
+      const title = metaDirective.title.trim() || metaDirective.id;
+      const pendingHint = isPendingSwap
+        ? '<span class="acp-harness__rail-meta__hint">· next send</span>'
+        : isPendingClear
+          ? '<span class="acp-harness__rail-meta__hint">· clear next send</span>'
+          : '';
+      metaHtml =
+        `<span class="acp-harness__rail-meta">` +
+        `<span class="acp-harness__rail-meta__icon${iconCls}">${esc(metaDirective.icon || '◇')}</span>` +
+        `<span class="acp-harness__rail-meta__title">${esc(title)}</span>` +
+        pendingHint +
+        `</span>`;
+    } else {
+      metaHtml =
+        `<span class="acp-harness__rail-meta">` +
+        `<span class="acp-harness__rail-meta__hint">${esc(statusLabel(lane.status))}</span>` +
+        `</span>`;
+    }
+
+    entry.innerHTML =
+      `<span class="acp-harness__rail-dot"></span>` +
+      headHtml +
+      metaHtml;
     return entry;
   }
 
