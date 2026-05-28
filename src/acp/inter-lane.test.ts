@@ -51,6 +51,7 @@ function makeHost(): LaneHost & {
         backendId: laneId.split('-')[0],
         modelName: null,
         inboxDepth: 0,
+        activeDirective: null,
       })),
     getLane: (laneId) => {
       const status = statuses.get(laneId);
@@ -233,6 +234,7 @@ describe('InterLaneCoordinator transcript dedup (spec 120 phase 0)', () => {
           backendId: laneId.split('-')[0],
           modelName: null,
           inboxDepth: 0,
+          activeDirective: null,
         })),
       getLane: (laneId) => {
         const status = statuses.get(laneId);

@@ -1553,7 +1553,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "peer_list",
-            "description": "Returns guidance on naming sibling lanes. Lanes are addressed by display name (e.g., 'Claude-2', 'Codex-1') as shown in the user's tab.",
+            "description": "List live sibling lanes in this harness. Returns `{ lanes, count }` where each lane has `laneId`, `displayName`, `backendId`, `status`, `modelName`, `inboxDepth`, and `activeDirective` (the lane-scope directive binding: `{ id, title, task, description, enabled }` or null). Use `activeDirective` to pick the lane whose role fits the job (e.g., a lane bound to a 'review' directive for review work). Address lanes by `displayName` when calling peer_send.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {

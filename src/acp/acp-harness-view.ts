@@ -744,14 +744,26 @@ export class AcpHarnessView implements ContentView {
       listLanes: () =>
         this.lanes
           .filter((l) => l.status !== 'stopped')
-          .map<LaneSummary>((l) => ({
-            laneId: l.id,
-            displayName: l.displayName,
-            backendId: l.backendId,
-            status: l.status,
-            modelName: l.modelName,
-            inboxDepth: 0,
-          })),
+          .map<LaneSummary>((l) => {
+            const directive = this.directiveById(l.activeDirectiveId);
+            return {
+              laneId: l.id,
+              displayName: l.displayName,
+              backendId: l.backendId,
+              status: l.status,
+              modelName: l.modelName,
+              inboxDepth: 0,
+              activeDirective: directive
+                ? {
+                    id: directive.id,
+                    title: directive.title,
+                    task: directive.task,
+                    description: directive.description,
+                    enabled: directive.enabled,
+                  }
+                : null,
+            };
+          }),
       getLane: (id) => {
         const l = this.lanes.find((x) => x.id === id);
         if (!l) return null;
