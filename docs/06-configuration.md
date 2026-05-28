@@ -528,6 +528,60 @@ active = "anthropic/claude-sonnet-4-5"
 models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-5"]
 ```
 
+### ACP Harness Directives (`acp-harness.toml`)
+
+Reusable, backend/task-scoped **directives** (system-style prompt blocks) live in a separate Krypton-owned file, **not** in `krypton.toml`:
+
+| File | `~/.config/krypton/acp-harness.toml` |
+|------|--------------------------------------|
+
+Unlike `krypton.toml` (hand-edited, never written by Krypton), `acp-harness.toml` is Krypton-managed: it is **created empty on first harness open** and rewritten atomically when an agent mutates a directive (and you approve). Edits made by hand are picked up the next time the harness loads it; there is no live hot-reload in v1. See `docs/124-acp-harness-directive-management.md`.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `version` | int | `1` | Schema version for future migrations |
+| `[[directives]]` | array | `[]` | Reusable Harness directives |
+| `[[directives]].id` | string | — | Required, unique, lowercase kebab-case (`[a-z0-9][a-z0-9-]*`) |
+| `[[directives]].title` | string | `""` | Display title in the picker |
+| `[[directives]].icon` | string | `""` | 1–2 char glyph; falls back to a deterministic glyph from task/backend when empty |
+| `[[directives]].description` | string | `""` | One-line description shown in the picker |
+| `[[directives]].backend` | string | `""` | Target backend id (empty = all backends) |
+| `[[directives]].task` | string | `""` | Free-form task key (`implementation`/`review`/`research`/…), kebab-case |
+| `[[directives]].system_prompt` | string | `""` | Reusable system-style prompt block (16 KiB cap) |
+| `[[directives]].enabled` | bool | `true` | Disabled directives show in the picker but cannot be assigned |
+
+A directive's `system_prompt` is injected into the same leading context packet as the lane-context stub, after it and before the user's prompt. Assign a directive to the focused lane with `Cmd+P → .` (the directive picker) or by clicking the composer `directive …` chip. Agents can also list/preview/create/update/delete/assign directives through the harness MCP tools (`directive_list`, `directive_preview`, `directive_apply`); persistent changes and cross-lane assignment require your approval in the lane transcript.
+
+Example:
+
+```toml
+version = 1
+
+[[directives]]
+id = "codex-implementation"
+title = "Codex Implementation"
+icon = "⌘"
+description = "Scoped code changes and narrow verification."
+backend = "codex"
+task = "implementation"
+enabled = true
+system_prompt = """
+You are the implementation lane. Make scoped edits, follow existing patterns, and run the narrowest useful checks before reporting changed files.
+"""
+
+[[directives]]
+id = "claude-review"
+title = "Claude Review"
+icon = "◇"
+description = "Read-only review for regressions and missing tests."
+backend = "claude"
+task = "review"
+enabled = true
+system_prompt = """
+You are the review lane. Do not edit files. Prioritize bugs, regressions, risky assumptions, and missing tests.
+"""
+```
+
 ### Hooks Configuration
 
 | Section | Key | Type | Default | Description |

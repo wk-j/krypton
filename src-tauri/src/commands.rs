@@ -259,6 +259,22 @@ pub fn acp_bus_reply(
     Ok(())
 }
 
+/// Load the ACP Harness directive config (`~/.config/krypton/acp-harness.toml`),
+/// creating an empty default file when missing so the user has something to
+/// hand-edit. See `docs/124-acp-harness-directive-management.md`.
+#[tauri::command]
+pub fn get_acp_harness_config() -> Result<crate::acp_harness_config::AcpHarnessUserConfig, String> {
+    crate::acp_harness_config::load_or_create()
+}
+
+/// Absolute path to `acp-harness.toml` (for surfacing in the UI / docs).
+#[tauri::command]
+pub fn get_acp_harness_config_path() -> Result<String, String> {
+    crate::acp_harness_config::acp_harness_config_path()
+        .map(|p| p.display().to_string())
+        .ok_or_else(|| "Could not determine config directory".to_string())
+}
+
 /// spec 112: collect git working-tree state for the Review Lane Mode packet.
 /// Same shape as the value Rust emits on `acp-review-requested`. Frontend uses
 /// this for both user-triggered `#review` (no MCP round-trip) and to recompute

@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod acp_harness_config;
 mod commands;
 mod config;
 pub mod hook_server;
@@ -150,6 +151,8 @@ pub fn run() {
             commands::list_harness_memory,
             commands::dispose_harness_memory,
             commands::acp_bus_reply,
+            commands::get_acp_harness_config,
+            commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
             commands::list_harness_mcp_stats,
             commands::save_temp_image,

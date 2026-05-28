@@ -3024,6 +3024,173 @@
   border-radius: 0 0 3px 3px;
 }
 
+/* ── Directive picker overlay (spec 124) ──────────────────────
+   No left-border rails: state via full outline, tint, and badges. */
+
+.acp-harness__directive-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 13, 0.74);
+}
+
+.acp-harness__directive-picker[hidden] {
+  display: none;
+}
+
+.acp-harness__directive-head,
+.acp-harness__directive-list,
+.acp-harness__directive-preview {
+  width: clamp(360px, 46vw, 580px);
+  background: rgba(8, 14, 18, 0.98);
+  border: 1px solid rgba(0, 204, 255, 0.32);
+  border-bottom: none;
+}
+
+.acp-harness__directive-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  color: var(--krypton-window-accent, #0cf);
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+}
+
+.acp-harness__directive-head span:last-child {
+  color: rgba(216, 232, 216, 0.5);
+  font-size: 0.84em;
+  text-shadow: none;
+  letter-spacing: 0.04em;
+}
+
+.acp-harness__directive-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+.acp-harness__directive-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 14px;
+  color: rgba(216, 232, 216, 0.84);
+  cursor: default;
+}
+
+.acp-harness__directive-row--active {
+  background: rgba(0, 204, 255, 0.12);
+  outline: 1px solid rgba(0, 204, 255, 0.5);
+  outline-offset: -1px;
+  color: rgba(216, 232, 216, 0.98);
+}
+
+.acp-harness__directive-row--disabled,
+.acp-harness__directive-row--incompatible {
+  color: rgba(216, 232, 216, 0.4);
+}
+
+.acp-harness__directive-icon {
+  flex: 0 0 auto;
+  width: 1.4em;
+  text-align: center;
+  color: var(--krypton-window-accent, #0cf);
+}
+
+.acp-harness__directive-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.acp-harness__directive-title {
+  letter-spacing: 0.03em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.acp-harness__directive-assigned {
+  color: rgba(122, 255, 178, 0.9);
+  font-size: 0.74em;
+  letter-spacing: 0.06em;
+}
+
+.acp-harness__directive-badge {
+  color: rgba(255, 196, 122, 0.85);
+  font-size: 0.74em;
+  letter-spacing: 0.06em;
+}
+
+.acp-harness__directive-meta {
+  color: rgba(216, 232, 216, 0.46);
+  font-size: 0.82em;
+}
+
+.acp-harness__directive-desc {
+  color: rgba(216, 232, 216, 0.62);
+  font-size: 0.85em;
+}
+
+.acp-harness__directive-preview {
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.32);
+  border-radius: 0 0 3px 3px;
+  max-height: 22vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  color: rgba(216, 232, 216, 0.72);
+  font-size: 0.86em;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* ── Composer directive chip ──────────────────────────────── */
+
+.acp-harness__directive-chip {
+  color: rgba(216, 232, 216, 0.5);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.acp-harness__directive-chip--set {
+  color: var(--krypton-window-accent, #0cf);
+}
+
+.acp-harness__directive-chip--pending {
+  color: rgba(255, 196, 122, 0.85);
+}
+
+/* ── Directive approval diff card ─────────────────────────── */
+
+.acp-harness__directive-diff {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: rgba(4, 8, 13, 0.5);
+  font-size: 0.84em;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.acp-harness__directive-diff-add {
+  color: rgba(122, 255, 178, 0.9);
+}
+
+.acp-harness__directive-diff-del {
+  color: rgba(255, 138, 138, 0.9);
+}
+
+.acp-harness__directive-diff-ctx {
+  color: rgba(216, 232, 216, 0.5);
+}
+
 /* ── Session picker overlay ───────────────────────────────── */
 
 .acp-harness__session-picker {

@@ -182,3 +182,29 @@ export interface KryptonConfig {
 export async function loadConfig(): Promise<KryptonConfig> {
   return invoke<KryptonConfig>('get_config');
 }
+
+/** A reusable ACP Harness directive (spec 124). Mirrors the Rust
+ * `HarnessDirective` shape in `acp-harness.toml`. */
+export interface HarnessDirective {
+  id: string;
+  title: string;
+  icon: string;
+  description: string;
+  /** Empty = all backends. */
+  backend: string;
+  /** Free-form task key (implementation/review/research/...). */
+  task: string;
+  system_prompt: string;
+  enabled: boolean;
+}
+
+export interface AcpHarnessUserConfig {
+  version: number;
+  directives: HarnessDirective[];
+}
+
+/** Load the ACP Harness directive config (`~/.config/krypton/acp-harness.toml`),
+ * creating an empty default file when missing. */
+export async function getAcpHarnessConfig(): Promise<AcpHarnessUserConfig> {
+  return invoke<AcpHarnessUserConfig>('get_acp_harness_config');
+}

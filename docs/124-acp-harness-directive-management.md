@@ -1,6 +1,6 @@
 # ACP Harness Directive Management — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-05-28
 > Milestone: M8 — Polish
 
@@ -85,8 +85,14 @@ Frontend-only lane state:
 interface HarnessLane {
   // existing fields...
   activeDirectiveId: string | null;
-  pendingDirectiveId: string | null; // set while busy; promoted to activeDirectiveId before the next prompt
-  turnDirectiveOverrideId: string | null; // MCP scope = "next_turn"; cleared after one prompt
+  // Deferred lane-scope change while the lane is busy; promoted to
+  // activeDirectiveId before the next prompt. The wrapping object disambiguates
+  // "no change queued" (`null`) from "queued clear" (`{ directiveId: null }`),
+  // which would be impossible to express if the field itself were a nullable id.
+  pendingDirectiveChange: { directiveId: string | null } | null;
+  // MCP scope = "next_turn"; used for one prompt then cleared. Same sentinel
+  // structure as `pendingDirectiveChange` so a one-shot clear can be expressed.
+  turnDirectiveOverride: { directiveId: string | null } | null;
   previousDirectiveId: string | null; // restored after a next-turn override completes
 }
 ```
@@ -182,8 +188,8 @@ Validation rules:
 3. Missing file creates a default `acp-harness.toml` with no directives.
 4. Harness renders the config-defined directives in a workspace directive picker.
 5. User opens the picker from the focused lane/composer directive chip.
-6. User selects a compatible directive and applies it to the focused lane.
-7. Harness updates the lane's runtime `activeDirectiveId` and renders an assignment audit event.
+6. User selects a directive and spawns a new lane initialized with that directive.
+7. Harness creates a new lane (backend from `directive.backend`, or a fallback when empty), sets that lane's `activeDirectiveId`, focuses it, and renders an audit event.
 8. Each spawned lane also receives MCP directive tools alongside memory/peer tools when Harness MCP is available.
 9. An agent can call `directive_list` to inspect reusable directives (Rust answers directly).
 10. An agent can call `directive_preview` to inspect the exact context block when needed (Rust answers directly).
@@ -207,23 +213,22 @@ Directive block construction:
 
 Assignment scope behavior:
 
-- User picker assignment always uses lane scope. It sets `activeDirectiveId` immediately when idle, or `pendingDirectiveId` when the lane is busy. `pendingDirectiveId` is promoted to `activeDirectiveId` just before the next user prompt is sent.
-- MCP `scope = "lane"` follows the same behavior as the user picker.
-- MCP `scope = "next_turn"` stores `previousDirectiveId = activeDirectiveId`, sets `turnDirectiveOverrideId = directive_id`, uses that override for exactly one prompt, then clears `turnDirectiveOverrideId` and restores `activeDirectiveId = previousDirectiveId`.
+- User picker selection spawns a new lane initialized with the chosen directive. The new lane's `activeDirectiveId` is set at creation; because the lane starts fresh and idle, no `pendingDirectiveChange` deferral applies on its first prompt. The picker does not modify any existing lane's `activeDirectiveId` — to clear the focused lane's directive use `Backspace` in the picker, and to reassign a directive on an existing lane use MCP `directive_apply` with `action = "assign"`.
+- MCP `scope = "lane"` binds the directive to the target lane (defaults to the calling lane). It sets `activeDirectiveId` immediately when the lane is idle, or queues `pendingDirectiveChange = { directiveId }` (with `directiveId: null` for a clear) when the lane is busy; the queued change is promoted into `activeDirectiveId` just before the next user prompt is sent. A queued clear is preserved as `{ directiveId: null }` so it cannot be confused with "no change queued".
+- MCP `scope = "next_turn"` stores `previousDirectiveId = activeDirectiveId`, sets `turnDirectiveOverride = { directiveId }`, uses that override (including a one-shot clear when `directiveId` is `null`) for exactly one prompt, then clears `turnDirectiveOverride` and restores `activeDirectiveId = previousDirectiveId`.
 
 ### Keybindings And Commands
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `Cmd+P` then `+` | Focused ACP Harness | Add lane; no directive is auto-assigned in v1 |
-| `Cmd+P` then `R` | Focused ACP Harness | Open the directive picker overlay for the focused lane |
+| `Cmd+P` then `.` | Focused ACP Harness | Open the directive picker overlay for the focused lane |
 | Click | Composer directive chip | Open the directive picker for the focused lane (secondary, mouse-only) |
-| `ArrowUp` / `ArrowDown` | Directive picker | Move through predefined directives loaded from `acp-harness.toml` |
-| `Enter` | Directive picker | Assign selected compatible directive to the focused lane |
+| `ArrowUp` / `ArrowDown` (or `j`/`k`) | Directive picker | Move through predefined directives loaded from `acp-harness.toml` |
+| `Enter` | Directive picker | Spawn a new lane initialized with the selected directive |
 | `Backspace` | Directive picker | Clear directive from the focused lane |
-| `Esc` | Directive picker | Close without changing assignment |
+| `Esc` (or `q`) | Directive picker | Close without changing assignment |
 
-The keyboard path to open the picker is `Cmd+P → R`; the composer directive chip is a visible status indicator and a mouse click target, not a keyboard focus target (the composer keeps text focus, and `Tab` continues to cycle lane tabs).
+The keyboard path to open the picker is `Cmd+P → .`. Note: spec originally proposed `R`, but every letter is a reserved global leader key and `/` `;` `?` are taken by the markdown/pencil views, so `.` is the free non-reserved key. The composer directive chip is a visible status indicator and a mouse click target, not a keyboard focus target (the composer keeps text focus, and `Tab` continues to cycle lane tabs).
 
 Directive Management does not add custom composer commands in v1. Users primarily pick predefined directives from the workspace directive picker. Users can also ask an active lane in normal language to inspect, create, update, delete, or assign directives; the lane performs that work through `directive_list`, `directive_preview`, and `directive_apply`. Multi-lane coordination continues to use the existing `peer_send` tool only.
 
@@ -238,11 +243,11 @@ Keep UI minimal:
 - Picker rows show a directive icon, title, id, backend/task, enabled state, and a one-line description.
 - Picker detail pane previews the injected directive block before assignment and may show `estimated_tokens` when available.
 - Directive picker, rows, preview panes, and audit cards must not use left-border rails; state is communicated with text, full outlines, tint, and chip color.
-- Assigning a predefined directive updates the focused lane immediately and writes no persistent config.
+- Selecting a predefined directive spawns a new lane (backend from `directive.backend`, or fallback when empty) with that directive active. No persistent config is written.
 - Directive MCP mutations render transcript cards with requested action, directive id, backend/task, requesting lane, reason, and approval decision.
 - For `upsert`, the approval card shows a compact before/after diff of `system_prompt` when updating an existing directive.
 
-No manual text editor ships in v1. Users can still edit `acp-harness.toml` directly, but the primary in-app workflow is: select a predefined config directive in the workspace picker, apply it to the focused lane, then observe the directive chip/audit card. Agent-assisted persistent directive creation or edits remain available through MCP permission cards.
+No manual text editor ships in v1. Users can still edit `acp-harness.toml` directly, but the primary in-app workflow is: select a predefined config directive in the workspace picker, spawn a new lane initialized with it, then observe the directive chip on the new lane. Agent-assisted persistent directive creation or edits remain available through MCP permission cards.
 
 ### Configuration
 

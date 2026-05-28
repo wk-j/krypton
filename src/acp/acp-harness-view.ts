@@ -77,7 +77,12 @@ import type {
   PaneContentType,
 } from '../types';
 import type { PaletteAction, PaletteContext } from '../palette-types';
-import { loadConfig, type LaneModelConfig } from '../config';
+import {
+  loadConfig,
+  getAcpHarnessConfig,
+  type LaneModelConfig,
+  type HarnessDirective,
+} from '../config';
 import { extractModifiedPath } from './acp-harness-memory';
 import { classifyProviderError, shouldAppendProviderError } from './provider-error';
 import {
@@ -420,11 +425,52 @@ interface HarnessLane {
   /** spec 120: set when drain calls enqueueSystemPrompt; cleared on turn end. */
   pendingCoordinatorDrain: CoordinatorDrainContext | null;
   coordinatorDrainProvenanceUsed: boolean;
+  /** spec 124: directive assigned to this lane (lane scope). */
+  activeDirectiveId: string | null;
+  /** spec 124: queued lane-scope change while busy; promoted before next prompt.
+   * Object presence = change pending; `directiveId: null` = clear on next send.
+   * Plain `null` on the field = no pending change. */
+  pendingDirectiveChange: { directiveId: string | null } | null;
+  /** spec 124: MCP scope = "next_turn"; used for one prompt then cleared.
+   * Object presence = override active; `directiveId: null` = clear active
+   * directive for one turn. Plain `null` on the field = no override. */
+  turnDirectiveOverride: { directiveId: string | null } | null;
+  /** spec 124: restored after a next-turn override completes. */
+  previousDirectiveId: string | null;
 }
 
 interface TranscriptScrollAnchor {
   msgId: string;
   offsetTop: number;
+}
+
+/** spec 124: payload of `acp-directive-apply-requested` from Rust. */
+interface DirectiveApplyEvent {
+  action: 'upsert' | 'delete' | 'assign';
+  requestId?: string;
+  harnessId?: string;
+  fromLaneId?: string; // requesting lane display name
+  reason?: string;
+  // upsert
+  directive?: HarnessDirective;
+  prior?: HarnessDirective | null;
+  isUpdate?: boolean;
+  // delete / assign
+  directive_id?: string | null;
+  // assign
+  lane?: string | null;
+  scope?: 'next_turn' | 'lane';
+}
+
+/** spec 124: an in-flight directive mutation awaiting the user's decision. */
+interface PendingDirectiveApproval {
+  requestId: string;
+  laneId: string; // requesting lane (internal id)
+  action: 'upsert' | 'delete' | 'assign';
+  banner: string;
+  reply: (result: unknown) => void;
+  /** Run on approval; returns the tool result the agent receives. */
+  onApprove: () => unknown;
 }
 
 interface SessionPickerState {
@@ -450,6 +496,7 @@ export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
   { key: '_', label: 'Close Active Lane', group: 'Harness', effect: 'danger' },
   { key: '=', label: 'Lane Metrics', group: 'Harness' },
   { key: '0', label: 'Resume Session', group: 'Harness', effect: 'important' },
+  { key: '.', label: 'Directives', group: 'Harness' },
 ];
 
 const BACKEND_LABELS: Record<string, string> = {
@@ -530,6 +577,10 @@ const LANE_DEFAULTS = {
   junieMcpOverlayDir: null,
   pendingCoordinatorDrain: null,
   coordinatorDrainProvenanceUsed: false,
+  activeDirectiveId: null,
+  pendingDirectiveChange: null,
+  turnDirectiveOverride: null,
+  previousDirectiveId: null,
 };
 
 const md = new Marked(
@@ -616,6 +667,15 @@ export class AcpHarnessView implements ContentView {
   private nextLaneIndex = 1;
   private systemRows: string[] = ['loading ACP backends...'];
   private laneModels: Record<string, LaneModelConfig> = {};
+  /** spec 124: reusable directives loaded from acp-harness.toml. */
+  private directives: HarnessDirective[] = [];
+  /** spec 124: directive picker overlay state. */
+  private directivePickerOpen = false;
+  private directivePickerCursor = 0;
+  private directivesUnlisten: UnlistenFn | null = null;
+  private directiveApplyUnlisten: UnlistenFn | null = null;
+  /** spec 124: at most one outstanding directive mutation awaiting approval. */
+  private pendingDirectiveApproval: PendingDirectiveApproval | null = null;
   private closeCb: (() => void) | null = null;
 
   private dashboardEl!: HTMLElement;
@@ -624,6 +684,7 @@ export class AcpHarnessView implements ContentView {
   private helpOverlayEl!: HTMLElement;
   private metricsOverlayEl!: HTMLElement;
   private pickerEl!: HTMLElement;
+  private directivePickerEl!: HTMLElement;
   private planEl!: HTMLElement;
   private laneRailEl!: HTMLElement;
   private planSlotEl!: HTMLElement;
@@ -966,6 +1027,34 @@ export class AcpHarnessView implements ContentView {
           });
         };
         void this.handleReviewReply(env, reply);
+      },
+    );
+
+    // spec 124: persistent config changed on disk (a directive upsert/delete
+    // was approved by some harness). Reload the directive library.
+    this.directivesUnlisten = await listen<{ harnessId?: string }>(
+      'acp-harness-directives-changed',
+      (e) => {
+        if (!this.harnessMemoryId || e.payload.harnessId !== this.harnessMemoryId) return;
+        void this.refreshDirectives().then(() => this.render());
+      },
+    );
+
+    // spec 124: a lane called directive_apply. Rust blocks on this round-trip;
+    // the frontend approves/applies and replies with the outcome.
+    this.directiveApplyUnlisten = await listen<DirectiveApplyEvent>(
+      'acp-directive-apply-requested',
+      (e) => {
+        const env = e.payload;
+        const requestId = env.requestId;
+        if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
+        const reply = (result: unknown): void => {
+          if (!requestId) return;
+          void invoke('acp_bus_reply', { requestId, result }).catch((err) => {
+            console.warn('acp_bus_reply (directive_apply) failed', err);
+          });
+        };
+        this.handleDirectiveApply(env, reply);
       },
     );
   }
@@ -1313,6 +1402,17 @@ export class AcpHarnessView implements ContentView {
         effect: 'important',
         run: () => this.openSessionPicker(),
       },
+      {
+        // spec 124 wanted `R` ("diRective"), but every letter is a reserved
+        // global leader key (and `/` `;` `?` are taken by other views), so the
+        // free non-reserved key is `.`.
+        key: '.',
+        label: 'Directives',
+        group: 'Harness',
+        run: () => this.openDirectivePicker(),
+        isEnabled: () => this.lanes.length > 0,
+        disabledReason: () => 'no active lane',
+      },
     ];
   }
 
@@ -1335,6 +1435,11 @@ export class AcpHarnessView implements ContentView {
     if (this.pickerOpen) {
       e.preventDefault();
       this.handlePickerKey(e);
+      return true;
+    }
+    if (this.directivePickerOpen) {
+      e.preventDefault();
+      this.handleDirectivePickerKey(e);
       return true;
     }
     if (this.metricsPanelOpen && e.key === 'Escape') {
@@ -1378,6 +1483,21 @@ export class AcpHarnessView implements ContentView {
 
     if (lane.pendingPermissions.length > 0) {
       return this.handlePermissionKey(e, lane);
+    }
+
+    if (this.pendingDirectiveApproval && this.pendingDirectiveApproval.laneId === lane.id) {
+      if (e.key === 'a') {
+        e.preventDefault();
+        this.resolveDirectiveApproval(true);
+        return true;
+      }
+      if (e.key === 'r' || e.key === 'Escape') {
+        e.preventDefault();
+        this.resolveDirectiveApproval(false);
+        return true;
+      }
+      e.preventDefault();
+      return true;
     }
 
     const pendingReview = this.firstUnresolvedFsReview(lane);
@@ -1598,6 +1718,18 @@ export class AcpHarnessView implements ContentView {
       this.mcpUnlisten();
       this.mcpUnlisten = null;
     }
+    if (this.directivesUnlisten) {
+      this.directivesUnlisten();
+      this.directivesUnlisten = null;
+    }
+    if (this.directiveApplyUnlisten) {
+      this.directiveApplyUnlisten();
+      this.directiveApplyUnlisten = null;
+    }
+    if (this.pendingDirectiveApproval) {
+      this.pendingDirectiveApproval.reply({ approved: false, approval: 'rejected', reason: 'harness_closed' });
+      this.pendingDirectiveApproval = null;
+    }
     if (this.transcriptResizeObserver) {
       this.transcriptResizeObserver.disconnect();
       this.transcriptResizeObserver = null;
@@ -1814,6 +1946,21 @@ export class AcpHarnessView implements ContentView {
     this.sessionPickerEl.hidden = true;
     body.appendChild(this.sessionPickerEl);
 
+    this.directivePickerEl = document.createElement('aside');
+    this.directivePickerEl.className = 'acp-harness__directive-picker';
+    this.directivePickerEl.hidden = true;
+    this.directivePickerEl.addEventListener('click', (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const row = target.closest<HTMLElement>('[data-directive-index]');
+      if (!row) return;
+      const idx = Number(row.dataset.directiveIndex);
+      if (!Number.isInteger(idx)) return;
+      this.directivePickerCursor = idx;
+      this.handleDirectivePickerKey(new KeyboardEvent('keydown', { key: 'Enter' }));
+    });
+    body.appendChild(this.directivePickerEl);
+
     this.element.appendChild(body);
 
     const commandCenter = document.createElement('div');
@@ -1823,6 +1970,11 @@ export class AcpHarnessView implements ContentView {
     this.composerEl.addEventListener('click', (e: MouseEvent) => {
       const target = e.target;
       if (!(target instanceof HTMLElement)) return;
+      if (target.closest('[data-open-directive-picker]')) {
+        e.preventDefault();
+        void this.openDirectivePicker();
+        return;
+      }
       const button = target.closest<HTMLButtonElement>('[data-remove-staged-image]');
       if (!button) return;
       const lane = this.activeLane();
@@ -1898,6 +2050,8 @@ export class AcpHarnessView implements ContentView {
     } catch {
       this.laneModels = {};
     }
+
+    await this.refreshDirectives();
 
     try {
       this.pickerEntries = await AcpClient.listBackends();
@@ -2002,6 +2156,56 @@ export class AcpHarnessView implements ContentView {
     } catch (e) {
       this.flashChip(`memory unavailable: ${String(e)}`);
     }
+  }
+
+  private async refreshDirectives(): Promise<void> {
+    try {
+      const cfg = await getAcpHarnessConfig();
+      this.directives = cfg.directives ?? [];
+    } catch (e) {
+      console.warn('[acp-harness] load directives failed:', e);
+      this.directives = [];
+    }
+    // Drop bindings to directives that no longer exist (deleted on disk).
+    // `pendingDirectiveChange` with `directiveId: null` is a deliberate clear
+    // and must survive a refresh — only drop it when it targets a directive
+    // that has disappeared.
+    for (const lane of this.lanes) {
+      if (lane.activeDirectiveId && !this.directiveById(lane.activeDirectiveId)) {
+        lane.activeDirectiveId = null;
+      }
+      const pending = lane.pendingDirectiveChange;
+      if (pending && pending.directiveId !== null && !this.directiveById(pending.directiveId)) {
+        lane.pendingDirectiveChange = null;
+      }
+      const override = lane.turnDirectiveOverride;
+      if (override && override.directiveId !== null && !this.directiveById(override.directiveId)) {
+        lane.turnDirectiveOverride = null;
+        lane.previousDirectiveId = null;
+      }
+    }
+  }
+
+  private directiveById(id: string | null): HarnessDirective | null {
+    if (!id) return null;
+    return this.directives.find((d) => d.id === id) ?? null;
+  }
+
+  /** The directive that will be injected on the lane's next prompt: a one-shot
+   * next-turn override wins over the lane-scoped active directive. An override
+   * with `directiveId: null` deliberately clears for the turn. */
+  private effectiveDirective(lane: HarnessLane): HarnessDirective | null {
+    const id = lane.turnDirectiveOverride
+      ? lane.turnDirectiveOverride.directiveId
+      : lane.activeDirectiveId;
+    const directive = this.directiveById(id);
+    return directive && directive.enabled ? directive : null;
+  }
+
+  /** True when a directive may be assigned to a lane (enabled + backend match). */
+  private directiveCompatible(directive: HarnessDirective, lane: HarnessLane): boolean {
+    if (!directive.enabled) return false;
+    return directive.backend === '' || directive.backend === lane.backendId;
   }
 
   private createLane(index: number, backendId: string, displayName: string): HarnessLane {
@@ -2285,7 +2489,19 @@ export class AcpHarnessView implements ContentView {
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
+    // spec 124: promote a deferred lane-scope assignment, then build blocks
+    // (which read the effective directive), then consume any one-shot override.
+    // The deferred change is a sentinel-safe object: a queued clear is
+    // represented as `{ directiveId: null }`, not by a plain null on the field.
+    if (lane.pendingDirectiveChange) {
+      lane.activeDirectiveId = lane.pendingDirectiveChange.directiveId;
+      lane.pendingDirectiveChange = null;
+    }
     const blocks = this.buildPromptBlocks(lane, text, images);
+    if (lane.turnDirectiveOverride) {
+      lane.turnDirectiveOverride = null;
+      lane.previousDirectiveId = null;
+    }
     this.updateComposerTick();
     this.render();
     try {
@@ -2325,8 +2541,11 @@ export class AcpHarnessView implements ContentView {
     const userBlocks: ContentBlock[] = [];
     if (userText) userBlocks.push({ type: 'text', text: userText });
     const tail = [...imageBlocks, ...userBlocks];
-    const packet = this.renderPromptMemoryPacket(lane);
-    if (!packet) return tail;
+    // spec 124: the directive block rides inside the SAME leading packet as the
+    // lane-context stub so adapters that only honor the first resource/text
+    // block still see both. Never emit the directive as a second block.
+    const leading = this.composeLeadingContext(lane);
+    if (!leading) return tail;
     if (lane.supportsEmbeddedContext) {
       return [
         {
@@ -2334,16 +2553,28 @@ export class AcpHarnessView implements ContentView {
           resource: {
             uri: 'krypton://acp-harness/lane-context.md',
             mimeType: 'text/markdown',
-            text: packet,
+            text: leading,
           },
         },
         ...tail,
       ];
     }
     return [
-      { type: 'text', text: packet },
+      { type: 'text', text: leading },
       ...tail,
     ];
+  }
+
+  /** Join the lane-context stub and the active directive into one block. */
+  private composeLeadingContext(lane: HarnessLane): string {
+    const packet = this.renderPromptMemoryPacket(lane);
+    const directive = this.effectiveDirective(lane);
+    if (!directive) return packet;
+    const heading = directive.title.trim()
+      ? `## Directive: ${directive.title.trim()}`
+      : '## Directive';
+    const block = `${heading}\n${directive.system_prompt.trim()}`;
+    return packet ? `${packet}\n\n${block}` : block;
   }
 
   private renderPromptMemoryPacket(lane: HarnessLane): string {
@@ -2535,6 +2766,259 @@ export class AcpHarnessView implements ContentView {
     payload.decision = decision;
     payload.decisionLabel = label;
     payload.autoReason = autoReason;
+  }
+
+  // ─── Directive picker (spec 124) ──────────────────────────────────────────
+
+  /** Directives ordered for the picker: compatible+enabled first, then the
+   * rest (disabled or backend-incompatible), each tagged with compatibility. */
+  private orderedDirectivesFor(lane: HarnessLane): { directive: HarnessDirective; compatible: boolean }[] {
+    const rows = this.directives.map((directive) => ({
+      directive,
+      compatible: this.directiveCompatible(directive, lane),
+    }));
+    rows.sort((a, b) => Number(b.compatible) - Number(a.compatible));
+    return rows;
+  }
+
+  private async openDirectivePicker(): Promise<void> {
+    const lane = this.activeLane();
+    if (!lane) {
+      this.flashChip('no active lane');
+      return;
+    }
+    await this.refreshDirectives();
+    if (this.directives.length === 0) {
+      this.flashChip('no directives — edit ~/.config/krypton/acp-harness.toml');
+      return;
+    }
+    this.pickerOpen = false;
+    this.helpOpen = false;
+    this.memoryDrawerOpen = false;
+    this.directivePickerOpen = true;
+    // Start the cursor on the lane's current directive when present.
+    const ordered = this.orderedDirectivesFor(lane);
+    const currentId = lane.pendingDirectiveChange
+      ? lane.pendingDirectiveChange.directiveId
+      : lane.activeDirectiveId;
+    const idx = ordered.findIndex((r) => r.directive.id === currentId);
+    this.directivePickerCursor = idx >= 0 ? idx : 0;
+    this.render();
+  }
+
+  private closeDirectivePicker(): void {
+    if (!this.directivePickerOpen) return;
+    this.directivePickerOpen = false;
+    this.render();
+  }
+
+  /** Assign (lane scope) or defer a directive to the focused lane. */
+  private assignDirectiveToLane(lane: HarnessLane, directiveId: string | null): void {
+    const busy = lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer';
+    if (busy) {
+      lane.pendingDirectiveChange = { directiveId };
+      this.flashChip(directiveId ? 'directive changes next send' : 'directive clears next send');
+    } else {
+      lane.activeDirectiveId = directiveId;
+      lane.pendingDirectiveChange = null;
+    }
+    this.appendTranscript(
+      lane,
+      'system',
+      directiveId ? `directive set: ${directiveId}` : 'directive cleared',
+    );
+    this.renderComposer();
+  }
+
+  /** Spawn a new lane and start it with an active directive. */
+  private async addLaneFromDirective(directive: HarnessDirective): Promise<void> {
+    const backendId = directive.backend.trim() ? directive.backend.trim() : 'codex';
+    const label = backendLabel(backendId);
+    const existing = this.lanes.filter((l) => l.backendId === backendId).length;
+    const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${existing + 1}`);
+    lane.activeDirectiveId = directive.id;
+    lane.pendingDirectiveChange = null;
+    this.appendTranscript(lane, 'system', `directive set: ${directive.id}`);
+    this.lanes.push(lane);
+    this.activateLane(lane.id);
+    await this.spawnLane(lane);
+  }
+
+  private handleDirectivePickerKey(e: KeyboardEvent): void {
+    const lane = this.activeLane();
+    if (!lane) {
+      this.closeDirectivePicker();
+      return;
+    }
+    const ordered = this.orderedDirectivesFor(lane);
+    const total = ordered.length;
+    if (e.key === 'Escape' || e.key === 'q') {
+      this.closeDirectivePicker();
+      return;
+    }
+    if (e.key === 'Backspace') {
+      this.assignDirectiveToLane(lane, null);
+      this.closeDirectivePicker();
+      return;
+    }
+    if (total === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      this.directivePickerCursor = (this.directivePickerCursor + 1) % total;
+      this.renderDirectivePicker();
+      return;
+    }
+    if (e.key === 'ArrowUp' || e.key === 'k') {
+      this.directivePickerCursor = (this.directivePickerCursor - 1 + total) % total;
+      this.renderDirectivePicker();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const row = ordered[this.directivePickerCursor];
+      if (!row) return;
+      if (!row.directive.enabled) {
+        this.flashChip('directive disabled');
+        return;
+      }
+      this.closeDirectivePicker();
+      void this.addLaneFromDirective(row.directive);
+    }
+  }
+
+  // ─── Directive MCP round-trip (spec 124) ──────────────────────────────────
+
+  private handleDirectiveApply(env: DirectiveApplyEvent, reply: (result: unknown) => void): void {
+    const fromLane = this.lanes.find((l) => l.displayName === env.fromLaneId);
+    if (!fromLane) {
+      reply({ approved: false, approval: 'rejected', reason: 'unknown_sender' });
+      return;
+    }
+    // One outstanding directive mutation per harness (mirrors the Rust /
+    // peer_send one-in-flight rule).
+    if (this.pendingDirectiveApproval) {
+      reply({ approved: false, approval: 'rejected', reason: 'directive_approval_in_flight' });
+      return;
+    }
+
+    if (env.action === 'assign') {
+      this.handleDirectiveAssign(env, fromLane, reply);
+      return;
+    }
+
+    // upsert / delete: persistent config change — always needs user approval.
+    const reason = env.reason ? ` — ${env.reason}` : '';
+    let banner: string;
+    let cardText: string;
+    let diff: { title: string; unified: string } | undefined;
+    if (env.action === 'upsert' && env.directive) {
+      const verb = env.isUpdate ? 'update' : 'create';
+      banner = `${fromLane.displayName} wants to ${verb} directive ${env.directive.id}`;
+      cardText = `directive ${verb}: ${env.directive.id}${reason}`;
+      const before = env.prior?.system_prompt ?? '';
+      const after = env.directive.system_prompt;
+      diff = { title: `directive ${env.directive.id} system_prompt`, unified: unifiedPromptDiff(before, after) };
+    } else if (env.action === 'delete') {
+      banner = `${fromLane.displayName} wants to delete directive ${env.directive_id}`;
+      cardText = `directive delete: ${env.directive_id}${reason}`;
+    } else {
+      reply({ approved: false, approval: 'rejected', reason: 'invalid_request' });
+      return;
+    }
+
+    const item = this.appendTranscript(fromLane, 'system', cardText);
+    if (diff && item) item.diff = diff;
+    this.pendingDirectiveApproval = {
+      requestId: env.requestId ?? '',
+      laneId: fromLane.id,
+      action: env.action,
+      banner,
+      reply,
+      onApprove: () => ({ approved: true }),
+    };
+    this.renderComposer();
+    this.scheduleLaneRender(fromLane);
+  }
+
+  private handleDirectiveAssign(
+    env: DirectiveApplyEvent,
+    fromLane: HarnessLane,
+    reply: (result: unknown) => void,
+  ): void {
+    const targetLane = env.lane ? this.lanes.find((l) => l.displayName === env.lane) : fromLane;
+    if (!targetLane) {
+      reply({ approved: false, approval: 'rejected', reason: 'unknown_lane' });
+      return;
+    }
+    const scope: 'next_turn' | 'lane' = env.scope === 'next_turn' ? 'next_turn' : 'lane';
+    const directiveId = env.directive_id ?? null;
+    if (directiveId !== null) {
+      const directive = this.directiveById(directiveId);
+      if (!directive) {
+        reply({ approved: false, approval: 'rejected', reason: 'unknown_directive' });
+        return;
+      }
+      if (!this.directiveCompatible(directive, targetLane)) {
+        reply({ approved: false, approval: 'rejected', reason: 'incompatible' });
+        return;
+      }
+    }
+    const crossLane = targetLane.id !== fromLane.id;
+    const apply = (): unknown => {
+      this.applyDirectiveAssignment(targetLane, directiveId, scope);
+      this.appendTranscript(
+        targetLane,
+        'system',
+        `directive ${directiveId ?? 'cleared'} assigned by ${fromLane.displayName} (${scope})`,
+      );
+      this.scheduleLaneRender(targetLane);
+      return { action: 'assign', approved: true, approval: crossLane ? 'approved' : 'auto', assigned: true, lane: targetLane.displayName };
+    };
+
+    if (!crossLane) {
+      reply(apply());
+      return;
+    }
+    // Cross-lane assignment needs explicit user approval.
+    this.appendTranscript(
+      fromLane,
+      'system',
+      `directive assign → ${targetLane.displayName}: ${directiveId ?? 'clear'}${env.reason ? ` — ${env.reason}` : ''}`,
+    );
+    this.pendingDirectiveApproval = {
+      requestId: env.requestId ?? '',
+      laneId: fromLane.id,
+      action: 'assign',
+      banner: `${fromLane.displayName} wants to assign directive to ${targetLane.displayName}`,
+      reply,
+      onApprove: apply,
+    };
+    this.renderComposer();
+    this.scheduleLaneRender(fromLane);
+  }
+
+  /** Apply a directive binding honoring scope and lane busy-state. */
+  private applyDirectiveAssignment(lane: HarnessLane, directiveId: string | null, scope: 'next_turn' | 'lane'): void {
+    if (scope === 'next_turn') {
+      lane.previousDirectiveId = lane.activeDirectiveId;
+      lane.turnDirectiveOverride = { directiveId };
+      return;
+    }
+    this.assignDirectiveToLane(lane, directiveId);
+  }
+
+  private resolveDirectiveApproval(approved: boolean): void {
+    const pending = this.pendingDirectiveApproval;
+    if (!pending) return;
+    this.pendingDirectiveApproval = null;
+    const lane = this.lanes.find((l) => l.id === pending.laneId) ?? null;
+    if (approved) {
+      pending.reply(pending.onApprove());
+      if (lane) this.appendTranscript(lane, 'system', `directive ${pending.action} approved`);
+    } else {
+      pending.reply({ action: pending.action, approved: false, approval: 'rejected' });
+      if (lane) this.appendTranscript(lane, 'system', `directive ${pending.action} rejected`);
+    }
+    this.renderComposer();
+    if (lane) this.scheduleLaneRender(lane);
   }
 
   private async openLanePicker(): Promise<void> {
@@ -3152,6 +3636,7 @@ export class AcpHarnessView implements ContentView {
     this.renderHelp();
     this.renderPlanPanel(this.activeLane());
     this.renderPicker();
+    this.renderDirectivePicker();
     this.renderSessionPicker();
     this.renderComposer();
     this.scheduleStickyScroll();
@@ -3741,6 +4226,61 @@ export class AcpHarnessView implements ContentView {
       `<ul class="acp-harness__picker-list">${rows}</ul>${empty}`;
   }
 
+  private renderDirectivePicker(): void {
+    this.directivePickerEl.hidden = !this.directivePickerOpen;
+    if (!this.directivePickerOpen) {
+      this.directivePickerEl.innerHTML = '';
+      return;
+    }
+    const lane = this.activeLane();
+    if (!lane) {
+      this.directivePickerEl.innerHTML = '';
+      return;
+    }
+    const ordered = this.orderedDirectivesFor(lane);
+    const total = ordered.length;
+    const cursor = total === 0 ? 0 : Math.max(0, Math.min(this.directivePickerCursor, total - 1));
+    const currentId = lane.pendingDirectiveChange
+      ? lane.pendingDirectiveChange.directiveId
+      : lane.activeDirectiveId;
+    const rows = ordered
+      .map((row, i) => {
+        const d = row.directive;
+        const active = i === cursor ? ' acp-harness__directive-row--active' : '';
+        const state = !d.enabled
+          ? ' acp-harness__directive-row--disabled'
+          : !row.compatible
+            ? ' acp-harness__directive-row--incompatible'
+            : '';
+        const assigned = d.id === currentId ? '<span class="acp-harness__directive-assigned">assigned</span>' : '';
+        const scope = [d.backend || 'all backends', d.task].filter(Boolean).join(' · ');
+        const badge = !d.enabled ? 'disabled' : !row.compatible ? 'incompatible' : '';
+        const badgeEl = badge ? `<span class="acp-harness__directive-badge">${esc(badge)}</span>` : '';
+        return (
+          `<li class="acp-harness__directive-row${active}${state}" data-directive-index="${i}">` +
+          `<span class="acp-harness__directive-icon">${esc(d.icon)}</span>` +
+          `<span class="acp-harness__directive-main">` +
+          `<span class="acp-harness__directive-title">${esc(d.title || d.id)}${assigned}${badgeEl}</span>` +
+          `<span class="acp-harness__directive-meta">${esc(d.id)} · ${esc(scope)}</span>` +
+          (d.description ? `<span class="acp-harness__directive-desc">${esc(d.description)}</span>` : '') +
+          `</span>` +
+          `</li>`
+        );
+      })
+      .join('');
+    const selected = ordered[cursor]?.directive;
+    const preview = selected
+      ? `<div class="acp-harness__directive-preview">${esc(selected.system_prompt || '(empty prompt)')}</div>`
+      : '';
+    this.directivePickerEl.innerHTML =
+      `<header class="acp-harness__directive-head">` +
+      `<span>// directive · spawn new lane</span>` +
+      `<span>j/k move · enter spawn · backspace clear ${esc(lane.displayName)} · esc cancel</span>` +
+      `</header>` +
+      `<ul class="acp-harness__directive-list">${rows}</ul>` +
+      preview;
+  }
+
   private renderSessionPicker(): void {
     const state = this.sessionPicker;
     this.sessionPickerEl.hidden = !state.open;
@@ -4000,6 +4540,13 @@ export class AcpHarnessView implements ContentView {
         `<div class="acp-harness__permission-options">a accept &nbsp;&nbsp; A accept-all-turn &nbsp;&nbsp; r reject &nbsp;&nbsp; R reject-all-turn &nbsp;&nbsp; Esc cancel</div>`;
       return;
     }
+    if (this.pendingDirectiveApproval && this.pendingDirectiveApproval.laneId === lane.id) {
+      this.composerEl.className = 'acp-harness__composer acp-harness__composer--permission';
+      this.composerEl.innerHTML =
+        `<div class="acp-harness__composer-meta">${esc(this.pendingDirectiveApproval.banner)} — see lane</div>` +
+        `<div class="acp-harness__permission-options">a approve &nbsp;&nbsp; r reject &nbsp;&nbsp; Esc reject</div>`;
+      return;
+    }
     this.composerEl.className =
       `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}` +
       `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}` +
@@ -4037,6 +4584,7 @@ export class AcpHarnessView implements ContentView {
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-meta">` +
       `<span class="${chipClass}">${esc(chip)}</span>` +
+      this.renderDirectiveChip(lane) +
       projectStatus +
       `</div>` +
       peerStrip +
@@ -4048,6 +4596,19 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-harness__prompt">›</span>` +
       `<span class="acp-harness__input">${esc(before)}<span class="acp-harness__caret">█</span>${esc(after)}</span>` +
       `<span class="acp-harness__help-hint">? help</span></div>`;
+  }
+
+  /** Composer directive chip: clickable, opens the picker. Keyboard users use
+   * `Cmd+P → /`. Shows the pending (deferred) directive when the lane is busy. */
+  private renderDirectiveChip(lane: HarnessLane): string {
+    const pendingChange = lane.pendingDirectiveChange;
+    const pending = pendingChange !== null && pendingChange.directiveId !== lane.activeDirectiveId;
+    const id = pendingChange ? pendingChange.directiveId : lane.activeDirectiveId;
+    const directive = this.directiveById(id);
+    const label = directive ? directive.id : 'none';
+    const cls = `acp-harness__directive-chip${directive ? ' acp-harness__directive-chip--set' : ''}${pending ? ' acp-harness__directive-chip--pending' : ''}`;
+    const suffix = pending ? ' (next send)' : '';
+    return `<span class="${cls}" data-open-directive-picker="1" title="Cmd+P then . to change">directive ${esc(label)}${suffix}</span>`;
   }
 
   private composerStatusChip(lane: HarnessLane): string {
@@ -5846,6 +6407,27 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   } else if (item.kind === 'review' && item.review) {
     body.classList.add('acp-harness__review-card');
     renderReviewCardBody(body, item.review);
+  } else if (item.kind === 'system' && item.diff) {
+    // spec 124: directive upsert approval card with a before/after diff.
+    const text = document.createElement('div');
+    text.className = 'acp-harness__msg-text';
+    text.textContent = item.text;
+    body.appendChild(text);
+    const pre = document.createElement('pre');
+    pre.className = 'acp-harness__directive-diff';
+    for (const line of item.diff.unified.split('\n')) {
+      const row = document.createElement('div');
+      const sign = line.charAt(0);
+      row.className =
+        sign === '+'
+          ? 'acp-harness__directive-diff-add'
+          : sign === '-'
+            ? 'acp-harness__directive-diff-del'
+            : 'acp-harness__directive-diff-ctx';
+      row.textContent = line;
+      pre.appendChild(row);
+    }
+    body.appendChild(pre);
   } else if (item.kind === 'user' && item.imageCount && item.imageCount > 0) {
     if (item.text) {
       const textEl = document.createElement('div');
@@ -6804,6 +7386,29 @@ function basename(path: string): string {
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+}
+
+/** spec 124: compact line-based before/after diff for a directive system
+ * prompt. Trims the common prefix/suffix lines, then shows the rest as
+ * removed (`-`) / added (`+`) blocks. */
+function unifiedPromptDiff(before: string, after: string): string {
+  if (before === after) return after.split('\n').map((l) => ` ${l}`).join('\n');
+  const b = before.length ? before.split('\n') : [];
+  const a = after.length ? after.split('\n') : [];
+  let start = 0;
+  while (start < b.length && start < a.length && b[start] === a[start]) start += 1;
+  let endB = b.length;
+  let endA = a.length;
+  while (endB > start && endA > start && b[endB - 1] === a[endA - 1]) {
+    endB -= 1;
+    endA -= 1;
+  }
+  const lines: string[] = [];
+  for (let i = 0; i < start; i += 1) lines.push(` ${b[i]}`);
+  for (let i = start; i < endB; i += 1) lines.push(`-${b[i]}`);
+  for (let i = start; i < endA; i += 1) lines.push(`+${a[i]}`);
+  for (let i = endB; i < b.length; i += 1) lines.push(` ${b[i]}`);
+  return lines.join('\n');
 }
 
 function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {

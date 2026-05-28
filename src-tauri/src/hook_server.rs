@@ -656,6 +656,9 @@ async fn handle_bus_tool_call(
         "peer_list" => peer_list(state, harness_id).await,
         "review_request" => review_request(state, harness_id, lane_label, arguments).await,
         "review_reply" => review_reply(state, harness_id, lane_label, arguments).await,
+        "directive_list" => directive_list(),
+        "directive_preview" => directive_preview(arguments),
+        "directive_apply" => directive_apply(state, harness_id, lane_label, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -1168,6 +1171,233 @@ fn rand_suffix() -> String {
     format!("{:08x}", nanos)
 }
 
+// ─── Directive management (spec 124) ───────────────────────────────────────
+//
+// `directive_list` / `directive_preview` are read-only and answered directly
+// from `acp-harness.toml`. `directive_apply` blocks on a frontend round-trip:
+// the frontend renders an approval card (for persistent or cross-lane changes)
+// or auto-approves a same-lane assignment, then replies. Persistent
+// `upsert`/`delete` are written by Rust only after the user approves;
+// `assign` mutates frontend runtime lane state, so Rust forwards and relays
+// the frontend's outcome verbatim.
+
+/// Generous timeout for a directive round-trip. Unlike `peer_send` (a
+/// programmatic frontend delivery), an `upsert`/`delete`/cross-lane `assign`
+/// waits on a human approval decision, so the MCP call may hold for minutes.
+const DIRECTIVE_REPLY_TIMEOUT: Duration = Duration::from_secs(300);
+
+fn directive_list() -> Result<Value, String> {
+    let cfg = crate::acp_harness_config::load()?;
+    let directives: Vec<Value> = cfg
+        .directives
+        .iter()
+        .map(|d| {
+            json!({
+                "id": d.id,
+                "title": d.title,
+                "icon": d.icon,
+                "description": d.description,
+                "backend": d.backend,
+                "task": d.task,
+                "enabled": d.enabled,
+            })
+        })
+        .collect();
+    Ok(json!({ "directives": directives }))
+}
+
+fn directive_preview(arguments: Value) -> Result<Value, String> {
+    let directive_id = required_string(&arguments, "directive_id")?;
+    let directive_id = directive_id.trim();
+    let cfg = crate::acp_harness_config::load()?;
+    let directive = cfg
+        .directives
+        .iter()
+        .find(|d| d.id == directive_id)
+        .ok_or_else(|| format!("no directive '{directive_id}'"))?;
+    let text = directive.system_prompt.clone();
+    // No tokenizer in Rust; report a rough estimate (≈ chars / 4).
+    let estimated_tokens = (text.chars().count() as u64).div_ceil(4);
+    Ok(json!({
+        "text": text,
+        "estimated_tokens": estimated_tokens,
+    }))
+}
+
+/// Emit a directive-apply request to the frontend and await its reply. The
+/// frontend is the authority on runtime lane state and on whether the user
+/// approved a persistent or cross-lane change.
+async fn directive_round_trip(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    mut payload: Value,
+) -> Result<Value, String> {
+    let request_id = format!("dir-{}-{}", now_ms(), rand_suffix());
+    if let Value::Object(ref mut map) = payload {
+        map.insert("requestId".into(), json!(request_id));
+        map.insert("harnessId".into(), json!(harness_id));
+        map.insert("fromLaneId".into(), json!(from_lane));
+        map.insert("sentAt".into(), json!(now_ms()));
+    }
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state
+        .app_handle
+        .emit_or_log("acp-directive-apply-requested", payload);
+    match tokio::time::timeout(DIRECTIVE_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(_)) => Err("directive_apply: frontend coordinator did not respond".to_string()),
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            Err("directive_apply: frontend reply timed out".to_string())
+        }
+    }
+}
+
+fn reply_approved(reply: &Value) -> bool {
+    reply
+        .get("approved")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+async fn directive_apply(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    use crate::acp_harness_config as dir;
+
+    let action = required_string(&arguments, "action")?;
+    let reason = arguments
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    match action.as_str() {
+        "upsert" => {
+            let directive_val = arguments
+                .get("directive")
+                .cloned()
+                .ok_or_else(|| "directive_apply: upsert requires `directive`".to_string())?;
+            let directive: dir::HarnessDirective = serde_json::from_value(directive_val)
+                .map_err(|e| format!("directive_apply: invalid directive: {e}"))?;
+            // Pre-validate against the snapshot the user is about to be shown,
+            // so the approval card only renders a valid proposal. The post-
+            // approval re-validation below re-runs against the latest on-disk
+            // state in case the file changed during the approval wait.
+            let preview_cfg = dir::load()?;
+            dir::validate_directive(&directive, &preview_cfg.directives)?;
+            let is_update = preview_cfg
+                .directives
+                .iter()
+                .any(|d| d.id == directive.id.trim());
+            let prior = preview_cfg
+                .directives
+                .iter()
+                .find(|d| d.id == directive.id.trim())
+                .cloned();
+            drop(preview_cfg);
+            let reply = directive_round_trip(
+                state,
+                harness_id,
+                from_lane,
+                json!({
+                    "action": "upsert",
+                    "directive": directive,
+                    "prior": prior,
+                    "isUpdate": is_update,
+                    "reason": reason,
+                }),
+            )
+            .await?;
+            if reply_approved(&reply) {
+                // Approval can wait up to DIRECTIVE_REPLY_TIMEOUT (5 min); the
+                // file may have been edited externally or by another approved
+                // mutation in that window. Reload + re-validate against the
+                // latest on-disk state so we never write back stale config.
+                let mut cfg = dir::load()?;
+                dir::validate_directive(&directive, &cfg.directives)?;
+                let stored = dir::upsert_directive(&mut cfg, directive)?;
+                dir::save(&cfg)?;
+                state.app_handle.emit_or_log(
+                    "acp-harness-directives-changed",
+                    json!({ "harnessId": harness_id }),
+                );
+                Ok(json!({ "action": "upsert", "approval": "approved", "directive": stored }))
+            } else {
+                Ok(json!({ "action": "upsert", "approval": "rejected" }))
+            }
+        }
+        "delete" => {
+            let directive_id = required_string(&arguments, "directive_id")?;
+            let directive_id = directive_id.trim().to_string();
+            // Pre-check against the snapshot the user is about to be shown so
+            // we don't surface an approval card for a missing directive.
+            {
+                let preview_cfg = dir::load()?;
+                if !preview_cfg.directives.iter().any(|d| d.id == directive_id) {
+                    return Err(format!("directive_apply: no directive '{directive_id}'"));
+                }
+            }
+            let reply = directive_round_trip(
+                state,
+                harness_id,
+                from_lane,
+                json!({
+                    "action": "delete",
+                    "directive_id": directive_id,
+                    "reason": reason,
+                }),
+            )
+            .await?;
+            if reply_approved(&reply) {
+                // Reload after approval so concurrent edits during the wait
+                // are not clobbered. `delete_directive` returns false if the
+                // directive was already removed externally — that's fine; we
+                // still save the (unchanged) latest config.
+                let mut cfg = dir::load()?;
+                let deleted = dir::delete_directive(&mut cfg, &directive_id);
+                dir::save(&cfg)?;
+                state.app_handle.emit_or_log(
+                    "acp-harness-directives-changed",
+                    json!({ "harnessId": harness_id }),
+                );
+                Ok(json!({ "action": "delete", "approval": "approved", "deleted": deleted }))
+            } else {
+                Ok(json!({ "action": "delete", "approval": "rejected", "deleted": false }))
+            }
+        }
+        "assign" => {
+            // Frontend owns runtime lane state; it validates compatibility,
+            // applies the binding, and reports the final outcome.
+            let directive_id = arguments.get("directive_id").and_then(|v| v.as_str());
+            let lane = arguments.get("lane").and_then(|v| v.as_str());
+            let scope = arguments
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .unwrap_or("lane");
+            let reply = directive_round_trip(
+                state,
+                harness_id,
+                from_lane,
+                json!({
+                    "action": "assign",
+                    "directive_id": directive_id,
+                    "lane": lane,
+                    "scope": scope,
+                    "reason": reason,
+                }),
+            )
+            .await?;
+            Ok(reply)
+        }
+        other => Err(format!("directive_apply: unknown action '{other}'")),
+    }
+}
+
 fn memory_set(
     hook_server: &Arc<HookServer>,
     harness_id: &str,
@@ -1361,6 +1591,52 @@ fn bus_tool_descriptors() -> Value {
                     }
                 },
                 "required": ["packet_id"]
+            }
+        },
+        {
+            "name": "directive_list",
+            "description": "List the reusable directives configured for this harness (id, title, icon, description, backend, task, enabled). A directive is a backend/task-scoped system-style prompt the user can assign to a lane. Read-only.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "directive_preview",
+            "description": "Preview the exact prompt block a directive injects, plus a rough token estimate. Read-only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directive_id": { "type": "string" },
+                    "sample_user_text": { "type": "string", "description": "Optional; reserved for future contextual previews." }
+                },
+                "required": ["directive_id"]
+            }
+        },
+        {
+            "name": "directive_apply",
+            "description": "Create/update (upsert), delete, or assign a directive. Use only when the user asks you to manage directives. `upsert` and `delete` mutate persistent config and require user approval; `assign` binds a directive to a lane at runtime (same-lane assignment is auto-approved, cross-lane requires approval). Returns the approval outcome. After calling for a change that needs approval, expect the result to reflect the user's decision.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": { "enum": ["upsert", "delete", "assign"] },
+                    "directive": {
+                        "type": "object",
+                        "description": "Required for upsert. Fields: id (lowercase kebab-case), title, icon, description, backend (empty = all), task, system_prompt, enabled.",
+                        "properties": {
+                            "id": { "type": "string" },
+                            "title": { "type": "string" },
+                            "icon": { "type": "string" },
+                            "description": { "type": "string" },
+                            "backend": { "type": "string" },
+                            "task": { "type": "string" },
+                            "system_prompt": { "type": "string" },
+                            "enabled": { "type": "boolean" }
+                        }
+                    },
+                    "directive_id": { "type": "string", "description": "Required for delete and assign." },
+                    "lane": { "type": "string", "description": "Assign target lane display name; omitted = your own lane." },
+                    "scope": { "enum": ["next_turn", "lane"], "description": "Assign scope; omitted = lane." },
+                    "reason": { "type": "string", "description": "Short reason shown to the user on the approval card." }
+                },
+                "required": ["action", "reason"]
             }
         }
     ])
