@@ -515,6 +515,146 @@ function backendLabel(backendId: string): string {
   return BACKEND_LABELS[backendId] ?? backendId.charAt(0).toUpperCase() + backendId.slice(1);
 }
 
+// spec 125 — lane-rail disambiguation helpers. Pure, side-effect-free
+// derivations from data the schema already carries (HarnessLane.backendId,
+// HarnessDirective.task / title). Exported so unit tests can exercise the
+// table-driven mapping without spinning up a view.
+export type DirectiveRoleBucket =
+  | 'analysis'
+  | 'review'
+  | 'impl'
+  | 'plan'
+  | 'explore'
+  | 'hash-1'
+  | 'hash-2'
+  | 'hash-3';
+
+// djb2-style hash → 3 buckets. Stable across renders so two lanes with the
+// same custom `task` always land in the same fallback color.
+export function hashBucket(s: string): 'hash-1' | 'hash-2' | 'hash-3' {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  const i = Math.abs(h) % 3;
+  return i === 0 ? 'hash-1' : i === 1 ? 'hash-2' : 'hash-3';
+}
+
+// Patterns are checked in declaration order. Overlap is intentional: a
+// directive titled "review-implementation" lands in `review`, not `impl`.
+export function directiveRole(task: string): DirectiveRoleBucket {
+  const t = task.trim().toLowerCase();
+  if (!t) return hashBucket('');
+  if (/\banaly|\bdiagnos/.test(t)) return 'analysis';
+  if (/\breview/.test(t)) return 'review';
+  if (/\bimplement|\bimpl|\bfix/.test(t)) return 'impl';
+  if (/\bplan|\bdesign|\bspec/.test(t)) return 'plan';
+  if (/\bexplor|\bsurvey|\bmap|\bresearch|\binvestigat/.test(t)) return 'explore';
+  return hashBucket(t);
+}
+
+// Decoupled from `directiveRole()` so a `task = "refactor"` can hash to a
+// stable color while the chip still reads "refactor", not the bucket id.
+export function directiveTagLabel(task: string): string {
+  const t = task.trim().toLowerCase();
+  if (!t) return 'custom';
+  if (/\banaly|\bdiagnos/.test(t)) return 'analysis';
+  if (/\breview/.test(t)) return 'review';
+  if (/\bimplement|\bimpl|\bfix/.test(t)) return 'impl';
+  if (/\bplan|\bdesign|\bspec/.test(t)) return 'plan';
+  if (/\bexplor|\bsurvey|\bmap|\bresearch|\binvestigat/.test(t)) return 'explore';
+  return t;
+}
+
+export function backendLogoId(backendId: string): string {
+  switch (backendId) {
+    case 'claude':
+      return 'krypton-logo-claude';
+    case 'codex':
+      return 'krypton-logo-codex';
+    case 'gemini':
+      return 'krypton-logo-gemini';
+    case 'opencode':
+      return 'krypton-logo-opencode';
+    case 'pi-acp':
+      return 'krypton-logo-pi';
+    case 'droid':
+      return 'krypton-logo-droid';
+    case 'cursor':
+      return 'krypton-logo-cursor';
+    case 'junie':
+      return 'krypton-logo-junie';
+    case 'omp':
+      return 'krypton-logo-omp';
+    default:
+      return 'krypton-logo-omp';
+  }
+}
+
+// Presentation-only: strips a single leading "<BackendLabel> " token so the
+// rail does not echo the backend that the logo + lane name already say.
+// Never mutates storage; the picker and peer_list still see the full title.
+export function trimBackendPrefix(title: string, backendId: string): string {
+  const label = BACKEND_LABELS[backendId];
+  if (!label) return title;
+  const prefix = label + ' ';
+  return title.startsWith(prefix) ? title.slice(prefix.length) : title;
+}
+
+// Inline <symbol> defs for the nine built-in backends. Geometry is copied
+// from docs/prototypes/125-lane-rail-disambiguation.html — keep both sides
+// in sync if iterated. All strokes/fills use currentColor so the rail can
+// recolor via a single CSS class.
+export const BACKEND_LOGO_SVG_DEFS = [
+  // claude: 8-spoke asterisk
+  '<symbol id="krypton-logo-claude" viewBox="0 0 16 16">' +
+    '<g stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none">' +
+    '<line x1="8" y1="2" x2="8" y2="14"/>' +
+    '<line x1="2" y1="8" x2="14" y2="8"/>' +
+    '<line x1="3.8" y1="3.8" x2="12.2" y2="12.2"/>' +
+    '<line x1="3.8" y1="12.2" x2="12.2" y2="3.8"/>' +
+    '</g></symbol>',
+  // codex/openai: hex ring with dot
+  '<symbol id="krypton-logo-codex" viewBox="0 0 16 16">' +
+    '<polygon points="8,1.6 13.6,5 13.6,11 8,14.4 2.4,11 2.4,5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+    '<circle cx="8" cy="8" r="1.6" fill="currentColor"/>' +
+    '</symbol>',
+  // gemini: 4-pointed sparkle
+  '<symbol id="krypton-logo-gemini" viewBox="0 0 16 16">' +
+    '<path d="M8 1 L9.4 6.6 L15 8 L9.4 9.4 L8 15 L6.6 9.4 L1 8 L6.6 6.6 Z" fill="currentColor"/>' +
+    '</symbol>',
+  // opencode: curly braces
+  '<symbol id="krypton-logo-opencode" viewBox="0 0 16 16">' +
+    '<path d="M6 2 Q3.5 2 3.5 4.5 V7 Q3.5 8 2.2 8 Q3.5 8 3.5 9 V11.5 Q3.5 14 6 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+    '<path d="M10 2 Q12.5 2 12.5 4.5 V7 Q12.5 8 13.8 8 Q12.5 8 12.5 9 V11.5 Q12.5 14 10 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+    '</symbol>',
+  // pi-acp: pi glyph
+  '<symbol id="krypton-logo-pi" viewBox="0 0 16 16">' +
+    '<path d="M2.5 5 H13.5 M5 5 V12 Q5 13 6 13 M11 5 V12 Q11 13 12 13 M13 13 L13.5 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
+    '</symbol>',
+  // droid: robot face
+  '<symbol id="krypton-logo-droid" viewBox="0 0 16 16">' +
+    '<rect x="2.5" y="3.5" width="11" height="9" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+    '<circle cx="6" cy="7.5" r="1" fill="currentColor"/>' +
+    '<circle cx="10" cy="7.5" r="1" fill="currentColor"/>' +
+    '<line x1="6.5" y1="10.5" x2="9.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+    '<line x1="8" y1="1.5" x2="8" y2="3.5" stroke="currentColor" stroke-width="1.3"/>' +
+    '</symbol>',
+  // cursor: arrow cursor
+  '<symbol id="krypton-logo-cursor" viewBox="0 0 16 16">' +
+    '<path d="M3 2 L13 8.5 L8.4 9.4 L10.7 13.8 L9.2 14.6 L6.9 10.2 L4 12.5 Z" fill="currentColor"/>' +
+    '</symbol>',
+  // junie: bracket frame (jetbrains-ish)
+  '<symbol id="krypton-logo-junie" viewBox="0 0 16 16">' +
+    '<rect x="2.5" y="2.5" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+    '<path d="M5.5 5.5 H10.5 M10.5 5.5 V9.5 Q10.5 11 9 11 H7.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
+    '</symbol>',
+  // omp: concentric rings (also serves as neutral fallback)
+  '<symbol id="krypton-logo-omp" viewBox="0 0 16 16">' +
+    '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+    '<circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+    '<circle cx="8" cy="8" r="0.6" fill="currentColor"/>' +
+    '</symbol>',
+].join('');
+
 const OPENCODE_DEFAULT_MODEL = 'zai-coding-plan/glm-5.1';
 const FILE_TOUCH_WINDOW_MS = 10 * 60 * 1000;
 
@@ -1883,6 +2023,16 @@ export class AcpHarnessView implements ContentView {
   }
 
   private buildDOM(): void {
+    // spec 125 — inject reusable backend logo <symbol> defs once. Hidden
+    // off-screen so <use href="#krypton-logo-*"/> resolves from the rail.
+    const logoDefs = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    logoDefs.setAttribute('width', '0');
+    logoDefs.setAttribute('height', '0');
+    logoDefs.setAttribute('aria-hidden', 'true');
+    logoDefs.style.position = 'absolute';
+    logoDefs.innerHTML = `<defs>${BACKEND_LOGO_SVG_DEFS}</defs>`;
+    this.element.appendChild(logoDefs);
+
     const body = document.createElement('div');
     body.className = 'acp-harness__body';
     this.dashboardEl = document.createElement('div');
@@ -1963,7 +2113,7 @@ export class AcpHarnessView implements ContentView {
     this.directivePickerEl.hidden = true;
     this.directivePickerEl.addEventListener('click', (event: MouseEvent) => {
       const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
+      if (!(target instanceof Element)) return;
       const row = target.closest<HTMLElement>('[data-directive-index]');
       if (!row) return;
       const idx = Number(row.dataset.directiveIndex);
@@ -4268,8 +4418,18 @@ export class AcpHarnessView implements ContentView {
         const scope = [d.backend || 'all backends', d.task].filter(Boolean).join(' · ');
         const badge = !d.enabled ? 'disabled' : !row.compatible ? 'incompatible' : '';
         const badgeEl = badge ? `<span class="acp-harness__directive-badge">${esc(badge)}</span>` : '';
+        const logoCls = d.backend === ''
+          ? 'all'
+          : d.backend === 'pi-acp'
+            ? 'pi'
+            : (BACKEND_LABELS[d.backend] ? d.backend : 'omp');
+        const logoHtml =
+          `<span class="acp-harness__directive-logo acp-harness__directive-logo--${logoCls}" aria-hidden="true">` +
+          `<svg><use href="#${backendLogoId(d.backend)}"/></svg>` +
+          `</span>`;
         return (
           `<li class="acp-harness__directive-row${active}${state}" data-directive-index="${i}">` +
+          logoHtml +
           `<span class="acp-harness__directive-icon">${esc(d.icon)}</span>` +
           `<span class="acp-harness__directive-main">` +
           `<span class="acp-harness__directive-title">${esc(d.title || d.id)}${assigned}${badgeEl}</span>` +
@@ -4522,10 +4682,16 @@ export class AcpHarnessView implements ContentView {
       ctxHtml +
       `</span>`;
 
+    // spec 125 — meta line replaces the user-icon with a role tag chip and
+    // trimmed title. The tag carries the pending-clear strike (previously on
+    // the icon span) via `--clearing`.
     let metaHtml: string;
     if (metaDirective) {
-      const iconCls = isPendingClear ? ' acp-harness__rail-meta__icon--clearing' : '';
-      const title = metaDirective.title.trim() || metaDirective.id;
+      const role = directiveRole(metaDirective.task);
+      const tagLabel = directiveTagLabel(metaDirective.task);
+      const tagCls = isPendingClear ? ' acp-harness__rail-tag--clearing' : '';
+      const trimmedRaw = trimBackendPrefix(metaDirective.title.trim(), lane.backendId);
+      const title = trimmedRaw || metaDirective.title.trim() || metaDirective.id;
       const pendingHint = isPendingSwap
         ? '<span class="acp-harness__rail-meta__hint">· next send</span>'
         : isPendingClear
@@ -4533,7 +4699,7 @@ export class AcpHarnessView implements ContentView {
           : '';
       metaHtml =
         `<span class="acp-harness__rail-meta">` +
-        `<span class="acp-harness__rail-meta__icon${iconCls}">${esc(metaDirective.icon || '◇')}</span>` +
+        `<span class="acp-harness__rail-tag acp-harness__rail-tag--${role}${tagCls}">${esc(tagLabel)}</span>` +
         `<span class="acp-harness__rail-meta__title">${esc(title)}</span>` +
         pendingHint +
         `</span>`;
@@ -4544,8 +4710,17 @@ export class AcpHarnessView implements ContentView {
         `</span>`;
     }
 
+    const logoId = backendLogoId(lane.backendId);
+    const logoCls =
+      lane.backendId === 'pi-acp' ? 'pi' : (BACKEND_LABELS[lane.backendId] ? lane.backendId : 'omp');
+    const logoHtml =
+      `<span class="acp-harness__rail-logo acp-harness__rail-logo--${logoCls}" aria-hidden="true">` +
+      `<svg><use href="#${logoId}"/></svg>` +
+      `</span>`;
+
     entry.innerHTML =
       `<span class="acp-harness__rail-dot"></span>` +
+      logoHtml +
       headHtml +
       metaHtml;
     return entry;

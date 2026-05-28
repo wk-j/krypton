@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lane Rail · Directive Disambiguation Prototype</title>
+<style>
+:root {
+  --bg: #050810;
+  --bg-rail: #0a0f1a;
+  --bg-selected: #0e1a2a;
+  --fg: #d7e7f0;
+  --fg-dim: #6a7d8a;
+  --fg-faint: #3f4f5a;
+  --accent-cyan: #5fd9d9;
+  --border: #14222e;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+
+  /* role palette — stable, semantic */
+  --role-analysis: #6fb8d9;   /* cool blue — diagnose, read-only */
+  --role-review:   #d9c66f;   /* amber — review changes */
+  --role-impl:     #6fd994;   /* green — implement, fix */
+  --role-plan:     #b86fd9;   /* violet — design, plan */
+  --role-explore:  #d9886f;   /* coral — explore, map */
+  --role-hash-1:   #d96fb3;   /* fallback bucket A */
+  --role-hash-2:   #6f8fd9;   /* fallback bucket B */
+  --role-hash-3:   #d9a86f;   /* fallback bucket C */
+}
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  padding: 32px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.header {
+  grid-column: 1 / -1;
+  margin-bottom: 8px;
+}
+.header h1 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--accent-cyan);
+}
+.header p {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+h2 {
+  font-size: 11px;
+  margin: 0 0 10px;
+  font-weight: 400;
+  color: var(--fg-dim);
+  letter-spacing: 0.14em;
+}
+h2 .num { color: var(--accent-cyan); margin-right: 6px; }
+
+.rail {
+  background: var(--bg-rail);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 6px 0;
+}
+
+.lane {
+  padding: 10px 16px;
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  column-gap: 12px;
+  align-items: start;
+  border-left: 2px solid transparent;
+  position: relative;
+}
+.lane.selected {
+  background: var(--bg-selected);
+  border-left-color: var(--accent-cyan);
+}
+
+.lane__dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  margin-top: 6px;
+  justify-self: center;
+}
+.lane__dot--idle { background: var(--fg-faint); }
+
+.lane__body { min-width: 0; }
+.lane__name {
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.2;
+}
+.lane__meta {
+  color: var(--fg-dim);
+  font-size: 11px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lane__directive {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ===== variant 0: current — uniform glyphs ===== */
+.glyph-uniform { color: var(--fg-faint); font-size: 10px; flex-shrink: 0; }
+
+/* ===== variant A: role-glyph + color ===== */
+.glyph-role {
+  font-size: 11px;
+  flex-shrink: 0;
+  width: 10px;
+  display: inline-block;
+  text-align: center;
+  line-height: 1;
+}
+.role-analysis { color: var(--role-analysis); }
+.role-review   { color: var(--role-review); }
+.role-impl     { color: var(--role-impl); }
+.role-plan     { color: var(--role-plan); }
+.role-explore  { color: var(--role-explore); }
+.role-hash-1   { color: var(--role-hash-1); }
+.role-hash-2   { color: var(--role-hash-2); }
+.role-hash-3   { color: var(--role-hash-3); }
+
+/* lane name picks up role tint as a hairline left rule */
+.lane--role-accent {
+  border-left-color: transparent;
+}
+.lane--role-accent.selected { /* keep selection cyan */
+  border-left-color: var(--accent-cyan);
+}
+
+/* ===== variant B: role tag prefix ===== */
+.role-tag {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  padding: 2px 5px 1px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  line-height: 1;
+  flex-shrink: 0;
+  text-transform: lowercase; /* per project rule: don't uppercase user-typed strings; tag stays lowercase chrome */
+  background: rgba(0,0,0,0.2);
+}
+
+/* ===== variant C: + backend logo ===== */
+.lane--with-logo {
+  grid-template-columns: 14px 18px 1fr;
+}
+.backend-logo {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  justify-self: center;
+  flex-shrink: 0;
+}
+.backend-logo svg { width: 100%; height: 100%; display: block; }
+
+/* backend brand tints (subdued for chrome) */
+.tint-claude   { color: #d97757; }   /* anthropic coral */
+.tint-codex    { color: #d7e7f0; }   /* neutral / openai mono */
+.tint-gemini   { color: #6f8fd9; }   /* google blue */
+.tint-opencode { color: #c186d9; }   /* zai purple */
+.tint-pi       { color: #6fd9c0; }   /* pi teal */
+.tint-droid    { color: #d9a86f; }   /* factory amber */
+.tint-cursor   { color: #c0c0c0; }   /* cursor silver */
+.tint-junie    { color: #d96fb3; }   /* jetbrains magenta */
+.tint-omp      { color: #d9c66f; }   /* omp amber */
+
+/* legend */
+.legend {
+  grid-column: 1 / -1;
+  margin-top: 20px;
+  padding: 14px 18px;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  color: var(--fg-dim);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.legend strong { color: var(--fg); font-weight: 400; }
+.legend__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 24px;
+  margin-top: 8px;
+}
+.legend__row { display: flex; align-items: center; gap: 8px; }
+.legend__glyph { width: 14px; text-align: center; font-size: 11px; }
+
+/* footnote */
+.foot {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--fg-faint);
+  line-height: 1.6;
+}
+.foot code { color: var(--accent-cyan); background: rgba(95,217,217,0.08); padding: 1px 4px; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- reusable backend logo defs -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- claude: 8-spoke asterisk -->
+    <symbol id="logo-claude" viewBox="0 0 16 16">
+      <g stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none">
+        <line x1="8" y1="2" x2="8" y2="14"/>
+        <line x1="2" y1="8" x2="14" y2="8"/>
+        <line x1="3.8" y1="3.8" x2="12.2" y2="12.2"/>
+        <line x1="3.8" y1="12.2" x2="12.2" y2="3.8"/>
+      </g>
+    </symbol>
+    <!-- codex/openai: hex ring with dot -->
+    <symbol id="logo-codex" viewBox="0 0 16 16">
+      <polygon points="8,1.6 13.6,5 13.6,11 8,14.4 2.4,11 2.4,5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+      <circle cx="8" cy="8" r="1.6" fill="currentColor"/>
+    </symbol>
+    <!-- gemini: 4-pointed sparkle -->
+    <symbol id="logo-gemini" viewBox="0 0 16 16">
+      <path d="M8 1 L9.4 6.6 L15 8 L9.4 9.4 L8 15 L6.6 9.4 L1 8 L6.6 6.6 Z" fill="currentColor"/>
+    </symbol>
+    <!-- opencode: curly braces -->
+    <symbol id="logo-opencode" viewBox="0 0 16 16">
+      <path d="M6 2 Q3.5 2 3.5 4.5 V7 Q3.5 8 2.2 8 Q3.5 8 3.5 9 V11.5 Q3.5 14 6 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      <path d="M10 2 Q12.5 2 12.5 4.5 V7 Q12.5 8 13.8 8 Q12.5 8 12.5 9 V11.5 Q12.5 14 10 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    </symbol>
+    <!-- pi-acp: pi glyph -->
+    <symbol id="logo-pi" viewBox="0 0 16 16">
+      <path d="M2.5 5 H13.5 M5 5 V12 Q5 13 6 13 M11 5 V12 Q11 13 12 13 M13 13 L13.5 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <!-- droid: robot face -->
+    <symbol id="logo-droid" viewBox="0 0 16 16">
+      <rect x="2.5" y="3.5" width="11" height="9" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+      <circle cx="6" cy="7.5" r="1" fill="currentColor"/>
+      <circle cx="10" cy="7.5" r="1" fill="currentColor"/>
+      <line x1="6.5" y1="10.5" x2="9.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      <line x1="8" y1="1.5" x2="8" y2="3.5" stroke="currentColor" stroke-width="1.3"/>
+    </symbol>
+    <!-- cursor: arrow cursor -->
+    <symbol id="logo-cursor" viewBox="0 0 16 16">
+      <path d="M3 2 L13 8.5 L8.4 9.4 L10.7 13.8 L9.2 14.6 L6.9 10.2 L4 12.5 Z" fill="currentColor"/>
+    </symbol>
+    <!-- junie: bracket frame (jetbrains-ish) -->
+    <symbol id="logo-junie" viewBox="0 0 16 16">
+      <rect x="2.5" y="2.5" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"/>
+      <path d="M5.5 5.5 H10.5 M10.5 5.5 V9.5 Q10.5 11 9 11 H7.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <!-- omp: concentric rings -->
+    <symbol id="logo-omp" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+      <circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+      <circle cx="8" cy="8" r="0.6" fill="currentColor"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="page">
+
+  <div class="header">
+    <h1>// lane-rail · directive disambiguation</h1>
+    <p>เทียบ 4 แบบกับ 6 ลานเดียวกัน · role: analysis / review / impl / plan / explore / hash · variant C เพิ่ม backend logo</p>
+  </div>
+
+  <!-- ========== variant 0: current ========== -->
+  <div>
+    <h2><span class="num">00</span>current</h2>
+    <div class="rail">
+      <div class="lane">
+        <span class="lane__dot lane__dot--idle"></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-1</div>
+          <div class="lane__meta"><span class="glyph-uniform">◇</span><span class="lane__directive">Claude Issue Analysis</span></div>
+        </div>
+      </div>
+      <div class="lane selected">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-2</div>
+          <div class="lane__meta"><span class="glyph-uniform">◎</span><span class="lane__directive">Claude Implementation</span></div>
+        </div>
+      </div>
+      <div class="lane">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-3</div>
+          <div class="lane__meta"><span class="glyph-uniform">◇</span><span class="lane__directive">Claude Plan Design</span></div>
+        </div>
+      </div>
+      <div class="lane">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Codex-1</div>
+          <div class="lane__meta"><span class="glyph-uniform">◇</span><span class="lane__directive">Codex Review Changed C…</span></div>
+        </div>
+      </div>
+      <div class="lane">
+        <span class="lane__dot lane__dot--idle"></span>
+        <div class="lane__body">
+          <div class="lane__name">Codex-2</div>
+          <div class="lane__meta"><span class="glyph-uniform">◇</span><span class="lane__directive">Custom Spec Drafter</span></div>
+        </div>
+      </div>
+      <div class="lane">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Sonnet-1</div>
+          <div class="lane__meta"><span class="glyph-uniform">◇</span><span class="lane__directive">Repo Exploration</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== variant A: role-glyph + color ========== -->
+  <div>
+    <h2><span class="num">A</span>role glyph + accent color</h2>
+    <div class="rail">
+      <div class="lane lane--role-accent">
+        <span class="lane__dot lane__dot--idle"></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-1</div>
+          <div class="lane__meta"><span class="glyph-role role-analysis">◇</span><span class="lane__directive role-analysis">Claude Issue Analysis</span></div>
+        </div>
+      </div>
+      <div class="lane lane--role-accent selected">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-2</div>
+          <div class="lane__meta"><span class="glyph-role role-impl">◆</span><span class="lane__directive role-impl">Claude Implementation</span></div>
+        </div>
+      </div>
+      <div class="lane lane--role-accent">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-3</div>
+          <div class="lane__meta"><span class="glyph-role role-plan">▷</span><span class="lane__directive role-plan">Claude Plan Design</span></div>
+        </div>
+      </div>
+      <div class="lane lane--role-accent">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Codex-1</div>
+          <div class="lane__meta"><span class="glyph-role role-review">▢</span><span class="lane__directive role-review">Codex Review Changed C…</span></div>
+        </div>
+      </div>
+      <div class="lane lane--role-accent">
+        <span class="lane__dot lane__dot--idle"></span>
+        <div class="lane__body">
+          <div class="lane__name">Codex-2</div>
+          <div class="lane__meta"><span class="glyph-role role-hash-1">◈</span><span class="lane__directive role-hash-1">Custom Spec Drafter</span></div>
+        </div>
+      </div>
+      <div class="lane lane--role-accent">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Sonnet-1</div>
+          <div class="lane__meta"><span class="glyph-role role-explore">○</span><span class="lane__directive role-explore">Repo Exploration</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== variant B: role tag prefix + truncated directive ========== -->
+  <div>
+    <h2><span class="num">B</span>role tag · trim repeated prefix</h2>
+    <div class="rail">
+      <div class="lane">
+        <span class="lane__dot lane__dot--idle"></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-1</div>
+          <div class="lane__meta">
+            <span class="role-tag role-analysis">analysis</span>
+            <span class="lane__directive">Issue Analysis</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane selected">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-2</div>
+          <div class="lane__meta">
+            <span class="role-tag role-impl">impl</span>
+            <span class="lane__directive">Implementation</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-3</div>
+          <div class="lane__meta">
+            <span class="role-tag role-plan">plan</span>
+            <span class="lane__directive">Plan Design</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Codex-1</div>
+          <div class="lane__meta">
+            <span class="role-tag role-review">review</span>
+            <span class="lane__directive">Review Changed Code</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane">
+        <span class="lane__dot lane__dot--idle"></span>
+        <div class="lane__body">
+          <div class="lane__name">Codex-2</div>
+          <div class="lane__meta">
+            <span class="role-tag role-hash-1">custom</span>
+            <span class="lane__directive">Spec Drafter</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane">
+        <span class="lane__dot"></span>
+        <div class="lane__body">
+          <div class="lane__name">Sonnet-1</div>
+          <div class="lane__meta">
+            <span class="role-tag role-explore">explore</span>
+            <span class="lane__directive">Repo Exploration</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== variant C: B + backend logo ========== -->
+  <div>
+    <h2><span class="num">C</span>+ backend logo (mark before name)</h2>
+    <div class="rail">
+      <div class="lane lane--with-logo">
+        <span class="lane__dot lane__dot--idle"></span>
+        <span class="backend-logo tint-claude"><svg><use href="#logo-claude"/></svg></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-1</div>
+          <div class="lane__meta">
+            <span class="role-tag role-analysis">analysis</span>
+            <span class="lane__directive">Issue Analysis</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane lane--with-logo selected">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-claude"><svg><use href="#logo-claude"/></svg></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-2</div>
+          <div class="lane__meta">
+            <span class="role-tag role-impl">impl</span>
+            <span class="lane__directive">Implementation</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-claude"><svg><use href="#logo-claude"/></svg></span>
+        <div class="lane__body">
+          <div class="lane__name">Claude-3</div>
+          <div class="lane__meta">
+            <span class="role-tag role-plan">plan</span>
+            <span class="lane__directive">Plan Design</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-codex"><svg><use href="#logo-codex"/></svg></span>
+        <div class="lane__body">
+          <div class="lane__name">Codex-1</div>
+          <div class="lane__meta">
+            <span class="role-tag role-review">review</span>
+            <span class="lane__directive">Review Changed Code</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot lane__dot--idle"></span>
+        <span class="backend-logo tint-codex"><svg><use href="#logo-codex"/></svg></span>
+        <div class="lane__body">
+          <div class="lane__name">Codex-2</div>
+          <div class="lane__meta">
+            <span class="role-tag role-hash-1">custom</span>
+            <span class="lane__directive">Spec Drafter</span>
+          </div>
+        </div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-gemini"><svg><use href="#logo-gemini"/></svg></span>
+        <div class="lane__body">
+          <div class="lane__name">Sonnet-1</div>
+          <div class="lane__meta">
+            <span class="role-tag role-explore">explore</span>
+            <span class="lane__directive">Repo Exploration</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- backend logo gallery -->
+  <div>
+    <h2><span class="num">D</span>backend logo gallery (all 9)</h2>
+    <div class="rail">
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-claude"><svg><use href="#logo-claude"/></svg></span>
+        <div class="lane__body"><div class="lane__name">claude</div><div class="lane__meta"><span class="lane__directive">anthropic · 8-spoke asterisk</span></div></div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-codex"><svg><use href="#logo-codex"/></svg></span>
+        <div class="lane__body"><div class="lane__name">codex</div><div class="lane__meta"><span class="lane__directive">openai · hex ring + dot</span></div></div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-gemini"><svg><use href="#logo-gemini"/></svg></span>
+        <div class="lane__body"><div class="lane__name">gemini</div><div class="lane__meta"><span class="lane__directive">google · 4-point sparkle</span></div></div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-opencode"><svg><use href="#logo-opencode"/></svg></span>
+        <div class="lane__body"><div class="lane__name">opencode</div><div class="lane__meta"><span class="lane__directive">curly braces</span></div></div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-pi"><svg><use href="#logo-pi"/></svg></span>
+        <div class="lane__body"><div class="lane__name">pi-acp</div><div class="lane__meta"><span class="lane__directive">pi glyph</span></div></div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-droid"><svg><use href="#logo-droid"/></svg></span>
+        <div class="lane__body"><div class="lane__name">droid</div><div class="lane__meta"><span class="lane__directive">factory · robot face</span></div></div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-cursor"><svg><use href="#logo-cursor"/></svg></span>
+        <div class="lane__body"><div class="lane__name">cursor</div><div class="lane__meta"><span class="lane__directive">arrow cursor</span></div></div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-junie"><svg><use href="#logo-junie"/></svg></span>
+        <div class="lane__body"><div class="lane__name">junie</div><div class="lane__meta"><span class="lane__directive">jetbrains · bracket frame</span></div></div>
+      </div>
+      <div class="lane lane--with-logo">
+        <span class="lane__dot"></span>
+        <span class="backend-logo tint-omp"><svg><use href="#logo-omp"/></svg></span>
+        <div class="lane__body"><div class="lane__name">omp</div><div class="lane__meta"><span class="lane__directive">concentric rings</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- legend / role mapping -->
+  <div class="legend">
+    <strong>// role → glyph + color mapping (used in A &amp; B)</strong>
+    <div class="legend__grid">
+      <div class="legend__row"><span class="legend__glyph role-analysis">◇</span><span class="role-analysis">analysis</span><span style="color:var(--fg-faint)">— diagnose, read-only</span></div>
+      <div class="legend__row"><span class="legend__glyph role-review">▢</span><span class="role-review">review</span><span style="color:var(--fg-faint)">— review changes</span></div>
+      <div class="legend__row"><span class="legend__glyph role-impl">◆</span><span class="role-impl">impl</span><span style="color:var(--fg-faint)">— implement, fix</span></div>
+      <div class="legend__row"><span class="legend__glyph role-plan">▷</span><span class="role-plan">plan</span><span style="color:var(--fg-faint)">— design, spec</span></div>
+      <div class="legend__row"><span class="legend__glyph role-explore">○</span><span class="role-explore">explore</span><span style="color:var(--fg-faint)">— map, survey</span></div>
+      <div class="legend__row"><span class="legend__glyph role-hash-1">◈</span><span class="role-hash-1">hash bucket</span><span style="color:var(--fg-faint)">— custom directive fallback</span></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <strong>note</strong> · role detection by keyword match on <code>directive.task</code> (already in schema at <code>acp_harness_config.rs:55</code>, mirrored to <code>config.ts:195</code>): <code>analysis</code>, <code>review</code>, <code>implement|fix</code>, <code>plan|design</code>, <code>explor</code>; unmatched values hash to one of 3 fallback buckets so any custom task still gets a stable, distinct color. variant B strips the lane-model prefix (<code>Claude </code> / <code>Codex </code>) since it duplicates the lane name above. variant C adds a backend logo (inline SVG) before the lane name, looked up by <code>lane.backendId</code> — 9 marks are placeholder geometric monograms drawn inline; production should swap in vetted brand assets where licensing allows. logo tint is monochrome per-backend; status dot retains its semantic (idle / active).
+  </div>
+
+</div>
+</body>
+</html>

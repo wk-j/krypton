@@ -241,6 +241,7 @@ Keep UI minimal:
 - Composer status line shows a compact selectable chip: `directive codex-implementation` or `directive none`.
 - Directive picker lists predefined directives from `acp-harness.toml` in a flat list: compatible enabled directives first, then disabled or incompatible directives.
 - Picker rows show a directive icon, title, id, backend/task, enabled state, and a one-line description.
+- Lane rail entries (zen mode) read `directive.task` as a second signal: a small role tag chip (`analysis` / `review` / `impl` / `plan` / `explore`, or the raw lowercased `task` for custom values, or the literal `custom` when empty) appears on the meta line alongside the rail-trimmed directive title and a backend logo before the lane name (spec 125). The picker still surfaces the full `title` and the user-defined `icon`; `task` is unchanged in storage and in `peer_list` / `activeDirective.task`.
 - Picker detail pane previews the injected directive block before assignment and may show `estimated_tokens` when available.
 - Directive picker, rows, preview panes, and audit cards must not use left-border rails; state is communicated with text, full outlines, tint, and chip color.
 - Selecting a predefined directive spawns a new lane (backend from `directive.backend`, or fallback when empty) with that directive active. No persistent config is written.

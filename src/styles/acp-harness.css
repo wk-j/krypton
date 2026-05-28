@@ -15,6 +15,28 @@
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: var(--krypton-font-size, 13px);
   outline: none;
+
+  /* spec 125 — lane-rail disambiguation palette. Scoped to the harness so
+   * other surfaces don't inherit these tokens; themes can override by
+   * redeclaring under a more specific selector. */
+  --krypton-role-analysis: #6fb8d9;
+  --krypton-role-review:   #d9c66f;
+  --krypton-role-impl:     #6fd994;
+  --krypton-role-plan:     #b86fd9;
+  --krypton-role-explore:  #d9886f;
+  --krypton-role-hash-1:   #d96fb3;
+  --krypton-role-hash-2:   #6f8fd9;
+  --krypton-role-hash-3:   #d9a86f;
+
+  --krypton-backend-claude:   #d97757;
+  --krypton-backend-codex:    #d7e7f0;
+  --krypton-backend-gemini:   #6f8fd9;
+  --krypton-backend-opencode: #c186d9;
+  --krypton-backend-pi:       #6fd9c0;
+  --krypton-backend-droid:    #d9a86f;
+  --krypton-backend-cursor:   #c0c0c0;
+  --krypton-backend-junie:    #d96fb3;
+  --krypton-backend-omp:      #d9c66f;
 }
 
 .acp-harness__body {
@@ -2203,13 +2225,13 @@
 }
 
 .acp-harness__rail-entry {
-  /* spec 124 — two-row grid:
-   *   col 1 = status dot (8px), col 2 = body
+  /* spec 125 — three-column / two-row grid:
+   *   col 1 = status dot (8px), col 2 = backend logo (14px), col 3 = body
    *   row 1 = head (name + peer hints + metrics, flex inside)
-   *   row 2 = meta (directive title when bound, status label otherwise)
+   *   row 2 = meta (tag chip + trimmed directive title, or status label)
    * The meta row always renders so row height stays consistent across lanes. */
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr);
+  grid-template-columns: 8px 14px minmax(0, 1fr);
   column-gap: 8px;
   row-gap: 2px;
   padding: 6px 12px;
@@ -2219,7 +2241,7 @@
 }
 
 .acp-harness__rail-head {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
   display: flex;
   align-items: baseline;
@@ -2229,7 +2251,7 @@
 }
 
 .acp-harness__rail-meta {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 2;
   display: flex;
   align-items: baseline;
@@ -2242,16 +2264,64 @@
   overflow: hidden;
 }
 
-.acp-harness__rail-meta__icon {
-  flex: 0 0 auto;
-  width: 1em;
-  text-align: center;
-  color: #c7a2ff;
+.acp-harness__rail-logo {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  justify-self: center;
+  width: 14px;
+  height: 14px;
+  color: rgba(216, 232, 216, 0.55);
+  flex-shrink: 0;
 }
 
-.acp-harness__rail-meta__icon--clearing {
+.acp-harness__rail-logo svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.acp-harness__rail-logo--claude   { color: var(--krypton-backend-claude); }
+.acp-harness__rail-logo--codex    { color: var(--krypton-backend-codex); }
+.acp-harness__rail-logo--gemini   { color: var(--krypton-backend-gemini); }
+.acp-harness__rail-logo--opencode { color: var(--krypton-backend-opencode); }
+.acp-harness__rail-logo--pi       { color: var(--krypton-backend-pi); }
+.acp-harness__rail-logo--droid    { color: var(--krypton-backend-droid); }
+.acp-harness__rail-logo--cursor   { color: var(--krypton-backend-cursor); }
+.acp-harness__rail-logo--junie    { color: var(--krypton-backend-junie); }
+.acp-harness__rail-logo--omp      { color: var(--krypton-backend-omp); }
+
+.acp-harness__rail-tag {
+  flex: 0 0 auto;
+  display: inline-block;
+  max-width: 10ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 0.92em;
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+
+.acp-harness__rail-tag--analysis { color: var(--krypton-role-analysis); }
+.acp-harness__rail-tag--review   { color: var(--krypton-role-review); }
+.acp-harness__rail-tag--impl     { color: var(--krypton-role-impl); }
+.acp-harness__rail-tag--plan     { color: var(--krypton-role-plan); }
+.acp-harness__rail-tag--explore  { color: var(--krypton-role-explore); }
+.acp-harness__rail-tag--hash-1   { color: var(--krypton-role-hash-1); }
+.acp-harness__rail-tag--hash-2   { color: var(--krypton-role-hash-2); }
+.acp-harness__rail-tag--hash-3   { color: var(--krypton-role-hash-3); }
+
+.acp-harness__rail-tag--clearing {
   text-decoration: line-through;
   text-decoration-color: rgba(255, 209, 102, 0.65);
+  border-style: dashed;
+  opacity: 0.55;
 }
 
 .acp-harness__rail-meta__title {
@@ -2281,7 +2351,6 @@
   background: color-mix(in srgb, #ffd166 5%, transparent);
 }
 
-.acp-harness__rail-entry--pending .acp-harness__rail-meta__icon,
 .acp-harness__rail-entry--pending .acp-harness__rail-meta__title,
 .acp-harness__rail-entry--pending .acp-harness__rail-meta__hint {
   color: #ffd166;
@@ -3168,6 +3237,31 @@
 .acp-harness__directive-row--incompatible {
   color: rgba(216, 232, 216, 0.4);
 }
+
+.acp-harness__directive-logo {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  color: rgba(216, 232, 216, 0.55);
+}
+
+.acp-harness__directive-logo svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.acp-harness__directive-logo--all      { visibility: hidden; }
+.acp-harness__directive-logo--claude   { color: var(--krypton-backend-claude); }
+.acp-harness__directive-logo--codex    { color: var(--krypton-backend-codex); }
+.acp-harness__directive-logo--gemini   { color: var(--krypton-backend-gemini); }
+.acp-harness__directive-logo--opencode { color: var(--krypton-backend-opencode); }
+.acp-harness__directive-logo--pi       { color: var(--krypton-backend-pi); }
+.acp-harness__directive-logo--droid    { color: var(--krypton-backend-droid); }
+.acp-harness__directive-logo--cursor   { color: var(--krypton-backend-cursor); }
+.acp-harness__directive-logo--junie    { color: var(--krypton-backend-junie); }
+.acp-harness__directive-logo--omp      { color: var(--krypton-backend-omp); }
 
 .acp-harness__directive-icon {
   flex: 0 0 auto;

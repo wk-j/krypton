@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  backendLogoId,
   buildComposerPeerStrip,
   buildLanePeekCandidates,
   deriveLanePairHeat,
   deriveRailPeerHint,
+  directiveRole,
+  directiveTagLabel,
   harnessAutoAllowToolName,
+  hashBucket,
   isDirectPeerPeekReasonKey,
   laneAccent,
   laneAccentForLabel,
@@ -13,6 +17,7 @@ import {
   formatLaneMailProvenanceLine,
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
+  trimBackendPrefix,
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
 } from './acp-harness-view';
@@ -643,5 +648,149 @@ describe('spec 120 lane mail copy', () => {
         envelopeCount: 2,
       }),
     ).toBe('↩ replying to lane mail (2 messages) from cursor-1');
+  });
+});
+
+describe('spec 125 lane rail disambiguation', () => {
+  describe('directiveRole', () => {
+    it('routes empty task into a stable hash bucket', () => {
+      const first = directiveRole('');
+      expect(first).toMatch(/^hash-[123]$/);
+      // Determinism: same input always lands in the same bucket.
+      expect(directiveRole('')).toBe(first);
+    });
+
+    it('matches canonical role keywords', () => {
+      expect(directiveRole('analysis')).toBe('analysis');
+      expect(directiveRole('diagnose-flow')).toBe('analysis');
+      expect(directiveRole('review')).toBe('review');
+      expect(directiveRole('implementation')).toBe('impl');
+      expect(directiveRole('impl')).toBe('impl');
+      expect(directiveRole('bug-fix')).toBe('impl');
+      expect(directiveRole('plan')).toBe('plan');
+      expect(directiveRole('design')).toBe('plan');
+      expect(directiveRole('spec')).toBe('plan');
+      expect(directiveRole('explore')).toBe('explore');
+      expect(directiveRole('survey')).toBe('explore');
+      expect(directiveRole('map')).toBe('explore');
+      expect(directiveRole('research')).toBe('explore');
+      expect(directiveRole('investigate')).toBe('explore');
+    });
+
+    it('resolves overlap by declaration order', () => {
+      // analysis → review → impl → plan → explore: "review" appears in both
+      // review and impl patterns when a string like "review-implementation"
+      // hits both. Declaration order wins.
+      expect(directiveRole('review-implementation')).toBe('review');
+    });
+
+    it('falls back to a stable hash bucket for unmatched values', () => {
+      const first = directiveRole('refactor');
+      expect(first).toMatch(/^hash-[123]$/);
+      expect(directiveRole('refactor')).toBe(first);
+      expect(directiveRole('REFACTOR')).toBe(first); // case-insensitive
+      // Different unmatched values can land in different buckets; we only
+      // assert that each is itself stable.
+      const obs = directiveRole('observability');
+      expect(obs).toMatch(/^hash-[123]$/);
+      expect(directiveRole('observability')).toBe(obs);
+    });
+  });
+
+  describe('directiveTagLabel', () => {
+    it('returns the literal "custom" for empty task', () => {
+      expect(directiveTagLabel('')).toBe('custom');
+      expect(directiveTagLabel('   ')).toBe('custom');
+    });
+
+    it('returns the canonical slug for matched roles', () => {
+      expect(directiveTagLabel('analysis')).toBe('analysis');
+      expect(directiveTagLabel('diagnose-flow')).toBe('analysis');
+      expect(directiveTagLabel('Review')).toBe('review');
+      expect(directiveTagLabel('implementation')).toBe('impl');
+      expect(directiveTagLabel('bug-fix')).toBe('impl');
+      expect(directiveTagLabel('design')).toBe('plan');
+      expect(directiveTagLabel('investigate')).toBe('explore');
+    });
+
+    it('returns the raw lowercased task for unmatched non-empty values', () => {
+      expect(directiveTagLabel('refactor')).toBe('refactor');
+      expect(directiveTagLabel('REFACTOR')).toBe('refactor');
+      expect(directiveTagLabel('  chore  ')).toBe('chore');
+    });
+
+    it('does not truncate long values (CSS handles ellipsis)', () => {
+      const long = 'super-long-custom-task-name';
+      expect(directiveTagLabel(long)).toBe(long);
+    });
+  });
+
+  describe('trimBackendPrefix', () => {
+    it('strips a single leading "<Label> " prefix', () => {
+      expect(trimBackendPrefix('Claude Issue Analysis', 'claude')).toBe('Issue Analysis');
+      expect(trimBackendPrefix('Codex Review Changed Code', 'codex')).toBe('Review Changed Code');
+      expect(trimBackendPrefix('OpenCode Plan Design', 'opencode')).toBe('Plan Design');
+    });
+
+    it('requires the trailing space — does not strip a bare label match', () => {
+      expect(trimBackendPrefix('Claude', 'claude')).toBe('Claude');
+      expect(trimBackendPrefix('ClaudeFoo', 'claude')).toBe('ClaudeFoo');
+    });
+
+    it('leaves titles without the matching prefix untouched', () => {
+      expect(trimBackendPrefix('Issue Analysis', 'claude')).toBe('Issue Analysis');
+      // Different backend label: "Codex" prefix doesn't match a claude lane.
+      expect(trimBackendPrefix('Codex Review', 'claude')).toBe('Codex Review');
+    });
+
+    it('no-ops for unknown backend ids', () => {
+      expect(trimBackendPrefix('Whatever Title', 'made-up')).toBe('Whatever Title');
+    });
+  });
+
+  describe('hashBucket', () => {
+    it('is deterministic for the same input', () => {
+      const a = hashBucket('refactor');
+      expect(hashBucket('refactor')).toBe(a);
+      const b = hashBucket('');
+      expect(hashBucket('')).toBe(b);
+    });
+
+    it('returns one of the three bucket ids', () => {
+      const corpus = [
+        '', 'a', 'refactor', 'observability', 'chore', 'cleanup', 'tracing',
+        'auth', 'session', 'pty', 'compositor', 'rail', 'directive', 'logo',
+        'sound', 'theme', 'workspace', 'lane', 'inbox', 'review', 'impl',
+        'plan', 'analyze', 'survey', 'research', 'tests', 'docs', 'ci',
+        'flag', 'config',
+      ];
+      const seen = new Set<string>();
+      for (const s of corpus) {
+        const bucket = hashBucket(s);
+        expect(['hash-1', 'hash-2', 'hash-3']).toContain(bucket);
+        seen.add(bucket);
+      }
+      // Distribution sanity: a 30-string corpus must reach at least 2
+      // buckets. (Exactly-1 would imply the hash collapsed.)
+      expect(seen.size).toBeGreaterThan(1);
+    });
+  });
+
+  describe('backendLogoId', () => {
+    it('maps the nine built-in backends to their krypton-logo-* ids', () => {
+      expect(backendLogoId('claude')).toBe('krypton-logo-claude');
+      expect(backendLogoId('codex')).toBe('krypton-logo-codex');
+      expect(backendLogoId('gemini')).toBe('krypton-logo-gemini');
+      expect(backendLogoId('opencode')).toBe('krypton-logo-opencode');
+      expect(backendLogoId('pi-acp')).toBe('krypton-logo-pi');
+      expect(backendLogoId('droid')).toBe('krypton-logo-droid');
+      expect(backendLogoId('cursor')).toBe('krypton-logo-cursor');
+      expect(backendLogoId('junie')).toBe('krypton-logo-junie');
+      expect(backendLogoId('omp')).toBe('krypton-logo-omp');
+    });
+
+    it('falls back to the neutral OMP mark for unknown backends', () => {
+      expect(backendLogoId('made-up-backend')).toBe('krypton-logo-omp');
+    });
   });
 });
