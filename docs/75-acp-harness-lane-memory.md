@@ -36,12 +36,24 @@ nothing on disk to migrate.
   "description":
     "Overwrite your lane's single memory document. You have one document; \
 this replaces its full contents (not append). Treat it as a living README \
-other agents in this tab will read. Empty strings clear it.",
+other agents in this tab will read. 'summary' is a SHORT one-line headline; \
+put all real content in 'detail'. Empty strings clear it.",
   "inputSchema": {
     "type": "object",
     "properties": {
-      "summary": { "type": "string", "maxLength": 300 },
-      "detail":  { "type": "string", "maxLength": 8000 }
+      "summary": {
+        "type": "string",
+        "maxLength": 300,
+        "description": "One short headline only (a single sentence). Do NOT \
+put the body here — it is rejected past the length limit. Use 'detail' for \
+everything substantial."
+      },
+      "detail": {
+        "type": "string",
+        "maxLength": 8000,
+        "description": "The full memory body. This is the long field — put \
+all substantive content here."
+      }
     },
     "required": ["summary", "detail"]
   }
@@ -123,7 +135,7 @@ Lane memory is persisted to disk per project directory. See `docs/76-acp-harness
 - **Lane removed from harness:** drop its entry.
 - **Lane never set memory:** `memory_get(lane)` returns `{ entry: null }`.
 - **Adapter does not support MCP descriptor:** lane runs without memory tools (unchanged).
-- **Oversized field:** reject with `summary_too_long` / `detail_too_long`.
+- **Oversized field:** reject. The `summary` rejection is *instructive* rather than a bare code — it reports the actual char count and tells the model to keep `summary` to one headline and move the body into `detail` (e.g. `summary is 412 chars but must be ≤300: keep it to one short headline and move the body into 'detail' (allows 8000 chars)`). Oversize `detail` rejects with `detail exceeds 8000 characters`. The model attends to the natural-language tool/field descriptions far more than to JSON-Schema `maxLength`, and cannot reliably count characters itself (Thai is worse, since the limit counts Unicode code points via `chars().count()`), so the constraint is carried qualitatively ("short one-line headline") in the descriptions and the error names the fix.
 - **Mixed empty/non-empty in `memory_set`:** reject with `mixed_empty`.
 - **Concurrent `memory_set` from same lane:** last writer wins (`Mutex` serializes).
 

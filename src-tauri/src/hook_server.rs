@@ -1416,7 +1416,10 @@ fn memory_set(
     }
     if !summary_empty {
         if summary.chars().count() > MEMORY_SUMMARY_MAX {
-            return Err(format!("summary exceeds {MEMORY_SUMMARY_MAX} characters"));
+            return Err(format!(
+                "summary is {} chars but must be \u{2264}{MEMORY_SUMMARY_MAX}: keep it to one short headline and move the body into 'detail' (allows {MEMORY_DETAIL_MAX} chars)",
+                summary.chars().count()
+            ));
         }
         if detail.chars().count() > MEMORY_DETAIL_MAX {
             return Err(format!("detail exceeds {MEMORY_DETAIL_MAX} characters"));
@@ -1514,12 +1517,20 @@ fn bus_tool_descriptors() -> Value {
     json!([
         {
             "name": "memory_set",
-            "description": "Overwrite your lane's single memory document. You have one document; this replaces its full contents (not append). Treat it as a living README other agents in this tab will read. Empty strings clear it.",
+            "description": "Overwrite your lane's single memory document. You have one document; this replaces its full contents (not append). Treat it as a living README other agents in this tab will read. 'summary' is a SHORT one-line headline; put all real content in 'detail'. Empty strings clear it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "summary": { "type": "string", "maxLength": MEMORY_SUMMARY_MAX },
-                    "detail": { "type": "string", "maxLength": MEMORY_DETAIL_MAX }
+                    "summary": {
+                        "type": "string",
+                        "maxLength": MEMORY_SUMMARY_MAX,
+                        "description": "One short headline only (a single sentence). Do NOT put the body here — it is rejected past the length limit. Use 'detail' for everything substantial."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": MEMORY_DETAIL_MAX,
+                        "description": "The full memory body. This is the long field — put all substantive content here."
+                    }
                 },
                 "required": ["summary", "detail"]
             }
