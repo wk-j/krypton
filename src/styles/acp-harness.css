@@ -3233,8 +3233,7 @@
   color: rgba(216, 232, 216, 0.98);
 }
 
-.acp-harness__directive-row--disabled,
-.acp-harness__directive-row--incompatible {
+.acp-harness__directive-row--disabled {
   color: rgba(216, 232, 216, 0.4);
 }
 

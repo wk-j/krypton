@@ -43,6 +43,7 @@ interface RawAcpEvent {
   };
   // stop:
   stopReason?: StopReason;
+  reason?: string;
   // error:
   message?: string;
   // fs_activity:
@@ -323,7 +324,11 @@ export class AcpClient {
         break;
       }
       case 'stop':
-        event = { type: 'stop', stopReason: (raw.stopReason ?? 'end_turn') as StopReason };
+        event = {
+          type: 'stop',
+          stopReason: (raw.stopReason ?? 'end_turn') as StopReason,
+          reason: typeof raw.reason === 'string' ? raw.reason : undefined,
+        };
         break;
       case 'error':
         event = { type: 'error', message: raw.message ?? 'unknown error' };

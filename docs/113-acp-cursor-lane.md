@@ -4,6 +4,8 @@
 > Date: 2026-05-20
 > Milestone: M-ACP — Harness convergence
 
+> **Revision 2026-05-29 — MCP delivery changed (upstream regression).** The original design (below) assumed Cursor consumes the harness `krypton-harness-memory` server via ACP `session/new mcpServers`, gated by `mcpCapabilities`. That was **verified false**: `cursor-agent` silently ignores `session/new` MCP servers (stdio *and* http), so the Cursor lane got no `peer_send`/`peer_list`/`memory_*` tools and could not message other lanes. Version-bisecting three retained builds showed `2026.05.20` honored `session/new` injection but `2026.05.27`/`2026.05.28` do not — an upstream regression (cursor-agent's own team confirms "dynamic MCP … aren't implemented yet, even though the capabilities say they are"; tracked as [Zed #50924](https://github.com/zed-industries/zed/issues/50924) and Cursor forum reports). `--approve-mcps` also has no effect in ACP mode. **New mechanism:** treat Cursor like Junie — exclude it from `session/new` injection and deliver the harness memory server through native `<projectDir>/.cursor/mcp.json` + `cursor-agent mcp enable <name>` (`prepare_cursor_mcp` / `cleanup_cursor_mcp` in `acp.rs`). The `--approve-mcps acp` spawn arg is reduced to plain `acp`. See **MCP And Memory** for the superseded design and `docs/06-configuration.md` for current behavior.
+
 ## Problem
 
 Krypton's ACP harness can compare Codex, Claude, Gemini, OpenCode, Pi, and Droid lanes, but cannot run Cursor Agent in the same shared project harness. Users with an existing Cursor subscription or Cursor Agent setup need to leave Krypton or run Cursor in a plain terminal, losing the harness transcript, lane switching, memory, peering, and permission UI.
@@ -43,7 +45,7 @@ Alternatives ruled out:
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/acp.rs` | Add `("cursor", AcpBackend { command: "cursor-agent", args: ["acp"], display_name: "Cursor" })` to `builtin_backends()`. Add Cursor-specific startup hint for auth/keychain errors. |
+| `src-tauri/src/acp.rs` | Add `("cursor", AcpBackend { command: "cursor-agent", args: ["--approve-mcps", "acp"], display_name: "Cursor" })` to `builtin_backends()`. Add Cursor-specific startup hint for auth/keychain errors. |
 | `src/acp/acp-harness-view.ts` | Add `cursor` to `BACKEND_LABELS`; add a distinct lane accent if current palette mapping does not already cover the extra backend cleanly; confirm Cursor is not skipped by `memoryServerForLane()` or `.mcp.json` bridge; update or explicitly accept the default behavior in `inferLaneModelName()`. |
 | `src/config.ts` | Update lane-model comment to mention `cursor` if needed. No schema change. |
 | `docs/04-architecture.md` | Add Cursor to the ACP lane list and document it as a regular lane. |
@@ -62,11 +64,13 @@ No new Tauri commands, frontend event types, or CSS files are required for v1.
     "cursor",
     AcpBackend {
         command: "cursor-agent".to_string(),
-        args: vec!["acp".to_string()],
+        args: vec!["--approve-mcps".to_string(), "acp".to_string()],
         display_name: "Cursor".to_string(),
     },
 ),
 ```
+
+`--approve-mcps` precedes the `acp` subcommand (it is a global Commander flag; verified that `cursor-agent --approve-mcps acp` still returns a normal ACP `initialize` response). See **MCP And Memory** below for why it is required.
 
 Krypton already injects the cached login-shell environment and current working directory into ACP subprocesses. That covers `CURSOR_API_KEY`, `PATH`, and project-root behavior.
 
@@ -90,8 +94,9 @@ Cursor is a regular lane:
 - Do not add it to the `pi-acp` no-MCP skip.
 - Do not add it to the `claude` native `.mcp.json` skip unless Cursor's ACP server is proven to load project `.mcp.json` itself.
 - Cursor's documented native MCP file is `.cursor/mcp.json`; if a project has both `.cursor/mcp.json` and `.mcp.json`, implementation verification should confirm Krypton's injected `.mcp.json` servers do not duplicate Cursor-loaded native servers under different names.
-- Let `filterByCapability()` gate HTTP/SSE/stdio MCP servers from `agentCapabilities.mcpCapabilities`.
+- Let `filterByCapability()` gate HTTP/SSE/stdio MCP servers from `agentCapabilities.mcpCapabilities`. Cursor advertises `mcpCapabilities: { http: true, sse: true }`, so the HTTP `krypton-harness-memory` server passes the gate and is injected into `session/new`.
 - Always include the per-lane `krypton-harness-memory` server when harness memory is available.
+- **Spawn with `--approve-mcps`.** `cursor-agent` defaults `--approve-mcps` to `false`, leaving every MCP server (including injected ones) in an unapproved state. ACP runs over piped stdio with no interactive approval channel, so without the flag the injected harness memory and `.mcp.json` servers are received but never activate — the lane shows no MCP tools at all. This was the original "Cursor lane has no MCP" symptom (fixed by adding the flag to the spawn args; transport was never the problem).
 
 ### Permissions
 
@@ -119,7 +124,7 @@ Match specific Keychain strings such as `SecItemCopyMatching failed` before gene
 1. User opens ACP Harness and presses Cmd+P then +.
 2. Lane picker lists `Cursor` from `acp_list_backends()`.
 3. User selects Cursor.
-4. Rust spawns `cursor-agent acp` in the harness project directory.
+4. Rust spawns `cursor-agent --approve-mcps acp` in the harness project directory.
 5. AcpClient sends `initialize`.
 6. Frontend capability-gates `.mcp.json` servers, appends memory MCP, then calls `session/new`.
 7. User prompts Cursor lane.
@@ -168,7 +173,7 @@ Whether `active` is passed as `--model` depends on implementation verification a
 - Implementing a headless NDJSON adapter.
 - Installing Cursor Agent or `cursor-agent-acp` automatically.
 - Adding a generic Zed ACP Registry installer to Krypton.
-- Wiring Cursor-specific `--force`, `--yolo`, `--trust`, `--approve-mcps`, `--sandbox`, `--worktree`, or `--plugin-dir` settings into `krypton.toml`.
+- Wiring Cursor-specific `--force`, `--yolo`, `--trust`, `--sandbox`, `--worktree`, or `--plugin-dir` settings into `krypton.toml`. (`--approve-mcps` is now always passed at spawn — see **MCP And Memory** — but is not a configurable `krypton.toml` knob.)
 - Building Cursor-specific slash command UI.
 
 ## Resources

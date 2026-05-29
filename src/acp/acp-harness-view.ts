@@ -92,6 +92,8 @@ import {
   gcJunieMcpOverlays,
   removeJunieMcpOverlay,
   writeJunieMcpOverlay,
+  prepareCursorMcp,
+  cleanupCursorMcp,
   JUNIE_MCP_CAPABILITIES,
 } from './mcp-bridge';
 
@@ -422,6 +424,9 @@ interface HarnessLane {
   streamingMarkdownItemId: string | null;
   /** Junie native MCP overlay dir passed to `--mcp-location`. */
   junieMcpOverlayDir: string | null;
+  /** spec 113 rev — krypton server names written into `<project>/.cursor/mcp.json`
+   *  for the Cursor lane (removed on close). null when not a Cursor lane. */
+  cursorMcpNames: string[] | null;
   /** spec 120: set when drain calls enqueueSystemPrompt; cleared on turn end. */
   pendingCoordinatorDrain: CoordinatorDrainContext | null;
   coordinatorDrainProvenanceUsed: boolean;
@@ -715,6 +720,7 @@ const LANE_DEFAULTS = {
   streamingMarkdownBody: null,
   streamingMarkdownItemId: null,
   junieMcpOverlayDir: null,
+  cursorMcpNames: null,
   pendingCoordinatorDrain: null,
   coordinatorDrainProvenanceUsed: false,
   activeDirectiveId: null,
@@ -2413,6 +2419,21 @@ export class AcpHarnessView implements ContentView {
           );
           lane.junieMcpOverlayDir = junieMcpLocation;
         }
+      } else if (lane.backendId === 'cursor') {
+        // cursor-agent ignores `session/new` mcpServers (upstream regression);
+        // deliver the harness memory server via native `<project>/.cursor/mcp.json`
+        // + `cursor-agent mcp enable` instead (see prepareCursorMcp).
+        seedMcp = [];
+        if (this.harnessMemoryId && this.projectDir) {
+          try {
+            lane.cursorMcpNames = await prepareCursorMcp(
+              this.projectDir,
+              this.memoryServerForLane(lane),
+            );
+          } catch (e) {
+            console.warn('[acp-harness] prepare cursor mcp failed:', e);
+          }
+        }
       }
       // Non-Junie: seed memory only; project `.mcp.json` is injected after `initialize`.
       client = await AcpClient.spawn(lane.backendId, this.projectDir, seedMcp, junieMcpLocation);
@@ -2479,15 +2500,18 @@ export class AcpHarnessView implements ContentView {
     // ACP would duplicate every entry. Pi has no MCP host at all (by design),
     // so the bridge has nowhere to land for Pi-1.
     // Junie loads MCP via `--mcp-location` overlay; session/new mcpServers is a no-op.
+    // Cursor ignores session/new mcpServers entirely (upstream regression); it
+    // gets the harness memory server via native `.cursor/mcp.json` at spawn time.
     // OMP native-loads root `.mcp.json` in ACP mode but still accepts injected
     // harness memory servers, so skip only the project bridge.
     if (
       lane.backendId === 'claude' ||
       lane.backendId === 'pi-acp' ||
       lane.backendId === 'junie' ||
+      lane.backendId === 'cursor' ||
       lane.backendId === 'omp'
     ) {
-      return lane.backendId === 'junie' ? [] : memoryServers;
+      return lane.backendId === 'junie' || lane.backendId === 'cursor' ? [] : memoryServers;
     }
     const projectServers = await loadProjectMcpServers(this.projectDir);
     if (projectServers.length === 0) return memoryServers;
@@ -2580,7 +2604,7 @@ export class AcpHarnessView implements ContentView {
         this.appendProviderError(lane, event.payload);
         break;
       case 'stop':
-        this.finishTurn(lane, event.stopReason);
+        this.finishTurn(lane, event.stopReason, event.reason);
         void this.refreshMemory();
         break;
       case 'error':
@@ -2763,10 +2787,14 @@ export class AcpHarnessView implements ContentView {
     return lines.join('\n');
   }
 
-  private finishTurn(lane: HarnessLane, stopReason: StopReason): void {
+  private finishTurn(lane: HarnessLane, stopReason: StopReason, reason?: string): void {
     this.sealStreaming(lane);
     if (stopReason === 'cancelled') {
-      this.appendTranscript(lane, 'system', 'turn cancelled');
+      // `reason` is set only for harness-synthesized stops (e.g. the subprocess
+      // exited mid-turn) — distinguish that from a user-initiated cancel so a
+      // dead lane never reads as "cancelled without reason". The full crash
+      // detail (stderr tail) arrives separately on the `prompt failed` line.
+      this.appendTranscript(lane, 'system', reason ? `turn ended — ${reason}` : 'turn cancelled');
     }
     lane.pendingTurnExtractions = [];
     lane.pendingPermissions = [];
@@ -2932,15 +2960,12 @@ export class AcpHarnessView implements ContentView {
 
   // ─── Directive picker (spec 124) ──────────────────────────────────────────
 
-  /** Directives ordered for the picker: compatible+enabled first, then the
-   * rest (disabled or backend-incompatible), each tagged with compatibility. */
-  private orderedDirectivesFor(lane: HarnessLane): { directive: HarnessDirective; compatible: boolean }[] {
-    const rows = this.directives.map((directive) => ({
-      directive,
-      compatible: this.directiveCompatible(directive, lane),
-    }));
-    rows.sort((a, b) => Number(b.compatible) - Number(a.compatible));
-    return rows;
+  /** Directives ordered for the spawn picker: enabled first, then disabled.
+   * The picker always spawns a fresh lane using each directive's own backend,
+   * so backend compatibility with the focused lane does not apply here — it is
+   * only enforced when assigning a directive to an existing lane (MCP). */
+  private pickerDirectives(): HarnessDirective[] {
+    return [...this.directives].sort((a, b) => Number(b.enabled) - Number(a.enabled));
   }
 
   private async openDirectivePicker(): Promise<void> {
@@ -2959,11 +2984,11 @@ export class AcpHarnessView implements ContentView {
     this.memoryDrawerOpen = false;
     this.directivePickerOpen = true;
     // Start the cursor on the lane's current directive when present.
-    const ordered = this.orderedDirectivesFor(lane);
+    const ordered = this.pickerDirectives();
     const currentId = lane.pendingDirectiveChange
       ? lane.pendingDirectiveChange.directiveId
       : lane.activeDirectiveId;
-    const idx = ordered.findIndex((r) => r.directive.id === currentId);
+    const idx = ordered.findIndex((d) => d.id === currentId);
     this.directivePickerCursor = idx >= 0 ? idx : 0;
     this.render();
   }
@@ -3012,7 +3037,7 @@ export class AcpHarnessView implements ContentView {
       this.closeDirectivePicker();
       return;
     }
-    const ordered = this.orderedDirectivesFor(lane);
+    const ordered = this.pickerDirectives();
     const total = ordered.length;
     if (e.key === 'Escape' || e.key === 'q') {
       this.closeDirectivePicker();
@@ -3035,14 +3060,14 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (e.key === 'Enter') {
-      const row = ordered[this.directivePickerCursor];
-      if (!row) return;
-      if (!row.directive.enabled) {
+      const directive = ordered[this.directivePickerCursor];
+      if (!directive) return;
+      if (!directive.enabled) {
         this.flashChip('directive disabled');
         return;
       }
       this.closeDirectivePicker();
-      void this.addLaneFromDirective(row.directive);
+      void this.addLaneFromDirective(directive);
     }
   }
 
@@ -3529,6 +3554,12 @@ export class AcpHarnessView implements ContentView {
       });
     }
     lane.junieMcpOverlayDir = null;
+    if (lane.backendId === 'cursor' && lane.cursorMcpNames?.length && this.projectDir) {
+      void cleanupCursorMcp(this.projectDir, lane.cursorMcpNames).catch((e) => {
+        console.warn('[acp-harness] cleanup cursor mcp failed:', e);
+      });
+    }
+    lane.cursorMcpNames = null;
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
     this.mcpStatsByLane.delete(lane.displayName);
@@ -4399,24 +4430,19 @@ export class AcpHarnessView implements ContentView {
       this.directivePickerEl.innerHTML = '';
       return;
     }
-    const ordered = this.orderedDirectivesFor(lane);
+    const ordered = this.pickerDirectives();
     const total = ordered.length;
     const cursor = total === 0 ? 0 : Math.max(0, Math.min(this.directivePickerCursor, total - 1));
     const currentId = lane.pendingDirectiveChange
       ? lane.pendingDirectiveChange.directiveId
       : lane.activeDirectiveId;
     const rows = ordered
-      .map((row, i) => {
-        const d = row.directive;
+      .map((d, i) => {
         const active = i === cursor ? ' acp-harness__directive-row--active' : '';
-        const state = !d.enabled
-          ? ' acp-harness__directive-row--disabled'
-          : !row.compatible
-            ? ' acp-harness__directive-row--incompatible'
-            : '';
+        const state = d.enabled ? '' : ' acp-harness__directive-row--disabled';
         const assigned = d.id === currentId ? '<span class="acp-harness__directive-assigned">assigned</span>' : '';
         const scope = [d.backend || 'all backends', d.task].filter(Boolean).join(' · ');
-        const badge = !d.enabled ? 'disabled' : !row.compatible ? 'incompatible' : '';
+        const badge = d.enabled ? '' : 'disabled';
         const badgeEl = badge ? `<span class="acp-harness__directive-badge">${esc(badge)}</span>` : '';
         const logoCls = d.backend === ''
           ? 'all'
@@ -4440,7 +4466,7 @@ export class AcpHarnessView implements ContentView {
         );
       })
       .join('');
-    const selected = ordered[cursor]?.directive;
+    const selected = ordered[cursor];
     const preview = selected
       ? `<div class="acp-harness__directive-preview">${esc(selected.system_prompt || '(empty prompt)')}</div>`
       : '';

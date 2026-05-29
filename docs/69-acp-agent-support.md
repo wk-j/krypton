@@ -75,7 +75,7 @@ ACP backends are code-defined, not configured in `krypton.toml`.
 | `opencode` | `opencode acp` + `session/set_config_option model=zai-coding-plan/glm-5.1` |
 | `pi-acp` | `pi-acp` |
 | `droid` | `droid exec --output-format acp` |
-| `cursor` | `cursor-agent acp` |
+| `cursor` | `cursor-agent acp` (harness MCP via native `.cursor/mcp.json` + `mcp enable`, not `session/new`) |
 | `junie` | `junie --acp true` |
 | `omp` | `omp acp` |
 

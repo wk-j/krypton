@@ -224,6 +224,8 @@ pub fn run() {
             acp::write_junie_mcp_overlay,
             acp::remove_junie_mcp_overlay,
             acp::gc_junie_mcp_overlays,
+            acp::prepare_cursor_mcp,
+            acp::cleanup_cursor_mcp,
             pencil::read_pencil_file,
             pencil::write_pencil_file,
             pencil::rename_pencil_file,

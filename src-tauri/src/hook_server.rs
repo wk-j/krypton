@@ -659,6 +659,7 @@ async fn handle_bus_tool_call(
         "directive_list" => directive_list(),
         "directive_preview" => directive_preview(arguments),
         "directive_apply" => directive_apply(state, harness_id, lane_label, arguments).await,
+        "directive_remove" => directive_remove(state, harness_id, lane_label, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -1261,6 +1262,71 @@ fn reply_approved(reply: &Value) -> bool {
         .unwrap_or(false)
 }
 
+/// Delete a reusable directive from `acp-harness.toml`. Shared by
+/// `directive_apply({ action: "delete" })` and the dedicated `directive_remove`
+/// tool.
+async fn directive_delete(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    directive_id: &str,
+    reason: String,
+) -> Result<Value, String> {
+    use crate::acp_harness_config as dir;
+
+    let directive_id = directive_id.trim().to_string();
+    // Pre-check against the snapshot the user is about to be shown so we don't
+    // surface an approval card for a missing directive.
+    {
+        let preview_cfg = dir::load()?;
+        if !preview_cfg.directives.iter().any(|d| d.id == directive_id) {
+            return Err(format!("no directive '{directive_id}'"));
+        }
+    }
+    let reply = directive_round_trip(
+        state,
+        harness_id,
+        from_lane,
+        json!({
+            "action": "delete",
+            "directive_id": directive_id,
+            "reason": reason,
+        }),
+    )
+    .await?;
+    if reply_approved(&reply) {
+        // Reload after approval so concurrent edits during the wait are not
+        // clobbered. `delete_directive` returns false if the directive was
+        // already removed externally — that's fine; we still save the latest
+        // config.
+        let mut cfg = dir::load()?;
+        let deleted = dir::delete_directive(&mut cfg, &directive_id);
+        dir::save(&cfg)?;
+        state.app_handle.emit_or_log(
+            "acp-harness-directives-changed",
+            json!({ "harnessId": harness_id }),
+        );
+        Ok(json!({ "action": "delete", "approval": "approved", "deleted": deleted }))
+    } else {
+        Ok(json!({ "action": "delete", "approval": "rejected", "deleted": false }))
+    }
+}
+
+async fn directive_remove(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let directive_id = required_string(&arguments, "directive_id")?;
+    let reason = arguments
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    directive_delete(state, harness_id, from_lane, &directive_id, reason).await
+}
+
 async fn directive_apply(
     state: &HookServerState,
     harness_id: &str,
@@ -1333,42 +1399,7 @@ async fn directive_apply(
         }
         "delete" => {
             let directive_id = required_string(&arguments, "directive_id")?;
-            let directive_id = directive_id.trim().to_string();
-            // Pre-check against the snapshot the user is about to be shown so
-            // we don't surface an approval card for a missing directive.
-            {
-                let preview_cfg = dir::load()?;
-                if !preview_cfg.directives.iter().any(|d| d.id == directive_id) {
-                    return Err(format!("directive_apply: no directive '{directive_id}'"));
-                }
-            }
-            let reply = directive_round_trip(
-                state,
-                harness_id,
-                from_lane,
-                json!({
-                    "action": "delete",
-                    "directive_id": directive_id,
-                    "reason": reason,
-                }),
-            )
-            .await?;
-            if reply_approved(&reply) {
-                // Reload after approval so concurrent edits during the wait
-                // are not clobbered. `delete_directive` returns false if the
-                // directive was already removed externally — that's fine; we
-                // still save the (unchanged) latest config.
-                let mut cfg = dir::load()?;
-                let deleted = dir::delete_directive(&mut cfg, &directive_id);
-                dir::save(&cfg)?;
-                state.app_handle.emit_or_log(
-                    "acp-harness-directives-changed",
-                    json!({ "harnessId": harness_id }),
-                );
-                Ok(json!({ "action": "delete", "approval": "approved", "deleted": deleted }))
-            } else {
-                Ok(json!({ "action": "delete", "approval": "rejected", "deleted": false }))
-            }
+            directive_delete(state, harness_id, from_lane, &directive_id, reason).await
         }
         "assign" => {
             // Frontend owns runtime lane state; it validates compatibility,
@@ -1623,7 +1654,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "directive_apply",
-            "description": "Create/update (upsert), delete, or assign a directive. Use only when the user asks you to manage directives. `upsert` and `delete` mutate persistent config and require user approval; `assign` binds a directive to a lane at runtime (same-lane assignment is auto-approved, cross-lane requires approval). Returns the approval outcome. After calling for a change that needs approval, expect the result to reflect the user's decision.",
+            "description": "Create/update (upsert), delete, or assign a directive. Use only when the user asks you to manage directives. `upsert` and `delete` mutate persistent config and require user approval; `assign` binds a directive to a lane at runtime (same-lane assignment is auto-approved, cross-lane requires approval). Returns the approval outcome. After calling for a change that needs approval, expect the result to reflect the user's decision. Prefer `directive_remove` when deleting a single directive.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1648,6 +1679,18 @@ fn bus_tool_descriptors() -> Value {
                     "reason": { "type": "string", "description": "Short reason shown to the user on the approval card." }
                 },
                 "required": ["action", "reason"]
+            }
+        },
+        {
+            "name": "directive_remove",
+            "description": "Remove a reusable directive from acp-harness.toml. Use only when the user asks you to delete/remove a directive. Requires user approval before the config is changed. Returns `{ action: \"delete\", approval, deleted }`.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directive_id": { "type": "string" },
+                    "reason": { "type": "string", "description": "Short reason shown to the user on the approval card." }
+                },
+                "required": ["directive_id", "reason"]
             }
         }
     ])

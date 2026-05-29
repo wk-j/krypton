@@ -94,6 +94,12 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
             "cursor",
             AcpBackend {
                 command: "cursor-agent".to_string(),
+                // cursor-agent ignores MCP servers passed via ACP `session/new`
+                // (regressed upstream ~2026.05.27; `2026.05.20` honored them) and
+                // `--approve-mcps` has NO effect in ACP mode — it only auto-approves
+                // in `--print`/headless. So the harness memory server is delivered
+                // through `<project>/.cursor/mcp.json` + `cursor-agent mcp enable`
+                // (see prepare_cursor_mcp); no extra spawn args beyond the subcommand.
                 args: vec!["acp".to_string()],
                 display_name: "Cursor".to_string(),
             },
@@ -196,6 +202,10 @@ struct AcpClient {
     acp_session_id: RwLock<Option<String>>,
     /// Rolling stderr capture (max 64KB) — surfaced on startup failure.
     stderr_buf: Mutex<String>,
+    /// Reason a request's reply never arrived: set when the subprocess
+    /// disconnects mid-flight so `request()` can report the real cause
+    /// (a stderr tail when captured) instead of a bare "closed before reply".
+    disconnect_reason: RwLock<Option<String>>,
     /// Holds the child handle so we can SIGTERM/SIGKILL it; None after dispose.
     child: Mutex<Option<Child>>,
     /// PID of the spawned adapter, set right after `cmd.spawn()`. 0 = unset
@@ -230,6 +240,7 @@ impl AcpClient {
             agent_capabilities: RwLock::new(None),
             acp_session_id: RwLock::new(None),
             stderr_buf: Mutex::new(String::new()),
+            disconnect_reason: RwLock::new(None),
             child: Mutex::new(None),
             child_pid: AtomicU32::new(0),
             cwd: RwLock::new(None),
@@ -266,7 +277,16 @@ impl AcpClient {
                     Ok(v.get("result").cloned().unwrap_or(Value::Null))
                 }
             }
-            Err(_) => Err(format!("{method}: subprocess closed before reply")),
+            Err(_) => {
+                // The oneshot was dropped without a reply — almost always
+                // `finalize_disconnect` clearing `pending` after the subprocess
+                // went away. Surface the captured cause if it set one.
+                let detail = self.disconnect_reason.read().ok().and_then(|g| g.clone());
+                match detail {
+                    Some(reason) => Err(format!("{method}: {reason}")),
+                    None => Err(format!("{method}: subprocess closed before reply")),
+                }
+            }
         }
     }
 
@@ -702,6 +722,15 @@ fn handle_notification(client: &Arc<AcpClient>, app: &AppHandle, method: &str, p
 }
 
 async fn finalize_disconnect(client: &Arc<AcpClient>, app: &AppHandle) {
+    // Capture *why* the subprocess went away before waking the in-flight
+    // requests, so each reports the real cause instead of a bare "closed
+    // before reply". The write must land BEFORE `pending.clear()`: dropping a
+    // oneshot sender is what wakes its awaiting `request()`, so the reason has
+    // to be visible by the time the read side observes the drop.
+    let detail = disconnect_detail(&client.backend_id, &client.stderr_snapshot().await);
+    if let Ok(mut slot) = client.disconnect_reason.write() {
+        *slot = Some(detail.clone());
+    }
     // Cancel all pending request oneshots.
     {
         let mut pending = client.pending.lock().await;
@@ -1492,7 +1521,149 @@ pub fn gc_junie_mcp_overlays(harness_id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// spec 113 rev — Cursor native MCP delivery.
+///
+/// cursor-agent (verified `2026.05.28-a70ca7c`) silently ignores MCP servers
+/// passed through ACP `session/new` `mcpServers` — both stdio and http — even
+/// though it advertises `mcpCapabilities`. It honored them on `2026.05.20` but
+/// regressed upstream. `--approve-mcps` has no effect in ACP mode either. The
+/// only working path is native config: write the servers into
+/// `<project_dir>/.cursor/mcp.json` and add each to cursor's per-project
+/// approved list via `cursor-agent mcp enable <name>` (without approval the
+/// server stays "needs approval" and never connects in ACP mode).
+///
+/// Merges into any existing `.cursor/mcp.json`, preserving the user's entries.
+/// Returns the krypton server names written so the lane can remove them on
+/// close. `mcp enable` failures are logged, not fatal (the lane still spawns).
+#[tauri::command]
+pub async fn prepare_cursor_mcp(
+    project_dir: String,
+    servers: Value,
+) -> Result<Vec<String>, String> {
+    let dir = std::path::Path::new(&project_dir).join(".cursor");
+    let path = dir.join("mcp.json");
+
+    let mut root: Value = if path.exists() {
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .filter(|v| v.is_object())
+            .unwrap_or_else(|| json!({}))
+    } else {
+        json!({})
+    };
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "internal: root not object".to_string())?;
+    let mcp = obj
+        .entry("mcpServers".to_string())
+        .or_insert_with(|| json!({}));
+    if !mcp.is_object() {
+        *mcp = json!({});
+    }
+    let mcp_obj = mcp.as_object_mut().unwrap();
+
+    let mut names = Vec::new();
+    if let Some(incoming) = servers.as_object() {
+        for (name, cfg) in incoming {
+            mcp_obj.insert(name.clone(), cfg.clone());
+            names.push(name.clone());
+        }
+    }
+
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty).map_err(|e| format!("write {}: {e}", path.display()))?;
+
+    // Pre-approve each server: native approval is the only ACP-mode path that
+    // makes cursor actually connect. Same env/cwd as the lane spawn so the
+    // per-project approval slug matches.
+    for name in &names {
+        let result = Command::new("cursor-agent")
+            .args(["mcp", "enable", name])
+            .envs(crate::pty::cached_login_env().iter())
+            .current_dir(&project_dir)
+            .output()
+            .await;
+        match result {
+            Ok(o) if o.status.success() => {}
+            Ok(o) => log::warn!(
+                "cursor-agent mcp enable {name} failed: {}",
+                String::from_utf8_lossy(&o.stderr).trim()
+            ),
+            Err(e) => log::warn!("cursor-agent mcp enable {name} did not run: {e}"),
+        }
+    }
+    Ok(names)
+}
+
+/// Remove the krypton-injected servers from `<project_dir>/.cursor/mcp.json` on
+/// Cursor lane close, preserving the user's own entries. Deletes the file only
+/// when it is exactly the `{"mcpServers":{}}` we would have created.
+#[tauri::command]
+pub fn cleanup_cursor_mcp(project_dir: String, names: Vec<String>) -> Result<(), String> {
+    let path = std::path::Path::new(&project_dir)
+        .join(".cursor")
+        .join("mcp.json");
+    if !path.exists() {
+        return Ok(());
+    }
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return Ok(());
+    };
+    let Ok(mut root) = serde_json::from_str::<Value>(&content) else {
+        return Ok(());
+    };
+    let Some(obj) = root.as_object_mut() else {
+        return Ok(());
+    };
+    if let Some(mcp) = obj.get_mut("mcpServers").and_then(|m| m.as_object_mut()) {
+        for name in &names {
+            mcp.remove(name);
+        }
+    }
+    let mcp_empty = obj
+        .get("mcpServers")
+        .and_then(|m| m.as_object())
+        .map(|m| m.is_empty())
+        .unwrap_or(true);
+    if obj.len() == 1 && mcp_empty {
+        let _ = std::fs::remove_file(&path);
+        return Ok(());
+    }
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty).map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(())
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────
+
+/// Last `max_chars` characters of a stderr capture, char-boundary safe. The
+/// tail is where adapters print panics / fatal errors right before exit.
+fn stderr_tail(stderr: &str, max_chars: usize) -> String {
+    stderr
+        .chars()
+        .rev()
+        .take(max_chars)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
+}
+
+/// Human-facing reason for a mid-flight subprocess disconnect. Prefers the tail
+/// of captured stderr; falls back to a generic notice when nothing was caught.
+fn disconnect_detail(backend_id: &str, stderr: &str) -> String {
+    let trimmed = stderr.trim();
+    if trimmed.is_empty() {
+        format!("{backend_id} subprocess exited before replying (no stderr captured)")
+    } else {
+        format!(
+            "{backend_id} subprocess exited — {}",
+            stderr_tail(trimmed, 1024)
+        )
+    }
+}
 
 fn startup_hint(backend_id: &str, stderr: &str) -> String {
     let s = stderr.to_lowercase();
@@ -1598,21 +1769,29 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
     if stderr.is_empty() {
         format!("Adapter `{backend_id}` failed to start.")
     } else {
-        let tail: String = stderr
-            .chars()
-            .rev()
-            .take(2048)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        tail
+        stderr_tail(stderr, 2048)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::startup_hint;
+    use super::{disconnect_detail, startup_hint};
+
+    #[test]
+    fn disconnect_detail_surfaces_stderr_tail() {
+        let detail = disconnect_detail("codex", "thread 'main' panicked at 'boom'\n");
+        assert!(detail.starts_with("codex subprocess exited — "));
+        assert!(detail.contains("panicked at 'boom'"));
+    }
+
+    #[test]
+    fn disconnect_detail_falls_back_when_no_stderr() {
+        let detail = disconnect_detail("codex", "   \n  ");
+        assert_eq!(
+            detail,
+            "codex subprocess exited before replying (no stderr captured)"
+        );
+    }
 
     #[test]
     fn cursor_startup_hint_prefers_keychain_error_over_auth_hint() {

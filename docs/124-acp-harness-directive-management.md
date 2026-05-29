@@ -40,7 +40,7 @@ Prototype: [`docs/prototypes/124-acp-harness-directive-management.html`](prototy
 |------|--------|
 | `src-tauri/src/acp_harness_config.rs` | New module for loading, validating, and saving `acp-harness.toml`, plus directive mutation helpers used by MCP. |
 | `src-tauri/src/lib.rs` / `main.rs` | Register new Tauri commands and module. |
-| `src-tauri/src/commands.rs` / `src-tauri/src/hook_server.rs` | Add `directive_list`, `directive_preview`, and `directive_apply` bus tools to the existing lane-scoped `krypton-harness-bus` MCP endpoint. Read-only tools answer from Rust; `assign` and persistent `upsert`/`delete` block on a frontend round-trip (same pattern as `peer_send`). |
+| `src-tauri/src/commands.rs` / `src-tauri/src/hook_server.rs` | Add `directive_list`, `directive_preview`, `directive_remove`, and `directive_apply` bus tools to the existing lane-scoped `krypton-harness-bus` MCP endpoint. Read-only tools answer from Rust; `assign` and persistent `upsert`/`delete` block on a frontend round-trip (same pattern as `peer_send`). |
 | `src/config.ts` | Add frontend types and helpers for `AcpHarnessUserConfig`. |
 | `src/input-router.ts` | Add the focused Harness leader binding (`Cmd+P → R`) through the existing focused-leader mechanism. No new global `Mode`. |
 | `src/acp/acp-harness-view.ts` | Load directives, handle the directive picker as an internal overlay (same pattern as the lane picker / memory drawer), bind selected directives to lanes at runtime, render directive audit cards, apply active directive in prompt blocks, answer directive MCP round-trips, and support directive mutation events. |
@@ -143,6 +143,7 @@ Directive bus tools exposed on the existing lane-scoped `krypton-harness-bus` MC
 ```ts
 directive_list(): { directives: HarnessDirectiveSummary[] };
 directive_preview({ directive_id, sample_user_text? }): { text: string; estimated_tokens?: number };
+directive_remove({ directive_id, reason }): { action: 'delete'; approval: 'approved' | 'rejected'; deleted: boolean };
 directive_apply({
   action: 'upsert' | 'delete' | 'assign',
   directive?: HarnessDirective,
@@ -163,6 +164,7 @@ directive_apply({
 **Ownership and the approval gate.** The bus MCP tools execute inside Krypton's Rust HTTP handler (`handle_bus_tool_call`) the moment the endpoint is hit. The ACP `session/request_permission` flow is backend-initiated and not every adapter raises it before calling an MCP tool, so it cannot gate a persistent config write. Directive tools therefore split by ownership:
 
 - `directive_list` and `directive_preview` are read-only. Rust answers them directly from the loaded `acp-harness.toml` (like `memory_list` / `memory_get`). `approval: "auto"`.
+- `directive_remove({ directive_id, reason })` deletes a reusable directive from persistent config. It is a dedicated alias for `directive_apply({ action: "delete", ... })` and follows the same approval gate and return shape.
 - `directive_apply({ action: "assign" })` mutates **frontend runtime lane state** (`activeDirectiveId`, etc.), which Rust does not own. The handler blocks on a frontend round-trip (the `peer_send` pattern: emit an event, await the coordinator's reply with a timeout). The frontend validates backend/enabled compatibility against live lane state, applies the binding, and returns `assigned`/`lane`. Same-lane assignment (omitted `lane` = caller's lane) resolves with `approval: "auto"`; cross-lane assignment requires explicit user approval in the frontend round-trip and returns `approved` or `rejected`.
 - `directive_apply({ action: "upsert" | "delete" })` mutates **persistent config**. Rust validates the payload up front and rejects malformed input as a tool error before any round-trip, so the approval card only ever shows a valid proposal. The handler then blocks on the same frontend round-trip so the user sees the approval card and decides before Rust writes the file. On approval Rust writes atomically and returns the normalized directive; on rejection nothing is written and the tool returns `approval: "rejected"`. This is a real gate, not a best-effort one that depends on the backend choosing to ask.
 - For `directive_apply({ action: "assign" })`, omitted `lane` means the caller's own lane and omitted `scope` means `"lane"`.
@@ -230,7 +232,7 @@ Assignment scope behavior:
 
 The keyboard path to open the picker is `Cmd+P → .`. Note: spec originally proposed `R`, but every letter is a reserved global leader key and `/` `;` `?` are taken by the markdown/pencil views, so `.` is the free non-reserved key. The composer directive chip is a visible status indicator and a mouse click target, not a keyboard focus target (the composer keeps text focus, and `Tab` continues to cycle lane tabs).
 
-Directive Management does not add custom composer commands in v1. Users primarily pick predefined directives from the workspace directive picker. Users can also ask an active lane in normal language to inspect, create, update, delete, or assign directives; the lane performs that work through `directive_list`, `directive_preview`, and `directive_apply`. Multi-lane coordination continues to use the existing `peer_send` tool only.
+Directive Management does not add custom composer commands in v1. Users primarily pick predefined directives from the workspace directive picker. Users can also ask an active lane in normal language to inspect, create, update, delete, or assign directives; the lane performs that work through `directive_list`, `directive_preview`, `directive_remove`, and `directive_apply`. Multi-lane coordination continues to use the existing `peer_send` tool only.
 
 Implementation adds the directive picker as an internal harness overlay handled inside `AcpHarnessView.onKeyDown` — the same way the existing lane picker (`handlePickerKey`) and memory drawer are handled — **not** as a global `input-router` `Mode`. Opening the picker closes other harness overlays, captures keys for the picker list, and blocks composer text input until `Enter`, `Backspace`, or `Esc` resolves it. `input-router` only contributes the focused-leader binding `Cmd+P → R`, registered through the same focused-leader mechanism as `Cmd+P → +/_/=/0`.
 
@@ -239,7 +241,7 @@ Implementation adds the directive picker as an internal harness overlay handled 
 Keep UI minimal:
 
 - Composer status line shows a compact selectable chip: `directive codex-implementation` or `directive none`.
-- Directive picker lists predefined directives from `acp-harness.toml` in a flat list: compatible enabled directives first, then disabled or incompatible directives.
+- Directive picker lists predefined directives from `acp-harness.toml` in a flat list: enabled directives first, then disabled ones. The picker always spawns a fresh lane using the directive's own backend, so it does not flag directives as backend-incompatible against the focused lane — compatibility is only enforced when the MCP `directive_apply` `assign` action attaches a directive to an existing lane.
 - Picker rows show a directive icon, title, id, backend/task, enabled state, and a one-line description.
 - Lane rail entries (zen mode) read `directive.task` as a second signal: a small role tag chip (`analysis` / `review` / `impl` / `plan` / `explore`, or the raw lowercased `task` for custom values, or the literal `custom` when empty) appears on the meta line alongside the rail-trimmed directive title and a backend logo before the lane name (spec 125). The picker still surfaces the full `title` and the user-defined `icon`; `task` is unchanged in storage and in `peer_list` / `activeDirective.task`.
 - Picker detail pane previews the injected directive block before assignment and may show `estimated_tokens` when available.

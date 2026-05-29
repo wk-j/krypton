@@ -320,6 +320,23 @@ export async function removeJunieMcpOverlay(harnessId: string, laneLabel: string
   await invoke('remove_junie_mcp_overlay', { harnessId, laneLabel });
 }
 
+/** spec 113 rev — cursor-agent ignores ACP `session/new` mcpServers (upstream
+ *  regression), so the Cursor lane gets its harness servers through native
+ *  `<projectDir>/.cursor/mcp.json` + `cursor-agent mcp enable`. Merges into any
+ *  existing file; returns the server names written (for cleanup on lane close). */
+export async function prepareCursorMcp(
+  projectDir: string,
+  servers: AcpMcpServerDescriptor[],
+): Promise<string[]> {
+  const file = toClaudeMcpFile(servers);
+  return invoke<string[]>('prepare_cursor_mcp', { projectDir, servers: file.mcpServers ?? {} });
+}
+
+/** Remove the krypton-injected entries from `<projectDir>/.cursor/mcp.json`. */
+export async function cleanupCursorMcp(projectDir: string, names: string[]): Promise<void> {
+  await invoke('cleanup_cursor_mcp', { projectDir, names });
+}
+
 export async function gcJunieMcpOverlays(harnessId: string): Promise<void> {
   await invoke('gc_junie_mcp_overlays', { harnessId });
 }
