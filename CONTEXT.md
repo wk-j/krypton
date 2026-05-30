@@ -16,6 +16,10 @@ _Avoid_: pane (a pane is a split *inside* a window), tab
 One ACP agent session inside the harness. Carries a `HarnessLaneStatus` (`starting | idle | busy | needs_permission | awaiting_peer | error | stopped`), an inbox, and optionally a bound directive.
 _Avoid_: agent (ambiguous — could mean the backend process or the pi-agent), thread
 
+**HTML artifact**:
+A browser-rendered, possibly interactive HTML view a lane hands to the human: the lane writes it to a harness-issued path under `.krypton/artifacts/` and registers it, and the human opens it on demand in the OS browser. A live, editable file — the lane may iterate on it across turns — not an immutable snapshot. An opt-in, ephemeral deliverable a lane *chooses* to emit (normally swept on harness close; stale leftovers swept on startup) — never the harness's default output format. Distinct from the lane's transcript text and from tool output.
+_Avoid_: prototype (a `docs/prototypes/*.html` is an author-side design mockup committed to this repo, not a lane-registered artifact), preview, output (a lane's ordinary turn text is its output; an artifact is a separate registered thing)
+
 ### Attention
 
 **Attention triage**:

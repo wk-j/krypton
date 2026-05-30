@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Harness HTML Artifacts · UI Prototype</title>
+<style>
+:root {
+  --bg: #050810;
+  --bg-rail: #0a0f1a;
+  --bg-panel: #07101a;
+  --bg-card: #08121e;
+  --fg: #d7e7f0;
+  --fg-dim: #6a7d8a;
+  --fg-faint: #3f4f5a;
+  --accent-cyan: #5fd9d9;
+  --border: #14222e;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+
+  /* mirrored from src/styles/acp-harness.css */
+  --st-busy: #5fd9d9;
+  --st-idle: rgba(216, 232, 216, 0.48);
+  --warn-fg: rgba(255, 196, 140, 0.85);
+  --warn-bd: rgba(255, 170, 102, 0.55);
+  --del-fg: #e8737b;
+  --add-fg: #7fd9c0;
+
+  /* artifact accent — its own kind, distinct from memory/peer/tool */
+  --art-fg: #8fd0ff;
+  --art-bd: rgba(143, 208, 255, 0.42);
+}
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-mono); font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1080px; margin: 0 auto; padding: 32px 28px 64px; }
+
+.header { margin-bottom: 24px; }
+.header h1 { margin: 0 0 6px; font-size: 14px; font-weight: 400; letter-spacing: 0.08em; color: var(--accent-cyan); }
+.header p { margin: 2px 0; color: var(--fg-dim); font-size: 12px; }
+.header .ref { color: var(--fg-faint); }
+
+.section { margin: 34px 0 0; }
+.section > h2 { margin: 0 0 4px; font-size: 12px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-cyan); }
+.section > .desc { margin: 0 0 16px; color: var(--fg-dim); font-size: 12px; max-width: 84ch; line-height: 1.55; }
+.tag { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 2px; font-size: 10px; letter-spacing: 0.08em; vertical-align: middle; }
+.tag--ships { border: 1px solid color-mix(in oklab, var(--st-busy) 45%, transparent); color: var(--st-busy); }
+code { color: var(--fg-dim); }
+
+/* ── transcript surface ── */
+.transcript {
+  background: var(--bg-rail); border: 1px solid var(--border); border-radius: 4px;
+  max-width: 760px; overflow: hidden;
+}
+.lane-head {
+  height: 30px; display: grid; grid-template-columns: 2ch max-content max-content 1fr; align-items: center;
+  gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border);
+}
+.lane-symbol { color: var(--st-idle); } .lane-symbol.busy { color: var(--st-busy); }
+.lane-name.accent-claude { color: #c79bff; } .lane-name.accent-codex { color: #7fd9c0; }
+.lane-status { color: rgba(216,232,216,0.5); font-size: 0.72em; letter-spacing: 0.06em; text-transform: uppercase; }
+
+.rows { padding: 8px 0; }
+.row { padding: 4px 14px; line-height: 1.5; }
+.row.assistant { color: rgba(215,231,240,0.82); font-size: 0.92em; }
+.row.assistant .who { color: #c79bff; }
+
+/* generic tool card (shown for contrast) */
+.tool {
+  margin: 6px 14px; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--bg-card);
+}
+.tool__head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: 0.84em; color: var(--fg-dim); border-bottom: 1px solid var(--border); }
+.tool__kind { color: var(--fg-faint); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.82em; }
+.tool__path { color: rgba(216,232,216,0.78); }
+.tool__meta { margin-left: auto; color: var(--fg-faint); font-size: 0.92em; }
+.tool__diff { padding: 6px 10px; font-size: 0.82em; line-height: 1.45; white-space: pre; overflow-x: auto; }
+.tool__diff .add { color: var(--add-fg); } .tool__diff .del { color: var(--del-fg); } .tool__diff .ctx { color: var(--fg-faint); }
+.tool--redacted .tool__head { border-bottom: none; }
+.redact-note { padding: 4px 10px 6px; font-size: 0.78em; color: var(--fg-faint); }
+.redact-note b { color: var(--warn-fg); font-weight: 400; }
+
+/* ── the artifact card ── */
+.art {
+  margin: 8px 14px; border: 1px solid var(--art-bd); border-left-width: 2px; border-radius: 3px;
+  background: color-mix(in oklab, var(--art-fg) 6%, var(--bg-card)); overflow: hidden;
+}
+.art__top { display: flex; align-items: center; gap: 9px; padding: 7px 10px 5px; }
+.art__glyph { color: var(--art-fg); }
+.art__title { color: var(--fg); font-size: 0.96em; }
+.art__lane { color: var(--fg-faint); font-size: 0.78em; }
+.art__lane.accent-claude { color: #c79bff; } .art__lane.accent-codex { color: #7fd9c0; }
+.art__hint {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.8em; color: var(--art-fg);
+}
+.art__hint kbd { border: 1px solid var(--art-bd); border-radius: 2px; padding: 0 5px; color: var(--art-fg); }
+.art__hint .arrow { color: var(--fg-faint); }
+.art__meta { padding: 0 10px 8px; font-size: 0.78em; color: var(--fg-faint); display: flex; gap: 12px; flex-wrap: wrap; }
+.art__meta .live { color: var(--add-fg); }
+.art__meta .path { color: var(--fg-dim); }
+.art__meta .changed { color: var(--warn-fg); }
+
+/* hint-mode label overlay */
+.art.hintmode { position: relative; }
+.hintlabel {
+  position: absolute; top: 6px; left: -7px; width: 18px; height: 18px;
+  background: var(--art-fg); color: #04121c; font-weight: 700; font-size: 11px;
+  display: flex; align-items: center; justify-content: center; border-radius: 2px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.6);
+}
+
+.legend { margin-top: 12px; font-size: 11px; color: var(--fg-faint); max-width: 760px; line-height: 1.65; }
+.legend code { color: var(--fg-dim); }
+.legend b { font-weight: 400; }
+
+.foot {
+  margin-top: 6px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px;
+  max-width: 760px; font-size: 10px; color: var(--fg-dim); letter-spacing: 0.04em; display: flex; gap: 16px; flex-wrap: wrap; background: var(--bg-rail);
+}
+.foot kbd { color: var(--accent-cyan); border: 1px solid var(--border); border-radius: 2px; padding: 0 4px; font-size: 10px; margin-right: 4px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <h1>Harness HTML Artifacts — UI Prototype</h1>
+    <p>Prototype for <span class="ref">docs/133-harness-html-artifacts.md</span> · ADR-0002 · CONTEXT.md</p>
+    <p class="ref">Krypton Dark · lane/tool classes mirror src/styles/acp-harness.css · keyboard-first, no mouse affordances</p>
+  </div>
+
+  <!-- ════════════ A · the artifact card ════════════ -->
+  <div class="section">
+    <h2>A · The artifact card in the transcript<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      When a lane calls <code>artifact_register</code>, a card lands in the transcript — its own kind, distinct
+      from tool / memory / peer rows. It shows <strong>title, lane, size + short content hash, and the issued
+      <code>.krypton/</code> path</strong>, never the HTML. The card is the only ambient affordance; it does not
+      auto-open. <code>live · editable</code> means the lane may iterate on the same file across turns.
+    </p>
+    <div class="transcript">
+      <div class="lane-head"><span class="lane-symbol busy">●</span><span class="lane-name accent-claude">Claude-1</span><span class="lane-status">idle</span><span></span></div>
+      <div class="rows">
+        <div class="row assistant"><span class="who">Claude-1</span> &nbsp;I compared the three auth-storage options side by side and built an interactive scorecard — open the artifact to flip between them.</div>
+        <div class="art">
+          <div class="art__top">
+            <span class="art__glyph">◆</span>
+            <span class="art__title">auth-storage options — scorecard</span>
+            <span class="art__lane accent-claude">Claude-1 · 2m ago</span>
+            <span class="art__hint"><kbd>f</kbd> hints <span class="arrow">↗</span> browser</span>
+          </div>
+          <div class="art__meta">
+            <span class="live">● live · editable</span>
+            <span>24.1 KB</span>
+            <span>#a3f9c1</span>
+            <span class="path">.krypton/artifacts/h1/l4f2/k3.html</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="legend">
+      <b style="color:var(--art-fg)">◆</b> artifact kind · the <code>↗</code> mark says this opens the
+      <b>OS browser</b>, not an in-app webview (ADR-0002) — the one place a hint leaves Krypton.
+      Hash + size let the card stay honest about a <em>live</em> file without ever rendering its bytes.
+      <b style="color:var(--fg-dim)">live ≠ durable</b> — the file is swept on session close (see E); the path segment (<code>l4f2</code>) is an opaque <code>laneId</code>, never the display name.
+    </p>
+  </div>
+
+  <!-- ════════════ B · hint mode ════════════ -->
+  <div class="section">
+    <h2>B · Open from hint mode — <code>f</code> labels the card<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      With several artifacts in the log, <code>f</code> overlays a label on each artifact card (the existing
+      hint label system). These are <strong>"open artifact" hints, not URL hints</strong> — they reuse the
+      labelling machinery, not the webview-opening semantics of spec 102. Press the label → that file opens
+      in the browser. Works for any card, not just the most recent.
+    </p>
+    <div class="transcript">
+      <div class="lane-head"><span class="lane-symbol busy">●</span><span class="lane-name accent-codex">Codex-1</span><span class="lane-status">busy</span><span></span></div>
+      <div class="rows">
+        <div class="art hintmode">
+          <span class="hintlabel">a</span>
+          <div class="art__top">
+            <span class="art__glyph">◆</span><span class="art__title">migration plan — annotated diff</span>
+            <span class="art__lane accent-codex">Codex-1 · 8m ago</span>
+            <span class="art__hint"><kbd>a</kbd><span class="arrow">›</span> open <span class="arrow">↗</span></span>
+          </div>
+          <div class="art__meta"><span class="live">● live</span><span>61.4 KB</span><span>#7d20ab</span><span class="path">.krypton/artifacts/h1/l9c7/k7.html</span></div>
+        </div>
+        <div class="art hintmode">
+          <span class="hintlabel">s</span>
+          <div class="art__top">
+            <span class="art__glyph">◆</span><span class="art__title">perf trace — flame view</span>
+            <span class="art__lane accent-codex">Codex-1 · 4m ago</span>
+            <span class="art__hint"><kbd>s</kbd><span class="arrow">›</span> open <span class="arrow">↗</span></span>
+          </div>
+          <div class="art__meta"><span class="live">● live</span><span>112 KB</span><span>#c41e0f</span><span class="path">.krypton/artifacts/h1/l9c7/k9.html</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="legend">Labels appear only while hint mode is active — artifact cards are never mouse targets and never steal a key in normal composer typing.</p>
+  </div>
+
+  <!-- ════════════ C · the path-handoff sequence (transcript hygiene) ════════════ -->
+  <div class="section">
+    <h2>C · How it lands — and why the transcript stays small<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      Path-handoff: <code>artifact_new</code> issues a path → the lane writes the file with its normal write
+      tool → <code>artifact_register</code> validates &amp; cards it. The HTML never travels through MCP. But the
+      lane's <strong>write tool card would still dump the HTML</strong> as a diff — so artifact-path writes are
+      <strong>redacted to path + bytes + hash</strong>. That redaction, not path-handoff alone, is what protects
+      the tail-window transcript (spec 103).
+    </p>
+    <div class="transcript">
+      <div class="lane-head"><span class="lane-symbol busy">●</span><span class="lane-name accent-claude">Claude-1</span><span class="lane-status">busy</span><span></span></div>
+      <div class="rows">
+        <!-- step 1 -->
+        <div class="tool tool--redacted">
+          <div class="tool__head"><span class="tool__kind">artifact_new</span><span class="tool__path">"auth-storage options — scorecard"</span><span class="tool__meta">auto · issued k3 → .krypton/artifacts/h1/l4f2/k3.html</span></div>
+        </div>
+        <!-- step 2 · the redacted write -->
+        <div class="tool tool--redacted">
+          <div class="tool__head"><span class="tool__kind">write</span><span class="tool__path">.krypton/artifacts/h1/l4f2/k3.html</span><span class="tool__meta">24.1 KB · #a3f9c1</span></div>
+          <div class="redact-note"><b>contents hidden</b> — artifact-path write; card shows size + hash only, never the HTML</div>
+        </div>
+        <!-- step 3 · register → card -->
+        <div class="art">
+          <div class="art__top">
+            <span class="art__glyph">◆</span><span class="art__title">auth-storage options — scorecard</span>
+            <span class="art__lane accent-claude">Claude-1 · now</span>
+            <span class="art__hint"><kbd>f</kbd> hints <span class="arrow">↗</span> browser</span>
+          </div>
+          <div class="art__meta"><span class="live">● live · editable</span><span>24.1 KB</span><span>#a3f9c1</span><span class="path">…/l4f2/k3.html</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="legend">
+      Contrast — a <em>normal</em> (non-artifact) write still shows its diff, e.g.:
+    </p>
+    <div class="tool" style="max-width:760px;">
+      <div class="tool__head"><span class="tool__kind">write</span><span class="tool__path">src/auth/store.ts</span><span class="tool__meta">+12 −3</span></div>
+      <div class="tool__diff"><span class="ctx">  hashToken(raw: string) {</span>
+<span class="add">+   return argon2id(raw, this.salt);</span>
+<span class="del">-   return sha256(raw);</span>
+<span class="ctx">  }</span></div>
+    </div>
+    <p class="legend">Only writes whose path is an <b>outstanding issued artifact path</b> (this lane, this id) are auto-approved <em>and</em> redacted — everything else keeps the normal permission + diff flow.</p>
+  </div>
+
+  <!-- ════════════ D · live edit / iteration ════════════ -->
+  <div class="section">
+    <h2>D · Iteration — the artifact is a live file<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      "Make the winning option green and add a verdict row." The lane reads <code>k3.html</code> back and edits it
+      with its ordinary edit tool — no full re-send. The same card updates in place: new size, new hash, a
+      <code>updated</code> marker. Editing is expected behaviour, so the card never pretends the bytes are frozen.
+    </p>
+    <div class="transcript">
+      <div class="lane-head"><span class="lane-symbol busy">●</span><span class="lane-name accent-claude">Claude-1</span><span class="lane-status">busy</span><span></span></div>
+      <div class="rows">
+        <div class="tool tool--redacted">
+          <div class="tool__head"><span class="tool__kind">edit</span><span class="tool__path">.krypton/artifacts/h1/l4f2/k3.html</span><span class="tool__meta">+18 −2 · now 26.8 KB · #b1f7e2</span></div>
+          <div class="redact-note"><b>contents hidden</b> — artifact-path edit; diff suppressed (still the same issued file)</div>
+        </div>
+        <div class="art">
+          <div class="art__top">
+            <span class="art__glyph">◆</span><span class="art__title">auth-storage options — scorecard</span>
+            <span class="art__lane accent-claude">Claude-1 · now</span>
+            <span class="art__hint"><kbd>f</kbd> hints <span class="arrow">↗</span> browser</span>
+          </div>
+          <div class="art__meta"><span class="live">● live · editable</span><span>26.8 KB</span><span>#b1f7e2</span><span class="changed">updated 2× this session</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="legend">The card carries one identity (<code>k3</code>) across edits; reopening <code>f</code> always serves the current file on disk.</p>
+  </div>
+
+  <!-- ════════════ E · ephemerality ════════════ -->
+  <div class="section">
+    <h2>E · Ephemeral by design<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      Artifacts live under <code>.krypton/artifacts/</code> (a self-ignoring <code>.gitignore</code> keeps them out
+      of the project's git). They are swept when the harness tab closes, and stale leftovers from a crash are swept
+      on next startup. Reopening a closed-session card just reports the file is gone — reload/bookmark is not a promise.
+    </p>
+    <div class="transcript" style="max-width:600px;">
+      <div class="rows">
+        <div class="art" style="opacity:0.6;">
+          <div class="art__top">
+            <span class="art__glyph" style="color:var(--fg-faint)">◇</span><span class="art__title" style="color:var(--fg-dim)">auth-storage options — scorecard</span>
+            <span class="art__lane accent-claude">Claude-1</span>
+            <span class="art__hint" style="color:var(--fg-faint)">swept ↵ unavailable</span>
+          </div>
+          <div class="art__meta"><span style="color:var(--fg-faint)">artifact swept on session close</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="legend">If you need it to last, it was never an artifact — it should be a committed file the lane wrote on purpose (e.g. <code>docs/</code>), which is a different, non-ephemeral act.</p>
+  </div>
+
+  <div class="foot">
+    <span><kbd>f</kbd> hint mode → label artifact cards → open in browser</span>
+    <span>artifacts: opt-in · user-opened · lane-attributed · capped · ephemeral</span>
+  </div>
+</div>
+</body>
+</html>
