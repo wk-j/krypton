@@ -36,6 +36,13 @@ Every completed turn that produced no judgement item, plus any judgement item a 
 The single ambient signal of the triage UI: a static count of open judgement items (queue depth). It exists so the human can scale the agent fleet to their own review rate — the consumer seeing the producer's backlog — *not* to announce activity. It shows depth, never live motion; it does not blink, pulse, or alert.
 _Avoid_: notification badge, alert count
 
+**Triage grant** (spec 129):
+A directive property (`triage_equipped`) that lets any lane *spawned* with that directive call `attention_flag` from its first turn — the per-lane opt-in sourced from a role rather than a keystroke. A *spawn-time default*, not live reconfiguration: flipping it does not retroactively equip a running lane.
+_Avoid_: triage permission (a manual override can supersede it, so it is a default not a hard permission), enable triage (the feature is always on; the grant is per-lane)
+
+**Manual equip** (spec 129):
+The runtime `Leader '` override of a lane's triage grant. Wins over the directive-sourced grant until the lane is closed or a new directive is assigned (which clears the override). The means to equip a lane that has no directive, or to overrule the one it carries.
+
 **Lane peek heat**:
 The existing *deterministic* score that ranks lanes by activity (tools / tokens / peer / process) plus an alert boost (error > needs_permission > pendingShell > awaiting_peer). The pre-LLM baseline that attention triage builds on or replaces.
 _Avoid_: priority, importance score

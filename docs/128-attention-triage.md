@@ -1,8 +1,34 @@
 # Attention Triage — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-05-30
 > Milestone: M8 — Polish
+
+> **Implementation notes (2026-05-30).** Two deviations from the draft, both
+> following established Krypton precedent:
+> - **Leader key.** The draft's `Leader j` ("judgement") could not be used: `j`
+>   is a `GLOBAL_LEADER_RESERVED_KEYS` entry (compositor focus-down), and the
+>   input router rejects local bindings that collide with global leader keys.
+>   Mirroring the spec-124 (`.`) and spec-127 (`,`) substitutions, the overlay
+>   is bound to **`Leader ;`** ("Triage Queue") and equip/unequip to **`Leader '`**
+>   ("Triage: Equip Lane"). Inside the overlay, `j`/`k`/`a`/`r`/`o`/`Enter`/`Esc`
+>   work exactly as the draft's overlay table specifies (raw keys, not leader-gated).
+> - **Equip persistence.** "Persisted alongside lane config" is implemented as a
+>   *runtime* per-lane toggle (`HarnessLane.triageEquipped`), matching the
+>   spec-124 directive-binding model the draft explicitly invokes (that binding is
+>   runtime, not on-disk). There is no `krypton.toml` / `acp-harness.toml` key in
+>   v1. The toggle is mirrored into the hook server for the `tools/list` gate.
+>   Caveat: because most ACP clients fetch `tools/list` once per session,
+>   equipping is most effective at/before a lane's first turn; the call-time gate
+>   is authoritative regardless.
+>
+> **Follow-up (spec 129).** That "effective at/before the first turn" caveat is
+> now *satisfiable*: a directive (spec 124) may carry `triage_equipped = true`,
+> and a lane spawned with such a directive is equipped before its first
+> `tools/list` (the Rust mirror is awaited ahead of `spawnLane`). The manual
+> `Leader '` toggle remains as a runtime override; `HarnessLane.triageEquipped`
+> is now the *effective* state, derived from the override or the bound
+> directive. See `docs/129-directive-triage-grant.md`.
 
 ## Problem
 
@@ -44,7 +70,7 @@ A per-lane opt-in **attention triage** system. A lane equipped with a new `atten
 | `src/acp/inter-lane.ts` | Redirect delivery wrapper over `enqueueSystemPrompt` (next-idle). |
 | `src/acp/acp-harness-view.ts` | Wire bus events → store; track busy→idle as silent turns into `LaneTriageStats`; status-bar gauge; leader key; mount overlay; per-lane equip toggle. |
 | `src/styles/attention-triage.css` | **New.** Overlay + gauge styles (cyberpunk; mirrors review-card patterns). |
-| `docs/PROGRESS.md`, `docs/04-architecture.md`, `docs/06-configuration.md` | Module + per-lane config. |
+| `docs/PROGRESS.md`, `docs/04-architecture.md`, `docs/06-configuration.md` | Module note + per-lane equip docs. (Equip is a runtime toggle, **not** a config-file key — `06-configuration.md` documents that explicitly; see Implementation notes above.) |
 
 ## Design
 

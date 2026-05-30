@@ -196,6 +196,10 @@ export interface HarnessDirective {
   task: string;
   system_prompt: string;
   enabled: boolean;
+  /** spec 129: spawn-time grant — a lane born with this directive is
+   * triage-equipped (may call attention_flag) from its first tools/list.
+   * A default grant, not live reconfiguration. */
+  triage_equipped: boolean;
 }
 
 export interface AcpHarnessUserConfig {

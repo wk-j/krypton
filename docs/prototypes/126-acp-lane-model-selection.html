@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ACP Lane Model Selection · Configure UI Prototype</title>
+<style>
+:root {
+  --bg: #050810;
+  --bg-rail: #0a0f1a;
+  --bg-selected: #0e1a2a;
+  --bg-panel: #07101a;
+  --fg: #d7e7f0;
+  --fg-dim: #6a7d8a;
+  --fg-faint: #3f4f5a;
+  --accent-cyan: #5fd9d9;
+  --border: #14222e;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+
+  /* chip palette — mirrored from src/styles/acp-harness.css */
+  --chip-model-fg: rgba(216, 232, 216, 0.62);
+  --chip-model-bd: rgba(216, 232, 216, 0.16);
+  --chip-mode-fg: #c77dff;
+  --chip-warn-bd: rgba(255, 170, 102, 0.55);
+  --chip-warn-fg: rgba(255, 196, 140, 0.85);
+  --chip-mcp-fg: rgba(216, 232, 216, 0.42);
+
+  /* status */
+  --st-busy: #5fd9d9;
+  --st-idle: rgba(216, 232, 216, 0.48);
+}
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page { max-width: 1100px; margin: 0 auto; padding: 32px 28px 64px; }
+
+.header { margin-bottom: 24px; }
+.header h1 {
+  margin: 0 0 6px; font-size: 14px; font-weight: 400;
+  letter-spacing: 0.08em; color: var(--accent-cyan);
+}
+.header p { margin: 2px 0; color: var(--fg-dim); font-size: 12px; }
+.header .ref { color: var(--fg-faint); }
+
+.section { margin: 34px 0 0; }
+.section > h2 {
+  margin: 0 0 4px; font-size: 12px; font-weight: 400;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-cyan);
+}
+.section > .desc { margin: 0 0 16px; color: var(--fg-dim); font-size: 12px; max-width: 78ch; }
+.tag {
+  display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 2px;
+  font-size: 10px; letter-spacing: 0.08em; vertical-align: middle;
+}
+.tag--ships { border: 1px solid color-mix(in oklab, var(--st-busy) 45%, transparent); color: var(--st-busy); }
+.tag--future { border: 1px solid color-mix(in oklab, var(--chip-mode-fg) 45%, transparent); color: var(--chip-mode-fg); }
+
+/* ── faithful lane rail ── */
+.rail {
+  background: var(--bg-rail);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  max-width: 720px;
+}
+.lane-head {
+  height: 30px;
+  display: grid;
+  grid-template-columns: 2ch max-content max-content minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.lane-head:last-child { border-bottom: none; }
+.lane-head.selected { background: var(--bg-selected); }
+.lane-head.selected::before {
+  content: ''; position: absolute; /* visual accent only */
+}
+.lane-symbol { color: var(--st-idle); }
+.lane-symbol.busy { color: var(--st-busy); }
+.lane-name {
+  color: rgba(216, 232, 216, 0.86); font-size: 0.95em;
+}
+.lane-name.accent-claude { color: #c79bff; }
+.lane-name.accent-codex { color: #7fd9c0; }
+.lane-name.accent-gemini { color: #8fb8ff; }
+.lane-name.accent-droid { color: #d9b06f; }
+.lane-status {
+  color: rgba(216, 232, 216, 0.5); font-size: 0.72em;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.lane-chips { min-width: 0; display: inline-flex; align-items: baseline; gap: 6px; overflow: hidden; }
+.lane-activity { color: rgba(216, 232, 216, 0.4); font-size: 0.8em; justify-self: end; }
+
+/* chips — faithful to acp-harness.css */
+.chip-model {
+  max-width: 24ch; overflow: hidden; text-overflow: ellipsis;
+  padding: 0 5px; border: 1px solid var(--chip-model-bd); border-radius: 2px;
+  color: var(--chip-model-fg); font-size: 0.72em; letter-spacing: 0.04em; white-space: nowrap;
+}
+.chip-model--warn {
+  border-color: var(--chip-warn-bd); color: var(--chip-warn-fg);
+}
+.chip-mode {
+  padding: 0 5px; border: 1px solid color-mix(in oklab, var(--chip-mode-fg) 35%, transparent);
+  border-radius: 2px; color: color-mix(in oklab, var(--chip-mode-fg) 88%, white 12%);
+  font-size: 0.72em; letter-spacing: 0.04em; white-space: nowrap;
+}
+.chip-mcp {
+  padding: 0 5px; border: 1px solid currentColor; border-radius: 2px;
+  color: var(--chip-mcp-fg); font-size: 0.72em; letter-spacing: 0.04em; white-space: nowrap;
+}
+
+.callout {
+  margin-top: 10px; display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px;
+  font-size: 11px; color: var(--fg-dim); max-width: 720px;
+}
+.callout .k { color: var(--accent-cyan); }
+.callout .chip-model, .callout .chip-model--warn { font-size: 11px; }
+
+/* ── config source ── */
+pre.toml {
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px;
+  padding: 14px 16px; margin: 0; max-width: 720px; overflow-x: auto;
+  font-size: 12px; line-height: 1.55; color: var(--fg);
+}
+.toml .c { color: var(--fg-faint); }
+.toml .k { color: var(--accent-cyan); }
+.toml .s { color: #d9b06f; }
+.toml .t { color: var(--chip-mode-fg); }
+.note {
+  margin-top: 10px; padding: 8px 12px; border-left: 2px solid var(--chip-warn-bd);
+  background: rgba(255, 170, 102, 0.05); color: var(--fg-dim); font-size: 11px; max-width: 706px;
+}
+.note b { color: var(--chip-warn-fg); font-weight: 400; }
+
+/* ── picker overlay ── */
+.stage {
+  position: relative; background: var(--bg-rail); border: 1px solid var(--border);
+  border-radius: 4px; height: 320px; overflow: hidden; max-width: 720px;
+}
+.stage .dim-rail { opacity: 0.28; filter: saturate(0.6); }
+.picker {
+  position: absolute; top: 36px; left: 50%; transform: translateX(-50%);
+  width: 420px; background: #06101b; border: 1px solid color-mix(in oklab, var(--accent-cyan) 38%, var(--border));
+  border-radius: 5px; box-shadow: 0 18px 50px -20px rgba(0,0,0,0.9), 0 0 0 1px rgba(95,217,217,0.06);
+  overflow: hidden;
+}
+.picker__title {
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  font-size: 11px; letter-spacing: 0.08em; color: var(--accent-cyan); text-transform: uppercase;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.picker__title .for { color: var(--fg-dim); text-transform: none; letter-spacing: 0; }
+.picker__group {
+  padding: 4px 0; border-bottom: 1px solid var(--border);
+}
+.picker__group-label {
+  padding: 4px 12px 2px; font-size: 10px; letter-spacing: 0.06em;
+  color: var(--fg-faint); text-transform: uppercase;
+}
+.opt {
+  display: grid; grid-template-columns: 16px 1fr max-content; align-items: center; gap: 8px;
+  padding: 4px 12px; font-size: 12px; color: rgba(216,232,216,0.78);
+}
+.opt .marker { color: var(--st-busy); }
+.opt .meta { color: var(--fg-faint); font-size: 10px; }
+.opt.sel { background: color-mix(in oklab, var(--accent-cyan) 12%, transparent); color: var(--fg); }
+.opt.sel .name { color: var(--accent-cyan); }
+.opt .name .alias { color: var(--fg-faint); }
+.opt.cur .meta { color: var(--st-busy); }
+.picker__foot {
+  padding: 6px 12px; font-size: 10px; color: var(--fg-dim); letter-spacing: 0.04em;
+  display: flex; gap: 14px; flex-wrap: wrap;
+}
+.picker__foot kbd {
+  color: var(--accent-cyan); border: 1px solid var(--border); border-radius: 2px;
+  padding: 0 4px; font-size: 10px; margin-right: 4px;
+}
+
+.legend { margin-top: 12px; font-size: 11px; color: var(--fg-faint); max-width: 720px; }
+.legend code { color: var(--fg-dim); }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <h1>ACP Lane Model Selection — Configure UI</h1>
+    <p>Prototype for <span class="ref">docs/126-acp-lane-model-selection.md</span>. Maps the spec's UI surfaces.</p>
+    <p class="ref">Krypton Dark · chip classes mirror src/styles/acp-harness.css · keyboard-first, no mouse affordances</p>
+  </div>
+
+  <!-- ════════════ A · Lane rail chip states (v1) ════════════ -->
+  <div class="section">
+    <h2>A · Lane rail — model chip states<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      The model chip is the only visible model surface in v1. It shows the <em>configured</em> model
+      (intent), not a confirmed-active id (<code>session/set_model</code> returns <code>{}</code>). On
+      apply failure the same chip text is kept but flagged with a warning style + tooltip — it never
+      guesses a real model. Backends that don't advertise model state show no chip.
+    </p>
+    <div class="rail">
+      <!-- claude: configured + applied OK -->
+      <div class="lane-head">
+        <span class="lane-symbol busy">●</span>
+        <span class="lane-name accent-claude">Claude-1</span>
+        <span class="lane-status">busy</span>
+        <span class="lane-chips">
+          <span class="chip-model" title="model opus">opus</span>
+          <span class="chip-mode" title="Plan mode">Plan</span>
+          <span class="chip-mcp" title="tools/list 7 · tools/call 2">mcp ✓ 2</span>
+        </span>
+        <span class="lane-activity">drafting spec…</span>
+      </div>
+      <!-- claude: apply FAILED (typo) -->
+      <div class="lane-head">
+        <span class="lane-symbol">○</span>
+        <span class="lane-name accent-claude">Claude-2</span>
+        <span class="lane-status">idle</span>
+        <span class="lane-chips">
+          <span class="chip-model chip-model--warn"
+                title='requested model "opuss" not applied — agent is using its default or prior model (session/set_model failed)'>⚠ opuss</span>
+          <span class="chip-mcp" title="tools/list 7 · tools/call 0">mcp ✓</span>
+        </span>
+        <span class="lane-activity">ready</span>
+      </div>
+      <!-- claude: no config → agent default, no chip -->
+      <div class="lane-head">
+        <span class="lane-symbol">○</span>
+        <span class="lane-name accent-claude">Claude-3</span>
+        <span class="lane-status">idle</span>
+        <span class="lane-chips">
+          <span class="chip-mcp" title="tools/list 7 · tools/call 0">mcp ✓</span>
+        </span>
+        <span class="lane-activity">ready · agent default model</span>
+      </div>
+      <!-- gemini: spawn-flag path (unchanged) -->
+      <div class="lane-head">
+        <span class="lane-symbol busy">●</span>
+        <span class="lane-name accent-gemini">Gemini-1</span>
+        <span class="lane-status">busy</span>
+        <span class="lane-chips">
+          <span class="chip-model" title="model gemini-2.0-flash · applied as --model at spawn">gemini-2.0-flash</span>
+          <span class="chip-mcp" title="tools/list 4 · tools/call 1">mcp ✓ 1</span>
+        </span>
+        <span class="lane-activity">running tool…</span>
+      </div>
+      <!-- droid -->
+      <div class="lane-head">
+        <span class="lane-symbol">○</span>
+        <span class="lane-name accent-droid">Droid-1</span>
+        <span class="lane-status">idle</span>
+        <span class="lane-chips">
+          <span class="chip-model" title="model claude-opus-4-7 · applied as -m at spawn">claude-opus-4-7</span>
+        </span>
+        <span class="lane-activity">ready</span>
+      </div>
+    </div>
+
+    <div class="callout">
+      <span class="chip-model">opus</span>
+      <span>Configured + applied (or spawn-flag backend). Dim border = normal chip.</span>
+      <span class="chip-model chip-model--warn">⚠ opuss</span>
+      <span>Configured but <span class="k">session/set_model failed</span> — amber warning, tooltip explains; lane runs default. (<code>model_apply_failed = true</code>)</span>
+      <span style="color:var(--fg-faint)">—</span>
+      <span>No <code>active</code> configured, or backend doesn't advertise model state → no chip; agent default.</span>
+    </div>
+  </div>
+
+  <!-- ════════════ B · Config source (v1) ════════════ -->
+  <div class="section">
+    <h2>B · How you configure it — krypton.toml<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      v1 is config-driven (no in-app editor). The existing <code>lane_models.&lt;backend&gt;</code>
+      table now actually takes effect for model-advertising adapters (Claude verified). Keyed by
+      <em>backend id</em>, so two concurrent <code>claude</code> lanes share one model in v1.
+    </p>
+<pre class="toml"><span class="c"># ~/.config/krypton/krypton.toml</span>
+<span class="t">[acp_harness.lane_models.claude]</span>
+<span class="k">active</span> = <span class="s">"opus"</span>          <span class="c"># the ONLY thing you set — alias or full id; adapter resolves "opus"→claude-opus-4-*</span>
+<span class="c"># models = [...]   ← OPTIONAL. You do NOT maintain a catalog: available models come from the</span>
+<span class="c">#                    agent (session/new). This array only curates/orders the future picker.</span>
+
+<span class="t">[acp_harness.lane_models.gemini]</span>
+<span class="k">active</span> = <span class="s">"gemini-2.0-flash"</span>   <span class="c"># applied as --model at spawn (unchanged path)</span>
+
+<span class="t">[acp_harness.lane_models.opencode]</span>
+<span class="k">active</span> = <span class="s">"zai-coding-plan/glm-5.1"</span>  <span class="c"># dedicated set_config_option path (unchanged)</span></pre>
+    <div class="note">
+      <b>Respawn-to-apply.</b> Editing the TOML updates the chip/config but does <b>not</b> hot-swap a
+      live lane's model. The agent model changes only on the next spawn — use <code>#new</code>,
+      <code>#new!</code>, or restart the lane. (Matches the Gemini/Droid "change model ⇒ respawn"
+      rule and the docs/83 "lane respawn is the trigger" precedent.)
+    </div>
+  </div>
+
+  <!-- ════════════ C · Interactive picker (future) ════════════ -->
+  <div class="section">
+    <h2>C · Interactive model picker<span class="tag tag--future">future — deferred per spec 126</span></h2>
+    <p class="desc">
+      <strong>Not in v1.</strong> Sketched here to show the end-state "configure" UX and to inform
+      whether to pull it forward. <strong>Trigger: leader → <code>,</code></strong> (i.e. <code>⌘P</code>
+      then <code>,</code>) — a new harness <code>LeaderKeyBinding</code> joining Add&nbsp;Lane&nbsp;<code>+</code>,
+      Metrics&nbsp;<code>=</code>, Resume&nbsp;<code>0</code>, Directives&nbsp;<code>.</code>. It can't be a
+      plain letter (all letters are reserved global leader keys) nor <code>⌃/⌘M</code> (memory drawer);
+      <code>,</code> is free and mnemonic (the settings convention). A keyboard-driven overlay populated
+      <strong>automatically from the agent-advertised <code>availableModels</code></strong>
+      (session/new response) — <strong>the user maintains no list</strong>; an optional
+      <code>lane_models.&lt;backend&gt;.models</code> array only curates/orders this live set.
+      Selecting issues a live <code>session/set_model</code> — which is why the follow-up <em>must</em>
+      handle the adapter's mode/effort/context resync &amp; visible mode downgrades that mid-session
+      switching triggers.
+    </p>
+    <div class="stage">
+      <div class="dim-rail rail" style="border:none;border-radius:0;max-width:none;">
+        <div class="lane-head">
+          <span class="lane-symbol busy">●</span>
+          <span class="lane-name accent-claude">Claude-1</span>
+          <span class="lane-status">busy</span>
+          <span class="lane-chips"><span class="chip-model">opus</span></span>
+          <span class="lane-activity">⌘P , model…</span>
+        </div>
+        <div class="lane-head">
+          <span class="lane-symbol">○</span>
+          <span class="lane-name accent-codex">Codex-1</span>
+          <span class="lane-status">idle</span>
+          <span class="lane-chips"><span class="chip-model">gpt-5-codex</span></span>
+          <span class="lane-activity">ready</span>
+        </div>
+      </div>
+
+      <div class="picker" role="dialog" aria-label="Select model">
+        <div class="picker__title"><span>Select model</span><span class="for">Claude-1</span></div>
+        <div class="picker__group">
+          <div class="picker__group-label">from agent · session/new · auto, zero-maintenance</div>
+          <div class="opt cur">
+            <span class="marker">●</span>
+            <span class="name">default <span class="alias">→ Sonnet 4.5</span></span>
+            <span class="meta">current</span>
+          </div>
+          <div class="opt sel">
+            <span class="marker">›</span>
+            <span class="name">opus <span class="alias">→ claude-opus-4-*</span></span>
+            <span class="meta">most capable</span>
+          </div>
+          <div class="opt">
+            <span class="marker"></span>
+            <span class="name">sonnet <span class="alias">→ Sonnet 4.5</span></span>
+            <span class="meta">balanced</span>
+          </div>
+          <div class="opt">
+            <span class="marker"></span>
+            <span class="name">haiku <span class="alias">→ Haiku 4.5</span></span>
+            <span class="meta">fast · cheap · no auto-mode</span>
+          </div>
+        </div>
+        <div class="picker__foot">
+          <span><kbd>j</kbd><kbd>k</kbd> move</span>
+          <span><kbd>↵</kbd> apply (session/set_model)</span>
+          <span><kbd>p</kbd> pin to config</span>
+          <span><kbd>esc</kbd> cancel</span>
+        </div>
+      </div>
+    </div>
+    <p class="legend">
+      Switching to <code>haiku</code> here would drop the lane's <code>Plan</code>/<code>auto</code>
+      mode → the adapter clamps mode to <code>default</code> and emits <code>current_mode_update</code>;
+      the picker follow-up must surface that downgrade. ● = current · › = cursor/selection.
+    </p>
+  </div>
+</div>
+</body>
+</html>

@@ -32,3 +32,4 @@ Thumbs.db
 
 # Junie (reserved for guidelines/config only; ignore per task)
 .junie/
+.cursor/

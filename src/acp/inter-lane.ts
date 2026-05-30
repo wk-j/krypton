@@ -467,6 +467,29 @@ export class InterLaneCoordinator {
     if (canDrainInbound(lane.status)) this.drain(laneId);
   }
 
+  /**
+   * spec 128: deliver a human redirect for a flagged judgement item. The text
+   * is injected as a synthetic harness user-turn on the lane's NEXT idle
+   * (`canDrainInbound`) — late-arrival rework is accepted (ADR-0001). Rejects a
+   * stopped/cancelled lane so the caller can keep the item open.
+   */
+  deliverRedirect(
+    laneId: string,
+    text: string,
+  ): { delivered: boolean; reason?: 'unknown_lane' | 'lane_stopped' } {
+    const lane = this.host.getLane(laneId);
+    if (!lane) return { delivered: false, reason: 'unknown_lane' };
+    if (lane.status === 'stopped' || lane.status === 'error') {
+      return { delivered: false, reason: 'lane_stopped' };
+    }
+    const message =
+      '[attention] The human reviewed a decision you flagged and is redirecting you:\n\n' +
+      `${text}\n\n` +
+      'Adjust course accordingly on this turn. You do not need to re-flag unless a new judgement call arises.';
+    this.injectHarnessEnvelope(laneId, message);
+    return { delivered: true };
+  }
+
   /** spec 112: returns true if the named review packet is still open. */
   isReviewPacketOpen(packetId: string): boolean {
     return this.openReviewPackets.has(packetId);

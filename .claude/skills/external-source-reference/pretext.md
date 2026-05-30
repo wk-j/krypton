@@ -1,13 +1,9 @@
----
-name: pretext-reference
-description: Reference for @chenglou/pretext text layout & measurement library. Load when creating text layouts, text animations, measuring text height without DOM, rendering text to canvas/SVG, or working with multiline text measurement.
----
-
 # Pretext Reference
 
 Local repo: `/Users/wk/Source/pretext`
 
-Use this skill whenever doing text layout, text animation, measuring text dimensions without DOM reflow, rendering text to canvas/SVG, or anything touching `@chenglou/pretext`.
+Use this reference whenever doing text layout, text animation, measuring text dimensions without
+DOM reflow, rendering text to canvas/SVG, or anything touching `@chenglou/pretext`.
 
 **Always read the local source — it is the ground truth. npm dist types can lag.**
 

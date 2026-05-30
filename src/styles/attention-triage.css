@@ -1,0 +1,260 @@
+/* Attention Triage (spec 128) — summon-on-demand judgement queue overlay and
+   the static backpressure gauge. Cyberpunk tokens mirror the review-card /
+   model-picker patterns in acp-harness.css. Deliberately motionless: no blink,
+   no pulse — the gauge is an ambient pull, not an alert. */
+
+/* ── Backpressure gauge ───────────────────────────────────── */
+
+.acp-harness__triage-gauge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  margin-right: 8px;
+  font-size: 0.82em;
+  letter-spacing: 0.06em;
+  color: var(--krypton-window-accent, #0cf);
+  border: 1px solid rgba(0, 204, 255, 0.3);
+  border-radius: 3px;
+  background: rgba(0, 204, 255, 0.06);
+  /* No animation — static by design (spec 128). */
+}
+
+.acp-harness__triage-gauge[hidden] {
+  display: none;
+}
+
+/* ── Triage grant markers (spec 129) ─────────────────────────
+   Flat accent chips that show which lanes / directives may flag.
+   No animation — consistent with the static-by-design gauge. */
+
+.acp-harness__directive-chip__triage {
+  margin-left: 6px;
+  font-size: 0.9em;
+  letter-spacing: 0.04em;
+  color: var(--krypton-window-accent, #0cf);
+}
+
+.acp-harness__directive-badge--triage {
+  color: var(--krypton-window-accent, #0cf);
+  border-color: rgba(0, 204, 255, 0.3);
+  background: rgba(0, 204, 255, 0.06);
+}
+
+/* ── Overlay shell ────────────────────────────────────────── */
+
+.acp-harness__triage-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 13, 0.78);
+}
+
+.acp-harness__triage-overlay[hidden] {
+  display: none;
+}
+
+.acp-triage__panel {
+  display: flex;
+  flex-direction: column;
+  width: clamp(420px, 56vw, 720px);
+  max-height: 78vh;
+  background: rgba(8, 14, 18, 0.98);
+  border: 1px solid rgba(0, 204, 255, 0.32);
+  border-radius: 3px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.acp-triage__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.22);
+  color: var(--krypton-window-accent, #0cf);
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+}
+
+.acp-triage__count {
+  color: rgba(216, 232, 216, 0.5);
+  font-size: 0.84em;
+  text-shadow: none;
+  letter-spacing: 0.04em;
+}
+
+.acp-triage__empty {
+  padding: 28px 18px;
+  text-align: center;
+  color: rgba(216, 232, 216, 0.55);
+  letter-spacing: 0.03em;
+}
+
+.acp-triage__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+/* ── Judgement card ───────────────────────────────────────── */
+
+.acp-triage__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 204, 255, 0.16);
+  border-left-width: 3px;
+  border-radius: 2px;
+  background: rgba(12, 20, 26, 0.7);
+  color: rgba(216, 232, 216, 0.86);
+}
+
+.acp-triage__card--selected {
+  background: rgba(0, 204, 255, 0.1);
+  outline: 1px solid rgba(0, 204, 255, 0.5);
+  outline-offset: -1px;
+}
+
+.acp-triage__card[data-reversibility='irreversible'] {
+  border-left-color: #ff5d6c;
+}
+
+.acp-triage__card[data-reversibility='costly'] {
+  border-left-color: #ffb454;
+}
+
+.acp-triage__card[data-reversibility='reversible'] {
+  border-left-color: rgba(0, 204, 255, 0.5);
+}
+
+.acp-triage__card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82em;
+}
+
+.acp-triage__badge {
+  padding: 0 6px;
+  border-radius: 2px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+
+.acp-triage__badge--irreversible {
+  color: #ff5d6c;
+  border: 1px solid rgba(255, 93, 108, 0.5);
+}
+
+.acp-triage__badge--costly {
+  color: #ffb454;
+  border: 1px solid rgba(255, 180, 84, 0.5);
+}
+
+.acp-triage__badge--reversible {
+  color: rgba(0, 204, 255, 0.85);
+  border: 1px solid rgba(0, 204, 255, 0.4);
+}
+
+.acp-triage__lane {
+  color: rgba(216, 232, 216, 0.7);
+}
+
+.acp-triage__diffstat {
+  margin-left: auto;
+  color: rgba(216, 232, 216, 0.45);
+  font-size: 0.95em;
+}
+
+.acp-triage__question {
+  color: rgba(216, 232, 216, 0.98);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.acp-triage__field {
+  display: flex;
+  gap: 8px;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.acp-triage__field-label {
+  flex: 0 0 72px;
+  color: rgba(0, 204, 255, 0.65);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.82em;
+  padding-top: 1px;
+}
+
+.acp-triage__field-value {
+  color: rgba(216, 232, 216, 0.82);
+}
+
+.acp-triage__field--uncertainty .acp-triage__field-value {
+  color: #ffb454;
+}
+
+.acp-triage__tradeoff-list {
+  margin: 0;
+  padding-left: 16px;
+  color: rgba(216, 232, 216, 0.78);
+}
+
+.acp-triage__tradeoff-list li {
+  line-height: 1.4;
+}
+
+/* ── Actions / redirect input ─────────────────────────────── */
+
+.acp-triage__actions {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(0, 204, 255, 0.18);
+}
+
+.acp-triage__action-hint {
+  color: rgba(216, 232, 216, 0.5);
+  font-size: 0.82em;
+  letter-spacing: 0.03em;
+}
+
+.acp-triage__action-hint kbd {
+  color: var(--krypton-window-accent, #0cf);
+  border: 1px solid rgba(0, 204, 255, 0.3);
+  border-radius: 2px;
+  padding: 0 4px;
+  font-size: 0.92em;
+}
+
+.acp-triage__redirect {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.acp-triage__redirect-label {
+  color: var(--krypton-window-accent, #0cf);
+  letter-spacing: 0.04em;
+}
+
+.acp-triage__redirect-input {
+  flex: 1;
+  color: rgba(216, 232, 216, 0.95);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.acp-triage__caret {
+  color: var(--krypton-window-accent, #0cf);
+}

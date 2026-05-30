@@ -16,7 +16,7 @@ use futures_util::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::{Path as StdPath, PathBuf};
@@ -169,6 +169,11 @@ pub struct HookServer {
     /// In-flight bus requests awaiting a frontend reply (peer_send, peer_list).
     /// Keyed by requestId. Sender is consumed on reply.
     pending_bus_replies: std::sync::Mutex<HashMap<String, oneshot::Sender<Value>>>,
+    /// spec 128: which lanes are triage-equipped, keyed by harness id → set of
+    /// lane labels. Authoritative gate for `attention_flag`/`attention_resolve`
+    /// (`tools/list` filtering + call-time check). Set by the frontend via the
+    /// `acp_set_lane_triage_equipped` command on equip/unequip and lane spawn.
+    triage_equipped: std::sync::Mutex<HashMap<String, HashSet<String>>>,
 }
 
 impl Default for HookServer {
@@ -181,6 +186,7 @@ impl Default for HookServer {
             mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
             pending_bus_replies: std::sync::Mutex::new(HashMap::new()),
+            triage_equipped: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }
@@ -195,7 +201,33 @@ impl HookServer {
             mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
             pending_bus_replies: std::sync::Mutex::new(HashMap::new()),
+            triage_equipped: std::sync::Mutex::new(HashMap::new()),
         }
+    }
+
+    /// spec 128: set whether a lane is triage-equipped (called by the frontend).
+    pub fn set_lane_triage_equipped(&self, harness_id: &str, lane_label: &str, equipped: bool) {
+        let mut map = self
+            .triage_equipped
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let lanes = map.entry(harness_id.to_string()).or_default();
+        if equipped {
+            lanes.insert(lane_label.to_string());
+        } else {
+            lanes.remove(lane_label);
+        }
+    }
+
+    /// spec 128: authoritative opt-in check for the attention tools.
+    fn is_lane_triage_equipped(&self, harness_id: &str, lane_label: &str) -> bool {
+        let map = self
+            .triage_equipped
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        map.get(harness_id)
+            .map(|lanes| lanes.contains(lane_label))
+            .unwrap_or(false)
     }
 
     /// Register a oneshot for a bus request awaiting a frontend reply.
@@ -420,6 +452,13 @@ impl HookServer {
         memories.remove(harness_id);
         let mut stats = self.mcp_stats.lock().unwrap_or_else(|e| e.into_inner());
         stats.remove(harness_id);
+        // spec 128: drop the harness's triage-equip set too (no stale state in a
+        // long-running app, even though harness ids are monotonic).
+        let mut triage = self
+            .triage_equipped
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        triage.remove(harness_id);
     }
 
     pub fn list_harness_mcp_stats(&self, harness_id: &str) -> Vec<McpLaneStatsEntry> {
@@ -613,7 +652,12 @@ async fn handle_harness_memory_mcp(
                 },
             }))
         }
-        "tools/list" => Ok(json!({ "tools": bus_tool_descriptors() })),
+        "tools/list" => {
+            let include_triage = state
+                .hook_server
+                .is_lane_triage_equipped(&harness_id, &lane_label);
+            Ok(json!({ "tools": bus_tool_descriptors(include_triage) }))
+        }
         "tools/call" => {
             let params = request.get("params").cloned().unwrap_or(Value::Null);
             handle_bus_tool_call(&state, &harness_id, &lane_label, params).await
@@ -660,6 +704,17 @@ async fn handle_bus_tool_call(
         "directive_preview" => directive_preview(arguments),
         "directive_apply" => directive_apply(state, harness_id, lane_label, arguments).await,
         "directive_remove" => directive_remove(state, harness_id, lane_label, arguments).await,
+        // spec 128: attention triage. Authoritative call-time opt-in gate — a
+        // non-equipped lane is rejected even if it somehow learned the name.
+        "attention_flag" | "attention_resolve"
+            if !state
+                .hook_server
+                .is_lane_triage_equipped(harness_id, lane_label) =>
+        {
+            Err("attention triage is not enabled for this lane".to_string())
+        }
+        "attention_flag" => attention_flag(state, harness_id, lane_label, arguments).await,
+        "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -881,6 +936,155 @@ async fn review_reply(
         Err(_) => {
             state.hook_server.drop_bus_reply(&request_id);
             Err("review_reply: frontend reply timed out".to_string())
+        }
+    }
+}
+
+/// attention_flag — an equipped lane self-reports a decision needing human
+/// judgement (spec 128). Validates the presence floor (traded_off non-empty,
+/// uncertainty non-blank), then round-trips like `review_request`: the frontend
+/// coordinator assembles the ReviewPacket blast-radius, inserts the JudgementItem
+/// into the demand queue, and replies with `{ item_id }`. Non-blocking — the lane
+/// keeps working after it sees the id.
+async fn attention_flag(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let question = required_string(&arguments, "question")?;
+    let chosen = required_string(&arguments, "chosen")?;
+    let rationale = required_string(&arguments, "rationale")?;
+    let uncertainty = required_string(&arguments, "uncertainty")?;
+    let reversibility = required_string(&arguments, "reversibility")?;
+    // traded_off: a non-empty array of non-blank strings.
+    let traded_off: Vec<String> = arguments
+        .get("traded_off")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if question.trim().is_empty() {
+        return Err("question must be non-empty".to_string());
+    }
+    if chosen.trim().is_empty() {
+        return Err("chosen must be non-empty".to_string());
+    }
+    // Presence floor (NOT a quality guard — see spec 128): the fields must exist,
+    // forcing the agent to articulate what it gave up and what it is unsure of.
+    if traded_off.is_empty() {
+        return Err(
+            "traded_off must be a non-empty array: list the options you rejected and why"
+                .to_string(),
+        );
+    }
+    if uncertainty.trim().is_empty() {
+        return Err(
+            "uncertainty must be non-blank: state what you are unsure of / what would change your mind"
+                .to_string(),
+        );
+    }
+    if !matches!(
+        reversibility.as_str(),
+        "reversible" | "costly" | "irreversible"
+    ) {
+        return Err("reversibility must be one of reversible | costly | irreversible".to_string());
+    }
+
+    let item_id = format!("jdg-{}-{}", now_ms(), rand_suffix());
+    let payload = json!({
+        "itemId": item_id,
+        "fromLaneId": from_lane,
+        "question": question,
+        "chosen": chosen,
+        "rationale": rationale,
+        "tradedOff": traded_off,
+        "uncertainty": uncertainty,
+        "reversibility": reversibility,
+        "sentAt": now_ms(),
+        "harnessId": harness_id,
+        "requestId": item_id,
+    });
+    let rx = state.hook_server.register_bus_reply(item_id.clone());
+    state.app_handle.emit_or_log("acp-attention-flag", payload);
+    let reply = match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(_)) => {
+            return Err("attention_flag: frontend coordinator did not respond".to_string());
+        }
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&item_id);
+            return Err("attention_flag: frontend reply timed out".to_string());
+        }
+    };
+    if reply
+        .get("inserted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        Ok(json!({ "item_id": item_id }))
+    } else {
+        let reason = reply
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("flag_failed");
+        Err(format!("attention_flag failed: {reason}"))
+    }
+}
+
+/// attention_resolve — the lane self-resolves a previously-flagged item (demote
+/// to the silent pile, never delete). A no-op if the item is already terminal
+/// (the human's approve/redirect wins).
+async fn attention_resolve(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let item_id = required_string(&arguments, "item_id")?;
+    if item_id.trim().is_empty() {
+        return Err("item_id must be non-empty".to_string());
+    }
+    let note = arguments
+        .get("note")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let request_id = format!("jres-{}-{}", now_ms(), rand_suffix());
+    let payload = json!({
+        "itemId": item_id,
+        "fromLaneId": from_lane,
+        "note": note,
+        "harnessId": harness_id,
+        "requestId": request_id,
+        "sentAt": now_ms(),
+    });
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state
+        .app_handle
+        .emit_or_log("acp-attention-resolve", payload);
+    match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => {
+            if value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                Ok(json!({ "ok": true }))
+            } else {
+                let reason = value
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("resolve_failed");
+                Err(format!("attention_resolve failed: {reason}"))
+            }
+        }
+        Ok(Err(_)) => Err("attention_resolve: frontend coordinator did not respond".to_string()),
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            Err("attention_resolve: frontend reply timed out".to_string())
         }
     }
 }
@@ -1201,6 +1405,7 @@ fn directive_list() -> Result<Value, String> {
                 "backend": d.backend,
                 "task": d.task,
                 "enabled": d.enabled,
+                "triage_equipped": d.triage_equipped,
             })
         })
         .collect();
@@ -1327,6 +1532,102 @@ async fn directive_remove(
     directive_delete(state, harness_id, from_lane, &directive_id, reason).await
 }
 
+/// Resolve the directive payload for a `directive_apply` upsert from whatever
+/// shape the calling MCP client managed to serialize.
+///
+/// Claude/Codex lanes send the documented nested `directive` object. The Cursor
+/// IDE MCP wrapper, however, mangles nested objects and enum values for
+/// HTTP-backed servers (krypton#2): the arguments arrive either empty or as
+/// malformed JSON, while flat scalar parameters (as used by every other harness
+/// tool) go through reliably. To stay robust across clients we accept, in order:
+///   1. `directive` as a proper object (preferred),
+///   2. `directive` as a JSON string (clients that stringify nested objects),
+///   3. flat top-level fields (`id`, `title`, ... — the Cursor-safe shape).
+fn upsert_directive_value(arguments: &Value) -> Result<Value, String> {
+    match arguments.get("directive") {
+        Some(Value::Object(_)) => Ok(arguments
+            .get("directive")
+            .cloned()
+            .expect("directive object present")),
+        Some(Value::String(s)) => {
+            let parsed = serde_json::from_str::<Value>(s).map_err(|e| {
+                format!("directive_apply: `directive` was a string but not valid JSON: {e}")
+            })?;
+            if !parsed.is_object() {
+                return Err(
+                    "directive_apply: `directive` string must encode a JSON object \
+                     with directive fields (id, title, ...)"
+                        .to_string(),
+                );
+            }
+            Ok(parsed)
+        }
+        Some(other) if !other.is_null() => Err(
+            "directive_apply: `directive` must be an object or omitted in favour of flat \
+                 fields (id, title, ...)"
+                .to_string(),
+        ),
+        // No usable `directive` — assemble one from flat top-level fields.
+        _ => {
+            const FLAT_FIELDS: &[&str] = &[
+                "id",
+                "title",
+                "icon",
+                "description",
+                "backend",
+                "task",
+                "system_prompt",
+                "enabled",
+                "triage_equipped",
+            ];
+            let mut obj = serde_json::Map::new();
+            for key in FLAT_FIELDS {
+                if let Some(v) = arguments.get(*key) {
+                    if !v.is_null() {
+                        obj.insert((*key).to_string(), v.clone());
+                    }
+                }
+            }
+            if obj.is_empty() {
+                return Err(
+                    "directive_apply: upsert requires a `directive` object or flat \
+                            directive fields (id, title, description, ...)"
+                        .to_string(),
+                );
+            }
+            Ok(Value::Object(obj))
+        }
+    }
+}
+
+/// Merge a supplied (possibly partial) upsert payload over the existing
+/// directive so an update can never silently wipe fields the caller omitted.
+///
+/// `HarnessDirective` carries `#[serde(default)]` (acp_harness_config.rs), so
+/// deserializing a partial payload on its own resets every omitted field to its
+/// default — `system_prompt` to `""`, `enabled` to `true`, etc. (krypton#2).
+/// A Cursor-safe flat call like `{ action: "upsert", id: "x", enabled: false }`
+/// would therefore erase `title`/`description`/`backend`/`task`/`system_prompt`.
+/// On UPDATE we instead layer the supplied keys over a full serialization of the
+/// existing directive; only the keys the caller actually sent change. Creates
+/// have no existing entry to protect and pass through unmerged.
+fn merge_directive_over_existing(
+    existing: &crate::acp_harness_config::HarnessDirective,
+    supplied: &Value,
+) -> Result<Value, String> {
+    let mut base = serde_json::to_value(existing)
+        .map_err(|e| format!("directive_apply: failed to serialize existing directive: {e}"))?;
+    let base_obj = base.as_object_mut().ok_or_else(|| {
+        "directive_apply: existing directive did not serialize to an object".to_string()
+    })?;
+    if let Some(obj) = supplied.as_object() {
+        for (key, value) in obj {
+            base_obj.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(base)
+}
+
 async fn directive_apply(
     state: &HookServerState,
     harness_id: &str,
@@ -1344,27 +1645,28 @@ async fn directive_apply(
 
     match action.as_str() {
         "upsert" => {
-            let directive_val = arguments
-                .get("directive")
-                .cloned()
-                .ok_or_else(|| "directive_apply: upsert requires `directive`".to_string())?;
-            let directive: dir::HarnessDirective = serde_json::from_value(directive_val)
-                .map_err(|e| format!("directive_apply: invalid directive: {e}"))?;
+            let supplied = upsert_directive_value(&arguments)?;
             // Pre-validate against the snapshot the user is about to be shown,
             // so the approval card only renders a valid proposal. The post-
             // approval re-validation below re-runs against the latest on-disk
             // state in case the file changed during the approval wait.
             let preview_cfg = dir::load()?;
+            // krypton#2: on UPDATE, layer the supplied (possibly partial) fields
+            // over the existing directive so an omitted field can't reset to its
+            // serde default. The merge is computed here, pre-approval, so the
+            // approval card and the eventual write reflect exactly the same
+            // proposal the user sees.
+            let supplied_id = supplied.get("id").and_then(|v| v.as_str()).map(str::trim);
+            let prior = supplied_id
+                .and_then(|id| preview_cfg.directives.iter().find(|d| d.id == id).cloned());
+            let directive_val = match &prior {
+                Some(existing) => merge_directive_over_existing(existing, &supplied)?,
+                None => supplied,
+            };
+            let directive: dir::HarnessDirective = serde_json::from_value(directive_val)
+                .map_err(|e| format!("directive_apply: invalid directive: {e}"))?;
             dir::validate_directive(&directive, &preview_cfg.directives)?;
-            let is_update = preview_cfg
-                .directives
-                .iter()
-                .any(|d| d.id == directive.id.trim());
-            let prior = preview_cfg
-                .directives
-                .iter()
-                .find(|d| d.id == directive.id.trim())
-                .cloned();
+            let is_update = prior.is_some();
             drop(preview_cfg);
             let reply = directive_round_trip(
                 state,
@@ -1544,8 +1846,8 @@ fn memory_list(hook_server: &Arc<HookServer>, harness_id: &str) -> Result<Value,
     Ok(json!({ "entries": entries }))
 }
 
-fn bus_tool_descriptors() -> Value {
-    json!([
+fn bus_tool_descriptors(include_triage: bool) -> Value {
+    let mut tools = json!([
         {
             "name": "memory_set",
             "description": "Overwrite your lane's single memory document. You have one document; this replaces its full contents (not append). Treat it as a living README other agents in this tab will read. 'summary' is a SHORT one-line headline; put all real content in 'detail'. Empty strings clear it.",
@@ -1654,14 +1956,14 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "directive_apply",
-            "description": "Create/update (upsert), delete, or assign a directive. Use only when the user asks you to manage directives. `upsert` and `delete` mutate persistent config and require user approval; `assign` binds a directive to a lane at runtime (same-lane assignment is auto-approved, cross-lane requires approval). Returns the approval outcome. After calling for a change that needs approval, expect the result to reflect the user's decision. Prefer `directive_remove` when deleting a single directive.",
+            "description": "Create/update (upsert), delete, or assign a directive. Use only when the user asks you to manage directives. `upsert` and `delete` mutate persistent config and require user approval; `assign` binds a directive to a lane at runtime (same-lane assignment is auto-approved, EXCEPT when it grants attention-triage — a `triage_equipped` directive that would newly equip the lane requires user approval even same-lane, since it is a capability grant; cross-lane always requires approval). Returns the approval outcome. After calling for a change that needs approval, expect the result to reflect the user's decision. Prefer `directive_remove` when deleting a single directive. For `upsert`, pass the directive fields as FLAT top-level parameters: id, title, icon, description, backend, task, system_prompt, enabled, triage_equipped. This flat shape is the reliable path across every MCP client. When UPDATING an existing directive you may send only the fields you want to change — omitted fields keep their current values (the harness merges over the stored directive). When CREATING a new directive, send at least id (and normally title + system_prompt). A nested `directive` object (or a JSON-string of one) is still accepted for backward compatibility, but the flat form is preferred — some MCP clients mangle nested objects on the wire.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "action": { "enum": ["upsert", "delete", "assign"] },
+                    "action": { "type": "string", "description": "One of: upsert, delete, assign." },
                     "directive": {
-                        "type": "object",
-                        "description": "Required for upsert. Fields: id (lowercase kebab-case), title, icon, description, backend (empty = all), task, system_prompt, enabled.",
+                        "type": ["object", "string"],
+                        "description": "LEGACY/compat fallback for upsert: the directive as a nested object, or a JSON string encoding that same object. Prefer the flat top-level fields below — some MCP clients mangle nested objects on the wire. Fields: id (lowercase kebab-case), title, icon, description, backend (empty = all), task, system_prompt, enabled, triage_equipped.",
                         "properties": {
                             "id": { "type": "string" },
                             "title": { "type": "string" },
@@ -1670,12 +1972,22 @@ fn bus_tool_descriptors() -> Value {
                             "backend": { "type": "string" },
                             "task": { "type": "string" },
                             "system_prompt": { "type": "string" },
-                            "enabled": { "type": "boolean" }
+                            "enabled": { "type": "boolean" },
+                            "triage_equipped": { "type": "boolean", "description": "spec 129: when true, a lane SPAWNED with this directive may call attention_flag from its first turn. A capability grant — surfaced on the approval card. Spawn-time only; flipping it does not retroactively equip a running lane." }
                         }
                     },
+                    "id": { "type": "string", "description": "Flat-form upsert (preferred): directive id (lowercase kebab-case). Identifies which directive to create or update; on update, fields you omit are preserved." },
+                    "title": { "type": "string", "description": "Flat-form upsert: directive title." },
+                    "icon": { "type": "string", "description": "Flat-form upsert: directive icon glyph." },
+                    "description": { "type": "string", "description": "Flat-form upsert: directive description." },
+                    "backend": { "type": "string", "description": "Flat-form upsert: target backend id (empty = all)." },
+                    "task": { "type": "string", "description": "Flat-form upsert: free-form task key." },
+                    "system_prompt": { "type": "string", "description": "Flat-form upsert: reusable system-style prompt block." },
+                    "enabled": { "type": "boolean", "description": "Flat-form upsert: whether the directive is enabled." },
+                    "triage_equipped": { "type": "boolean", "description": "Flat-form upsert: spec 129 attention-triage capability grant." },
                     "directive_id": { "type": "string", "description": "Required for delete and assign." },
                     "lane": { "type": "string", "description": "Assign target lane display name; omitted = your own lane." },
-                    "scope": { "enum": ["next_turn", "lane"], "description": "Assign scope; omitted = lane." },
+                    "scope": { "type": "string", "description": "Assign scope, one of: next_turn, lane. Omitted = lane." },
                     "reason": { "type": "string", "description": "Short reason shown to the user on the approval card." }
                 },
                 "required": ["action", "reason"]
@@ -1693,7 +2005,61 @@ fn bus_tool_descriptors() -> Value {
                 "required": ["directive_id", "reason"]
             }
         }
-    ])
+    ]);
+
+    // spec 128: attention triage tools are advertised only to triage-equipped
+    // lanes. Call-time dispatch re-checks the opt-in (authoritative); this
+    // filtering just keeps the tools invisible to lanes that shouldn't see them.
+    if include_triage {
+        if let Value::Array(ref mut arr) = tools {
+            for descriptor in attention_tool_descriptors() {
+                arr.push(descriptor);
+            }
+        }
+    }
+    tools
+}
+
+/// spec 128: descriptors for `attention_flag` / `attention_resolve`. The
+/// `attention_flag` description carries a strong "never flag proactively" guard
+/// mirroring `peer_send` / `review_request` — the boring, machine-verifiable 80%
+/// must never become a judgement item.
+fn attention_tool_descriptors() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "attention_flag",
+            "description": "Surface ONE decision from this turn that genuinely needs the human's judgement, then keep working — this is non-blocking and you already proceeded with your best guess (`chosen`). The flag lands in a ranked review queue the human triages on their own schedule; it does NOT pause you or wait for a reply. Flag ONLY a real fork: an irreversible or costly choice, a genuine ambiguity in intent, or a trade-off you are not confident is right. The boring, machine-verifiable 80% (passing tests, obvious refactors, reversible edits) must NEVER become a judgement item — over-flagging floods the queue and is worse than not flagging. Never flag proactively or to cover yourself. `traded_off` (what you rejected and why) and `uncertainty` (what would change your mind) are mandatory and must be substantive. Returns `{ item_id }` so you can later attention_resolve it if you settle the question yourself.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "question": { "type": "string", "description": "The specific decision that needs human judgement, as a question." },
+                    "chosen": { "type": "string", "description": "The best-guess option you already took and are proceeding with (non-blocking)." },
+                    "rationale": { "type": "string", "description": "Why you chose that option." },
+                    "traded_off": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 1,
+                        "description": "MANDATORY, non-empty. The options you rejected and why. Empty or hollow ('nothing significant') defeats the purpose."
+                    },
+                    "uncertainty": { "type": "string", "description": "MANDATORY, non-blank. What you are unsure of, and what evidence or instruction would change your mind." },
+                    "reversibility": { "enum": ["reversible", "costly", "irreversible"], "description": "How hard the chosen path is to undo. Drives queue ranking — irreversible first." }
+                },
+                "required": ["question", "chosen", "rationale", "traded_off", "uncertainty", "reversibility"]
+            }
+        }),
+        json!({
+            "name": "attention_resolve",
+            "description": "Self-resolve a judgement item you previously raised with attention_flag — use this when YOU later settle the question (e.g. the answer became obvious, or you reversed the decision yourself). It demotes the item out of the human's review queue into the silent pile; it is never deleted. No-op if the human already discharged it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "item_id": { "type": "string", "description": "The id returned by the earlier attention_flag call." },
+                    "note": { "type": "string", "description": "Optional short note on how you resolved it." }
+                },
+                "required": ["item_id"]
+            }
+        }),
+    ]
 }
 
 fn required_string(arguments: &Value, key: &str) -> Result<String, String> {
@@ -1814,4 +2180,145 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 });
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::acp_harness_config as dir;
+
+    // krypton#2: directive_apply upsert must accept the directive payload from
+    // every MCP client shape, not just the nested object Claude/Codex send.
+
+    #[test]
+    fn upsert_accepts_nested_object() {
+        let args = json!({
+            "action": "upsert",
+            "reason": "test",
+            "directive": { "id": "a", "title": "A", "system_prompt": "p" }
+        });
+        let val = upsert_directive_value(&args).expect("nested object");
+        assert_eq!(val["id"], "a");
+        let d: dir::HarnessDirective = serde_json::from_value(val).expect("deserialize");
+        assert_eq!(d.id, "a");
+        // Custom Default keeps `enabled` true when omitted.
+        assert!(d.enabled);
+    }
+
+    #[test]
+    fn upsert_accepts_flat_fields() {
+        // The Cursor-safe shape: scalar fields at the top level, no nesting.
+        let args = json!({
+            "action": "upsert",
+            "reason": "test",
+            "id": "analyze-issue-cursor",
+            "title": "Analyze Issue (Cursor)",
+            "icon": "🔬",
+            "description": "desc",
+            "backend": "cursor",
+            "task": "analyze-issue",
+            "system_prompt": "do the thing",
+            "enabled": true,
+            "triage_equipped": true
+        });
+        let val = upsert_directive_value(&args).expect("flat fields");
+        let d: dir::HarnessDirective = serde_json::from_value(val).expect("deserialize");
+        assert_eq!(d.id, "analyze-issue-cursor");
+        assert_eq!(d.backend, "cursor");
+        assert!(d.triage_equipped);
+        assert!(d.enabled);
+    }
+
+    #[test]
+    fn upsert_accepts_stringified_directive() {
+        // Clients that stringify nested objects still parse if the JSON is valid.
+        let args = json!({
+            "action": "upsert",
+            "reason": "test",
+            "directive": "{\"id\":\"b\",\"title\":\"B\"}"
+        });
+        let val = upsert_directive_value(&args).expect("stringified object");
+        let d: dir::HarnessDirective = serde_json::from_value(val).expect("deserialize");
+        assert_eq!(d.id, "b");
+    }
+
+    #[test]
+    fn upsert_rejects_empty_payload() {
+        let args = json!({ "action": "upsert", "reason": "test" });
+        assert!(upsert_directive_value(&args).is_err());
+    }
+
+    #[test]
+    fn upsert_rejects_invalid_directive_string() {
+        let args = json!({
+            "action": "upsert",
+            "reason": "test",
+            "directive": "{not valid json}"
+        });
+        assert!(upsert_directive_value(&args).is_err());
+    }
+
+    #[test]
+    fn upsert_rejects_non_object_directive_string() {
+        // Valid JSON but not an object (krypton#2: clearer diagnostics for the
+        // stringified-directive shape rather than a generic deserialize error).
+        let args = json!({
+            "action": "upsert",
+            "reason": "test",
+            "directive": "\"just a string\""
+        });
+        assert!(upsert_directive_value(&args).is_err());
+    }
+
+    fn existing_directive() -> dir::HarnessDirective {
+        dir::HarnessDirective {
+            id: "analyze-issue-cursor".to_string(),
+            title: "Analyze Issue (Cursor)".to_string(),
+            icon: "🔬".to_string(),
+            description: "long-standing description".to_string(),
+            backend: "cursor".to_string(),
+            task: "analyze-issue".to_string(),
+            system_prompt: "the carefully written prompt".to_string(),
+            enabled: true,
+            triage_equipped: false,
+        }
+    }
+
+    #[test]
+    fn merge_preserves_omitted_fields_on_update() {
+        // krypton#2 footgun guard: a Cursor-safe partial flat update that only
+        // flips `triage_equipped` must NOT wipe title/description/system_prompt.
+        let existing = existing_directive();
+        let supplied = json!({ "id": "analyze-issue-cursor", "triage_equipped": true });
+        let merged = merge_directive_over_existing(&existing, &supplied).expect("merge");
+        let d: dir::HarnessDirective = serde_json::from_value(merged).expect("deserialize");
+        assert!(d.triage_equipped, "the supplied field is applied");
+        assert_eq!(
+            d.system_prompt, "the carefully written prompt",
+            "omitted field preserved"
+        );
+        assert_eq!(d.title, "Analyze Issue (Cursor)");
+        assert_eq!(d.description, "long-standing description");
+        assert_eq!(d.backend, "cursor");
+        assert_eq!(d.task, "analyze-issue");
+        assert!(d.enabled);
+    }
+
+    #[test]
+    fn merge_overrides_supplied_fields() {
+        let existing = existing_directive();
+        let supplied = json!({
+            "id": "analyze-issue-cursor",
+            "title": "Renamed",
+            "enabled": false
+        });
+        let merged = merge_directive_over_existing(&existing, &supplied).expect("merge");
+        let d: dir::HarnessDirective = serde_json::from_value(merged).expect("deserialize");
+        assert_eq!(d.title, "Renamed", "supplied field overrides existing");
+        assert!(!d.enabled, "supplied false overrides existing true");
+        assert_eq!(
+            d.system_prompt, "the carefully written prompt",
+            "untouched field preserved"
+        );
+    }
 }

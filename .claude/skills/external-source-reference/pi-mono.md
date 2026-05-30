@@ -1,13 +1,10 @@
----
-name: pi-mono-reference
-description: Reference for @mariozechner/pi-agent-core and @mariozechner/pi-ai. Load when working on src/agent/, debugging agent events, adding tools, or changing models/providers.
----
-
 # pi-mono Reference
 
 Local repo: `/Users/wk/Source/pi-mono`
 
-Use this skill whenever working on agent integration (`src/agent/`), adding tools, changing model/provider, debugging events, or anything touching `@mariozechner/pi-agent-core` or `@mariozechner/pi-ai`.
+Use this reference whenever working on agent integration (`src/agent/`), adding tools, changing
+model/provider, debugging events, or anything touching `@mariozechner/pi-agent-core` or
+`@mariozechner/pi-ai`.
 
 **Always read the local source — it is the ground truth. npm dist types can lag.**
 

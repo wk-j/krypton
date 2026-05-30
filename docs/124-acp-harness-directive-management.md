@@ -146,6 +146,11 @@ directive_preview({ directive_id, sample_user_text? }): { text: string; estimate
 directive_remove({ directive_id, reason }): { action: 'delete'; approval: 'approved' | 'rejected'; deleted: boolean };
 directive_apply({
   action: 'upsert' | 'delete' | 'assign',
+  // For upsert: the directive payload, sent as flat top-level fields (id, title,
+  // icon, description, backend, task, system_prompt, enabled, triage_equipped) —
+  // the preferred, client-robust shape. On UPDATE only the supplied fields change;
+  // omitted ones are preserved. A nested `directive` object (below) is still
+  // accepted for compatibility. See "Client-shape tolerance".
   directive?: HarnessDirective,
   directive_id?: string,
   lane?: string,
@@ -170,6 +175,10 @@ directive_apply({
 - For `directive_apply({ action: "assign" })`, omitted `lane` means the caller's own lane and omitted `scope` means `"lane"`.
 - A round-trip that times out or finds no frontend coordinator returns a tool error (same failure shape as `peer_send`); no config is written and no binding changes.
 - Future config may add trusted auto-allow for directive mutations, but v1 keeps persistent writes and cross-lane assignment user-visible.
+
+**Client-shape tolerance (upsert).** Not every MCP client serializes a nested object argument reliably. The Cursor IDE MCP wrapper, in particular, mangles `directive_apply`'s nested `directive` object and unquoted enum values when talking to an HTTP-backed server — arguments arrive empty or as malformed JSON (krypton#2), while flat scalar parameters (as used by every other harness tool) go through fine. To remove the failure path rather than merely tolerate it, the **flat top-level fields** (`id`, `title`, `icon`, `description`, `backend`, `task`, `system_prompt`, `enabled`, `triage_equipped`) are advertised as the **primary** upsert shape in the tool description and schema, so a well-behaved lane reaches for the robust shape on its first attempt instead of trying the fragile nested object first. The handler (`upsert_directive_value` in `hook_server.rs`) still accepts three shapes for compatibility: (1) flat top-level fields (preferred); (2) a nested `directive` object; (3) a `directive` JSON string (validated to be an object, for clients that stringify nested objects). `action`/`scope` are typed as plain strings (allowed values in the description) rather than JSON-Schema enums to dodge the same client serialization bug. All shapes produce an identical normalized `HarnessDirective` before validation, so the approval card and on-disk result are unchanged regardless of which the lane used.
+
+**Partial update merge (upsert).** `HarnessDirective` carries `#[serde(default)]`, so deserializing a payload that omits a field would reset it to its serde default (`system_prompt` → `""`, `enabled` → `true`, `triage_equipped` → `false`). Because `upsert_directive` replaces the matched entry wholesale, a partial flat call such as `{ action: "upsert", id: "x", triage_equipped: true }` would otherwise silently wipe `title`/`description`/`backend`/`task`/`system_prompt` (krypton#2). To prevent this, when the supplied `id` matches an existing directive the handler merges the supplied fields over a full serialization of the stored directive (`merge_directive_over_existing`) **before** deserialization, validation, and the approval round-trip — so only the fields the caller actually sent change, and the approval card shows exactly what will be written. Creates (no matching `id`) pass through unmerged and must carry a complete enough payload to validate.
 
 Validation rules:
 

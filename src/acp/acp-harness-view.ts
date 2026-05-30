@@ -29,6 +29,7 @@ import type {
   HarnessMemorySession,
   InterLaneEnvelope,
   LaneSummary,
+  ModelInfo,
   PermissionOption,
   PlanEntry,
   ProviderErrorPayload,
@@ -38,6 +39,12 @@ import type {
   UsageInfo,
 } from './types';
 import { LaneBus } from './lane-bus';
+import { AttentionTriageStore } from './attention-triage';
+import {
+  renderTriageGauge,
+  renderTriageOverlay,
+  type TriageOverlayViewModel,
+} from './attention-overlay';
 import {
   InterLaneCoordinator,
   type CoordinatorDrainContext,
@@ -63,6 +70,7 @@ import {
   validateReply as validateReviewReply,
 } from './review';
 import type {
+  JudgementItem,
   ReviewCommandSummary,
   ReviewGitState,
   ReviewPacket,
@@ -352,6 +360,15 @@ interface FileTouchRecord {
   at: number;
 }
 
+/** spec 127: in-flight live model switch, used to revert/attribute correctly. */
+interface PendingModelSwitch {
+  epoch: number;
+  prevModelName: string | null;
+  prevModelId: string | null;
+  prevModeId: string | null;
+  pickedName: string;
+}
+
 interface HarnessLane {
   id: string;
   index: number;
@@ -368,6 +385,22 @@ interface HarnessLane {
   usage: UsageInfo | null;
   sessionId: string | null;
   modelName: string | null;
+  /** spec 126: true when the configured model failed to apply (session/set_model
+   *  errored/timed out). Drives the amber warning on the model chip; the chip
+   *  text still shows configured intent, now flagged unconfirmed. */
+  modelApplyFailed: boolean;
+  /** spec 127: agent-advertised models for the picker. Empty when the backend
+   *  advertises no model state — the leader-',' picker is then disabled. */
+  availableModels: ModelInfo[];
+  /** spec 127: confirmed current model id (marks `✓` in the picker), or null
+   *  when unverified (alias applied / pre-switch state). */
+  currentModelId: string | null;
+  /** spec 127: bumped on every live model-switch dispatch; a resolution only
+   *  mutates lane state when its captured epoch still equals this (Codex-1 #3). */
+  modelSwitchEpoch: number;
+  /** spec 127: set while a live switch is in flight; cleared on settle/deadline.
+   *  Gates re-entry and lets the mode_update handler attribute a downgrade. */
+  pendingModelSwitch: PendingModelSwitch | null;
   supportsEmbeddedContext: boolean;
   error: string | null;
   acceptAllForTurn: boolean;
@@ -442,6 +475,19 @@ interface HarnessLane {
   turnDirectiveOverride: { directiveId: string | null } | null;
   /** spec 124: restored after a next-turn override completes. */
   previousDirectiveId: string | null;
+  /** spec 128: lane is triage-equipped (sees attention_flag/attention_resolve).
+   *  Effective state, mirrored into the hook server for the tools/list gate.
+   *  Derived (spec 129): manual override if set, else the bound directive's
+   *  grant — never written directly except via the equip helpers. */
+  triageEquipped: boolean;
+  /** spec 129: manual `Cmd+P '` override of the triage grant. `null` = follow
+   *  the bound directive; a boolean = an explicit human decision that wins
+   *  until the lane is closed or a new directive is assigned (which resets it
+   *  to null). Keeps directive-sourced and manual equip from fighting blindly. */
+  triageOverride: boolean | null;
+  /** spec 128: set when this lane flagged ≥1 judgement item during the current
+   *  turn; read at busy→idle to classify the turn as flagged vs silent. */
+  flaggedThisTurn: boolean;
 }
 
 interface TranscriptScrollAnchor {
@@ -689,6 +735,11 @@ const LANE_DEFAULTS = {
   usage: null,
   sessionId: null,
   modelName: null,
+  modelApplyFailed: false,
+  availableModels: [] as ModelInfo[],
+  currentModelId: null,
+  modelSwitchEpoch: 0,
+  pendingModelSwitch: null,
   supportsEmbeddedContext: false,
   error: null,
   acceptAllForTurn: false,
@@ -727,6 +778,9 @@ const LANE_DEFAULTS = {
   pendingDirectiveChange: null,
   turnDirectiveOverride: null,
   previousDirectiveId: null,
+  triageEquipped: false,
+  triageOverride: null,
+  flaggedThisTurn: false,
 };
 
 const md = new Marked(
@@ -750,6 +804,14 @@ export class AcpHarnessView implements ContentView {
   private activeLaneId = '';
   private laneBus = new LaneBus();
   private coordinator!: InterLaneCoordinator;
+  /** spec 128: attention-triage demand queue + silent-turn audit. */
+  private triageStore = new AttentionTriageStore(this.laneBus);
+  private triageOverlayOpen = false;
+  private triageSelectedIndex = 0;
+  /** Non-null while the redirect one-line input is open for a selected item. */
+  private triageRedirect: { itemId: string; draft: string } | null = null;
+  private attentionFlagUnlisten: UnlistenFn | null = null;
+  private attentionResolveUnlisten: UnlistenFn | null = null;
   private interLaneUnlisten: UnlistenFn | null = null;
   private peerListUnlisten: UnlistenFn | null = null;
   private reviewRequestedUnlisten: UnlistenFn | null = null;
@@ -822,6 +884,11 @@ export class AcpHarnessView implements ContentView {
   private directiveApplyUnlisten: UnlistenFn | null = null;
   /** spec 124: at most one outstanding directive mutation awaiting approval. */
   private pendingDirectiveApproval: PendingDirectiveApproval | null = null;
+  /** spec 127: model picker overlay state. */
+  private modelPickerOpen = false;
+  private modelPickerCursor = 0;
+  /** spec 127: lane the model picker is acting on (captured at open). */
+  private modelPickerLaneId: string | null = null;
   private closeCb: (() => void) | null = null;
 
   private dashboardEl!: HTMLElement;
@@ -829,8 +896,12 @@ export class AcpHarnessView implements ContentView {
   private memoryPanelEl!: HTMLElement;
   private helpOverlayEl!: HTMLElement;
   private metricsOverlayEl!: HTMLElement;
+  private triageOverlayEl!: HTMLElement;
+  private triagePanelEl!: HTMLElement;
+  private triageGaugeEl!: HTMLElement;
   private pickerEl!: HTMLElement;
   private directivePickerEl!: HTMLElement;
+  private modelPickerEl!: HTMLElement;
   private planEl!: HTMLElement;
   private laneRailEl!: HTMLElement;
   private planSlotEl!: HTMLElement;
@@ -858,6 +929,14 @@ export class AcpHarnessView implements ContentView {
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
     this.coordinator = new InterLaneCoordinator(this.laneBus, this.buildLaneHost());
+    // spec 128: refresh the backpressure gauge (and the overlay, if open) on
+    // every queue mutation the store emits.
+    this.laneBus.subscribe((e) => {
+      if (e.type === 'triage:changed') {
+        this.renderTriageGaugeEl();
+        if (this.triageOverlayOpen) this.renderTriageOverlayEl();
+      }
+    });
     this.buildDOM();
     this.render();
     void this.refreshGitBranch();
@@ -1215,6 +1294,147 @@ export class AcpHarnessView implements ContentView {
         this.handleDirectiveApply(env, reply);
       },
     );
+
+    // spec 128: an equipped lane flagged a judgement item via attention_flag.
+    type AttentionFlagEvent = {
+      itemId: string;
+      fromLaneId: string; // display name from Rust
+      question: string;
+      chosen: string;
+      rationale: string;
+      tradedOff: string[];
+      uncertainty: string;
+      reversibility: JudgementItem['reversibility'];
+      sentAt: number;
+      harnessId?: string;
+      requestId?: string;
+    };
+    this.attentionFlagUnlisten = await listen<AttentionFlagEvent>('acp-attention-flag', (e) => {
+      const env = e.payload;
+      const requestId = env.requestId;
+      if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
+      const reply = (result: unknown): void => {
+        if (!requestId) return;
+        void invoke('acp_bus_reply', { requestId, result }).catch((err) => {
+          console.warn('acp_bus_reply (attention_flag) failed', err);
+        });
+      };
+      // Insert + reply synchronously so the bus reply never races the 2.5s
+      // timeout (which would make the agent think the flag failed and retry,
+      // creating a duplicate). Git blast-radius is enriched asynchronously.
+      const result = this.handleAttentionFlag(env);
+      reply(result);
+      if (result.inserted) void this.enrichJudgementDiffstat(env.itemId);
+    });
+
+    // spec 128: a lane self-resolves a previously-flagged item.
+    type AttentionResolveEvent = {
+      itemId: string;
+      fromLaneId: string;
+      note?: string;
+      harnessId?: string;
+      requestId?: string;
+    };
+    this.attentionResolveUnlisten = await listen<AttentionResolveEvent>(
+      'acp-attention-resolve',
+      (e) => {
+        const env = e.payload;
+        const requestId = env.requestId;
+        if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
+        const sendReply = (result: { ok: boolean; reason?: string }): void => {
+          if (!requestId) return;
+          void invoke('acp_bus_reply', { requestId, result }).catch((err) =>
+            console.warn('acp_bus_reply (attention_resolve) failed', err),
+          );
+        };
+        // Ownership: a lane may only resolve items it itself flagged, even if it
+        // somehow learned another lane's item id. An unknown sender can't own
+        // anything; otherwise the store enforces laneId match.
+        const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
+        if (!lane) {
+          sendReply({ ok: false, reason: 'not_owner' });
+          return;
+        }
+        const result = this.triageStore.selfResolve(env.itemId, lane.id);
+        sendReply(result.ok ? { ok: true } : { ok: false, reason: result.reason });
+        if (this.triageOverlayOpen) this.renderTriageOverlayEl();
+      },
+    );
+  }
+
+  /**
+   * spec 128: build a JudgementItem from a flag event and insert it into the
+   * demand queue. Synchronous: the diffstat starts empty and is filled in later
+   * by `enrichJudgementDiffstat()` so the bus reply returns before the timeout.
+   */
+  private handleAttentionFlag(env: {
+    itemId: string;
+    fromLaneId: string;
+    question: string;
+    chosen: string;
+    rationale: string;
+    tradedOff: string[];
+    uncertainty: string;
+    reversibility: JudgementItem['reversibility'];
+    sentAt: number;
+    harnessId?: string;
+  }): { inserted: boolean; reason?: string } {
+    const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
+    if (!lane) return { inserted: false, reason: 'unknown_sender' };
+    // Defensive: Rust is the authoritative gate, but never queue for a lane the
+    // view considers unequipped (e.g. a race with unequip).
+    if (!lane.triageEquipped) return { inserted: false, reason: 'not_equipped' };
+
+    const item: JudgementItem = {
+      id: env.itemId,
+      laneId: lane.id,
+      question: env.question,
+      chosen: env.chosen,
+      rationale: env.rationale,
+      tradedOff: env.tradedOff,
+      uncertainty: env.uncertainty,
+      reversibility: env.reversibility,
+      packetId: null,
+      diffstat: [],
+      createdAt: env.sentAt,
+      status: 'open',
+    };
+    this.triageStore.insert(item);
+    lane.flaggedThisTurn = true;
+    this.appendTranscript(lane, 'system', `[triage] flagged for review: ${item.question}`);
+    this.scheduleLaneRender(lane);
+    return { inserted: true };
+  }
+
+  /**
+   * spec 128: fill in a flagged item's git blast-radius after it was inserted.
+   * Runs after the bus reply, so a slow git probe never trips the bus timeout.
+   */
+  private async enrichJudgementDiffstat(itemId: string): Promise<void> {
+    const item = this.triageStore.get(itemId);
+    if (!item) return; // already resolved/closed
+    const cwd = this.projectDir ?? '';
+    if (!cwd) return;
+    try {
+      const git = await invoke<ReviewGitState & { hasGitRepo: boolean }>(
+        'acp_collect_review_git_state',
+        { cwd },
+      );
+      if (!git?.hasGitRepo || git.diffstat.length === 0) return;
+      const packet = buildReviewPacket({
+        packetId: `jpk-${itemId}`,
+        fromLaneId: item.laneId,
+        toLaneId: item.laneId,
+        note: undefined,
+        signals: { intent: '', commands: [], toolSummary: [] },
+        git,
+        sentAt: item.createdAt,
+        harnessId: this.harnessMemoryId ?? undefined,
+      });
+      this.triageStore.setDiffstat(itemId, packet.diffstat, packet.packetId);
+    } catch (err) {
+      console.warn('attention_flag git collection failed', err);
+    }
   }
 
   // spec 112: assemble transcript-derived signals since the given marker.
@@ -1571,6 +1791,35 @@ export class AcpHarnessView implements ContentView {
         isEnabled: () => this.lanes.length > 0,
         disabledReason: () => 'no active lane',
       },
+      {
+        // spec 127: model picker. `,` is the free non-reserved key (all letters
+        // are reserved global leader keys; ⌃/⌘M is the memory drawer).
+        key: ',',
+        label: 'Switch Model',
+        group: 'Lane',
+        run: () => this.openModelPicker(),
+        isEnabled: () => (this.activeLane()?.availableModels.length ?? 0) > 0,
+        disabledReason: () => 'backend advertises no models',
+      },
+      {
+        // spec 128: triage overlay. The spec's mnemonic `j` ("judgement") is a
+        // reserved global leader key (compositor focus-down), so — per the
+        // spec-124/127 precedent of substituting a free symbol — `;` opens the
+        // judgement queue. Inside the overlay, j/k/a/r/o navigate directly.
+        key: ';',
+        label: 'Triage Queue',
+        group: 'Harness',
+        run: () => this.openTriageOverlay(),
+      },
+      {
+        // spec 128: toggle whether the active lane is triage-equipped.
+        key: "'",
+        label: 'Triage: Equip Lane',
+        group: 'Lane',
+        run: () => this.toggleTriageEquip(),
+        isEnabled: () => this.lanes.length > 0,
+        disabledReason: () => 'no active lane',
+      },
     ];
   }
 
@@ -1598,6 +1847,16 @@ export class AcpHarnessView implements ContentView {
     if (this.directivePickerOpen) {
       e.preventDefault();
       this.handleDirectivePickerKey(e);
+      return true;
+    }
+    if (this.modelPickerOpen) {
+      e.preventDefault();
+      void this.handleModelPickerKey(e);
+      return true;
+    }
+    if (this.triageOverlayOpen) {
+      e.preventDefault();
+      this.handleTriageKey(e);
       return true;
     }
     if (this.metricsPanelOpen && e.key === 'Escape') {
@@ -1868,6 +2127,14 @@ export class AcpHarnessView implements ContentView {
       this.reviewReplyUnlisten();
       this.reviewReplyUnlisten = null;
     }
+    if (this.attentionFlagUnlisten) {
+      this.attentionFlagUnlisten();
+      this.attentionFlagUnlisten = null;
+    }
+    if (this.attentionResolveUnlisten) {
+      this.attentionResolveUnlisten();
+      this.attentionResolveUnlisten = null;
+    }
     if (this.peerListUnlisten) {
       this.peerListUnlisten();
       this.peerListUnlisten = null;
@@ -2028,6 +2295,234 @@ export class AcpHarnessView implements ContentView {
     this.renderLanePeek();
   }
 
+  // ──────────────────────────────────────────────────────────────────
+  // Attention triage (spec 128)
+
+  /**
+   * spec 129: mirror a lane's effective triage-equip into the hook server so
+   * `tools/list` advertises (or hides) the attention tools and the call-time
+   * gate matches. Returns the invoke promise so the spawn path can AWAIT it
+   * before the ACP client issues its first `tools/list` — a fire-and-forget
+   * call there could lose the race and the tool would be missing for exactly
+   * the lane a triage directive exists to serve.
+   */
+  private async mirrorTriageEquip(lane: HarnessLane, equipped: boolean): Promise<void> {
+    if (!this.harnessMemoryId) return;
+    try {
+      await invoke('acp_set_lane_triage_equipped', {
+        harnessId: this.harnessMemoryId,
+        laneLabel: lane.displayName,
+        equipped,
+      });
+    } catch (err) {
+      console.warn('acp_set_lane_triage_equipped failed', err);
+    }
+  }
+
+  /** spec 129: does the lane's *lane-scoped* directive grant triage? A one-shot
+   *  next-turn override is deliberately ignored — equip follows the durable
+   *  binding, not a transient per-prompt directive. A disabled directive grants
+   *  nothing (Codex finding 5). */
+  private directiveGrantsTriage(lane: HarnessLane): boolean {
+    const directive = this.directiveById(lane.activeDirectiveId);
+    return directive?.triage_equipped === true && directive.enabled;
+  }
+
+  /** spec 129: effective equip = manual override if set, else the directive grant. */
+  private computeTriageEquipped(lane: HarnessLane): boolean {
+    return lane.triageOverride ?? this.directiveGrantsTriage(lane);
+  }
+
+  /** spec 129: where the lane's current equip state comes from, for display. */
+  private triageSource(lane: HarnessLane): 'manual' | 'directive' | 'off' {
+    if (lane.triageOverride !== null) return 'manual';
+    return this.directiveGrantsTriage(lane) ? 'directive' : 'off';
+  }
+
+  /**
+   * spec 129: recompute a *running* lane's effective equip after its override
+   * or bound directive changed, and apply it (store + Rust mirror). The mirror
+   * is fire-and-forget here — the lane's client already fetched its tools/list,
+   * so there is nothing to race; only the spawn path (`addLaneFromDirective`)
+   * awaits the mirror. Mid-session changes update the call-time gate + UI but
+   * cannot make the tool re-appear (spec 129 caveat).
+   */
+  private refreshTriageEquip(lane: HarnessLane): void {
+    const next = this.computeTriageEquipped(lane);
+    if (next === lane.triageEquipped) return;
+    lane.triageEquipped = next;
+    if (next) this.triageStore.equip(lane.id);
+    else this.triageStore.unequip(lane.id);
+    void this.mirrorTriageEquip(lane, next);
+    this.renderTriageGaugeEl();
+    this.scheduleLaneRender(lane);
+  }
+
+  /** Toggle the manual triage override on the active (or given) lane. The
+   *  override wins over the directive grant until the lane is closed or a new
+   *  directive is assigned (which clears it). */
+  private toggleTriageEquip(lane: HarnessLane | null = this.activeLane()): void {
+    if (!lane) {
+      this.flashChip('no active lane');
+      return;
+    }
+    const next = !lane.triageEquipped;
+    lane.triageOverride = next; // explicit human decision; lane-local
+    lane.triageEquipped = next;
+    if (next) this.triageStore.equip(lane.id);
+    else this.triageStore.unequip(lane.id);
+    void this.mirrorTriageEquip(lane, next);
+    this.appendTranscript(
+      lane,
+      'system',
+      next
+        ? '[triage] equipped (manual) — this lane can now flag judgement items (effective on its next tools/list)'
+        : '[triage] unequipped (manual)',
+    );
+    this.flashChip(next ? `triage equipped: ${lane.displayName}` : `triage off: ${lane.displayName}`);
+    this.renderTriageGaugeEl();
+    this.scheduleLaneRender(lane);
+  }
+
+  private openTriageOverlay(): void {
+    this.triageOverlayOpen = true;
+    this.triageRedirect = null;
+    const open = this.triageStore.openItems();
+    this.triageSelectedIndex = Math.min(this.triageSelectedIndex, Math.max(0, open.length - 1));
+    this.helpOpen = false;
+    this.memoryDrawerOpen = false;
+    this.renderTriageOverlayEl();
+  }
+
+  private closeTriageOverlay(): void {
+    if (!this.triageOverlayOpen) return;
+    this.triageOverlayOpen = false;
+    this.triageRedirect = null;
+    this.triageOverlayEl.hidden = true;
+  }
+
+  private renderTriageGaugeEl(): void {
+    renderTriageGauge(this.triageGaugeEl, this.triageStore.openCount());
+  }
+
+  private renderTriageOverlayEl(): void {
+    this.triageOverlayEl.hidden = !this.triageOverlayOpen;
+    if (!this.triageOverlayOpen) return;
+    const items = this.triageStore.openItems();
+    if (this.triageSelectedIndex >= items.length) {
+      this.triageSelectedIndex = Math.max(0, items.length - 1);
+    }
+    const vm: TriageOverlayViewModel = {
+      items,
+      selectedIndex: this.triageSelectedIndex,
+      laneName: (id) => this.lanes.find((l) => l.id === id)?.displayName ?? id,
+      laneStats: (id) => this.triageStore.statsFor(id),
+      redirect: this.triageRedirect ? { draft: this.triageRedirect.draft } : null,
+      silentPileCount: this.triageStore.silentPile().length,
+    };
+    renderTriageOverlay(this.triagePanelEl, vm);
+  }
+
+  private selectedTriageItem(): JudgementItem | null {
+    const items = this.triageStore.openItems();
+    return items[this.triageSelectedIndex] ?? null;
+  }
+
+  /** Overlay key handling. Returns having consumed the event. */
+  private handleTriageKey(e: KeyboardEvent): void {
+    // Redirect one-line input sub-mode captures keys until Enter/Esc.
+    if (this.triageRedirect) {
+      this.handleTriageRedirectKey(e);
+      return;
+    }
+    const items = this.triageStore.openItems();
+    if (e.key === 'Escape' || e.key === 'q') {
+      this.closeTriageOverlay();
+      return;
+    }
+    if (items.length === 0) return;
+    if (e.key === 'j' || e.key === 'ArrowDown') {
+      this.triageSelectedIndex = (this.triageSelectedIndex + 1) % items.length;
+      this.renderTriageOverlayEl();
+      return;
+    }
+    if (e.key === 'k' || e.key === 'ArrowUp') {
+      this.triageSelectedIndex = (this.triageSelectedIndex - 1 + items.length) % items.length;
+      this.renderTriageOverlayEl();
+      return;
+    }
+    const item = this.selectedTriageItem();
+    if (!item) return;
+    if (e.key === 'a') {
+      this.triageStore.accept(item.id);
+      this.flashChip('approved');
+      this.renderTriageOverlayEl();
+      return;
+    }
+    if (e.key === 'r') {
+      this.triageRedirect = { itemId: item.id, draft: '' };
+      this.renderTriageOverlayEl();
+      return;
+    }
+    if (e.key === 'o' || e.key === 'Enter') {
+      this.closeTriageOverlay();
+      this.activateLane(item.laneId);
+      return;
+    }
+  }
+
+  private handleTriageRedirectKey(e: KeyboardEvent): void {
+    const redirect = this.triageRedirect;
+    if (!redirect) return;
+    if (e.key === 'Escape') {
+      this.triageRedirect = null;
+      this.renderTriageOverlayEl();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const text = redirect.draft.trim();
+      if (!text) {
+        this.triageRedirect = null;
+        this.renderTriageOverlayEl();
+        return;
+      }
+      this.submitTriageRedirect(redirect.itemId, text);
+      return;
+    }
+    if (e.key === 'Backspace') {
+      redirect.draft = redirect.draft.slice(0, -1);
+      this.renderTriageOverlayEl();
+      return;
+    }
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      redirect.draft += e.key;
+      this.renderTriageOverlayEl();
+    }
+  }
+
+  private submitTriageRedirect(itemId: string, text: string): void {
+    const item = this.triageStore.get(itemId);
+    if (!item) {
+      this.triageRedirect = null;
+      this.renderTriageOverlayEl();
+      return;
+    }
+    const result = this.coordinator.deliverRedirect(item.laneId, text);
+    if (!result.delivered) {
+      // Edge case: stopped/cancelled lane — item stays open, surface a notice.
+      const lane = this.lanes.find((l) => l.id === item.laneId);
+      if (lane) this.appendTranscript(lane, 'system', `[triage] redirect failed: ${result.reason}`);
+      this.flashChip(`redirect failed: ${result.reason}`);
+      this.triageRedirect = null;
+      this.renderTriageOverlayEl();
+      return;
+    }
+    this.triageStore.redirect(itemId);
+    this.triageRedirect = null;
+    this.flashChip('redirect queued (next idle)');
+    this.renderTriageOverlayEl();
+  }
+
   private buildDOM(): void {
     // spec 125 — inject reusable backend logo <symbol> defs once. Hidden
     // off-screen so <use href="#krypton-logo-*"/> resolves from the rail.
@@ -2086,6 +2581,15 @@ export class AcpHarnessView implements ContentView {
     this.metricsOverlayEl.hidden = true;
     body.appendChild(this.metricsOverlayEl);
 
+    // spec 128: attention-triage overlay (summon-on-demand judgement queue).
+    this.triageOverlayEl = document.createElement('aside');
+    this.triageOverlayEl.className = 'acp-harness__triage-overlay';
+    this.triageOverlayEl.hidden = true;
+    this.triagePanelEl = document.createElement('div');
+    this.triagePanelEl.className = 'acp-triage__panel';
+    this.triageOverlayEl.appendChild(this.triagePanelEl);
+    body.appendChild(this.triageOverlayEl);
+
     this.planEl = document.createElement('aside');
     this.planEl.className = 'acp-harness__plan';
     this.planEl.hidden = true;
@@ -2129,10 +2633,22 @@ export class AcpHarnessView implements ContentView {
     });
     body.appendChild(this.directivePickerEl);
 
+    // spec 127: model picker (keyboard-only — j/k/↵/esc, no mouse handlers).
+    this.modelPickerEl = document.createElement('aside');
+    this.modelPickerEl.className = 'acp-harness__model-picker';
+    this.modelPickerEl.hidden = true;
+    body.appendChild(this.modelPickerEl);
+
     this.element.appendChild(body);
 
     const commandCenter = document.createElement('div');
     commandCenter.className = 'acp-harness__command-center';
+    // spec 128: static backpressure gauge (◆ N). Hidden when the queue is empty.
+    this.triageGaugeEl = document.createElement('button');
+    this.triageGaugeEl.className = 'acp-harness__triage-gauge';
+    this.triageGaugeEl.hidden = true;
+    this.triageGaugeEl.addEventListener('click', () => this.openTriageOverlay());
+    commandCenter.appendChild(this.triageGaugeEl);
     this.composerEl = document.createElement('div');
     this.composerEl.className = 'acp-harness__composer';
     this.composerEl.addEventListener('click', (e: MouseEvent) => {
@@ -2351,6 +2867,12 @@ export class AcpHarnessView implements ContentView {
         lane.turnDirectiveOverride = null;
         lane.previousDirectiveId = null;
       }
+      // spec 129: a directive that was deleted or disabled (or had its grant
+      // flipped) on disk must no longer grant triage. `directiveGrantsTriage`
+      // already gates on the directive existing + being enabled, so recomputing
+      // here drops a stale directive-sourced equip. A manual override survives —
+      // it represents an explicit human decision, not the directive.
+      this.refreshTriageEquip(lane);
     }
   }
 
@@ -2522,6 +3044,14 @@ export class AcpHarnessView implements ContentView {
 
   private configureLaneFromInfo(lane: HarnessLane, info: AgentInfo | AgentInitInfo): void {
     lane.modelName = inferLaneModelName(lane.backendId, info, this.laneModels);
+    // AgentInitInfo (resume/load path) carries no apply status — no model was
+    // applied there, so it correctly falls back to false.
+    lane.modelApplyFailed = (info as AgentInfo).model_apply_failed ?? false;
+    // spec 127: agent-advertised model list + confirmed current id for the picker.
+    // AgentInitInfo carries neither; the resume path overrides these from its own
+    // AgentSessionInfo after this call.
+    lane.availableModels = (info as AgentInfo).available_models ?? [];
+    lane.currentModelId = (info as AgentInfo).current_model_id ?? null;
     lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
     lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
     lane.modesById = new Map();
@@ -2589,8 +3119,23 @@ export class AcpHarnessView implements ContentView {
       case 'mode_update': {
         const known = lane.modesById.get(event.modeId);
         lane.currentMode = known ?? { id: event.modeId, name: event.modeId };
+        // spec 127 (Codex-1 #4/#5): a live model switch can make the adapter clamp
+        // the mode to a supported one (e.g. `auto` → `default` on Haiku), emitting
+        // this update. Attribute it to the in-flight switch (token-gated, not a
+        // wall-clock window) and surface the downgrade so it isn't silent.
+        const pending = lane.pendingModelSwitch;
+        if (pending && pending.prevModeId && event.modeId !== pending.prevModeId) {
+          this.appendTranscript(
+            lane,
+            'system',
+            `model switch: mode downgraded to "${lane.currentMode.name}" — "${pending.pickedName}" does not support "${pending.prevModeId}"`,
+          );
+        }
         this.refreshMetricsRender();
-        needsRender = false;
+        // The mode chip lives in the lane header, not the metrics panel — leave
+        // needsRender true so the lane re-renders and the chip refreshes
+        // (previously this set needsRender=false and only refreshed metrics, so
+        // the header chip went stale).
         break;
       }
       case 'fs_activity':
@@ -2682,6 +3227,7 @@ export class AcpHarnessView implements ContentView {
     if (lane.pendingDirectiveChange) {
       lane.activeDirectiveId = lane.pendingDirectiveChange.directiveId;
       lane.pendingDirectiveChange = null;
+      this.refreshTriageEquip(lane); // spec 129: re-derive grant from the promoted directive
     }
     const blocks = this.buildPromptBlocks(lane, text, images);
     if (lane.turnDirectiveOverride) {
@@ -2814,6 +3360,16 @@ export class AcpHarnessView implements ContentView {
       const suggested = this.coordinator.onLaneStop(lane.id);
       this.setLaneStatus(lane, suggested ?? 'idle');
     }
+    // spec 128 silent-turn audit: a completed turn (busy→idle) that produced no
+    // judgement item counts toward the lane's silent pile. The flagged case was
+    // already counted by the store on insert.
+    if (stopReason === 'end_turn' && !lane.error && lane.triageEquipped) {
+      this.triageStore.recordTurnEnd(lane.id, lane.flaggedThisTurn);
+      // The audit counters (shown in each card header) aren't a queue mutation,
+      // so the store doesn't emit — refresh the overlay directly if it is open.
+      if (this.triageOverlayOpen) this.renderTriageOverlayEl();
+    }
+    lane.flaggedThisTurn = false;
     lane.activeTurnStartedAt = null;
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
@@ -3002,12 +3558,18 @@ export class AcpHarnessView implements ContentView {
   /** Assign (lane scope) or defer a directive to the focused lane. */
   private assignDirectiveToLane(lane: HarnessLane, directiveId: string | null): void {
     const busy = lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer';
+    // spec 129: a new directive context clears any manual triage override — the
+    // lane re-derives its grant from the incoming directive (unless the user
+    // explicitly toggles again afterward). For the deferred (busy) case the
+    // recompute happens when the change is promoted before the next send.
+    lane.triageOverride = null;
     if (busy) {
       lane.pendingDirectiveChange = { directiveId };
       this.flashChip(directiveId ? 'directive changes next send' : 'directive clears next send');
     } else {
       lane.activeDirectiveId = directiveId;
       lane.pendingDirectiveChange = null;
+      this.refreshTriageEquip(lane);
     }
     this.appendTranscript(
       lane,
@@ -3025,9 +3587,26 @@ export class AcpHarnessView implements ContentView {
     const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${existing + 1}`);
     lane.activeDirectiveId = directive.id;
     lane.pendingDirectiveChange = null;
+    lane.triageOverride = null;
     this.appendTranscript(lane, 'system', `directive set: ${directive.id}`);
     this.lanes.push(lane);
     this.activateLane(lane.id);
+    // spec 129: a lane born with a triage-granting directive must be equipped
+    // BEFORE spawnLane starts the ACP client — the client fetches tools/list
+    // once at session start, so the Rust mirror must COMPLETE first or the tool
+    // is missing for exactly the lane this grant exists to serve. Awaited, not
+    // fire-and-forget (Codex finding 3).
+    const equip = this.computeTriageEquipped(lane);
+    if (equip) {
+      lane.triageEquipped = true;
+      this.triageStore.equip(lane.id);
+      this.appendTranscript(
+        lane,
+        'system',
+        '[triage] equipped (directive) — may flag judgement items from its first turn',
+      );
+      await this.mirrorTriageEquip(lane, true);
+    }
     await this.spawnLane(lane);
   }
 
@@ -3071,6 +3650,141 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  // ─── Model picker (spec 127) ──────────────────────────────────────────────
+
+  /** Open the model picker for the focused lane. Disabled when the lane has no
+   *  client, advertises no models, or already has a switch in flight. */
+  private openModelPicker(): void {
+    const lane = this.activeLane();
+    if (!lane) {
+      this.flashChip('no active lane');
+      return;
+    }
+    if (!lane.client || lane.availableModels.length === 0) {
+      this.flashChip('model picker: backend advertises no models');
+      return;
+    }
+    if (lane.pendingModelSwitch) {
+      this.flashChip('model switch already in flight');
+      return;
+    }
+    this.pickerOpen = false;
+    this.helpOpen = false;
+    this.memoryDrawerOpen = false;
+    this.directivePickerOpen = false;
+    this.modelPickerOpen = true;
+    this.modelPickerLaneId = lane.id;
+    const idx = lane.availableModels.findIndex((m) => m.model_id === lane.currentModelId);
+    this.modelPickerCursor = idx >= 0 ? idx : 0;
+    this.render();
+  }
+
+  private closeModelPicker(): void {
+    if (!this.modelPickerOpen) return;
+    this.modelPickerOpen = false;
+    this.modelPickerLaneId = null;
+    this.render();
+  }
+
+  /** The lane the picker is bound to (captured at open, so the picker stays on
+   *  its lane even if focus changes). Null when the lane went away. */
+  private modelPickerLane(): HarnessLane | null {
+    if (!this.modelPickerLaneId) return null;
+    return this.lanes.find((l) => l.id === this.modelPickerLaneId) ?? null;
+  }
+
+  private handleModelPickerKey(e: KeyboardEvent): void {
+    const lane = this.modelPickerLane();
+    if (!lane) {
+      this.closeModelPicker();
+      return;
+    }
+    const total = lane.availableModels.length;
+    if (e.key === 'Escape' || e.key === 'q') {
+      this.closeModelPicker();
+      return;
+    }
+    if (total === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      this.modelPickerCursor = (this.modelPickerCursor + 1) % total;
+      this.renderModelPicker();
+      return;
+    }
+    if (e.key === 'ArrowUp' || e.key === 'k') {
+      this.modelPickerCursor = (this.modelPickerCursor - 1 + total) % total;
+      this.renderModelPicker();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const picked = lane.availableModels[this.modelPickerCursor];
+      if (!picked) return;
+      this.closeModelPicker();
+      if (picked.model_id === lane.currentModelId) return; // already current — no-op
+      void this.switchLaneModel(lane, picked);
+    }
+  }
+
+  /** Perform a live model switch with an epoch-guarded optimistic update
+   *  (Zed-style: revert on a rejected id, keep + flag on a timeout). */
+  private async switchLaneModel(lane: HarnessLane, picked: ModelInfo): Promise<void> {
+    const client = lane.client;
+    if (!client) {
+      this.flashChip('lane has no active session');
+      return;
+    }
+    const epoch = ++lane.modelSwitchEpoch;
+    const prev: PendingModelSwitch = {
+      epoch,
+      prevModelName: lane.modelName,
+      prevModelId: lane.currentModelId,
+      prevModeId: lane.currentMode?.id ?? null,
+      pickedName: picked.name,
+    };
+    lane.pendingModelSwitch = prev;
+    // Optimistic: show the picked model immediately.
+    lane.modelName = picked.name;
+    lane.currentModelId = picked.model_id;
+    lane.modelApplyFailed = false;
+    this.render();
+    this.flashChip(`→ ${picked.name}`);
+
+    // Deadline timer: clears a still-pending token so a switch that neither
+    // errors nor emits a mode update never leaves the lane stuck "in flight".
+    // 12s > the 10s backend timeout, so a late mode_update still attributes.
+    const deadline = window.setTimeout(() => {
+      if (lane.pendingModelSwitch?.epoch === epoch) {
+        lane.pendingModelSwitch = null;
+      }
+    }, 12_000);
+
+    try {
+      const outcome = await client.setLaneModel(picked.model_id);
+      if (lane.modelSwitchEpoch !== epoch) return; // a newer switch superseded us
+      if (outcome === 'timed_out_uncertain') {
+        // The agent may still apply it — keep the optimistic chip but flag it
+        // unconfirmed, and leave the token live to the deadline for a late
+        // mode_update. Do NOT revert.
+        lane.modelApplyFailed = true;
+        this.flashChip('model switch timed out; state uncertain');
+        this.render();
+        return;
+      }
+      // Success: clear the token (deadline timer will no-op).
+      window.clearTimeout(deadline);
+      lane.pendingModelSwitch = null;
+    } catch (err) {
+      window.clearTimeout(deadline);
+      if (lane.modelSwitchEpoch !== epoch) return; // a newer switch won — don't revert
+      // Rejected id: revert the optimistic update and flag.
+      lane.modelName = prev.prevModelName;
+      lane.currentModelId = prev.prevModelId;
+      lane.modelApplyFailed = true;
+      lane.pendingModelSwitch = null;
+      this.flashChip(`model switch failed: ${errorText(err)}`);
+      this.render();
+    }
+  }
+
   // ─── Directive MCP round-trip (spec 124) ──────────────────────────────────
 
   private handleDirectiveApply(env: DirectiveApplyEvent, reply: (result: unknown) => void): void {
@@ -3098,8 +3812,13 @@ export class AcpHarnessView implements ContentView {
     let diff: { title: string; unified: string } | undefined;
     if (env.action === 'upsert' && env.directive) {
       const verb = env.isUpdate ? 'update' : 'create';
-      banner = `${fromLane.displayName} wants to ${verb} directive ${env.directive.id}`;
-      cardText = `directive ${verb}: ${env.directive.id}${reason}`;
+      // spec 129: a triage grant is a capability grant (who may call the human's
+      // attention) — surface it on the approval card, never bury it in metadata.
+      const grant = env.directive.triage_equipped
+        ? ' · GRANTS attention-triage (lanes born with it may flag for your review)'
+        : '';
+      banner = `${fromLane.displayName} wants to ${verb} directive ${env.directive.id}${env.directive.triage_equipped ? ' [+triage]' : ''}`;
+      cardText = `directive ${verb}: ${env.directive.id}${grant}${reason}`;
       const before = env.prior?.system_prompt ?? '';
       const after = env.directive.system_prompt;
       diff = { title: `directive ${env.directive.id} system_prompt`, unified: unifiedPromptDiff(before, after) };
@@ -3149,6 +3868,18 @@ export class AcpHarnessView implements ContentView {
       }
     }
     const crossLane = targetLane.id !== fromLane.id;
+    // spec 129: assigning a triage-granting directive is a *capability
+    // escalation* — it hands the lane the ability to call for the human's
+    // attention. Per ADR-0001 equip must be user-chosen, so this needs explicit
+    // approval even same-lane, exactly like a cross-lane assign. Skip the prompt
+    // when it grants nothing new: the lane is already equipped, the grant is
+    // cleared/non-triage, or the scope is `next_turn` (a one-shot directive
+    // override never drives equip — see directiveGrantsTriage).
+    const assignedDirective = directiveId !== null ? this.directiveById(directiveId) : null;
+    const grantsTriage =
+      assignedDirective?.triage_equipped === true && assignedDirective.enabled;
+    const escalatesTriage = grantsTriage && scope === 'lane' && !targetLane.triageEquipped;
+    const autoApproved = !crossLane && !escalatesTriage;
     const apply = (): unknown => {
       this.applyDirectiveAssignment(targetLane, directiveId, scope);
       this.appendTranscript(
@@ -3157,24 +3888,30 @@ export class AcpHarnessView implements ContentView {
         `directive ${directiveId ?? 'cleared'} assigned by ${fromLane.displayName} (${scope})`,
       );
       this.scheduleLaneRender(targetLane);
-      return { action: 'assign', approved: true, approval: crossLane ? 'approved' : 'auto', assigned: true, lane: targetLane.displayName };
+      return { action: 'assign', approved: true, approval: autoApproved ? 'auto' : 'approved', assigned: true, lane: targetLane.displayName };
     };
 
-    if (!crossLane) {
+    if (autoApproved) {
       reply(apply());
       return;
     }
-    // Cross-lane assignment needs explicit user approval.
+    // Needs explicit user approval: a cross-lane assign, or a triage capability
+    // grant (which the banner calls out so the human knows what they are okaying).
+    const banner = escalatesTriage
+      ? (crossLane
+          ? `${fromLane.displayName} wants to grant attention-triage to ${targetLane.displayName} via directive ${directiveId}`
+          : `${fromLane.displayName} wants to self-equip attention-triage via directive ${directiveId} — it may then flag for your attention`)
+      : `${fromLane.displayName} wants to assign directive to ${targetLane.displayName}`;
     this.appendTranscript(
       fromLane,
       'system',
-      `directive assign → ${targetLane.displayName}: ${directiveId ?? 'clear'}${env.reason ? ` — ${env.reason}` : ''}`,
+      `directive assign → ${targetLane.displayName}: ${directiveId ?? 'clear'}${escalatesTriage ? ' [+triage grant]' : ''}${env.reason ? ` — ${env.reason}` : ''}`,
     );
     this.pendingDirectiveApproval = {
       requestId: env.requestId ?? '',
       laneId: fromLane.id,
       action: 'assign',
-      banner: `${fromLane.displayName} wants to assign directive to ${targetLane.displayName}`,
+      banner,
       reply,
       onApprove: apply,
     };
@@ -3505,6 +4242,10 @@ export class AcpHarnessView implements ContentView {
       }
       lane.sessionId = info.session_id;
       this.configureLaneFromInfo(lane, init);
+      // spec 127: resume/load surfaces its own model state — merge it in (init,
+      // an AgentInitInfo, has none). The picker then works on restored lanes too.
+      lane.availableModels = info.available_models ?? [];
+      lane.currentModelId = info.current_model_id ?? null;
       this.setLaneStatus(lane, 'idle');
       this.sealStreaming(lane);
       this.appendTranscript(lane, 'system', `${mode === 'resume' ? 'resumed' : 'loaded'} ${shortId(session.sessionId)}.`);
@@ -3564,6 +4305,17 @@ export class AcpHarnessView implements ContentView {
     if (index !== -1) this.lanes.splice(index, 1);
     this.mcpStatsByLane.delete(lane.displayName);
     this.laneMetricHistory.delete(lane.id);
+    // spec 128: drop the closed lane's queued items + audit row, and tell the
+    // hook server it is no longer triage-equipped.
+    if (lane.triageEquipped && this.harnessMemoryId) {
+      void invoke('acp_set_lane_triage_equipped', {
+        harnessId: this.harnessMemoryId,
+        laneLabel: lane.displayName,
+        equipped: false,
+      }).catch(() => {});
+    }
+    this.triageStore.onLaneClosed(lane.id);
+    this.renderTriageGaugeEl();
     this.laneBus.emit({
       type: 'lane:closed',
       payload: { laneId: lane.id, displayName: lane.displayName },
@@ -3664,6 +4416,7 @@ export class AcpHarnessView implements ContentView {
     lane.usage = null;
     lane.sessionId = null;
     lane.modelName = null;
+    lane.modelApplyFailed = false;
     lane.supportsEmbeddedContext = false;
     lane.supportsImages = false;
     lane.error = null;
@@ -3830,7 +4583,10 @@ export class AcpHarnessView implements ContentView {
     this.renderPlanPanel(this.activeLane());
     this.renderPicker();
     this.renderDirectivePicker();
+    this.renderModelPicker();
     this.renderSessionPicker();
+    this.renderTriageGaugeEl();
+    this.renderTriageOverlayEl();
     this.renderComposer();
     this.scheduleStickyScroll();
   }
@@ -4444,6 +5200,11 @@ export class AcpHarnessView implements ContentView {
         const scope = [d.backend || 'all backends', d.task].filter(Boolean).join(' · ');
         const badge = d.enabled ? '' : 'disabled';
         const badgeEl = badge ? `<span class="acp-harness__directive-badge">${esc(badge)}</span>` : '';
+        // spec 129: mark directives that grant attention-triage so the user can
+        // see which roles let a lane flag for their attention.
+        const triageEl = d.triage_equipped
+          ? '<span class="acp-harness__directive-badge acp-harness__directive-badge--triage" title="lanes spawned with this directive may flag judgement items">◆ triage</span>'
+          : '';
         const logoCls = d.backend === ''
           ? 'all'
           : d.backend === 'pi-acp'
@@ -4458,7 +5219,7 @@ export class AcpHarnessView implements ContentView {
           logoHtml +
           `<span class="acp-harness__directive-icon">${esc(d.icon)}</span>` +
           `<span class="acp-harness__directive-main">` +
-          `<span class="acp-harness__directive-title">${esc(d.title || d.id)}${assigned}${badgeEl}</span>` +
+          `<span class="acp-harness__directive-title">${esc(d.title || d.id)}${assigned}${badgeEl}${triageEl}</span>` +
           `<span class="acp-harness__directive-meta">${esc(d.id)} · ${esc(scope)}</span>` +
           (d.description ? `<span class="acp-harness__directive-desc">${esc(d.description)}</span>` : '') +
           `</span>` +
@@ -4477,6 +5238,42 @@ export class AcpHarnessView implements ContentView {
       `</header>` +
       `<ul class="acp-harness__directive-list">${rows}</ul>` +
       preview;
+  }
+
+  private renderModelPicker(): void {
+    this.modelPickerEl.hidden = !this.modelPickerOpen;
+    if (!this.modelPickerOpen) {
+      this.modelPickerEl.innerHTML = '';
+      return;
+    }
+    const lane = this.modelPickerLane();
+    if (!lane) {
+      this.modelPickerEl.innerHTML = '';
+      return;
+    }
+    const models = lane.availableModels;
+    const total = models.length;
+    const cursor = total === 0 ? 0 : Math.max(0, Math.min(this.modelPickerCursor, total - 1));
+    const rows = models
+      .map((m, i) => {
+        const active = i === cursor ? ' acp-harness__model-row--active' : '';
+        const current = m.model_id === lane.currentModelId
+          ? '<span class="acp-harness__model-current">✓</span>'
+          : '';
+        return (
+          `<li class="acp-harness__model-row${active}" data-model-index="${i}">` +
+          `<span class="acp-harness__model-name">${esc(m.name)}${current}</span>` +
+          (m.description ? `<span class="acp-harness__model-desc">${esc(m.description)}</span>` : '') +
+          `</li>`
+        );
+      })
+      .join('');
+    this.modelPickerEl.innerHTML =
+      `<header class="acp-harness__model-head">` +
+      `<span>// model · ${esc(lane.displayName)}</span>` +
+      `<span>j/k move · enter switch · esc cancel</span>` +
+      `</header>` +
+      `<ul class="acp-harness__model-list">${rows}</ul>`;
   }
 
   private renderSessionPicker(): void {
@@ -4874,7 +5671,13 @@ export class AcpHarnessView implements ContentView {
     const label = directive ? directive.id : 'none';
     const cls = `acp-harness__directive-chip${directive ? ' acp-harness__directive-chip--set' : ''}${pending ? ' acp-harness__directive-chip--pending' : ''}`;
     const suffix = pending ? ' (next send)' : '';
-    return `<span class="${cls}" data-open-directive-picker="1" title="Cmd+P then . to change">directive ${esc(label)}${suffix}</span>`;
+    // spec 129: show the triage grant + its source (directive vs manual) so the
+    // user can see at a glance which lanes may flag for their attention.
+    const source = this.triageSource(lane);
+    const triageTag = lane.triageEquipped
+      ? ` <span class="acp-harness__directive-chip__triage" title="triage equipped (${source}) — this lane may flag judgement items">◆ ${source}</span>`
+      : '';
+    return `<span class="${cls}" data-open-directive-picker="1" title="Cmd+P then . to change">directive ${esc(label)}${suffix}${triageTag}</span>`;
   }
 
   private composerStatusChip(lane: HarnessLane): string {
@@ -5011,12 +5814,17 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderMetricsLaneBlock(lane: HarnessLane, m: AcpLaneMetrics | null): string {
+    const totals = m && m.root_alive
+      ? (
+        `<span class="acp-harness__metrics-total acp-harness__metrics-total--cpu">CPU ${esc(formatCpu(m.total_cpu_percent))}</span>` +
+        `<span class="acp-harness__metrics-total">MEM ${esc(formatRss(m.total_rss_mb))}</span>` +
+        `<span class="acp-harness__metrics-total">${m.proc_count} proc${m.proc_count === 1 ? '' : 's'}</span>`
+      )
+      : `<span class="acp-harness__metrics-total acp-harness__metrics-total--dim">no live process</span>`;
     const head =
       `<div class="acp-harness__metrics-lane-head">` +
       `<span class="acp-harness__metrics-lane-name">${esc(lane.displayName)}</span>` +
-      (m && m.root_alive
-        ? `<span class="acp-harness__metrics-lane-totals">Σ ${formatCpu(m.total_cpu_percent)} · ${formatRss(m.total_rss_mb)} · ${m.proc_count} proc</span>`
-        : `<span class="acp-harness__metrics-lane-totals acp-harness__metrics-lane-totals--dim">no live process</span>`) +
+      `<span class="acp-harness__metrics-lane-totals">${totals}</span>` +
       `</div>`;
     if (!m || !m.root_alive || m.proc_count === 0) return `<section class="acp-harness__metrics-lane">${head}</section>`;
     const tree = renderProcessTree(m);
@@ -7383,7 +8191,7 @@ function renderLaneHead(
   pendingPeers: PendingPeerSummary[],
 ): string {
   const mcpChip = renderMcpChip(mcp);
-  const modelChip = renderModelChip(lane.modelName);
+  const modelChip = renderModelChip(lane.modelName, lane.modelApplyFailed);
   const modeChip = renderModeChip(lane);
   const sandboxChip = renderSandboxChip(lane);
   const metricsChip = renderMetricsChip(metrics);
@@ -7463,17 +8271,26 @@ function renderProcessTree(m: AcpLaneMetrics): string {
     const p = byPid.get(pid);
     if (!p) return;
     const branch = depth === 0 ? '' : isLast ? '└─ ' : '├─ ';
-    const label = depth === 0 ? 'ADAPTER' : esc(p.name);
+    const role = depth === 0
+      ? `<span class="acp-harness__metrics-role">adapter</span>`
+      : '';
+    const processName =
+      `<span class="acp-harness__metrics-tree">${esc(prefix + branch)}</span>` +
+      `<span class="acp-harness__metrics-name">${esc(p.name)}</span>` +
+      role;
     lines.push(
-      `<div class="acp-harness__metrics-row">` +
-        `<span class="acp-harness__metrics-tree">${esc(prefix + branch)}</span>` +
-        `<span class="acp-harness__metrics-name">${label}</span>` +
-        `<span class="acp-harness__metrics-pid">pid ${p.pid}</span>` +
-        `<span class="acp-harness__metrics-cpu">${esc(formatCpu(p.cpu_percent))}</span>` +
-        `<span class="acp-harness__metrics-rss">${esc(formatRss(p.rss_mb))}</span>` +
+      `<div class="acp-harness__metrics-row${depth === 0 ? ' acp-harness__metrics-row--root' : ''}">` +
+        `<span class="acp-harness__metrics-process">${processName}</span>` +
+        `<span class="acp-harness__metrics-pid">${p.pid}</span>` +
+        renderMetricCell('cpu', formatCpu(p.cpu_percent), metricPercent(p.cpu_percent, 100)) +
+        renderMetricCell('rss', formatRss(p.rss_mb), metricPercent(p.rss_mb, m.total_rss_mb)) +
       `</div>`,
     );
-    const kids = childrenByParent.get(pid) ?? [];
+    const kids = [...(childrenByParent.get(pid) ?? [])].sort((a, b) => {
+      const procA = byPid.get(a);
+      const procB = byPid.get(b);
+      return (procB?.cpu_percent ?? 0) - (procA?.cpu_percent ?? 0);
+    });
     const visibleKids = kids.filter((k) => byPid.has(k));
     visibleKids.forEach((kid, i) => {
       const last = i === visibleKids.length - 1;
@@ -7482,7 +8299,30 @@ function renderProcessTree(m: AcpLaneMetrics): string {
     });
   };
   walk(m.root_pid, 0, true, '');
-  return `<div class="acp-harness__metrics-tree-block">${lines.join('')}</div>`;
+  return (
+    `<div class="acp-harness__metrics-tree-block">` +
+      `<div class="acp-harness__metrics-row acp-harness__metrics-row--header">` +
+        `<span>Process</span><span>PID</span><span>CPU</span><span>Mem</span>` +
+      `</div>` +
+      lines.join('') +
+    `</div>`
+  );
+}
+
+function renderMetricCell(kind: 'cpu' | 'rss', value: string, width: number): string {
+  return (
+    `<span class="acp-harness__metrics-meter acp-harness__metrics-meter--${kind}">` +
+      `<span class="acp-harness__metrics-meter-value">${esc(value)}</span>` +
+      `<span class="acp-harness__metrics-meter-track">` +
+        `<span class="acp-harness__metrics-meter-fill" style="width:${width.toFixed(0)}%"></span>` +
+      `</span>` +
+    `</span>`
+  );
+}
+
+function metricPercent(value: number, max: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) return 0;
+  return Math.max(0, Math.min(100, (value / max) * 100));
 }
 
 function metricsBucket(cpu: number): 'idle' | 'warm' | 'hot' | 'crit' {
@@ -7519,8 +8359,12 @@ function renderSandboxChip(lane: HarnessLane): string {
   return '';
 }
 
-function renderModelChip(modelName: string | null): string {
+function renderModelChip(modelName: string | null, applyFailed = false): string {
   if (!modelName) return '';
+  if (applyFailed) {
+    const title = `requested model ${modelName} not applied — agent is using its default or prior model (session/set_model failed)`;
+    return `<span class="acp-harness__lane-model acp-harness__lane-model--warn" title="${esc(title)}">⚠ ${esc(modelName)}</span>`;
+  }
   return `<span class="acp-harness__lane-model" title="model ${esc(modelName)}">${esc(modelName)}</span>`;
 }
 

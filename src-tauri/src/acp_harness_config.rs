@@ -57,6 +57,12 @@ pub struct HarnessDirective {
     /// Reusable system-style prompt block.
     pub system_prompt: String,
     pub enabled: bool,
+    /// spec 129: spawn-time capability grant — a lane born with this directive
+    /// is triage-equipped (may call `attention_flag`) from its first
+    /// `tools/list`. This is a DEFAULT grant, not live reconfiguration: changing
+    /// it on an already-running lane updates call-time authorization but cannot
+    /// make the tool appear in a client that already fetched its tool list.
+    pub triage_equipped: bool,
 }
 
 // Hand-written, NOT `#[derive(Default)]`: derive would resolve `enabled` to
@@ -73,6 +79,7 @@ impl Default for HarnessDirective {
             task: String::new(),
             system_prompt: String::new(),
             enabled: true,
+            triage_equipped: false,
         }
     }
 }
@@ -242,6 +249,16 @@ mod tests {
     fn default_enabled_is_true() {
         assert!(HarnessDirective::default().enabled);
         assert_eq!(AcpHarnessUserConfig::default().version, 1);
+    }
+
+    #[test]
+    fn default_triage_grant_is_off() {
+        // spec 129: triage is opt-in — a directive grants it only when the user
+        // sets it. A config omitting the field must deserialize to no grant.
+        assert!(!HarnessDirective::default().triage_equipped);
+        let cfg: AcpHarnessUserConfig =
+            toml::from_str("version = 1\n[[directives]]\nid = \"x\"\ntitle = \"X\"\n").unwrap();
+        assert!(!cfg.directives[0].triage_equipped);
     }
 
     #[test]

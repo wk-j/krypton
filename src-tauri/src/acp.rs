@@ -156,9 +156,86 @@ pub struct AgentInitInfo {
     pub agent_capabilities: Value,
 }
 
+/// One agent-advertised model entry, mapped from the ACP `session/new`
+/// `models.availableModels[]` (camelCase) into snake_case for the frontend
+/// (spec 127). The picker offers exactly these — never a hand-maintained list.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelInfo {
+    pub model_id: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentSessionInfo {
     pub session_id: String,
+    /// True ONLY when a model was configured, the agent advertised model state,
+    /// and the `session/set_model` request errored/timed out. False on success,
+    /// skip, no-config, or no-capability. Drives a "requested model not applied"
+    /// chip warning — it never claims to know the real running model.
+    pub model_apply_failed: bool,
+    /// Agent-advertised models from the `session/new` response (spec 127). Empty
+    /// when the backend advertises no model state — the model picker is then
+    /// disabled for that lane.
+    pub available_models: Vec<ModelInfo>,
+    /// The session's confirmed current model id. Starts as the agent's
+    /// `currentModelId`, but is overwritten with the spawn-applied id when the
+    /// configured value was an exact advertised id (so the picker's `✓` marks the
+    /// running model, not the pre-switch default). `None` when unverified (e.g. an
+    /// alias was applied — we don't assert a guessed canonical id).
+    pub current_model_id: Option<String>,
+}
+
+/// Richer result of `apply_session_model` (spec 127): the spawn path needs to
+/// know not just whether the apply failed, but which canonical id was applied so
+/// `acp_session_new` can correct the stale pre-switch `currentModelId` marker.
+struct ModelApplyResult {
+    failed: bool,
+    /// The id that was successfully applied AND is an exact advertised id. `None`
+    /// when nothing was applied, the apply failed, or the configured value was a
+    /// non-canonical alias (then we leave the marker unverified rather than guess).
+    applied_model_id: Option<String>,
+}
+
+/// Parse the ACP `session/new` (or resume/load) `models` value into the
+/// frontend-facing `(available_models, current_model_id)` pair. Tolerates a
+/// missing/garbage `models` value and filters malformed entries (an entry missing
+/// `modelId`/`name` is dropped rather than failing the whole parse).
+fn parse_session_models(models: Option<&Value>) -> (Vec<ModelInfo>, Option<String>) {
+    let Some(obj) = models.and_then(|v| v.as_object()) else {
+        return (Vec::new(), None);
+    };
+    let available = obj
+        .get("availableModels")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|entry| {
+                    let e = entry.as_object()?;
+                    let model_id = e.get("modelId")?.as_str()?.to_string();
+                    let name = e
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(&model_id)
+                        .to_string();
+                    let description = e
+                        .get("description")
+                        .and_then(|d| d.as_str())
+                        .map(|s| s.to_string());
+                    Some(ModelInfo {
+                        model_id,
+                        name,
+                        description,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let current = obj
+        .get("currentModelId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    (available, current)
 }
 
 fn client_session_cwd(client: &AcpClient) -> Option<String> {
@@ -1109,12 +1186,32 @@ pub async fn acp_session_new(
         .to_string();
     set_client_session_id(&client, &acp_session_id);
 
-    if client.backend_id == "opencode" {
-        set_opencode_default_model(&client, &acp_session_id).await?;
-    }
+    // Surface the agent-advertised model list to the frontend (spec 127). The
+    // capability gate inside apply_session_model still reads the raw value; this
+    // is the frontend-facing projection.
+    let (available_models, advertised_current) = parse_session_models(new_session.get("models"));
+
+    // Apply the configured model AFTER session/new (never as a session/new field),
+    // awaited inline so the switch completes before the frontend can send the first
+    // prompt. OpenCode keeps its dedicated path; ACP-native backends that advertise
+    // model state get a non-fatal `session/set_model`.
+    let apply = apply_session_model(
+        &client,
+        &acp_session_id,
+        &available_models,
+        new_session.get("models"),
+    )
+    .await?;
+
+    // `currentModelId` from session/new is captured BEFORE the spawn-time apply, so
+    // prefer the applied canonical id when we have one (spec 127, Codex-1 #1).
+    let current_model_id = apply.applied_model_id.or(advertised_current);
 
     Ok(AgentSessionInfo {
         session_id: acp_session_id,
+        model_apply_failed: apply.failed,
+        available_models,
+        current_model_id,
     })
 }
 
@@ -1146,7 +1243,7 @@ async fn acp_session_restore(
     set_client_session_id(&client, &session_id);
     let session_cwd = client_session_cwd(&client);
     let mcp_servers = client_mcp_servers(&client);
-    client
+    let response = client
         .request(
             method,
             json!({
@@ -1156,7 +1253,18 @@ async fn acp_session_restore(
             }),
         )
         .await?;
-    Ok(AgentSessionInfo { session_id })
+    // Resumed/loaded sessions keep whatever model they were saved with — v1 does
+    // not force them to the current config, so no apply is attempted here. But we
+    // DO surface any advertised model list/current id so the picker works on
+    // restored lanes too (spec 127, Codex-1 #2). When the backend omits `models`,
+    // available_models is empty and the picker stays disabled for that lane.
+    let (available_models, current_model_id) = parse_session_models(response.get("models"));
+    Ok(AgentSessionInfo {
+        session_id,
+        model_apply_failed: false,
+        available_models,
+        current_model_id,
+    })
 }
 
 #[tauri::command]
@@ -1181,6 +1289,151 @@ pub async fn acp_session_load(
         .get(session)
         .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
     acp_session_restore(client, "session/load", session_id).await
+}
+
+/// Outcome of a live model switch (spec 127). Distinguished so the frontend can
+/// hard-revert its optimistic chip on a rejected id but NOT on a timeout — after
+/// the client-side timeout the agent may still apply the switch, so reverting
+/// would fight the agent. A rejected id is surfaced as `Err`, not an outcome.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SetModelOutcome {
+    Ok,
+    TimedOutUncertain,
+}
+
+/// Switch the model of a LIVE lane (spec 127). Unlike the spawn-time
+/// `apply_session_model` (silent, non-fatal), this is user-initiated, so a
+/// rejected/unknown id is returned as `Err` for the frontend to surface and
+/// revert. A timeout is `Ok(TimedOutUncertain)` — the request may still complete
+/// agent-side, so the frontend keeps its optimistic state and marks it uncertain.
+#[tauri::command]
+pub async fn acp_set_lane_model(
+    session: u64,
+    model_id: String,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<SetModelOutcome, String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    let acp_session_id = client
+        .acp_session_id
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .ok_or_else(|| "lane has no active session".to_string())?;
+    match tokio::time::timeout(
+        Duration::from_secs(10),
+        client.request(
+            "session/set_model",
+            json!({ "sessionId": acp_session_id, "modelId": &model_id }),
+        ),
+    )
+    .await
+    {
+        Ok(Ok(_)) => Ok(SetModelOutcome::Ok),
+        Ok(Err(e)) => Err(format!("session/set_model failed: {e}")),
+        Err(_) => {
+            log::warn!(
+                "acp_set_lane_model modelId={model_id} timed out for backend {}",
+                client.backend_id
+            );
+            Ok(SetModelOutcome::TimedOutUncertain)
+        }
+    }
+}
+
+/// Apply the lane's configured model after `session/new`. Returns
+/// `Ok(model_apply_failed)`: `true` only when a model was configured, the agent
+/// advertised model state, and the `session/set_model` request errored/timed out.
+///
+/// OpenCode keeps its dedicated `set_config_option`-first path (FATAL via `?`),
+/// evaluated BEFORE the capability gate so it is never skipped for lacking a
+/// `models` object. ACP-native backends that advertise a valid session model
+/// state get a generic, non-fatal `session/set_model` — a misspelled or
+/// unsupported model id must not stop the lane starting.
+async fn apply_session_model(
+    client: &AcpClient,
+    acp_session_id: &str,
+    available_models: &[ModelInfo],
+    models: Option<&Value>,
+) -> Result<ModelApplyResult, String> {
+    let no_op = ModelApplyResult {
+        failed: false,
+        applied_model_id: None,
+    };
+    if client.backend_id == "opencode" {
+        set_opencode_default_model(client, acp_session_id).await?;
+        return Ok(no_op);
+    }
+    // Capability gate: a valid session model state must be present. Check the
+    // object shape (an `availableModels` array or a `currentModelId` string), not
+    // merely the key, so a backend echoing an empty/garbage `models` value does
+    // not trigger a doomed request. An empty `availableModels: []` array still
+    // counts as capability-present — the shape is the signal, not the contents.
+    let advertises_models = models
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            m.get("availableModels")
+                .map(|a| a.is_array())
+                .unwrap_or(false)
+                || m.get("currentModelId")
+                    .map(|c| c.is_string())
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    if !advertises_models {
+        return Ok(no_op);
+    }
+    let Some(model) = client.model_override.read().ok().and_then(|g| g.clone()) else {
+        return Ok(no_op); // nothing configured — agent default is used
+    };
+    // Sent verbatim (so aliases like `opus`/`sonnet` resolve adapter-side); any
+    // failure is logged with the backend id + requested model and is non-fatal.
+    let res = tokio::time::timeout(
+        Duration::from_secs(10),
+        client.request(
+            "session/set_model",
+            json!({ "sessionId": acp_session_id, "modelId": &model }),
+        ),
+    )
+    .await;
+    match res {
+        Ok(Ok(_)) => {
+            // Spec 127: only report a confirmed current id when the configured
+            // value is an EXACT advertised id (canonical). Aliases resolve
+            // adapter-side to an id we can't know here, so leave it unverified
+            // rather than asserting the pre-switch default or a guess.
+            let applied_model_id = available_models
+                .iter()
+                .any(|m| m.model_id == model)
+                .then(|| model.clone());
+            Ok(ModelApplyResult {
+                failed: false,
+                applied_model_id,
+            })
+        }
+        Ok(Err(e)) => {
+            log::warn!(
+                "session/set_model modelId={model} failed for backend {}: {e}",
+                client.backend_id
+            );
+            Ok(ModelApplyResult {
+                failed: true,
+                applied_model_id: None,
+            })
+        }
+        Err(_) => {
+            log::warn!(
+                "session/set_model modelId={model} timed out for backend {}",
+                client.backend_id
+            );
+            Ok(ModelApplyResult {
+                failed: true,
+                applied_model_id: None,
+            })
+        }
+    }
 }
 
 async fn set_opencode_default_model(

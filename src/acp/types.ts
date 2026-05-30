@@ -65,6 +65,13 @@ export interface PermissionOption {
   kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
 }
 
+/** spec 127: one agent-advertised model, from the session/new `models.availableModels[]`. */
+export interface ModelInfo {
+  model_id: string;
+  name: string;
+  description?: string | null;
+}
+
 export interface AgentInfo {
   agent_protocol_version: number;
   auth_methods: unknown[];
@@ -75,6 +82,12 @@ export interface AgentInfo {
     [k: string]: unknown;
   };
   session_id: string;
+  /** spec 126: true when a configured model was not applied (session/set_model
+   *  errored/timed out for an adapter that advertised model state). */
+  model_apply_failed?: boolean;
+  /** spec 127: agent-advertised models + confirmed current id (from session/new). */
+  available_models?: ModelInfo[];
+  current_model_id?: string | null;
 }
 
 export interface AgentInitInfo {
@@ -85,6 +98,13 @@ export interface AgentInitInfo {
 
 export interface AgentSessionInfo {
   session_id: string;
+  /** spec 126: see AgentInfo.model_apply_failed. */
+  model_apply_failed?: boolean;
+  /** spec 127: agent-advertised models from session/new (or resume/load). Empty
+   *  when the backend advertises no model state — model picker disabled. */
+  available_models?: ModelInfo[];
+  /** spec 127: confirmed current model id, or null/undefined when unverified. */
+  current_model_id?: string | null;
 }
 
 export interface AcpSessionCapabilities {
@@ -361,10 +381,50 @@ export interface ReviewReply {
   harnessId?: string;
 }
 
+// Attention Triage (spec 128) — self-reported judgement items.
+export type Reversibility = 'reversible' | 'costly' | 'irreversible';
+
+export type JudgementStatus = 'open' | 'accepted' | 'redirected' | 'self_resolved';
+
+/** The raw fields an equipped lane self-reports via the `attention_flag` MCP tool. */
+export interface AttentionFlagPayload {
+  question: string; // the decision needing judgement
+  chosen: string; // the best-guess the lane already took (non-blocking)
+  rationale: string; // why it chose that
+  tradedOff: string[]; // options rejected + why — MANDATORY, non-empty (anti-rosy-card)
+  uncertainty: string; // what the agent is unsure of / what would change its mind — MANDATORY, non-empty
+  reversibility: Reversibility;
+}
+
+/** A flagged decision living in the demand queue (or the silent pile once resolved). */
+export interface JudgementItem extends AttentionFlagPayload {
+  id: string;
+  laneId: string;
+  packetId: string | null; // linked ReviewPacket id (blast-radius), null if no repo changes
+  diffstat: ReviewDiffstatEntry[];
+  createdAt: number;
+  status: JudgementStatus;
+}
+
+/** Per-equipped-lane audit counters (spec 128 silent-turn audit). */
+export interface LaneTriageStats {
+  laneId: string;
+  flaggedCount: number; // turns that produced ≥1 judgement item
+  silentTurnCount: number; // turns that ended (busy→idle) with no flag
+  lastSilentTurnAt: number | null;
+}
+
+/** Payload of a lane's `attention_resolve` MCP call (self-resolve / demote). */
+export interface AttentionResolvePayload {
+  itemId: string;
+  note: string;
+}
+
 export type LaneBusEvent =
   | { type: 'lane:status'; payload: LaneStatusEvent }
   | { type: 'lane:spawned'; payload: { laneId: string } }
-  | { type: 'lane:closed'; payload: { laneId: string; displayName: string } };
+  | { type: 'lane:closed'; payload: { laneId: string; displayName: string } }
+  | { type: 'triage:changed'; payload: { openCount: number } };
 
 export type AcpEvent =
   | { type: 'user_message_chunk'; text: string }

@@ -120,6 +120,10 @@ export class AcpClient {
       auth_methods: init.auth_methods,
       agent_capabilities: init.agent_capabilities,
       session_id: sn.session_id,
+      model_apply_failed: sn.model_apply_failed ?? false,
+      // spec 127: carry the agent-advertised model list + current id through.
+      available_models: sn.available_models ?? [],
+      current_model_id: sn.current_model_id ?? null,
     } as AgentInfo;
   }
 
@@ -157,6 +161,16 @@ export class AcpClient {
     return invoke<AgentSessionInfo>('acp_session_load', {
       session: this.session,
       sessionId,
+    });
+  }
+
+  /** spec 127: switch the model of this live lane. Resolves to 'ok' on success or
+   *  'timed_out_uncertain' on a client-side timeout (the agent may still apply it);
+   *  rejects (throws) when the agent rejects the model id. */
+  async setLaneModel(modelId: string): Promise<'ok' | 'timed_out_uncertain'> {
+    return invoke<'ok' | 'timed_out_uncertain'>('acp_set_lane_model', {
+      session: this.session,
+      modelId,
     });
   }
 

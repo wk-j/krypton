@@ -69,7 +69,7 @@ ACP backends are code-defined, not configured in `krypton.toml`.
 
 | Backend ID | Command |
 |------------|---------|
-| `claude` | `npx -y @agentclientprotocol/claude-agent-acp` |
+| `claude` | `npx -y @agentclientprotocol/claude-agent-acp` (lane model applied via `session/set_model` after `session/new` when `lane_models.claude.active` is set — the adapter advertises model state and resolves aliases like `opus`/`sonnet`; non-fatal on failure. The agent-advertised `availableModels` also feed the in-harness live model picker, leader `,` — spec 127) |
 | `gemini` | `gemini --experimental-acp` |
 | `codex` | `codex-acp` |
 | `opencode` | `opencode acp` + `session/set_config_option model=zai-coding-plan/glm-5.1` |

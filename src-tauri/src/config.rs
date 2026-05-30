@@ -476,11 +476,18 @@ pub struct AcpHarnessConfig {
     pub memory_footer: bool,
     /// Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
     /// `claude`, `codex`, `cursor`, `droid`, `junie`). `active` is the model
-    /// passed at spawn (Gemini via `--model`, Droid via `-m`, OpenCode via
-    /// `session/set_config_option`). `models` is an informational allow-list
-    /// shown in the UI; it is not enforced. Backends that do not honour a
-    /// model flag in v1 (Claude, Codex, Cursor, Junie) are accepted but
-    /// ignored at spawn — the entry only drives the model chip.
+    /// applied to the lane: Gemini via `--model`, Droid via `-m`, OpenCode via
+    /// `session/set_config_option`, and any ACP-native backend that advertises
+    /// model state in `session/new` (verified: `claude`) via a post-`session/new`
+    /// `session/set_model` (sent verbatim so aliases like `opus`/`sonnet`
+    /// resolve adapter-side; a failure is non-fatal — the lane keeps the agent
+    /// default). `models` is an informational allow-list shown in the UI; it is
+    /// not enforced and is not the model discovery source. Backends that do not
+    /// advertise model state yet (Cursor, Junie, OMP, Pi) are accepted but
+    /// ignored at spawn — the entry only drives the model chip; they auto-enable
+    /// if/when their adapter advertises model state. `active` is snapshotted at
+    /// spawn: editing it takes effect only on the next spawn/`#new`/`#new!`/lane
+    /// restart, never on a live lane (respawn-to-apply).
     pub lane_models: HashMap<String, LaneModelConfig>,
 }
 

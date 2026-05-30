@@ -292,6 +292,21 @@ pub fn list_harness_mcp_stats(
     Ok(hook_server.list_harness_mcp_stats(&harness_id))
 }
 
+/// spec 128: set whether a lane is triage-equipped. The frontend is the
+/// authority on per-lane equip state (a runtime harness-view toggle); this
+/// mirrors it into the hook server so `tools/list` advertises `attention_flag`
+/// / `attention_resolve` to that lane and the call-time gate admits it.
+#[tauri::command]
+pub fn acp_set_lane_triage_equipped(
+    harness_id: String,
+    lane_label: String,
+    equipped: bool,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.set_lane_triage_equipped(&harness_id, &lane_label, equipped);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn save_temp_image(data: String, mime_type: String) -> Result<String, String> {
     use base64::Engine;
