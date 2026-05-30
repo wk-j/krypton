@@ -57,11 +57,9 @@ pub struct HarnessDirective {
     /// Reusable system-style prompt block.
     pub system_prompt: String,
     pub enabled: bool,
-    /// spec 129: spawn-time capability grant — a lane born with this directive
-    /// is triage-equipped (may call `attention_flag`) from its first
-    /// `tools/list`. This is a DEFAULT grant, not live reconfiguration: changing
-    /// it on an already-running lane updates call-time authorization but cannot
-    /// make the tool appear in a client that already fetched its tool list.
+    /// Legacy spec-129 metadata. Since spec 130, `attention_flag` is default-on
+    /// for every harness-memory-capable lane and this no longer controls tool
+    /// visibility. Retained for config compatibility and visible badges.
     pub triage_equipped: bool,
 }
 

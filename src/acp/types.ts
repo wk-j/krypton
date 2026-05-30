@@ -386,7 +386,7 @@ export type Reversibility = 'reversible' | 'costly' | 'irreversible';
 
 export type JudgementStatus = 'open' | 'accepted' | 'redirected' | 'self_resolved';
 
-/** The raw fields an equipped lane self-reports via the `attention_flag` MCP tool. */
+/** The raw fields a lane self-reports via the `attention_flag` MCP tool. */
 export interface AttentionFlagPayload {
   question: string; // the decision needing judgement
   chosen: string; // the best-guess the lane already took (non-blocking)

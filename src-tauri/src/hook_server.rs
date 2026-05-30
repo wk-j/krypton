@@ -169,10 +169,9 @@ pub struct HookServer {
     /// In-flight bus requests awaiting a frontend reply (peer_send, peer_list).
     /// Keyed by requestId. Sender is consumed on reply.
     pending_bus_replies: std::sync::Mutex<HashMap<String, oneshot::Sender<Value>>>,
-    /// spec 128: which lanes are triage-equipped, keyed by harness id → set of
-    /// lane labels. Authoritative gate for `attention_flag`/`attention_resolve`
-    /// (`tools/list` filtering + call-time check). Set by the frontend via the
-    /// `acp_set_lane_triage_equipped` command on equip/unequip and lane spawn.
+    /// Legacy triage-equipped labels, keyed by harness id → set of lane labels.
+    /// Spec 130 makes attention tools default-on for harness-memory-capable
+    /// lanes; this remains only for command/backward compatibility.
     triage_equipped: std::sync::Mutex<HashMap<String, HashSet<String>>>,
 }
 
@@ -205,7 +204,7 @@ impl HookServer {
         }
     }
 
-    /// spec 128: set whether a lane is triage-equipped (called by the frontend).
+    /// Legacy setter for whether a lane is triage-equipped.
     pub fn set_lane_triage_equipped(&self, harness_id: &str, lane_label: &str, equipped: bool) {
         let mut map = self
             .triage_equipped
@@ -217,17 +216,6 @@ impl HookServer {
         } else {
             lanes.remove(lane_label);
         }
-    }
-
-    /// spec 128: authoritative opt-in check for the attention tools.
-    fn is_lane_triage_equipped(&self, harness_id: &str, lane_label: &str) -> bool {
-        let map = self
-            .triage_equipped
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        map.get(harness_id)
-            .map(|lanes| lanes.contains(lane_label))
-            .unwrap_or(false)
     }
 
     /// Register a oneshot for a bus request awaiting a frontend reply.
@@ -443,7 +431,7 @@ impl HookServer {
                 updated_at: doc.updated_at,
             })
             .collect();
-        entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.updated_at));
         Ok(entries)
     }
 
@@ -652,12 +640,7 @@ async fn handle_harness_memory_mcp(
                 },
             }))
         }
-        "tools/list" => {
-            let include_triage = state
-                .hook_server
-                .is_lane_triage_equipped(&harness_id, &lane_label);
-            Ok(json!({ "tools": bus_tool_descriptors(include_triage) }))
-        }
+        "tools/list" => Ok(json!({ "tools": bus_tool_descriptors() })),
         "tools/call" => {
             let params = request.get("params").cloned().unwrap_or(Value::Null);
             handle_bus_tool_call(&state, &harness_id, &lane_label, params).await
@@ -704,15 +687,6 @@ async fn handle_bus_tool_call(
         "directive_preview" => directive_preview(arguments),
         "directive_apply" => directive_apply(state, harness_id, lane_label, arguments).await,
         "directive_remove" => directive_remove(state, harness_id, lane_label, arguments).await,
-        // spec 128: attention triage. Authoritative call-time opt-in gate — a
-        // non-equipped lane is rejected even if it somehow learned the name.
-        "attention_flag" | "attention_resolve"
-            if !state
-                .hook_server
-                .is_lane_triage_equipped(harness_id, lane_label) =>
-        {
-            Err("attention triage is not enabled for this lane".to_string())
-        }
         "attention_flag" => attention_flag(state, harness_id, lane_label, arguments).await,
         "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
@@ -940,8 +914,8 @@ async fn review_reply(
     }
 }
 
-/// attention_flag — an equipped lane self-reports a decision needing human
-/// judgement (spec 128). Validates the presence floor (traded_off non-empty,
+/// attention_flag — a lane self-reports a decision needing human judgement
+/// (spec 128/130). Validates the presence floor (traded_off non-empty,
 /// uncertainty non-blank), then round-trips like `review_request`: the frontend
 /// coordinator assembles the ReviewPacket blast-radius, inserts the JudgementItem
 /// into the demand queue, and replies with `{ item_id }`. Non-blocking — the lane
@@ -1846,7 +1820,7 @@ fn memory_list(hook_server: &Arc<HookServer>, harness_id: &str) -> Result<Value,
     Ok(json!({ "entries": entries }))
 }
 
-fn bus_tool_descriptors(include_triage: bool) -> Value {
+fn bus_tool_descriptors() -> Value {
     let mut tools = json!([
         {
             "name": "memory_set",
@@ -1956,7 +1930,7 @@ fn bus_tool_descriptors(include_triage: bool) -> Value {
         },
         {
             "name": "directive_apply",
-            "description": "Create/update (upsert), delete, or assign a directive. Use only when the user asks you to manage directives. `upsert` and `delete` mutate persistent config and require user approval; `assign` binds a directive to a lane at runtime (same-lane assignment is auto-approved, EXCEPT when it grants attention-triage — a `triage_equipped` directive that would newly equip the lane requires user approval even same-lane, since it is a capability grant; cross-lane always requires approval). Returns the approval outcome. After calling for a change that needs approval, expect the result to reflect the user's decision. Prefer `directive_remove` when deleting a single directive. For `upsert`, pass the directive fields as FLAT top-level parameters: id, title, icon, description, backend, task, system_prompt, enabled, triage_equipped. This flat shape is the reliable path across every MCP client. When UPDATING an existing directive you may send only the fields you want to change — omitted fields keep their current values (the harness merges over the stored directive). When CREATING a new directive, send at least id (and normally title + system_prompt). A nested `directive` object (or a JSON-string of one) is still accepted for backward compatibility, but the flat form is preferred — some MCP clients mangle nested objects on the wire.",
+            "description": "Create/update (upsert), delete, or assign a directive. Use only when the user asks you to manage directives. `upsert` and `delete` mutate persistent config and require user approval; `assign` binds a directive to a lane at runtime (same-lane assignment is auto-approved; cross-lane always requires approval). Returns the approval outcome. After calling for a change that needs approval, expect the result to reflect the user's decision. Prefer `directive_remove` when deleting a single directive. For `upsert`, pass the directive fields as FLAT top-level parameters: id, title, icon, description, backend, task, system_prompt, enabled, triage_equipped. This flat shape is the reliable path across every MCP client. `triage_equipped` is legacy metadata in spec 130: attention_flag is now default-on for every harness-memory-capable lane, so the field no longer controls tool visibility. When UPDATING an existing directive you may send only the fields you want to change — omitted fields keep their current values (the harness merges over the stored directive). When CREATING a new directive, send at least id (and normally title + system_prompt). A nested `directive` object (or a JSON-string of one) is still accepted for backward compatibility, but the flat form is preferred — some MCP clients mangle nested objects on the wire.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1973,7 +1947,7 @@ fn bus_tool_descriptors(include_triage: bool) -> Value {
                             "task": { "type": "string" },
                             "system_prompt": { "type": "string" },
                             "enabled": { "type": "boolean" },
-                            "triage_equipped": { "type": "boolean", "description": "spec 129: when true, a lane SPAWNED with this directive may call attention_flag from its first turn. A capability grant — surfaced on the approval card. Spawn-time only; flipping it does not retroactively equip a running lane." }
+                            "triage_equipped": { "type": "boolean", "description": "Legacy metadata retained for compatibility. Since spec 130, attention_flag is default-on for every harness-memory-capable lane and this field no longer controls tool visibility." }
                         }
                     },
                     "id": { "type": "string", "description": "Flat-form upsert (preferred): directive id (lowercase kebab-case). Identifies which directive to create or update; on update, fields you omit are preserved." },
@@ -1984,7 +1958,7 @@ fn bus_tool_descriptors(include_triage: bool) -> Value {
                     "task": { "type": "string", "description": "Flat-form upsert: free-form task key." },
                     "system_prompt": { "type": "string", "description": "Flat-form upsert: reusable system-style prompt block." },
                     "enabled": { "type": "boolean", "description": "Flat-form upsert: whether the directive is enabled." },
-                    "triage_equipped": { "type": "boolean", "description": "Flat-form upsert: spec 129 attention-triage capability grant." },
+                    "triage_equipped": { "type": "boolean", "description": "Flat-form upsert: legacy attention-triage metadata; no longer controls tool visibility." },
                     "directive_id": { "type": "string", "description": "Required for delete and assign." },
                     "lane": { "type": "string", "description": "Assign target lane display name; omitted = your own lane." },
                     "scope": { "type": "string", "description": "Assign scope, one of: next_turn, lane. Omitted = lane." },
@@ -2007,14 +1981,12 @@ fn bus_tool_descriptors(include_triage: bool) -> Value {
         }
     ]);
 
-    // spec 128: attention triage tools are advertised only to triage-equipped
-    // lanes. Call-time dispatch re-checks the opt-in (authoritative); this
-    // filtering just keeps the tools invisible to lanes that shouldn't see them.
-    if include_triage {
-        if let Value::Array(ref mut arr) = tools {
-            for descriptor in attention_tool_descriptors() {
-                arr.push(descriptor);
-            }
+    // spec 130: attention triage tools are default-on for every lane that gets
+    // this harness-memory MCP server. Payload validation and frontend insertion
+    // remain the meaningful guards.
+    if let Value::Array(ref mut arr) = tools {
+        for descriptor in attention_tool_descriptors() {
+            arr.push(descriptor);
         }
     }
     tools
@@ -2319,6 +2291,25 @@ mod tests {
         assert_eq!(
             d.system_prompt, "the carefully written prompt",
             "untouched field preserved"
+        );
+    }
+
+    #[test]
+    fn bus_tools_include_attention_by_default() {
+        let tools = bus_tool_descriptors();
+        let names: Vec<&str> = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|tool| tool.get("name").and_then(|name| name.as_str()))
+            .collect();
+        assert!(
+            names.contains(&"attention_flag"),
+            "attention_flag should be advertised without per-lane opt-in"
+        );
+        assert!(
+            names.contains(&"attention_resolve"),
+            "attention_resolve should be advertised without per-lane opt-in"
         );
     }
 }

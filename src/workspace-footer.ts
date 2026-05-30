@@ -102,6 +102,10 @@ export class WorkspaceFooter {
   private centerEl: HTMLElement;
   private rightEl: HTMLElement;
   private hintEl: HTMLElement;
+  private attentionEl: HTMLElement;
+  /** spec 128: open attention count per publishing harness instance. Summed for
+   * display so every lane's attention collects in this one place. */
+  private attentionBySource = new Map<string, number>();
   private musicEl: HTMLElement;
   private musicProgressFillEl: HTMLElement;
   private musicIconEl: HTMLElement | null = null;
@@ -150,6 +154,12 @@ export class WorkspaceFooter {
     this.rightEl.className = 'krypton-workspace-footer__right';
     this.hintEl = document.createElement('span');
     this.hintEl.className = 'krypton-workspace-footer__segment krypton-workspace-footer__hint';
+    // spec 128: global attention-triage badge — open count published by the ACP
+    // harness via `system:attention`, shown regardless of focused view.
+    this.attentionEl = document.createElement('span');
+    this.attentionEl.className =
+      'krypton-workspace-footer__segment krypton-workspace-footer__segment--attention';
+    this.attentionEl.hidden = true;
     this.musicEl = document.createElement('div');
     this.musicEl.className = 'krypton-workspace-footer__music';
     this.musicEl.setAttribute('aria-label', 'music mini player');
@@ -157,7 +167,7 @@ export class WorkspaceFooter {
     this.musicProgressFillEl = document.createElement('div');
     this.musicProgressFillEl.className = 'krypton-workspace-footer__music-progress-fill';
 
-    this.rightEl.append(this.hintEl, this.musicEl);
+    this.rightEl.append(this.attentionEl, this.hintEl, this.musicEl);
     this.root.append(this.leftEl, this.centerEl, this.rightEl);
 
     deps.inputRouter.onModeChange((mode) => {
@@ -200,6 +210,14 @@ export class WorkspaceFooter {
       if (!this.isFocusedSource(s.source)) return;
       this.busState = { state: 'normal', throughput: 0, process: null, progress: null };
       this.refresh('bus');
+    });
+    // spec 128: global (not focus-gated) — the ACP harness owns the count and it
+    // matters wherever the user is, so it survives focus changes.
+    this.bus.onSignal({ kind: 'system:attention' }, (s) => {
+      const { sourceId, openCount } = s.value;
+      if (openCount > 0) this.attentionBySource.set(sourceId, openCount);
+      else this.attentionBySource.delete(sourceId);
+      this.renderAttention();
     });
 
     this.timer = setInterval(() => {
@@ -338,7 +356,24 @@ export class WorkspaceFooter {
 
   private renderRight(summary: FocusSummary): void {
     this.hintEl.textContent = this.hintFor(summary);
+    this.renderAttention();
     this.renderMusic();
+  }
+
+  /** spec 128: render the open attention-triage count. Hidden at zero so the
+   * footer stays quiet when nothing needs the human. */
+  private renderAttention(): void {
+    let n = 0;
+    for (const count of this.attentionBySource.values()) n += count;
+    if (n <= 0) {
+      this.attentionEl.hidden = true;
+      this.attentionEl.textContent = '';
+      this.attentionEl.removeAttribute('title');
+      return;
+    }
+    this.attentionEl.hidden = false;
+    this.attentionEl.textContent = `◆ ${n} attention`;
+    this.attentionEl.title = `${n} open attention item${n === 1 ? '' : 's'} awaiting your judgement`;
   }
 
   private renderMusic(): void {

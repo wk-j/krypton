@@ -196,9 +196,8 @@ export interface HarnessDirective {
   task: string;
   system_prompt: string;
   enabled: boolean;
-  /** spec 129: spawn-time grant — a lane born with this directive is
-   * triage-equipped (may call attention_flag) from its first tools/list.
-   * A default grant, not live reconfiguration. */
+  /** Legacy spec-129 metadata. Since spec 130, attention_flag is default-on for
+   * every harness-memory-capable lane and this no longer controls tool visibility. */
   triage_equipped: boolean;
 }
 

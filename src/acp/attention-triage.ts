@@ -1,9 +1,9 @@
 // Krypton — Attention Triage store (spec 128).
 //
-// A per-lane opt-in router for self-reported judgement items. An equipped lane
-// calls the `attention_flag` MCP tool at end-of-turn to surface a decision that
+// A default-on router for self-reported judgement items. A lane calls the
+// `attention_flag` MCP tool at end-of-turn to surface a decision that
 // genuinely needs human judgement. Items accumulate in a *demand queue* ranked
-// by reversibility/blast-radius; the human discharges them (approve / redirect /
+// by reversibility/blast-radius; the human discharges them (acknowledge / redirect /
 // dig) in a summon-on-demand overlay. Nothing is auto-approved or deleted —
 // triage is a router, not a gatekeeper (see docs/adr/0001).
 //
@@ -46,14 +46,14 @@ export function compareJudgement(a: JudgementItem, b: JudgementItem): number {
 export class AttentionTriageStore {
   /** All items ever flagged, keyed by id. Resolved items stay here (silent pile). */
   private items = new Map<string, JudgementItem>();
-  /** Per-equipped-lane audit counters. Presence = lane is triage-equipped. */
+  /** Per-lane audit counters. Presence = lane participates in triage audit. */
   private stats = new Map<string, LaneTriageStats>();
 
   constructor(private readonly bus?: LaneBus) {}
 
   // ── Equip lifecycle ────────────────────────────────────────────────
 
-  /** Mark a lane triage-equipped. Idempotent; seeds zeroed audit counters. */
+  /** Mark a lane as participating in triage audit. Idempotent. */
   equip(laneId: string): void {
     if (!this.stats.has(laneId)) {
       this.stats.set(laneId, {
@@ -109,7 +109,7 @@ export class AttentionTriageStore {
     this.emitChanged();
   }
 
-  /** Human approves: pure bookkeeping, no lane effect. Open items only. */
+  /** Human acknowledges: pure bookkeeping, no lane effect. Open items only. */
   accept(itemId: string): boolean {
     return this.transition(itemId, 'accepted');
   }
@@ -121,7 +121,7 @@ export class AttentionTriageStore {
 
   /**
    * Lane self-resolves via `attention_resolve`: demote to the silent pile, never
-   * delete. A no-op if the item is already terminal (human approve/redirect wins).
+   * delete. A no-op if the item is already terminal (human acknowledge/redirect wins).
    *
    * Ownership: when `requesterLaneId` is given, only the lane that flagged the
    * item may resolve it — a foreign lane that learned the id is rejected.
@@ -192,7 +192,7 @@ export class AttentionTriageStore {
   // ── Silent-turn audit ──────────────────────────────────────────────
 
   /**
-   * Record the end of an equipped lane's turn (busy→idle). `flagged` is true if
+   * Record the end of a triage-audited lane's turn (busy→idle). `flagged` is true if
    * the turn produced ≥1 judgement item — in which case the flagged count was
    * already bumped by `insert()`, so we only count the silent case here.
    */

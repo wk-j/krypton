@@ -556,7 +556,7 @@ Unlike `krypton.toml` (hand-edited, never written by Krypton), `acp-harness.toml
 | `[[directives]].task` | string | `""` | Free-form task key (`implementation`/`review`/`research`/…), kebab-case |
 | `[[directives]].system_prompt` | string | `""` | Reusable system-style prompt block (16 KiB cap) |
 | `[[directives]].enabled` | bool | `true` | Disabled directives show in the picker but cannot be assigned |
-| `[[directives]].triage_equipped` | bool | `false` | spec 129: a **spawn-time** capability grant — a lane *spawned* with this directive may call `attention_flag` (raise judgement items) from its first turn. The only triage setting that lives on disk; equip itself is still per-lane runtime (spec 128). **Not** live reconfiguration: flipping it does not retroactively equip a running lane, and a manual `Leader '` override supersedes it. The directive approval card surfaces this grant explicitly. See `docs/129-directive-triage-grant.md`. |
+| `[[directives]].triage_equipped` | bool | `false` | Legacy spec-129 metadata. Since spec 130, `attention_flag` / `attention_resolve` are default-on for every lane that receives the `krypton-harness-memory` MCP server, so this field no longer controls tool visibility or assignment approval. Krypton still accepts and displays it as a legacy directive badge for compatibility. See `docs/130-default-attention-triage.md`. |
 
 A directive's `system_prompt` is injected into the same leading context packet as the lane-context stub, after it and before the user's prompt. Assign a directive to the focused lane with `Cmd+P → .` (the directive picker) or by clicking the composer `directive …` chip. Agents can also list/preview/create/update/delete/assign directives through the harness MCP tools (`directive_list`, `directive_preview`, `directive_remove`, `directive_apply`); persistent changes and cross-lane assignment require your approval in the lane transcript.
 
@@ -592,7 +592,7 @@ You are the review lane. Do not edit files. Prioritize bugs, regressions, risky 
 
 ### ACP Harness Attention Triage (spec 128)
 
-Attention triage is a **per-lane runtime toggle**, not a config-file setting — there is no `krypton.toml` or `acp-harness.toml` key for it in v1 (mirroring the runtime directive-binding model of spec 124). Equip the focused lane with `Cmd+P → '` ("Triage: Equip Lane"); only an equipped lane is advertised the `attention_flag` / `attention_resolve` MCP tools and may flag judgement items. The equip state resets when a lane is closed and does not persist across harness restarts. Summon the judgement queue with `Cmd+P → ;`. Because most ACP clients fetch the MCP tool list once per session, equip a lane at or before its first turn for the tool to surface; the harness's call-time gate is authoritative regardless. See `docs/128-attention-triage.md`.
+Attention triage is **default-on** for lanes that receive the `krypton-harness-memory` MCP server. There is no `krypton.toml` switch and no required directive grant: `tools/list` advertises `attention_flag` / `attention_resolve` by default, while payload validation and the review queue remain the safety surface. The old `Cmd+P → '` manual equip action has been removed from the active UI. Summon the judgement queue with `Cmd+P → ;`. Existing `triage_equipped` directive fields are preserved only as legacy metadata/badges. See `docs/128-attention-triage.md` and `docs/130-default-attention-triage.md`.
 
 ### Hooks Configuration
 

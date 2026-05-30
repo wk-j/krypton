@@ -6,6 +6,13 @@
 > Extends: `docs/128-attention-triage.md` (spec 128), `docs/124-acp-harness-directive-management.md` (spec 124)
 > Reviewed by: Codex-1 (adversarial design review, 7 findings — all adopted)
 
+> **Follow-up (spec 130).** This spawn-time grant model is superseded for tool
+> visibility: `attention_flag` / `attention_resolve` are now default-on for every
+> lane that receives the `krypton-harness-memory` MCP server. The
+> `triage_equipped` field remains accepted and visible as legacy directive
+> metadata, but no longer grants unique capability or triggers same-lane
+> assignment approval. See `docs/130-default-attention-triage.md`.
+
 ## Problem
 
 Spec 128 makes a lane able to call `attention_flag` only when it is *triage-equipped*. v1 models equip as a runtime-only per-lane toggle (`HarnessLane.triageEquipped`, bound to `Cmd+P '`). In practice this is hard to use: **most ACP clients fetch `tools/list` exactly once at session start**, so equipping a lane *after* it spawned never makes the tool appear — the lane was born without it. Spec 128 documents this as a caveat (128:20-23) but offers no ergonomic path to "this kind of lane should be able to flag from turn one."

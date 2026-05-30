@@ -292,10 +292,9 @@ pub fn list_harness_mcp_stats(
     Ok(hook_server.list_harness_mcp_stats(&harness_id))
 }
 
-/// spec 128: set whether a lane is triage-equipped. The frontend is the
-/// authority on per-lane equip state (a runtime harness-view toggle); this
-/// mirrors it into the hook server so `tools/list` advertises `attention_flag`
-/// / `attention_resolve` to that lane and the call-time gate admits it.
+/// Legacy spec-128/129 triage mirror. Since spec 130, attention tools are
+/// default-on for every harness-memory-capable lane; this command remains for
+/// backward compatibility and diagnostics.
 #[tauri::command]
 pub fn acp_set_lane_triage_equipped(
     harness_id: String,

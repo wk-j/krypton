@@ -111,7 +111,7 @@ function renderJudgementCard(item: JudgementItem, vm: TriageOverlayViewModel, se
       const hint = document.createElement('div');
       hint.className = 'acp-triage__action-hint';
       hint.innerHTML =
-        `<kbd>a</kbd> approve · <kbd>r</kbd> redirect · <kbd>o</kbd> dig (open lane) · <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>Esc</kbd> close`;
+        `<kbd>a</kbd> acknowledge · <kbd>r</kbd> redirect · <kbd>o</kbd> dig (open lane) · <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>Esc</kbd> close`;
       actions.appendChild(hint);
     }
     card.appendChild(actions);
@@ -161,11 +161,4 @@ export function renderTriageOverlay(panel: HTMLElement, vm: TriageOverlayViewMod
     list.appendChild(renderJudgementCard(item, vm, i === vm.selectedIndex));
   });
   panel.appendChild(list);
-}
-
-/** Render the static backpressure gauge (`◆ N`). Caller hides the element at 0. */
-export function renderTriageGauge(gauge: HTMLElement, openCount: number): void {
-  gauge.hidden = openCount === 0;
-  gauge.textContent = `◆ ${openCount}`;
-  gauge.title = `${openCount} judgement item${openCount === 1 ? '' : 's'} awaiting review (Cmd+P ;)`;
 }

@@ -1,28 +1,8 @@
-/* Attention Triage (spec 128) — summon-on-demand judgement queue overlay and
-   the static backpressure gauge. Cyberpunk tokens mirror the review-card /
-   model-picker patterns in acp-harness.css. Deliberately motionless: no blink,
-   no pulse — the gauge is an ambient pull, not an alert. */
-
-/* ── Backpressure gauge ───────────────────────────────────── */
-
-.acp-harness__triage-gauge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 8px;
-  margin-right: 8px;
-  font-size: 0.82em;
-  letter-spacing: 0.06em;
-  color: var(--krypton-window-accent, #0cf);
-  border: 1px solid rgba(0, 204, 255, 0.3);
-  border-radius: 3px;
-  background: rgba(0, 204, 255, 0.06);
-  /* No animation — static by design (spec 128). */
-}
-
-.acp-harness__triage-gauge[hidden] {
-  display: none;
-}
+/* Attention Triage (spec 128) — summon-on-demand judgement queue overlay.
+   Cyberpunk tokens mirror the review-card / model-picker patterns in
+   acp-harness.css. The static backpressure gauge (open count) lives in the
+   global workspace footer — see src/styles/workspace-footer.css
+   (`__segment--attention`) and WorkspaceFooter — not in the harness chrome. */
 
 /* ── Triage grant markers (spec 129) ─────────────────────────
    Flat accent chips that show which lanes / directives may flag.

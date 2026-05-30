@@ -354,11 +354,9 @@ pub fn run() {
                     log::info!("scale factor changed; reapplying fullscreen geometry");
                     apply_fullscreen_geometry(&webview);
                 }
-                tauri::WindowEvent::Focused(true) => {
-                    if window_is_offscreen(&webview) {
-                        log::warn!("window detected offscreen on focus; recentering");
-                        apply_fullscreen_geometry(&webview);
-                    }
+                tauri::WindowEvent::Focused(true) if window_is_offscreen(&webview) => {
+                    log::warn!("window detected offscreen on focus; recentering");
+                    apply_fullscreen_geometry(&webview);
                 }
                 _ => {}
             }

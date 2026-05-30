@@ -238,6 +238,9 @@ export class Compositor {
   private workspace: HTMLElement;
   private onFocusChangeCallbacks: Array<(id: WindowId | null) => void> = [];
   private onRelayoutCallbacks: Array<() => void> = [];
+  /** Global ViewBus, captured in attachToBus; passed to views that publish
+   * system-level signals (e.g. the ACP harness attention count). */
+  private bus: ViewBus | null = null;
   private customKeyHandler: CustomKeyHandler | null = null;
   private layoutMode: LayoutMode = LayoutMode.Focus;
   /** Visual order of window IDs after the last Focus layout relayout.
@@ -936,6 +939,7 @@ export class Compositor {
    *  Call once at boot, before windows are created so the bus catches the
    *  initial focus-change. See docs/105-view-protocol.md § Compositor ↔ Bus. */
   attachToBus(bus: ViewBus): void {
+    this.bus = bus;
     this.onFocusChange((id) => {
       bus.publishSignal({
         kind: 'system:focus-change',
@@ -2909,7 +2913,7 @@ export class Compositor {
   async openAcpHarnessView(): Promise<void> {
     const { AcpHarnessView } = await import('./acp/acp-harness-view');
     const projectDir = await this.getFocusedCwd();
-    const view = new AcpHarnessView(projectDir);
+    const view = new AcpHarnessView(projectDir, this.bus);
     view.onClose(() => this.closeTab());
     await this.createContentTab('ACP Harness', view);
   }

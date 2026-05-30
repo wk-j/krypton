@@ -36,6 +36,12 @@ export interface SignalValueMap {
   'view:progress': { state: ProgressState; pct: number | null };
   'system:focus-change': { windowId: WindowId | null };
   'system:relayout': Record<string, never>;
+  // spec 128: open attention-triage item count, published globally by each ACP
+  // harness so the workspace footer can surface it regardless of focused view.
+  // `sourceId` identifies the publishing harness instance so the footer sums
+  // across all of them (collect every lane's attention in one place) rather than
+  // last-writer-wins. A harness publishes `openCount: 0` for its id on dispose.
+  'system:attention': { sourceId: string; openCount: number };
 }
 
 export type SignalKind = keyof SignalValueMap;

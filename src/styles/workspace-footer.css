@@ -93,6 +93,17 @@
   color: var(--krypton-yellow, #ffcc00);
 }
 
+/* spec 128: attention-triage open count — a quiet chip that only shows when
+   the ACP harness has items awaiting the human's judgement. */
+.krypton-workspace-footer__segment--attention {
+  padding: 0 7px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 176, 64, 0.45);
+  color: var(--krypton-amber, #ffb040);
+  background: rgba(255, 176, 64, 0.1);
+  letter-spacing: 0.04em;
+}
+
 .krypton-workspace-footer__hint {
   color: rgba(142, 255, 176, 0.72);
 }

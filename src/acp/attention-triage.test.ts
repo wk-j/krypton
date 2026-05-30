@@ -104,7 +104,7 @@ describe('AttentionTriageStore lifecycle', () => {
 });
 
 describe('AttentionTriageStore audit + bus', () => {
-  it('counts flagged vs silent turns per equipped lane', () => {
+  it('counts flagged vs silent turns per audited lane', () => {
     const store = new AttentionTriageStore();
     store.equip('l');
     store.insert(makeItem('a', 'l', 'costly', 1)); // flaggedCount→1
@@ -116,7 +116,7 @@ describe('AttentionTriageStore audit + bus', () => {
     expect(stats?.silentTurnCount).toBe(2);
   });
 
-  it('does not track turns for unequipped lanes', () => {
+  it('does not track turns before audit state is seeded', () => {
     const store = new AttentionTriageStore();
     store.recordTurnEnd('ghost', false);
     expect(store.statsFor('ghost')).toBeNull();

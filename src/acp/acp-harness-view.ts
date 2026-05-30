@@ -41,7 +41,6 @@ import type {
 import { LaneBus } from './lane-bus';
 import { AttentionTriageStore } from './attention-triage';
 import {
-  renderTriageGauge,
   renderTriageOverlay,
   type TriageOverlayViewModel,
 } from './attention-overlay';
@@ -85,6 +84,8 @@ import type {
   PaneContentType,
 } from '../types';
 import type { PaletteAction, PaletteContext } from '../palette-types';
+import type { ViewBus } from '../view-bus';
+import { SYSTEM_SOURCE } from '../view-bus-types';
 import {
   loadConfig,
   getAcpHarnessConfig,
@@ -475,15 +476,12 @@ interface HarnessLane {
   turnDirectiveOverride: { directiveId: string | null } | null;
   /** spec 124: restored after a next-turn override completes. */
   previousDirectiveId: string | null;
-  /** spec 128: lane is triage-equipped (sees attention_flag/attention_resolve).
-   *  Effective state, mirrored into the hook server for the tools/list gate.
-   *  Derived (spec 129): manual override if set, else the bound directive's
-   *  grant — never written directly except via the equip helpers. */
+  /** spec 130: lane participates in attention-triage audit. Attention tools are
+   *  default-on for every harness-memory-capable lane; this flag now drives local
+   *  audit/UI behavior rather than MCP tool visibility. */
   triageEquipped: boolean;
-  /** spec 129: manual `Cmd+P '` override of the triage grant. `null` = follow
-   *  the bound directive; a boolean = an explicit human decision that wins
-   *  until the lane is closed or a new directive is assigned (which resets it
-   *  to null). Keeps directive-sourced and manual equip from fighting blindly. */
+  /** Legacy spec-129 override field retained for saved/runtime shape stability.
+   *  The user-facing manual toggle was removed in spec 130. */
   triageOverride: boolean | null;
   /** spec 128: set when this lane flagged ≥1 judgement item during the current
    *  turn; read at busy→idle to classify the turn as flagged vs silent. */
@@ -778,7 +776,7 @@ const LANE_DEFAULTS = {
   pendingDirectiveChange: null,
   turnDirectiveOverride: null,
   previousDirectiveId: null,
-  triageEquipped: false,
+  triageEquipped: true,
   triageOverride: null,
   flaggedThisTurn: false,
 };
@@ -795,11 +793,23 @@ const md = new Marked(
   }),
 );
 
+/** spec 128: monotonic per-session counter so each harness instance publishes
+ * attention counts under a distinct `sourceId`, letting the footer sum them. */
+let harnessViewSeq = 0;
+
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
 
   private projectDir: string | null;
+  /** spec 128: global ViewBus, used to publish the open attention count so the
+   * workspace footer can show it regardless of which view is focused. */
+  private viewBus: ViewBus | null = null;
+  /** spec 128: stable identity for this harness instance on the footer's
+   * attention tally. Lets the footer aggregate across multiple harness tabs. */
+  private readonly attentionSourceId = `harness-${++harnessViewSeq}`;
+  /** Last attention count published to the footer; dedupes redundant signals. */
+  private lastPublishedAttention = -1;
   private lanes: HarnessLane[] = [];
   private activeLaneId = '';
   private laneBus = new LaneBus();
@@ -898,7 +908,6 @@ export class AcpHarnessView implements ContentView {
   private metricsOverlayEl!: HTMLElement;
   private triageOverlayEl!: HTMLElement;
   private triagePanelEl!: HTMLElement;
-  private triageGaugeEl!: HTMLElement;
   private pickerEl!: HTMLElement;
   private directivePickerEl!: HTMLElement;
   private modelPickerEl!: HTMLElement;
@@ -922,8 +931,9 @@ export class AcpHarnessView implements ContentView {
   private observedTranscriptBody: HTMLElement | null = null;
   private observedTranscriptRows = new Set<HTMLElement>();
 
-  constructor(projectDir: string | null = null) {
+  constructor(projectDir: string | null = null, bus: ViewBus | null = null) {
     this.projectDir = projectDir;
+    this.viewBus = bus;
     this.zenMode = readZenModePreference(projectDir);
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
@@ -1295,7 +1305,7 @@ export class AcpHarnessView implements ContentView {
       },
     );
 
-    // spec 128: an equipped lane flagged a judgement item via attention_flag.
+    // spec 130: a lane flagged a judgement item via attention_flag.
     type AttentionFlagEvent = {
       itemId: string;
       fromLaneId: string; // display name from Rust
@@ -1381,9 +1391,12 @@ export class AcpHarnessView implements ContentView {
   }): { inserted: boolean; reason?: string } {
     const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
     if (!lane) return { inserted: false, reason: 'unknown_sender' };
-    // Defensive: Rust is the authoritative gate, but never queue for a lane the
-    // view considers unequipped (e.g. a race with unequip).
-    if (!lane.triageEquipped) return { inserted: false, reason: 'not_equipped' };
+    // spec 130: attention tools are default-on. If this lane came from an older
+    // runtime path, seed the local audit state instead of rejecting the flag.
+    if (!lane.triageEquipped) {
+      lane.triageEquipped = true;
+      this.triageStore.equip(lane.id);
+    }
 
     const item: JudgementItem = {
       id: env.itemId,
@@ -1811,15 +1824,6 @@ export class AcpHarnessView implements ContentView {
         group: 'Harness',
         run: () => this.openTriageOverlay(),
       },
-      {
-        // spec 128: toggle whether the active lane is triage-equipped.
-        key: "'",
-        label: 'Triage: Equip Lane',
-        group: 'Lane',
-        run: () => this.toggleTriageEquip(),
-        isEnabled: () => this.lanes.length > 0,
-        disabledReason: () => 'no active lane',
-      },
     ];
   }
 
@@ -2095,6 +2099,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   dispose(): void {
+    // spec 128: clear the footer attention badge — the harness is going away.
+    this.publishAttentionCount(0);
     this.stopComposerTick();
     this.stopMetricsTick();
     if (this.toolTickTimer !== null) {
@@ -2298,54 +2304,28 @@ export class AcpHarnessView implements ContentView {
   // ──────────────────────────────────────────────────────────────────
   // Attention triage (spec 128)
 
-  /**
-   * spec 129: mirror a lane's effective triage-equip into the hook server so
-   * `tools/list` advertises (or hides) the attention tools and the call-time
-   * gate matches. Returns the invoke promise so the spawn path can AWAIT it
-   * before the ACP client issues its first `tools/list` — a fire-and-forget
-   * call there could lose the race and the tool would be missing for exactly
-   * the lane a triage directive exists to serve.
-   */
-  private async mirrorTriageEquip(lane: HarnessLane, equipped: boolean): Promise<void> {
-    if (!this.harnessMemoryId) return;
-    try {
-      await invoke('acp_set_lane_triage_equipped', {
-        harnessId: this.harnessMemoryId,
-        laneLabel: lane.displayName,
-        equipped,
-      });
-    } catch (err) {
-      console.warn('acp_set_lane_triage_equipped failed', err);
-    }
-  }
-
-  /** spec 129: does the lane's *lane-scoped* directive grant triage? A one-shot
-   *  next-turn override is deliberately ignored — equip follows the durable
-   *  binding, not a transient per-prompt directive. A disabled directive grants
-   *  nothing (Codex finding 5). */
+  /** Legacy spec-129 metadata: directives may still carry/show a triage badge,
+   * but spec 130 no longer uses it to control tool visibility. */
   private directiveGrantsTriage(lane: HarnessLane): boolean {
     const directive = this.directiveById(lane.activeDirectiveId);
     return directive?.triage_equipped === true && directive.enabled;
   }
 
-  /** spec 129: effective equip = manual override if set, else the directive grant. */
+  /** spec 130: attention triage is default-on for harness-memory-capable lanes. */
   private computeTriageEquipped(lane: HarnessLane): boolean {
-    return lane.triageOverride ?? this.directiveGrantsTriage(lane);
+    void lane;
+    return true;
   }
 
-  /** spec 129: where the lane's current equip state comes from, for display. */
-  private triageSource(lane: HarnessLane): 'manual' | 'directive' | 'off' {
-    if (lane.triageOverride !== null) return 'manual';
-    return this.directiveGrantsTriage(lane) ? 'directive' : 'off';
+  /** Where the visible triage chip comes from. Directive grants are legacy
+   * metadata; default is the active capability source. */
+  private triageSource(lane: HarnessLane): 'default' | 'legacy' {
+    return this.directiveGrantsTriage(lane) ? 'legacy' : 'default';
   }
 
   /**
-   * spec 129: recompute a *running* lane's effective equip after its override
-   * or bound directive changed, and apply it (store + Rust mirror). The mirror
-   * is fire-and-forget here — the lane's client already fetched its tools/list,
-   * so there is nothing to race; only the spawn path (`addLaneFromDirective`)
-   * awaits the mirror. Mid-session changes update the call-time gate + UI but
-   * cannot make the tool re-appear (spec 129 caveat).
+   * spec 130: ensure a running lane participates in attention audit. Directive
+   * changes no longer affect MCP tool visibility.
    */
   private refreshTriageEquip(lane: HarnessLane): void {
     const next = this.computeTriageEquipped(lane);
@@ -2353,33 +2333,6 @@ export class AcpHarnessView implements ContentView {
     lane.triageEquipped = next;
     if (next) this.triageStore.equip(lane.id);
     else this.triageStore.unequip(lane.id);
-    void this.mirrorTriageEquip(lane, next);
-    this.renderTriageGaugeEl();
-    this.scheduleLaneRender(lane);
-  }
-
-  /** Toggle the manual triage override on the active (or given) lane. The
-   *  override wins over the directive grant until the lane is closed or a new
-   *  directive is assigned (which clears it). */
-  private toggleTriageEquip(lane: HarnessLane | null = this.activeLane()): void {
-    if (!lane) {
-      this.flashChip('no active lane');
-      return;
-    }
-    const next = !lane.triageEquipped;
-    lane.triageOverride = next; // explicit human decision; lane-local
-    lane.triageEquipped = next;
-    if (next) this.triageStore.equip(lane.id);
-    else this.triageStore.unequip(lane.id);
-    void this.mirrorTriageEquip(lane, next);
-    this.appendTranscript(
-      lane,
-      'system',
-      next
-        ? '[triage] equipped (manual) — this lane can now flag judgement items (effective on its next tools/list)'
-        : '[triage] unequipped (manual)',
-    );
-    this.flashChip(next ? `triage equipped: ${lane.displayName}` : `triage off: ${lane.displayName}`);
     this.renderTriageGaugeEl();
     this.scheduleLaneRender(lane);
   }
@@ -2402,7 +2355,22 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderTriageGaugeEl(): void {
-    renderTriageGauge(this.triageGaugeEl, this.triageStore.openCount());
+    // spec 128: the open-count gauge lives in the global workspace footer (its
+    // documented home), not in the harness chrome — publish and let the footer
+    // render it. The overlay is reached via the `;` leader key.
+    this.publishAttentionCount(this.triageStore.openCount());
+  }
+
+  /** spec 128: surface the open attention count on the global workspace footer.
+   * Deduped so a no-op `triage:changed` does not churn the footer. */
+  private publishAttentionCount(openCount: number): void {
+    if (openCount === this.lastPublishedAttention) return;
+    this.lastPublishedAttention = openCount;
+    this.viewBus?.publishSignal({
+      kind: 'system:attention',
+      source: SYSTEM_SOURCE,
+      value: { sourceId: this.attentionSourceId, openCount },
+    });
   }
 
   private renderTriageOverlayEl(): void {
@@ -2455,7 +2423,7 @@ export class AcpHarnessView implements ContentView {
     if (!item) return;
     if (e.key === 'a') {
       this.triageStore.accept(item.id);
-      this.flashChip('approved');
+      this.flashChip('acknowledged');
       this.renderTriageOverlayEl();
       return;
     }
@@ -2643,12 +2611,8 @@ export class AcpHarnessView implements ContentView {
 
     const commandCenter = document.createElement('div');
     commandCenter.className = 'acp-harness__command-center';
-    // spec 128: static backpressure gauge (◆ N). Hidden when the queue is empty.
-    this.triageGaugeEl = document.createElement('button');
-    this.triageGaugeEl.className = 'acp-harness__triage-gauge';
-    this.triageGaugeEl.hidden = true;
-    this.triageGaugeEl.addEventListener('click', () => this.openTriageOverlay());
-    commandCenter.appendChild(this.triageGaugeEl);
+    // spec 128: the open-count gauge lives in the global workspace footer, not
+    // here — see renderTriageGaugeEl / WorkspaceFooter. Overlay opens via `;`.
     this.composerEl = document.createElement('div');
     this.composerEl.className = 'acp-harness__composer';
     this.composerEl.addEventListener('click', (e: MouseEvent) => {
@@ -2867,11 +2831,8 @@ export class AcpHarnessView implements ContentView {
         lane.turnDirectiveOverride = null;
         lane.previousDirectiveId = null;
       }
-      // spec 129: a directive that was deleted or disabled (or had its grant
-      // flipped) on disk must no longer grant triage. `directiveGrantsTriage`
-      // already gates on the directive existing + being enabled, so recomputing
-      // here drops a stale directive-sourced equip. A manual override survives —
-      // it represents an explicit human decision, not the directive.
+      // spec 130: directive changes no longer grant/revoke attention tools, but
+      // recomputing keeps legacy chip metadata and audit state coherent.
       this.refreshTriageEquip(lane);
     }
   }
@@ -2899,7 +2860,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private createLane(index: number, backendId: string, displayName: string): HarnessLane {
-    return {
+    const lane: HarnessLane = {
       ...LANE_DEFAULTS,
       id: `${backendId}-${index}`,
       index,
@@ -2919,6 +2880,11 @@ export class AcpHarnessView implements ContentView {
       promptHistory: [],
       reviewReplyAttemptsThisTurn: new Set(),
     };
+    // spec 130: every harness-memory-capable lane gets attention tools by
+    // default; seed local audit counters at lane creation so silent turns count
+    // from the first response.
+    this.triageStore.equip(lane.id);
+    return lane;
   }
 
   private async spawnLane(lane: HarnessLane): Promise<void> {
@@ -3227,7 +3193,7 @@ export class AcpHarnessView implements ContentView {
     if (lane.pendingDirectiveChange) {
       lane.activeDirectiveId = lane.pendingDirectiveChange.directiveId;
       lane.pendingDirectiveChange = null;
-      this.refreshTriageEquip(lane); // spec 129: re-derive grant from the promoted directive
+      this.refreshTriageEquip(lane); // spec 130: keep audit/default state coherent
     }
     const blocks = this.buildPromptBlocks(lane, text, images);
     if (lane.turnDirectiveOverride) {
@@ -3330,6 +3296,13 @@ export class AcpHarnessView implements ContentView {
         'Shared memory is available through the krypton-harness-memory MCP server: call memory_set { summary, detail } to record state for future turns and memory_get { lane } / memory_list to read it back.',
       );
     }
+    // spec 130: attention tools are default-on for every harness-memory-capable
+    // lane, but a lane only learns their exact names via ranked tool discovery —
+    // which can drop attention_flag under a capped query. Name both tools here so
+    // the model can target them directly instead of relying on search ranking.
+    lines.push(
+      'Attention triage: when a turn forces a genuinely hard judgement call — an irreversible or costly choice, a real ambiguity in intent, or a trade-off you are not confident about — surface ONE such decision to the human review queue with attention_flag { question, chosen, rationale, traded_off, uncertainty, reversibility }, then keep working (it is non-blocking; proceed with `chosen`). Use attention_resolve { item_id } if you later settle it yourself. Never flag the routine, reversible 80%, and never flag proactively.',
+    );
     return lines.join('\n');
   }
 
@@ -3558,10 +3531,9 @@ export class AcpHarnessView implements ContentView {
   /** Assign (lane scope) or defer a directive to the focused lane. */
   private assignDirectiveToLane(lane: HarnessLane, directiveId: string | null): void {
     const busy = lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer';
-    // spec 129: a new directive context clears any manual triage override — the
-    // lane re-derives its grant from the incoming directive (unless the user
-    // explicitly toggles again afterward). For the deferred (busy) case the
-    // recompute happens when the change is promoted before the next send.
+    // spec 130: manual triage override is legacy; clear it when directive
+    // context changes. For the deferred (busy) case the recompute happens when
+    // the change is promoted before the next send.
     lane.triageOverride = null;
     if (busy) {
       lane.pendingDirectiveChange = { directiveId };
@@ -3591,22 +3563,8 @@ export class AcpHarnessView implements ContentView {
     this.appendTranscript(lane, 'system', `directive set: ${directive.id}`);
     this.lanes.push(lane);
     this.activateLane(lane.id);
-    // spec 129: a lane born with a triage-granting directive must be equipped
-    // BEFORE spawnLane starts the ACP client — the client fetches tools/list
-    // once at session start, so the Rust mirror must COMPLETE first or the tool
-    // is missing for exactly the lane this grant exists to serve. Awaited, not
-    // fire-and-forget (Codex finding 3).
-    const equip = this.computeTriageEquipped(lane);
-    if (equip) {
-      lane.triageEquipped = true;
-      this.triageStore.equip(lane.id);
-      this.appendTranscript(
-        lane,
-        'system',
-        '[triage] equipped (directive) — may flag judgement items from its first turn',
-      );
-      await this.mirrorTriageEquip(lane, true);
-    }
+    // spec 130: attention tools are default-on; directive triage grants are
+    // retained only as visible legacy metadata.
     await this.spawnLane(lane);
   }
 
@@ -3812,10 +3770,10 @@ export class AcpHarnessView implements ContentView {
     let diff: { title: string; unified: string } | undefined;
     if (env.action === 'upsert' && env.directive) {
       const verb = env.isUpdate ? 'update' : 'create';
-      // spec 129: a triage grant is a capability grant (who may call the human's
-      // attention) — surface it on the approval card, never bury it in metadata.
+      // spec 130: triage metadata is legacy and no longer grants tool
+      // visibility, but keep it visible so older directive files stay legible.
       const grant = env.directive.triage_equipped
-        ? ' · GRANTS attention-triage (lanes born with it may flag for your review)'
+        ? ' · legacy triage badge'
         : '';
       banner = `${fromLane.displayName} wants to ${verb} directive ${env.directive.id}${env.directive.triage_equipped ? ' [+triage]' : ''}`;
       cardText = `directive ${verb}: ${env.directive.id}${grant}${reason}`;
@@ -3868,18 +3826,10 @@ export class AcpHarnessView implements ContentView {
       }
     }
     const crossLane = targetLane.id !== fromLane.id;
-    // spec 129: assigning a triage-granting directive is a *capability
-    // escalation* — it hands the lane the ability to call for the human's
-    // attention. Per ADR-0001 equip must be user-chosen, so this needs explicit
-    // approval even same-lane, exactly like a cross-lane assign. Skip the prompt
-    // when it grants nothing new: the lane is already equipped, the grant is
-    // cleared/non-triage, or the scope is `next_turn` (a one-shot directive
-    // override never drives equip — see directiveGrantsTriage).
-    const assignedDirective = directiveId !== null ? this.directiveById(directiveId) : null;
-    const grantsTriage =
-      assignedDirective?.triage_equipped === true && assignedDirective.enabled;
-    const escalatesTriage = grantsTriage && scope === 'lane' && !targetLane.triageEquipped;
-    const autoApproved = !crossLane && !escalatesTriage;
+    // spec 130: attention tools are default-on, so triage metadata is no longer
+    // a capability escalation. Same-lane assignment returns to the normal
+    // auto-approval rule; cross-lane still requires approval.
+    const autoApproved = !crossLane;
     const apply = (): unknown => {
       this.applyDirectiveAssignment(targetLane, directiveId, scope);
       this.appendTranscript(
@@ -3895,17 +3845,12 @@ export class AcpHarnessView implements ContentView {
       reply(apply());
       return;
     }
-    // Needs explicit user approval: a cross-lane assign, or a triage capability
-    // grant (which the banner calls out so the human knows what they are okaying).
-    const banner = escalatesTriage
-      ? (crossLane
-          ? `${fromLane.displayName} wants to grant attention-triage to ${targetLane.displayName} via directive ${directiveId}`
-          : `${fromLane.displayName} wants to self-equip attention-triage via directive ${directiveId} — it may then flag for your attention`)
-      : `${fromLane.displayName} wants to assign directive to ${targetLane.displayName}`;
+    // Needs explicit user approval for cross-lane assignment.
+    const banner = `${fromLane.displayName} wants to assign directive to ${targetLane.displayName}`;
     this.appendTranscript(
       fromLane,
       'system',
-      `directive assign → ${targetLane.displayName}: ${directiveId ?? 'clear'}${escalatesTriage ? ' [+triage grant]' : ''}${env.reason ? ` — ${env.reason}` : ''}`,
+      `directive assign → ${targetLane.displayName}: ${directiveId ?? 'clear'}${env.reason ? ` — ${env.reason}` : ''}`,
     );
     this.pendingDirectiveApproval = {
       requestId: env.requestId ?? '',
@@ -4305,8 +4250,8 @@ export class AcpHarnessView implements ContentView {
     if (index !== -1) this.lanes.splice(index, 1);
     this.mcpStatsByLane.delete(lane.displayName);
     this.laneMetricHistory.delete(lane.id);
-    // spec 128: drop the closed lane's queued items + audit row, and tell the
-    // hook server it is no longer triage-equipped.
+    // Drop the closed lane's queued items + audit row. The legacy Rust mirror is
+    // also cleared, though spec 130 no longer gates attention tools with it.
     if (lane.triageEquipped && this.harnessMemoryId) {
       void invoke('acp_set_lane_triage_equipped', {
         harnessId: this.harnessMemoryId,
@@ -5200,10 +5145,10 @@ export class AcpHarnessView implements ContentView {
         const scope = [d.backend || 'all backends', d.task].filter(Boolean).join(' · ');
         const badge = d.enabled ? '' : 'disabled';
         const badgeEl = badge ? `<span class="acp-harness__directive-badge">${esc(badge)}</span>` : '';
-        // spec 129: mark directives that grant attention-triage so the user can
-        // see which roles let a lane flag for their attention.
+        // spec 130: keep legacy triage metadata visible, but it no longer gates
+        // attention_flag visibility.
         const triageEl = d.triage_equipped
-          ? '<span class="acp-harness__directive-badge acp-harness__directive-badge--triage" title="lanes spawned with this directive may flag judgement items">◆ triage</span>'
+          ? '<span class="acp-harness__directive-badge acp-harness__directive-badge--triage" title="legacy triage metadata; attention tools are default-on">◆ triage</span>'
           : '';
         const logoCls = d.backend === ''
           ? 'all'
@@ -5671,11 +5616,12 @@ export class AcpHarnessView implements ContentView {
     const label = directive ? directive.id : 'none';
     const cls = `acp-harness__directive-chip${directive ? ' acp-harness__directive-chip--set' : ''}${pending ? ' acp-harness__directive-chip--pending' : ''}`;
     const suffix = pending ? ' (next send)' : '';
-    // spec 129: show the triage grant + its source (directive vs manual) so the
-    // user can see at a glance which lanes may flag for their attention.
+    // spec 130: all harness-memory lanes may flag by default. Keep showing
+    // legacy directive metadata when present so older directive files stay
+    // legible.
     const source = this.triageSource(lane);
     const triageTag = lane.triageEquipped
-      ? ` <span class="acp-harness__directive-chip__triage" title="triage equipped (${source}) — this lane may flag judgement items">◆ ${source}</span>`
+      ? ` <span class="acp-harness__directive-chip__triage" title="attention triage ${source}; tools are available when this lane has harness memory MCP">◆ ${source}</span>`
       : '';
     return `<span class="${cls}" data-open-directive-picker="1" title="Cmd+P then . to change">directive ${esc(label)}${suffix}${triageTag}</span>`;
   }

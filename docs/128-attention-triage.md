@@ -10,9 +10,10 @@
 >   is a `GLOBAL_LEADER_RESERVED_KEYS` entry (compositor focus-down), and the
 >   input router rejects local bindings that collide with global leader keys.
 >   Mirroring the spec-124 (`.`) and spec-127 (`,`) substitutions, the overlay
->   is bound to **`Leader ;`** ("Triage Queue") and equip/unequip to **`Leader '`**
->   ("Triage: Equip Lane"). Inside the overlay, `j`/`k`/`a`/`r`/`o`/`Enter`/`Esc`
->   work exactly as the draft's overlay table specifies (raw keys, not leader-gated).
+>   is bound to **`Leader ;`** ("Triage Queue"). Spec 130 later removed the
+>   separate equip/unequip leader action. Inside the overlay,
+>   `j`/`k`/`a`/`r`/`o`/`Enter`/`Esc` work exactly as the draft's overlay table
+>   specifies (raw keys, not leader-gated).
 > - **Equip persistence.** "Persisted alongside lane config" is implemented as a
 >   *runtime* per-lane toggle (`HarnessLane.triageEquipped`), matching the
 >   spec-124 directive-binding model the draft explicitly invokes (that binding is
@@ -29,6 +30,13 @@
 > `Leader '` toggle remains as a runtime override; `HarnessLane.triageEquipped`
 > is now the *effective* state, derived from the override or the bound
 > directive. See `docs/129-directive-triage-grant.md`.
+>
+> **Follow-up (spec 130).** Specs 128/129's per-lane opt-in model is superseded:
+> every lane that receives the `krypton-harness-memory` MCP server is advertised
+> `attention_flag` / `attention_resolve` by default. The `Leader '` manual equip
+> action is removed from the active UI. `triage_equipped` remains visible as
+> legacy directive metadata only; it no longer gates tool visibility. See
+> `docs/130-default-attention-triage.md`.
 
 ## Problem
 
@@ -36,7 +44,7 @@ Running many ACP lanes is cheap; closing the loop on them is not. The human's at
 
 ## Solution
 
-A per-lane opt-in **attention triage** system. A lane equipped with a new `attention_flag` MCP tool self-reports, at end-of-turn and non-blocking, the specific decisions that need human judgement (a *judgement item*). Items accumulate in a **demand queue** rendered in a summon-on-demand **overlay**, ranked by reversibility/blast-radius. The only ambient signal is a static **backpressure gauge** (a count in the status bar). Triage is a *router, not a gatekeeper*: turns with no flagged item fall to a silent pile, nothing is auto-approved or deleted. See `CONTEXT.md` for the vocabulary and `docs/adr/0001-attention-triage-self-reported-router.md` for the trust-model decision.
+A default-on **attention triage** system for harness-memory-capable lanes. A lane with the `attention_flag` MCP tool self-reports, at end-of-turn and non-blocking, the specific decisions that need human judgement (a *judgement item*). Items accumulate in a **demand queue** rendered in a summon-on-demand **overlay**, ranked by reversibility/blast-radius. The only ambient signal is a static **backpressure gauge** (a count in the status bar). Triage is a *router, not a gatekeeper*: turns with no flagged item fall to a silent pile, nothing is auto-approved or deleted. See `CONTEXT.md` for the vocabulary and `docs/adr/0001-attention-triage-self-reported-router.md` for the trust-model decision.
 
 ## Research
 
@@ -62,14 +70,16 @@ A per-lane opt-in **attention triage** system. A lane equipped with a new `atten
 | File | Change |
 |------|--------|
 | `src-tauri/src/hook_server.rs` | Add `attention_flag` + `attention_resolve` to `bus_tool_descriptors()` (advertised only for opted-in lanes); dispatch in `handle_bus_tool_call`; round-trip via `register_bus_reply` → emit `acp-attention-flag` / `acp-attention-resolve`. |
-| `src-tauri/src/commands.rs` | Per-lane opt-in lookup (which lanes are triage-equipped) consulted by `tools/list` and call-time gate. |
+| `src-tauri/src/commands.rs` | Legacy per-lane triage mirror retained for compatibility. Since spec 130, `tools/list` and call-time dispatch no longer consult it. |
 | `src/acp/types.ts` | `JudgementItem`, `Reversibility`, `AttentionFlagPayload`, `AttentionResolvePayload`; new `LaneBusEvent` variants. |
 | `src/acp/attention-triage.ts` | **New.** `AttentionTriageStore` — demand queue, ranking, lifecycle, silent pile. |
 | `src/acp/attention-overlay.ts` | **New.** Overlay UI: ranked card list, single-key actions. Reuses the review-card renderer. |
 | `src/acp/review.ts` | Extract/reuse `buildPacket` for blast-radius; export a card-render helper shared with the overlay. |
 | `src/acp/inter-lane.ts` | Redirect delivery wrapper over `enqueueSystemPrompt` (next-idle). |
-| `src/acp/acp-harness-view.ts` | Wire bus events → store; track busy→idle as silent turns into `LaneTriageStats`; status-bar gauge; leader key; mount overlay; per-lane equip toggle. |
-| `src/styles/attention-triage.css` | **New.** Overlay + gauge styles (cyberpunk; mirrors review-card patterns). |
+| `src/acp/acp-harness-view.ts` | Wire bus events → store; track busy→idle as silent turns into `LaneTriageStats`; publish the open count on the global `system:attention` ViewBus signal; leader key; mount overlay; per-lane equip toggle. |
+| `src/workspace-footer.ts` / `src/styles/workspace-footer.css` | Subscribe (un-gated) to `system:attention`; keep a per-`sourceId` tally and render the SUMMED open-count gauge (`◆ N attention`, `__segment--attention`) in the global workspace footer — its documented home — surviving focus changes, hidden at zero. Summing across sources means every harness tab's attention collects in this one place rather than last-writer-wins. |
+| `src/view-bus-types.ts` | `system:attention { sourceId, openCount }` signal kind (global `SystemSource`); `sourceId` identifies the publishing harness instance for footer aggregation. |
+| `src/styles/attention-triage.css` | **New.** Overlay styles (cyberpunk; mirrors review-card patterns). The open-count gauge styling lives in `workspace-footer.css`. |
 | `docs/PROGRESS.md`, `docs/04-architecture.md`, `docs/06-configuration.md` | Module note + per-lane equip docs. (Equip is a runtime toggle, **not** a config-file key — `06-configuration.md` documents that explicitly; see Implementation notes above.) |
 
 ## Design
@@ -122,7 +132,7 @@ attention_resolve { item_id, note } -> { ok }   // lane self-resolves (demote, n
 
 Both follow the `review_request` round-trip: the frontend coordinator assembles the `ReviewPacket` from current lane state, inserts the `JudgementItem`, and replies. Tool description carries a **strong "never flag proactively"** guard mirroring `peer_send` / `review_request`: *flag only a decision that genuinely needs the human; the boring, machine-verifiable 80% must never become a judgement item.*
 
-**Per-lane opt-in.** `tools/list` for `:lane_label` includes `attention_flag` / `attention_resolve` only when that lane is triage-equipped (user-defined, modelled on the per-lane directive binding of spec 124). Call-time dispatch re-checks and rejects a non-equipped lane. Authoritative gate is call-time; `tools/list` filtering is the nicety that keeps the tool invisible to lanes that shouldn't see it.
+**Default tool exposure.** Since spec 130, `tools/list` for `:lane_label` includes `attention_flag` / `attention_resolve` for every lane that receives the `krypton-harness-memory` MCP server. Payload validation and frontend queue insertion are the meaningful guards; the old triage-equipped gate is retained only as legacy metadata.
 
 ### Ranking (`attention-triage.ts`)
 
@@ -130,11 +140,11 @@ Demand queue = open items, sorted by `reversibility` (`irreversible` > `costly` 
 
 ### Silent-turn audit (v1 minimal)
 
-Pure self-report means a lane that mis-judges its own work and *never flags* produces no demand-queue item — the cognitive-surrender risk of ADR-0001. To keep that risk **auditable in v1** (rather than fully deferring it to a pile-browser follow-up), the harness tracks `LaneTriageStats` per equipped lane: every busy→idle transition increments `silentTurnCount` unless that turn flagged. The overlay shows a per-lane header — `Claude-3 · 2 flagged · 12 silent` — and selecting a lane lets the human open that lane's transcript window (`o`) to spot-check silent turns. This is deliberately minimal: a count plus a jump-to-transcript, **not** a rich per-turn pile browser (deferred — Out of Scope). It is enough to make ADR-0001's "the pile remains auditable" claim true in v1.
+Pure self-report means a lane that mis-judges its own work and *never flags* produces no demand-queue item — the cognitive-surrender risk of ADR-0001. To keep that risk **auditable in v1** (rather than fully deferring it to a pile-browser follow-up), the harness tracks `LaneTriageStats` per lane: every busy→idle transition increments `silentTurnCount` unless that turn flagged. The overlay shows a per-lane header — `Claude-3 · 2 flagged · 12 silent` — and selecting a lane lets the human open that lane's transcript window (`o`) to spot-check silent turns. This is deliberately minimal: a count plus a jump-to-transcript, **not** a rich per-turn pile browser (deferred — Out of Scope). It is enough to make ADR-0001's "the pile remains auditable" claim true in v1.
 
 ### Actions (overlay)
 
-- **Approve** — pure bookkeeping: marks `accepted`, removes from demand queue. **No mechanical effect on the lane** (the lane already proceeded with `chosen`). Approve is the human discharging the item, not a signal to the lane.
+- **Acknowledge** — pure bookkeeping: marks `accepted`, removes from demand queue. **No mechanical effect on the lane** (the lane already proceeded with `chosen`). Acknowledge is the human discharging the item, not a signal to the lane.
 - **Redirect** — opens a one-line input; the text is delivered via `InterLaneCoordinator.enqueueSystemPrompt(laneId, text)` on the lane's **next idle** (`canDrainInbound`). Marks `redirected`, removes from queue. Late-arrival rework is accepted (ADR-0001).
 - **Dig** — opens the lane's transcript window for full review. Item stays `open`.
 - Doing nothing = defer (item stays ranked in the queue). There is no dismiss action.
@@ -151,7 +161,7 @@ A lane's `attention_resolve` marks the item `self_resolved` and drops it from th
 4. hook_server replies { item_id }; the lane sees it and ends its turn (keeps working next turn)
 5. Status-bar backpressure gauge updates to the new open count (static, no motion)
 6. Human summons overlay (leader key) → ranked cards → presses a / r / o:
-     a → accepted, dequeued
+     a → acknowledged, dequeued
      r → enqueueSystemPrompt(laneId, correction) on next idle → redirected, dequeued
      o → open lane transcript window
 ```
@@ -160,9 +170,9 @@ A lane's `attention_resolve` marks the item `self_resolved` and drops it from th
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `Leader j` | Compositor / harness | Summon the triage overlay (judgement queue) |
+| `Leader ;` | Compositor / harness | Summon the triage overlay (judgement queue) |
 | `j` / `k` | Triage overlay | Move selection down / up |
-| `a` | Triage overlay, card selected | Approve (dequeue, no lane effect) |
+| `a` | Triage overlay, card selected | Acknowledge (dequeue, no lane effect) |
 | `r` | Triage overlay, card selected | Redirect (open correction input → next-idle inject) |
 | `o` or `Enter` | Triage overlay, card selected | Dig — open the lane transcript window |
 | `Esc` | Triage overlay | Dismiss overlay |
@@ -172,25 +182,25 @@ No Alt modifier (project constraint). All actions single-keystroke.
 ### UI Changes
 
 - **Overlay** — modeled on the command-palette / Quick Terminal overlay: centered panel, absolute-positioned, summoned and dismissed, never occupying a workspace slot. Cards reuse the review-card renderer; each card shows question / chosen / rationale / **traded-off** / **uncertainty** / reversibility badge / diffstat summary. The traded-off and uncertainty blocks are always rendered (never collapsed) so the human sees what the agent gave up.
-- **Backpressure gauge** — a single static glyph + count in the workspace status bar (`◆ N`). No blink, no pulse, no alert colour. Hidden when the count is zero.
+- **Backpressure gauge** — a single static glyph + count (`◆ N attention`) in the **global workspace footer**, published by each harness via the `system:attention` ViewBus signal and rendered un-gated so it persists across focus changes (the harness is one view among many, but the count matters wherever the user is). When more than one harness tab is open the footer **sums** their counts (keyed by per-instance `sourceId`) so all lanes' attention collects in one place; a harness publishes `0` for its id on dispose, removing only its own contribution. No blink, no pulse. Hidden when the total is zero. The overlay is summoned with the `;` harness leader key. It deliberately does **not** live in the harness chrome — duplicating it there would split the single ambient pull the spec calls for.
 
 ### Configuration
 
-Per-lane opt-in (which lanes are triage-equipped) follows the per-lane directive-binding model (spec 124). Equip/unequip is a harness-view toggle persisted alongside lane config; no global `krypton.toml` switch in v1.
+Since spec 130, attention tools are default-on for every lane that receives the `krypton-harness-memory` MCP server. There is no global `krypton.toml` switch and no required per-lane equip action. The legacy `triage_equipped` directive field remains accepted and visible as metadata only.
 
 ## Edge Cases
 
 - **`attention_flag` with empty `traded_off` or blank `uncertainty`** → tool returns an error; no item created (presence floor — does not police field *quality*, see Design).
-- **Non-equipped lane calls the tool** → rejected at call time even if it somehow learned the name.
-- **Lane self-resolves an item already approved/redirected by the human** → no-op (terminal status wins); the resolve is dropped.
+- **Lane without harness memory MCP** → no attention tools appear because no MCP server is injected.
+- **Lane self-resolves an item already acknowledged/redirected by the human** → no-op (terminal status wins); the resolve is dropped.
 - **Redirect to a stopped/cancelled lane** → `enqueueSystemPrompt` / `canDrainInbound` rejects; surface an inline notice, item returns to `open`.
 - **Lane keeps flagging (queue floods)** → the static gauge climbs; this is *intended* backpressure signal, not an error. The "never proactively" guard is the only throttle.
 - **Overlay summoned with empty queue** → shows "no judgement pending" + a pointer to the silent pile.
-- **Harness with zero equipped lanes** → gauge hidden, `Leader j` shows the empty state. Feature is inert until the user equips a lane.
+- **Harness with zero flagged items** → gauge hidden, `Leader ;` shows the empty state.
 
 ## Open Questions
 
-None — all 13 design decisions and the 3 prior open points (mandatory card fields, redirect timing, approve semantics) are resolved above.
+None — all 13 design decisions and the 3 prior open points (mandatory card fields, redirect timing, acknowledge semantics) are resolved above.
 
 ## Out of Scope
 

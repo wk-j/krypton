@@ -273,7 +273,7 @@ fn scan_mp3_files(dir: &PathBuf) -> Vec<TrackInfo> {
         }
     }
 
-    tracks.sort_by(|a, b| a.filename.to_lowercase().cmp(&b.filename.to_lowercase()));
+    tracks.sort_by_key(|track| track.filename.to_lowercase());
     tracks
 }
 
