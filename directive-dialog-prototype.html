@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Directive Dialog — prototype</title>
+<style>
+  /* ── Page scaffold to mimic the Krypton transparent workspace ── */
+  :root {
+    --accent: #0cf;
+    --backend-claude: #d98a5a;
+    --backend-codex: #8fd0ff;
+    --backend-cursor: #c0c4cc;
+    --text: 216, 232, 216;
+    --mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  body {
+    background:
+      radial-gradient(120% 90% at 18% 0%, #0a1a22 0%, #04080d 55%, #02050a 100%);
+    color: rgba(var(--text), 0.84);
+    overflow: hidden;
+  }
+
+  /* faint terminal text echo, like the screenshot */
+  .bg-echo {
+    position: fixed;
+    top: 10px; left: 24px;
+    color: rgba(var(--text), 0.14);
+    font-size: 13px;
+    white-space: pre;
+    pointer-events: none;
+  }
+
+  .toolbar {
+    position: fixed;
+    top: 14px; right: 18px;
+    z-index: 50;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+    color: rgba(var(--text), 0.55);
+  }
+  .toolbar kbd {
+    border: 1px solid rgba(var(--text), 0.3);
+    border-radius: 3px;
+    padding: 1px 6px;
+    color: rgba(var(--text), 0.8);
+  }
+  .toolbar .mode {
+    color: var(--accent);
+    letter-spacing: 0.06em;
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     Directive picker — faithful port of src/styles/acp-harness.css
+     ════════════════════════════════════════════════════════════ */
+  .acp-harness__directive-picker {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(4, 8, 13, 0.74);
+  }
+
+  .acp-harness__directive-head,
+  .acp-harness__directive-list,
+  .acp-harness__directive-preview {
+    width: clamp(480px, 62vw, 860px);
+    background: rgba(8, 14, 18, 0.98);
+    border: 1px solid rgba(0, 204, 255, 0.32);
+    border-bottom: none;
+  }
+
+  .acp-harness__directive-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 12px;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+  }
+  .acp-harness__directive-head .hint {
+    color: rgba(var(--text), 0.5);
+    font-size: 0.84em;
+    text-shadow: none;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-harness__directive-list {
+    list-style: none;
+    margin: 0;
+    padding: 6px 0;
+    max-height: 44vh;
+    overflow-y: auto;
+  }
+
+  .acp-harness__directive-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 14px;
+    color: rgba(var(--text), 0.84);
+    cursor: default;
+  }
+  .acp-harness__directive-row--active {
+    background: rgba(0, 204, 255, 0.12);
+    outline: 1px solid rgba(0, 204, 255, 0.5);
+    outline-offset: -1px;
+    color: rgba(var(--text), 0.98);
+  }
+
+  .acp-harness__directive-logo {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin-top: 3px;
+    text-align: center;
+    font-size: 13px;
+    color: rgba(var(--text), 0.55);
+  }
+  .logo--codex  { color: var(--backend-codex); }
+  .logo--claude { color: var(--backend-claude); }
+  .logo--cursor { color: var(--backend-cursor); }
+
+  .acp-harness__directive-icon {
+    flex: 0 0 auto;
+    width: 1.4em;
+    text-align: center;
+    margin-top: 1px;
+    color: var(--accent);
+  }
+
+  .acp-harness__directive-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .acp-harness__directive-title {
+    letter-spacing: 0.03em;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .acp-harness__directive-badge {
+    color: rgba(255, 196, 122, 0.85);
+    font-size: 0.74em;
+    letter-spacing: 0.06em;
+  }
+  /* triage badge — current: boxed cyan tag (attention-triage.css) */
+  .acp-harness__directive-badge--triage {
+    color: var(--accent);
+    background: rgba(0, 204, 255, 0.12);
+    border: 1px solid rgba(0, 204, 255, 0.35);
+    border-radius: 3px;
+    padding: 0 5px;
+  }
+  .acp-harness__directive-meta {
+    color: rgba(var(--text), 0.46);
+    font-size: 0.82em;
+  }
+  .acp-harness__directive-desc {
+    color: rgba(var(--text), 0.62);
+    font-size: 0.85em;
+  }
+
+  .acp-harness__directive-preview {
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(0, 204, 255, 0.32);
+    border-radius: 0 0 3px 3px;
+    height: 22vh;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    color: rgba(var(--text), 0.72);
+    font-size: 0.86em;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     IMPROVED overrides — applied only on <body class="improved">
+     ════════════════════════════════════════════════════════════ */
+
+  /* #3 — stronger title hierarchy for fast keyboard scanning */
+  body.improved .acp-harness__directive-title {
+    font-weight: 600;
+    color: rgba(var(--text), 0.96);
+  }
+  body.improved .acp-harness__directive-row:not(.acp-harness__directive-row--active)
+    .acp-harness__directive-title {
+    color: rgba(var(--text), 0.9);
+  }
+
+  /* #2 — triage demoted to a quiet inline tag (it's legacy display-only) */
+  body.improved .acp-harness__directive-badge--triage {
+    background: none;
+    border: none;
+    padding: 0;
+    color: rgba(0, 204, 255, 0.42);
+    font-size: 0.7em;
+    letter-spacing: 0.08em;
+  }
+
+  /* #1 — preview gets a labelled header + bottom fade affordance */
+  body.improved .acp-harness__directive-preview {
+    padding: 0;
+    position: relative;
+  }
+  body.improved .preview-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 14px 5px;
+    border-bottom: 1px solid rgba(0, 204, 255, 0.14);
+    color: rgba(0, 204, 255, 0.7);
+    font-size: 0.92em;
+    letter-spacing: 0.05em;
+    position: sticky;
+    top: 0;
+    background: rgba(8, 14, 18, 0.98);
+  }
+  body.improved .preview-head .scope {
+    color: rgba(var(--text), 0.4);
+  }
+  body.improved .preview-body {
+    padding: 8px 14px 16px;
+  }
+  /* fade hint that more prompt text exists below */
+  body.improved .acp-harness__directive-preview::after {
+    content: '';
+    position: sticky;
+    bottom: 0;
+    display: block;
+    height: 26px;
+    margin-top: -26px;
+    pointer-events: none;
+    background: linear-gradient(to top, rgba(8, 14, 18, 0.98), rgba(8, 14, 18, 0));
+  }
+
+  /* current view hides the improved-only preview header */
+  body:not(.improved) .preview-head { display: none; }
+</style>
+</head>
+<body class="improved">
+  <div class="bg-echo">SYS  starting Claude-1...
+SYS  connected to Claude-1.</div>
+
+  <div class="toolbar">
+    <span>view</span>
+    <span class="mode" id="mode">improved</span>
+    <span>·</span>
+    <kbd>t</kbd> <span>toggle</span>
+  </div>
+
+  <aside class="acp-harness__directive-picker">
+    <header class="acp-harness__directive-head">
+      <span>// directive · spawn new lane</span>
+      <span class="hint" id="hint">j/k move · enter spawn · backspace clear Claude-1 · esc cancel</span>
+    </header>
+
+    <ul class="acp-harness__directive-list" id="list"></ul>
+
+    <div class="acp-harness__directive-preview" id="preview"></div>
+  </aside>
+
+<script>
+  const directives = [
+    {
+      id: 'review-code-by-topic',
+      title: 'Review Code by Topic (Codex)',
+      icon: '🔍',
+      logo: '⬡', logoCls: 'logo--codex',
+      scope: 'codex · code-review',
+      desc: 'Codex-backend-scoped focused code review of the current diff (or named files) strictly through the lens of a user-supplied topic — security, error handling, SQL/native-query safety, performance, concurrency, logging, API-contract parity, test coverage, etc.',
+      triage: true,
+      prompt: `You are a focused code reviewer. The user supplies a TOPIC (e.g.
+security, error handling, SQL/native-query safety, performance,
+concurrency, logging, API-contract parity, test coverage).
+Review code STRICTLY through the lens of that topic.
+
+Scope:
+- Default target is the current working-tree diff (\`git diff\`
+  plus staged changes). If the user names specific files, paths, a
+  commit range, or a PR, review those instead.
+- Read the actual code before judging — open the files and
+  follow the call sites. Never infer behavior from names alone.
+
+What to report:
+- Only findings that relate to the given topic. Do not drift
+  into unrelated cleanup. If you spot something critical outside
+  the topic, note it in a single short "out of scope" line.`,
+    },
+    {
+      id: 'review-code-by-topic-claude',
+      title: 'Review Code by Topic (Claude)',
+      icon: '🔍',
+      logo: '✳', logoCls: 'logo--claude',
+      scope: 'claude · code-review',
+      desc: 'Claude-backend-scoped focused code review of the current diff (or named files) strictly through the lens of a user-supplied topic — security, error handling, SQL/native-query safety, performance, concurrency, logging, API-contract parity, test coverage, etc.',
+      triage: true,
+      prompt: `You are a focused code reviewer (Claude backend). The user supplies
+a TOPIC. Review code STRICTLY through the lens of that topic and
+report only findings tied to it.`,
+    },
+    {
+      id: 'analyze-issue-cursor',
+      title: 'Analyze Issue (Cursor)',
+      icon: '🔬',
+      logo: '▸', logoCls: 'logo--cursor',
+      scope: 'cursor · analyze-issue',
+      desc: 'Cursor-backend-scoped analysis of one named GitHub issue. Investigates the issue against the actual codebase, traces it to a root cause, and creates or updates an analysis document. Write scope is the analysis doc only — no application-code changes and no GitHub comments. Project-agnostic.',
+      triage: true,
+      prompt: `You analyze one named GitHub issue against the actual codebase,
+trace it to a root cause, and write an analysis document. You do
+NOT change application code and do NOT post GitHub comments.`,
+    },
+  ];
+
+  let cursor = 0;
+  const listEl = document.getElementById('list');
+  const previewEl = document.getElementById('preview');
+  const modeEl = document.getElementById('mode');
+
+  function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function render() {
+    listEl.innerHTML = directives.map((d, i) => {
+      const active = i === cursor ? ' acp-harness__directive-row--active' : '';
+      const triage = d.triage
+        ? '<span class="acp-harness__directive-badge acp-harness__directive-badge--triage">◆ triage</span>'
+        : '';
+      return `<li class="acp-harness__directive-row${active}" data-i="${i}">`
+        + `<span class="acp-harness__directive-logo ${d.logoCls}">${d.logo}</span>`
+        + `<span class="acp-harness__directive-icon">${d.icon}</span>`
+        + `<span class="acp-harness__directive-main">`
+        +   `<span class="acp-harness__directive-title">${esc(d.title)}${triage}</span>`
+        +   `<span class="acp-harness__directive-meta">${esc(d.id)} · ${esc(d.scope)}</span>`
+        +   `<span class="acp-harness__directive-desc">${esc(d.desc)}</span>`
+        + `</span>`
+        + `</li>`;
+    }).join('');
+
+    const d = directives[cursor];
+    const improved = document.body.classList.contains('improved');
+    if (improved) {
+      previewEl.innerHTML =
+        `<div class="preview-head"><span>// prompt</span>`
+        + `<span class="scope">${esc(d.title)}</span></div>`
+        + `<div class="preview-body">${esc(d.prompt)}</div>`;
+    } else {
+      previewEl.innerHTML = esc(d.prompt);
+    }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'j' || e.key === 'ArrowDown') { cursor = (cursor + 1) % directives.length; render(); }
+    else if (e.key === 'k' || e.key === 'ArrowUp') { cursor = (cursor - 1 + directives.length) % directives.length; render(); }
+    else if (e.key === 't') {
+      document.body.classList.toggle('improved');
+      modeEl.textContent = document.body.classList.contains('improved') ? 'improved' : 'current';
+      render();
+    }
+  });
+
+  listEl.addEventListener('click', (e) => {
+    const li = e.target.closest('[data-i]');
+    if (li) { cursor = Number(li.dataset.i); render(); }
+  });
+
+  render();
+</script>
+</body>
+</html>
