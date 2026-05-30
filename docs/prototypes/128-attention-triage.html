@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Attention Triage · UI Prototype</title>
+<style>
+:root {
+  --bg: #050810;
+  --bg-rail: #0a0f1a;
+  --bg-selected: #0e1a2a;
+  --bg-panel: #07101a;
+  --bg-card: #08121e;
+  --fg: #d7e7f0;
+  --fg-dim: #6a7d8a;
+  --fg-faint: #3f4f5a;
+  --accent-cyan: #5fd9d9;
+  --border: #14222e;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+
+  /* mirrored from src/styles/acp-harness.css */
+  --chip-model-fg: rgba(216, 232, 216, 0.62);
+  --chip-model-bd: rgba(216, 232, 216, 0.16);
+  --chip-mode-fg: #c77dff;
+  --chip-warn-bd: rgba(255, 170, 102, 0.55);
+  --chip-warn-fg: rgba(255, 196, 140, 0.85);
+
+  --st-busy: #5fd9d9;
+  --st-idle: rgba(216, 232, 216, 0.48);
+
+  /* reversibility ranking palette (the demand-queue sort key) */
+  --rev-irrev-fg: #e8737b;
+  --rev-irrev-bd: rgba(232, 115, 123, 0.5);
+  --rev-costly-fg: var(--chip-warn-fg);
+  --rev-costly-bd: var(--chip-warn-bd);
+  --rev-rev-fg: rgba(216, 232, 216, 0.45);
+  --rev-rev-bd: rgba(216, 232, 216, 0.16);
+}
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-mono); font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 32px 28px 64px; }
+
+.header { margin-bottom: 24px; }
+.header h1 { margin: 0 0 6px; font-size: 14px; font-weight: 400; letter-spacing: 0.08em; color: var(--accent-cyan); }
+.header p { margin: 2px 0; color: var(--fg-dim); font-size: 12px; }
+.header .ref { color: var(--fg-faint); }
+
+.section { margin: 34px 0 0; }
+.section > h2 { margin: 0 0 4px; font-size: 12px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-cyan); }
+.section > .desc { margin: 0 0 16px; color: var(--fg-dim); font-size: 12px; max-width: 80ch; }
+.tag { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 2px; font-size: 10px; letter-spacing: 0.08em; vertical-align: middle; }
+.tag--ships { border: 1px solid color-mix(in oklab, var(--st-busy) 45%, transparent); color: var(--st-busy); }
+.tag--future { border: 1px solid color-mix(in oklab, var(--chip-mode-fg) 45%, transparent); color: var(--chip-mode-fg); }
+code { color: var(--fg-dim); }
+
+/* ── status bar + backpressure gauge ── */
+.statusbar {
+  display: flex; align-items: center; gap: 16px;
+  background: var(--bg-rail); border: 1px solid var(--border); border-radius: 4px;
+  padding: 0 14px; height: 30px; max-width: 720px; font-size: 0.82em; color: var(--fg-dim);
+}
+.statusbar .sb-seg { white-space: nowrap; }
+.statusbar .sb-spacer { flex: 1; }
+.gauge { display: inline-flex; align-items: baseline; gap: 5px; color: var(--fg-dim); }
+.gauge .glyph { color: var(--accent-cyan); }      /* static · no blink, no pulse, no alert color */
+.gauge .n { color: rgba(216,232,216,0.82); }
+.gauge.zero { display: none; }
+
+/* ── overlay stage ── */
+.stage {
+  position: relative; background: var(--bg-rail); border: 1px solid var(--border);
+  border-radius: 4px; min-height: 480px; overflow: hidden; max-width: 760px; padding-bottom: 18px;
+}
+.stage .dim-rail { opacity: 0.22; filter: saturate(0.6); pointer-events: none; }
+.dim-rail .lane-head { height: 30px; display: grid; grid-template-columns: 2ch max-content max-content 1fr; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+.lane-symbol { color: var(--st-idle); } .lane-symbol.busy { color: var(--st-busy); }
+.lane-name.accent-claude { color: #c79bff; } .lane-name.accent-codex { color: #7fd9c0; }
+.lane-status { color: rgba(216,232,216,0.5); font-size: 0.72em; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* ── triage overlay ── */
+.triage {
+  position: absolute; top: 22px; left: 50%; transform: translateX(-50%);
+  width: 600px; background: #06101b;
+  border: 1px solid color-mix(in oklab, var(--accent-cyan) 38%, var(--border));
+  border-radius: 5px; box-shadow: 0 18px 50px -20px rgba(0,0,0,0.9);
+  overflow: hidden;
+}
+.triage__title {
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; letter-spacing: 0.08em; color: var(--accent-cyan); text-transform: uppercase;
+}
+.triage__title .depth { color: var(--fg-dim); text-transform: none; letter-spacing: 0; }
+
+/* per-lane silent-turn audit header (v1 minimal) */
+.audit { padding: 6px 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
+.audit-row { display: flex; gap: 10px; align-items: baseline; font-size: 10.5px; }
+.audit-row .ln { font-size: 0.95em; }
+.audit-row .ln.accent-claude { color: #c79bff; } .audit-row .ln.accent-codex { color: #7fd9c0; } .audit-row .ln.accent-gemini { color: #8fb8ff; }
+.audit-row .flagged { color: var(--accent-cyan); }
+.audit-row .silent { color: var(--fg-dim); }
+.audit-row .silent b { color: var(--chip-warn-fg); font-weight: 400; }
+.audit-row .hint { color: var(--fg-faint); margin-left: auto; }
+
+/* judgement card */
+.cards { padding: 6px 0; max-height: 360px; overflow-y: auto; }
+.card { border-bottom: 1px solid var(--border); padding: 8px 12px 10px; position: relative; }
+.card:last-child { border-bottom: none; }
+.card.sel { background: color-mix(in oklab, var(--accent-cyan) 9%, transparent); }
+.card.sel::before { content: '›'; position: absolute; left: 3px; top: 8px; color: var(--accent-cyan); }
+.card__top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.rev { padding: 0 6px; border-radius: 2px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid; }
+.rev--irrev { color: var(--rev-irrev-fg); border-color: var(--rev-irrev-bd); }
+.rev--costly { color: var(--rev-costly-fg); border-color: var(--rev-costly-bd); }
+.rev--rev { color: var(--rev-rev-fg); border-color: var(--rev-rev-bd); }
+.card__lane { font-size: 0.78em; }
+.card__lane.accent-claude { color: #c79bff; } .card__lane.accent-codex { color: #7fd9c0; }
+.card__q { color: var(--fg); font-size: 0.96em; margin-bottom: 6px; }
+.kv { display: grid; grid-template-columns: 9ch 1fr; gap: 2px 10px; font-size: 0.84em; line-height: 1.5; }
+.kv .k { color: var(--fg-faint); text-align: right; }
+.kv .v { color: rgba(216,232,216,0.8); }
+.kv .v.chose { color: var(--accent-cyan); }
+.kv .v.traded { color: var(--chip-warn-fg); }     /* always shown, never collapsed */
+.kv .v.unsure { color: #d9b06f; }                 /* always shown, never collapsed */
+.card__blast { margin-top: 6px; font-size: 0.78em; color: var(--fg-faint); }
+.card__blast .path { color: var(--fg-dim); }
+.card__blast .add { color: #7fd9c0; } .card__blast .del { color: var(--rev-irrev-fg); }
+
+.triage__foot {
+  padding: 6px 12px; border-top: 1px solid var(--border);
+  font-size: 10px; color: var(--fg-dim); letter-spacing: 0.04em; display: flex; gap: 14px; flex-wrap: wrap;
+}
+.triage__foot kbd { color: var(--accent-cyan); border: 1px solid var(--border); border-radius: 2px; padding: 0 4px; font-size: 10px; margin-right: 4px; }
+
+/* redirect inline input */
+.redirect { padding: 8px 12px; border-top: 1px solid var(--border); background: rgba(95,217,217,0.04); }
+.redirect .lbl { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-cyan); margin-bottom: 4px; }
+.redirect .field { background: #040c14; border: 1px solid color-mix(in oklab, var(--accent-cyan) 30%, var(--border)); border-radius: 3px; padding: 5px 8px; font-size: 12px; color: var(--fg); }
+.redirect .field .caret { color: var(--accent-cyan); }
+.redirect .delivery { margin-top: 4px; font-size: 10px; color: var(--fg-faint); }
+
+.empty { padding: 40px 12px; text-align: center; color: var(--fg-faint); font-size: 12px; }
+.empty .big { color: var(--fg-dim); font-size: 13px; margin-bottom: 6px; }
+
+.legend { margin-top: 12px; font-size: 11px; color: var(--fg-faint); max-width: 760px; line-height: 1.6; }
+.legend code { color: var(--fg-dim); }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <h1>Attention Triage — UI Prototype</h1>
+    <p>Prototype for <span class="ref">docs/128-attention-triage.md</span> · ADR-0001 · CONTEXT.md</p>
+    <p class="ref">Krypton Dark · chip/lane classes mirror src/styles/acp-harness.css · keyboard-first, no mouse affordances</p>
+  </div>
+
+  <!-- ════════════ A · backpressure gauge ════════════ -->
+  <div class="section">
+    <h2>A · Backpressure gauge — the only ambient signal<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      A single <strong>static</strong> count of open judgement items, living in the workspace status bar.
+      It shows queue depth so you can scale the fleet to your own review rate — it never blinks, pulses,
+      or turns an alert color. Hidden when the count is zero. This is <em>not</em> a notification.
+    </p>
+    <div class="statusbar">
+      <span class="sb-seg">3 lanes · 1 busy</span>
+      <span class="sb-spacer"></span>
+      <span class="sb-seg gauge" title="3 judgement items awaiting review — leader j to open">
+        <span class="glyph">◆</span><span class="n">3</span><span style="color:var(--fg-faint)">judgement</span>
+      </span>
+    </div>
+    <p class="legend">When zero: <span class="gauge zero" style="display:inline-flex">◆</span> the segment simply disappears — no "all clear" badge, nothing to glance at.</p>
+  </div>
+
+  <!-- ════════════ B · the triage overlay ════════════ -->
+  <div class="section">
+    <h2>B · Triage overlay — summon with <code>leader j</code><span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      A summon-on-demand overlay (like the command palette) over the dimmed harness — never a persistent
+      dashboard. Cards are ranked by <strong>reversibility / blast-radius</strong> (irreversible first),
+      tie-broken by age (oldest first). <strong>Lane peek heat is not consulted</strong> — it measures
+      busy-ness, not judgement weight. Every card always renders <em>traded-off</em> and <em>unsure</em>
+      blocks (never collapsed) so you see what the agent gave up.
+    </p>
+    <div class="stage">
+      <!-- dimmed harness behind -->
+      <div class="dim-rail">
+        <div class="lane-head"><span class="lane-symbol busy">●</span><span class="lane-name accent-claude">Claude-1</span><span class="lane-status">busy</span><span></span></div>
+        <div class="lane-head"><span class="lane-symbol">○</span><span class="lane-name accent-codex">Codex-1</span><span class="lane-status">idle</span><span></span></div>
+      </div>
+
+      <div class="triage" role="dialog" aria-label="Attention triage">
+        <div class="triage__title"><span>Judgement queue</span><span class="depth">◆ 3 open · oldest first within rank</span></div>
+
+        <!-- per-lane silent-turn audit (v1 minimal) -->
+        <div class="audit">
+          <div class="audit-row"><span class="ln accent-claude">Claude-1</span><span class="flagged">2 flagged</span><span class="silent"><b>9</b> silent turns</span><span class="hint">o · open transcript to spot-check</span></div>
+          <div class="audit-row"><span class="ln accent-codex">Codex-1</span><span class="flagged">1 flagged</span><span class="silent"><b>14</b> silent turns</span><span class="hint">o · open transcript to spot-check</span></div>
+        </div>
+
+        <div class="cards">
+          <!-- card 1 · irreversible · selected -->
+          <div class="card sel">
+            <div class="card__top"><span class="rev rev--irrev">irreversible</span><span class="card__lane accent-claude">Claude-1 · 6m ago</span></div>
+            <div class="card__q">Store auth tokens hashed or encrypted at rest?</div>
+            <div class="kv">
+              <span class="k">chose →</span><span class="v chose">hashed (argon2id), one-way</span>
+              <span class="k">why</span><span class="v">matches existing password storage; reviewers expect one-way</span>
+              <span class="k">traded off</span><span class="v traded">encrypted-at-rest — dropped: adds a KMS dependency + key rotation we don't run yet</span>
+              <span class="k">unsure</span><span class="v unsure">whether support needs plaintext token recovery — would flip to encrypted if yes</span>
+            </div>
+            <div class="card__blast">blast · <span class="path">migrations/003_tokens.sql</span> +<span class="add">88</span> −<span class="del">12</span> · 4 files · schema migration (no rollback)</div>
+          </div>
+
+          <!-- card 2 · costly -->
+          <div class="card">
+            <div class="card__top"><span class="rev rev--costly">costly</span><span class="card__lane accent-codex">Codex-1 · 12m ago</span></div>
+            <div class="card__q">Sync API transport: REST polling or a WebSocket channel?</div>
+            <div class="kv">
+              <span class="k">chose →</span><span class="v chose">REST long-poll</span>
+              <span class="k">why</span><span class="v">no new infra; fits the existing gateway + auth middleware</span>
+              <span class="k">traded off</span><span class="v traded">WebSocket — dropped: needs sticky sessions at the LB; lower latency though</span>
+              <span class="k">unsure</span><span class="v unsure">whether p95 latency target is &lt; 200ms — would switch to WS if so</span>
+            </div>
+            <div class="card__blast">blast · <span class="path">src/sync/transport.ts</span> +<span class="add">140</span> −<span class="del">4</span> · 6 files · reversible behind interface</div>
+          </div>
+
+          <!-- card 3 · reversible -->
+          <div class="card">
+            <div class="card__top"><span class="rev rev--rev">reversible</span><span class="card__lane accent-claude">Claude-1 · 3m ago</span></div>
+            <div class="card__q">Name the new module <code>attention-triage</code> or <code>review-queue</code>?</div>
+            <div class="kv">
+              <span class="k">chose →</span><span class="v chose">attention-triage</span>
+              <span class="k">why</span><span class="v">matches CONTEXT.md glossary; "review queue" overloads the peer-review packet</span>
+              <span class="k">traded off</span><span class="v traded">review-queue — dropped: shorter but collides with review_request vocabulary</span>
+              <span class="k">unsure</span><span class="v unsure">low — pure rename if you disagree, no downstream cost</span>
+            </div>
+            <div class="card__blast">blast · 1 new file · trivial rename</div>
+          </div>
+        </div>
+
+        <div class="triage__foot">
+          <span><kbd>j</kbd><kbd>k</kbd> move</span>
+          <span><kbd>a</kbd> approve</span>
+          <span><kbd>r</kbd> redirect</span>
+          <span><kbd>o</kbd>/<kbd>↵</kbd> dig — open lane</span>
+          <span><kbd>esc</kbd> dismiss</span>
+        </div>
+      </div>
+    </div>
+    <p class="legend">
+      <b style="color:var(--rev-irrev-fg)">irreversible</b> &gt; <b style="color:var(--rev-costly-fg)">costly</b> &gt;
+      <b style="color:var(--rev-rev-fg)">reversible</b> — the sort key. ● = busy · › = cursor.
+      <code>a</code> approve has <em>no</em> effect on the lane (it already proceeded with "chose →"); it just
+      discharges the item. Only <code>r</code> feeds the lane back.
+    </p>
+  </div>
+
+  <!-- ════════════ C · redirect state ════════════ -->
+  <div class="section">
+    <h2>C · Redirect — <code>r</code> on a card<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">
+      Redirect opens a one-line correction. It is delivered on the lane's <strong>next idle</strong> via the
+      existing <code>InterLaneCoordinator.enqueueSystemPrompt</code> path — it does not interrupt the running
+      turn. The lane figures out its own rework; late-arrival rework is the accepted price of non-blocking.
+    </p>
+    <div class="triage" style="position: static; transform: none; max-width: 600px;">
+      <div class="triage__title"><span>Redirect → Claude-1</span><span class="depth">re: hashed vs encrypted</span></div>
+      <div class="redirect">
+        <div class="lbl">your correction</div>
+        <div class="field">Use encrypted-at-rest after all — support confirmed they need token recovery.<span class="caret">▋</span></div>
+        <div class="delivery">delivered on Claude-1's next idle · marks item redirected · <kbd style="color:var(--accent-cyan)">↵</kbd> send · <kbd style="color:var(--accent-cyan)">esc</kbd> back</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ D · empty state ════════════ -->
+  <div class="section">
+    <h2>D · Empty queue<span class="tag tag--ships">ships v1</span></h2>
+    <p class="desc">When no judgement is pending. The gauge is already hidden; opening the overlay confirms the queue is clear and points at the silent-turn audit.</p>
+    <div class="triage" style="position: static; transform: none; max-width: 600px;">
+      <div class="triage__title"><span>Judgement queue</span><span class="depth">◆ 0 open</span></div>
+      <div class="empty">
+        <div class="big">no judgement pending</div>
+        <div>lanes are working on a long leash · 23 turns ran silently this session</div>
+        <div style="margin-top:8px;color:var(--accent-cyan)">press <kbd style="border:1px solid var(--border);border-radius:2px;padding:0 4px">o</kbd> on a lane above to spot-check silent turns</div>
+      </div>
+    </div>
+    <p class="legend">
+      Empty ≠ "all approved." Silent turns fell into the pile, not into auto-merge — the audit header is the
+      v1 hook for spot-checking what the lanes decided <em>not</em> to flag (ADR-0001 cognitive-surrender mitigation).
+    </p>
+  </div>
+</div>
+</body>
+</html>
