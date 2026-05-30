@@ -3289,7 +3289,7 @@
 .acp-harness__directive-head,
 .acp-harness__directive-list,
 .acp-harness__directive-preview {
-  width: clamp(360px, 46vw, 580px);
+  width: clamp(480px, 62vw, 860px);
   background: rgba(8, 14, 18, 0.98);
   border: 1px solid rgba(0, 204, 255, 0.32);
   border-bottom: none;
@@ -3384,6 +3384,12 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
+  font-weight: 600;
+  color: rgba(216, 232, 216, 0.9);
+}
+
+.acp-harness__directive-row--active .acp-harness__directive-title {
+  color: rgba(216, 232, 216, 0.98);
 }
 
 .acp-harness__directive-assigned {
@@ -3408,16 +3414,57 @@
   font-size: 0.85em;
 }
 
+/* Fixed height (not max-height) so the panel never resizes/re-centers when
+   navigating between directives — prompts of different lengths must not move
+   the layout. Short prompts leave trailing space; long ones scroll. */
 .acp-harness__directive-preview {
-  padding: 8px 14px;
+  position: relative;
+  padding: 0;
   border-bottom: 1px solid rgba(0, 204, 255, 0.32);
   border-radius: 0 0 3px 3px;
-  max-height: 22vh;
+  height: 22vh;
   overflow-y: auto;
   white-space: pre-wrap;
   color: rgba(216, 232, 216, 0.72);
   font-size: 0.86em;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+.acp-harness__directive-preview-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 14px 5px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.14);
+  background: rgba(8, 14, 18, 0.98);
+  color: rgba(0, 204, 255, 0.7);
+  font-size: 0.92em;
+  letter-spacing: 0.05em;
+}
+
+.acp-harness__directive-preview-scope {
+  color: rgba(216, 232, 216, 0.4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-harness__directive-preview-body {
+  padding: 8px 14px 16px;
+}
+
+/* Bottom fade hinting the prompt scrolls past the fixed-height edge. */
+.acp-harness__directive-preview::after {
+  content: '';
+  position: sticky;
+  bottom: 0;
+  display: block;
+  height: 26px;
+  margin-top: -26px;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(8, 14, 18, 0.98), rgba(8, 14, 18, 0));
 }
 
 /* ── Model picker (spec 127) ──────────────────────────────── */

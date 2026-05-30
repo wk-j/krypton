@@ -5174,7 +5174,13 @@ export class AcpHarnessView implements ContentView {
       .join('');
     const selected = ordered[cursor];
     const preview = selected
-      ? `<div class="acp-harness__directive-preview">${esc(selected.system_prompt || '(empty prompt)')}</div>`
+      ? `<div class="acp-harness__directive-preview">` +
+        `<div class="acp-harness__directive-preview-head">` +
+        `<span>// prompt</span>` +
+        `<span class="acp-harness__directive-preview-scope">${esc(selected.title || selected.id)}</span>` +
+        `</div>` +
+        `<div class="acp-harness__directive-preview-body">${esc(selected.system_prompt || '(empty prompt)')}</div>` +
+        `</div>`
       : '';
     this.directivePickerEl.innerHTML =
       `<header class="acp-harness__directive-head">` +

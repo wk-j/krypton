@@ -15,10 +15,13 @@
   color: var(--krypton-window-accent, #0cf);
 }
 
+/* Legacy display-only metadata (spec 130) — kept visible but demoted to a
+   quiet inline tag so it doesn't compete with the directive title/meta. */
 .acp-harness__directive-badge--triage {
-  color: var(--krypton-window-accent, #0cf);
-  border-color: rgba(0, 204, 255, 0.3);
-  background: rgba(0, 204, 255, 0.06);
+  color: rgba(0, 204, 255, 0.42);
+  background: none;
+  font-size: 0.7em;
+  letter-spacing: 0.08em;
 }
 
 /* ── Overlay shell ────────────────────────────────────────── */
