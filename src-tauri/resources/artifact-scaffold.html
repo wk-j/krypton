@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<style id="krypton-artifact-base">
+  /* DEFAULT = Krypton cyberpunk (dark, mono, dense). Palette mirrors
+     src/styles/acp-harness.css / docs/prototypes/*.html.
+     To override these defaults, add your own <style> AFTER this block. */
+  :root {
+    --bg: #050810; --fg: #d7e7f0; --muted: #6a7d8a; --border: #14222e;
+    --accent: #5fd9d9; --card: #08121e; --code-bg: #0a141c;
+    --add: #7fd9c0; --del: #e8737b; color-scheme: dark;
+    --mono: 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+  }
+  /* opt-out variants reached through the toggle */
+  html[data-theme="light"] {
+    color-scheme: light;
+    --bg: #ffffff; --fg: #1a1f24; --muted: #5a6671; --border: #d7dde2;
+    --accent: #0a7ea4; --card: #f6f8fa; --code-bg: #f0f3f5; --add: #1a7f37; --del: #cf222e;
+  }
+  @media (prefers-color-scheme: light) {   /* auto follows the OS; cyberpunk default does not */
+    html[data-theme="auto"] {
+      color-scheme: light;
+      --bg: #ffffff; --fg: #1a1f24; --muted: #5a6671; --border: #d7dde2;
+      --accent: #0a7ea4; --card: #f6f8fa; --code-bg: #f0f3f5; --add: #1a7f37; --del: #cf222e;
+    }
+  }
+  body { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.45;
+         background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); }
+  .ka-main { max-width: 880px; margin: 0 auto; padding: 16px 20px 48px; }
+  h1, h2, h3 { line-height: 1.2; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+  th { color: var(--accent); }
+  pre, code { font-family: var(--mono); background: var(--code-bg); }
+  pre { padding: 10px; overflow: auto; border-radius: 4px; }
+  code { padding: 1px 4px; border-radius: 3px; }
+  pre code { padding: 0; background: none; }
+  .ka-card { background: var(--card); border: 1px solid var(--border);
+             border-radius: 4px; padding: 12px; }
+  .ka-add { color: var(--add); }
+  .ka-del { color: var(--del); }
+  .ka-header { display: flex; justify-content: space-between; align-items: center;
+               padding: 8px 20px; border-bottom: 1px solid var(--border); color: var(--muted); }
+  .ka-toggle { font: inherit; cursor: pointer; background: transparent;
+               border: 1px solid var(--border); color: var(--accent);
+               border-radius: 4px; padding: 3px 9px; }
+</style>
+</head>
+<body>
+<header class="ka-header">
+  <strong>{{title}}</strong>
+  <button class="ka-toggle" id="ka-theme" type="button">◐ theme</button>
+</header>
+<main class="ka-main" data-artifact-content>
+  <!-- Replace this block with your content. Keep <style id="krypton-artifact-base">
+       and the theme toggle. Use plain semantic HTML — it is styled automatically.
+       To override the defaults, add your own <style> AFTER krypton-artifact-base. -->
+  <p>Artifact scaffold ready. Edit this file to add your content.</p>
+</main>
+<script>
+  // cyberpunk/light/auto toggle, best-effort persisted (file:// origin varies by browser)
+  (function () {
+    var order = ["cyberpunk", "light", "auto"], html = document.documentElement;
+    var k = "krypton-artifact-theme", btn = document.getElementById("ka-theme");
+    try { var s = localStorage.getItem(k); if (s) html.dataset.theme = s; } catch (e) {}
+    if (!html.dataset.theme) html.dataset.theme = "cyberpunk";   // default
+    function label() { if (btn) btn.textContent = "◐ " + html.dataset.theme; }
+    label();
+    if (btn) btn.addEventListener("click", function () {   // guard: lane may drop the header
+      var next = order[(order.indexOf(html.dataset.theme) + 1) % order.length];
+      html.dataset.theme = next; label();
+      try { localStorage.setItem(k, next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

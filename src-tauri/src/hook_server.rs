@@ -579,6 +579,15 @@ impl HookServer {
         let path = lane_dir.join(format!("{artifact_id}.html"));
         let tail = format!(".krypton/artifacts/{harness_id}/{lane_dir_name}/{artifact_id}.html");
         let path_str = path.to_string_lossy().to_string();
+
+        // spec 134 — seed a styled scaffold so the lane edits (not authors from
+        // scratch) and output has a consistent baseline. Atomic temp+rename so a
+        // failed/interrupted write never leaves a truncated scaffold, and fail
+        // closed (no pending entry / no issued path) if it cannot be written.
+        let html = ARTIFACT_SCAFFOLD.replace("{{title}}", &html_escape(title));
+        write_artifact_scaffold(&path, &html)
+            .map_err(|e| format!("could not seed artifact scaffold: {e}"))?;
+
         store.entries.insert(
             artifact_id.clone(),
             ArtifactEntry {
@@ -599,6 +608,7 @@ impl HookServer {
             "tail": tail,
             "state": "pending",
             "title": title,
+            "content_marker": ARTIFACT_CONTENT_MARKER,
         }))
     }
 
@@ -826,6 +836,12 @@ const ARTIFACT_PER_SESSION_MAX: usize = 64;
 /// Max outstanding `pending` artifacts per lane. Pending entries authorize a
 /// write, so they are bounded and short-lived.
 const ARTIFACT_PENDING_PER_LANE_MAX: usize = 4;
+/// Styled starter scaffold seeded at `artifact_new` (spec 134). Self-contained
+/// HTML with the Krypton cyberpunk default theme + light/auto toggle; the lane
+/// edits the `<main data-artifact-content>` placeholder to fill content.
+const ARTIFACT_SCAFFOLD: &str = include_str!("../resources/artifact-scaffold.html");
+/// Stable anchor the lane orients its first edit on (returned by `artifact_new`).
+const ARTIFACT_CONTENT_MARKER: &str = "main[data-artifact-content]";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ArtifactState {
@@ -2377,7 +2393,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "artifact_new",
-            "description": "Create an HTML artifact the user opens in their browser, for views that beat prose: side-by-side comparisons, diagrams, annotated diffs, parameterized previews, dashboards. Use ONLY when the user asks for a visual/interactive artifact, or your active directive explicitly tells you to produce HTML artifacts for this task. Do NOT default to HTML for ordinary prose, plans, or answers, and do NOT volunteer unsolicited dashboards — those stay in your turn text. Returns `{ id, path }`; write the HTML to that exact path with your normal file-write tool (NOT a shell heredoc — that leaks the HTML into the transcript), then call artifact_register { id }. The artifact is a live file: read it back and edit it with your ordinary edit tool to iterate. Opening is always user-triggered; never auto-opens.",
+            "description": "Create an HTML artifact the user opens in their browser, for views that beat prose: side-by-side comparisons, diagrams, annotated diffs, parameterized previews, dashboards. Use ONLY when the user asks for a visual/interactive artifact, or your active directive explicitly tells you to produce HTML artifacts for this task. Do NOT default to HTML for ordinary prose, plans, or answers, and do NOT volunteer unsolicited dashboards — those stay in your turn text. Returns `{ id, path, content_marker }`. The path points to a file that ALREADY EXISTS — a ready-made HTML scaffold with Krypton's default cyberpunk styling and a light/auto toggle. Use your EDIT/patch tool (NOT a Write that recreates the file, and NOT a shell heredoc — both lose the styling or leak HTML into the transcript) to replace the placeholder inside `<main data-artifact-content>` with your content; keep the `<style id=\"krypton-artifact-base\">` block and the toggle. Write plain semantic HTML (headings, tables, `<pre><code>`, `<section class=\"ka-card\">`) — it is styled automatically; to override a default, add your own `<style>` AFTER the base block. Then call artifact_register { id }. The artifact is a live file: keep editing it to iterate. Opening is always user-triggered; never auto-opens.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2507,6 +2523,40 @@ fn artifacts_root(project_dir: &str) -> Option<PathBuf> {
         return None;
     }
     Some(base.join(".krypton").join("artifacts"))
+}
+
+/// Full HTML text+attribute escape for the only interpolated scaffold value (the
+/// title, which appears in `<title>` and the header). Escapes `'` too so the
+/// helper stays safe if the token ever moves into an attribute (spec 134).
+fn html_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Write the seeded scaffold atomically: write to `<path>.tmp` then rename onto
+/// `<path>`, so an interrupted write never leaves a truncated file. Best-effort
+/// removes the tmp file on any failure (spec 134).
+fn write_artifact_scaffold(path: &StdPath, html: &str) -> std::io::Result<()> {
+    let tmp = path.with_extension("html.tmp");
+    if let Err(e) = std::fs::write(&tmp, html) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Make a lane label safe to use as a single path component. Every non
@@ -2921,7 +2971,7 @@ mod tests {
 
         server.init_harness_artifacts("hm-1", Some(project.clone()), &HashSet::new());
 
-        // new issues a path + creates the gitignore.
+        // new issues a path + creates the gitignore + seeds a styled scaffold.
         let issued = server
             .artifact_new("hm-1", "Claude-1", "Side-by-side")
             .unwrap();
@@ -2929,19 +2979,35 @@ mod tests {
         let path = PathBuf::from(issued["path"].as_str().unwrap());
         assert!(path.ends_with(format!("{id}.html")));
         assert!(tmp.join(".krypton/artifacts/.gitignore").exists());
+        assert_eq!(
+            issued["content_marker"],
+            serde_json::json!("main[data-artifact-content]")
+        );
 
-        // register before the file exists fails (not_found).
-        assert!(server.artifact_register("hm-1", "Claude-1", &id).is_err());
+        // spec 134 — the scaffold is seeded at new: file exists, carries the
+        // style marker, and the title is HTML-escaped into it.
+        let seeded = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            seeded.contains("krypton-artifact-base"),
+            "scaffold style missing"
+        );
+        assert!(
+            seeded.contains("data-artifact-content"),
+            "content placeholder missing"
+        );
+        assert!(seeded.contains("Side-by-side"), "title not interpolated");
 
-        // write the file, then register succeeds with size + hash.
-        std::fs::write(&path, "<!doctype html><h1>hi</h1>").unwrap();
+        // spec 134 — registering the untouched scaffold is allowed (placeholder
+        // artifact); register does NOT require the placeholder be replaced. This
+        // first register raises the card (registered=true) on the seeded file.
         let reg = server.artifact_register("hm-1", "Claude-1", &id).unwrap();
         assert_eq!(reg["ok"], serde_json::json!(true));
         assert_eq!(reg["registered"], serde_json::json!(true));
-        assert_eq!(reg["size"].as_u64().unwrap(), 26);
+        assert!(reg["size"].as_u64().unwrap() > 0, "scaffold has bytes");
         assert_eq!(reg["hash"].as_str().unwrap().len(), 64);
 
-        // repeat register is an idempotent refresh (registered=false).
+        // the lane then edits the file; a repeat register is an idempotent
+        // refresh (registered=false) that picks up the new size/hash.
         std::fs::write(&path, "<!doctype html><h1>hello</h1>").unwrap();
         let refreshed = server.refresh_artifact("hm-1", "Claude-1", &id).unwrap();
         assert_eq!(refreshed["registered"], serde_json::json!(false));
