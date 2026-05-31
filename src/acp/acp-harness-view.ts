@@ -5195,13 +5195,14 @@ export class AcpHarnessView implements ContentView {
   }
 
   /** spec 136: render the ACTIVE lane's prompt queue into the bottom rail slot.
-   *  Shown independently of the peek; hidden when empty or in zen (zen uses its
-   *  own left rail). Numbered drain-order rows, ▸ head marker (dimmed when the
-   *  queue is held/paused), per-item →lane / img×N tags. */
+   *  Shown independently of the peek; hidden only when empty. The bottom rail
+   *  lives inside the active lane shell, which renders in zen too, so the queue
+   *  follows the active lane there as well. Numbered drain-order rows, ▸ head
+   *  marker (dimmed when the queue is held/paused), per-item →lane / img×N tags. */
   private renderActiveLaneQueue(): void {
     const slot = this.queueSlotEl;
     const lane = this.activeLane();
-    if (!lane || this.zenMode || lane.queuedPrompts.length === 0) {
+    if (!lane || lane.queuedPrompts.length === 0) {
       slot.replaceChildren();
       slot.hidden = true;
       return;
