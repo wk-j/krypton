@@ -152,6 +152,53 @@ describe('ACP harness auto-allow permission detection', () => {
     }))).toBe('peer_send');
   });
 
+  it('rejects attention tool names without a built-in bus marker', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'attention_flag',
+      rawInput: {
+        name: 'attention_flag',
+        server: 'third-party-memory',
+      },
+    }))).toBeNull();
+  });
+
+  it('accepts Codex-style underscored bus namespace for attention_flag', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__krypton_harness_bus__attention_flag',
+      rawInput: {
+        toolName: 'mcp__krypton_harness_bus__attention_flag',
+        arguments: { question: 'which approach?', chosen: 'A' },
+      },
+    }))).toBe('attention_flag');
+  });
+
+  it('accepts attention_resolve under the hyphenated bus marker', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'attention_resolve',
+      rawInput: {
+        name: 'attention_resolve',
+        server: 'krypton-harness-bus',
+      },
+    }))).toBe('attention_resolve');
+  });
+
+  it('accepts attention_flag detected via fallback regex on content text', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'ATTENTION_FLAG',
+      content: [{
+        type: 'content',
+        content: {
+          type: 'text',
+          text: 'Tool: krypton-harness-bus/attention_flag',
+        },
+      }],
+      rawInput: {
+        question: 'fork?',
+        chosen: 'A',
+      },
+    }))).toBe('attention_flag');
+  });
+
   it('accepts Junie-style permission where server + tool name appear only in option labels', () => {
     expect(harnessAutoAllowToolName(permissionFor(
       { title: 'Allow running MCP?', kind: 'other' },

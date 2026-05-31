@@ -202,7 +202,7 @@ interface FsActivityPayload {
   error?: string;
 }
 
-type HarnessToolFamily = 'memory' | 'peer' | 'review';
+type HarnessToolFamily = 'memory' | 'peer' | 'review' | 'attention';
 type PermissionDecision = 'pending' | 'accepted' | 'rejected' | 'auto_allowed' | 'failed';
 
 interface PermissionPayload {
@@ -397,10 +397,15 @@ interface ArtifactEventPayload {
 const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
 const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
 const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_request', 'review_reply']);
+// spec 130: attention triage is default-on built-in harness-bus tooling, so its
+// calls must auto-allow like memory/peer/review — a permission prompt here also
+// breaks the non-blocking contract (the lane proceeds with `chosen`, never waits).
+const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resolve']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
   ...HARNESS_PEER_TOOL_NAMES,
   ...HARNESS_REVIEW_TOOL_NAMES,
+  ...HARNESS_ATTENTION_TOOL_NAMES,
 ]);
 const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
@@ -3506,8 +3511,8 @@ export class AcpHarnessView implements ContentView {
     const family = harnessToolFamily(toolName);
     try {
       await lane.client.respondPermission(permission.requestId, option.optionId);
-      const reason = family === 'peer'
-        ? 'matched harness peer auto-allow rule'
+      const reason = family
+        ? `matched harness ${family} auto-allow rule`
         : 'matched harness memory auto-allow rule';
       this.updatePermissionDecision(permission, 'auto_allowed', `✓ ${toolName} (harness auto-allow)`, reason);
     } catch (e) {
@@ -7490,7 +7495,7 @@ function harnessToolNameFromString(value: string | undefined): string | null {
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list|review_request|review_reply)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list|review_request|review_reply|attention_flag|attention_resolve)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 
@@ -7498,6 +7503,7 @@ function harnessToolFamily(toolName: string): HarnessToolFamily | null {
   if (HARNESS_MEMORY_TOOL_NAMES.has(toolName)) return 'memory';
   if (HARNESS_PEER_TOOL_NAMES.has(toolName)) return 'peer';
   if (HARNESS_REVIEW_TOOL_NAMES.has(toolName)) return 'review';
+  if (HARNESS_ATTENTION_TOOL_NAMES.has(toolName)) return 'attention';
   return null;
 }
 

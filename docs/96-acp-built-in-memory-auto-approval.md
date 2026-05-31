@@ -68,7 +68,7 @@ interface MemoryPermissionMatch {
 
 Auto-approve only when both conditions are true:
 
-1. The permission request contains one of the allowed built-in tool names (memory: `memory_set`, `memory_get`, `memory_list`; peer: `peer_send`, `peer_list`; review: `review_request`, `review_reply`) somewhere in `toolCall.{rawInput,title,content}` or in any `permission.options[].name`.
+1. The permission request contains one of the allowed built-in tool names (memory: `memory_set`, `memory_get`, `memory_list`; peer: `peer_send`, `peer_list`; review: `review_request`, `review_reply`; attention: `attention_flag`, `attention_resolve`) somewhere in `toolCall.{rawInput,title,content}` or in any `permission.options[].name`. (Attention triage is default-on built-in harness tooling per [spec 130](130-default-attention-triage.md); a permission prompt for it is a bug *and* breaks the non-blocking contract — the lane has already proceeded with `chosen`.)
 2. The permission request also contains a built-in server marker (`krypton-harness-memory`, `krypton_harness_memory`, `krypton-harness-bus`, `krypton_harness_bus`, or `/mcp/harness/`) somewhere in `toolCall` or in any option label.
 
 All other requests, including a third-party MCP server that also exposes `memory_set` or `peer_send`, must enter the existing permission flow.
