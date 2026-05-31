@@ -3372,8 +3372,13 @@ export class AcpHarnessView implements ContentView {
     // lane, but a lane only learns their exact names via ranked tool discovery —
     // which can drop attention_flag under a capped query. Name both tools here so
     // the model can target them directly instead of relying on search ranking.
+    // spec 134: reframed to lead with positive, recognizable fork triggers and a
+    // symmetric "don't let a genuine fork pass unflagged" calibration. The old
+    // prohibition-first wording ("never flag the routine … never proactively")
+    // had pushed flagging to near-zero; the single retained guard now trails the
+    // triggers rather than dominating them. Mirrors the tool description.
     lines.push(
-      'Attention triage: when a turn forces a genuinely hard judgement call — an irreversible or costly choice, a real ambiguity in intent, or a trade-off you are not confident about — surface ONE such decision to the human review queue with attention_flag { question, chosen, rationale, traded_off, uncertainty, reversibility }, then keep working (it is non-blocking; proceed with `chosen`). Use attention_resolve { item_id } if you later settle it yourself. Never flag the routine, reversible 80%, and never flag proactively.',
+      'Attention triage: at the end of a turn where you hit a real fork — you picked among two or more genuinely viable approaches the user could reasonably decide differently on, you resolved a consequential ambiguity in their intent (one that changes the user-visible outcome, architecture, or workflow) by guessing, or you did something costly or hard to undo — surface ONE such decision to the human review queue with attention_flag { question, chosen, rationale, traded_off, uncertainty, reversibility }, then keep working (non-blocking; proceed with `chosen`). Calibrate in both directions: both a silent genuine fork and a trivia flag degrade the queue, so flag the consequential forks but skip the routine, reversible, machine-verifiable 80%, at most one per turn, and never flag just to cover yourself. Use attention_resolve { item_id } if you later settle it yourself.',
     );
     // spec 133: discoverability only — the agent decides when an HTML artifact
     // beats prose. Opt-in, user-driven; never default to it.

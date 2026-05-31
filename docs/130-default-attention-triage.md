@@ -56,7 +56,7 @@ This deliberately changes the trust model from "per-lane opt-in" to "ambient har
 Ok(json!({ "tools": bus_tool_descriptors() }))
 ```
 
-`bus_tool_descriptors()` no longer needs an `include_triage` parameter. `attention_tool_descriptors()` remains unchanged, including its strong "never flag proactively" description and required fields.
+`bus_tool_descriptors()` no longer needs an `include_triage` parameter. `attention_tool_descriptors()` keeps the same tool names and required fields; its description text was later reframed (spec 134) from prohibition-dominant to positive fork triggers with symmetric calibration, after default-on exposure showed the tool was still almost never called.
 
 ### Discoverability
 

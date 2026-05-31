@@ -37,6 +37,21 @@
 > action is removed from the active UI. `triage_equipped` remains visible as
 > legacy directive metadata only; it no longer gates tool visibility. See
 > `docs/130-default-attention-triage.md`.
+>
+> **Follow-up (spec 134) — prompt reframe.** With the tool default-on, real usage
+> showed it was *still* almost never called even across turns full of decision
+> points — the ADR-0001 cognitive-surrender risk materializing. Root cause was the
+> prompt, not the plumbing: both the tool description and the injected lane-context
+> line were prohibition-dominant ("the boring 80% must NEVER become a judgement
+> item … over-flagging is **worse than not flagging** … never flag proactively"),
+> which told the model the safe move was silence. Spec 134 reframes both strings
+> (the only change — no architecture, ADR-0001 self-report model intact): lead with
+> positive, *recognizable* fork triggers (picked among ≥2 viable approaches the user
+> might decide differently on / resolved an ambiguity by guessing / did something
+> costly or hard to undo), make the error framing **symmetric** ("letting a genuine
+> fork pass unflagged is as costly as over-flagging"), and demote the "skip the 80%,
+> one per turn, never to cover yourself" guard to a single trailing clause. The
+> presence floor and ranking are unchanged.
 
 ## Problem
 
@@ -130,7 +145,7 @@ attention_flag {
 attention_resolve { item_id, note } -> { ok }   // lane self-resolves (demote, not delete)
 ```
 
-Both follow the `review_request` round-trip: the frontend coordinator assembles the `ReviewPacket` from current lane state, inserts the `JudgementItem`, and replies. Tool description carries a **strong "never flag proactively"** guard mirroring `peer_send` / `review_request`: *flag only a decision that genuinely needs the human; the boring, machine-verifiable 80% must never become a judgement item.*
+Both follow the `review_request` round-trip: the frontend coordinator assembles the `ReviewPacket` from current lane state, inserts the `JudgementItem`, and replies. Tool description (reframed in spec 134 — see the follow-up note above) **leads with positive, recognizable fork triggers** and a *symmetric* calibration: *flag a real fork the human would want to weigh in on — ≥2 viable approaches the user could reasonably decide differently on, a guessed-at consequential ambiguity (one changing the user-visible outcome / architecture / workflow), or a costly/irreversible action; both a silent genuine fork and a trivia flag degrade the queue.* The guard from `peer_send` / `review_request` (*skip the boring machine-verifiable 80%, one flag per turn, never to cover yourself*) is retained as a single trailing clause rather than the dominant theme.
 
 **Default tool exposure.** Since spec 130, `tools/list` for `:lane_label` includes `attention_flag` / `attention_resolve` for every lane that receives the `krypton-harness-memory` MCP server. Payload validation and frontend queue insertion are the meaningful guards; the old triage-equipped gate is retained only as legacy metadata.
 

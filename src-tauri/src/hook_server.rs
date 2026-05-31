@@ -2437,15 +2437,19 @@ fn bus_tool_descriptors() -> Value {
     tools
 }
 
-/// spec 128: descriptors for `attention_flag` / `attention_resolve`. The
-/// `attention_flag` description carries a strong "never flag proactively" guard
-/// mirroring `peer_send` / `review_request` — the boring, machine-verifiable 80%
-/// must never become a judgement item.
+/// spec 128: descriptors for `attention_flag` / `attention_resolve`. Spec 134
+/// reframed the `attention_flag` description: positive, recognizable fork
+/// triggers lead, with a symmetric calibration ("letting a genuine fork pass
+/// unflagged is as costly as over-flagging") replacing the old prohibition-heavy
+/// "worse than not flagging" guard, which had driven the tool to near-zero use
+/// (the ADR-0001 cognitive-surrender risk materializing). The "skip the 80%, one
+/// per turn, never to cover yourself" guard is retained as a single calibrating
+/// clause rather than the dominant theme.
 fn attention_tool_descriptors() -> Vec<Value> {
     vec![
         json!({
             "name": "attention_flag",
-            "description": "Surface ONE decision from this turn that genuinely needs the human's judgement, then keep working — this is non-blocking and you already proceeded with your best guess (`chosen`). The flag lands in a ranked review queue the human triages on their own schedule; it does NOT pause you or wait for a reply. Flag ONLY a real fork: an irreversible or costly choice, a genuine ambiguity in intent, or a trade-off you are not confident is right. The boring, machine-verifiable 80% (passing tests, obvious refactors, reversible edits) must NEVER become a judgement item — over-flagging floods the queue and is worse than not flagging. Never flag proactively or to cover yourself. `traded_off` (what you rejected and why) and `uncertainty` (what would change your mind) are mandatory and must be substantive. Returns `{ item_id }` so you can later attention_resolve it if you settle the question yourself.",
+            "description": "At the end of a turn where you hit a real fork, surface ONE decision the human would want to weigh in on — then keep working. This is non-blocking: you already proceeded with your best guess (`chosen`), and the flag lands in a ranked queue the human triages on their own schedule; it never pauses you or waits for a reply. You hit a real fork when: you picked among two or more genuinely viable approaches the user could reasonably decide differently on; you resolved a consequential ambiguity in their intent — one that changes the user-visible outcome, architecture, or workflow — by guessing; or you did something costly or hard to undo. Calibrate in both directions: both a silent genuine fork and a trivia flag degrade the queue, so flag the consequential forks but skip the routine, reversible, machine-verifiable 80% (passing tests, obvious refactors, trivially-undoable edits). Flag at most one per turn, and never flag just to cover yourself. `traded_off` (what you rejected and why) and `uncertainty` (what would change your mind) are mandatory and must be substantive. Returns `{ item_id }` so you can attention_resolve it if you later settle the question yourself.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
