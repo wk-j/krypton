@@ -210,6 +210,8 @@ This invariant matters because `done:true` is a unilateral lock-out — the reci
 - **Exit (cancel):** user runs `#cancel` on the lane. Coordinator clears pending sends + notifies peers (synthesized inbox entry: `harness: peer cancelled`). Status goes `awaiting_peer → idle`.
 - **Exit (done received):** peer sent `done: true`. After A processes the closing message its turn ends normally → `idle`.
 
+> **Precedence vs. the user prompt queue (Spec 136).** Both the peer-mail inbox and the user-typed prompt queue drain on the `idle` transition. Peer mail wins: `InterLaneCoordinator.onBus` drains the inbox *synchronously* inside `setLaneStatus(idle)`, flipping the lane back to `busy` before `finishTurn`'s `queueMicrotask`-deferred `maybeDrainPromptQueue` runs (it gates on `status === 'idle'` and so holds). While peer mail preempts, the user queue renders `held behind lane mail`. There is no user override to jump the peer queue in v1 — `#cancel` (kills the turn + queue) and `#queue clear` (abandons the queue, keeps the turn) are the only escapes. See `docs/136-acp-harness-prompt-queue.md`.
+
 ### MCP Tools
 
 Added to `hook_server.rs` next to memory tools. Server identity renamed to `krypton-harness-bus` (the memory tools live on the same endpoint — renaming is cosmetic).

@@ -542,6 +542,20 @@ interface HarnessLane {
   /** spec 128: set when this lane flagged ≥1 judgement item during the current
    *  turn; read at busy→idle to classify the turn as flagged vs silent. */
   flaggedThisTurn: boolean;
+  /** spec 136: prompts the user submitted while the lane was busy. FIFO — the
+   *  head drains first on the next idle transition. Capped at PROMPT_QUEUE_MAX. */
+  queuedPrompts: QueuedPrompt[];
+}
+
+/** spec 136: one user prompt captured while the lane was busy, awaiting drain. */
+interface QueuedPrompt {
+  /** Trimmed prompt text as submitted. */
+  text: string;
+  /** Frozen snapshot of staged images at enqueue (isolated from later composer edits). */
+  images: StagedImage[];
+  /** Lane display names resolved via parseMentionFanOut AT ENQUEUE (empty if not a
+   *  mention); drives the →lane row tag without re-parsing at render. */
+  mentionTargets: string[];
 }
 
 interface TranscriptScrollAnchor {
@@ -787,6 +801,9 @@ const SPEC114_DEV = Boolean(
 // Immutable defaults shared across all lanes. Mutable containers (arrays,
 // Maps, Sets) MUST NOT live here — createLane() instantiates fresh ones
 // per lane to prevent reference aliasing.
+/** spec 136: cap on queued-while-busy prompts per lane. */
+const PROMPT_QUEUE_MAX = 10;
+
 const LANE_DEFAULTS = {
   client: null,
   status: 'starting' as const,
@@ -984,6 +1001,7 @@ export class AcpHarnessView implements ContentView {
   private laneRailEl!: HTMLElement;
   private planSlotEl!: HTMLElement;
   private peekSlotEl!: HTMLElement;
+  private queueSlotEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private pretextRaf = false;
   private scrollRaf = false;
@@ -1130,24 +1148,32 @@ export class AcpHarnessView implements ContentView {
     };
   }
 
-  /** spec 115: @mention fan-out from composer. */
-  private tryMentionFanOut(lane: HarnessLane, text: string, hasImages: boolean): boolean {
-    if (!text.trimStart().startsWith('@')) return false;
+  /** spec 115: @mention fan-out from composer.
+   *  spec 136: returns { handled, delivered } and gates the draft-clear so the
+   *  prompt-queue drain path can fan out without wiping the user's live draft. */
+  private tryMentionFanOut(
+    lane: HarnessLane,
+    text: string,
+    hasImages: boolean,
+    opts?: { clearDraftOnDeliver?: boolean },
+  ): { handled: boolean; delivered: boolean } {
+    if (!text.trimStart().startsWith('@')) return { handled: false, delivered: false };
+    const clearDraft = opts?.clearDraftOnDeliver !== false;
     const roster = this.lanes.map((l) => l.displayName);
     const parsed = parseMentionFanOut(text, lane.displayName, roster);
     if ('kind' in parsed) {
-      if (parsed.kind === 'empty_body') return false;
+      if (parsed.kind === 'empty_body') return { handled: false, delivered: false };
       if (parsed.kind === 'self_only') {
         this.flashChip('mention: cannot target only yourself');
-        return true;
+        return { handled: true, delivered: false };
       }
       this.flashChip(`mention: unknown lane ${parsed.token}`);
-      return true;
+      return { handled: true, delivered: false };
     }
-    if (parsed.targets.length === 0) return false;
+    if (parsed.targets.length === 0) return { handled: false, delivered: false };
     if (hasImages) {
       this.flashChip('mention fan-out: images not supported yet');
-      return true;
+      return { handled: true, delivered: false };
     }
     const targets = parsed.targets
       .map((displayName) => {
@@ -1157,7 +1183,7 @@ export class AcpHarnessView implements ContentView {
       .filter((t): t is { laneId: string; displayName: string } => t !== null);
     if (targets.length === 0) {
       this.flashChip('mention: no valid target lanes');
-      return true;
+      return { handled: true, delivered: false };
     }
     const result = this.coordinator.deliverMentionFanOut(
       lane.id,
@@ -1166,12 +1192,12 @@ export class AcpHarnessView implements ContentView {
       parsed.body,
       this.harnessMemoryId ?? undefined,
     );
-    this.setDraft(lane, '', 0);
+    if (clearDraft) this.setDraft(lane, '', 0);
     if (result.delivered.length === 0) {
       const why = result.failed.map((f) => `${f.displayName} (${f.reason})`).join(', ');
       this.flashChip(`mention failed: ${why || 'no targets'}`);
       this.render();
-      return true;
+      return { handled: true, delivered: false };
     }
     if (result.failed.length > 0) {
       const why = result.failed.map((f) => `${f.displayName} (${f.reason})`).join(', ');
@@ -1187,7 +1213,15 @@ export class AcpHarnessView implements ContentView {
       this.setLaneStatus(lane, 'awaiting_peer');
     }
     this.render();
-    return true;
+    return { handled: true, delivered: true };
+  }
+
+  /** spec 136: resolve a queued prompt's mention targets at enqueue time using
+   *  the real parser (not an ad-hoc regex). Empty when the text is not a mention. */
+  private resolveMentionTargets(text: string, lane: HarnessLane): string[] {
+    if (!text.trimStart().startsWith('@')) return [];
+    const parsed = parseMentionFanOut(text, lane.displayName, this.lanes.map((l) => l.displayName));
+    return 'kind' in parsed ? [] : parsed.targets;
   }
 
   /** Inject a programmatic user-turn (no UI composer involved). */
@@ -2651,6 +2685,13 @@ export class AcpHarnessView implements ContentView {
     this.peekSlotEl.dataset.slot = 'peek';
     this.peekSlotEl.hidden = true;
     this.laneRailEl.appendChild(this.peekSlotEl);
+    // spec 136: bottom-anchored slot for the ACTIVE lane's prompt queue. Shown
+    // independently of the peek; CSS `margin-top: auto` pins it to the rail bottom.
+    this.queueSlotEl = document.createElement('div');
+    this.queueSlotEl.className = 'acp-harness__lane-rail__slot';
+    this.queueSlotEl.dataset.slot = 'queue';
+    this.queueSlotEl.hidden = true;
+    this.laneRailEl.appendChild(this.queueSlotEl);
 
     this.pickerEl = document.createElement('aside');
     this.pickerEl.className = 'acp-harness__picker';
@@ -2958,6 +2999,7 @@ export class AcpHarnessView implements ContentView {
       modesById: new Map(),
       promptHistory: [],
       reviewReplyAttemptsThisTurn: new Set(),
+      queuedPrompts: [],
     };
     // spec 130: every harness-memory-capable lane gets attention tools by
     // default; seed local audit counters at lane creation so silent turns count
@@ -3250,14 +3292,51 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (lane.status === 'busy' || lane.status === 'needs_permission') {
-      this.flashChip('lane busy');
+      // spec 136: queue the prompt instead of discarding it — it drains on the
+      // next idle transition. Capture text + a frozen image snapshot + resolved
+      // mention targets, then clear the composer so the user can type the next.
+      if (lane.queuedPrompts.length >= PROMPT_QUEUE_MAX) {
+        this.flashChip(`queue full (${PROMPT_QUEUE_MAX})`);
+        return;
+      }
+      const queuedImages = lane.stagedImages.map((img) => Object.freeze({ ...img }) as StagedImage);
+      lane.queuedPrompts.push({
+        text,
+        images: queuedImages,
+        mentionTargets: this.resolveMentionTargets(text, lane),
+      });
+      this.setDraft(lane, '', 0);
+      lane.stagedImages = [];
+      this.flashChip(`queued (${lane.queuedPrompts.length})`);
+      this.render();
       return;
     }
     const images = lane.stagedImages.slice();
-    const mentionParsed = this.tryMentionFanOut(lane, text, images.length > 0);
-    if (mentionParsed) return;
     this.setDraft(lane, '', 0);
     lane.stagedImages = [];
+    await this.sendUserPrompt(lane, text, images, { clearDraft: true });
+  }
+
+  /**
+   * spec 136: dispatch a user prompt to the agent — the back half of the old
+   * submitActiveLane, shared by the immediate composer submit and the queued
+   * drain. Does NOT clear the live draft / staged images itself (callers own
+   * that), so draining a queued prompt never wipes a draft the user is typing.
+   * Returns { handled, delivered }: handled=false only when the lane has no
+   * client; delivered=false when a mention fan-out consumed the prompt without
+   * starting a turn (the lane stays idle — maybeDrainPromptQueue re-arms on that).
+   */
+  private async sendUserPrompt(
+    lane: HarnessLane,
+    text: string,
+    images: StagedImage[],
+    opts?: { clearDraft?: boolean },
+  ): Promise<{ handled: boolean; delivered: boolean }> {
+    if (!lane.client) return { handled: false, delivered: false };
+    const mention = this.tryMentionFanOut(lane, text, images.length > 0, {
+      clearDraftOnDeliver: opts?.clearDraft === true,
+    });
+    if (mention.handled) return mention;
     this.appendTranscript(lane, 'user', text, { imageCount: images.length });
     this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
@@ -3293,6 +3372,32 @@ export class AcpHarnessView implements ContentView {
       this.appendClassifiedError(lane, message, `prompt failed: ${message}`);
       this.render();
     }
+    return { handled: true, delivered: true };
+  }
+
+  /**
+   * spec 136: drain at most one queued user prompt when the lane settles to idle.
+   * Called (deferred) from finishTurn's tail. The status gate lets a synchronous
+   * peer-mail drain win (it flips the lane back to busy before this runs). A
+   * consumed-but-undelivered drain (a queued @mention whose target vanished)
+   * leaves the lane idle, so re-arm the drain or the rest of the queue stalls.
+   */
+  private maybeDrainPromptQueue(lane: HarnessLane): void {
+    if (lane.status !== 'idle') return; // busy (peer mail) / awaiting_peer / error / stopped → hold
+    const next = lane.queuedPrompts.shift();
+    if (!next) return;
+    void this.sendUserPrompt(lane, next.text, next.images, { clearDraft: false }).then((r) => {
+      if (r.delivered) return; // a turn started; the next finishTurn drains the rest
+      if (r.handled) {
+        this.appendTranscript(lane, 'system', `queued prompt not sent: ${truncate(next.text, 80)}`);
+        this.render();
+        if (lane.queuedPrompts.length > 0) {
+          queueMicrotask(() => this.maybeDrainPromptQueue(lane));
+        }
+      }
+      // r.handled === false means !lane.client (a dead lane) — not idle anyway,
+      // so we neither re-arm nor discard the remaining queue here.
+    });
   }
 
   private handleSubmitError(error: unknown): void {
@@ -3450,7 +3555,14 @@ export class AcpHarnessView implements ContentView {
     if (stopReason !== 'end_turn' && stopReason !== 'cancelled') {
       this.appendTranscript(lane, 'system', `turn ended: ${stopReason}`);
     }
-    if (lane.draft.trim()) this.flashChip('lane idle - Enter to send');
+    if (lane.draft.trim() && lane.queuedPrompts.length === 0) {
+      this.flashChip('lane idle - Enter to send');
+    }
+    // spec 136: drain one queued prompt on idle — deferred to a microtask so it
+    // reads the settled status (a synchronous peer-mail drain above wins if any).
+    if (lane.queuedPrompts.length > 0) {
+      queueMicrotask(() => this.maybeDrainPromptQueue(lane));
+    }
   }
 
   private observeFileTouch(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
@@ -4676,6 +4788,9 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async cancelLane(lane: HarnessLane): Promise<void> {
+    // spec 136: #cancel / Ctrl+C is the explicit "stop" gesture — drop the prompt
+    // queue here, before any early return, so it can't be left half-cleared.
+    lane.queuedPrompts = [];
     const pending = this.coordinator.pendingPeersFor(lane.id);
     // spec 116: busy cancel stops the ACP turn only — keep outstanding peer waits.
     if (lane.status === 'awaiting_peer' || (lane.status === 'idle' && pending.length > 0)) {
@@ -4715,6 +4830,7 @@ export class AcpHarnessView implements ContentView {
     lane.error = null;
     lane.plan = null;
     lane.planCollapsed = false;
+    lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
     // spec 133: a restart reuses the display name — drop any pending artifact
     // write grant so the restarted lane can't inherit it.
     this.cancelPendingArtifactsForLane(lane);
@@ -4759,6 +4875,7 @@ export class AcpHarnessView implements ContentView {
     lane.pendingPermissions = [];
     lane.pendingTurnExtractions = [];
     lane.stagedImages = [];
+    lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
     lane.transcript = [{ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` }];
     lane.usage = null;
     lane.sessionId = null;
@@ -4847,7 +4964,74 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
+    if (parts[0] === '#unqueue') {
+      this.setDraft(lane, '', 0); // consume the command text on every branch
+      this.unqueuePrompt(lane, parts[1]);
+      this.render();
+      return;
+    }
+    if (parts[0] === '#queue') {
+      this.setDraft(lane, '', 0);
+      this.runQueueCommand(lane, parts.slice(1));
+      this.render();
+      return;
+    }
     this.flashChip('unknown command');
+  }
+
+  /** spec 136: #unqueue [N] — remove the last queued item, or the 1-indexed N. */
+  private unqueuePrompt(lane: HarnessLane, arg: string | undefined): void {
+    if (lane.queuedPrompts.length === 0) {
+      this.flashChip('nothing queued');
+      return;
+    }
+    if (arg === undefined) {
+      lane.queuedPrompts.pop();
+      this.flashChip(`unqueued (${lane.queuedPrompts.length} left)`);
+      return;
+    }
+    const n = parseQueueIndex(arg);
+    if (n === null || n > lane.queuedPrompts.length) {
+      this.flashChip(`no item ${arg}`);
+      return;
+    }
+    lane.queuedPrompts.splice(n - 1, 1);
+    this.flashChip(`unqueued ${n} (${lane.queuedPrompts.length} left)`);
+  }
+
+  /** spec 136: #queue { clear | edit N }. */
+  private runQueueCommand(lane: HarnessLane, args: string[]): void {
+    const sub = args[0];
+    if (sub === 'clear') {
+      const n = lane.queuedPrompts.length;
+      lane.queuedPrompts = [];
+      this.flashChip(n > 0 ? `queue cleared (${n})` : 'queue empty');
+      return;
+    }
+    if (sub === 'edit') {
+      this.editQueuedPrompt(lane, args[1]);
+      return;
+    }
+    this.flashChip('queue: #queue clear | #queue edit N | #unqueue [N]');
+  }
+
+  /** spec 136: #queue edit N — pop item N into the composer to edit and re-send.
+   *  The command text was the live draft (intended overwrite); only an image-only
+   *  draft is a real clobber risk, so guard on staged images, not draft text. */
+  private editQueuedPrompt(lane: HarnessLane, arg: string | undefined): void {
+    const n = parseQueueIndex(arg);
+    if (n === null || n > lane.queuedPrompts.length) {
+      this.flashChip(arg === undefined ? 'usage: #queue edit N' : `no item ${arg}`);
+      return;
+    }
+    if (lane.stagedImages.length > 0) {
+      this.flashChip('clear staged image first');
+      return;
+    }
+    const [item] = lane.queuedPrompts.splice(n - 1, 1);
+    this.setDraft(lane, item.text, item.text.length);
+    lane.stagedImages = item.images.slice();
+    this.flashChip(`editing queued ${n} — re-send to re-queue`);
   }
 
   private async printMcpStatus(lane: HarnessLane): Promise<void> {
@@ -4934,6 +5118,7 @@ export class AcpHarnessView implements ContentView {
     this.renderSessionPicker();
     this.renderTriageGaugeEl();
     this.renderTriageOverlayEl();
+    this.renderActiveLaneQueue();
     this.renderComposer();
     this.scheduleStickyScroll();
   }
@@ -4991,8 +5176,58 @@ export class AcpHarnessView implements ContentView {
     this.renderActiveTranscript(lane);
     this.renderLanePeek();
     this.renderPlanPanel(lane);
+    this.renderActiveLaneQueue();
     this.renderComposer();
     this.scheduleStickyScroll();
+  }
+
+  /** spec 136: render the ACTIVE lane's prompt queue into the bottom rail slot.
+   *  Shown independently of the peek; hidden when empty or in zen (zen uses its
+   *  own left rail). Numbered drain-order rows, ▸ head marker (dimmed when the
+   *  queue is held/paused), per-item →lane / img×N tags. */
+  private renderActiveLaneQueue(): void {
+    const slot = this.queueSlotEl;
+    const lane = this.activeLane();
+    if (!lane || this.zenMode || lane.queuedPrompts.length === 0) {
+      slot.replaceChildren();
+      slot.hidden = true;
+      return;
+    }
+    const held = lane.status === 'awaiting_peer';
+    const paused = lane.status === 'error';
+    const stateSuffix = held ? ' · held behind lane mail' : paused ? ' · paused' : '';
+    const rows = lane.queuedPrompts
+      .map((q, i) => {
+        const isNext = i === 0 && !held && !paused;
+        const marker = isNext ? '▸1' : String(i + 1);
+        const tags: string[] = [];
+        if (q.mentionTargets.length > 0) {
+          const extra = q.mentionTargets.length - 1;
+          tags.push(
+            `<span class="acp-harness__lane-queue-tag">→${esc(q.mentionTargets[0])}${extra > 0 ? ` +${extra}` : ''}</span>`,
+          );
+        }
+        if (q.images.length > 0) {
+          tags.push(`<span class="acp-harness__lane-queue-tag">img×${q.images.length}</span>`);
+        }
+        return (
+          `<li class="acp-harness__lane-queue-row${isNext ? ' acp-harness__lane-queue-row--next' : ''}">` +
+          `<span class="acp-harness__lane-queue-n">${esc(marker)}</span>` +
+          `<span class="acp-harness__lane-queue-body">${esc(q.text)}</span>` +
+          tags.join('') +
+          `</li>`
+        );
+      })
+      .join('');
+    const el = document.createElement('div');
+    el.className = `acp-harness__lane-queue${held || paused ? ' acp-harness__lane-queue--held' : ''}`;
+    el.style.setProperty('--acp-lane-accent', lane.accent);
+    el.innerHTML =
+      `<div class="acp-harness__lane-queue-head">⏎ queue (${lane.queuedPrompts.length})${stateSuffix}</div>` +
+      `<ol class="acp-harness__lane-queue-list">${rows}</ol>` +
+      `<div class="acp-harness__lane-queue-hint">#unqueue · #queue clear</div>`;
+    slot.replaceChildren(el);
+    slot.hidden = false;
   }
 
   private renderActiveLaneChrome(lane: HarnessLane): void {
@@ -6039,7 +6274,8 @@ export class AcpHarnessView implements ContentView {
     if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · f open artifact · ? help · i/Esc input';
     if (lane.status === 'busy') {
       const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
-      return `${lane.displayName} running${elapsed} · Ctrl+C cancel`;
+      const queued = lane.queuedPrompts.length > 0 ? ` · ${lane.queuedPrompts.length} queued` : '';
+      return `${lane.displayName} running${elapsed}${queued} · Ctrl+C cancel`;
     }
     const pending = this.coordinator.pendingPeersFor(lane.id);
     if (pending.length > 0 && (lane.status === 'awaiting_peer' || lane.status === 'idle')) {
@@ -9041,6 +9277,13 @@ function basename(path: string): string {
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+}
+
+/** spec 136: strict positive base-10 index parse for #unqueue / #queue edit.
+ *  Rejects 0, negatives, decimals, and trailing junk (1foo). null = invalid. */
+export function parseQueueIndex(arg: string | undefined): number | null {
+  if (arg === undefined || !/^[1-9]\d*$/.test(arg)) return null;
+  return Number(arg);
 }
 
 /** spec 124: compact line-based before/after diff for a directive system

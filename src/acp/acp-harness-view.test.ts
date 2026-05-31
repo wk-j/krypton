@@ -19,6 +19,7 @@ import {
   isDirectPeerPeekReasonKey,
   laneAccent,
   laneAccentForLabel,
+  parseQueueIndex,
   rawOutputSections,
   stringifyToolValue,
   formatLaneMailMetaLine,
@@ -989,5 +990,28 @@ describe('byte-array tool output decoding (spec 135 — Grok lane)', () => {
     expect(rawOutputSections(onBranchMaster)).toEqual([
       { label: 'output', text: 'On branch master' },
     ]);
+  });
+});
+
+describe('prompt queue index parsing (spec 136)', () => {
+  it('accepts positive base-10 integers', () => {
+    expect(parseQueueIndex('1')).toBe(1);
+    expect(parseQueueIndex('2')).toBe(2);
+    expect(parseQueueIndex('10')).toBe(10);
+  });
+
+  it('rejects zero, negatives, decimals, and trailing junk', () => {
+    expect(parseQueueIndex('0')).toBeNull();
+    expect(parseQueueIndex('-1')).toBeNull();
+    expect(parseQueueIndex('1.5')).toBeNull();
+    expect(parseQueueIndex('1foo')).toBeNull();
+    expect(parseQueueIndex('foo')).toBeNull();
+    expect(parseQueueIndex('01')).toBeNull(); // leading zero is not a clean 1-indexed row
+  });
+
+  it('rejects missing / empty arg (caller uses this for "remove last" vs indexed)', () => {
+    expect(parseQueueIndex(undefined)).toBeNull();
+    expect(parseQueueIndex('')).toBeNull();
+    expect(parseQueueIndex(' 1')).toBeNull(); // not pre-trimmed → invalid
   });
 });

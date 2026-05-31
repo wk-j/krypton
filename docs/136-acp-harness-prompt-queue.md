@@ -1,6 +1,6 @@
 # ACP Harness Prompt Queue — Implementation Spec
 
-> Status: Draft (revised after Codex-1 ×2 + Grok-1 + Claude-2 adversarial reviews, 2026-05-31)
+> Status: Implemented (after Codex-1 ×2 + Grok-1 + Claude-2 adversarial reviews, 2026-05-31)
 > Date: 2026-05-31
 > Milestone: M-ACP — Harness convergence
 

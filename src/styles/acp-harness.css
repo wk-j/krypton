@@ -745,6 +745,95 @@
 .acp-harness__lane-rail__slot--primary { max-height: 70%; }
 .acp-harness__lane-rail__slot--compact { max-height: 96px; }
 
+/* spec 136: prompt-queue slot — bottom-anchored, never crushed. flex-shrink:0 +
+   capped height so the plan/peek slots above absorb the squeeze when all three
+   are present; margin-top:auto pins it to the rail bottom near the composer. */
+.acp-harness__lane-rail__slot[data-slot="queue"] {
+  flex-shrink: 0;
+  max-height: clamp(72px, 30%, 160px);
+  margin-top: auto;
+}
+
+.acp-harness__lane-queue {
+  --acp-queue-accent: var(--acp-lane-accent, var(--krypton-accent, #00ccff));
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 11px;
+  font-family: var(--krypton-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.92em;
+  background: rgba(6, 12, 20, 0.92);
+  border: 1px solid color-mix(in srgb, var(--acp-queue-accent) 38%, transparent);
+  border-radius: 4px;
+  color: rgba(216, 232, 216, 0.9);
+  overflow: hidden;
+}
+
+.acp-harness__lane-queue-head {
+  color: var(--acp-queue-accent);
+  font-size: 0.8em;
+  letter-spacing: 0.04em;
+}
+
+.acp-harness__lane-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.acp-harness__lane-queue-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.acp-harness__lane-queue-n {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: right;
+  color: rgba(216, 232, 216, 0.4);
+  font-size: 0.82em;
+}
+
+.acp-harness__lane-queue-row--next .acp-harness__lane-queue-n,
+.acp-harness__lane-queue-row--next .acp-harness__lane-queue-body {
+  color: var(--acp-queue-accent);
+}
+
+.acp-harness__lane-queue-body {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acp-harness__lane-queue-tag {
+  flex-shrink: 0;
+  font-size: 0.72em;
+  color: var(--acp-queue-accent);
+  border: 1px solid color-mix(in srgb, var(--acp-queue-accent) 40%, transparent);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.acp-harness__lane-queue-hint {
+  color: rgba(216, 232, 216, 0.4);
+  font-size: 0.74em;
+}
+
+/* held behind lane mail / paused on error — dim, nothing draining right now */
+.acp-harness__lane-queue--held .acp-harness__lane-queue-body,
+.acp-harness__lane-queue--held .acp-harness__lane-queue-n {
+  color: rgba(216, 232, 216, 0.34);
+}
+.acp-harness__lane-queue--held .acp-harness__lane-queue-head {
+  color: rgba(216, 232, 216, 0.5);
+}
+
 .acp-harness__lane-peek {
   position: relative;
   width: 100%;

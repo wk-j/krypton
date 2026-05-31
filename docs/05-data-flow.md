@@ -258,6 +258,14 @@
    one-line nudge describing the krypton-harness-memory MCP tools. Memory
    bodies (summary + detail) are not injected — agents call memory_list /
    memory_get on demand (Spec 98).
+   a. Prompt queue (Spec 136): if the active lane is busy / needs_permission,
+      Enter does NOT discard the prompt — it captures {text, frozen image
+      snapshot, mention targets} into the lane's FIFO queuedPrompts (cap 10).
+      finishTurn schedules maybeDrainPromptQueue via queueMicrotask on each
+      idle transition; it drains ONE item (gated on status === 'idle', so a
+      synchronous peer-mail drain wins). sendUserPrompt is the shared dispatch
+      core (immediate + drain) and never clears the live draft. A drained
+      mention whose target vanished re-arms the drain so the queue can't stall.
 8. MCP-capable agents call memory_set, memory_get, and memory_list against
    /mcp/harness/<harnessId>/lane/<laneLabel>.
    a. memory_set overwrites the caller's own document in RAM.
@@ -286,6 +294,10 @@
     d. #new! first clears that lane's persisted memory document through
        clear_harness_memory_lane, then follows the #new flow.
     e. #mem clear clears the active lane memory document for future prompts only.
+    f. #cancel also clears the lane's prompt queue. #unqueue [N] removes the
+       last (or 1-indexed) queued prompt; #queue clear empties the queue without
+       cancelling the running turn; #queue edit N pops item N into the composer
+       to edit and re-send (Spec 136).
 13. Session resume picker:
     a. `Cmd+P → 0` opens the session picker. If an active lane exists, the
        picker auto-selects that lane's backend; otherwise it opens backend
