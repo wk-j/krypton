@@ -46,6 +46,17 @@ type FooterRefreshReason = 'mode' | 'focus' | 'bus' | 'timer' | 'config' | 'musi
 const GIT_CACHE_TTL_MS = 10_000;
 const GIT_DEBOUNCE_MS = 100;
 
+// spec 132: Krypton app mark — "K" = solid cursor stem-bar + monoline command-prompt
+// chevron ("stem-bar" candidate). Singleton in the footer, so the SVG is inlined
+// directly (no <symbol>/<use> indirection). Strokes/fills use currentColor so it
+// recolors with the theme via the footer's accent color.
+const KRYPTON_LOGO_SVG =
+  '<svg viewBox="0 0 32 32" aria-hidden="true">' +
+  '<rect x="8" y="6" width="3.4" height="20" rx="0.4" fill="currentColor"/>' +
+  '<g stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M12 16 L23 6"/><path d="M12 16 L23 26"/>' +
+  '</g></svg>';
+
 function isViewSource(source: SignalSource): source is ViewAddress {
   return 'viewId' in source;
 }
@@ -98,6 +109,7 @@ export class WorkspaceFooter {
   private density: WorkspaceFooterDensity = 'compact';
   private visible = true;
   private root: HTMLElement;
+  private brandEl: HTMLElement;
   private leftEl: HTMLElement;
   private centerEl: HTMLElement;
   private rightEl: HTMLElement;
@@ -167,8 +179,16 @@ export class WorkspaceFooter {
     this.musicProgressFillEl = document.createElement('div');
     this.musicProgressFillEl.className = 'krypton-workspace-footer__music-progress-fill';
 
+    // spec 132: persistent Krypton brand anchor at the leading edge — created once,
+    // never re-rendered (renderLeft/Center/Right only touch their own cells), so it
+    // stays off the refresh hot path. Like the Apple mark at the left of the menu bar.
+    this.brandEl = document.createElement('span');
+    this.brandEl.className = 'krypton-workspace-footer__brand';
+    this.brandEl.setAttribute('aria-label', 'Krypton');
+    this.brandEl.innerHTML = KRYPTON_LOGO_SVG;
+
     this.rightEl.append(this.attentionEl, this.hintEl, this.musicEl);
-    this.root.append(this.leftEl, this.centerEl, this.rightEl);
+    this.root.append(this.brandEl, this.leftEl, this.centerEl, this.rightEl);
 
     deps.inputRouter.onModeChange((mode) => {
       this.mode = mode;

@@ -25,6 +25,25 @@
   box-shadow: 0 -8px 24px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
 }
 
+/* spec 132: Krypton brand anchor — identity mark at the leading edge. Persistent
+   chrome (not data), so it is never hidden by the responsive segment rules below. */
+.krypton-workspace-footer__brand {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  line-height: 0;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
+  filter:
+    drop-shadow(0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6))
+    drop-shadow(0 0 10px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.18));
+}
+
+.krypton-workspace-footer__brand svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
 .krypton-workspace-footer__left,
 .krypton-workspace-footer__center,
 .krypton-workspace-footer__right,

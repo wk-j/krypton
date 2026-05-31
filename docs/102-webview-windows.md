@@ -3,6 +3,8 @@
 > Status: Implemented
 > Date: 2026-05-11
 > Milestone: M3 — Compositor & Windows (extension)
+>
+> Cross-reference (spec 133): ACP-harness **HTML artifact cards** are *not* URL hints and do *not* open in a webview pane. They are a distinct "open artifact" hint in the harness transcript (`f` in command mode → label) that opens the artifact's `file://` path in the **OS browser** via `open_url` (ADR 0002), deliberately bypassing the in-app webview surface described here. See `docs/133-harness-html-artifacts.md`.
 
 ## Problem
 

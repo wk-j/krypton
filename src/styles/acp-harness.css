@@ -3711,3 +3711,90 @@
 .acp-harness__session-error {
   color: rgba(255, 118, 118, 0.78);
 }
+
+/* ─── HTML artifacts (spec 133) ─────────────────────────────────────────── */
+
+.acp-harness__msg--artifact .acp-harness__msg-label {
+  color: var(--krypton-window-accent, #0cf);
+}
+
+.acp-harness__msg--artifact .acp-harness__msg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-left: 2px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 55%, transparent);
+  background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 6%, transparent);
+  border-radius: 0 3px 3px 0;
+}
+
+.acp-harness__msg--artifact-unavailable .acp-harness__msg-body {
+  border-left-color: rgba(255, 118, 118, 0.5);
+  background: rgba(255, 118, 118, 0.05);
+  opacity: 0.72;
+}
+
+.acp-harness__msg--artifact-hinted .acp-harness__msg-body {
+  border-left-color: var(--krypton-window-accent, #0cf);
+  background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 12%, transparent);
+}
+
+.acp-harness__artifact-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+}
+
+.acp-harness__artifact-hint {
+  flex: 0 0 auto;
+  min-width: 1.4em;
+  padding: 0 0.35em;
+  text-align: center;
+  font-weight: bold;
+  color: #0a0e12;
+  background: var(--krypton-window-accent, #0cf);
+  border-radius: 2px;
+}
+
+.acp-harness__artifact-glyph {
+  color: var(--krypton-window-accent, #0cf);
+}
+
+.acp-harness__artifact-title {
+  font-weight: 600;
+  color: rgba(216, 232, 240, 0.95);
+}
+
+.acp-harness__artifact-meta,
+.acp-harness__artifact-action {
+  font-size: 0.82em;
+  color: rgba(216, 232, 240, 0.55);
+}
+
+.acp-harness__artifact-action {
+  color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 70%, rgba(216, 232, 240, 0.6));
+}
+
+/* Redacted artifact-path write/edit card — path + bytes + hash only, never
+   the HTML (spec 133 transcript hygiene). */
+.acp-harness__artifact-redaction {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 4px 6px;
+  border-left: 2px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 40%, transparent);
+  background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 4%, transparent);
+}
+
+.acp-harness__artifact-redaction-note {
+  font-size: 0.8em;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 65%, rgba(216, 232, 240, 0.6));
+}
+
+.acp-harness__artifact-redaction-meta {
+  font-size: 0.8em;
+  color: rgba(216, 232, 240, 0.5);
+  word-break: break-all;
+}

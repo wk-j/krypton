@@ -173,6 +173,12 @@ pub struct HookServer {
     /// Spec 130 makes attention tools default-on for harness-memory-capable
     /// lanes; this remains only for command/backward compatibility.
     triage_equipped: std::sync::Mutex<HashMap<String, HashSet<String>>>,
+    /// Spec 133: HTML artifact registry, keyed by harness id. One store per
+    /// harness tab; entries keyed by artifact id.
+    artifacts: std::sync::Mutex<HashMap<String, HarnessArtifactStore>>,
+    /// Monotonic artifact id sequence (resets per app run — artifact paths are
+    /// swept on close and the random suffix keeps them unguessable).
+    next_artifact_seq: AtomicU64,
 }
 
 impl Default for HookServer {
@@ -186,6 +192,8 @@ impl Default for HookServer {
             next_harness_id: AtomicU64::new(1),
             pending_bus_replies: std::sync::Mutex::new(HashMap::new()),
             triage_equipped: std::sync::Mutex::new(HashMap::new()),
+            artifacts: std::sync::Mutex::new(HashMap::new()),
+            next_artifact_seq: AtomicU64::new(1),
         }
     }
 }
@@ -201,6 +209,8 @@ impl HookServer {
             next_harness_id: AtomicU64::new(1),
             pending_bus_replies: std::sync::Mutex::new(HashMap::new()),
             triage_equipped: std::sync::Mutex::new(HashMap::new()),
+            artifacts: std::sync::Mutex::new(HashMap::new()),
+            next_artifact_seq: AtomicU64::new(1),
         }
     }
 
@@ -319,6 +329,7 @@ impl HookServer {
             }
         }
 
+        let artifact_project_dir = project_dir.clone();
         let store = HarnessMemoryStore {
             lanes,
             persistence_path,
@@ -326,8 +337,15 @@ impl HookServer {
             save_pending: Arc::new(AtomicBool::new(false)),
         };
 
-        let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
-        memories.insert(harness_id.clone(), store);
+        let live_harness_ids: HashSet<String> = {
+            let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
+            memories.insert(harness_id.clone(), store);
+            memories.keys().cloned().collect()
+        };
+
+        // Spec 133: register the artifact store and stale-sweep crash leftovers
+        // (harness dirs absent from the live registry) for this project.
+        self.init_harness_artifacts(&harness_id, artifact_project_dir, &live_harness_ids);
         harness_id
     }
 
@@ -436,6 +454,8 @@ impl HookServer {
     }
 
     pub fn dispose_harness_memory(&self, harness_id: &str) {
+        // Spec 133: sweep this harness's artifact scratch dir on normal close.
+        self.dispose_harness_artifacts(harness_id);
         let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
         memories.remove(harness_id);
         let mut stats = self.mcp_stats.lock().unwrap_or_else(|e| e.into_inner());
@@ -447,6 +467,255 @@ impl HookServer {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         triage.remove(harness_id);
+    }
+
+    // ─── Artifact store (spec 133) ──────────────────────────────────────────
+
+    /// Register an artifact store for a harness and stale-sweep crash leftovers.
+    /// The sweep removes any `harnessId` subdir under this project's artifact
+    /// root that is NOT in the live registry — never the live set (so a second
+    /// harness tab sharing the project keeps its artifacts), and only crash
+    /// leftovers from prior app runs are reclaimed.
+    fn init_harness_artifacts(
+        &self,
+        harness_id: &str,
+        project_dir: Option<String>,
+        live_harness_ids: &HashSet<String>,
+    ) {
+        if let Some(ref dir) = project_dir {
+            if let Some(root) = artifacts_root(dir) {
+                sweep_stale_artifacts(&root, live_harness_ids);
+            }
+        }
+        let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+        artifacts.insert(
+            harness_id.to_string(),
+            HarnessArtifactStore {
+                project_dir,
+                entries: HashMap::new(),
+            },
+        );
+    }
+
+    /// Remove a harness's artifact store and delete its scratch dir.
+    fn dispose_harness_artifacts(&self, harness_id: &str) {
+        let store = {
+            let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+            artifacts.remove(harness_id)
+        };
+        if let Some(store) = store {
+            if let Some(ref dir) = store.project_dir {
+                if let Some(root) = artifacts_root(dir) {
+                    let harness_dir = root.join(harness_id);
+                    if harness_dir.exists() {
+                        let _ = std::fs::remove_dir_all(&harness_dir);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `artifact_new` — allocate an id, issue a destination path inside the
+    /// project, ensure the scratch dirs + `.gitignore` exist, and record a
+    /// `pending` entry. Returns `{ id, path }`. Fails closed if the gitignore
+    /// or directory cannot be created (no path leaked into git status).
+    fn artifact_new(
+        &self,
+        harness_id: &str,
+        lane_label: &str,
+        title: &str,
+    ) -> Result<Value, String> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err("title must be non-empty".to_string());
+        }
+        if title.chars().count() > ARTIFACT_TITLE_MAX {
+            return Err(format!(
+                "title is {} chars but must be \u{2264}{ARTIFACT_TITLE_MAX}",
+                title.chars().count()
+            ));
+        }
+
+        let seq = self.next_artifact_seq.fetch_add(1, Ordering::Relaxed);
+        let artifact_id = format!("art-{seq}-{}", rand_suffix());
+        let lane_dir_name = sanitize_path_component(lane_label);
+
+        let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+        let store = artifacts
+            .get_mut(harness_id)
+            .ok_or_else(|| format!("Unknown harness: {harness_id}"))?;
+        let project_dir = store
+            .project_dir
+            .clone()
+            .ok_or_else(|| "no project directory for artifacts in this harness".to_string())?;
+
+        // Caps: outstanding pending per lane, and total per session.
+        let pending_for_lane = store
+            .entries
+            .values()
+            .filter(|e| e.lane_label == lane_label && e.state == ArtifactState::Pending)
+            .count();
+        if pending_for_lane >= ARTIFACT_PENDING_PER_LANE_MAX {
+            return Err(format!(
+                "pending_cap: at most {ARTIFACT_PENDING_PER_LANE_MAX} outstanding pending artifacts per lane — register or cancel one first"
+            ));
+        }
+        if store.entries.len() >= ARTIFACT_PER_SESSION_MAX {
+            return Err(format!(
+                "session_cap: at most {ARTIFACT_PER_SESSION_MAX} artifacts per harness tab"
+            ));
+        }
+
+        let root = artifacts_root(&project_dir)
+            .ok_or_else(|| "could not resolve artifact scratch root".to_string())?;
+        let lane_dir = root.join(harness_id).join(&lane_dir_name);
+        // Fail closed: a path we cannot back with a gitignore must never be
+        // handed out, or it would pollute the user's git status.
+        ensure_artifacts_gitignore(&root)
+            .map_err(|e| format!("could not prepare artifact scratch dir: {e}"))?;
+        std::fs::create_dir_all(&lane_dir)
+            .map_err(|e| format!("could not create artifact lane dir: {e}"))?;
+
+        let path = lane_dir.join(format!("{artifact_id}.html"));
+        let tail = format!(".krypton/artifacts/{harness_id}/{lane_dir_name}/{artifact_id}.html");
+        let path_str = path.to_string_lossy().to_string();
+        store.entries.insert(
+            artifact_id.clone(),
+            ArtifactEntry {
+                id: artifact_id.clone(),
+                lane_label: lane_label.to_string(),
+                title: title.to_string(),
+                path,
+                tail: tail.clone(),
+                state: ArtifactState::Pending,
+                size: 0,
+                hash: String::new(),
+            },
+        );
+
+        Ok(json!({
+            "id": artifact_id,
+            "path": path_str,
+            "tail": tail,
+            "state": "pending",
+            "title": title,
+        }))
+    }
+
+    /// `artifact_register` — first call validates the issued file and
+    /// transitions `pending → registered_live`; a repeat call on a live id is an
+    /// idempotent metadata refresh (re-stat/re-hash).
+    fn artifact_register(
+        &self,
+        harness_id: &str,
+        lane_label: &str,
+        id: &str,
+    ) -> Result<Value, String> {
+        let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+        let store = artifacts
+            .get_mut(harness_id)
+            .ok_or_else(|| format!("Unknown harness: {harness_id}"))?;
+        let project_dir = store.project_dir.clone();
+        let entry = store
+            .entries
+            .get_mut(id)
+            // No path detail leaked for an id that is not the caller's.
+            .filter(|e| e.lane_label == lane_label)
+            .ok_or_else(|| "not_found: no such artifact id for this lane".to_string())?;
+
+        let root = project_dir
+            .as_deref()
+            .and_then(artifacts_root)
+            .ok_or_else(|| "could not resolve artifact scratch root".to_string())?;
+        let (size, hash) =
+            validate_artifact_file(&root, &entry.path, &entry.id, ARTIFACT_FILE_BYTES_MAX)?;
+        let was_pending = entry.state == ArtifactState::Pending;
+        entry.state = ArtifactState::RegisteredLive;
+        entry.size = size;
+        entry.hash = hash.clone();
+        let snapshot = entry.clone();
+        drop(artifacts);
+
+        Ok(json!({
+            "ok": true,
+            "id": snapshot.id,
+            "size": size,
+            "hash": hash,
+            "title": snapshot.title,
+            "path": snapshot.path.to_string_lossy(),
+            "tail": snapshot.tail,
+            // First register raises the card; a repeat is just a refresh.
+            "registered": was_pending,
+        }))
+    }
+
+    /// `artifact_cancel` — `pending` only: drop the entry and best-effort delete
+    /// the pending file. Errors `already_registered` on a live id.
+    fn artifact_cancel(
+        &self,
+        harness_id: &str,
+        lane_label: &str,
+        id: &str,
+    ) -> Result<Value, String> {
+        let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+        let store = artifacts
+            .get_mut(harness_id)
+            .ok_or_else(|| format!("Unknown harness: {harness_id}"))?;
+        let entry = store
+            .entries
+            .get(id)
+            .filter(|e| e.lane_label == lane_label)
+            .ok_or_else(|| "not_found: no such artifact id for this lane".to_string())?;
+        if entry.state == ArtifactState::RegisteredLive {
+            return Err(
+                "already_registered: cannot cancel a live artifact (no retire in v1)".to_string(),
+            );
+        }
+        let path = entry.path.clone();
+        store.entries.remove(id);
+        drop(artifacts);
+        // Best-effort: the file may not exist yet (new → cancel without write).
+        let _ = std::fs::remove_file(&path);
+        Ok(json!({ "ok": true, "id": id }))
+    }
+
+    /// Cancel every outstanding `pending` artifact for a lane (turn-end / lane
+    /// teardown). Returns the cancelled ids. Live artifacts are untouched.
+    pub fn cancel_pending_artifacts(&self, harness_id: &str, lane_label: &str) -> Vec<String> {
+        let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(store) = artifacts.get_mut(harness_id) else {
+            return Vec::new();
+        };
+        let pending_ids: Vec<String> = store
+            .entries
+            .values()
+            .filter(|e| e.lane_label == lane_label && e.state == ArtifactState::Pending)
+            .map(|e| e.id.clone())
+            .collect();
+        let mut paths = Vec::new();
+        for id in &pending_ids {
+            if let Some(entry) = store.entries.remove(id) {
+                paths.push(entry.path);
+            }
+        }
+        drop(artifacts);
+        for path in paths {
+            let _ = std::fs::remove_file(&path);
+        }
+        pending_ids
+    }
+
+    /// Re-stat/re-hash a live artifact after an observed write/edit. Returns the
+    /// refreshed `{ id, size, hash, ... }` for the frontend card, or an error if
+    /// the file now violates the size cap / path rules (card goes unavailable).
+    pub fn refresh_artifact(
+        &self,
+        harness_id: &str,
+        lane_label: &str,
+        id: &str,
+    ) -> Result<Value, String> {
+        // Same validation as register's idempotent refresh path.
+        self.artifact_register(harness_id, lane_label, id)
     }
 
     pub fn list_harness_mcp_stats(&self, harness_id: &str) -> Vec<McpLaneStatsEntry> {
@@ -543,6 +812,49 @@ struct LaneMemoryDoc {
 
 const MEMORY_SUMMARY_MAX: usize = 300;
 const MEMORY_DETAIL_MAX: usize = 8000;
+
+// ─── HTML artifacts (spec 133) ──────────────────────────────────────────────
+
+/// Max characters for an artifact title (card label only).
+const ARTIFACT_TITLE_MAX: usize = 200;
+/// Max bytes for an artifact file, enforced on every write/edit and at
+/// register/open. A live edit past this makes the card unavailable rather than
+/// silently opening.
+const ARTIFACT_FILE_BYTES_MAX: u64 = 4 * 1024 * 1024;
+/// Max live + pending artifacts per harness tab.
+const ARTIFACT_PER_SESSION_MAX: usize = 64;
+/// Max outstanding `pending` artifacts per lane. Pending entries authorize a
+/// write, so they are bounded and short-lived.
+const ARTIFACT_PENDING_PER_LANE_MAX: usize = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArtifactState {
+    Pending,
+    RegisteredLive,
+}
+
+#[derive(Debug, Clone)]
+struct ArtifactEntry {
+    id: String,
+    lane_label: String,
+    title: String,
+    /// Absolute issued path to `<id>.html`.
+    path: PathBuf,
+    /// Project-relative tail `.krypton/artifacts/<harnessId>/<laneLabel>/<id>.html`
+    /// — the unique suffix the frontend matches write targets against.
+    tail: String,
+    state: ArtifactState,
+    size: u64,
+    hash: String,
+}
+
+#[derive(Debug, Default)]
+struct HarnessArtifactStore {
+    /// Lane working dir / scratch base. None ⇒ artifacts unavailable here.
+    project_dir: Option<String>,
+    /// Key: artifact id.
+    entries: HashMap<String, ArtifactEntry>,
+}
 
 /// POST /hook — receive a Claude Code hook event.
 async fn handle_hook(
@@ -689,6 +1001,9 @@ async fn handle_bus_tool_call(
         "directive_remove" => directive_remove(state, harness_id, lane_label, arguments).await,
         "attention_flag" => attention_flag(state, harness_id, lane_label, arguments).await,
         "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
+        "artifact_new" => artifact_tool_new(state, harness_id, lane_label, arguments),
+        "artifact_register" => artifact_tool_register(state, harness_id, lane_label, arguments),
+        "artifact_cancel" => artifact_tool_cancel(state, harness_id, lane_label, arguments),
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -1820,6 +2135,87 @@ fn memory_list(hook_server: &Arc<HookServer>, harness_id: &str) -> Result<Value,
     Ok(json!({ "entries": entries }))
 }
 
+/// spec 133 — `artifact_new`: allocate + issue path, emit a `pending` event so
+/// the frontend opens the issued-path write auto-approval.
+fn artifact_tool_new(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let title = required_string(&arguments, "title")?;
+    let value = state
+        .hook_server
+        .artifact_new(harness_id, lane_label, &title)?;
+    state.app_handle.emit_or_log(
+        "acp-harness-artifact",
+        json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "id": value.get("id"),
+            "path": value.get("path"),
+            "tail": value.get("tail"),
+            "title": value.get("title"),
+            "state": "pending",
+        }),
+    );
+    Ok(value)
+}
+
+/// spec 133 — `artifact_register`: validate + record size/hash, emit a
+/// `registered` event (first call raises the card; a repeat refreshes it).
+fn artifact_tool_register(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let id = required_string(&arguments, "id")?;
+    let value = state
+        .hook_server
+        .artifact_register(harness_id, lane_label, &id)?;
+    state.app_handle.emit_or_log(
+        "acp-harness-artifact",
+        json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "id": value.get("id"),
+            "path": value.get("path"),
+            "tail": value.get("tail"),
+            "title": value.get("title"),
+            "size": value.get("size"),
+            "hash": value.get("hash"),
+            "state": "registered",
+            "registered": value.get("registered"),
+        }),
+    );
+    Ok(value)
+}
+
+/// spec 133 — `artifact_cancel`: drop a pending entry, emit a `cancelled` event
+/// so the frontend closes the write grant.
+fn artifact_tool_cancel(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let id = required_string(&arguments, "id")?;
+    let value = state
+        .hook_server
+        .artifact_cancel(harness_id, lane_label, &id)?;
+    state.app_handle.emit_or_log(
+        "acp-harness-artifact",
+        json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "id": id,
+            "state": "cancelled",
+        }),
+    );
+    Ok(value)
+}
+
 fn bus_tool_descriptors() -> Value {
     let mut tools = json!([
         {
@@ -1978,6 +2374,39 @@ fn bus_tool_descriptors() -> Value {
                 },
                 "required": ["directive_id", "reason"]
             }
+        },
+        {
+            "name": "artifact_new",
+            "description": "Create an HTML artifact the user opens in their browser, for views that beat prose: side-by-side comparisons, diagrams, annotated diffs, parameterized previews, dashboards. Use ONLY when the user asks for a visual/interactive artifact, or your active directive explicitly tells you to produce HTML artifacts for this task. Do NOT default to HTML for ordinary prose, plans, or answers, and do NOT volunteer unsolicited dashboards — those stay in your turn text. Returns `{ id, path }`; write the HTML to that exact path with your normal file-write tool (NOT a shell heredoc — that leaks the HTML into the transcript), then call artifact_register { id }. The artifact is a live file: read it back and edit it with your ordinary edit tool to iterate. Opening is always user-triggered; never auto-opens.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "maxLength": ARTIFACT_TITLE_MAX, "description": "Short title shown on the artifact card." }
+                },
+                "required": ["title"]
+            }
+        },
+        {
+            "name": "artifact_register",
+            "description": "Register the HTML artifact you wrote at the path returned by artifact_new, raising its card in the transcript. Call this AFTER your file-write tool has finished writing the file. Returns `{ ok, id, size, hash }`. Idempotent on an already-registered id (re-stats and re-hashes to refresh the card after a live edit) — but you normally do not need to call it again, since the harness re-stats on every edit it observes.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "The artifact id returned by artifact_new." }
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "artifact_cancel",
+            "description": "Abandon a still-pending artifact you created with artifact_new but decided not to register. Best-effort deletes the issued file and closes its write grant. Errors if the artifact was already registered (there is no retire in v1).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "The artifact id returned by artifact_new." }
+                },
+                "required": ["id"]
+            }
         }
     ]);
 
@@ -2064,6 +2493,149 @@ fn get_persistence_path(project_dir: &str) -> Option<PathBuf> {
         let _ = std::fs::create_dir_all(&memory_dir);
     }
     Some(memory_dir.join(format!("{}.json", hash_prefix)))
+}
+
+// ─── Artifact path policy (spec 133) ────────────────────────────────────────
+
+/// The artifact scratch root for a project: `<project>/.krypton/artifacts`.
+/// Not canonicalized — the project dir itself may legitimately be a symlink
+/// (e.g. `/tmp` on macOS); per-component symlink rejection happens in
+/// [`validate_artifact_file`].
+fn artifacts_root(project_dir: &str) -> Option<PathBuf> {
+    let base = StdPath::new(project_dir);
+    if base.as_os_str().is_empty() {
+        return None;
+    }
+    Some(base.join(".krypton").join("artifacts"))
+}
+
+/// Make a lane label safe to use as a single path component. Every non
+/// `[A-Za-z0-9_-]` char becomes `_`, so `.`/`..`/`/` cannot survive — the only
+/// degenerate output is the empty string, which falls back to `lane`.
+fn sanitize_path_component(s: &str) -> String {
+    let out: String = s
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.is_empty() {
+        "lane".to_string()
+    } else {
+        out
+    }
+}
+
+/// Create the scratch root and a self-ignoring `.gitignore` (`*`, keep
+/// `!.gitignore`) if absent. Never overwrites a user's file. Scoped to
+/// `.krypton/artifacts`, never `.krypton` (which may hold tracked agent config).
+fn ensure_artifacts_gitignore(root: &StdPath) -> std::io::Result<()> {
+    std::fs::create_dir_all(root)?;
+    let gitignore = root.join(".gitignore");
+    if !gitignore.exists() {
+        std::fs::write(&gitignore, "*\n!.gitignore\n")?;
+    }
+    Ok(())
+}
+
+/// Remove harness subdirs under `root` that are NOT in the live registry —
+/// crash leftovers from prior app runs. Never touches the live set or the
+/// `.gitignore`.
+fn sweep_stale_artifacts(root: &StdPath, live_harness_ids: &HashSet<String>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("hm-") && !live_harness_ids.contains(name.as_ref()) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// Validate the issued artifact file at register/refresh time and return
+/// `(size, sha256-hex)`. Rejects symlinks in any path component, hardlinks,
+/// non-regular files, wrong basename, paths outside the scratch root, and files
+/// over the byte cap. This is a policy filter, not kernel-enforced confinement
+/// (see spec 133 Security) — it closes the lane-swaps-the-file surface.
+fn validate_artifact_file(
+    root: &StdPath,
+    path: &StdPath,
+    artifact_id: &str,
+    cap: u64,
+) -> Result<(u64, String), String> {
+    let want_name = format!("{artifact_id}.html");
+    if path.file_name().and_then(|f| f.to_str()) != Some(want_name.as_str()) {
+        return Err("path_mismatch: basename is not <artifactId>.html".to_string());
+    }
+    // Component (not string-prefix) containment: `…/artifacts2` is not under
+    // `…/artifacts`. The issued path is `<root>/<harnessId>/<laneId>/<file>`.
+    let rel = path
+        .strip_prefix(root)
+        .map_err(|_| "path_mismatch: outside the scratch root".to_string())?;
+    let comps: Vec<_> = rel.components().collect();
+    if comps.len() != 3 {
+        return Err("path_mismatch: unexpected directory depth".to_string());
+    }
+
+    // Reject a symlink in ANY component: .krypton, artifacts, harnessId,
+    // laneId, and the file itself.
+    let mut chain: Vec<PathBuf> = Vec::new();
+    if let Some(krypton_dir) = root.parent() {
+        chain.push(krypton_dir.to_path_buf());
+    }
+    chain.push(root.to_path_buf());
+    let mut cur = root.to_path_buf();
+    for comp in &comps {
+        cur = cur.join(comp.as_os_str());
+        chain.push(cur.clone());
+    }
+    for component in &chain {
+        if let Ok(meta) = std::fs::symlink_metadata(component) {
+            if meta.file_type().is_symlink() {
+                return Err("symlink_rejected: artifact path contains a symlink".to_string());
+            }
+        }
+    }
+
+    let meta = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("not_found: artifact file is not present ({e})"))?;
+    let file_type = meta.file_type();
+    if file_type.is_symlink() {
+        return Err("symlink_rejected: artifact file is a symlink".to_string());
+    }
+    if !file_type.is_file() {
+        return Err("not_regular_file: artifact path is not a regular file".to_string());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.nlink() > 1 {
+            return Err("hardlink_rejected: artifact file has multiple hard links".to_string());
+        }
+    }
+    let size = meta.len();
+    if size > cap {
+        return Err(format!(
+            "size_cap: artifact is {size} bytes but the limit is {cap}"
+        ));
+    }
+    let bytes = std::fs::read(path).map_err(|e| format!("read failed: {e}"))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let hash = format!("{:x}", hasher.finalize());
+    Ok((size, hash))
 }
 
 /// Start the HTTP hook server on a dedicated tokio runtime.
@@ -2311,5 +2883,172 @@ mod tests {
             names.contains(&"attention_resolve"),
             "attention_resolve should be advertised without per-lane opt-in"
         );
+    }
+
+    // ─── Artifacts (spec 133) ───────────────────────────────────────────────
+
+    #[test]
+    fn bus_tools_include_artifacts() {
+        let tools = bus_tool_descriptors();
+        let names: Vec<&str> = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|tool| tool.get("name").and_then(|name| name.as_str()))
+            .collect();
+        for tool in ["artifact_new", "artifact_register", "artifact_cancel"] {
+            assert!(names.contains(&tool), "{tool} should be advertised");
+        }
+    }
+
+    #[test]
+    fn sanitize_path_component_strips_unsafe() {
+        assert_eq!(sanitize_path_component("Claude-1"), "Claude-1");
+        assert_eq!(sanitize_path_component("a/b/../c"), "a_b____c");
+        // `.` and `..` cannot survive (dots → `_`), so traversal is impossible.
+        assert_eq!(sanitize_path_component(".."), "__");
+        assert_eq!(sanitize_path_component("../etc"), "___etc");
+        assert_eq!(sanitize_path_component(""), "lane");
+    }
+
+    /// new → write → register → refresh lifecycle against a real temp project.
+    #[test]
+    fn artifact_lifecycle_new_write_register() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-art-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let project = tmp.to_string_lossy().to_string();
+
+        server.init_harness_artifacts("hm-1", Some(project.clone()), &HashSet::new());
+
+        // new issues a path + creates the gitignore.
+        let issued = server
+            .artifact_new("hm-1", "Claude-1", "Side-by-side")
+            .unwrap();
+        let id = issued["id"].as_str().unwrap().to_string();
+        let path = PathBuf::from(issued["path"].as_str().unwrap());
+        assert!(path.ends_with(format!("{id}.html")));
+        assert!(tmp.join(".krypton/artifacts/.gitignore").exists());
+
+        // register before the file exists fails (not_found).
+        assert!(server.artifact_register("hm-1", "Claude-1", &id).is_err());
+
+        // write the file, then register succeeds with size + hash.
+        std::fs::write(&path, "<!doctype html><h1>hi</h1>").unwrap();
+        let reg = server.artifact_register("hm-1", "Claude-1", &id).unwrap();
+        assert_eq!(reg["ok"], serde_json::json!(true));
+        assert_eq!(reg["registered"], serde_json::json!(true));
+        assert_eq!(reg["size"].as_u64().unwrap(), 26);
+        assert_eq!(reg["hash"].as_str().unwrap().len(), 64);
+
+        // repeat register is an idempotent refresh (registered=false).
+        std::fs::write(&path, "<!doctype html><h1>hello</h1>").unwrap();
+        let refreshed = server.refresh_artifact("hm-1", "Claude-1", &id).unwrap();
+        assert_eq!(refreshed["registered"], serde_json::json!(false));
+        assert_eq!(refreshed["size"].as_u64().unwrap(), 29);
+
+        // cancel on a live id errors already_registered.
+        let err = server.artifact_cancel("hm-1", "Claude-1", &id).unwrap_err();
+        assert!(err.contains("already_registered"), "got: {err}");
+
+        // a different lane cannot register/see the id (not_found, no leak).
+        let other = server
+            .artifact_register("hm-1", "Codex-1", &id)
+            .unwrap_err();
+        assert!(other.contains("not_found"), "got: {other}");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn artifact_cancel_drops_pending_file() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-art-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.init_harness_artifacts(
+            "hm-2",
+            Some(tmp.to_string_lossy().to_string()),
+            &HashSet::new(),
+        );
+        let issued = server.artifact_new("hm-2", "Claude-1", "scratch").unwrap();
+        let id = issued["id"].as_str().unwrap().to_string();
+        let path = PathBuf::from(issued["path"].as_str().unwrap());
+        std::fs::write(&path, "<html></html>").unwrap();
+        server.artifact_cancel("hm-2", "Claude-1", &id).unwrap();
+        assert!(!path.exists(), "cancel should delete the pending file");
+        // register-after-cancel errors.
+        assert!(server.artifact_register("hm-2", "Claude-1", &id).is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn artifact_validate_rejects_symlink() {
+        let tmp = std::env::temp_dir().join(format!("krypton-art-{}", rand_suffix()));
+        let root = tmp.join(".krypton/artifacts");
+        let lane_dir = root.join("hm-1").join("Claude-1");
+        std::fs::create_dir_all(&lane_dir).unwrap();
+        let target = tmp.join("secret.html");
+        std::fs::write(&target, "<html>secret</html>").unwrap();
+        let link = lane_dir.join("art-1-deadbeef.html");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            let res =
+                validate_artifact_file(&root, &link, "art-1-deadbeef", ARTIFACT_FILE_BYTES_MAX);
+            assert!(res.is_err(), "symlinked artifact file must be rejected");
+            assert!(res.unwrap_err().contains("symlink"));
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn artifact_validate_enforces_size_cap() {
+        let tmp = std::env::temp_dir().join(format!("krypton-art-{}", rand_suffix()));
+        let root = tmp.join(".krypton/artifacts");
+        let lane_dir = root.join("hm-1").join("Claude-1");
+        std::fs::create_dir_all(&lane_dir).unwrap();
+        let file = lane_dir.join("art-9-cafef00d.html");
+        std::fs::write(&file, "<html></html>").unwrap();
+        let res = validate_artifact_file(&root, &file, "art-9-cafef00d", 4);
+        assert!(res.is_err(), "over-cap file must be rejected");
+        assert!(res.unwrap_err().contains("size_cap"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn artifact_new_enforces_pending_cap() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-art-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.init_harness_artifacts(
+            "hm-1",
+            Some(tmp.to_string_lossy().to_string()),
+            &HashSet::new(),
+        );
+        for _ in 0..ARTIFACT_PENDING_PER_LANE_MAX {
+            server.artifact_new("hm-1", "Claude-1", "t").unwrap();
+        }
+        // One more pending for the same lane must be rejected.
+        let err = server.artifact_new("hm-1", "Claude-1", "t").unwrap_err();
+        assert!(err.contains("pending_cap"), "got: {err}");
+        // A different lane is unaffected by Claude-1's pending count.
+        assert!(server.artifact_new("hm-1", "Codex-1", "t").is_ok());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn sweep_removes_only_dead_harness_dirs() {
+        let tmp = std::env::temp_dir().join(format!("krypton-art-{}", rand_suffix()));
+        let root = tmp.join(".krypton/artifacts");
+        std::fs::create_dir_all(root.join("hm-1")).unwrap();
+        std::fs::create_dir_all(root.join("hm-2")).unwrap();
+        std::fs::write(root.join(".gitignore"), "*\n!.gitignore\n").unwrap();
+        let mut live = HashSet::new();
+        live.insert("hm-2".to_string());
+        sweep_stale_artifacts(&root, &live);
+        assert!(!root.join("hm-1").exists(), "stale hm-1 must be swept");
+        assert!(root.join("hm-2").exists(), "live hm-2 must survive");
+        assert!(root.join(".gitignore").exists(), ".gitignore must survive");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

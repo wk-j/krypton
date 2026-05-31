@@ -73,6 +73,8 @@ Auto-approve only when both conditions are true:
 
 All other requests, including a third-party MCP server that also exposes `memory_set` or `peer_send`, must enter the existing permission flow.
 
+**Artifact file writes (spec 133) are a separate taxonomy — not a built-in-server-marker entry.** HTML-artifact writes are performed by the lane's backend-native filesystem tool (Write/Edit), *not* the harness MCP server, so the marker rule above cannot apply. They are auto-approved by a distinct, path/registry-keyed detector (`matchArtifactWrite` in `acp-harness-view.ts`): the write target's path must match an issued artifact path in the registry for the same `harnessId + laneId + artifactId`, in state `pending` or `registered_live`. This is intentionally *not* a string check on `.krypton/artifacts/` (which would let a lane write into another lane's tree); it matches the registry entry. The auto-approved write card is redacted to path + bytes + hash. See `docs/133-harness-html-artifacts.md`.
+
 ### Data Flow
 
 ```

@@ -292,6 +292,32 @@ pub fn list_harness_mcp_stats(
     Ok(hook_server.list_harness_mcp_stats(&harness_id))
 }
 
+/// spec 133: cancel all still-pending artifacts for a lane at turn-end / lane
+/// teardown. Pending artifacts carry a write grant, so they must not outlive the
+/// turn. Returns the cancelled artifact ids.
+#[tauri::command]
+pub fn acp_cancel_pending_artifacts(
+    harness_id: String,
+    lane_label: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Vec<String> {
+    hook_server.cancel_pending_artifacts(&harness_id, &lane_label)
+}
+
+/// spec 133: re-stat/re-hash a live artifact after the harness observes a
+/// write/edit to its path, refreshing the card's size/hash. Errors (e.g. the
+/// edit grew the file past the cap) make the card unavailable rather than
+/// silently opening.
+#[tauri::command]
+pub fn acp_refresh_artifact(
+    harness_id: String,
+    lane_label: String,
+    id: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<serde_json::Value, String> {
+    hook_server.refresh_artifact(&harness_id, &lane_label, &id)
+}
+
 /// Legacy spec-128/129 triage mirror. Since spec 130, attention tools are
 /// default-on for every harness-memory-capable lane; this command remains for
 /// backward compatibility and diagnostics.

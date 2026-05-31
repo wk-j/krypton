@@ -9,6 +9,7 @@ import 'highlight.js/styles/github-dark.css';
 import * as smd from 'streaming-markdown';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { openExternalUrl } from '../external-url';
 import { AcpClient } from './client';
 import { renderDiffPreview } from './diff-render';
 import type {
@@ -120,7 +121,7 @@ interface HarnessPermission {
 
 interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'review' | 'provider_error';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'review' | 'provider_error' | 'artifact';
   text: string;
   createdAt?: number;
   markdownSource?: string;
@@ -152,6 +153,23 @@ interface HarnessTranscriptItem {
   /** spec 120: first assistant row after coordinator drain. */
   replyingToLaneMail?: LaneMailProvenance;
   review?: ReviewCardPayload;
+  /** spec 133: hintable HTML artifact card. */
+  artifact?: ArtifactCardPayload;
+}
+
+/** spec 133 — transcript card for a registered HTML artifact. */
+interface ArtifactCardPayload {
+  id: string;
+  title: string;
+  laneLabel: string;
+  /** Absolute file path opened via `open_url(file://…)`. */
+  path: string;
+  size: number | null;
+  hash: string | null;
+  /** false once the file is swept/cancelled — the card reports "unavailable". */
+  available: boolean;
+  /** Hint label assigned while artifact hint mode is active, else null. */
+  hintLabel: string | null;
 }
 
 interface InterLanePayload {
@@ -213,6 +231,10 @@ interface ToolPayload {
   diffs: Array<{ path: string; oldText: string; newText: string }>;
   startedAt?: number;
   endedAt?: number;
+  /** spec 133: set when this tool wrote/edited a registered artifact path. The
+   * diff/content is redacted to path + bytes + hash so HTML never enters the
+   * transcript model under the write tool. */
+  artifactRedaction?: { tail: string; size: number | null; hash: string | null; pending: boolean };
 }
 
 interface StagedImage {
@@ -343,6 +365,35 @@ const LANE_PEEK_DWELL_MS = 8_000;
 const LANE_PEEK_RECENT_MS = 5 * 60_000;
 /** spec 118 — peer peek tiers: awaiting 10, inbound 20, counterpart 30 */
 export const PEER_PREEMPT_MAX_PRIORITY = 30;
+/** spec 133 — alphabet for artifact hint labels (mirrors the `f` hint mode). */
+const ARTIFACT_HINT_ALPHABET = 'asdfghjklqweruiop';
+
+/** spec 133 — frontend mirror of a Rust artifact registry entry. */
+type HarnessArtifactState = 'pending' | 'registered_live';
+interface HarnessArtifactRecord {
+  id: string;
+  laneLabel: string;
+  path: string;
+  tail: string;
+  title: string;
+  state: HarnessArtifactState;
+  size: number | null;
+  hash: string | null;
+}
+
+interface ArtifactEventPayload {
+  harnessId: string;
+  laneLabel: string;
+  id: string;
+  path?: string;
+  tail?: string;
+  title?: string;
+  size?: number;
+  hash?: string;
+  state: 'pending' | 'registered' | 'cancelled';
+  registered?: boolean;
+}
+
 const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
 const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
 const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_request', 'review_reply']);
@@ -836,6 +887,12 @@ export class AcpHarnessView implements ContentView {
   private memoryUnlisten: UnlistenFn | null = null;
   private mcpStatsByLane = new Map<string, HarnessMcpLaneStats>();
   private mcpUnlisten: UnlistenFn | null = null;
+  /** spec 133: HTML artifact registry mirror, keyed by artifact id. */
+  private artifacts = new Map<string, HarnessArtifactRecord>();
+  private artifactUnlisten: UnlistenFn | null = null;
+  /** spec 133: artifact hint mode (open-artifact labels), active only when on. */
+  private artifactHintMode = false;
+  private artifactHintBuffer = '';
   private fileTouchMap = new Map<string, FileTouchRecord>();
   private lanePeek: LanePeekState = {
     visible: true,
@@ -1828,6 +1885,9 @@ export class AcpHarnessView implements ContentView {
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
+    // spec 133: artifact hint mode swallows keys while active (read-only
+    // transcript exception, active only in hint mode).
+    if (this.artifactHintMode) return this.handleArtifactHintKey(e);
     if (e.key === '.' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       this.toggleZenMode();
@@ -2148,6 +2208,10 @@ export class AcpHarnessView implements ContentView {
     if (this.mcpUnlisten) {
       this.mcpUnlisten();
       this.mcpUnlisten = null;
+    }
+    if (this.artifactUnlisten) {
+      this.artifactUnlisten();
+      this.artifactUnlisten = null;
     }
     if (this.directivesUnlisten) {
       this.directivesUnlisten();
@@ -2737,6 +2801,9 @@ export class AcpHarnessView implements ContentView {
     this.mcpUnlisten = await listen<{ harnessId: string; laneLabel: string }>('acp-harness-mcp-touched', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMcpStats();
     });
+    this.artifactUnlisten = await listen<ArtifactEventPayload>('acp-harness-artifact', (event) => {
+      if (event.payload.harnessId === this.harnessMemoryId) this.handleArtifactEvent(event.payload);
+    });
     await this.refreshMemory();
     await this.refreshMcpStats();
   }
@@ -3303,6 +3370,11 @@ export class AcpHarnessView implements ContentView {
     lines.push(
       'Attention triage: when a turn forces a genuinely hard judgement call — an irreversible or costly choice, a real ambiguity in intent, or a trade-off you are not confident about — surface ONE such decision to the human review queue with attention_flag { question, chosen, rationale, traded_off, uncertainty, reversibility }, then keep working (it is non-blocking; proceed with `chosen`). Use attention_resolve { item_id } if you later settle it yourself. Never flag the routine, reversible 80%, and never flag proactively.',
     );
+    // spec 133: discoverability only — the agent decides when an HTML artifact
+    // beats prose. Opt-in, user-driven; never default to it.
+    lines.push(
+      'HTML artifacts: when the user asks for a visual or interactive view (side-by-side, diagram, annotated diff, dashboard), call artifact_new { title } to get a destination path, write the HTML there with your normal file tool, then artifact_register { id }; the user opens it in their browser. Opt-in only — keep ordinary prose, plans, and answers in your turn text.',
+    );
     return lines.join('\n');
   }
 
@@ -3343,6 +3415,9 @@ export class AcpHarnessView implements ContentView {
       if (this.triageOverlayOpen) this.renderTriageOverlayEl();
     }
     lane.flaggedThisTurn = false;
+    // spec 133: a pending artifact carries a write grant and must not outlive
+    // the turn — cancel any the lane created but never registered.
+    this.cancelPendingArtifactsForLane(lane);
     lane.activeTurnStartedAt = null;
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
@@ -3376,6 +3451,15 @@ export class AcpHarnessView implements ContentView {
     const harnessToolName = harnessAutoAllowToolName(permission);
     if (harnessToolName && pickPermissionOption(permission.options, 'accept')) {
       void this.resolveHarnessPermission(lane, permission, harnessToolName);
+      return;
+    }
+    // spec 133: issued-path-only artifact write auto-approval — a SEPARATE
+    // mechanism from the memory/peer server-marker detector. The write tool is a
+    // backend-native filesystem tool, so we key off path + registry entry +
+    // same lane, never the built-in-server marker.
+    const artifactWrite = this.matchArtifactWriteForGrant(lane, toolCall);
+    if (artifactWrite && pickPermissionOption(permission.options, 'accept')) {
+      void this.resolveArtifactWritePermission(lane, permission, artifactWrite);
       return;
     }
     lane.pendingPermissions.push(permission);
@@ -3433,6 +3517,285 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
+  // ─── HTML artifacts (spec 133) ──────────────────────────────────────────
+
+  /** Apply a Rust artifact registry event: update the mirror + the card. */
+  private handleArtifactEvent(payload: ArtifactEventPayload): void {
+    const { id, laneLabel, state } = payload;
+    if (state === 'cancelled') {
+      this.artifacts.delete(id);
+      this.markArtifactCardUnavailable(id);
+      return;
+    }
+    const existing = this.artifacts.get(id);
+    const record: HarnessArtifactRecord = {
+      id,
+      laneLabel,
+      path: payload.path ?? existing?.path ?? '',
+      tail: payload.tail ?? existing?.tail ?? '',
+      title: payload.title ?? existing?.title ?? id,
+      state: state === 'registered' ? 'registered_live' : 'pending',
+      size: typeof payload.size === 'number' ? payload.size : existing?.size ?? null,
+      hash: payload.hash ?? existing?.hash ?? null,
+    };
+    this.artifacts.set(id, record);
+    if (state === 'pending') return;
+    // state === 'registered': first register raises the card; a refresh updates it.
+    if (payload.registered === false) {
+      this.updateArtifactCard(record);
+      return;
+    }
+    this.raiseArtifactCard(record);
+  }
+
+  /** Append a hintable artifact card to the owning lane's transcript. */
+  private raiseArtifactCard(record: HarnessArtifactRecord): void {
+    const lane = this.lanes.find((l) => l.displayName === record.laneLabel);
+    if (!lane) return;
+    // Idempotent: a re-register on an id that already has a card just refreshes.
+    const prior = lane.transcript.find((item) => item.artifact?.id === record.id);
+    if (prior) {
+      this.updateArtifactCard(record);
+      return;
+    }
+    const item = this.appendTranscript(lane, 'artifact', record.title);
+    item.artifact = {
+      id: record.id,
+      title: record.title,
+      laneLabel: record.laneLabel,
+      path: record.path,
+      size: record.size,
+      hash: record.hash,
+      available: true,
+      hintLabel: null,
+    };
+    this.scheduleLaneRender(lane);
+  }
+
+  private updateArtifactCard(record: HarnessArtifactRecord): void {
+    for (const lane of this.lanes) {
+      const item = lane.transcript.find((t) => t.artifact?.id === record.id);
+      if (!item || !item.artifact) continue;
+      item.artifact.size = record.size;
+      item.artifact.hash = record.hash;
+      item.artifact.path = record.path;
+      item.artifact.available = true;
+      this.scheduleLaneRender(lane);
+      return;
+    }
+  }
+
+  private markArtifactCardUnavailable(id: string): void {
+    for (const lane of this.lanes) {
+      const item = lane.transcript.find((t) => t.artifact?.id === id);
+      if (!item || !item.artifact) continue;
+      item.artifact.available = false;
+      item.artifact.hintLabel = null;
+      this.scheduleLaneRender(lane);
+      return;
+    }
+  }
+
+  /** Find a registered/pending artifact whose path matches a write target. */
+  private findArtifactForWrite(laneLabel: string, target: string | null): HarnessArtifactRecord | null {
+    if (!target) return null;
+    for (const record of this.artifacts.values()) {
+      if (record.laneLabel !== laneLabel) continue;
+      if (artifactWritePathMatches(target, record.path, record.tail)) return record;
+    }
+    return null;
+  }
+
+  /** Match a tool call against the artifact registry by path (broad — used for
+   * transcript redaction, which must also cover reads of the artifact). */
+  private matchArtifactWrite(lane: HarnessLane, call: ToolCall | ToolCallUpdate): HarnessArtifactRecord | null {
+    const target = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? null;
+    return this.findArtifactForWrite(lane.displayName, target);
+  }
+
+  /** Auto-approval gate: a path match is NOT enough — the spec auto-approves a
+   * file *write*, not any tool whose `locations[]` happens to name the artifact
+   * (a read/search/execute could otherwise be silently granted). */
+  private matchArtifactWriteForGrant(lane: HarnessLane, call: ToolCall | ToolCallUpdate): HarnessArtifactRecord | null {
+    if (!isArtifactWriteGrantKind(inferToolLabel(call))) return null;
+    return this.matchArtifactWrite(lane, call);
+  }
+
+  private async resolveArtifactWritePermission(
+    lane: HarnessLane,
+    permission: HarnessPermission,
+    record: HarnessArtifactRecord,
+  ): Promise<void> {
+    if (!lane.client) return;
+    const option = pickPermissionOption(permission.options, 'accept');
+    if (!option) return;
+    try {
+      await lane.client.respondPermission(permission.requestId, option.optionId);
+      this.updatePermissionDecision(
+        permission,
+        'auto_allowed',
+        '✓ artifact write (auto-allow)',
+        `matched issued artifact path ${record.tail}`,
+      );
+    } catch (e) {
+      this.updatePermissionDecision(permission, 'failed', 'permission reply failed');
+      this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+    }
+    this.render();
+  }
+
+  /** Re-stat/re-hash a live artifact after observing an edit; refresh the card. */
+  private async refreshArtifact(record: HarnessArtifactRecord): Promise<void> {
+    if (!this.harnessMemoryId) return;
+    try {
+      const result = await invoke<{ size: number; hash: string }>('acp_refresh_artifact', {
+        harnessId: this.harnessMemoryId,
+        laneLabel: record.laneLabel,
+        id: record.id,
+      });
+      record.size = result.size;
+      record.hash = result.hash;
+      this.updateArtifactCard(record);
+    } catch {
+      // A failed refresh (e.g. the edit grew past the cap) marks the card
+      // unavailable rather than silently opening a too-large file.
+      this.markArtifactCardUnavailable(record.id);
+    }
+  }
+
+  // ─── Artifact hint mode ─────────────────────────────────────────────────
+
+  /** Live artifact cards in the active lane, in transcript order. */
+  private activeLaneArtifactCards(): HarnessTranscriptItem[] {
+    const lane = this.activeLane();
+    if (!lane) return [];
+    return lane.transcript.filter((item) => item.artifact && item.artifact.available);
+  }
+
+  private enterArtifactHintMode(): boolean {
+    const cards = this.activeLaneArtifactCards();
+    if (cards.length === 0) return false;
+    const labels = generateArtifactHintLabels(cards.length);
+    cards.forEach((item, i) => {
+      if (item.artifact) item.artifact.hintLabel = labels[i] ?? null;
+    });
+    this.artifactHintMode = true;
+    this.artifactHintBuffer = '';
+    this.render();
+    return true;
+  }
+
+  private exitArtifactHintMode(): void {
+    if (!this.artifactHintMode) return;
+    this.artifactHintMode = false;
+    this.artifactHintBuffer = '';
+    for (const item of this.activeLane()?.transcript ?? []) {
+      if (item.artifact) item.artifact.hintLabel = null;
+    }
+    this.render();
+  }
+
+  private handleArtifactHintKey(e: KeyboardEvent): boolean {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      this.exitArtifactHintMode();
+      return true;
+    }
+    if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) {
+      // Ignore modifier/navigation keys; stay in hint mode.
+      if (e.key !== 'Shift') e.preventDefault();
+      return true;
+    }
+    e.preventDefault();
+    const ch = e.key.toLowerCase();
+    if (!ARTIFACT_HINT_ALPHABET.includes(ch)) {
+      this.exitArtifactHintMode();
+      return true;
+    }
+    const candidate = this.artifactHintBuffer + ch;
+    const cards = this.activeLaneArtifactCards();
+    const exact = cards.find((item) => item.artifact?.hintLabel === candidate);
+    if (exact && exact.artifact) {
+      void this.openArtifact(exact.artifact);
+      this.exitArtifactHintMode();
+      return true;
+    }
+    const stillPossible = cards.some((item) => item.artifact?.hintLabel?.startsWith(candidate));
+    if (stillPossible) {
+      this.artifactHintBuffer = candidate;
+      return true;
+    }
+    this.exitArtifactHintMode();
+    return true;
+  }
+
+  private async openArtifact(card: ArtifactCardPayload): Promise<void> {
+    if (!card.available || !card.path) {
+      this.flashChip('artifact unavailable');
+      return;
+    }
+    // spec 133 Limits: re-validate the file at OPEN time (not just register) —
+    // a path/size violation introduced after register makes the card
+    // unavailable rather than opening a swapped/oversized file.
+    const record = this.artifacts.get(card.id);
+    if (record && this.harnessMemoryId) {
+      try {
+        await invoke('acp_refresh_artifact', {
+          harnessId: this.harnessMemoryId,
+          laneLabel: record.laneLabel,
+          id: record.id,
+        });
+      } catch {
+        this.markArtifactCardUnavailable(card.id);
+        this.flashChip('artifact unavailable');
+        return;
+      }
+    }
+    // ADR 0002: artifacts open verbatim in the user's real OS browser.
+    // encodeURI so a project path with spaces/unicode yields a valid file URL
+    // (the artifact's own components are sanitized, but the project dir is not).
+    openExternalUrl(`file://${encodeURI(card.path)}`, { external: true });
+    this.flashChip(`opening ${card.title}`);
+  }
+
+  /** Turn-end: cancel a lane's still-pending artifacts (drops the frontend write
+   * grant + asks Rust to delete the issued files). Registered-live artifacts
+   * survive across turns — they are the deliverable the user still opens. */
+  private cancelPendingArtifactsForLane(lane: HarnessLane): void {
+    let hadPending = false;
+    for (const [id, record] of this.artifacts) {
+      if (record.laneLabel === lane.displayName && record.state === 'pending') {
+        this.artifacts.delete(id);
+        hadPending = true;
+      }
+    }
+    if (!hadPending || !this.harnessMemoryId) return;
+    void invoke('acp_cancel_pending_artifacts', {
+      harnessId: this.harnessMemoryId,
+      laneLabel: lane.displayName,
+    }).catch(() => undefined);
+  }
+
+  /** Session reset / lane removal (#new, close): drop ALL of the lane's artifact
+   * records — pending *and* registered. The transcript (and its cards) are gone,
+   * so leaving registered entries in the map would be a stale auto-approval grant
+   * that a later same-display-name lane could inherit. Pending files are deleted
+   * via Rust; registered files are reclaimed by the harness-close/startup sweep. */
+  private dropAllArtifactsForLane(lane: HarnessLane): void {
+    let hadPending = false;
+    for (const [id, record] of this.artifacts) {
+      if (record.laneLabel !== lane.displayName) continue;
+      if (record.state === 'pending') hadPending = true;
+      this.artifacts.delete(id);
+    }
+    if (hadPending && this.harnessMemoryId) {
+      void invoke('acp_cancel_pending_artifacts', {
+        harnessId: this.harnessMemoryId,
+        laneLabel: lane.displayName,
+      }).catch(() => undefined);
+    }
+  }
+
   private describePermission(lane: HarnessLane, permission: HarnessPermission): PermissionPayload {
     const call = permission.toolCall;
     const subject = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? call.title ?? 'unknown target';
@@ -3444,6 +3807,11 @@ export class AcpHarnessView implements ContentView {
     if (touch && touch.laneId !== lane.id && Date.now() - touch.at <= FILE_TOUCH_WINDOW_MS) {
       suffix = `· also ${touch.laneDisplayName} ${formatAge(Date.now() - touch.at)} ago`;
     }
+    // spec 133: the permission card's argsPreview echoes the tool's raw input —
+    // which for an artifact write is the HTML. Redact it (registry match OR raw
+    // scratch-path pattern, to survive the pending-event race) so HTML never
+    // leaks into the transcript via the permission row, just like the tool card.
+    const isArtifact = this.matchArtifactWrite(lane, call) !== null || callTargetsArtifactScratch(call);
     return {
       id: permission.requestId,
       toolName,
@@ -3452,7 +3820,7 @@ export class AcpHarnessView implements ContentView {
       kind,
       subject,
       suffix,
-      argsPreview: permissionArgsPreview(call.rawInput),
+      argsPreview: isArtifact ? 'html artifact · contents hidden' : permissionArgsPreview(call.rawInput),
       options: permission.options.map((option) => ({
         optionId: option.optionId,
         name: option.name,
@@ -4219,6 +4587,10 @@ export class AcpHarnessView implements ContentView {
     const lane = this.activeLane();
     if (!lane) return;
     lane.spawnEpoch += 1;
+    // spec 133: the lane is being removed — drop all its artifact records
+    // (pending grants + registered entries) so a later same-name lane can't
+    // inherit them.
+    this.dropAllArtifactsForLane(lane);
     if (lane.client) {
       try {
         await lane.client.dispose();
@@ -4320,6 +4692,9 @@ export class AcpHarnessView implements ContentView {
     lane.error = null;
     lane.plan = null;
     lane.planCollapsed = false;
+    // spec 133: a restart reuses the display name — drop any pending artifact
+    // write grant so the restarted lane can't inherit it.
+    this.cancelPendingArtifactsForLane(lane);
     this.appendTranscript(lane, 'restart', '--- session restarted ---');
     await this.spawnLane(lane);
   }
@@ -4347,6 +4722,10 @@ export class AcpHarnessView implements ContentView {
     }
     if (lane.pendingShellId) await this.cancelShell(lane);
     lane.spawnEpoch += 1;
+    // spec 133: a fresh session wipes the transcript (and its artifact cards),
+    // so drop ALL of this lane's artifact records — pending grants AND now-stale
+    // registered entries that a same-name lane would otherwise inherit.
+    this.dropAllArtifactsForLane(lane);
     if (lane.client) {
       await lane.client.dispose();
       lane.client = null;
@@ -5633,7 +6012,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   private composerStatusChip(lane: HarnessLane): string {
-    if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · ? help · i/Esc input';
+    if (this.artifactHintMode) return 'open artifact: press label · Esc cancel';
+    if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · f open artifact · ? help · i/Esc input';
     if (lane.status === 'busy') {
       const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
       return `${lane.displayName} running${elapsed} · Ctrl+C cancel`;
@@ -6160,8 +6540,11 @@ export class AcpHarnessView implements ContentView {
     // Spec 114: before/after delta on the row's "active" state. A row is
     // active iff it has a start timestamp but no end timestamp.
     const wasActive = target.toolStartedAt !== undefined && target.toolEndedAt === undefined;
+    // Capture the terminal transition BEFORE stamping toolEndedAt below —
+    // otherwise the check always reads false (spec 133 live-edit refresh).
+    const justEnded = isTerminalToolStatus(status) && target.toolEndedAt === undefined;
     if (target.toolStartedAt === undefined) target.toolStartedAt = performance.now();
-    if (isTerminalToolStatus(status) && target.toolEndedAt === undefined) {
+    if (justEnded) {
       target.toolEndedAt = performance.now();
     }
     const isActive = target.toolStartedAt !== undefined && target.toolEndedAt === undefined;
@@ -6169,6 +6552,28 @@ export class AcpHarnessView implements ContentView {
       lane.activeToolCount += isActive ? 1 : -1;
     }
     const tool = buildToolPayload(merged, status, target.toolStartedAt, target.toolEndedAt);
+    // spec 133: redact write/edit cards on an artifact path to path + bytes +
+    // hash — HTML must never reach the transcript model under the write tool
+    // (the real spec-103 fix). Match the registry when known, but ALSO redact on
+    // the raw scratch-path pattern so a write card that renders before the
+    // pending event arrives still never shows the HTML (event/registry race).
+    const artifactRecord = this.matchArtifactWrite(lane, merged);
+    const artifactTarget = extractModifiedPath(merged) ?? merged.locations?.[0]?.path ?? null;
+    if (artifactRecord || callTargetsArtifactScratch(merged)) {
+      tool.diffs = [];
+      tool.sections = [];
+      tool.artifactRedaction = {
+        tail: artifactRecord?.tail ?? normalizeArtifactPath(artifactTarget ?? ''),
+        size: artifactRecord?.size ?? null,
+        hash: artifactRecord?.hash ?? null,
+        pending: artifactRecord ? artifactRecord.state === 'pending' : true,
+      };
+      // A completed edit to a live artifact refreshes its card's size/hash
+      // without a lane round-trip.
+      if (justEnded && artifactRecord?.state === 'registered_live') {
+        void this.refreshArtifact(artifactRecord);
+      }
+    }
     const text = tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
     target.text = text;
     target.status = status;
@@ -6326,6 +6731,11 @@ export class AcpHarnessView implements ContentView {
     if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       this.toggleHelp(true);
+      return true;
+    }
+    if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (!this.enterArtifactHintMode()) this.flashChip('no artifacts to open');
       return true;
     }
     if (e.key === 'j') { e.preventDefault(); body.scrollBy({ top: 24, behavior: 'instant' }); return true; }
@@ -7166,6 +7576,87 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** spec 133 — normalize a path for artifact registry matching (forward slashes). */
+export function normalizeArtifactPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+/** spec 133 — does a file-write target match an issued artifact path? An
+ * ABSOLUTE target must equal the issued path exactly — never a mere suffix
+ * match, or an attacker-controlled parent (`/evil/<tail>`) sharing the tail
+ * would be auto-approved. A RELATIVE target (adapter reports relative to the
+ * lane cwd) matches when it is a suffix of the *trusted* issued path. Empty
+ * tail never matches. */
+export function artifactWritePathMatches(target: string, recordPath: string, recordTail: string): boolean {
+  if (!recordTail) return false;
+  const t = normalizeArtifactPath(target);
+  const p = normalizeArtifactPath(recordPath);
+  if (t === p) return true;
+  if (t.startsWith('/')) return false; // absolute, non-equal → reject
+  const rel = t.replace(/^\.\//, '');
+  return rel.length > 0 && (p === rel || p.endsWith('/' + rel));
+}
+
+/** spec 133 — tool kinds eligible for artifact-write auto-approval. A path
+ * match alone must NOT grant: only a file *write* is auto-approved, never a
+ * read/search/execute/delete that merely names the artifact in `locations`. */
+export function isArtifactWriteGrantKind(kind: string): boolean {
+  return kind === 'edit' || kind === 'write' || kind === 'create';
+}
+
+/** spec 133 — does a path sit under any harness artifact scratch root? Used for
+ * transcript REDACTION only (never for grant): redacting is always safe, so a
+ * broad `.krypton/artifacts/` pattern closes the window where the registry
+ * pending event has not yet arrived when a write card first renders. Grant
+ * stays strictly registry-keyed (see `artifactWritePathMatches`). */
+export function isArtifactScratchPath(path: string | null | undefined): boolean {
+  if (!path) return false;
+  return normalizeArtifactPath(path).includes('/.krypton/artifacts/');
+}
+
+/** spec 133 — does a tool call target a scratch path anywhere (modified-path,
+ * locations, or a path-bearing rawInput field)? Used for REDACTION only, so it
+ * is deliberately broad: it closes the gap where an adapter reports the artifact
+ * path only inside rawInput (not as a diff/location), which `extractModifiedPath`
+ * would miss — leaking HTML during the registry-event race. Only path-ish keys
+ * are inspected, never large content blobs. */
+export function callTargetsArtifactScratch(call: ToolCall | ToolCallUpdate): boolean {
+  if (isArtifactScratchPath(extractModifiedPath(call))) return true;
+  for (const loc of call.locations ?? []) {
+    if (isArtifactScratchPath(loc.path)) return true;
+  }
+  return rawInputPathMentionsScratch(call.rawInput, 0);
+}
+
+function rawInputPathMentionsScratch(value: unknown, depth: number): boolean {
+  if (depth > 4 || !value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some((v) => rawInputPathMentionsScratch(v, depth + 1));
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof val === 'string') {
+      if (/path|file|target|dest|location/i.test(key) && isArtifactScratchPath(val)) return true;
+    } else if (val && typeof val === 'object') {
+      if (rawInputPathMentionsScratch(val, depth + 1)) return true;
+    }
+  }
+  return false;
+}
+
+/** spec 133 — prefix-free hint labels from the same alphabet as the `f` mode. */
+export function generateArtifactHintLabels(count: number): string[] {
+  const chars = [...ARTIFACT_HINT_ALPHABET];
+  const labels: string[] = [];
+  if (count <= chars.length) {
+    for (let i = 0; i < count; i++) labels.push(chars[i]);
+    return labels;
+  }
+  for (let i = 0; i < chars.length && labels.length < count; i++) {
+    for (let j = 0; j < chars.length && labels.length < count; j++) {
+      labels.push(chars[i] + chars[j]);
+    }
+  }
+  return labels;
+}
+
 // Spec 114: dev-build assertion that the cached `lane.activeToolCount`
 // matches the actual count of active tool rows. Catches counter drift
 // from missed delta updates or cap-shift bugs. Stripped at build time
@@ -7433,6 +7924,12 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
   } else if (item.kind === 'review' && item.review) {
     body.classList.add('acp-harness__review-card');
     renderReviewCardBody(body, item.review);
+  } else if (item.kind === 'artifact' && item.artifact) {
+    label.textContent = 'html';
+    el.classList.add('acp-harness__msg--artifact');
+    if (!item.artifact.available) el.classList.add('acp-harness__msg--artifact-unavailable');
+    if (item.artifact.hintLabel) el.classList.add('acp-harness__msg--artifact-hinted');
+    renderArtifactCardBody(body, item.artifact);
   } else if (item.kind === 'system' && item.diff) {
     // spec 124: directive upsert approval card with a before/after diff.
     const text = document.createElement('div');
@@ -7527,6 +8024,11 @@ function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boole
   const provenance = item.replyingToLaneMail
     ? `${item.replyingToLaneMail.envelopeId}\u001e${item.replyingToLaneMail.peerDisplayName}\u001e${item.replyingToLaneMail.envelopeCount}`
     : '';
+  const artifact = item.artifact
+    ? `${item.artifact.id}|${item.artifact.title}|${item.artifact.size ?? ''}|${item.artifact.hash ?? ''}|${item.artifact.available ? '1' : '0'}|${item.artifact.hintLabel ?? ''}`
+    : item.tool?.artifactRedaction
+      ? `red|${item.tool.artifactRedaction.tail}|${item.tool.artifactRedaction.size ?? ''}|${item.tool.artifactRedaction.hash ?? ''}|${item.tool.artifactRedaction.pending ? '1' : '0'}`
+      : '';
   return [
     item.kind,
     item.status ?? '',
@@ -7540,6 +8042,7 @@ function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boole
     providerError,
     interLane,
     provenance,
+    artifact,
   ].join('\u001d');
 }
 
@@ -7874,6 +8377,10 @@ function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
     head.appendChild(timer);
   }
   body.appendChild(head);
+  if (tool.artifactRedaction) {
+    body.appendChild(renderArtifactRedaction(tool.artifactRedaction));
+    return;
+  }
   if (tool.sections.length > 0) {
     body.appendChild(renderToolOutput(tool));
   }
@@ -7896,6 +8403,66 @@ function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
     }
     body.appendChild(wrap);
   }
+}
+
+function formatArtifactBytes(size: number | null): string {
+  if (size === null) return '— bytes';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** spec 133 — redacted body for an artifact-path write/edit card: never the
+ * HTML, only path + bytes + hash. */
+function renderArtifactRedaction(r: NonNullable<ToolPayload['artifactRedaction']>): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'acp-harness__artifact-redaction';
+  const note = document.createElement('div');
+  note.className = 'acp-harness__artifact-redaction-note';
+  note.textContent = r.pending ? 'html artifact · contents hidden' : 'html artifact edit · contents hidden';
+  wrap.appendChild(note);
+  const meta = document.createElement('div');
+  meta.className = 'acp-harness__artifact-redaction-meta';
+  const hash7 = r.hash ? r.hash.slice(0, 7) : '—';
+  meta.textContent = `${r.tail} · ${formatArtifactBytes(r.size)} · ${hash7}`;
+  wrap.appendChild(meta);
+  return wrap;
+}
+
+/** spec 133 — hintable artifact card body. */
+function renderArtifactCardBody(body: HTMLElement, card: ArtifactCardPayload): void {
+  const head = document.createElement('div');
+  head.className = 'acp-harness__artifact-head';
+  if (card.hintLabel) {
+    const hint = document.createElement('span');
+    hint.className = 'acp-harness__artifact-hint';
+    hint.textContent = card.hintLabel;
+    head.appendChild(hint);
+  }
+  const glyph = document.createElement('span');
+  glyph.className = 'acp-harness__artifact-glyph';
+  glyph.textContent = '◫';
+  head.appendChild(glyph);
+  const title = document.createElement('span');
+  title.className = 'acp-harness__artifact-title';
+  title.textContent = card.title;
+  head.appendChild(title);
+  body.appendChild(head);
+
+  const meta = document.createElement('div');
+  meta.className = 'acp-harness__artifact-meta';
+  const hash7 = card.hash ? card.hash.slice(0, 7) : '—';
+  meta.textContent = card.available
+    ? `${formatArtifactBytes(card.size)} · ${hash7}`
+    : 'unavailable — file removed';
+  body.appendChild(meta);
+
+  const action = document.createElement('div');
+  action.className = 'acp-harness__artifact-action';
+  action.textContent = card.available
+    ? (card.hintLabel ? `press ${card.hintLabel} to open in browser` : 'f then label to open in browser')
+    : 'reopen unavailable';
+  body.appendChild(action);
 }
 
 function renderToolOutput(tool: ToolPayload): HTMLElement {
@@ -8484,6 +9051,7 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'fs_activity': return 'fs';
     case 'inter_lane': return 'mail';
     case 'review': return 'rev';
+    case 'artifact': return 'html';
     default: return kind;
   }
 }

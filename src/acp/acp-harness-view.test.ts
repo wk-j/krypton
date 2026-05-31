@@ -9,6 +9,12 @@ import {
   directiveRole,
   directiveTagLabel,
   harnessAutoAllowToolName,
+  artifactWritePathMatches,
+  isArtifactWriteGrantKind,
+  isArtifactScratchPath,
+  callTargetsArtifactScratch,
+  generateArtifactHintLabels,
+  normalizeArtifactPath,
   hashBucket,
   isDirectPeerPeekReasonKey,
   laneAccent,
@@ -791,6 +797,96 @@ describe('spec 125 lane rail disambiguation', () => {
 
     it('falls back to the neutral OMP mark for unknown backends', () => {
       expect(backendLogoId('made-up-backend')).toBe('krypton-logo-omp');
+    });
+  });
+
+  describe('artifact write path matching (spec 133)', () => {
+    const path = '/Users/me/proj/.krypton/artifacts/hm-3/Claude-1/art-7-abcd1234.html';
+    const tail = '.krypton/artifacts/hm-3/Claude-1/art-7-abcd1234.html';
+
+    it('matches the exact absolute issued path', () => {
+      expect(artifactWritePathMatches(path, path, tail)).toBe(true);
+    });
+
+    it('matches a relative target by the unique tail', () => {
+      expect(artifactWritePathMatches('proj/' + tail, path, tail)).toBe(true);
+      expect(artifactWritePathMatches('./' + tail, path, tail)).toBe(true);
+    });
+
+    it('does not match a different artifact id or lane', () => {
+      const other = '/Users/me/proj/.krypton/artifacts/hm-3/Codex-1/art-9-ffff0000.html';
+      expect(artifactWritePathMatches(other, path, tail)).toBe(false);
+      expect(artifactWritePathMatches('/Users/me/proj/src/main.ts', path, tail)).toBe(false);
+    });
+
+    it('rejects an absolute attacker path that merely shares the tail suffix', () => {
+      // Cursor finding: a suffix match would auto-approve a write outside the
+      // project. An absolute target must equal the issued path exactly.
+      expect(artifactWritePathMatches('/evil/' + tail, path, tail)).toBe(false);
+      expect(artifactWritePathMatches('/tmp' + path, path, tail)).toBe(false);
+    });
+
+    it('never matches an empty tail', () => {
+      expect(artifactWritePathMatches(path, path, '')).toBe(false);
+    });
+
+    it('flags any scratch path for redaction (broad, race-proof)', () => {
+      expect(isArtifactScratchPath(path)).toBe(true);
+      expect(isArtifactScratchPath('/x/.krypton/artifacts/hm-9/L/z.html')).toBe(true);
+      expect(isArtifactScratchPath('/x/.krypton/themes/foo.toml')).toBe(false);
+      expect(isArtifactScratchPath('/x/src/main.ts')).toBe(false);
+      expect(isArtifactScratchPath(null)).toBe(false);
+    });
+
+    it('redacts when the scratch path is only in a rawInput path field', () => {
+      // Claude-2 finding: extractModifiedPath misses a path that lives only in
+      // rawInput, leaving the tool/permission card unredacted.
+      const call = {
+        toolCallId: 't1',
+        title: 'Allow running MCP?',
+        rawInput: { file_path: path, content: '<html>secret</html>' },
+        locations: [],
+        content: [],
+      } as unknown as ToolCall;
+      expect(callTargetsArtifactScratch(call)).toBe(true);
+    });
+
+    it('does not over-redact a non-artifact write whose content mentions nothing scratchy', () => {
+      const call = {
+        toolCallId: 't2',
+        title: 'edit src/main.ts',
+        rawInput: { file_path: '/Users/me/proj/src/main.ts', content: 'x' },
+        locations: [{ path: '/Users/me/proj/src/main.ts' }],
+        content: [],
+      } as unknown as ToolCall;
+      expect(callTargetsArtifactScratch(call)).toBe(false);
+    });
+
+    it('only grants auto-approval for file-write tool kinds, not read/exec', () => {
+      expect(isArtifactWriteGrantKind('edit')).toBe(true);
+      expect(isArtifactWriteGrantKind('write')).toBe(true);
+      expect(isArtifactWriteGrantKind('create')).toBe(true);
+      expect(isArtifactWriteGrantKind('read')).toBe(false);
+      expect(isArtifactWriteGrantKind('search')).toBe(false);
+      expect(isArtifactWriteGrantKind('execute')).toBe(false);
+      expect(isArtifactWriteGrantKind('delete')).toBe(false);
+    });
+
+    it('normalizes backslashes and trailing slashes', () => {
+      expect(normalizeArtifactPath('a\\b\\c/')).toBe('a/b/c');
+    });
+  });
+
+  describe('artifact hint labels (spec 133)', () => {
+    it('assigns single-character prefix-free labels for small counts', () => {
+      expect(generateArtifactHintLabels(3)).toEqual(['a', 's', 'd']);
+    });
+
+    it('falls back to two-character labels past the alphabet size', () => {
+      const labels = generateArtifactHintLabels(20);
+      expect(labels).toHaveLength(20);
+      expect(new Set(labels).size).toBe(20);
+      expect(labels[17]).toHaveLength(2);
     });
   });
 });

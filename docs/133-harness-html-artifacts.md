@@ -1,6 +1,6 @@
 # Harness HTML Artifacts — Implementation Spec
 
-> Status: Proposed
+> Status: Implemented
 > Date: 2026-05-30
 > Milestone: M8 — Polish
 

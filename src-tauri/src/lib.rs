@@ -155,6 +155,8 @@ pub fn run() {
             commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
             commands::list_harness_mcp_stats,
+            commands::acp_cancel_pending_artifacts,
+            commands::acp_refresh_artifact,
             commands::acp_set_lane_triage_equipped,
             commands::save_temp_image,
             commands::capture_screen,
