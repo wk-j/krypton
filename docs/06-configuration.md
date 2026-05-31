@@ -415,7 +415,7 @@ To switch models, change `active` to the name of another preset. Changes take ef
 
 ### ACP Agent Backends
 
-ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, `pi-acp`, `droid`, `cursor`, `junie`, and `omp`.
+ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, `pi-acp`, `droid`, `cursor`, `junie`, `omp`, and `grok`.
 
 | Backend | Command |
 |---------|---------|
@@ -428,8 +428,9 @@ ACP agent backends are built into Krypton rather than configured in `krypton.tom
 | Cursor | `cursor-agent acp` |
 | Junie | `junie --acp true` |
 | OMP | `omp acp` |
+| Grok | `grok agent stdio` |
 
-Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys).
+Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`).
 
 **Pi lane prerequisites.** The Pi-1 lane uses the third-party [`pi-acp`](https://github.com/svkozak/pi-acp) adapter to drive the [`pi`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) coding agent. Install both globally:
 
@@ -498,7 +499,17 @@ OMP is a regular permission-gated lane, but it native-loads project root `.mcp.j
 
 Optional: `acp_harness.lane_models.omp.active` is accepted for the lane model chip, but Krypton does not pass it to OMP at spawn or via `session/set_model` until either path is verified to take effect under `omp acp`.
 
-See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-lane.md` for Pi-1, `docs/86-acp-droid-lane.md` for Droid-1, `docs/113-acp-cursor-lane.md` for Cursor, `docs/119-acp-junie-lane.md` for Junie, and `docs/122-acp-omp-lane.md` for OMP.
+**Grok lane prerequisites.** The Grok lane uses xAI Grok Build's native ACP mode (`grok agent stdio`). Install the CLI (macOS/Linux):
+
+```sh
+curl -fsSL https://x.ai/cli/install.sh | bash
+```
+
+Then authenticate outside Krypton by running `grok` once for the first-run browser login, or export `XAI_API_KEY` in the login shell before launching Krypton. Krypton does not provide a TTY for the browser-OAuth flow. Startup failures include Grok-specific install, old-CLI-without-ACP, auth, API-key, and empty-stderr hints.
+
+Grok is a regular permission-gated lane: the project `.mcp.json` bridge (spec 83) and the per-lane `krypton-harness-memory` MCP server both apply, capability-gated by what Grok advertises at `initialize`. Optional `acp_harness.lane_models.grok.active` drives the lane model chip and is applied via the generic `session/set_model` path if Grok advertises model state at `session/new`; no CLI `-m` flag is passed at spawn in v1.
+
+See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-lane.md` for Pi-1, `docs/86-acp-droid-lane.md` for Droid-1, `docs/113-acp-cursor-lane.md` for Cursor, `docs/119-acp-junie-lane.md` for Junie, `docs/122-acp-omp-lane.md` for OMP, and `docs/135-acp-grok-lane.md` for Grok.
 
 ### ACP Harness Configuration
 
@@ -511,13 +522,13 @@ See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-
 
 The ACP Harness backend picker is code-defined in v1: installed built-in backends are listed, and the harness starts with no lanes until the user spawns one via `Cmd+P → +`. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
 
-**Lane model selection.** `<backend>` keys match the ACP backend ids: `gemini`, `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, and `omp`. Krypton applies `active` only for backends that support model selection in v1:
+**Lane model selection.** `<backend>` keys match the ACP backend ids: `gemini`, `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, and `grok`. Krypton applies `active` only for backends that support model selection in v1:
 
 - **Gemini** — passes `--model <active>` as a CLI flag at spawn. Changing the model requires respawning the lane.
 - **OpenCode** — sends `session/set_config_option {model}` (with `session/set_model` fallback) right after `session/new`. If `active` is empty, Krypton falls back to the historical default `zai-coding-plan/glm-5.1`.
 - **Droid** — passes `-m <active>` to `droid exec` at spawn. Default if unset is Factory's `claude-opus-4-7`. Changing the model requires respawning the lane.
 - **Claude** (and any ACP-native backend that advertises model state) — applied via `session/set_model {sessionId, modelId}` right *after* `session/new`, for adapters whose `session/new` response carries a valid `models` object (an `availableModels` array or a `currentModelId` string). `active` is sent **verbatim**, so aliases like `opus`/`sonnet`/`haiku` resolve adapter-side. A failure (unknown id, timeout, adapter doesn't implement the method) is **non-fatal**: the lane keeps running on the agent default and the model chip turns amber with a tooltip. The set of available models is the *agent's* (advertised in `session/new`) — you don't maintain a catalog; the optional `models` array only curates/orders a future picker.
-- **Cursor / Codex / Pi / Junie / OMP** — `active` is accepted in the schema but ignored at spawn (those adapters do not advertise ACP model state in v1). The value still drives the lane model chip if present, and each auto-enables the `session/set_model` path with no further code if/when its adapter starts advertising model state.
+- **Cursor / Codex / Pi / Junie / OMP / Grok** — `active` is accepted in the schema but no CLI flag is passed at spawn (those adapters do not pass model via a spawn flag in v1). The value still drives the lane model chip if present, and each auto-enables the generic `session/set_model` path with no further code if/when its adapter advertises model state at `session/new`. (Grok's `-m` spawn flag under `agent stdio` is unverified and deferred — see `docs/135-acp-grok-lane.md`.)
 
 **Respawn-to-apply.** `active` is snapshotted into the lane at spawn. Editing `krypton.toml` updates the stored config and the chip inference, but does **not** re-apply to a live lane — the agent model changes only on the next spawn / `#new` / `#new!` / lane restart. Resumed and loaded sessions keep whatever model they were saved with and are not forced to the current config.
 

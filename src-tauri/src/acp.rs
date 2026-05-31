@@ -120,6 +120,14 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "OMP".to_string(),
             },
         ),
+        (
+            "grok",
+            AcpBackend {
+                command: "grok".to_string(),
+                args: vec!["agent".to_string(), "stdio".to_string()],
+                display_name: "Grok".to_string(),
+            },
+        ),
     ]
 }
 
@@ -2007,6 +2015,37 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
             return "OMP did not return an initialize response and no stderr was captured. First-run auth-broker/OAuth or install input is a likely cause; run `omp` once in a terminal, then retry.".to_string();
         }
     }
+    if backend_id == "grok" {
+        if s.contains("command not found") || s.contains("enoent") || s.contains("no such file") {
+            return "Install Grok Build CLI: `curl -fsSL https://x.ai/cli/install.sh | bash`, then restart Krypton so the login-shell PATH cache includes `grok`.".to_string();
+        }
+        if s.contains("unknown command")
+            || s.contains("unrecognized subcommand")
+            || s.contains("unknown subcommand")
+            || s.contains("invalid command")
+        {
+            return "Your Grok CLI predates ACP mode (`grok agent stdio`). Update via `curl -fsSL https://x.ai/cli/install.sh | bash`.".to_string();
+        }
+        if s.contains("not authenticated")
+            || s.contains("please log in")
+            || s.contains("please login")
+            || s.contains("authentication required")
+            || s.contains("unauthorized")
+        {
+            return "Run `grok` once in a terminal to complete browser login, or export `XAI_API_KEY` in the login shell used to launch Krypton.".to_string();
+        }
+        if s.contains("invalid api key")
+            || s.contains("bad token")
+            || s.contains("api key")
+            || s.contains("xai_api_key")
+            || s.contains("api_key")
+        {
+            return "Grok reports an API key problem. Re-check `XAI_API_KEY` in the login shell used to launch Krypton.".to_string();
+        }
+        if stderr.is_empty() {
+            return "Grok did not return an initialize response and no stderr was captured. First-run browser login or install input is a likely cause; run `grok` once in a terminal, then retry.".to_string();
+        }
+    }
     if s.contains("/login") || s.contains("not authenticated") {
         return "Run `claude /login` in a terminal, then retry.".to_string();
     }
@@ -2229,6 +2268,55 @@ mod tests {
         let hint = startup_hint("claude", "omp: unknown command acp");
 
         assert!(!hint.contains("OMP CLI predates native ACP mode"));
+    }
+
+    #[test]
+    fn grok_startup_hint_reports_missing_cli() {
+        let hint = startup_hint("grok", "No such file or directory (os error 2)");
+
+        assert!(hint.contains("Install Grok Build CLI"));
+        assert!(hint.contains("x.ai/cli/install.sh"));
+    }
+
+    #[test]
+    fn grok_startup_hint_reports_unknown_acp_subcommand() {
+        let hint = startup_hint("grok", "error: unrecognized subcommand 'agent'");
+
+        assert!(hint.contains("predates ACP mode"));
+        assert!(hint.contains("grok agent stdio"));
+    }
+
+    #[test]
+    fn grok_startup_hint_reports_auth_when_explicit() {
+        let hint = startup_hint("grok", "Error: not authenticated: please log in");
+
+        assert!(hint.contains("Run `grok` once"));
+        assert!(hint.contains("XAI_API_KEY"));
+    }
+
+    #[test]
+    fn grok_startup_hint_reports_api_key_problem_for_env_var_form() {
+        // stderr that names the env var (lowercased to `xai_api_key`) must hit
+        // the API-key branch, not fall through to raw stderr.
+        let hint = startup_hint("grok", "Error: XAI_API_KEY is required");
+
+        assert!(hint.contains("Grok reports an API key problem"));
+        assert!(!hint.contains("claude /login"));
+    }
+
+    #[test]
+    fn grok_startup_hint_empty_stderr_is_non_diagnostic() {
+        let hint = startup_hint("grok", "");
+
+        assert!(hint.contains("no stderr was captured"));
+        assert!(hint.contains("browser login"));
+    }
+
+    #[test]
+    fn grok_startup_hint_does_not_leak_to_other_backends() {
+        let hint = startup_hint("claude", "grok: unrecognized subcommand 'agent'");
+
+        assert!(!hint.contains("Grok CLI predates ACP mode"));
     }
 
     #[test]

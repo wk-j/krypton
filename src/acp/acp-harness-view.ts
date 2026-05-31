@@ -614,6 +614,7 @@ const BACKEND_LABELS: Record<string, string> = {
   cursor: 'Cursor',
   junie: 'Junie',
   omp: 'OMP',
+  grok: 'Grok',
 };
 
 function backendLabel(backendId: string): string {
@@ -689,6 +690,8 @@ export function backendLogoId(backendId: string): string {
       return 'krypton-logo-junie';
     case 'omp':
       return 'krypton-logo-omp';
+    case 'grok':
+      return 'krypton-logo-grok';
     default:
       return 'krypton-logo-omp';
   }
@@ -704,7 +707,7 @@ export function trimBackendPrefix(title: string, backendId: string): string {
   return title.startsWith(prefix) ? title.slice(prefix.length) : title;
 }
 
-// Inline <symbol> defs for the nine built-in backends. Geometry is copied
+// Inline <symbol> defs for the ten built-in backends. Geometry is copied
 // from docs/prototypes/125-lane-rail-disambiguation.html — keep both sides
 // in sync if iterated. All strokes/fills use currentColor so the rail can
 // recolor via a single CSS class.
@@ -757,6 +760,10 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
     '<circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
     '<circle cx="8" cy="8" r="0.6" fill="currentColor"/>' +
+    '</symbol>',
+  // grok/xai: angular bolt (hard-edged, x.ai identity)
+  '<symbol id="krypton-logo-grok" viewBox="0 0 16 16">' +
+    '<path d="M9.2 1.5 L3.8 8.8 H6.9 L5.8 14.5 L12.2 6.6 H8.8 Z" fill="currentColor"/>' +
     '</symbol>',
 ].join('');
 
@@ -8963,6 +8970,7 @@ export function laneAccent(index: number): string {
     '#ff9f1c',
     '#b18cff',
     '#4dd0ff',
+    '#5ce6a8',
   ];
   return accents[(index - 1) % accents.length];
 }
@@ -8977,6 +8985,7 @@ export function laneAccentForLabel(label: string): string {
   if (/cursor/i.test(label)) return laneAccent(7);
   if (/junie/i.test(label)) return laneAccent(8);
   if (/^omp(-|$)/i.test(label)) return laneAccent(9);
+  if (/grok/i.test(label)) return laneAccent(10);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }
@@ -10104,7 +10113,9 @@ function extractToolExit(rawOutput: unknown): string {
   return '';
 }
 
-function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: string }> {
+export function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: string }> {
+  const decodedRoot = decodeByteArray(rawOutput);
+  if (decodedRoot !== null) return decodedRoot ? [{ label: 'output', text: decodedRoot }] : [];
   if (typeof rawOutput === 'object' && rawOutput) {
     const record = rawOutput as Record<string, unknown>;
     const sections: Array<{ label: string; text: string }> = [];
@@ -10138,11 +10149,43 @@ function contentBlockText(block: ContentBlock): string {
   return '';
 }
 
-function stringifyToolValue(value: unknown): string {
+const byteArrayDecoder = new TextDecoder();
+
+/**
+ * Some ACP backends (Grok's `grok agent stdio`) serialize terminal/command output as a
+ * raw byte array (a JSON `number[]` of 0–255 values) instead of a decoded UTF-8 string.
+ * Detect that shape and decode it back to text; otherwise the generic array branch below
+ * would stringify each byte and join them, rendering "79 110 32 …" decimal dumps in the
+ * tool-output panel. Returns null when `value` is not a byte array (so callers fall back
+ * to their normal handling).
+ */
+function decodeByteArray(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  for (const n of value) {
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > 255) return null;
+  }
+  const decoded = byteArrayDecoder.decode(Uint8Array.from(value as number[]));
+  // Validate it's actually text, not a semantic number array (RGB tuples, flag
+  // vectors, line counts) that happens to sit in 0–255. Real command output is
+  // near-printable; a semantic array decodes to mostly control / replacement
+  // chars. Reject when >30% of chars are non-text (tab/newline/CR stay allowed).
+  let bad = 0;
+  for (const ch of decoded) {
+    const code = ch.codePointAt(0) ?? 0;
+    const printable = code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127 && code !== 0xfffd);
+    if (!printable) bad += 1;
+  }
+  if (bad / decoded.length > 0.3) return null;
+  return decoded;
+}
+
+export function stringifyToolValue(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) {
+    const decoded = decodeByteArray(value);
+    if (decoded !== null) return decoded;
     return value.map((item) => stringifyToolValue(item)).filter(Boolean).join(' ');
   }
   if (typeof value === 'object') {

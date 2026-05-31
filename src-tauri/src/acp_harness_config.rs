@@ -21,7 +21,7 @@ pub const DIRECTIVE_SYSTEM_PROMPT_MAX: usize = 16 * 1024;
 /// Built-in ACP backend ids a directive may target. An empty `backend` means
 /// "all backends". Mirrors the frontend `BACKEND_LABELS` keys.
 pub const BUILTIN_BACKEND_IDS: &[&str] = &[
-    "codex", "claude", "gemini", "opencode", "pi-acp", "droid", "cursor", "junie", "omp",
+    "codex", "claude", "gemini", "opencode", "pi-acp", "droid", "cursor", "junie", "omp", "grok",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

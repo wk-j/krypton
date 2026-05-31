@@ -19,6 +19,8 @@ import {
   isDirectPeerPeekReasonKey,
   laneAccent,
   laneAccentForLabel,
+  rawOutputSections,
+  stringifyToolValue,
   formatLaneMailMetaLine,
   formatLaneMailProvenanceLine,
   selectLanePeekCandidate,
@@ -677,11 +679,19 @@ describe('laneAccentForLabel', () => {
     expect(laneAccentForLabel('Junie-1')).not.toBe(laneAccent(1));
   });
 
-  it('keeps the 8-color palette wider than the 7 named lanes', () => {
-    // Junie occupies slot 8, so the palette must have at least 8 distinct
-    // entries — otherwise laneAccent(8) wraps modulo to Codex blue.
-    const slots = [1, 2, 3, 4, 5, 6, 7, 8].map(laneAccent);
-    expect(new Set(slots).size).toBe(8);
+  it('routes Grok labels to the 10th palette slot, not the numeric fallback', () => {
+    // Spec 135: Grok is the 10th named lane. Without the explicit /grok/i arm,
+    // 'Grok-1' would hit the -(\d+)$ fallback → laneAccent(1) (Codex blue).
+    expect(laneAccentForLabel('Grok-1')).toBe(laneAccent(10));
+    expect(laneAccentForLabel('Grok-1')).not.toBe(laneAccent(1));
+  });
+
+  it('keeps a 10-color palette wider than the 10 named lanes', () => {
+    // Junie=8, OMP=9, Grok=10 all occupy distinct slots, so the palette must
+    // have at least 10 distinct entries — otherwise laneAccent(10) wraps modulo
+    // to Codex blue.
+    const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(laneAccent);
+    expect(new Set(slots).size).toBe(10);
   });
 });
 
@@ -840,6 +850,7 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(backendLogoId('cursor')).toBe('krypton-logo-cursor');
       expect(backendLogoId('junie')).toBe('krypton-logo-junie');
       expect(backendLogoId('omp')).toBe('krypton-logo-omp');
+      expect(backendLogoId('grok')).toBe('krypton-logo-grok');
     });
 
     it('falls back to the neutral OMP mark for unknown backends', () => {
@@ -935,5 +946,48 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(new Set(labels).size).toBe(20);
       expect(labels[17]).toHaveLength(2);
     });
+  });
+});
+
+describe('byte-array tool output decoding (spec 135 — Grok lane)', () => {
+  // Grok's `grok agent stdio` serializes command output as a raw byte array
+  // (number[]) rather than a UTF-8 string. "On branch master" as bytes:
+  const onBranchMaster = [
+    79, 110, 32, 98, 114, 97, 110, 99, 104, 32, 109, 97, 115, 116, 101, 114,
+  ];
+
+  it('decodes a keyed byte array instead of joining decimals', () => {
+    expect(stringifyToolValue(onBranchMaster)).toBe('On branch master');
+  });
+
+  it('still joins arrays of strings/objects (no regression)', () => {
+    expect(stringifyToolValue(['a', { text: 'b' }, 'c'])).toBe('a b c');
+  });
+
+  it('leaves out-of-range or non-integer arrays to the generic path', () => {
+    expect(stringifyToolValue([256, 1, 2])).toBe('256 1 2');
+    expect(stringifyToolValue([1.5, 2])).toBe('1.5 2');
+  });
+
+  it('falls back for semantic 0–255 arrays that decode to non-text', () => {
+    // RGB tuple and a flag vector: in-range integers but not byte text.
+    expect(stringifyToolValue([255, 0, 128])).toBe('255 0 128');
+    expect(stringifyToolValue([1, 0, 1, 0])).toBe('1 0 1 0');
+  });
+
+  it('keeps short but genuinely printable byte text', () => {
+    expect(stringifyToolValue([72, 105])).toBe('Hi'); // "Hi"
+  });
+
+  it('decodes a byte array nested under an output key', () => {
+    expect(rawOutputSections({ output: onBranchMaster })).toEqual([
+      { label: 'output', text: 'On branch master' },
+    ]);
+  });
+
+  it('decodes a bare byte-array rawOutput', () => {
+    expect(rawOutputSections(onBranchMaster)).toEqual([
+      { label: 'output', text: 'On branch master' },
+    ]);
   });
 });

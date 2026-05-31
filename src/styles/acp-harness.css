@@ -37,6 +37,7 @@
   --krypton-backend-cursor:   #c0c0c0;
   --krypton-backend-junie:    #d96fb3;
   --krypton-backend-omp:      #d9c66f;
+  --krypton-backend-grok:     #5ce6a8;
 }
 
 .acp-harness__body {
@@ -2393,6 +2394,7 @@
 .acp-harness__rail-logo--cursor   { color: var(--krypton-backend-cursor); }
 .acp-harness__rail-logo--junie    { color: var(--krypton-backend-junie); }
 .acp-harness__rail-logo--omp      { color: var(--krypton-backend-omp); }
+.acp-harness__rail-logo--grok     { color: var(--krypton-backend-grok); }
 
 .acp-harness__rail-tag {
   flex: 0 0 auto;
@@ -3364,6 +3366,7 @@
 .acp-harness__directive-logo--cursor   { color: var(--krypton-backend-cursor); }
 .acp-harness__directive-logo--junie    { color: var(--krypton-backend-junie); }
 .acp-harness__directive-logo--omp      { color: var(--krypton-backend-omp); }
+.acp-harness__directive-logo--grok     { color: var(--krypton-backend-grok); }
 
 .acp-harness__directive-icon {
   flex: 0 0 auto;
