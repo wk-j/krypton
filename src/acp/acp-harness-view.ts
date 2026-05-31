@@ -3416,6 +3416,17 @@ export class AcpHarnessView implements ContentView {
     if (stopReason === 'end_turn' && !lane.error) {
       void this.checkProseOnlyReviewer(lane);
     }
+    // Reset this turn's pointers BEFORE the status transition below. setLaneStatus
+    // can synchronously drain queued peer mail (InterLaneCoordinator.onBus ->
+    // enqueueSystemPrompt), which stamps the NEXT turn's activeTurnStartedAt /
+    // currentAssistantId / pendingCoordinatorDrain before this method resumes.
+    // Clearing them here — not at the tail — stops that re-entrant turn's state
+    // from being clobbered (fixes back-to-back peer-turn provenance + elapsed UI).
+    lane.activeTurnStartedAt = null;
+    lane.currentAssistantId = null;
+    lane.currentThoughtId = null;
+    lane.pendingCoordinatorDrain = null;
+    lane.coordinatorDrainProvenanceUsed = false;
     if (lane.error) {
       this.setLaneStatus(lane, 'error');
     } else {
@@ -3435,11 +3446,6 @@ export class AcpHarnessView implements ContentView {
     // spec 133: a pending artifact carries a write grant and must not outlive
     // the turn — cancel any the lane created but never registered.
     this.cancelPendingArtifactsForLane(lane);
-    lane.activeTurnStartedAt = null;
-    lane.currentAssistantId = null;
-    lane.currentThoughtId = null;
-    lane.pendingCoordinatorDrain = null;
-    lane.coordinatorDrainProvenanceUsed = false;
     this.updateComposerTick();
     if (stopReason !== 'end_turn' && stopReason !== 'cancelled') {
       this.appendTranscript(lane, 'system', `turn ended: ${stopReason}`);
