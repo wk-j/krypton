@@ -5,6 +5,8 @@ import { Marked, Lexer } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
+import { convertFileSrc } from '@tauri-apps/api/core';
+
 import { invoke } from './profiler/ipc';
 import { openExternalUrl } from './external-url';
 
@@ -68,6 +70,8 @@ export class MarkdownContentView implements ContentView {
   private selectedIndex = 0;
   private cwd: string;
   private closeCallback: (() => void) | null = null;
+  /** Path of the file currently rendered in the preview (guards no-op reloads). */
+  private currentLoadedFile: string | null = null;
 
   getWorkingDirectory(): string | null {
     return this.cwd;
@@ -105,11 +109,23 @@ export class MarkdownContentView implements ContentView {
   // Content reveal animations
   private revealAnimations: Animation[] = [];
 
-  // Link hint mode state
-  private linkHintActive = false;
-  private linkHintLabels: HTMLElement[] = [];
-  private linkHintMap: Map<string, HTMLAnchorElement> = new Map();
-  private linkHintInput = '';
+  // Hint mode state (shared by link hints `o`/`;` and heading hints `H`)
+  private hintActive = false;
+  private hintLabels: HTMLElement[] = [];
+  private hintMap: Map<string, HTMLElement> = new Map();
+  private hintInput = '';
+  private hintOnPick: ((el: HTMLElement) => void) | null = null;
+  // Targets whose inline `position` we set to 'relative' for badge anchoring,
+  // with their prior value so exitHintMode can restore it.
+  private hintTouched: Array<{ el: HTMLElement; prevPosition: string }> = [];
+
+  // In-doc search state
+  private searchActive = false;
+  private searchHud: HTMLElement | null = null;
+  private searchInput: HTMLInputElement | null = null;
+  private searchMatches: HTMLElement[] = [];
+  private searchIndex = -1;
+  private searchDebounce: number | null = null;
 
   // AI overlay
   private aiOverlay: MarkdownViewAI | null = null;
@@ -344,7 +360,18 @@ export class MarkdownContentView implements ContentView {
     this.setFocus('preview');
   }
 
-  private async loadFile(relativePath: string, recordJump = true): Promise<void> {
+  private async loadFile(relativePath: string, recordJump = true, force = false): Promise<void> {
+    // No-op when the requested file is already shown — re-selecting it should
+    // just hand focus to the preview (caller does that), not re-render/reset scroll.
+    if (!force && relativePath === this.currentLoadedFile) return;
+
+    // Tear down any transient overlay mode bound to the old DOM before the
+    // innerHTML swap, or its badges/highlights orphan and the mode's key
+    // handlers fire against dead element refs.
+    if (this.searchActive) this.closeSearch();
+    if (this.hintActive) this.exitHintMode();
+    if (this.focusPanel === 'select') this.exitSelectMode();
+
     if (recordJump) this.pushJump(relativePath);
     this.previewHeader.textContent = relativePath;
 
@@ -365,6 +392,8 @@ export class MarkdownContentView implements ContentView {
       const lineOffset = fmMatch ? fmMatch[0].split('\n').length - 1 : 0;
       const html = await md.parse(body, { gfm: true, breaks: true });
       this.previewContent.innerHTML = html;
+      this.currentLoadedFile = relativePath;
+      this.rewriteImageSources(relativePath);
       this.annotateBlocksWithRaw(body, lineOffset);
 
       if (truncated) {
@@ -377,7 +406,48 @@ export class MarkdownContentView implements ContentView {
       this.previewContent.scrollTop = 0;
       this.animateContentReveal();
     } catch {
+      this.currentLoadedFile = null;
       this.previewContent.innerHTML = `<div class="krypton-md__empty">Failed to read file: ${relativePath}</div>`;
+    }
+  }
+
+  /** Resolve relative <img src> against the current file's directory so local
+   *  images load inside the webview (raw file:// is blocked cross-origin). */
+  private rewriteImageSources(relativePath: string): void {
+    const currentDir = relativePath.includes('/')
+      ? relativePath.slice(0, relativePath.lastIndexOf('/'))
+      : '';
+    const imgs = this.previewContent.querySelectorAll('img[src]');
+    for (const img of Array.from(imgs) as HTMLImageElement[]) {
+      const src = img.getAttribute('src') ?? '';
+      // Leave remote / data / already-absolute-protocol sources untouched.
+      if (/^(https?:|data:|asset:|blob:)/i.test(src) || src.startsWith('//')) continue;
+
+      // Strip ?query / #fragment before FS resolution (cache-busters like
+      // `diagram.png?v=3` would otherwise become part of the path).
+      const path = src.replace(/[?#].*$/, '');
+      if (!path) continue;
+
+      // Build an absolute path: leading "/" is treated as cwd-root, else relative
+      // to the current file's directory. Collapse ./ and ../ segments.
+      const joined = path.startsWith('/')
+        ? `${this.cwd}/${path.slice(1)}`
+        : `${this.cwd}/${currentDir ? currentDir + '/' : ''}${path}`;
+      const parts: string[] = [];
+      for (const seg of joined.split('/')) {
+        if (seg === '..') parts.pop();
+        else if (seg !== '.' && seg !== '') parts.push(seg);
+      }
+      const abs = '/' + parts.join('/');
+
+      const relForNotice = src;
+      img.src = convertFileSrc(abs);
+      img.addEventListener('error', () => {
+        const breach = document.createElement('span');
+        breach.className = 'krypton-md__img-breach';
+        breach.textContent = `IMG BREACH // ${relForNotice}`;
+        img.replaceWith(breach);
+      }, { once: true });
     }
   }
 
@@ -549,11 +619,16 @@ export class MarkdownContentView implements ContentView {
       return true;
     }
 
+    // Search box editing — let the input element handle typing/Enter/Esc itself.
+    if (this.searchActive && this.searchInput && document.activeElement === this.searchInput) {
+      return false;
+    }
+
     // Don't intercept modifier combos (let globals handle them)
     if (e.metaKey || e.ctrlKey || e.altKey) return false;
 
-    if (this.linkHintActive) {
-      return this.handleLinkHintKey(e);
+    if (this.hintActive) {
+      return this.handleHintKey(e);
     }
 
     if (this.focusPanel === 'select') {
@@ -602,10 +677,36 @@ export class MarkdownContentView implements ContentView {
   }
 
   private handlePreviewKey(e: KeyboardEvent): boolean {
+    // Search results present (input not focused) — n/N cycle, Esc/q clears.
+    if (this.searchActive) {
+      switch (e.key) {
+        case 'n':
+          this.searchStep(1);
+          return true;
+        case 'N':
+          this.searchStep(-1);
+          return true;
+        case '/':
+          this.openSearch();
+          return true;
+        case 'Escape':
+        case 'q':
+          this.closeSearch();
+          return true;
+        // other keys fall through (scrolling still works while matches persist)
+      }
+    }
+
     switch (e.key) {
       case 'h':
       case 'ArrowLeft':
         this.setFocus('sidebar');
+        return true;
+      case '/':
+        this.openSearch();
+        return true;
+      case 'H':
+        this.enterHeadingHintMode();
         return true;
       case 'j':
         this.previewContent.scrollBy({ top: 40, behavior: 'auto' });
@@ -887,7 +988,7 @@ export class MarkdownContentView implements ContentView {
     }
   }
 
-  // ── Link Hint Mode ──
+  // ── Hint Mode (shared: links + headings) ──
 
   private hasPreviewLinks(): boolean {
     return this.previewContent.querySelector('a[href]') !== null;
@@ -908,70 +1009,93 @@ export class MarkdownContentView implements ContentView {
     return labels;
   }
 
-  private enterLinkHintMode(): void {
-    const links = Array.from(
-      this.previewContent.querySelectorAll('a[href]'),
-    ) as HTMLAnchorElement[];
-    if (links.length === 0) return;
+  /** Generic hint overlay: badge each target, run `onPick` for the typed label. */
+  private enterHintMode(targets: HTMLElement[], onPick: (el: HTMLElement) => void): void {
+    if (targets.length === 0) return;
 
-    const labels = MarkdownContentView.generateHintLabels(links.length);
-    this.linkHintMap.clear();
-    this.linkHintLabels = [];
-    this.linkHintInput = '';
+    const labels = MarkdownContentView.generateHintLabels(targets.length);
+    this.hintMap.clear();
+    this.hintLabels = [];
+    this.hintInput = '';
+    this.hintOnPick = onPick;
 
-    for (let i = 0; i < links.length; i++) {
-      const link = links[i];
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i];
       const label = labels[i];
-      this.linkHintMap.set(label, link);
+      this.hintMap.set(label, target);
 
       const badge = document.createElement('span');
       badge.className = 'krypton-md__link-hint';
       badge.textContent = label;
-      link.style.position = 'relative';
-      link.appendChild(badge);
-      this.linkHintLabels.push(badge);
+      // Anchor the badge; remember the prior inline position to restore on exit
+      // so we don't leave a permanent side-effect on headings/links.
+      this.hintTouched.push({ el: target, prevPosition: target.style.position });
+      target.style.position = 'relative';
+      target.appendChild(badge);
+      this.hintLabels.push(badge);
     }
 
-    this.linkHintActive = true;
+    this.hintActive = true;
   }
 
-  private exitLinkHintMode(): void {
-    for (const badge of this.linkHintLabels) badge.remove();
-    this.linkHintLabels = [];
-    this.linkHintMap.clear();
-    this.linkHintInput = '';
-    this.linkHintActive = false;
+  private enterLinkHintMode(): void {
+    const links = Array.from(
+      this.previewContent.querySelectorAll('a[href]'),
+    ) as HTMLAnchorElement[];
+    this.enterHintMode(links, (el) => {
+      const href = el.getAttribute('href');
+      if (!href) return;
+      if (href.endsWith('.md') && !href.includes('://')) {
+        this.navigateToLocalMd(href);
+      } else {
+        openExternalUrl(href);
+      }
+    });
   }
 
-  private handleLinkHintKey(e: KeyboardEvent): boolean {
+  private enterHeadingHintMode(): void {
+    const headings = Array.from(
+      this.previewContent.querySelectorAll('h1, h2, h3, h4, h5, h6'),
+    ) as HTMLElement[];
+    this.enterHintMode(headings, (el) => {
+      el.scrollIntoView({ behavior: 'auto', block: 'start' });
+    });
+  }
+
+  private exitHintMode(): void {
+    for (const badge of this.hintLabels) badge.remove();
+    for (const { el, prevPosition } of this.hintTouched) el.style.position = prevPosition;
+    this.hintTouched = [];
+    this.hintLabels = [];
+    this.hintMap.clear();
+    this.hintInput = '';
+    this.hintOnPick = null;
+    this.hintActive = false;
+  }
+
+  private handleHintKey(e: KeyboardEvent): boolean {
     if (e.key === 'Escape') {
-      this.exitLinkHintMode();
+      this.exitHintMode();
       return true;
     }
 
     if (e.key.length !== 1) return true; // absorb non-character keys
 
-    this.linkHintInput += e.key.toLowerCase();
+    this.hintInput += e.key.toLowerCase();
 
     // Check for exact match
-    const match = this.linkHintMap.get(this.linkHintInput);
+    const match = this.hintMap.get(this.hintInput);
     if (match) {
-      const href = match.getAttribute('href');
-      this.exitLinkHintMode();
-      if (href) {
-        if (href.endsWith('.md') && !href.includes('://')) {
-          this.navigateToLocalMd(href);
-        } else {
-          openExternalUrl(href);
-        }
-      }
+      const onPick = this.hintOnPick;
+      this.exitHintMode();
+      onPick?.(match);
       return true;
     }
 
     // Check if input is a prefix of any label
     let hasPrefix = false;
-    for (const label of this.linkHintMap.keys()) {
-      if (label.startsWith(this.linkHintInput)) {
+    for (const label of this.hintMap.keys()) {
+      if (label.startsWith(this.hintInput)) {
         hasPrefix = true;
         break;
       }
@@ -979,18 +1103,187 @@ export class MarkdownContentView implements ContentView {
 
     if (!hasPrefix) {
       // No possible match — exit
-      this.exitLinkHintMode();
+      this.exitHintMode();
     } else {
       // Dim non-matching hints
-      for (const badge of this.linkHintLabels) {
+      for (const badge of this.hintLabels) {
         const label = badge.textContent || '';
         badge.classList.toggle(
           'krypton-md__link-hint--dimmed',
-          !label.startsWith(this.linkHintInput),
+          !label.startsWith(this.hintInput),
         );
       }
     }
     return true;
+  }
+
+  // ── In-Doc Search ──
+
+  private static readonly SEARCH_MATCH_CAP = 500;
+
+  /** Open (or re-focus) the in-doc search HUD. */
+  private openSearch(): void {
+    if (!this.searchHud) {
+      this.searchHud = document.createElement('div');
+      this.searchHud.className = 'krypton-md__search';
+
+      const prompt = document.createElement('span');
+      prompt.className = 'krypton-md__search-prompt';
+      prompt.textContent = '/';
+
+      this.searchInput = document.createElement('input');
+      this.searchInput.className = 'krypton-md__search-input';
+      this.searchInput.placeholder = 'search...';
+      this.searchInput.addEventListener('input', () => this.scheduleSearch(this.searchInput!.value));
+      this.searchInput.addEventListener('keydown', (e) => this.handleSearchInputKey(e));
+
+      const count = document.createElement('span');
+      count.className = 'krypton-md__search-count';
+
+      this.searchHud.append(prompt, this.searchInput, count);
+      this.previewContent.parentElement?.appendChild(this.searchHud);
+    }
+
+    this.searchActive = true;
+    this.searchHud.style.display = '';
+    this.searchInput!.focus();
+    this.searchInput!.select();
+    this.applySearch(this.searchInput!.value);
+  }
+
+  private handleSearchInputKey(e: KeyboardEvent): void {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      this.closeSearch();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.flushSearch(); // ensure matches reflect the latest query before stepping
+      this.searchStep(e.shiftKey ? -1 : 1);
+      // Blur so n/N work as navigation in the preview pane.
+      this.searchInput?.blur();
+      this.element.focus();
+    }
+  }
+
+  /** Debounced live re-highlight — avoids a full unwrap+TreeWalk on every keystroke. */
+  private scheduleSearch(query: string): void {
+    if (this.searchDebounce !== null) clearTimeout(this.searchDebounce);
+    this.searchDebounce = window.setTimeout(() => {
+      this.searchDebounce = null;
+      this.applySearch(query);
+    }, 120);
+  }
+
+  /** Run any pending debounced search immediately. */
+  private flushSearch(): void {
+    if (this.searchDebounce === null) return;
+    clearTimeout(this.searchDebounce);
+    this.searchDebounce = null;
+    this.applySearch(this.searchInput?.value ?? '');
+  }
+
+  /** Re-highlight matches for the current query. */
+  private applySearch(query: string): void {
+    this.unwrapMatches();
+    const q = query.toLowerCase();
+    if (!q) {
+      this.updateSearchCount();
+      return;
+    }
+
+    // Collect candidate text nodes first (mutating during walk is unsafe).
+    const walker = document.createTreeWalker(this.previewContent, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        const p = node.parentElement;
+        if (!p || !node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        if (p.closest('pre, code, .krypton-md__link-hint, .krypton-md__search')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const textNodes: Text[] = [];
+    let n = walker.nextNode();
+    while (n) {
+      textNodes.push(n as Text);
+      n = walker.nextNode();
+    }
+
+    for (const node of textNodes) {
+      if (this.searchMatches.length >= MarkdownContentView.SEARCH_MATCH_CAP) break;
+      const text = node.nodeValue ?? '';
+      const lower = text.toLowerCase();
+      if (!lower.includes(q)) continue;
+
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      let idx = lower.indexOf(q, 0);
+      while (idx !== -1 && this.searchMatches.length < MarkdownContentView.SEARCH_MATCH_CAP) {
+        if (idx > last) frag.append(text.slice(last, idx));
+        const mark = document.createElement('mark');
+        mark.className = 'krypton-md__match';
+        mark.textContent = text.slice(idx, idx + q.length);
+        frag.append(mark);
+        this.searchMatches.push(mark);
+        last = idx + q.length;
+        idx = lower.indexOf(q, last);
+      }
+      if (last < text.length) frag.append(text.slice(last));
+      node.parentNode?.replaceChild(frag, node);
+    }
+
+    this.searchIndex = -1;
+    this.updateSearchCount();
+  }
+
+  /** Move to the next/previous match and scroll it into view. */
+  private searchStep(delta: number): void {
+    if (this.searchMatches.length === 0) return;
+    if (this.searchIndex >= 0) {
+      this.searchMatches[this.searchIndex]?.classList.remove('krypton-md__match--current');
+    }
+    const n = this.searchMatches.length;
+    this.searchIndex = ((this.searchIndex + delta) % n + n) % n;
+    const current = this.searchMatches[this.searchIndex];
+    current.classList.add('krypton-md__match--current');
+    current.scrollIntoView({ behavior: 'auto', block: 'center' });
+    this.updateSearchCount();
+  }
+
+  private updateSearchCount(): void {
+    const count = this.searchHud?.querySelector('.krypton-md__search-count');
+    if (!count) return;
+    const total = this.searchMatches.length;
+    if (total === 0) {
+      count.textContent = 'no matches';
+    } else {
+      const pos = this.searchIndex >= 0 ? `${this.searchIndex + 1}/` : '';
+      const capped = total >= MarkdownContentView.SEARCH_MATCH_CAP ? '+' : '';
+      count.textContent = `${pos}${total}${capped}`;
+    }
+  }
+
+  /** Remove all <mark> wrappers, restoring the original text. */
+  private unwrapMatches(): void {
+    for (const mark of this.searchMatches) {
+      mark.replaceWith(document.createTextNode(mark.textContent ?? ''));
+    }
+    this.searchMatches = [];
+    this.searchIndex = -1;
+    this.previewContent.normalize();
+  }
+
+  /** Close the search HUD and clear highlights. */
+  private closeSearch(): void {
+    if (this.searchDebounce !== null) {
+      clearTimeout(this.searchDebounce);
+      this.searchDebounce = null;
+    }
+    this.unwrapMatches();
+    this.searchActive = false;
+    if (this.searchHud) this.searchHud.style.display = 'none';
+    if (this.focusPanel === 'preview') this.element.focus();
   }
 
   private handleSelectKey(e: KeyboardEvent): boolean {
@@ -1034,7 +1327,7 @@ export class MarkdownContentView implements ContentView {
   /** Reload the currently selected file from disk. */
   private reloadCurrentFile(): void {
     const file = this.filteredFiles[this.selectedIndex];
-    if (file) this.loadFile(file);
+    if (file) this.loadFile(file, true, true);
   }
 
   /** Re-scan the CWD for .md files and refresh the sidebar. */
@@ -1061,6 +1354,11 @@ export class MarkdownContentView implements ContentView {
     if (this.aiOverlay) return;
 
     const { MarkdownViewAI } = await import('./markdown-view-ai');
+
+    // Tear down transient overlays so their badges/highlights don't sit behind
+    // the AI panel (select state is preserved — it feeds getAIContext).
+    if (this.searchActive) this.closeSearch();
+    if (this.hintActive) this.exitHintMode();
 
     this.aiOverlay = new MarkdownViewAI({
       cwd: this.cwd,
@@ -1102,6 +1400,9 @@ export class MarkdownContentView implements ContentView {
 
   dispose(): void {
     this.closeAI();
+    if (this.searchDebounce !== null) clearTimeout(this.searchDebounce);
+    for (const a of this.revealAnimations) a.cancel();
+    this.revealAnimations = [];
     this.element.remove();
   }
 }

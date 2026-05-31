@@ -3,6 +3,8 @@
 > Status: Implemented
 > Date: 2026-03-23
 > Milestone: M8 — Polish
+>
+> Enhancements (in-doc search, heading hints, image fix, focus indicator, re-select guard): see `docs/137-markdown-viewer-search-hints-images.md`.
 
 ## Problem
 
@@ -57,8 +59,13 @@ Add a dedicated markdown viewer window with a two-panel layout: a **file browser
 | `f` / `b` | Preview focused | Page down / page up |
 | `g` / `G` | Preview focused | Jump to top / bottom |
 | `]` / `[` | Preview focused | Next / previous heading |
+| `/` | Preview focused | Open in-doc search HUD (highlights matches) |
+| `n` / `N` | Search results active | Next / previous match |
+| `Enter` / `Shift+Enter` | Search HUD input | Next / previous match |
+| `Escape` / `q` | Search results active | Clear search, close HUD |
 | `o` | Preview focused | Enter link hint mode (type label to follow link) |
-| `Escape` | Link hint active | Cancel link hints |
+| `H` | Preview focused | Enter heading hint mode (type label to jump to heading) |
+| `Escape` | Link / heading hint active | Cancel hints |
 | `Ctrl+o` | Any panel | Jump back in navigation history |
 | `Ctrl+i` | Any panel | Jump forward in navigation history |
 | `r` | Either panel | Reload current file from disk |
@@ -117,7 +124,7 @@ Preview styling (dark theme matching Krypton):
 - Lists: accent-colored bullets/numbers
 - Blockquotes: left border accent, dimmed text
 - Tables: bordered, alternating row tint
-- Images: rendered inline (file:// URLs for local images)
+- Images: rendered inline — relative `src` is resolved against the current file's directory and loaded via Tauri's `convertFileSrc()` (asset protocol; raw `file://` is blocked cross-origin in the webview). A failed load is replaced with a styled `IMG BREACH // <path>` notice. See `docs/137-markdown-viewer-search-hints-images.md`.
 - Horizontal rules: accent-colored line
 
 ## Edge Cases
