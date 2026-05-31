@@ -3368,6 +3368,10 @@ export class AcpHarnessView implements ContentView {
       lane.error = message;
       lane.activeTurnStartedAt = null;
       lane.pendingTurnExtractions = [];
+      // Clear the streaming pointers too, matching finishTurn's reset — an errored
+      // lane must not carry a stale active assistant/thought row (Grok-1 R3 #1).
+      lane.currentAssistantId = null;
+      lane.currentThoughtId = null;
       this.updateComposerTick();
       this.appendClassifiedError(lane, message, `prompt failed: ${message}`);
       this.render();
@@ -3386,18 +3390,27 @@ export class AcpHarnessView implements ContentView {
     if (lane.status !== 'idle') return; // busy (peer mail) / awaiting_peer / error / stopped → hold
     const next = lane.queuedPrompts.shift();
     if (!next) return;
-    void this.sendUserPrompt(lane, next.text, next.images, { clearDraft: false }).then((r) => {
-      if (r.delivered) return; // a turn started; the next finishTurn drains the rest
-      if (r.handled) {
-        this.appendTranscript(lane, 'system', `queued prompt not sent: ${truncate(next.text, 80)}`);
-        this.render();
-        if (lane.queuedPrompts.length > 0) {
-          queueMicrotask(() => this.maybeDrainPromptQueue(lane));
-        }
+    const reArm = (): void => {
+      this.appendTranscript(lane, 'system', `queued prompt not sent: ${truncate(next.text, 80)}`);
+      this.render();
+      if (lane.status === 'idle' && lane.queuedPrompts.length > 0) {
+        queueMicrotask(() => this.maybeDrainPromptQueue(lane));
       }
-      // r.handled === false means !lane.client (a dead lane) — not idle anyway,
-      // so we neither re-arm nor discard the remaining queue here.
-    });
+    };
+    void this.sendUserPrompt(lane, next.text, next.images, { clearDraft: false })
+      .then((r) => {
+        if (r.delivered) return; // a turn started; the next finishTurn drains the rest
+        if (r.handled) reArm();
+        // r.handled === false means !lane.client (a dead lane) — not idle anyway,
+        // so we neither re-arm nor discard the remaining queue here.
+      })
+      .catch((e) => {
+        // sendUserPrompt is self-contained (client.prompt errors are caught inside
+        // it), but guard defensively: a synchronous throw must not silently drop
+        // the already-shifted item and stall the queue (Grok-1 R3 #3).
+        console.warn('[acp-harness] queued drain failed', e);
+        reArm();
+      });
   }
 
   private handleSubmitError(error: unknown): void {
