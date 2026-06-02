@@ -426,7 +426,6 @@
   padding: 10px 14px;
   background: var(--agent-surface-mid);
   border: 1px solid rgba(var(--agent-primary-rgb), 0.12);
-  border-left: 2px solid rgba(var(--agent-primary-rgb), 0.35);
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(var(--agent-primary-rgb), 0.2) transparent;
@@ -530,9 +529,8 @@
 
 .agent-view__msg-body--markdown blockquote {
   margin: 0.4em 0;
-  padding: 0.3em 0.8em;
-  border-left: 2px solid rgba(var(--agent-blue-rgb), 0.4);
-  background: rgba(var(--agent-blue-rgb), 0.03);
+  padding: 0.3em 0.9em;
+  background: rgba(var(--agent-blue-rgb), 0.06);
   color: rgba(var(--agent-blue-rgb), 0.65);
   font-style: italic;
 }
@@ -901,8 +899,7 @@
 .agent-view__error {
   color: var(--agent-red);
   padding: 8px 12px;
-  border: 1px solid rgba(var(--agent-red-rgb), 0.25);
-  border-left: 2px solid rgba(var(--agent-red-rgb), 0.7);
+  border: 1px solid rgba(var(--agent-red-rgb), 0.5);
   background: rgba(var(--agent-red-rgb), 0.04);
   font-size: var(--krypton-font-size);
   white-space: pre-wrap;
@@ -911,8 +908,8 @@
 }
 
 @keyframes error-flash {
-  0%, 100% { border-left-color: rgba(var(--agent-red-rgb), 0.7); }
-  50% { border-left-color: rgba(var(--agent-red-rgb), 1); background: rgba(var(--agent-red-rgb), 0.06); }
+  0%, 100% { border-color: rgba(var(--agent-red-rgb), 0.5); }
+  50% { border-color: rgba(var(--agent-red-rgb), 0.9); background: rgba(var(--agent-red-rgb), 0.08); }
 }
 
 /* ═══ State hint bar ═════════════════════════════════════════ */
@@ -1138,12 +1135,12 @@
   padding: 5px 12px;
   cursor: default;
   flex-shrink: 0;
-  border-left: 2px solid transparent;
 }
 
 .agent-view__ac-row--selected {
-  background: rgba(var(--agent-primary-rgb), 0.1);
-  border-left-color: rgba(var(--agent-primary-rgb), 0.6);
+  background: rgba(var(--agent-primary-rgb), 0.12);
+  outline: 1px solid rgba(var(--agent-primary-rgb), 0.25);
+  outline-offset: -1px;
 }
 
 .agent-view__ac-cmd {
@@ -1188,7 +1185,6 @@
   padding: 5px 12px;
   cursor: default;
   flex-shrink: 0;
-  border-left: 2px solid transparent;
   color: rgba(var(--agent-text-rgb), 0.7);
   font-size: var(--krypton-chrome-font-size, 11px);
   white-space: nowrap;
@@ -1197,8 +1193,9 @@
 }
 
 .agent-view__mention-row--selected {
-  background: rgba(var(--agent-primary-rgb), 0.1);
-  border-left-color: rgba(var(--agent-primary-rgb), 0.6);
+  background: rgba(var(--agent-primary-rgb), 0.12);
+  outline: 1px solid rgba(var(--agent-primary-rgb), 0.25);
+  outline-offset: -1px;
   color: var(--agent-text);
 }
 
@@ -1260,7 +1257,7 @@
 }
 
 .agent-view__ctx-row--error {
-  border-left: 2px solid rgba(var(--agent-red-rgb), 0.5);
+  background: rgba(var(--agent-red-rgb), 0.08);
 }
 
 .agent-view__ctx-idx {
@@ -1328,7 +1325,6 @@
   line-height: var(--krypton-content-line-height, 1.5);
   color: rgba(var(--agent-text-rgb), 0.75);
   background: rgba(14, 10, 4, 0.3);
-  border-left: 2px solid rgba(var(--agent-primary-rgb), 0.2);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 40vh;
@@ -1428,7 +1424,7 @@
 }
 
 .context-view__row--error {
-  border-left: 2px solid rgba(var(--agent-red-rgb), 0.5);
+  background: rgba(var(--agent-red-rgb), 0.08);
 }
 
 .context-view__row-idx {
@@ -1587,4 +1583,34 @@
 
 .agent-view--drag-over {
   position: relative;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   REDUCED MOTION
+   Per DESIGN.md policy: drop ambient infinite animations, keep
+   entrance only (capped at ~120ms). Vestibular safety, not optional.
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Ambient infinite pulses + the 3× error flash hold at rest (lit) */
+  .agent-view__status-line--critical,
+  .agent-view__timer,
+  .agent-view__error,
+  .context-view__live-dot {
+    animation: none;
+  }
+
+  /* Entrance reveals stay, but capped — no slow boot under reduced motion */
+  .agent-view__logo-title,
+  .agent-view__logo-sub,
+  .agent-view__msg--assistant,
+  .agent-view__tool-row {
+    animation-duration: 0.12s;
+    animation-delay: 0s;
+  }
+
+  /* Logo collapse: tame the max-height/opacity transition */
+  .agent-view__logo {
+    transition-duration: 0.12s;
+  }
 }
