@@ -738,6 +738,48 @@
   text-transform: uppercase;
 }
 
+.agent-view__msg-review-hint--highrisk {
+  color: rgba(var(--agent-red-rgb), 0.8);
+}
+
+/* Risk chip — worded severity, color + text (never color alone) */
+.agent-view__msg-review-risk {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 0 6px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-view__msg-review-risk--low {
+  color: var(--agent-gold);
+  background: rgba(255, 213, 79, 0.1);
+  border: 1px solid rgba(255, 213, 79, 0.35);
+}
+
+.agent-view__msg-review-risk--high {
+  color: var(--agent-red);
+  background: rgba(var(--agent-red-rgb), 0.1);
+  border: 1px solid rgba(var(--agent-red-rgb), 0.5);
+  text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.25);
+}
+
+/* Whole-turn affordance — a distinct, separated control, not a faint hint.
+   Separated by spacing + a glyph (no side-stripe border). */
+.agent-view__msg-review-turn {
+  margin-left: 16px;
+  color: rgba(var(--agent-text-rgb), 0.5);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.06em;
+}
+
+.agent-view__msg-review-turn::before {
+  content: '· ';
+  color: rgba(var(--agent-text-rgb), 0.3);
+}
+
 .agent-view__msg-review-actions--accepted {
   color: var(--agent-green);
   text-shadow: 0 0 6px rgba(var(--agent-green-rgb), 0.4);
@@ -950,6 +992,20 @@
 }
 
 .agent-view__status-line--visible { display: block; }
+
+/* Armed auto-approval indicator — turns the telemetry strip into the safety surface */
+.agent-view__armed {
+  display: inline-block;
+  margin-right: 10px;
+  padding: 1px 7px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+  color: var(--agent-red);
+  background: rgba(var(--agent-red-rgb), 0.1);
+  border: 1px solid rgba(var(--agent-red-rgb), 0.5);
+  text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.3);
+}
 
 .agent-view__status-line--warn {
   color: var(--agent-gold);

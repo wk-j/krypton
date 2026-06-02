@@ -137,6 +137,8 @@ export class AgentView implements ContentView {
   private inputDisplayEl!: HTMLElement;
   private stateHintEl!: HTMLElement;
   private statusLineEl!: HTMLElement;
+  private statusTelemetryEl!: HTMLElement;
+  private statusArmedEl!: HTMLElement;
   private logoEl!: HTMLElement;
 
   private state: 'input' | 'scroll' = 'input';
@@ -253,9 +255,17 @@ export class AgentView implements ContentView {
     this.mentionPopupEl = document.createElement('div');
     this.mentionPopupEl.className = 'agent-view__mention-popup';
 
-    // Status line (token usage)
+    // Status line (token usage). Stable child segments so spinner/timer/armed
+    // survive telemetry re-renders: [spinner?][timer?][armed?][telemetry].
     this.statusLineEl = document.createElement('div');
     this.statusLineEl.className = 'agent-view__status-line';
+    this.statusArmedEl = document.createElement('span');
+    this.statusArmedEl.className = 'agent-view__armed';
+    this.statusArmedEl.style.display = 'none';
+    this.statusTelemetryEl = document.createElement('span');
+    this.statusTelemetryEl.className = 'agent-view__telemetry';
+    this.statusLineEl.appendChild(this.statusArmedEl);
+    this.statusLineEl.appendChild(this.statusTelemetryEl);
 
     // Staging area (hidden until images are staged)
     this.stagingAreaEl = document.createElement('div');
@@ -800,6 +810,7 @@ export class AgentView implements ContentView {
     if (applyToTurn) {
       this.acceptAllWritesForTurn = accepted;
       this.rejectAllWritesForTurn = !accepted;
+      this.renderArmedIndicator();
     }
 
     pending.resolved = true;
@@ -836,7 +847,8 @@ export class AgentView implements ContentView {
   }
 
   private requestCommandApproval(request: BashApprovalRequest): Promise<boolean> {
-    if (this.acceptAllCommandsForTurn) {
+    // Armed auto-run never covers high-risk commands — always prompt those.
+    if (this.acceptAllCommandsForTurn && !request.highRisk) {
       this.appendCommandApprovalDom(request, true, 'accepted');
       this.scrollToBottom();
       return Promise.resolve(true);
@@ -870,6 +882,7 @@ export class AgentView implements ContentView {
     if (resolved) row.classList.add(`agent-view__msg--review-${resolved}`);
     row.dataset.commandApprovalId = request.id;
     row.dataset.risk = request.risk;
+    row.dataset.highRisk = request.highRisk ? '1' : '0';
     row.dataset.cwd = request.cwd ?? '';
     row.dataset.reason = request.reason;
 
@@ -905,20 +918,26 @@ export class AgentView implements ContentView {
     const prompt = row.querySelector<HTMLElement>('.agent-view__msg-review-prompt');
     if (!prompt) return;
     const risk = row.dataset.risk ?? '';
+    const highRisk = row.dataset.highRisk === '1';
     const cwd = row.dataset.cwd ? `  cwd: ${row.dataset.cwd}` : '';
     const reason = row.dataset.reason ?? '';
     prompt.innerHTML = '';
+    const chip = document.createElement('span');
+    chip.className = `agent-view__msg-review-risk agent-view__msg-review-risk--${highRisk ? 'high' : 'low'}`;
+    chip.textContent = `${highRisk ? 'HIGH' : 'LOW'} · ${risk}`;
+    prompt.appendChild(chip);
     const subject = document.createElement('span');
     subject.className = 'agent-view__msg-review-subject';
-    subject.textContent = `[${risk}]${cwd}  ${reason}`.trimEnd();
+    subject.textContent = `${cwd}  ${reason}`.trimEnd();
     prompt.appendChild(subject);
-    prompt.appendChild(this.buildReviewActionsSpan('command', auto, resolved));
+    prompt.appendChild(this.buildReviewActionsSpan('command', auto, resolved, highRisk));
   }
 
   private buildReviewActionsSpan(
     kind: 'write' | 'command',
     auto: boolean,
     resolved?: 'accepted' | 'rejected',
+    highRisk = false,
   ): HTMLElement {
     const wrap = document.createElement('span');
     wrap.className = 'agent-view__msg-review-actions';
@@ -935,12 +954,21 @@ export class AgentView implements ContentView {
     const r = document.createElement('span');
     r.className = 'agent-view__msg-review-key agent-view__msg-review-key--reject';
     r.textContent = reject;
-    const hint = document.createElement('span');
-    hint.className = 'agent-view__msg-review-hint';
-    hint.textContent = 'A/R = whole turn';
     wrap.appendChild(a);
     wrap.appendChild(r);
-    wrap.appendChild(hint);
+    if (kind === 'command' && highRisk) {
+      // High-risk: whole-turn accept is unavailable — say so explicitly.
+      const note = document.createElement('span');
+      note.className = 'agent-view__msg-review-hint agent-view__msg-review-hint--highrisk';
+      note.textContent = 'high-risk · per-command only';
+      wrap.appendChild(note);
+    } else {
+      // Distinct turn-wide affordance (not a faint inline hint).
+      const turn = document.createElement('span');
+      turn.className = 'agent-view__msg-review-turn';
+      turn.textContent = '[A]all  [R]all';
+      wrap.appendChild(turn);
+    }
     return wrap;
   }
 
@@ -948,9 +976,14 @@ export class AgentView implements ContentView {
     const pending = this.pendingCommandApprovals.find((p) => !p.resolved);
     if (!pending) return false;
 
+    // Defense in depth: never arm whole-turn accept off a high-risk command,
+    // even if the caller asked to (rejection-for-turn stays allowed — safe).
+    if (applyToTurn && accepted && pending.request.highRisk) applyToTurn = false;
+
     if (applyToTurn) {
       this.acceptAllCommandsForTurn = accepted;
       this.rejectAllCommandsForTurn = !accepted;
+      this.renderArmedIndicator();
     }
 
     pending.resolved = true;
@@ -976,8 +1009,14 @@ export class AgentView implements ContentView {
   }
 
   private handleCommandApprovalKey(e: KeyboardEvent): boolean {
-    if (!this.pendingCommandApprovals.some((p) => !p.resolved)) return false;
+    const oldest = this.pendingCommandApprovals.find((p) => !p.resolved);
+    if (!oldest) return false;
     if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // High-risk commands can never be whole-turn approved in one keystroke.
+      if (e.key === 'A' && oldest.request.highRisk) {
+        this.showSystemMessage('high-risk · per-command only');
+        return this.resolveOldestCommandApproval(true, false);
+      }
       return this.resolveOldestCommandApproval(true, e.key === 'A');
     }
     if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -1242,6 +1281,7 @@ export class AgentView implements ContentView {
         this.rejectAllWritesForTurn = false;
         this.acceptAllCommandsForTurn = false;
         this.rejectAllCommandsForTurn = false;
+        this.renderArmedIndicator();
         this.startSpinner();
         this.promptGlyphEl.textContent = SPINNER_FRAMES[0];
         this.inputRowEl.classList.add('agent-view__input-row--busy');
@@ -1817,6 +1857,12 @@ export class AgentView implements ContentView {
   // ─── Keyboard ────────────────────────────────────────────────────
 
   onKeyDown(e: KeyboardEvent): boolean {
+    // Esc disarms any armed turn-wide auto-approval first — works in every
+    // state, even with no pending rows left, and beats mention/ac/scroll.
+    if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey && this.isAnyTurnApprovalArmed()) {
+      this.disarmTurnApprovals();
+      return true;
+    }
     if (this.handleWriteApprovalKey(e)) return true;
     if (this.handleCommandApprovalKey(e)) return true;
     if (
@@ -2322,12 +2368,57 @@ export class AgentView implements ContentView {
     const skillCount = this.controller.getSkills().length;
     if (skillCount > 0) parts.push(`SKILLS ${skillCount}`);
 
-    this.statusLineEl.textContent = parts.join('  ·  ');
+    this.statusTelemetryEl.textContent = parts.join('  ·  ');
     this.statusLineEl.classList.add('agent-view__status-line--visible');
+    this.renderArmedIndicator();
 
     // Visual warning when context is getting full
     this.statusLineEl.classList.toggle('agent-view__status-line--warn', usage.contextPercent >= 70);
     this.statusLineEl.classList.toggle('agent-view__status-line--critical', usage.contextPercent >= 90);
+  }
+
+  // ─── Turn-wide auto-approval safety ──────────────────────────────
+
+  private isAnyTurnApprovalArmed(): boolean {
+    return (
+      this.acceptAllWritesForTurn ||
+      this.rejectAllWritesForTurn ||
+      this.acceptAllCommandsForTurn ||
+      this.rejectAllCommandsForTurn
+    );
+  }
+
+  /** Clears all turn-wide approval flags. Returns true if any was set. */
+  private disarmTurnApprovals(): boolean {
+    if (!this.isAnyTurnApprovalArmed()) return false;
+    this.acceptAllWritesForTurn = false;
+    this.rejectAllWritesForTurn = false;
+    this.acceptAllCommandsForTurn = false;
+    this.rejectAllCommandsForTurn = false;
+    this.renderArmedIndicator();
+    this.showSystemMessage('auto-approval disarmed');
+    return true;
+  }
+
+  /** Shows/hides the status-line armed segment, naming what is live. */
+  private renderArmedIndicator(): void {
+    const autoFiles = this.acceptAllWritesForTurn;
+    const autoCmds = this.acceptAllCommandsForTurn;
+    const blocking = this.rejectAllWritesForTurn || this.rejectAllCommandsForTurn;
+    let label = '';
+    if (autoFiles || autoCmds) {
+      const what = autoFiles && autoCmds ? 'FILES+CMDS' : autoFiles ? 'FILES' : 'CMDS';
+      label = `⚠ AUTO-RUN ${what} · esc`;
+    } else if (blocking) {
+      label = '⚠ AUTO-BLOCK · esc';
+    }
+    if (label) {
+      this.statusArmedEl.textContent = label;
+      this.statusArmedEl.style.display = '';
+    } else {
+      this.statusArmedEl.textContent = '';
+      this.statusArmedEl.style.display = 'none';
+    }
   }
 
   private scrollToBottom(): void {

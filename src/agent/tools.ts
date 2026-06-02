@@ -27,6 +27,7 @@ export interface BashApprovalRequest {
   cwd: string | null;
   risk: BashRisk;
   reason: string;
+  highRisk: boolean;
 }
 
 export type BashApprovalHandler = (request: BashApprovalRequest) => Promise<boolean>;
@@ -151,17 +152,27 @@ function splitShellSegments(command: string): string[] {
   return segments;
 }
 
-function classifyBashCommand(command: string): { needsApproval: boolean; risk: BashRisk; reason: string } {
+// Verbs that modify/overwrite existing state — excluded from whole-turn auto-approve.
+// `mkdir` and `touch` are create-only and stay low-risk (blanket-able).
+const destructiveWrite = new Set([
+  'chmod', 'chown', 'cp', 'dd', 'install', 'ln', 'mv', 'perl',
+  'rm', 'rmdir', 'rsync', 'tee', 'truncate',
+]);
+// git subcommands that discard work or rewrite history.
+const dangerousGit = new Set(['reset', 'clean', 'checkout', 'restore', 'push', 'rebase']);
+
+export function classifyBashCommand(command: string): { needsApproval: boolean; risk: BashRisk; reason: string; highRisk: boolean } {
   const trimmed = command.trim();
-  if (!trimmed) return { needsApproval: false, risk: 'unknown', reason: 'Empty command.' };
+  if (!trimmed) return { needsApproval: false, risk: 'unknown', reason: 'Empty command.', highRisk: false };
 
   if (/(^|[^<])>{1,2}|&>|<</.test(trimmed)) {
-    return { needsApproval: true, risk: 'write', reason: 'Uses shell redirection or heredoc.' };
+    // Redirection can truncate/overwrite files — treat as high-risk.
+    return { needsApproval: true, risk: 'write', reason: 'Uses shell redirection or heredoc.', highRisk: true };
   }
 
   const segments = splitShellSegments(trimmed);
   if (segments.length === 0) {
-    return { needsApproval: true, risk: 'unknown', reason: 'Unable to parse command.' };
+    return { needsApproval: true, risk: 'unknown', reason: 'Unable to parse command.', highRisk: true };
   }
 
   const readOnly = new Set([
@@ -186,7 +197,7 @@ function classifyBashCommand(command: string): { needsApproval: boolean; risk: B
     if (cmd === 'git') {
       const sub = args.find((arg) => !arg.startsWith('-')) ?? '';
       if (!safeGit.has(sub)) {
-        return { needsApproval: true, risk: 'git', reason: `git ${sub || '(unknown)'} can change repository state.` };
+        return { needsApproval: true, risk: 'git', reason: `git ${sub || '(unknown)'} can change repository state.`, highRisk: dangerousGit.has(sub) };
       }
       continue;
     }
@@ -194,33 +205,33 @@ function classifyBashCommand(command: string): { needsApproval: boolean; risk: B
     if (cmd === 'npm') {
       const sub = args.find((arg) => !arg.startsWith('-')) ?? '';
       if (!safeNpm.has(sub)) {
-        return { needsApproval: true, risk: 'network', reason: `npm ${sub || '(unknown)'} may modify dependencies or run scripts.` };
+        return { needsApproval: true, risk: 'network', reason: `npm ${sub || '(unknown)'} may modify dependencies or run scripts.`, highRisk: true };
       }
       continue;
     }
 
     if (cmd === 'sed' && args.some((arg) => arg === '-i' || arg.startsWith('-i'))) {
-      return { needsApproval: true, risk: 'write', reason: 'sed -i edits files in place.' };
+      return { needsApproval: true, risk: 'write', reason: 'sed -i edits files in place.', highRisk: true };
     }
 
     if (alwaysWrite.has(cmd) && cmd !== 'sed') {
-      return { needsApproval: true, risk: 'write', reason: `${cmd} can modify files.` };
+      return { needsApproval: true, risk: 'write', reason: `${cmd} can modify files.`, highRisk: destructiveWrite.has(cmd) };
     }
 
     if (scriptRunners.has(cmd)) {
-      return { needsApproval: true, risk: 'script', reason: `${cmd} can execute arbitrary code.` };
+      return { needsApproval: true, risk: 'script', reason: `${cmd} can execute arbitrary code.`, highRisk: true };
     }
 
     if (networkInstallers.has(cmd)) {
-      return { needsApproval: true, risk: 'network', reason: `${cmd} may access the network or modify dependencies.` };
+      return { needsApproval: true, risk: 'network', reason: `${cmd} may access the network or modify dependencies.`, highRisk: true };
     }
 
     if (!readOnly.has(cmd)) {
-      return { needsApproval: true, risk: 'unknown', reason: `${cmd} is not in the read-only allowlist.` };
+      return { needsApproval: true, risk: 'unknown', reason: `${cmd} is not in the read-only allowlist.`, highRisk: true };
     }
   }
 
-  return { needsApproval: false, risk: 'unknown', reason: 'Read-only allowlisted command.' };
+  return { needsApproval: false, risk: 'unknown', reason: 'Read-only allowlisted command.', highRisk: false };
 }
 
 export function createKryptonTools(
@@ -312,6 +323,7 @@ export function createKryptonTools(
           cwd,
           risk: classification.risk,
           reason: classification.reason,
+          highRisk: classification.highRisk,
         });
         if (!accepted) {
           throw new Error(`User rejected bash command: ${params.command}`);
