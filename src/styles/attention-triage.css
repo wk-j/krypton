@@ -44,8 +44,8 @@
 .acp-triage__panel {
   display: flex;
   flex-direction: column;
-  width: clamp(420px, 56vw, 720px);
-  max-height: 78vh;
+  width: clamp(480px, 76vw, 1080px);
+  max-height: 84vh;
   background: rgba(8, 14, 18, 0.98);
   border: 1px solid rgba(0, 204, 255, 0.32);
   border-radius: 3px;
@@ -83,6 +83,12 @@
   flex-direction: column;
   gap: 8px;
   padding: 10px;
+  /* flex:1 + min-height:0 let this claim the panel's remaining height and own
+     the scroll, so a single information-dense card (long traded-off /
+     uncertainty) scrolls internally instead of being clipped by the panel's
+     own overflow:hidden at max-height. */
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -91,10 +97,9 @@
 .acp-triage__card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 11px;
+  padding: 12px 14px;
   border: 1px solid rgba(0, 204, 255, 0.16);
-  border-left-width: 3px;
   border-radius: 2px;
   background: rgba(12, 20, 26, 0.7);
   color: rgba(216, 232, 216, 0.86);
@@ -104,18 +109,6 @@
   background: rgba(0, 204, 255, 0.1);
   outline: 1px solid rgba(0, 204, 255, 0.5);
   outline-offset: -1px;
-}
-
-.acp-triage__card[data-reversibility='irreversible'] {
-  border-left-color: #ff5d6c;
-}
-
-.acp-triage__card[data-reversibility='costly'] {
-  border-left-color: #ffb454;
-}
-
-.acp-triage__card[data-reversibility='reversible'] {
-  border-left-color: rgba(0, 204, 255, 0.5);
 }
 
 .acp-triage__card-head {
@@ -160,41 +153,92 @@
 .acp-triage__question {
   color: rgba(216, 232, 216, 0.98);
   font-weight: 600;
-  line-height: 1.35;
-}
-
-.acp-triage__field {
-  display: flex;
-  gap: 8px;
-  font-size: 0.9em;
+  font-size: 1.04em;
   line-height: 1.4;
 }
 
-.acp-triage__field-label {
-  flex: 0 0 72px;
-  color: rgba(0, 204, 255, 0.65);
-  letter-spacing: 0.04em;
+/* ── Decision (verdict) block ─────────────────────────────────
+   The answer the human acknowledges — promoted above the supporting prose
+   with a full background tint + hairline border (NO left rail — see
+   feedback) and the reversibility colour carried by that tint, so the eye
+   lands here first. Flat: one tint + one border, no stacked layers. */
+.acp-triage__decision {
+  margin-top: 2px;
+  padding: 8px 11px;
+  border: 1px solid rgba(0, 204, 255, 0.28);
+  background: rgba(0, 204, 255, 0.08);
+  border-radius: 3px;
+}
+
+.acp-triage__card[data-reversibility='irreversible'] .acp-triage__decision {
+  border-color: rgba(255, 93, 108, 0.4);
+  background: rgba(255, 93, 108, 0.09);
+}
+
+.acp-triage__card[data-reversibility='costly'] .acp-triage__decision {
+  border-color: rgba(255, 180, 84, 0.4);
+  background: rgba(255, 180, 84, 0.09);
+}
+
+.acp-triage__decision-label {
+  display: block;
+  margin-bottom: 3px;
+  color: rgba(0, 204, 255, 0.7);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  font-size: 0.82em;
-  padding-top: 1px;
+  font-size: 0.72em;
 }
 
-.acp-triage__field-value {
+.acp-triage__decision-text {
+  color: rgba(232, 244, 232, 0.98);
+  font-size: 0.98em;
+  line-height: 1.45;
+}
+
+/* ── Stacked sections (rationale / traded-off / uncertainty) ──
+   Eyebrow label above a full-width body — each reads as its own beat. */
+.acp-triage__section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.acp-triage__section-label {
+  color: rgba(0, 204, 255, 0.6);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 0.72em;
+}
+
+.acp-triage__section-body {
   color: rgba(216, 232, 216, 0.82);
+  font-size: 0.9em;
+  line-height: 1.5;
 }
 
-.acp-triage__field--uncertainty .acp-triage__field-value {
+/* Rationale recedes — supporting "why", not the answer. */
+.acp-triage__section--rationale .acp-triage__section-body {
+  color: rgba(216, 232, 216, 0.66);
+}
+
+/* Uncertainty flagged amber via label + body colour — the "watch this" beat.
+   No left rail (see feedback); the amber type alone carries the flag. */
+.acp-triage__section--uncertainty .acp-triage__section-label {
+  color: rgba(255, 180, 84, 0.75);
+}
+
+.acp-triage__section--uncertainty .acp-triage__section-body {
   color: #ffb454;
 }
 
 .acp-triage__tradeoff-list {
   margin: 0;
   padding-left: 16px;
-  color: rgba(216, 232, 216, 0.78);
 }
 
 .acp-triage__tradeoff-list li {
-  line-height: 1.4;
+  line-height: 1.5;
+  margin-bottom: 2px;
 }
 
 /* ── Actions / redirect input ─────────────────────────────── */

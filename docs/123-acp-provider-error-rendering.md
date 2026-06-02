@@ -114,11 +114,12 @@ Classification is conservative:
   - `resource_exhausted`, `rate_limit_error`, `rate limit`, `429`, `too many requests` -> `rate_limit`
   - `insufficient_quota`, `quota exceeded`, `credit balance`, `usage limit` -> `quota`
   - `context_length_exceeded`, `context length`, `token limit`, `max tokens`, `maximum context` -> `context`
-  - `invalid api key`, `unauthorized`, `authentication`, `401`, `403` -> `auth`
+  - `invalid api key`, `unauthorized`, `authentication failed/error/required`, `failed to authenticate`, `401` -> `auth` (the bare word `authentication` is intentionally NOT a trigger — it appears constantly in normal assistant prose and would rewrite working lanes into auth-error cards)
   - `ECONNRESET`, `ETIMEDOUT`, `network error`, `connection refused`, `503` -> `network`
   - `overloaded_error`, `api_error`, `internal server error`, `529` -> `provider`
 - Extract a lowercase code when present, such as `resource_exhausted`, `rate_limit_error`, or `context_length_exceeded`.
 - Do not classify long assistant prose, markdown documents, tool outputs, or rows containing multiple paragraphs plus normal explanation.
+- **Assistant-prose gate (`{ prose: true }`).** The seal-time path passes `prose: true`; the structured `error` / `prompt failed` paths do not. In prose mode the text must additionally *lead with* an error-shaped token (`Error:`, `API Error 429`, `unauthorized: …`, a leading HTTP status, a leading `snake_case` code, etc.) via `leadsWithErrorShape()`. A keyword anywhere mid-sentence is not enough — conversational prose leads with ordinary words (`I added …`, `**BUILD SUCCESS — 55 tests passed** … (401 paths + success)`), so it is never rewritten. Only leading punctuation/markdown is stripped before the head check, never letters of any script, so a Thai-leading message is not chopped down to a stray status number. The structured paths skip this gate because those strings are already known to be failures and may not open with an error token.
 
 Recommended user-facing copy:
 
@@ -139,7 +140,7 @@ Recommended user-facing copy:
 2. `AcpClient.handleRaw()` maps it to `message_chunk`.
 3. Harness appends it as a streaming assistant row while chunks arrive.
 4. A stop/tool/permission/error event calls `sealStreaming(lane)`.
-5. `sealStreaming()` captures the just-sealed assistant item and calls `classifyProviderError(item.text, lane.backendId)`.
+5. `sealStreaming()` captures the just-sealed assistant item and calls `classifyProviderError(item.text, { prose: true })` (prose gate on — the row must lead with an error shape).
 6. If classification returns null, existing assistant markdown sealing continues unchanged.
 7. If classification returns a payload:
    - clear assistant markdown caches for that row,

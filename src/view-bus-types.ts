@@ -41,8 +41,16 @@ export interface SignalValueMap {
   // `sourceId` identifies the publishing harness instance so the footer sums
   // across all of them (collect every lane's attention in one place) rather than
   // last-writer-wins. A harness publishes `openCount: 0` for its id on dispose.
-  'system:attention': { sourceId: string; openCount: number };
+  // spec 138: `maxReversibility` is the heaviest open item's tier (the list is
+  // pre-sorted), letting the footer colour the gauge by judgement weight; null
+  // when nothing is open. Self-contained union (mirrors acp `Reversibility`
+  // values) so the global bus stays decoupled from the ACP types.
+  'system:attention': { sourceId: string; openCount: number; maxReversibility: AttentionTier | null };
 }
+
+/** spec 138: reversibility tier of the heaviest open attention item, ordered
+ * lightest → heaviest. String values match acp `Reversibility`. */
+export type AttentionTier = 'reversible' | 'costly' | 'irreversible';
 
 export type SignalKind = keyof SignalValueMap;
 

@@ -88,11 +88,11 @@ A default-on **attention triage** system for harness-memory-capable lanes. A lan
 | `src-tauri/src/commands.rs` | Legacy per-lane triage mirror retained for compatibility. Since spec 130, `tools/list` and call-time dispatch no longer consult it. |
 | `src/acp/types.ts` | `JudgementItem`, `Reversibility`, `AttentionFlagPayload`, `AttentionResolvePayload`; new `LaneBusEvent` variants. |
 | `src/acp/attention-triage.ts` | **New.** `AttentionTriageStore` — demand queue, ranking, lifecycle, silent pile. |
-| `src/acp/attention-overlay.ts` | **New.** Overlay UI: ranked card list, single-key actions. Reuses the review-card renderer. |
+| `src/acp/attention-overlay.ts` | **New.** Overlay UI: one ranked card shown at a time (j/k pages), single-key actions. Reuses the review-card renderer. |
 | `src/acp/review.ts` | Extract/reuse `buildPacket` for blast-radius; export a card-render helper shared with the overlay. |
 | `src/acp/inter-lane.ts` | Redirect delivery wrapper over `enqueueSystemPrompt` (next-idle). |
 | `src/acp/acp-harness-view.ts` | Wire bus events → store; track busy→idle as silent turns into `LaneTriageStats`; publish the open count on the global `system:attention` ViewBus signal; leader key; mount overlay; per-lane equip toggle. |
-| `src/workspace-footer.ts` / `src/styles/workspace-footer.css` | Subscribe (un-gated) to `system:attention`; keep a per-`sourceId` tally and render the SUMMED open-count gauge (`◆ N attention`, `__segment--attention`) in the global workspace footer — its documented home — surviving focus changes, hidden at zero. Summing across sources means every harness tab's attention collects in this one place rather than last-writer-wins. |
+| `src/workspace-footer.ts` / `src/styles/workspace-footer.css` | Subscribe (un-gated) to `system:attention`; keep a per-`sourceId` tally and render the SUMMED open-count gauge (`N attention`, `__segment--attention`) in the global workspace footer — its documented home — surviving focus changes, hidden at zero. Summing across sources means every harness tab's attention collects in this one place rather than last-writer-wins. |
 | `src/view-bus-types.ts` | `system:attention { sourceId, openCount }` signal kind (global `SystemSource`); `sourceId` identifies the publishing harness instance for footer aggregation. |
 | `src/styles/attention-triage.css` | **New.** Overlay styles (cyberpunk; mirrors review-card patterns). The open-count gauge styling lives in `workspace-footer.css`. |
 | `docs/PROGRESS.md`, `docs/04-architecture.md`, `docs/06-configuration.md` | Module note + per-lane equip docs. (Equip is a runtime toggle, **not** a config-file key — `06-configuration.md` documents that explicitly; see Implementation notes above.) |
@@ -175,7 +175,7 @@ A lane's `attention_resolve` marks the item `self_resolved` and drops it from th
    coordinator assembles ReviewPacket via buildPacket() → JudgementItem with diffstat
 4. hook_server replies { item_id }; the lane sees it and ends its turn (keeps working next turn)
 5. Status-bar backpressure gauge updates to the new open count (static, no motion)
-6. Human summons overlay (leader key) → ranked cards → presses a / r / o:
+6. Human summons overlay (leader key) → one ranked card at a time, j/k pages → presses a / r / o:
      a → acknowledged, dequeued
      r → enqueueSystemPrompt(laneId, correction) on next idle → redirected, dequeued
      o → open lane transcript window
@@ -186,7 +186,7 @@ A lane's `attention_resolve` marks the item `self_resolved` and drops it from th
 | Key | Context | Action |
 |-----|---------|--------|
 | `Leader ;` | Compositor / harness | Summon the triage overlay (judgement queue) |
-| `j` / `k` | Triage overlay | Move selection down / up |
+| `j` / `k` | Triage overlay | Page to next / previous item (one detail shown at a time) |
 | `a` | Triage overlay, card selected | Acknowledge (dequeue, no lane effect) |
 | `r` | Triage overlay, card selected | Redirect (open correction input → next-idle inject) |
 | `o` or `Enter` | Triage overlay, card selected | Dig — open the lane transcript window |
@@ -196,8 +196,10 @@ No Alt modifier (project constraint). All actions single-keystroke.
 
 ### UI Changes
 
-- **Overlay** — modeled on the command-palette / Quick Terminal overlay: centered panel, absolute-positioned, summoned and dismissed, never occupying a workspace slot. Cards reuse the review-card renderer; each card shows question / chosen / rationale / **traded-off** / **uncertainty** / reversibility badge / diffstat summary. The traded-off and uncertainty blocks are always rendered (never collapsed) so the human sees what the agent gave up.
-- **Backpressure gauge** — a single static glyph + count (`◆ N attention`) in the **global workspace footer**, published by each harness via the `system:attention` ViewBus signal and rendered un-gated so it persists across focus changes (the harness is one view among many, but the count matters wherever the user is). When more than one harness tab is open the footer **sums** their counts (keyed by per-instance `sourceId`) so all lanes' attention collects in one place; a harness publishes `0` for its id on dispose, removing only its own contribution. No blink, no pulse. Hidden when the total is zero. The overlay is summoned with the `;` harness leader key. It deliberately does **not** live in the harness chrome — duplicating it there would split the single ambient pull the spec calls for.
+- **Overlay** — modeled on the command-palette / Quick Terminal overlay: centered panel, absolute-positioned, summoned and dismissed, never occupying a workspace slot. Shows **one detail at a time** — only the selected (highest-ranked first) card is rendered full-width, with `j`/`k` paging through the queue and the header showing the cursor position (`2 / 5`). This gives each decision the whole panel instead of stacking every open item into a scroll list where the tall traded-off / uncertainty fields get clipped. The card shows question / chosen / rationale / **traded-off** / **uncertainty** / reversibility badge / diffstat summary. The traded-off and uncertainty blocks are always rendered (never collapsed) so the human sees what the agent gave up.
+
+  **Card layout (post-ship polish, 2026-06-02).** The card started as four uniform label+text rows (an 84px label gutter), which read as one grey wall. It was reworked into a deliberate hierarchy: `chosen` is promoted into a **verdict block** (full background tint + hairline border, the tint colour carrying reversibility — cyan / amber / red) so the eye lands on the decision first; rationale / traded-off / uncertainty follow as **stacked sections** (an eyebrow label above a full-width body), with the rationale dimmed and the uncertainty flagged in amber. Per a hard user preference the surface uses **no left-bar accent rails** anywhere — reversibility is signalled by the badge and the verdict-block tint, not a coloured left border. Effects are flat (one tint + one border per accent). See `renderJudgementCard` in `src/acp/attention-overlay.ts`.
+- **Backpressure gauge** — a static count (`N attention`) chip in the **global workspace footer**, published by each harness via the `system:attention` ViewBus signal and rendered un-gated so it persists across focus changes (the harness is one view among many, but the count matters wherever the user is). When more than one harness tab is open the footer **sums** their counts (keyed by per-instance `sourceId`) so all lanes' attention collects in one place; a harness publishes `0` for its id on dispose, removing only its own contribution. No blink, no pulse. Hidden when the total is zero. **Spec 138** makes the chip *weight-dynamic* while keeping it motionless: its colour tracks the **heaviest open reversibility tier** (cyan / amber / red) and a **pip strip** encodes the count (`6+` past the cap). The signal carries `maxReversibility` for this; colour + pips are steady-state encodings, not animation — see `docs/138-attention-gauge-weight-dynamic.md`. The overlay is summoned with the `;` harness leader key. It deliberately does **not** live in the harness chrome — duplicating it there would split the single ambient pull the spec calls for.
 
 ### Configuration
 

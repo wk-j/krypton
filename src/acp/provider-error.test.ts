@@ -69,6 +69,50 @@ describe('classifyProviderError', () => {
     expect(classifyProviderError('Error 403: forbidden')).toBeNull();
   });
 
+  it('does not classify working assistant prose that merely mentions authentication', () => {
+    expect(
+      classifyProviderError(
+        'I added the authentication middleware to the API request handler and wired up the token refresh path.',
+      ),
+    ).toBeNull();
+  });
+
+  it('still classifies a genuine authentication failure with failure context', () => {
+    expect(classifyProviderError('authentication failed: token expired')?.category).toBe('auth');
+  });
+
+  describe('prose mode (assistant rows)', () => {
+    it('does not classify a build-success message that mentions a 401 code path', () => {
+      expect(
+        classifyProviderError(
+          '**BUILD SUCCESS — 55 tests passed**, createIndex 8 wired. Now adding a unit test for `DimAnyAuthService` (401 paths + success):',
+          { prose: true },
+        ),
+      ).toBeNull();
+    });
+
+    it('does not classify working prose that merely discusses rate limits or auth', () => {
+      expect(
+        classifyProviderError(
+          'I wired the rate limit guard and the authentication retry path; the request now returns a token on success.',
+          { prose: true },
+        ),
+      ).toBeNull();
+    });
+
+    it('does not chop a Thai-leading message down to a stray status number', () => {
+      expect(classifyProviderError('เพิ่มเทสต์ 401 path เรียบร้อย', { prose: true })).toBeNull();
+    });
+
+    it('still classifies a stringified provider error that leads with the failure', () => {
+      expect(
+        classifyProviderError('Error: T: resource_exhausted] Error', { prose: true })?.category,
+      ).toBe('rate_limit');
+      expect(classifyProviderError('unauthorized: invalid api key', { prose: true })?.category).toBe('auth');
+      expect(classifyProviderError('429 Too Many Requests', { prose: true })?.category).toBe('rate_limit');
+    });
+  });
+
   it('does not classify long markdown content', () => {
     const body = '# Error handling notes\n\n' + 'This document discusses rate limit handling.\n'.repeat(80);
     expect(classifyProviderError(body)).toBeNull();

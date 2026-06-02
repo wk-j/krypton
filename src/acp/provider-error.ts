@@ -35,7 +35,17 @@ const CATEGORY_RULES: Array<{
     category: 'auth',
     retryable: false,
     codePatterns: [/\bauthentication_error\b/i, /\binvalid_api_key\b/i],
-    textPatterns: [/\binvalid api key\b/i, /\bunauthori[sz]ed\b/i, /\bauthentication\b/i, /\b401\b/],
+    // Require failure context — the bare word "authentication" appears constantly
+    // in normal assistant prose (e.g. narrating auth-related code) and must not
+    // rewrite a working lane's message into an auth-error card.
+    textPatterns: [
+      /\binvalid api key\b/i,
+      /\bunauthori[sz]ed\b/i,
+      /\bauthentication (?:error|failed|failure|required|rejected|expired)\b/i,
+      /\b(?:failed to|could not|unable to|cannot) authenticate\b/i,
+      /\bnot authenticated\b/i,
+      /\b401\b/,
+    ],
   },
   {
     category: 'network',
@@ -53,11 +63,28 @@ const CATEGORY_RULES: Array<{
 
 const CODE_RE = /\b(resource_exhausted|rate_limit_error|insufficient_quota|quota_exceeded|context_length_exceeded|authentication_error|invalid_api_key|overloaded_error|api_error|econnreset|etimedout|econnrefused)\b/i;
 
-export function classifyProviderError(text: string, _backendId?: string): ProviderErrorPayload | null {
+export interface ClassifyProviderErrorOptions {
+  /**
+   * Assistant-prose path. When true, only classify text that *reads like* an
+   * error dump — i.e. it leads with an error-shaped token. A working assistant
+   * message must never be rewritten into an error card just because it mentions
+   * an error topic or an HTTP code somewhere mid-sentence (e.g.
+   * "BUILD SUCCESS — 55 tests passed ... (401 paths + success)"). The structured
+   * `error`/`prompt failed` paths leave this off: those strings are already known
+   * to be failures, so they classify by marker regardless of how they open.
+   */
+  prose?: boolean;
+}
+
+export function classifyProviderError(
+  text: string,
+  opts?: ClassifyProviderErrorOptions,
+): ProviderErrorPayload | null {
   const raw = text.trim();
   if (!raw) return null;
   const normalized = normalizeProviderErrorText(raw);
   if (!looksLikeProviderFailure(normalized)) return null;
+  if (opts?.prose && !leadsWithErrorShape(normalized)) return null;
 
   const strongMarker = CATEGORY_RULES.some((rule) =>
     [...rule.codePatterns, ...rule.textPatterns].some((pattern) => pattern.test(normalized)),
@@ -110,6 +137,22 @@ function normalizeProviderErrorText(text: string): string {
 
 function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+}
+
+// A stringified provider error LEADS with the failure (`Error: ...`,
+// `resource_exhausted: ...`, `401 Unauthorized`, `API Error 429`). Conversational
+// assistant prose leads with ordinary words ("I added ...", "BUILD SUCCESS ...",
+// "The error path ..."). Strip only leading markdown/punctuation — never letters
+// of any script, so a Thai-leading message is not chopped down to a stray number.
+function leadsWithErrorShape(text: string): boolean {
+  const head = text.replace(/^[\s>*_#`~–—\-[\](){}"'·•|:;,.]+/u, '').slice(0, 80);
+  return (
+    /^(?:error|err|exception|fatal|panic|traceback|stacktrace|warning|warn|failed|failure|unauthori[sz]ed|forbidden|timeout|timed out|overloaded|rate[-\s]?limit|quota)\b/i.test(head) ||
+    /^(?:api\s+error|error\s+code|status\s+code|http(?:\s+error)?|authentication\s+(?:error|failed|failure|required)|invalid\s+api\s+key)\b/i.test(head) ||
+    /^\d{3}\b/.test(head) ||
+    /^[a-z][a-z0-9]*_[a-z0-9_]+\b/i.test(head) ||
+    CODE_RE.test(head)
+  );
 }
 
 function looksLikeProviderFailure(text: string): boolean {

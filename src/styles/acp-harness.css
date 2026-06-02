@@ -1764,6 +1764,30 @@
   letter-spacing: 0.04em;
 }
 
+/* Agent-emitted images (e.g. image_gen output). Resolved to asset URLs by
+   resolveLocalImageSrcs(); constrain so a 1024px source doesn't blow out the
+   transcript column. */
+.acp-harness__msg-body--markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5em 0;
+  border: 1px solid rgba(109, 208, 255, 0.25);
+  border-radius: 3px;
+}
+
+/* Shown in place of an <img> whose asset URL failed to load. */
+.acp-harness__img-breach {
+  display: inline-block;
+  padding: 2px 6px;
+  font-family: var(--krypton-font-mono, monospace);
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+  color: var(--agent-error, #ff6d8a);
+  border: 1px dashed rgba(255, 109, 138, 0.5);
+  border-radius: 3px;
+}
+
 .acp-harness__msg--user .acp-harness__msg-label,
 .acp-harness__msg--user .acp-harness__msg-body {
   color: var(--agent-user, #6dd0ff);

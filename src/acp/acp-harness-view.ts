@@ -7,7 +7,7 @@ import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import * as smd from 'streaming-markdown';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openExternalUrl } from '../external-url';
 import { AcpClient } from './client';
@@ -86,6 +86,7 @@ import type {
 } from '../types';
 import type { PaletteAction, PaletteContext } from '../palette-types';
 import type { ViewBus } from '../view-bus';
+import type { AttentionTier } from '../view-bus-types';
 import { SYSTEM_SOURCE } from '../view-bus-types';
 import {
   loadConfig,
@@ -888,8 +889,10 @@ export class AcpHarnessView implements ContentView {
   /** spec 128: stable identity for this harness instance on the footer's
    * attention tally. Lets the footer aggregate across multiple harness tabs. */
   private readonly attentionSourceId = `harness-${++harnessViewSeq}`;
-  /** Last attention count published to the footer; dedupes redundant signals. */
+  /** Last attention count + tier published to the footer; dedupes redundant
+   * signals (spec 138 — tier changes must re-publish even at the same count). */
   private lastPublishedAttention = -1;
+  private lastPublishedTier: AttentionTier | null = null;
   private lanes: HarnessLane[] = [];
   private activeLaneId = '';
   private laneBus = new LaneBus();
@@ -2206,7 +2209,7 @@ export class AcpHarnessView implements ContentView {
 
   dispose(): void {
     // spec 128: clear the footer attention badge — the harness is going away.
-    this.publishAttentionCount(0);
+    this.publishAttention(0, null);
     this.stopComposerTick();
     this.stopMetricsTick();
     if (this.toolTickTimer !== null) {
@@ -2468,18 +2471,25 @@ export class AcpHarnessView implements ContentView {
     // spec 128: the open-count gauge lives in the global workspace footer (its
     // documented home), not in the harness chrome — publish and let the footer
     // render it. The overlay is reached via the `;` leader key.
-    this.publishAttentionCount(this.triageStore.openCount());
+    this.publishAttention(
+      this.triageStore.openCount(),
+      this.triageStore.openItems()[0]?.reversibility ?? null,
+    );
   }
 
-  /** spec 128: surface the open attention count on the global workspace footer.
-   * Deduped so a no-op `triage:changed` does not churn the footer. */
-  private publishAttentionCount(openCount: number): void {
-    if (openCount === this.lastPublishedAttention) return;
+  /** spec 128/138: surface the open attention count + heaviest reversibility tier
+   * on the global workspace footer. Deduped on both fields so a no-op
+   * `triage:changed` does not churn the footer, but a tier change at the same
+   * count still re-publishes. `openItems()` is pre-sorted by reversibility
+   * descending, so element 0 is the heaviest tier. */
+  private publishAttention(openCount: number, maxReversibility: AttentionTier | null): void {
+    if (openCount === this.lastPublishedAttention && maxReversibility === this.lastPublishedTier) return;
     this.lastPublishedAttention = openCount;
+    this.lastPublishedTier = maxReversibility;
     this.viewBus?.publishSignal({
       kind: 'system:attention',
       source: SYSTEM_SOURCE,
-      value: { sourceId: this.attentionSourceId, openCount },
+      value: { sourceId: this.attentionSourceId, openCount, maxReversibility },
     });
   }
 
@@ -5389,7 +5399,7 @@ export class AcpHarnessView implements ContentView {
         if (current.dataset.renderSignature === signature) {
           previous = current;
         } else {
-          const next = renderTranscriptItem(item, false, streaming, lane);
+          const next = renderTranscriptItem(item, false, streaming, lane, this.projectDir);
           if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
           if (streaming) {
             current.className = next.className;
@@ -5402,7 +5412,7 @@ export class AcpHarnessView implements ContentView {
           }
         }
       } else {
-        const next = renderTranscriptItem(item, isNew, streaming, lane);
+        const next = renderTranscriptItem(item, isNew, streaming, lane, this.projectDir);
         if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
         if (previous?.nextSibling) body.insertBefore(next, previous.nextSibling);
         else body.appendChild(next);
@@ -6588,7 +6598,7 @@ export class AcpHarnessView implements ContentView {
 
   private appendClassifiedError(lane: HarnessLane, raw: string, fallbackText: string): void {
     this.sealStreaming(lane);
-    const providerError = classifyProviderError(raw, lane.backendId);
+    const providerError = classifyProviderError(raw);
     if (providerError) {
       this.appendProviderError(lane, providerError);
       return;
@@ -6711,7 +6721,7 @@ export class AcpHarnessView implements ContentView {
     if (assistantId) {
       const item = lane.transcript.find((entry) => entry.id === assistantId);
       if (item) {
-        const providerError = classifyProviderError(item.text, lane.backendId);
+        const providerError = classifyProviderError(item.text, { prose: true });
         if (providerError) {
           this.convertAssistantRowToProviderError(lane, item, providerError);
           lane.streamingMarkdownParser = null;
@@ -6772,6 +6782,10 @@ export class AcpHarnessView implements ContentView {
       } catch (e) {
         console.warn('[spec117] parser_end during seal failed', e);
       }
+      // Resolve agent-emitted local image paths on the LIVE body before caching:
+      // a sealed foreground row is not re-rendered (its renderSignature is
+      // stabilised below), so this is the only chance to fix its <img> srcs.
+      resolveLocalImageSrcs(body, this.projectDir);
       item.markdownHtml = body.innerHTML;
       item.markdownSource = item.text;
       // Stabilise signature so the next renderActiveTranscript() pass hits the
@@ -6790,6 +6804,7 @@ export class AcpHarnessView implements ContentView {
       try {
         smd.parser_write(parser, item.text);
         smd.parser_end(parser);
+        resolveLocalImageSrcs(offscreen, this.projectDir);
         item.markdownHtml = offscreen.innerHTML;
         item.markdownSource = item.text;
       } catch (e) {
@@ -7990,6 +8005,58 @@ function sanitizeSrc(value: string): string | null {
   return null;
 }
 
+/** Resolve local <img src> in a rendered transcript body to Tauri asset URLs so
+ *  agent-generated images load inside the webview. Agents (e.g. Grok's image_gen)
+ *  emit markdown `![alt](/abs/path.jpg)` with a bare absolute filesystem path; the
+ *  webview origin can't fetch raw FS paths, so they show as broken-image boxes.
+ *  convertFileSrc() maps an on-disk path under the assetProtocol scope ($HOME/**)
+ *  to a loadable asset URL. Idempotent: already-resolved / remote / data sources
+ *  are skipped, so it is safe to re-run on cached HTML across re-renders.
+ *  Unlike markdown-view's rewriter, a leading "/" is treated as a TRUE absolute
+ *  path (agent output), not as a cwd-root-relative path. */
+function resolveLocalImageSrcs(root: HTMLElement, cwd: string | null): void {
+  const imgs = root.querySelectorAll('img[src]');
+  for (const img of Array.from(imgs) as HTMLImageElement[]) {
+    const src = img.getAttribute('src') ?? '';
+    // Leave remote / data / already-resolved sources untouched (also keeps the
+    // pass idempotent on cached HTML that was rewritten on a prior render).
+    if (/^(https?:|data:|asset:|blob:|file:)/i.test(src) || src.startsWith('//')) continue;
+
+    // Strip ?query / #fragment before FS resolution.
+    const raw = src.replace(/[?#].*$/, '');
+    if (!raw) continue;
+
+    let abs: string;
+    if (raw.startsWith('/')) {
+      abs = raw; // true absolute path from the agent
+    } else if (cwd) {
+      // Relative path — resolve against the lane's project dir.
+      const joined = `${cwd}/${raw}`;
+      const parts: string[] = [];
+      for (const seg of joined.split('/')) {
+        if (seg === '..') parts.pop();
+        else if (seg !== '.' && seg !== '') parts.push(seg);
+      }
+      abs = '/' + parts.join('/');
+    } else {
+      continue; // relative path with no base — cannot resolve
+    }
+
+    const original = src;
+    img.src = convertFileSrc(abs);
+    img.addEventListener(
+      'error',
+      () => {
+        const breach = document.createElement('span');
+        breach.className = 'acp-harness__img-breach';
+        breach.textContent = `IMG BREACH // ${original}`;
+        img.replaceWith(breach);
+      },
+      { once: true },
+    );
+  }
+}
+
 function makeSafeRenderer(root: HTMLElement): smd.Default_Renderer {
   const base = smd.default_renderer(root);
   return {
@@ -8114,7 +8181,13 @@ function applyCoordinatorProvenanceToItem(lane: HarnessLane, item: HarnessTransc
   lane.coordinatorDrainProvenanceUsed = true;
 }
 
-function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, streaming: boolean, lane: HarnessLane | null): HTMLElement {
+function renderTranscriptItem(
+  item: HarnessTranscriptItem,
+  isNew: boolean,
+  streaming: boolean,
+  lane: HarnessLane | null,
+  projectDir: string | null,
+): HTMLElement {
   const el = document.createElement('div');
   el.className =
     `acp-harness__msg acp-harness__msg--${item.kind}` +
@@ -8162,6 +8235,9 @@ function renderTranscriptItem(item: HarnessTranscriptItem, isNew: boolean, strea
       }
       if (item.markdownHtml !== undefined) {
         body.innerHTML = item.markdownHtml;
+        // Resolve agent-emitted local image paths (marked cold-load output, or a
+        // cached seal that has not yet been rewritten) to loadable asset URLs.
+        resolveLocalImageSrcs(body, projectDir);
       } else {
         body.textContent = item.text;
       }

@@ -2,8 +2,9 @@
 //
 // Pure DOM builders for the summon-on-demand judgement queue overlay and the
 // static backpressure gauge. State (open/selection/redirect) lives in the
-// harness view; this module only renders. Card layout mirrors the review-card
-// renderer (`renderReviewCardBody`) so the two surfaces read consistently.
+// harness view; this module only renders. The card uses a deliberate hierarchy
+// (verdict block + stacked sections) rather than the review-card's flat rows —
+// see renderJudgementCard for the rationale.
 
 import type { JudgementItem, LaneTriageStats, Reversibility, ReviewDiffstatEntry } from './types';
 
@@ -44,11 +45,19 @@ function diffstatSummary(diffstat: ReviewDiffstatEntry[]): string {
   return `${diffstat.length} file${diffstat.length === 1 ? '' : 's'} · +${added} / -${removed}`;
 }
 
-/** Build one judgement card. `traded-off` and `uncertainty` are always shown. */
-function renderJudgementCard(item: JudgementItem, vm: TriageOverlayViewModel, selected: boolean): HTMLElement {
+/** Build the judgement card. `traded-off` and `uncertainty` are always shown.
+   Single-detail view: only the selected item is ever rendered, so the card is
+   always the active one — it carries the --selected highlight and the action
+   row unconditionally.
+
+   Layout is a deliberate hierarchy rather than four look-alike label+text rows:
+   the question frames the fork, the *decision* (chosen) is promoted to a verdict
+   block — the thing the human acknowledges — and rationale / traded-off /
+   uncertainty follow as stacked sections (eyebrow label above a full-width body)
+   so each reads as its own beat instead of one grey wall. */
+function renderJudgementCard(item: JudgementItem, vm: TriageOverlayViewModel): HTMLElement {
   const card = document.createElement('div');
-  card.className = 'acp-triage__card';
-  if (selected) card.classList.add('acp-triage__card--selected');
+  card.className = 'acp-triage__card acp-triage__card--selected';
   card.dataset.reversibility = item.reversibility;
 
   const head = document.createElement('div');
@@ -70,65 +79,79 @@ function renderJudgementCard(item: JudgementItem, vm: TriageOverlayViewModel, se
   question.textContent = item.question;
   card.appendChild(question);
 
-  card.appendChild(field('chose', item.chosen));
-  card.appendChild(field('because', item.rationale));
+  // Decision = the verdict the human is acknowledging. Promoted above the
+  // supporting prose with its own accent so the eye lands on it first.
+  const decision = document.createElement('div');
+  decision.className = 'acp-triage__decision';
+  const decisionLabel = document.createElement('span');
+  decisionLabel.className = 'acp-triage__decision-label';
+  decisionLabel.textContent = 'decision';
+  const decisionText = document.createElement('div');
+  decisionText.className = 'acp-triage__decision-text';
+  decisionText.textContent = item.chosen;
+  decision.append(decisionLabel, decisionText);
+  card.appendChild(decision);
+
+  // Rationale recedes — it is the supporting "why", not the answer.
+  card.appendChild(section('because', item.rationale, 'acp-triage__section--rationale'));
 
   // Traded-off + uncertainty are ALWAYS rendered, never collapsed (spec 128):
   // this is what lets the human see what the agent gave up.
-  const traded = document.createElement('div');
-  traded.className = 'acp-triage__field acp-triage__field--tradedoff';
-  const tradedLabel = document.createElement('span');
-  tradedLabel.className = 'acp-triage__field-label';
-  tradedLabel.textContent = 'traded off';
-  traded.appendChild(tradedLabel);
-  const tradedList = document.createElement('ul');
-  tradedList.className = 'acp-triage__tradeoff-list';
+  const tradedBody = document.createElement('ul');
+  tradedBody.className = 'acp-triage__tradeoff-list';
   for (const t of item.tradedOff) {
     const li = document.createElement('li');
     li.textContent = t;
-    tradedList.appendChild(li);
+    tradedBody.appendChild(li);
   }
-  traded.appendChild(tradedList);
-  card.appendChild(traded);
+  card.appendChild(section('traded off', tradedBody));
 
-  card.appendChild(field('unsure', item.uncertainty, 'acp-triage__field--uncertainty'));
+  card.appendChild(section('unsure', item.uncertainty, 'acp-triage__section--uncertainty'));
 
-  if (selected) {
-    const actions = document.createElement('div');
-    actions.className = 'acp-triage__actions';
-    if (vm.redirect) {
-      const input = document.createElement('div');
-      input.className = 'acp-triage__redirect';
-      input.innerHTML =
-        `<span class="acp-triage__redirect-label">redirect →</span>` +
-        `<span class="acp-triage__redirect-input">${esc(vm.redirect.draft)}<span class="acp-triage__caret">▋</span></span>`;
-      actions.appendChild(input);
-      const hint = document.createElement('div');
-      hint.className = 'acp-triage__action-hint';
-      hint.textContent = 'Enter send · Esc cancel — delivered on the lane’s next idle';
-      actions.appendChild(hint);
-    } else {
-      const hint = document.createElement('div');
-      hint.className = 'acp-triage__action-hint';
-      hint.innerHTML =
-        `<kbd>a</kbd> acknowledge · <kbd>r</kbd> redirect · <kbd>o</kbd> dig (open lane) · <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>Esc</kbd> close`;
-      actions.appendChild(hint);
-    }
-    card.appendChild(actions);
+  const actions = document.createElement('div');
+  actions.className = 'acp-triage__actions';
+  if (vm.redirect) {
+    const input = document.createElement('div');
+    input.className = 'acp-triage__redirect';
+    input.innerHTML =
+      `<span class="acp-triage__redirect-label">redirect →</span>` +
+      `<span class="acp-triage__redirect-input">${esc(vm.redirect.draft)}<span class="acp-triage__caret">▋</span></span>`;
+    actions.appendChild(input);
+    const hint = document.createElement('div');
+    hint.className = 'acp-triage__action-hint';
+    hint.textContent = 'Enter send · Esc cancel — delivered on the lane’s next idle';
+    actions.appendChild(hint);
+  } else {
+    const hint = document.createElement('div');
+    hint.className = 'acp-triage__action-hint';
+    hint.innerHTML =
+      `<kbd>a</kbd> acknowledge · <kbd>r</kbd> redirect · <kbd>o</kbd> dig (open lane) · <kbd>j</kbd>/<kbd>k</kbd> prev/next · <kbd>Esc</kbd> close`;
+    actions.appendChild(hint);
   }
+  card.appendChild(actions);
   return card;
 }
 
-function field(label: string, value: string, extraClass?: string): HTMLElement {
+/** A stacked section: an eyebrow label above a full-width body. `body` may be
+   plain text (rationale / uncertainty) or a prebuilt element (the traded-off
+   list). Stacking gives each beat its own break and lets long prose use the
+   full card width instead of being squeezed into a narrow gutter column. */
+function section(label: string, body: string | HTMLElement, extraClass?: string): HTMLElement {
   const el = document.createElement('div');
-  el.className = 'acp-triage__field' + (extraClass ? ` ${extraClass}` : '');
+  el.className = 'acp-triage__section' + (extraClass ? ` ${extraClass}` : '');
   const lab = document.createElement('span');
-  lab.className = 'acp-triage__field-label';
+  lab.className = 'acp-triage__section-label';
   lab.textContent = label;
-  const val = document.createElement('span');
-  val.className = 'acp-triage__field-value';
-  val.textContent = value;
-  el.append(lab, val);
+  el.appendChild(lab);
+  if (typeof body === 'string') {
+    const val = document.createElement('div');
+    val.className = 'acp-triage__section-body';
+    val.textContent = body;
+    el.appendChild(val);
+  } else {
+    body.classList.add('acp-triage__section-body');
+    el.appendChild(body);
+  }
   return el;
 }
 
@@ -138,9 +161,13 @@ export function renderTriageOverlay(panel: HTMLElement, vm: TriageOverlayViewMod
 
   const header = document.createElement('header');
   header.className = 'acp-triage__head';
+  // One detail at a time: the count shows the cursor position within the queue
+  // (e.g. "2 / 5") rather than a flat open-count, since only the selected card
+  // is on screen. Empty state falls through below before this matters.
+  const position = vm.items.length === 0 ? '0 open' : `${vm.selectedIndex + 1} / ${vm.items.length}`;
   header.innerHTML =
     `<span class="acp-triage__title">Judgement queue</span>` +
-    `<span class="acp-triage__count">${vm.items.length} open</span>`;
+    `<span class="acp-triage__count">${position}</span>`;
   panel.appendChild(header);
 
   if (vm.items.length === 0) {
@@ -155,10 +182,15 @@ export function renderTriageOverlay(panel: HTMLElement, vm: TriageOverlayViewMod
     return;
   }
 
+  // Single-detail view: render only the selected item full-width. j/k cycles
+  // which item is shown (handled in the harness view). Showing one card at a
+  // time gives each decision the whole panel instead of cramming every open
+  // item into a scroll list where the tall traded-off / uncertainty fields get
+  // clipped. The body scrolls only when a single card overflows its own height.
+  const selected = vm.items[vm.selectedIndex] ?? vm.items[0];
   const list = document.createElement('div');
   list.className = 'acp-triage__list';
-  vm.items.forEach((item, i) => {
-    list.appendChild(renderJudgementCard(item, vm, i === vm.selectedIndex));
-  });
+  list.appendChild(renderJudgementCard(selected, vm));
   panel.appendChild(list);
+  list.scrollTop = 0;
 }

@@ -112,15 +112,65 @@
   color: var(--krypton-yellow, #ffcc00);
 }
 
-/* spec 128: attention-triage open count — a quiet chip that only shows when
-   the ACP harness has items awaiting the human's judgement. */
+/* spec 128/138: attention-triage gauge — a quiet chip that only shows when the
+   ACP harness has items awaiting the human's judgement. As the single ambient
+   pull, it must never be clipped: it keeps its intrinsic width and opts out of
+   the base segment's shrink/ellipsis so it always reads in full. Mirrors the
+   --mode chip box. spec 138 makes it weight-dynamic: a reversibility tier
+   modifier (--rev-*) colours it, and a pip strip encodes the count — both are
+   STATIC encodings (no blink, no pulse), per the spec-128 static-by-design rule. */
 .krypton-workspace-footer__segment--attention {
+  flex: 0 0 auto;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 7px;
+  overflow: visible;
+  text-overflow: clip;
   border-radius: 3px;
-  border: 1px solid rgba(255, 176, 64, 0.45);
-  color: var(--krypton-amber, #ffb040);
-  background: rgba(255, 176, 64, 0.1);
+  border: 1px solid;
   letter-spacing: 0.04em;
+  transition: color 160ms, border-color 160ms, background 160ms;
+}
+
+/* Tier colours — same palette as the triage-overlay cards so the footer chip
+   and the overlay agree on what each colour means (cyan < amber < red). */
+.krypton-workspace-footer__segment--rev-reversible {
+  color: var(--krypton-cyan, #00d4ff);
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+}
+
+.krypton-workspace-footer__segment--rev-costly {
+  color: var(--krypton-amber, #ffb040);
+  border-color: rgba(255, 176, 64, 0.45);
+  background: rgba(255, 176, 64, 0.1);
+}
+
+.krypton-workspace-footer__segment--rev-irreversible {
+  color: var(--krypton-danger, #ff5d6c);
+  border-color: rgba(255, 93, 108, 0.5);
+  background: rgba(255, 93, 108, 0.12);
+}
+
+/* Count pip strip — discrete bars in the chip's own colour; dim for the
+   remaining capacity up to the cap. No animation. */
+.krypton-workspace-footer__attention-pips {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.krypton-workspace-footer__attention-pips i {
+  width: 3px;
+  height: 9px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.krypton-workspace-footer__attention-pips i.is-off {
+  opacity: 0.18;
 }
 
 .krypton-workspace-footer__hint {
