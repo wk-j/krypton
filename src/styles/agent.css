@@ -5,19 +5,16 @@
    PALETTE — AMBER PHOSPHOR TERMINAL
    ═══════════════════════════════════════════════════════════════ */
 
-/* Shared agent-family tokens — also consumed by the ACP view (acp.css) and
-   ACP harness (acp-harness.css), which are separate content-types. They stay
-   at :root so those views inherit them; everything else is scoped below. */
+/* Amber-phosphor palette. Kept at :root: content-tab views (agent/context)
+   are mounted via createContentTab, which does NOT set data-content-type on
+   the .krypton-window element (only createContentWindow does, compositor.ts).
+   A previous attempt scoped these to .krypton-window[data-content-type="agent"]
+   — a selector that never matches for tab-mounted views — which zeroed out the
+   entire palette and blanked the Agent view. --agent-font/--agent-text are also
+   inherited here by acp.css / acp-harness.css via fallback'd var(). */
 :root {
   --agent-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   --agent-text: #e8cfa4;
-}
-
-/* Amber-phosphor palette — scoped to the Agent view and its Context view
-   (data-content-type="agent" | "context"), so the warm identity does not leak
-   into the global :root namespace. */
-.krypton-window[data-content-type="agent"],
-.krypton-window[data-content-type="context"] {
   --agent-bg: rgba(6, 10, 18, 0.55);
   --agent-panel: rgba(6, 10, 18, 0.82);
   --agent-surface-low: rgba(6, 10, 18, 0.35);
