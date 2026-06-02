@@ -2221,16 +2221,29 @@
 .acp-harness__composer-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 15px;
-  color: rgba(216, 232, 216, 0.4);
+  gap: 0;
+  min-height: 16px;
+  color: rgba(216, 232, 216, 0.46);
   font-size: 0.72em;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
+/* Telemetry-deck separators: a dim accent middot before each segment after
+   the first. A divider between readouts — not a left-edge accent rail. */
+.acp-harness__directive-chip::before,
+.acp-harness__project-status::before {
+  content: '·';
+  margin: 0 8px;
+  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 38%, transparent);
+  text-shadow: none;
+}
+
+/* Memory readout: the lane's heartbeat — tinted + softly lit, not flat gray. */
 .acp-harness__memory-chip {
   flex: 0 0 auto;
+  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 42%, #d8e8d8);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 26%, transparent);
 }
 
 .acp-harness__memory-chip--running {
@@ -2240,25 +2253,59 @@
 .acp-harness__project-status {
   flex: 1 1 auto;
   min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  color: rgba(109, 208, 255, 0.72);
   text-transform: none;
 }
 
+.acp-harness__project-cwd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(109, 208, 255, 0.58);
+}
+
+.acp-harness__project-branch {
+  flex: 0 0 auto;
+  color: rgba(109, 208, 255, 0.92);
+  text-shadow: 0 0 6px rgba(109, 208, 255, 0.22);
+}
+
 .acp-harness__input-line {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  margin-top: 5px;
+  padding-top: 6px;
   line-height: 1.55;
+}
+
+/* Center-peaked accent rule seating the command line below the telemetry deck
+   (amber "symmetric gradient rule" signature — one flat layer, full width). */
+.acp-harness__input-line::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--acp-lane-accent, #8effb0) 42%, transparent) 50%,
+    transparent
+  );
 }
 
 .acp-harness__lane-tag {
   flex: 0 0 auto;
   color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
-  font-weight: normal;
-  letter-spacing: 0.03em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: none;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 32%, transparent);
 }
 
 .acp-harness__prompt {
@@ -2277,6 +2324,7 @@
   align-items: center;
   justify-content: center;
   color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 40%, transparent);
   animation: acp-harness-lane-spin 0.8s steps(1, end) infinite;
   animation-play-state: paused;
 }
@@ -2319,7 +2367,8 @@
 }
 
 .acp-harness__caret {
-  color: var(--agent-accent, #8effb0);
+  color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 45%, transparent);
   animation: acp-harness-caret 1s step-end infinite;
 }
 
@@ -3682,6 +3731,11 @@
 
 .acp-harness__directive-chip--pending {
   color: rgba(255, 196, 122, 0.85);
+}
+
+.acp-harness__directive-chip__triage {
+  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 58%, #d8e8d8);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 24%, transparent);
 }
 
 /* ── Directive approval diff card ─────────────────────────── */

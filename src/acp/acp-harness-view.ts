@@ -6488,9 +6488,16 @@ export class AcpHarnessView implements ContentView {
   private renderComposerProjectStatus(): string {
     const cwd = this.projectDir ? abbreviatePath(this.projectDir) : 'no cwd';
     const branch = this.gitBranchLoading ? '...' : this.gitBranch;
-    const branchText = branch ? ` on ${branch}` : '';
     const title = this.projectDir ? `${this.projectDir}${this.gitBranch ? ` on ${this.gitBranch}` : ''}` : '';
-    return `<span class="acp-harness__project-status" title="${esc(title)}">${esc(cwd)}${esc(branchText)}</span>`;
+    const branchChip = branch
+      ? `<span class="acp-harness__project-branch">⎇ ${esc(branch)}</span>`
+      : '';
+    return (
+      `<span class="acp-harness__project-status" title="${esc(title)}">` +
+      `<span class="acp-harness__project-cwd">${esc(cwd)}</span>` +
+      branchChip +
+      `</span>`
+    );
   }
 
   private renderHelp(): void {
