@@ -33,3 +33,6 @@ Thumbs.db
 # Junie (reserved for guidelines/config only; ignore per task)
 .junie/
 .cursor/
+
+# Impeccable (generated critique snapshots, live-mode config — skill itself lives in .claude/skills/)
+.impeccable/
