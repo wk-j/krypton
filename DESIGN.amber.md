@@ -1,7 +1,7 @@
 ---
 name: Krypton Amber Phosphor
 description: Warm amber phosphor terminal — 1980s cassette-futurism CRT aesthetic with corner brackets, CRT scanlines, layered amber glows, and telemetry-style typography
-appliesTo: ".krypton-agent (src/styles/agent.css)"
+appliesTo: ".agent-view (src/styles/agent.css)"
 colors:
   primary: "#ffb000"
   primaryBright: "#ffd880"
@@ -86,7 +86,7 @@ forbidden:
 
 A warm, instrumented look modeled on 1980s amber-phosphor computer terminals — IBM 3270s, vintage VT100s, the orange-on-black workstations of late Cold War flight control. Every readout glows in measured amber; corner brackets bolt the chrome to the frame; CRT scanlines bleed gently through; and motion is reserved for *boot*, *alert*, and *liveness* — never decoration.
 
-This identity is applied to the **Agent view** (`.krypton-agent`, `src/styles/agent.css`) — the conversation surface for AI assistants. The deliberate warmth contrasts with Krypton Dark's cool cyan so the user knows they are talking to a system, not driving a terminal.
+This identity is applied to the **Agent view** (`.agent-view`, `src/styles/agent.css`) and its companion **Context view** (`.context-view`) — the conversation surfaces for AI assistants. The deliberate warmth contrasts with Krypton Dark's cool cyan so the user knows they are talking to a system, not driving a terminal. The `--agent-*` palette tokens are scoped to the agent/context windows (`data-content-type="agent" | "context"`); only the two cross-consumed tokens `--agent-font` and `--agent-text` remain at `:root`, where the ACP view and ACP harness inherit them.
 
 ## Colors
 

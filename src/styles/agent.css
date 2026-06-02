@@ -5,7 +5,19 @@
    PALETTE — AMBER PHOSPHOR TERMINAL
    ═══════════════════════════════════════════════════════════════ */
 
+/* Shared agent-family tokens — also consumed by the ACP view (acp.css) and
+   ACP harness (acp-harness.css), which are separate content-types. They stay
+   at :root so those views inherit them; everything else is scoped below. */
 :root {
+  --agent-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  --agent-text: #e8cfa4;
+}
+
+/* Amber-phosphor palette — scoped to the Agent view and its Context view
+   (data-content-type="agent" | "context"), so the warm identity does not leak
+   into the global :root namespace. */
+.krypton-window[data-content-type="agent"],
+.krypton-window[data-content-type="context"] {
   --agent-bg: rgba(6, 10, 18, 0.55);
   --agent-panel: rgba(6, 10, 18, 0.82);
   --agent-surface-low: rgba(6, 10, 18, 0.35);
@@ -19,7 +31,6 @@
   --agent-bright: #ffd880;
   --agent-dim: rgba(255, 176, 0, 0.35);
   --agent-ghost: rgba(255, 176, 0, 0.08);
-  --agent-text: #e8cfa4;
   --agent-text-rgb: 232, 207, 164;
   --agent-text-dim: #a68d68;
   --agent-green: #8bc34a;
@@ -28,11 +39,11 @@
   --agent-red-rgb: 255, 110, 64;
   --agent-magenta: #e091c0;
   --agent-gold: #ffd54f;
+  --agent-gold-rgb: 255, 213, 79;
   --agent-cyan: #4dd0e1;
   --agent-cyan-rgb: 77, 208, 225;
   --agent-blue: #64b5f6;
   --agent-blue-rgb: 100, 181, 246;
-  --agent-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   --agent-scanline: rgba(0, 0, 0, 0.06);
 }
 
@@ -693,7 +704,7 @@
 /* ═══ Write approval gate ════════════════════════════════════ */
 
 .agent-view__msg--review .agent-view__msg-label {
-  color: rgba(var(--agent-gold-rgb, 220, 180, 80), 0.9);
+  color: rgba(var(--agent-gold-rgb), 0.9);
 }
 
 .agent-view__msg--review-accepted .agent-view__msg-label {
