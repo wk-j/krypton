@@ -82,6 +82,14 @@
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.62);
 }
 
+/* `hidden` must win over segments that set their own `display` (--attention,
+   --mode, music): an author `display` overrides the UA `[hidden]` rule, so
+   without this the attention chip rendered as an empty bordered square at zero.
+   Class+attribute specificity (0,2,0) beats the bare-class display rules. */
+.krypton-workspace-footer__segment[hidden] {
+  display: none;
+}
+
 .krypton-workspace-footer__segment--p0 {
   color: var(--krypton-foreground, #c0c8d4);
 }

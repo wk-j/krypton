@@ -94,21 +94,15 @@
 
 /* ── Judgement card ───────────────────────────────────────── */
 
+/* The card is a flat layout container, not a box: the panel is the only frame.
+   Single-detail view shows exactly one card, so a border/tint here would just
+   be a box nested in the panel (see feedback). Hierarchy comes from type. */
 .acp-triage__card {
   display: flex;
   flex-direction: column;
   gap: 11px;
-  padding: 12px 14px;
-  border: 1px solid rgba(0, 204, 255, 0.16);
-  border-radius: 2px;
-  background: rgba(12, 20, 26, 0.7);
+  padding: 2px 4px;
   color: rgba(216, 232, 216, 0.86);
-}
-
-.acp-triage__card--selected {
-  background: rgba(0, 204, 255, 0.1);
-  outline: 1px solid rgba(0, 204, 255, 0.5);
-  outline-offset: -1px;
 }
 
 .acp-triage__card-head {
@@ -157,27 +151,13 @@
   line-height: 1.4;
 }
 
-/* ── Decision (verdict) block ─────────────────────────────────
-   The answer the human acknowledges — promoted above the supporting prose
-   with a full background tint + hairline border (NO left rail — see
-   feedback) and the reversibility colour carried by that tint, so the eye
-   lands here first. Flat: one tint + one border, no stacked layers. */
+/* ── Decision (verdict) ───────────────────────────────────────
+   The answer the human acknowledges — promoted above the supporting prose by
+   type alone (brighter + heavier + a size step over the 0.9em sections), NOT a
+   tinted box or rail (see feedback): no box-in-a-box. Reversibility is carried
+   by the label colour, reusing the badge's colour language as type. */
 .acp-triage__decision {
   margin-top: 2px;
-  padding: 8px 11px;
-  border: 1px solid rgba(0, 204, 255, 0.28);
-  background: rgba(0, 204, 255, 0.08);
-  border-radius: 3px;
-}
-
-.acp-triage__card[data-reversibility='irreversible'] .acp-triage__decision {
-  border-color: rgba(255, 93, 108, 0.4);
-  background: rgba(255, 93, 108, 0.09);
-}
-
-.acp-triage__card[data-reversibility='costly'] .acp-triage__decision {
-  border-color: rgba(255, 180, 84, 0.4);
-  background: rgba(255, 180, 84, 0.09);
 }
 
 .acp-triage__decision-label {
@@ -189,9 +169,18 @@
   font-size: 0.72em;
 }
 
+.acp-triage__card[data-reversibility='irreversible'] .acp-triage__decision-label {
+  color: rgba(255, 93, 108, 0.85);
+}
+
+.acp-triage__card[data-reversibility='costly'] .acp-triage__decision-label {
+  color: rgba(255, 180, 84, 0.85);
+}
+
 .acp-triage__decision-text {
   color: rgba(232, 244, 232, 0.98);
-  font-size: 0.98em;
+  font-size: 1.04em;
+  font-weight: 500;
   line-height: 1.45;
 }
 

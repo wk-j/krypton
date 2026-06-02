@@ -47,17 +47,18 @@ function diffstatSummary(diffstat: ReviewDiffstatEntry[]): string {
 
 /** Build the judgement card. `traded-off` and `uncertainty` are always shown.
    Single-detail view: only the selected item is ever rendered, so the card is
-   always the active one — it carries the --selected highlight and the action
-   row unconditionally.
+   always the active one and renders the action row unconditionally. It is a
+   flat layout container, NOT a bordered box — the panel is the only frame, so
+   the card carries no border/tint of its own (no box-in-a-box; see feedback).
 
-   Layout is a deliberate hierarchy rather than four look-alike label+text rows:
-   the question frames the fork, the *decision* (chosen) is promoted to a verdict
-   block — the thing the human acknowledges — and rationale / traded-off /
-   uncertainty follow as stacked sections (eyebrow label above a full-width body)
-   so each reads as its own beat instead of one grey wall. */
+   Hierarchy is carried by type, not nested containers: the question frames the
+   fork, the *decision* (chosen) is the verdict the human acknowledges — promoted
+   by brightness + weight alone — and rationale / traded-off / uncertainty follow
+   as stacked sections (eyebrow label above a full-width body) so each reads as
+   its own beat instead of one grey wall. */
 function renderJudgementCard(item: JudgementItem, vm: TriageOverlayViewModel): HTMLElement {
   const card = document.createElement('div');
-  card.className = 'acp-triage__card acp-triage__card--selected';
+  card.className = 'acp-triage__card';
   card.dataset.reversibility = item.reversibility;
 
   const head = document.createElement('div');
@@ -80,7 +81,8 @@ function renderJudgementCard(item: JudgementItem, vm: TriageOverlayViewModel): H
   card.appendChild(question);
 
   // Decision = the verdict the human is acknowledging. Promoted above the
-  // supporting prose with its own accent so the eye lands on it first.
+  // supporting prose by type weight + brightness (flat — no tinted box) so the
+  // eye lands on it first.
   const decision = document.createElement('div');
   decision.className = 'acp-triage__decision';
   const decisionLabel = document.createElement('span');
