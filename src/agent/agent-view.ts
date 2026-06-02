@@ -327,6 +327,7 @@ export class AgentView implements ContentView {
     this.logoEl = document.createElement('div');
     this.logoEl.className = 'agent-view__logo';
     this.logoEl.innerHTML =
+      '<div class="agent-view__logo-inner">' +
       '<div class="agent-view__logo-title">KRYPTON <span class="agent-view__logo-accent">AI</span></div>' +
       '<div class="agent-view__logo-sub">type a prompt · ↵ send · ⇧↵ newline · esc scroll</div>' +
       '<div class="agent-view__logo-hints">' +
@@ -334,6 +335,7 @@ export class AgentView implements ContentView {
       '<span class="agent-view__logo-cmd">/check</span><span class="agent-view__logo-desc">run the project check command</span>' +
       '<span class="agent-view__logo-cmd">/context</span><span class="agent-view__logo-desc">inspect messages, tools, system prompt</span>' +
       '<span class="agent-view__logo-cmd">/model</span><span class="agent-view__logo-desc">show or switch the model</span>' +
+      '</div>' +
       '</div>';
 
     this.element.appendChild(this.logoEl);

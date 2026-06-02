@@ -159,10 +159,11 @@ Detection order is intentionally narrow: `package.json` scripts `check`, `typech
 
 ```
 .agent-view                                    ← fills pane bounds, flex column
-  .agent-view__logo                            ← onboarding empty state (hidden once a msg arrives)
-    .agent-view__logo-title                    ← "KRYPTON AI"
-    .agent-view__logo-sub                      ← primary action: "type a prompt · ↵ send · ⇧↵ newline · esc scroll"
-    .agent-view__logo-hints                    ← flat 2-col grid of starter commands (/skills /check /context /model)
+  .agent-view__logo                            ← onboarding empty state; collapses via grid-template-rows 1fr→0fr
+    .agent-view__logo-inner                    ← layout + clip wrapper (overflow hidden, min-height 0)
+      .agent-view__logo-title                  ← "KRYPTON AI"
+      .agent-view__logo-sub                    ← primary action: "type a prompt · ↵ send · ⇧↵ newline · esc scroll"
+      .agent-view__logo-hints                  ← flat 2-col grid of starter commands (/skills /check /context /model)
   .agent-view__messages                        ← flex-col, overflow-y: auto, flex: 1
     .agent-view__msg.agent-view__msg--user
       .agent-view__msg-label                   ← "YOU" (12px)
