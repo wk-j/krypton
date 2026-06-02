@@ -235,7 +235,7 @@
   gap: 8px;
   padding: 64px 16px 32px;
   transition: opacity 0.3s ease, max-height 0.3s ease;
-  max-height: 200px;
+  max-height: 360px;
   overflow: hidden;
 }
 
@@ -272,6 +272,30 @@
 @keyframes logo-text-reveal {
   0%   { opacity: 0; transform: translateY(2px); }
   100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Starter command hints — flat two-column grid (command · description).
+   No card, border, or rail: one surface, typographic only. */
+.agent-view__logo-hints {
+  margin-top: 6px;
+  display: inline-grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 16px;
+  row-gap: 5px;
+  align-items: baseline;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  animation: logo-text-reveal 0.5s ease-out 0.3s both;
+}
+
+.agent-view__logo-cmd {
+  color: rgba(var(--agent-primary-rgb), 0.7);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.agent-view__logo-desc {
+  color: rgba(var(--agent-text-rgb), 0.45);
+  letter-spacing: 0.02em;
 }
 
 /* ─── Messages list ─────────────────────────────────────────── */
@@ -1670,6 +1694,7 @@
   /* Entrance reveals stay, but capped — no slow boot under reduced motion */
   .agent-view__logo-title,
   .agent-view__logo-sub,
+  .agent-view__logo-hints,
   .agent-view__msg--assistant,
   .agent-view__tool-row {
     animation-duration: 0.12s;
