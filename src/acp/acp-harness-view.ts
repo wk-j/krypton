@@ -410,6 +410,27 @@ const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
 ]);
 const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
+// spec 139: user-triggered handoff. #handoff / #resume inject these one-shot
+// instructions via enqueueSystemPrompt — handoff is NOT an always-on stub
+// convention, so the cost (proactive memory read/write) is paid only on the
+// user's command. The shape lives here, the store is the existing memory_set
+// document. memory_set is not redacted, so the "no secrets" rule is instructed.
+const HANDOFF_WRITE_PROMPT =
+  'Write or refresh your memory_set handoff document now so a future session can resume. ' +
+  'Shape it as: what\'s done, current state, next steps, open questions. ' +
+  'Reference files, commits, and artifacts by path rather than pasting their contents. ' +
+  'Never write secrets, tokens, or credentials (this document is not redacted). ' +
+  'Overwrite your existing document, don\'t accrete; keep detail under 8000 characters.';
+function handoffResumePrompt(displayName: string): string {
+  // JSON.stringify quotes + escapes — a backend-derived display name containing a
+  // double-quote can't break the memory_get { lane: "…" } example (Codex-1 review).
+  return (
+    `Call memory_get { lane: ${JSON.stringify(displayName)} } to load your handoff document from a ` +
+    'previous session, then continue the work from where it left off. ' +
+    'If the document is empty or missing, start fresh.'
+  );
+}
+
 interface FileTouchRecord {
   path: string;
   laneId: string;
@@ -4981,6 +5002,24 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
+    // spec 139: user-triggered handoff. #handoff writes a resume-ready memory_set
+    // doc; #resume reads it back and continues. One-shot injection only — no
+    // always-on stub, no per-turn cost. Guard like #new for user-facing feedback;
+    // enqueueSystemPrompt re-checks lane.client + idle status internally.
+    if (parts[0] === '#handoff' || parts[0] === '#resume') {
+      this.setDraft(lane, '', 0);
+      if (!this.harnessMemoryId) {
+        this.flashChip(this.harnessMemoryWarning ? `memory unavailable: ${truncate(this.harnessMemoryWarning, 72)}` : 'memory unavailable - use #new');
+        return;
+      }
+      if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+        this.flashChip('lane busy - #cancel first');
+        return;
+      }
+      const prompt = parts[0] === '#handoff' ? HANDOFF_WRITE_PROMPT : handoffResumePrompt(lane.displayName);
+      await this.enqueueSystemPrompt(lane, prompt);
+      return;
+    }
     if (parts[0] === '#review') {
       this.setDraft(lane, '', 0);
       await this.runReviewCommand(lane, parts.slice(1));
@@ -6539,6 +6578,8 @@ export class AcpHarnessView implements ContentView {
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
             <dt>#mem</dt><dd>Show memory command hint</dd>
             <dt>#mem clear</dt><dd>Clear active lane memory only</dd>
+            <dt>#handoff</dt><dd>Ask active lane to write a resume-ready handoff to its memory</dd>
+            <dt>#resume</dt><dd>Ask active lane to read its memory handoff and continue</dd>
             <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
             <dt>!cmd</dt><dd>Run shell command in project cwd, output goes to transcript</dd>
           </dl>

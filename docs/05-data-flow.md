@@ -298,6 +298,14 @@
        last (or 1-indexed) queued prompt; #queue clear empties the queue without
        cancelling the running turn; #queue edit N pops item N into the composer
        to edit and re-send (Spec 136).
+    g. #handoff / #resume (Spec 139) inject a one-shot instruction turn into the
+       active lane via enqueueSystemPrompt (no acp_* command): #handoff tells the
+       lane to write/refresh a resume-ready memory_set document; #resume tells it
+       to memory_get its own lane and continue. Both no-op with a flashChip when
+       memory is unavailable or the lane is mid-work (busy/needs_permission/
+       starting); they are allowed while awaiting_peer (soft-awaiting, spec 116).
+       Cross-session handoff is user-triggered only — no always-on stub, no
+       per-turn cost.
 13. Session resume picker:
     a. `Cmd+P → 0` opens the session picker. If an active lane exists, the
        picker auto-selects that lane's backend; otherwise it opens backend
