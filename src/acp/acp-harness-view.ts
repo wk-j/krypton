@@ -804,6 +804,35 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '</symbol>',
 ].join('');
 
+// Lane-bar telemetry icons — same <symbol>/<use> + currentColor mechanism as the
+// backend logos above, sized to the text cell in CSS so they recolour per lane
+// accent / status with no glyph-font dependency. Geometry mirrors the approved
+// artifact (art-2 — ACP harness lane bar). Injected once in buildDOM().
+export const HARNESS_ICON_SVG_DEFS = [
+  // status set (row 1 leading glyph) — tinted by state via the symbol's color
+  '<symbol id="krypton-icon-status-starting" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2" fill="currentColor"/></symbol>',
+  '<symbol id="krypton-icon-status-idle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>',
+  '<symbol id="krypton-icon-status-busy" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4" fill="currentColor"/></symbol>',
+  '<symbol id="krypton-icon-status-perm" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><line x1="8" y1="4.6" x2="8" y2="9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.3" r="0.9" fill="currentColor"/></symbol>',
+  '<symbol id="krypton-icon-status-peer" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6 H12 M10 4 L12 6 L10 8"/><path d="M13 10 H4 M6 8 L4 10 L6 12"/></g></symbol>',
+  '<symbol id="krypton-icon-status-error" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 5.6 L10.4 10.4 M10.4 5.6 L5.6 10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>',
+  // chip + stat glyphs
+  '<symbol id="krypton-icon-check" viewBox="0 0 16 16"><path d="M3.5 8.4 L6.4 11.3 L12.5 4.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
+  '<symbol id="krypton-icon-warn" viewBox="0 0 16 16"><path d="M8 2.6 L14.6 13.4 H1.4 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><line x1="8" y1="6.6" x2="8" y2="9.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.6" r="0.8" fill="currentColor"/></symbol>',
+  '<symbol id="krypton-icon-inbox" viewBox="0 0 16 16"><rect x="2.4" y="4" width="11.2" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.8 5 L8 9 L13.2 5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
+  '<symbol id="krypton-icon-gauge" viewBox="0 0 16 16"><path d="M2.8 11.8 A5.6 5.6 0 1 1 13.2 11.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.4"/><path d="M2.8 11.8 A5.6 5.6 0 0 1 5.2 4.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>',
+  '<symbol id="krypton-icon-dl" viewBox="0 0 16 16"><path d="M8 3 V12 M4.6 8.5 L8 12 L11.4 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
+  '<symbol id="krypton-icon-ul" viewBox="0 0 16 16"><path d="M8 13 V4 M4.6 7.5 L8 4 L11.4 7.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
+  '<symbol id="krypton-icon-list" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="3.5" y1="5" x2="12.5" y2="5"/><line x1="3.5" y1="8" x2="12.5" y2="8"/><line x1="3.5" y1="11" x2="12.5" y2="11"/></g></symbol>',
+  '<symbol id="krypton-icon-tool" viewBox="0 0 16 16"><path d="M11.2 2.4 a2.8 2.8 0 0 0 -3.5 3.5 L2.8 10.8 a1.25 1.25 0 0 0 1.8 1.8 L9.5 7.5 a2.8 2.8 0 0 0 3.5 -3.5 L11 6 L9.4 6 L9.4 4.4 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>',
+].join('');
+
+/** Lane-bar telemetry icon — references a HARNESS_ICON_SVG_DEFS symbol. The svg
+ * inherits currentColor so it recolours with its container (lane accent/status). */
+function harnessIcon(id: string, cls = ''): string {
+  return `<svg class="acp-harness__icon${cls ? ` ${cls}` : ''}" aria-hidden="true"><use href="#krypton-icon-${id}"/></svg>`;
+}
+
 const OPENCODE_DEFAULT_MODEL = 'zai-coding-plan/glm-5.1';
 const FILE_TOUCH_WINDOW_MS = 10 * 60 * 1000;
 
@@ -2641,7 +2670,7 @@ export class AcpHarnessView implements ContentView {
     logoDefs.setAttribute('height', '0');
     logoDefs.setAttribute('aria-hidden', 'true');
     logoDefs.style.position = 'absolute';
-    logoDefs.innerHTML = `<defs>${BACKEND_LOGO_SVG_DEFS}</defs>`;
+    logoDefs.innerHTML = `<defs>${BACKEND_LOGO_SVG_DEFS}${HARNESS_ICON_SVG_DEFS}</defs>`;
     this.element.appendChild(logoDefs);
 
     const body = document.createElement('div');
@@ -9118,11 +9147,11 @@ function renderLaneHead(
     ? `<span class="acp-harness__lane-chips">${chipGroup}</span>`
     : '';
   const inboxChip = inboxDepth > 0
-    ? `<span class="acp-harness__lane-inbox" title="${inboxDepth} pending peer message${inboxDepth === 1 ? '' : 's'}">▼${inboxDepth}</span>`
+    ? `<span class="acp-harness__lane-inbox" title="${inboxDepth} pending peer message${inboxDepth === 1 ? '' : 's'}">${harnessIcon('inbox', 'acp-harness__icon--dot')}${inboxDepth}</span>`
     : '';
   if (!active) {
     return (
-      `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
+      renderLaneSymbol(lane.status) +
       `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
       inboxChip +
@@ -9134,7 +9163,7 @@ function renderLaneHead(
     ? `<span class="acp-harness__lane-cancel-hint">⌃C cancel</span>`
     : '';
   return (
-    `<span class="acp-harness__lane-symbol">${statusSymbol(lane.status)}</span>` +
+    renderLaneSymbol(lane.status) +
     `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
     inboxChip +
@@ -9355,17 +9384,18 @@ function renderSandboxChip(lane: HarnessLane): string {
   // Surface backend-specific safety caveats directly in the lane chrome:
   // Pi is known to bypass the permission rail, while Cursor still needs
   // manual verification of ACP write-permission semantics.
+  const warn = harnessIcon('warn', 'acp-harness__icon--dot');
   if (lane.backendId === 'pi-acp') {
     const title = 'No permission gate — Pi runs edits and shell commands immediately. Use a sandboxed cwd or container if untrusted.';
-    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">⚠ unsandboxed</span>`;
+    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">${warn} unsandboxed</span>`;
   }
   if (lane.backendId === 'cursor') {
     const title = 'Cursor ACP write-permission behavior has not been verified yet. Krypton does not pass force/yolo flags, but use a trusted cwd until verified.';
-    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">⚠ permissions unverified</span>`;
+    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">${warn} permissions unverified</span>`;
   }
   if (lane.backendId === 'junie') {
     const title = 'Junie ACP write-permission behavior has not been verified yet. Krypton does not pass force/yolo/brave flags, but use a trusted cwd until verified.';
-    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">⚠ permissions unverified</span>`;
+    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">${warn} permissions unverified</span>`;
   }
   return '';
 }
@@ -9374,7 +9404,7 @@ function renderModelChip(modelName: string | null, applyFailed = false): string 
   if (!modelName) return '';
   if (applyFailed) {
     const title = `requested model ${modelName} not applied — agent is using its default or prior model (session/set_model failed)`;
-    return `<span class="acp-harness__lane-model acp-harness__lane-model--warn" title="${esc(title)}">⚠ ${esc(modelName)}</span>`;
+    return `<span class="acp-harness__lane-model acp-harness__lane-model--warn" title="${esc(title)}">${harnessIcon('warn', 'acp-harness__icon--dot')} ${esc(modelName)}</span>`;
   }
   return `<span class="acp-harness__lane-model" title="model ${esc(modelName)}">${esc(modelName)}</span>`;
 }
@@ -9388,7 +9418,7 @@ function renderMcpChip(mcp: HarnessMcpLaneStats | null): string {
   }
   const title = `tools/list ${mcp.toolsListCount} · tools/call ${mcp.toolsCallCount}` +
     (mcp.lastMethod ? ` · last ${mcp.lastMethod}` : '');
-  return `<span class="acp-harness__lane-mcp acp-harness__lane-mcp--on" title="${esc(title)}">mcp ✓${mcp.toolsCallCount > 0 ? ` ${mcp.toolsCallCount}` : ''}</span>`;
+  return `<span class="acp-harness__lane-mcp acp-harness__lane-mcp--on" title="${esc(title)}">mcp ${harnessIcon('check', 'acp-harness__icon--dot')}${mcp.toolsCallCount > 0 ? ` ${mcp.toolsCallCount}` : ''}</span>`;
 }
 
 const SLASH_PALETTE_REGEX = /^\/[a-zA-Z0-9_-]*$/;
@@ -9465,40 +9495,52 @@ export function laneAccentForLabel(label: string): string {
 }
 
 function renderLaneStats(lane: HarnessLane, projectDir: string | null): string {
-  const parts: string[] = [];
-  parts.push(lane.backendId);
-  parts.push(lane.sessionId ? `sess ${shortId(lane.sessionId)}` : 'sess pending');
-  if (projectDir) parts.push(basename(projectDir));
+  // Each cell is a <span>; iconified cells carry a title so the dropped noun
+  // (ctx/tools/rows) and the ↓↑ arrows stay legible to tooltips + screen readers.
+  const spans: string[] = [];
+  const cell = (inner: string, title?: string): string =>
+    `<span${title ? ` title="${esc(title)}"` : ''}>${inner}</span>`;
+  const text = (s: string): string => cell(esc(s));
+
+  spans.push(cell(
+    `<svg class="acp-harness__icon acp-harness__icon--accent" aria-hidden="true"><use href="#${backendLogoId(lane.backendId)}"/></svg>${esc(lane.backendId)}`,
+    `backend ${lane.backendId}`,
+  ));
+  spans.push(text(lane.sessionId ? `sess ${shortId(lane.sessionId)}` : 'sess pending'));
+  if (projectDir) spans.push(text(basename(projectDir)));
 
   const usage = lane.usage;
   if (usage) {
     if (typeof usage.used === 'number') {
-      if (typeof usage.size === 'number' && usage.size > 0) {
-        const pct = Math.round((usage.used / usage.size) * 100);
-        parts.push(`ctx ${formatCount(usage.used)}/${formatCount(usage.size)} (${pct}%)`);
-      } else {
-        parts.push(`ctx ${formatCount(usage.used)}`);
-      }
+      const val = typeof usage.size === 'number' && usage.size > 0
+        ? `${formatCount(usage.used)}/${formatCount(usage.size)} (${Math.round((usage.used / usage.size) * 100)}%)`
+        : formatCount(usage.used);
+      spans.push(cell(`${harnessIcon('gauge')}${esc(val)}`, `context ${val}`));
     }
     if (typeof usage.cachedReadTokens === 'number' || typeof usage.cachedWriteTokens === 'number') {
-      const r = usage.cachedReadTokens ?? 0;
-      const w = usage.cachedWriteTokens ?? 0;
-      parts.push(`cache ${formatCount(r)}↓ ${formatCount(w)}↑`);
+      const r = formatCount(usage.cachedReadTokens ?? 0);
+      const w = formatCount(usage.cachedWriteTokens ?? 0);
+      spans.push(cell(
+        `cache ${esc(r)}${harnessIcon('dl', 'acp-harness__icon--dot')}${esc(w)}${harnessIcon('ul', 'acp-harness__icon--dot')}`,
+        `cache read ${r}, write ${w}`,
+      ));
     }
     if (typeof usage.inputTokens === 'number' || typeof usage.outputTokens === 'number') {
-      parts.push(`in ${formatCount(usage.inputTokens ?? 0)} out ${formatCount(usage.outputTokens ?? 0)}`);
+      spans.push(text(`in ${formatCount(usage.inputTokens ?? 0)} out ${formatCount(usage.outputTokens ?? 0)}`));
     }
-    if (usage.cost) parts.push(`$${usage.cost.amount.toFixed(4)} ${usage.cost.currency}`);
+    if (usage.cost) spans.push(text(`$${usage.cost.amount.toFixed(4)} ${usage.cost.currency}`));
   }
 
-  if (lane.toolCalls.size > 0) parts.push(`${lane.toolCalls.size} tools`);
-  parts.push(`${lane.transcript.length} rows`);
-  if (lane.pendingPermissions.length > 0) parts.push(`${lane.pendingPermissions.length} perm`);
-  if (lane.acceptAllForTurn) parts.push('accept-all');
-  if (lane.rejectAllForTurn) parts.push('reject-all');
-  if (lane.error) parts.push(`err: ${truncate(lane.error, 48)}`);
+  if (lane.toolCalls.size > 0) {
+    spans.push(cell(`${harnessIcon('tool')}${esc(String(lane.toolCalls.size))}`, `${lane.toolCalls.size} tool calls`));
+  }
+  spans.push(cell(`${harnessIcon('list')}${esc(String(lane.transcript.length))}`, `${lane.transcript.length} transcript rows`));
+  if (lane.pendingPermissions.length > 0) spans.push(text(`${lane.pendingPermissions.length} perm`));
+  if (lane.acceptAllForTurn) spans.push(text('accept-all'));
+  if (lane.rejectAllForTurn) spans.push(text('reject-all'));
+  if (lane.error) spans.push(text(`err: ${truncate(lane.error, 48)}`));
 
-  return parts.map((part) => `<span>${esc(part)}</span>`).join('');
+  return spans.join('');
 }
 
 function basename(path: string): string {
@@ -10485,16 +10527,26 @@ function formatAwaitingPeerAge(ms: number): string {
   return '15m+';
 }
 
-function statusSymbol(status: HarnessLaneStatus): string {
+function statusIconId(status: HarnessLaneStatus): string {
   switch (status) {
-    case 'starting': return '·';
-    case 'idle': return '○';
-    case 'busy': return '●';
-    case 'needs_permission': return '!';
-    case 'awaiting_peer': return '⇆';
-    case 'error': return '×';
-    case 'stopped': return '×';
+    case 'starting': return 'status-starting';
+    case 'idle': return 'status-idle';
+    case 'busy': return 'status-busy';
+    case 'needs_permission': return 'status-perm';
+    case 'awaiting_peer': return 'status-peer';
+    case 'error': return 'status-error';
+    case 'stopped': return 'status-error';
   }
+}
+
+// Row-1 leading status glyph as an SVG, in a state-tinted wrapper so CSS can
+// colour idle/busy/permission/peer/error distinctly (was Unicode · ○ ● ! ⇆ ×).
+function renderLaneSymbol(status: HarnessLaneStatus): string {
+  return (
+    `<span class="acp-harness__lane-symbol acp-harness__lane-symbol--${status}">` +
+    harnessIcon(statusIconId(status)) +
+    `</span>`
+  );
 }
 
 function statusLabel(status: HarnessLaneStatus): string {

@@ -20,6 +20,9 @@
   color: var(--krypton-foreground, #c0c8d4);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
+  /* DESIGN.md § Numerics: HUD digits (counts, io, %, clock) must not jitter as
+     they tick — tabular figures hold the columns and keep the deck instrumented. */
+  font-variant-numeric: tabular-nums;
   user-select: none;
   pointer-events: none;
   box-shadow: 0 -8px 24px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
@@ -61,6 +64,19 @@
 
 .krypton-workspace-footer__center {
   flex: 1 1 auto;
+  /* Middot owns the inter-segment spacing (see separator rule below), so the
+     flex gap drops to 0 — otherwise spacing would double up. */
+  gap: 0;
+}
+
+/* Telemetry-deck separators — a dim accent middot before each center readout
+   after the first, matching the composer-meta deck (acp-harness.css). A divider
+   between readouts so the eye can parse cwd / git / counts / process as distinct
+   fields instead of one undifferentiated run. Not a left-edge accent rail. */
+.krypton-workspace-footer__center > .krypton-workspace-footer__segment:not(:first-child)::before {
+  content: '·';
+  margin: 0 8px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.38);
 }
 
 .krypton-workspace-footer__right {
@@ -111,13 +127,90 @@
   color: var(--krypton-success, #8effb0);
 }
 
+/* Priority ladder — telemetry recedes as it gets less actionable so the eye
+   lands on the working dir and git ref first. Tiers ride the accent opacity
+   scale (DESIGN.md § The Opacity Scale): cwd legible, p2 secondary, p3 ambient. */
 .krypton-workspace-footer__segment--project {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.72);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.82);
 }
 
-.krypton-workspace-footer__segment--git,
+.krypton-workspace-footer__segment--p2 {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+}
+
+.krypton-workspace-footer__segment--p3 {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+}
+
 .krypton-workspace-footer__segment--music-flags {
   color: var(--krypton-yellow, #ffcc00);
+}
+
+/* git ref — accent-bright with a soft single-layer glow so the branch reads as
+   the deck's anchor readout. Matches the composer-meta branch chip
+   (acp-harness.css) for one consistent git voice across the harness. */
+.krypton-workspace-footer__segment--git {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.92);
+  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.22);
+}
+
+/* Telemetry icons — monoline SVGs sized to the text cell and baseline-tuned so
+   they sit on the text's optical centre. currentColor + em sizing → theme-aware,
+   scales with the chrome font, no glyph-font dependency (no tofu). */
+.krypton-workspace-footer__icon {
+  width: 1em;
+  height: 1em;
+  margin-right: 3px;
+  vertical-align: -0.13em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.95;
+}
+
+.krypton-workspace-footer__icon--fill {
+  fill: currentColor;
+  stroke: none;
+}
+
+.krypton-workspace-footer__icon--dot {
+  width: 0.62em;
+  height: 0.62em;
+  vertical-align: 0.02em;
+}
+
+/* Uncommitted-changes marker — a warning-tier dot trailing the ref so "dirty"
+   reads as a state signal rather than part of the branch name. */
+.krypton-workspace-footer__git-dirty {
+  margin: 0 0 0 2px;
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+}
+
+/* pid suffix on the process readout — present but de-emphasised */
+.krypton-workspace-footer__pid {
+  opacity: 0.6;
+}
+
+/* Focused-view state — coloured by meaning so a non-normal state is legible at
+   a glance instead of blending into the p3 tier. Theme-aware via the semantic
+   -rgb triplets. Detail density only (like progress). */
+.krypton-workspace-footer__segment--state[data-state='busy'] {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.78);
+}
+.krypton-workspace-footer__segment--state[data-state='ok'] {
+  color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.85);
+}
+.krypton-workspace-footer__segment--state[data-state='warn'],
+.krypton-workspace-footer__segment--state[data-state='needs_attention'] {
+  color: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.9);
+}
+.krypton-workspace-footer__segment--state[data-state='err'] {
+  color: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.92);
+}
+.krypton-workspace-footer__segment--state[data-state='special'] {
+  color: rgba(var(--krypton-special-rgb, 199, 125, 255), 0.85);
 }
 
 /* spec 128/138: attention-triage gauge — a quiet chip that only shows when the

@@ -37,7 +37,7 @@ interface GitSummary {
 interface FocusedBusState {
   state: SignalState;
   throughput: number;
-  process: string | null;
+  process: { name: string; pid: number | null } | null;
   progress: { state: ProgressState; pct: number | null } | null;
 }
 
@@ -65,6 +65,35 @@ const KRYPTON_LOGO_SVG =
   '<g stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M12 16 L23 6"/><path d="M12 16 L23 26"/>' +
   '</g></svg>';
+
+// Footer telemetry icons — monoline SVGs in the brand mark's style, sized to the
+// text cell in CSS (currentColor + em → theme-aware, scales with the chrome font,
+// no glyph-font dependency so they never fall back to tofu). Each is parsed once
+// into a cached node (see `icon()`) and cloned per segment, so the render hot path
+// never re-parses markup. viewBox is 0 0 16 16; the base class is baked in.
+const FOOTER_ICON_SVG: Record<string, string> = {
+  // git branch: three nodes, the right one merging into the trunk
+  branch:
+    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
+    '<circle cx="4.5" cy="3.6" r="1.5"/><circle cx="4.5" cy="12.4" r="1.5"/><circle cx="11.5" cy="3.6" r="1.5"/>' +
+    '<path d="M4.5 5.1 V12.4"/><path d="M11.5 5.1 V6.6 c0 2.2 -1.8 4 -4 4 H4.5"/></svg>',
+  // window/layout: a framed pane with a title bar and a vertical split
+  layout:
+    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
+    '<rect x="2.5" y="3.5" width="11" height="9" rx="1"/><path d="M2.5 6.3 H13.5"/><path d="M8 6.3 V12.5"/></svg>',
+  // process: a terminal prompt chevron + caret line
+  prompt:
+    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
+    '<path d="M4 5 L7.5 8 L4 11"/><path d="M9 11 H12.5"/></svg>',
+  // throughput: paired up/down transfer arrows
+  io:
+    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
+    '<path d="M5 11.5 V4.5 M3 6.5 L5 4.5 L7 6.5"/><path d="M11 4.5 V11.5 M9 9.5 L11 11.5 L13 9.5"/></svg>',
+  // filled status dot — used for the focused-view state and the git dirty marker
+  dot:
+    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
+    '<circle cx="8" cy="8" r="3.4"/></svg>',
+};
 
 function isViewSource(source: SignalSource): source is ViewAddress {
   return 'viewId' in source;
@@ -103,9 +132,13 @@ function roleLabel(role: FocusSummary['role']): string {
 
 function progressText(progress: FocusedBusState['progress']): string | null {
   if (!progress || progress.state === ProgressState.Hidden) return null;
-  if (progress.pct !== null) return `progress ${Math.round(progress.pct)}%`;
-  if (progress.state === ProgressState.Indeterminate) return 'progress ...';
-  return 'progress';
+  if (progress.pct !== null) return `${Math.round(progress.pct)}%`;
+  if (progress.state === ProgressState.Indeterminate) return '…';
+  return null;
+}
+
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
 
 export class WorkspaceFooter {
@@ -151,6 +184,8 @@ export class WorkspaceFooter {
   private renderGeneration = 0;
   private focusedViewKey: string | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Parsed-once SVG icon nodes, cloned per segment so renders never re-parse. */
+  private iconTemplates = new Map<string, SVGElement>();
 
   constructor(deps: {
     workspace: HTMLElement;
@@ -227,7 +262,7 @@ export class WorkspaceFooter {
       const name = s.value.name;
       const pid = s.value.pid;
       this.busState.process = typeof name === 'string'
-        ? `${name}${typeof pid === 'number' ? ` pid ${pid}` : ''}`
+        ? { name, pid: typeof pid === 'number' ? pid : null }
         : null;
       this.refresh('bus');
     });
@@ -371,16 +406,55 @@ export class WorkspaceFooter {
     const progress = progressText(this.busState.progress);
     const children: HTMLElement[] = [];
     if (cwd) children.push(this.segment(cwd, 'p1 project'));
-    if (this.gitText) children.push(this.segment(this.gitText, 'p1 git'));
+    if (this.gitText) children.push(this.gitSegment(this.gitText));
     if (summary.windows > 1 || summary.tabs > 1 || summary.panes > 1) {
-      children.push(this.segment(`win ${summary.windows} tab ${summary.tabs} pane ${summary.panes}`, 'p2 counts'));
+      // layout icon + compact win/tab/pane triplet (full phrasing in the label)
+      const el = this.segment(`${summary.windows}/${summary.tabs}/${summary.panes}`, 'p2 counts');
+      el.prepend(this.icon('layout'));
+      const label = `${plural(summary.windows, 'window')} · ${plural(summary.tabs, 'tab')} · ${plural(summary.panes, 'pane')}`;
+      el.title = label;
+      el.setAttribute('aria-label', label);
+      children.push(el);
     }
-    if (this.busState.process) children.push(this.segment(this.busState.process, 'p2 process'));
+    if (this.busState.process) {
+      const { name, pid } = this.busState.process;
+      const el = this.segment(name, 'p2 process');
+      el.prepend(this.icon('prompt'));
+      if (pid !== null) {
+        const pidEl = document.createElement('span');
+        pidEl.className = 'krypton-workspace-footer__pid';
+        pidEl.textContent = ` ${pid}`;
+        el.append(pidEl);
+      }
+      const label = pid !== null ? `process ${name} · pid ${pid}` : `process ${name}`;
+      el.title = label;
+      el.setAttribute('aria-label', label);
+      children.push(el);
+    }
     if (this.busState.throughput > 0) {
-      children.push(this.segment(`io ${formatBytesPerSec(this.busState.throughput)}`, 'p3'));
+      const rate = formatBytesPerSec(this.busState.throughput);
+      const el = this.segment(rate, 'p3');
+      el.prepend(this.icon('io'));
+      el.title = `throughput ${rate}`;
+      el.setAttribute('aria-label', el.title);
+      children.push(el);
     }
-    if (progress) children.push(this.segment(progress, 'p3 detail'));
-    if (this.busState.state !== 'normal') children.push(this.segment(this.busState.state, 'p3 detail'));
+    if (progress) {
+      const el = this.segment(progress, 'p3 detail');
+      el.title = `progress ${progress}`;
+      el.setAttribute('aria-label', el.title);
+      children.push(el);
+    }
+    if (this.busState.state !== 'normal') {
+      // spec: a status dot + the state word, tagged so CSS can colour both by
+      // meaning (busy/warn/err/…) instead of the flat p3 tier. Detail density only.
+      const el = this.segment(this.busState.state, 'p3 detail state');
+      el.dataset.state = this.busState.state;
+      el.prepend(this.icon('dot', 'fill dot'));
+      el.title = `state: ${this.busState.state}`;
+      el.setAttribute('aria-label', el.title);
+      children.push(el);
+    }
     this.centerEl.replaceChildren(...children);
   }
 
@@ -484,6 +558,42 @@ export class WorkspaceFooter {
     if (summary.role === 'acp_harness') return 'Cmd+P lanes · #cancel running';
     if (this.musicSegment) return 'Cmd+Shift+M music';
     return 'Leader v select · Cmd+O files · Cmd+Shift+G git';
+  }
+
+  /** Clone a cached telemetry icon. `variants` are short tokens mapped to
+   * `__icon--<token>` BEM modifiers (e.g. 'fill dot'). Parses each SVG once. */
+  private icon(name: string, variants = ''): SVGElement {
+    let tpl = this.iconTemplates.get(name);
+    if (!tpl) {
+      const holder = document.createElement('div');
+      holder.innerHTML = FOOTER_ICON_SVG[name];
+      tpl = holder.firstElementChild as SVGElement;
+      this.iconTemplates.set(name, tpl);
+    }
+    const node = tpl.cloneNode(true) as SVGElement;
+    for (const v of variants.split(/\s+/).filter(Boolean)) {
+      node.classList.add(`krypton-workspace-footer__icon--${v}`);
+    }
+    return node;
+  }
+
+  /** spec: git readout — a branch glyph + ref at accent-bright; the dirty state
+   * becomes a warning-tier dot (not a `*` glued to the name) so "uncommitted"
+   * reads as a signal. One consistent git voice with the composer-meta chip. */
+  private gitSegment(text: string): HTMLElement {
+    const dirty = text.endsWith(' *');
+    const ref = dirty ? text.slice(0, -2) : text;
+    const el = this.segment(ref, 'p1 git');
+    el.prepend(this.icon('branch'));
+    if (dirty) {
+      const dot = this.icon('dot', 'fill dot');
+      dot.classList.add('krypton-workspace-footer__git-dirty');
+      el.append(dot);
+    }
+    const label = dirty ? `branch ${ref} — uncommitted changes` : `branch ${ref}`;
+    el.title = label;
+    el.setAttribute('aria-label', label);
+    return el;
   }
 
   private segment(text: string, modifiers: string): HTMLElement {

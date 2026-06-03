@@ -105,6 +105,38 @@
   color: rgba(216, 232, 216, 0.48);
 }
 
+/* Lane-bar telemetry icons (SVG icon pass) — sized to the text cell, recolour
+   via currentColor so they follow their container (lane accent / status). Same
+   <symbol>/<use> engine + currentColor as the backend logos and the workspace
+   footer; no glyph-font dependency. */
+.acp-harness__icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.13em;
+  flex: 0 0 auto;
+}
+
+.acp-harness__icon--dot {
+  width: 0.78em;
+  height: 0.78em;
+}
+
+.acp-harness__icon--accent {
+  color: var(--acp-lane-accent, #8effb0);
+}
+
+/* Status-glyph tints. busy is left alone (its `color: transparent` + spinner
+   ::before below win on specificity); awaiting_peer is already purple via a
+   `.acp-harness__lane--awaiting_peer` rule. Only permission + error need a tint. */
+.acp-harness__lane-symbol--needs_permission {
+  color: #ffd166;
+}
+
+.acp-harness__lane-symbol--error,
+.acp-harness__lane-symbol--stopped {
+  color: #ec5f67;
+}
+
 .acp-harness__lane-name {
   grid-column: 2;
   max-width: 18ch;
@@ -138,16 +170,19 @@
   overflow: hidden;
 }
 
+/* Lane chips share one flat language: a faint tinted pill, no border. Hue +
+   text color carry the meaning (identity / status / warning) so the row reads
+   as one surface that's scannable by color, not a strip of outlined boxes. */
 .acp-harness__lane-model {
   justify-self: start;
   min-width: 0;
   max-width: 24ch;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 0 5px;
-  border: 1px solid rgba(216, 232, 216, 0.16);
-  border-radius: 2px;
-  color: rgba(216, 232, 216, 0.46);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(216, 232, 216, 0.06);
+  color: rgba(216, 232, 216, 0.68);
   font-size: 0.72em;
   letter-spacing: 0.04em;
   text-shadow: none;
@@ -157,16 +192,16 @@
 /* spec 126: configured model failed to apply (session/set_model errored). Reuses
    the sandbox-chip amber palette; chip text keeps the configured intent, flagged. */
 .acp-harness__lane-model--warn {
-  border-color: rgba(255, 170, 102, 0.55);
-  color: rgba(255, 196, 140, 0.85);
+  background: rgba(255, 170, 102, 0.16);
+  color: rgba(255, 200, 150, 0.92);
 }
 
 .acp-harness__lane-mode {
   justify-self: start;
-  padding: 0 5px;
-  border: 1px solid color-mix(in oklab, #c77dff 35%, transparent);
-  border-radius: 2px;
-  color: color-mix(in oklab, #c77dff 88%, white 12%);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: color-mix(in oklab, #c77dff 16%, transparent);
+  color: color-mix(in oklab, #c77dff 78%, white 22%);
   font-size: 0.72em;
   letter-spacing: 0.04em;
   text-shadow: none;
@@ -179,10 +214,10 @@
 .acp-harness__lane-sandbox {
   flex: 0 0 auto;
   justify-self: start;
-  padding: 0 5px;
-  border: 1px solid rgba(255, 170, 102, 0.55);
-  border-radius: 2px;
-  color: rgba(255, 196, 140, 0.78);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255, 170, 102, 0.16);
+  color: rgba(255, 200, 150, 0.92);
   font-size: 0.72em;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -200,16 +235,17 @@
 .acp-harness__lane-mcp {
   flex: 0 0 auto;
   justify-self: start;
-  padding: 0 5px;
-  border: 1px solid currentColor;
-  border-radius: 2px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(216, 232, 216, 0.06);
   font-size: 0.72em;
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
+/* MCP connected: the ✓ reads "ok" in the lane's own accent, not flat gray. */
 .acp-harness__lane-mcp--on {
-  color: rgba(216, 232, 216, 0.42);
+  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 60%, #d8e8d8);
 }
 
 .acp-harness__lane-mcp--off {
@@ -221,9 +257,9 @@
   justify-self: start;
   display: inline-flex;
   gap: 5px;
-  padding: 0 5px;
-  border: 1px solid rgba(216, 232, 216, 0.16);
-  border-radius: 2px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(216, 232, 216, 0.06);
   font-size: 0.72em;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -241,21 +277,21 @@
 }
 
 .acp-harness__lane-metrics--warm {
-  border-color: rgba(0, 204, 255, 0.45);
+  background: rgba(0, 204, 255, 0.12);
 }
 .acp-harness__lane-metrics--warm .acp-harness__lane-metrics-cpu {
   color: rgba(0, 204, 255, 0.95);
 }
 
 .acp-harness__lane-metrics--hot {
-  border-color: rgba(250, 200, 99, 0.55);
+  background: rgba(250, 200, 99, 0.14);
 }
 .acp-harness__lane-metrics--hot .acp-harness__lane-metrics-cpu {
   color: #fac863;
 }
 
 .acp-harness__lane-metrics--crit {
-  border-color: rgba(236, 95, 103, 0.65);
+  background: rgba(236, 95, 103, 0.16);
 }
 .acp-harness__lane-metrics--crit .acp-harness__lane-metrics-cpu {
   color: #ec5f67;
@@ -524,11 +560,14 @@
 .acp-harness__lane-inbox {
   flex: 0 0 auto;
   align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   margin-left: 0.5em;
-  padding: 0 5px;
-  border: 1px solid rgba(184, 166, 255, 0.45);
-  border-radius: 2px;
-  color: #b8a6ff;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(184, 166, 255, 0.18);
+  color: #cabfff;
   font-size: 0.7em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1160,7 +1199,7 @@
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 0 6px;
   padding: 0 10px 6px calc(10px + 2ch + 6px);
 }
@@ -1172,8 +1211,8 @@
   letter-spacing: 0.02em;
   text-decoration: none;
   display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
 }
 
 .acp-harness__lane-stats span:not(:last-child)::after {
@@ -2442,16 +2481,19 @@
   animation: acp-harness-lane-spin 0.8s steps(1, end) infinite;
 }
 
+/* Even 8-frame braille perimeter rotation. Every frame holds for exactly one
+   12.5% slice and 100% == 0%, so the loop wraps seamlessly — no doubled frame
+   (the old \2807 sat on 0/87/100%, holding 2x and reading as a hitch/stop). */
 @keyframes acp-harness-lane-spin {
-  0%   { content: '\2807'; }
-  12%  { content: '\280B'; }
-  25%  { content: '\2819'; }
-  37%  { content: '\2838'; }
-  50%  { content: '\2834'; }
-  62%  { content: '\2826'; }
-  75%  { content: '\2827'; }
-  87%  { content: '\2807'; }
-  100% { content: '\2807'; }
+  0%    { content: '\280B'; } /* ⠋ */
+  12.5% { content: '\2819'; } /* ⠙ */
+  25%   { content: '\2839'; } /* ⠹ */
+  37.5% { content: '\2838'; } /* ⠸ */
+  50%   { content: '\283C'; } /* ⠼ */
+  62.5% { content: '\2834'; } /* ⠴ */
+  75%   { content: '\2826'; } /* ⠦ */
+  87.5% { content: '\2827'; } /* ⠧ */
+  100%  { content: '\280B'; } /* ⠋ */
 }
 
 @keyframes acp-harness-busy-pulse {
