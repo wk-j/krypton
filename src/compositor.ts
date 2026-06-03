@@ -4704,13 +4704,14 @@ export class Compositor {
     }
   }
 
-  /** Default window size as fraction of viewport */
+  /** Single grid window: size as fraction of viewport (centered, not filled) */
   private static readonly DEFAULT_WIDTH_RATIO = 0.95;
   private static readonly DEFAULT_HEIGHT_RATIO = 0.90;
-  /** Multi-window: total area used as fraction of viewport */
-  private static readonly MULTI_WIDTH_RATIO = 0.95;
-  private static readonly MULTI_HEIGHT_RATIO = 0.95;
   private static readonly WINDOW_GAP = 6;
+  /** Height of the fixed bottom workspace footer rail (matches
+   *  .krypton-workspace-footer height in workspace-footer.css). Grid layouts
+   *  reserve this space so windows don't overlap the status bar. */
+  private static readonly FOOTER_HEIGHT = 28;
   /** Depth layout: window size as fraction of viewport */
   private static readonly DEPTH_WIDTH_RATIO = 0.88;
   private static readonly DEPTH_HEIGHT_RATIO = 0.90;
@@ -4751,7 +4752,8 @@ export class Compositor {
         this.applyDepthLayer(win, 0);
         this.depthOrder = [win.id];
       } else {
-        // Grid mode: centered at a comfortable default size
+        // Grid mode: a lone window stays at a comfortable centered default size.
+        // (Filling the viewport is reserved for multi-window grids — see relayoutGrid.)
         const w = Math.round(vw * Compositor.DEFAULT_WIDTH_RATIO);
         const h = Math.round(vh * Compositor.DEFAULT_HEIGHT_RATIO);
         win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
@@ -4778,15 +4780,15 @@ export class Compositor {
     collector.layoutEnd();
   }
 
-  /** Grid layout: tile windows in a balanced grid within a centered region */
+  /** Grid layout: tile windows to fill the viewport, inset by the window gap on every edge */
   private relayoutGrid(vw: number, vh: number, count: number): void {
     const { slots, gridCols, gridRows } = autoTile(count);
 
-    const totalW = Math.round(vw * Compositor.MULTI_WIDTH_RATIO);
-    const totalH = Math.round(vh * Compositor.MULTI_HEIGHT_RATIO);
-    const offsetX = Math.round((vw - totalW) / 2);
-    const offsetY = Math.round((vh - totalH) / 2);
     const gap = this.windowGap;
+    const totalW = vw - gap * 2;
+    const totalH = vh - gap * 2 - Compositor.FOOTER_HEIGHT;
+    const offsetX = gap;
+    const offsetY = gap;
 
     const cellW = (totalW - gap * (gridCols - 1)) / gridCols;
     const cellH = (totalH - gap * (gridRows - 1)) / gridRows;
