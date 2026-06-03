@@ -78,6 +78,7 @@ import type {
 } from './types';
 import type {
   AcpLaneMetrics,
+  AcpLaneProcMetric,
   CapturedImage,
   ContentView,
   LeaderKeyBinding,
@@ -9191,12 +9192,17 @@ function renderProcessTree(m: AcpLaneMetrics): string {
     const role = depth === 0
       ? `<span class="acp-harness__metrics-role">adapter</span>`
       : '';
+    const { label, command } = describeProc(p);
+    const detail = label
+      ? `<span class="acp-harness__metrics-detail">${esc(label)}</span>`
+      : '';
     const processName =
       `<span class="acp-harness__metrics-tree">${esc(prefix + branch)}</span>` +
       `<span class="acp-harness__metrics-name">${esc(p.name)}</span>` +
+      detail +
       role;
     lines.push(
-      `<div class="acp-harness__metrics-row${depth === 0 ? ' acp-harness__metrics-row--root' : ''}">` +
+      `<div class="acp-harness__metrics-row${depth === 0 ? ' acp-harness__metrics-row--root' : ''}" title="${esc(command)}">` +
         `<span class="acp-harness__metrics-process">${processName}</span>` +
         `<span class="acp-harness__metrics-pid">${p.pid}</span>` +
         renderMetricCell('cpu', formatCpu(p.cpu_percent), metricPercent(p.cpu_percent, 100)) +
@@ -9224,6 +9230,94 @@ function renderProcessTree(m: AcpLaneMetrics): string {
       lines.join('') +
     `</div>`
   );
+}
+
+// Interpreters whose bare process name ("node", "python3") says nothing about
+// what they're actually running — the useful identity lives in the script /
+// module argument. Everything else is assumed to be its own meaningful name.
+const PROC_INTERPRETERS = new Set([
+  'node', 'node.exe', 'deno', 'bun', 'electron',
+  'python', 'python.exe', 'ruby', 'perl', 'php', 'java', 'dotnet',
+]);
+
+function isInterpreter(name: string): boolean {
+  const n = name.toLowerCase();
+  return PROC_INTERPRETERS.has(n) || n.startsWith('python');
+}
+
+// "@scope/pkg@1.2.3" → "@scope/pkg"; "pkg@1.2.3" → "pkg"; leaves a bare
+// "@scope/pkg" (no version) and a plain "pkg" untouched.
+function stripPkgVersion(spec: string): string {
+  const at = spec.lastIndexOf('@');
+  return at > 0 ? spec.slice(0, at) : spec;
+}
+
+function procBasename(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, '');
+  const i = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  return i === -1 ? trimmed : trimmed.slice(i + 1);
+}
+
+// Turn a script path into the most recognizable name: the npm package when it
+// lives under node_modules (handles @scope/name and .bin shims), otherwise the
+// file's basename. e.g.
+//   .../node_modules/@modelcontextprotocol/server-filesystem/dist/index.js
+//     → "@modelcontextprotocol/server-filesystem"
+//   .../node_modules/.bin/claude-code-acp → "claude-code-acp"
+//   /Users/me/proj/server.js              → "server.js"
+function prettifyScriptPath(path: string): string {
+  const marker = path.lastIndexOf('node_modules/');
+  if (marker !== -1) {
+    const parts = path.slice(marker + 'node_modules/'.length).split('/').filter(Boolean);
+    if (parts.length) {
+      if (parts[0] === '.bin' && parts[1]) return parts[1];
+      if (parts[0].startsWith('@') && parts[1]) return `${parts[0]}/${parts[1]}`;
+      return parts[0];
+    }
+  }
+  return procBasename(path);
+}
+
+// Derive a short human label for a process row plus the full command for the
+// hover tooltip. The label answers "which node is this?" — the question the
+// bare process tree can't, since a busy lane is mostly indistinguishable
+// "node" rows (the adapter wrapper, each MCP server, tool subprocesses).
+function describeProc(p: AcpLaneProcMetric): { label: string; command: string } {
+  const argv = Array.isArray(p.cmd) ? p.cmd.filter((a) => a.length > 0) : [];
+  const command = argv.length ? argv.join(' ') : (p.exe ?? p.name);
+  // First argument that isn't a flag — for interpreters this is the script or,
+  // after `-m`/`-e` style flags, the module/code token.
+  const firstArg = argv.slice(1).find((a) => !a.startsWith('-'));
+
+  let label = '';
+  if (isInterpreter(p.name)) {
+    if (firstArg) {
+      label = prettifyScriptPath(firstArg);
+      // npx / npm-exec launchers: the script *is* the launcher ("npm"), so the
+      // useful identity is the package it's running, further along argv. The
+      // Claude lane (`npx -y @agentclientprotocol/claude-agent-acp`) lands here.
+      const launcher = procBasename(firstArg).toLowerCase();
+      if (launcher === 'npx-cli.js' || launcher === 'npx' || launcher === 'npm-cli.js' || launcher === 'npm') {
+        const after = argv.slice(argv.indexOf(firstArg) + 1).find((a) => !a.startsWith('-'));
+        if (after) label = stripPkgVersion(after);
+      }
+    }
+  } else if (firstArg) {
+    // Non-interpreter binary (claude, rg, git…): a path arg → its basename,
+    // a short bareword → the subcommand itself.
+    label = /[/\\]/.test(firstArg)
+      ? prettifyScriptPath(firstArg)
+      : (firstArg.length <= 24 ? firstArg : '');
+  } else if (argv.length === 0 && p.exe) {
+    // No argv at all (restricted process): fall back to the exe basename when
+    // it adds something the name doesn't already say.
+    const base = procBasename(p.exe);
+    if (base && base.toLowerCase() !== p.name.toLowerCase()) label = base;
+  }
+
+  // Never echo the process name back as its own label.
+  if (label.toLowerCase() === p.name.toLowerCase()) label = '';
+  return { label, command };
 }
 
 function renderMetricCell(kind: 'cpu' | 'rss', value: string, width: number): string {

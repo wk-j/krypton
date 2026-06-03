@@ -127,11 +127,22 @@ pub struct TreeMetrics {
 pub struct ProcMetric {
     pub pid: u32,
     pub parent_pid: Option<u32>,
-    pub name: String,             // "claude-code-acp", "node", etc.
+    pub name: String,             // bare process name: "node", "python3", etc.
+    pub cmd: Vec<String>,         // full argv (bounded) — the frontend derives
+                                  // a label from this; "node" alone is useless
+    pub exe: Option<String>,      // resolved exe path; fallback label source
     pub cpu_percent: f64,
     pub rss_mb: f64,
 }
 ```
+
+> **`cmd` capture (implementation note).** `sysinfo`'s default
+> `refresh_processes` kind omits the command line, so `Process::cmd()` would be
+> empty. The sampler uses `refresh_processes_specifics` with the default kind
+> plus `.with_cmd(UpdateKind::OnlyIfNotSet)` — cmd/exe are read once per
+> process and cached, keeping the per-tick cost flat. argv is bounded
+> (`MAX_CMD_ARGS = 48`, `MAX_ARG_LEN = 1024`, char-boundary safe) so a
+> pathological `node -e '<blob>'` can't bloat the 2 Hz payload.
 
 A long-lived `Mutex<sysinfo::System>` lives in Tauri state
 (`AcpMetricsSampler`). Each call:
@@ -150,6 +161,8 @@ export interface AcpLaneProcMetric {
   pid: number;
   parent_pid: number | null;
   name: string;
+  cmd: string[];          // full argv; source for the derived label
+  exe: string | null;     // resolved exe path; fallback label source
   cpu_percent: number;
   rss_mb: number;
 }
@@ -241,13 +254,33 @@ absolute MB has no universal "high".
 panel at `acp-harness-view.ts:1502`), one row per process:
 
 ```
-ADAPTER         pid 8421    cpu 12%    rss 184M
-├ node          pid 8443    cpu  3%    rss  62M    [@modelcontextprotocol/server-filesystem]
-├ python3       pid 8455    cpu  0%    rss  41M    [mcp-server-git]
-└ rg            pid 8470    cpu  9%    rss  12M
+node  @agentclientprotocol/claude-agent-acp  [adapter]   pid 8421   cpu 12%   rss 184M
+├ node  @modelcontextprotocol/server-filesystem          pid 8443   cpu  3%   rss  62M
+├ python3  mcp_server_git                                pid 8455   cpu  0%   rss  41M
+└ rg                                                     pid 8470   cpu  9%   rss  12M
 ```
 
 Shows tree from the active lane only. Updated live by the same poll loop.
+
+**Process labelling (`describeProc`).** A bare process tree is mostly
+indistinguishable `node` rows (the adapter wrapper, each MCP server, tool
+subprocesses), so each row carries a derived label answering "which `node` is
+this?" plus the full command on hover (`title`). Derivation
+(`acp-harness-view.ts`):
+
+- **Interpreters** (`node`, `python*`, `deno`, `bun`, `ruby`, …) → the first
+  non-flag argv token (the script / `-m` module), prettified: an npm package
+  when under `node_modules/` (`@scope/name`, `.bin/<name>` shims handled),
+  else the file basename.
+- **npx / npm-exec launchers** → the package being run, scanned further along
+  argv and version-stripped (`@scope/pkg@1.2.3` → `@scope/pkg`). The Claude
+  lane's `npx -y @agentclientprotocol/claude-agent-acp` resolves here.
+- **Other binaries** (`claude`, `rg`, `git`…) → a path operand's basename, or a
+  short bareword subcommand.
+- **No argv** (restricted process) → exe basename when it adds something the
+  name doesn't.
+
+The label never echoes the process name back at itself.
 
 ### Configuration
 

@@ -397,10 +397,24 @@
 }
 
 .acp-harness__metrics-name {
+  /* Process names are short ("node", "claude") — never let them truncate;
+     the detail label absorbs all the shrinking instead. */
+  flex: 0 0 auto;
   color: rgba(216, 232, 216, 0.86);
+  white-space: nowrap;
+}
+
+.acp-harness__metrics-detail {
+  /* The "which node is this?" answer: package / module / script name. Reads
+     as cyan-secondary — clearly the process's identity, subordinate to the
+     name, and the first thing to ellipsize when the row gets tight. */
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: rgba(0, 204, 255, 0.6);
+  letter-spacing: 0.01em;
 }
 
 .acp-harness__metrics-tree {

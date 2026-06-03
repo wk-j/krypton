@@ -442,6 +442,10 @@ export interface AcpLaneProcMetric {
   pid: number;
   parent_pid: number | null;
   name: string;
+  /** Full argv (bounded backend-side). Source for the human-readable label. */
+  cmd: string[];
+  /** Resolved executable path, when readable. Fallback label source. */
+  exe: string | null;
   cpu_percent: number;
   rss_mb: number;
 }
