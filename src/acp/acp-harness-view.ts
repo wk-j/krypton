@@ -53,6 +53,16 @@ import {
   type PendingPeerSummary,
   type ReviewCardPayload,
 } from './inter-lane';
+import {
+  nextLaneNumber,
+  registerHarness,
+  unregisterHarness,
+  notifyForeignLaneClosed,
+  peersFor,
+  resolveDisplayName,
+  harnessEntry,
+  type HarnessEntry,
+} from './harness-directory';
 import { parseMentionFanOut } from './mention-parse';
 import {
   applyMentionSelection,
@@ -658,6 +668,17 @@ function backendLabel(backendId: string): string {
   return BACKEND_LABELS[backendId] ?? backendId.charAt(0).toUpperCase() + backendId.slice(1);
 }
 
+/** spec 141: normalize a cwd for cross-project comparison (cross_project_review,
+ *  same-repo grouping). Strips a trailing slash so `/repo` and `/repo/` match.
+ *  Symlink resolution would need Rust; the realistic cross-project case is
+ *  clearly-distinct roots, which this already separates. null cwds never match a
+ *  real path. */
+function normalizeCwd(cwd: string | null): string | null {
+  if (!cwd) return null;
+  const trimmed = cwd.replace(/\/+$/, '');
+  return trimmed.length > 0 ? trimmed : '/';
+}
+
 // spec 125 — lane-rail disambiguation helpers. Pure, side-effect-free
 // derivations from data the schema already carries (HarnessLane.backendId,
 // HarnessDirective.task / title). Exported so unit tests can exercise the
@@ -962,6 +983,9 @@ export class AcpHarnessView implements ContentView {
   private reviewReplyUnlisten: UnlistenFn | null = null;
   private memoryEntries: HarnessMemoryEntry[] = [];
   private harnessMemoryId: string | null = null;
+  /** spec 141: this view's entry in the process-wide HarnessDirectory, while
+   * registered. Holds the `alive` flag the directory reads when routing. */
+  private directoryEntry: HarnessEntry | null = null;
   private harnessMemoryPort: number | null = null;
   private harnessMemoryWarning: string | null = null;
   private gitBranch: string | null = null;
@@ -1129,6 +1153,12 @@ export class AcpHarnessView implements ContentView {
               status: l.status,
               modelName: l.modelName,
               inboxDepth: 0,
+              // spec 141: local lanes are tagged local:true and carry this view's
+              // harnessId + cwd so peer_list presents local and foreign peers
+              // uniformly.
+              local: true,
+              harnessId: this.harnessMemoryId ?? undefined,
+              cwd: this.projectDir,
               activeDirective: directive
                 ? {
                     id: directive.id,
@@ -1200,6 +1230,48 @@ export class AcpHarnessView implements ContentView {
         this.scheduleLaneRender(l);
       },
     };
+  }
+
+  /**
+   * spec 141: register this view in the process-wide HarnessDirectory so its
+   * lanes are reachable by name from every other open harness view. Idempotent
+   * — no-op before the harness id is known or once already registered. Removal
+   * happens in dispose().
+   */
+  private registerWithDirectory(): void {
+    if (!this.harnessMemoryId || this.directoryEntry) return;
+    const entry: HarnessEntry = {
+      harnessId: this.harnessMemoryId,
+      cwd: this.projectDir,
+      alive: true,
+      listLanes: () => this.coordinator.listLanes(),
+      resolveLocalDisplayName: (name) => {
+        const lane = this.lanes.find((l) => l.displayName === name && l.status !== 'stopped');
+        return lane ? { laneId: lane.id, displayName: lane.displayName } : null;
+      },
+      acceptInbound: (env) => {
+        if (!entry.alive) {
+          return {
+            result: { delivered: false, reason: 'harness_closed' },
+            senderIsReplier: false,
+            effectiveDone: env.done,
+          };
+        }
+        return this.coordinator.acceptInbound(env);
+      },
+      acceptForeignCancellation: (targetLaneId, cancellerDisplayName) => {
+        if (!entry.alive) return;
+        this.coordinator.acceptForeignCancellation(targetLaneId, cancellerDisplayName);
+      },
+      clearCancellationTombstone: (cancellerLaneId, peerDisplayName) => {
+        this.coordinator.clearForeignCancellationTombstone(cancellerLaneId, peerDisplayName);
+      },
+      onForeignHarnessClosed: (snapshot) => {
+        this.coordinator.onForeignHarnessClosed(snapshot);
+      },
+    };
+    this.directoryEntry = entry;
+    registerHarness(entry);
   }
 
   /** spec 115: @mention fan-out from composer.
@@ -1329,18 +1401,65 @@ export class AcpHarnessView implements ContentView {
         // The Rust side addresses lanes by display name; translate to
         // internal lane ids before handing to the coordinator.
         const fromLane = this.lanes.find((l) => l.displayName === env.fromLaneId);
-        const toLane = this.lanes.find((l) => l.displayName === env.toLaneId);
         if (!fromLane) {
           reply({ delivered: false, reason: 'unknown_sender' });
           return;
         }
-        const translated: InterLaneEnvelope = {
+        const toLane = this.lanes.find((l) => l.displayName === env.toLaneId);
+        if (toLane) {
+          // Same-view delivery — both lanes live in this coordinator.
+          const translated: InterLaneEnvelope = {
+            ...env,
+            fromLaneId: fromLane.id,
+            toLaneId: toLane.id,
+          };
+          reply(this.coordinator.deliver(translated));
+          return;
+        }
+        // spec 141: cross-view delivery. The target displayName is globally
+        // unique, so resolve it across every live harness view.
+        const resolved = resolveDisplayName(env.toLaneId);
+        if (!resolved) {
+          // Unknown or closed lane (names are never recycled → no false match).
+          reply({ delivered: false, reason: 'unknown_lane' });
+          return;
+        }
+        const target = harnessEntry(resolved.harnessId);
+        if (!target) {
+          reply({ delivered: false, reason: 'harness_closed' });
+          return;
+        }
+        // Sender-side "one outstanding per target" guard, keyed by the foreign
+        // displayName — must run on THIS (sender's) coordinator before the hop.
+        const senderEnv: InterLaneEnvelope = {
           ...env,
           fromLaneId: fromLane.id,
-          toLaneId: toLane ? toLane.id : env.toLaneId,
+          toLaneId: resolved.displayName,
         };
-        const result = this.coordinator.deliver(translated);
-        reply(result);
+        if (this.coordinator.isPeerInFlight(senderEnv, resolved.displayName)) {
+          reply({ delivered: false, reason: 'peer_in_flight' });
+          return;
+        }
+        // Recipient side runs on the TARGET coordinator (where the pending state
+        // that classifies the sender lives). Resolve names exactly once, here at
+        // the view boundary: fromLaneId = sender's globally-unique displayName
+        // (the foreign pending key), toLaneId = the target's local lane id.
+        const inboundEnv: InterLaneEnvelope = {
+          ...env,
+          fromLaneId: env.fromLaneId,
+          fromDisplayName: env.fromLaneId,
+          toLaneId: resolved.laneId,
+        };
+        const inbound = target.acceptInbound(inboundEnv);
+        if (inbound.result.delivered) {
+          this.coordinator.recordOutbound(
+            fromLane.id,
+            { key: resolved.displayName, displayName: resolved.displayName },
+            senderEnv,
+            inbound,
+          );
+        }
+        reply(inbound.result);
       },
     );
     this.peerListUnlisten = await listen<{ harnessId?: string; requestId?: string }>(
@@ -1352,7 +1471,12 @@ export class AcpHarnessView implements ContentView {
         if (!this.harnessMemoryId || harnessId !== this.harnessMemoryId) {
           return;
         }
-        const lanes = this.coordinator.listLanes();
+        // spec 141: local lanes (tagged local:true by the host) plus every other
+        // live harness's lanes (tagged local:false, carrying their cwd) so an
+        // agent can pick a peer across projects.
+        const local = this.coordinator.listLanes();
+        const foreign = this.harnessMemoryId ? peersFor(this.harnessMemoryId) : [];
+        const lanes = [...local, ...foreign];
         void invoke('acp_bus_reply', {
           requestId,
           result: { lanes, count: lanes.length },
@@ -1394,7 +1518,17 @@ export class AcpHarnessView implements ContentView {
           return;
         }
         if (!toLane) {
-          reply({ delivered: false, reason: 'unknown_lane' });
+          // spec 141: a review packet's worktree fingerprint + diffstat only make
+          // sense within one repo, so review stays same-project. A reviewer in a
+          // different harness view whose cwd differs is refused with a clear
+          // reason; a same-cwd foreign reviewer is still out of scope (no shared
+          // worktree across coordinators) and reads as unknown here.
+          const foreign = resolveDisplayName(env.toLaneId);
+          if (foreign && normalizeCwd(foreign.cwd) !== normalizeCwd(this.projectDir)) {
+            reply({ delivered: false, reason: 'cross_project_review' });
+          } else {
+            reply({ delivered: false, reason: 'unknown_lane' });
+          }
           return;
         }
         void this.collectGitAndDeliverReviewRequest({
@@ -2259,6 +2393,16 @@ export class AcpHarnessView implements ContentView {
   }
 
   dispose(): void {
+    // spec 141: leave the cross-harness directory FIRST — flip `alive` false (so
+    // any delivery already past resolveDisplayName is rejected deterministically)
+    // and unregister (which captures a close snapshot from the still-intact lanes
+    // and fans a "peer closed" notice out to other harnesses) — all before
+    // tearing lanes/clients/listeners down.
+    if (this.directoryEntry) {
+      this.directoryEntry.alive = false;
+      unregisterHarness(this.directoryEntry.harnessId);
+      this.directoryEntry = null;
+    }
     // spec 128: clear the footer attention badge — the harness is going away.
     this.publishAttention(0, null);
     this.stopComposerTick();
@@ -2870,6 +3014,10 @@ export class AcpHarnessView implements ContentView {
       this.memoryEntries = [];
     }
 
+    // spec 141: join the cross-harness directory once the harness id is known.
+    // No-op when memory init failed (no id). Removal is in dispose().
+    this.registerWithDirectory();
+
     try {
       const cfg = await loadConfig();
       this.laneModels = cfg.acp_harness?.lane_models ?? {};
@@ -2900,6 +3048,12 @@ export class AcpHarnessView implements ContentView {
 
   private async initializeHarnessMemory(): Promise<void> {
     const projectDir = this.projectDir || await invoke<string>('get_app_cwd').catch(() => null);
+    // spec 141: persist the resolved fallback so the cwd the memory session runs
+    // in is the same cwd the directory entry (registerWithDirectory, called right
+    // after start) exposes to peer_list, and that refreshGitBranch / AcpClient.spawn
+    // use. Without this, a view constructed with projectDir=null reports cwd:null to
+    // cross-harness peers even though it actually resolved get_app_cwd here.
+    this.projectDir = projectDir;
     const session = await invoke<HarnessMemorySession>('create_harness_memory', { projectDir });
     this.harnessMemoryId = session.harnessId;
     this.harnessMemoryPort = session.hookPort;
@@ -4132,8 +4286,10 @@ export class AcpHarnessView implements ContentView {
   private async addLaneFromDirective(directive: HarnessDirective): Promise<void> {
     const backendId = directive.backend.trim() ? directive.backend.trim() : 'codex';
     const label = backendLabel(backendId);
-    const existing = this.lanes.filter((l) => l.backendId === backendId).length;
-    const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${existing + 1}`);
+    // spec 141: number from the process-wide, never-recycled counter keyed by
+    // the rendered label prefix so the displayName is globally unique across all
+    // harness views (no per-view collision, safe to address bare).
+    const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${nextLaneNumber(label)}`);
     lane.activeDirectiveId = directive.id;
     lane.pendingDirectiveChange = null;
     lane.triageOverride = null;
@@ -4738,8 +4894,8 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     const label = backendLabel(state.backendId);
-    const existing = this.lanes.filter((l) => l.backendId === state.backendId).length;
-    const lane = this.createLane(this.nextLaneIndex++, state.backendId, `${label}-${existing + 1}`);
+    // spec 141: globally-unique displayName from the directory's monotonic counter.
+    const lane = this.createLane(this.nextLaneIndex++, state.backendId, `${label}-${nextLaneNumber(label)}`);
     lane.client = client;
     this.setLaneStatus(lane, 'starting');
     lane.transcript = [{ id: makeId(), kind: 'system', text: `${mode === 'resume' ? 'resuming' : 'loading'} ${shortId(session.sessionId)}...` }];
@@ -4785,8 +4941,10 @@ export class AcpHarnessView implements ContentView {
 
   private async addLane(backendId: string): Promise<void> {
     const label = backendLabel(backendId);
-    const existing = this.lanes.filter((l) => l.backendId === backendId).length;
-    const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${existing + 1}`);
+    // spec 141: number from the process-wide, never-recycled counter keyed by
+    // the rendered label prefix so the displayName is globally unique across all
+    // harness views (no per-view collision, safe to address bare).
+    const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${nextLaneNumber(label)}`);
     this.lanes.push(lane);
     this.activateLane(lane.id);
     await this.spawnLane(lane);
@@ -4846,6 +5004,12 @@ export class AcpHarnessView implements ContentView {
       type: 'lane:closed',
       payload: { laneId: lane.id, displayName: lane.displayName },
     });
+    // spec 141: this lane stopped but the harness stays open — tell other harness
+    // views so a cross-view initiator waiting on it isn't left in awaiting_peer.
+    // (Whole-harness dispose goes through unregisterHarness instead.)
+    if (this.directoryEntry) {
+      notifyForeignLaneClosed(this.directoryEntry.harnessId, lane.displayName, this.projectDir);
+    }
     if (this.lanes.length === 0) {
       this.activeLaneId = '';
       this.systemRows = [

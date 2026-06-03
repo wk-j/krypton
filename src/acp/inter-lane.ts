@@ -19,6 +19,7 @@ import type {
 } from './types';
 import { LaneBus } from './lane-bus';
 import { LaneInbox } from './lane-inbox';
+import { harnessEntry, resolveDisplayName, type HarnessEntrySnapshot } from './harness-directory';
 
 export type DeliveryResult =
   | { delivered: true; envelopeId: string; queuedDepth: number; hint: string }
@@ -30,8 +31,24 @@ export type DeliveryResult =
         | 'unknown_sender'
         | 'lane_stopped'
         | 'conversation_cancelled'
-        | 'peer_in_flight';
+        | 'peer_in_flight'
+        // spec 141: the target lane's harness view is gone or disposing — a
+        // deterministic cross-view failure (no Rust-oneshot timeout).
+        | 'harness_closed';
     };
+
+/** spec 141: the recipient-side outcome of an inbound envelope, computed on the
+ *  TARGET coordinator (where the pending state that classifies the sender lives)
+ *  and handed back to the sender's coordinator so it can record its outbound
+ *  side with the correct replier/done semantics. */
+export interface AcceptInboundResult {
+  result: DeliveryResult;
+  /** Computed on the target: the sender is replying to a pending request, so it
+   *  must NOT acquire its own pending / awaiting_peer. */
+  senderIsReplier: boolean;
+  /** done after replier-side coercion (a replier can never close the pair). */
+  effectiveDone: boolean;
+}
 
 export type ReviewDeliveryResult =
   | { delivered: true; packetId: string; queuedDepth: number; hint: string }
@@ -43,7 +60,10 @@ export type ReviewDeliveryResult =
         | 'unknown_sender'
         | 'lane_stopped'
         | 'review_in_flight'
-        | 'no_changes';
+        | 'no_changes'
+        // spec 141: a review packet's worktree fingerprint/diffstat only make
+        // sense within one repo, so a foreign-cwd reviewer is refused.
+        | 'cross_project_review';
     };
 
 export interface ReviewReplyDeliveryResult {
@@ -192,6 +212,12 @@ export class InterLaneCoordinator {
     }));
   }
 
+  /**
+   * Same-view delivery. Validates against THIS coordinator's tables (which owns
+   * both the sender and the recipient), then runs the recipient side
+   * (`acceptInbound`) and the sender side (`recordOutbound`). Cross-view delivery
+   * (spec 141) calls the two halves separately across two coordinators.
+   */
   deliver(env: InterLaneEnvelope): DeliveryResult {
     if (env.fromLaneId === env.toLaneId) {
       return { delivered: false, reason: 'self_send' };
@@ -208,49 +234,113 @@ export class InterLaneCoordinator {
     if (this.cancelledPairs.has(this.pairKey(env.toLaneId, env.fromLaneId))) {
       return { delivered: false, reason: 'conversation_cancelled' };
     }
-    if (shouldTrackPending(env) && this.hasPendingTo(env.fromLaneId, env.toLaneId)) {
+    // One outstanding message per target (sender-side). Checked here, before
+    // any side effect, to preserve the pre-factor ordering of failure reasons.
+    if (this.isPeerInFlight(env, env.toLaneId)) {
       return { delivered: false, reason: 'peer_in_flight' };
+    }
+
+    const inbound = this.acceptInbound(env);
+    if (!inbound.result.delivered) return inbound.result;
+    this.recordOutbound(
+      env.fromLaneId,
+      { key: env.toLaneId, displayName: recipient.displayName },
+      env,
+      inbound,
+    );
+    return inbound.result;
+  }
+
+  /** spec 141: the "one outstanding message per target" guard, exposed so the
+   *  cross-view bridge can run it against the sender's coordinator before
+   *  handing the envelope to the target. `toKey` is the pending key — a local
+   *  lane id for same-view, the foreign displayName for cross-view. */
+  isPeerInFlight(env: InterLaneEnvelope, toKey: string): boolean {
+    return shouldTrackPending(env) && this.hasPendingTo(env.fromLaneId, toKey);
+  }
+
+  /**
+   * spec 141 — recipient side of delivery, run on the coordinator that OWNS the
+   * recipient lane. Classifies the sender as initiator-vs-replier against THIS
+   * coordinator's pending table (the only place that state lives), coerces a
+   * replier's done flag, pushes the inbox, and drains. Returns the classification
+   * so the sender's coordinator can record its outbound side consistently.
+   *
+   * For cross-view delivery `env.fromLaneId` carries the sender's globally-unique
+   * displayName (the foreign pending key) and `env.toLaneId` is this view's local
+   * lane id — see the cross-view envelope-keying invariant in spec 141.
+   */
+  acceptInbound(env: InterLaneEnvelope): AcceptInboundResult {
+    const fail = (reason: Extract<DeliveryResult, { delivered: false }>['reason']): AcceptInboundResult => ({
+      result: { delivered: false, reason },
+      senderIsReplier: false,
+      effectiveDone: env.done,
+    });
+    const recipient = this.host.getLane(env.toLaneId);
+    if (!recipient) return fail('unknown_lane');
+    if (recipient.status === 'stopped' || recipient.status === 'error') {
+      return fail('lane_stopped');
+    }
+    if (this.cancelledPairs.has(this.pairKey(env.toLaneId, env.fromLaneId))) {
+      return fail('conversation_cancelled');
     }
 
     // Initiator-owns-lifecycle: only the initiator of a pair may set done:true.
     // If the recipient already has a pending send toward this sender, the sender
-    // is a replier — coerce their done flag to false and skip pending tracking
-    // (a reply is not a new initiation). Harness-injected envelopes bypass this
-    // rule (they're synthetic close notices).
+    // is a replier — coerce their done flag to false (a reply is not a new
+    // initiation). Harness-injected envelopes bypass this rule.
     const senderIsReplier =
-      env.fromLaneId !== '__harness__' &&
-      this.hasPendingTo(env.toLaneId, env.fromLaneId);
+      env.fromLaneId !== '__harness__' && this.hasPendingTo(env.toLaneId, env.fromLaneId);
+    let effective = env;
     if (senderIsReplier && env.done) {
-      env = { ...env, done: false };
+      effective = { ...env, done: false };
     }
 
-    this.inbox(env.toLaneId).push(env);
-    if (shouldTrackPending(env) && !senderIsReplier) {
-      this.trackPending(env.fromLaneId, env.id, env.toLaneId, env.sentAt, env.mentionPacketId);
-    }
-
-    const sender = this.host.getLane(env.fromLaneId);
-    if (sender) {
-      this.host.appendInterLaneRow(
-        env.fromLaneId,
-        'out',
-        { id: env.toLaneId, displayName: recipient.displayName },
-        env.message,
-        env.done,
-        { envelopeId: env.id, channel: interLaneRowChannel(env) },
-      );
-    }
-
+    this.inbox(effective.toLaneId).push(effective);
     if (canDrainInbound(recipient.status)) {
-      this.drain(env.toLaneId);
+      this.drain(effective.toLaneId);
     }
 
     return {
-      delivered: true,
-      envelopeId: env.id,
-      queuedDepth: this.inbox(env.toLaneId).depth(),
-      hint: REPLY_HINT,
+      result: {
+        delivered: true,
+        envelopeId: effective.id,
+        queuedDepth: this.inbox(effective.toLaneId).depth(),
+        hint: REPLY_HINT,
+      },
+      senderIsReplier,
+      effectiveDone: effective.done,
     };
+  }
+
+  /**
+   * spec 141 — sender side of delivery, run on the coordinator that owns the
+   * sender lane. Appends the outbound transcript row and, when the sender is the
+   * initiator (not a replier), tracks pending so the lane goes to awaiting_peer
+   * on stop. `target.key` is the pending key (local lane id same-view, foreign
+   * displayName cross-view); `classification` comes from `acceptInbound`.
+   */
+  recordOutbound(
+    fromLaneId: string,
+    target: { key: string; displayName: string },
+    env: InterLaneEnvelope,
+    classification: { senderIsReplier: boolean; effectiveDone: boolean },
+  ): void {
+    const sender = this.host.getLane(fromLaneId);
+    if (sender) {
+      this.host.appendInterLaneRow(
+        fromLaneId,
+        'out',
+        { id: target.key, displayName: target.displayName },
+        env.message,
+        classification.effectiveDone,
+        { envelopeId: env.id, channel: interLaneRowChannel(env) },
+      );
+    }
+    if (shouldTrackPending(env) && !classification.senderIsReplier) {
+      this.trackPending(fromLaneId, env.id, target.key, env.sentAt, env.mentionPacketId);
+    }
+    this.recomputePeerStatus(fromLaneId);
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -541,16 +631,94 @@ export class InterLaneCoordinator {
     this.pending.delete(laneId);
     const senderInfo = this.host.getLane(laneId);
     const senderName = senderInfo?.displayName ?? laneId;
-    for (const peerId of peers) {
-      const peer = this.host.getLane(peerId);
-      if (!peer) continue;
-      // Tombstone the (canceller → peer) pair so any late reply from the
-      // peer is dropped until it has consumed the cancellation notice.
-      this.cancelledPairs.add(this.pairKey(laneId, peerId));
-      this.host.appendSystemNotice(peerId, `peer ${senderName} cancelled`);
-      this.notifyPeerOfTermination(peerId, senderName, 'cancelled');
+    for (const peerKey of peers) {
+      // Tombstone the (canceller → peer) pair so any late reply from the peer is
+      // dropped until it has consumed the cancellation notice. For a foreign peer
+      // the late reply arrives back through the bridge into THIS coordinator
+      // (env.fromLaneId = the foreign displayName = peerKey), so the same tombstone
+      // catches it.
+      this.cancelledPairs.add(this.pairKey(laneId, peerKey));
+      const peer = this.host.getLane(peerKey);
+      if (peer) {
+        // Local peer — notify directly.
+        this.host.appendSystemNotice(peerKey, `peer ${senderName} cancelled`);
+        this.notifyPeerOfTermination(peerKey, senderName, 'cancelled');
+        continue;
+      }
+      // spec 141: foreign pending peer — peerKey is a globally-unique displayName
+      // owned by another harness view. Route the cancellation onto the target
+      // coordinator so the foreign lane gets the same notice + tombstone +
+      // termination prompt a local cancel would produce (Codex-1 re-review High 2).
+      // Without this, the foreign peer keeps running and could still reply,
+      // breaking byte-for-byte #cancel.
+      const resolved = resolveDisplayName(peerKey);
+      if (resolved) {
+        harnessEntry(resolved.harnessId)?.acceptForeignCancellation(resolved.laneId, senderName);
+      }
     }
     this.recomputePeerStatus(laneId);
+  }
+
+  /**
+   * spec 141 — a FOREIGN lane (`cancellerDisplayName`, owned by another harness
+   * view) ran #cancel on its conversation with our local lane `targetLaneId`.
+   * Give `targetLaneId` the same treatment a local peer cancel produces: drop any
+   * pending it held toward the canceller, surface the notice, and inject the
+   * termination prompt so the agent stops replying.
+   */
+  acceptForeignCancellation(targetLaneId: string, cancellerDisplayName: string): void {
+    const target = this.host.getLane(targetLaneId);
+    if (!target) return;
+    // The canceller is foreign, so its key in our pending table (if any) is its
+    // displayName. Clear any pending our lane held toward it.
+    this.clearPendingFromPeer(targetLaneId, cancellerDisplayName);
+    this.host.appendSystemNotice(targetLaneId, `peer ${cancellerDisplayName} cancelled`);
+    // Carry ack metadata: when this lane drains the notice, it routes a callback
+    // to the canceller's coordinator to clear the cross-view tombstone (so the
+    // tombstone lives until acknowledgement, not until the canceller re-sends).
+    this.notifyPeerOfTermination(targetLaneId, cancellerDisplayName, 'cancelled', {
+      cancellerDisplayName,
+      peerDisplayName: target.displayName,
+    });
+    this.recomputePeerStatus(targetLaneId);
+  }
+
+  /** spec 141 — clear a cross-view cancellation tombstone on THIS (canceller's)
+   *  coordinator, invoked when the foreign peer acknowledges the cancellation by
+   *  draining its notice. */
+  clearForeignCancellationTombstone(cancellerLaneId: string, peerDisplayName: string): void {
+    this.cancelledPairs.delete(this.pairKey(cancellerLaneId, peerDisplayName));
+  }
+
+  /**
+   * spec 141 — a foreign harness view closed. For any local lane with a pending
+   * send toward one of the closed harness's lanes (keyed by displayName in the
+   * snapshot), surface a "peer closed" notice + termination prompt, exactly like
+   * a local lane closing. Pending tables are private to each coordinator, so this
+   * is the directory→coordinator bridge for the close path.
+   */
+  onForeignHarnessClosed(snapshot: HarnessEntrySnapshot): void {
+    const names = new Set(snapshot.displayNames);
+    for (const [senderId, sends] of [...this.pending.entries()]) {
+      const closing = sends.filter((s) => names.has(s.toLaneId));
+      if (closing.length === 0) continue;
+      const remaining = sends.filter((s) => !names.has(s.toLaneId));
+      if (remaining.length === 0) this.pending.delete(senderId);
+      else this.pending.set(senderId, remaining);
+      const notified = new Set<string>();
+      for (const s of closing) {
+        if (notified.has(s.toLaneId)) continue;
+        notified.add(s.toLaneId);
+        this.host.appendSystemNotice(senderId, `peer ${s.toLaneId} closed`);
+        this.notifyPeerOfTermination(senderId, s.toLaneId, 'closed');
+      }
+      this.recomputePeerStatus(senderId);
+    }
+    // Drop any cancellation tombstones referencing the closed foreign names.
+    for (const key of this.cancelledPairs) {
+      const peerKey = key.split('::')[1];
+      if (names.has(peerKey)) this.cancelledPairs.delete(key);
+    }
   }
 
   private pairKey(cancellerLaneId: string, peerLaneId: string): string {
@@ -623,6 +791,7 @@ export class InterLaneCoordinator {
     peerLaneId: string,
     senderName: string,
     kind: 'cancelled' | 'closed',
+    foreignCancelAck?: { cancellerDisplayName: string; peerDisplayName: string },
   ): void {
     const peer = this.host.getLane(peerLaneId);
     if (!peer) return;
@@ -641,6 +810,7 @@ export class InterLaneCoordinator {
       done: true,
       sentAt: Date.now(),
       harnessId: '__harness__',
+      foreignCancelAck,
     });
     if (canDrainInbound(peer.status)) this.drain(peerLaneId);
   }
@@ -739,10 +909,26 @@ export class InterLaneCoordinator {
         // Synthetic — notice already rendered as a system row. Mark that the
         // peer has now seen the cancellation/closure prompt.
         drainedHarnessNotice = true;
+        // spec 141: a foreign cancellation notice carries ack metadata. Draining
+        // it is this peer's acknowledgement, so clear the tombstone on the
+        // canceller's (foreign) coordinator — the cross-coordinator analogue of
+        // the local suffix-clear below.
+        if (env.foreignCancelAck) {
+          const ack = env.foreignCancelAck;
+          const canceller = resolveDisplayName(ack.cancellerDisplayName);
+          if (canceller) {
+            harnessEntry(canceller.harnessId)?.clearCancellationTombstone(
+              canceller.laneId,
+              ack.peerDisplayName,
+            );
+          }
+        }
         continue;
       }
       const sender = this.host.getLane(env.fromLaneId);
-      const senderName = sender?.displayName ?? env.fromLaneId;
+      // spec 141: a foreign sender has no local lane, so fall back to the
+      // displayName carried on the cross-view envelope.
+      const senderName = sender?.displayName ?? env.fromDisplayName ?? env.fromLaneId;
       const rowMessage =
         env.kind === 'review_request' && env.reviewPacket
           ? `[review request received] ${env.reviewPacket.diffstat.length} files; ` +
@@ -774,7 +960,9 @@ export class InterLaneCoordinator {
     const mailEnvelopes = envelopes.filter((env) => env.fromLaneId !== '__harness__');
     const firstMail = mailEnvelopes[0];
     const primaryPeerDisplayName = firstMail
-      ? (this.host.getLane(firstMail.fromLaneId)?.displayName ?? firstMail.fromLaneId)
+      ? (this.host.getLane(firstMail.fromLaneId)?.displayName ??
+        firstMail.fromDisplayName ??
+        firstMail.fromLaneId)
       : null;
     const text = this.composePrompt(envelopes, recipientWasInitiator);
     this.host.enqueueSystemPrompt(laneId, text, {
@@ -800,7 +988,7 @@ export class InterLaneCoordinator {
         continue;
       }
       const sender = this.host.getLane(env.fromLaneId);
-      const senderName = sender?.displayName ?? env.fromLaneId;
+      const senderName = sender?.displayName ?? env.fromDisplayName ?? env.fromLaneId;
       if (env.mentionPacketId) {
         parts.push(
           `[mention reply] From ${senderName}:\n\n${env.message}\n\n` +

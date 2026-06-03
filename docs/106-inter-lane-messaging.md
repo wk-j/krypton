@@ -35,7 +35,7 @@ Key findings from `src/acp/acp-harness-view.ts`, `src/acp/client.ts`, `src-tauri
 - **MCP host already runs** at `hook_server.rs:215+` on localhost. The memory tools live at `/mcp/harness/<harnessId>/lane/<laneLabel>` (`hook_server.rs:490`). We add two more tools to the same endpoint and rename the server `krypton-harness-bus`. No new transport.
 - **Auto-allow precedent**: Spec 96 silently approved `memory_set` / `memory_get` / `memory_list`. The implementation now splits the detector into memory tools and peer tools, then combines them under `HARNESS_AUTO_ALLOW_TOOL_NAMES`; `peer_send` and `peer_list` are auto-allowed but rendered as auditable permission cards.
 - **`#cancel` exists** as the current cancel-active-turn affordance (line 1661). We hook into the same path so cancelling a lane in `awaiting_peer` clears the bus state and notifies the peer.
-- **Per-project isolation**: harness state is keyed by project-dir hash (`hook_server.rs:258`). Inter-lane messages share the same scope — lanes in different projects never see each other, by construction.
+- **~~Per-project isolation~~ (superseded — see spec 141):** this line originally claimed harness state was keyed by a project-dir hash so lanes in different projects never see each other. That was already stale (each `AcpHarnessView` gets a brand-new sequence-based `harnessId`, not a project hash — `hook_server.rs::create_harness_memory`), and **spec 141 (cross-harness peering) lifts the isolation entirely**: lanes are addressed by a globally-unique `displayName` and can peer across harness views and across projects. The original same-harness `harnessId` filter still scopes which view *consumes* a `peer_send` event; the cross-view hop then happens in-process via the `HarnessDirectory` singleton. `peer_list` now surfaces each peer's `cwd` and a `local` flag.
 
 **Alternatives ruled out:**
 - *Hard-cancel A's turn after `peer_send` returns* — requires calling `session/cancel`, surfaces as `stop_reason: cancelled`, looks like an error. Rejected in favour of soft guidance via tool description + return-message hint.
@@ -311,7 +311,7 @@ All changes appear **only** when a conversation is active. Lane sidebar is verti
 - **Group chats** (>2 lanes in one conversation). Data model is point-to-point.
 - **Persisting conversations across harness restart.** Inbox + bus state are in-memory.
 - **Streaming partial replies.** Lanes exchange complete turns, not token streams.
-- **Cross-project / cross-harness messaging.**
+- ~~**Cross-project / cross-harness messaging.**~~ **Now in scope via spec 141** — lanes peer across harness views and across projects, addressed by globally-unique `displayName`; `peer_list` exposes each peer's `cwd`. (`review_request`/`review_reply` stay same-project — they depend on a shared worktree.)
 - **Auto-spawn missing peer.** Unknown lane = reject.
 - **Agent-initiated peer review** (agent decides on its own to consult another lane). User-directed only in this spec.
 - **Telemetry / token-cost tracking** for inter-lane traffic.

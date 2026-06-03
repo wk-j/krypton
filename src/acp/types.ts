@@ -253,6 +253,18 @@ export interface InterLaneEnvelope {
   sentAt: number;
   /** Rust-side harness scope tag. Used by the bridge to drop cross-harness leakage. */
   harnessId?: string;
+  /** spec 141: the sender's globally-unique displayName, carried on cross-view
+   * envelopes so the target coordinator can render the peer name and key pending
+   * tracking without a local `getLane` lookup (which returns null for a foreign
+   * lane). */
+  fromDisplayName?: string;
+  /** spec 141: set on the synthetic cancellation notice injected into a FOREIGN
+   * peer (`acceptForeignCancellation`). When the peer drains it, the coordinator
+   * routes a callback to the canceller's coordinator to clear the cross-view
+   * cancellation tombstone — the cross-coordinator analogue of the local
+   * drainedHarnessNotice suffix-clear, so the tombstone lives only until the peer
+   * acknowledges the cancellation (not until the canceller re-initiates). */
+  foreignCancelAck?: { cancellerDisplayName: string; peerDisplayName: string };
   /** spec 112 / 115: peer chat, review, or composer @mention fan-out. */
   kind?: 'peer' | 'review_request' | 'mention_request';
   reviewPacket?: ReviewPacket;
@@ -274,6 +286,13 @@ export interface LaneSummary {
   status: HarnessLaneStatus;
   modelName: string | null;
   inboxDepth: number;
+  /** spec 141: cross-harness routing/identity. `harnessId` is the owning view's
+   * id (`hm-NN`); `local` is false for peers reached through the directory;
+   * `cwd` is the owning view's working directory, surfaced so an agent can tell
+   * which project a (possibly foreign) peer belongs to. */
+  harnessId?: string;
+  local?: boolean;
+  cwd?: string | null;
   /** spec 124: lane-scope directive binding, if any. Surfaced via peer_list so
    * callers can pick the lane whose role fits the job. Reflects
    * `activeDirectiveId` only — one-shot `turnDirectiveOverride` is excluded
