@@ -43,10 +43,9 @@ put all real content in 'detail'. Empty strings clear it.",
     "properties": {
       "summary": {
         "type": "string",
-        "maxLength": 300,
         "description": "One short headline only (a single sentence). Do NOT \
-put the body here — it is rejected past the length limit. Use 'detail' for \
-everything substantial."
+put the body here — anything past ~300 characters is clipped to a headline \
+(never rejected). Use 'detail' for everything substantial."
       },
       "detail": {
         "type": "string",
@@ -98,7 +97,7 @@ the agent calls `memory_list` if curious.
 
 ```rust
 struct LaneMemory {
-    summary: String,    // ≤300 chars
+    summary: String,    // clipped to ≤300 chars (headline)
     detail: String,     // ≤8000 chars
     updated_at: u64,
 }
@@ -135,7 +134,8 @@ Lane memory is persisted to disk per project directory. See `docs/76-acp-harness
 - **Lane removed from harness:** drop its entry.
 - **Lane never set memory:** `memory_get(lane)` returns `{ entry: null }`.
 - **Adapter does not support MCP descriptor:** lane runs without memory tools (unchanged).
-- **Oversized field:** reject. The `summary` rejection is *instructive* rather than a bare code — it reports the actual char count and tells the model to keep `summary` to one headline and move the body into `detail` (e.g. `summary is 412 chars but must be ≤300: keep it to one short headline and move the body into 'detail' (allows 8000 chars)`). Oversize `detail` rejects with `detail exceeds 8000 characters`. The model attends to the natural-language tool/field descriptions far more than to JSON-Schema `maxLength`, and cannot reliably count characters itself (Thai is worse, since the limit counts Unicode code points via `chars().count()`), so the constraint is carried qualitatively ("short one-line headline") in the descriptions and the error names the fix.
+- **Oversized `summary`:** clip, don't reject. `summary` is only the scannable headline shown by `memory_list`, and the body always lives in `detail`, so an over-long `summary` is harmless — `memory_set` truncates it server-side to `MEMORY_SUMMARY_MAX` code points and appends an ellipsis (`clamp_headline`), then stores it. This replaced the earlier *instructive rejection* (`summary is 412 chars but must be ≤300: …`): the model attends to the natural-language field description far more than to JSON-Schema `maxLength` and **cannot reliably count characters itself** (Thai is worse, since the limit counts Unicode code points via `chars().count()`), so the rejection produced retry loops — the model shaving the headline down across several failed turns — instead of compliance. The qualitative nudge ("one short headline") stays in the description; the cap is now enforced by truncation, not a wall. The `summary` `maxLength` was dropped from the input schema so no MCP client hard-rejects before the server can clip.
+- **Oversized `detail`:** reject with `detail exceeds 8000 characters`. Unlike `summary`, `detail` carries real content, so silently truncating it would lose substance — an over-cap body is a genuine mistake worth surfacing.
 - **Mixed empty/non-empty in `memory_set`:** reject with `mixed_empty`.
 - **Concurrent `memory_set` from same lane:** last writer wins (`Mutex` serializes).
 

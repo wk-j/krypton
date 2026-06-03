@@ -1414,6 +1414,22 @@ fn safe_truncate(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
+/// Clamp a one-line headline to at most `max` Unicode code points, appending an
+/// ellipsis when it had to be clipped. Counting by code points (not bytes)
+/// matches `MEMORY_SUMMARY_MAX` and stays correct for multi-byte scripts such as
+/// Thai. `memory_set` uses this to truncate an over-long `summary` instead of
+/// rejecting it: models cannot reliably self-count characters, so the old
+/// instructive rejection just produced retry loops. The body lives in `detail`;
+/// `summary` is only the scannable headline shown by `memory_list`.
+fn clamp_headline(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut clamped: String = s.chars().take(max.saturating_sub(1)).collect();
+    clamped.push('\u{2026}');
+    clamped
+}
+
 fn collect_git_state(cwd: Option<&str>) -> Value {
     use std::process::Command;
 
@@ -2052,16 +2068,11 @@ fn memory_set(
                 .to_string(),
         );
     }
-    if !summary_empty {
-        if summary.chars().count() > MEMORY_SUMMARY_MAX {
-            return Err(format!(
-                "summary is {} chars but must be \u{2264}{MEMORY_SUMMARY_MAX}: keep it to one short headline and move the body into 'detail' (allows {MEMORY_DETAIL_MAX} chars)",
-                summary.chars().count()
-            ));
-        }
-        if detail.chars().count() > MEMORY_DETAIL_MAX {
-            return Err(format!("detail exceeds {MEMORY_DETAIL_MAX} characters"));
-        }
+    // `summary` is only a scannable headline — clip it server-side rather than
+    // reject (models can't reliably self-count code points, especially in Thai).
+    // `detail` carries the body, so an over-long body is a real mistake: reject.
+    if !summary_empty && detail.chars().count() > MEMORY_DETAIL_MAX {
+        return Err(format!("detail exceeds {MEMORY_DETAIL_MAX} characters"));
     }
 
     let mut memories = hook_server
@@ -2080,7 +2091,7 @@ fn memory_set(
     }
 
     let doc = LaneMemoryDoc {
-        summary: summary.trim().to_string(),
+        summary: clamp_headline(summary.trim(), MEMORY_SUMMARY_MAX),
         detail: detail.trim().to_string(),
         updated_at: now_ms(),
     };
@@ -2242,8 +2253,7 @@ fn bus_tool_descriptors() -> Value {
                 "properties": {
                     "summary": {
                         "type": "string",
-                        "maxLength": MEMORY_SUMMARY_MAX,
-                        "description": "One short headline only (a single sentence). Do NOT put the body here — it is rejected past the length limit. Use 'detail' for everything substantial."
+                        "description": "One short headline only (a single sentence). Do NOT put the body here — anything past ~300 characters is clipped to a headline (never rejected). Use 'detail' for everything substantial."
                     },
                     "detail": {
                         "type": "string",
@@ -3120,5 +3130,40 @@ mod tests {
         assert!(root.join("hm-2").exists(), "live hm-2 must survive");
         assert!(root.join(".gitignore").exists(), ".gitignore must survive");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // memory_set no longer rejects an over-long `summary` — it clips it to a
+    // headline server-side, so the model never hits a retry loop trying (and
+    // failing) to self-count code points.
+    #[test]
+    fn clamp_headline_passes_short_unchanged() {
+        let s = "#727 RE-AUDIT DONE";
+        assert_eq!(clamp_headline(s, MEMORY_SUMMARY_MAX), s);
+        // Exactly at the cap is kept verbatim (no ellipsis).
+        let at_cap: String = "x".repeat(MEMORY_SUMMARY_MAX);
+        assert_eq!(clamp_headline(&at_cap, MEMORY_SUMMARY_MAX), at_cap);
+    }
+
+    #[test]
+    fn clamp_headline_clips_oversize_to_cap_with_ellipsis() {
+        let over: String = "a".repeat(MEMORY_SUMMARY_MAX + 200);
+        let clamped = clamp_headline(&over, MEMORY_SUMMARY_MAX);
+        assert_eq!(clamped.chars().count(), MEMORY_SUMMARY_MAX);
+        assert!(
+            clamped.ends_with('\u{2026}'),
+            "clipped headline marks itself"
+        );
+    }
+
+    #[test]
+    fn clamp_headline_counts_code_points_not_bytes() {
+        // Thai counts as one code point each but several UTF-8 bytes — the cap
+        // is code points (`chars().count()`), and the result stays valid UTF-8.
+        let thai: String = "ก".repeat(MEMORY_SUMMARY_MAX + 50);
+        let clamped = clamp_headline(&thai, MEMORY_SUMMARY_MAX);
+        assert_eq!(clamped.chars().count(), MEMORY_SUMMARY_MAX);
+        assert!(clamped.ends_with('\u{2026}'));
+        // Byte length far exceeds the code-point cap — proof we clipped by chars.
+        assert!(clamped.len() > MEMORY_SUMMARY_MAX);
     }
 }
