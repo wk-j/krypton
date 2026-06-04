@@ -60,10 +60,10 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  /* Top cyan wash dropped — flat dashboard. Dot-grid texture kept. */
   background:
-    radial-gradient(circle at 12px 12px, rgba(0, 204, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(0, 204, 255, 0.018), transparent 22%);
-  background-size: 10px 10px, 100% 100%;
+    radial-gradient(circle at 12px 12px, rgba(0, 204, 255, 0.018) 1px, transparent 1px);
+  background-size: 10px 10px;
 }
 
 .acp-harness__lane {

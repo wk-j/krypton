@@ -25,7 +25,8 @@
   font-variant-numeric: tabular-nums;
   user-select: none;
   pointer-events: none;
-  box-shadow: 0 -8px 24px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  /* Upward accent glow dropped — flat rail. The 1px border-top stays as a flat
+     separator (a hard line, not a gradient). */
 }
 
 /* spec 132: Krypton brand anchor — identity mark at the leading edge. Persistent

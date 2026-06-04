@@ -477,11 +477,9 @@
   left: 0;
   right: 0;
   height: calc(var(--krypton-terminal-cell-height, 17px) * 5 + 4px);
-  background: linear-gradient(
-    to bottom,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35),
-    transparent 100%
-  );
+  /* Gradient dropped — flat chrome (no top/bottom accent wash). The element is
+     kept so the throughput-driven opacity hook stays wired but paints nothing. */
+  background: none;
   opacity: var(--krypton-glow-intensity, 0.8);
   /* Smooth the 5 Hz throughput-driven opacity updates from chrome-signals so
      command output reads as a gentle pulse instead of a flicker. */
@@ -495,13 +493,8 @@
 .krypton-glow-overlay--bottom {
   top: auto;
   bottom: 0;
-  background: linear-gradient(
-    to top,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35),
-    transparent 100%
-  );
-  mask-image: linear-gradient(to top, black 0%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 100%);
+  /* Gradient dropped — flat chrome (no bottom activity wash). */
+  background: none;
 }
 
 .krypton-pane--focused {
