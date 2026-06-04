@@ -1876,6 +1876,30 @@
 .acp-harness__msg--thought .acp-harness__msg-body {
   color: rgba(216, 232, 216, 0.52);
   font-style: italic;
+  /* Thinking is low-signal detail — cap it to a few lines so a long
+     reasoning dump doesn't dominate the transcript. */
+  max-height: 5.6em; /* ~4 lines at line-height 1.36 */
+  overflow: hidden;
+}
+
+/* Sealed: keep the opening lines, fade the remainder away. */
+.acp-harness__msg--thought:not(.acp-harness__msg--streaming) .acp-harness__msg-body {
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
+  mask-image: linear-gradient(to bottom, #000 62%, transparent);
+}
+
+/* Streaming: a rolling window pinned (via scrollTop in JS) to the latest
+   line, with older lines fading out the top — live reasoning stays visible
+   without growing. */
+.acp-harness__msg--thought.acp-harness__msg--streaming .acp-harness__msg-body {
+  overflow-y: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 38%);
+  mask-image: linear-gradient(to bottom, transparent, #000 38%);
+}
+
+.acp-harness__msg--thought.acp-harness__msg--streaming .acp-harness__msg-body::-webkit-scrollbar {
+  display: none;
 }
 
 .acp-harness__msg--tool .acp-harness__msg-body,

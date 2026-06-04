@@ -8392,6 +8392,7 @@ function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem)
     const seed = document.createTextNode(item.text);
     body.replaceChildren(seed);
     item.streamPlainLength = item.text.length;
+    if (item.kind === 'thought') body.scrollTop = body.scrollHeight;
     return;
   }
   let textNode = body.firstChild;
@@ -8409,6 +8410,9 @@ function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem)
     plain.data = item.text;
     item.streamPlainLength = item.text.length;
   }
+  // Thought rows render in a fixed-height clamped window; keep the latest
+  // reasoning line pinned to the bottom so live thinking stays visible.
+  if (item.kind === 'thought') body.scrollTop = body.scrollHeight;
 }
 
 function applyCoordinatorProvenanceToItem(lane: HarnessLane, item: HarnessTranscriptItem): void {
