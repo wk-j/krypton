@@ -2403,6 +2403,12 @@ export class AcpHarnessView implements ContentView {
       unregisterHarness(this.directoryEntry.harnessId);
       this.directoryEntry = null;
     }
+    // spec 142: drop the active-lane accent while this.element is still in the
+    // DOM (closePaneInTab disposes the contentView BEFORE removing the element),
+    // so a surviving host window (sibling pane promoted) reverts to its
+    // compositor-allocated color rather than keeping a stale lane tint.
+    const accentHost = this.element.closest('.krypton-window');
+    if (accentHost instanceof HTMLElement) delete accentHost.dataset.laneAccent;
     // spec 128: clear the footer attention badge — the harness is going away.
     this.publishAttention(0, null);
     this.stopComposerTick();
@@ -5364,6 +5370,7 @@ export class AcpHarnessView implements ContentView {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
+    this.applyActiveLaneAccent();
     this.renderDashboard();
     this.renderMemory();
     this.renderHelp();
@@ -7537,6 +7544,32 @@ export class AcpHarnessView implements ContentView {
 
   private activeLane(): HarnessLane | null {
     return this.lanes.find((lane) => lane.id === this.activeLaneId) ?? null;
+  }
+
+  /**
+   * Spec 142: paint the host `.krypton-window` with the active lane's identity
+   * accent by setting `data-lane-accent="<slot 1–10>"`; CSS (`window.css`) maps
+   * the slot to the accent vars with `!important`, layered under the
+   * `data-signal` status override. Driven from `render()` — the single funnel
+   * every active-lane change passes through (activateLane, closeActiveLane,
+   * initial mount) — so no `activeLaneId` write can bypass it. Cheap + guarded:
+   * a no-op when the slot is unchanged or the harness isn't mounted in a window
+   * (e.g. tests). The slot derives from `lane.index`, never `lane.accent`
+   * (slot 1's accent is the self-referential `--krypton-window-accent` var). On
+   * no active lane the attribute is dropped so the window reverts to its
+   * compositor-allocated color (the inline accent vars sit underneath, intact).
+   */
+  private applyActiveLaneAccent(): void {
+    const host = this.element.closest('.krypton-window');
+    if (!(host instanceof HTMLElement)) return;
+    const lane = this.activeLane();
+    if (lane) {
+      const slot = ((lane.index - 1) % 10) + 1;
+      const value = String(slot);
+      if (host.dataset.laneAccent !== value) host.dataset.laneAccent = value;
+    } else if (host.dataset.laneAccent !== undefined) {
+      delete host.dataset.laneAccent;
+    }
   }
 
   // ─── Palette contributor ─────────────────────────────────────────────
