@@ -124,7 +124,7 @@
 }
 
 .krypton-workspace-footer__segment--role {
-  color: var(--krypton-success, #8effb0);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.72);
 }
 
 /* Priority ladder — telemetry recedes as it gets less actionable so the eye
@@ -200,7 +200,7 @@
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.78);
 }
 .krypton-workspace-footer__segment--state[data-state='ok'] {
-  color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.85);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
 }
 .krypton-workspace-footer__segment--state[data-state='warn'],
 .krypton-workspace-footer__segment--state[data-state='needs_attention'] {
@@ -275,7 +275,7 @@
 }
 
 .krypton-workspace-footer__hint {
-  color: rgba(142, 255, 176, 0.72);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
 }
 
 .krypton-workspace-footer[data-density="compact"] .krypton-workspace-footer__segment--detail {
@@ -291,7 +291,7 @@
 }
 
 .krypton-workspace-footer__segment--music-icon {
-  color: var(--krypton-success, #8effb0);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.82);
   flex: 0 0 auto;
 }
 

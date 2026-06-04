@@ -38,6 +38,14 @@
   --krypton-backend-junie:    #d96fb3;
   --krypton-backend-omp:      #d9c66f;
   --krypton-backend-grok:     #5ce6a8;
+
+  /* Transcript message-body accents. Carried as a background tint (no
+   * side-stripe) so the accent is themeable and the chrome stays flat. */
+  --acp-accent-review:     #b8dcff;
+  --acp-accent-shell:      #ffd166;
+  --acp-accent-shell-fail: #ff6b8b;
+  --acp-accent-quote:      #d6b8ff;
+  --acp-accent-danger:     #ff7878;
 }
 
 .acp-harness__body {
@@ -640,14 +648,13 @@
   flex-direction: column;
   gap: 6px;
   padding: 6px 8px;
-  border-left: 2px solid rgba(184, 220, 255, 0.45);
-  background: rgba(184, 220, 255, 0.04);
+  background: color-mix(in srgb, var(--acp-accent-review) 7%, transparent);
+  border-radius: 2px;
   color: rgba(216, 232, 240, 0.95);
 }
 
 .acp-harness__review-card--blocked {
-  border-left-color: rgba(255, 168, 120, 0.65);
-  background: rgba(255, 168, 120, 0.06);
+  background: rgba(255, 168, 120, 0.09);
 }
 
 .acp-harness__review-head {
@@ -675,15 +682,14 @@
 
 .acp-harness__review-banner {
   padding: 3px 6px;
-  border-left: 2px solid rgba(255, 200, 120, 0.75);
-  background: rgba(255, 200, 120, 0.08);
+  background: rgba(255, 200, 120, 0.10);
+  border-radius: 2px;
   color: rgba(255, 220, 180, 0.95);
   font-size: 0.86em;
 }
 
 .acp-harness__review-banner--blocked {
-  border-left-color: rgba(255, 120, 120, 0.75);
-  background: rgba(255, 120, 120, 0.08);
+  background: color-mix(in srgb, var(--acp-accent-danger) 12%, transparent);
   color: rgba(255, 200, 200, 0.95);
 }
 
@@ -1290,12 +1296,13 @@
 .acp-harness__msg--shell .acp-harness__msg-body {
   white-space: pre-wrap;
   color: rgba(216, 232, 216, 0.92);
-  border-left: 2px solid rgba(255, 209, 102, 0.5);
-  padding-left: 8px;
+  background: color-mix(in srgb, var(--acp-accent-shell) 7%, transparent);
+  padding: 4px 8px;
+  border-radius: 2px;
 }
 
 .acp-harness__msg--shell.acp-harness__msg--failed .acp-harness__msg-body {
-  border-left-color: rgba(255, 107, 139, 0.6);
+  background: color-mix(in srgb, var(--acp-accent-shell-fail) 9%, transparent);
   color: rgba(255, 200, 210, 0.92);
 }
 
@@ -1751,8 +1758,7 @@
   padding: 4px 8px;
   line-height: 1.28;
   overflow-x: auto;
-  background: rgba(0, 0, 0, 0.42);
-  border-left: 2px solid var(--agent-accent, #8effb0);
+  background: rgba(0, 0, 0, 0.46);
   border-radius: 2px;
 }
 
@@ -1776,9 +1782,9 @@
 
 .acp-harness__msg-body--markdown blockquote {
   margin: 0.12em 0;
-  padding: 0 0.6ch;
-  border-left: 3px solid rgba(214, 184, 255, 0.55);
-  background: rgba(214, 184, 255, 0.06);
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--acp-accent-quote) 9%, transparent);
+  border-radius: 2px;
   color: #e6dcff;
   font-style: italic;
 }
@@ -3949,20 +3955,17 @@
   flex-direction: column;
   gap: 4px;
   padding: 6px 8px;
-  border-left: 2px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 55%, transparent);
-  background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 6%, transparent);
-  border-radius: 0 3px 3px 0;
+  background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 8%, transparent);
+  border-radius: 2px;
 }
 
 .acp-harness__msg--artifact-unavailable .acp-harness__msg-body {
-  border-left-color: rgba(255, 118, 118, 0.5);
-  background: rgba(255, 118, 118, 0.05);
+  background: rgba(255, 118, 118, 0.07);
   opacity: 0.72;
 }
 
 .acp-harness__msg--artifact-hinted .acp-harness__msg-body {
-  border-left-color: var(--krypton-window-accent, #0cf);
-  background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 12%, transparent);
+  background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 14%, transparent);
 }
 
 .acp-harness__artifact-head {
@@ -4009,8 +4012,8 @@
   gap: 2px;
   margin-top: 4px;
   padding: 4px 6px;
-  border-left: 2px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 40%, transparent);
-  background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 4%, transparent);
+  background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 6%, transparent);
+  border-radius: 2px;
 }
 
 .acp-harness__artifact-redaction-note {
