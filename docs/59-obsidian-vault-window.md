@@ -142,6 +142,8 @@ paths = [
 
 Resolution order: if `path` is set, use it directly. If `paths` is set, show picker (or direct if only one). If both, `path` is the default and `paths` populates the picker.
 
+**Auto-detected code wiki:** the picker also includes the focused project's code wiki at `<cwd>/docs/wiki` (see `docs/144-harness-wiki-command.md`) whenever that directory exists — no `[vault]` entry required. `getVaultEntries()` resolves the focused terminal/lane cwd via `getFocusedCwd()` and probes `<cwd>/docs/wiki` with `list_directory` (a successful call means the directory exists); the entry is labelled `docs/wiki` and deduplicated by path against any configured vault. This means `u` opens straight into the project's `#wiki` knowledge base with zero configuration, and the entry is silently omitted in projects that have no wiki yet.
+
 ### Keybindings
 
 | Key | Context | Action |

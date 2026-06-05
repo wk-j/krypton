@@ -2717,6 +2717,22 @@ export class Compositor {
     for (const v of cfg.paths ?? []) {
       if (v?.path) push(v.name ?? '', v.path);
     }
+
+    // Auto-detect the focused project's code wiki (`<cwd>/docs/wiki`, spec 144)
+    // so it appears in the picker without a [vault] entry. `list_directory`
+    // throws if the path is missing or not a directory, so a successful call
+    // means the wiki exists.
+    try {
+      const cwd = await this.getFocusedCwd();
+      if (cwd) {
+        const wikiPath = `${cwd.replace(/\/+$/, '')}/docs/wiki`;
+        await invoke('list_directory', { path: wikiPath, showHidden: false });
+        push('docs/wiki', wikiPath);
+      }
+    } catch {
+      // No docs/wiki in the focused directory — skip.
+    }
+
     return out;
   }
 

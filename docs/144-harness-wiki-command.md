@@ -1,6 +1,6 @@
 # Harness `#wiki` Command — Implementation Spec
 
-> Status: Approved
+> Status: Implemented
 > Date: 2026-06-06
 > Milestone: ACP Harness — knowledge tooling
 
@@ -24,6 +24,7 @@ The commands add no new persistence, no MCP tools, and no Rust changes: the harn
 - **CWD** is `this.projectDir` (`:962`, lazily resolved via `get_app_cwd` at `:3087-3093`), already passed to every lane on spawn — so `<cwd>/docs/wiki/` is well-defined per project.
 - **Storage decision** — using repo markdown rather than the existing `krypton-harness-memory` store (per-lane opaque JSON outside the repo) is recorded in `docs/adr/0003`. The memory store is a per-lane `{summary, detail}` blob, not a shared interlinked page-graph, and is not human-browsable.
 - **Pattern source** — `docs/concepts/llm-wiki.md`: three layers (raw sources / wiki / schema), `index.md` (catalog) + `log.md` (chronological), incremental ingest over full rebuild, "the wiki is just a git repo of markdown files."
+- **Page structure (settled in follow-up).** The pattern source prescribes an index "organized by category (entities, concepts, sources)." The prompt encodes a three-type taxonomy — **entity / concept / decision** — and each page declares its `type` in **YAML frontmatter** (`type`, `title`), so the type is intrinsic to the file rather than living only in the catalog; the `index.md` headings are *derived* from frontmatter, making a reconstruct pass deterministic. The wiki stays **flat**: pages are referenced by name via `[[page]]` links, so there are **no subdirectories** — every page sits directly under `docs/wiki/`. (Subdirectory layout was explicitly rejected: it breaks name-based `[[page]]` resolution and catalog reconstruction.)
 
 ## Prior Art
 
@@ -40,7 +41,8 @@ The commands add no new persistence, no MCP tools, and no Rust changes: the harn
 
 | File | Change |
 |------|--------|
-| `src/acp/acp-harness-view.ts` | Add `wikiIngestPrompt()` + `wikiRecallPrompt()` templates (near `HANDOFF_WRITE_PROMPT`, ~`:430`); add `#wiki` and `#recall` branches in `runHashCommand` (~`:5276`); add `<dt>#wiki</dt>` + `<dt>#recall</dt>` to the help drawer (~`:6845`) |
+| `src/acp/acp-harness-view.ts` | Add exported pure `wikiIngestPrompt()` + `wikiRecallPrompt()` templates (near `HANDOFF_WRITE_PROMPT`, ~`:446`); add `#wiki` and `#recall` branches in `runHashCommand` (~`:5276`); add `<dt>#wiki</dt>` + `<dt>#recall</dt>` to the help drawer (~`:6845`) |
+| `src/acp/acp-harness-view.test.ts` | Focused unit tests pinning the two prompt builders — load-bearing clauses, empty-hint omission, and JSON.stringify neutralization of injection-laden multiline input |
 | `docs/PROGRESS.md` | Note `#wiki` under harness knowledge tooling |
 | `CONTEXT.md` | "Code wiki" term — already added |
 | `docs/adr/0003-…md` | Storage decision — already added |
@@ -69,19 +71,28 @@ function wikiIngestPrompt(focusHint: string): string {
     'asserting agent speculation as fact.\n' +
     'Workflow:\n' +
     '1. Read `docs/wiki/index.md` and `docs/wiki/log.md` if present, and create whichever is ' +
-    'missing (`index.md` = catalog, one line + link per page; `log.md` = append-only chronological). ' +
-    'If pages already exist but the catalog is absent or incomplete, reconstruct it from those pages ' +
-    'WITHOUT overwriting them. On a true first run (no wiki yet), also create at least one content ' +
-    'page from this conversation — never leave an empty catalog.\n' +
+    'missing (`index.md` = catalog, one line + link per page grouped under headings by page type, ' +
+    'derived from each page\'s frontmatter; `log.md` = append-only chronological). ' +
+    'If content pages already exist but the catalog is absent or incomplete, reconstruct it from them ' +
+    '(read each content page\'s frontmatter `type` to regroup; `index.md` and `log.md` are not ' +
+    'content pages and have no frontmatter) WITHOUT overwriting them. On a true first run (no wiki ' +
+    'yet), also create at least one content ' +
+    'page from this conversation — never leave an empty catalog; but if this conversation has ' +
+    'settled nothing worth recording, make NO changes and say so in your reply rather than ' +
+    'fabricating a page.\n' +
     '2. Distill only what THIS conversation settled that belongs in the wiki (decisions, rationale, ' +
     'domain terms, discovered constraints). Skip routine or transient chatter.\n' +
     '3. Integrate incrementally and preservingly: update the pages it touches and add cross-links ' +
     '([[page]] style). Preserve existing claims unless this conversation explicitly supersedes them; ' +
     'when new evidence conflicts with an existing claim, keep BOTH and mark the contradiction as an ' +
     'open question rather than silently replacing it. Create a new page only for a genuinely new ' +
-    'entity, concept, or decision. Do not rename or delete pages unless clearly required, and never ' +
+    'entity, concept, or decision; give every content page YAML frontmatter declaring its `type` ' +
+    '(entity | concept | decision) and `title` (display metadata). The wiki is FLAT — pages are ' +
+    'referenced by their unique filename stem (not the `title`) via [[page]] links, so do NOT create ' +
+    'subdirectories; keep every page directly under `docs/wiki/`. ' +
+    'Do not rename or delete pages unless clearly required, and never ' +
     'discard user-authored content. Do not rewrite the whole wiki.\n' +
-    '4. Update `index.md` for any page added or renamed.\n' +
+    '4. Update `index.md` for any page added, renamed, or retyped, filing each under its type heading (from frontmatter).\n' +
     '5. Append one entry to `log.md` prefixed `## [YYYY-MM-DD] wiki | <what changed>`.\n' +
     'Safety (best-effort, not a hard guarantee): never persist secrets, tokens, credentials, ' +
     'personal/private data, environment values, or sensitive raw command/tool output. Reference ' +
@@ -217,7 +228,7 @@ None — core decisions resolved via grill (see `CONTEXT.md` "Code wiki", `docs/
 - Search tooling over the wiki (e.g. qmd) — add only if scale demands it.
 - Dedicated `wiki_*` MCP tools or any Rust/persistence changes.
 - Auto-triggering `#wiki`/`#recall` on idle or on a schedule — they stay explicit.
-- An in-harness wiki viewer/HTML artifact — the human browses files (or Obsidian) directly.
+- A dedicated in-harness wiki viewer/HTML artifact. The human browses the markdown directly — and since `docs/wiki/` is flat markdown with wikilinks, the built-in vault viewer (`u`) auto-detects `<cwd>/docs/wiki` and opens it with zero config (see `docs/59-obsidian-vault-window.md`), so no bespoke viewer is needed.
 - Auto-injecting wiki context into ordinary turns — knowledge reaches a lane only via explicit `#recall`.
 
 ## Resources
