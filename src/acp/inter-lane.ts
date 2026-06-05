@@ -89,6 +89,11 @@ export interface CoordinatorDrainContext {
   envelopeIds: string[];
   primaryPeerDisplayName: string | null;
   envelopeCount: number;
+  /** spec 143: arm lane.peerAutoAcceptForTurn for this injected turn. Set only
+   *  when EVERY mail envelope in the drained batch is local and carries
+   *  `autoAccept` — otherwise a single delegated envelope would grant autonomy to
+   *  work caused by other (or foreign) envelopes sharing the composed turn. */
+  autoAcceptPermissions?: boolean;
 }
 
 export type InterLaneRowChannel = 'peer' | 'mention' | 'review';
@@ -964,11 +969,25 @@ export class InterLaneCoordinator {
         firstMail.fromDisplayName ??
         firstMail.fromLaneId)
       : null;
+    // spec 143: arm peer auto-accept only when EVERY mail envelope in this
+    // composed turn is a local sibling's request/initiation carrying autoAccept.
+    // A foreign sender (getLane → null), a reply (recipient was the initiator),
+    // or one non-delegated envelope in the batch all veto the grant — otherwise
+    // a single delegated message would auto-accept work caused by the others.
+    const autoAcceptPermissions =
+      mailEnvelopes.length > 0 &&
+      mailEnvelopes.every(
+        (env) =>
+          env.autoAccept === true &&
+          !recipientWasInitiator.get(env.id) &&
+          this.host.getLane(env.fromLaneId) !== null,
+      );
     const text = this.composePrompt(envelopes, recipientWasInitiator);
     this.host.enqueueSystemPrompt(laneId, text, {
       envelopeIds: mailEnvelopes.map((env) => env.id),
       primaryPeerDisplayName,
       envelopeCount: mailEnvelopes.length,
+      autoAcceptPermissions,
     });
   }
 

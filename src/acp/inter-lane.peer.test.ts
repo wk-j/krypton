@@ -1,17 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { canDrainInbound, InterLaneCoordinator, type LaneHost } from './inter-lane';
+import {
+  canDrainInbound,
+  InterLaneCoordinator,
+  type CoordinatorDrainContext,
+  type LaneHost,
+} from './inter-lane';
 import { LaneBus } from './lane-bus';
 import type { HarnessLaneStatus, LaneSummary } from './types';
 
 function peerHost(): LaneHost & {
-  prompts: Array<{ laneId: string; text: string }>;
+  prompts: Array<{ laneId: string; text: string; drain?: CoordinatorDrainContext }>;
   statuses: Map<string, HarnessLaneStatus>;
 } {
   const statuses = new Map<string, HarnessLaneStatus>([
     ['a', 'idle'],
     ['b', 'idle'],
   ]);
-  const prompts: Array<{ laneId: string; text: string }> = [];
+  const prompts: Array<{ laneId: string; text: string; drain?: CoordinatorDrainContext }> = [];
   return {
     prompts,
     statuses,
@@ -33,8 +38,8 @@ function peerHost(): LaneHost & {
     setLaneStatus: (laneId, next) => {
       statuses.set(laneId, next);
     },
-    enqueueSystemPrompt: (laneId, text) => {
-      prompts.push({ laneId, text });
+    enqueueSystemPrompt: (laneId, text, drain) => {
+      prompts.push({ laneId, text, drain });
     },
     appendInterLaneRow: () => {},
     appendSystemNotice: () => {},
@@ -187,5 +192,66 @@ describe('InterLaneCoordinator peer pending', () => {
     });
     expect(second).toEqual({ delivered: false, reason: 'peer_in_flight' });
     expect(coordinator.pendingPeersFor('a')).toHaveLength(1);
+  });
+});
+
+describe('spec 143 — peer auto_accept arming (drain context)', () => {
+  function drainOf(host: ReturnType<typeof peerHost>, laneId: string): CoordinatorDrainContext | undefined {
+    return host.prompts.find((p) => p.laneId === laneId)?.drain;
+  }
+
+  it('arms autoAcceptPermissions for a local initiation carrying auto_accept', () => {
+    const host = peerHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    coordinator.deliver({
+      id: 'env-1',
+      fromLaneId: 'a',
+      toLaneId: 'b',
+      message: 'do the thing',
+      done: false,
+      autoAccept: true,
+      sentAt: 1,
+    });
+    expect(drainOf(host, 'b')?.autoAcceptPermissions).toBe(true);
+  });
+
+  it('does not arm when auto_accept is absent', () => {
+    const host = peerHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    coordinator.deliver({
+      id: 'env-1',
+      fromLaneId: 'a',
+      toLaneId: 'b',
+      message: 'do the thing',
+      done: false,
+      sentAt: 1,
+    });
+    expect(drainOf(host, 'b')?.autoAcceptPermissions).toBe(false);
+  });
+
+  it('does not arm on a reply (recipient was the initiator)', () => {
+    const host = peerHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    // a initiates → a is the initiator, b will reply.
+    coordinator.deliver({
+      id: 'env-out',
+      fromLaneId: 'a',
+      toLaneId: 'b',
+      message: 'please review',
+      done: false,
+      sentAt: 1,
+    });
+    host.statuses.set('a', 'awaiting_peer');
+    // b replies WITH auto_accept set — must NOT arm a's turn (reply-side grant).
+    coordinator.deliver({
+      id: 'env-in',
+      fromLaneId: 'b',
+      toLaneId: 'a',
+      message: 'feedback',
+      done: false,
+      autoAccept: true,
+      sentAt: 2,
+    });
+    expect(drainOf(host, 'a')?.autoAcceptPermissions).toBe(false);
   });
 });

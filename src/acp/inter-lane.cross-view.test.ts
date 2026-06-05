@@ -4,7 +4,7 @@
 // run the recipient side on the target, the sender side on the sender).
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { InterLaneCoordinator, type LaneHost } from './inter-lane';
+import { InterLaneCoordinator, type CoordinatorDrainContext, type LaneHost } from './inter-lane';
 import { LaneBus } from './lane-bus';
 import {
   __resetHarnessDirectoryForTests,
@@ -24,7 +24,7 @@ interface TestView {
   bus: LaneBus;
   statuses: Map<string, HarnessLaneStatus>;
   names: Map<string, string>; // laneId → displayName
-  prompts: Array<{ laneId: string; text: string }>;
+  prompts: Array<{ laneId: string; text: string; drain?: CoordinatorDrainContext }>;
   notices: Array<{ laneId: string; text: string }>;
   entry: HarnessEntry;
 }
@@ -44,7 +44,7 @@ function makeView(
 ): TestView {
   const statuses = new Map(lanes.map((l) => [l.laneId, l.status]));
   const names = new Map(lanes.map((l) => [l.laneId, l.displayName]));
-  const prompts: Array<{ laneId: string; text: string }> = [];
+  const prompts: Array<{ laneId: string; text: string; drain?: CoordinatorDrainContext }> = [];
   const notices: Array<{ laneId: string; text: string }> = [];
   const host: LaneHost = {
     listLanes: (): LaneSummary[] =>
@@ -63,7 +63,7 @@ function makeView(
       return { status, displayName: names.get(laneId) ?? laneId };
     },
     setLaneStatus: (laneId, next) => statuses.set(laneId, next),
-    enqueueSystemPrompt: (laneId, text) => prompts.push({ laneId, text }),
+    enqueueSystemPrompt: (laneId, text, drain) => prompts.push({ laneId, text, drain }),
     appendInterLaneRow: () => {},
     appendSystemNotice: (laneId, text) => notices.push({ laneId, text }),
   };
@@ -115,7 +115,8 @@ function crossSend(
   toName: string,
   message: string,
   done = false,
-): { delivered: boolean; reason?: string } {
+  autoAccept = false,
+): { delivered: boolean; reason?: string; hint?: string } {
   const fromDisplayName = sender.names.get(fromLaneId)!;
   const base: InterLaneEnvelope = {
     id: `env-${seq++}`,
@@ -123,6 +124,7 @@ function crossSend(
     toLaneId: toName,
     message,
     done,
+    autoAccept,
     sentAt: Date.now(),
   };
   const resolved = resolveDisplayName(toName);
@@ -138,6 +140,7 @@ function crossSend(
     fromLaneId: fromDisplayName,
     fromDisplayName,
     toLaneId: resolved.laneId,
+    autoAccept: false, // spec 143: auto_accept never crosses the trust boundary
   };
   const inbound = target.acceptInbound(inboundEnv);
   if (inbound.result.delivered) {
@@ -148,8 +151,11 @@ function crossSend(
       inbound,
     );
   }
+  if (base.autoAccept && inbound.result.delivered) {
+    inbound.result.hint = `${inbound.result.hint} auto_accept ignored: cross-view sender.`;
+  }
   return inbound.result.delivered
-    ? { delivered: true }
+    ? { delivered: true, hint: inbound.result.hint }
     : { delivered: false, reason: inbound.result.reason };
 }
 
@@ -296,5 +302,24 @@ describe('foreign harness close', () => {
     // Termination prompt drains when Claude-1's current turn ends.
     goIdle(a, 'a1');
     expect(a.prompts.some((p) => p.laneId === 'a1' && /closed \(lane stopped\)/.test(p.text))).toBe(true);
+  });
+});
+
+describe('spec 143 — auto_accept does not cross the trust boundary', () => {
+  it('strips auto_accept on the hop, does not arm the foreign recipient, and reports back', () => {
+    const a = makeView('hm-1', '/project-a', [{ laneId: 'a1', displayName: 'Claude-1', status: 'busy' }]);
+    const b = makeView('hm-2', '/project-b', [{ laneId: 'b1', displayName: 'Pi-7', status: 'idle' }]);
+
+    // Claude-1 (project A) sends Pi-7 (project B) a delegated task WITH auto_accept.
+    const sent = crossSend(a, 'a1', 'Pi-7', 'run the migration', false, true);
+    expect(sent.delivered).toBe(true);
+
+    // Pi-7 drained the prompt, but its turn must NOT be armed for auto-accept —
+    // a foreign sender cannot grant autonomous execution across the boundary.
+    const pi7Drain = b.prompts.find((p) => p.laneId === 'b1')?.drain;
+    expect(pi7Drain?.autoAcceptPermissions).toBe(false);
+
+    // The sender is told its auto_accept was dropped.
+    expect(sent.hint).toContain('auto_accept ignored: cross-view sender');
   });
 });

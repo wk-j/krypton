@@ -250,6 +250,11 @@ export interface InterLaneEnvelope {
   toLaneId: string;
   message: string;
   done: boolean;
+  /** spec 143: sender requests the recipient's peer-injected turn auto-accept
+   *  non-high-risk permissions (high-risk commands still prompt the human).
+   *  Honored only for same-view sibling senders on request/initiation envelopes;
+   *  coerced to false (and reported back) for foreign/cross-harness senders. */
+  autoAccept?: boolean;
   sentAt: number;
   /** Rust-side harness scope tag. Used by the bridge to drop cross-harness leakage. */
   harnessId?: string;

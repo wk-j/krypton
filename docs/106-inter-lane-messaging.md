@@ -86,6 +86,7 @@ export interface InterLaneEnvelope {
   toLaneId: string;
   message: string;
   done: boolean;          // sender signals end-of-conversation
+  autoAccept?: boolean;   // spec 143: delegate runs the triggered turn autonomously
   sentAt: number;
 }
 
@@ -202,6 +203,22 @@ The **initiator of a pair owns the conversation lifecycle**. "Initiator" = the l
 - **Replier** must omit `done`. If a replier passes `done:true`, the coordinator silently coerces it to `false` inside `deliver()` — the conversation continues, and the initiator retains close authority.
 
 This invariant matters because `done:true` is a unilateral lock-out — the recipient sees "Do NOT call peer_send again". Allowing callees to set it lets them terminate exchanges the initiator hadn't intended to close.
+
+### Autonomous delegation (`auto_accept`, spec 143)
+
+`peer_send` accepts an optional `auto_accept` boolean. When set, the recipient's
+peer-injected turn auto-accepts every permission request **except high-risk
+commands** (destructive verbs / dangerous git / script / network / unparseable —
+the spec 140 `classifyBashCommand().highRisk` set), which still prompt the human.
+File-write reviews auto-accept (diff-shown + VCS-recoverable). Implemented via a
+dedicated per-turn `lane.peerAutoAcceptForTurn` flag (visible as a `peer-auto`
+chip + a system transcript line naming the granter), reset at turn end.
+
+Honored **only for same-view sibling senders on a request/initiation envelope** —
+a foreign/cross-harness sender's `auto_accept` is coerced to `false` and reported
+back in the `peer_send` result (`auto_accept ignored: cross-view sender`), and a
+reply-side `auto_accept` never arms anything. A batched drain arms only when
+*every* mail envelope is local and carries `auto_accept`. See `docs/143-peer-send-auto-accept.md`.
 
 ### awaiting_peer transitions
 

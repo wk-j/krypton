@@ -106,6 +106,7 @@ import {
   type HarnessDirective,
 } from '../config';
 import { extractModifiedPath } from './acp-harness-memory';
+import { classifyBashCommand } from '../agent/tools';
 import { classifyProviderError, shouldAppendProviderError } from './provider-error';
 import {
   loadProjectMcpServers,
@@ -495,6 +496,9 @@ interface HarnessLane {
   error: string | null;
   acceptAllForTurn: boolean;
   rejectAllForTurn: boolean;
+  /** spec 143: armed for one peer-injected turn (auto_accept). Auto-accepts every
+   *  permission EXCEPT high-risk commands, which still prompt. Reset at turn end. */
+  peerAutoAcceptForTurn: boolean;
   pendingTurnExtractions: PendingExtraction[];
   currentUserId: string | null;
   currentAssistantId: string | null;
@@ -895,6 +899,7 @@ const LANE_DEFAULTS = {
   error: null,
   acceptAllForTurn: false,
   rejectAllForTurn: false,
+  peerAutoAcceptForTurn: false,
   currentUserId: null,
   currentAssistantId: null,
   currentThoughtId: null,
@@ -1366,6 +1371,19 @@ export class AcpHarnessView implements ContentView {
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
+    // spec 143: a delegated peer turn may run non-high-risk permissions
+    // autonomously. Arm here (turn-start), reset at turn end like the manual
+    // accept-all flag. Visible via the `peer-auto` chip + the system line below.
+    if (drain?.autoAcceptPermissions) {
+      lane.peerAutoAcceptForTurn = true;
+      const granter = drain.primaryPeerDisplayName ?? 'a peer';
+      const extra = (drain.envelopeCount ?? 1) > 1 ? ` (+${(drain.envelopeCount ?? 1) - 1} more)` : '';
+      this.appendTranscript(
+        lane,
+        'system',
+        `auto-accept (non-high-risk) armed by ${granter}${extra} for this turn — destructive commands still prompt`,
+      );
+    }
     this.updateComposerTick();
     this.render();
     try {
@@ -1373,6 +1391,11 @@ export class AcpHarnessView implements ContentView {
     } catch (e) {
       this.setLaneStatus(lane, 'error');
       lane.error = String(e);
+      // spec 143: the turn never started — clear the arm so it cannot leak into a
+      // later manual turn (this catch does not get the normal turn-end reset).
+      lane.peerAutoAcceptForTurn = false;
+      lane.acceptAllForTurn = false;
+      lane.rejectAllForTurn = false;
       this.appendTranscript(lane, 'system', `error: ${String(e)}`);
       this.render();
     }
@@ -1449,6 +1472,9 @@ export class AcpHarnessView implements ContentView {
           fromLaneId: env.fromLaneId,
           fromDisplayName: env.fromLaneId,
           toLaneId: resolved.laneId,
+          // spec 143: auto_accept never crosses the harness trust boundary — a
+          // foreign peer cannot arm autonomous execution on this lane.
+          autoAccept: false,
         };
         const inbound = target.acceptInbound(inboundEnv);
         if (inbound.result.delivered) {
@@ -1458,6 +1484,11 @@ export class AcpHarnessView implements ContentView {
             senderEnv,
             inbound,
           );
+        }
+        // spec 143: tell the sender its auto_accept was dropped on the hop, so it
+        // does not assume the foreign lane is running its work autonomously.
+        if (env.autoAccept && inbound.result.delivered) {
+          inbound.result.hint = `${inbound.result.hint} auto_accept ignored: cross-view sender.`;
         }
         reply(inbound.result);
       },
@@ -3474,6 +3505,7 @@ export class AcpHarnessView implements ContentView {
         lane.pendingPermissions = [];
         lane.acceptAllForTurn = false;
         lane.rejectAllForTurn = false;
+        lane.peerAutoAcceptForTurn = false;
         this.updateComposerTick();
         this.appendClassifiedError(lane, event.message, `error: ${event.message}`);
         break;
@@ -3747,6 +3779,7 @@ export class AcpHarnessView implements ContentView {
     lane.pendingPermissions = [];
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
+    lane.peerAutoAcceptForTurn = false;
     // spec 112: no-tool reviewer detection runs BEFORE the idle transition.
     // Going idle drains the coordinator's queue, and the drain calls
     // enqueueSystemPrompt() which clears reviewReplyAttemptsThisTurn — if that
@@ -3835,10 +3868,29 @@ export class AcpHarnessView implements ContentView {
     this.setLaneStatus(lane, 'needs_permission');
     if (lane.acceptAllForTurn || lane.rejectAllForTurn) {
       void this.resolvePermission(lane, lane.rejectAllForTurn ? 'reject' : 'accept', true);
+      return;
+    }
+    // spec 143: a peer-delegated turn auto-accepts non-high-risk requests; a
+    // destructive/unparseable command falls through to the human permission gate.
+    if (lane.peerAutoAcceptForTurn && !this.isHighRiskPermission(permission)) {
+      void this.resolvePermission(lane, 'accept', true, 'peer-auto');
     }
   }
 
-  private async resolvePermission(lane: HarnessLane, action: 'accept' | 'reject', auto: boolean): Promise<void> {
+  /** spec 143: is this permission a high-risk command (destructive verb, dangerous
+   *  git, or unparseable/script/network)? Non-command surfaces (edits, writes) are
+   *  not gated here — fs writes are diff-shown + VCS-recoverable. Reuses the spec
+   *  140 classifier so there is one source of truth. */
+  private isHighRiskPermission(permission: HarnessPermission): boolean {
+    return permissionCommandIsHighRisk(permission.toolCall);
+  }
+
+  private async resolvePermission(
+    lane: HarnessLane,
+    action: 'accept' | 'reject',
+    auto: boolean,
+    autoReason = 'auto-turn',
+  ): Promise<void> {
     const permission = lane.pendingPermissions[0];
     if (!permission || !lane.client) return;
     const option = pickPermissionOption(permission.options, action);
@@ -3848,7 +3900,7 @@ export class AcpHarnessView implements ContentView {
     }
     lane.pendingPermissions.shift();
     const label = option?.name ?? (action === 'accept' ? 'accepted' : 'rejected');
-    permission.resolvedLabel = `${action === 'accept' ? '✓' : '✗'} ${label}${auto ? ' (auto-turn)' : ''}`;
+    permission.resolvedLabel = `${action === 'accept' ? '✓' : '✗'} ${label}${auto ? ` (${autoReason})` : ''}`;
     permission.auto = auto;
     this.updatePermissionDecision(permission, action === 'accept' ? 'accepted' : 'rejected', permission.resolvedLabel);
     if (lane.pendingPermissions.length === 0 && lane.status === 'needs_permission') this.setLaneStatus(lane, 'busy');
@@ -5070,6 +5122,7 @@ export class AcpHarnessView implements ContentView {
     lane.pendingTurnExtractions = [];
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
+    lane.peerAutoAcceptForTurn = false;
     lane.sessionId = null;
     lane.error = null;
     lane.plan = null;
@@ -5130,6 +5183,7 @@ export class AcpHarnessView implements ContentView {
     lane.error = null;
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
+    lane.peerAutoAcceptForTurn = false;
     lane.currentUserId = null;
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
@@ -6892,6 +6946,7 @@ export class AcpHarnessView implements ContentView {
     lane.pendingPermissions = [];
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
+    lane.peerAutoAcceptForTurn = false;
     this.updateComposerTick();
   }
 
@@ -6907,6 +6962,10 @@ export class AcpHarnessView implements ContentView {
     item.fsReview = { requestId, path, oldText, newText };
     if (lane.acceptAllForTurn || lane.rejectAllForTurn) {
       void this.resolveFsWriteReview(lane, item.id, lane.rejectAllForTurn ? 'rejected' : 'accepted', true);
+    } else if (lane.peerAutoAcceptForTurn) {
+      // spec 143: file writes are low-risk (diff shown + VCS-recoverable), so a
+      // peer-delegated turn auto-accepts them — only commands are risk-gated.
+      void this.resolveFsWriteReview(lane, item.id, 'accepted', true);
     }
   }
 
@@ -9739,6 +9798,7 @@ function renderLaneStats(lane: HarnessLane, projectDir: string | null): string {
   if (lane.pendingPermissions.length > 0) spans.push(text(`${lane.pendingPermissions.length} perm`));
   if (lane.acceptAllForTurn) spans.push(text('accept-all'));
   if (lane.rejectAllForTurn) spans.push(text('reject-all'));
+  if (lane.peerAutoAcceptForTurn) spans.push(text('peer-auto'));
   if (lane.error) spans.push(text(`err: ${truncate(lane.error, 48)}`));
 
   return spans.join('');
@@ -10823,18 +10883,54 @@ function cleanToolTitle(title: string | undefined, fallback: string): string {
   return value;
 }
 
-function extractCommandLine(rawInput: unknown): string {
+/** Full command string from a tool's rawInput, UNTRUNCATED. Used by policy
+ *  (spec 143 high-risk gating) — must never be the 96-char display form, or a
+ *  destructive tail past the cutoff (`echo …<96> && rm -rf x`) would be hidden. */
+function extractCommandLineRaw(rawInput: unknown): string {
   if (typeof rawInput === 'object' && rawInput) {
     const record = rawInput as Record<string, unknown>;
     for (const key of ['command', 'cmd']) {
-      if (typeof record[key] === 'string') return truncateInline(record[key], 96);
+      if (typeof record[key] === 'string') return record[key];
     }
     if (Array.isArray(record.argv)) {
       const argv = record.argv.filter((part): part is string => typeof part === 'string');
-      if (argv.length > 0) return truncateInline(argv.join(' '), 96);
+      if (argv.length > 0) return argv.join(' ');
     }
   }
   return '';
+}
+
+/** Display form — truncated for transcript/label rendering. */
+function extractCommandLine(rawInput: unknown): string {
+  const raw = extractCommandLineRaw(rawInput);
+  return raw ? truncateInline(raw, 96) : '';
+}
+
+/** Is this tool call an execute/shell surface (even when its command string is
+ *  not extractable)? Conservative: kind, a present command, or a shell-ish raw
+ *  name / title all count. */
+/** A leading shell/exec verb. Shared by the rawName and title checks so the
+ *  policy gate can't drift between the two surfaces (Codex-1 nit, spec 143). */
+const SHELL_LIKE_PREFIX = /^(bash|shell|terminal|run|exec|execute|command|sh|zsh|fish|cmd|powershell|pwsh)\b/;
+
+function isExecuteLikeToolCall(call: Pick<ToolCall, 'rawInput' | 'kind' | 'title'>): boolean {
+  if (call.kind === 'execute') return true;
+  if (extractCommandLineRaw(call.rawInput)) return true;
+  if (SHELL_LIKE_PREFIX.test(extractRawToolName(call.rawInput).toLowerCase())) return true;
+  return SHELL_LIKE_PREFIX.test((call.title ?? '').trim().toLowerCase());
+}
+
+/** spec 143 policy: should this permission still prompt the human under peer
+ *  auto-accept? A parseable command is classified via the spec 140 highRisk set;
+ *  an execute-like surface whose command cannot be read is treated as high-risk
+ *  (unknown ⇒ high-risk); any other surface (edit/read/write/fetch) is not gated
+ *  here (writes are diff-shown + VCS-recoverable). */
+export function permissionCommandIsHighRisk(
+  call: Pick<ToolCall, 'rawInput' | 'kind' | 'title'>,
+): boolean {
+  const command = extractCommandLineRaw(call.rawInput);
+  if (command) return classifyBashCommand(command).highRisk;
+  return isExecuteLikeToolCall(call);
 }
 
 function extractToolExit(rawOutput: unknown): string {

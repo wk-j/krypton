@@ -1059,6 +1059,10 @@ async fn peer_send(
         .get("done")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let auto_accept = arguments
+        .get("auto_accept")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     if to_lane.trim().is_empty() {
         return Err("to_lane must be non-empty".to_string());
     }
@@ -1072,6 +1076,7 @@ async fn peer_send(
         "toLaneId": to_lane,
         "message": message,
         "done": done,
+        "autoAccept": auto_accept,
         "sentAt": now_ms(),
         "harnessId": harness_id,
         "requestId": envelope_id,
@@ -2286,7 +2291,8 @@ fn bus_tool_descriptors() -> Value {
                 "properties": {
                     "to_lane": { "type": "string", "description": "Target lane display name (e.g., 'Claude-2'). Use the `displayName` shown by peer_list — works for both local and cross-harness peers." },
                     "message": { "type": "string" },
-                    "done": { "type": "boolean", "default": false, "description": "Closes the conversation: recipient processes the message but will NOT reply. Reserved for the original initiator of the pair — either as a closing ack after receiving their reply, or as a one-shot fire-and-forget on the first send. Repliers must omit this field; the harness coerces replier-side `done:true` to false." }
+                    "done": { "type": "boolean", "default": false, "description": "Closes the conversation: recipient processes the message but will NOT reply. Reserved for the original initiator of the pair — either as a closing ack after receiving their reply, or as a one-shot fire-and-forget on the first send. Repliers must omit this field; the harness coerces replier-side `done:true` to false." },
+                    "auto_accept": { "type": "boolean", "default": false, "description": "Let the recipient run the turn this message triggers autonomously: it auto-accepts every permission request EXCEPT high-risk/destructive commands (rm, dd, force-push, network/script/unparseable, …), which still prompt the human. The grant is visible (a `peer-auto` chip + a transcript line naming you) and lasts only that one turn. Honored ONLY for sibling lanes in this harness view AND only on a request/initiation send — a cross-harness peer's auto_accept is ignored (reported back in the result) and a reply-side auto_accept does not arm anything. Use only when the user authorized the delegated work to run without supervision." }
                 },
                 "required": ["to_lane", "message"]
             }

@@ -17,6 +17,7 @@
         "fullscreen": false,
         "decorations": false,
         "transparent": true,
+        "shadow": false,
         "resizable": true,
         "alwaysOnTop": false,
         "skipTaskbar": false

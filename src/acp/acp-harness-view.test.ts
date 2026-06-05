@@ -27,6 +27,7 @@ import {
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
   trimBackendPrefix,
+  permissionCommandIsHighRisk,
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
 } from './acp-harness-view';
@@ -1013,5 +1014,36 @@ describe('prompt queue index parsing (spec 136)', () => {
     expect(parseQueueIndex(undefined)).toBeNull();
     expect(parseQueueIndex('')).toBeNull();
     expect(parseQueueIndex(' 1')).toBeNull(); // not pre-trimmed → invalid
+  });
+});
+
+describe('spec 143 — permissionCommandIsHighRisk (peer auto-accept gate)', () => {
+  it('classifies the FULL command, not the 96-char display form', () => {
+    // Destructive segment lands well past the 96-char display truncation point.
+    const command = `echo ${'a'.repeat(120)} && rm -rf build`;
+    expect(command.length).toBeGreaterThan(96);
+    expect(permissionCommandIsHighRisk({ rawInput: { command }, kind: 'execute' })).toBe(true);
+  });
+
+  it('treats an execute-kind tool with no extractable command as high-risk', () => {
+    expect(permissionCommandIsHighRisk({ rawInput: {}, kind: 'execute' })).toBe(true);
+  });
+
+  it('treats a shell-ish title/raw-name with no command as high-risk', () => {
+    expect(permissionCommandIsHighRisk({ rawInput: {}, title: 'Run shell command' })).toBe(true);
+    expect(permissionCommandIsHighRisk({ rawInput: { toolName: 'bash' } })).toBe(true);
+    // title set is kept aligned with the rawName set (no drift between surfaces).
+    expect(permissionCommandIsHighRisk({ rawInput: {}, title: 'powershell -Command rm' })).toBe(true);
+    expect(permissionCommandIsHighRisk({ rawInput: {}, title: 'zsh' })).toBe(true);
+  });
+
+  it('does not gate a low-risk command (auto-accepts)', () => {
+    expect(permissionCommandIsHighRisk({ rawInput: { command: 'touch file.txt' }, kind: 'execute' })).toBe(false);
+    expect(permissionCommandIsHighRisk({ rawInput: { argv: ['ls', '-la'] }, kind: 'execute' })).toBe(false);
+  });
+
+  it('does not gate a non-command surface (edit/read)', () => {
+    expect(permissionCommandIsHighRisk({ rawInput: { path: '/x', content: 'y' }, kind: 'edit' })).toBe(false);
+    expect(permissionCommandIsHighRisk({ rawInput: { path: '/x' }, kind: 'read' })).toBe(false);
   });
 });

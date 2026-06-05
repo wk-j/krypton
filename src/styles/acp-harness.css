@@ -11,7 +11,9 @@
   min-height: 0;
   overflow: hidden;
   color: var(--agent-text, #d8e8d8);
-  background: rgba(5, 9, 16, 0.9);
+  /* Transparent root — let the host window backdrop (--krypton-backdrop-color)
+   * and the workspace behind it show through, matching terminal windows. */
+  background: transparent;
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: var(--krypton-font-size, 13px);
   outline: none;
