@@ -50,3 +50,9 @@ The runtime `Leader '` override of a lane's triage grant. Wins over the directiv
 **Lane peek heat**:
 The existing *deterministic* score that ranks lanes by activity (tools / tokens / peer / process) plus an alert boost (error > needs_permission > pendingShell > awaiting_peer). The pre-LLM baseline that attention triage builds on or replaces.
 _Avoid_: priority, importance score
+
+### Knowledge
+
+**Code wiki**:
+A persistent, LLM-maintained set of interlinked markdown pages capturing the *why* of a codebase — architectural rationale, domain model, trade-offs, and external research — **not** a re-summary of the code itself. Lives as markdown in the *target* project the lane operates on (`<cwd>/docs/wiki/`), so git gives version history and a human can browse it. The code plus git history is the source of truth for *what/how*; the code wiki owns *why/decisions/domain*, the layer the code does not record. A compounding artifact: the LLM integrates each new decision into existing pages rather than re-deriving it on every question. A **generic harness capability**, not specific to the Krypton repo — any lane in any project can maintain its project's wiki.
+_Avoid_: docs (too broad — a code wiki excludes derived/how-to docs that restate code), index (the catalog file is one page *in* the wiki, not the wiki), harness memory (the per-lane `memory_*` store is ephemeral working/handoff state, kept outside the repo — the code wiki is persistent shared knowledge committed to the repo)
