@@ -1649,13 +1649,6 @@ export class Compositor {
     const content = document.createElement('div');
     content.className = 'krypton-window__content';
 
-    // Corner accent elements
-    for (const pos of ['tl', 'tr', 'bl', 'br']) {
-      const corner = document.createElement('div');
-      corner.className = `krypton-window__corner krypton-window__corner--${pos}`;
-      el.appendChild(corner);
-    }
-
     // Claude Code HUD elements inside content area
     if (this.claudeHookManager) {
       const animCanvas = this.claudeHookManager.createAnimationCanvas();
@@ -1823,12 +1816,6 @@ export class Compositor {
 
     const content = document.createElement('div');
     content.className = 'krypton-window__content';
-
-    for (const pos of ['tl', 'tr', 'bl', 'br']) {
-      const corner = document.createElement('div');
-      corner.className = `krypton-window__corner krypton-window__corner--${pos}`;
-      el.appendChild(corner);
-    }
 
     const perspectiveWrap = document.createElement('div');
     perspectiveWrap.className = 'krypton-window__perspective';
@@ -4359,13 +4346,6 @@ export class Compositor {
     const body = document.createElement('div');
     body.className = 'krypton-window__body';
     content.appendChild(body);
-
-    // Corner accents
-    for (const pos of ['tl', 'tr', 'bl', 'br']) {
-      const corner = document.createElement('div');
-      corner.className = `krypton-window__corner krypton-window__corner--${pos}`;
-      el.appendChild(corner);
-    }
 
     // 3D perspective wrapper
     const perspectiveWrap = document.createElement('div');

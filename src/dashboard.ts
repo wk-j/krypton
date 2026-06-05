@@ -356,13 +356,6 @@ export class DashboardManager {
     content.className = 'krypton-dashboard__content';
     this.tabContent = content;
 
-    // Corner accent elements (match krypton-window chrome)
-    for (const pos of ['tl', 'tr', 'bl', 'br']) {
-      const corner = document.createElement('div');
-      corner.className = `krypton-window__corner krypton-window__corner--${pos}`;
-      panel.appendChild(corner);
-    }
-
     panel.appendChild(header);
     panel.appendChild(headerAccent);
     panel.appendChild(content);

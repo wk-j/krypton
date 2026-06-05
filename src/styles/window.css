@@ -28,8 +28,13 @@
 }
 
 .krypton-window--focused {
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-  box-shadow: 0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
+  /* Layered glow (tight + wide bloom per DESIGN.md § Glows) — clearly brighter
+     than the base single shadow so the focused window reads at a glance now that
+     the corner accents no longer carry focus. */
+  box-shadow:
+    0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45),
+    0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.22);
 }
 
 /* ─── Signal-state chrome — drives corner accent + border tint via the focused
@@ -73,99 +78,6 @@
 /* 'busy' and 'normal' use the default primary; explicit rule kept for completeness */
 .krypton-window[data-signal='busy'],
 .krypton-window[data-signal='normal']  { /* default primary */ }
-
-/* ─── Corner accents ─── */
-/* Small glowing L-shapes at each corner */
-.krypton-window__corner {
-  position: absolute;
-  width: var(--krypton-corner-size, 14px);
-  height: var(--krypton-corner-size, 14px);
-  z-index: 2;
-  pointer-events: none;
-}
-
-.krypton-window__corner::before,
-.krypton-window__corner::after {
-  content: '';
-  position: absolute;
-  background: var(--krypton-window-accent, var(--krypton-corner-color, #0cf));
-  box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
-}
-
-/* Breathing peak — focused window's corner accents pulse subtly.
-   DESIGN.md § Motion: breathingPulse 3s ease-in-out infinite. */
-@keyframes krypton-corner-breathing {
-  0%, 100% { box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6); }
-  50%      { box-shadow: 0 0 10px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9); }
-}
-
-.krypton-window--focused .krypton-window__corner::before,
-.krypton-window--focused .krypton-window__corner::after {
-  animation: krypton-corner-breathing 3s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .krypton-window--focused .krypton-window__corner::before,
-  .krypton-window--focused .krypton-window__corner::after {
-    animation: none;
-  }
-}
-
-/* Top-left corner */
-.krypton-window__corner--tl {
-  top: -1px;
-  left: -1px;
-}
-.krypton-window__corner--tl::before {
-  top: 0; left: 0;
-  width: var(--krypton-corner-size, 14px); height: var(--krypton-corner-thickness, 2px);
-}
-.krypton-window__corner--tl::after {
-  top: 0; left: 0;
-  width: var(--krypton-corner-thickness, 2px); height: var(--krypton-corner-size, 14px);
-}
-
-/* Top-right corner */
-.krypton-window__corner--tr {
-  top: -1px;
-  right: -1px;
-}
-.krypton-window__corner--tr::before {
-  top: 0; right: 0;
-  width: var(--krypton-corner-size, 14px); height: var(--krypton-corner-thickness, 2px);
-}
-.krypton-window__corner--tr::after {
-  top: 0; right: 0;
-  width: var(--krypton-corner-thickness, 2px); height: var(--krypton-corner-size, 14px);
-}
-
-/* Bottom-left corner */
-.krypton-window__corner--bl {
-  bottom: -1px;
-  left: -1px;
-}
-.krypton-window__corner--bl::before {
-  bottom: 0; left: 0;
-  width: var(--krypton-corner-size, 14px); height: var(--krypton-corner-thickness, 2px);
-}
-.krypton-window__corner--bl::after {
-  bottom: 0; left: 0;
-  width: var(--krypton-corner-thickness, 2px); height: var(--krypton-corner-size, 14px);
-}
-
-/* Bottom-right corner */
-.krypton-window__corner--br {
-  bottom: -1px;
-  right: -1px;
-}
-.krypton-window__corner--br::before {
-  bottom: 0; right: 0;
-  width: var(--krypton-corner-size, 14px); height: var(--krypton-corner-thickness, 2px);
-}
-.krypton-window__corner--br::after {
-  bottom: 0; right: 0;
-  width: var(--krypton-corner-thickness, 2px); height: var(--krypton-corner-size, 14px);
-}
 
 /* ─── Header accent bar ─── */
 /* Decorative striped bar below the titlebar */

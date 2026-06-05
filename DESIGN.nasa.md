@@ -1,6 +1,6 @@
 ---
 name: Krypton NASA
-description: NASA Mission Control retro-futurism — cool cyan phosphor on dark navy, corner brackets, CRT scanlines, atmospheric vignette
+description: NASA Mission Control retro-futurism — cool cyan phosphor on dark navy, CRT scanlines, atmospheric vignette
 appliesTo: ".krypton-vault (src/styles/vault-view.css)"
 colors:
   primary: "#4fc3f7"
@@ -59,8 +59,6 @@ spacing:
   lg: "14px"
 chrome:
   borderWidth: "1px"
-  cornerBracketLength: "14px"
-  cornerBracketThickness: "1px"
 forbidden:
   - "warm amber tones in primary palette"
   - "border-radius > 3px"
@@ -99,7 +97,6 @@ Slightly softer than Krypton Dark:
 - Window frame: `3px` corner radius — a hint of bevel.
 - Inputs/panels: `2px`.
 - Minor elements: `1px`.
-- Corner brackets are `14px × 1px` L-shapes — thinner and longer than Krypton Dark's `14px × 2px`, giving a more *drafted* than *machined* feel.
 
 ## Glows
 

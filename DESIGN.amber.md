@@ -1,6 +1,6 @@
 ---
 name: Krypton Amber Phosphor
-description: Warm amber phosphor terminal — 1980s cassette-futurism CRT aesthetic with corner brackets, CRT scanlines, layered amber glows, and telemetry-style typography
+description: Warm amber phosphor terminal — 1980s cassette-futurism CRT aesthetic with CRT scanlines, layered amber glows, and telemetry-style typography
 appliesTo: ".agent-view (src/styles/agent.css)"
 colors:
   primary: "#ffb000"
@@ -66,8 +66,6 @@ spacing:
   lg: "12px"
 chrome:
   borderWidth: "1px"
-  cornerBracketLength: "18px"
-  cornerBracketThickness: "2px"
 roleColors:
   user: "#4dd0e1"
   assistant: "#ffb000"
@@ -84,7 +82,7 @@ forbidden:
 
 ## Overview
 
-A warm, instrumented look modeled on 1980s amber-phosphor computer terminals — IBM 3270s, vintage VT100s, the orange-on-black workstations of late Cold War flight control. Every readout glows in measured amber; corner brackets bolt the chrome to the frame; CRT scanlines bleed gently through; and motion is reserved for *boot*, *alert*, and *liveness* — never decoration.
+A warm, instrumented look modeled on 1980s amber-phosphor computer terminals — IBM 3270s, vintage VT100s, the orange-on-black workstations of late Cold War flight control. Every readout glows in measured amber; the 1px amber border bolts the chrome to the frame; CRT scanlines bleed gently through; and motion is reserved for *boot*, *alert*, and *liveness* — never decoration.
 
 This identity is applied to the **Agent view** (`.agent-view`, `src/styles/agent.css`) and its companion **Context view** (`.context-view`) — the conversation surfaces for AI assistants. The deliberate warmth contrasts with Krypton Dark's cool cyan so the user knows they are talking to a system, not driving a terminal. The `--agent-*` palette tokens are scoped to the agent/context windows (`data-content-type="agent" | "context"`); only the two cross-consumed tokens `--agent-font` and `--agent-text` remain at `:root`, where the ACP view and ACP harness inherit them.
 
@@ -125,7 +123,6 @@ The hardest geometry of any Krypton aesthetic:
 
 - Window radius: **`0px`** — no concession to softness.
 - Minor elements: `2px` maximum.
-- Corner brackets: `18px × 2px` — *larger and bolder* than both Krypton Dark (14×2) and NASA (14×1). The brackets are the most visible chrome element; they read as load-bearing structural members, not decoration.
 
 ## Glows
 
@@ -161,7 +158,6 @@ Each animation marks a *state*. The fastest pulse (1s) is reserved for the live 
 ## Signature Elements
 
 - **Amber phosphor text-shadow on every label** — single tight + wide bloom layer.
-- **`18px × 2px` bold corner brackets** at all major surfaces.
 - **Inset amber glow** on window edges (`inset 0 0 60–80px @ 0.02–0.03`) — imperceptible until the window is focused, then warmth radiates inward.
 - **Telemetry chevrons** (`»`, `❯`, `◆`, `⟨ ⟩`) as prefix/suffix pseudo-content on labels and rows.
 - **Symmetric gradient rules** above code blocks and below headings — center-peaked amber, fading both directions.

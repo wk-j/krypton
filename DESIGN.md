@@ -203,7 +203,7 @@ Krypton is a keyboard-driven terminal emulator dressed as a piece of fictional c
 
 The aesthetic is built on three tensions:
 
-1. **Hard geometry vs. soft light** — sharp 0px corners, 1px borders, and L-shaped corner accents are softened only by multi-layer glows that bleed into the surrounding void.
+1. **Hard geometry vs. soft light** — sharp 0px corners and 1px borders are softened only by multi-layer glows that bleed into the surrounding void.
 2. **Transparency vs. legibility** — backgrounds are never fully opaque (they sit between 40% and 92%), so the underlying desktop bleeds through, but text remains crisp via heavy contrast and selective glow.
 3. **Stillness vs. life** — most of the UI is motionless. The few elements that animate (active tabs, status dots, progress gauges) breathe on slow 1–3s cycles. Motion is reserved for *state*, never decoration.
 
@@ -245,12 +245,12 @@ Monospace everywhere. The terminal nature of the product is the brand — propor
 
 **Angled clip-paths** appear on active tabs (chamfered top corners), giving an industrial "machined" silhouette. Diagonals also appear in tab separators (12° rotation) — a subtle "this is not a spreadsheet" cue.
 
-Every window has **four L-shaped corner accents** (14px × 2px brackets) drawn just inside the border. They glow at the focused-window opacity tier and serve as the primary focus indicator — more readable than a border color change alone.
+Windows carry no corner ornament. The chrome is the 1px accent-tinted border plus the multi-layer outer glow — the whole frame reads as a single luminous edge rather than discrete brackets.
 
 ### Window Anatomy
 
 ```
-┌─[14px×2px corner accent]─────────────────[corner accent]─┐
+┌──────────────────────────────────────────────────────────┐
 │ ▌ TITLEBAR · 28px · uppercase label · status dot 6px    │  ← header accent strip 6px
 ├──────────────────────────────────────────────────────────┤
 │ ░░░ edge glow ░░░ (5em tall, fades into pane)            │
@@ -258,7 +258,7 @@ Every window has **four L-shaped corner accents** (14px × 2px brackets) drawn j
 │         terminal content (xterm.js viewport)             │
 │                                                          │
 │ ░░░ edge glow ░░░                                        │
-└─[corner accent]──────────────────────────[corner accent]─┘
+└──────────────────────────────────────────────────────────┘
    ↑ 1px border @ tier (inactive→active depending on focus)
 ```
 
@@ -276,7 +276,7 @@ Edge glow overlays (5em tall — sized in `em` so they scale with terminal font 
 
 The interface is keyboard-first. **Every focusable element must show a visible focus state** — `outline: none` without a replacement is forbidden.
 
-- **Windows** use the four L-corner accents stepping from `inactive` to `active` tier; no border color change is needed.
+- **Windows** step their border color and outer glow from `inactive` to `active` tier on focus — the whole frame brightens. (Window focus is the one place a border-tier change carries the signal on its own, now that there are no corner accents.)
 - **Inputs, buttons, list rows, palette items** use a 1px solid outline at `active` tier with the standard tight-bloom glow stack. Never dashed or dotted.
 - **Focus is keyboard-only** — use `:focus-visible`, not `:focus`. Mouse clicks should not draw rings on already-focused elements.
 - **Active row in a list** (palette suggestion, file picker entry) gets a 2px left bar at `active` tier rather than a full outline — it reads as a cursor mark, not a button.
