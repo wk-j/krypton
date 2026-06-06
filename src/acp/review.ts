@@ -137,7 +137,11 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
     `3. As replies arrive, track how many of the ${reviewers.length} reviewers have answered. Once all ` +
       'have replied (or the user runs #cancel, which aborts the whole review), synthesize: cluster ' +
       'concerns raised by ≥2 reviewers (high signal), list any conflicts between reviewers, and note ' +
-      'unique catches. Report the synthesis in your turn text.',
+      'unique catches. Report the synthesis in your turn text. After synthesizing (not on #cancel), ' +
+      'call `review_outcome` once with the totals you reported — `blockers` and `warnings` are the ' +
+      `combined counts across all reviewers, \`reviewer_count\` is ${reviewers.length}, and ` +
+      '`subject_label` is a short tag for what was reviewed (the diff summary or doc path). This ' +
+      'records a summary row in the review quality matrix; it stores no scores and no grades.',
   );
   lines.push(
     '4. Do NOT auto-commit or auto-apply fixes. If the reviews surface a genuine unresolved fork (a real ' +

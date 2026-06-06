@@ -90,4 +90,17 @@ describe('reviewRequestPrompt', () => {
     expect(prompt).toContain('attention_flag');
     expect(prompt).toContain('auto-commit');
   });
+
+  it('instructs a review_outcome summary call after synthesis (spec 146)', () => {
+    const prompt = reviewRequestPrompt({
+      reviewers: ['A', 'B', 'C'],
+      subject: diffSubject,
+      intent: '',
+    });
+    expect(prompt).toContain('review_outcome');
+    expect(prompt).toContain('blockers');
+    expect(prompt).toContain('warnings');
+    // reviewer_count is wired to the actual reviewer total.
+    expect(prompt).toContain('`reviewer_count` is 3');
+  });
 });

@@ -236,6 +236,29 @@
   transition: color 160ms, border-color 160ms, background 160ms;
 }
 
+/* spec 146: review-count depth indicator — a quiet neutral chip that only shows
+   when the ACP harness has recorded #review rounds. Visually DISTINCT from the
+   attention gauge: a glyph + count, a muted (never tier-coloured, never pulsing)
+   appearance, and no border box — it reads as ambient depth ("inspect"), not as
+   demand ("act on me"). Like the attention chip, it never shrinks/clips. */
+.krypton-workspace-footer__segment--reviews {
+  flex: 0 0 auto;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  overflow: visible;
+  text-overflow: clip;
+  letter-spacing: 0.04em;
+  color: rgba(216, 232, 216, 0.5);
+}
+
+.krypton-workspace-footer__reviews-glyph {
+  color: rgba(216, 232, 216, 0.42);
+  font-size: 0.96em;
+}
+
 /* Tier colours — same palette as the triage-overlay cards so the footer chip
    and the overlay agree on what each colour means (cyan < amber < red). */
 .krypton-workspace-footer__segment--rev-reversible {

@@ -46,6 +46,15 @@ export interface SignalValueMap {
   // when nothing is open. Self-contained union (mirrors acp `Reversibility`
   // values) so the global bus stays decoupled from the ACP types.
   'system:attention': { sourceId: string; openCount: number; maxReversibility: AttentionTier | null };
+  // spec 146: total recorded #review rounds (review quality matrix), published
+  // globally by each ACP harness so the workspace footer can show a neutral
+  // depth indicator regardless of focused view. `sourceId` identifies the
+  // publishing harness so the footer sums across all of them rather than
+  // last-writer-wins. A harness publishes `totalReviews: 0` for its id on
+  // dispose. Deliberately just a count — never coloured by badness, never a
+  // score (ADR-0004); it means "N rounds recorded — press to inspect", not
+  // "act on me" (contrast the attention gauge).
+  'review:quality': { sourceId: string; totalReviews: number };
 }
 
 /** spec 138: reversibility tier of the heaviest open attention item, ordered

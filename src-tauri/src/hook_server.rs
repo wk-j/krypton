@@ -1015,6 +1015,7 @@ async fn handle_bus_tool_call(
         "directive_remove" => directive_remove(state, harness_id, lane_label, arguments).await,
         "attention_flag" => attention_flag(state, harness_id, lane_label, arguments).await,
         "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
+        "review_outcome" => review_outcome(state, harness_id, lane_label, arguments).await,
         "artifact_new" => artifact_tool_new(state, harness_id, lane_label, arguments),
         "artifact_register" => artifact_tool_register(state, harness_id, lane_label, arguments),
         "artifact_cancel" => artifact_tool_cancel(state, harness_id, lane_label, arguments),
@@ -1282,6 +1283,101 @@ async fn attention_resolve(
     }
 }
 
+/// review_outcome — the authoring (convening) lane self-reports a summary of a
+/// completed #review round (spec 146). Summary-only: raw blocker/warning counts,
+/// a reviewer count, and a subject label — no diff size, no transcript anchor,
+/// no score. Round-trips to the frontend, which records the row in the review
+/// quality matrix (in-memory, session-only) and replies `{ recorded }`.
+async fn review_outcome(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let subject_label = required_string(&arguments, "subject_label")?;
+    if subject_label.trim().is_empty() {
+        return Err("subject_label must be non-empty".to_string());
+    }
+    // Counts must be valid non-negative integers. A *missing* blocker/warning
+    // means a clean round (0), but a *present-but-malformed* value (negative,
+    // fractional, junk string) is rejected rather than coerced — coercing a
+    // failed call into 0 would record a falsely-clean round and corrupt the only
+    // observation data (spec 146 / design-review blocker). reviewer_count is
+    // required and must be ≥ 1 (a review with no reviewers is meaningless).
+    let blockers = parse_count_field(&arguments, "blockers")?.unwrap_or(0);
+    let warnings = parse_count_field(&arguments, "warnings")?.unwrap_or(0);
+    let reviewer_count = parse_count_field(&arguments, "reviewer_count")?.ok_or_else(|| {
+        "reviewer_count is required (how many reviewers you fanned out to)".to_string()
+    })?;
+    if reviewer_count < 1 {
+        return Err("reviewer_count must be at least 1".to_string());
+    }
+
+    let request_id = format!("rvo-{}-{}", now_ms(), rand_suffix());
+    let payload = json!({
+        "fromLaneId": from_lane,
+        "blockers": blockers,
+        "warnings": warnings,
+        "reviewerCount": reviewer_count,
+        "subjectLabel": subject_label,
+        "harnessId": harness_id,
+        "requestId": request_id,
+        "sentAt": now_ms(),
+    });
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state.app_handle.emit_or_log("acp-review-outcome", payload);
+    match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => {
+            if value
+                .get("recorded")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                Ok(json!({ "recorded": true }))
+            } else {
+                let reason = value
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("record_failed");
+                Err(format!("review_outcome failed: {reason}"))
+            }
+        }
+        Ok(Err(_)) => Err("review_outcome: frontend coordinator did not respond".to_string()),
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            Err("review_outcome: frontend reply timed out".to_string())
+        }
+    }
+}
+
+/// Parse a count field that distinguishes *absent* (Ok(None) → caller defaults)
+/// from *present-but-invalid* (Err → reject, never coerce to 0). A present value
+/// must be a non-negative integer: a JSON unsigned int, an integer-valued float
+/// (e.g. `2.0`), or a numeric string. Negative, fractional, or junk values error.
+fn parse_count_field(arguments: &Value, key: &str) -> Result<Option<u64>, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => count_value(v)
+            .map(Some)
+            .ok_or_else(|| format!("{key} must be a non-negative integer")),
+    }
+}
+
+/// Interpret a JSON value as a non-negative integer count, or None if it is not
+/// one (negative, fractional, or unparseable). Accepts unsigned ints,
+/// integer-valued non-negative floats, and numeric strings.
+fn count_value(v: &Value) -> Option<u64> {
+    if let Some(n) = v.as_u64() {
+        return Some(n);
+    }
+    if let Some(f) = v.as_f64() {
+        if f >= 0.0 && f.fract() == 0.0 {
+            return Some(f as u64);
+        }
+    }
+    v.as_str().and_then(|s| s.trim().parse::<u64>().ok())
+}
+
 /// collect_git_state — run a few git commands in the lane's cwd and assemble a
 /// JSON payload matching the frontend's `ReviewGitState` shape (spec 145, shared
 /// by `#review` and attention triage). Never panics; on any failure returns
@@ -1378,13 +1474,19 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
     } else {
         "HEAD".to_string()
     };
-    let numstat_raw = run(&["--no-pager", "diff", "--no-ext-diff", &base, "--numstat"])
-        .unwrap_or_default();
+    let numstat_raw =
+        run(&["--no-pager", "diff", "--no-ext-diff", &base, "--numstat"]).unwrap_or_default();
     // A non-zero `git diff` is a real error, NOT "no changes" — and with
     // --no-ext-diff an external diff driver can't be the cause. Surface a sentinel
     // rather than coercing failure into an empty diff (which a populated diffstat
     // would then contradict). `run` returns None only on that genuine failure.
-    let diff_raw = match run(&["--no-pager", "diff", "--no-ext-diff", "--no-textconv", &base]) {
+    let diff_raw = match run(&[
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        &base,
+    ]) {
         Some(d) => d,
         None => "<git diff failed>".to_string(),
     };
@@ -1453,7 +1555,11 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
     // the cap so the whole `diff` string stays ≤ REVIEW_DIFF_CAP.
     let diff = if diff_raw.len() > REVIEW_DIFF_CAP {
         let budget = REVIEW_DIFF_CAP.saturating_sub(DIFF_TRUNCATION_MARKER.len());
-        format!("{}{}", safe_truncate(&diff_raw, budget), DIFF_TRUNCATION_MARKER)
+        format!(
+            "{}{}",
+            safe_truncate(&diff_raw, budget),
+            DIFF_TRUNCATION_MARKER
+        )
     } else {
         diff_raw
     };
@@ -1471,7 +1577,10 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
             Ok(file) => {
                 use std::io::Read;
                 let mut bytes = Vec::new();
-                match file.take(UNTRACKED_HEAD_BYTES as u64).read_to_end(&mut bytes) {
+                match file
+                    .take(UNTRACKED_HEAD_BYTES as u64)
+                    .read_to_end(&mut bytes)
+                {
                     Ok(_) => {
                         if bytes.iter().take(2048).any(|b| *b == 0) {
                             "<binary>".to_string()
@@ -1490,8 +1599,7 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
         };
         // Strict cap: stop before the returned payload would exceed the cap (each
         // head is ≤ UNTRACKED_HEAD_BYTES, so the first excerpt always fits).
-        if !untracked.is_empty()
-            && untracked_total.saturating_add(head.len()) > UNTRACKED_TOTAL_CAP
+        if !untracked.is_empty() && untracked_total.saturating_add(head.len()) > UNTRACKED_TOTAL_CAP
         {
             break;
         }
@@ -2286,6 +2394,20 @@ fn attention_tool_descriptors() -> Vec<Value> {
                 "required": ["item_id"]
             }
         }),
+        json!({
+            "name": "review_outcome",
+            "description": "After you synthesize a #review round you convened (you fanned the subject out to reviewer lanes and aggregated their Blockers/Warnings), record a one-row summary of the outcome against your own work. This feeds the review quality matrix — a session-only, per-lane history the human inspects to observe whether a lane keeps producing problems across successive reviews. It is an OBSERVATION, NOT A SCORE: it stores only the raw counts, never a grade or ranking. Call it exactly once per review round, only for a real review you actually convened; never fabricate one. Counts are the combined totals across all reviewers.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "blockers": { "type": "integer", "minimum": 0, "description": "Total blockers reported across all reviewers this round (0 if none)." },
+                    "warnings": { "type": "integer", "minimum": 0, "description": "Total warnings reported across all reviewers this round (0 if none)." },
+                    "reviewer_count": { "type": "integer", "minimum": 1, "description": "How many reviewers you fanned the review out to." },
+                    "subject_label": { "type": "string", "description": "Short tag for what was reviewed — a diff summary or the doc path." }
+                },
+                "required": ["reviewer_count", "subject_label"]
+            }
+        }),
     ]
 }
 
@@ -2593,6 +2715,33 @@ mod tests {
 
     // krypton#2: directive_apply upsert must accept the directive payload from
     // every MCP client shape, not just the nested object Claude/Codex send.
+
+    // spec 146: review_outcome count parsing accepts ints, integer-valued
+    // floats, and numeric strings; absent → None; present-but-invalid → Err
+    // (never silently coerced to 0, which would record a falsely-clean round).
+    #[test]
+    fn parse_count_field_distinguishes_absent_valid_and_invalid() {
+        let args = json!({
+            "blockers": 3,
+            "warnings": "2",
+            "reviewer_count": 2.0,
+            "null_field": null,
+            "junk": "nope",
+            "neg": -1,
+            "frac": 1.5
+        });
+        // absent / null → None (caller defaults, e.g. 0 blockers = clean round)
+        assert_eq!(parse_count_field(&args, "missing").unwrap(), None);
+        assert_eq!(parse_count_field(&args, "null_field").unwrap(), None);
+        // valid forms → Some(n)
+        assert_eq!(parse_count_field(&args, "blockers").unwrap(), Some(3));
+        assert_eq!(parse_count_field(&args, "warnings").unwrap(), Some(2));
+        assert_eq!(parse_count_field(&args, "reviewer_count").unwrap(), Some(2));
+        // present-but-invalid → Err (NOT coerced to 0)
+        assert!(parse_count_field(&args, "junk").is_err());
+        assert!(parse_count_field(&args, "neg").is_err());
+        assert!(parse_count_field(&args, "frac").is_err());
+    }
 
     #[test]
     fn upsert_accepts_nested_object() {
@@ -3048,9 +3197,14 @@ mod git_state_tests {
         let untracked = v["untracked"].as_array().unwrap();
         assert_eq!(untracked.len(), 1);
         assert_eq!(untracked[0]["path"], json!("new.txt"));
-        assert!(untracked[0]["head"].as_str().unwrap().contains("fresh content"));
+        assert!(untracked[0]["head"]
+            .as_str()
+            .unwrap()
+            .contains("fresh content"));
         let diffstat = v["diffstat"].as_array().unwrap();
-        assert!(diffstat.iter().any(|e| e["path"] == json!("new.txt") && e["status"] == json!("?")));
+        assert!(diffstat
+            .iter()
+            .any(|e| e["path"] == json!("new.txt") && e["status"] == json!("?")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

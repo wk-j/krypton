@@ -44,8 +44,8 @@ _Avoid_: notification badge, alert count
 A directive property (`triage_equipped`) that lets any lane *spawned* with that directive call `attention_flag` from its first turn — the per-lane opt-in sourced from a role rather than a keystroke. A *spawn-time default*, not live reconfiguration: flipping it does not retroactively equip a running lane.
 _Avoid_: triage permission (a manual override can supersede it, so it is a default not a hard permission), enable triage (the feature is always on; the grant is per-lane)
 
-**Manual equip** (spec 129):
-The runtime `Leader '` override of a lane's triage grant. Wins over the directive-sourced grant until the lane is closed or a new directive is assigned (which clears the override). The means to equip a lane that has no directive, or to overrule the one it carries.
+**Manual equip** (spec 129, legacy):
+A runtime override of a lane's triage grant — wins over the directive-sourced grant until the lane is closed or a new directive is assigned. Spec 130 made attention triage **default-on for every lane**, which retired the need to manually equip; the `setTriageEquipped` store path remains as legacy API but no leader key invokes it. The `Leader '` chord it once used is **now the Review Matrix overlay** (spec 146) — do not document `Leader '` as manual equip.
 
 **Lane peek heat**:
 The existing *deterministic* score that ranks lanes by activity (tools / tokens / peer / process) plus an alert boost (error > needs_permission > pendingShell > awaiting_peer). The pre-LLM baseline that attention triage builds on or replaces.
@@ -56,3 +56,13 @@ _Avoid_: priority, importance score
 **Code wiki**:
 A persistent, LLM-maintained set of interlinked markdown pages capturing the *why* of a codebase — architectural rationale, domain model, trade-offs, and external research — **not** a re-summary of the code itself. Lives as markdown in the *target* project the lane operates on (`<cwd>/docs/wiki/`), so git gives version history and a human can browse it. The code plus git history is the source of truth for *what/how*; the code wiki owns *why/decisions/domain*, the layer the code does not record. A compounding artifact: the LLM integrates each new decision into existing pages rather than re-deriving it on every question. A **generic harness capability**, not specific to the Krypton repo — any lane in any project can maintain its project's wiki.
 _Avoid_: docs (too broad — a code wiki excludes derived/how-to docs that restate code), index (the catalog file is one page *in* the wiki, not the wiki), harness memory (the per-lane `memory_*` store is ephemeral working/handoff state, kept outside the repo — the code wiki is persistent shared knowledge committed to the repo)
+
+### Review
+
+**Authoring lane**:
+The single lane that edits the shared worktree and convenes a `#review` over its own working diff — the producer of the work under review, as distinct from the reviewer lanes that only read and report. Meaningful only under the "one lane edits, the others review" workflow; because every lane in a harness view shares one worktree, the diff is attributed to the authoring lane by *convention of that workflow*, not by per-line ownership the system can prove.
+_Avoid_: requester (too generic — every peer message has a requester), convening lane (the act of convening; "authoring" names the role that owns the work), owner
+
+**Review quality matrix**:
+A per-session, in-memory surface that accumulates a small **summary** of each `#review` round against an [[Authoring lane]]'s work — the raw blocker/warning counts the reviewers reported (plus a subject label and reviewer count), shown as *history per lane*. An **observation, not a score**: it never blends those counts into a single quality number, never grades, and never ranks lanes — it shows how many problems reviewers kept finding so the human eyeballs a trend. The authoring lane self-reports the summary at synthesis time; the matrix keeps no fine-grained per-review detail (no stored diff size, no jump-back-to-transcript anchor) — the real reviewer replies live in scrollback. Surfaced exactly like attention triage: a neutral depth indicator in the workspace status bar (a count of reviews recorded, *not* an alarm) plus a summon-on-demand overlay.
+_Avoid_: quality score (the explicit thing it refuses to be), lane grade, verdict, leaderboard, ranking

@@ -45,6 +45,7 @@ import {
   renderTriageOverlay,
   type TriageOverlayViewModel,
 } from './attention-overlay';
+import { ReviewQualityStore } from './review-quality';
 import {
   InterLaneCoordinator,
   type CoordinatorDrainContext,
@@ -206,7 +207,7 @@ interface FsActivityPayload {
   error?: string;
 }
 
-type HarnessToolFamily = 'memory' | 'peer' | 'attention';
+type HarnessToolFamily = 'memory' | 'peer' | 'attention' | 'review';
 type PermissionDecision = 'pending' | 'accepted' | 'rejected' | 'auto_allowed' | 'failed';
 
 interface PermissionPayload {
@@ -404,10 +405,15 @@ const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
 // calls must auto-allow like memory/peer — a permission prompt here also
 // breaks the non-blocking contract (the lane proceeds with `chosen`, never waits).
 const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resolve']);
+// spec 146: review_outcome is default-on built-in harness-bus tooling (the
+// authoring lane self-reports a #review summary), so it must auto-allow like
+// the others — a permission prompt mid-synthesis would derail the round.
+const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
   ...HARNESS_PEER_TOOL_NAMES,
   ...HARNESS_ATTENTION_TOOL_NAMES,
+  ...HARNESS_REVIEW_TOOL_NAMES,
 ]);
 const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
@@ -1015,6 +1021,8 @@ export class AcpHarnessView implements ContentView {
    * signals (spec 138 — tier changes must re-publish even at the same count). */
   private lastPublishedAttention = -1;
   private lastPublishedTier: AttentionTier | null = null;
+  /** spec 146: last review count published to the footer; dedupes the signal. */
+  private lastPublishedReviews = -1;
   private lanes: HarnessLane[] = [];
   private activeLaneId = '';
   private laneBus = new LaneBus();
@@ -1027,6 +1035,11 @@ export class AcpHarnessView implements ContentView {
   private triageRedirect: { itemId: string; draft: string } | null = null;
   private attentionFlagUnlisten: UnlistenFn | null = null;
   private attentionResolveUnlisten: UnlistenFn | null = null;
+  /** spec 146: review quality matrix — summary-only #review history per lane. */
+  private reviewQualityStore = new ReviewQualityStore(this.laneBus);
+  private reviewMatrixOverlayOpen = false;
+  private reviewMatrixSelectedLaneIndex = 0;
+  private reviewOutcomeUnlisten: UnlistenFn | null = null;
   private interLaneUnlisten: UnlistenFn | null = null;
   private peerListUnlisten: UnlistenFn | null = null;
   private memoryEntries: HarnessMemoryEntry[] = [];
@@ -1120,6 +1133,8 @@ export class AcpHarnessView implements ContentView {
   private metricsOverlayEl!: HTMLElement;
   private triageOverlayEl!: HTMLElement;
   private triagePanelEl!: HTMLElement;
+  private reviewMatrixOverlayEl!: HTMLElement;
+  private reviewMatrixPanelEl!: HTMLElement;
   private pickerEl!: HTMLElement;
   private directivePickerEl!: HTMLElement;
   private modelPickerEl!: HTMLElement;
@@ -1158,6 +1173,11 @@ export class AcpHarnessView implements ContentView {
       if (e.type === 'triage:changed') {
         this.renderTriageGaugeEl();
         if (this.triageOverlayOpen) this.renderTriageOverlayEl();
+      } else if (e.type === 'review:quality') {
+        // spec 146: refresh the neutral footer review-count indicator (and the
+        // overlay, if open) whenever a round is recorded or a lane is dropped.
+        this.renderReviewGaugeEl();
+        if (this.reviewMatrixOverlayOpen) this.renderReviewMatrixOverlayEl();
       }
     });
     this.buildDOM();
@@ -1629,6 +1649,63 @@ export class AcpHarnessView implements ContentView {
         if (this.triageOverlayOpen) this.renderTriageOverlayEl();
       },
     );
+
+    // spec 146: the authoring lane self-reports a #review summary at synthesis
+    // time. All fields are self-reported (no git collection, no session state) —
+    // we just record the summary row, mirroring the attention_flag round-trip.
+    type ReviewOutcomeEvent = {
+      fromLaneId: string; // display name from Rust
+      blockers: number;
+      warnings: number;
+      reviewerCount: number;
+      subjectLabel: string;
+      harnessId?: string;
+      requestId?: string;
+    };
+    this.reviewOutcomeUnlisten = await listen<ReviewOutcomeEvent>('acp-review-outcome', (e) => {
+      const env = e.payload;
+      const requestId = env.requestId;
+      if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
+      const reply = (result: { recorded: boolean; reason?: string }): void => {
+        if (!requestId) return;
+        void invoke('acp_bus_reply', { requestId, result }).catch((err) => {
+          console.warn('acp_bus_reply (review_outcome) failed', err);
+        });
+      };
+      reply(this.handleReviewOutcome(env));
+    });
+  }
+
+  /**
+   * spec 146: record one self-reported #review summary against the authoring
+   * (convening) lane. Synchronous — there is no git collection or anchor to
+   * mint, so we record and reply immediately.
+   */
+  private handleReviewOutcome(env: {
+    fromLaneId: string;
+    blockers: number;
+    warnings: number;
+    reviewerCount: number;
+    subjectLabel: string;
+  }): { recorded: boolean; reason?: string } {
+    const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
+    if (!lane) return { recorded: false, reason: 'unknown_sender' };
+    const label = env.subjectLabel.trim() || '(review)';
+    this.reviewQualityStore.record({
+      authoringLaneId: lane.id,
+      authoringLaneName: lane.displayName,
+      subjectLabel: label,
+      reviewerCount: Math.max(0, Math.trunc(env.reviewerCount)),
+      blockers: Math.max(0, Math.trunc(env.blockers)),
+      warnings: Math.max(0, Math.trunc(env.warnings)),
+    });
+    this.appendTranscript(
+      lane,
+      'system',
+      `[review] recorded: ${label} — ${env.blockers} blocker${env.blockers === 1 ? '' : 's'}, ${env.warnings} warning${env.warnings === 1 ? '' : 's'} across ${env.reviewerCount} reviewer${env.reviewerCount === 1 ? '' : 's'}`,
+    );
+    this.scheduleLaneRender(lane);
+    return { recorded: true };
   }
 
   /**
@@ -1893,6 +1970,17 @@ export class AcpHarnessView implements ContentView {
         group: 'Harness',
         run: () => this.openTriageOverlay(),
       },
+      {
+        // spec 146: review quality matrix overlay. `'` is a free non-reserved
+        // key (all letters are reserved global leader keys; `;` is the adjacent
+        // triage queue, `,` `.` are model/directives). Inside, j/k switch lane.
+        key: "'",
+        label: 'Review Matrix',
+        group: 'Harness',
+        run: () => this.openReviewMatrixOverlay(),
+        isEnabled: () => this.reviewQualityStore.totalReviews() > 0,
+        disabledReason: () => 'no reviews recorded yet',
+      },
     ];
   }
 
@@ -1933,6 +2021,11 @@ export class AcpHarnessView implements ContentView {
     if (this.triageOverlayOpen) {
       e.preventDefault();
       this.handleTriageKey(e);
+      return true;
+    }
+    if (this.reviewMatrixOverlayOpen) {
+      e.preventDefault();
+      this.handleReviewMatrixKey(e);
       return true;
     }
     if (this.metricsPanelOpen && e.key === 'Escape') {
@@ -2189,6 +2282,8 @@ export class AcpHarnessView implements ContentView {
     if (accentHost instanceof HTMLElement) delete accentHost.dataset.laneAccent;
     // spec 128: clear the footer attention badge — the harness is going away.
     this.publishAttention(0, null);
+    // spec 146: clear the footer review-count indicator — the harness is going away.
+    this.publishReviews(0);
     this.stopComposerTick();
     this.stopMetricsTick();
     if (this.toolTickTimer !== null) {
@@ -2220,6 +2315,10 @@ export class AcpHarnessView implements ContentView {
     if (this.attentionResolveUnlisten) {
       this.attentionResolveUnlisten();
       this.attentionResolveUnlisten = null;
+    }
+    if (this.reviewOutcomeUnlisten) {
+      this.reviewOutcomeUnlisten();
+      this.reviewOutcomeUnlisten = null;
     }
     if (this.peerListUnlisten) {
       this.peerListUnlisten();
@@ -2422,6 +2521,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private openTriageOverlay(): void {
+    this.closeReviewMatrixOverlay(); // mutual-exclude: never stack the two full-screen overlays
     this.triageOverlayOpen = true;
     this.triageRedirect = null;
     const open = this.triageStore.openItems();
@@ -2582,6 +2682,160 @@ export class AcpHarnessView implements ContentView {
     this.renderTriageOverlayEl();
   }
 
+  // ── spec 146: review quality matrix ─────────────────────────────────────
+
+  private openReviewMatrixOverlay(): void {
+    if (this.reviewQualityStore.totalReviews() === 0) return;
+    this.closeTriageOverlay(); // mutual-exclude: never stack the two full-screen overlays
+    this.reviewMatrixOverlayOpen = true;
+    const lanes = this.reviewQualityStore.lanesWithHistory();
+    this.reviewMatrixSelectedLaneIndex = Math.min(
+      this.reviewMatrixSelectedLaneIndex,
+      Math.max(0, lanes.length - 1),
+    );
+    this.helpOpen = false;
+    this.memoryDrawerOpen = false;
+    this.renderReviewMatrixOverlayEl();
+  }
+
+  private closeReviewMatrixOverlay(): void {
+    if (!this.reviewMatrixOverlayOpen) return;
+    this.reviewMatrixOverlayOpen = false;
+    this.reviewMatrixOverlayEl.hidden = true;
+  }
+
+  private renderReviewGaugeEl(): void {
+    // spec 146: the neutral review-count indicator lives in the global
+    // workspace footer (beside, but distinct from, the attention gauge) —
+    // publish and let the footer render it. The overlay is reached via `'`.
+    this.publishReviews(this.reviewQualityStore.totalReviews());
+  }
+
+  /** spec 146: surface the total recorded review rounds on the global footer.
+   * Deduped so a no-op does not churn the footer. Just a count — never coloured
+   * by badness, never a score (ADR-0004). */
+  private publishReviews(totalReviews: number): void {
+    if (totalReviews === this.lastPublishedReviews) return;
+    this.lastPublishedReviews = totalReviews;
+    this.viewBus?.publishSignal({
+      kind: 'review:quality',
+      source: SYSTEM_SOURCE,
+      value: { sourceId: this.attentionSourceId, totalReviews },
+    });
+  }
+
+  private renderReviewMatrixOverlayEl(): void {
+    this.reviewMatrixOverlayEl.hidden = !this.reviewMatrixOverlayOpen;
+    if (!this.reviewMatrixOverlayOpen) return;
+    const panel = this.reviewMatrixPanelEl;
+    panel.replaceChildren();
+
+    const lanes = this.reviewQualityStore.lanesWithHistory();
+    if (this.reviewMatrixSelectedLaneIndex >= lanes.length) {
+      this.reviewMatrixSelectedLaneIndex = Math.max(0, lanes.length - 1);
+    }
+
+    const header = document.createElement('header');
+    header.className = 'acp-review__head';
+    const title = document.createElement('span');
+    title.className = 'acp-review__title';
+    title.textContent = 'Review quality matrix';
+    const sub = document.createElement('span');
+    sub.className = 'acp-review__sub';
+    sub.textContent = 'this session · in-memory · not persisted';
+    header.append(title, sub);
+    panel.appendChild(header);
+
+    if (lanes.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'acp-review__empty';
+      empty.textContent = 'No reviews recorded.';
+      panel.appendChild(empty);
+      return;
+    }
+
+    // Lane switcher (only meaningful with >1 lane in history).
+    if (lanes.length > 1) {
+      const tabs = document.createElement('div');
+      tabs.className = 'acp-review__lanes';
+      lanes.forEach((laneId, i) => {
+        const tab = document.createElement('span');
+        tab.className = 'acp-review__lane' + (i === this.reviewMatrixSelectedLaneIndex ? ' is-active' : '');
+        // A closed lane is gone from this.lanes; fall back to the displayName
+        // snapshot stored on its newest recorded outcome so the row stays labelled.
+        const history = this.reviewQualityStore.historyFor(laneId);
+        const name =
+          this.lanes.find((l) => l.id === laneId)?.displayName ?? history[0]?.authoringLaneName ?? laneId;
+        tab.textContent = `${name} · ${history.length}`;
+        tabs.appendChild(tab);
+      });
+      panel.appendChild(tabs);
+    }
+
+    const selectedLaneId = lanes[this.reviewMatrixSelectedLaneIndex];
+    const rows = this.reviewQualityStore.historyFor(selectedLaneId);
+
+    const table = document.createElement('table');
+    table.className = 'acp-review__table';
+    table.innerHTML =
+      '<thead><tr>' +
+      '<th class="acp-review__col-when">round</th>' +
+      '<th class="acp-review__col-subj">subject</th>' +
+      '<th class="acp-review__col-num">reviewers</th>' +
+      '<th class="acp-review__col-num">🔴 block</th>' +
+      '<th class="acp-review__col-num">🟡 warn</th>' +
+      '</tr></thead>';
+    const tbody = document.createElement('tbody');
+    for (const row of rows) {
+      const tr = document.createElement('tr');
+      const when = document.createElement('td');
+      when.className = 'acp-review__when';
+      when.textContent = formatReviewRoundTime(row.at);
+      const subj = document.createElement('td');
+      subj.className = 'acp-review__subj';
+      subj.textContent = row.subjectLabel;
+      const rev = document.createElement('td');
+      rev.className = 'acp-review__num acp-review__rev';
+      rev.textContent = String(row.reviewerCount);
+      const block = document.createElement('td');
+      block.className = 'acp-review__num acp-review__block' + (row.blockers === 0 ? ' is-zero' : '');
+      block.textContent = String(row.blockers);
+      const warn = document.createElement('td');
+      warn.className = 'acp-review__num acp-review__warn' + (row.warnings === 0 ? ' is-zero' : '');
+      warn.textContent = String(row.warnings);
+      tr.append(when, subj, rev, block, warn);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    panel.appendChild(table);
+
+    const foot = document.createElement('div');
+    foot.className = 'acp-review__foot';
+    foot.innerHTML =
+      (lanes.length > 1 ? '<span><kbd>j</kbd> <kbd>k</kbd> switch lane</span>' : '') +
+      '<span><kbd>esc</kbd> close</span>' +
+      '<span class="acp-review__foot-note">read-only — observation, not a score</span>';
+    panel.appendChild(foot);
+  }
+
+  /** Overlay key handling. Read-only: j/k switch lane, Esc/q close. */
+  private handleReviewMatrixKey(e: KeyboardEvent): void {
+    if (e.key === 'Escape' || e.key === 'q') {
+      this.closeReviewMatrixOverlay();
+      return;
+    }
+    const lanes = this.reviewQualityStore.lanesWithHistory();
+    if (lanes.length < 2) return;
+    if (e.key === 'j' || e.key === 'ArrowDown') {
+      this.reviewMatrixSelectedLaneIndex = (this.reviewMatrixSelectedLaneIndex + 1) % lanes.length;
+      this.renderReviewMatrixOverlayEl();
+    } else if (e.key === 'k' || e.key === 'ArrowUp') {
+      this.reviewMatrixSelectedLaneIndex =
+        (this.reviewMatrixSelectedLaneIndex - 1 + lanes.length) % lanes.length;
+      this.renderReviewMatrixOverlayEl();
+    }
+  }
+
   private buildDOM(): void {
     // spec 125 — inject reusable backend logo <symbol> defs once. Hidden
     // off-screen so <use href="#krypton-logo-*"/> resolves from the rail.
@@ -2648,6 +2902,15 @@ export class AcpHarnessView implements ContentView {
     this.triagePanelEl.className = 'acp-triage__panel';
     this.triageOverlayEl.appendChild(this.triagePanelEl);
     body.appendChild(this.triageOverlayEl);
+
+    // spec 146: review-quality-matrix overlay (summon-on-demand, read-only).
+    this.reviewMatrixOverlayEl = document.createElement('aside');
+    this.reviewMatrixOverlayEl.className = 'acp-harness__review-overlay';
+    this.reviewMatrixOverlayEl.hidden = true;
+    this.reviewMatrixPanelEl = document.createElement('div');
+    this.reviewMatrixPanelEl.className = 'acp-review__panel';
+    this.reviewMatrixOverlayEl.appendChild(this.reviewMatrixPanelEl);
+    body.appendChild(this.reviewMatrixOverlayEl);
 
     this.planEl = document.createElement('aside');
     this.planEl.className = 'acp-harness__plan';
@@ -3495,6 +3758,15 @@ export class AcpHarnessView implements ContentView {
     lines.push(
       'Attention triage: at the end of a turn where you hit a real fork — you picked among two or more genuinely viable approaches the user could reasonably decide differently on, you resolved a consequential ambiguity in their intent (one that changes the user-visible outcome, architecture, or workflow) by guessing, or you did something costly or hard to undo — surface ONE such decision to the human review queue with attention_flag { question, chosen, rationale, traded_off, uncertainty, reversibility }, then keep working (non-blocking; proceed with `chosen`). Calibrate in both directions: both a silent genuine fork and a trivia flag degrade the queue, so flag the consequential forks but skip the routine, reversible, machine-verifiable 80%, at most one per turn, and never flag just to cover yourself. Use attention_resolve { item_id } if you later settle it yourself.',
     );
+    // spec 146: review_outcome is default-on but only used during a #review
+    // round (which needs reviewer lanes), so name it for discoverability only
+    // when peers exist. The #review prompt already instructs the call; this just
+    // ensures the model can target the tool by name under a capped tool search.
+    if (hasPeers) {
+      lines.push(
+        'Review quality matrix: after you synthesize a #review round (you convened reviewers and aggregated their Blockers/Warnings), call review_outcome { blockers, warnings, reviewer_count, subject_label } once to record a summary row for your own work. It stores the raw counts only — no score, no grade — so the human can observe the trend across rounds. Only call it for a real review you convened; never fabricate one.',
+      );
+    }
     // spec 133: discoverability only — the agent decides when an HTML artifact
     // beats prose. Opt-in, user-driven; never default to it.
     lines.push(
@@ -4787,6 +5059,10 @@ export class AcpHarnessView implements ContentView {
     }
     this.triageStore.onLaneClosed(lane.id);
     this.renderTriageGaugeEl();
+    // spec 146: a closed lane's review history is deliberately KEPT until the
+    // whole view disposes (the matrix observes the per-session trend; closing or
+    // restarting a lane mid-session must not erase its history). The record
+    // snapshots the lane displayName so the overlay can still label these rows.
     this.laneBus.emit({
       type: 'lane:closed',
       payload: { laneId: lane.id, displayName: lane.displayName },
@@ -7880,7 +8156,7 @@ function harnessToolNameFromString(value: string | undefined): string | null {
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list|attention_flag|attention_resolve)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 
@@ -7888,6 +8164,7 @@ function harnessToolFamily(toolName: string): HarnessToolFamily | null {
   if (HARNESS_MEMORY_TOOL_NAMES.has(toolName)) return 'memory';
   if (HARNESS_PEER_TOOL_NAMES.has(toolName)) return 'peer';
   if (HARNESS_ATTENTION_TOOL_NAMES.has(toolName)) return 'attention';
+  if (HARNESS_REVIEW_TOOL_NAMES.has(toolName)) return 'review';
   return null;
 }
 
@@ -10804,6 +11081,15 @@ function formatShortTime(epochMs: number): string {
   const age = Date.now() - epochMs;
   if (age >= 0 && age < 24 * 60 * 60 * 1000) return `${formatAge(age)} ago`;
   return new Date(epochMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/** spec 146: review matrix round timestamp — clock time today, else "Mon D · HH:MM". */
+function formatReviewRoundTime(epochMs: number): string {
+  const d = new Date(epochMs);
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const sameDay = new Date().toDateString() === d.toDateString();
+  if (sameDay) return time;
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time}`;
 }
 
 function formatSessionUpdatedAt(value: string | null | undefined): string | null {

@@ -1,0 +1,170 @@
+/* Review Quality Matrix (spec 146) — summon-on-demand, read-only overlay.
+   Mirrors the attention-triage overlay shell (src/styles/attention-triage.css);
+   the neutral depth indicator in the workspace footer lives in
+   src/styles/workspace-footer.css (`__segment--reviews`). Observation, not a
+   score — flat surface, no per-row accent rails, no nested boxes. */
+
+/* ── Overlay shell ────────────────────────────────────────── */
+
+.acp-harness__review-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 13, 0.78);
+}
+
+.acp-harness__review-overlay[hidden] {
+  display: none;
+}
+
+.acp-review__panel {
+  display: flex;
+  flex-direction: column;
+  width: clamp(520px, 72vw, 940px);
+  max-height: 84vh;
+  background: rgba(8, 14, 18, 0.98);
+  border: 1px solid rgba(0, 204, 255, 0.32);
+  border-radius: 3px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.acp-review__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.22);
+  color: var(--krypton-window-accent, #0cf);
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+}
+
+.acp-review__sub {
+  color: rgba(216, 232, 216, 0.5);
+  font-size: 0.8em;
+  text-shadow: none;
+  letter-spacing: 0.04em;
+}
+
+.acp-review__empty {
+  padding: 28px 18px;
+  text-align: center;
+  color: rgba(216, 232, 216, 0.55);
+  letter-spacing: 0.03em;
+}
+
+/* ── Lane switcher ────────────────────────────────────────── */
+
+.acp-review__lanes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.14);
+}
+
+.acp-review__lane {
+  font-size: 0.86em;
+  letter-spacing: 0.03em;
+  color: rgba(216, 232, 216, 0.55);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.acp-review__lane.is-active {
+  color: #04080d;
+  background: var(--krypton-window-accent, #0cf);
+}
+
+/* ── History table ───────────────────────────────────────── */
+
+.acp-review__table {
+  width: 100%;
+  border-collapse: collapse;
+  flex: 1;
+  min-height: 0;
+  display: block;
+  overflow-y: auto;
+}
+
+.acp-review__table thead,
+.acp-review__table tbody {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.acp-review__table th {
+  text-align: left;
+  font-weight: normal;
+  font-size: 0.72em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(216, 232, 216, 0.45);
+  padding: 7px 14px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.14);
+}
+
+.acp-review__table td {
+  padding: 7px 14px;
+  font-size: 0.9em;
+  vertical-align: baseline;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.08);
+  color: rgba(216, 232, 216, 0.86);
+}
+
+.acp-review__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.acp-review__col-when { width: 124px; }
+.acp-review__col-num { width: 84px; text-align: center; }
+
+.acp-review__when {
+  color: rgba(216, 232, 216, 0.5);
+  white-space: nowrap;
+}
+
+.acp-review__num {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Category colours label the KIND of finding (block vs warn), not a verdict on
+   the lane — the count itself is never graded (ADR-0004). Zero is dimmed. */
+.acp-review__rev { color: rgba(216, 232, 216, 0.6); }
+.acp-review__block { color: #ff5d6c; }
+.acp-review__warn { color: #ffb454; }
+.acp-review__num.is-zero { color: rgba(216, 232, 216, 0.3); }
+
+/* ── Footer hint row ─────────────────────────────────────── */
+
+.acp-review__foot {
+  display: flex;
+  gap: 16px;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(0, 204, 255, 0.18);
+  color: rgba(216, 232, 216, 0.5);
+  font-size: 0.8em;
+  letter-spacing: 0.03em;
+}
+
+.acp-review__foot-note {
+  margin-left: auto;
+  color: rgba(216, 232, 216, 0.38);
+}
+
+.acp-review__foot kbd {
+  color: var(--krypton-window-accent, #0cf);
+  border: 1px solid rgba(0, 204, 255, 0.3);
+  border-radius: 3px;
+  padding: 0 5px;
+  font-family: inherit;
+  font-size: 0.92em;
+}

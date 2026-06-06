@@ -161,6 +161,10 @@ export class WorkspaceFooter {
    * publishing harness instance. Counts are summed and tiers max'd for display
    * so every lane's attention collects in this one place. */
   private attentionBySource = new Map<string, { count: number; tier: AttentionTier | null }>();
+  private reviewsEl: HTMLElement;
+  /** spec 146: recorded #review rounds per publishing harness instance, summed
+   * for the neutral depth indicator (distinct from the attention gauge). */
+  private reviewsBySource = new Map<string, number>();
   private musicEl: HTMLElement;
   private musicProgressFillEl: HTMLElement;
   private musicIconEl: HTMLElement | null = null;
@@ -217,6 +221,14 @@ export class WorkspaceFooter {
     this.attentionEl.className =
       'krypton-workspace-footer__segment krypton-workspace-footer__segment--attention';
     this.attentionEl.hidden = true;
+    // spec 146: neutral review-count depth indicator (review quality matrix),
+    // published by the ACP harness via `review:quality`. Distinct from the
+    // attention gauge: it means "N rounds recorded — press to inspect", never
+    // "act on me", and is never coloured by badness (ADR-0004).
+    this.reviewsEl = document.createElement('span');
+    this.reviewsEl.className =
+      'krypton-workspace-footer__segment krypton-workspace-footer__segment--reviews';
+    this.reviewsEl.hidden = true;
     this.musicEl = document.createElement('div');
     this.musicEl.className = 'krypton-workspace-footer__music';
     this.musicEl.setAttribute('aria-label', 'music mini player');
@@ -232,7 +244,7 @@ export class WorkspaceFooter {
     this.brandEl.setAttribute('aria-label', 'Krypton');
     this.brandEl.innerHTML = KRYPTON_LOGO_SVG;
 
-    this.rightEl.append(this.attentionEl, this.hintEl, this.musicEl);
+    this.rightEl.append(this.reviewsEl, this.attentionEl, this.hintEl, this.musicEl);
     this.root.append(this.brandEl, this.leftEl, this.centerEl, this.rightEl);
 
     deps.inputRouter.onModeChange((mode) => {
@@ -283,6 +295,14 @@ export class WorkspaceFooter {
       if (openCount > 0) this.attentionBySource.set(sourceId, { count: openCount, tier: maxReversibility });
       else this.attentionBySource.delete(sourceId);
       this.renderAttention();
+    });
+
+    // spec 146: global (not focus-gated) review-count depth indicator.
+    this.bus.onSignal({ kind: 'review:quality' }, (s) => {
+      const { sourceId, totalReviews } = s.value;
+      if (totalReviews > 0) this.reviewsBySource.set(sourceId, totalReviews);
+      else this.reviewsBySource.delete(sourceId);
+      this.renderReviews();
     });
 
     this.timer = setInterval(() => {
@@ -460,8 +480,32 @@ export class WorkspaceFooter {
 
   private renderRight(summary: FocusSummary): void {
     this.hintEl.textContent = this.hintFor(summary);
+    this.renderReviews();
     this.renderAttention();
     this.renderMusic();
+  }
+
+  /** spec 146: render the neutral review-count depth indicator — total recorded
+   * #review rounds summed across sources. Deliberately NOT a gauge: a single
+   * glyph + count, never coloured by badness, never pulses (ADR-0004). Hidden at
+   * zero. Distinct from the attention gauge — depth ("inspect"), not demand. */
+  private renderReviews(): void {
+    let n = 0;
+    for (const total of this.reviewsBySource.values()) n += total;
+    if (n <= 0) {
+      this.reviewsEl.hidden = true;
+      this.reviewsEl.replaceChildren();
+      this.reviewsEl.removeAttribute('title');
+      return;
+    }
+    this.reviewsEl.hidden = false;
+    const glyph = document.createElement('span');
+    glyph.className = 'krypton-workspace-footer__reviews-glyph';
+    glyph.textContent = '◷';
+    const label = document.createElement('span');
+    label.textContent = `${n} review${n === 1 ? '' : 's'}`;
+    this.reviewsEl.replaceChildren(glyph, label);
+    this.reviewsEl.title = `${n} recorded review round${n === 1 ? '' : 's'} — press ⌘P ' to inspect the review quality matrix`;
   }
 
   /** spec 128/138: render the open attention-triage gauge — count summed across

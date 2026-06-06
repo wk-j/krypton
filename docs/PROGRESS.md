@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-05-30 (default-on attention triage)
+> Last updated: 2026-06-07 (review quality matrix — spec 146)
 
 ## Overview
 
@@ -242,6 +242,7 @@
 - [x] ACP Harness MCP memory — the harness creates a tab-local memory store on the existing localhost hook server, passes lane-scoped HTTP MCP descriptors through ACP `session/new.mcpServers`, injects latest summaries, and renders a read-only observer memory board while agents manage create/update/delete/search/get themselves. See `docs/73-acp-harness-mcp-memory.md`.
 - [x] ACP Harness memory persistence — lane memory is saved to per-project-dir JSON files under `~/.config/krypton/acp-harness-memory/` and restored on next harness creation for the same directory. Debounced atomic writes on change. See `docs/76-acp-harness-memory-persistence.md`.
 - [x] ACP Harness fresh-session commands — `#new` starts a fresh active-lane ACP session while preserving memory, `#new!` also clears that lane's persisted memory, and `#mem clear` clears active lane memory without replacing the session. See `docs/79-acp-harness-fresh-session-commands.md`.
+- [x] ACP Harness review quality matrix — a summary-only, session-only history of `#review` rounds per authoring lane. After synthesizing a review, the convening lane self-reports via the default-on `review_outcome` MCP tool `{ blockers, warnings, reviewer_count, subject_label }`; the view records it in an in-memory `ReviewQualityStore`. An observation, not a score (ADR-0004): raw counts only, no grade/verdict/diff-size/ranking. Surfaced like attention triage — a neutral `N reviews` footer depth indicator (ViewBus `review:quality`) plus a summon-on-demand read-only overlay (`Leader '`). See `docs/146-review-quality-matrix.md`.
 - [ ] Edge cases: rapid workspace switching, many windows, large scrollback, resolution changes
 - [ ] Bug fixes
 

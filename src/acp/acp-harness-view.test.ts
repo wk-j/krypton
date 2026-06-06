@@ -206,6 +206,37 @@ describe('ACP harness auto-allow permission detection', () => {
     }))).toBe('attention_flag');
   });
 
+  // spec 146: review_outcome is default-on built-in bus tooling — auto-allow it.
+  it('accepts Codex-style underscored bus namespace for review_outcome', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__krypton_harness_bus__review_outcome',
+      rawInput: {
+        toolName: 'mcp__krypton_harness_bus__review_outcome',
+        arguments: { blockers: 2, warnings: 1, reviewer_count: 2, subject_label: 'spec 146' },
+      },
+    }))).toBe('review_outcome');
+  });
+
+  it('accepts review_outcome under the hyphenated bus marker', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'review_outcome',
+      rawInput: {
+        name: 'review_outcome',
+        server: 'krypton-harness-bus',
+      },
+    }))).toBe('review_outcome');
+  });
+
+  it('rejects review_outcome without a built-in bus marker', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'review_outcome',
+      rawInput: {
+        name: 'review_outcome',
+        server: 'third-party-memory',
+      },
+    }))).toBeNull();
+  });
+
   it('accepts Junie-style permission where server + tool name appear only in option labels', () => {
     expect(harnessAutoAllowToolName(permissionFor(
       { title: 'Allow running MCP?', kind: 'other' },

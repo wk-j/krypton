@@ -378,11 +378,34 @@ export interface AttentionResolvePayload {
   note: string;
 }
 
+// Review Quality Matrix (spec 146) — a summary-only history of #review rounds.
+// The authoring lane self-reports the totals at synthesis time; the matrix keeps
+// no fine-grained detail (no stored diff size, no transcript anchor) — see
+// docs/146-review-quality-matrix.md and docs/adr/0004. Observation, not a score.
+export interface ReviewOutcome {
+  /** The lane credited with the work under review (the convening lane). */
+  authoringLaneId: string;
+  /** Display name snapshot of the authoring lane, so the overlay can still label
+   * the row after that lane has closed (history is kept until view dispose). */
+  authoringLaneName: string;
+  /** Short human label: diff summary or doc path (self-reported). */
+  subjectLabel: string;
+  /** How many reviewers the round fanned out to (self-reported). */
+  reviewerCount: number;
+  /** Total blockers reported across reviewers (self-reported). */
+  blockers: number;
+  /** Total warnings reported across reviewers (self-reported). */
+  warnings: number;
+  /** ms timestamp, stamped by the store on record(). */
+  at: number;
+}
+
 export type LaneBusEvent =
   | { type: 'lane:status'; payload: LaneStatusEvent }
   | { type: 'lane:spawned'; payload: { laneId: string } }
   | { type: 'lane:closed'; payload: { laneId: string; displayName: string } }
-  | { type: 'triage:changed'; payload: { openCount: number } };
+  | { type: 'triage:changed'; payload: { openCount: number } }
+  | { type: 'review:quality'; payload: { totalReviews: number } };
 
 export type AcpEvent =
   | { type: 'user_message_chunk'; text: string }
