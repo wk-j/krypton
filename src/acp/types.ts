@@ -270,18 +270,10 @@ export interface InterLaneEnvelope {
    * drainedHarnessNotice suffix-clear, so the tombstone lives only until the peer
    * acknowledges the cancellation (not until the canceller re-initiates). */
   foreignCancelAck?: { cancellerDisplayName: string; peerDisplayName: string };
-  /** spec 112 / 115: peer chat, review, or composer @mention fan-out. */
-  kind?: 'peer' | 'review_request' | 'mention_request';
-  reviewPacket?: ReviewPacket;
+  /** spec 115: peer chat or composer @mention fan-out. */
+  kind?: 'peer' | 'mention_request';
   /** spec 115: correlates fan-out replies on the requester. */
   mentionPacketId?: string;
-  /**
-   * spec 112: when set, this envelope is only relevant while the named review packet
-   * is still open. Used for harness-injected protocol-retry prompts so that a stale
-   * corrective prompt is dropped if the reviewer already produced an accepted reply
-   * earlier in the same turn (which closes the packet).
-   */
-  reviewPacketId?: string;
 }
 
 export interface LaneSummary {
@@ -318,17 +310,10 @@ export interface LaneStatusEvent {
   at: number;
 }
 
-// Review Lane Mode (spec 112)
-export type ReviewSeverity = 'block' | 'warn' | 'nit';
-
-export interface ReviewFinding {
-  file: string;
-  line: number;
-  severity: ReviewSeverity;
-  concern: string;
-  suggestedCheck?: string;
-}
-
+// Shared git working-tree collector (spec 145). The structured Review Lane
+// packet (spec 112) was removed; this minimal shape is shared by the
+// `#review` command (diff + untracked subject) and attention triage
+// (`diffstat` for a flagged decision's blast-radius).
 export interface ReviewDiffstatEntry {
   path: string;
   status: 'M' | 'A' | 'D' | 'R' | '?';
@@ -336,73 +321,22 @@ export interface ReviewDiffstatEntry {
   removed: number;
 }
 
-export interface ReviewPatchHunk {
-  path: string;
-  status: 'M' | 'A' | 'D' | 'R' | '?';
-  hunk: string;
-  truncated: boolean;
-}
-
 export interface ReviewUntrackedExcerpt {
   path: string;
   head: string;
 }
 
-export interface ReviewCommandSummary {
-  command: string;
-  exitCode: number | null;
-  summary: string;
-  at: number;
-}
-
-export interface ReviewToolSummary {
-  kind: 'read' | 'edit' | 'search' | 'other';
-  subject: string;
-  count: number;
-}
-
 export interface ReviewGitState {
   repoRoot: string;
   hasGitRepo: boolean;
-  hasStagedChanges: boolean;
-  hasUnstagedChanges: boolean;
-  partialStagingDetected: boolean;
-  worktreeFingerprint: string;
+  /** true when the repo has no commits yet → callers diff against the empty
+   * tree / report "no committed baseline". */
+  isUnbornHead: boolean;
   diffstat: ReviewDiffstatEntry[];
-  patchHunks: ReviewPatchHunk[];
-  untrackedExcerpts: ReviewUntrackedExcerpt[];
-}
-
-export interface ReviewPacket {
-  packetId: string;
-  fromLaneId: string;
-  toLaneId: string;
-  intent: string;
-  repoRoot: string;
-  patchBase: 'head';
-  hasStagedChanges: boolean;
-  hasUnstagedChanges: boolean;
-  partialStagingDetected: boolean;
-  worktreeFingerprint: string;
-  diffstat: ReviewDiffstatEntry[];
-  patchHunks: ReviewPatchHunk[];
-  untrackedExcerpts: ReviewUntrackedExcerpt[];
-  commands: ReviewCommandSummary[];
-  toolSummary: ReviewToolSummary[];
-  note?: string;
-  sentAt: number;
-  harnessId?: string;
-}
-
-export interface ReviewReply {
-  packetId: string;
-  fromLaneId: string;
-  toLaneId: string;
-  findings: ReviewFinding[];
-  summary: string;
-  interruptedReason?: string;
-  sentAt: number;
-  harnessId?: string;
+  /** `git diff HEAD` (or the empty tree when unborn), payload-capped + UTF-8-safe. */
+  diff: string;
+  /** bounded head excerpts of untracked files so new files are visible. */
+  untracked: ReviewUntrackedExcerpt[];
 }
 
 // Attention Triage (spec 128) — self-reported judgement items.
@@ -424,7 +358,7 @@ export interface AttentionFlagPayload {
 export interface JudgementItem extends AttentionFlagPayload {
   id: string;
   laneId: string;
-  packetId: string | null; // linked ReviewPacket id (blast-radius), null if no repo changes
+  packetId: string | null; // synthetic blast-radius id for the diffstat, null if no repo changes
   diffstat: ReviewDiffstatEntry[];
   createdAt: number;
   status: JudgementStatus;

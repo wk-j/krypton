@@ -275,10 +275,10 @@ pub fn get_acp_harness_config_path() -> Result<String, String> {
         .ok_or_else(|| "Could not determine config directory".to_string())
 }
 
-/// spec 112: collect git working-tree state for the Review Lane Mode packet.
-/// Same shape as the value Rust emits on `acp-review-requested`. Frontend uses
-/// this for both user-triggered `#review` (no MCP round-trip) and to recompute
-/// the worktree fingerprint at reply time.
+/// spec 145: collect git working-tree state (diff + untracked excerpts +
+/// diffstat) for the lane's cwd. Shared by the user-triggered `#review` command
+/// (which forwards the diff/doc subject to reviewers) and attention triage
+/// (which uses `diffstat` for a flagged decision's blast-radius).
 #[tauri::command]
 pub fn acp_collect_review_git_state(cwd: String) -> Result<serde_json::Value, String> {
     Ok(crate::hook_server::collect_git_state_public(Some(&cwd)))

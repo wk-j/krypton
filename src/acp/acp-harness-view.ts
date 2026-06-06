@@ -51,7 +51,6 @@ import {
   type InterLaneRowChannel,
   type LaneHost,
   type PendingPeerSummary,
-  type ReviewCardPayload,
 } from './inter-lane';
 import {
   nextLaneNumber,
@@ -71,20 +70,13 @@ import {
   mentionPaletteVisible,
 } from './mention-palette';
 import {
-  buildPacket as buildReviewPacket,
-  composeReviewerPrompt,
-  appendReviewValidationSuffix,
-  malformedFindingCount,
-  reviewSummaryOrFallback,
-  topLevelValidationErrorCount,
-  validateReply as validateReviewReply,
+  reviewRequestPrompt,
+  REVIEW_INTENT_CAP,
+  type ReviewSubject,
 } from './review';
 import type {
   JudgementItem,
-  ReviewCommandSummary,
   ReviewGitState,
-  ReviewPacket,
-  ReviewToolSummary,
 } from './types';
 import type {
   AcpLaneMetrics,
@@ -134,7 +126,7 @@ interface HarnessPermission {
 
 interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'review' | 'provider_error' | 'artifact';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact';
   text: string;
   createdAt?: number;
   markdownSource?: string;
@@ -165,7 +157,6 @@ interface HarnessTranscriptItem {
   providerError?: ProviderErrorPayload;
   /** spec 120: first assistant row after coordinator drain. */
   replyingToLaneMail?: LaneMailProvenance;
-  review?: ReviewCardPayload;
   /** spec 133: hintable HTML artifact card. */
   artifact?: ArtifactCardPayload;
 }
@@ -215,7 +206,7 @@ interface FsActivityPayload {
   error?: string;
 }
 
-type HarnessToolFamily = 'memory' | 'peer' | 'review' | 'attention';
+type HarnessToolFamily = 'memory' | 'peer' | 'attention';
 type PermissionDecision = 'pending' | 'accepted' | 'rejected' | 'auto_allowed' | 'failed';
 
 interface PermissionPayload {
@@ -409,15 +400,13 @@ interface ArtifactEventPayload {
 
 const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
 const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
-const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_request', 'review_reply']);
 // spec 130: attention triage is default-on built-in harness-bus tooling, so its
-// calls must auto-allow like memory/peer/review — a permission prompt here also
+// calls must auto-allow like memory/peer — a permission prompt here also
 // breaks the non-blocking contract (the lane proceeds with `chosen`, never waits).
 const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resolve']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
   ...HARNESS_PEER_TOOL_NAMES,
-  ...HARNESS_REVIEW_TOOL_NAMES,
   ...HARNESS_ATTENTION_TOOL_NAMES,
 ]);
 const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
@@ -593,14 +582,6 @@ interface HarnessLane {
   promptHistory: string[];
   historyIndex: number | null;
   historySavedDraft: string | null;
-  /** spec 112: timestamp of the last delivered review reply received. */
-  reviewedThrough: number;
-  /**
-   * spec 112: packetIds for which the reviewer called `review_reply` during
-   * the current turn. Used by `checkProseOnlyReviewer` so a handled tool call
-   * is not also resolved as a no-tool review.
-   */
-  reviewReplyAttemptsThisTurn: Set<string>;
   /**
    * Spec 114: cached count of tool rows on this lane in
    * `started but not yet ended` state. Replaces the O(rows) scan inside
@@ -986,8 +967,6 @@ const LANE_DEFAULTS = {
   transcriptWindow: TRANSCRIPT_WINDOW_DEFAULT,
   historyIndex: null,
   historySavedDraft: null,
-  reviewedThrough: 0,
-  reviewReplyAttemptsThisTurn: new Set<string>(),
   activeToolCount: 0,
   streamingMarkdownParser: null,
   streamingMarkdownBody: null,
@@ -1050,8 +1029,6 @@ export class AcpHarnessView implements ContentView {
   private attentionResolveUnlisten: UnlistenFn | null = null;
   private interLaneUnlisten: UnlistenFn | null = null;
   private peerListUnlisten: UnlistenFn | null = null;
-  private reviewRequestedUnlisten: UnlistenFn | null = null;
-  private reviewReplyUnlisten: UnlistenFn | null = null;
   private memoryEntries: HarnessMemoryEntry[] = [];
   private harnessMemoryId: string | null = null;
   /** spec 141: this view's entry in the process-wide HarnessDirectory, while
@@ -1277,29 +1254,6 @@ export class AcpHarnessView implements ContentView {
         this.appendTranscript(l, 'system', `[inter-lane] ${text}`);
         this.scheduleLaneRender(l);
       },
-      appendReviewCard: (id, payload) => {
-        const l = this.lanes.find((x) => x.id === id);
-        if (!l) return;
-        const block = payload.findings.filter((f) => f.severity === 'block').length;
-        const warn = payload.findings.filter((f) => f.severity === 'warn').length;
-        const nit = payload.findings.filter((f) => f.severity === 'nit').length;
-        const counts = [block ? `${block} block` : null, warn ? `${warn} warn` : null, nit ? `${nit} nit` : null]
-          .filter(Boolean)
-          .join(', ');
-        const header = `review · from ${payload.fromDisplayName} · ${payload.findings.length} finding${
-          payload.findings.length === 1 ? '' : 's'
-        }${counts ? ` (${counts})` : ''}`;
-        const item = this.appendTranscript(l, 'review', `${header}\n${payload.summary}`);
-        item.review = payload;
-        // Advance reviewedThrough on delivered review replies. Lane-failure
-        // cards remain excluded so interrupted reviews can be requested again.
-        if (!payload.interruptedReason) {
-          l.reviewedThrough = payload.sentAt;
-        }
-        // Settle requester out of awaiting_peer if they were on this packet.
-        this.coordinator.recomputePeerStatus(l.id);
-        this.scheduleLaneRender(l);
-      },
     };
   }
 
@@ -1433,7 +1387,6 @@ export class AcpHarnessView implements ContentView {
     lane.coordinatorDrainProvenanceUsed = false;
     this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
-    lane.reviewReplyAttemptsThisTurn.clear();
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
@@ -1580,88 +1533,6 @@ export class AcpHarnessView implements ContentView {
         }).catch((err) => {
           console.warn('acp_bus_reply (peer_list) failed', err);
         });
-      },
-    );
-
-    // spec 112: review request from an agent via review_request MCP tool.
-    // Rust emits the event WITHOUT git state — the frontend listener collects
-    // it via the acp_collect_review_git_state Tauri command using the lane's
-    // own cwd. The agent never needs to know or pass `cwd`.
-    type ReviewRequestedEvent = {
-      packetId: string;
-      fromLaneId: string; // display name from Rust
-      toLaneId: string;
-      note?: string | null;
-      sentAt: number;
-      harnessId?: string;
-      requestId?: string;
-    };
-    this.reviewRequestedUnlisten = await listen<ReviewRequestedEvent>(
-      'acp-review-requested',
-      (e) => {
-        const env = e.payload;
-        const requestId = env.requestId;
-        if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
-        const reply = (result: unknown): void => {
-          if (!requestId) return;
-          void invoke('acp_bus_reply', { requestId, result }).catch((err) => {
-            console.warn('acp_bus_reply (review_request) failed', err);
-          });
-        };
-        const fromLane = this.lanes.find((l) => l.displayName === env.fromLaneId);
-        const toLane = this.lanes.find((l) => l.displayName === env.toLaneId);
-        if (!fromLane) {
-          reply({ delivered: false, reason: 'unknown_sender' });
-          return;
-        }
-        if (!toLane) {
-          // spec 141: a review packet's worktree fingerprint + diffstat only make
-          // sense within one repo, so review stays same-project. A reviewer in a
-          // different harness view whose cwd differs is refused with a clear
-          // reason; a same-cwd foreign reviewer is still out of scope (no shared
-          // worktree across coordinators) and reads as unknown here.
-          const foreign = resolveDisplayName(env.toLaneId);
-          if (foreign && normalizeCwd(foreign.cwd) !== normalizeCwd(this.projectDir)) {
-            reply({ delivered: false, reason: 'cross_project_review' });
-          } else {
-            reply({ delivered: false, reason: 'unknown_lane' });
-          }
-          return;
-        }
-        void this.collectGitAndDeliverReviewRequest({
-          packetId: env.packetId,
-          fromLane,
-          toLane,
-          note: env.note ?? undefined,
-          sentAt: env.sentAt,
-          harnessId: env.harnessId,
-        }).then(reply);
-      },
-    );
-
-    // spec 112: review reply from a reviewer agent via review_reply MCP tool.
-    type ReviewReplyEvent = {
-      packetId: string;
-      fromLaneId: string;
-      summary: string;
-      findings: unknown;
-      harnessId?: string;
-      requestId?: string;
-      sentAt: number;
-    };
-    this.reviewReplyUnlisten = await listen<ReviewReplyEvent>(
-      'acp-review-reply-requested',
-      (e) => {
-        const env = e.payload;
-        const requestId = env.requestId;
-        if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
-        const reply = (result: unknown): void => {
-          if (!requestId) return;
-          void invoke('acp_bus_reply', { requestId, result }).catch((err) => {
-            console.warn('acp_bus_reply (review_reply) failed', err);
-          });
-        };
-        void this.handleReviewReply(env, reply);
       },
     );
 
@@ -1817,330 +1688,140 @@ export class AcpHarnessView implements ContentView {
     const cwd = this.projectDir ?? '';
     if (!cwd) return;
     try {
-      const git = await invoke<ReviewGitState & { hasGitRepo: boolean }>(
-        'acp_collect_review_git_state',
-        { cwd },
-      );
+      const git = await invoke<ReviewGitState>('acp_collect_review_git_state', { cwd });
       if (!git?.hasGitRepo || git.diffstat.length === 0) return;
-      const packet = buildReviewPacket({
-        packetId: `jpk-${itemId}`,
-        fromLaneId: item.laneId,
-        toLaneId: item.laneId,
-        note: undefined,
-        signals: { intent: '', commands: [], toolSummary: [] },
-        git,
-        sentAt: item.createdAt,
-        harnessId: this.harnessMemoryId ?? undefined,
-      });
-      this.triageStore.setDiffstat(itemId, packet.diffstat, packet.packetId);
+      this.triageStore.setDiffstat(itemId, git.diffstat, `jpk-${itemId}`);
     } catch (err) {
       console.warn('attention_flag git collection failed', err);
     }
   }
 
-  // spec 112: assemble transcript-derived signals since the given marker.
-  private assembleReviewSignals(
-    lane: HarnessLane,
-    since: number,
-  ): { intent: string; commands: ReviewCommandSummary[]; toolSummary: ReviewToolSummary[] } {
-    const userIntents: string[] = [];
-    const commands: ReviewCommandSummary[] = [];
-    const toolCounts = new Map<ReviewToolSummary['kind'], Map<string, number>>();
-    for (const item of lane.transcript) {
-      if ((item.createdAt ?? 0) <= since) continue;
-      if (item.kind === 'user') {
-        if (item.text.trim().length > 0) userIntents.push(item.text.trim());
-      }
-      if (item.kind === 'tool' && item.tool) {
-        const t = item.tool;
-        const cmd = t.command?.trim();
-        if (cmd && t.kind === 'execute') {
-          // Best-effort exit-code tail parse: look for "exit \d+" or "exit code: \d+".
-          const tail = (t.result || '').slice(-200);
-          const match = tail.match(/exit(?:\s+code)?\s*[:=]?\s*(\d+)/i);
-          const exitCode = match ? parseInt(match[1], 10) : null;
-          commands.push({
-            command: cmd,
-            exitCode,
-            summary: (t.result || '').slice(-400),
-            at: item.createdAt ?? Date.now(),
-          });
-        }
-        const kind: ReviewToolSummary['kind'] =
-          t.kind === 'read'
-            ? 'read'
-            : t.kind === 'edit' || t.kind === 'delete' || t.kind === 'move'
-              ? 'edit'
-              : t.kind === 'search'
-                ? 'search'
-                : 'other';
-        const subject = (t.subject || '').trim() || '(unknown)';
-        if (!toolCounts.has(kind)) toolCounts.set(kind, new Map());
-        const bucket = toolCounts.get(kind)!;
-        bucket.set(subject, (bucket.get(subject) ?? 0) + 1);
-      }
-    }
-    const toolSummary: ReviewToolSummary[] = [];
-    for (const [kind, bucket] of toolCounts.entries()) {
-      // Most-touched subject per kind.
-      let bestSubject = '';
-      let bestCount = 0;
-      let total = 0;
-      for (const [s, c] of bucket.entries()) {
-        total += c;
-        if (c > bestCount) {
-          bestCount = c;
-          bestSubject = s;
-        }
-      }
-      toolSummary.push({ kind, subject: bestSubject, count: total });
-    }
-    return {
-      intent: userIntents.join('\n\n'),
-      commands,
-      toolSummary,
-    };
-  }
-
-  private async collectGitAndDeliverReviewRequest(args: {
-    packetId: string;
-    fromLane: HarnessLane;
-    toLane: HarnessLane;
-    note: string | undefined;
-    sentAt: number;
-    harnessId?: string;
-  }): Promise<{ delivered: boolean; packetId?: string; reason?: string; queuedDepth?: number; hint?: string }> {
-    const cwd = this.projectDir ?? '';
-    if (!cwd) return { delivered: false, reason: 'no_cwd' };
-    let git: (ReviewGitState & { hasGitRepo: boolean }) | null = null;
-    try {
-      git = await invoke<ReviewGitState & { hasGitRepo: boolean }>('acp_collect_review_git_state', { cwd });
-    } catch (err) {
-      console.warn('acp_collect_review_git_state failed', err);
-      return { delivered: false, reason: 'git_collection_failed' };
-    }
-    if (!git?.hasGitRepo) return { delivered: false, reason: 'no_git_repo' };
-    return this.buildAndDeliverReviewRequest({
-      ...args,
-      git,
-    });
-  }
-
-  private buildAndDeliverReviewRequest(args: {
-    packetId: string;
-    fromLane: HarnessLane;
-    toLane: HarnessLane;
-    note: string | undefined;
-    git: ReviewGitState;
-    sentAt: number;
-    harnessId?: string;
-  }): { delivered: boolean; packetId?: string; reason?: string; queuedDepth?: number; hint?: string } {
-    const signals = this.assembleReviewSignals(args.fromLane, args.fromLane.reviewedThrough);
-    const packet: ReviewPacket = buildReviewPacket({
-      packetId: args.packetId,
-      fromLaneId: args.fromLane.id,
-      toLaneId: args.toLane.id,
-      note: args.note,
-      signals,
-      git: args.git,
-      sentAt: args.sentAt,
-      harnessId: args.harnessId,
-    });
-    const prompt = composeReviewerPrompt(packet, args.fromLane.displayName);
-    const result = this.coordinator.deliverReviewRequest(packet, prompt);
-    if (result.delivered) {
-      return {
-        delivered: true,
-        packetId: result.packetId,
-        queuedDepth: result.queuedDepth,
-        hint: result.hint,
-      };
-    }
-    return { delivered: false, reason: result.reason };
-  }
-
-  private async handleReviewReply(
-    env: {
-      packetId: string;
-      fromLaneId: string;
-      summary: string;
-      findings: unknown;
-      sentAt: number;
-    },
-    reply: (result: unknown) => void,
-  ): Promise<void> {
-    const packet = this.coordinator.getOpenReviewPacket(env.packetId);
-    if (!packet) {
-      reply({ delivered: false, reason: 'unknown_packet' });
-      return;
-    }
-    const reviewerLane = this.lanes.find((l) => l.displayName === env.fromLaneId);
-    if (!reviewerLane) {
-      reply({ delivered: false, reason: 'unknown_sender' });
-      return;
-    }
-    // The packet was sent FROM the requester TO the reviewer. So the requester is fromLaneId.
-    const requesterLane = this.lanes.find((l) => l.id === packet.fromLaneId);
-    if (!requesterLane) {
-      reply({ delivered: false, reason: 'unknown_lane' });
-      return;
-    }
-    // Reviewer mismatch guard: the lane sending the reply must be the lane the packet was addressed to.
-    if (reviewerLane.id !== packet.toLaneId) {
-      reply({ delivered: false, reason: 'unauthorized_reviewer' });
-      return;
-    }
-    // Mark that review_reply was attempted for this packet during the current
-    // turn (regardless of validation outcome). `checkProseOnlyReviewer` uses
-    // this to avoid double-counting the same turn as a missing-tool failure.
-    reviewerLane.reviewReplyAttemptsThisTurn.add(env.packetId);
-    const validated = validateReviewReply(
-      { packet_id: env.packetId, summary: env.summary, findings: env.findings },
-      env.packetId,
-      packet.repoRoot,
-    );
-    const summary = reviewSummaryOrFallback(validated, env.summary);
-    const malformedFindings = malformedFindingCount(validated);
-    const topLevelErrors = topLevelValidationErrorCount(validated);
-    const validationNotes: string[] = [];
-    if (malformedFindings > 0) {
-      validationNotes.push(`${malformedFindings} malformed finding${malformedFindings === 1 ? '' : 's'} omitted`);
-    }
-    if (topLevelErrors > 0) {
-      validationNotes.push(`${topLevelErrors} top-level field${topLevelErrors === 1 ? '' : 's'} ignored`);
-    }
-    const validationSuffix =
-      !validated.ok && validationNotes.length > 0
-        ? ` (${validationNotes.join('; ')}.)`
-        : '';
-    const deliveredSummary = appendReviewValidationSuffix(summary, validationSuffix);
-
-    // Review replies are best-effort lane messages. Deliver cleaned findings
-    // when present; otherwise render the reply as a clean review with a summary
-    // instead of retrying a private protocol.
-    let worktreeMatch = true;
-    try {
-      const cwd = this.projectDir ?? '';
-      if (cwd) {
-        const current = await invoke<{ worktreeFingerprint?: string }>('acp_collect_review_git_state', { cwd });
-        if (current?.worktreeFingerprint) {
-          worktreeMatch = current.worktreeFingerprint === packet.worktreeFingerprint;
-        }
-      }
-    } catch {
-      // If we can't recompute, render the card without the warning rather than blocking the reply.
-    }
-
-    const payload: ReviewCardPayload = {
-      packetId: env.packetId,
-      fromLaneId: reviewerLane.id,
-      toLaneId: requesterLane.id,
-      fromDisplayName: reviewerLane.displayName,
-      toDisplayName: requesterLane.displayName,
-      findings: validated.cleanedFindings,
-      summary: deliveredSummary,
-      worktreeMatchAtReceipt: worktreeMatch,
-      sentAt: env.sentAt,
-    };
-    const result = this.coordinator.deliverReviewReply(payload);
-    reply({ delivered: result.delivered, reason: result.reason });
-  }
-
   /**
-   * spec 112: detect a reviewer that ended its turn without calling
-   * review_reply. Resolve the packet with a clean summary instead of injecting
-   * retry prompts; lane-to-lane review should stay simple and non-blocking.
+   * spec 145: transcript-derived "what the author was trying to do", carried
+   * into the review prompt so reviewers judge against intent (not a raw diff).
+   * Earliest user turns hold the original task, so we read from the front.
    */
-  private async checkProseOnlyReviewer(reviewerLane: HarnessLane): Promise<void> {
-    const packetId = this.coordinator.assignedReviewPacketFor(reviewerLane.id);
-    if (!packetId) return;
-    // If the validation handler already saw a review_reply for this packet
-    // during this turn, delivery already happened there.
-    if (reviewerLane.reviewReplyAttemptsThisTurn.has(packetId)) {
-      reviewerLane.reviewReplyAttemptsThisTurn.delete(packetId);
-      return;
+  private collectReviewIntent(lane: HarnessLane): string {
+    const intents: string[] = [];
+    for (const item of lane.transcript) {
+      if (item.kind === 'user' && item.text.trim().length > 0) {
+        intents.push(item.text.trim());
+      }
     }
-    const packet = this.coordinator.getOpenReviewPacket(packetId);
-    if (!packet) {
-      this.coordinator.clearReviewerAssignment(reviewerLane.id);
-      return;
-    }
-    const requesterLane = this.lanes.find((l) => l.id === packet.fromLaneId);
-    if (!requesterLane) return;
-    const payload: ReviewCardPayload = {
-      packetId,
-      fromLaneId: reviewerLane.id,
-      toLaneId: requesterLane.id,
-      fromDisplayName: reviewerLane.displayName,
-      toDisplayName: requesterLane.displayName,
-      findings: [],
-      summary: '(reviewer ended without a review_reply tool call)',
-      worktreeMatchAtReceipt: true,
-      sentAt: Date.now(),
-    };
-    this.coordinator.deliverReviewReply(payload);
-    this.coordinator.clearReviewerAssignment(reviewerLane.id);
+    return intents.join('\n\n').slice(0, REVIEW_INTENT_CAP);
   }
 
   /**
-   * spec 112: user-triggered `#review <lane>` chat command. Bypasses MCP —
-   * frontend collects git state directly and delivers via the coordinator.
+   * spec 145: classify the `--` tail as a design-doc subject. Only a path that
+   * is relative (no leading `/`) with no `..` segment AND exists under the
+   * project dir qualifies — an absolute path or a traversal escapes the repo and
+   * is treated as a focus note instead, so `#review -- /etc/passwd` can't leak an
+   * arbitrary file to reviewers. (A directory that happens to exist is a residual
+   * edge: `stat_files` reports only mtime, so the agent would try to read it as a
+   * doc and report that it can't — low harm.)
+   */
+  private async docPathExists(token: string): Promise<boolean> {
+    const dir = this.projectDir ?? '';
+    if (!dir) return false;
+    if (token.startsWith('/') || token.split('/').includes('..')) return false;
+    try {
+      const mtimes = await invoke<number[]>('stat_files', { paths: [`${dir}/${token}`] });
+      return (mtimes[0] ?? 0) > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * spec 145: user-triggered `#review [<lane> ...] [-- <docpath | note>]`.
+   * Agent-orchestrated: collect the review subject (working diff or a design
+   * doc) and inject ONE prompt directing the convening lane to fan it out to
+   * every reviewer via peer_send, then synthesize the replies. The harness no
+   * longer assembles packets or routes a bespoke reply channel.
    */
   private async runReviewCommand(lane: HarnessLane, rest: string[]): Promise<void> {
-    const target = rest[0]?.trim();
-    if (!target) {
-      this.flashChip('#review usage: #review <lane> [note...]');
+    if (!this.projectDir) {
+      this.flashChip('#review: no project dir');
       return;
     }
-    const toLane = this.lanes.find(
-      (l) => l.displayName.toLowerCase() === target.toLowerCase() && l.id !== lane.id,
-    );
-    if (!toLane) {
-      this.flashChip(`#review: unknown lane "${target}"`);
+    // Require strictly idle (spec 145 Data Flow): an `awaiting_peer` convening
+    // lane already has an outstanding peer_send, so a reviewer we pick could be
+    // that same pending peer — the review send would fail `peer_in_flight` and
+    // the unrelated outstanding reply could be miscounted as a review response.
+    // An idle lane has no pending peers (recomputePeerStatus), so the fan-out is
+    // unambiguous. The user can #cancel the peer conversation first.
+    if (lane.status !== 'idle') {
+      this.flashChip('lane busy - #cancel first');
       return;
     }
-    if (toLane.status === 'stopped' || toLane.status === 'error') {
-      this.flashChip(`#review: ${toLane.displayName} is ${toLane.status}`);
+
+    // Split `<lane> ... -- <docpath | note>`: tokens before `--` name reviewers,
+    // the tail after `--` is a doc path or a free focus note.
+    const { nameTokens, tail } = parseReviewCommandArgs(rest);
+
+    // Resolve reviewers: named subset (case-insensitive, exclude self,
+    // exclude stopped/error) or — when none named — every other live local lane.
+    const isLive = (l: HarnessLane): boolean => l.status !== 'stopped' && l.status !== 'error';
+    let reviewers: HarnessLane[];
+    let skipped: string[] = [];
+    if (nameTokens.length > 0) {
+      const wanted = nameTokens.map((t) => t.toLowerCase());
+      reviewers = this.lanes.filter(
+        (l) => l.id !== lane.id && isLive(l) && wanted.includes(l.displayName.toLowerCase()),
+      );
+      // Surface named reviewers that didn't resolve (unknown/self/stopped) so a
+      // requested reviewer is never silently dropped from the fan-out.
+      const matched = new Set(reviewers.map((r) => r.displayName.toLowerCase()));
+      skipped = nameTokens.filter((t) => !matched.has(t.toLowerCase()));
+    } else {
+      reviewers = this.lanes.filter((l) => l.id !== lane.id && isLive(l));
+    }
+    if (reviewers.length === 0) {
+      this.flashChip('#review: no reviewable lanes');
       return;
     }
-    const note = rest.slice(1).join(' ').trim() || undefined;
-    const cwd = this.projectDir ?? '';
-    if (!cwd) {
-      this.flashChip('#review: no working directory');
-      return;
+
+    // Classify the tail: an existing repo file is the design-doc subject;
+    // anything else is a free focus note over the working diff.
+    let subject: ReviewSubject;
+    let note: string | undefined;
+    if (tail.length > 0 && (await this.docPathExists(tail))) {
+      subject = { kind: 'doc', path: tail };
+    } else {
+      if (tail.length > 0) note = tail;
+      const cwd = this.projectDir;
+      let git: ReviewGitState | null = null;
+      try {
+        git = await invoke<ReviewGitState>('acp_collect_review_git_state', { cwd });
+      } catch (e) {
+        this.flashChip(`#review: git collection failed: ${String(e)}`);
+        return;
+      }
+      if (!git?.hasGitRepo) {
+        this.flashChip('#review: no git repo in lane cwd');
+        return;
+      }
+      subject = {
+        kind: 'diff',
+        repoRoot: git.repoRoot,
+        isUnbornHead: git.isUnbornHead,
+        diffstat: git.diffstat,
+        diff: git.diff,
+        untracked: git.untracked,
+      };
     }
-    let git: (ReviewGitState & { hasGitRepo: boolean }) | null = null;
-    try {
-      git = await invoke<ReviewGitState & { hasGitRepo: boolean }>('acp_collect_review_git_state', { cwd });
-    } catch (e) {
-      this.flashChip(`#review: git collection failed: ${String(e)}`);
-      return;
-    }
-    if (!git?.hasGitRepo) {
-      this.flashChip('#review: no git repo in lane cwd');
-      return;
-    }
-    const result = this.buildAndDeliverReviewRequest({
-      packetId: `rev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      fromLane: lane,
-      toLane,
+
+    const reviewerNames = reviewers.map((l) => l.displayName);
+    const prompt = reviewRequestPrompt({
+      reviewers: reviewerNames,
+      subject,
+      intent: this.collectReviewIntent(lane),
       note,
-      git,
-      sentAt: Date.now(),
-      harnessId: this.harnessMemoryId ?? undefined,
     });
-    if (!result.delivered) {
-      this.flashChip(`#review failed: ${result.reason}`);
-      return;
-    }
-    this.flashChip(`#review → ${toLane.displayName}`);
-    // Sender goes to awaiting_peer once their turn would end; for user-triggered
-    // review the sender lane is typically idle, so set awaiting_peer immediately.
-    if (lane.status === 'idle') {
-      this.setLaneStatus(lane, 'awaiting_peer');
-    }
-    this.scheduleLaneRender(lane);
-    this.scheduleLaneRender(toLane);
+    await this.enqueueSystemPrompt(lane, prompt);
+    this.flashChip(
+      `#review → ${reviewerNames.join(', ')}${skipped.length ? ` · skipped: ${skipped.join(', ')}` : ''}`,
+    );
   }
 
   getWorkingDirectory(): string | null {
@@ -2531,14 +2212,6 @@ export class AcpHarnessView implements ContentView {
     if (this.interLaneUnlisten) {
       this.interLaneUnlisten();
       this.interLaneUnlisten = null;
-    }
-    if (this.reviewRequestedUnlisten) {
-      this.reviewRequestedUnlisten();
-      this.reviewRequestedUnlisten = null;
-    }
-    if (this.reviewReplyUnlisten) {
-      this.reviewReplyUnlisten();
-      this.reviewReplyUnlisten = null;
     }
     if (this.attentionFlagUnlisten) {
       this.attentionFlagUnlisten();
@@ -3316,7 +2989,6 @@ export class AcpHarnessView implements ContentView {
       availableCommands: [],
       modesById: new Map(),
       promptHistory: [],
-      reviewReplyAttemptsThisTurn: new Set(),
       queuedPrompts: [],
     };
     // spec 130: every harness-memory-capable lane gets attention tools by
@@ -3659,7 +3331,6 @@ export class AcpHarnessView implements ContentView {
     this.appendTranscript(lane, 'user', text, { imageCount: images.length });
     this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
-    lane.reviewReplyAttemptsThisTurn.clear();
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
     lane.currentThoughtId = null;
@@ -3846,14 +3517,6 @@ export class AcpHarnessView implements ContentView {
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
     lane.peerAutoAcceptForTurn = false;
-    // spec 112: no-tool reviewer detection runs BEFORE the idle transition.
-    // Going idle drains the coordinator's queue, and the drain calls
-    // enqueueSystemPrompt() which clears reviewReplyAttemptsThisTurn — if that
-    // happens first, this check can resolve an already-delivered reply as a
-    // missing-tool review too.
-    if (stopReason === 'end_turn' && !lane.error) {
-      void this.checkProseOnlyReviewer(lane);
-    }
     // Reset this turn's pointers BEFORE the status transition below. setLaneStatus
     // can synchronously drain queued peer mail (InterLaneCoordinator.onBus ->
     // enqueueSystemPrompt), which stamps the NEXT turn's activeTurnStartedAt /
@@ -6939,7 +6602,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#cancel</dt><dd>Cancel active lane, same as Ctrl+C</dd>
             <dt>#new</dt><dd>Start fresh active lane, keep memory</dd>
             <dt>#new!</dt><dd>Start fresh active lane and clear its memory</dd>
-            <dt>#review &lt;lane&gt; [note]</dt><dd>Ask another lane to review your uncommitted work</dd>
+            <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
             <dt>#mem</dt><dd>Show memory command hint</dd>
             <dt>#mem clear</dt><dd>Clear active lane memory only</dd>
@@ -8217,14 +7880,13 @@ function harnessToolNameFromString(value: string | undefined): string | null {
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list|review_request|review_reply|attention_flag|attention_resolve)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list|attention_flag|attention_resolve)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 
 function harnessToolFamily(toolName: string): HarnessToolFamily | null {
   if (HARNESS_MEMORY_TOOL_NAMES.has(toolName)) return 'memory';
   if (HARNESS_PEER_TOOL_NAMES.has(toolName)) return 'peer';
-  if (HARNESS_REVIEW_TOOL_NAMES.has(toolName)) return 'review';
   if (HARNESS_ATTENTION_TOOL_NAMES.has(toolName)) return 'attention';
   return null;
 }
@@ -8714,9 +8376,6 @@ function renderTranscriptItem(
     el.classList.add('acp-harness__msg--harness-event');
     body.classList.add('acp-harness__harness-event-body');
     body.textContent = item.text.replace(/^\[inter-lane\]\s*/u, '');
-  } else if (item.kind === 'review' && item.review) {
-    body.classList.add('acp-harness__review-card');
-    renderReviewCardBody(body, item.review);
   } else if (item.kind === 'artifact' && item.artifact) {
     label.textContent = 'html';
     el.classList.add('acp-harness__msg--artifact');
@@ -8851,7 +8510,6 @@ export function formatLaneMailMetaLine(
   const peer = peerDisplayName.toLowerCase();
   let line = `${arrow} ${rel} ${peer} · lane mail`;
   if (channel === 'mention') line += ' · mention';
-  else if (channel === 'review') line += ' · review';
   if (done) line += ' · closed';
   return line;
 }
@@ -9959,92 +9617,26 @@ function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'shell': return 'sh';
     case 'fs_activity': return 'fs';
     case 'inter_lane': return 'mail';
-    case 'review': return 'rev';
     case 'artifact': return 'html';
     default: return kind;
   }
 }
 
-function renderReviewCardBody(body: HTMLElement, payload: ReviewCardPayload): void {
-  body.dataset.direction = 'received';
-  if (payload.interruptedReason) body.classList.add('acp-harness__review-card--blocked');
-
-  // Header line
-  const block = payload.findings.filter((f) => f.severity === 'block').length;
-  const warn = payload.findings.filter((f) => f.severity === 'warn').length;
-  const nit = payload.findings.filter((f) => f.severity === 'nit').length;
-  const counts: string[] = [];
-  if (block) counts.push(`${block} block`);
-  if (warn) counts.push(`${warn} warn`);
-  if (nit) counts.push(`${nit} nit`);
-  const head = document.createElement('div');
-  head.className = 'acp-harness__review-head';
-  head.innerHTML =
-    `<span class="acp-harness__review-arrow">←</span>` +
-    `<span class="acp-harness__review-peer">from ${esc(payload.fromDisplayName)}</span>` +
-    `<span class="acp-harness__review-count">${payload.findings.length} finding${
-      payload.findings.length === 1 ? '' : 's'
-    }${counts.length ? ` (${esc(counts.join(', '))})` : ''}</span>`;
-  body.appendChild(head);
-
-  if (!payload.worktreeMatchAtReceipt) {
-    const banner = document.createElement('div');
-    banner.className = 'acp-harness__review-banner';
-    banner.textContent = 'worktree changed since review request — verify findings against current code';
-    body.appendChild(banner);
-  }
-  if (payload.interruptedReason) {
-    const banner = document.createElement('div');
-    banner.className = 'acp-harness__review-banner acp-harness__review-banner--blocked';
-    banner.textContent = `review interrupted: ${payload.interruptedReason}`;
-    body.appendChild(banner);
-  }
-
-  if (payload.summary && payload.summary.trim().length > 0) {
-    const sum = document.createElement('div');
-    sum.className = 'acp-harness__review-summary';
-    sum.textContent = payload.summary;
-    body.appendChild(sum);
-  }
-
-  if (payload.findings.length === 0 && !payload.interruptedReason) {
-    const clean = document.createElement('div');
-    clean.className = 'acp-harness__review-clean';
-    clean.textContent = '(clean review — no findings)';
-    body.appendChild(clean);
-    return;
-  }
-
-  const list = document.createElement('div');
-  list.className = 'acp-harness__review-findings';
-  for (const f of payload.findings) {
-    const row = document.createElement('div');
-    row.className = `acp-harness__review-finding acp-harness__review-finding--${f.severity}`;
-    const sev = document.createElement('span');
-    sev.className = 'acp-harness__review-sev';
-    sev.textContent = f.severity;
-    const anchor = document.createElement('span');
-    anchor.className = 'acp-harness__review-anchor';
-    anchor.textContent = `${f.file}:${f.line}`;
-    const concern = document.createElement('span');
-    concern.className = 'acp-harness__review-concern';
-    concern.textContent = f.concern;
-    row.appendChild(sev);
-    row.appendChild(anchor);
-    row.appendChild(concern);
-    if (f.suggestedCheck) {
-      const check = document.createElement('div');
-      check.className = 'acp-harness__review-check';
-      check.textContent = `check: ${f.suggestedCheck}`;
-      row.appendChild(check);
-    }
-    list.appendChild(row);
-  }
-  body.appendChild(list);
-}
-
 export function isDirectPeerPeekReasonKey(reasonKey: string): boolean {
   return reasonKey === 'awaiting-peer' || reasonKey === 'inbound-peer' || reasonKey === 'peer-counterpart';
+}
+
+/**
+ * spec 145: split `#review` args into reviewer name tokens (before `--`) and the
+ * trailing doc-path-or-note (after `--`). With no `--`, every token is a name.
+ */
+export function parseReviewCommandArgs(rest: string[]): { nameTokens: string[]; tail: string } {
+  const sepIdx = rest.indexOf('--');
+  const nameTokens = (sepIdx === -1 ? rest : rest.slice(0, sepIdx))
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  const tail = sepIdx === -1 ? '' : rest.slice(sepIdx + 1).join(' ').trim();
+  return { nameTokens, tail };
 }
 
 function heatWindowCutoffMs(window: LanePeekHeatWindow, now: number): number {

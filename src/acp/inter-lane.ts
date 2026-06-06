@@ -14,8 +14,6 @@ import type {
   InterLaneEnvelope,
   LaneBusEvent,
   LaneSummary,
-  ReviewFinding,
-  ReviewPacket,
 } from './types';
 import { LaneBus } from './lane-bus';
 import { LaneInbox } from './lane-inbox';
@@ -50,40 +48,6 @@ export interface AcceptInboundResult {
   effectiveDone: boolean;
 }
 
-export type ReviewDeliveryResult =
-  | { delivered: true; packetId: string; queuedDepth: number; hint: string }
-  | {
-      delivered: false;
-      reason:
-        | 'self_send'
-        | 'unknown_lane'
-        | 'unknown_sender'
-        | 'lane_stopped'
-        | 'review_in_flight'
-        | 'no_changes'
-        // spec 141: a review packet's worktree fingerprint/diffstat only make
-        // sense within one repo, so a foreign-cwd reviewer is refused.
-        | 'cross_project_review';
-    };
-
-export interface ReviewReplyDeliveryResult {
-  delivered: boolean;
-  reason?: 'unknown_packet' | 'unknown_lane' | 'cancelled' | 'lane_stopped';
-}
-
-export interface ReviewCardPayload {
-  packetId: string;
-  fromLaneId: string;
-  toLaneId: string;
-  fromDisplayName: string;
-  toDisplayName: string;
-  findings: ReviewFinding[];
-  summary: string;
-  worktreeMatchAtReceipt: boolean;
-  interruptedReason?: string;
-  sentAt: number;
-}
-
 /** spec 120: metadata for assistant provenance after coordinator drain. */
 export interface CoordinatorDrainContext {
   envelopeIds: string[];
@@ -96,7 +60,7 @@ export interface CoordinatorDrainContext {
   autoAcceptPermissions?: boolean;
 }
 
-export type InterLaneRowChannel = 'peer' | 'mention' | 'review';
+export type InterLaneRowChannel = 'peer' | 'mention';
 
 export interface LaneHost {
   /** Enumerate all live (non-stopped) lanes. */
@@ -118,8 +82,6 @@ export interface LaneHost {
   ): void;
   /** Surface a synthesized notice (e.g. "peer cancelled") to the user. */
   appendSystemNotice(laneId: string, text: string): void;
-  /** spec 112: append a review card row to the requester's transcript. */
-  appendReviewCard?(laneId: string, payload: ReviewCardPayload): void;
 }
 
 interface PendingSend {
@@ -146,12 +108,11 @@ export function canDrainInbound(status: HarnessLaneStatus): boolean {
 
 function shouldTrackPending(env: InterLaneEnvelope): boolean {
   if (env.done || env.fromLaneId === '__harness__') return false;
-  if (env.kind === 'review_request' || env.kind === 'mention_request') return true;
   return true;
 }
 
 function isInboundRequestEnvelope(env: InterLaneEnvelope): boolean {
-  return env.kind === 'review_request' || env.kind === 'mention_request';
+  return env.kind === 'mention_request';
 }
 
 export interface MentionFanOutTarget {
@@ -177,14 +138,6 @@ export class InterLaneCoordinator {
    * still deliver a late reply back into the cancelled lane.
    */
   private cancelledPairs = new Set<string>();
-  /** spec 112: synchronous in-flight guard per requester. */
-  private inFlightReviews = new Map<string, string>(); // requesterLaneId → packetId
-  /** spec 112: stale-reply discard set. */
-  private cancelledPacketIds = new Set<string>();
-  /** spec 112: outstanding review packets by id for receipt-side lookup. */
-  private openReviewPackets = new Map<string, ReviewPacket>();
-  /** spec 112: which reviewer lane is currently assigned which packet. */
-  private assignedReviewPackets = new Map<string, string>(); // reviewerLaneId → packetId
 
   constructor(
     private readonly bus: LaneBus,
@@ -348,137 +301,6 @@ export class InterLaneCoordinator {
     this.recomputePeerStatus(fromLaneId);
   }
 
-  // ──────────────────────────────────────────────────────────────────
-  // Review Lane Mode (spec 112)
-
-  /**
-   * Synchronous in-flight check + delivery for a review request.
-   * Caller is the harness view layer, which has already collected git state
-   * via Rust and assembled the ReviewPacket. We never block on async work
-   * inside this method to make the in-flight guard atomic against
-   * back-to-back `#review` invocations.
-   */
-  deliverReviewRequest(packet: ReviewPacket, reviewerPrompt: string): ReviewDeliveryResult {
-    if (packet.fromLaneId === packet.toLaneId) {
-      return { delivered: false, reason: 'self_send' };
-    }
-    if (this.inFlightReviews.has(packet.fromLaneId)) {
-      return { delivered: false, reason: 'review_in_flight' };
-    }
-    const recipient = this.host.getLane(packet.toLaneId);
-    if (!recipient) return { delivered: false, reason: 'unknown_lane' };
-    if (recipient.status === 'stopped' || recipient.status === 'error') {
-      return { delivered: false, reason: 'lane_stopped' };
-    }
-    const sender = this.host.getLane(packet.fromLaneId);
-    if (!sender) return { delivered: false, reason: 'unknown_sender' };
-    if (packet.diffstat.length === 0 && packet.untrackedExcerpts.length === 0) {
-      return { delivered: false, reason: 'no_changes' };
-    }
-
-    this.inFlightReviews.set(packet.fromLaneId, packet.packetId);
-    this.openReviewPackets.set(packet.packetId, packet);
-    this.assignedReviewPackets.set(packet.toLaneId, packet.packetId);
-
-    const env: InterLaneEnvelope = {
-      id: packet.packetId,
-      fromLaneId: packet.fromLaneId,
-      toLaneId: packet.toLaneId,
-      message: reviewerPrompt,
-      done: false,
-      sentAt: packet.sentAt,
-      harnessId: packet.harnessId,
-      kind: 'review_request',
-      reviewPacket: packet,
-    };
-    this.inbox(packet.toLaneId).push(env);
-    this.trackPending(packet.fromLaneId, packet.packetId, packet.toLaneId, packet.sentAt);
-
-    // Sender-side outbound row — short summary, not full prompt body.
-    this.host.appendInterLaneRow(
-      packet.fromLaneId,
-      'out',
-      { id: packet.toLaneId, displayName: recipient.displayName },
-      `[review request → ${recipient.displayName}] ${packet.diffstat.length} files; ` +
-        `${packet.commands.length} commands; note: ${packet.note ?? '(none)'}`,
-      false,
-      { envelopeId: packet.packetId, channel: 'review' },
-    );
-
-    if (canDrainInbound(recipient.status)) {
-      this.drain(packet.toLaneId);
-    }
-
-    return {
-      delivered: true,
-      packetId: packet.packetId,
-      queuedDepth: this.inbox(packet.toLaneId).depth(),
-      hint: REPLY_HINT,
-    };
-  }
-
-  /**
-   * Deliver a reviewer's reply (already validated by the caller). Renders the
-   * review card on the requester's transcript and clears in-flight bookkeeping.
-   * Stale replies (packets the requester already cancelled) are discarded
-   * silently.
-   */
-  deliverReviewReply(payload: ReviewCardPayload): ReviewReplyDeliveryResult {
-    if (this.cancelledPacketIds.has(payload.packetId)) {
-      this.cancelledPacketIds.delete(payload.packetId);
-      this.openReviewPackets.delete(payload.packetId);
-      return { delivered: false, reason: 'cancelled' };
-    }
-    const packet = this.openReviewPackets.get(payload.packetId);
-    if (!packet) return { delivered: false, reason: 'unknown_packet' };
-    const requester = this.host.getLane(payload.toLaneId);
-    if (!requester) return { delivered: false, reason: 'unknown_lane' };
-
-    this.openReviewPackets.delete(payload.packetId);
-    const existing = this.inFlightReviews.get(payload.toLaneId);
-    if (existing === payload.packetId) {
-      this.inFlightReviews.delete(payload.toLaneId);
-    }
-    // Clear reviewer-side assignment so the lane-stop hook doesn't fire a
-    // missing-tool envelope for this packet again.
-    const reviewerAssigned = this.assignedReviewPackets.get(payload.fromLaneId);
-    if (reviewerAssigned === payload.packetId) {
-      this.assignedReviewPackets.delete(payload.fromLaneId);
-    }
-    this.clearPendingFromPeer(payload.toLaneId, payload.fromLaneId, payload.packetId);
-
-    if (this.host.appendReviewCard) {
-      this.host.appendReviewCard(payload.toLaneId, payload);
-    } else {
-      // Fallback: synthesize an inter-lane row if the host hasn't wired the card renderer.
-      this.host.appendInterLaneRow(
-        payload.toLaneId,
-        'in',
-        { id: payload.fromLaneId, displayName: payload.fromDisplayName },
-        `[review reply] ${payload.findings.length} findings — ${payload.summary}`,
-        true,
-      );
-    }
-    if (!payload.interruptedReason) {
-      // Queue inject like peer replies so a busy requester (soft awaiting) still
-      // receives the prompt after its current turn ends.
-      this.inbox(payload.toLaneId).push({
-        id: `review-inject-${payload.packetId}`,
-        fromLaneId: '__harness__',
-        toLaneId: payload.toLaneId,
-        message: this.composeReviewReplyPrompt(payload),
-        done: true,
-        sentAt: payload.sentAt,
-        harnessId: '__harness__',
-      });
-      if (canDrainInbound(requester.status)) {
-        this.drain(payload.toLaneId);
-      }
-    }
-    this.recomputePeerStatus(payload.toLaneId);
-    return { delivered: true };
-  }
-
   /**
    * spec 115: fan-out one body to multiple lanes from the composer (@mention).
    */
@@ -518,35 +340,19 @@ export class InterLaneCoordinator {
     return { packetId, delivered, failed };
   }
 
-  /** spec 116: set idle vs awaiting_peer from pending + in-flight review. */
+  /** spec 116: set idle vs awaiting_peer from outstanding pending peers. */
   recomputePeerStatus(laneId: string): void {
     const lane = this.host.getLane(laneId);
     if (!lane || lane.status === 'busy' || lane.status === 'needs_permission') return;
     const pending = this.pendingPeersFor(laneId).length;
-    const reviewPending = this.inFlightReviews.has(laneId);
-    this.host.setLaneStatus(laneId, pending > 0 || reviewPending ? 'awaiting_peer' : 'idle');
-  }
-
-  /** Returns the open ReviewPacket for the given id, or null. */
-  getOpenReviewPacket(packetId: string): ReviewPacket | null {
-    return this.openReviewPackets.get(packetId) ?? null;
-  }
-
-  /** Returns the packetId the given reviewer lane is currently assigned, or null. */
-  assignedReviewPacketFor(reviewerLaneId: string): string | null {
-    return this.assignedReviewPackets.get(reviewerLaneId) ?? null;
-  }
-
-  /** Clear the reviewer assignment after the review is delivered or cancelled. */
-  clearReviewerAssignment(reviewerLaneId: string): void {
-    this.assignedReviewPackets.delete(reviewerLaneId);
+    this.host.setLaneStatus(laneId, pending > 0 ? 'awaiting_peer' : 'idle');
   }
 
   /**
-   * Inject a synthetic harness envelope into a lane's inbox (used by review
-   * protocol-retry envelopes). Drains immediately if the lane is idle.
+   * Inject a synthetic harness envelope into a lane's inbox (used by the
+   * attention-redirect path). Drains immediately if the lane is idle.
    */
-  injectHarnessEnvelope(laneId: string, message: string, reviewPacketId?: string): void {
+  injectHarnessEnvelope(laneId: string, message: string): void {
     const lane = this.host.getLane(laneId);
     if (!lane) return;
     this.inbox(laneId).push({
@@ -557,7 +363,6 @@ export class InterLaneCoordinator {
       done: false,
       sentAt: Date.now(),
       harnessId: '__harness__',
-      reviewPacketId,
     });
     if (canDrainInbound(lane.status)) this.drain(laneId);
   }
@@ -585,32 +390,6 @@ export class InterLaneCoordinator {
     return { delivered: true };
   }
 
-  /** spec 112: returns true if the named review packet is still open. */
-  isReviewPacketOpen(packetId: string): boolean {
-    return this.openReviewPackets.has(packetId);
-  }
-
-  /** Mark a packet cancelled. Subsequent deliverReviewReply for the same id is dropped. */
-  cancelReviewPacket(packetId: string): void {
-    const packet = this.openReviewPackets.get(packetId);
-    if (packet) {
-      this.openReviewPackets.delete(packetId);
-      const existing = this.inFlightReviews.get(packet.fromLaneId);
-      if (existing === packetId) this.inFlightReviews.delete(packet.fromLaneId);
-      // Clear reviewer-side assignment too.
-      const reviewerAssigned = this.assignedReviewPackets.get(packet.toLaneId);
-      if (reviewerAssigned === packetId) this.assignedReviewPackets.delete(packet.toLaneId);
-      // Clear pending tracker too.
-      const sends = this.pending.get(packet.fromLaneId);
-      if (sends) {
-        const remaining = sends.filter((s) => s.envelopeId !== packetId);
-        if (remaining.length === 0) this.pending.delete(packet.fromLaneId);
-        else this.pending.set(packet.fromLaneId, remaining);
-      }
-    }
-    this.cancelledPacketIds.add(packetId);
-  }
-
   /**
    * Called by the harness when a lane finishes a turn (stop event).
    * If the lane has pending sends, transition to awaiting_peer.
@@ -624,12 +403,6 @@ export class InterLaneCoordinator {
 
   /** User ran #cancel on a lane in awaiting_peer (or any lane mid-conversation). */
   cancelConversationsFor(laneId: string): void {
-    // Also tombstone any in-flight review packet originating from this lane so
-    // late review_reply envelopes are discarded.
-    const inFlightPacket = this.inFlightReviews.get(laneId);
-    if (inFlightPacket) {
-      this.cancelReviewPacket(inFlightPacket);
-    }
     const pending = this.pending.get(laneId);
     if (!pending || pending.length === 0) return;
     const peers = new Set(pending.map((p) => p.toLaneId));
@@ -756,35 +529,6 @@ export class InterLaneCoordinator {
         this.recomputePeerStatus(senderId);
       }
     }
-    // spec 112: review packets involving the closed lane.
-    // Reviewer closed mid-review → deliver an interrupted review card to
-    // the requester. Requester closed → tombstone packet so a late reply from
-    // the reviewer is dropped and reviewer-side assignment is cleared.
-    for (const [packetId, packet] of [...this.openReviewPackets.entries()]) {
-      if (packet.toLaneId === laneId) {
-        const requester = this.host.getLane(packet.fromLaneId);
-        if (requester) {
-          this.deliverReviewReply({
-            packetId,
-            fromLaneId: packet.toLaneId,
-            toLaneId: packet.fromLaneId,
-            fromDisplayName: displayName,
-            toDisplayName: requester.displayName,
-            findings: [],
-            summary: '(reviewer lane closed before reply)',
-            worktreeMatchAtReceipt: true,
-            interruptedReason: 'reviewer lane closed',
-            sentAt: Date.now(),
-          });
-        } else {
-          this.openReviewPackets.delete(packetId);
-          this.inFlightReviews.delete(packet.fromLaneId);
-          this.assignedReviewPackets.delete(packet.toLaneId);
-        }
-      } else if (packet.fromLaneId === laneId) {
-        this.cancelReviewPacket(packetId);
-      }
-    }
   }
 
   /**
@@ -885,18 +629,9 @@ export class InterLaneCoordinator {
   private drain(laneId: string): void {
     const inbox = this.inbox(laneId);
     if (inbox.depth() === 0) return;
-    const rawEnvelopes = inbox.drain();
+    const envelopes = inbox.drain();
     const recipient = this.host.getLane(laneId);
     if (!recipient) return;
-
-    // spec 112: drop harness-injected protocol-retry prompts whose review packet
-    // is already closed (delivered or cancelled). Prevents the reviewer from
-    // being woken up for a now-irrelevant correction after it already succeeded
-    // in the same turn.
-    const envelopes = rawEnvelopes.filter(
-      (env) =>
-        !(env.fromLaneId === '__harness__' && env.reviewPacketId && !this.openReviewPackets.has(env.reviewPacketId)),
-    );
     if (envelopes.length === 0) return;
 
     // Capture initiator-vs-callee role per envelope before clearing pending,
@@ -934,16 +669,11 @@ export class InterLaneCoordinator {
       // spec 141: a foreign sender has no local lane, so fall back to the
       // displayName carried on the cross-view envelope.
       const senderName = sender?.displayName ?? env.fromDisplayName ?? env.fromLaneId;
-      const rowMessage =
-        env.kind === 'review_request' && env.reviewPacket
-          ? `[review request received] ${env.reviewPacket.diffstat.length} files; ` +
-            `note: ${env.reviewPacket.note ?? '(none)'}`
-          : env.message;
       this.host.appendInterLaneRow(
         laneId,
         'in',
         { id: env.fromLaneId, displayName: senderName },
-        rowMessage,
+        env.message,
         env.done,
         { envelopeId: env.id, channel: interLaneRowChannel(env) },
       );
@@ -1002,7 +732,7 @@ export class InterLaneCoordinator {
         parts.push(env.message);
         continue;
       }
-      if (env.kind === 'review_request' || env.kind === 'mention_request') {
+      if (env.kind === 'mention_request') {
         parts.push(env.message);
         continue;
       }
@@ -1041,45 +771,9 @@ export class InterLaneCoordinator {
     }
     return parts.join('\n\n');
   }
-
-  private composeReviewReplyPrompt(payload: ReviewCardPayload): string {
-    const lines: string[] = [];
-    lines.push(`[review reply] From ${payload.fromDisplayName} (packet: ${payload.packetId}):`);
-    lines.push('');
-    lines.push(payload.summary.trim() || '(no summary)');
-    if (!payload.worktreeMatchAtReceipt) {
-      lines.push('');
-      lines.push('WARNING: The worktree changed after the review was requested. Verify each finding against the current code before editing.');
-    }
-    if (payload.findings.length > 0) {
-      lines.push('');
-      lines.push('Findings:');
-      for (const finding of payload.findings) {
-        lines.push(
-          `- ${finding.severity.toUpperCase()} ${finding.file}:${finding.line} - ${finding.concern}`,
-        );
-        if (finding.suggestedCheck) {
-          lines.push(`  check: ${finding.suggestedCheck}`);
-        }
-      }
-      lines.push('');
-      lines.push(
-        'You are the requester lane receiving review feedback. Address these findings directly now. ' +
-          'Do not call review_reply; that tool is only for reviewer lanes.',
-      );
-    } else {
-      lines.push('');
-      lines.push(
-        'You are the requester lane. The reviewer returned no anchored findings — treat the summary above as their full response. ' +
-          'Do not call review_reply; that tool is only for reviewer lanes.',
-      );
-    }
-    return lines.join('\n');
-  }
 }
 
 function interLaneRowChannel(env: InterLaneEnvelope): InterLaneRowChannel {
   if (env.kind === 'mention_request') return 'mention';
-  if (env.kind === 'review_request') return 'review';
   return 'peer';
 }

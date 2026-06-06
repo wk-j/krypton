@@ -1,6 +1,15 @@
 # ACP Review Lane Mode — Implementation Spec
 
-> Status: Implemented (V0.5 scope)
+> Status: Partially superseded by `docs/145-harness-design-review-panel.md` (2026-06-06).
+> The structured-review *delivery/findings/UI* machinery described below —
+> `review_request`/`review_reply` MCP tools, the `ReviewPacket`/`ReviewFinding`
+> schema, the `ReviewCard`, the per-sender `inFlightReviews` guard, and the
+> dedicated coordinator delivery path — was REMOVED. `#review` is now
+> agent-orchestrated multi-reviewer fan-out over `peer_send` (spec 145). What
+> survives from this spec is the shared git-state collector (now simplified to
+> `{ hasGitRepo, isUnbornHead, diffstat, diff, untracked }`), retained because
+> attention triage (spec 128) also consumes `ReviewDiffstatEntry`.
+> The text below is kept for historical context only.
 > Date: 2026-05-20
 > Milestone: M-ACP — Harness Multi-Agent
 

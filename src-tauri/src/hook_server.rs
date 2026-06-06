@@ -1009,8 +1009,6 @@ async fn handle_bus_tool_call(
         "memory_list" => memory_list(&state.hook_server, harness_id),
         "peer_send" => peer_send(state, harness_id, lane_label, arguments).await,
         "peer_list" => peer_list(state, harness_id).await,
-        "review_request" => review_request(state, harness_id, lane_label, arguments).await,
-        "review_reply" => review_reply(state, harness_id, lane_label, arguments).await,
         "directive_list" => directive_list(),
         "directive_preview" => directive_preview(arguments),
         "directive_apply" => directive_apply(state, harness_id, lane_label, arguments).await,
@@ -1135,125 +1133,10 @@ async fn peer_list(state: &HookServerState, harness_id: &str) -> Result<Value, S
     }
 }
 
-/// review_request — ask the frontend coordinator to assemble the packet
-/// (lane cwd + transcript signals + git state) and deliver to the recipient's
-/// inbox. The frontend listener collects git state via the
-/// `acp_collect_review_git_state` Tauri command — Rust here does not touch
-/// git, so the agent never needs to know or pass `cwd`.
-async fn review_request(
-    state: &HookServerState,
-    harness_id: &str,
-    from_lane: &str,
-    arguments: Value,
-) -> Result<Value, String> {
-    let to_lane = required_string(&arguments, "to_lane")?;
-    if to_lane.trim().is_empty() {
-        return Err("to_lane must be non-empty".to_string());
-    }
-    let note = arguments
-        .get("note")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    let packet_id = format!("rev-{}-{}", now_ms(), rand_suffix());
-    let payload = json!({
-        "packetId": packet_id,
-        "fromLaneId": from_lane,
-        "toLaneId": to_lane,
-        "note": note,
-        "sentAt": now_ms(),
-        "harnessId": harness_id,
-        "requestId": packet_id,
-    });
-    let rx = state.hook_server.register_bus_reply(packet_id.clone());
-    state
-        .app_handle
-        .emit_or_log("acp-review-requested", payload);
-    let reply = match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
-        Ok(Ok(value)) => value,
-        Ok(Err(_)) => {
-            return Err("review_request: frontend coordinator did not respond".to_string());
-        }
-        Err(_) => {
-            state.hook_server.drop_bus_reply(&packet_id);
-            return Err("review_request: frontend reply timed out".to_string());
-        }
-    };
-    if reply
-        .get("delivered")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        Ok(reply)
-    } else {
-        let reason = reply
-            .get("reason")
-            .and_then(|v| v.as_str())
-            .unwrap_or("delivery_failed");
-        Err(format!("review_request failed: {reason}"))
-    }
-}
-
-/// review_reply — forward a reviewer's findings to the frontend coordinator
-/// for best-effort cleanup + delivery to the requester's inbox.
-async fn review_reply(
-    state: &HookServerState,
-    harness_id: &str,
-    from_lane: &str,
-    arguments: Value,
-) -> Result<Value, String> {
-    let packet_id = required_string(&arguments, "packet_id")?;
-    let summary = arguments
-        .get("summary")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let findings = arguments
-        .get("findings")
-        .cloned()
-        .unwrap_or_else(|| json!([]));
-    let request_id = format!("revreply-{}-{}", now_ms(), rand_suffix());
-    let payload = json!({
-        "packetId": packet_id,
-        "fromLaneId": from_lane,
-        "summary": summary,
-        "findings": findings,
-        "harnessId": harness_id,
-        "requestId": request_id,
-        "sentAt": now_ms(),
-    });
-    let rx = state.hook_server.register_bus_reply(request_id.clone());
-    state
-        .app_handle
-        .emit_or_log("acp-review-reply-requested", payload);
-    match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
-        Ok(Ok(value)) => {
-            if value
-                .get("delivered")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-            {
-                Ok(value)
-            } else {
-                let reason = value
-                    .get("reason")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("delivery_failed");
-                Err(format!("review_reply failed: {reason}"))
-            }
-        }
-        Ok(Err(_)) => Err("review_reply: frontend coordinator did not respond".to_string()),
-        Err(_) => {
-            state.hook_server.drop_bus_reply(&request_id);
-            Err("review_reply: frontend reply timed out".to_string())
-        }
-    }
-}
-
 /// attention_flag — a lane self-reports a decision needing human judgement
 /// (spec 128/130). Validates the presence floor (traded_off non-empty,
-/// uncertainty non-blank), then round-trips like `review_request`: the frontend
-/// coordinator assembles the ReviewPacket blast-radius, inserts the JudgementItem
+/// uncertainty non-blank), then round-trips to the frontend: the coordinator
+/// assembles the git blast-radius (diffstat), inserts the JudgementItem
 /// into the demand queue, and replies with `{ item_id }`. Non-blocking — the lane
 /// keeps working after it sees the id.
 async fn attention_flag(
@@ -1399,9 +1282,10 @@ async fn attention_resolve(
     }
 }
 
-/// collect_git_state — run a series of git commands in the lane's cwd and assemble
-/// a JSON payload matching the frontend's ReviewGitState shape. Never panics; on
-/// any failure returns `{ hasGitRepo: false, ... empty }`.
+/// collect_git_state — run a few git commands in the lane's cwd and assemble a
+/// JSON payload matching the frontend's `ReviewGitState` shape (spec 145, shared
+/// by `#review` and attention triage). Never panics; on any failure returns
+/// `{ hasGitRepo: false, ... empty }`.
 pub fn collect_git_state_public(cwd: Option<&str>) -> Value {
     collect_git_state(cwd)
 }
@@ -1438,10 +1322,13 @@ fn clamp_headline(s: &str, max: usize) -> String {
 fn collect_git_state(cwd: Option<&str>) -> Value {
     use std::process::Command;
 
-    const TOTAL_PATCH_CAP: usize = 40_960;
-    const PER_FILE_HUNK_CAP: usize = 8_192;
+    // Bounds the payload (not process memory): the unified diff is capped, and
+    // each untracked file contributes only a head excerpt.
+    const REVIEW_DIFF_CAP: usize = 40_960;
+    const DIFF_TRUNCATION_MARKER: &str = "\n…[diff truncated at payload cap]…\n";
     const UNTRACKED_HEAD_LINES: usize = 40;
     const UNTRACKED_HEAD_BYTES: usize = 4_096;
+    const UNTRACKED_TOTAL_CAP: usize = 40_960;
 
     let cwd_path = match cwd {
         Some(c) if !c.is_empty() => StdPath::new(c).to_path_buf(),
@@ -1467,34 +1354,40 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
         None => return empty_git_state(cwd_path.to_string_lossy().to_string()),
     };
 
-    // Use --no-pager + --no-ext-diff + --no-textconv to avoid user diff machinery
-    // (external diff drivers, textconv filters, pagers) stalling the collector.
-    let porcelain = run(&["status", "--porcelain=v1"]).unwrap_or_default();
-    let head_sha = run(&["rev-parse", "HEAD"]).unwrap_or_default();
-    let staged_raw = run(&[
-        "--no-pager",
-        "diff",
-        "--no-ext-diff",
-        "--cached",
-        "--name-only",
-    ])
-    .unwrap_or_default();
-    let unstaged_raw =
-        run(&["--no-pager", "diff", "--no-ext-diff", "--name-only"]).unwrap_or_default();
-    let numstat_raw =
-        run(&["--no-pager", "diff", "--no-ext-diff", "HEAD", "--numstat"]).unwrap_or_default();
+    // Unborn HEAD: a fresh repo with no commits. `rev-parse --is-inside-work-tree`
+    // (and --show-toplevel) succeed, but `git diff HEAD` fails — so callers must
+    // know to diff against the empty tree / report "no committed baseline".
+    let is_unborn_head = run(&["rev-parse", "--verify", "HEAD"]).is_none();
 
-    let staged_set: std::collections::HashSet<String> = staged_raw
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-    let unstaged_set: std::collections::HashSet<String> = unstaged_raw
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-    let partial_staging = staged_set.intersection(&unstaged_set).next().is_some();
+    let porcelain = run(&["status", "--porcelain=v1"]).unwrap_or_default();
+
+    // Diff base: HEAD for a normal repo; the empty-tree object when HEAD is
+    // unborn. `git diff <base>` (one tree-ish) compares the WORKING tree against
+    // that base, so it captures BOTH staged and unstaged edits — a
+    // `git add`-then-edit file (porcelain `AM`) keeps its unstaged changes, which
+    // a `--cached` diff would silently drop. The empty tree is DERIVED via
+    // `git hash-object -t tree /dev/null` so it is correct for both SHA-1 and
+    // SHA-256 repos; the SHA-1 constant is only a fallback (e.g. no `/dev/null`).
+    // Keep --no-pager + --no-ext-diff + --no-textconv to avoid user diff machinery
+    // (external drivers, textconv filters, pagers) stalling us.
+    let base: String = if is_unborn_head {
+        run(&["hash-object", "-t", "tree", "/dev/null"])
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "4b825dc642cb6eb9a060e54bf8d69288fbee4904".to_string())
+    } else {
+        "HEAD".to_string()
+    };
+    let numstat_raw = run(&["--no-pager", "diff", "--no-ext-diff", &base, "--numstat"])
+        .unwrap_or_default();
+    // A non-zero `git diff` is a real error, NOT "no changes" — and with
+    // --no-ext-diff an external diff driver can't be the cause. Surface a sentinel
+    // rather than coercing failure into an empty diff (which a populated diffstat
+    // would then contradict). `run` returns None only on that genuine failure.
+    let diff_raw = match run(&["--no-pager", "diff", "--no-ext-diff", "--no-textconv", &base]) {
+        Some(d) => d,
+        None => "<git diff failed>".to_string(),
+    };
 
     let mut tracked_paths: Vec<(String, char)> = Vec::new();
     let mut untracked_paths: Vec<String> = Vec::new();
@@ -1556,126 +1449,63 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
         }));
     }
 
-    let mut total_size: usize = 0;
-    let mut hunks: Vec<Value> = Vec::new();
-    // Sort tracked by best-effort churn (added+removed) desc — bigger churn first.
-    let mut tracked_sorted = tracked_paths.clone();
-    tracked_sorted.sort_by(|a, b| {
-        let (aa, ar) = numstat.get(&a.0).cloned().unwrap_or((0, 0));
-        let (ba, br) = numstat.get(&b.0).cloned().unwrap_or((0, 0));
-        (ba + br).cmp(&(aa + ar))
-    });
-    for (path, status) in &tracked_sorted {
-        if total_size >= TOTAL_PATCH_CAP {
-            hunks.push(json!({
-                "path": path,
-                "status": status.to_string(),
-                "hunk": "",
-                "truncated": true,
-            }));
-            continue;
-        }
-        let raw = run(&[
-            "--no-pager",
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "HEAD",
-            "--",
-            path,
-        ])
-        .unwrap_or_default();
-        let (body, truncated) = if raw.len() > PER_FILE_HUNK_CAP {
-            (safe_truncate(&raw, PER_FILE_HUNK_CAP).to_string(), true)
-        } else {
-            (raw, false)
-        };
-        total_size = total_size.saturating_add(body.len());
-        hunks.push(json!({
-            "path": path,
-            "status": status.to_string(),
-            "hunk": body,
-            "truncated": truncated,
-        }));
-    }
+    // Payload-cap the unified diff on a UTF-8 boundary, with the marker INSIDE
+    // the cap so the whole `diff` string stays ≤ REVIEW_DIFF_CAP.
+    let diff = if diff_raw.len() > REVIEW_DIFF_CAP {
+        let budget = REVIEW_DIFF_CAP.saturating_sub(DIFF_TRUNCATION_MARKER.len());
+        format!("{}{}", safe_truncate(&diff_raw, budget), DIFF_TRUNCATION_MARKER)
+    } else {
+        diff_raw
+    };
 
-    let mut untracked_excerpts: Vec<Value> = Vec::new();
+    let mut untracked_total: usize = 0;
+    let mut untracked: Vec<Value> = Vec::new();
     for path in &untracked_paths {
-        if total_size >= TOTAL_PATCH_CAP {
+        if untracked_total >= UNTRACKED_TOTAL_CAP {
             break;
         }
         let full = StdPath::new(&repo_root).join(path);
-        let head = match std::fs::read(&full) {
-            Ok(bytes) => {
-                if bytes.iter().take(2048).any(|b| *b == 0) {
-                    "<binary>".to_string()
-                } else {
-                    let slice = if bytes.len() > UNTRACKED_HEAD_BYTES {
-                        &bytes[..UNTRACKED_HEAD_BYTES]
-                    } else {
-                        &bytes[..]
-                    };
-                    let text = String::from_utf8_lossy(slice);
-                    text.lines()
-                        .take(UNTRACKED_HEAD_LINES)
-                        .collect::<Vec<_>>()
-                        .join("\n")
+        // Read only the head bytes — never buffer an entire (possibly huge)
+        // untracked file when we only show a 4 KB excerpt.
+        let head = match std::fs::File::open(&full) {
+            Ok(file) => {
+                use std::io::Read;
+                let mut bytes = Vec::new();
+                match file.take(UNTRACKED_HEAD_BYTES as u64).read_to_end(&mut bytes) {
+                    Ok(_) => {
+                        if bytes.iter().take(2048).any(|b| *b == 0) {
+                            "<binary>".to_string()
+                        } else {
+                            String::from_utf8_lossy(&bytes)
+                                .lines()
+                                .take(UNTRACKED_HEAD_LINES)
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        }
+                    }
+                    Err(_) => "<unreadable>".to_string(),
                 }
             }
             Err(_) => "<unreadable>".to_string(),
         };
-        total_size = total_size.saturating_add(head.len());
-        untracked_excerpts.push(json!({ "path": path, "head": head }));
+        // Strict cap: stop before the returned payload would exceed the cap (each
+        // head is ≤ UNTRACKED_HEAD_BYTES, so the first excerpt always fits).
+        if !untracked.is_empty()
+            && untracked_total.saturating_add(head.len()) > UNTRACKED_TOTAL_CAP
+        {
+            break;
+        }
+        untracked_total = untracked_total.saturating_add(head.len());
+        untracked.push(json!({ "path": path, "head": head }));
     }
-
-    let fingerprint_input = {
-        let mut paths_meta: Vec<String> = Vec::new();
-        for (path, _) in &tracked_paths {
-            let full = StdPath::new(&repo_root).join(path);
-            let meta = std::fs::metadata(&full).ok();
-            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-            let mtime = meta
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            paths_meta.push(format!("{}|{}|{}", path, size, mtime));
-        }
-        for path in &untracked_paths {
-            let full = StdPath::new(&repo_root).join(path);
-            let meta = std::fs::metadata(&full).ok();
-            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-            let mtime = meta
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            paths_meta.push(format!("{}|{}|{}", path, size, mtime));
-        }
-        paths_meta.sort();
-        format!(
-            "{}\n{}\n{}",
-            head_sha.trim(),
-            porcelain.trim(),
-            paths_meta.join("\n")
-        )
-    };
-    let mut hasher = Sha256::new();
-    hasher.update(fingerprint_input.as_bytes());
-    let fingerprint = format!("{:x}", hasher.finalize());
 
     json!({
         "hasGitRepo": true,
         "repoRoot": repo_root,
-        "hasStagedChanges": !staged_set.is_empty(),
-        "hasUnstagedChanges": !unstaged_set.is_empty(),
-        "partialStagingDetected": partial_staging,
-        "worktreeFingerprint": fingerprint,
+        "isUnbornHead": is_unborn_head,
         "diffstat": diffstat,
-        "patchHunks": hunks,
-        "untrackedExcerpts": untracked_excerpts,
+        "diff": diff,
+        "untracked": untracked,
     })
 }
 
@@ -1683,13 +1513,10 @@ fn empty_git_state(cwd: String) -> Value {
     json!({
         "hasGitRepo": false,
         "repoRoot": cwd,
-        "hasStagedChanges": false,
-        "hasUnstagedChanges": false,
-        "partialStagingDetected": false,
-        "worktreeFingerprint": "<no-git>",
+        "isUnbornHead": false,
         "diffstat": [],
-        "patchHunks": [],
-        "untrackedExcerpts": [],
+        "diff": "",
+        "untracked": [],
     })
 }
 
@@ -2301,43 +2128,6 @@ fn bus_tool_descriptors() -> Value {
             "name": "peer_list",
             "description": "List live peer lanes. Returns `{ lanes, count }` where each lane has `laneId`, `displayName`, `backendId`, `status`, `modelName`, `inboxDepth`, and `activeDirective` (the lane-scope directive binding: `{ id, title, task, description, enabled }` or null). The list spans this harness AND every other open harness view: each entry also carries `local` (true for a sibling in this harness, false for a cross-harness peer) and `cwd` (that lane's working directory). A foreign peer may be in a DIFFERENT repository — read `cwd` to pick the right peer and to know which project a message would leave for. Use `activeDirective` to pick the lane whose role fits the job (e.g., a lane bound to a 'review' directive for review work). Pass `displayName` to peer_send as `to_lane` for local and foreign peers alike. Re-query rather than caching — lanes come and go.",
             "inputSchema": { "type": "object", "properties": {} }
-        },
-        {
-            "name": "review_request",
-            "description": "Ask another lane to review your recent work. The harness assembles a packet (intent + git diff + commands + tool summary) from your lane state. The reviewer should reply with review_reply. After calling this tool, end your turn; the reply arrives as a transcript card. Use only when the user explicitly asks for a review — never proactively.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "to_lane": { "type": "string", "description": "Reviewer lane display name (e.g., 'Codex-1')." },
-                    "note": { "type": "string", "description": "Optional one-line hint to the reviewer (focus area, known concerns)." }
-                },
-                "required": ["to_lane"]
-            }
-        },
-        {
-            "name": "review_reply",
-            "description": "Reply to a review packet. Use summary plus optional findings. For actionable findings, include file + line + severity (block|warn|nit) + concern; malformed findings are omitted instead of blocking delivery. Use empty or omitted findings for a clean review.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "packet_id": { "type": "string" },
-                    "summary": { "type": "string" },
-                    "findings": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "file": { "type": "string" },
-                                "line": { "type": "integer", "minimum": 1 },
-                                "severity": { "enum": ["block", "warn", "nit"] },
-                                "concern": { "type": "string", "maxLength": 200 },
-                                "suggested_check": { "type": "string" }
-                            }
-                        }
-                    }
-                },
-                "required": ["packet_id"]
-            }
         },
         {
             "name": "directive_list",
@@ -3171,5 +2961,135 @@ mod tests {
         assert!(clamped.ends_with('\u{2026}'));
         // Byte length far exceeds the code-point cap — proof we clipped by chars.
         assert!(clamped.len() > MEMORY_SUMMARY_MAX);
+    }
+}
+
+// spec 145 — focused tests for the shared git-state collector. They run real
+// `git` in a throwaway repo to lock the edge cases the rewrite is meant to fix:
+// non-git dirs, tracked diff + diffstat, untracked excerpts, unborn HEAD (incl.
+// the `AM` staged-then-edited case), and the UTF-8 payload cap.
+#[cfg(test)]
+mod git_state_tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+
+    fn git(dir: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@example.com")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@example.com")
+            .output()
+            .expect("git runs");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    fn temp_repo() -> PathBuf {
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("krypton-git-{}-{n}", rand_suffix()));
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q"]);
+        git(&dir, &["config", "commit.gpgsign", "false"]);
+        dir
+    }
+
+    fn collect(dir: &Path) -> Value {
+        collect_git_state(Some(dir.to_str().unwrap()))
+    }
+
+    #[test]
+    fn no_cwd_and_non_git_dir_report_no_repo() {
+        assert_eq!(collect_git_state(None)["hasGitRepo"], json!(false));
+        let dir = std::env::temp_dir().join(format!("krypton-nogit-{}", rand_suffix()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let v = collect(&dir);
+        assert_eq!(v["hasGitRepo"], json!(false));
+        assert_eq!(v["isUnbornHead"], json!(false));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tracked_modification_yields_diffstat_and_diff() {
+        let dir = temp_repo();
+        std::fs::write(dir.join("a.txt"), "one\ntwo\n").unwrap();
+        git(&dir, &["add", "a.txt"]);
+        git(&dir, &["commit", "-qm", "init"]);
+        std::fs::write(dir.join("a.txt"), "one\ntwo\nthree\n").unwrap();
+
+        let v = collect(&dir);
+        assert_eq!(v["hasGitRepo"], json!(true));
+        assert_eq!(v["isUnbornHead"], json!(false));
+        let diffstat = v["diffstat"].as_array().unwrap();
+        assert_eq!(diffstat.len(), 1);
+        assert_eq!(diffstat[0]["path"], json!("a.txt"));
+        assert_eq!(diffstat[0]["status"], json!("M"));
+        assert!(v["diff"].as_str().unwrap().contains("+three"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn untracked_file_appears_as_excerpt_and_diffstat_entry() {
+        let dir = temp_repo();
+        std::fs::write(dir.join("seed"), "x").unwrap();
+        git(&dir, &["add", "seed"]);
+        git(&dir, &["commit", "-qm", "seed"]);
+        std::fs::write(dir.join("new.txt"), "fresh content\n").unwrap();
+
+        let v = collect(&dir);
+        let untracked = v["untracked"].as_array().unwrap();
+        assert_eq!(untracked.len(), 1);
+        assert_eq!(untracked[0]["path"], json!("new.txt"));
+        assert!(untracked[0]["head"].as_str().unwrap().contains("fresh content"));
+        let diffstat = v["diffstat"].as_array().unwrap();
+        assert!(diffstat.iter().any(|e| e["path"] == json!("new.txt") && e["status"] == json!("?")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unborn_head_captures_staged_then_modified_file() {
+        // B2: a file added then edited (`AM`) keeps its unstaged content because
+        // the collector diffs the working tree against the empty tree, not --cached.
+        let dir = temp_repo();
+        std::fs::write(dir.join("a.txt"), "staged\n").unwrap();
+        git(&dir, &["add", "a.txt"]);
+        std::fs::write(dir.join("a.txt"), "staged\nthen-unstaged\n").unwrap();
+
+        let v = collect(&dir);
+        assert_eq!(v["hasGitRepo"], json!(true));
+        assert_eq!(v["isUnbornHead"], json!(true));
+        let diff = v["diff"].as_str().unwrap();
+        assert!(diff.contains("+staged"), "diff missing staged line: {diff}");
+        assert!(
+            diff.contains("+then-unstaged"),
+            "unborn-HEAD diff dropped the unstaged edit: {diff}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn large_diff_is_capped_on_a_utf8_boundary_with_marker_inside_cap() {
+        const CAP: usize = 40_960;
+        let dir = temp_repo();
+        std::fs::write(dir.join("a.txt"), "seed\n").unwrap();
+        git(&dir, &["add", "a.txt"]);
+        git(&dir, &["commit", "-qm", "init"]);
+        // A multibyte body well over the cap to exercise the UTF-8-safe truncation.
+        let big: String = "กข\n".repeat(40_000);
+        std::fs::write(dir.join("a.txt"), big).unwrap();
+
+        let v = collect(&dir);
+        let diff = v["diff"].as_str().unwrap();
+        assert!(diff.len() <= CAP, "diff {} exceeds cap {CAP}", diff.len());
+        assert!(diff.contains("truncated"), "truncation marker missing");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -3,6 +3,15 @@
 > Status: Draft (V0.5 scope, revised after Cursor-1 + Codex-1 review)
 > Date: 2026-05-21
 > Milestone: M-ACP — Harness Multi-Agent
+>
+> **Stale-premise note (2026-06-06):** this unimplemented draft mirrors the
+> spec-112 review machinery — the `review_request`/`review_reply` MCP tools, the
+> `review` envelope `kind`, and the per-requester `inFlightReviews` /
+> `openReviewPackets` mutex it proposes to mutex against. That machinery was
+> removed by `docs/145-harness-design-review-panel.md`; `#review` no longer holds
+> any coordinator-side in-flight review state. If brainstorm mode is ever built,
+> drop the `inFlightReviews`/`review_in_flight` mutex references and model it on
+> the spec-145 agent-orchestrated `peer_send` fan-out instead.
 
 ## Problem
 

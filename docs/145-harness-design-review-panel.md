@@ -1,6 +1,6 @@
 # Simplify `#review` — Agent-Orchestrated Multi-Reviewer (Diff or Design Doc) — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-06-06
 > Milestone: M-ACP — Harness Peering
 > Supersedes the structured-review *delivery/findings/UI* machinery of `docs/112`
