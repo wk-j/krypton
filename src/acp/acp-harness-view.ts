@@ -478,7 +478,9 @@ export function wikiIngestPrompt(focusHint: string): string {
     'when new evidence conflicts with an existing claim, keep BOTH and mark the contradiction as an ' +
     'open question rather than silently replacing it. Create a new page only for a genuinely new ' +
     'entity, concept, or decision; give every content page YAML frontmatter declaring its `type` ' +
-    '(entity | concept | decision) and `title` (display metadata). The wiki is FLAT — pages are ' +
+    '(entity | concept | decision), `title` (display metadata), and a `tags` YAML array that ' +
+    'includes at least its `type` (e.g. `tags: [entity]`) so vault viewers that index by ' +
+    'frontmatter tags surface the page. The wiki is FLAT — pages are ' +
     'referenced by their unique filename stem (not the `title`) via [[page]] links, so do NOT create ' +
     'subdirectories; keep every page directly under `docs/wiki/`. ' +
     'Do not rename or delete pages unless clearly required, and never ' +

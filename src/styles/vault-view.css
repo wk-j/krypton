@@ -362,7 +362,11 @@
   letter-spacing: 0.04em;
   padding: 1px 4px;
   border-radius: 2px;
-  border: 1px solid transparent;
+  /* Neutral default so any `type` (including ones without a dedicated rule)
+     still renders a consistent decorator badge. */
+  color: var(--vault-text);
+  border: 1px solid var(--vault-border);
+  background: var(--vault-ghost);
   opacity: 0.8;
   transition: opacity 0.1s;
 }
@@ -411,6 +415,30 @@
   color: var(--vault-green);
   border-color: rgba(102, 187, 106, 0.3);
   background: rgba(102, 187, 106, 0.07);
+}
+
+.krypton-vault__doc-type--endpoint {
+  color: var(--vault-red);
+  border-color: rgba(239, 83, 80, 0.3);
+  background: rgba(239, 83, 80, 0.07);
+}
+
+.krypton-vault__doc-type--table {
+  color: var(--vault-cyan);
+  border-color: rgba(77, 208, 225, 0.3);
+  background: rgba(77, 208, 225, 0.07);
+}
+
+.krypton-vault__doc-type--field {
+  color: var(--vault-magenta);
+  border-color: rgba(206, 147, 216, 0.3);
+  background: rgba(206, 147, 216, 0.07);
+}
+
+.krypton-vault__doc-type--original {
+  color: var(--vault-gold);
+  border-color: rgba(255, 213, 79, 0.3);
+  background: rgba(255, 213, 79, 0.07);
 }
 
 /* ─── Main Panel ─── */

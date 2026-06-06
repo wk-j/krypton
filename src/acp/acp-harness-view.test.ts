@@ -1077,6 +1077,7 @@ describe('wikiIngestPrompt', () => {
     expect(p).toContain('frontmatter'); // page type lives in the file, not only the catalog
     expect(p).toContain('(entity | concept | decision)'); // the type taxonomy
     expect(p).toContain('`title`'); // pages also declare a display title
+    expect(p).toContain('`tags` YAML array'); // tags so the vault viewer's FILE sidebar surfaces pages
     expect(p).toContain('content page'); // frontmatter applies to content pages, not index.md/log.md
     expect(p).toContain('do NOT create subdirectories'); // flat namespace for [[page]] links
     expect(p).toContain('filename stem'); // [[page]] resolves by filename stem, not title

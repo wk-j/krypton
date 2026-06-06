@@ -206,7 +206,11 @@ export class VaultContentView implements ContentView {
       case 'files': {
         let all = [...this.index.files.keys()].filter((f) => {
           const file = this.index!.files.get(f);
-          return file != null && file.frontmatterTags.length > 0;
+          if (file == null) return false;
+          // Show files that are typed (any `type` frontmatter / inferred doc type)
+          // or tagged. Keeps tag-based Obsidian vaults working while also listing
+          // vaults that classify pages by `type:` instead of `tags:`.
+          return file.frontmatterTags.length > 0 || this.getDocType(f, file) !== '';
         });
         const dir = this.fileSortOrder === 'asc' ? 1 : -1;
         all.sort((a, b) => {
@@ -296,6 +300,10 @@ export class VaultContentView implements ContentView {
       log: 'LOG',
       index: 'IDX',
       analysis: 'ANA',
+      endpoint: 'ENDP',
+      table: 'TBL',
+      field: 'FLD',
+      original: 'ORIG',
     };
     return map[docType] ?? docType.slice(0, 3).toUpperCase();
   }

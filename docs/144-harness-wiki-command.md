@@ -24,7 +24,7 @@ The commands add no new persistence, no MCP tools, and no Rust changes: the harn
 - **CWD** is `this.projectDir` (`:962`, lazily resolved via `get_app_cwd` at `:3087-3093`), already passed to every lane on spawn — so `<cwd>/docs/wiki/` is well-defined per project.
 - **Storage decision** — using repo markdown rather than the existing `krypton-harness-memory` store (per-lane opaque JSON outside the repo) is recorded in `docs/adr/0003`. The memory store is a per-lane `{summary, detail}` blob, not a shared interlinked page-graph, and is not human-browsable.
 - **Pattern source** — `docs/concepts/llm-wiki.md`: three layers (raw sources / wiki / schema), `index.md` (catalog) + `log.md` (chronological), incremental ingest over full rebuild, "the wiki is just a git repo of markdown files."
-- **Page structure (settled in follow-up).** The pattern source prescribes an index "organized by category (entities, concepts, sources)." The prompt encodes a three-type taxonomy — **entity / concept / decision** — and each page declares its `type` in **YAML frontmatter** (`type`, `title`), so the type is intrinsic to the file rather than living only in the catalog; the `index.md` headings are *derived* from frontmatter, making a reconstruct pass deterministic. The wiki stays **flat**: pages are referenced by name via `[[page]]` links, so there are **no subdirectories** — every page sits directly under `docs/wiki/`. (Subdirectory layout was explicitly rejected: it breaks name-based `[[page]]` resolution and catalog reconstruction.)
+- **Page structure (settled in follow-up).** The pattern source prescribes an index "organized by category (entities, concepts, sources)." The prompt encodes a three-type taxonomy — **entity / concept / decision** — and each page declares its `type` in **YAML frontmatter** (`type`, `title`, plus a `tags` array that includes its `type`), so the type is intrinsic to the file rather than living only in the catalog; the `index.md` headings are *derived* from frontmatter, making a reconstruct pass deterministic. The `tags` array exists so the built-in vault viewer — whose FILE sidebar curates by frontmatter `tags:` (Obsidian convention) — surfaces wiki pages without a viewer-side special case. (`index.md` and `log.md` remain frontmatter-less catalog/log files, so they do not appear in that FILE list; `index.md` is the auto-rendered home view.) The wiki stays **flat**: pages are referenced by name via `[[page]]` links, so there are **no subdirectories** — every page sits directly under `docs/wiki/`. (Subdirectory layout was explicitly rejected: it breaks name-based `[[page]]` resolution and catalog reconstruction.)
 
 ## Prior Art
 
@@ -87,7 +87,9 @@ function wikiIngestPrompt(focusHint: string): string {
     'when new evidence conflicts with an existing claim, keep BOTH and mark the contradiction as an ' +
     'open question rather than silently replacing it. Create a new page only for a genuinely new ' +
     'entity, concept, or decision; give every content page YAML frontmatter declaring its `type` ' +
-    '(entity | concept | decision) and `title` (display metadata). The wiki is FLAT — pages are ' +
+    '(entity | concept | decision), `title` (display metadata), and a `tags` YAML array that ' +
+    'includes at least its `type` (e.g. `tags: [entity]`) so vault viewers that index by ' +
+    'frontmatter tags surface the page. The wiki is FLAT — pages are ' +
     'referenced by their unique filename stem (not the `title`) via [[page]] links, so do NOT create ' +
     'subdirectories; keep every page directly under `docs/wiki/`. ' +
     'Do not rename or delete pages unless clearly required, and never ' +
