@@ -304,6 +304,19 @@ pub fn acp_cancel_pending_artifacts(
     hook_server.cancel_pending_artifacts(&harness_id, &lane_label)
 }
 
+/// spec 149: forward-only revoke of a lane's artifact feedback tokens on lane
+/// close / `#new`. After this, the browser's feedback page reports `410 revoked`
+/// (the lane was reset). `#restart` does NOT call this — the respawned session
+/// keeps the channel. Returns the number of tokens revoked.
+#[tauri::command]
+pub fn acp_revoke_artifact_feedback(
+    harness_id: String,
+    lane_label: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> usize {
+    hook_server.revoke_feedback_tokens_for_lane(&harness_id, &lane_label)
+}
+
 /// spec 133: re-stat/re-hash a live artifact after the harness observes a
 /// write/edit to its path, refreshing the card's size/hash. Errors (e.g. the
 /// edit grew the file past the cap) make the card unavailable rather than

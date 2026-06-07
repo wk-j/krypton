@@ -77,5 +77,340 @@
     });
   })();
 </script>
+<script>
+  // spec 149 — feedback channel config, substituted by Rust at artifact_new
+  // (exactly as {{title}} is). `token` is the unguessable per-artifact capability
+  // in the served URL; `url` is the loopback origin the overlay POSTs to.
+  window.__KRYPTON_FEEDBACK__ = { token: "{{feedbackToken}}", url: "{{feedbackBaseUrl}}" };
+</script>
+<script>
+  // spec 149 — artifact inline feedback overlay (crit-style). A mini element
+  // picker: hover-highlight + click-to-anchor + comment, posted to the harness.
+  // SELF-INJECTS its DOM (no static markup) so a lane editing <main> at runtime
+  // cannot clobber the widget. Best-effort: a lane that rewrites this <script>
+  // block on disk loses the overlay until the artifact is re-registered.
+  (function () {
+    var FB = window.__KRYPTON_FEEDBACK__ || {};
+    // Guard: only arm when Rust actually substituted the placeholders (a served
+    // artifact). A raw/un-served file leaves the {{...}} literals untouched.
+    if (!FB.token || !FB.url || FB.token.indexOf("{{") === 0) return;
+
+    var FEED = FB.url.replace(/\/$/, "") + "/artifact/feedback/" + FB.token;
+    var STATE = FB.url.replace(/\/$/, "") + "/artifact/state/" + FB.token;
+    var SKEY = "kfb:" + FB.token;        // token-scoped sessionStorage
+    var BODY_MAX = 4000, QUOTE_MAX = 2000, OUTERHTML_MAX = 4000;
+
+    // ── persisted state ──────────────────────────────────────────────────
+    var pins = [];            // saved comments {id,pinNumber,body,quote,anchor,createdAt,sent,drifted}
+    var pinSeq = 0;           // 1-based stable pin numbers
+    var draft = null;         // in-progress composer pin (anchor + partial body)
+    var batchId = null;       // kept across retries until the batch is accepted
+    try {
+      var saved = JSON.parse(sessionStorage.getItem(SKEY) || "null");
+      if (saved) {
+        pins = (saved.pins || []).filter(function (p) { return !p.sent; });
+        pinSeq = saved.pinSeq || pins.length;
+        draft = saved.draft || null;
+        batchId = saved.batchId || null;
+      }
+    } catch (e) {}
+    function persist() {
+      try {
+        sessionStorage.setItem(SKEY, JSON.stringify({ pins: pins, pinSeq: pinSeq, draft: draft, batchId: batchId }));
+      } catch (e) {}
+    }
+
+    // ── runtime state ────────────────────────────────────────────────────
+    var armed = false, disabled = false, cycleIdx = -1;
+    var lastHash = null, pendingReload = null;
+
+    // ── self-injected DOM (theme-token styled, fixed, high z) ──────────────
+    var ROOT = document.createElement("div");
+    ROOT.setAttribute("data-kfb", "root");
+    ROOT.innerHTML =
+      '<style>' +
+      '[data-kfb]{font-family:var(--mono,monospace);box-sizing:border-box}' +
+      '#kfb-pill{position:fixed;right:12px;bottom:12px;z-index:2147483646;' +
+        'background:var(--card,#08121e);color:var(--fg,#d7e7f0);border:1px solid var(--border,#14222e);' +
+        'border-radius:6px;padding:6px 10px;font-size:12px;line-height:1.4;cursor:pointer;' +
+        'max-width:280px;box-shadow:0 2px 12px rgba(0,0,0,.4)}' +
+      '#kfb-pill b{color:var(--accent,#5fd9d9)}' +
+      '#kfb-pill .kfb-sub{color:var(--muted,#6a7d8a);display:block;margin-top:2px;font-size:11px}' +
+      '#kfb-hi{position:fixed;z-index:2147483645;pointer-events:none;border:2px solid var(--accent,#5fd9d9);' +
+        'background:rgba(95,217,217,.10);border-radius:3px;display:none}' +
+      '#kfb-box{position:fixed;right:12px;bottom:52px;z-index:2147483647;width:300px;' +
+        'background:var(--card,#08121e);color:var(--fg,#d7e7f0);border:1px solid var(--accent,#5fd9d9);' +
+        'border-radius:6px;padding:10px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5)}' +
+      '#kfb-box .kfb-tgt{color:var(--muted,#6a7d8a);font-size:11px;margin-bottom:6px;' +
+        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '#kfb-box textarea{width:100%;box-sizing:border-box;min-height:64px;resize:vertical;' +
+        'font:inherit;font-size:12px;background:var(--bg,#050810);color:var(--fg,#d7e7f0);' +
+        'border:1px solid var(--border,#14222e);border-radius:4px;padding:6px}' +
+      '#kfb-box .kfb-row{display:flex;justify-content:space-between;align-items:center;margin-top:8px}' +
+      '#kfb-box .kfb-keys{color:var(--muted,#6a7d8a);font-size:10px}' +
+      '#kfb-box button,#kfb-pill button{font:inherit;font-size:11px;cursor:pointer;' +
+        'background:transparent;border:1px solid var(--border,#14222e);color:var(--accent,#5fd9d9);' +
+        'border-radius:4px;padding:3px 9px;margin-left:4px}' +
+      '</style>' +
+      '<div id="kfb-hi"></div>' +
+      '<div id="kfb-pill"></div>' +
+      '<div id="kfb-box">' +
+        '<div class="kfb-tgt" id="kfb-tgt"></div>' +
+        '<textarea id="kfb-text" placeholder="describe the change…"></textarea>' +
+        '<div class="kfb-row"><span class="kfb-keys">⌘↵ save · esc cancel</span>' +
+          '<span><button id="kfb-cancel" type="button">cancel</button>' +
+          '<button id="kfb-save" type="button">save</button></span></div>' +
+      '</div>';
+    document.body.appendChild(ROOT);
+    var pillEl = ROOT.querySelector("#kfb-pill");
+    var hiEl = ROOT.querySelector("#kfb-hi");
+    var boxEl = ROOT.querySelector("#kfb-box");
+    var tgtEl = ROOT.querySelector("#kfb-tgt");
+    var textEl = ROOT.querySelector("#kfb-text");
+
+    function cap(s, n) { s = s == null ? "" : String(s); return s.length > n ? s.slice(0, n) : s; }
+    function inOverlay(el) { return !!(el && el.closest && el.closest("[data-kfb]")); }
+
+    // ── stable, unique-ish selector (walk parentElement + nth-of-type) ─────
+    function selectorFor(el) {
+      if (!el || el.nodeType !== 1) return "";
+      if (el.id) { try { return "#" + CSS.escape(el.id); } catch (e) { return "#" + el.id; } }
+      var parts = [], node = el, guard = 0;
+      while (node && node.nodeType === 1 && node !== document.body && guard++ < 6) {
+        var part = node.tagName.toLowerCase();
+        var parent = node.parentElement;
+        if (parent) {
+          var sibs = Array.prototype.filter.call(parent.children, function (c) { return c.tagName === node.tagName; });
+          if (sibs.length > 1) part += ":nth-of-type(" + (sibs.indexOf(node) + 1) + ")";
+        }
+        parts.unshift(part);
+        if (node.id) { try { parts[0] = "#" + CSS.escape(node.id); } catch (e) { parts[0] = "#" + node.id; } break; }
+        node = parent;
+      }
+      return parts.join(" > ");
+    }
+    function tagChainFor(el) {
+      var chain = [], node = el, guard = 0;
+      while (node && node.nodeType === 1 && node !== document.documentElement && guard++ < 12) {
+        chain.unshift(node.tagName.toLowerCase());
+        node = node.parentElement;
+      }
+      return chain;
+    }
+    function accessibleNameFor(el) {
+      return cap((el.getAttribute("aria-label") || el.getAttribute("alt") ||
+        el.getAttribute("title") || (el.textContent || "").trim()), 120);
+    }
+    function buildAnchor(el) {
+      return {
+        pathname: location.pathname,
+        cssSelector: selectorFor(el),
+        tagChain: tagChainFor(el),
+        accessibleName: accessibleNameFor(el),
+        role: el.getAttribute("role") || undefined,
+        outerHTML: cap(el.outerHTML, OUTERHTML_MAX)
+      };
+    }
+
+    // ── re-anchor a saved pin after a reload / edit ────────────────────────
+    function resolveAnchor(anchor) {
+      if (!anchor) return null;
+      var el = null;
+      try { if (anchor.cssSelector) el = document.querySelector(anchor.cssSelector); } catch (e) {}
+      if (!el && anchor.accessibleName) {
+        var tag = (anchor.tagChain && anchor.tagChain[anchor.tagChain.length - 1]) || "*";
+        try {
+          el = Array.prototype.find.call(document.querySelectorAll(tag), function (n) {
+            return ((n.getAttribute("aria-label") || n.textContent || "").trim()).indexOf(anchor.accessibleName) === 0;
+          }) || null;
+        } catch (e) {}
+      }
+      if (!el && anchor.outerHTML) {
+        el = Array.prototype.find.call(document.querySelectorAll("body *"), function (n) {
+          return n.outerHTML === anchor.outerHTML;
+        }) || null;
+      }
+      return el || null;
+    }
+
+    function highlight(el) {
+      if (!el) { hiEl.style.display = "none"; return; }
+      var r = el.getBoundingClientRect();
+      hiEl.style.left = r.left + "px"; hiEl.style.top = r.top + "px";
+      hiEl.style.width = r.width + "px"; hiEl.style.height = r.height + "px";
+      hiEl.style.display = "block";
+    }
+    function flashHighlight(el) {
+      highlight(el);
+      window.clearTimeout(flashHighlight._t);
+      flashHighlight._t = window.setTimeout(function () { if (!armed) hiEl.style.display = "none"; }, 1200);
+    }
+
+    var flashMsg = null;
+    function flash(msg) { flashMsg = msg; renderPill(); window.clearTimeout(flash._t); flash._t = window.setTimeout(function () { flashMsg = null; renderPill(); }, 2200); }
+
+    function renderPill() {
+      var unsent = pins.filter(function (p) { return !p.sent; }).length;
+      var drifted = pins.filter(function (p) { return p.drifted; }).length;
+      var main, sub;
+      if (disabled) { main = "✦ artifact no longer live"; sub = "the lane was reset"; }
+      else if (armed) { main = "✦ click an element"; sub = "esc to cancel"; }
+      else {
+        main = "✦ comments (" + pins.length + ")";
+        var bits = ["c add"];
+        if (unsent > 0) bits.push("s send " + unsent);
+        if (pins.length > 0) bits.push("j/k cycle");
+        sub = bits.join(" · ");
+      }
+      if (flashMsg) sub = flashMsg;
+      if (drifted > 0 && !flashMsg) sub += " · " + drifted + " drifted";
+      pillEl.innerHTML = "<b>" + main + "</b><span class='kfb-sub'>" + sub + "</span>";
+    }
+
+    // ── arm / disarm pin mode ──────────────────────────────────────────────
+    function arm() { if (disabled) return; armed = true; renderPill(); }
+    function disarm() { armed = false; hiEl.style.display = "none"; renderPill(); maybeDeferredReload(); }
+
+    function onMove(e) {
+      if (!armed) return;
+      var el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el || inOverlay(el)) { hiEl.style.display = "none"; return; }
+      highlight(el);
+    }
+    function onClick(e) {
+      if (!armed) return;
+      var el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el || inOverlay(el)) return;
+      e.preventDefault(); e.stopPropagation();
+      armed = false;
+      var sel = "";
+      try { sel = String(window.getSelection ? window.getSelection() : "").trim(); } catch (x) {}
+      draft = { anchor: buildAnchor(el), quote: sel ? cap(sel, QUOTE_MAX) : undefined, body: "" };
+      openComposer();
+    }
+
+    // ── composer ───────────────────────────────────────────────────────────
+    function openComposer() {
+      if (!draft) return;
+      var a = draft.anchor;
+      tgtEl.textContent = (a.cssSelector || a.tagChain.join(">")) + (draft.quote ? '  “' + cap(draft.quote, 48) + '”' : "");
+      textEl.value = draft.body || "";
+      boxEl.style.display = "block";
+      hiEl.style.display = "none";
+      var el = resolveAnchor(a); if (el) highlight(el);
+      renderPill();
+      textEl.focus();
+    }
+    function closeComposer() { boxEl.style.display = "none"; renderPill(); }
+    function saveComposer() {
+      if (!draft) { closeComposer(); return; }
+      var body = cap(textEl.value.trim(), BODY_MAX);
+      if (!body) { flash("comment is empty"); return; }
+      pinSeq += 1;
+      pins.push({
+        id: "c-" + Date.now() + "-" + Math.random().toString(16).slice(2, 8),
+        pinNumber: pinSeq, body: body, quote: draft.quote, anchor: draft.anchor,
+        createdAt: Date.now(), sent: false, drifted: false
+      });
+      draft = null; persist(); closeComposer(); maybeDeferredReload();
+    }
+    function cancelComposer() { draft = null; persist(); closeComposer(); hiEl.style.display = "none"; maybeDeferredReload(); }
+
+    // ── send the unsent batch (idempotent on batchId) ──────────────────────
+    function sendBatch() {
+      if (disabled) return;
+      var unsent = pins.filter(function (p) { return !p.sent && !p.drifted; });
+      if (!unsent.length) { flash("nothing to send"); return; }
+      if (!batchId) batchId = "b-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+      persist();
+      var payload = {
+        batchId: batchId,
+        comments: unsent.map(function (p) {
+          return { id: p.id, pinNumber: p.pinNumber, body: p.body, quote: p.quote, anchor: p.anchor, createdAt: p.createdAt };
+        })
+      };
+      flash("sending…");
+      fetch(FEED, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+        .then(function (res) {
+          if (res.ok) {
+            unsent.forEach(function (p) { p.sent = true; });
+            batchId = null; persist();
+            flash("queued " + payload.comments.length + " ✓");
+          } else if (res.status === 409) { flash("lane busy — press s to retry"); }
+          else if (res.status === 410) { disabled = true; renderPill(); flash("this lane was reset"); }
+          else if (res.status === 413) { flash("too large — trim a comment"); }
+          else if (res.status === 503) { flash("queued — retrying, press s"); }
+          else { flash("send failed (" + res.status + ")"); }
+        })
+        .catch(function () { flash("offline — press s to retry"); });
+    }
+
+    // ── j/k cycle existing pins ────────────────────────────────────────────
+    function cyclePins(dir) {
+      if (!pins.length) return;
+      cycleIdx = (cycleIdx + dir + pins.length) % pins.length;
+      var pin = pins[cycleIdx];
+      var el = resolveAnchor(pin.anchor);
+      if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); flashHighlight(el); }
+      flash("pin #" + pin.pinNumber + ": " + cap(pin.body, 40));
+    }
+
+    // ── live-reload poll (hash change → reload, deferred while composing) ───
+    function composing() { return boxEl.style.display === "block" || armed; }
+    function maybeDeferredReload() { if (pendingReload && !composing()) { location.reload(); } }
+    function poll() {
+      if (disabled) return;
+      fetch(STATE, { cache: "no-store" }).then(function (res) {
+        if (res.status === 404 || res.status === 410) { disabled = true; renderPill(); return; }
+        if (!res.ok) return;
+        return res.json();
+      }).then(function (st) {
+        if (!st) return;
+        if (!st.registered) {
+          // swept (harness closed) or revoked (lane close/#new) — the artifact is
+          // no longer live. Keep the captured comments visible, but block submit.
+          disabled = true; renderPill(); return;
+        }
+        if (lastHash === null) { lastHash = st.hash; return; }
+        if (st.hash && st.hash !== lastHash) {
+          lastHash = st.hash; pendingReload = st.hash;
+          if (!composing()) location.reload();
+        }
+      }).catch(function () { /* server gone — stop silently; manual refresh works */ });
+    }
+
+    // ── reconcile loaded pins against the current DOM (drift) ──────────────
+    pins.forEach(function (p) { p.drifted = !resolveAnchor(p.anchor); });
+    if (draft) openComposer();
+
+    // ── events ──────────────────────────────────────────────────────────────
+    document.addEventListener("mousemove", onMove, true);
+    document.addEventListener("click", onClick, true);
+    pillEl.addEventListener("click", function () { if (disabled) return; if (armed) disarm(); else arm(); });
+    ROOT.querySelector("#kfb-save").addEventListener("click", saveComposer);
+    ROOT.querySelector("#kfb-cancel").addEventListener("click", cancelComposer);
+    textEl.addEventListener("input", function () { if (draft) { draft.body = textEl.value; persist(); } });
+    document.addEventListener("keydown", function (e) {
+      if (boxEl.style.display === "block") {
+        if (e.key === "Escape") { e.preventDefault(); cancelComposer(); }
+        else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveComposer(); }
+        return;
+      }
+      // ignore when the user is typing in the artifact's own inputs
+      var t = e.target;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || (t && t.isContentEditable)) return;
+      if (e.key === "Escape" && armed) { e.preventDefault(); disarm(); }
+      else if (e.key === "c" && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); arm(); }
+      else if (e.key === "s" && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); sendBatch(); }
+      else if (e.key === "j") { e.preventDefault(); cyclePins(1); }
+      else if (e.key === "k") { e.preventDefault(); cyclePins(-1); }
+    }, true);
+    window.addEventListener("scroll", function () { if (armed) hiEl.style.display = "none"; }, true);
+
+    renderPill();
+    poll();
+    setInterval(poll, 2500);
+  })();
+</script>
 </body>
 </html>
