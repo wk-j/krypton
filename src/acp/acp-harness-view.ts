@@ -700,6 +700,14 @@ const STICK_THRESHOLD_PX = 32;
 
 const METRICS_POLL_MS = 2000;
 
+// Braille spinner frames driven by a single JS interval (mirrors the agent
+// view's SPINNER_FRAMES). A shared frame counter, re-applied to every spinner
+// element on each tick, keeps the glyph continuous across DOM rebuilds — unlike
+// a CSS animation, which restarts whenever its host element is recreated (the 2s
+// metrics-poll head rebuild, the 1s composer tick), reading as a stutter / snap.
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_INTERVAL_MS = 80;
+
 export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
   { key: '+', label: 'Add Lane', group: 'Harness' },
   { key: '_', label: 'Close Active Lane', group: 'Harness', effect: 'danger' },
@@ -1089,6 +1097,8 @@ export class AcpHarnessView implements ContentView {
   private toolTickTimer: number | null = null;
   private metricsBySession = new Map<number, AcpLaneMetrics>();
   private metricsTimer: number | null = null;
+  private spinnerTimer: number | null = null;
+  private spinnerFrame = 0;
   private metricsPanelOpen = false;
   private pickerOpen = false;
   private pickerCursor = 0;
@@ -1205,6 +1215,7 @@ export class AcpHarnessView implements ContentView {
     // mention / review / peer_send paths don't have to remember to call this
     // themselves. Idempotent and cheap.
     this.updateComposerTick();
+    this.updateSpinnerTicker();
   }
 
   private buildLaneHost(): LaneHost {
@@ -2286,6 +2297,7 @@ export class AcpHarnessView implements ContentView {
     this.publishReviews(0);
     this.stopComposerTick();
     this.stopMetricsTick();
+    this.stopSpinnerTicker();
     if (this.toolTickTimer !== null) {
       window.clearInterval(this.toolTickTimer);
       this.toolTickTimer = null;
@@ -6560,8 +6572,7 @@ export class AcpHarnessView implements ContentView {
     }
     this.composerEl.className =
       `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}` +
-      `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}` +
-      `${lane.status === 'busy' ? ' acp-harness__composer--running' : ''}`;
+      `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}`;
     const chip = this.chip ?? this.composerStatusChip(lane);
     const chipClass = `acp-harness__memory-chip${!this.chip && lane.status === 'busy' ? ' acp-harness__memory-chip--running' : ''}`;
     const projectStatus = this.renderComposerProjectStatus();
@@ -6604,7 +6615,9 @@ export class AcpHarnessView implements ContentView {
       palette +
       `<div class="acp-harness__input-line">` +
       `<span class="acp-harness__lane-tag">${esc(lane.displayName)}</span>` +
-      `<span class="acp-harness__prompt">›</span>` +
+      `<span class="acp-harness__prompt">${lane.status === 'busy'
+        ? `<span class="acp-harness__spinner">${SPINNER_FRAMES[0]}</span>`
+        : SPINNER_FRAMES[0]}</span>` +
       `<span class="acp-harness__input">${esc(before)}<span class="acp-harness__caret">█</span>${esc(after)}</span>` +
       `<span class="acp-harness__help-hint">? help</span></div>`;
   }
@@ -6663,6 +6676,35 @@ export class AcpHarnessView implements ContentView {
     if (this.composerTickTimer === null) return;
     window.clearInterval(this.composerTickTimer);
     this.composerTickTimer = null;
+  }
+
+  /** Run a single braille-spinner interval whenever any lane is busy, advancing
+   *  one shared frame counter and writing the glyph to every `.acp-harness__spinner`
+   *  element in the view. Because the frame counter lives on the instance (not on
+   *  the DOM nodes) and is re-applied to whatever spinners currently exist, the
+   *  metrics-poll head rebuild and the composer tick can recreate those nodes
+   *  without resetting the animation — the glyph just continues from the live
+   *  frame on the next tick. */
+  private updateSpinnerTicker(): void {
+    const anyBusy = this.lanes.some((lane) => lane.status === 'busy');
+    if (anyBusy && this.spinnerTimer === null) {
+      this.spinnerTimer = window.setInterval(() => this.tickSpinner(), SPINNER_INTERVAL_MS);
+    } else if (!anyBusy) {
+      this.stopSpinnerTicker();
+    }
+  }
+
+  private tickSpinner(): void {
+    this.spinnerFrame = (this.spinnerFrame + 1) % SPINNER_FRAMES.length;
+    const glyph = SPINNER_FRAMES[this.spinnerFrame];
+    const spinners = this.element.querySelectorAll<HTMLElement>('.acp-harness__spinner');
+    for (const el of spinners) el.textContent = glyph;
+  }
+
+  private stopSpinnerTicker(): void {
+    if (this.spinnerTimer === null) return;
+    window.clearInterval(this.spinnerTimer);
+    this.spinnerTimer = null;
   }
 
   private updateToolTick(): void {
@@ -10777,9 +10819,14 @@ function statusIconId(status: HarnessLaneStatus): string {
 // Row-1 leading status glyph as an SVG, in a state-tinted wrapper so CSS can
 // colour idle/busy/permission/peer/error distinctly (was Unicode · ○ ● ! ⇆ ×).
 function renderLaneSymbol(status: HarnessLaneStatus): string {
+  // busy → braille spinner glyph advanced by the JS ticker (tickSpinner); every
+  // other status → static SVG status icon.
+  const inner = status === 'busy'
+    ? `<span class="acp-harness__spinner">${SPINNER_FRAMES[0]}</span>`
+    : harnessIcon(statusIconId(status));
   return (
     `<span class="acp-harness__lane-symbol acp-harness__lane-symbol--${status}">` +
-    harnessIcon(statusIconId(status)) +
+    inner +
     `</span>`
   );
 }

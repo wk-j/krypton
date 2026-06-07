@@ -134,9 +134,10 @@
   color: var(--acp-lane-accent, #8effb0);
 }
 
-/* Status-glyph tints. busy is left alone (its `color: transparent` + spinner
-   ::before below win on specificity); awaiting_peer is already purple via a
-   `.acp-harness__lane--awaiting_peer` rule. Only permission + error need a tint. */
+/* Status-glyph tints. busy renders the JS spinner glyph (tinted to the lane
+   accent by a `.acp-harness__lane--busy` rule below); awaiting_peer is already
+   purple via a `.acp-harness__lane--awaiting_peer` rule. Only permission + error
+   need a tint. */
 .acp-harness__lane-symbol--needs_permission {
   color: #ffd166;
 }
@@ -2284,20 +2285,19 @@
   position: relative;
   width: 1ch;
   text-align: center;
-  color: transparent;
-}
-
-.acp-harness__prompt::before {
-  content: '\2807';
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
   text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 40%, transparent);
-  animation: acp-harness-lane-spin 0.8s steps(1, end) infinite;
-  animation-play-state: paused;
+}
+
+/* Braille spinner glyph — frames are advanced by a single JS interval (see
+   SPINNER_FRAMES in acp-harness-view.ts), NOT a CSS animation. A CSS @keyframes
+   restarts whenever its host element is recreated, and both the lane head (2s
+   metrics poll) and the composer (1s tick) rebuild their innerHTML — which made
+   the old ::before spinner snap back to frame 0 and stutter. A JS ticker keeps a
+   continuous frame counter and re-applies it to whatever spinner elements exist,
+   so DOM rebuilds no longer reset the animation. */
+.acp-harness__spinner {
+  color: inherit;
 }
 
 .acp-harness__input {
@@ -2311,16 +2311,12 @@
   color: rgba(216, 232, 216, 0.42);
 }
 
-.acp-harness__composer--command .acp-harness__prompt::before {
+.acp-harness__composer--command .acp-harness__prompt {
   color: #ffd166;
 }
 
 .acp-harness__composer--command .acp-harness__caret {
   display: none;
-}
-
-.acp-harness__composer--running .acp-harness__prompt::before {
-  animation-play-state: running;
 }
 
 .acp-harness__composer--memory .acp-harness__input-line {
@@ -2383,35 +2379,7 @@
 }
 
 .acp-harness__lane--busy .acp-harness__lane-symbol {
-  position: relative;
-  color: transparent;
-  text-shadow: none;
-}
-
-.acp-harness__lane--busy .acp-harness__lane-symbol::before {
-  content: '\2807';
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   color: var(--acp-lane-accent, var(--agent-accent, #0cf));
-  animation: acp-harness-lane-spin 0.8s steps(1, end) infinite;
-}
-
-/* Even 8-frame braille perimeter rotation. Every frame holds for exactly one
-   12.5% slice and 100% == 0%, so the loop wraps seamlessly — no doubled frame
-   (the old \2807 sat on 0/87/100%, holding 2x and reading as a hitch/stop). */
-@keyframes acp-harness-lane-spin {
-  0%    { content: '\280B'; } /* ⠋ */
-  12.5% { content: '\2819'; } /* ⠙ */
-  25%   { content: '\2839'; } /* ⠹ */
-  37.5% { content: '\2838'; } /* ⠸ */
-  50%   { content: '\283C'; } /* ⠼ */
-  62.5% { content: '\2834'; } /* ⠴ */
-  75%   { content: '\2826'; } /* ⠦ */
-  87.5% { content: '\2827'; } /* ⠧ */
-  100%  { content: '\280B'; } /* ⠋ */
 }
 
 @keyframes acp-harness-busy-pulse {
