@@ -126,6 +126,13 @@
 .acp-review__col-when { width: 124px; }
 .acp-review__col-num { width: 84px; text-align: center; }
 
+/* Header labels carry the same hue as their column's numbers (block red, warn
+   amber) so the colour cue reads without an emoji glyph — kept dim to stay in
+   the muted header register. Colour labels the KIND of finding, not a verdict
+   (ADR-0004). */
+.acp-review__col-block { color: rgba(255, 93, 108, 0.66); }
+.acp-review__col-warn { color: rgba(255, 180, 84, 0.66); }
+
 .acp-review__when {
   color: rgba(216, 232, 216, 0.5);
   white-space: nowrap;

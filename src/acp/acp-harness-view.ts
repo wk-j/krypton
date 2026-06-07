@@ -2782,8 +2782,8 @@ export class AcpHarnessView implements ContentView {
       '<th class="acp-review__col-when">round</th>' +
       '<th class="acp-review__col-subj">subject</th>' +
       '<th class="acp-review__col-num">reviewers</th>' +
-      '<th class="acp-review__col-num">🔴 block</th>' +
-      '<th class="acp-review__col-num">🟡 warn</th>' +
+      '<th class="acp-review__col-num acp-review__col-block">block</th>' +
+      '<th class="acp-review__col-num acp-review__col-warn">warn</th>' +
       '</tr></thead>';
     const tbody = document.createElement('tbody');
     for (const row of rows) {
