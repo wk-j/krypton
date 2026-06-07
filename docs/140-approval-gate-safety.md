@@ -140,6 +140,14 @@ Per Cursor-1 review: this design intentionally keeps `acceptAllWritesForTurn` (f
 
 None blocking. Resolved: (1) `highRisk` computed in `classifyBashCommand` as a 4th field rather than a new `BashRisk` enum value, keeping `risk` category honest for telemetry; (2) blanket-write stance is a stated product call (above) the user confirms at approval.
 
+## Related
+
+- **Spec 147 (persistent permission mode)** adds an opt-in `bypass` mode that *skips* this
+  gate entirely for the Agent view, by deliberate user choice. The classifier here is
+  **unchanged** — `bypass` does not narrow `classifyBashCommand`; it just bypasses the
+  prompt. `normal`/`acceptEdits` keep this gate's full behaviour. See
+  `docs/147-persistent-permission-mode.md`.
+
 ## Out of Scope
 
 - Configurable per-command allowlist / persistent cross-session policy (Cursor-style).

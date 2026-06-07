@@ -990,6 +990,23 @@
   text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.3);
 }
 
+/* acceptEdits — gold, calmer than the red turn-armed default (spec 147) */
+.agent-view__armed--accept-edits {
+  color: var(--agent-gold);
+  background: rgba(var(--agent-gold-rgb), 0.1);
+  border-color: rgba(var(--agent-gold-rgb), 0.5);
+  text-shadow: 0 0 6px rgba(var(--agent-gold-rgb), 0.3);
+}
+
+/* bypass — the no-safety state: loud, pulsing red so it is never missed (spec 147) */
+.agent-view__armed--bypass {
+  color: var(--agent-red);
+  background: rgba(var(--agent-red-rgb), 0.18);
+  border-color: rgba(var(--agent-red-rgb), 0.8);
+  text-shadow: 0 0 8px rgba(var(--agent-red-rgb), 0.5);
+  animation: status-alert 2s ease-in-out infinite;
+}
+
 .agent-view__status-line--warn {
   color: var(--agent-gold);
   text-shadow: 0 0 6px rgba(255, 213, 79, 0.2);

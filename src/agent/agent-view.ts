@@ -8,6 +8,13 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { AgentController, type AgentEventType, type ImageContent } from './agent';
 import type { BashApprovalRequest, WriteApprovalRequest } from './tools';
+import {
+  type PermissionMode,
+  decideCommandApproval,
+  decideWriteApproval,
+  nextPermissionMode,
+  permissionModeDescription,
+} from './permission-mode';
 import type { ContentView, PaneContentType } from '../types';
 import { invoke } from '../profiler/ipc';
 
@@ -208,6 +215,10 @@ export class AgentView implements ContentView {
   private pendingCommandApprovals: PendingCommandApproval[] = [];
   private acceptAllCommandsForTurn = false;
   private rejectAllCommandsForTurn = false;
+
+  // Persistent per-lane permission mode (spec 147). Cycled with Shift+Tab,
+  // survives turn boundaries — deliberately NOT reset on agent_start. Esc clears it.
+  private permissionMode: PermissionMode = 'normal';
 
   // Last failing /check output, ready to send back to the agent.
   private lastCheckFailurePrompt: string | null = null;
@@ -733,15 +744,22 @@ export class AgentView implements ContentView {
   }
 
   private requestWriteApproval(request: WriteApprovalRequest): Promise<boolean> {
-    if (this.acceptAllWritesForTurn) {
-      this.appendWriteApprovalDom(request, true, 'accepted');
-      this.scrollToBottom();
-      return Promise.resolve(true);
-    }
-    if (this.rejectAllWritesForTurn) {
+    // Decision precedence: per-turn reject-all > persistent mode > per-turn accept-all.
+    const decision = decideWriteApproval({
+      rejectAllForTurn: this.rejectAllWritesForTurn,
+      mode: this.permissionMode,
+      acceptAllForTurn: this.acceptAllWritesForTurn,
+    });
+    if (decision === 'reject') {
       this.appendWriteApprovalDom(request, true, 'rejected');
       this.scrollToBottom();
       return Promise.resolve(false);
+    }
+    if (decision === 'accept') {
+      // Auto-accepted (per-turn or mode) — still append a compact record for auditability.
+      this.appendWriteApprovalDom(request, true, 'accepted');
+      this.scrollToBottom();
+      return Promise.resolve(true);
     }
 
     return new Promise<boolean>((resolve) => {
@@ -855,16 +873,23 @@ export class AgentView implements ContentView {
   }
 
   private requestCommandApproval(request: BashApprovalRequest): Promise<boolean> {
-    // Armed auto-run never covers high-risk commands — always prompt those.
-    if (this.acceptAllCommandsForTurn && !request.highRisk) {
-      this.appendCommandApprovalDom(request, true, 'accepted');
-      this.scrollToBottom();
-      return Promise.resolve(true);
-    }
-    if (this.rejectAllCommandsForTurn) {
+    // Decision precedence: per-turn reject-all > bypass (any risk) > per-turn
+    // accept-all (never high-risk). acceptEdits does NOT cover commands.
+    const decision = decideCommandApproval({
+      rejectAllForTurn: this.rejectAllCommandsForTurn,
+      mode: this.permissionMode,
+      acceptAllForTurn: this.acceptAllCommandsForTurn,
+      highRisk: request.highRisk,
+    });
+    if (decision === 'reject') {
       this.appendCommandApprovalDom(request, true, 'rejected');
       this.scrollToBottom();
       return Promise.resolve(false);
+    }
+    if (decision === 'accept') {
+      this.appendCommandApprovalDom(request, true, 'accepted');
+      this.scrollToBottom();
+      return Promise.resolve(true);
     }
 
     return new Promise<boolean>((resolve) => {
@@ -1867,12 +1892,35 @@ export class AgentView implements ContentView {
   onKeyDown(e: KeyboardEvent): boolean {
     // Esc disarms any armed turn-wide auto-approval first — works in every
     // state, even with no pending rows left, and beats mention/ac/scroll.
-    if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey && this.isAnyTurnApprovalArmed()) {
+    if (
+      e.key === 'Escape' &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      (this.isAnyTurnApprovalArmed() || this.permissionMode !== 'normal')
+    ) {
       this.disarmTurnApprovals();
       return true;
     }
     if (this.handleWriteApprovalKey(e)) return true;
     if (this.handleCommandApprovalKey(e)) return true;
+    // Shift+Tab cycles the persistent permission mode — gated on both popups being
+    // closed so it never steals the autocomplete/mention reverse-cycle. Works in
+    // input and scroll state alike.
+    if (
+      e.key === 'Tab' &&
+      e.shiftKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      !this.mention.active &&
+      this.acMatches.length === 0
+    ) {
+      this.permissionMode = nextPermissionMode(this.permissionMode);
+      this.renderArmedIndicator();
+      this.showSystemMessage(`permission mode: ${permissionModeDescription(this.permissionMode)}`);
+      return true;
+    }
     if (
       this.lastCheckFailurePrompt &&
       !this.controller.isRunning &&
@@ -2396,30 +2444,48 @@ export class AgentView implements ContentView {
     );
   }
 
-  /** Clears all turn-wide approval flags. Returns true if any was set. */
+  /** Clears all turn-wide approval flags AND the persistent permission mode.
+   *  Returns true if any was set. */
   private disarmTurnApprovals(): boolean {
-    if (!this.isAnyTurnApprovalArmed()) return false;
+    const hadTurn = this.isAnyTurnApprovalArmed();
+    const hadMode = this.permissionMode !== 'normal';
+    if (!hadTurn && !hadMode) return false;
     this.acceptAllWritesForTurn = false;
     this.rejectAllWritesForTurn = false;
     this.acceptAllCommandsForTurn = false;
     this.rejectAllCommandsForTurn = false;
+    this.permissionMode = 'normal';
     this.renderArmedIndicator();
     this.showSystemMessage('auto-approval disarmed');
     return true;
   }
 
-  /** Shows/hides the status-line armed segment, naming what is live. */
+  /** Shows/hides the status-line armed segment, naming what is live. Folds in the
+   *  persistent permission mode: bypass (loud red) wins over the per-turn labels;
+   *  acceptEdits (gold) shows only when nothing per-turn is armed. */
   private renderArmedIndicator(): void {
     const autoFiles = this.acceptAllWritesForTurn;
     const autoCmds = this.acceptAllCommandsForTurn;
     const blocking = this.rejectAllWritesForTurn || this.rejectAllCommandsForTurn;
     let label = '';
-    if (autoFiles || autoCmds) {
+    let variant: 'bypass' | 'accept-edits' | '' = '';
+    if (this.permissionMode === 'bypass') {
+      label = '⚠ BYPASS · ⇧⇥/esc';
+      variant = 'bypass';
+    } else if (autoFiles || autoCmds) {
       const what = autoFiles && autoCmds ? 'FILES+CMDS' : autoFiles ? 'FILES' : 'CMDS';
       label = `⚠ AUTO-RUN ${what} · esc`;
     } else if (blocking) {
       label = '⚠ AUTO-BLOCK · esc';
+    } else if (this.permissionMode === 'acceptEdits') {
+      label = '◆ auto-edit · ⇧⇥/esc';
+      variant = 'accept-edits';
     }
+    this.statusArmedEl.classList.toggle('agent-view__armed--bypass', variant === 'bypass');
+    this.statusArmedEl.classList.toggle(
+      'agent-view__armed--accept-edits',
+      variant === 'accept-edits',
+    );
     if (label) {
       this.statusArmedEl.textContent = label;
       this.statusArmedEl.style.display = '';

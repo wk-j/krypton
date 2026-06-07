@@ -114,7 +114,7 @@ Skills in `.claude/skills/` define repeatable workflows. Load the appropriate sk
 
 - `DESIGN.md` — Visual identity spec for the default Krypton Dark cyberpunk aesthetic. Load when adding UI components, modifying chrome, or verifying visual consistency. Validate with `npx @google/design.md lint DESIGN.md`
 - `DESIGN.nasa.md` — Alt aesthetic spec for the Vault Viewer (`.krypton-vault`, `src/styles/vault-view.css`): NASA Mission Control retro-futurism
-- `DESIGN.amber.md` — Alt aesthetic spec for the Agent view (`.krypton-agent`, `src/styles/agent.css`): warm amber phosphor cassette futurism
+- `DESIGN.amber.md` — Alt aesthetic spec for the Agent view (`.krypton-agent`, `src/styles/agent.css`): warm amber phosphor cassette futurism. The Agent view has a persistent per-lane permission mode cycled with `Shift+Tab` — `normal` → `acceptEdits` (auto-accept writes) → `bypass` (auto-accept everything incl. high-risk) — that survives turn boundaries; decision logic in `src/agent/permission-mode.ts`, classifier untouched (spec 147).
 - `docs/PROGRESS.md` — **Update this** when completing milestone tasks
 - `docs/04-architecture.md` — System architecture, DOM structure, module responsibilities
 - `docs/05-data-flow.md` — How keystrokes, resize, and workspace switching flow through the system
