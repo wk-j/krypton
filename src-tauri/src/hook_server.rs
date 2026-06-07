@@ -3,11 +3,12 @@
 // them as Tauri events to the frontend.
 
 use axum::{
+    body::Body,
     extract::{Path, State as AxumState},
-    http::StatusCode,
+    http::{header, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
-        IntoResponse,
+        IntoResponse, Response,
     },
     routing::{get, post},
     Json, Router,
@@ -179,6 +180,47 @@ pub struct HookServer {
     /// Monotonic artifact id sequence (resets per app run — artifact paths are
     /// swept on close and the random suffix keeps them unguessable).
     next_artifact_seq: AtomicU64,
+    /// Spec 149: per-artifact feedback tokens, keyed by the unguessable token
+    /// baked into the served artifact URL. The token is the sole capability for
+    /// `GET /artifact/<token>` + `POST /artifact/feedback/<token>`. `revoked`
+    /// is set (not removed) on lane close/`#new` so a later request reports
+    /// `410 revoked` rather than an ambiguous `404`.
+    feedback_tokens: std::sync::Mutex<HashMap<String, FeedbackToken>>,
+}
+
+/// Spec 149: registry record for an artifact feedback token. Maps the
+/// browser-held capability back to the owning harness/lane/artifact so the
+/// HTTP handlers can resolve the file + route the bus round-trip.
+#[derive(Debug, Clone)]
+struct FeedbackToken {
+    harness_id: String,
+    /// Owning lane label at issue time. The frontend resolves label → live lane;
+    /// kept here so the emitted event carries it (not a dynamic display lookup).
+    lane_label: String,
+    artifact_id: String,
+    /// Forward-only: a revoked token never un-revokes (lane close/`#new`).
+    revoked: bool,
+}
+
+/// Outcome of resolving a feedback token at request time (spec 149).
+enum FeedbackLookup {
+    /// No such token → `404` (no existence leak).
+    Unknown,
+    /// Token revoked or its artifact swept → `410`.
+    Revoked,
+    Found(FeedbackServeInfo),
+}
+
+/// The data the artifact HTTP handlers need once a token resolves.
+struct FeedbackServeInfo {
+    harness_id: String,
+    lane_label: String,
+    artifact_id: String,
+    title: String,
+    path: PathBuf,
+    /// The harness scratch root, for re-running `validate_artifact_file`.
+    root: PathBuf,
+    registered: bool,
 }
 
 impl Default for HookServer {
@@ -194,6 +236,7 @@ impl Default for HookServer {
             triage_equipped: std::sync::Mutex::new(HashMap::new()),
             artifacts: std::sync::Mutex::new(HashMap::new()),
             next_artifact_seq: AtomicU64::new(1),
+            feedback_tokens: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }
@@ -211,6 +254,7 @@ impl HookServer {
             triage_equipped: std::sync::Mutex::new(HashMap::new()),
             artifacts: std::sync::Mutex::new(HashMap::new()),
             next_artifact_seq: AtomicU64::new(1),
+            feedback_tokens: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -513,6 +557,12 @@ impl HookServer {
                 }
             }
         }
+        // spec 149: the artifacts are gone — drop every feedback token for this
+        // harness so the map does not accumulate dead tokens across a session.
+        self.feedback_tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|_, t| t.harness_id != harness_id);
     }
 
     /// `artifact_new` — allocate an id, issue a destination path inside the
@@ -580,11 +630,22 @@ impl HookServer {
         let tail = format!(".krypton/artifacts/{harness_id}/{lane_dir_name}/{artifact_id}.html");
         let path_str = path.to_string_lossy().to_string();
 
+        // spec 149 — bake the feedback channel into the scaffold at issue time:
+        // an unguessable per-artifact token (the sole capability for the served
+        // URL + feedback endpoint) and the loopback base URL the page POSTs to.
+        // The server is already listening when a lane can call artifact_new, so
+        // the port is known here.
+        let feedback_token = feedback_token();
+        let feedback_base_url = format!("http://127.0.0.1:{}", self.get_port());
+
         // spec 134 — seed a styled scaffold so the lane edits (not authors from
         // scratch) and output has a consistent baseline. Atomic temp+rename so a
         // failed/interrupted write never leaves a truncated scaffold, and fail
         // closed (no pending entry / no issued path) if it cannot be written.
-        let html = ARTIFACT_SCAFFOLD.replace("{{title}}", &html_escape(title));
+        let html = ARTIFACT_SCAFFOLD
+            .replace("{{title}}", &html_escape(title))
+            .replace("{{feedbackToken}}", &feedback_token)
+            .replace("{{feedbackBaseUrl}}", &feedback_base_url);
         write_artifact_scaffold(&path, &html)
             .map_err(|e| format!("could not seed artifact scaffold: {e}"))?;
 
@@ -599,8 +660,22 @@ impl HookServer {
                 state: ArtifactState::Pending,
                 size: 0,
                 hash: String::new(),
+                feedback_token: feedback_token.clone(),
             },
         );
+        drop(artifacts);
+        self.feedback_tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
+                feedback_token.clone(),
+                FeedbackToken {
+                    harness_id: harness_id.to_string(),
+                    lane_label: lane_label.to_string(),
+                    artifact_id: artifact_id.clone(),
+                    revoked: false,
+                },
+            );
 
         Ok(json!({
             "id": artifact_id,
@@ -609,6 +684,7 @@ impl HookServer {
             "state": "pending",
             "title": title,
             "content_marker": ARTIFACT_CONTENT_MARKER,
+            "feedbackToken": feedback_token,
         }))
     }
 
@@ -682,8 +758,14 @@ impl HookServer {
             );
         }
         let path = entry.path.clone();
+        let token = entry.feedback_token.clone();
         store.entries.remove(id);
         drop(artifacts);
+        // spec 149: drop the cancelled artifact's feedback token.
+        self.feedback_tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&token);
         // Best-effort: the file may not exist yet (new → cancel without write).
         let _ = std::fs::remove_file(&path);
         Ok(json!({ "ok": true, "id": id }))
@@ -703,12 +785,24 @@ impl HookServer {
             .map(|e| e.id.clone())
             .collect();
         let mut paths = Vec::new();
+        let mut tokens = Vec::new();
         for id in &pending_ids {
             if let Some(entry) = store.entries.remove(id) {
+                tokens.push(entry.feedback_token);
                 paths.push(entry.path);
             }
         }
         drop(artifacts);
+        // spec 149: drop the cancelled artifacts' feedback tokens.
+        {
+            let mut map = self
+                .feedback_tokens
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            for token in &tokens {
+                map.remove(token);
+            }
+        }
         for path in paths {
             let _ = std::fs::remove_file(&path);
         }
@@ -726,6 +820,66 @@ impl HookServer {
     ) -> Result<Value, String> {
         // Same validation as register's idempotent refresh path.
         self.artifact_register(harness_id, lane_label, id)
+    }
+
+    /// Spec 149: forward-only revoke of every feedback token issued to a lane
+    /// (lane close / `#new`). Subsequent `GET`/`state`/`feedback` for those
+    /// tokens report `410 revoked`. `#restart` does NOT call this — the
+    /// respawned session keeps the channel. Returns the number revoked.
+    pub fn revoke_feedback_tokens_for_lane(&self, harness_id: &str, lane_label: &str) -> usize {
+        let mut tokens = self
+            .feedback_tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut count = 0;
+        for entry in tokens.values_mut() {
+            if entry.harness_id == harness_id && entry.lane_label == lane_label && !entry.revoked {
+                entry.revoked = true;
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Resolve a feedback token to the served artifact's location + metadata.
+    /// Returns the lookup outcome; a token whose artifact entry has since been
+    /// swept is reported as `Revoked` (the artifact is no longer live).
+    fn lookup_feedback_token(&self, token: &str) -> FeedbackLookup {
+        let (harness_id, lane_label, artifact_id) = {
+            let tokens = self
+                .feedback_tokens
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            match tokens.get(token) {
+                None => return FeedbackLookup::Unknown,
+                Some(t) if t.revoked => return FeedbackLookup::Revoked,
+                Some(t) => (
+                    t.harness_id.clone(),
+                    t.lane_label.clone(),
+                    t.artifact_id.clone(),
+                ),
+            }
+        };
+        let artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(store) = artifacts.get(&harness_id) else {
+            return FeedbackLookup::Revoked;
+        };
+        let Some(entry) = store.entries.get(&artifact_id) else {
+            // Entry swept (harness closed) while the token map still holds it.
+            return FeedbackLookup::Revoked;
+        };
+        let Some(root) = store.project_dir.as_deref().and_then(artifacts_root) else {
+            return FeedbackLookup::Revoked;
+        };
+        FeedbackLookup::Found(FeedbackServeInfo {
+            harness_id,
+            lane_label,
+            artifact_id,
+            title: entry.title.clone(),
+            path: entry.path.clone(),
+            root,
+            registered: entry.state == ArtifactState::RegisteredLive,
+        })
     }
 
     pub fn list_harness_mcp_stats(&self, harness_id: &str) -> Vec<McpLaneStatsEntry> {
@@ -843,6 +997,16 @@ const ARTIFACT_SCAFFOLD: &str = include_str!("../resources/artifact-scaffold.htm
 /// Stable anchor the lane orients its first edit on (returned by `artifact_new`).
 const ARTIFACT_CONTENT_MARKER: &str = "main[data-artifact-content]";
 
+// ─── Artifact inline feedback (spec 149) ────────────────────────────────────
+/// Max comments accepted in a single feedback batch POST. Over → `413`.
+const FEEDBACK_COMMENTS_MAX: usize = 50;
+/// Max chars for a single comment `body`. Over → `413`.
+const FEEDBACK_BODY_MAX: usize = 4000;
+/// Max chars for a comment's selected-text `quote`. Over → `413`.
+const FEEDBACK_QUOTE_MAX: usize = 2000;
+/// Max chars for a comment anchor's `outerHTML` snapshot. Over → `413`.
+const FEEDBACK_OUTERHTML_MAX: usize = 8000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ArtifactState {
     Pending,
@@ -862,6 +1026,10 @@ struct ArtifactEntry {
     state: ArtifactState,
     size: u64,
     hash: String,
+    /// Spec 149: unguessable per-artifact feedback token, baked into the served
+    /// scaffold and the registry. Empty only for entries created before this
+    /// field existed (none at runtime — always set at `artifact_new`).
+    feedback_token: String,
 }
 
 #[derive(Debug, Default)]
@@ -986,6 +1154,209 @@ async fn handle_harness_memory_mcp(
         }
         (None, Ok(_)) => StatusCode::ACCEPTED.into_response(),
         (None, Err(error)) => Json(json!({ "jsonrpc": "2.0", "error": error })).into_response(),
+    }
+}
+
+/// GET /artifact/:token — serve the registered artifact's HTML (spec 149).
+/// Replaces the old `file://` open: the OS browser loads this URL so the page
+/// is same-origin with the feedback endpoint. The token in the path is the sole
+/// capability. Re-runs the full spec-133 `validate_artifact_file` policy on
+/// every serve (symlink/hardlink/component/size checks) to bound the TOCTOU
+/// window, and serves with `no-store` so a refresh re-checks the registry and
+/// the token never persists in cache/history. GET-only; non-reflective errors.
+async fn handle_artifact_get(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    let info = match state.hook_server.lookup_feedback_token(&token) {
+        FeedbackLookup::Unknown => return StatusCode::NOT_FOUND.into_response(),
+        FeedbackLookup::Revoked => return StatusCode::GONE.into_response(),
+        FeedbackLookup::Found(info) => info,
+    };
+    // Validate-then-read: confirms the path policy and that the file fits the
+    // cap before we read it. Validation already reads+hashes; read again here so
+    // the bytes match the validated metadata closely (TOCTOU is bounded, not
+    // eliminated — accepted in the spec's risk notes).
+    if validate_artifact_file(
+        &info.root,
+        &info.path,
+        &info.artifact_id,
+        ARTIFACT_FILE_BYTES_MAX,
+    )
+    .is_err()
+    {
+        return StatusCode::GONE.into_response();
+    }
+    let body = match std::fs::read(&info.path) {
+        Ok(bytes) => bytes,
+        Err(_) => return StatusCode::GONE.into_response(),
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(body))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// GET /artifact/state/:token — the scaffold's live-reload poll (spec 149).
+/// Returns the artifact file's current hash + whether it is still registered;
+/// the page reloads when the hash changes. Re-hashes on each poll so it
+/// reflects the latest lane edit (the registry hash only updates on register).
+async fn handle_artifact_state(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    let info = match state.hook_server.lookup_feedback_token(&token) {
+        FeedbackLookup::Unknown => return StatusCode::NOT_FOUND.into_response(),
+        // Distinct from GET: the overlay disables submission on `registered:false`
+        // rather than treating a swept artifact as a hard error.
+        FeedbackLookup::Revoked => {
+            return Json(json!({ "hash": "", "registered": false })).into_response()
+        }
+        FeedbackLookup::Found(info) => info,
+    };
+    let hash = match validate_artifact_file(
+        &info.root,
+        &info.path,
+        &info.artifact_id,
+        ARTIFACT_FILE_BYTES_MAX,
+    ) {
+        Ok((_, hash)) => hash,
+        Err(_) => String::new(),
+    };
+    let mut resp = Json(json!({ "hash": hash, "registered": info.registered && !hash.is_empty() }))
+        .into_response();
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    resp
+}
+
+/// POST /artifact/feedback/:token — the browser submits a comment batch (spec
+/// 149). Validates the token + caps, then runs the synchronous bus round-trip
+/// (fresh request id → emit `acp-artifact-feedback-received` → await the
+/// frontend's accept). A 200 means the batch entered the lane's feedback queue,
+/// NOT that the lane acted on it. On bus timeout the browser may retry the same
+/// `batchId` (the frontend de-dupes), so the failure is non-success, not a
+/// silent drop.
+async fn handle_artifact_feedback(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+    Json(body): Json<Value>,
+) -> Response {
+    let info = match state.hook_server.lookup_feedback_token(&token) {
+        FeedbackLookup::Unknown => return StatusCode::NOT_FOUND.into_response(),
+        FeedbackLookup::Revoked => return StatusCode::GONE.into_response(),
+        FeedbackLookup::Found(info) => info,
+    };
+    let batch_id = body.get("batchId").and_then(|v| v.as_str()).unwrap_or("");
+    if batch_id.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "missing batchId").into_response();
+    }
+    let comments = body.get("comments").and_then(|v| v.as_array());
+    let Some(comments) = comments else {
+        return (StatusCode::BAD_REQUEST, "missing comments").into_response();
+    };
+    if comments.is_empty() {
+        return (StatusCode::BAD_REQUEST, "empty comments").into_response();
+    }
+    if comments.len() > FEEDBACK_COMMENTS_MAX {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
+    // Validate the required runtime shape BEFORE the bus round-trip. A malformed
+    // comment (no string `body`, no `anchor` object) that passed only the cap
+    // checks would later throw in the frontend prompt composer — after the batch
+    // was queued, cleared, and its batchId marked seen — silently losing the
+    // feedback and permanently de-duping every retry. Reject up front (400, no
+    // emit) so the batchId is never poisoned.
+    for c in comments {
+        let body_ok = c
+            .get("body")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        if !body_ok {
+            return (StatusCode::BAD_REQUEST, "comment missing non-empty body").into_response();
+        }
+        if !c.get("anchor").map(|a| a.is_object()).unwrap_or(false) {
+            return (StatusCode::BAD_REQUEST, "comment missing anchor object").into_response();
+        }
+    }
+    // Cap untrusted field lengths server-side (defense-in-depth alongside the
+    // scaffold's own caps) before the content ever reaches a composed prompt.
+    for c in comments {
+        let over = |key: &str, max: usize| {
+            c.get(key)
+                .and_then(|v| v.as_str())
+                .map(|s| s.chars().count() > max)
+                .unwrap_or(false)
+        };
+        if over("body", FEEDBACK_BODY_MAX)
+            || over("quote", FEEDBACK_QUOTE_MAX)
+            || c.get("anchor")
+                .map(|a| {
+                    a.get("outerHTML")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.chars().count() > FEEDBACK_OUTERHTML_MAX)
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        {
+            return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        }
+    }
+
+    let request_id = format!("fb-{}-{}", now_ms(), rand_suffix());
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state.app_handle.emit_or_log(
+        "acp-artifact-feedback-received",
+        json!({
+            "harnessId": info.harness_id,
+            "laneLabel": info.lane_label,
+            "artifactId": info.artifact_id,
+            "artifactTitle": info.title,
+            "batchId": batch_id,
+            "comments": comments,
+            "requestId": request_id,
+        }),
+    );
+    let reply = match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(_)) => {
+            // Listener dropped without replying — retryable.
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "retry" })),
+            )
+                .into_response();
+        }
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "retry" })),
+            )
+                .into_response();
+        }
+    };
+    let accepted = reply
+        .get("accepted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if accepted {
+        return Json(json!({ "status": "accepted" })).into_response();
+    }
+    match reply.get("reason").and_then(|v| v.as_str()) {
+        Some("revoked") => StatusCode::GONE.into_response(),
+        _ => (
+            StatusCode::CONFLICT,
+            Json(json!({ "status": "no-live-lane" })),
+        )
+            .into_response(),
     }
 }
 
@@ -1637,6 +2008,31 @@ fn rand_suffix() -> String {
     format!("{:08x}", nanos)
 }
 
+/// Spec 149: an unguessable 128-bit feedback token, hex-encoded (path-safe).
+/// This is the SOLE capability for the served artifact + its feedback endpoint,
+/// so it uses the OS CSPRNG (not the time-based `rand_suffix`). On the
+/// vanishingly rare CSPRNG failure, fall back to hashing time + a process
+/// counter so a token is still issued (degraded entropy, never panics).
+fn feedback_token() -> String {
+    let mut bytes = [0u8; 16];
+    if getrandom::getrandom(&mut bytes).is_err() {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let mut hasher = Sha256::new();
+        hasher.update(nanos.to_le_bytes());
+        hasher.update(COUNTER.fetch_add(1, Ordering::Relaxed).to_le_bytes());
+        bytes.copy_from_slice(&hasher.finalize()[..16]);
+    }
+    let mut out = String::with_capacity(32);
+    for b in bytes {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
+}
+
 // ─── Directive management (spec 124) ───────────────────────────────────────
 //
 // `directive_list` / `directive_preview` are read-only and answered directly
@@ -2124,6 +2520,7 @@ fn artifact_tool_new(
             "tail": value.get("tail"),
             "title": value.get("title"),
             "state": "pending",
+            "feedbackToken": value.get("feedbackToken"),
         }),
     );
     Ok(value)
@@ -2651,6 +3048,13 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                     "/mcp/harness/{harness_id}/lane/{lane_label}",
                     get(handle_harness_memory_mcp_sse).post(handle_harness_memory_mcp),
                 )
+                // spec 149 — artifact inline feedback. Served over loopback HTTP
+                // so the OS-browser page is same-origin with the feedback POST
+                // (no CORS, no `Origin: null`). The token in the path is the sole
+                // capability. Distinct segment counts → no route conflict.
+                .route("/artifact/{token}", get(handle_artifact_get))
+                .route("/artifact/state/{token}", get(handle_artifact_state))
+                .route("/artifact/feedback/{token}", post(handle_artifact_feedback))
                 .with_state(shared);
 
             let addr = SocketAddr::from(([127, 0, 0, 1], configured_port));
@@ -3003,6 +3407,119 @@ mod tests {
         assert!(!path.exists(), "cancel should delete the pending file");
         // register-after-cancel errors.
         assert!(server.artifact_register("hm-2", "Claude-1", &id).is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn artifact_feedback_token_lifecycle() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-fb-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.init_harness_artifacts(
+            "hm-9",
+            Some(tmp.to_string_lossy().to_string()),
+            &HashSet::new(),
+        );
+        let issued = server.artifact_new("hm-9", "Claude-1", "Pricing").unwrap();
+        let id = issued["id"].as_str().unwrap().to_string();
+        let token = issued["feedbackToken"].as_str().unwrap().to_string();
+        assert_eq!(token.len(), 32, "128-bit hex token");
+        let path = PathBuf::from(issued["path"].as_str().unwrap());
+
+        // spec 149 — the token + base URL are baked into the served scaffold
+        // (placeholders substituted, exactly like {{title}}).
+        let seeded = std::fs::read_to_string(&path).unwrap();
+        assert!(seeded.contains(&token), "token not baked into scaffold");
+        assert!(
+            !seeded.contains("{{feedbackToken}}"),
+            "feedbackToken placeholder left unsubstituted"
+        );
+        assert!(
+            seeded.contains("http://127.0.0.1:"),
+            "feedback base url missing"
+        );
+
+        // pending artifact resolves; not yet registered.
+        match server.lookup_feedback_token(&token) {
+            FeedbackLookup::Found(info) => {
+                assert_eq!(info.artifact_id, id);
+                assert_eq!(info.lane_label, "Claude-1");
+                assert!(!info.registered);
+            }
+            _ => panic!("token should resolve while pending"),
+        }
+
+        // register flips registered=true.
+        server.artifact_register("hm-9", "Claude-1", &id).unwrap();
+        match server.lookup_feedback_token(&token) {
+            FeedbackLookup::Found(info) => assert!(info.registered),
+            _ => panic!("token should resolve after register"),
+        }
+
+        // an unknown token is Unknown (→ 404, no existence leak).
+        assert!(matches!(
+            server.lookup_feedback_token("deadbeef00000000"),
+            FeedbackLookup::Unknown
+        ));
+
+        // revoke (lane close / #new) is forward-only → Revoked (→ 410).
+        assert_eq!(
+            server.revoke_feedback_tokens_for_lane("hm-9", "Claude-1"),
+            1
+        );
+        assert!(matches!(
+            server.lookup_feedback_token(&token),
+            FeedbackLookup::Revoked
+        ));
+        // idempotent: a second revoke finds nothing new to revoke.
+        assert_eq!(
+            server.revoke_feedback_tokens_for_lane("hm-9", "Claude-1"),
+            0
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn artifact_routes_do_not_conflict() {
+        // axum/matchit panics at `.route()` time on a path conflict. The three
+        // spec-149 artifact routes share the `/artifact/...` prefix with the MCP
+        // route's neighbour space; build the same router with trivial handlers to
+        // prove the patterns register together without a conflict panic.
+        async fn ok() -> &'static str {
+            "ok"
+        }
+        let _app: Router = Router::new()
+            .route("/hook", post(ok))
+            .route(
+                "/mcp/harness/{harness_id}/lane/{lane_label}",
+                get(ok).post(ok),
+            )
+            .route("/artifact/{token}", get(ok))
+            .route("/artifact/state/{token}", get(ok))
+            .route("/artifact/feedback/{token}", post(ok));
+    }
+
+    #[test]
+    fn artifact_cancel_drops_feedback_token() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-fb-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.init_harness_artifacts(
+            "hm-10",
+            Some(tmp.to_string_lossy().to_string()),
+            &HashSet::new(),
+        );
+        let issued = server.artifact_new("hm-10", "Claude-1", "scratch").unwrap();
+        let id = issued["id"].as_str().unwrap().to_string();
+        let token = issued["feedbackToken"].as_str().unwrap().to_string();
+        server.artifact_cancel("hm-10", "Claude-1", &id).unwrap();
+        // cancel removes the token entirely → Unknown (the artifact never existed
+        // for a fresh viewer), not Revoked.
+        assert!(matches!(
+            server.lookup_feedback_token(&token),
+            FeedbackLookup::Unknown
+        ));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

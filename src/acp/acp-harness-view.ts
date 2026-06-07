@@ -26,6 +26,8 @@ import type {
   ContentBlock,
   HarnessLaneStatus,
   HarnessMcpLaneStats,
+  ArtifactComment,
+  ArtifactFeedbackEnvelope,
   HarnessMemoryEntry,
   HarnessMemorySession,
   InterLaneEnvelope,
@@ -46,6 +48,7 @@ import {
   type TriageOverlayViewModel,
 } from './attention-overlay';
 import { ReviewQualityStore } from './review-quality';
+import { ArtifactFeedbackQueue } from './artifact-feedback';
 import {
   InterLaneCoordinator,
   type CoordinatorDrainContext,
@@ -384,6 +387,9 @@ interface HarnessArtifactRecord {
   state: HarnessArtifactState;
   size: number | null;
   hash: string | null;
+  /** spec 149: per-artifact feedback token, baked into the served URL. Set at
+   *  `artifact_new`; empty only for entries from a prior (pre-149) app run. */
+  feedbackToken: string;
 }
 
 interface ArtifactEventPayload {
@@ -397,6 +403,8 @@ interface ArtifactEventPayload {
   hash?: string;
   state: 'pending' | 'registered' | 'cancelled';
   registered?: boolean;
+  /** spec 149: present on the `pending` event from `artifact_new`. */
+  feedbackToken?: string;
 }
 
 const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
@@ -1095,6 +1103,10 @@ export class AcpHarnessView implements ContentView {
   /** spec 133: HTML artifact registry mirror, keyed by artifact id. */
   private artifacts = new Map<string, HarnessArtifactRecord>();
   private artifactUnlisten: UnlistenFn | null = null;
+  /** spec 149: per-lane artifact feedback queue, drained on the lane's next idle
+   *  (a dedicated queue, NOT the peer LaneInbox). Constructed in the ctor. */
+  private feedbackQueue: ArtifactFeedbackQueue;
+  private feedbackUnlisten: UnlistenFn | null = null;
   /** spec 133: artifact hint mode (open-artifact labels), active only when on. */
   private artifactHintMode = false;
   private artifactHintBuffer = '';
@@ -1206,6 +1218,22 @@ export class AcpHarnessView implements ContentView {
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
     this.coordinator = new InterLaneCoordinator(this.laneBus, this.buildLaneHost());
+    // spec 149: artifact feedback drains on the lane's next idle, like peer mail,
+    // but through its own queue (human→lane review, not lane↔lane mail).
+    // ORDERING MATTERS: construct this AFTER the coordinator. LaneBus dispatches
+    // subscribers in insertion order, and the coordinator drains peer mail without
+    // re-checking status, so it must claim a contested idle first; this queue
+    // re-checks status in its own drain and defers when the lane is already busy.
+    // If this were constructed first, a peer inbox could be emptied into a turn
+    // this queue had already claimed. (Codex-1 review W1.)
+    this.feedbackQueue = new ArtifactFeedbackQueue(this.laneBus, {
+      getLaneStatus: (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
+      artifactPath: (artifactId) => this.artifacts.get(artifactId)?.path ?? null,
+      injectFeedbackTurn: (laneId, text) => {
+        const lane = this.lanes.find((l) => l.id === laneId);
+        if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'artifact feedback');
+      },
+    });
     // spec 128: refresh the backpressure gauge (and the overlay, if open) on
     // every queue mutation the store emits.
     this.laneBus.subscribe((e) => {
@@ -1647,6 +1675,72 @@ export class AcpHarnessView implements ContentView {
         });
       },
     );
+
+    // spec 149: a browser POSTed artifact feedback. Rust blocks on this round-trip
+    // (mirrors peer_send): resolve the registry laneLabel → live lane, de-dupe by
+    // batchId, enqueue into the dedicated feedback queue, and reply with the
+    // acceptance so the POST reports a real status (not fire-and-forget).
+    this.feedbackUnlisten = await listen<{
+      harnessId?: string;
+      laneLabel: string;
+      artifactId: string;
+      artifactTitle: string;
+      batchId: string;
+      comments: ArtifactComment[];
+      requestId?: string;
+    }>('acp-artifact-feedback-received', (e) => {
+      const p = e.payload;
+      if (!this.harnessMemoryId || p.harnessId !== this.harnessMemoryId) return;
+      const reply = (result: unknown): void => {
+        if (!p.requestId) return;
+        void invoke('acp_bus_reply', { requestId: p.requestId, result }).catch((err) => {
+          console.warn('acp_bus_reply (feedback) failed', err);
+        });
+      };
+      // Resolve the registry's laneLabel → the live authoring lane. A closed /
+      // `#new`'d lane has had its token revoked in Rust (so the POST would have
+      // 410'd first); this guards the race where the lane is gone but the token
+      // lingered, replying no-live-lane → 409.
+      const lane = this.lanes.find((l) => l.displayName === p.laneLabel && l.status !== 'stopped');
+      if (!lane) {
+        reply({ accepted: false, reason: 'no_live_lane' });
+        return;
+      }
+      // Forward-only revocation guard against the close/`#new` race: the Rust
+      // token revoke is async (fire-and-forget invoke), but `dropAllArtifactsForLane`
+      // deletes the artifact RECORD synchronously. So if a feedback event for an
+      // old session is processed after the lane was reset, the record is already
+      // gone — reject rather than enqueue into the same-id/displayName successor
+      // session. (`#restart` keeps the registered record, so this passes there.)
+      const record = this.artifacts.get(p.artifactId);
+      if (!record || record.laneLabel !== p.laneLabel) {
+        reply({ accepted: false, reason: 'no_live_lane' });
+        return;
+      }
+      const envelope: ArtifactFeedbackEnvelope = {
+        kind: 'artifact_feedback',
+        batchId: p.batchId,
+        artifactId: p.artifactId,
+        artifactTitle: p.artifactTitle,
+        laneLabel: p.laneLabel,
+        comments: p.comments ?? [],
+        sentAt: Date.now(),
+      };
+      const outcome = this.feedbackQueue.accept(lane.id, envelope);
+      if (outcome === 'duplicate') {
+        // A retried POST after a bus timeout — already queued, ack idempotently.
+        reply({ accepted: true, reason: 'duplicate' });
+        return;
+      }
+      const n = envelope.comments.length;
+      this.appendTranscript(
+        lane,
+        'system',
+        `${n} comment${n === 1 ? '' : 's'} received on artifact «${p.artifactTitle}»`,
+      );
+      this.scheduleLaneRender(lane);
+      reply({ accepted: true });
+    });
 
     // spec 124: persistent config changed on disk (a directive upsert/delete
     // was approved by some harness). Reload the directive library.
@@ -2452,6 +2546,11 @@ export class AcpHarnessView implements ContentView {
       this.artifactUnlisten();
       this.artifactUnlisten = null;
     }
+    if (this.feedbackUnlisten) {
+      this.feedbackUnlisten();
+      this.feedbackUnlisten = null;
+    }
+    this.feedbackQueue.dispose();
     if (this.directivesUnlisten) {
       this.directivesUnlisten();
       this.directivesUnlisten = null;
@@ -4092,6 +4191,9 @@ export class AcpHarnessView implements ContentView {
       state: state === 'registered' ? 'registered_live' : 'pending',
       size: typeof payload.size === 'number' ? payload.size : existing?.size ?? null,
       hash: payload.hash ?? existing?.hash ?? null,
+      // spec 149: the token ships only on the `pending` event; carry it forward
+      // across the later `registered`/refresh events that omit it.
+      feedbackToken: payload.feedbackToken ?? existing?.feedbackToken ?? '',
     };
     this.artifacts.set(id, record);
     if (state === 'pending') return;
@@ -4306,10 +4408,19 @@ export class AcpHarnessView implements ContentView {
         return;
       }
     }
-    // ADR 0002: artifacts open verbatim in the user's real OS browser.
-    // encodeURI so a project path with spaces/unicode yields a valid file URL
-    // (the artifact's own components are sanitized, but the project dir is not).
-    openExternalUrl(`file://${encodeURI(card.path)}`, { external: true });
+    // ADR 0002 (amended, spec 149): artifacts open in the user's real OS browser,
+    // but served over loopback HTTP (`http://127.0.0.1:<port>/artifact/<token>`)
+    // rather than `file://` — so the page is same-origin with the feedback
+    // endpoint (inline comments) and gets a real origin for future SSE/server
+    // features. The token in the path is the capability. Fall back to `file://`
+    // only for a pre-149 record without a token (no feedback channel, still opens).
+    if (record?.feedbackToken && this.harnessMemoryPort) {
+      openExternalUrl(`http://127.0.0.1:${this.harnessMemoryPort}/artifact/${record.feedbackToken}`, {
+        external: true,
+      });
+    } else {
+      openExternalUrl(`file://${encodeURI(card.path)}`, { external: true });
+    }
     this.flashChip(`opening ${card.title}`);
   }
 
@@ -4343,12 +4454,23 @@ export class AcpHarnessView implements ContentView {
       if (record.state === 'pending') hadPending = true;
       this.artifacts.delete(id);
     }
-    if (hadPending && this.harnessMemoryId) {
+    if (!this.harnessMemoryId) return;
+    if (hadPending) {
       void invoke('acp_cancel_pending_artifacts', {
         harnessId: this.harnessMemoryId,
         laneLabel: lane.displayName,
       }).catch(() => undefined);
     }
+    // spec 149: revoke the lane's feedback tokens (pending AND registered) so a
+    // browser page left open on a closed/#new'd lane gets `410 revoked` rather
+    // than routing into a same-display-name successor. `#restart` does NOT call
+    // this path (it uses cancelPendingArtifactsForLane) — the channel survives.
+    void invoke('acp_revoke_artifact_feedback', {
+      harnessId: this.harnessMemoryId,
+      laneLabel: lane.displayName,
+    }).catch(() => undefined);
+    // Drop any queued-but-undrained feedback for the lane's now-dead session.
+    this.feedbackQueue.dropLane(lane.id);
   }
 
   private describePermission(lane: HarnessLane, permission: HarnessPermission): PermissionPayload {

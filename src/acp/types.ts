@@ -276,6 +276,49 @@ export interface InterLaneEnvelope {
   mentionPacketId?: string;
 }
 
+// Artifact inline feedback (spec 149). The browser POSTs a batch of comments
+// captured on a served HTML artifact; the harness routes them to the authoring
+// lane as a system turn. These types mirror the JSON the scaffold sends.
+export interface DomAnchor {
+  /** location.pathname at pin time (single-page artifacts: usually "/"). */
+  pathname: string;
+  /** best-effort unique selector built on click (parentElement + nth-of-type). */
+  cssSelector: string;
+  /** ancestor tag names, outermost→innermost — a fallback if the selector drifts. */
+  tagChain: string[];
+  /** ARIA name / visible label fallback. */
+  accessibleName?: string;
+  /** ARIA role, if any. */
+  role?: string;
+  /** element snapshot at pin time (capped), for drift recovery. */
+  outerHTML: string;
+}
+
+export interface ArtifactComment {
+  /** stable client id, for server-side + frontend de-dupe. */
+  id: string;
+  /** 1-based, stable per artifact ("pin #3"). */
+  pinNumber: number;
+  /** the user's comment text. */
+  body: string;
+  /** selected text inside the element, if any. */
+  quote?: string;
+  anchor: DomAnchor;
+  createdAt: number;
+}
+
+export interface ArtifactFeedbackEnvelope {
+  kind: 'artifact_feedback';
+  /** idempotency key — a retried POST with the same id is dropped. */
+  batchId: string;
+  artifactId: string;
+  artifactTitle: string;
+  /** owning lane label from the registry; the frontend resolves → live lane. */
+  laneLabel: string;
+  comments: ArtifactComment[];
+  sentAt: number;
+}
+
 export interface LaneSummary {
   laneId: string;
   displayName: string;
