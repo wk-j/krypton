@@ -133,12 +133,18 @@
 .acp-review__col-block { color: rgba(255, 93, 108, 0.66); }
 .acp-review__col-warn { color: rgba(255, 180, 84, 0.66); }
 
+/* Body cells must repeat the header column widths: thead and tbody are separate
+   `display: table` blocks under `table-layout: fixed`, so each derives its column
+   widths from its own first row. Without these the numeric columns drift out from
+   under their labels. */
 .acp-review__when {
+  width: 124px;
   color: rgba(216, 232, 216, 0.5);
   white-space: nowrap;
 }
 
 .acp-review__num {
+  width: 84px;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
