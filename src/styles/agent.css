@@ -173,7 +173,14 @@
    magic-number max-height. The inner wrapper carries the layout + clips. */
 .agent-view__logo {
   display: grid;
-  grid-template-rows: 1fr;
+  /* minmax(0, Nfr), NOT a bare Nfr: a bare `0fr` track expands to
+     `minmax(auto, 0fr)`, and WebKit (WKWebView) refuses to shrink that `auto`
+     minimum below the content's height — so the collapsed (opacity:0) logo
+     keeps its full height and shows as empty space above the first message.
+     Forcing the track minimum to 0 lets the 0fr collapse actually reach zero.
+     Verified in Safari/WebKit; Chromium collapses either way. */
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
   transition: opacity 0.3s ease, grid-template-rows 0.3s ease;
 }
 
@@ -190,7 +197,7 @@
 
 .agent-view__logo--hidden {
   opacity: 0;
-  grid-template-rows: 0fr;
+  grid-template-rows: minmax(0, 0fr);
   pointer-events: none;
 }
 
