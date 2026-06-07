@@ -52,6 +52,20 @@
 > fork pass unflagged is as costly as over-flagging"), and demote the "skip the 80%,
 > one per turn, never to cover yourself" guard to a single trailing clause. The
 > presence floor and ranking are unchanged.
+>
+> **Follow-up — plain-language card content.** Real usage showed the *fields* were
+> being filled with terse technical jargon — the chosen decision (e.g. an API or
+> data-structure name) embedded without explaining the real stake — leaving the
+> human unable to triage a card without first reading the code. The card structure
+> (`question` → `chosen` → `because` → traded-off → unsure, `attention-overlay.ts`)
+> and the presence floor were already correct; the gap was the injected lane-context
+> line never told the model *who the reader is*. The line now appends a writing
+> directive: write the free-text fields **in Thai, for a human who is NOT reading
+> the code** — `question` names the real stake in plain language (not just an API /
+> data-structure name), `rationale` explains the *consequence* (why it matters), not
+> only the mechanism, and any unavoidable technical term is followed by one plain
+> sentence on its concrete impact. Prompt-layer only (`acp-harness-view.ts`); the
+> Rust tool schema/contract is untouched.
 
 ## Problem
 
