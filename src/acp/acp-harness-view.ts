@@ -428,6 +428,18 @@ const HANDOFF_WRITE_PROMPT =
   'Reference files, commits, and artifacts by path rather than pasting their contents. ' +
   'Never write secrets, tokens, or credentials (this document is not redacted). ' +
   'Overwrite your existing document, don\'t accrete; keep detail under 8000 characters.';
+// spec 148: seed turn sent after `#goal <text>` clears + respawns the lane. The goal
+// text is embedded directly — it does NOT rely on the per-turn context packet — so this
+// first turn carries the goal even though it is sent as a plain programmatic prompt.
+// Subsequent turns of THIS lane re-state the goal via renderPromptMemoryPacket; other
+// lanes' turns are never touched (the goal is confined to the lane that set it).
+function goalSeedPrompt(text: string): string {
+  return (
+    `Your focus for this session: ${text.replace(/\s+/g, ' ').trim()}. ` +
+    'Begin working on it now and stay scoped to it; if something pulls you off it, say so before continuing.'
+  );
+}
+
 function handoffResumePrompt(displayName: string): string {
   // JSON.stringify quotes + escapes — a backend-derived display name containing a
   // double-quote can't break the memory_get { lane: "…" } example (Codex-1 review).
@@ -574,6 +586,10 @@ interface HarnessLane {
   stagedImages: StagedImage[];
   supportsImages: boolean;
   activeTurnStartedAt: number | null;
+  /** Human label for a custom-command-driven turn (e.g. 'reviewing', 'ingesting
+   *  wiki') so the busy chip reads as that operation, not a generic 'running'.
+   *  Set in enqueueSystemPrompt, auto-cleared in setLaneStatus on leaving busy. */
+  activeSystemLabel: string | null;
   availableCommands: AcpAvailableCommand[];
   modesById: Map<string, AcpAgentMode>;
   currentMode: AcpAgentMode | null;
@@ -635,6 +651,18 @@ interface HarnessLane {
   /** spec 136: prompts the user submitted while the lane was busy. FIFO — the
    *  head drains first on the next idle transition. Capped at PROMPT_QUEUE_MAX. */
   queuedPrompts: QueuedPrompt[];
+  /** spec 148: active focus-scope goal, or undefined. Session-only harness-lane
+   *  runtime state confined to THIS lane: it rides this lane's own turns via
+   *  renderPromptMemoryPacket (never other lanes' / programmatic turns) and survives
+   *  `#new`; dropped only on `#goal clear`, a replacing `#goal`, or lane close. */
+  goal?: LaneGoal;
+}
+
+/** spec 148: a per-lane focus-scope goal — the current task the lane is anchored
+ *  to. Not a completion condition (no evaluator, no auto-continue); just scope. */
+interface LaneGoal {
+  text: string;
+  setAt: number;
 }
 
 /** spec 136: one user prompt captured while the lane was busy, awaiting drain. */
@@ -970,6 +998,7 @@ const LANE_DEFAULTS = {
   pendingShellId: null,
   supportsImages: false,
   activeTurnStartedAt: null,
+  activeSystemLabel: null,
   currentMode: null,
   slashPaletteIndex: 0,
   slashPaletteDismissed: false,
@@ -1206,6 +1235,12 @@ export class AcpHarnessView implements ContentView {
     const prev = lane.status;
     if (prev === next) return;
     lane.status = next;
+    // The operation label describes an in-flight custom-command turn. Keep it
+    // across `busy` AND `needs_permission` — a permission pause is still the same
+    // turn, and it resumes to `busy` after the human decides (Codex-1 B2). Clear it
+    // only when the turn truly ends (idle / awaiting_peer / error / stopped / starting)
+    // so the chip never shows a stale 'reviewing'.
+    if (next !== 'busy' && next !== 'needs_permission') lane.activeSystemLabel = null;
     this.laneBus.emit({
       type: 'lane:status',
       payload: { laneId: lane.id, prev, next, at: Date.now() },
@@ -1263,7 +1298,10 @@ export class AcpHarnessView implements ContentView {
       enqueueSystemPrompt: (id, text, drain) => {
         const l = this.lanes.find((x) => x.id === id);
         if (!l) return;
-        void this.enqueueSystemPrompt(l, text, drain);
+        // Label the drained peer turn so a human watching a recipient lane (e.g. a
+        // reviewer mid-#review) sees 'handling peer' rather than a generic 'running'
+        // (Claude-2). It's the recipient's ordinary peer turn, not command-specific.
+        void this.enqueueSystemPrompt(l, text, drain, 'handling peer');
       },
       appendInterLaneRow: (id, direction, peer, message, done, meta) => {
         const l = this.lanes.find((x) => x.id === id);
@@ -1411,11 +1449,30 @@ export class AcpHarnessView implements ContentView {
     lane: HarnessLane,
     text: string,
     drain?: CoordinatorDrainContext,
+    label?: string,
   ): Promise<void> {
     if (!lane.client) return;
     if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') return;
+    this.beginSystemTurn(lane, drain, label);
+    await this.dispatchTurn(lane, text);
+  }
+
+  /** Turn-start bookkeeping shared by enqueueSystemPrompt and the reserve-then-send
+   *  path (reserveCommandTurn). Flips the lane to `busy` so it stops being drainable
+   *  (canDrainInbound is false for `busy`), which is what blocks a peer envelope or a
+   *  user prompt from claiming the lane mid-command. */
+  private beginSystemTurn(
+    lane: HarnessLane,
+    drain: CoordinatorDrainContext | undefined,
+    label: string | undefined,
+  ): void {
     lane.pendingCoordinatorDrain = drain ?? null;
     lane.coordinatorDrainProvenanceUsed = false;
+    // Label the operation BEFORE the status flip so the busy chip and any
+    // synchronous lane:status observer see it from the turn's first render.
+    // setLaneStatus only clears the label on a non-busy transition, so a label
+    // set here survives the idle→busy flip.
+    lane.activeSystemLabel = label ?? null;
     this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
     lane.pendingTurnExtractions = [];
@@ -1436,6 +1493,10 @@ export class AcpHarnessView implements ContentView {
     }
     this.updateComposerTick();
     this.render();
+  }
+
+  private async dispatchTurn(lane: HarnessLane, text: string): Promise<void> {
+    if (!lane.client) return;
     try {
       await lane.client.prompt([{ type: 'text', text }]);
     } catch (e) {
@@ -1449,6 +1510,26 @@ export class AcpHarnessView implements ContentView {
       this.appendTranscript(lane, 'system', `error: ${String(e)}`);
       this.render();
     }
+  }
+
+  /** Reserve an idle lane for a custom command BEFORE its slow async prelude
+   *  (e.g. `#review`'s git-diff collection): flips it to `busy` + labels it so the
+   *  busy chip shows the operation persistently (not a 2s flash) and peer mail / a
+   *  user prompt cannot claim the lane during the awaits (Codex-1 B1). Pair with
+   *  dispatchTurn on success or releaseReservedTurn on a prep failure. */
+  private reserveCommandTurn(lane: HarnessLane, label: string): void {
+    this.beginSystemTurn(lane, undefined, label);
+  }
+
+  /** Undo a reserveCommandTurn when the command bails before dispatch (bad subject,
+   *  git collection failed): return the lane to idle so it drains held peer mail and
+   *  accepts input again. setLaneStatus(idle) clears activeSystemLabel. */
+  private releaseReservedTurn(lane: HarnessLane): void {
+    lane.activeTurnStartedAt = null;
+    lane.pendingCoordinatorDrain = null;
+    this.setLaneStatus(lane, 'idle');
+    this.updateComposerTick();
+    this.render();
   }
 
   private async subscribeInterLaneBridge(): Promise<void> {
@@ -1868,6 +1949,20 @@ export class AcpHarnessView implements ContentView {
       this.flashChip('#review: no reviewable lanes');
       return;
     }
+    if (!lane.client) {
+      this.flashChip('#review: lane not ready');
+      return;
+    }
+
+    // Reserve the lane up front (Codex-1 B1): flip to busy + 'reviewing' label
+    // BEFORE the async subject collection so peer mail or another prompt can't
+    // claim it mid-command (a claimed lane would make the dispatch below no-op
+    // while the chip still reported success). The busy label also shows the
+    // operation persistently for the whole collection instead of via a 2s flash
+    // that could expire first on a large repo (Claude-2). releaseReservedTurn
+    // returns the lane to idle on any bail before dispatch.
+    this.reserveCommandTurn(lane, 'reviewing');
+    this.flashChip(`#review → ${reviewers.map((l) => l.displayName).join(', ')}: collecting subject…`);
 
     // Classify the tail: an existing repo file is the design-doc subject;
     // anything else is a free focus note over the working diff.
@@ -1882,10 +1977,12 @@ export class AcpHarnessView implements ContentView {
       try {
         git = await invoke<ReviewGitState>('acp_collect_review_git_state', { cwd });
       } catch (e) {
+        this.releaseReservedTurn(lane);
         this.flashChip(`#review: git collection failed: ${String(e)}`);
         return;
       }
       if (!git?.hasGitRepo) {
+        this.releaseReservedTurn(lane);
         this.flashChip('#review: no git repo in lane cwd');
         return;
       }
@@ -1899,14 +1996,25 @@ export class AcpHarnessView implements ContentView {
       };
     }
 
-    const reviewerNames = reviewers.map((l) => l.displayName);
+    // Revalidate reviewers (Codex-1 W2): a lane may have closed or errored during
+    // the async collection. Drop any no longer live so the prompt never advertises
+    // a dead reviewer; bail (releasing the reservation) if none survive.
+    const liveReviewers = reviewers.filter((r) => this.lanes.includes(r) && isLive(r));
+    if (liveReviewers.length === 0) {
+      this.releaseReservedTurn(lane);
+      this.flashChip('#review: reviewers no longer available');
+      return;
+    }
+    const reviewerNames = liveReviewers.map((l) => l.displayName);
     const prompt = reviewRequestPrompt({
       reviewers: reviewerNames,
       subject,
       intent: this.collectReviewIntent(lane),
       note,
     });
-    await this.enqueueSystemPrompt(lane, prompt);
+    // Lane is already reserved (busy) — send directly via dispatchTurn rather than
+    // enqueueSystemPrompt (whose idle/awaiting_peer guard would now reject it).
+    await this.dispatchTurn(lane, prompt);
     this.flashChip(
       `#review → ${reviewerNames.join(', ')}${skipped.length ? ` · skipped: ${skipped.join(', ')}` : ''}`,
     );
@@ -3737,6 +3845,17 @@ export class AcpHarnessView implements ContentView {
     return packet ? `${packet}\n\n${block}` : block;
   }
 
+  /** spec 148: append the active-goal pin to a context packet. Called from BOTH
+   *  return paths of renderPromptMemoryPacket so a lane without harness memory still
+   *  carries its goal. Internal whitespace is collapsed to keep it a single line. */
+  private pushGoalLine(lines: string[], lane: HarnessLane): void {
+    const text = lane.goal?.text.replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    lines.push(
+      `Active goal: ${text}. Stay scoped to this; if a turn pulls you off it, say so before continuing.`,
+    );
+  }
+
   private renderPromptMemoryPacket(lane: HarnessLane): string {
     const self = lane.displayName;
     const roster = this.lanes.map((l) => l.displayName).join(', ');
@@ -3744,6 +3863,7 @@ export class AcpHarnessView implements ContentView {
     const lines: string[] = [`You are lane ${self}. Lanes: ${roster}.`];
     if (!this.harnessMemoryId || !this.harnessMemoryPort) {
       lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
+      this.pushGoalLine(lines, lane);
       return lines.join('\n');
     }
     if (hasPeers) {
@@ -3784,6 +3904,7 @@ export class AcpHarnessView implements ContentView {
     lines.push(
       'HTML artifacts: when the user asks for a visual or interactive view (side-by-side, diagram, annotated diff, dashboard), call artifact_new { title }. It returns a path to a file that ALREADY EXISTS — a styled scaffold (Krypton cyberpunk theme + light/auto toggle); EDIT it with your normal edit tool (do not recreate it with Write) to replace the placeholder inside <main data-artifact-content>, then artifact_register { id }; the user opens it in their browser. Opt-in only — keep ordinary prose, plans, and answers in your turn text.',
     );
+    this.pushGoalLine(lines, lane);
     return lines.join('\n');
   }
 
@@ -5152,25 +5273,32 @@ export class AcpHarnessView implements ContentView {
     await this.spawnLane(lane);
   }
 
-  private async newLaneSession(lane: HarnessLane, options: { clearMemory: boolean }): Promise<void> {
+  /** Reset a lane to a fresh ACP session. Returns true once the lane has been
+   *  disposed and successfully respawned; false if it bailed (wrong status,
+   *  memory-clear failure) or the respawn errored — so callers like `#goal`
+   *  (spec 148) can abort their follow-up rather than act on a dead session. */
+  private async newLaneSession(
+    lane: HarnessLane,
+    options: { clearMemory: boolean },
+  ): Promise<boolean> {
     if (lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer') {
       this.flashChip('lane busy - #cancel first');
-      return;
+      return false;
     }
     if (lane.status === 'starting') {
       this.flashChip('lane starting');
-      return;
+      return false;
     }
     if (options.clearMemory && !this.harnessMemoryId) {
       this.flashChip(this.harnessMemoryWarning ? `memory unavailable: ${truncate(this.harnessMemoryWarning, 72)}` : 'memory unavailable - use #new');
-      return;
+      return false;
     }
     if (options.clearMemory) {
       try {
         await this.clearActiveLaneMemory(lane, false);
       } catch (e) {
         this.flashChip(`memory clear failed: ${errorText(e)}`);
-        return;
+        return false;
       }
     }
     if (lane.pendingShellId) await this.cancelShell(lane);
@@ -5216,6 +5344,68 @@ export class AcpHarnessView implements ContentView {
     this.updateComposerTick();
     this.render();
     await this.spawnLane(lane);
+    // spec 148: false when spawn/initialize failed (lane left in 'error'), so #goal
+    // doesn't claim success or seed a turn that can't start (Codex-1 W1).
+    return lane.status !== 'error';
+  }
+
+  /** spec 148: `#goal <text>` sets a focus scope — it clears the lane like `#new`
+   *  (fresh session, memory kept) and seeds the first turn; `#goal` shows the
+   *  current goal; `#goal clear` (aliases stop/off/none/reset) removes the scope
+   *  without touching the session. */
+  private async runGoalCommand(lane: HarnessLane, text: string): Promise<void> {
+    this.setDraft(lane, '', 0);
+    const arg = text.trim().slice('#goal'.length).trim();
+    const CLEAR_ALIASES = new Set(['clear', 'stop', 'off', 'none', 'reset']);
+    if (!arg) {
+      this.flashChip(
+        lane.goal
+          ? `goal: ${truncate(lane.goal.text, 56)} · ${formatAge(Date.now() - lane.goal.setAt)}`
+          : 'no active goal · #goal <text> to set',
+      );
+      return;
+    }
+    if (CLEAR_ALIASES.has(arg.toLowerCase())) {
+      if (!lane.goal) {
+        this.flashChip('no active goal');
+        return;
+      }
+      lane.goal = undefined;
+      this.flashChip('goal cleared');
+      this.render();
+      return;
+    }
+    // Setting clears the session via newLaneSession, which only accepts `idle`.
+    if (lane.status !== 'idle') {
+      this.flashChip('lane busy - #cancel first');
+      return;
+    }
+    // Respawn FIRST, then publish the goal (Codex-1 B1): if the goal were set before
+    // the respawn's awaits, a peer message arriving in that window could start an
+    // old-session turn carrying the new goal, then be disposed mid-turn. Publishing
+    // after a confirmed respawn closes that window.
+    const ok = await this.newLaneSession(lane, { clearMemory: false });
+    if (!ok) return; // respawn bailed or errored — leave the lane goal-free
+    // The goal is set regardless of what follows: it rides this lane's subsequent
+    // turns via pushGoalLine, so it takes effect even when the immediate seed is
+    // deferred below.
+    lane.goal = { text: arg, setAt: Date.now() };
+    this.flashChip(`goal set · ${truncate(arg, 56)}`);
+    this.render();
+    // newLaneSession does NOT guarantee an idle lane on return (Codex-1 B3):
+    // spawnLane's idle transition synchronously drains any queued peer mail, which
+    // can flip the fresh session to busy before we reach here. Seed only when the
+    // lane is actually idle; otherwise the goal already applies to the next turn, so
+    // record the deferral rather than letting enqueueSystemPrompt silently no-op.
+    if (lane.status !== 'idle') {
+      this.appendTranscript(lane, 'system', 'goal set; first turn deferred — lane is handling other work');
+      this.render();
+      return;
+    }
+    // Kick the first turn on the goal. Self-contained seed (the goal text is embedded),
+    // sent only to THIS lane — it does not touch the shared inter-lane drain path, so a
+    // cancelled-peer tombstone is never cleared and other lanes are untouched (human redirect).
+    await this.enqueueSystemPrompt(lane, goalSeedPrompt(arg), undefined, 'setting goal');
   }
 
   private async clearActiveLaneMemory(lane: HarnessLane, showSuccess = true): Promise<void> {
@@ -5241,6 +5431,10 @@ export class AcpHarnessView implements ContentView {
     if (parts[0] === '#new!') {
       this.setDraft(lane, '', 0);
       await this.newLaneSession(lane, { clearMemory: true });
+      return;
+    }
+    if (parts[0] === '#goal') {
+      await this.runGoalCommand(lane, text);
       return;
     }
     if (parts[0] === '#cancel') {
@@ -5288,7 +5482,7 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       const prompt = parts[0] === '#handoff' ? HANDOFF_WRITE_PROMPT : handoffResumePrompt(lane.displayName);
-      await this.enqueueSystemPrompt(lane, prompt);
+      await this.enqueueSystemPrompt(lane, prompt, undefined, parts[0] === '#handoff' ? 'writing handoff' : 'resuming');
       return;
     }
     // spec 144: #wiki ingests the current conversation into the repo's docs/wiki/;
@@ -5307,7 +5501,7 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       const hint = text.trim().slice('#wiki'.length).trim();
-      await this.enqueueSystemPrompt(lane, wikiIngestPrompt(hint));
+      await this.enqueueSystemPrompt(lane, wikiIngestPrompt(hint), undefined, 'saving to wiki');
       return;
     }
     if (parts[0] === '#recall') {
@@ -5325,7 +5519,7 @@ export class AcpHarnessView implements ContentView {
         this.flashChip('lane busy - #cancel first');
         return;
       }
-      await this.enqueueSystemPrompt(lane, wikiRecallPrompt(question));
+      await this.enqueueSystemPrompt(lane, wikiRecallPrompt(question), undefined, 'recalling wiki');
       return;
     }
     if (parts[0] === '#review') {
@@ -6604,6 +6798,7 @@ export class AcpHarnessView implements ContentView {
       this.coordinator.inboxDepth(lane.id),
     );
     this.composerEl.innerHTML =
+      this.renderGoalBar(lane) +
       `<div class="acp-harness__composer-meta">` +
       `<span class="${chipClass}">${esc(chip)}</span>` +
       this.renderDirectiveChip(lane) +
@@ -6620,6 +6815,23 @@ export class AcpHarnessView implements ContentView {
         : SPINNER_FRAMES[0]}</span>` +
       `<span class="acp-harness__input">${esc(before)}<span class="acp-harness__caret">█</span>${esc(after)}</span>` +
       `<span class="acp-harness__help-hint">? help</span></div>`;
+  }
+
+  /** spec 148: static goal-bar above the composer meta row, shown only when the
+   *  active lane has a focus-scope goal. Quiet depth indicator — never blinks. The
+   *  age is a snapshot refreshed on each render, deliberately NOT driven by a live
+   *  1s ticker (an idle lane with a goal must not keep the composer re-rendering —
+   *  idle CPU budget). Minutes-granularity makes the staleness invisible in practice. */
+  private renderGoalBar(lane: HarnessLane): string {
+    if (!lane.goal) return '';
+    const age = formatAge(Date.now() - lane.goal.setAt);
+    return (
+      `<div class="acp-harness__goal-bar">` +
+      `<span class="acp-harness__goal-label">◎ goal</span>` +
+      `<span class="acp-harness__goal-text">${esc(lane.goal.text)}</span>` +
+      `<span class="acp-harness__goal-age">${esc(age)}</span>` +
+      `</div>`
+    );
   }
 
   /** Composer directive chip: clickable, opens the picker. Keyboard users use
@@ -6648,7 +6860,15 @@ export class AcpHarnessView implements ContentView {
     if (lane.status === 'busy') {
       const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
       const queued = lane.queuedPrompts.length > 0 ? ` · ${lane.queuedPrompts.length} queued` : '';
-      return `${lane.displayName} running${elapsed}${queued} · Ctrl+C cancel`;
+      // Custom commands name the operation (reviewing / saving to wiki / …) so the
+      // user can tell a #review in flight from an ordinary turn; else plain 'running'.
+      const verb = lane.activeSystemLabel ?? 'running';
+      return `${lane.displayName} ${verb}${elapsed}${queued} · Ctrl+C cancel`;
+    }
+    if (lane.status === 'starting') {
+      // Session is (re)initializing — the slowest sub-window of #goal/#new/#new!.
+      // Cue it rather than falling through to the generic memory readout (Claude-2).
+      return `${lane.displayName} starting…`;
     }
     const pending = this.coordinator.pendingPeersFor(lane.id);
     if (pending.length > 0 && (lane.status === 'awaiting_peer' || lane.status === 'idle')) {
@@ -6920,6 +7140,8 @@ export class AcpHarnessView implements ContentView {
             <dt>#cancel</dt><dd>Cancel active lane, same as Ctrl+C</dd>
             <dt>#new</dt><dd>Start fresh active lane, keep memory</dd>
             <dt>#new!</dt><dd>Start fresh active lane and clear its memory</dd>
+            <dt>#goal &lt;text&gt;</dt><dd>Set a focus scope: clears the lane (keeps memory) and anchors it to this task</dd>
+            <dt>#goal</dt><dd>Show the active goal · #goal clear removes it</dd>
             <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
             <dt>#mem</dt><dd>Show memory command hint</dd>

@@ -2201,6 +2201,40 @@
   text-transform: uppercase;
 }
 
+/* spec 148: active goal — a quiet focus-scope bar above the meta row. Flat lane-accent
+   tint, no border/rail/box. A static depth indicator, never animated. */
+.acp-harness__goal-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 0.78em;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 8%, transparent);
+}
+
+.acp-harness__goal-label {
+  flex: 0 0 auto;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  font-size: 0.86em;
+  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 55%, #d8e8d8);
+}
+
+.acp-harness__goal-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(216, 232, 216, 0.95);
+}
+
+.acp-harness__goal-age {
+  flex: 0 0 auto;
+  color: rgba(216, 232, 216, 0.40);
+}
+
 /* Telemetry-deck separators: a dim accent middot before each segment after
    the first. A divider between readouts — not a left-edge accent rail. */
 .acp-harness__directive-chip::before,

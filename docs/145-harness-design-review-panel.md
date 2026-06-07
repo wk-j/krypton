@@ -172,6 +172,37 @@ One-shot instruction (sibling to `wikiIngestPrompt`) telling the convening lane 
 Net removal: no `ReviewCard`. `flashChip` for validation + `#review → Codex-2,
 Cursor-1`. `peer_send`/reply use existing peer-message rows.
 
+**Background-work indicator.** A `#review` has a silent async prelude (doc lookup +
+git-diff collection, slow on a large repo) followed by an agent turn that is
+otherwise indistinguishable from a normal one. The fix has two parts:
+
+- **Reserve-then-send.** `runReviewCommand` calls `reserveCommandTurn(lane, 'reviewing')`
+  *before* the async subject collection: it flips the lane to `busy` and labels it.
+  Because `canDrainInbound` is false for `busy`, a peer envelope or a user prompt can
+  no longer claim the lane mid-collection (previously the lane stayed `idle` during the
+  awaits, so a claim made the subsequent send silently no-op while the chip still
+  reported success). On any bail before dispatch (bad git state, no reviewers left)
+  `releaseReservedTurn` returns the lane to `idle`. The prompt is then sent with
+  `dispatchTurn` (not `enqueueSystemPrompt`, whose idle guard would now reject the
+  already-reserved lane). Reviewers are re-validated for liveness right before the send.
+  `enqueueSystemPrompt` was refactored into `beginSystemTurn` (turn-start bookkeeping +
+  the `busy` flip) and `dispatchTurn` (the `client.prompt` call) to share this path.
+- **Operation label.** The turn is tagged with `HarnessLane.activeSystemLabel` (set in
+  `beginSystemTurn`) so the busy composer chip reads `<lane> reviewing · <elapsed> ·
+  Ctrl+C cancel` instead of a generic `running`. Because the lane is reserved up front
+  the label shows for the whole collection — not via a 2s `flashChip` that could expire
+  before the work finished. The label is **kept across `busy` and `needs_permission`** (a
+  permission pause is the same turn) and cleared by `setLaneStatus` only on a true turn
+  end (idle / awaiting_peer / error / stopped / starting). The same mechanism names the
+  other async custom commands (`#wiki` → `saving to wiki`, `#recall` → `recalling wiki`,
+  `#handoff` → `writing handoff`, `#resume` → `resuming`, `#goal` seed → `setting goal`),
+  and drained **peer** turns read `handling peer` (so a reviewer lane mid-`#review` is
+  legible too). `composerStatusChip` also gives a `starting…` cue during a `#goal`/`#new`
+  respawn (the session-init window). `#goal`'s seed is itself reserve-aware: if drained
+  peer mail claims the freshly respawned session, the goal is still set (it rides
+  subsequent turns via `pushGoalLine`) and the seed is deferred with a transcript note
+  rather than silently dropped.
+
 ## Edge Cases
 
 - **No valid reviewers** (bare `#review` with no other live local lane, or all named
