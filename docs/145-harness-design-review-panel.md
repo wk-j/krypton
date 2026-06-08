@@ -200,7 +200,7 @@ otherwise indistinguishable from a normal one. The fix has two parts:
   legible too). `composerStatusChip` also gives a `starting…` cue during a `#goal`/`#new`
   respawn (the session-init window). `#goal`'s seed is itself reserve-aware: if drained
   peer mail claims the freshly respawned session, the goal is still set (it rides
-  subsequent turns via `pushGoalLine`) and the seed is deferred with a transcript note
+  subsequent turns via `insertGoalLine`) and the seed is deferred with a transcript note
   rather than silently dropped.
 
 ## Edge Cases

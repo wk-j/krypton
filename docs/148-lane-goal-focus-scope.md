@@ -6,7 +6,7 @@
 > Implementation: `#goal` command + `lane.goal` state in
 > `src/acp/acp-harness-view.ts` — `LaneGoal` type + `goal?` field; `goalSeedPrompt()`;
 > `runGoalCommand()` + `#goal` branch in `runHashCommand()`; `newLaneSession()` now
-> returns `Promise<boolean>`; `pushGoalLine()` injects the pin in both return paths of
+> returns `Promise<boolean>`; `insertGoalLine()` injects the pin at the packet head in both return paths of
 > `renderPromptMemoryPacket()`; `renderGoalBar()` above the composer meta row;
 > help-drawer entries. Styling: `.acp-harness__goal-bar` in `src/styles/acp-harness.css`.
 > No new MCP tools, no Rust changes. 191 harness tests green.
@@ -86,8 +86,11 @@ So Krypton's goal drops the loop and the evaluator entirely and keeps focus-scop
   "Clear the lane" on goal-set is exactly `#new` semantics (`clearMemory: false`).
 - **Per-turn context packet** — `renderPromptMemoryPacket()` (`:3740`) builds the
   `lane-context.md` block that rides on *every* turn via `buildPromptBlocks()` /
-  `composeLeadingContext()` (`:3694`, `:3728`). Appending one `Active goal: …` line here is the
-  pin mechanism (a) — cheap, one line, already on the per-turn path.
+  `composeLeadingContext()` (`:3694`, `:3728`). Inserting one `Active goal: …` line here is the
+  pin mechanism (a) — cheap, one line, already on the per-turn path. The line goes at the packet
+  **head** (right after the identity line), not the tail: buried under the memory/attention/artifact
+  blocks the agent treated it as background and often drifted off-goal; up top it reads as a
+  standing instruction.
 - **Composer meta row** — `.acp-harness__composer-meta` (flat telemetry deck, middot-separated).
   The goal-bar sits just above it.
 
@@ -168,7 +171,8 @@ they just did by removing a label. A user who wants a clean slate already has `#
 ### Pin mechanism (a) — per-turn injection
 
 The goal text lives in the leading-context packet built by `renderPromptMemoryPacket()`. When
-`lane.goal` is set, the packet carries:
+`lane.goal` is set, the packet carries, **at its head — right after the identity line, before the
+memory/attention/artifact blocks**:
 
 ```
 Active goal: <text>.
@@ -176,7 +180,9 @@ Stay scoped to this; if a turn pulls you off it, say so before continuing.
 ```
 
 One line of intent + one line of guard (the goal `text` has internal newlines collapsed to
-spaces). Present while the goal lives; gone the moment it is cleared.
+spaces). Present while the goal lives; gone the moment it is cleared. `insertGoalLine()` splices it
+at index 1 rather than appending: tail placement left it buried beneath the other context blocks,
+where the agent read it as background and drifted off-goal.
 
 **Scope of the pin — this lane only (human redirect, code round).** The pin rides only the turns
 that go through `buildPromptBlocks` — i.e. this lane's own user-typed turns (`sendUserPrompt`,
@@ -190,7 +196,7 @@ lane is pulled into a peer turn, that single turn is not goal-anchored; the goal
 lane's next normal turn.
 
 - **Placement before the memory-unavailable early return (Warning 4).**
-  `renderPromptMemoryPacket()` `return`s early on the no-memory branch. `pushGoalLine()` is called
+  `renderPromptMemoryPacket()` `return`s early on the no-memory branch. `insertGoalLine()` is called
   in **both** return paths so a lane without harness memory still carries its goal.
 
 ### UI (c) — the goal-bar
@@ -256,7 +262,7 @@ alert. Mockup: `docs/prototypes/` (the registered artifact from the grill — to
   - `#goal` command branch + `runGoalCommand()`, with the `idle`-only guard; respawn-then-publish
     ordering; direct self-contained seed via `enqueueSystemPrompt(goalSeedPrompt(text))`.
   - `newLaneSession`: return type `void → Promise<boolean>`, `false` on a bailed/errored respawn.
-  - `pushGoalLine()` called in **both** return paths of `renderPromptMemoryPacket` (Warning 4).
+  - `insertGoalLine()` called in **both** return paths of `renderPromptMemoryPacket` (Warning 4).
   - `enqueueSystemPrompt` left **raw** (the round-1 `buildPromptBlocks` routing was reverted in
     the code round — see revisions).
   - `goalSeedPrompt(text)` helper (embeds the goal); `renderGoalBar()` in the composer markup;

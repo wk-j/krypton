@@ -3944,13 +3944,18 @@ export class AcpHarnessView implements ContentView {
     return packet ? `${packet}\n\n${block}` : block;
   }
 
-  /** spec 148: append the active-goal pin to a context packet. Called from BOTH
-   *  return paths of renderPromptMemoryPacket so a lane without harness memory still
-   *  carries its goal. Internal whitespace is collapsed to keep it a single line. */
-  private pushGoalLine(lines: string[], lane: HarnessLane): void {
+  /** spec 148: insert the active-goal pin near the HEAD of a context packet (right
+   *  after the identity line at index 0), not the tail. Called from BOTH return paths
+   *  of renderPromptMemoryPacket so a lane without harness memory still carries its
+   *  goal. Head placement keeps the goal prominent instead of buried under the
+   *  memory/attention/artifact blocks, where it was treated as background and often
+   *  ignored. Internal whitespace is collapsed to keep it a single line. */
+  private insertGoalLine(lines: string[], lane: HarnessLane): void {
     const text = lane.goal?.text.replace(/\s+/g, ' ').trim();
     if (!text) return;
-    lines.push(
+    lines.splice(
+      1,
+      0,
       `Active goal: ${text}. Stay scoped to this; if a turn pulls you off it, say so before continuing.`,
     );
   }
@@ -3962,7 +3967,7 @@ export class AcpHarnessView implements ContentView {
     const lines: string[] = [`You are lane ${self}. Lanes: ${roster}.`];
     if (!this.harnessMemoryId || !this.harnessMemoryPort) {
       lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
-      this.pushGoalLine(lines, lane);
+      this.insertGoalLine(lines, lane);
       return lines.join('\n');
     }
     if (hasPeers) {
@@ -4003,7 +4008,7 @@ export class AcpHarnessView implements ContentView {
     lines.push(
       'HTML artifacts: when the user asks for a visual or interactive view (side-by-side, diagram, annotated diff, dashboard), call artifact_new { title }. It returns a path to a file that ALREADY EXISTS — a styled scaffold (Krypton cyberpunk theme + light/auto toggle); EDIT it with your normal edit tool (do not recreate it with Write) to replace the placeholder inside <main data-artifact-content>, then artifact_register { id }; the user opens it in their browser. Opt-in only — keep ordinary prose, plans, and answers in your turn text.',
     );
-    this.pushGoalLine(lines, lane);
+    this.insertGoalLine(lines, lane);
     return lines.join('\n');
   }
 
@@ -5509,7 +5514,7 @@ export class AcpHarnessView implements ContentView {
     const ok = await this.newLaneSession(lane, { clearMemory: false });
     if (!ok) return; // respawn bailed or errored — leave the lane goal-free
     // The goal is set regardless of what follows: it rides this lane's subsequent
-    // turns via pushGoalLine, so it takes effect even when the immediate seed is
+    // turns via insertGoalLine, so it takes effect even when the immediate seed is
     // deferred below.
     lane.goal = { text: arg, setAt: Date.now() };
     this.flashChip(`goal set · ${truncate(arg, 56)}`);
