@@ -40,6 +40,7 @@
   --krypton-backend-junie:    #d96fb3;
   --krypton-backend-omp:      #d9c66f;
   --krypton-backend-grok:     #5ce6a8;
+  --krypton-backend-copilot:  #7fa8ff;
 
   /* Transcript message-body accents. Carried as a background tint (no
    * side-stripe) so the accent is themeable and the chrome stays flat. */
@@ -2533,6 +2534,7 @@
 .acp-harness__rail-logo--junie    { color: var(--krypton-backend-junie); }
 .acp-harness__rail-logo--omp      { color: var(--krypton-backend-omp); }
 .acp-harness__rail-logo--grok     { color: var(--krypton-backend-grok); }
+.acp-harness__rail-logo--copilot  { color: var(--krypton-backend-copilot); }
 
 .acp-harness__rail-tag {
   flex: 0 0 auto;
@@ -3505,6 +3507,7 @@
 .acp-harness__directive-logo--junie    { color: var(--krypton-backend-junie); }
 .acp-harness__directive-logo--omp      { color: var(--krypton-backend-omp); }
 .acp-harness__directive-logo--grok     { color: var(--krypton-backend-grok); }
+.acp-harness__directive-logo--copilot  { color: var(--krypton-backend-copilot); }
 
 .acp-harness__directive-icon {
   flex: 0 0 auto;

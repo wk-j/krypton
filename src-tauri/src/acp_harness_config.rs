@@ -22,6 +22,7 @@ pub const DIRECTIVE_SYSTEM_PROMPT_MAX: usize = 16 * 1024;
 /// "all backends". Mirrors the frontend `BACKEND_LABELS` keys.
 pub const BUILTIN_BACKEND_IDS: &[&str] = &[
     "codex", "claude", "gemini", "opencode", "pi-acp", "droid", "cursor", "junie", "omp", "grok",
+    "copilot",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

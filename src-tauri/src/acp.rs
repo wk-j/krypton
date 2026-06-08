@@ -128,6 +128,18 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "Grok".to_string(),
             },
         ),
+        (
+            "copilot",
+            AcpBackend {
+                command: "copilot".to_string(),
+                // GitHub Copilot CLI native ACP server over stdio (public preview).
+                // `--port N` would switch to TCP; the harness is stdio-only like
+                // every other lane. No model flag is documented — see acp.rs model
+                // block (none added) and docs/150-acp-copilot-lane.md.
+                args: vec!["--acp".to_string(), "--stdio".to_string()],
+                display_name: "Copilot".to_string(),
+            },
+        ),
     ]
 }
 
@@ -2046,6 +2058,44 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
             return "Grok did not return an initialize response and no stderr was captured. First-run browser login or install input is a likely cause; run `grok` once in a terminal, then retry.".to_string();
         }
     }
+    if backend_id == "copilot" {
+        if s.contains("command not found") || s.contains("enoent") || s.contains("no such file") {
+            return "Install GitHub Copilot CLI: `npm install -g @github/copilot` (Node.js 22+), then restart Krypton so the login-shell PATH cache includes `copilot`.".to_string();
+        }
+        // Only treat this as an outdated CLI when stderr is an actual flag
+        // diagnostic — a bare `--acp` substring would also match any error that
+        // merely echoes the invocation, masking the real auth/token failure
+        // below. The unknown/unrecognized phrasing covers both `--acp` and
+        // `--stdio` rejection on an old build.
+        if s.contains("unknown option")
+            || s.contains("unknown argument")
+            || s.contains("unrecognized option")
+            || s.contains("unrecognized argument")
+            || s.contains("unexpected argument")
+            || s.contains("invalid option")
+        {
+            return "Your Copilot CLI predates ACP mode (`copilot --acp --stdio`). Update via `npm install -g @github/copilot`.".to_string();
+        }
+        if s.contains("not authenticated")
+            || s.contains("please log in")
+            || s.contains("please login")
+            || s.contains("authentication required")
+            || s.contains("unauthorized")
+            || s.contains("/login")
+        {
+            return "Run `copilot` then `/login` once in a terminal to complete GitHub auth, or export `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` (fine-grained PAT with the Copilot Requests permission) in the login shell used to launch Krypton.".to_string();
+        }
+        if s.contains("invalid api key")
+            || s.contains("bad token")
+            || s.contains("api key")
+            || s.contains("forbidden")
+        {
+            return "Copilot reports a token problem. Re-check `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` (needs the Copilot Requests permission) in the login shell used to launch Krypton.".to_string();
+        }
+        if stderr.is_empty() {
+            return "Copilot did not return an initialize response and no stderr was captured. First-run `/login` or install input is a likely cause; run `copilot` once in a terminal, then retry.".to_string();
+        }
+    }
     if s.contains("/login") || s.contains("not authenticated") {
         return "Run `claude /login` in a terminal, then retry.".to_string();
     }
@@ -2317,6 +2367,45 @@ mod tests {
         let hint = startup_hint("claude", "grok: unrecognized subcommand 'agent'");
 
         assert!(!hint.contains("Grok CLI predates ACP mode"));
+    }
+
+    #[test]
+    fn copilot_startup_hint_reports_missing_cli() {
+        let hint = startup_hint("copilot", "No such file or directory (os error 2)");
+
+        assert!(hint.contains("Install GitHub Copilot CLI"));
+        assert!(hint.contains("npm install -g @github/copilot"));
+    }
+
+    #[test]
+    fn copilot_startup_hint_reports_unknown_acp_flag() {
+        let hint = startup_hint("copilot", "error: unknown option '--acp'");
+
+        assert!(hint.contains("predates ACP mode"));
+        assert!(hint.contains("copilot --acp --stdio"));
+    }
+
+    #[test]
+    fn copilot_startup_hint_reports_auth_when_explicit() {
+        let hint = startup_hint("copilot", "Error: not authenticated, run /login");
+
+        assert!(hint.contains("Run `copilot` then `/login`"));
+        assert!(hint.contains("GITHUB_TOKEN"));
+    }
+
+    #[test]
+    fn copilot_startup_hint_empty_stderr_is_non_diagnostic() {
+        let hint = startup_hint("copilot", "");
+
+        assert!(hint.contains("no stderr was captured"));
+        assert!(hint.contains("/login"));
+    }
+
+    #[test]
+    fn copilot_startup_hint_does_not_leak_to_other_backends() {
+        let hint = startup_hint("claude", "copilot: unknown option '--acp'");
+
+        assert!(!hint.contains("Copilot CLI predates ACP mode"));
     }
 
     #[test]

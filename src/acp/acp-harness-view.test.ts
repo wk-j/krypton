@@ -722,12 +722,19 @@ describe('laneAccentForLabel', () => {
     expect(laneAccentForLabel('Grok-1')).not.toBe(laneAccent(1));
   });
 
-  it('keeps a 10-color palette wider than the 10 named lanes', () => {
-    // Junie=8, OMP=9, Grok=10 all occupy distinct slots, so the palette must
-    // have at least 10 distinct entries — otherwise laneAccent(10) wraps modulo
-    // to Codex blue.
-    const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(laneAccent);
-    expect(new Set(slots).size).toBe(10);
+  it('routes Copilot labels to the 11th palette slot, not the numeric fallback', () => {
+    // Spec 150: Copilot is the 11th named lane. Without the explicit /copilot/i
+    // arm, 'Copilot-1' would hit the -(\d+)$ fallback → laneAccent(1) (Codex blue).
+    expect(laneAccentForLabel('Copilot-1')).toBe(laneAccent(11));
+    expect(laneAccentForLabel('Copilot-1')).not.toBe(laneAccent(1));
+  });
+
+  it('keeps an 11-color palette wider than the 11 named lanes', () => {
+    // Junie=8, OMP=9, Grok=10, Copilot=11 all occupy distinct slots, so the
+    // palette must have at least 11 distinct entries — otherwise laneAccent(11)
+    // wraps modulo to Codex blue.
+    const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(laneAccent);
+    expect(new Set(slots).size).toBe(11);
   });
 });
 
@@ -887,6 +894,7 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(backendLogoId('junie')).toBe('krypton-logo-junie');
       expect(backendLogoId('omp')).toBe('krypton-logo-omp');
       expect(backendLogoId('grok')).toBe('krypton-logo-grok');
+      expect(backendLogoId('copilot')).toBe('krypton-logo-copilot');
     });
 
     it('falls back to the neutral OMP mark for unknown backends', () => {
