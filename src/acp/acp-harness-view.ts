@@ -8964,6 +8964,49 @@ function applyCoordinatorProvenanceToItem(lane: HarnessLane, item: HarnessTransc
   lane.coordinatorDrainProvenanceUsed = true;
 }
 
+// Thought effort meter (length-derived). Thinking is dimmed and clamped to a
+// few lines, so a glyph meter on the label restores the lost signal: how much
+// reasoning is hidden below the fold. Length ≈ effort — log-scaled between a
+// floor (~one short line) and a ceiling (~a long deliberation), bucketed to 5.
+const THOUGHT_EFFORT_MIN_CHARS = 40;
+const THOUGHT_EFFORT_MAX_CHARS = 4000;
+
+function thoughtEffortLevel(len: number): { filled: number; tier: string } {
+  let ratio = 0;
+  if (len > THOUGHT_EFFORT_MIN_CHARS) {
+    ratio =
+      Math.log(len / THOUGHT_EFFORT_MIN_CHARS) /
+      Math.log(THOUGHT_EFFORT_MAX_CHARS / THOUGHT_EFFORT_MIN_CHARS);
+    ratio = Math.max(0, Math.min(1, ratio));
+  }
+  const filled = Math.max(1, Math.round(ratio * 5));
+  const tier =
+    ratio < 0.2
+      ? 'brief'
+      : ratio < 0.45
+        ? 'considered'
+        : ratio < 0.7
+          ? 'deep'
+          : ratio < 0.9
+            ? 'extended'
+            : 'exhaustive';
+  return { filled, tier };
+}
+
+function buildThoughtEffortMeter(len: number): HTMLElement {
+  const { filled, tier } = thoughtEffortLevel(len);
+  const meter = document.createElement('span');
+  meter.className = 'acp-harness__thought-effort';
+  const glyph = document.createElement('span');
+  glyph.className = 'acp-harness__thought-effort-glyph';
+  glyph.textContent = '▰'.repeat(filled) + '▱'.repeat(5 - filled);
+  const word = document.createElement('span');
+  word.className = 'acp-harness__thought-effort-tier';
+  word.textContent = tier;
+  meter.append(glyph, word);
+  return meter;
+}
+
 function renderTranscriptItem(
   item: HarnessTranscriptItem,
   isNew: boolean,
@@ -8982,6 +9025,10 @@ function renderTranscriptItem(
   const label = document.createElement('div');
   label.className = 'acp-harness__msg-label';
   label.textContent = transcriptLabel(item.kind);
+  if (item.kind === 'thought') {
+    label.classList.add('acp-harness__msg-label--thought');
+    label.appendChild(buildThoughtEffortMeter(item.text.length));
+  }
   const body = document.createElement('div');
   body.className = 'acp-harness__msg-body';
   if (item.kind === 'assistant') {
