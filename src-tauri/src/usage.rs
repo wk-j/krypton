@@ -125,6 +125,7 @@ pub struct CursorUsage {
 struct ClaudeCreds {
     access_token: String,
     expires_at_ms: i64,
+    scopes: Vec<String>,
     subscription_type: Option<String>,
     rate_limit_tier: Option<String>,
 }
@@ -142,6 +143,17 @@ fn parse_claude_creds(raw: &str) -> Option<ClaudeCreds> {
     Some(ClaudeCreds {
         access_token: oauth.get("accessToken")?.as_str()?.to_string(),
         expires_at_ms: oauth.get("expiresAt").and_then(Value::as_i64).unwrap_or(0),
+        scopes: oauth
+            .get("scopes")
+            .and_then(Value::as_array)
+            .map(|scopes| {
+                scopes
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default(),
         subscription_type: oauth
             .get("subscriptionType")
             .and_then(Value::as_str)
@@ -306,6 +318,12 @@ pub async fn usage_fetch_claude() -> Result<ClaudeUsage, String> {
     }
     if creds.expires_at_ms <= now_ms() {
         return Err("token-expired".to_string());
+    }
+    // Recent Claude Code credentials may be inference-only. Anthropic's
+    // undocumented usage endpoint rejects those grants with a 403 requiring
+    // user:profile, so avoid a network request that cannot succeed.
+    if !creds.scopes.is_empty() && !creds.scopes.iter().any(|scope| scope == "user:profile") {
+        return Err("usage-scope-missing".to_string());
     }
 
     let client = reqwest::Client::builder()
@@ -885,6 +903,7 @@ mod tests {
         let creds = |exp: i64| ClaudeCreds {
             access_token: format!("tok-{exp}"),
             expires_at_ms: exp,
+            scopes: Vec::new(),
             subscription_type: None,
             rate_limit_tier: None,
         };
@@ -986,10 +1005,11 @@ mod tests {
 
     #[test]
     fn parses_credentials_shape() {
-        let raw = r#"{"claudeAiOauth":{"accessToken":"tok","refreshToken":"r","expiresAt":1780940991388,"subscriptionType":"team","rateLimitTier":"default_claude_max_5x"}}"#;
+        let raw = r#"{"claudeAiOauth":{"accessToken":"tok","refreshToken":"r","expiresAt":1780940991388,"scopes":["user:inference"],"subscriptionType":"team","rateLimitTier":"default_claude_max_5x"}}"#;
         let creds = parse_claude_creds(raw).expect("should parse");
         assert_eq!(creds.access_token, "tok");
         assert_eq!(creds.expires_at_ms, 1780940991388);
+        assert_eq!(creds.scopes, vec!["user:inference"]);
         assert_eq!(creds.subscription_type.as_deref(), Some("team"));
         assert_eq!(
             creds.rate_limit_tier.as_deref(),
