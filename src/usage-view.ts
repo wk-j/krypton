@@ -131,6 +131,15 @@ const PROVIDER_LOGOS: Record<string, string> = {
 
 function errorHint(err: unknown): string {
   const key = String(err);
+  // "rate-limited:<epochMs>" — Retry-After deadline from the backend. Foot
+  // closures re-evaluate this every tick, so the countdown stays live.
+  if (key.startsWith('rate-limited:')) {
+    const until = Number(key.slice('rate-limited:'.length));
+    if (Number.isFinite(until) && until > Date.now()) {
+      return `rate limited — retry in ${formatCountdown(until)}`;
+    }
+    return ERROR_HINTS['rate-limited'];
+  }
   return ERROR_HINTS[key] ?? `fetch failed (${key}) — retrying next cycle`;
 }
 
@@ -229,7 +238,9 @@ export class UsageContentView implements ContentView {
     } catch (err) {
       if (this.disposed) return;
       // Keep last good payload visible; the foot line marks it stale by age.
-      this.claudeError = errorHint(err);
+      // Raw sentinel key — formatted by errorHint() at render time so
+      // time-based hints (rate-limit countdown) stay live.
+      this.claudeError = String(err);
     }
     this.claudePending = false;
     this.render();
@@ -243,7 +254,7 @@ export class UsageContentView implements ContentView {
       this.codexError = null;
     } catch (err) {
       if (this.disposed) return;
-      this.codexError = errorHint(err);
+      this.codexError = String(err);
     }
     this.codexPending = false;
     this.render();
@@ -257,7 +268,7 @@ export class UsageContentView implements ContentView {
       this.copilotError = null;
     } catch (err) {
       if (this.disposed) return;
-      this.copilotError = errorHint(err);
+      this.copilotError = String(err);
     }
     this.copilotPending = false;
     this.render();
@@ -271,7 +282,7 @@ export class UsageContentView implements ContentView {
       this.cursorError = null;
     } catch (err) {
       if (this.disposed) return;
-      this.cursorError = errorHint(err);
+      this.cursorError = String(err);
     }
     this.cursorPending = false;
     this.render();
@@ -422,7 +433,7 @@ export class UsageContentView implements ContentView {
       }
       const error = this.claudeError;
       if (error) {
-        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${error}`);
+        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
       } else {
         this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
       }
@@ -430,7 +441,8 @@ export class UsageContentView implements ContentView {
       this.skeleton(widget, 3);
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
-      this.foot(widget, 'off', () => this.claudeError ?? 'not connected');
+      const error = this.claudeError;
+      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
     }
     return widget;
   }
@@ -460,7 +472,7 @@ export class UsageContentView implements ContentView {
       const error = this.codexError;
       const asOf = () => (Number.isNaN(observed) ? 'as of last session' : `as of ${formatAge(observed)}`);
       if (error) {
-        this.foot(widget, 'stale', () => `${asOf()} — ${error}`);
+        this.foot(widget, 'stale', () => `${asOf()} — ${errorHint(error)}`);
       } else {
         // Codex data is a local snapshot: freshness is the last codex
         // activity, not the last poll, so the foot always says "as of".
@@ -470,7 +482,8 @@ export class UsageContentView implements ContentView {
       this.skeleton(widget, 2);
       this.foot(widget, 'loading', () => 'reading sessions…');
     } else {
-      this.foot(widget, 'off', () => this.codexError ?? 'not connected');
+      const error = this.codexError;
+      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
     }
     return widget;
   }
@@ -505,7 +518,7 @@ export class UsageContentView implements ContentView {
       row('completions', u.completions);
       const error = this.copilotError;
       if (error) {
-        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${error}`);
+        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
       } else {
         this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
       }
@@ -513,7 +526,8 @@ export class UsageContentView implements ContentView {
       this.skeleton(widget, 3);
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
-      this.foot(widget, 'off', () => this.copilotError ?? 'not connected');
+      const error = this.copilotError;
+      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
     }
     return widget;
   }
@@ -554,7 +568,7 @@ export class UsageContentView implements ContentView {
       }
       const error = this.cursorError;
       if (error) {
-        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${error}`);
+        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
       } else if (u.totalPercentUsed !== null) {
         this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
       } else if (u.cycleStart !== null) {
@@ -567,7 +581,8 @@ export class UsageContentView implements ContentView {
       this.skeleton(widget, 2);
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
-      this.foot(widget, 'off', () => this.cursorError ?? 'not connected');
+      const error = this.cursorError;
+      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
     }
     return widget;
   }

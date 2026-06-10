@@ -89,7 +89,8 @@ struct CodexUsage {
 - `usage_fetch_claude() -> Result<ClaudeUsage, String>`
   1. Load credentials: `~/.claude/.credentials.json`; if missing on macOS, try `security find-generic-password -s "Claude Code-credentials" -w` (spawned process, 2 s timeout).
   2. If `expiresAt <= now` → `Err("token-expired")` (sentinel string; UI maps it to a hint).
-  3. Serve from in-memory cache if `< 180 s` old (per-token); otherwise GET the endpoint with the three required headers (`User-Agent: claude-code/2.0`) and a 10 s timeout. On 429 → keep cache, surface `Err("rate-limited")` only if no cache exists.
+  3. Serve from in-memory cache if `< 180 s` old (per-token); on a memory miss, warm from the disk cache (`<OS cache dir>/krypton/claude-usage.json`, keyed by a token hash — the token itself is never written) so app restarts don't cost a request. Otherwise GET the endpoint with the three required headers (`User-Agent: claude-code/2.0`) and a 10 s timeout.
+  4. On 429 → honor `Retry-After` (capped at 1 h; one poll cycle if absent): no network until the penalty lapses (the server counts down a fixed window — requests during it are wasted). Keep serving cache; surface `Err("rate-limited:<epochMs>")` only if no cache exists, and the UI renders a live countdown from the deadline ("rate limited — retry in 28m").
 - `usage_fetch_codex() -> Result<CodexUsage, String>`
   Walk `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl` newest-first (by path order, limit ~10 files / 7 days), scan each file *backwards* for the last `token_count` with `rate_limits != null`. Pure local read, no cache needed. Honors `CODEX_HOME` env override.
 - `usage_fetch_copilot() -> Result<CopilotUsage, String>` — token from `apps.json`/`hosts.json`, GET `copilot_internal/user`, 180 s cache, same stale-fallback ladder; 401/403 → `token-expired`.
@@ -145,7 +146,8 @@ None. Poll cadences are fixed (180 s / 60 s); provider sections appear by auto-d
 - **No credentials anywhere** → Claude section shows “not connected”, view still opens for Codex (and vice versa).
 - **Stale `.credentials.json` + fresh Keychain token (macOS)** → the freshest credential wins; the lingering file never masks a live Keychain login.
 - **Expired access token (everywhere)** → no network call; expired-state hint. We never refresh the token ourselves (rotation race with Claude Code could invalidate its session).
-- **429 / network failure / offline** → keep showing last successful payload with “stale · Xm ago”; retry on next cycle with the cycle itself as backoff.
+- **429 / network failure / offline** → keep showing last successful payload with “stale · Xm ago”. Network errors retry on the next cycle; a 429 arms a `Retry-After` backoff so polls short-circuit in Rust (no HTTP) until the penalty lapses, with a countdown in the foot line when there is no payload to show.
+- **App restart during a rate-limit window** → the disk cache restores the last good payload immediately, so the widget never opens blank just because the process restarted (dev iteration restarts used to cost one request each and start empty).
 - **`codex exec`-only recent activity** (`rate_limits: null`) → scanner keeps walking older events/files; if nothing in ~7 days → “no recent data — run codex once”.
 - **`seven_day_opus`/`seven_day_sonnet` null** → row hidden, no empty gauge.
 - **Multiple usage views** → allowed; each polls independently but the Rust 180 s cache makes the endpoint see at most one call per cycle.
@@ -155,7 +157,7 @@ None. Poll cadences are fixed (180 s / 60 s); provider sections appear by auto-d
 
 - Per-lane / per-session token+cost aggregation from ACP `UsageInfo` events (different layer; possible future tab in this same view).
 - Workspace-footer utilization indicator and threshold notifications (future spec if wanted).
-- OAuth token refresh, any write to credential stores, any persistence of usage history.
+- OAuth token refresh, any write to credential stores, any persistence of usage *history* (the single last-payload disk cache added post-implementation is a freshness optimization, not history).
 - ~~Other providers (Gemini, Cursor, Copilot…)~~ Copilot and Cursor were added post-implementation at the user's request (see Solution). Remaining: Gemini etc. — still no accessible quota source.
 
 ## Resources

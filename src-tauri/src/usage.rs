@@ -4,7 +4,11 @@
 //   - Claude: OAuth usage endpoint, authenticated with the token Claude Code
 //     already maintains (~/.claude/.credentials.json, macOS Keychain fallback).
 //     Responses are cached for 180 s per token to stay inside the endpoint's
-//     safe polling cadence regardless of how many views poll.
+//     safe polling cadence regardless of how many views poll, and the last
+//     good payload is persisted to the OS cache dir (keyed by a token hash)
+//     so restarts don't cost a request or blank the widget. A 429 arms a
+//     Retry-After backoff: no network until the penalty lapses, and the
+//     error sentinel carries the deadline ("rate-limited:<epochMs>").
 //   - Codex: newest `token_count` event with a non-null `rate_limits` object
 //     from the local rollout JSONL under ~/.codex/sessions (CODEX_HOME aware).
 //
@@ -12,8 +16,10 @@
 // Authorization header to api.anthropic.com. Error strings are static
 // sentinels — never raw HTTP bodies.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -24,14 +30,14 @@ const CODEX_MAX_FILES: usize = 10;
 
 // ─── Payload types (camelCase over IPC) ─────────────────────────────────────
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageWindow {
     pub utilization: f64,
     pub resets_at: Option<String>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtraUsage {
     pub is_enabled: bool,
@@ -40,7 +46,7 @@ pub struct ExtraUsage {
     pub utilization: Option<f64>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeUsage {
     pub five_hour: UsageWindow,
@@ -199,6 +205,49 @@ async fn load_claude_creds() -> Result<ClaudeCreds, String> {
 
 // Cache key is the access token itself; it never leaves process memory.
 static CLAUDE_CACHE: Mutex<Option<(String, ClaudeUsage)>> = Mutex::new(None);
+// 429 backoff from Retry-After: fetches are skipped until this epoch-ms.
+static CLAUDE_THROTTLE: Mutex<Option<(String, i64)>> = Mutex::new(None);
+
+/// Cap a Retry-After value so a bogus header can't brick fetching until
+/// restart; absent header backs off one poll cycle.
+const CLAUDE_RETRY_AFTER_MAX_S: i64 = 3_600;
+
+// ─── Claude disk cache ───────────────────────────────────────────────────────
+//
+// The in-memory cache dies with the process, and dev iteration restarts the
+// app constantly — every restart used to cost one real request and an empty
+// widget until it landed. The last good payload is persisted to the OS cache
+// dir, keyed by a hash of the token (the token itself is never written).
+
+fn token_fingerprint(token: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    token.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn claude_disk_cache_path() -> Option<PathBuf> {
+    Some(dirs::cache_dir()?.join("krypton/claude-usage.json"))
+}
+
+fn load_disk_claude_from(path: &PathBuf, token: &str) -> Option<ClaudeUsage> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let v: Value = serde_json::from_str(&raw).ok()?;
+    if v.get("tokenFingerprint")?.as_str()? != token_fingerprint(token) {
+        return None;
+    }
+    serde_json::from_value(v.get("usage")?.clone()).ok()
+}
+
+fn store_disk_claude_to(path: &PathBuf, token: &str, usage: &ClaudeUsage) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let payload = serde_json::json!({
+        "tokenFingerprint": token_fingerprint(token),
+        "usage": usage,
+    });
+    let _ = std::fs::write(path, payload.to_string());
+}
 
 fn window_from(v: Option<&Value>) -> Option<UsageWindow> {
     let obj = v?.as_object()?;
@@ -212,17 +261,33 @@ fn window_from(v: Option<&Value>) -> Option<UsageWindow> {
 }
 
 fn cached_claude(token: &str, max_age_ms: Option<i64>) -> Option<ClaudeUsage> {
-    let guard = CLAUDE_CACHE.lock().ok()?;
-    let (cached_token, usage) = guard.as_ref()?;
-    if cached_token != token {
-        return None;
-    }
+    let mut guard = CLAUDE_CACHE.lock().ok()?;
+    let usage = match guard.as_ref() {
+        Some((cached_token, usage)) if cached_token == token => usage.clone(),
+        // Memory miss (fresh process) — warm from the disk cache.
+        _ => {
+            let usage = claude_disk_cache_path().and_then(|p| load_disk_claude_from(&p, token))?;
+            *guard = Some((token.to_string(), usage.clone()));
+            usage
+        }
+    };
     if let Some(max_age) = max_age_ms {
         if now_ms() - usage.fetched_at > max_age {
             return None;
         }
     }
-    Some(usage.clone())
+    Some(usage)
+}
+
+/// Epoch-ms until which the token is under a 429 penalty, if any.
+fn claude_throttled_until(token: &str) -> Option<i64> {
+    let guard = CLAUDE_THROTTLE.lock().ok()?;
+    match guard.as_ref() {
+        Some((throttled_token, until)) if throttled_token == token && *until > now_ms() => {
+            Some(*until)
+        }
+        _ => None,
+    }
 }
 
 #[tauri::command]
@@ -231,6 +296,13 @@ pub async fn usage_fetch_claude() -> Result<ClaudeUsage, String> {
 
     if let Some(fresh) = cached_claude(&creds.access_token, Some(CLAUDE_CACHE_TTL_MS)) {
         return Ok(fresh);
+    }
+    // Under a 429 penalty the server counts down a fixed window; requests
+    // during it are wasted, so skip the network entirely until it lapses.
+    // The sentinel carries the deadline for the frontend's countdown.
+    if let Some(until) = claude_throttled_until(&creds.access_token) {
+        return cached_claude(&creds.access_token, None)
+            .ok_or_else(|| format!("rate-limited:{until}"));
     }
     if creds.expires_at_ms <= now_ms() {
         return Err("token-expired".to_string());
@@ -259,7 +331,18 @@ pub async fn usage_fetch_claude() -> Result<ClaudeUsage, String> {
     };
     let status = response.status();
     if status.as_u16() == 429 {
-        return stale().ok_or_else(|| "rate-limited".to_string());
+        let retry_secs = response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .unwrap_or(CLAUDE_CACHE_TTL_MS / 1_000)
+            .clamp(1, CLAUDE_RETRY_AFTER_MAX_S);
+        let until = now_ms() + retry_secs * 1_000;
+        if let Ok(mut guard) = CLAUDE_THROTTLE.lock() {
+            *guard = Some((creds.access_token.clone(), until));
+        }
+        return stale().ok_or_else(|| format!("rate-limited:{until}"));
     }
     if status.as_u16() == 401 {
         return Err("token-expired".to_string());
@@ -303,6 +386,9 @@ pub async fn usage_fetch_claude() -> Result<ClaudeUsage, String> {
         fetched_at: now_ms(),
     };
 
+    if let Some(path) = claude_disk_cache_path() {
+        store_disk_claude_to(&path, &creds.access_token, &usage);
+    }
     if let Ok(mut guard) = CLAUDE_CACHE.lock() {
         *guard = Some((creds.access_token, usage.clone()));
     }
@@ -862,6 +948,40 @@ mod tests {
         assert!(usage.total_percent_used.is_none());
         assert!(usage.total_spend.is_none());
         assert!(usage.cycle_end.is_none());
+    }
+
+    #[test]
+    fn disk_cache_roundtrips_and_rejects_other_tokens() {
+        let usage = ClaudeUsage {
+            five_hour: UsageWindow {
+                utilization: 42.0,
+                resets_at: Some("2026-06-10T18:00:00Z".into()),
+            },
+            seven_day: UsageWindow {
+                utilization: 80.5,
+                resets_at: None,
+            },
+            seven_day_opus: None,
+            seven_day_sonnet: None,
+            extra_usage: None,
+            subscription_type: Some("team".into()),
+            rate_limit_tier: None,
+            fetched_at: 1_781_100_000_000,
+        };
+        let dir = std::env::temp_dir().join("krypton-usage-test");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("claude-usage.json");
+
+        store_disk_claude_to(&path, "tok-a", &usage);
+        let loaded = load_disk_claude_from(&path, "tok-a").expect("should load");
+        assert_eq!(loaded.five_hour.utilization, 42.0);
+        assert_eq!(loaded.seven_day.utilization, 80.5);
+        assert_eq!(loaded.fetched_at, 1_781_100_000_000);
+        assert_eq!(loaded.subscription_type.as_deref(), Some("team"));
+        // A different token must not see the cached payload.
+        assert!(load_disk_claude_from(&path, "tok-b").is_none());
+
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]
