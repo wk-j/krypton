@@ -894,6 +894,11 @@ export class InputRouter {
         this.compositor.openHurlClient().then(() => this.toNormal());
         break;
 
+      // $ — open subscription credit usage view
+      case '$':
+        this.compositor.openUsageView().then(() => this.toNormal());
+        break;
+
       // c — clone SSH session (new tab) / C — clone SSH session (new window)
       case 'c':
         if (e.shiftKey) {

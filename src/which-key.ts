@@ -64,6 +64,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'u', label: 'Vault Viewer', effect: 'important' },
     { key: 'e', label: 'Pencil', effect: 'important' },
     { key: 'q', label: 'Hurl Client', effect: 'important' },
+    { key: '$', label: 'Credit Usage', effect: 'important' },
     { key: 'M', label: 'Music Dashboard', effect: 'important' },
     { key: 'P', label: 'Profiler HUD', effect: 'important' },
     { key: 'H', label: 'Hint Mode', effect: 'important' },

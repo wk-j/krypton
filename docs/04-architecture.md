@@ -109,6 +109,7 @@ The webview's `<html>` and `<body>` have `background: transparent`. Windows are 
 | `rusqlite` | Read-only SQLite database access for dashboard overlays | Implemented |
 | `rodio` | Audio playback for sound engine (WAV decoding + OS audio output via cpal) | Implemented |
 | `hostname` | Local hostname detection for SSH remote CWD filtering (OSC 7 hostname comparison) | Implemented |
+| `reqwest` | HTTPS client for the subscription credit usage view (Claude OAuth usage endpoint) | Implemented |
 
 ## 5.2 Key Frontend Packages (npm)
 

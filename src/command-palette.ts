@@ -794,6 +794,15 @@ export class CommandPalette {
       execute: () => c.openPencil(),
     });
 
+    // ── Credit Usage ──
+    this.register({
+      id: 'usage.open',
+      label: 'Open Credit Usage',
+      category: 'Window',
+      keybinding: 'Leader $',
+      execute: () => c.openUsageView(),
+    });
+
     // ── Hurl Client ──
     this.register({
       id: 'hurl.open',

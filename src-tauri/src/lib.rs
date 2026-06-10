@@ -13,6 +13,7 @@ mod session;
 pub mod sound;
 pub mod ssh;
 pub mod theme;
+pub mod usage;
 pub mod util;
 pub mod webview;
 
@@ -231,6 +232,10 @@ pub fn run() {
             acp::gc_junie_mcp_overlays,
             acp::prepare_cursor_mcp,
             acp::cleanup_cursor_mcp,
+            usage::usage_fetch_claude,
+            usage::usage_fetch_codex,
+            usage::usage_fetch_copilot,
+            usage::usage_fetch_cursor,
             pencil::read_pencil_file,
             pencil::write_pencil_file,
             pencil::rename_pencil_file,

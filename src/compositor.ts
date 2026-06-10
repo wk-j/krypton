@@ -2105,6 +2105,22 @@ export class Compositor {
   }
 
   /**
+   * Open the subscription credit usage view (Claude / Codex quotas).
+   */
+  async openUsageView(): Promise<void> {
+    const { UsageContentView } = await import('./usage-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const usageView = new UsageContentView(container);
+    await this.createContentTab('USAGE // credits', usageView);
+
+    usageView.onClose(() => {
+      this.closeTab();
+    });
+  }
+
+  /**
    * Open a Pencil (Excalidraw) window. With no path it shows the picker
    * over the configured `[pencil] dir`; with a path it opens that file
    * directly (refocusing an existing tab if the same file is already open).
