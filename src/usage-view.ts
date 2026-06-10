@@ -67,9 +67,15 @@ interface CopilotUsage {
 }
 
 interface CursorUsage {
+  totalPercentUsed: number | null;
+  totalSpend: number | null;
+  includedSpend: number | null;
+  bonusSpend: number | null;
+  limitSpend: number | null;
+  cycleStart: number | null;
+  cycleEnd: number | null;
   requestsUsed: number | null;
   requestsLimit: number | null;
-  startOfMonth: string | null;
   email: string | null;
   fetchedAt: number;
 }
@@ -527,21 +533,33 @@ export class UsageContentView implements ContentView {
     const widget = this.widget('cursor', metaParts.join(' · '), state);
 
     if (u) {
-      if (u.requestsLimit !== null && u.requestsLimit > 0) {
-        // Legacy request-capped plan — the only quota Cursor's CLI token
-        // can read.
+      if (u.totalPercentUsed !== null) {
+        // Usage-based plan — % of included usage for the billing cycle,
+        // straight from Cursor's dashboard RPC.
+        this.gauge(widget, 'usage', u.totalPercentUsed, u.cycleEnd);
+        if (u.totalSpend !== null && u.includedSpend !== null) {
+          const bonus = u.bonusSpend ? ` + $${u.bonusSpend.toFixed(2)} bonus` : '';
+          this.note(
+            widget,
+            `$${u.totalSpend.toFixed(2)} used · $${u.includedSpend.toFixed(2)} included${bonus}`,
+          );
+        }
+      } else if (u.requestsLimit !== null && u.requestsLimit > 0) {
+        // Legacy request-capped plan fallback.
         const used = u.requestsUsed ?? 0;
         this.gauge(widget, 'requests', (used / u.requestsLimit) * 100, null);
         this.note(widget, `${used} / ${u.requestsLimit} fast requests this cycle`);
       } else {
         this.note(widget, 'plan usage not exposed by Cursor — see cursor.com/dashboard');
       }
-      const cycleStart = u.startOfMonth ? Date.parse(u.startOfMonth) : NaN;
       const error = this.cursorError;
       if (error) {
         this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${error}`);
-      } else if (!Number.isNaN(cycleStart)) {
-        this.foot(widget, 'ok', () => `connected · cycle started ${formatAge(cycleStart)}`);
+      } else if (u.totalPercentUsed !== null) {
+        this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
+      } else if (u.cycleStart !== null) {
+        const start = u.cycleStart;
+        this.foot(widget, 'ok', () => `connected · cycle started ${formatAge(start)}`);
       } else {
         this.foot(widget, 'ok', () => 'connected');
       }

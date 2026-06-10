@@ -92,16 +92,24 @@ pub struct CopilotUsage {
     pub fetched_at: i64,
 }
 
-/// Cursor's CLI token only unlocks the legacy per-request counters, which are
-/// null/zero on current plans — the dashboard quota APIs reject non-browser
-/// sessions. The widget therefore mostly reports "connected, quota not
-/// exposed"; the request gauge appears only for legacy request-based plans.
+/// Cursor plan usage from the dashboard RPC
+/// (`DashboardService/GetCurrentPeriodUsage`), which accepts the same CLI
+/// JWT and returns spend vs included allowance for the current billing
+/// cycle. Spend fields are in dollars (the RPC reports cents). The legacy
+/// request counters remain as a fallback slot for old request-capped plans.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CursorUsage {
+    pub total_percent_used: Option<f64>,
+    pub total_spend: Option<f64>,
+    pub included_spend: Option<f64>,
+    pub bonus_spend: Option<f64>,
+    pub limit_spend: Option<f64>,
+    /// Billing-cycle bounds, epoch ms.
+    pub cycle_start: Option<i64>,
+    pub cycle_end: Option<i64>,
     pub requests_used: Option<f64>,
     pub requests_limit: Option<f64>,
-    pub start_of_month: Option<String>,
     pub email: Option<String>,
     pub fetched_at: i64,
 }
@@ -597,18 +605,19 @@ pub async fn usage_fetch_copilot() -> Result<CopilotUsage, String> {
 static CURSOR_CACHE: Mutex<Option<(String, CursorUsage)>> = Mutex::new(None);
 
 struct CursorCreds {
-    user_id: i64,
     jwt: String,
     email: Option<String>,
 }
 
-/// cursor-agent keeps the numeric user id in ~/.cursor/cli-config.json and
+/// cursor-agent keeps its auth info in ~/.cursor/cli-config.json and
 /// the access-token JWT in the macOS Keychain (service "cursor-access-token").
 async fn load_cursor_creds() -> Option<CursorCreds> {
     let raw = std::fs::read_to_string(dirs::home_dir()?.join(".cursor/cli-config.json")).ok()?;
     let v: Value = serde_json::from_str(&raw).ok()?;
     let auth = v.get("authInfo")?;
-    let user_id = auth.get("userId").and_then(Value::as_i64)?;
+    // Presence of a numeric userId distinguishes a real login from a stale
+    // config; the id itself is only needed by the legacy cookie endpoint.
+    auth.get("userId").and_then(Value::as_i64)?;
     let email = auth.get("email").and_then(Value::as_str).map(String::from);
 
     #[cfg(target_os = "macos")]
@@ -620,11 +629,7 @@ async fn load_cursor_creds() -> Option<CursorCreds> {
             if out.status.success() {
                 let jwt = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if !jwt.is_empty() {
-                    return Some(CursorCreds {
-                        user_id,
-                        jwt,
-                        email,
-                    });
+                    return Some(CursorCreds { jwt, email });
                 }
             }
         }
@@ -633,20 +638,35 @@ async fn load_cursor_creds() -> Option<CursorCreds> {
 }
 
 fn parse_cursor_usage(body: &Value, email: Option<String>, fetched_at: i64) -> CursorUsage {
-    let gpt4 = body.get("gpt-4");
-    let num = |k: &str| gpt4.and_then(|g| g.get(k)).and_then(Value::as_f64);
-    // maxRequestUsage is null on current (usage-based) plans; the request
-    // gauge only means something when the plan still has a request cap.
-    let requests_limit = num("maxRequestUsage");
+    let plan = body.get("planUsage");
+    // Spend values arrive in cents (verified against the standard $20.00
+    // Pro included allowance).
+    let dollars = |k: &str| {
+        plan.and_then(|p| p.get(k))
+            .and_then(Value::as_f64)
+            .map(|cents| cents / 100.0)
+    };
+    // Billing-cycle bounds are epoch ms encoded as JSON strings.
+    let epoch_ms = |k: &str| {
+        body.get(k).and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+        })
+    };
     CursorUsage {
-        requests_used: requests_limit
-            .is_some()
-            .then(|| num("numRequests").unwrap_or(0.0)),
-        requests_limit,
-        start_of_month: body
-            .get("startOfMonth")
-            .and_then(Value::as_str)
-            .map(String::from),
+        total_percent_used: plan
+            .and_then(|p| p.get("totalPercentUsed"))
+            .and_then(Value::as_f64),
+        total_spend: dollars("totalSpend"),
+        included_spend: dollars("includedSpend"),
+        bonus_spend: dollars("bonusSpend"),
+        limit_spend: dollars("limit"),
+        cycle_start: epoch_ms("billingCycleStart"),
+        cycle_end: epoch_ms("billingCycleEnd"),
+        // The RPC carries no request counters; these stay as a fallback
+        // slot for legacy request-capped plans.
+        requests_used: None,
+        requests_limit: None,
         email,
         fetched_at,
     }
@@ -676,21 +696,18 @@ pub async fn usage_fetch_cursor() -> Result<CursorUsage, String> {
         return Ok(fresh);
     }
 
-    // WorkosCursorSessionToken cookie format: "<userId>%3A%3A<jwt>".
-    let cookie = format!(
-        "WorkosCursorSessionToken={}%3A%3A{}",
-        creds.user_id, creds.jwt
-    );
+    // Dashboard usage RPC (Connect protocol) — same data Cursor's own
+    // dashboard renders, and it accepts the CLI's Keychain JWT directly.
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
         .map_err(|_| "network-error".to_string())?;
     let response = client
-        .get(format!(
-            "https://cursor.com/api/usage?user={}",
-            creds.user_id
-        ))
-        .header("Cookie", cookie)
+        .post("https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage")
+        .header("Authorization", format!("Bearer {}", creds.jwt))
+        .header("Connect-Protocol-Version", "1")
+        .header("Content-Type", "application/json")
+        .body("{}")
         .send()
         .await;
 
@@ -816,29 +833,35 @@ mod tests {
     }
 
     #[test]
-    fn cursor_request_gauge_only_for_capped_plans() {
-        // Current usage-based plan: maxRequestUsage null → no gauge data.
+    fn cursor_plan_usage_parses_cents_and_cycle_strings() {
+        // Live GetCurrentPeriodUsage shape captured 2026-06-10: spend in
+        // cents, billing-cycle bounds as string epoch ms.
         let modern: Value = serde_json::from_str(
-            r#"{"gpt-4":{"numRequests":0,"maxRequestUsage":null},"startOfMonth":"2026-05-21T15:12:35.000Z"}"#,
+            r#"{"billingCycleStart":"1779376355000","billingCycleEnd":"1782054755000",
+                "planUsage":{"totalSpend":5052,"includedSpend":2000,"bonusSpend":3052,
+                "limit":2000,"remainingBonus":false,"autoPercentUsed":22.45,
+                "apiPercentUsed":0,"totalPercentUsed":18.71},"enabled":true}"#,
         )
         .expect("fixture json");
         let usage = parse_cursor_usage(&modern, Some("a@b.c".into()), 42);
-        assert!(usage.requests_limit.is_none());
+        assert_eq!(usage.total_percent_used, Some(18.71));
+        assert_eq!(usage.total_spend, Some(50.52));
+        assert_eq!(usage.included_spend, Some(20.0));
+        assert_eq!(usage.bonus_spend, Some(30.52));
+        assert_eq!(usage.limit_spend, Some(20.0));
+        assert_eq!(usage.cycle_start, Some(1779376355000));
+        assert_eq!(usage.cycle_end, Some(1782054755000));
         assert!(usage.requests_used.is_none());
-        assert_eq!(
-            usage.start_of_month.as_deref(),
-            Some("2026-05-21T15:12:35.000Z")
-        );
+        assert!(usage.requests_limit.is_none());
         assert_eq!(usage.email.as_deref(), Some("a@b.c"));
 
-        // Legacy request-capped plan: both sides present.
-        let legacy: Value = serde_json::from_str(
-            r#"{"gpt-4":{"numRequests":123,"maxRequestUsage":500},"startOfMonth":"2026-05-21T15:12:35.000Z"}"#,
-        )
-        .expect("fixture json");
-        let usage = parse_cursor_usage(&legacy, None, 42);
-        assert_eq!(usage.requests_used, Some(123.0));
-        assert_eq!(usage.requests_limit, Some(500.0));
+        // No planUsage (e.g. account without usage-based pricing) → all
+        // spend fields None; the widget falls back to "not exposed".
+        let empty: Value = serde_json::from_str(r#"{"enabled":false}"#).expect("fixture json");
+        let usage = parse_cursor_usage(&empty, None, 42);
+        assert!(usage.total_percent_used.is_none());
+        assert!(usage.total_spend.is_none());
+        assert!(usage.cycle_end.is_none());
     }
 
     #[test]
