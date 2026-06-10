@@ -173,6 +173,81 @@
   color: var(--krypton-titlebar-text, rgba(0, 200, 255, 0.4));
 }
 
+/* ─── Window footer AI subscription usage (spec 153) ─── */
+
+.krypton-window__footer {
+  container-type: inline-size;
+}
+
+.krypton-window__usage-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-variant-numeric: tabular-nums;
+}
+
+.krypton-window__usage-status[hidden] {
+  display: none;
+}
+
+.krypton-window__usage-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.55);
+}
+
+.krypton-window__usage-provider + .krypton-window__usage-provider::before {
+  content: '·';
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.24);
+}
+
+.krypton-window__usage-provider--loading,
+.krypton-window__usage-provider--stale {
+  opacity: 0.58;
+}
+
+.krypton-window__usage-name {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.82);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.krypton-window__usage-quota {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+}
+
+.krypton-window__usage-quota + .krypton-window__usage-quota::before {
+  content: '/';
+  margin-right: 5px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
+}
+
+.krypton-window__usage-quota--warn {
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+}
+
+.krypton-window__usage-quota--critical {
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+}
+
+@container (max-width: 620px) {
+  .krypton-window__usage-quota--secondary {
+    display: none;
+  }
+
+  .krypton-window__usage-quota--secondary + .krypton-window__usage-quota::before {
+    content: none;
+  }
+}
+
 /* ─── Pinned Window Indicator ─── */
 .krypton-window--pinned .krypton-window__label-group::after {
   content: '\u25C8';  /* Unicode diamond with dot */
@@ -451,4 +526,3 @@
               filter 200ms cubic-bezier(0, 0, 0.2, 1);
   transform-origin: center top;
 }
-

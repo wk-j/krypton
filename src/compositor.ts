@@ -52,6 +52,7 @@ import { ProgressGauge } from './progress-gauge';
 import { parseOsc7Sequences } from './osc7';
 import { probeRemoteCwd, type SshConnectionInfo } from './ssh-session';
 import { WebviewContentView } from './webview-view';
+import { usageStore, type ProviderUsageSummary, type UsageProvider } from './usage-store';
 import type { ViewBus } from './view-bus';
 import { SYSTEM_SOURCE, type ViewAddress } from './view-bus-types';
 
@@ -342,6 +343,8 @@ export class Compositor {
   /** Latest foreground process per session, populated from process-changed events.
    *  Used by findSessionsByProcess() for the Smart Prompt Dialog. */
   private processBySession: Map<SessionId, ProcessInfo> = new Map();
+  private usageUnsubscribeByWindow = new Map<WindowId, () => void>();
+  private usageProvidersUnsubscribeByWindow = new Map<WindowId, () => void>();
 
   /** Callbacks invoked after config reload with the fresh config */
   private onConfigReloadCallbacks: Array<(config: KryptonConfig) => void> = [];
@@ -963,6 +966,9 @@ export class Compositor {
       const idx = info.win.tabs.indexOf(info.tab);
       if (idx >= 0) info.win.activeTabIndex = idx;
       info.tab.focusedPaneId = info.pane.id;
+      this.updateTabBar(info.win);
+      this.showActiveTab(info.win);
+      this.updatePaneFocusIndicator(info.tab);
       info.pane.terminal?.focus();
       info.pane.contentView?.focusView?.();
       return { consumed: true };
@@ -1224,6 +1230,85 @@ export class Compositor {
         tab !== activeTab,
       );
     }
+    this.syncWindowUsageStatus(win);
+  }
+
+  /** Follow the active tab's focused content view and render its provider quotas. */
+  private syncWindowUsageStatus(win: KryptonWindow): void {
+    this.usageUnsubscribeByWindow.get(win.id)?.();
+    this.usageUnsubscribeByWindow.delete(win.id);
+    this.usageProvidersUnsubscribeByWindow.get(win.id)?.();
+    this.usageProvidersUnsubscribeByWindow.delete(win.id);
+
+    const tab = win.tabs[win.activeTabIndex];
+    const pane = tab ? this.findPaneInTree(tab.paneTree, tab.focusedPaneId) : null;
+    const view = pane?.contentView;
+    const providers = [...new Set(view?.getUsageProviders?.() ?? [])];
+    const rerender = (): void => this.renderWindowUsageStatus(win, providers);
+
+    rerender();
+    if (providers.length > 0) {
+      this.usageUnsubscribeByWindow.set(win.id, usageStore.subscribe(providers, rerender));
+    }
+    if (view?.onUsageProvidersChange) {
+      this.usageProvidersUnsubscribeByWindow.set(
+        win.id,
+        view.onUsageProvidersChange(() => this.syncWindowUsageStatus(win)),
+      );
+    }
+  }
+
+  private renderWindowUsageStatus(win: KryptonWindow, providers: readonly UsageProvider[]): void {
+    const footer = win.element.querySelector<HTMLElement>('.krypton-window__footer');
+    if (!footer) return;
+    let root = footer.querySelector<HTMLElement>('.krypton-window__usage-status');
+    if (!root) {
+      root = document.createElement('div');
+      root.className = 'krypton-window__usage-status';
+      footer.prepend(root);
+    }
+    root.replaceChildren();
+
+    for (const provider of providers) {
+      const summary = usageStore.summary(provider);
+      if (summary.freshness !== 'off' && (summary.freshness === 'loading' || summary.quotas.length > 0)) {
+        root.appendChild(this.buildWindowUsageProvider(summary));
+      }
+    }
+    root.hidden = root.childElementCount === 0;
+  }
+
+  private buildWindowUsageProvider(summary: ProviderUsageSummary): HTMLElement {
+    const segment = document.createElement('span');
+    segment.className =
+      `krypton-window__usage-provider krypton-window__usage-provider--${summary.freshness}`;
+    const name = document.createElement('span');
+    name.className = 'krypton-window__usage-name';
+    name.textContent = summary.provider;
+    segment.appendChild(name);
+
+    if (summary.freshness === 'loading') {
+      const pending = document.createElement('span');
+      pending.className = 'krypton-window__usage-quota';
+      pending.textContent = '--';
+      segment.appendChild(pending);
+    } else {
+      for (const quota of summary.quotas) {
+        const item = document.createElement('span');
+        item.className = 'krypton-window__usage-quota';
+        if (quota !== summary.mostConstrained) item.classList.add('krypton-window__usage-quota--secondary');
+        if (quota.usedPercent >= 95) item.classList.add('krypton-window__usage-quota--critical');
+        else if (quota.usedPercent >= 80) item.classList.add('krypton-window__usage-quota--warn');
+        item.textContent = `${quota.label} ${Math.round(quota.usedPercent)}%`;
+        segment.appendChild(item);
+      }
+    }
+
+    const detail = summary.quotas.map((q) => `${q.label} ${Math.round(q.usedPercent)}%`).join(', ');
+    const stale = summary.freshness === 'stale' ? `; stale${summary.error ? `: ${summary.error}` : ''}` : '';
+    segment.title = `${summary.provider} usage${detail ? `: ${detail}` : ''}${stale}`;
+    segment.setAttribute('aria-label', segment.title);
+    return segment;
   }
 
   private focusContentView(contentView: ContentView): void {
@@ -1706,6 +1791,7 @@ export class Compositor {
     };
     this.windows.set(id, win);
     this.updateTabBar(win);
+    this.syncWindowUsageStatus(win);
 
     // Focus the new window BEFORE relayout so that Focus layout
     // places it on the left (main) column immediately.
@@ -1889,6 +1975,7 @@ export class Compositor {
     };
     this.windows.set(id, win);
     this.updateTabBar(win);
+    this.syncWindowUsageStatus(win);
 
     this.focusWindowQuiet(id);
     const snapshots = this.snapshotBounds();
@@ -3039,6 +3126,10 @@ export class Compositor {
   async closeWindow(id: WindowId): Promise<void> {
     const win = this.windows.get(id);
     if (!win) return;
+    this.usageUnsubscribeByWindow.get(id)?.();
+    this.usageUnsubscribeByWindow.delete(id);
+    this.usageProvidersUnsubscribeByWindow.get(id)?.();
+    this.usageProvidersUnsubscribeByWindow.delete(id);
 
     // Exit maximize mode if the maximized window is being closed
     if (this.maximizedWindowId === id) {
@@ -4175,6 +4266,8 @@ export class Compositor {
     for (const p of panes) {
       p.element.classList.toggle('krypton-pane--focused', p.id === tab.focusedPaneId);
     }
+    const win = [...this.windows.values()].find((candidate) => candidate.tabs[candidate.activeTabIndex] === tab);
+    if (win) this.syncWindowUsageStatus(win);
   }
 
   // ─── Quick Terminal ───────────────────────────────────────────────

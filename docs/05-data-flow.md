@@ -246,6 +246,8 @@
    OpenCode, Pi, Droid, Cursor, Junie, or OMP with the same cwd. After `session/new`,
    OpenCode lanes receive `session/set_config_option` to select
    `zai-coding-plan/glm-5.1`.
+   a. Lane add/restore/close recomputes the deduplicated set of supported usage
+      providers (Claude, Codex, Copilot, Cursor) and notifies the compositor.
 7. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
    Lanes render into a shared dashboard, but prompts are dispatched only to the
@@ -293,6 +295,27 @@
        increments a spawn epoch, and spawns the same backend in the same cwd.
     d. #new! first clears that lane's persisted memory document through
        clear_harness_memory_lane, then follows the #new flow.
+
+## Window AI Credit Status Flow
+
+```
+1. The active tab's focused ContentView declares zero or more providers through
+   getUsageProviders(); ACP Harness returns the deduplicated union of its lanes.
+2. Compositor subscribes that provider set to the shared UsageStore.
+3. UsageStore serves its last snapshot immediately, starts one poll timer per
+   provider on the first subscriber, and invokes the existing usage_fetch_*
+   Tauri command at the provider cadence.
+4. Rust usage.rs returns cached-or-live provider data; UsageStore keeps the last
+   good payload on failure and marks it stale.
+5. Compositor normalizes the snapshot into quota labels and renders the left side
+   of the visible window's .krypton-window__footer.
+6. CSS shows all quota windows at normal width and hides secondary quotas at
+   constrained widths; the provider's most-used quota remains.
+7. Tab/pane focus changes or Harness provider-membership changes replace the
+   window subscription. Closing the final subscriber stops that provider timer.
+8. UsageContentView subscribes to the same store for full gauges, reset times,
+   spend, and freshness; it no longer owns separate polling loops.
+```
     e. #mem clear clears the active lane memory document for future prompts only.
     f. #cancel also clears the lane's prompt queue. #unqueue [N] removes the
        last (or 1-indexed) queued prompt; #queue clear empties the queue without

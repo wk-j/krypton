@@ -95,6 +95,7 @@ import type { PaletteAction, PaletteContext } from '../palette-types';
 import type { ViewBus } from '../view-bus';
 import type { AttentionTier } from '../view-bus-types';
 import { SYSTEM_SOURCE } from '../view-bus-types';
+import { providerForBackend, type UsageProvider } from '../usage-store';
 import {
   loadConfig,
   getAcpHarnessConfig,
@@ -1079,6 +1080,7 @@ export class AcpHarnessView implements ContentView {
   /** spec 146: last review count published to the footer; dedupes the signal. */
   private lastPublishedReviews = -1;
   private lanes: HarnessLane[] = [];
+  private usageProviderListeners = new Set<() => void>();
   private activeLaneId = '';
   private laneBus = new LaneBus();
   private coordinator!: InterLaneCoordinator;
@@ -2486,6 +2488,22 @@ export class AcpHarnessView implements ContentView {
     this.scheduleStickyScroll();
   }
 
+  getUsageProviders(): readonly UsageProvider[] {
+    const providers = this.lanes
+      .map((lane) => providerForBackend(lane.backendId))
+      .filter((provider): provider is UsageProvider => provider !== null);
+    return [...new Set(providers)];
+  }
+
+  onUsageProvidersChange(cb: () => void): () => void {
+    this.usageProviderListeners.add(cb);
+    return () => this.usageProviderListeners.delete(cb);
+  }
+
+  private notifyUsageProvidersChanged(): void {
+    for (const listener of [...this.usageProviderListeners]) listener();
+  }
+
   dispose(): void {
     // spec 141: leave the cross-harness directory FIRST — flip `alive` false (so
     // any delivery already past resolveDisplayName is rejected deterministically)
@@ -2561,6 +2579,7 @@ export class AcpHarnessView implements ContentView {
       this.feedbackUnlisten = null;
     }
     this.feedbackQueue.dispose();
+    this.usageProviderListeners.clear();
     if (this.directivesUnlisten) {
       this.directivesUnlisten();
       this.directivesUnlisten = null;
@@ -4624,6 +4643,7 @@ export class AcpHarnessView implements ContentView {
     lane.triageOverride = null;
     this.appendTranscript(lane, 'system', `directive set: ${directive.id}`);
     this.lanes.push(lane);
+    this.notifyUsageProvidersChanged();
     this.activateLane(lane.id);
     // spec 130: attention tools are default-on; directive triage grants are
     // retained only as visible legacy metadata.
@@ -5229,6 +5249,7 @@ export class AcpHarnessView implements ContentView {
     this.setLaneStatus(lane, 'starting');
     lane.transcript = [{ id: makeId(), kind: 'system', text: `${mode === 'resume' ? 'resuming' : 'loading'} ${shortId(session.sessionId)}...` }];
     this.lanes.push(lane);
+    this.notifyUsageProvidersChanged();
     this.activateLane(lane.id);
     this.sessionPicker.probeClient = null;
     await this.closeSessionPicker(false);
@@ -5275,6 +5296,7 @@ export class AcpHarnessView implements ContentView {
     // harness views (no per-view collision, safe to address bare).
     const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${nextLaneNumber(label)}`);
     this.lanes.push(lane);
+    this.notifyUsageProvidersChanged();
     this.activateLane(lane.id);
     await this.spawnLane(lane);
   }
@@ -5316,6 +5338,7 @@ export class AcpHarnessView implements ContentView {
     lane.cursorMcpNames = null;
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
+    this.notifyUsageProvidersChanged();
     this.mcpStatsByLane.delete(lane.displayName);
     this.laneMetricHistory.delete(lane.id);
     // Drop the closed lane's queued items + audit row. The legacy Rust mirror is

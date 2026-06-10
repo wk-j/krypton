@@ -1,94 +1,26 @@
 // Krypton — Subscription Credit Usage View (spec 151)
-// Read-only gauges for provider subscription quotas: Claude (OAuth usage
-// endpoint, fetched by the Rust backend with a 180 s cache) and Codex
-// (snapshot from the newest local rollout JSONL — only as fresh as the
-// last Codex activity, hence the "as of" label).
+// Read-only gauges for provider subscription quotas. Payloads and polling come
+// from the shared UsageStore so this detailed view and window chrome consume
+// one provider snapshot/timer.
 //
 // Layout: one flat widget per provider on a responsive grid (side by side
 // in wide windows, stacked in narrow ones). Each widget is a single
 // surface — full border + background tint, no inner boxes.
 
-import { invoke } from '@tauri-apps/api/core';
-
 import type { ContentView, PaneContentType } from './types';
 import type { PaletteAction } from './palette-types';
-
-interface UsageWindow {
-  utilization: number;
-  resetsAt: string | null;
-}
-
-interface ExtraUsage {
-  isEnabled: boolean;
-  monthlyLimit: number | null;
-  usedCredits: number | null;
-  utilization: number | null;
-}
-
-interface ClaudeUsage {
-  fiveHour: UsageWindow;
-  sevenDay: UsageWindow;
-  sevenDayOpus: UsageWindow | null;
-  sevenDaySonnet: UsageWindow | null;
-  extraUsage: ExtraUsage | null;
-  subscriptionType: string | null;
-  rateLimitTier: string | null;
-  fetchedAt: number;
-}
-
-interface CodexWindow {
-  usedPercent: number;
-  windowMinutes: number;
-  resetsAt: number;
-}
-
-interface CodexUsage {
-  primary: CodexWindow | null;
-  secondary: CodexWindow | null;
-  planType: string | null;
-  observedAt: string;
-  sessionFile: string;
-}
-
-interface CopilotQuota {
-  usedPercent: number;
-  remaining: number;
-  entitlement: number;
-  unlimited: boolean;
-}
-
-interface CopilotUsage {
-  premium: CopilotQuota | null;
-  chat: CopilotQuota | null;
-  completions: CopilotQuota | null;
-  plan: string | null;
-  resetDate: string | null;
-  fetchedAt: number;
-}
-
-interface CursorUsage {
-  totalPercentUsed: number | null;
-  totalSpend: number | null;
-  includedSpend: number | null;
-  bonusSpend: number | null;
-  limitSpend: number | null;
-  cycleStart: number | null;
-  cycleEnd: number | null;
-  requestsUsed: number | null;
-  requestsLimit: number | null;
-  email: string | null;
-  fetchedAt: number;
-}
-
-const CLAUDE_POLL_MS = 180_000;
-const CODEX_POLL_MS = 60_000;
-const COPILOT_POLL_MS = 180_000;
-const CURSOR_POLL_MS = 180_000;
+import {
+  usageStore,
+  type CopilotQuota,
+  type UsageProvider,
+  type UsageWindow,
+} from './usage-store';
 
 /** Static error sentinels from the Rust side, mapped to display hints. */
 const ERROR_HINTS: Record<string, string> = {
   'not-connected': 'not connected',
   'token-expired': 'token expired — open a Claude lane or run claude to refresh',
+  'usage-scope-missing': 'Claude login lacks user:profile scope — usage unavailable',
   'rate-limited': 'rate limited — retrying next cycle',
   'no-recent-data': 'no recent data — run codex once',
   'unexpected-response': 'unexpected response — retrying next cycle',
@@ -170,24 +102,12 @@ export class UsageContentView implements ContentView {
   readonly element: HTMLElement;
 
   private body: HTMLElement;
-  private claude: ClaudeUsage | null = null;
-  private claudeError: string | null = null;
-  private claudePending = true;
-  private codex: CodexUsage | null = null;
-  private codexError: string | null = null;
-  private codexPending = true;
-  private copilot: CopilotUsage | null = null;
-  private copilotError: string | null = null;
-  private copilotPending = true;
-  private cursor: CursorUsage | null = null;
-  private cursorError: string | null = null;
-  private cursorPending = true;
+  private readonly providers: readonly UsageProvider[] = ['claude', 'codex', 'copilot', 'cursor'];
   /** Text nodes re-rendered by the 1 s tick (countdowns + data ages). */
   private liveTexts: Array<{ el: HTMLElement; text: () => string }> = [];
-  private pollTimers: number[] = [];
+  private unsubscribe: (() => void) | null = null;
   private tickTimer: number | null = null;
   private closeCallback: (() => void) | null = null;
-  private disposed = false;
 
   constructor(container: HTMLElement) {
     this.element = document.createElement('div');
@@ -204,15 +124,8 @@ export class UsageContentView implements ContentView {
     hints.textContent = 'r refresh · j/k scroll · q close';
     this.element.appendChild(hints);
 
+    this.unsubscribe = usageStore.subscribe(this.providers, () => this.render());
     this.render();
-    void this.refresh();
-
-    this.pollTimers.push(
-      window.setInterval(() => void this.fetchClaude(), CLAUDE_POLL_MS),
-      window.setInterval(() => void this.fetchCodex(), CODEX_POLL_MS),
-      window.setInterval(() => void this.fetchCopilot(), COPILOT_POLL_MS),
-      window.setInterval(() => void this.fetchCursor(), CURSOR_POLL_MS),
-    );
     this.tickTimer = window.setInterval(() => this.tick(), 1_000);
   }
 
@@ -221,71 +134,7 @@ export class UsageContentView implements ContentView {
   }
 
   private async refresh(): Promise<void> {
-    await Promise.allSettled([
-      this.fetchClaude(),
-      this.fetchCodex(),
-      this.fetchCopilot(),
-      this.fetchCursor(),
-    ]);
-  }
-
-  private async fetchClaude(): Promise<void> {
-    try {
-      const usage = await invoke<ClaudeUsage>('usage_fetch_claude');
-      if (this.disposed) return;
-      this.claude = usage;
-      this.claudeError = null;
-    } catch (err) {
-      if (this.disposed) return;
-      // Keep last good payload visible; the foot line marks it stale by age.
-      // Raw sentinel key — formatted by errorHint() at render time so
-      // time-based hints (rate-limit countdown) stay live.
-      this.claudeError = String(err);
-    }
-    this.claudePending = false;
-    this.render();
-  }
-
-  private async fetchCodex(): Promise<void> {
-    try {
-      const usage = await invoke<CodexUsage>('usage_fetch_codex');
-      if (this.disposed) return;
-      this.codex = usage;
-      this.codexError = null;
-    } catch (err) {
-      if (this.disposed) return;
-      this.codexError = String(err);
-    }
-    this.codexPending = false;
-    this.render();
-  }
-
-  private async fetchCopilot(): Promise<void> {
-    try {
-      const usage = await invoke<CopilotUsage>('usage_fetch_copilot');
-      if (this.disposed) return;
-      this.copilot = usage;
-      this.copilotError = null;
-    } catch (err) {
-      if (this.disposed) return;
-      this.copilotError = String(err);
-    }
-    this.copilotPending = false;
-    this.render();
-  }
-
-  private async fetchCursor(): Promise<void> {
-    try {
-      const usage = await invoke<CursorUsage>('usage_fetch_cursor');
-      if (this.disposed) return;
-      this.cursor = usage;
-      this.cursorError = null;
-    } catch (err) {
-      if (this.disposed) return;
-      this.cursorError = String(err);
-    }
-    this.cursorPending = false;
-    this.render();
+    await usageStore.refresh(this.providers);
   }
 
   // ─── Rendering ────────────────────────────────────────────
@@ -398,19 +247,20 @@ export class UsageContentView implements ContentView {
   }
 
   private renderClaude(): HTMLElement {
-    const u = this.claude;
+    const state = usageStore.get('claude');
+    const u = state.data;
     const metaParts: string[] = [];
     if (u?.subscriptionType) metaParts.push(u.subscriptionType);
     if (u?.rateLimitTier) metaParts.push(u.rateLimitTier.replace(/^default_claude_/, ''));
 
-    const state: WidgetState = this.claudePending
+    const widgetState: WidgetState = state.pending
       ? 'loading'
       : u
-        ? this.claudeError
+        ? state.error
           ? 'stale'
           : 'ok'
         : 'off';
-    const widget = this.widget('claude', metaParts.join(' · '), state);
+    const widget = this.widget('claude', metaParts.join(' · '), widgetState);
 
     if (u) {
       const isoMs = (w: UsageWindow): number | null =>
@@ -431,35 +281,36 @@ export class UsageContentView implements ContentView {
           `extra credits $${used.toFixed(2)}${limit !== null ? ` / $${limit.toFixed(2)}` : ''}`,
         );
       }
-      const error = this.claudeError;
+      const error = state.error;
       if (error) {
         this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
       } else {
         this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
       }
-    } else if (this.claudePending) {
+    } else if (state.pending) {
       this.skeleton(widget, 3);
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
-      const error = this.claudeError;
+      const error = state.error;
       this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
     }
     return widget;
   }
 
   private renderCodex(): HTMLElement {
-    const u = this.codex;
+    const state = usageStore.get('codex');
+    const u = state.data;
     const metaParts: string[] = [];
     if (u?.planType) metaParts.push(u.planType);
 
-    const state: WidgetState = this.codexPending
+    const widgetState: WidgetState = state.pending
       ? 'loading'
       : u
-        ? this.codexError
+        ? state.error
           ? 'stale'
           : 'ok'
         : 'off';
-    const widget = this.widget('codex', metaParts.join(' · '), state);
+    const widget = this.widget('codex', metaParts.join(' · '), widgetState);
 
     if (u) {
       if (u.primary) {
@@ -469,7 +320,7 @@ export class UsageContentView implements ContentView {
         this.gauge(widget, 'week', u.secondary.usedPercent, u.secondary.resetsAt * 1000);
       }
       const observed = Date.parse(u.observedAt);
-      const error = this.codexError;
+      const error = state.error;
       const asOf = () => (Number.isNaN(observed) ? 'as of last session' : `as of ${formatAge(observed)}`);
       if (error) {
         this.foot(widget, 'stale', () => `${asOf()} — ${errorHint(error)}`);
@@ -478,29 +329,30 @@ export class UsageContentView implements ContentView {
         // activity, not the last poll, so the foot always says "as of".
         this.foot(widget, 'ok', asOf);
       }
-    } else if (this.codexPending) {
+    } else if (state.pending) {
       this.skeleton(widget, 2);
       this.foot(widget, 'loading', () => 'reading sessions…');
     } else {
-      const error = this.codexError;
+      const error = state.error;
       this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
     }
     return widget;
   }
 
   private renderCopilot(): HTMLElement {
-    const u = this.copilot;
+    const state = usageStore.get('copilot');
+    const u = state.data;
     const metaParts: string[] = [];
     if (u?.plan) metaParts.push(u.plan);
 
-    const state: WidgetState = this.copilotPending
+    const widgetState: WidgetState = state.pending
       ? 'loading'
       : u
-        ? this.copilotError
+        ? state.error
           ? 'stale'
           : 'ok'
         : 'off';
-    const widget = this.widget('copilot', metaParts.join(' · '), state);
+    const widget = this.widget('copilot', metaParts.join(' · '), widgetState);
 
     if (u) {
       // quota_reset_date is a date string ("2026-07-01") — monthly cycle.
@@ -516,35 +368,36 @@ export class UsageContentView implements ContentView {
       row('premium', u.premium);
       row('chat', u.chat);
       row('completions', u.completions);
-      const error = this.copilotError;
+      const error = state.error;
       if (error) {
         this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
       } else {
         this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
       }
-    } else if (this.copilotPending) {
+    } else if (state.pending) {
       this.skeleton(widget, 3);
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
-      const error = this.copilotError;
+      const error = state.error;
       this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
     }
     return widget;
   }
 
   private renderCursor(): HTMLElement {
-    const u = this.cursor;
+    const state = usageStore.get('cursor');
+    const u = state.data;
     const metaParts: string[] = [];
     if (u?.email) metaParts.push(u.email);
 
-    const state: WidgetState = this.cursorPending
+    const widgetState: WidgetState = state.pending
       ? 'loading'
       : u
-        ? this.cursorError
+        ? state.error
           ? 'stale'
           : 'ok'
         : 'off';
-    const widget = this.widget('cursor', metaParts.join(' · '), state);
+    const widget = this.widget('cursor', metaParts.join(' · '), widgetState);
 
     if (u) {
       if (u.totalPercentUsed !== null) {
@@ -566,7 +419,7 @@ export class UsageContentView implements ContentView {
       } else {
         this.note(widget, 'plan usage not exposed by Cursor — see cursor.com/dashboard');
       }
-      const error = this.cursorError;
+      const error = state.error;
       if (error) {
         this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
       } else if (u.totalPercentUsed !== null) {
@@ -577,11 +430,11 @@ export class UsageContentView implements ContentView {
       } else {
         this.foot(widget, 'ok', () => 'connected');
       }
-    } else if (this.cursorPending) {
+    } else if (state.pending) {
       this.skeleton(widget, 2);
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
-      const error = this.cursorError;
+      const error = state.error;
       this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
     }
     return widget;
@@ -635,12 +488,15 @@ export class UsageContentView implements ContentView {
   }
 
   dispose(): void {
-    this.disposed = true;
-    for (const t of this.pollTimers) window.clearInterval(t);
-    this.pollTimers = [];
+    this.unsubscribe?.();
+    this.unsubscribe = null;
     if (this.tickTimer !== null) window.clearInterval(this.tickTimer);
     this.tickTimer = null;
     this.liveTexts = [];
     this.element.remove();
+  }
+
+  getUsageProviders(): readonly UsageProvider[] {
+    return this.providers;
   }
 }

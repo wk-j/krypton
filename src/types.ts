@@ -3,6 +3,7 @@
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { ShaderInstance } from './shaders';
+import type { UsageProvider } from './usage-store';
 
 /** Unique identifier for a terminal window */
 export type WindowId = string;
@@ -158,6 +159,10 @@ export interface ContentView {
   onResize?(width: number, height: number): void;
   /** Optional working directory associated with this content view */
   getWorkingDirectory?(): string | null;
+  /** AI subscription providers represented by this view in window chrome. */
+  getUsageProviders?(): readonly UsageProvider[];
+  /** Subscribe to provider-membership changes. Returns an unsubscribe function. */
+  onUsageProvidersChange?(cb: () => void): () => void;
   /** Optional staging hook for global screen-capture images. */
   stageCapturedImage?(image: CapturedImage): boolean;
   /** Optional focused-view leader key bindings. Keys must not conflict with global leader keys. */

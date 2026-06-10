@@ -22,6 +22,7 @@ import type {
   UsageInfo,
 } from './types';
 import type { ContentView, PaneContentType, QuickSearchHit, QuickSearchResponse } from '../types';
+import { providerForBackend, type UsageProvider } from '../usage-store';
 
 // ─── Fuzzy file search (@ mention) ─────────────────────────────────
 
@@ -215,6 +216,11 @@ export class AcpView implements ContentView {
 
   getWorkingDirectory(): string | null {
     return this.projectDir;
+  }
+
+  getUsageProviders(): readonly UsageProvider[] {
+    const provider = providerForBackend(this.backendId);
+    return provider ? [provider] : [];
   }
 
   onOpenDiff(cb: (unifiedDiff: string, title: string) => void): void {

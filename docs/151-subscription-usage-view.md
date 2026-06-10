@@ -17,7 +17,9 @@ A new keyboard-summoned **content-view window** (`PaneContentType` `'usage'`, sa
 - **Copilot** (added post-implementation, user request) — `GET https://api.github.com/copilot_internal/user` with the `oauth_token` from `~/.config/github-copilot/apps.json` (or `hosts.json`); `quota_snapshots` carries `premium_interactions` / `chat` / `completions` with `percent_remaining`, `entitlement`, `unlimited`, plus `copilot_plan` and monthly `quota_reset_date`. Verified live on this machine.
 - **Cursor** (added post-implementation, user request; endpoint upgraded by spec 152) — `POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` with `Authorization: Bearer <jwt>` (JWT from macOS Keychain service `cursor-access-token`; `~/.cursor/cli-config.json` `authInfo` validates the login). Returns authoritative billing-cycle spend (`planUsage`: spend in cents, `totalPercentUsed`, cycle bounds) — the same data Cursor's own dashboard renders. The original `cursor.com/api/usage` request counters (null on usage-based plans) were replaced; the request gauge remains only as a fallback rendering slot for legacy capped plans, and "quota not exposed" is the final fallback when the RPC returns no `planUsage`. See `docs/152-cursor-real-usage.md`.
 
-Fetching/parsing lives in a new Rust module (`usage.rs`) behind two Tauri commands; the frontend view polls them while visible. No persistence, no token refresh, no writes anywhere.
+Fetching/parsing lives in Rust `usage.rs`. Since spec 153, the shared frontend
+`UsageStore` polls the commands on behalf of both the detailed view and visible
+window-credit status segments. No token refresh or credential writes occur.
 
 ## Research
 
@@ -95,7 +97,8 @@ struct CodexUsage {
   Walk `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl` newest-first (by path order, limit ~10 files / 7 days), scan each file *backwards* for the last `token_count` with `rate_limits != null`. Pure local read, no cache needed. Honors `CODEX_HOME` env override.
 - `usage_fetch_copilot() -> Result<CopilotUsage, String>` — token from `apps.json`/`hosts.json`, GET `copilot_internal/user`, 180 s cache, same stale-fallback ladder; 401/403 → `token-expired`.
 - `usage_fetch_cursor() -> Result<CursorUsage, String>` — Keychain JWT (macOS only; elsewhere `not-connected`; login validated against `cli-config.json`), POST `api2.cursor.sh/.../GetCurrentPeriodUsage` (Connect protocol, `Bearer` auth), 180 s cache, same ladder (spec 152).
-- All commands are invoked on demand from the view; no Tauri events, no background tasks when the view is closed.
+- Commands are invoked on demand by the shared frontend UsageStore; no Tauri
+  events or always-on backend tasks are introduced.
 
 ### Data Flow
 
@@ -106,7 +109,8 @@ struct CodexUsage {
 4. Rust: claude → credentials file/Keychain → cached-or-live GET api.anthropic.com/api/oauth/usage
          codex  → newest rollout JSONL → last non-null rate_limits event
 5. View renders provider sections; per-provider errors render inline (one failing never blanks the other)
-6. While the view exists: Claude re-fetch every 180 s, Codex every 60 s; reset countdowns tick every 1 s (single interval, cleared in dispose())
+6. While the view exists, it subscribes all providers to the shared UsageStore;
+   reset countdowns tick every 1 s (single interval, cleared in dispose())
 7. 'r' forces a re-render + re-invoke (Claude still served from Rust cache if < 180 s — endpoint cadence is never violated)
 ```
 
@@ -150,13 +154,19 @@ None. Poll cadences are fixed (180 s / 60 s); provider sections appear by auto-d
 - **App restart during a rate-limit window** → the disk cache restores the last good payload immediately, so the widget never opens blank just because the process restarted (dev iteration restarts used to cost one request each and start empty).
 - **`codex exec`-only recent activity** (`rate_limits: null`) → scanner keeps walking older events/files; if nothing in ~7 days → “no recent data — run codex once”.
 - **`seven_day_opus`/`seven_day_sonnet` null** → row hidden, no empty gauge.
-- **Multiple usage views** → allowed; each polls independently but the Rust 180 s cache makes the endpoint see at most one call per cycle.
+- **Multiple usage views / window status segments** → allowed; all subscribers
+  share one frontend poll timer per provider, backed by the Rust cache.
 - **Secrets hygiene** → tokens never logged, never serialized into any Result; error strings are static sentinels, never raw HTTP bodies.
+- **Inference-only Claude OAuth grant** → recent Claude Code credentials may list
+  only `user:inference`; the usage endpoint requires `user:profile` and returns
+  403. Krypton detects the missing scope before fetching and renders “Claude
+  login lacks user:profile scope — usage unavailable”.
 
 ## Out of Scope
 
 - Per-lane / per-session token+cost aggregation from ACP `UsageInfo` events (different layer; possible future tab in this same view).
-- Workspace-footer utilization indicator and threshold notifications (future spec if wanted).
+- Workspace-footer utilization indicator and threshold notifications (per-window
+  status landed in spec 153; the global workspace footer remains out of scope).
 - OAuth token refresh, any write to credential stores, any persistence of usage *history* (the single last-payload disk cache added post-implementation is a freshness optimization, not history).
 - ~~Other providers (Gemini, Cursor, Copilot…)~~ Copilot and Cursor were added post-implementation at the user's request (see Solution). Remaining: Gemini etc. — still no accessible quota source.
 
