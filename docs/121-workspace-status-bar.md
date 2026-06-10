@@ -173,7 +173,7 @@ New input action:
 
 | Zone | Contents | Behavior |
 |------|----------|----------|
-| Left | Mode chip + focused pane role/title | Always visible; strongest space priority. |
+| Left | Mode chip + focused pane role/title | Always visible; strongest space priority. Built by `composeRoleTitle`: the shell-embedded cwd is stripped from the title (`stripCwdToken`, matched against the focused cwd — exact or shell-abbreviated like `~/S/krypton`) so it is never duplicated with the center CWD segment, while real path arguments (`vim /tmp/a`) and separators (`MD // foo`) are kept. The role prefix is dropped when the title already names the same kind of view, so `acp_harness` + "ACP Harness" shows just "ACP Harness", not "acp_harness ACP Harness". |
 | Center | CWD, git ref/dirty summary, process, counts, activity/progress | Main compression zone; each segment has a priority class. |
 | Right | Music segment when active, otherwise one contextual hint | Music gets reserved width while active; hints disappear before core status. |
 
@@ -277,6 +277,7 @@ Persistent config can be added later under `[workspace.status_bar]` if the bar p
 - **Git probe failure** — fail silent; never surface command errors in the bar.
 - **High throughput** — bus already emits at 5 Hz; status bar coalesces renders in RAF.
 - **Many focus changes** — CWD/git refresh is debounced 100 ms and keyed by focused view id + cwd.
+- **`cd` without a focus change** — terminals that report OSC 7 publish a `view:cwd` signal on every prompt (via `pty-bridge`); the footer caches the path per view (`cwdByView`) and uses it directly, so a directory change shows immediately rather than waiting for a focus change or the detail-mode timer. Shells/views without OSC 7 fall back to the live `get_pty_cwd` query in `render()`. The bridge carries a bounded trailing partial across chunks (`trailingEscStart`, `OSC7_CARRY_CAP`) so a sequence split between two `pty-output` reads is still parsed, and a malformed percent-escape is ignored rather than throwing. **Accepted trade-offs of preferring the pushed cwd (over always re-querying):** if a shell stops reporting OSC 7 (e.g. a full-screen TUI or a subshell), the cached path can go stale until the next focus change; and for SSH shells the OSC 7 path is the **remote** cwd, so the local git probe in `render()` will not reflect it. These are inherent to the event-driven choice; revisit if correctness outweighs instant `cd` feedback.
 - **Quick Terminal visible** — status source is Quick Terminal session and title, matching `Compositor.getFocusedSessionId()`.
 - **Music inactive** — music segment is hidden and workspace status fills the footer.
 - **Music active** — music segment gets fixed/minmax width, workspace status compresses by priority before overflowing.

@@ -109,6 +109,40 @@ function abbreviatePath(path: string | null): string | null {
   return path;
 }
 
+/** True when a title token is the shell's rendering of `cwd` — exact, or an
+ *  abbreviated form like `~/S/krypton` for `~/Source/krypton` (each leading
+ *  path segment a prefix of the real one, last segment equal). Matching against
+ *  the actual cwd means we drop only the duplicated working directory, never an
+ *  unrelated path argument such as the `/tmp/a` in a "vim /tmp/a" title. */
+function tokenIsCwd(token: string, cwd: string | null): boolean {
+  if (!cwd) return false;
+  const segs = (p: string): string[] => p.replace(/\/+$/, '').split('/');
+  const tok = segs(token);
+  if (tok.length === 0) return false;
+  for (const cand of [cwd, abbreviatePath(cwd) ?? cwd]) {
+    const ref = segs(cand);
+    if (ref.length !== tok.length) continue;
+    const matches = tok.every((t, i) => {
+      const a = t.toLowerCase();
+      const b = ref[i].toLowerCase();
+      return i === tok.length - 1 ? a === b : b.startsWith(a);
+    });
+    if (matches) return true;
+  }
+  return false;
+}
+
+/** Drop the shell-embedded cwd from a terminal title so it isn't duplicated with
+ *  the center CWD segment, keeping everything else (command names, real path
+ *  arguments, decorative separators like the `//` in "MD // foo"). */
+function stripCwdToken(title: string, cwd: string | null): string {
+  return title
+    .split(/\s+/)
+    .filter((token) => token.length > 0 && !tokenIsCwd(token, cwd))
+    .join(' ')
+    .trim();
+}
+
 function getHomePath(): string | null {
   const envHome = (globalThis as unknown as { process?: { env?: { HOME?: string } } }).process?.env?.HOME;
   return envHome ?? null;
@@ -128,6 +162,23 @@ function roleLabel(role: FocusSummary['role']): string {
   if (!role) return 'no focus';
   if (role === 'quick_terminal') return 'quick terminal';
   return role;
+}
+
+/** Compose the left "role + title" label, dropping the role prefix when the
+ *  title already names the same kind of view — otherwise content views whose
+ *  title IS the view name double up (e.g. role `acp_harness` + title
+ *  "ACP Harness" → "acp_harness ACP Harness"). The shell-embedded cwd is
+ *  stripped from the title first so it isn't duplicated with the CWD segment. */
+function composeRoleTitle(role: FocusSummary['role'], rawTitle: string, cwd: string | null): string {
+  const roleText = roleLabel(role);
+  const title = stripCwdToken(rawTitle, cwd);
+  if (!title) return roleText;
+  const norm = (s: string): string => s.toLowerCase().replace(/[_\s]+/g, ' ').trim();
+  const nRole = norm(roleText);
+  const nTitle = norm(title);
+  // Title equals or extends the role name → it already conveys the kind.
+  if (nTitle === nRole || nTitle.startsWith(`${nRole} `)) return title;
+  return `${roleText} ${title}`.trim();
 }
 
 function progressText(progress: FocusedBusState['progress']): string | null {
@@ -180,6 +231,10 @@ export class WorkspaceFooter {
     progress: null,
   };
   private gitByCwd = new Map<string, GitSummary>();
+  /** Latest OSC 7 cwd per view (keyed by viewId), pushed via `view:cwd`. Used as
+   *  the footer's working directory so a `cd` shows immediately without polling;
+   *  views without OSC 7 fall back to the live `get_pty_cwd` query in render(). */
+  private cwdByView = new Map<string, string>();
   private gitText: string | null = null;
   private gitCwd: string | null = null;
   private pendingGitCwd: string | null = null;
@@ -269,21 +324,24 @@ export class WorkspaceFooter {
       this.busState.throughput = s.value;
       this.refresh('bus');
     });
+    // A process change for the focused view repaints the footer; render() reads
+    // the authoritative process from the compositor, so this only needs to trigger
+    // a refresh (no value is plumbed through the signal here).
     this.bus.onSignal({ kind: 'view:metrics' }, (s) => {
-      if (!this.isFocusedSource(s.source)) return;
-      const name = s.value.name;
-      const pid = s.value.pid;
-      this.busState.process = typeof name === 'string'
-        ? { name, pid: typeof pid === 'number' ? pid : null }
-        : null;
-      this.refresh('bus');
+      if (this.isFocusedSource(s.source)) this.refresh('bus');
     });
     this.bus.onSignal({ kind: 'view:progress' }, (s) => {
       if (!this.isFocusedSource(s.source)) return;
       this.busState.progress = s.value;
       this.refresh('bus');
     });
+    this.bus.onSignal({ kind: 'view:cwd' }, (s) => {
+      if (!isViewSource(s.source)) return;
+      this.cwdByView.set(s.source.viewId, s.value.cwd);
+      if (this.isFocusedSource(s.source)) this.refresh('bus');
+    });
     this.bus.onSignal({ kind: 'view:exit' }, (s) => {
+      if (isViewSource(s.source)) this.cwdByView.delete(s.source.viewId);
       if (!this.isFocusedSource(s.source)) return;
       this.busState = { state: 'normal', throughput: 0, process: null, progress: null };
       this.refresh('bus');
@@ -374,10 +432,14 @@ export class WorkspaceFooter {
     this.renderGeneration++;
     if (this.renderScheduled) return;
     this.renderScheduled = true;
-    const generation = this.renderGeneration;
     requestAnimationFrame(() => {
       this.renderScheduled = false;
-      void this.render(generation);
+      // Read the generation at frame time, not at schedule time: a second
+      // refresh() in the same tick (tab switch fires both the direct
+      // focus-change callback and the bus `system:focus-change` signal) bumps
+      // the generation after scheduling, and a stale capture would make
+      // render() abort at its own guard — dropping the repaint entirely.
+      void this.render(this.renderGeneration);
     });
   }
 
@@ -405,7 +467,18 @@ export class WorkspaceFooter {
       this.focusedViewKey = viewKey;
       this.busState = this.defaultBusState();
     }
-    summary.cwd = await this.compositor.getFocusedWorkingDirectory();
+    // Prefer the event-driven OSC 7 cwd (instant on `cd`); fall back to a live
+    // backend query for views/shells that don't report it.
+    const pushedCwd = summary.viewId ? this.cwdByView.get(summary.viewId) ?? null : null;
+    summary.cwd = pushedCwd ?? (await this.compositor.getFocusedWorkingDirectory());
+    // Read the focused pane's process from the compositor's authoritative
+    // per-session map rather than the event-driven bus. `process-changed` (and
+    // thus `view:metrics`) fires only when a process *changes*, so a steady-state
+    // tab's one-shot event may have fired before the footer subscribed — leaving
+    // the bus with nothing to replay on a tab switch. The compositor subscribes
+    // in its constructor and never resets, so this always reflects the focus.
+    const proc = this.compositor.getFocusedProcess();
+    this.busState.process = proc ? { name: proc.name, pid: proc.pid } : null;
     if (generation !== this.renderGeneration) return;
     this.updateGit(summary.cwd);
 
@@ -417,65 +490,24 @@ export class WorkspaceFooter {
   private renderLeft(summary: FocusSummary): void {
     this.leftEl.replaceChildren(
       this.segment(modeLabel(this.mode), 'mode'),
-      this.segment(`${roleLabel(summary.role)} ${summary.title}`.trim(), 'p0 role'),
+      this.segment(composeRoleTitle(summary.role, summary.title, summary.cwd), 'p0 role'),
     );
   }
 
   private renderCenter(summary: FocusSummary): void {
-    const cwd = abbreviatePath(summary.cwd);
-    const progress = progressText(this.busState.progress);
-    const children: HTMLElement[] = [];
-    if (cwd) children.push(this.segment(cwd, 'p1 project'));
-    if (this.gitText) children.push(this.gitSegment(this.gitText));
-    if (summary.windows > 1 || summary.tabs > 1 || summary.panes > 1) {
-      // layout icon + compact win/tab/pane triplet (full phrasing in the label)
-      const el = this.segment(`${summary.windows}/${summary.tabs}/${summary.panes}`, 'p2 counts');
-      el.prepend(this.icon('layout'));
-      const label = `${plural(summary.windows, 'window')} · ${plural(summary.tabs, 'tab')} · ${plural(summary.panes, 'pane')}`;
-      el.title = label;
-      el.setAttribute('aria-label', label);
-      children.push(el);
-    }
-    if (this.busState.process) {
-      const { name, pid } = this.busState.process;
-      const el = this.segment(name, 'p2 process');
-      el.prepend(this.icon('prompt'));
-      if (pid !== null) {
-        const pidEl = document.createElement('span');
-        pidEl.className = 'krypton-workspace-footer__pid';
-        pidEl.textContent = ` ${pid}`;
-        el.append(pidEl);
-      }
-      const label = pid !== null ? `process ${name} · pid ${pid}` : `process ${name}`;
-      el.title = label;
-      el.setAttribute('aria-label', label);
-      children.push(el);
-    }
-    if (this.busState.throughput > 0) {
-      const rate = formatBytesPerSec(this.busState.throughput);
-      const el = this.segment(rate, 'p3');
-      el.prepend(this.icon('io'));
-      el.title = `throughput ${rate}`;
-      el.setAttribute('aria-label', el.title);
-      children.push(el);
-    }
-    if (progress) {
-      const el = this.segment(progress, 'p3 detail');
-      el.title = `progress ${progress}`;
-      el.setAttribute('aria-label', el.title);
-      children.push(el);
-    }
-    if (this.busState.state !== 'normal') {
-      // spec: a status dot + the state word, tagged so CSS can colour both by
-      // meaning (busy/warn/err/…) instead of the flat p3 tier. Detail density only.
-      const el = this.segment(this.busState.state, 'p3 detail state');
-      el.dataset.state = this.busState.state;
-      el.prepend(this.icon('dot', 'fill dot'));
-      el.title = `state: ${this.busState.state}`;
-      el.setAttribute('aria-label', el.title);
-      children.push(el);
-    }
-    this.centerEl.replaceChildren(...children);
+    // Compose the center zone from independent per-datum segment builders. Each
+    // returns null when its datum is absent, so the order here IS the layout and
+    // nothing is entangled in a chain of ifs.
+    const segments = [
+      this.workingDirSegment(summary.cwd),
+      this.gitSegment(this.gitText),
+      this.countsSegment(summary),
+      this.processSegment(),
+      this.throughputSegment(),
+      this.progressSegment(),
+      this.stateSegment(),
+    ].filter((el): el is HTMLElement => el !== null);
+    this.centerEl.replaceChildren(...segments);
   }
 
   private renderRight(summary: FocusSummary): void {
@@ -624,7 +656,23 @@ export class WorkspaceFooter {
   /** spec: git readout — a branch glyph + ref at accent-bright; the dirty state
    * becomes a warning-tier dot (not a `*` glued to the name) so "uncommitted"
    * reads as a signal. One consistent git voice with the composer-meta chip. */
-  private gitSegment(text: string): HTMLElement {
+  /** Build the single canonical working-directory segment for the workspace
+   *  footer. This is the ONE place the workspace renders the focused pane's cwd
+   *  (the left title strips path tokens so it never duplicates this). Returns
+   *  null when there is no cwd to show. */
+  private workingDirSegment(cwd: string | null): HTMLElement | null {
+    const abbreviated = abbreviatePath(cwd);
+    if (!abbreviated) return null;
+    const el = this.segment(abbreviated, 'p1 project');
+    const label = `working directory ${cwd}`;
+    el.title = label;
+    el.setAttribute('aria-label', label);
+    return el;
+  }
+
+  /** Git ref + dirty marker for the focused pane's cwd. Null when not a repo. */
+  private gitSegment(text: string | null): HTMLElement | null {
+    if (!text) return null;
     const dirty = text.endsWith(' *');
     const ref = dirty ? text.slice(0, -2) : text;
     const el = this.segment(ref, 'p1 git');
@@ -637,6 +685,69 @@ export class WorkspaceFooter {
     const label = dirty ? `branch ${ref} — uncommitted changes` : `branch ${ref}`;
     el.title = label;
     el.setAttribute('aria-label', label);
+    return el;
+  }
+
+  /** Compact window/tab/pane triplet with a layout icon. Null unless something
+   *  is split (any count > 1) — a lone pane needs no counter. */
+  private countsSegment(summary: FocusSummary): HTMLElement | null {
+    if (summary.windows <= 1 && summary.tabs <= 1 && summary.panes <= 1) return null;
+    const el = this.segment(`${summary.windows}/${summary.tabs}/${summary.panes}`, 'p2 counts');
+    el.prepend(this.icon('layout'));
+    const label = `${plural(summary.windows, 'window')} · ${plural(summary.tabs, 'tab')} · ${plural(summary.panes, 'pane')}`;
+    el.title = label;
+    el.setAttribute('aria-label', label);
+    return el;
+  }
+
+  /** Foreground process name (+ pid) of the focused session. Null when unknown. */
+  private processSegment(): HTMLElement | null {
+    if (!this.busState.process) return null;
+    const { name, pid } = this.busState.process;
+    const el = this.segment(name, 'p2 process');
+    el.prepend(this.icon('prompt'));
+    if (pid !== null) {
+      const pidEl = document.createElement('span');
+      pidEl.className = 'krypton-workspace-footer__pid';
+      pidEl.textContent = ` ${pid}`;
+      el.append(pidEl);
+    }
+    const label = pid !== null ? `process ${name} · pid ${pid}` : `process ${name}`;
+    el.title = label;
+    el.setAttribute('aria-label', label);
+    return el;
+  }
+
+  /** PTY throughput rate. Null when idle (0 B/s). */
+  private throughputSegment(): HTMLElement | null {
+    if (this.busState.throughput <= 0) return null;
+    const rate = formatBytesPerSec(this.busState.throughput);
+    const el = this.segment(rate, 'p3');
+    el.prepend(this.icon('io'));
+    el.title = `throughput ${rate}`;
+    el.setAttribute('aria-label', el.title);
+    return el;
+  }
+
+  /** OSC progress percentage / indeterminate marker. Null when no progress. */
+  private progressSegment(): HTMLElement | null {
+    const progress = progressText(this.busState.progress);
+    if (!progress) return null;
+    const el = this.segment(progress, 'p3 detail');
+    el.title = `progress ${progress}`;
+    el.setAttribute('aria-label', el.title);
+    return el;
+  }
+
+  /** Signal state (busy/warn/err/…) as a coloured dot + word. Null when normal.
+   *  Tagged via data-state so CSS colours it by meaning, not the flat p3 tier. */
+  private stateSegment(): HTMLElement | null {
+    if (this.busState.state === 'normal') return null;
+    const el = this.segment(this.busState.state, 'p3 detail state');
+    el.dataset.state = this.busState.state;
+    el.prepend(this.icon('dot', 'fill dot'));
+    el.title = `state: ${this.busState.state}`;
+    el.setAttribute('aria-label', el.title);
     return el;
   }
 

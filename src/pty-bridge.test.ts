@@ -100,6 +100,44 @@ describe('pty-bridge', () => {
     expect(snap).toHaveLength(2);
   });
 
+  const osc7 = (path: string): number[] => [
+    0x1b, 0x5d, 0x37, 0x3b,
+    ...new TextEncoder().encode(`file://${path}`),
+    0x07,
+  ];
+
+  it('emits view:cwd from an OSC 7 cwd report', async () => {
+    resolver.set(1, addr(1));
+    await startPtyBridge(bus, resolver, { listen: listener.listen, now });
+    listener.fire('pty-output', [1, osc7('/Users/wk/Source/krypton')]);
+    const snap = bus.snapshot().signals;
+    expect(snap).toHaveLength(1);
+    expect(snap[0].kind).toBe('view:cwd');
+    expect(snap[0].value).toEqual({ cwd: '/Users/wk/Source/krypton' });
+  });
+
+  it('emits the latest cwd when a chunk carries multiple OSC 7 reports', async () => {
+    resolver.set(1, addr(1));
+    await startPtyBridge(bus, resolver, { listen: listener.listen, now });
+    listener.fire('pty-output', [1, [...osc7('/a'), ...osc7('/b')]]);
+    const cwd = bus.snapshot().signals.filter((s) => s.kind === 'view:cwd');
+    expect(cwd).toHaveLength(1);
+    expect(cwd[0].value).toEqual({ cwd: '/b' });
+  });
+
+  it('reassembles an OSC 7 sequence split across two pty-output chunks', async () => {
+    resolver.set(1, addr(1));
+    await startPtyBridge(bus, resolver, { listen: listener.listen, now });
+    const full = osc7('/Users/wk/split');
+    const cut = 8; // mid-sequence boundary
+    listener.fire('pty-output', [1, full.slice(0, cut)]);
+    expect(bus.snapshot().signals.filter((s) => s.kind === 'view:cwd')).toHaveLength(0);
+    listener.fire('pty-output', [1, full.slice(cut)]);
+    const cwd = bus.snapshot().signals.filter((s) => s.kind === 'view:cwd');
+    expect(cwd).toHaveLength(1);
+    expect(cwd[0].value).toEqual({ cwd: '/Users/wk/split' });
+  });
+
   it('emits view:exit with null code on pty-exit', async () => {
     resolver.set(7, addr(7));
     await startPtyBridge(bus, resolver, { listen: listener.listen, now });

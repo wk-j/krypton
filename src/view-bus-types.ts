@@ -34,6 +34,11 @@ export interface SignalValueMap {
   'view:metrics': Record<string, string | number>;
   'view:exit': { code: number | null };
   'view:progress': { state: ProgressState; pct: number | null };
+  // Working directory reported by the view, event-driven. Terminals emit this
+  // from OSC 7 (every prompt / after `cd`) via the PTY→ViewBus bridge, so the
+  // workspace footer reflects a directory change immediately instead of waiting
+  // for a focus change or poll tick. `cwd` is the absolute path.
+  'view:cwd': { cwd: string };
   'system:focus-change': { windowId: WindowId | null };
   'system:relayout': Record<string, never>;
   // spec 128: open attention-triage item count, published globally by each ACP

@@ -5,6 +5,7 @@
 
 import { listen as tauriListen } from '@tauri-apps/api/event';
 
+import { parseOsc7Sequences, trailingEscStart } from './osc7';
 import type { ViewBus } from './view-bus';
 import type { ViewAddress } from './view-bus-types';
 import type {
@@ -29,6 +30,9 @@ export interface PtyBridgeDeps {
 
 const THROUGHPUT_INTERVAL_MS = 200; // 5 Hz
 const EMA_ALPHA = 0.3;
+// Max bytes of an unterminated escape we'll carry between chunks. A cwd path
+// can't realistically exceed this; a stray ESC in binary output is dropped.
+const OSC7_CARRY_CAP = 4096;
 
 interface ThroughputState {
   bytesSinceLastEmit: number;
@@ -49,11 +53,39 @@ export async function startPtyBridge(
   const now = deps.now ?? (() => performance.now());
 
   const throughput = new Map<SessionId, ThroughputState>();
+  // Trailing partial escape bytes per session, carried into the next chunk so an
+  // OSC 7 split across two reads is still parsed. Bounded by OSC7_CARRY_CAP.
+  const osc7Carry = new Map<SessionId, number[]>();
 
   const offOutput = await listen<[SessionId, number[]]>('pty-output', (event) => {
     const [sid, data] = event.payload;
     const addr = resolver.addressFromSession(sid);
-    if (!addr) return;
+    if (!addr) {
+      osc7Carry.delete(sid);
+      return;
+    }
+
+    // OSC 7 cwd reports fire on every prompt — surface the latest so the footer
+    // reflects a `cd` immediately (event-driven, no polling). Prepend any
+    // carried partial so a sequence split across chunks is still seen.
+    const prev = osc7Carry.get(sid);
+    const buf = prev ? prev.concat(data) : data;
+    const cwds = parseOsc7Sequences(buf);
+    if (cwds.length > 0) {
+      bus.publishSignal({
+        kind: 'view:cwd',
+        source: addr,
+        value: { cwd: cwds[cwds.length - 1].path },
+      });
+    }
+    // Carry only a bounded unterminated tail; the carry point is never inside a
+    // completed sequence, so this can't re-emit an already-published cwd.
+    const tailFrom = trailingEscStart(buf);
+    if (tailFrom >= 0 && buf.length - tailFrom <= OSC7_CARRY_CAP) {
+      osc7Carry.set(sid, buf.slice(tailFrom));
+    } else {
+      osc7Carry.delete(sid);
+    }
 
     const state = throughput.get(sid) ?? {
       bytesSinceLastEmit: 0,
@@ -81,6 +113,7 @@ export async function startPtyBridge(
     const sid = event.payload;
     const addr = resolver.addressFromSession(sid);
     throughput.delete(sid);
+    osc7Carry.delete(sid);
     if (!addr) return;
     // The Rust backend does not currently carry the exit code through `pty-exit`;
     // it only signals process termination. Surface as code: null until the

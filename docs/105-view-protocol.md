@@ -95,6 +95,7 @@ export type SignalKind =
   | 'view:metrics'         // value: Record<string, string | number>
   | 'view:exit'            // value: { code: number | null }
   | 'view:progress'        // value: { state: ProgressPhase; pct: number | null }
+  | 'view:cwd'             // value: { cwd: string } — OSC 7 cwd report (terminals, via pty-bridge)
   | 'system:focus-change'  // value: { windowId: WindowId | null }
   | 'system:relayout';     // value: {}
 

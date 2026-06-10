@@ -49,6 +49,7 @@ import type { ClaudeHookManager } from './claude-hooks';
 import type { NotificationController } from './notification';
 import { installPerspectiveMouseFix } from './perspective-fix';
 import { ProgressGauge } from './progress-gauge';
+import { parseOsc7Sequences } from './osc7';
 import { probeRemoteCwd, type SshConnectionInfo } from './ssh-session';
 import { WebviewContentView } from './webview-view';
 import type { ViewBus } from './view-bus';
@@ -3358,6 +3359,18 @@ export class Compositor {
     return pane?.sessionId ?? null;
   }
 
+  /** Foreground process of the focused pane's session, from the authoritative
+   *  `processBySession` map (populated from `process-changed` in the constructor,
+   *  never reset on focus change). The workspace footer reads this directly rather
+   *  than relying on the event-driven bus, because `process-changed` fires only
+   *  when a process *changes* — a steady-state tab's one-shot event may have fired
+   *  before later subscribers existed, so the bus has nothing to replay. */
+  getFocusedProcess(): ProcessInfo | null {
+    const sessionId = this.getFocusedSessionId();
+    if (sessionId === null) return null;
+    return this.processBySession.get(sessionId) ?? null;
+  }
+
   /** Resolve the focused terminal/content view working directory. */
   async getFocusedWorkingDirectory(): Promise<string | null> {
     if (this.qtVisible && this.qtSessionId !== null) {
@@ -3841,6 +3854,11 @@ export class Compositor {
     // Tab wrappers stay mounted (CSS visibility toggle, no DOM detach/reattach),
     // so fit can run immediately without waiting for reflow.
     this.fitWindow(win.id);
+
+    // The focused pane changed even though the window didn't — notify so
+    // focus-change listeners (e.g. the workspace footer) re-read the active
+    // tab's cwd/title/role instead of showing the previous tab's values.
+    this.notifyFocusChange();
 
     this.sound.play('tab.switch');
   }
@@ -5132,43 +5150,15 @@ export class Compositor {
   // ─── OSC 7 CWD Tracking ──────────────────────────────────────────
 
   /**
-   * Scan raw PTY output for OSC 7 escape sequences that report the
-   * current working directory: ESC ] 7 ; file://host/path BEL|ST
-   *
-   * When found, reports the path to the backend so SSH clone can
-   * use it as the remote CWD.
+   * Scan raw PTY output for OSC 7 escape sequences that report the current
+   * working directory and forward each to the backend so SSH clone can use it
+   * as the remote CWD. (The workspace footer reacts to the same sequences via
+   * the PTY→ViewBus bridge's `view:cwd` signal — see `pty-bridge.ts`.)
    */
   private parseOsc7(sessionId: number, data: number[]): void {
-    // Quick scan: look for ESC ] 7 ; (0x1b 0x5d 0x37 0x3b)
-    for (let i = 0; i < data.length - 4; i++) {
-      if (data[i] === 0x1b && data[i + 1] === 0x5d && data[i + 2] === 0x37 && data[i + 3] === 0x3b) {
-        // Found OSC 7 start — collect until BEL (0x07) or ESC \ (0x1b 0x5c)
-        let end = -1;
-        for (let j = i + 4; j < data.length; j++) {
-          if (data[j] === 0x07) {
-            end = j;
-            break;
-          }
-          if (data[j] === 0x1b && j + 1 < data.length && data[j + 1] === 0x5c) {
-            end = j;
-            break;
-          }
-        }
-        if (end > i + 4) {
-          const uriBytes = data.slice(i + 4, end);
-          const uri = new TextDecoder().decode(new Uint8Array(uriBytes));
-          // URI format: file://hostname/path or file:///path
-          // Extract both hostname and path so the backend can distinguish
-          // local CWD updates from remote ones (SSH shells emit the remote hostname).
-          const match = uri.match(/^file:\/\/([^/]*)(\/.*)$/);
-          if (match) {
-            const hostname = decodeURIComponent(match[1]);
-            const path = decodeURIComponent(match[2]);
-            invoke('set_ssh_remote_cwd', { sessionId, cwd: path, hostname })
-              .catch(() => { /* ignore — ssh feature may be disabled */ });
-          }
-        }
-      }
+    for (const { hostname, path } of parseOsc7Sequences(data)) {
+      invoke('set_ssh_remote_cwd', { sessionId, cwd: path, hostname })
+        .catch(() => { /* ignore — ssh feature may be disabled */ });
     }
   }
 
