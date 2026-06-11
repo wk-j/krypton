@@ -66,6 +66,7 @@ export interface HarnessEntry {
   // Close notification: the directory calls this on every OTHER registered
   // harness when some harness disposes, handing it a snapshot taken before removal.
   onForeignHarnessClosed(closed: HarnessEntrySnapshot): void;
+  control?(operation: string, params: Record<string, unknown>): Promise<unknown>;
 }
 
 const harnesses = new Map<string, HarnessEntry>();
@@ -150,6 +151,10 @@ export function resolveDisplayName(
 export function harnessEntry(harnessId: string): HarnessEntry | null {
   const entry = harnesses.get(harnessId);
   return entry && entry.alive ? entry : null;
+}
+
+export function listHarnessEntries(): HarnessEntry[] {
+  return Array.from(harnesses.values()).filter((entry) => entry.alive);
 }
 
 // Test-only escape hatch — resets both the router and the name counters.

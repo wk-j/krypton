@@ -64,6 +64,7 @@ import {
   peersFor,
   resolveDisplayName,
   harnessEntry,
+  listHarnessEntries,
   type HarnessEntry,
 } from './harness-directory';
 import { parseMentionFanOut } from './mention-parse';
@@ -459,6 +460,26 @@ function handoffResumePrompt(displayName: string): string {
   );
 }
 
+function controlError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code, retryable: false });
+}
+
+function requiredString(params: Record<string, unknown>, key: string): string {
+  const value = params[key];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw controlError('invalid_request', `${key} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requiredNumber(params: Record<string, unknown>, key: string): number {
+  const value = params[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw controlError('invalid_request', `${key} must be a number`);
+  }
+  return value;
+}
+
 // spec 144: #wiki / #recall maintain an LLM-Wiki-style code wiki in the target
 // repo at <cwd>/docs/wiki/ (NOT the harness memory store — see docs/adr/0003).
 // One-shot prompt injection like #handoff: no always-on stub, no per-turn cost.
@@ -578,6 +599,7 @@ interface HarnessLane {
   error: string | null;
   acceptAllForTurn: boolean;
   rejectAllForTurn: boolean;
+  permissionMode: 'normal' | 'acceptEdits' | 'bypass';
   /** spec 143: armed for one peer-injected turn (auto_accept). Auto-accepts every
    *  permission EXCEPT high-risk commands, which still prompt. Reset at turn end. */
   peerAutoAcceptForTurn: boolean;
@@ -1007,6 +1029,7 @@ const LANE_DEFAULTS = {
   error: null,
   acceptAllForTurn: false,
   rejectAllForTurn: false,
+  permissionMode: 'normal' as const,
   peerAutoAcceptForTurn: false,
   currentUserId: null,
   currentAssistantId: null,
@@ -1403,9 +1426,159 @@ export class AcpHarnessView implements ContentView {
       onForeignHarnessClosed: (snapshot) => {
         this.coordinator.onForeignHarnessClosed(snapshot);
       },
+      control: (operation, params) => this.handleControlOperation(operation, params),
     };
     this.directoryEntry = entry;
     registerHarness(entry);
+  }
+
+  async handleControlOperation(operation: string, params: Record<string, unknown>): Promise<unknown> {
+    if (operation === 'lane.list') return this.controlLaneList();
+    if (operation === 'lane.spawn') {
+      const backendId = requiredString(params, 'backendId');
+      if (!this.pickerEntries.some((entry) => entry.id === backendId)) {
+        throw controlError('unsupported_backend', `backend is not available: ${backendId}`);
+      }
+      await this.addLane(backendId);
+      return this.controlLaneList();
+    }
+    if (operation === 'peer.list') {
+      return listHarnessEntries().flatMap((entry) => entry.listLanes());
+    }
+    if (operation === 'memory.list') {
+      return this.memoryEntries;
+    }
+    const lane = this.controlLane(params);
+    switch (operation) {
+      case 'lane.send': {
+        const text = requiredString(params, 'text').trim();
+        if (!text) throw controlError('invalid_request', 'text must not be empty');
+        if (!lane.client || lane.status === 'starting' || lane.status === 'error' || lane.status === 'stopped') {
+          throw controlError('lane_not_ready', `${lane.displayName} is ${lane.status}`);
+        }
+        if (lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer') {
+          if (lane.queuedPrompts.length >= PROMPT_QUEUE_MAX) {
+            throw controlError('queue_full', `${lane.displayName} prompt queue is full`);
+          }
+          lane.queuedPrompts.push({ text, images: [], mentionTargets: [] });
+          this.render();
+          return { status: 'queued', lane: lane.displayName, queueDepth: lane.queuedPrompts.length };
+        }
+        void this.sendUserPrompt(lane, text, [], { clearDraft: false });
+        return { status: 'started', lane: lane.displayName };
+      }
+      case 'lane.cancel':
+        await this.cancelLane(lane);
+        return { cancelled: true, lane: lane.displayName };
+      case 'lane.close':
+        await this.closeLane(lane);
+        return { closed: true, lane: lane.displayName };
+      case 'lane.restart':
+        await this.restartLane(lane);
+        return { status: lane.status, lane: lane.displayName };
+      case 'lane.new': {
+        const clearMemory = params.clearMemory === true;
+        const ok = await this.newLaneSession(lane, { clearMemory });
+        if (!ok) throw controlError('conflict', `could not create a fresh session for ${lane.displayName}`);
+        return { status: lane.status, lane: lane.displayName };
+      }
+      case 'lane.model': {
+        const modelId = requiredString(params, 'modelId');
+        if (!lane.client) throw controlError('lane_not_ready', `${lane.displayName} has no client`);
+        const result = await lane.client.setLaneModel(modelId);
+        lane.currentModelId = modelId;
+        lane.modelName = modelId;
+        this.render();
+        return { lane: lane.displayName, modelId, result };
+      }
+      case 'lane.directive': {
+        const directiveId = params.directiveId === null ? null : requiredString(params, 'directiveId');
+        if (directiveId) {
+          const directive = this.directiveById(directiveId);
+          if (!directive || !this.directiveCompatible(directive, lane)) {
+            throw controlError('invalid_directive', `directive is unavailable for ${lane.displayName}`);
+          }
+        }
+        this.assignDirectiveToLane(lane, directiveId);
+        return { lane: lane.displayName, directiveId };
+      }
+      case 'lane.goal': {
+        const text = params.text === null ? 'clear' : requiredString(params, 'text');
+        if (params.text !== null && lane.status !== 'idle') {
+          throw controlError('lane_not_idle', `${lane.displayName} is ${lane.status}`);
+        }
+        await this.runGoalCommand(lane, `#goal ${text}`);
+        return { lane: lane.displayName, goal: lane.goal ?? null };
+      }
+      case 'lane.permission_mode': {
+        const mode = requiredString(params, 'mode');
+        if (mode !== 'normal' && mode !== 'acceptEdits' && mode !== 'bypass') {
+          throw controlError('invalid_request', 'mode must be normal, acceptEdits, or bypass');
+        }
+        lane.permissionMode = mode;
+        this.render();
+        return { lane: lane.displayName, permissionMode: mode };
+      }
+      case 'lane.transcript':
+        return lane.transcript.map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          text: item.text,
+          createdAt: item.createdAt ?? null,
+          status: item.status ?? null,
+          permission: item.permission ?? null,
+          providerError: item.providerError ?? null,
+        }));
+      case 'permission.list':
+        return lane.pendingPermissions.map((permission) => ({
+          requestId: permission.requestId,
+          tool: permission.toolCall.title ?? permission.toolCall.kind ?? 'tool',
+          options: permission.options,
+        }));
+      case 'permission.resolve': {
+        const requestId = requiredNumber(params, 'requestId');
+        const action = requiredString(params, 'action');
+        const index = lane.pendingPermissions.findIndex((permission) => permission.requestId === requestId);
+        if (index < 0) throw controlError('permission_not_found', `permission not found: ${requestId}`);
+        if (index !== 0) throw controlError('conflict', 'only the oldest pending permission can be resolved');
+        if (action !== 'accept' && action !== 'reject') {
+          throw controlError('invalid_request', 'action must be accept or reject');
+        }
+        await this.resolvePermission(lane, action, false);
+        return { resolved: true, requestId, action };
+      }
+      case 'memory.get':
+        return this.memoryEntries.find((entry) => entry.lane === lane.displayName) ?? null;
+      case 'memory.clear':
+        await this.clearActiveLaneMemory(lane, false);
+        return { cleared: true, lane: lane.displayName };
+      default:
+        throw controlError('unsupported_operation', `unsupported operation: ${operation}`);
+    }
+  }
+
+  private controlLaneList(): unknown[] {
+    return this.lanes.map((lane) => ({
+      harnessId: this.harnessMemoryId,
+      cwd: this.projectDir,
+      laneId: lane.id,
+      displayName: lane.displayName,
+      backendId: lane.backendId,
+      status: lane.status,
+      sessionId: lane.sessionId,
+      modelName: lane.modelName,
+      queueDepth: lane.queuedPrompts.length,
+      pendingPermissions: lane.pendingPermissions.length,
+      goal: lane.goal ?? null,
+      permissionMode: lane.permissionMode,
+    }));
+  }
+
+  private controlLane(params: Record<string, unknown>): HarnessLane {
+    const name = requiredString(params, 'lane');
+    const lane = this.lanes.find((candidate) => candidate.displayName === name);
+    if (!lane) throw controlError('unknown_lane', `unknown lane: ${name}`);
+    return lane;
   }
 
   /** spec 115: @mention fan-out from composer.
@@ -4133,6 +4306,10 @@ export class AcpHarnessView implements ContentView {
     }
     lane.pendingPermissions.push(permission);
     this.setLaneStatus(lane, 'needs_permission');
+    if (lane.permissionMode === 'bypass' || (lane.permissionMode === 'acceptEdits' && toolCall.kind === 'edit')) {
+      void this.resolvePermission(lane, 'accept', true, `mode:${lane.permissionMode}`);
+      return;
+    }
     if (lane.acceptAllForTurn || lane.rejectAllForTurn) {
       void this.resolvePermission(lane, lane.rejectAllForTurn ? 'reject' : 'accept', true);
       return;
@@ -5304,6 +5481,10 @@ export class AcpHarnessView implements ContentView {
   private async closeActiveLane(): Promise<void> {
     const lane = this.activeLane();
     if (!lane) return;
+    await this.closeLane(lane);
+  }
+
+  private async closeLane(lane: HarnessLane): Promise<void> {
     lane.spawnEpoch += 1;
     // spec 133: the lane is being removed — drop all its artifact records
     // (pending grants + registered entries) so a later same-name lane can't
@@ -7430,6 +7611,8 @@ export class AcpHarnessView implements ContentView {
     item.fsReview = { requestId, path, oldText, newText };
     if (lane.acceptAllForTurn || lane.rejectAllForTurn) {
       void this.resolveFsWriteReview(lane, item.id, lane.rejectAllForTurn ? 'rejected' : 'accepted', true);
+    } else if (lane.permissionMode === 'acceptEdits' || lane.permissionMode === 'bypass') {
+      void this.resolveFsWriteReview(lane, item.id, 'accepted', true);
     } else if (lane.peerAutoAcceptForTurn) {
       // spec 143: file writes are low-risk (diff shown + VCS-recoverable), so a
       // peer-delegated turn auto-accepts them — only commands are risk-gated.

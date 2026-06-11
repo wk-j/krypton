@@ -654,3 +654,18 @@ Sessions live in a shared pool. Windows reference sessions by ID. When a workspa
 10. User presses 'r' -> refreshes all 4 queries
 11. User presses Escape -> DashboardManager.close() -> restores terminal focus
 ```
+
+## Harness Controller CLI Flow
+
+```text
+1. kryptonctl reads ~/.config/krypton/runtime/controller.json and validates the PID.
+2. kryptonctl sends an authenticated typed operation to the loopback control API.
+3. Rust control server validates the bearer token and emits acp-control-request.
+4. Frontend control bridge checks operationId replay state and routes via HarnessDirectory.
+5. The owning AcpHarnessView executes the typed domain operation against live state.
+6. Frontend invokes acp_control_reply with the typed result or error.
+7. Rust completes the pending HTTP request and kryptonctl prints structured output.
+8. For send --wait, kryptonctl polls lane.list until the lane is idle and queueDepth is zero.
+```
+
+The CLI never simulates keys, submits hash commands, or registers as a lane.

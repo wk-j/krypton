@@ -618,3 +618,19 @@ Two built-in packs, each containing 17 WAV files:
 | `mach-line` | `src-tauri/sounds/mach-line/` | Sharp, mechanical interface tones |
 
 Packs are bundled as Tauri resources (declared in `tauri.conf.json`) and loaded at runtime from the app's resource directory. The command palette lists all available packs for switching.
+
+### Harness Controller CLI
+
+`kryptonctl` is an external Harness Controller, not an ACP lane. The Rust
+control server (`src-tauri/src/control.rs`) publishes an authenticated
+loopback HTTP endpoint and a user-private runtime descriptor. Requests cross
+the Tauri boundary through `acp-control-request` / `acp_control_reply`, then
+`src/acp/control-bridge.ts` routes typed domain operations through the
+process-wide `HarnessDirectory` to the owning `AcpHarnessView`.
+
+The frontend remains the only authority for live harness state. Rust owns
+discovery, authentication, protocol parsing, and request timeout handling; it
+does not mirror lanes, queues, transcripts, or permissions. Core v1 uses
+ordinary request/response operations, and `kryptonctl acp send --wait` polls
+typed lane state. Prompt-specific IDs, SSE, and prompt-specific cancellation
+are deferred. See `docs/154-harness-controller-cli.md`.

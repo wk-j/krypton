@@ -3017,9 +3017,9 @@ export class Compositor {
    * subprocesses for the focused working directory and routes one prompt at a
    * time to the active lane.
    */
-  async openAcpHarnessView(): Promise<void> {
+  async openAcpHarnessView(projectDirOverride: string | null = null): Promise<void> {
     const { AcpHarnessView } = await import('./acp/acp-harness-view');
-    const projectDir = await this.getFocusedCwd();
+    const projectDir = projectDirOverride ?? await this.getFocusedCwd();
     const view = new AcpHarnessView(projectDir, this.bus);
     view.onClose(() => this.closeTab());
     await this.createContentTab('ACP Harness', view);

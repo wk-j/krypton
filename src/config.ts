@@ -137,6 +137,10 @@ export interface HooksConfig {
   animation: string;
 }
 
+export interface AcpControllerConfig {
+  enabled: boolean;
+}
+
 export interface MusicConfig {
   enabled: boolean;
   volume: number;
@@ -175,6 +179,7 @@ export interface KryptonConfig {
   visual: VisualConfig;
   extensions: ExtensionsConfig;
   hooks: HooksConfig;
+  acp_controller: AcpControllerConfig;
   music: MusicConfig;
   acp_harness: AcpHarnessConfig;
 }

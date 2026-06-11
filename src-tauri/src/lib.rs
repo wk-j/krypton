@@ -2,6 +2,7 @@ pub mod acp;
 pub mod acp_harness_config;
 mod commands;
 mod config;
+pub mod control;
 pub mod hook_server;
 pub mod hurl;
 pub mod music;
@@ -73,6 +74,7 @@ pub fn run() {
 
     // Initialize hook server state
     let hook_server = Arc::new(hook_server::HookServer::new());
+    let control_server = Arc::new(control::ControlServer::default());
 
     // Initialize SSH manager
     let ssh_socket_dir = config::config_dir()
@@ -118,6 +120,7 @@ pub fn run() {
         .manage(sound_engine)
         .manage(ssh_manager)
         .manage(hook_server.clone())
+        .manage(control_server.clone())
         .manage(hurl_state)
         .manage(quick_search::QuickSearchState::new())
         .manage(Arc::new(acp::AcpRegistry::new()))
@@ -152,6 +155,7 @@ pub fn run() {
             commands::list_harness_memory,
             commands::dispose_harness_memory,
             commands::acp_bus_reply,
+            commands::acp_control_reply,
             commands::get_acp_harness_config,
             commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
@@ -340,6 +344,16 @@ pub fn run() {
                 }
             }
 
+            {
+                let enabled = krypton_config
+                    .read()
+                    .map(|cfg| cfg.acp_controller.enabled)
+                    .unwrap_or(true);
+                if enabled {
+                    control::start(app.handle().clone(), control_server.clone());
+                }
+            }
+
             // Start process detection poller for context-aware extensions
             let poller_handle = app.handle().clone();
             let poller_config = krypton_config.clone();
@@ -377,6 +391,8 @@ pub fn run() {
                 // process groups (including MCP servers) don't outlive the app
                 // and get reparented to launchd.
                 let registry = app.state::<Arc<acp::AcpRegistry>>().inner().clone();
+                let control = app.state::<Arc<control::ControlServer>>().inner().clone();
+                control.remove_descriptor();
                 tauri::async_runtime::block_on(async move {
                     acp::dispose_all(&registry).await;
                 });

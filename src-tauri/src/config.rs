@@ -43,6 +43,7 @@ pub struct KryptonConfig {
     pub extensions: ExtensionsConfig,
     pub ssh: SshConfig,
     pub hooks: HooksConfig,
+    pub acp_controller: AcpControllerConfig,
     pub music: MusicConfig,
     pub agent: AgentConfig,
     pub vault: VaultConfig,
@@ -382,6 +383,19 @@ impl Default for HooksConfig {
             max_toasts: 20,
             animation: "brainwave".to_string(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AcpControllerConfig {
+    /// Start the authenticated local `kryptonctl` control endpoint at launch.
+    pub enabled: bool,
+}
+
+impl Default for AcpControllerConfig {
+    fn default() -> Self {
+        Self { enabled: true }
     }
 }
 

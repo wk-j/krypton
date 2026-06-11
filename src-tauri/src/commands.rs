@@ -1,4 +1,5 @@
 use crate::config::KryptonConfig;
+use crate::control::{ControlReply, ControlServer};
 use crate::hook_server::HookServer;
 use crate::pty::PtyManager;
 use crate::ssh::SshManager;
@@ -255,6 +256,18 @@ pub fn acp_bus_reply(
             "acp_bus_reply: no pending request {} (already timed out or unknown id)",
             request_id
         );
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn acp_control_reply(
+    request_id: String,
+    reply: ControlReply,
+    control_server: State<'_, Arc<ControlServer>>,
+) -> Result<(), String> {
+    if !control_server.complete(&request_id, reply) {
+        log::warn!("acp_control_reply: unknown or timed-out request {request_id}");
     }
     Ok(())
 }

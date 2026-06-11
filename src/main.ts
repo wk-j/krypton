@@ -24,6 +24,7 @@ import { installGlobalCopyOnSelect } from './copy-on-select';
 import { getViewBus } from './view-bus';
 import { startPtyBridge } from './pty-bridge';
 import { startChromeSignals } from './chrome-signals';
+import { startAcpControlBridge } from './acp/control-bridge';
 
 interface CaptureResult {
   path: string;
@@ -76,6 +77,11 @@ async function main(): Promise<void> {
   const bus = getViewBus();
   compositor.attachToBus(bus);
   startChromeSignals(bus, compositor);
+  try {
+    await startAcpControlBridge(compositor);
+  } catch (e) {
+    console.error('[Krypton] Failed to start ACP control bridge:', e);
+  }
   try {
     await startPtyBridge(bus, compositor);
   } catch (e) {

@@ -118,6 +118,7 @@ This approach enables:
 | CSI | Control Sequence Introducer — prefix byte sequence for ANSI escape codes |
 | IME | Input Method Editor — system component for composing CJK and other complex text |
 | Session Pool | The set of all active PTY sessions managed by the Rust backend, shared across windows and workspaces |
+| Harness Controller CLI | The external `kryptonctl` command that controls a running Krypton instance and its ACP harnesses. It is not an ACP lane or standalone ACP client. |
 | Window Slot | A position within a workspace layout that a window occupies |
 | Gap | Pixel spacing between tiled windows in a grid layout |
 | Padding | Inner margin of the workspace — space between the screen edge and the nearest window |

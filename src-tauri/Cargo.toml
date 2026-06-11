@@ -1,5 +1,6 @@
 [package]
 name = "app"
+default-run = "app"
 version = "0.1.0"
 description = "Krypton — a modern terminal emulator"
 authors = ["you"]

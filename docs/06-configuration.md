@@ -222,6 +222,12 @@ enabled = true                 # Enable the hook HTTP server
 port = 0                       # Port to listen on (0 = auto-assign)
 show_toasts = true             # Show toast notifications for hook events
 
+# --- ACP Harness Controller CLI ---
+# Starts the authenticated local endpoint used by kryptonctl. Load-time only.
+
+[acp_controller]
+enabled = true
+
 # --- SSH Session Multiplexing ---
 # Clone SSH sessions into new tabs/windows via ControlMaster multiplexing.
 # Krypton detects active SSH connections and manages control sockets automatically.
@@ -623,6 +629,7 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | `[hooks]` | `enabled` | bool | `true` | Master toggle — enables/disables the Claude Code hook HTTP server |
 | `[hooks]` | `port` | int | `0` | Port to listen on. 0 = OS auto-assigns an available port |
 | `[hooks]` | `show_toasts` | bool | `true` | Show toast notifications for hook events. Toggleable at runtime via command palette |
+| `[acp_controller]` | `enabled` | bool | `true` | Start the authenticated local `kryptonctl` control endpoint. Load-time only; restart Krypton after changing it |
 
 ### Hints Configuration
 

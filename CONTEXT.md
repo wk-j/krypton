@@ -16,6 +16,10 @@ _Avoid_: pane (a pane is a split *inside* a window), tab
 One ACP agent session inside the harness. Carries a `HarnessLaneStatus` (`starting | idle | busy | needs_permission | awaiting_peer | error | stopped`), an inbox, and optionally a bound directive.
 _Avoid_: agent (ambiguous — could mean the backend process or the pi-agent), thread
 
+**Harness Controller CLI**:
+An external command-line client that connects to the running Krypton instance to observe and control its ACP harnesses and lanes. It controls Krypton itself; it is neither an ACP agent lane nor a standalone ACP client that bypasses Krypton.
+_Avoid_: ACP agent CLI, standalone ACP client
+
 **Goal**:
 A declared, single-task **focus scope** bound to one [[Lane]]: a short statement of what this lane is currently working on. Its purpose is *scoping and focus*, not autonomy — it (a) keeps the agent anchored to that task so it does not drift onto unrelated work, and (c) reminds the human which task this lane is on. Setting a goal **clears the lane** (fresh ACP session + empty transcript, equivalent to `#new`) so the lane refocuses with nothing from before bleeding in; harness `memory_*` state and the peer inbox/pending sends are **left untouched**. A goal does **not** auto-continue the lane across turns and is **not** checked for completion — there is no evaluator and no self-reported "done". It persists, purely as scope, until the human replaces it (a new goal) or clears it.
 _Avoid_: completion condition / "keep working until met" (that is Claude Code's `/goal`, a different feature — autonomy via an independent evaluator; Krypton's goal borrows the name and the clear-on-new behaviour but **not** the auto-loop or the evaluator), directive (a [[Lane]] directive is a persistent role/persona; a goal is the current *task*, set ad-hoc and cleared freely), task/todo (a goal is one active scope per lane, not a tracked list)
