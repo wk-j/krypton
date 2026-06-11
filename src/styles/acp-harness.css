@@ -1821,6 +1821,46 @@
   color: rgba(216, 232, 216, 0.5);
 }
 
+/* Veiled thinking: some providers (Claude Code on current Opus models) stream
+   thought deltas with empty text — reasoning happens server-side and never
+   reaches the client. The body shows "thinking" with pulsing dots instead of
+   an empty block; the row is dropped at seal, so this only renders while
+   streaming. Opacity-only animation (compositor-friendly, no layout). */
+.acp-harness__thought-veil {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  color: rgba(216, 232, 216, 0.45);
+}
+
+.acp-harness__thought-veil-word {
+  letter-spacing: 2px;
+}
+
+.acp-harness__thought-veil-dot {
+  opacity: 0.25;
+  animation: acp-thought-veil-blink 1.2s ease-in-out infinite;
+}
+
+.acp-harness__thought-veil-dot:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.acp-harness__thought-veil-dot:nth-child(4) {
+  animation-delay: 0.4s;
+}
+
+@keyframes acp-thought-veil-blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
 .acp-harness__msg--tool .acp-harness__msg-body,
 .acp-harness__msg--plan .acp-harness__msg-body {
   color: rgba(255, 209, 102, 0.86);

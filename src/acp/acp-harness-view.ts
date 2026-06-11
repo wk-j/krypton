@@ -4054,6 +4054,7 @@ export class AcpHarnessView implements ContentView {
       // Clear the streaming pointers too, matching finishTurn's reset — an errored
       // lane must not carry a stale active assistant/thought row (Grok-1 R3 #1).
       lane.currentAssistantId = null;
+      this.dropVeiledThoughtRow(lane);
       lane.currentThoughtId = null;
       this.updateComposerTick();
       this.appendClassifiedError(lane, message, `prompt failed: ${message}`);
@@ -4245,6 +4246,7 @@ export class AcpHarnessView implements ContentView {
     // from being clobbered (fixes back-to-back peer-turn provenance + elapsed UI).
     lane.activeTurnStartedAt = null;
     lane.currentAssistantId = null;
+    this.dropVeiledThoughtRow(lane);
     lane.currentThoughtId = null;
     lane.pendingCoordinatorDrain = null;
     lane.coordinatorDrainProvenanceUsed = false;
@@ -7661,7 +7663,10 @@ export class AcpHarnessView implements ContentView {
   private appendStreaming(lane: HarnessLane, kind: 'user' | 'assistant' | 'thought', text: string): void {
     if (kind !== 'user') lane.currentUserId = null;
     if (kind !== 'assistant') lane.currentAssistantId = null;
-    if (kind !== 'thought') lane.currentThoughtId = null;
+    if (kind !== 'thought') {
+      this.dropVeiledThoughtRow(lane);
+      lane.currentThoughtId = null;
+    }
     const currentId = kind === 'user'
       ? lane.currentUserId
       : kind === 'assistant'
@@ -7679,7 +7684,23 @@ export class AcpHarnessView implements ContentView {
     item.text += text;
   }
 
+  /** Drop a thought row that never received any text. Providers that keep
+   *  reasoning server-side (Claude Code on current Opus models) stream
+   *  thought deltas with empty text; the row shows an animated veil while
+   *  streaming and would otherwise be left behind as an empty block. */
+  private dropVeiledThoughtRow(lane: HarnessLane): void {
+    const id = lane.currentThoughtId;
+    if (!id) return;
+    const idx = lane.transcript.findIndex((entry) => entry.id === id);
+    if (idx === -1) return;
+    const item = lane.transcript[idx];
+    if (item.kind === 'thought' && item.text.length === 0) {
+      lane.transcript.splice(idx, 1);
+    }
+  }
+
   private sealStreaming(lane: HarnessLane): void {
+    this.dropVeiledThoughtRow(lane);
     // Spec 114: capture the assistant id BEFORE nulling so we can find the
     // row that was just streaming.
     const assistantId = lane.currentAssistantId;
@@ -9130,13 +9151,43 @@ function updateStreamingAssistantMarkdownBody(
   }
 }
 
+// Veiled thinking: providers that keep reasoning server-side (Claude Code on
+// current Opus models) stream thought deltas whose text is EMPTY — the model
+// is thinking, but the content never reaches the client. Instead of an empty
+// body, show a small text animation ("thinking" + pulsing dots). The row is
+// dropped at seal (dropVeiledThoughtRow) if no text ever arrived, so the veil
+// only ever exists on a streaming row.
+function installThoughtVeil(body: HTMLElement): void {
+  if (body.classList.contains('acp-harness__msg-body--thought-veil')) return;
+  body.classList.remove('acp-harness__msg-body--stream-plain');
+  body.classList.add('acp-harness__msg-body--thought-veil');
+  const veil = document.createElement('span');
+  veil.className = 'acp-harness__thought-veil';
+  const word = document.createElement('span');
+  word.className = 'acp-harness__thought-veil-word';
+  word.textContent = 'thinking';
+  veil.appendChild(word);
+  for (let i = 0; i < 3; i++) {
+    const dot = document.createElement('span');
+    dot.className = 'acp-harness__thought-veil-dot';
+    dot.textContent = '·';
+    veil.appendChild(dot);
+  }
+  body.replaceChildren(veil);
+}
+
 // Spec 114 rev 4: append-only update for streaming assistant / thought /
 // user rows. One TextNode grows via appendData; markdown waits for seal.
 // Spec 117: assistant rows now use updateStreamingAssistantMarkdownBody; this
 // helper still serves thought / user streaming rows.
 function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem): void {
+  if (item.kind === 'thought' && item.text.length === 0) {
+    installThoughtVeil(body);
+    return;
+  }
   if (!body.classList.contains('acp-harness__msg-body--stream-plain')) {
     body.classList.remove('acp-harness__msg-body--markdown');
+    body.classList.remove('acp-harness__msg-body--thought-veil');
     delete body.dataset.pretext;
     delete body.dataset.rawText;
     delete body.dataset.rowId;
@@ -9242,7 +9293,9 @@ function renderTranscriptItem(
   label.textContent = transcriptLabel(item.kind);
   if (item.kind === 'thought') {
     label.classList.add('acp-harness__msg-label--thought');
-    label.appendChild(buildThoughtEffortMeter(item.text.length));
+    // No meter while the row is veiled (zero text) — a "brief" reading on
+    // hidden reasoning would be a lie about how much thinking is happening.
+    if (item.text.length > 0) label.appendChild(buildThoughtEffortMeter(item.text.length));
   }
   const body = document.createElement('div');
   body.className = 'acp-harness__msg-body';
@@ -9356,9 +9409,13 @@ function renderTranscriptItem(
     // assistant (fast path in renderActiveTranscript). Pretext layout runs
     // once after seal when streaming is false.
     if (streaming) {
-      body.classList.add('acp-harness__msg-body--stream-plain');
-      body.appendChild(document.createTextNode(item.text));
-      item.streamPlainLength = item.text.length;
+      if (item.kind === 'thought' && item.text.length === 0) {
+        installThoughtVeil(body);
+      } else {
+        body.classList.add('acp-harness__msg-body--stream-plain');
+        body.appendChild(document.createTextNode(item.text));
+        item.streamPlainLength = item.text.length;
+      }
     } else {
       body.dataset.pretext = 'true';
       body.dataset.rawText = item.text;
