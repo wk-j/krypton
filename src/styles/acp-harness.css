@@ -668,7 +668,10 @@
   position: absolute;
   top: 36px;
   right: 12px;
-  width: clamp(220px, 28%, 320px);
+  /* Fixed width — must not track lane/window resize. The max-width guard
+     only engages on lanes too narrow to fit the rail at all. */
+  width: 320px;
+  max-width: calc(100% - 24px);
   max-height: calc(100% - 36px - 56px);
   z-index: 4;
   display: flex;

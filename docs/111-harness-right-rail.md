@@ -69,7 +69,8 @@ Terminology: **rail** (a single contextual overlay column), not a sidebar, not a
   position: absolute;
   top: 36px;                 /* clears head (28px) + small gap */
   right: 12px;
-  width: clamp(220px, 28%, 320px);
+  width: 320px;              /* fixed — must not track lane/window resize */
+  max-width: calc(100% - 24px);  /* guard for lanes too narrow to fit the rail */
   max-height: calc(100% - 36px - 56px);   /* leaves room for composer below */
   z-index: 4;                /* above transcript, below modals (memory/help at 2–3 use `inset:0` and z-context resolves correctly) */
   display: flex;
