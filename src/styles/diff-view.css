@@ -51,6 +51,27 @@
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
+/* spec 155: static freshness indicator — never blinks or pulses */
+.krypton-diff__sync {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  white-space: nowrap;
+}
+
+/* spec 155: untracked files skipped by the backend (binary / too large) —
+   name-only line; paths keep their real casing */
+.krypton-diff__skipped {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.45);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+}
+
 .krypton-diff__content {
   flex: 1;
   overflow: auto;

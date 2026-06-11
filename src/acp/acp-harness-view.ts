@@ -1319,6 +1319,16 @@ export class AcpHarnessView implements ContentView {
       type: 'lane:status',
       payload: { laneId: lane.id, prev, next, at: Date.now() },
     });
+    // spec 155: a transition into `idle` is a lane quiet point (ADR-0008) —
+    // announce it globally so a Diff Window over the same repo refreshes its
+    // working diff. Payload is just the projectDir; no lane identity needed.
+    if (next === 'idle' && this.projectDir) {
+      this.viewBus?.publishSignal({
+        kind: 'harness:lane-idle',
+        source: SYSTEM_SOURCE,
+        value: { cwd: this.projectDir },
+      });
+    }
     // Composer peer-strip age depends on lane status (busy / awaiting_peer)
     // and pending peers. Refresh the 1Hz tick whenever status changes so
     // mention / review / peer_send paths don't have to remember to call this

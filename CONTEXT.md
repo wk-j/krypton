@@ -67,6 +67,10 @@ _Avoid_: docs (too broad — a code wiki excludes derived/how-to docs that resta
 
 ### Review
 
+**Working diff**:
+The full uncommitted state of a worktree as one reviewable unit: tracked modifications *plus* untracked, non-ignored files (rendered as pure additions). The subject `#review` packages for reviewer lanes and the thing the Diff Window displays. A displayed working diff is **stale** the moment any lane writes after the snapshot was taken.
+_Avoid_: git diff (the plain command omits untracked files, which are first-class lane output), changes (too vague — could mean one turn's edits or one tool call's diff)
+
 **Authoring lane**:
 The single lane that edits the shared worktree and convenes a `#review` over its own working diff — the producer of the work under review, as distinct from the reviewer lanes that only read and report. Meaningful only under the "one lane edits, the others review" workflow; because every lane in a harness view shares one worktree, the diff is attributed to the authoring lane by *convention of that workflow*, not by per-line ownership the system can prove.
 _Avoid_: requester (too generic — every peer message has a requester), convening lane (the act of convening; "authoring" names the role that owns the work), owner

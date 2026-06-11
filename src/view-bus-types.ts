@@ -60,6 +60,12 @@ export interface SignalValueMap {
   // score (ADR-0004); it means "N rounds recorded — press to inspect", not
   // "act on me" (contrast the attention gauge).
   'review:quality': { sourceId: string; totalReviews: number };
+  // spec 155: published by an ACP harness whenever one of its lanes
+  // transitions to `idle` — a lane quiet point (ADR-0008). `cwd` is the
+  // harness's projectDir; consumers (the Diff Window) resolve it to a repo
+  // root and refresh when it matches their own. Deliberately carries no lane
+  // identity: the only meaning is "a lane in this project just went quiet".
+  'harness:lane-idle': { cwd: string };
 }
 
 /** spec 138: reversibility tier of the heaviest open attention item, ordered

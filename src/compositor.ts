@@ -1230,6 +1230,11 @@ export class Compositor {
         tab !== activeTab,
       );
     }
+    // Notify content views in the now-visible tab (spec 155). onShow is
+    // idempotent, so redundant calls while already visible are harmless.
+    for (const pane of this.collectPanes(activeTab.paneTree)) {
+      pane.contentView?.onShow?.();
+    }
     this.syncWindowUsageStatus(win);
   }
 
@@ -2012,75 +2017,102 @@ export class Compositor {
     }
   }
 
+  /** Cache of cwd → repo toplevel, used to match `harness:lane-idle` signals
+   *  against an open Diff Window's repo (spec 155). One `git rev-parse` per
+   *  unique harness cwd per app run. */
+  private repoRootCache = new Map<string, string | null>();
+
+  private async resolveRepoRoot(cwd: string): Promise<string | null> {
+    const cached = this.repoRootCache.get(cwd);
+    if (cached !== undefined) return cached;
+    let root: string | null = null;
+    try {
+      const out = await invoke<string>('run_command', {
+        program: 'git',
+        args: ['rev-parse', '--show-toplevel'],
+        cwd,
+      });
+      root = out.trim() || null;
+    } catch {
+      root = null;
+    }
+    this.repoRootCache.set(cwd, root);
+    return root;
+  }
+
   /**
-   * Open a diff view window showing git diff output from the focused terminal's CWD.
+   * Open a diff view window showing the working diff of the repo containing
+   * the focused view's CWD. Live-refreshes at lane quiet points (spec 155).
    */
   async openDiffView(options?: { staged?: boolean }): Promise<void> {
     const cwd = await this.getFocusedCwd();
-    if (!await this.isGitRepo(cwd)) {
+    if (!cwd) {
       this.showNotification('Not a git repository — diff view unavailable');
       return;
     }
-    const args = ['diff', '-M'];
-    if (options?.staged) args.push('--staged');
+    const staged = options?.staged ?? false;
 
-    let diffOutput: string;
+    type WorkingDiffPayload = {
+      repoRoot: string;
+      diff: string;
+      skipped: { path: string; reason: string }[];
+    };
+    let initial: WorkingDiffPayload;
     try {
-      diffOutput = await invoke<string>('run_command', {
-        program: 'git',
-        args,
-        cwd,
-      });
+      initial = await invoke<WorkingDiffPayload>('collect_working_diff', { cwd, staged });
     } catch (e) {
-      console.error('Failed to run git diff:', e);
+      console.warn('collect_working_diff failed:', e);
+      this.showNotification('Not a git repository — diff view unavailable');
       return;
-    }
-
-    // Append diffs for untracked files (only in unstaged view — staged view
-    // by definition cannot contain untracked files).
-    if (!options?.staged) {
-      try {
-        const untrackedRaw = await invoke<string>('run_command', {
-          program: 'git',
-          args: ['ls-files', '--others', '--exclude-standard', '-z'],
-          cwd,
-        });
-        const untracked = untrackedRaw.split('\0').filter((p) => p.length > 0);
-        for (const path of untracked) {
-          // `git diff --no-index` exits 1 when files differ — run_command
-          // surfaces the diff payload as the Err string, so use that as output.
-          let fileDiff = '';
-          try {
-            fileDiff = await invoke<string>('run_command', {
-              program: 'git',
-              args: ['diff', '--no-index', '--', '/dev/null', path],
-              cwd,
-            });
-          } catch (e) {
-            fileDiff = typeof e === 'string' ? e : '';
-          }
-          if (fileDiff) {
-            if (diffOutput.length > 0 && !diffOutput.endsWith('\n')) diffOutput += '\n';
-            diffOutput += fileDiff;
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to enumerate untracked files for diff view:', e);
-      }
     }
 
     const { DiffContentView } = await import('./diff-view');
     const container = document.createElement('div');
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
 
-    const diffView = new DiffContentView(diffOutput, container);
+    const diffView = new DiffContentView(initial.diff, container, {
+      skipped: initial.skipped,
+      // Anchor refreshes to the resolved repo root, not the originally focused
+      // subdirectory — a lane deleting/renaming that subdirectory must not
+      // permanently break refresh for an otherwise-live repo (Codex-1 review).
+      refreshProvider: async () => {
+        const r = await invoke<WorkingDiffPayload>('collect_working_diff', {
+          cwd: initial.repoRoot,
+          staged,
+        });
+        return { diff: r.diff, skipped: r.skipped };
+      },
+    });
 
-    const fileCount = diffView['files'].length;
-    const titleText = options?.staged
-      ? `DIFF_STAGED // ${fileCount} file${fileCount !== 1 ? 's' : ''}`
-      : `DIFF // ${fileCount} file${fileCount !== 1 ? 's' : ''}`;
+    const titleFor = (count: number): string => {
+      const files = `${count} file${count !== 1 ? 's' : ''}`;
+      return staged ? `DIFF_STAGED // ${files}` : `DIFF // ${files}`;
+    };
+    await this.createContentTab(titleFor(diffView.fileCount()), diffView);
 
-    await this.createContentTab(titleText, diffView);
+    // Refresh at lane quiet points: any harness lane in the same repo going
+    // idle requests a (debounced, visibility-aware) refresh. Deliberately not
+    // a filesystem watcher — see ADR-0008.
+    if (this.bus) {
+      const repoRoot = initial.repoRoot;
+      const unsub = this.bus.onSignal({ kind: 'harness:lane-idle' }, (sig) => {
+        void this.resolveRepoRoot(sig.value.cwd).then((root) => {
+          if (root !== null && root === repoRoot) diffView.requestRefresh();
+        });
+      });
+      diffView.addDisposeListener(unsub);
+    }
+
+    // Keep the tab title's file count honest across refreshes.
+    const win = this.focusedWindowId ? this.windows.get(this.focusedWindowId) : null;
+    const tab = win ? win.tabs[win.activeTabIndex] : undefined;
+    if (tab) {
+      diffView.onRefreshed((count) => {
+        tab.title = titleFor(count);
+        const titleEl = tab.element.querySelector('.krypton-tab__title');
+        if (titleEl) titleEl.textContent = tab.title;
+      });
+    }
 
     // Wire close callback to close the tab
     diffView.onClose(() => {

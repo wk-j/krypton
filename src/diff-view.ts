@@ -9,6 +9,30 @@ import 'highlight.js/styles/github-dark-dimmed.css';
 
 import type { ContentView, PaneContentType } from './types';
 
+/** Untracked file whose content the backend declined to render (spec 155). */
+export interface SkippedFile {
+  path: string;
+  /** 'binary' | 'too_large' | 'unreadable' */
+  reason: string;
+}
+
+/** One refresh round-trip result — a re-collected working diff. */
+export interface WorkingDiffResult {
+  diff: string;
+  skipped: SkippedFile[];
+}
+
+export interface DiffViewOptions {
+  skipped?: SkippedFile[];
+  /** Re-collects the working diff (spec 155). When absent the view is a
+   *  static snapshot, exactly as before — no `r` key, no sync indicator. */
+  refreshProvider?: () => Promise<WorkingDiffResult>;
+}
+
+/** Debounce for event-driven refreshes; coalesces a burst of lane-idle
+ *  signals from multiple lanes into one git round-trip. */
+const REFRESH_DEBOUNCE_MS = 300;
+
 /** Diff content view — renders git diff output as side-by-side panels */
 export class DiffContentView implements ContentView {
   readonly type: PaneContentType = 'diff';
@@ -18,10 +42,28 @@ export class DiffContentView implements ContentView {
   private currentFileIndex = 0;
   private fileContainer: HTMLElement;
   private navEl: HTMLElement;
+  private skippedEl: HTMLElement;
   private diffStyle: 'side-by-side' | 'line-by-line' = 'side-by-side';
   private closeCallback: (() => void) | null = null;
 
-  constructor(unifiedDiff: string, container: HTMLElement) {
+  // Live refresh state (spec 155 / ADR-0008)
+  private refreshProvider: (() => Promise<WorkingDiffResult>) | null;
+  private skipped: SkippedFile[];
+  private syncEl: HTMLElement | null = null;
+  private dirty = false;
+  private refreshing = false;
+  private trailingRefresh = false;
+  private lastSyncedAt: Date | null = null;
+  private syncFailed = false;
+  private debounceTimer: number | null = null;
+  private refreshedCallback: ((fileCount: number) => void) | null = null;
+  private disposeListeners: (() => void)[] = [];
+
+  constructor(unifiedDiff: string, container: HTMLElement, options?: DiffViewOptions) {
+    this.refreshProvider = options?.refreshProvider ?? null;
+    this.skipped = options?.skipped ?? [];
+    if (this.refreshProvider) this.lastSyncedAt = new Date();
+
     this.element = document.createElement('div');
     this.element.className = 'krypton-diff';
     this.element.tabIndex = 0;
@@ -38,6 +80,13 @@ export class DiffContentView implements ContentView {
     this.navEl = document.createElement('div');
     this.navEl.className = 'krypton-diff__nav';
     this.element.appendChild(this.navEl);
+
+    // Untracked files the backend skipped (binary / too large) — name-only,
+    // so nothing a lane created is invisible.
+    this.skippedEl = document.createElement('div');
+    this.skippedEl.className = 'krypton-diff__skipped';
+    this.element.appendChild(this.skippedEl);
+    this.renderSkipped();
 
     // Diff content area
     this.fileContainer = document.createElement('div');
@@ -58,6 +107,7 @@ export class DiffContentView implements ContentView {
 
   private renderEmpty(): void {
     this.navEl.innerHTML = '';
+    this.appendSyncIndicator();
     this.fileContainer.innerHTML = '';
     const msg = document.createElement('div');
     msg.className = 'krypton-diff__empty';
@@ -97,6 +147,7 @@ export class DiffContentView implements ContentView {
     this.navEl.appendChild(path);
     this.navEl.appendChild(stats);
     this.navEl.appendChild(mode);
+    this.appendSyncIndicator();
   }
 
   private renderCurrentFile(): void {
@@ -175,6 +226,16 @@ export class DiffContentView implements ContentView {
       case 's':
         this.toggleDiffStyle();
         return true;
+      case 'r':
+        // Manual refresh — explicit human intent, no debounce (ADR-0008's
+        // mid-turn escape hatch).
+        if (!this.refreshProvider) return false;
+        if (this.debounceTimer !== null) {
+          window.clearTimeout(this.debounceTimer);
+          this.debounceTimer = null;
+        }
+        void this.doRefresh();
+        return true;
       case 'q':
       case 'Escape':
         if (this.closeCallback) this.closeCallback();
@@ -241,11 +302,165 @@ export class DiffContentView implements ContentView {
     this.renderCurrentFile();
   }
 
+  // ─── Live refresh (spec 155 / ADR-0008) ───
+
+  /** Event-driven refresh request (lane quiet point). Debounced; deferred to
+   *  a dirty flag while the hosting tab is hidden. */
+  requestRefresh(): void {
+    if (!this.refreshProvider) return;
+    if (this.element.offsetParent === null) {
+      this.dirty = true;
+      return;
+    }
+    if (this.debounceTimer !== null) window.clearTimeout(this.debounceTimer);
+    this.debounceTimer = window.setTimeout(() => {
+      this.debounceTimer = null;
+      void this.doRefresh();
+    }, REFRESH_DEBOUNCE_MS);
+  }
+
+  /** Reveal hook — a hidden tab that went dirty refreshes exactly once. */
+  onShow(): void {
+    if (!this.dirty) return;
+    this.dirty = false;
+    void this.doRefresh();
+  }
+
+  /** Number of files in the current diff (drives the tab title). */
+  fileCount(): number {
+    return this.files.length;
+  }
+
+  /** Invoked after every applied refresh with the new file count. */
+  onRefreshed(cb: (fileCount: number) => void): void {
+    this.refreshedCallback = cb;
+  }
+
+  /** Cleanup hook run from dispose() — e.g. the compositor's bus unsubscribe. */
+  addDisposeListener(cb: () => void): void {
+    this.disposeListeners.push(cb);
+  }
+
+  private async doRefresh(): Promise<void> {
+    if (!this.refreshProvider) return;
+    if (this.refreshing) {
+      // Coalesce: one trailing refresh after the in-flight one completes.
+      this.trailingRefresh = true;
+      return;
+    }
+    this.refreshing = true;
+    this.updateSyncIndicator();
+    try {
+      const result = await this.refreshProvider();
+      this.syncFailed = false;
+      this.lastSyncedAt = new Date();
+      this.applyRefresh(result);
+    } catch {
+      // Keep the last rendered diff; the indicator reports the failure and
+      // the next trigger (or `r`) retries.
+      this.syncFailed = true;
+      this.lastSyncedAt = new Date();
+    } finally {
+      this.refreshing = false;
+      this.updateSyncIndicator();
+      if (this.trailingRefresh) {
+        this.trailingRefresh = false;
+        void this.doRefresh();
+      }
+    }
+  }
+
+  private applyRefresh(result: WorkingDiffResult): void {
+    const prevKey = this.files[this.currentFileIndex]
+      ? this.fileKey(this.files[this.currentFileIndex])
+      : null;
+    const prevScroll = this.fileContainer.scrollTop;
+
+    // A parse failure must propagate to doRefresh's catch: swallowing it here
+    // would erase the last valid snapshot and report a clean sync. A truly
+    // empty diff (no changes) parses to [] without throwing, so the empty
+    // state below remains reachable only for genuine emptiness (Codex-1 review).
+    const parsed = parse(result.diff);
+
+    this.files = parsed;
+    this.skipped = result.skipped;
+    this.renderSkipped();
+
+    if (this.files.length === 0) {
+      this.currentFileIndex = 0;
+      this.renderEmpty();
+      this.refreshedCallback?.(0);
+      return;
+    }
+
+    // Preserve the file the human was reading; if it left the diff, clamp to
+    // the nearest index and reset scroll.
+    const matched = prevKey === null
+      ? -1
+      : this.files.findIndex((f) => this.fileKey(f) === prevKey);
+    const samePath = matched >= 0;
+    this.currentFileIndex = samePath
+      ? matched
+      : Math.min(this.currentFileIndex, this.files.length - 1);
+    this.renderCurrentFile();
+    this.fileContainer.scrollTop = samePath ? prevScroll : 0;
+    this.refreshedCallback?.(this.files.length);
+  }
+
+  private fileKey(file: DiffFile): string {
+    return file.newName === '/dev/null'
+      ? (file.oldName ?? '')
+      : (file.newName ?? file.oldName ?? '');
+  }
+
+  /** Static freshness text — never blinks or pulses, same philosophy as the
+   *  backpressure gauge. */
+  private syncText(): string {
+    const at = this.lastSyncedAt
+      ? this.lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+      : '';
+    if (this.refreshing) return 'refreshing…';
+    if (this.syncFailed) return at ? `sync failed ${at}` : 'sync failed';
+    return at ? `synced ${at}` : '';
+  }
+
+  private appendSyncIndicator(): void {
+    if (!this.refreshProvider) {
+      this.syncEl = null;
+      return;
+    }
+    const sync = document.createElement('span');
+    sync.className = 'krypton-diff__sync';
+    sync.textContent = this.syncText();
+    this.navEl.appendChild(sync);
+    this.syncEl = sync;
+  }
+
+  private updateSyncIndicator(): void {
+    if (this.syncEl) this.syncEl.textContent = this.syncText();
+  }
+
+  private renderSkipped(): void {
+    this.skippedEl.innerHTML = '';
+    this.skippedEl.hidden = this.skipped.length === 0;
+    if (this.skipped.length === 0) return;
+    const reasonLabel = (r: string): string =>
+      r === 'too_large' ? 'too large' : r;
+    this.skippedEl.textContent =
+      `not rendered: ${this.skipped.map((s) => `${s.path} (${reasonLabel(s.reason)})`).join(' · ')}`;
+  }
+
   onResize(): void {
     // diff2html handles its own layout via CSS
   }
 
   dispose(): void {
+    if (this.debounceTimer !== null) {
+      window.clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    for (const cb of this.disposeListeners) cb();
+    this.disposeListeners = [];
     this.element.remove();
   }
 }

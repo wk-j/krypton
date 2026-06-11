@@ -157,6 +157,9 @@ export interface ContentView {
   dispose(): void;
   /** Called when pane is resized */
   onResize?(width: number, height: number): void;
+  /** Called when the hosting tab becomes the visible one (spec 155). May fire
+   *  redundantly while already visible — implementations must be idempotent. */
+  onShow?(): void;
   /** Optional working directory associated with this content view */
   getWorkingDirectory?(): string | null;
   /** AI subscription providers represented by this view in window chrome. */

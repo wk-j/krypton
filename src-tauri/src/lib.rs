@@ -3,6 +3,7 @@ pub mod acp_harness_config;
 mod commands;
 mod config;
 pub mod control;
+pub mod git;
 pub mod hook_server;
 pub mod hurl;
 pub mod music;
@@ -159,6 +160,7 @@ pub fn run() {
             commands::get_acp_harness_config,
             commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
+            commands::collect_working_diff,
             commands::list_harness_mcp_stats,
             commands::acp_cancel_pending_artifacts,
             commands::acp_revoke_artifact_feedback,

@@ -1787,8 +1787,6 @@ fn clamp_headline(s: &str, max: usize) -> String {
 }
 
 fn collect_git_state(cwd: Option<&str>) -> Value {
-    use std::process::Command;
-
     // Bounds the payload (not process memory): the unified diff is capped, and
     // each untracked file contributes only a head excerpt.
     const REVIEW_DIFF_CAP: usize = 40_960;
@@ -1804,20 +1802,12 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
         }
     };
 
-    let run = |args: &[&str]| -> Option<String> {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(&cwd_path)
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        String::from_utf8(out.stdout).ok()
-    };
+    // Shared git primitives (spec 155) — same invocation/root/binary handling
+    // as the Diff Window's `collect_working_diff`.
+    let run = |args: &[&str]| -> Option<String> { crate::git::run_git(&cwd_path, args) };
 
-    let repo_root = match run(&["rev-parse", "--show-toplevel"]) {
-        Some(s) => s.trim().to_string(),
+    let repo_root = match crate::git::repo_root(&cwd_path) {
+        Some(s) => s,
         None => return empty_git_state(cwd_path.to_string_lossy().to_string()),
     };
 
@@ -1953,7 +1943,7 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
                     .read_to_end(&mut bytes)
                 {
                     Ok(_) => {
-                        if bytes.iter().take(2048).any(|b| *b == 0) {
+                        if crate::git::looks_binary(&bytes) {
                             "<binary>".to_string()
                         } else {
                             String::from_utf8_lossy(&bytes)

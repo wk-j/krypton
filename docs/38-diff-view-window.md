@@ -4,6 +4,10 @@
 > Date: 2026-03-23
 > Milestone: M8 — Polish
 
+> **Implementation notes (post-spec):**
+> - The shipped renderer is **`diff2html`** (+ highlight.js), not `@pierre/diffs` as designed below — the design's `FileDiff`/`processPatch` details are historical.
+> - Spec 155 (`docs/155-live-working-diff.md`) made the window **live**: it re-collects the working diff at lane quiet points (ADR-0008), supports manual refresh (`r`), includes untracked files via the `collect_working_diff` Tauri command, and preserves file + scroll position across refreshes.
+
 ## Problem
 
 Krypton only supports terminal windows — every pane requires an xterm.js instance and PTY session. There's no way to display rich non-terminal content in the tiling layout. Users viewing diffs must shell out to CLI tools (`git diff`, `delta`) with no side-by-side view or syntax highlighting.
@@ -175,6 +179,7 @@ openDiffView(options?: { staged?: boolean; path?: string }): Promise<void>
 | `g` / `G` | Diff view focused | Jump to top / bottom |
 | `]` / `[` | Diff view focused | Next / previous file |
 | `s` | Diff view focused | Toggle split ↔ unified view |
+| `r` | Diff view focused | Refresh working diff now (spec 155) |
 | `q` | Diff view focused | Close diff view window |
 
 ### UI Changes

@@ -297,6 +297,15 @@ pub fn acp_collect_review_git_state(cwd: String) -> Result<serde_json::Value, St
     Ok(crate::hook_server::collect_git_state_public(Some(&cwd)))
 }
 
+/// spec 155: collect the [[Working diff]] for the Diff Window — `git diff -M`
+/// (or `--staged`) with untracked files appended as synthesized additions.
+/// Single IPC call per refresh; shares git primitives with the `#review`
+/// collection above so both surfaces agree on what the working diff is.
+#[tauri::command]
+pub fn collect_working_diff(cwd: String, staged: bool) -> Result<crate::git::WorkingDiff, String> {
+    crate::git::collect_working_diff(&cwd, staged)
+}
+
 #[tauri::command]
 pub fn list_harness_mcp_stats(
     harness_id: String,
