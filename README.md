@@ -33,6 +33,25 @@ Each agent runs in its own **lane** with an independent session, transcript, and
 - **Attention triage** -- agents surface only genuinely hard, irreversible, or ambiguous decisions to a non-blocking human review queue (default-on), with a directive-bound grant model.
 - **Streaming markdown** transcripts, provider-error rendering, and a readability-tuned transcript window.
 
+### Control the harness from the command line
+
+`kryptonctl` is an authenticated local controller for the running Krypton
+instance. It can inspect harnesses and lanes, submit prompts, wait for a lane to
+finish, manage lane settings and permissions, and read transcripts or shared
+memory. It is a controller, not an ACP lane, so it cannot impersonate a lane or
+send peer messages.
+
+```sh
+kryptonctl acp harnesses
+kryptonctl acp lanes
+kryptonctl acp send Claude-1 "Review the current diff" --wait
+kryptonctl --json acp transcript Claude-1
+kryptonctl acp capabilities
+```
+
+`send --wait` blocks until the lane is idle and its queue is empty. Read the
+completed response with `transcript`; add `--json` for scripting.
+
 ## Other Features
 
 - **Transparent Workspace** -- Fullscreen borderless window with tiling Grid/Focus layouts.
@@ -54,13 +73,20 @@ Krypton uses a **Rust (Tauri v2)** backend for PTY management, sound, and subpro
 npm install      # Dependencies
 make dev         # Run dev environment
 make build       # Build distributable bundle
+make install     # Install Krypton.app and kryptonctl (macOS)
 ```
 
-Configuration is located at `~/.config/krypton/krypton.toml`. Custom themes go in `~/.config/krypton/themes/`.
+On macOS, `make install` installs Krypton to `/Applications` and `kryptonctl` to
+`~/.local/bin` by default. Override the CLI destination with
+`CLI_INSTALL_DIR=/desired/path make install`.
+
+Configuration is located at `~/.config/krypton/krypton.toml`. Custom themes go
+in `~/.config/krypton/themes/`. The authenticated loopback endpoint used by
+`kryptonctl` is enabled by default through `[acp_controller].enabled`.
 
 ## Tech Stack
 
-- **Backend:** Rust, Tauri v2, portable-pty, rodio, axum (Claude hooks).
+- **Backend:** Rust, Tauri v2, portable-pty, rodio, axum (hooks and local control API).
 - **Frontend:** TypeScript, xterm.js, Vite, WAAPI (animations).
 - **AI:** pi-agent-core, Agent Client Protocol (ACP).
 
