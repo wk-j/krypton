@@ -934,9 +934,11 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<line x1="6.5" y1="10.5" x2="9.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
     '<line x1="8" y1="1.5" x2="8" y2="3.5" stroke="currentColor" stroke-width="1.3"/>' +
     '</symbol>',
-  // cursor: arrow cursor
+  // cursor: isometric cube, filled top face (Anysphere mark)
   '<symbol id="krypton-logo-cursor" viewBox="0 0 16 16">' +
-    '<path d="M3 2 L13 8.5 L8.4 9.4 L10.7 13.8 L9.2 14.6 L6.9 10.2 L4 12.5 Z" fill="currentColor"/>' +
+    '<polygon points="8,1.6 13.6,5 13.6,11 8,14.4 2.4,11 2.4,5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>' +
+    '<path d="M8 1.6 L13.6 5 L8 8.4 L2.4 5 Z" fill="currentColor"/>' +
+    '<line x1="8" y1="8.4" x2="8" y2="14.4" stroke="currentColor" stroke-width="1.3"/>' +
     '</symbol>',
   // junie: bracket frame (jetbrains-ish)
   '<symbol id="krypton-logo-junie" viewBox="0 0 16 16">' +
