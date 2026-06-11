@@ -78,6 +78,7 @@ ACP backends are code-defined, not configured in `krypton.toml`.
 | `cursor` | `cursor-agent acp` (harness MCP via native `.cursor/mcp.json` + `mcp enable`, not `session/new`) |
 | `junie` | `junie --acp true` |
 | `omp` | `omp acp` |
+| `mimo` | `mimo acp` (MiMo-Code, Xiaomi's OpenCode fork — `npm i -g @mimo-ai/cli`; keeps OpenCode's ACP module and advertises model state. Krypton applies `mimo/mimo-auto`, MiMo's anonymous free-for-limited-time channel, via `session/set_model` by default; `lane_models.mimo.active` overrides it) |
 
 **PATH for spawned adapters.** macOS GUI apps launched from `/Applications` inherit only `/usr/bin:/bin:/usr/sbin:/sbin`, so `gemini` (Homebrew) and `npx` (nvm) are typically invisible. At app start, run `sh -lc 'printenv PATH'` once, cache the result in a `OnceCell<String>`, and pass it via `Command::env("PATH", cached)` for every ACP spawn. Reuses the same login-shell trick already used by `get_env_var`.
 

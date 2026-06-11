@@ -787,6 +787,7 @@ const BACKEND_LABELS: Record<string, string> = {
   omp: 'OMP',
   grok: 'Grok',
   copilot: 'Copilot',
+  mimo: 'MiMo',
 };
 
 function backendLabel(backendId: string): string {
@@ -877,6 +878,8 @@ export function backendLogoId(backendId: string): string {
       return 'krypton-logo-grok';
     case 'copilot':
       return 'krypton-logo-copilot';
+    case 'mimo':
+      return 'krypton-logo-mimo';
     default:
       return 'krypton-logo-omp';
   }
@@ -892,7 +895,7 @@ export function trimBackendPrefix(title: string, backendId: string): string {
   return title.startsWith(prefix) ? title.slice(prefix.length) : title;
 }
 
-// Inline <symbol> defs for the eleven built-in backends. Geometry is copied
+// Inline <symbol> defs for the twelve built-in backends. Geometry is copied
 // from docs/prototypes/125-lane-rail-disambiguation.html — keep both sides
 // in sync if iterated. All strokes/fills use currentColor so the rail can
 // recolor via a single CSS class.
@@ -956,6 +959,12 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<rect x="2.5" y="5" width="11" height="7.4" rx="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
     '<ellipse cx="6.2" cy="8.7" rx="0.95" ry="1.5" fill="currentColor"/>' +
     '<ellipse cx="9.8" cy="8.7" rx="0.95" ry="1.5" fill="currentColor"/>' +
+    '</symbol>',
+  // mimo: "mi" mark in a rounded tile (Xiaomi MiMo-Code)
+  '<symbol id="krypton-logo-mimo" viewBox="0 0 16 16">' +
+    '<rect x="2" y="2" width="12" height="12" rx="3.2" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+    '<path d="M4.8 11 V6 H7.6 Q8.8 6 8.8 7.2 V11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<line x1="11.2" y1="6" x2="11.2" y2="11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
     '</symbol>',
 ].join('');
 
@@ -10430,6 +10439,7 @@ export function laneAccent(index: number): string {
     '#4dd0ff',
     '#5ce6a8',
     '#7fa8ff',
+    '#ff8552',
   ];
   return accents[(index - 1) % accents.length];
 }
@@ -10446,6 +10456,7 @@ export function laneAccentForLabel(label: string): string {
   if (/^omp(-|$)/i.test(label)) return laneAccent(9);
   if (/grok/i.test(label)) return laneAccent(10);
   if (/copilot/i.test(label)) return laneAccent(11);
+  if (/mimo/i.test(label)) return laneAccent(12);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }

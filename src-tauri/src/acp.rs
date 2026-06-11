@@ -23,6 +23,7 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
 
 const OPENCODE_DEFAULT_MODEL: &str = "zai-coding-plan/glm-5.1";
+const MIMO_DEFAULT_MODEL: &str = "mimo/mimo-auto";
 
 // ─── Built-in backends ─────────────────────────────────────────────
 
@@ -140,6 +141,20 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "Copilot".to_string(),
             },
         ),
+        (
+            "mimo",
+            AcpBackend {
+                command: "mimo".to_string(),
+                // MiMo-Code (Xiaomi's OpenCode fork, `npm i -g @mimo-ai/cli`)
+                // keeps OpenCode's `acp` subcommand and ACP module. Unlike the
+                // `opencode` lane it takes the generic model path: its session/new
+                // advertises `models { currentModelId, availableModels }`, so
+                // Krypton selects the anonymous free `mimo/mimo-auto` model via
+                // `session/set_model` unless the user configured another model.
+                args: vec!["acp".to_string()],
+                display_name: "MiMo".to_string(),
+            },
+        ),
     ]
 }
 
@@ -189,9 +204,9 @@ pub struct ModelInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentSessionInfo {
     pub session_id: String,
-    /// True ONLY when a model was configured, the agent advertised model state,
+    /// True ONLY when a model was requested, the agent advertised model state,
     /// and the `session/set_model` request errored/timed out. False on success,
-    /// skip, no-config, or no-capability. Drives a "requested model not applied"
+    /// skip, no-request, or no-capability. Drives a "requested model not applied"
     /// chip warning — it never claims to know the real running model.
     pub model_apply_failed: bool,
     /// Agent-advertised models from the `session/new` response (spec 127). Empty
@@ -256,6 +271,12 @@ fn parse_session_models(models: Option<&Value>) -> (Vec<ModelInfo>, Option<Strin
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
     (available, current)
+}
+
+fn effective_spawn_model(backend_id: &str, configured_model: Option<String>) -> Option<String> {
+    configured_model
+        .filter(|model| !model.is_empty())
+        .or_else(|| (backend_id == "mimo").then(|| MIMO_DEFAULT_MODEL.to_string()))
 }
 
 fn client_session_cwd(client: &AcpClient) -> Option<String> {
@@ -981,13 +1002,16 @@ pub async fn acp_spawn(
         backend.display_name.clone()
     };
 
-    // Resolve configured active model for this backend (empty string = unset).
-    let configured_model: Option<String> = config
-        .read()
-        .ok()
-        .and_then(|cfg| cfg.acp_harness.lane_models.get(&backend_id).cloned())
-        .map(|m| m.active)
-        .filter(|s| !s.is_empty());
+    // Resolve configured active model for this backend. MiMo defaults to its
+    // anonymous free channel; an explicit lane model still takes precedence.
+    let configured_model = effective_spawn_model(
+        &backend_id,
+        config
+            .read()
+            .ok()
+            .and_then(|cfg| cfg.acp_harness.lane_models.get(&backend_id).cloned())
+            .map(|m| m.active),
+    );
 
     // Backends that take the model via CLI flag — apply before spawn.
     if let Some(ref model) = configured_model {
@@ -1364,7 +1388,7 @@ pub async fn acp_set_lane_model(
 }
 
 /// Apply the lane's configured model after `session/new`. Returns
-/// `Ok(model_apply_failed)`: `true` only when a model was configured, the agent
+/// `Ok(model_apply_failed)`: `true` only when a model was requested, the agent
 /// advertised model state, and the `session/set_model` request errored/timed out.
 ///
 /// OpenCode keeps its dedicated `set_config_option`-first path (FATAL via `?`),
@@ -1406,7 +1430,7 @@ async fn apply_session_model(
         return Ok(no_op);
     }
     let Some(model) = client.model_override.read().ok().and_then(|g| g.clone()) else {
-        return Ok(no_op); // nothing configured — agent default is used
+        return Ok(no_op); // no spawn model requested — agent default is used
     };
     // Sent verbatim (so aliases like `opus`/`sonnet` resolve adapter-side); any
     // failure is logged with the backend id + requested model and is non-fatal.
@@ -2096,6 +2120,20 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
             return "Copilot did not return an initialize response and no stderr was captured. First-run `/login` or install input is a likely cause; run `copilot` once in a terminal, then retry.".to_string();
         }
     }
+    if backend_id == "mimo" {
+        // Before the generic `/login`/`not authenticated` branch below — that
+        // one names `claude /login`, which is wrong advice for a MiMo lane.
+        if s.contains("command not found") || s.contains("enoent") || s.contains("no such file") {
+            return "Install MiMo-Code: `npm install -g @mimo-ai/cli`, then restart Krypton so the login-shell PATH cache includes `mimo`.".to_string();
+        }
+        if s.contains("api key")
+            || s.contains("auth")
+            || s.contains("provider")
+            || s.contains("/login")
+        {
+            return "Run `mimo` once in a terminal to complete its first-launch provider setup (MiMo Auto / Xiaomi OAuth / custom provider), then retry.".to_string();
+        }
+    }
     if s.contains("/login") || s.contains("not authenticated") {
         return "Run `claude /login` in a terminal, then retry.".to_string();
     }
@@ -2117,7 +2155,28 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{disconnect_detail, startup_hint};
+    use super::{disconnect_detail, effective_spawn_model, startup_hint};
+
+    #[test]
+    fn mimo_defaults_to_anonymous_free_model() {
+        assert_eq!(
+            effective_spawn_model("mimo", None).as_deref(),
+            Some("mimo/mimo-auto")
+        );
+        assert_eq!(
+            effective_spawn_model("mimo", Some(String::new())).as_deref(),
+            Some("mimo/mimo-auto")
+        );
+    }
+
+    #[test]
+    fn configured_mimo_model_overrides_free_default() {
+        assert_eq!(
+            effective_spawn_model("mimo", Some("mimo/mimo-v2.5".to_string())).as_deref(),
+            Some("mimo/mimo-v2.5")
+        );
+        assert_eq!(effective_spawn_model("claude", None), None);
+    }
 
     #[test]
     fn disconnect_detail_surfaces_stderr_tail() {
@@ -2367,6 +2426,30 @@ mod tests {
         let hint = startup_hint("claude", "grok: unrecognized subcommand 'agent'");
 
         assert!(!hint.contains("Grok CLI predates ACP mode"));
+    }
+
+    #[test]
+    fn mimo_startup_hint_reports_missing_cli() {
+        let hint = startup_hint("mimo", "No such file or directory (os error 2)");
+
+        assert!(hint.contains("Install MiMo-Code"));
+        assert!(hint.contains("npm install -g @mimo-ai/cli"));
+    }
+
+    #[test]
+    fn mimo_startup_hint_reports_first_launch_setup_for_auth() {
+        // Must hit the mimo branch, not the generic `claude /login` hint.
+        let hint = startup_hint("mimo", "Error: not authenticated, please /login");
+
+        assert!(hint.contains("Run `mimo` once"));
+        assert!(!hint.contains("claude /login"));
+    }
+
+    #[test]
+    fn mimo_startup_hint_does_not_leak_to_other_backends() {
+        let hint = startup_hint("opencode", "provider auth failed");
+
+        assert!(!hint.contains("MiMo"));
     }
 
     #[test]

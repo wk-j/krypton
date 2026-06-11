@@ -729,12 +729,19 @@ describe('laneAccentForLabel', () => {
     expect(laneAccentForLabel('Copilot-1')).not.toBe(laneAccent(1));
   });
 
-  it('keeps an 11-color palette wider than the 11 named lanes', () => {
-    // Junie=8, OMP=9, Grok=10, Copilot=11 all occupy distinct slots, so the
-    // palette must have at least 11 distinct entries — otherwise laneAccent(11)
-    // wraps modulo to Codex blue.
-    const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(laneAccent);
-    expect(new Set(slots).size).toBe(11);
+  it('routes MiMo labels to the 12th palette slot, not the numeric fallback', () => {
+    // MiMo is the 12th named lane. Without the explicit /mimo/i arm,
+    // 'MiMo-1' would hit the -(\d+)$ fallback → laneAccent(1) (Codex blue).
+    expect(laneAccentForLabel('MiMo-1')).toBe(laneAccent(12));
+    expect(laneAccentForLabel('MiMo-1')).not.toBe(laneAccent(1));
+  });
+
+  it('keeps a 12-color palette wider than the 12 named lanes', () => {
+    // Junie=8, OMP=9, Grok=10, Copilot=11, MiMo=12 all occupy distinct slots,
+    // so the palette must have at least 12 distinct entries — otherwise
+    // laneAccent(12) wraps modulo to Codex blue.
+    const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(laneAccent);
+    expect(new Set(slots).size).toBe(12);
   });
 });
 
@@ -895,6 +902,7 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(backendLogoId('omp')).toBe('krypton-logo-omp');
       expect(backendLogoId('grok')).toBe('krypton-logo-grok');
       expect(backendLogoId('copilot')).toBe('krypton-logo-copilot');
+      expect(backendLogoId('mimo')).toBe('krypton-logo-mimo');
     });
 
     it('falls back to the neutral OMP mark for unknown backends', () => {

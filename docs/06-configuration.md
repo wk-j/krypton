@@ -534,7 +534,7 @@ See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-
 |---------|-----|------|---------|-------------|
 | `[acp_harness]` | `idle_flash_sound` | bool | `true` | Reserved for the soft cue when an active lane returns idle while its draft is non-empty |
 | `[acp_harness]` | `memory_footer` | bool | `true` | Append the MEMORY footer to each harness prompt so agents can publish short shared-memory bullets |
-| `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id/alias applied to the lane (CLI flag at spawn, or `session/set_model`/`set_config_option` after `session/new`). Empty = use the adapter default |
+| `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id/alias applied to the lane (CLI flag at spawn, or `session/set_model`/`set_config_option` after `session/new`). Empty = use the adapter default, except MiMo uses its anonymous free `mimo/mimo-auto` model |
 | `[acp_harness.lane_models.<backend>]` | `models` | array | `[]` | Informational allow-list (not enforced). The in-harness picker (spec 127) sources its options from the agent-advertised `availableModels`, not this array |
 
 The ACP Harness backend picker is code-defined in v1: installed built-in backends are listed, and the harness starts with no lanes until the user spawns one via `Cmd+P → +`. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
