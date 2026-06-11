@@ -991,7 +991,7 @@ const ARTIFACT_PER_SESSION_MAX: usize = 64;
 /// write, so they are bounded and short-lived.
 const ARTIFACT_PENDING_PER_LANE_MAX: usize = 4;
 /// Styled starter scaffold seeded at `artifact_new` (spec 134). Self-contained
-/// HTML with the Krypton cyberpunk default theme + light/auto toggle; the lane
+/// HTML with the Binance dark default theme + light/auto toggle; the lane
 /// edits the `<main data-artifact-content>` placeholder to fill content.
 const ARTIFACT_SCAFFOLD: &str = include_str!("../resources/artifact-scaffold.html");
 /// Stable anchor the lane orients its first edit on (returned by `artifact_new`).
@@ -2704,7 +2704,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "artifact_new",
-            "description": "Create an HTML artifact the user opens in their browser, for views that beat prose: side-by-side comparisons, diagrams, annotated diffs, parameterized previews, dashboards. Use ONLY when the user asks for a visual/interactive artifact, or your active directive explicitly tells you to produce HTML artifacts for this task. Do NOT default to HTML for ordinary prose, plans, or answers, and do NOT volunteer unsolicited dashboards — those stay in your turn text. Returns `{ id, path, content_marker }`. The path points to a file that ALREADY EXISTS — a ready-made HTML scaffold with Krypton's default cyberpunk styling and a light/auto toggle. Use your EDIT/patch tool (NOT a Write that recreates the file, and NOT a shell heredoc — both lose the styling or leak HTML into the transcript) to replace the placeholder inside `<main data-artifact-content>` with your content; keep the `<style id=\"krypton-artifact-base\">` block and the toggle. Write plain semantic HTML (headings, tables, `<pre><code>`, `<section class=\"ka-card\">`) — it is styled automatically; to override a default, add your own `<style>` AFTER the base block. Then call artifact_register { id }. The artifact is a live file: keep editing it to iterate. Opening is always user-triggered; never auto-opens.",
+            "description": "Create an HTML artifact the user opens in their browser, for views that beat prose: side-by-side comparisons, diagrams, annotated diffs, parameterized previews, dashboards. Use ONLY when the user asks for a visual/interactive artifact, or your active directive explicitly tells you to produce HTML artifacts for this task. Do NOT default to HTML for ordinary prose, plans, or answers, and do NOT volunteer unsolicited dashboards — those stay in your turn text. Returns `{ id, path, content_marker }`. The path points to a file that ALREADY EXISTS — a ready-made HTML scaffold with the default Binance dark styling and a light/auto toggle. Use your EDIT/patch tool (NOT a Write that recreates the file, and NOT a shell heredoc — both lose the styling or leak HTML into the transcript) to replace the placeholder inside `<main data-artifact-content>` with your content; keep the `<style id=\"krypton-artifact-base\">` block and the toggle. Write plain semantic HTML (headings, tables, `<pre><code>`, `<section class=\"ka-card\">`) — it is styled automatically; to override a default, add your own `<style>` AFTER the base block. Then call artifact_register { id }. The artifact is a live file: keep editing it to iterate. Opening is always user-triggered; never auto-opens.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

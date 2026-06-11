@@ -4,6 +4,19 @@
 > Date: 2026-05-31
 > Milestone: M8 — Polish
 
+> **Amendment (2026-06-11): default theme switched to Binance dark.** The scaffold's
+> default palette was replaced with the Binance design system
+> ([getdesign.md/binance](https://getdesign.md/binance/design-md)): near-black canvas
+> `#0b0e11`, foreground `#eaecef`, yellow accent `#fcd535`, card `#1e2329`, border
+> `#2b3139`, trading green/red `#0ecb81`/`#f6465d` for add/del. Body type moved from
+> mono to a sans stack (`--sans`, BinanceNova → IBM Plex Sans → system); `--mono`
+> remains for `pre`/`code`. Radii widened per the Binance spec (buttons 6px, cards/pre
+> 8px). The toggle now cycles **binance → light → auto** (light variant uses Binance's
+> light-surface tokens with `#f0b90b` accent for contrast on white); a stale persisted
+> `cyberpunk` value in `localStorage` is ignored and falls back to the default.
+> Everything below this note describes the original cyberpunk design — the mechanism
+> (scaffold, toggle, edit-in-place, feedback overlay fallbacks) is unchanged.
+
 ## Problem
 
 Spec 133 HTML artifacts open verbatim in the OS browser with **zero baseline styling** — `artifact_new` issues a path but writes no file, so the lane authors the entire document. Output quality is therefore uncontrolled: one lane ships a polished page, another an unstyled white table, a third broken markup. There is no consistent look and no light/dark affordance. This is a quality/consistency gap (not a security one — spec 133's threat model already covers safety).

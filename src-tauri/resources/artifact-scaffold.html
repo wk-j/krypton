@@ -5,29 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{title}}</title>
 <style id="krypton-artifact-base">
-  /* DEFAULT = Krypton cyberpunk (dark, mono, dense). Palette mirrors
-     src/styles/acp-harness.css / docs/prototypes/*.html.
+  /* DEFAULT = Binance dark (getdesign.md/binance): near-black canvas, yellow
+     accent (#fcd535), trading green/red for add/del.
      To override these defaults, add your own <style> AFTER this block. */
   :root {
-    --bg: #050810; --fg: #d7e7f0; --muted: #6a7d8a; --border: #14222e;
-    --accent: #5fd9d9; --card: #08121e; --code-bg: #0a141c;
-    --add: #7fd9c0; --del: #e8737b; color-scheme: dark;
-    --mono: 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+    --bg: #0b0e11; --fg: #eaecef; --muted: #707a8a; --border: #2b3139;
+    --accent: #fcd535; --card: #1e2329; --code-bg: #181a20;
+    --add: #0ecb81; --del: #f6465d; color-scheme: dark;
+    --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
   }
   /* opt-out variants reached through the toggle */
   html[data-theme="light"] {
     color-scheme: light;
-    --bg: #ffffff; --fg: #1a1f24; --muted: #5a6671; --border: #d7dde2;
-    --accent: #0a7ea4; --card: #f6f8fa; --code-bg: #f0f3f5; --add: #1a7f37; --del: #cf222e;
+    --bg: #ffffff; --fg: #181a20; --muted: #707a8a; --border: #eaecef;
+    --accent: #f0b90b; --card: #fafafa; --code-bg: #f5f5f5; --add: #0ecb81; --del: #f6465d;
   }
-  @media (prefers-color-scheme: light) {   /* auto follows the OS; cyberpunk default does not */
+  @media (prefers-color-scheme: light) {   /* auto follows the OS; binance default does not */
     html[data-theme="auto"] {
       color-scheme: light;
-      --bg: #ffffff; --fg: #1a1f24; --muted: #5a6671; --border: #d7dde2;
-      --accent: #0a7ea4; --card: #f6f8fa; --code-bg: #f0f3f5; --add: #1a7f37; --del: #cf222e;
+      --bg: #ffffff; --fg: #181a20; --muted: #707a8a; --border: #eaecef;
+      --accent: #f0b90b; --card: #fafafa; --code-bg: #f5f5f5; --add: #0ecb81; --del: #f6465d;
     }
   }
-  body { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.45;
+  body { margin: 0; font-family: var(--sans); font-size: 14px; line-height: 1.5;
          background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
   a { color: var(--accent); }
   .ka-main { max-width: 880px; margin: 0 auto; padding: 16px 20px 48px; }
@@ -36,18 +37,18 @@
   th, td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
   th { color: var(--accent); }
   pre, code { font-family: var(--mono); background: var(--code-bg); }
-  pre { padding: 10px; overflow: auto; border-radius: 4px; }
+  pre { padding: 10px; overflow: auto; border-radius: 8px; }
   code { padding: 1px 4px; border-radius: 3px; }
   pre code { padding: 0; background: none; }
   .ka-card { background: var(--card); border: 1px solid var(--border);
-             border-radius: 4px; padding: 12px; }
+             border-radius: 8px; padding: 12px; }
   .ka-add { color: var(--add); }
   .ka-del { color: var(--del); }
   .ka-header { display: flex; justify-content: space-between; align-items: center;
                padding: 8px 20px; border-bottom: 1px solid var(--border); color: var(--muted); }
   .ka-toggle { font: inherit; cursor: pointer; background: transparent;
                border: 1px solid var(--border); color: var(--accent);
-               border-radius: 4px; padding: 3px 9px; }
+               border-radius: 6px; padding: 3px 9px; }
 </style>
 </head>
 <body>
@@ -62,12 +63,12 @@
   <p>Artifact scaffold ready. Edit this file to add your content.</p>
 </main>
 <script>
-  // cyberpunk/light/auto toggle, best-effort persisted (file:// origin varies by browser)
+  // binance/light/auto toggle, best-effort persisted (file:// origin varies by browser)
   (function () {
-    var order = ["cyberpunk", "light", "auto"], html = document.documentElement;
+    var order = ["binance", "light", "auto"], html = document.documentElement;
     var k = "krypton-artifact-theme", btn = document.getElementById("ka-theme");
-    try { var s = localStorage.getItem(k); if (s) html.dataset.theme = s; } catch (e) {}
-    if (!html.dataset.theme) html.dataset.theme = "cyberpunk";   // default
+    try { var s = localStorage.getItem(k); if (s && order.indexOf(s) !== -1) html.dataset.theme = s; } catch (e) {}
+    if (!html.dataset.theme) html.dataset.theme = "binance";   // default
     function label() { if (btn) btn.textContent = "◐ " + html.dataset.theme; }
     label();
     if (btn) btn.addEventListener("click", function () {   // guard: lane may drop the header
@@ -131,25 +132,25 @@
       '<style>' +
       '[data-kfb]{font-family:var(--mono,monospace);box-sizing:border-box}' +
       '#kfb-pill{position:fixed;right:12px;bottom:12px;z-index:2147483646;' +
-        'background:var(--card,#08121e);color:var(--fg,#d7e7f0);border:1px solid var(--border,#14222e);' +
+        'background:var(--card,#1e2329);color:var(--fg,#eaecef);border:1px solid var(--border,#2b3139);' +
         'border-radius:6px;padding:6px 10px;font-size:12px;line-height:1.4;cursor:pointer;' +
         'max-width:280px;box-shadow:0 2px 12px rgba(0,0,0,.4)}' +
-      '#kfb-pill b{color:var(--accent,#5fd9d9)}' +
-      '#kfb-pill .kfb-sub{color:var(--muted,#6a7d8a);display:block;margin-top:2px;font-size:11px}' +
-      '#kfb-hi{position:fixed;z-index:2147483645;pointer-events:none;border:2px solid var(--accent,#5fd9d9);' +
-        'background:rgba(95,217,217,.10);border-radius:3px;display:none}' +
+      '#kfb-pill b{color:var(--accent,#fcd535)}' +
+      '#kfb-pill .kfb-sub{color:var(--muted,#707a8a);display:block;margin-top:2px;font-size:11px}' +
+      '#kfb-hi{position:fixed;z-index:2147483645;pointer-events:none;border:2px solid var(--accent,#fcd535);' +
+        'background:rgba(252,213,53,.12);border-radius:3px;display:none}' +
       '#kfb-box{position:fixed;right:12px;bottom:52px;z-index:2147483647;width:300px;' +
-        'background:var(--card,#08121e);color:var(--fg,#d7e7f0);border:1px solid var(--accent,#5fd9d9);' +
+        'background:var(--card,#1e2329);color:var(--fg,#eaecef);border:1px solid var(--accent,#fcd535);' +
         'border-radius:6px;padding:10px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5)}' +
-      '#kfb-box .kfb-tgt{color:var(--muted,#6a7d8a);font-size:11px;margin-bottom:6px;' +
+      '#kfb-box .kfb-tgt{color:var(--muted,#707a8a);font-size:11px;margin-bottom:6px;' +
         'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
       '#kfb-box textarea{width:100%;box-sizing:border-box;min-height:64px;resize:vertical;' +
-        'font:inherit;font-size:12px;background:var(--bg,#050810);color:var(--fg,#d7e7f0);' +
-        'border:1px solid var(--border,#14222e);border-radius:4px;padding:6px}' +
+        'font:inherit;font-size:12px;background:var(--bg,#0b0e11);color:var(--fg,#eaecef);' +
+        'border:1px solid var(--border,#2b3139);border-radius:4px;padding:6px}' +
       '#kfb-box .kfb-row{display:flex;justify-content:space-between;align-items:center;margin-top:8px}' +
-      '#kfb-box .kfb-keys{color:var(--muted,#6a7d8a);font-size:10px}' +
+      '#kfb-box .kfb-keys{color:var(--muted,#707a8a);font-size:10px}' +
       '#kfb-box button,#kfb-pill button{font:inherit;font-size:11px;cursor:pointer;' +
-        'background:transparent;border:1px solid var(--border,#14222e);color:var(--accent,#5fd9d9);' +
+        'background:transparent;border:1px solid var(--border,#2b3139);color:var(--accent,#fcd535);' +
         'border-radius:4px;padding:3px 9px;margin-left:4px}' +
       '</style>' +
       '<div id="kfb-hi"></div>' +
