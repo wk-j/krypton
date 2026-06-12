@@ -516,6 +516,7 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `i` / `Esc` | Transcript scroll focus | Return to composer input. |
 | `q` | Transcript scroll focus | Close harness tab. |
 | `Cmd+.` | Any composer/transcript context | Toggle Zen Mode (collapses inactive lanes into a left rail; active lane fills the body). Persisted per project. See `docs/80-acp-harness-zen-mode.md`. |
+| `Cmd+Shift+.` | Any composer/transcript context | Toggle Concise Mode (spec 157). Tool cards collapse to their single head line (glyph + kind + subject + result + live timer; output sections and diff previews hidden); `thought`/`fs_activity`/`memory` rows hide entirely. Interactive rows (`permission`, `fs_write_review`) and everything else stay visible. CSS-only — rows stay in the DOM, streaming continues underneath. Persisted per project; a `concise` token shows in the composer meta row while on. Note: the Ctrl+H hidden-row indicator counts transcript rows, so in concise mode N can exceed what visibly appears. See `docs/157-harness-concise-mode.md`. |
 | `Cmd+P → +` | Harness focused | Open lane picker and spawn a fresh backend lane. |
 | `Cmd+P → _` | Harness focused | Close and dispose the active lane. |
 | `Cmd+P → =` | Harness focused | Toggle lane resource metrics overlay (CPU/RSS tree per lane). See `docs/91-acp-lane-resource-metrics.md`. |

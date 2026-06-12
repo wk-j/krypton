@@ -1887,7 +1887,6 @@
   gap: 4px;
   padding: 6px 8px;
   background: rgba(255, 176, 0, 0.045);
-  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.12);
 }
 
 .acp-harness__perm-card[data-decision='auto_allowed'] .acp-harness__perm-decision,
@@ -2505,6 +2504,49 @@
 @keyframes acp-harness-permission-pulse {
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CONCISE MODE — tool cards collapse to their head line (spec 157)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* tool card: keep the head row, drop the detail */
+.acp-harness--concise .acp-harness__msg--tool .acp-harness__tool-output,
+.acp-harness--concise .acp-harness__msg--tool .acp-harness__tool-diffs,
+.acp-harness--concise .acp-harness__msg--tool .acp-harness__artifact-redaction {
+  display: none;
+}
+
+/* single-line guarantee: the head normally flex-wraps and the subject
+   word-breaks; in concise it must stay one line, ellipsized */
+.acp-harness--concise .acp-harness__tool-head {
+  flex-wrap: nowrap;
+}
+
+.acp-harness--concise .acp-harness__tool-subject {
+  white-space: nowrap;
+  word-break: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* side-channel kinds: hidden entirely */
+.acp-harness--concise .acp-harness__msg--thought,
+.acp-harness--concise .acp-harness__msg--fs_activity,
+.acp-harness--concise .acp-harness__msg--memory {
+  display: none;
+}
+
+/* composer token cueing that the mode is on (the flag persists across reopen) */
+.acp-harness__concise-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 6px;
+  border: 1px solid rgba(216, 232, 216, 0.28);
+  border-radius: 3px;
+  color: rgba(216, 232, 216, 0.62);
 }
 
 /* ═══════════════════════════════════════════════════════════════

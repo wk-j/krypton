@@ -1189,6 +1189,8 @@ export class AcpHarnessView implements ContentView {
   private memoryDrawerOpen = false;
   private helpOpen = false;
   private zenMode = false;
+  /** spec 157: collapse tool cards to their head line, hide side-channel rows. */
+  private conciseMode = false;
   private memoryCursorRowId: string | null = null;
   private focus: ComposerFocus = 'text';
   private chip: string | null = null;
@@ -1273,6 +1275,7 @@ export class AcpHarnessView implements ContentView {
     this.projectDir = projectDir;
     this.viewBus = bus;
     this.zenMode = readZenModePreference(projectDir);
+    this.conciseMode = readConciseModePreference(projectDir);
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
@@ -2423,6 +2426,13 @@ export class AcpHarnessView implements ContentView {
     if (e.key === '.' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       this.toggleZenMode();
+      return true;
+    }
+    // spec 157: Cmd+Shift+. — with Shift held macOS reports the shifted char,
+    // so match both '.' and '>'.
+    if ((e.key === '.' || e.key === '>') && (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      this.toggleConciseMode();
       return true;
     }
     if (this.helpOpen) {
@@ -6065,6 +6075,7 @@ export class AcpHarnessView implements ContentView {
     this.renderRaf = false;
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
+    this.element.classList.toggle('acp-harness--concise', this.conciseMode);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
     this.applyActiveLaneAccent();
     this.renderDashboard();
@@ -6130,6 +6141,7 @@ export class AcpHarnessView implements ContentView {
     }
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
+    this.element.classList.toggle('acp-harness--concise', this.conciseMode);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
     this.renderActiveLaneChrome(lane);
     this.renderActiveTranscript(lane);
@@ -7195,6 +7207,9 @@ export class AcpHarnessView implements ContentView {
       this.renderGoalBar(lane) +
       `<div class="acp-harness__composer-meta">` +
       `<span class="${chipClass}">${esc(chip)}</span>` +
+      // spec 157: persistent token explaining why tool detail is absent — the
+      // flag survives reopen, so the cue must too.
+      (this.conciseMode ? `<span class="acp-harness__concise-tag">concise</span>` : '') +
       this.renderDirectiveChip(lane) +
       projectStatus +
       `</div>` +
@@ -7483,6 +7498,7 @@ export class AcpHarnessView implements ContentView {
             <dt>Ctrl+Shift+J / Ctrl+Shift+K</dt><dd>Scroll transcript down / up (works in composer)</dd>
             <dt>Cmd+W</dt><dd>Close harness tab</dd>
             <dt>Cmd+.</dt><dd>Toggle Zen Mode</dd>
+            <dt>Cmd+Shift+.</dt><dd>Toggle Concise Mode (tool cards collapse to one line)</dd>
           </dl>
         </section>
         <section class="acp-harness__help-section">
@@ -8473,6 +8489,12 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
+  private toggleConciseMode(): void {
+    this.conciseMode = !this.conciseMode;
+    writeConciseModePreference(this.projectDir, this.conciseMode);
+    this.render();
+  }
+
   private sortedMemoryRows(): HarnessMemoryEntry[] {
     return this.memoryEntries.slice().sort((a, b) => b.updatedAt - a.updatedAt);
   }
@@ -8747,6 +8769,27 @@ function writeZenModePreference(projectDir: string | null, value: boolean): void
   try {
     if (value) localStorage.setItem(zenModeStorageKey(projectDir), '1');
     else localStorage.removeItem(zenModeStorageKey(projectDir));
+  } catch {
+    // localStorage unavailable — preference simply won't persist
+  }
+}
+
+function conciseModeStorageKey(projectDir: string | null): string {
+  return `krypton:acp-harness:concise:${projectDir ?? ''}`;
+}
+
+function readConciseModePreference(projectDir: string | null): boolean {
+  try {
+    return localStorage.getItem(conciseModeStorageKey(projectDir)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeConciseModePreference(projectDir: string | null, value: boolean): void {
+  try {
+    if (value) localStorage.setItem(conciseModeStorageKey(projectDir), '1');
+    else localStorage.removeItem(conciseModeStorageKey(projectDir));
   } catch {
     // localStorage unavailable — preference simply won't persist
   }
