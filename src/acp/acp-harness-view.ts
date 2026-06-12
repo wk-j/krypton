@@ -554,6 +554,15 @@ interface FileTouchRecord {
   at: number;
 }
 
+/** spec 156: what the lane is doing right now, shown in the busy status chip.
+ *  Written as plain field assignments on the hot streaming path (no render
+ *  call); the existing 1 s composer tick paints it. */
+interface LaneActivity {
+  kind: 'tool' | 'thinking' | 'writing';
+  /** tool title (preferred) or kind; empty for thinking/writing */
+  label: string;
+}
+
 /** spec 127: in-flight live model switch, used to revert/attribute correctly. */
 interface PendingModelSwitch {
   epoch: number;
@@ -621,6 +630,9 @@ interface HarnessLane {
    *  wiki') so the busy chip reads as that operation, not a generic 'running'.
    *  Set in enqueueSystemPrompt, auto-cleared in setLaneStatus on leaving busy. */
   activeSystemLabel: string | null;
+  /** spec 156: live activity segment for the busy chip (current tool /
+   *  thinking / writing). Cleared on stop/error. */
+  activity: LaneActivity | null;
   availableCommands: AcpAvailableCommand[];
   modesById: Map<string, AcpAgentMode>;
   currentMode: AcpAgentMode | null;
@@ -1052,6 +1064,7 @@ const LANE_DEFAULTS = {
   supportsImages: false,
   activeTurnStartedAt: null,
   activeSystemLabel: null,
+  activity: null,
   currentMode: null,
   slashPaletteIndex: 0,
   slashPaletteDismissed: false,
@@ -3863,11 +3876,13 @@ export class AcpHarnessView implements ContentView {
         needsRender = false;
         break;
       case 'message_chunk':
+        lane.activity = { kind: 'writing', label: '' };
         this.appendStreaming(lane, 'assistant', event.text);
         this.scheduleStreamingBodyOnly(lane);
         needsRender = false;
         break;
       case 'thought_chunk':
+        lane.activity = { kind: 'thinking', label: '' };
         this.appendStreaming(lane, 'thought', event.text);
         this.scheduleStreamingBodyOnly(lane);
         needsRender = false;
@@ -3875,9 +3890,11 @@ export class AcpHarnessView implements ContentView {
       case 'tool_call':
         this.sealStreaming(lane);
         this.renderTool(lane, event.call);
+        this.noteToolActivity(lane, event.call.toolCallId);
         break;
       case 'tool_call_update':
         this.renderTool(lane, event.update);
+        this.noteToolActivity(lane, event.update.toolCallId);
         this.observeFileTouch(lane, event.update);
         if (isMemoryTool(event.update)) void this.refreshMemory();
         break;
@@ -3944,6 +3961,7 @@ export class AcpHarnessView implements ContentView {
         this.setLaneStatus(lane, 'error');
         lane.error = event.message;
         lane.activeTurnStartedAt = null;
+        lane.activity = null;
         lane.pendingTurnExtractions = [];
         lane.pendingPermissions = [];
         lane.acceptAllForTurn = false;
@@ -3954,6 +3972,17 @@ export class AcpHarnessView implements ContentView {
         break;
     }
     if (needsRender) this.scheduleLaneRender(lane);
+  }
+
+  /** spec 156: stamp the busy-chip activity from the merged tool record (after
+   *  renderTool has cached it). Terminal updates are skipped, so a finished
+   *  tool's label simply lingers until the next chunk or tool call replaces
+   *  it — no completion bookkeeping. */
+  private noteToolActivity(lane: HarnessLane, toolCallId: string | undefined): void {
+    if (!toolCallId) return;
+    const merged = lane.toolCalls.get(toolCallId);
+    if (!merged || (merged.status && isTerminalToolStatus(merged.status))) return;
+    lane.activity = { kind: 'tool', label: merged.title ?? merged.kind ?? 'tool' };
   }
 
   private async submitActiveLane(): Promise<void> {
@@ -4257,6 +4286,7 @@ export class AcpHarnessView implements ContentView {
     // Clearing them here — not at the tail — stops that re-entrant turn's state
     // from being clobbered (fixes back-to-back peer-turn provenance + elapsed UI).
     lane.activeTurnStartedAt = null;
+    lane.activity = null;
     lane.currentAssistantId = null;
     this.dropVeiledThoughtRow(lane);
     lane.currentThoughtId = null;
@@ -7223,11 +7253,15 @@ export class AcpHarnessView implements ContentView {
     if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · f open artifact · ? help · i/Esc input';
     if (lane.status === 'busy') {
       const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
+      // spec 156: live activity + output-token counter, re-read on each 1 s tick.
+      const activity = lane.activity ? ` · ${formatLaneActivity(lane.activity)}` : '';
+      const outputTokens = lane.usage?.outputTokens;
+      const tokens = typeof outputTokens === 'number' && outputTokens > 0 ? ` · ${formatCount(outputTokens)} tok` : '';
       const queued = lane.queuedPrompts.length > 0 ? ` · ${lane.queuedPrompts.length} queued` : '';
       // Custom commands name the operation (reviewing / saving to wiki / …) so the
       // user can tell a #review in flight from an ordinary turn; else plain 'running'.
       const verb = lane.activeSystemLabel ?? 'running';
-      return `${lane.displayName} ${verb}${elapsed}${queued} · Ctrl+C cancel`;
+      return `${lane.displayName} ${verb}${elapsed}${activity}${tokens}${queued} · Ctrl+C cancel`;
     }
     if (lane.status === 'starting') {
       // Session is (re)initializing — the slowest sub-window of #goal/#new/#new!.
@@ -11816,6 +11850,14 @@ function formatElapsed(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+/** spec 156: activity segment of the busy chip. Tool titles are hard-truncated
+ *  so a full-path title cannot push the chip past one line. */
+function formatLaneActivity(activity: LaneActivity): string {
+  if (activity.kind === 'thinking') return 'thinking…';
+  if (activity.kind === 'writing') return 'writing…';
+  return `⚒ ${truncate(activity.label, 32)}`;
 }
 
 function formatShortTime(epochMs: number): string {
