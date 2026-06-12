@@ -59,7 +59,11 @@
 <main class="ka-main" data-artifact-content>
   <!-- Replace this block with your content. Keep <style id="krypton-artifact-base">
        and the theme toggle. Use plain semantic HTML — it is styled automatically.
-       To override the defaults, add your own <style> AFTER krypton-artifact-base. -->
+       To override the defaults, add your own <style> AFTER krypton-artifact-base.
+       HOUSE RULE: never use left accent borders (border-left rails) on cards,
+       callouts, or steps — to color-code a block use a full border, a background
+       tint, or heading/icon color instead. A runtime backstop strips left-only
+       borders, so a rail will not survive anyway. -->
   <p>Artifact scaffold ready. Edit this file to add your content.</p>
 </main>
 <script>
@@ -76,6 +80,35 @@
       html.dataset.theme = next; label();
       try { localStorage.setItem(k, next); } catch (e) {}
     });
+  })();
+</script>
+<script>
+  // House rule: left accent borders (border-left rails) are banned in artifact
+  // content. Lanes are told not to author them, but this backstop enforces it:
+  // any element whose computed style is a left-only border gets the rail
+  // stripped. Full borders (e.g. .ka-card, table cells) are untouched because
+  // their right border is non-zero. Re-runs on DOM growth for interactive
+  // artifacts; writing only inline style (childList-only observer) cannot loop.
+  (function () {
+    function stripRails(root) {
+      var els = root.querySelectorAll("*");
+      for (var i = 0; i < els.length; i++) {
+        var cs = getComputedStyle(els[i]);
+        if (cs.borderLeftStyle !== "none" && parseFloat(cs.borderLeftWidth) > 0 &&
+            parseFloat(cs.borderRightWidth) === 0) {
+          els[i].style.setProperty("border-left", "0", "important");
+        }
+      }
+    }
+    function run() {
+      var main = document.querySelector("main[data-artifact-content]");
+      if (!main) return;
+      stripRails(main);
+      new MutationObserver(function () { stripRails(main); })
+        .observe(main, { childList: true, subtree: true });
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
+    else run();
   })();
 </script>
 <script>

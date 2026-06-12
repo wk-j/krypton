@@ -486,7 +486,7 @@
   flex: 1;
   overflow-y: auto;
   padding: 20px 28px;
-  line-height: var(--krypton-prose-line-height, 1.7);
+  line-height: max(var(--krypton-prose-line-height, 1.7), 1.4);
   position: relative;
 }
 

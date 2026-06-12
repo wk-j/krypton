@@ -247,12 +247,15 @@ export class DiffContentView implements ContentView {
 
   private scrollHorizontal(delta: number): void {
     // In side-by-side mode, .d2h-file-side-diff is the per-panel scrollable
-    // container (overflow-x: scroll). Fall back to outer container for unified.
+    // container (overflow-x: scroll). In unified mode the scroll container is
+    // .d2h-file-diff — its overflow-y: hidden makes overflow-x compute to
+    // auto, so long lines overflow there, never reaching fileContainer.
     const panels = this.fileContainer.querySelectorAll<HTMLElement>('.d2h-file-side-diff');
     if (panels.length > 0) {
       panels.forEach((p) => p.scrollBy({ left: delta, behavior: 'auto' }));
     } else {
-      this.fileContainer.scrollBy({ left: delta, behavior: 'auto' });
+      const unified = this.fileContainer.querySelector<HTMLElement>('.d2h-file-diff');
+      (unified ?? this.fileContainer).scrollBy({ left: delta, behavior: 'auto' });
     }
   }
 

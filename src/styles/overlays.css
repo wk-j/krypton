@@ -65,12 +65,10 @@
 
 .krypton-whichkey__entry--important {
   background: linear-gradient(90deg, rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.16), transparent 75%);
-  box-shadow: inset 2px 0 0 var(--krypton-whichkey-title, #0cf);
 }
 
 .krypton-whichkey__entry--danger {
   background: linear-gradient(90deg, rgba(255, 80, 110, 0.18), transparent 75%);
-  box-shadow: inset 2px 0 0 var(--krypton-error, #ff506e);
 }
 
 .krypton-whichkey__entry--important .krypton-whichkey__label,
