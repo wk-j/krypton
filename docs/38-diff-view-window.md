@@ -180,6 +180,7 @@ openDiffView(options?: { staged?: boolean; path?: string }): Promise<void>
 | `]` / `[` | Diff view focused | Next / previous file |
 | `t` | Diff view focused | Toggle the file-list quick-switcher overlay |
 | `s` | Diff view focused | Toggle split ↔ unified view |
+| `?` | Diff view focused | Open the keybindings help overlay |
 | `r` | Diff view focused | Refresh working diff now (spec 155) |
 | `c` | Diff view focused | Comment on the selection / current hunk (spec 158) |
 | `Shift+C` | Diff view focused | Open the review-comments overlay (spec 158) |
@@ -190,6 +191,7 @@ openDiffView(options?: { staged?: boolean; path?: string }): Promise<void>
 | `Esc` / `q` / `t` | File-list overlay open | Close overlay without jumping |
 | `Enter` / `Shift+Enter` / `Esc` | Comment composer open | Add comment / newline / cancel (spec 158) |
 | `j` / `k`, Enter, `d`, `[` `]` / Tab, `s`, Esc | Comments overlay open | Move / jump / delete / retarget / send / close (spec 158) |
+| `?` / `q` / `Esc` | Help overlay open | Close the keybindings help overlay |
 
 ### Review comments (spec 158)
 

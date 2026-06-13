@@ -90,6 +90,10 @@ export class DiffContentView implements ContentView {
   private diffStyle: 'side-by-side' | 'line-by-line' = 'side-by-side';
   private closeCallback: (() => void) | null = null;
 
+  // Keybindings help overlay (modal)
+  private helpEl: HTMLElement;
+  private helpOpen = false;
+
   // Live refresh state (spec 155 / ADR-0008)
   private refreshProvider: (() => Promise<WorkingDiffResult>) | null;
   private skipped: SkippedFile[];
@@ -158,6 +162,12 @@ export class DiffContentView implements ContentView {
     this.listEl.hidden = true;
     this.element.appendChild(this.listEl);
 
+    // Keybindings help overlay — hidden until toggled with `?`
+    this.helpEl = document.createElement('div');
+    this.helpEl.className = 'krypton-diff__help';
+    this.helpEl.hidden = true;
+    this.element.appendChild(this.helpEl);
+
     // Review comments (spec 158) — composer + comments overlay, hidden until used.
     if (this.review) {
       this.composerEl = document.createElement('div');
@@ -190,6 +200,7 @@ export class DiffContentView implements ContentView {
     this.navEl.innerHTML = '';
     this.appendReviewIndicator();
     this.appendSyncIndicator();
+    this.appendHelpHint();
     this.fileContainer.innerHTML = '';
     const msg = document.createElement('div');
     msg.className = 'krypton-diff__empty';
@@ -226,6 +237,16 @@ export class DiffContentView implements ContentView {
     this.navEl.appendChild(mode);
     this.appendReviewIndicator();
     this.appendSyncIndicator();
+    this.appendHelpHint();
+  }
+
+  /** Static `? help` affordance at the end of the nav bar so the keybindings
+   *  overlay is discoverable. Chrome text, no border rail. */
+  private appendHelpHint(): void {
+    const el = document.createElement('span');
+    el.className = 'krypton-diff__help-hint';
+    el.textContent = '? help';
+    this.navEl.appendChild(el);
   }
 
   // ─── Review comments (spec 158) ───
@@ -746,8 +767,14 @@ export class DiffContentView implements ContentView {
     // other key fall through (return false) so typing reaches the textarea.
     if (this.composerEl && !this.composerEl.hidden) return this.onComposerKey(e);
     if (e.metaKey || e.ctrlKey || e.altKey) return false;
+    if (this.helpOpen) return this.onHelpKey(e);
     if (this.listOpen) return this.onFileListKey(e);
     if (this.commentsOverlayOpen) return this.onCommentsKey(e);
+
+    if (e.key === '?') {
+      this.openHelp();
+      return true;
+    }
 
     // Review comments (spec 158)
     if (this.review) {
@@ -1014,6 +1041,115 @@ export class DiffContentView implements ContentView {
 
     (items.children[this.listSelectedIndex] as HTMLElement | undefined)
       ?.scrollIntoView({ block: 'nearest' });
+  }
+
+  // ─── Keybindings help overlay ───
+
+  private openHelp(): void {
+    this.helpOpen = true;
+    this.helpEl.hidden = false;
+    this.renderHelp();
+  }
+
+  private closeHelp(): void {
+    this.helpOpen = false;
+    this.helpEl.hidden = true;
+  }
+
+  /** Keys while the help overlay is open. Swallows everything (returns true) so
+   *  the diff underneath never scrolls; `?`/q/Escape dismiss. */
+  private onHelpKey(e: KeyboardEvent): boolean {
+    if (e.key === '?' || e.key === 'q' || e.key === 'Escape') this.closeHelp();
+    return true;
+  }
+
+  /** Build the keybindings reference. Sections mirror onKeyDown; review and
+   *  refresh rows appear only when those features are wired up. */
+  private renderHelp(): void {
+    this.helpEl.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'krypton-diff__help-header';
+    header.textContent = 'Keybindings';
+    this.helpEl.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'krypton-diff__help-body';
+    this.helpEl.appendChild(body);
+
+    const sections: { title: string; rows: [string, string][] }[] = [
+      {
+        title: 'Scroll',
+        rows: [
+          ['j / k', 'down / up'],
+          ['h / l', 'left / right'],
+          ['f / b', 'page down / up'],
+          ['g / G', 'top / bottom'],
+        ],
+      },
+      {
+        title: 'Navigate',
+        rows: [
+          ['n / N', 'next / previous hunk'],
+          ['] / [', 'next / previous file'],
+          ['t', 'file switcher'],
+        ],
+      },
+      {
+        title: 'View',
+        rows: [
+          ['s', 'toggle split / unified'],
+          ...(this.refreshProvider ? ([['r', 'refresh diff']] as [string, string][]) : []),
+        ],
+      },
+    ];
+
+    if (this.review) {
+      sections.push({
+        title: 'Review',
+        rows: [
+          ['c', 'comment on hunk / selection'],
+          ['C', 'open comments'],
+        ],
+      });
+    }
+
+    sections.push({
+      title: 'General',
+      rows: [
+        ['?', 'this help'],
+        ['q / Esc', 'close diff'],
+      ],
+    });
+
+    for (const section of sections) {
+      const title = document.createElement('div');
+      title.className = 'krypton-diff__help-section';
+      title.textContent = section.title;
+      body.appendChild(title);
+
+      for (const [keys, desc] of section.rows) {
+        const row = document.createElement('div');
+        row.className = 'krypton-diff__help-row';
+
+        const k = document.createElement('span');
+        k.className = 'krypton-diff__help-keys';
+        k.textContent = keys;
+
+        const d = document.createElement('span');
+        d.className = 'krypton-diff__help-desc';
+        d.textContent = desc;
+
+        row.appendChild(k);
+        row.appendChild(d);
+        body.appendChild(row);
+      }
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'krypton-diff__help-footer';
+    footer.textContent = '? or Esc to close';
+    this.helpEl.appendChild(footer);
   }
 
   // ─── Live refresh (spec 155 / ADR-0008) ───

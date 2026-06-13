@@ -117,6 +117,14 @@
   position: sticky;
   left: 0;
   z-index: 1;
+  /* diff2html keeps line numbers `position: absolute` (out of flow) so they
+     never drive row height; our sticky override puts them back in flow. The
+     cell is a fixed 4em wide with 0.5em side padding, so on a 4-digit number
+     the default `white-space: normal` wraps to two lines and balloons the whole
+     row to ~2× (the code cell stays one line). Pin to a single line — diff2html
+     already ships `overflow: hidden; text-overflow: ellipsis` here for exactly
+     this, so wide numbers ellipsize instead of wrapping. */
+  white-space: nowrap;
 }
 
 /* File-list quick-switcher — a centered popup over the diff; one flat surface,
@@ -367,4 +375,81 @@
   color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
   vertical-align: middle;
   cursor: default;
+}
+
+/* ─── Keybindings help overlay ─── */
+
+/* `? help` affordance at the end of the nav bar — static chrome text, no rail. */
+.krypton-diff__help-hint {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  white-space: nowrap;
+  text-transform: none;
+}
+
+/* Centered popup over the diff — same flat-surface construction as the
+   file-list; no inner card, no backdrop-filter (macOS WKWebView freeze). */
+.krypton-diff__help {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, 88%);
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  z-index: 7;
+  background: var(--krypton-background, #0b0e14);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+/* `display: flex` overrides the UA `[hidden]` hide, like the other sheets. */
+.krypton-diff__help[hidden] {
+  display: none;
+}
+.krypton-diff__help-header {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+}
+.krypton-diff__help-body {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 8px 0;
+}
+.krypton-diff__help-section {
+  padding: 6px 12px 2px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.55);
+}
+.krypton-diff__help-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 2px 12px;
+}
+.krypton-diff__help-keys {
+  flex-shrink: 0;
+  width: 5.5em;
+  text-align: right;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
+}
+.krypton-diff__help-desc {
+  flex: 1;
+  color: var(--krypton-foreground, #c0c5ce);
+}
+.krypton-diff__help-footer {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
 }
