@@ -43,6 +43,11 @@ export class DiffContentView implements ContentView {
   private fileContainer: HTMLElement;
   private navEl: HTMLElement;
   private skippedEl: HTMLElement;
+
+  // File-list quick-switcher overlay (modal)
+  private listEl: HTMLElement;
+  private listOpen = false;
+  private listSelectedIndex = 0;
   private diffStyle: 'side-by-side' | 'line-by-line' = 'side-by-side';
   private closeCallback: (() => void) | null = null;
 
@@ -93,6 +98,12 @@ export class DiffContentView implements ContentView {
     this.fileContainer.className = 'krypton-diff__content';
     this.element.appendChild(this.fileContainer);
 
+    // File-list overlay — hidden until toggled with `t`
+    this.listEl = document.createElement('div');
+    this.listEl.className = 'krypton-diff__filelist';
+    this.listEl.hidden = true;
+    this.element.appendChild(this.listEl);
+
     if (this.files.length === 0) {
       this.renderEmpty();
     } else {
@@ -106,6 +117,7 @@ export class DiffContentView implements ContentView {
   }
 
   private renderEmpty(): void {
+    this.closeFileList();
     this.navEl.innerHTML = '';
     this.appendSyncIndicator();
     this.fileContainer.innerHTML = '';
@@ -126,12 +138,7 @@ export class DiffContentView implements ContentView {
 
     const path = document.createElement('span');
     path.className = 'krypton-diff__file-path';
-    const isRename = file.oldName && file.newName && file.oldName !== file.newName
-      && file.oldName !== '/dev/null' && file.newName !== '/dev/null';
-    path.textContent = isRename
-      ? `${file.oldName} → ${file.newName}`
-      : file.newName === '/dev/null' ? file.oldName || 'unknown'
-      : file.newName || file.oldName || 'unknown';
+    path.textContent = this.filePath(file);
 
     const stats = document.createElement('span');
     stats.className = 'krypton-diff__stats';
@@ -184,6 +191,7 @@ export class DiffContentView implements ContentView {
 
   onKeyDown(e: KeyboardEvent): boolean {
     if (e.metaKey || e.ctrlKey || e.altKey) return false;
+    if (this.listOpen) return this.onFileListKey(e);
 
     switch (e.key) {
       case 'j':
@@ -225,6 +233,9 @@ export class DiffContentView implements ContentView {
         return true;
       case 's':
         this.toggleDiffStyle();
+        return true;
+      case 't':
+        if (this.files.length > 0) this.openFileList();
         return true;
       case 'r':
         // Manual refresh — explicit human intent, no debounce (ADR-0008's
@@ -303,6 +314,138 @@ export class DiffContentView implements ContentView {
   private toggleDiffStyle(): void {
     this.diffStyle = this.diffStyle === 'side-by-side' ? 'line-by-line' : 'side-by-side';
     this.renderCurrentFile();
+  }
+
+  // ─── File-list quick-switcher (modal overlay) ───
+
+  /** Display path for a file, with rename arrow. Shared by the nav bar and
+   *  the file-list overlay so both label files identically. */
+  private filePath(file: DiffFile): string {
+    const isRename = file.oldName && file.newName && file.oldName !== file.newName
+      && file.oldName !== '/dev/null' && file.newName !== '/dev/null';
+    return isRename
+      ? `${file.oldName} → ${file.newName}`
+      : file.newName === '/dev/null' ? file.oldName || 'unknown'
+      : file.newName || file.oldName || 'unknown';
+  }
+
+  /** Single-letter status derived the same way as the nav-bar rename check —
+   *  A(dded) / D(eleted) / R(enamed) / M(odified). */
+  private fileStatus(file: DiffFile): { letter: string; label: string } {
+    if (file.newName === '/dev/null') return { letter: 'D', label: 'deleted' };
+    if (file.oldName === '/dev/null') return { letter: 'A', label: 'added' };
+    if (file.oldName && file.newName && file.oldName !== file.newName) {
+      return { letter: 'R', label: 'renamed' };
+    }
+    return { letter: 'M', label: 'modified' };
+  }
+
+  private openFileList(): void {
+    this.listOpen = true;
+    this.listSelectedIndex = this.currentFileIndex;
+    this.listEl.hidden = false;
+    this.renderFileList();
+  }
+
+  private closeFileList(): void {
+    this.listOpen = false;
+    this.listEl.hidden = true;
+  }
+
+  /** Keys while the overlay is open. Swallows everything (returns true) so the
+   *  diff underneath never scrolls behind the picker; Escape/q/t dismiss. */
+  private onFileListKey(e: KeyboardEvent): boolean {
+    switch (e.key) {
+      case 'j':
+      case 'ArrowDown':
+        this.moveListSelection(1);
+        return true;
+      case 'k':
+      case 'ArrowUp':
+        this.moveListSelection(-1);
+        return true;
+      case 'g':
+        this.listSelectedIndex = e.shiftKey ? this.files.length - 1 : 0;
+        this.renderFileList();
+        return true;
+      case 'Enter':
+      case ' ':
+        this.confirmFileList();
+        return true;
+      case 't':
+      case 'q':
+      case 'Escape':
+        this.closeFileList();
+        return true;
+      default:
+        return true;
+    }
+  }
+
+  private moveListSelection(delta: number): void {
+    if (this.files.length === 0) return;
+    this.listSelectedIndex =
+      (this.listSelectedIndex + delta + this.files.length) % this.files.length;
+    this.renderFileList();
+  }
+
+  private confirmFileList(): void {
+    const target = this.listSelectedIndex;
+    this.closeFileList();
+    if (target !== this.currentFileIndex && this.files[target]) {
+      this.currentFileIndex = target;
+      this.renderCurrentFile();
+    }
+  }
+
+  private renderFileList(): void {
+    this.listEl.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'krypton-diff__filelist-header';
+    header.textContent =
+      `${this.files.length} ${this.files.length === 1 ? 'file' : 'files'} changed`;
+    this.listEl.appendChild(header);
+
+    const items = document.createElement('div');
+    items.className = 'krypton-diff__filelist-items';
+    this.listEl.appendChild(items);
+
+    this.files.forEach((file, i) => {
+      const row = document.createElement('div');
+      row.className = 'krypton-diff__filelist-item';
+      if (i === this.listSelectedIndex) row.classList.add('krypton-diff__filelist-item--selected');
+      if (i === this.currentFileIndex) row.classList.add('krypton-diff__filelist-item--current');
+
+      const status = this.fileStatus(file);
+      const badge = document.createElement('span');
+      badge.className =
+        `krypton-diff__filelist-status krypton-diff__filelist-status--${status.letter.toLowerCase()}`;
+      badge.textContent = status.letter;
+      badge.title = status.label;
+
+      const path = document.createElement('span');
+      path.className = 'krypton-diff__filelist-path';
+      path.textContent = this.filePath(file);
+
+      const stats = document.createElement('span');
+      stats.className = 'krypton-diff__filelist-stats';
+      stats.innerHTML =
+        `<span class="krypton-diff__adds">+${file.addedLines}</span> <span class="krypton-diff__dels">-${file.deletedLines}</span>`;
+
+      row.appendChild(badge);
+      row.appendChild(path);
+      row.appendChild(stats);
+      // Mouse is secondary, but a click jumps straight to the file.
+      row.addEventListener('click', () => {
+        this.listSelectedIndex = i;
+        this.confirmFileList();
+      });
+      items.appendChild(row);
+    });
+
+    (items.children[this.listSelectedIndex] as HTMLElement | undefined)
+      ?.scrollIntoView({ block: 'nearest' });
   }
 
   // ─── Live refresh (spec 155 / ADR-0008) ───
@@ -407,6 +550,12 @@ export class DiffContentView implements ContentView {
       : Math.min(this.currentFileIndex, this.files.length - 1);
     this.renderCurrentFile();
     this.fileContainer.scrollTop = samePath ? prevScroll : 0;
+    // If the picker is open, rebuild it against the new file set and keep the
+    // selection in range.
+    if (this.listOpen) {
+      this.listSelectedIndex = Math.min(this.listSelectedIndex, this.files.length - 1);
+      this.renderFileList();
+    }
     this.refreshedCallback?.(this.files.length);
   }
 

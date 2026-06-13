@@ -1,5 +1,6 @@
 /* ─── Diff View ─── */
 .krypton-diff {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -116,6 +117,80 @@
   position: sticky;
   left: 0;
   z-index: 1;
+}
+
+/* File-list quick-switcher — a top sheet over the diff; one flat surface,
+   no inner card, no backdrop-filter (macOS WKWebView freeze). */
+.krypton-diff__filelist {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+  background: var(--krypton-background, #0b0e14);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.krypton-diff__filelist-header {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+}
+
+.krypton-diff__filelist-items {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.krypton-diff__filelist-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* selection: full-row background tint (never a left accent rail) */
+.krypton-diff__filelist-item--selected {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+}
+
+/* the file currently rendered behind the picker — accent the label only */
+.krypton-diff__filelist-item--current .krypton-diff__filelist-path {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
+}
+
+.krypton-diff__filelist-status {
+  flex-shrink: 0;
+  width: 1.2em;
+  text-align: center;
+  font-weight: bold;
+  font-size: var(--krypton-chrome-font-size, 11px);
+}
+
+.krypton-diff__filelist-status--a { color: #a3be8c; }
+.krypton-diff__filelist-status--d { color: #bf616a; }
+.krypton-diff__filelist-status--r { color: #ebcb8b; }
+.krypton-diff__filelist-status--m { color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.8); }
+
+.krypton-diff__filelist-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-diff__filelist-stats {
+  flex-shrink: 0;
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-diff__empty {

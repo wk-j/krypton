@@ -1260,6 +1260,8 @@
 }
 
 .acp-harness__tool-kind {
+  flex: none;
+  white-space: nowrap;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.78em;

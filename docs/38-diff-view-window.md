@@ -178,9 +178,35 @@ openDiffView(options?: { staged?: boolean; path?: string }): Promise<void>
 | `f` / `b` | Diff view focused | Page down / page up |
 | `g` / `G` | Diff view focused | Jump to top / bottom |
 | `]` / `[` | Diff view focused | Next / previous file |
+| `t` | Diff view focused | Toggle the file-list quick-switcher overlay |
 | `s` | Diff view focused | Toggle split ↔ unified view |
 | `r` | Diff view focused | Refresh working diff now (spec 155) |
 | `q` | Diff view focused | Close diff view window |
+| `j` / `k`, `↓` / `↑` | File-list overlay open | Move selection |
+| `g` / `G` | File-list overlay open | Select first / last file |
+| `Enter` / `Space` | File-list overlay open | Jump to selected file, close overlay |
+| `Esc` / `q` / `t` | File-list overlay open | Close overlay without jumping |
+
+### File-list quick-switcher
+
+`t` opens a modal overlay (a top sheet over the diff) listing every file in the
+current diff — a single-letter status (`A`/`D`/`R`/`M`), the path (with rename
+arrow), and `+adds`/`-dels`. The diff already parses all files; this surfaces the
+whole set instead of stepping through them blind with `]`/`[`.
+
+While the overlay is open it is **modal**: all keys are captured so the diff
+underneath never scrolls. Selection starts on the file currently shown (marked
+with an accented label); the highlighted row uses a full-row background tint, not
+a left accent rail. `Enter`/`Space` (or a click) jumps to the file and closes;
+`Esc`/`q`/`t` dismiss without changing the view. A live refresh (spec 155) while
+the overlay is open rebuilds the list against the new file set and clamps the
+selection; an empty diff closes it.
+
+DOM: `.krypton-diff__filelist` (the sheet) → `.krypton-diff__filelist-header`
++ `.krypton-diff__filelist-items` → rows of
+`.krypton-diff__filelist-item[--selected|--current]` containing
+`.krypton-diff__filelist-status`, `.krypton-diff__filelist-path`,
+`.krypton-diff__filelist-stats`.
 
 ### UI Changes
 
