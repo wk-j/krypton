@@ -55,6 +55,16 @@ import { WebviewContentView } from './webview-view';
 import { usageStore, type ProviderUsageSummary, type UsageProvider } from './usage-store';
 import type { ViewBus } from './view-bus';
 import { SYSTEM_SOURCE, type ViewAddress } from './view-bus-types';
+import {
+  listHarnessEntries,
+  resolveDisplayName,
+  harnessEntry,
+} from './acp/harness-directory';
+import type {
+  DiffReviewBatch,
+  DiffReviewSendResult,
+  DiffReviewTargets,
+} from './acp/types';
 
 interface AcpLanePeekCommands {
   showLanePeek(): void;
@@ -2022,6 +2032,62 @@ export class Compositor {
    *  unique harness cwd per app run. */
   private repoRootCache = new Map<string, string | null>();
 
+  /**
+   * spec 158: enumerate live lanes whose owning harness sits in `repoRoot`,
+   * resolved on demand from the HarnessDirectory (a pull, not a broadcast — so
+   * a newly-opened diff sees current state and multiple harnesses don't race).
+   * Merges each matching harness's own `default` (its active lane), falling back
+   * to the sole candidate.
+   */
+  private async resolveDiffReviewTargets(repoRoot: string): Promise<DiffReviewTargets> {
+    const lanes: DiffReviewTargets['lanes'] = [];
+    let matchingHarnesses = 0;
+    let soleDefault: string | null = null;
+    for (const entry of listHarnessEntries()) {
+      if (!entry.cwd) continue;
+      const root = await this.resolveRepoRoot(entry.cwd);
+      if (root === null || root !== repoRoot) continue;
+      const res = (await entry.control?.('diff.review-targets', {})) as
+        | DiffReviewTargets
+        | undefined;
+      if (!res) continue;
+      matchingHarnesses += 1;
+      lanes.push(...res.lanes);
+      soleDefault = res.default;
+    }
+    // Only auto-pick a default when exactly ONE harness owns this repo — its
+    // active lane is then meaningful. With multiple harnesses, insertion order
+    // is NOT "the active lane", so leave it null and make the human choose
+    // rather than silently route to the wrong working lane (Codex-1 B3). Still
+    // fall back to a sole candidate lane.
+    const def =
+      matchingHarnesses === 1
+        ? soleDefault
+        : lanes.length === 1
+          ? lanes[0].displayName
+          : null;
+    return { lanes, default: def };
+  }
+
+  /**
+   * spec 158: route a review batch to the lane that owns the target displayName.
+   * `resolveDisplayName` finds the owning live harness (globally-unique names),
+   * so the send lands on exactly one harness. A missing target → 'no-live-lane'
+   * and the diff view keeps the batch (never silently dropped — Codex-1 B4).
+   */
+  private async sendDiffReview(batch: DiffReviewBatch): Promise<DiffReviewSendResult> {
+    const resolved = resolveDisplayName(batch.target);
+    if (!resolved) return { status: 'no-live-lane' };
+    const entry = harnessEntry(resolved.harnessId);
+    if (!entry || !entry.control) return { status: 'no-live-lane' };
+    const res = (await entry.control('diff.review-send', {
+      target: batch.target,
+      batchId: batch.batchId,
+      comments: batch.comments,
+    })) as DiffReviewSendResult | undefined;
+    return res ?? { status: 'no-live-lane' };
+  }
+
   private async resolveRepoRoot(cwd: string): Promise<string | null> {
     const cached = this.repoRootCache.get(cwd);
     if (cached !== undefined) return cached;
@@ -2081,6 +2147,15 @@ export class Compositor {
           staged,
         });
         return { diff: r.diff, skipped: r.skipped };
+      },
+      // spec 158: attach review comments to a hunk and send them to a working
+      // lane. Routing is resolved on demand through the HarnessDirectory (the
+      // process-wide singleton), NOT a ViewBus broadcast — so exactly one
+      // harness (the one owning the target) handles the send, even with
+      // multiple harness views open over the same repo (Codex-1 review B1/B2).
+      review: {
+        resolveTargets: () => this.resolveDiffReviewTargets(initial.repoRoot),
+        send: (batch) => this.sendDiffReview(batch),
       },
     });
 

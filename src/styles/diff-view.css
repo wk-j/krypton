@@ -119,20 +119,32 @@
   z-index: 1;
 }
 
-/* File-list quick-switcher — a top sheet over the diff; one flat surface,
+/* File-list quick-switcher — a centered popup over the diff; one flat surface,
    no inner card, no backdrop-filter (macOS WKWebView freeze). */
 .krypton-diff__filelist {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  max-height: 100%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, 88%);
+  max-height: 70%;
   display: flex;
   flex-direction: column;
   z-index: 5;
   background: var(--krypton-background, #0b0e14);
-  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* The `display: flex` above (and on the composer/comments overlays) overrides
+   the UA `[hidden] { display: none }`, so these sheets need an explicit hide
+   rule or they never close. There is no global `[hidden]` reset in this app. */
+.krypton-diff__filelist[hidden],
+.krypton-diff__composer[hidden],
+.krypton-diff__comments[hidden] {
+  display: none;
 }
 
 .krypton-diff__filelist-header {
@@ -202,4 +214,157 @@
   font-size: var(--krypton-font-size);
   letter-spacing: 2px;
   text-transform: uppercase;
+}
+
+/* ─── Review comments (spec 158) ─── */
+
+/* Target-lane + pending-count indicator in the nav bar. Static chrome text,
+   no border rail — matches the sync indicator. */
+.krypton-diff__review-target {
+  margin-left: auto;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.75);
+  white-space: nowrap;
+}
+.krypton-diff__review-target--none {
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.45);
+}
+/* If the sync indicator is also present it follows the target; don't double the
+   auto-margin. */
+.krypton-diff__review-target + .krypton-diff__sync {
+  margin-left: 12px;
+}
+
+/* Inline composer — a small sheet at the bottom; one flat surface, no inner
+   card, no backdrop-filter (macOS WKWebView freeze). */
+.krypton-diff__composer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--krypton-background, #0b0e14);
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+}
+.krypton-diff__composer-label {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.8);
+}
+/* the typed comment is user content → user font, not chrome font */
+.krypton-diff__composer-input {
+  width: 100%;
+  resize: none;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  font-size: var(--krypton-font-size);
+  color: var(--krypton-foreground, #c0c5ce);
+  background: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.06);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.3);
+  border-radius: 2px;
+  outline: none;
+}
+.krypton-diff__composer-input:focus {
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
+}
+.krypton-diff__composer-hint {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
+}
+
+/* Comments overlay — a top sheet, same construction as the file-list. */
+.krypton-diff__comments {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(640px, 90%);
+  max-height: 70%;
+  display: flex;
+  flex-direction: column;
+  z-index: 6;
+  background: var(--krypton-background, #0b0e14);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.krypton-diff__comments-header {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+}
+.krypton-diff__comments-notice {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.85);
+}
+.krypton-diff__comments-items {
+  overflow-y: auto;
+  min-height: 0;
+}
+.krypton-diff__comments-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.krypton-diff__comments-item--selected {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+}
+.krypton-diff__comments-item--sent {
+  opacity: 0.55;
+}
+.krypton-diff__comments-tag {
+  flex-shrink: 0;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #a3be8c;
+}
+.krypton-diff__comments-loc {
+  flex-shrink: 0;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.8);
+}
+/* the comment body is user content → user font */
+.krypton-diff__comments-note {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--krypton-foreground, #c0c5ce);
+}
+.krypton-diff__comments-empty {
+  padding: 8px 12px;
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
+}
+.krypton-diff__comments-footer {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+}
+
+/* Pin marker on a commented line's number cell — a small accent glyph, no rail. */
+.krypton-diff__pin {
+  margin-left: 4px;
+  font-size: 0.7em;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
+  vertical-align: middle;
+  cursor: default;
 }

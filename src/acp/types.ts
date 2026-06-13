@@ -319,6 +319,65 @@ export interface ArtifactFeedbackEnvelope {
   sentAt: number;
 }
 
+// ─── Diff review comments (spec 158) ───
+// Human→lane inline review on the working diff. A comment carries a precise
+// file:line anchor (intrinsic to the diff, no synthesized selector) plus the
+// quoted code and the human's note. Sibling to artifact feedback (spec 149):
+// same drain-on-idle delivery, different surface.
+
+export interface DiffReviewComment {
+  /** stable client id, for de-dupe within a batch. */
+  id: string;
+  /** newName, or oldName for a deletion. */
+  file: string;
+  /** which side the anchor sits on: 'new' = post-change line, 'old' = pre-change. */
+  side: 'old' | 'new';
+  /** diff line numbers (inclusive); lineStart === lineEnd for a single line. */
+  lineStart: number;
+  lineEnd: number;
+  /** the selected/hunk code text (capped). */
+  quote: string;
+  /** the human's comment. */
+  body: string;
+  createdAt: number;
+}
+
+export interface DiffReviewEnvelope {
+  kind: 'diff_review';
+  /** idempotency key — a retried send carrying a seen id is dropped. */
+  batchId: string;
+  comments: DiffReviewComment[];
+  sentAt: number;
+}
+
+/** A live lane that can receive review comments. */
+export interface ReviewTarget {
+  displayName: string;
+  status: HarnessLaneStatus;
+}
+
+/** Snapshot of routable lanes for a repo, resolved on demand (no broadcast). */
+export interface DiffReviewTargets {
+  lanes: ReviewTarget[];
+  /** Pre-selected target: the active lane if it is a candidate, else the sole
+   *  candidate, else null (the human must pick). */
+  default: string | null;
+}
+
+/** One batch the diff view sends to a chosen lane. */
+export interface DiffReviewBatch {
+  batchId: string;
+  /** target lane displayName (globally unique via the HarnessDirectory). */
+  target: string;
+  comments: DiffReviewComment[];
+}
+
+export type DiffReviewSendResult = {
+  /** 'accepted' = queued for the lane; 'no-live-lane' = target gone, keep the
+   *  batch; 'duplicate' = already accepted (idempotent retry). */
+  status: 'accepted' | 'no-live-lane' | 'duplicate';
+};
+
 export interface LaneSummary {
   laneId: string;
   displayName: string;

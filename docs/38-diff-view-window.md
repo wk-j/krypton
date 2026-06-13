@@ -181,15 +181,23 @@ openDiffView(options?: { staged?: boolean; path?: string }): Promise<void>
 | `t` | Diff view focused | Toggle the file-list quick-switcher overlay |
 | `s` | Diff view focused | Toggle split ↔ unified view |
 | `r` | Diff view focused | Refresh working diff now (spec 155) |
+| `c` | Diff view focused | Comment on the selection / current hunk (spec 158) |
+| `Shift+C` | Diff view focused | Open the review-comments overlay (spec 158) |
 | `q` | Diff view focused | Close diff view window |
 | `j` / `k`, `↓` / `↑` | File-list overlay open | Move selection |
 | `g` / `G` | File-list overlay open | Select first / last file |
 | `Enter` / `Space` | File-list overlay open | Jump to selected file, close overlay |
 | `Esc` / `q` / `t` | File-list overlay open | Close overlay without jumping |
+| `Enter` / `Shift+Enter` / `Esc` | Comment composer open | Add comment / newline / cancel (spec 158) |
+| `j` / `k`, Enter, `d`, `[` `]` / Tab, `s`, Esc | Comments overlay open | Move / jump / delete / retarget / send / close (spec 158) |
+
+### Review comments (spec 158)
+
+The diff view can attach review comments to a hunk or selection and send them to a working ACP lane as a system turn — closing the "review → tell the agent what to fix" loop without leaving the diff. Comments batch (multiple before submit, GitHub-style), carry a precise `file:line` + quoted code anchor read from the diff2html DOM (both side-by-side and line-by-line renderers), and route to the target lane through the `HarnessDirectory` (no ViewBus broadcast). Delivery reuses the spec-149 drain-on-idle pattern via a sibling `DiffReviewQueue`. Sent comments are marked and kept (never silently dropped). See `docs/158-diff-review-comments.md`.
 
 ### File-list quick-switcher
 
-`t` opens a modal overlay (a top sheet over the diff) listing every file in the
+`t` opens a modal overlay (a centered popup over the diff) listing every file in the
 current diff — a single-letter status (`A`/`D`/`R`/`M`), the path (with rename
 arrow), and `+adds`/`-dels`. The diff already parses all files; this surfaces the
 whole set instead of stepping through them blind with `]`/`[`.

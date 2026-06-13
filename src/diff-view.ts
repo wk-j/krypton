@@ -8,6 +8,12 @@ import 'diff2html/bundles/css/diff2html.min.css';
 import 'highlight.js/styles/github-dark-dimmed.css';
 
 import type { ContentView, PaneContentType } from './types';
+import type {
+  DiffReviewBatch,
+  DiffReviewComment,
+  DiffReviewSendResult,
+  DiffReviewTargets,
+} from './acp/types';
 
 /** Untracked file whose content the backend declined to render (spec 155). */
 export interface SkippedFile {
@@ -22,12 +28,45 @@ export interface WorkingDiffResult {
   skipped: SkippedFile[];
 }
 
+/** Channel for sending inline review comments to a working lane (spec 158).
+ *  Routing is resolved on demand (no broadcast); the diff view stays decoupled
+ *  from the harness — it only calls these callbacks. */
+export interface DiffReviewChannel {
+  /** Live lanes in this repo + a pre-selected default, resolved on demand. */
+  resolveTargets: () => Promise<DiffReviewTargets>;
+  /** Send a batch to the chosen lane. Resolves with the accept outcome; the
+   *  view keeps the batch unless the result is 'accepted'/'duplicate'. */
+  send: (batch: DiffReviewBatch) => Promise<DiffReviewSendResult>;
+}
+
 export interface DiffViewOptions {
   skipped?: SkippedFile[];
   /** Re-collects the working diff (spec 155). When absent the view is a
    *  static snapshot, exactly as before — no `r` key, no sync indicator. */
   refreshProvider?: () => Promise<WorkingDiffResult>;
+  /** Inline review comments (spec 158). Absent when no harness backs the repo. */
+  review?: DiffReviewChannel;
 }
+
+/** A review comment plus its local send state. The shared payload is never
+ *  mutated after capture, so the line/quote anchor the lane receives stays
+ *  exactly what the human saw, even after the diff refreshes (Codex-1 B4: a
+ *  sent comment is kept, marked, never silently dropped). */
+interface PendingComment extends DiffReviewComment {
+  sent: boolean;
+}
+
+/** Anchor captured from the diff2html DOM. */
+interface CapturedAnchor {
+  file: string;
+  side: 'old' | 'new';
+  lineStart: number;
+  lineEnd: number;
+  quote: string;
+}
+
+/** Max quote length stored per comment. */
+const QUOTE_CAP = 2000;
 
 /** Debounce for event-driven refreshes; coalesces a burst of lane-idle
  *  signals from multiple lanes into one git round-trip. */
@@ -64,8 +103,23 @@ export class DiffContentView implements ContentView {
   private refreshedCallback: ((fileCount: number) => void) | null = null;
   private disposeListeners: (() => void)[] = [];
 
+  // Review comments (spec 158)
+  private review: DiffReviewChannel | null;
+  private comments: PendingComment[] = [];
+  private targets: DiffReviewTargets = { lanes: [], default: null };
+  private reviewTarget: string | null = null;
+  private composerEl: HTMLElement | null = null;
+  private composerArea: HTMLTextAreaElement | null = null;
+  private composerAnchor: CapturedAnchor | null = null;
+  private commentsOverlay: HTMLElement | null = null;
+  private commentsOverlayOpen = false;
+  private commentsSelectedIndex = 0;
+  private reviewNotice = '';
+  private sending = false;
+
   constructor(unifiedDiff: string, container: HTMLElement, options?: DiffViewOptions) {
     this.refreshProvider = options?.refreshProvider ?? null;
+    this.review = options?.review ?? null;
     this.skipped = options?.skipped ?? [];
     if (this.refreshProvider) this.lastSyncedAt = new Date();
 
@@ -104,6 +158,21 @@ export class DiffContentView implements ContentView {
     this.listEl.hidden = true;
     this.element.appendChild(this.listEl);
 
+    // Review comments (spec 158) — composer + comments overlay, hidden until used.
+    if (this.review) {
+      this.composerEl = document.createElement('div');
+      this.composerEl.className = 'krypton-diff__composer';
+      this.composerEl.hidden = true;
+      this.element.appendChild(this.composerEl);
+
+      this.commentsOverlay = document.createElement('div');
+      this.commentsOverlay.className = 'krypton-diff__comments';
+      this.commentsOverlay.hidden = true;
+      this.element.appendChild(this.commentsOverlay);
+
+      void this.refreshTargets();
+    }
+
     if (this.files.length === 0) {
       this.renderEmpty();
     } else {
@@ -119,6 +188,7 @@ export class DiffContentView implements ContentView {
   private renderEmpty(): void {
     this.closeFileList();
     this.navEl.innerHTML = '';
+    this.appendReviewIndicator();
     this.appendSyncIndicator();
     this.fileContainer.innerHTML = '';
     const msg = document.createElement('div');
@@ -154,7 +224,486 @@ export class DiffContentView implements ContentView {
     this.navEl.appendChild(path);
     this.navEl.appendChild(stats);
     this.navEl.appendChild(mode);
+    this.appendReviewIndicator();
     this.appendSyncIndicator();
+  }
+
+  // ─── Review comments (spec 158) ───
+
+  /** Target lane + pending-comment count in the nav bar. Static text, no border
+   *  rail — matches the sync-indicator philosophy. */
+  private appendReviewIndicator(): void {
+    if (!this.review) return;
+    const el = document.createElement('span');
+    el.className = 'krypton-diff__review-target';
+    const pending = this.comments.filter((c) => !c.sent).length;
+    const target = this.reviewTarget ? `→ ${this.reviewTarget}` : '→ (no lane)';
+    let text = pending > 0 ? `${target} · ${pending} comment${pending === 1 ? '' : 's'}` : target;
+    if (this.reviewNotice) text += ` · ${this.reviewNotice}`;
+    el.textContent = text;
+    if (!this.reviewTarget) el.classList.add('krypton-diff__review-target--none');
+    this.navEl.appendChild(el);
+  }
+
+  /** Pull the current lane roster + default target on demand (no broadcast). */
+  private async refreshTargets(): Promise<void> {
+    if (!this.review) return;
+    try {
+      this.targets = await this.review.resolveTargets();
+    } catch {
+      this.targets = { lanes: [], default: null };
+    }
+    // Keep the human's pick if it is still a candidate; otherwise fall back to
+    // the resolved default.
+    const names = this.targets.lanes.map((l) => l.displayName);
+    if (!this.reviewTarget || !names.includes(this.reviewTarget)) {
+      this.reviewTarget = this.targets.default;
+    }
+    if (!this.commentsOverlayOpen) this.renderNav();
+    else this.renderCommentsOverlay();
+  }
+
+  /** The file path the lane would edit for the current file (post-image name,
+   *  or the old name for a deletion). */
+  private currentFilePath(): string | null {
+    const file = this.files[this.currentFileIndex];
+    if (!file) return null;
+    return file.newName && file.newName !== '/dev/null'
+      ? file.newName
+      : (file.oldName ?? null);
+  }
+
+  // ─── Anchor capture from the diff2html DOM ───
+
+  private elementOf(node: Node | null): Element | null {
+    if (!node) return null;
+    return node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  }
+
+  /** Line number + side for a diff row, supporting BOTH renderers: side-by-side
+   *  uses `.d2h-code-side-linenumber` (one number per split table; side from
+   *  panel order) and line-by-line uses `.d2h-code-linenumber` with
+   *  `.line-num1`/`.line-num2` (Codex-1 B3). Returns null for a padding/empty
+   *  row. */
+  private lineInfoForRow(row: Element | null): { side: 'old' | 'new'; line: number } | null {
+    if (!row) return null;
+    // Line-by-line: a single cell carries both old + new numbers.
+    const unified = row.querySelector('.d2h-code-linenumber');
+    if (unified) {
+      const newNum = parseInt(unified.querySelector('.line-num2')?.textContent ?? '', 10);
+      if (Number.isFinite(newNum)) return { side: 'new', line: newNum };
+      const oldNum = parseInt(unified.querySelector('.line-num1')?.textContent ?? '', 10);
+      if (Number.isFinite(oldNum)) return { side: 'old', line: oldNum };
+      return null;
+    }
+    // Side-by-side: one number per row; side from which split panel it sits in.
+    const sideCell = row.querySelector('.d2h-code-side-linenumber');
+    if (sideCell) {
+      const num = parseInt(sideCell.textContent ?? '', 10);
+      if (!Number.isFinite(num)) return null;
+      const panel = row.closest('.d2h-file-side-diff');
+      const panels = Array.from(this.fileContainer.querySelectorAll('.d2h-file-side-diff'));
+      const side: 'old' | 'new' = panels.indexOf(panel as Element) <= 0 ? 'old' : 'new';
+      return { side, line: num };
+    }
+    return null;
+  }
+
+  private lineInfoFor(node: Node | null): { side: 'old' | 'new'; line: number } | null {
+    const el = this.elementOf(node);
+    return this.lineInfoForRow(el?.closest('tr') ?? null);
+  }
+
+  /** Build an anchor from the current text selection, or fall back to the hunk
+   *  nearest the top of the viewport when nothing is selected. */
+  private captureAnchor(): CapturedAnchor | null {
+    const file = this.currentFilePath();
+    if (!file) return null;
+
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && this.element.contains(sel.anchorNode)) {
+      const range = sel.getRangeAt(0);
+      const start = this.lineInfoFor(range.startContainer);
+      if (start) {
+        const end = this.lineInfoFor(range.endContainer);
+        // Constrain a cross-side / cross-panel selection to the start side
+        // (Codex-1 W1): a comment maps to one side + one contiguous range.
+        let lineStart = start.line;
+        let lineEnd = end && end.side === start.side ? end.line : start.line;
+        if (lineEnd < lineStart) [lineStart, lineEnd] = [lineEnd, lineStart];
+        return {
+          file,
+          side: start.side,
+          lineStart,
+          lineEnd,
+          quote: sel.toString().slice(0, QUOTE_CAP),
+        };
+      }
+    }
+    return this.currentHunkAnchor(file);
+  }
+
+  private currentHunkAnchor(file: string): CapturedAnchor | null {
+    // In side-by-side each panel has its OWN tbodies; scope the search to the
+    // NEW (right) panel so a whole-hunk anchor lands on the editable post-change
+    // lines, not the old/left side (Codex-1 B2). Line-by-line has no split
+    // panels, so the whole container is the scope and prefer-new picks the new
+    // number from the shared cell.
+    const panels = this.fileContainer.querySelectorAll('.d2h-file-side-diff');
+    const scope: ParentNode = panels.length > 1 ? panels[1] : this.fileContainer;
+    const blocks = Array.from(scope.querySelectorAll('.d2h-diff-tbody'));
+    if (blocks.length === 0) return null;
+    const containerTop = this.fileContainer.getBoundingClientRect().top;
+    // First block whose bottom is still below the viewport top = the hunk the
+    // human is looking at.
+    const block =
+      blocks.find((b) => b.getBoundingClientRect().bottom - containerTop > 0) ?? blocks[0];
+
+    const infos = Array.from(block.querySelectorAll('tr'))
+      .map((row) => this.lineInfoForRow(row))
+      .filter((i): i is { side: 'old' | 'new'; line: number } => i !== null);
+    if (infos.length === 0) return null;
+    const preferred = infos.filter((i) => i.side === 'new');
+    const chosen = preferred.length > 0 ? preferred : infos;
+    const side = chosen[0].side;
+    const lines = chosen.filter((i) => i.side === side).map((i) => i.line);
+    const quote = Array.from(block.querySelectorAll('.d2h-code-line-ctn'))
+      .map((e) => e.textContent ?? '')
+      .join('\n')
+      .slice(0, QUOTE_CAP);
+    return { file, side, lineStart: Math.min(...lines), lineEnd: Math.max(...lines), quote };
+  }
+
+  // ─── Composer ───
+
+  private startComment(): void {
+    const anchor = this.captureAnchor();
+    if (!anchor || !this.composerEl) {
+      this.reviewNotice = 'select code or a hunk to comment on';
+      this.renderNav();
+      return;
+    }
+    this.composerAnchor = anchor;
+    this.composerEl.innerHTML = '';
+
+    const label = document.createElement('div');
+    label.className = 'krypton-diff__composer-label';
+    const range = anchor.lineStart === anchor.lineEnd
+      ? `${anchor.lineStart}`
+      : `${anchor.lineStart}-${anchor.lineEnd}`;
+    label.textContent = `${anchor.file}:${range} (${anchor.side})`;
+
+    const area = document.createElement('textarea');
+    area.className = 'krypton-diff__composer-input';
+    area.placeholder = 'comment — Enter to add, Shift+Enter newline, Esc cancel';
+    area.rows = 2;
+
+    const hint = document.createElement('div');
+    hint.className = 'krypton-diff__composer-hint';
+    hint.textContent = this.reviewTarget ? `→ ${this.reviewTarget}` : 'no target lane yet';
+
+    this.composerEl.appendChild(label);
+    this.composerEl.appendChild(area);
+    this.composerEl.appendChild(hint);
+    this.composerEl.hidden = false;
+    this.composerArea = area;
+    area.focus();
+  }
+
+  private onComposerKey(e: KeyboardEvent): boolean {
+    if (e.key === 'Escape') {
+      this.closeComposer();
+      return true;
+    }
+    // Enter submits; Shift+Enter inserts a newline (let the textarea handle it).
+    if (e.key === 'Enter' && !e.shiftKey) {
+      this.commitComment();
+      return true;
+    }
+    return false;
+  }
+
+  private closeComposer(): void {
+    if (this.composerEl) this.composerEl.hidden = true;
+    this.composerArea = null;
+    this.composerAnchor = null;
+    this.element.focus();
+  }
+
+  private commitComment(): void {
+    const body = this.composerArea?.value.trim() ?? '';
+    const anchor = this.composerAnchor;
+    if (!anchor || body === '') {
+      this.closeComposer();
+      return;
+    }
+    this.comments.push({
+      id: crypto.randomUUID(),
+      file: anchor.file,
+      side: anchor.side,
+      lineStart: anchor.lineStart,
+      lineEnd: anchor.lineEnd,
+      quote: anchor.quote,
+      body,
+      createdAt: Date.now(),
+      sent: false,
+    });
+    this.reviewNotice = '';
+    this.closeComposer();
+    this.renderNav();
+  }
+
+  // ─── Comments overlay ───
+
+  private openCommentsOverlay(): void {
+    if (!this.commentsOverlay) return;
+    this.commentsOverlayOpen = true;
+    this.commentsSelectedIndex = Math.min(this.commentsSelectedIndex, Math.max(0, this.comments.length - 1));
+    this.commentsOverlay.hidden = false;
+    void this.refreshTargets(); // pull a current roster while the picker is open
+    this.renderCommentsOverlay();
+  }
+
+  private closeCommentsOverlay(): void {
+    this.commentsOverlayOpen = false;
+    if (this.commentsOverlay) this.commentsOverlay.hidden = true;
+  }
+
+  private onCommentsKey(e: KeyboardEvent): boolean {
+    switch (e.key) {
+      case 'j':
+      case 'ArrowDown':
+        this.moveCommentSelection(1);
+        return true;
+      case 'k':
+      case 'ArrowUp':
+        this.moveCommentSelection(-1);
+        return true;
+      case 'Enter':
+        this.jumpToComment();
+        return true;
+      case 'd':
+        this.deleteSelectedComment();
+        return true;
+      case 'Tab':
+      case ']':
+        this.cycleTarget(1);
+        return true;
+      case '[':
+        this.cycleTarget(-1);
+        return true;
+      case 's':
+        void this.sendComments();
+        return true;
+      case 'C':
+      case 'q':
+      case 'Escape':
+        this.closeCommentsOverlay();
+        return true;
+      default:
+        return true;
+    }
+  }
+
+  private moveCommentSelection(delta: number): void {
+    if (this.comments.length === 0) return;
+    this.commentsSelectedIndex =
+      (this.commentsSelectedIndex + delta + this.comments.length) % this.comments.length;
+    this.renderCommentsOverlay();
+  }
+
+  private cycleTarget(delta: number): void {
+    const names = this.targets.lanes.map((l) => l.displayName);
+    if (names.length === 0) return;
+    const cur = this.reviewTarget ? names.indexOf(this.reviewTarget) : -1;
+    this.reviewTarget = names[(cur + delta + names.length) % names.length];
+    this.renderCommentsOverlay();
+    this.renderNav();
+  }
+
+  private deleteSelectedComment(): void {
+    const c = this.comments[this.commentsSelectedIndex];
+    if (!c) return;
+    this.comments.splice(this.commentsSelectedIndex, 1);
+    this.commentsSelectedIndex = Math.min(this.commentsSelectedIndex, Math.max(0, this.comments.length - 1));
+    this.renderCommentsOverlay();
+    this.renderNav();
+  }
+
+  private jumpToComment(): void {
+    const c = this.comments[this.commentsSelectedIndex];
+    if (!c) return;
+    const idx = this.files.findIndex((f) => this.fileKey(f) === c.file || this.filePath(f) === c.file);
+    this.closeCommentsOverlay();
+    if (idx >= 0 && idx !== this.currentFileIndex) {
+      this.currentFileIndex = idx;
+      this.renderCurrentFile();
+    }
+    this.scrollToLine(c.side, c.lineStart);
+  }
+
+  /** Scroll the matching line into view, if it can still be located. */
+  private scrollToLine(side: 'old' | 'new', line: number): void {
+    const cell = this.findLineCell(side, line);
+    cell?.closest('tr')?.scrollIntoView({ behavior: 'auto', block: 'center' });
+  }
+
+  private async sendComments(): Promise<void> {
+    // In-flight guard: a second `s` while a send is pending would mint a new
+    // batchId for the same comments (Codex-1 W2). The queue de-dupes per comment
+    // so it could not double-deliver, but the guard avoids redundant round-trips.
+    if (!this.review || this.sending) return;
+    if (this.comments.length === 0) {
+      this.reviewNotice = 'no comments to send';
+      this.renderCommentsOverlay();
+      return;
+    }
+    if (!this.reviewTarget) {
+      this.reviewNotice = 'pick a target lane first ([ ] / Tab)';
+      this.renderCommentsOverlay();
+      return;
+    }
+    // Send ALL comments, not just unsent: a comment marked sent but dropped
+    // before the lane drained it (lane close / `#new`) must be recoverable. The
+    // DiffReviewQueue de-dupes by comment id at drain, so re-sending an
+    // already-delivered comment is a harmless no-op (Codex-1 B1).
+    const target = this.reviewTarget;
+    const batch: DiffReviewBatch = {
+      batchId: crypto.randomUUID(),
+      target,
+      comments: this.comments.map(({ sent: _sent, ...c }) => c),
+    };
+    this.sending = true;
+    this.reviewNotice = `sending → ${target}…`;
+    this.renderCommentsOverlay();
+    let result: DiffReviewSendResult;
+    try {
+      result = await this.review.send(batch);
+    } catch {
+      result = { status: 'no-live-lane' };
+    } finally {
+      this.sending = false;
+    }
+    if (result.status === 'accepted' || result.status === 'duplicate') {
+      for (const c of this.comments) c.sent = true;
+      this.reviewNotice =
+        result.status === 'duplicate' ? `already delivered → ${target}` : `sent → ${target}`;
+    } else {
+      // Kept, not dropped — the human can retarget and re-send (Codex-1 B1/B4).
+      this.reviewNotice = `${target} is no longer live — comments kept, retarget and re-send`;
+      void this.refreshTargets();
+    }
+    this.renderCommentsOverlay();
+    this.renderNav();
+  }
+
+  private renderCommentsOverlay(): void {
+    const root = this.commentsOverlay;
+    if (!root) return;
+    root.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'krypton-diff__comments-header';
+    const target = this.reviewTarget ? `→ ${this.reviewTarget}` : '→ (no lane — [ ] to pick)';
+    header.textContent =
+      `${this.comments.length} comment${this.comments.length === 1 ? '' : 's'} · ${target}`;
+    root.appendChild(header);
+
+    if (this.reviewNotice) {
+      const notice = document.createElement('div');
+      notice.className = 'krypton-diff__comments-notice';
+      notice.textContent = this.reviewNotice;
+      root.appendChild(notice);
+    }
+
+    const items = document.createElement('div');
+    items.className = 'krypton-diff__comments-items';
+    root.appendChild(items);
+
+    if (this.comments.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'krypton-diff__comments-empty';
+      empty.textContent = 'No comments — press c on a hunk to add one';
+      items.appendChild(empty);
+    }
+
+    this.comments.forEach((c, i) => {
+      const row = document.createElement('div');
+      row.className = 'krypton-diff__comments-item';
+      if (i === this.commentsSelectedIndex) row.classList.add('krypton-diff__comments-item--selected');
+      if (c.sent) row.classList.add('krypton-diff__comments-item--sent');
+
+      const range = c.lineStart === c.lineEnd ? `${c.lineStart}` : `${c.lineStart}-${c.lineEnd}`;
+      const loc = document.createElement('span');
+      loc.className = 'krypton-diff__comments-loc';
+      loc.textContent = `${c.file}:${range}`;
+
+      const note = document.createElement('span');
+      note.className = 'krypton-diff__comments-note';
+      note.textContent = c.body;
+
+      if (c.sent) {
+        const tag = document.createElement('span');
+        tag.className = 'krypton-diff__comments-tag';
+        tag.textContent = 'sent';
+        row.appendChild(tag);
+      }
+      row.appendChild(loc);
+      row.appendChild(note);
+      row.addEventListener('click', () => {
+        this.commentsSelectedIndex = i;
+        this.jumpToComment();
+      });
+      items.appendChild(row);
+    });
+
+    const footer = document.createElement('div');
+    footer.className = 'krypton-diff__comments-footer';
+    footer.textContent = 'j/k move · Enter jump · d delete · [ ] target · s send · Esc close';
+    root.appendChild(footer);
+
+    (items.children[this.commentsSelectedIndex] as HTMLElement | undefined)
+      ?.scrollIntoView({ block: 'nearest' });
+  }
+
+  // ─── Pin markers ───
+
+  /** Find the line-number cell for a (side, line) anchor in the current render,
+   *  across both diff2html renderers. Null if the line is no longer present. */
+  private findLineCell(side: 'old' | 'new', line: number): Element | null {
+    const want = String(line);
+    // Line-by-line: .line-num1 (old) / .line-num2 (new) inside .d2h-code-linenumber.
+    const numClass = side === 'new' ? '.line-num2' : '.line-num1';
+    for (const el of this.fileContainer.querySelectorAll(numClass)) {
+      if ((el.textContent ?? '').trim() === want) return el.closest('.d2h-code-linenumber');
+    }
+    // Side-by-side: pick the matching panel, then the number cell.
+    const panels = this.fileContainer.querySelectorAll('.d2h-file-side-diff');
+    const panel = side === 'new' ? panels[1] : panels[0];
+    if (panel) {
+      for (const el of panel.querySelectorAll('.d2h-code-side-linenumber')) {
+        if ((el.textContent ?? '').trim() === want) return el;
+      }
+    }
+    return null;
+  }
+
+  /** Mark commented lines on the current file. Best-effort: a comment whose line
+   *  drifted after a refresh simply shows no pin (its stored anchor is intact). */
+  private renderPins(): void {
+    if (!this.review) return;
+    const file = this.currentFilePath();
+    if (!file) return;
+    for (const c of this.comments) {
+      if (c.file !== file) continue;
+      const cell = this.findLineCell(c.side, c.lineStart);
+      if (!cell || cell.querySelector('.krypton-diff__pin')) continue;
+      const pin = document.createElement('span');
+      pin.className = 'krypton-diff__pin';
+      pin.textContent = '●';
+      pin.title = c.sent ? `sent: ${c.body}` : c.body;
+      cell.appendChild(pin);
+    }
   }
 
   private renderCurrentFile(): void {
@@ -187,11 +736,30 @@ export class DiffContentView implements ContentView {
       synchronisedScroll: this.diffStyle === 'side-by-side',
     });
     ui.draw();
+    // Pins must run AFTER draw — renderNav (which runs before the redraw) would
+    // mark the about-to-be-deleted DOM (Codex-1 Warning-1).
+    this.renderPins();
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
+    // Composer is a focused <textarea>: intercept only submit/cancel, let every
+    // other key fall through (return false) so typing reaches the textarea.
+    if (this.composerEl && !this.composerEl.hidden) return this.onComposerKey(e);
     if (e.metaKey || e.ctrlKey || e.altKey) return false;
     if (this.listOpen) return this.onFileListKey(e);
+    if (this.commentsOverlayOpen) return this.onCommentsKey(e);
+
+    // Review comments (spec 158)
+    if (this.review) {
+      if (e.key === 'c') {
+        this.startComment();
+        return true;
+      }
+      if (e.key === 'C') {
+        this.openCommentsOverlay();
+        return true;
+      }
+    }
 
     switch (e.key) {
       case 'j':

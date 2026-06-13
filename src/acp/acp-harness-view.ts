@@ -17,6 +17,7 @@ import type {
   AcpAvailableCommand,
   AcpBackendDescriptor,
   AcpEvent,
+  DiffReviewComment,
   AcpMcpCapabilities,
   AcpMcpServerDescriptor,
   AcpSessionCapabilities,
@@ -49,6 +50,7 @@ import {
 } from './attention-overlay';
 import { ReviewQualityStore } from './review-quality';
 import { ArtifactFeedbackQueue } from './artifact-feedback';
+import { DiffReviewQueue } from './diff-review';
 import {
   InterLaneCoordinator,
   type CoordinatorDrainContext,
@@ -1165,6 +1167,7 @@ export class AcpHarnessView implements ContentView {
   /** spec 149: per-lane artifact feedback queue, drained on the lane's next idle
    *  (a dedicated queue, NOT the peer LaneInbox). Constructed in the ctor. */
   private feedbackQueue: ArtifactFeedbackQueue;
+  private diffReviewQueue: DiffReviewQueue;
   private feedbackUnlisten: UnlistenFn | null = null;
   /** spec 133: artifact hint mode (open-artifact labels), active only when on. */
   private artifactHintMode = false;
@@ -1294,6 +1297,18 @@ export class AcpHarnessView implements ContentView {
       injectFeedbackTurn: (laneId, text) => {
         const lane = this.lanes.find((l) => l.id === laneId);
         if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'artifact feedback');
+      },
+    });
+    // spec 158: diff review comments drain on the lane's next idle, same as
+    // artifact feedback. Constructed AFTER the feedback queue (and the
+    // coordinator) for the same reason: LaneBus dispatches in insertion order,
+    // so this re-checking drainer must run last and defer when an earlier
+    // drainer already claimed a contested idle. (Codex-1 review W2.)
+    this.diffReviewQueue = new DiffReviewQueue(this.laneBus, {
+      getLaneStatus: (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
+      injectReviewTurn: (laneId, text) => {
+        const lane = this.lanes.find((l) => l.id === laneId);
+        if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'diff review');
       },
     });
     // spec 128: refresh the backpressure gauge (and the overlay, if open) on
@@ -1484,6 +1499,36 @@ export class AcpHarnessView implements ContentView {
     }
     if (operation === 'memory.list') {
       return this.memoryEntries;
+    }
+    // spec 158: diff review routing. Resolved on demand through the
+    // HarnessDirectory (no ViewBus broadcast), so the compositor talks to the
+    // one harness that owns the target rather than every harness on the repo.
+    if (operation === 'diff.review-targets') {
+      const lanes = this.lanes
+        .filter((l) => l.status !== 'stopped' && l.status !== 'error' && l.status !== 'starting')
+        .map((l) => ({ displayName: l.displayName, status: l.status }));
+      const active = this.activeLane();
+      const activeName = active && lanes.some((l) => l.displayName === active.displayName)
+        ? active.displayName
+        : null;
+      const def = activeName ?? (lanes.length === 1 ? lanes[0].displayName : null);
+      return { lanes, default: def };
+    }
+    if (operation === 'diff.review-send') {
+      const target = requiredString(params, 'target');
+      const batchId = requiredString(params, 'batchId');
+      const comments = Array.isArray(params.comments)
+        ? (params.comments as DiffReviewComment[])
+        : [];
+      const lane = this.lanes.find((l) => l.displayName === target && l.status !== 'stopped');
+      if (!lane) return { status: 'no-live-lane' };
+      const outcome = this.diffReviewQueue.accept(lane.id, {
+        kind: 'diff_review',
+        batchId,
+        comments,
+        sentAt: Date.now(),
+      });
+      return { status: outcome === 'duplicate' ? 'duplicate' : 'accepted' };
     }
     const lane = this.controlLane(params);
     switch (operation) {
@@ -2796,6 +2841,7 @@ export class AcpHarnessView implements ContentView {
       this.feedbackUnlisten = null;
     }
     this.feedbackQueue.dispose();
+    this.diffReviewQueue.dispose();
     this.usageProviderListeners.clear();
     if (this.directivesUnlisten) {
       this.directivesUnlisten();
@@ -4745,6 +4791,7 @@ export class AcpHarnessView implements ContentView {
     }).catch(() => undefined);
     // Drop any queued-but-undrained feedback for the lane's now-dead session.
     this.feedbackQueue.dropLane(lane.id);
+    this.diffReviewQueue.dropLane(lane.id);
   }
 
   private describePermission(lane: HarnessLane, permission: HarnessPermission): PermissionPayload {

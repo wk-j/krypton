@@ -544,6 +544,22 @@ export class InputRouter {
         return;
       }
 
+      // Normal mode: a focused content view gets first crack at every key,
+      // BEFORE the modifier+Enter→PTY interception below — otherwise a content
+      // view's own Shift/Ctrl+Enter gesture (e.g. the diff composer's newline)
+      // would be swallowed and leaked to a terminal (Codex-1 B4). Skipped when
+      // Quick Terminal is visible — QT owns keyboard focus.
+      if (this.mode === Mode.Normal && !this.compositor.isQuickTerminalVisible) {
+        const pane = this.compositor.getFocusedPanePublic();
+        if (pane?.contentView) {
+          if (pane.contentView.onKeyDown(e)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
+      }
+
       // Modifier+Enter: xterm.js discards shift/ctrl/alt modifiers on Enter,
       // so we intercept and send the correct CSI u escape sequence directly.
       // This enables Shift+Enter, Ctrl+Enter, Alt+Enter in shells and apps
@@ -563,21 +579,8 @@ export class InputRouter {
         return;
       }
 
-      // Normal mode: if focused pane has a content view, delegate to it
-      // (but not when Quick Terminal is visible — QT owns keyboard focus)
+      // Normal mode pass-through to terminal (no content view consumed the key).
       if (this.mode === Mode.Normal) {
-        if (this.compositor.isQuickTerminalVisible) {
-          return; // Let xterm.js Quick Terminal handle the key
-        }
-        const pane = this.compositor.getFocusedPanePublic();
-        if (pane?.contentView) {
-          if (pane.contentView.onKeyDown(e)) {
-            e.preventDefault();
-            e.stopPropagation();
-          }
-          return;
-        }
-        // Otherwise pass through to terminal
         return;
       }
 
