@@ -242,7 +242,7 @@
    c. If file exists, loads lane memory documents into RAM (continuity).
    d. Returns harnessId and hook server port to frontend.
 6. AcpHarnessView lists ACP backends and starts with an empty roster. The user
-   opens `Cmd+P → +` to spawn installed backends such as Codex, Claude, Gemini,
+   opens `Cmd+P → +` to spawn installed harness backends such as Codex, Claude,
    OpenCode, Pi, Droid, Cursor, Junie, or OMP with the same cwd. After `session/new`,
    OpenCode lanes receive `session/set_config_option` to select
    `zai-coding-plan/glm-5.1`.

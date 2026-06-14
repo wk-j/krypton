@@ -14,6 +14,8 @@ import {
   isArtifactScratchPath,
   callTargetsArtifactScratch,
   generateArtifactHintLabels,
+  harnessBackends,
+  harnessDirectives,
   normalizeArtifactPath,
   hashBucket,
   isDirectPeerPeekReasonKey,
@@ -752,6 +754,31 @@ describe('laneAccentForLabel', () => {
   });
 });
 
+describe('harnessBackends', () => {
+  it('excludes Gemini without changing the shared ACP backend registry', () => {
+    const backends = [
+      { id: 'claude', display_name: 'Claude', command: 'npx' },
+      { id: 'gemini', display_name: 'Gemini', command: 'gemini' },
+      { id: 'codex', display_name: 'Codex', command: 'codex-acp' },
+    ];
+
+    expect(harnessBackends(backends).map((backend) => backend.id)).toEqual(['claude', 'codex']);
+    expect(backends.map((backend) => backend.id)).toEqual(['claude', 'gemini', 'codex']);
+  });
+});
+
+describe('harnessDirectives', () => {
+  it('excludes legacy Gemini-scoped directives', () => {
+    const directives = [
+      { id: 'all', title: 'All', icon: '', description: '', backend: '', task: '', system_prompt: '', enabled: true, triage_equipped: false },
+      { id: 'gemini', title: 'Gemini', icon: '', description: '', backend: 'gemini', task: '', system_prompt: '', enabled: true, triage_equipped: false },
+      { id: 'codex', title: 'Codex', icon: '', description: '', backend: 'codex', task: '', system_prompt: '', enabled: true, triage_equipped: false },
+    ];
+
+    expect(harnessDirectives(directives).map((directive) => directive.id)).toEqual(['all', 'codex']);
+  });
+});
+
 describe('spec 120 lane mail copy', () => {
   it('formats flat meta lines without nested chrome', () => {
     expect(formatLaneMailMetaLine('in', 'Codex-1', false)).toBe('← from codex-1 · lane mail');
@@ -897,10 +924,9 @@ describe('spec 125 lane rail disambiguation', () => {
   });
 
   describe('backendLogoId', () => {
-    it('maps the nine built-in backends to their krypton-logo-* ids', () => {
+    it('maps the harness-supported built-in backends to their krypton-logo-* ids', () => {
       expect(backendLogoId('claude')).toBe('krypton-logo-claude');
       expect(backendLogoId('codex')).toBe('krypton-logo-codex');
-      expect(backendLogoId('gemini')).toBe('krypton-logo-gemini');
       expect(backendLogoId('opencode')).toBe('krypton-logo-opencode');
       expect(backendLogoId('pi-acp')).toBe('krypton-logo-pi');
       expect(backendLogoId('droid')).toBe('krypton-logo-droid');

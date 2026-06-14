@@ -798,7 +798,6 @@ export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
 const BACKEND_LABELS: Record<string, string> = {
   codex: 'Codex',
   claude: 'Claude',
-  gemini: 'Gemini',
   opencode: 'OpenCode',
   'pi-acp': 'Pi',
   droid: 'Droid',
@@ -810,6 +809,14 @@ const BACKEND_LABELS: Record<string, string> = {
   mimo: 'MiMo',
   cline: 'Cline',
 };
+
+export function harnessBackends(backends: AcpBackendDescriptor[]): AcpBackendDescriptor[] {
+  return backends.filter((backend) => backend.id !== 'gemini');
+}
+
+export function harnessDirectives(directives: HarnessDirective[]): HarnessDirective[] {
+  return directives.filter((directive) => directive.backend !== 'gemini');
+}
 
 function backendLabel(backendId: string): string {
   return BACKEND_LABELS[backendId] ?? backendId.charAt(0).toUpperCase() + backendId.slice(1);
@@ -881,8 +888,6 @@ export function backendLogoId(backendId: string): string {
       return 'krypton-logo-claude';
     case 'codex':
       return 'krypton-logo-codex';
-    case 'gemini':
-      return 'krypton-logo-gemini';
     case 'opencode':
       return 'krypton-logo-opencode';
     case 'pi-acp':
@@ -935,10 +940,6 @@ export const BACKEND_LOGO_SVG_DEFS = [
   '<symbol id="krypton-logo-codex" viewBox="0 0 16 16">' +
     '<polygon points="8,1.6 13.6,5 13.6,11 8,14.4 2.4,11 2.4,5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
     '<circle cx="8" cy="8" r="1.6" fill="currentColor"/>' +
-    '</symbol>',
-  // gemini: 4-pointed sparkle
-  '<symbol id="krypton-logo-gemini" viewBox="0 0 16 16">' +
-    '<path d="M8 1 L9.4 6.6 L15 8 L9.4 9.4 L8 15 L6.6 9.4 L1 8 L6.6 6.6 Z" fill="currentColor"/>' +
     '</symbol>',
   // opencode: curly braces
   '<symbol id="krypton-logo-opencode" viewBox="0 0 16 16">' +
@@ -3594,7 +3595,7 @@ export class AcpHarnessView implements ContentView {
     await this.refreshDirectives();
 
     try {
-      this.pickerEntries = await AcpClient.listBackends();
+      this.pickerEntries = harnessBackends(await AcpClient.listBackends());
       this.systemRows = [
         ...(this.harnessMemoryWarning ? [`memory warning: ${this.harnessMemoryWarning}`] : []),
         'no lanes running',
@@ -3720,7 +3721,7 @@ export class AcpHarnessView implements ContentView {
   private async refreshDirectives(): Promise<void> {
     try {
       const cfg = await getAcpHarnessConfig();
-      this.directives = cfg.directives ?? [];
+      this.directives = harnessDirectives(cfg.directives ?? []);
     } catch (e) {
       console.warn('[acp-harness] load directives failed:', e);
       this.directives = [];
@@ -5325,7 +5326,7 @@ export class AcpHarnessView implements ContentView {
 
   private async openLanePicker(): Promise<void> {
     try {
-      this.pickerEntries = await AcpClient.listBackends();
+      this.pickerEntries = harnessBackends(await AcpClient.listBackends());
     } catch (e) {
       this.flashChip(`backend list failed: ${String(e)}`);
       return;
@@ -5380,7 +5381,7 @@ export class AcpHarnessView implements ContentView {
     this.memoryDrawerOpen = false;
     if (this.pickerEntries.length === 0) {
       try {
-        this.pickerEntries = await AcpClient.listBackends();
+        this.pickerEntries = harnessBackends(await AcpClient.listBackends());
       } catch (e) {
         this.flashChip(`backend list failed: ${errorText(e)}`);
         return;
@@ -9569,7 +9570,7 @@ function renderTranscriptItem(
     label.textContent = 'mail';
     el.classList.add('acp-harness__msg--inter_lane', `acp-harness__msg--mail-${direction}`);
     if (done) el.classList.add('acp-harness__msg--mail-done');
-    renderLaneMailBody(body, item.interLane, item.text);
+    renderLaneMailBody(body, item, item.interLane, item.text);
   } else if (item.kind === 'system' && item.text.startsWith('[inter-lane]')) {
     label.textContent = 'event';
     el.classList.add('acp-harness__msg--harness-event');
@@ -9725,7 +9726,12 @@ export function formatLaneMailProvenanceLine(provenance: LaneMailProvenance): st
   return `↩ replying to lane mail from ${peer}`;
 }
 
-function renderLaneMailBody(body: HTMLElement, payload: InterLanePayload, message: string): void {
+function renderLaneMailBody(
+  body: HTMLElement,
+  item: HarnessTranscriptItem,
+  payload: InterLanePayload,
+  message: string,
+): void {
   body.classList.add('acp-harness__msg-body--lane-mail');
   const meta = document.createElement('span');
   meta.className = 'acp-harness__lane-mail-meta';
@@ -9735,9 +9741,25 @@ function renderLaneMailBody(body: HTMLElement, payload: InterLanePayload, messag
     payload.done,
     payload.channel,
   );
-  const text = document.createElement('span');
+  const text = document.createElement('div');
   text.className = 'acp-harness__lane-mail-text';
-  text.textContent = message;
+  // Render the mail body as markdown, mirroring normal agent messages (same
+  // `md` parser + `--markdown` styling), with the parse cached on the item.
+  if (item.markdownSource !== message || item.markdownHtml === undefined) {
+    try {
+      item.markdownHtml = md.parse(message, { async: false }) as string;
+      item.markdownSource = message;
+    } catch {
+      item.markdownHtml = undefined;
+      item.markdownSource = undefined;
+    }
+  }
+  if (item.markdownHtml !== undefined) {
+    text.classList.add('acp-harness__msg-body--markdown');
+    text.innerHTML = item.markdownHtml;
+  } else {
+    text.textContent = message;
+  }
   body.appendChild(meta);
   body.appendChild(text);
 }
@@ -10711,7 +10733,6 @@ export function laneAccent(index: number): string {
 export function laneAccentForLabel(label: string): string {
   if (/codex/i.test(label)) return laneAccent(1);
   if (/claude/i.test(label)) return laneAccent(2);
-  if (/gemini/i.test(label)) return laneAccent(3);
   if (/opencode/i.test(label)) return laneAccent(4);
   if (/^pi(-|$)/i.test(label)) return laneAccent(5);
   if (/droid/i.test(label)) return laneAccent(6);
@@ -11726,7 +11747,7 @@ function statusLabel(status: HarnessLaneStatus): string {
     case 'starting': return 'starting';
     case 'idle': return 'idle';
     case 'busy': return 'busy';
-    case 'needs_permission': return 'permission';
+    case 'needs_permission': return 'action required';
     case 'awaiting_peer': return 'awaiting peer';
     case 'error': return 'error';
     case 'stopped': return 'stopped';

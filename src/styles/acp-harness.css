@@ -32,7 +32,6 @@
 
   --krypton-backend-claude:   #d97757;
   --krypton-backend-codex:    #d7e7f0;
-  --krypton-backend-gemini:   #6f8fd9;
   --krypton-backend-opencode: #c186d9;
   --krypton-backend-pi:       #6fd9c0;
   --krypton-backend-droid:    #d9a86f;
@@ -550,6 +549,21 @@
 .acp-harness__tab--needs_permission {
   color: #ffd166;
   text-decoration: none;
+  text-shadow: 0 0 8px rgba(255, 209, 102, 0.34);
+}
+
+.acp-harness__lane--needs_permission.acp-harness__lane--collapsed {
+  background: rgba(255, 209, 102, 0.1);
+  box-shadow:
+    inset 0 0 10px rgba(255, 209, 102, 0.08),
+    0 0 8px rgba(255, 209, 102, 0.12);
+}
+
+.acp-harness__lane--needs_permission .acp-harness__lane-status {
+  padding: 1px 6px;
+  background: rgba(255, 209, 102, 0.14);
+  color: #ffe3a0;
+  font-weight: 700;
 }
 
 .acp-harness__lane--error .acp-harness__lane-head,
@@ -2500,13 +2514,25 @@
 }
 
 .acp-harness__lane--needs_permission .acp-harness__lane-symbol,
-.acp-harness__tab--needs_permission {
+.acp-harness__tab--needs_permission,
+.acp-harness__lane--needs_permission.acp-harness__lane--collapsed,
+.acp-harness__rail-entry--needs_permission {
   animation: acp-harness-permission-pulse 1.1s ease-in-out infinite;
 }
 
 @keyframes acp-harness-permission-pulse {
-  0%, 100% { opacity: 0.6; }
+  0%, 100% { opacity: 0.72; }
   50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness__lane--needs_permission .acp-harness__lane-symbol,
+  .acp-harness__tab--needs_permission,
+  .acp-harness__lane--needs_permission.acp-harness__lane--collapsed,
+  .acp-harness__rail-entry--needs_permission {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2640,7 +2666,6 @@
 
 .acp-harness__rail-logo--claude   { color: var(--krypton-backend-claude); }
 .acp-harness__rail-logo--codex    { color: var(--krypton-backend-codex); }
-.acp-harness__rail-logo--gemini   { color: var(--krypton-backend-gemini); }
 .acp-harness__rail-logo--opencode { color: var(--krypton-backend-opencode); }
 .acp-harness__rail-logo--pi       { color: var(--krypton-backend-pi); }
 .acp-harness__rail-logo--droid    { color: var(--krypton-backend-droid); }
@@ -2801,6 +2826,17 @@
 
 .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
   background: #ffd166;
+  box-shadow: 0 0 8px rgba(255, 209, 102, 0.72);
+}
+
+.acp-harness__rail-entry--needs_permission {
+  background: rgba(255, 209, 102, 0.12);
+  color: #ffe3a0;
+}
+
+.acp-harness__rail-entry--needs_permission .acp-harness__rail-meta__hint {
+  color: #ffe3a0;
+  font-weight: 700;
 }
 
 .acp-harness__rail-entry--error .acp-harness__rail-dot {
@@ -2810,6 +2846,12 @@
 .acp-harness--zen .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot,
 .acp-harness--zen .acp-harness__rail-entry--error .acp-harness__rail-dot {
   animation: acp-harness-zen-attention 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness--zen .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
+    animation: none;
+  }
 }
 
 @keyframes acp-harness-zen-attention {
@@ -3615,7 +3657,6 @@
 .acp-harness__directive-logo--all      { visibility: hidden; }
 .acp-harness__directive-logo--claude   { color: var(--krypton-backend-claude); }
 .acp-harness__directive-logo--codex    { color: var(--krypton-backend-codex); }
-.acp-harness__directive-logo--gemini   { color: var(--krypton-backend-gemini); }
 .acp-harness__directive-logo--opencode { color: var(--krypton-backend-opencode); }
 .acp-harness__directive-logo--pi       { color: var(--krypton-backend-pi); }
 .acp-harness__directive-logo--droid    { color: var(--krypton-backend-droid); }

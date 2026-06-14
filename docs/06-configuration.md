@@ -423,6 +423,8 @@ To switch models, change `active` to the name of another preset. Changes take ef
 
 ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, `pi-acp`, `droid`, `cursor`, `junie`, `omp`, `grok`, `copilot`, `mimo`, and `cline`.
 
+Gemini is available only in the standalone ACP agent view. The multi-lane ACP Harness excludes it from lane and session pickers and does not accept Gemini-scoped harness directives.
+
 | Backend | Command |
 |---------|---------|
 | Claude | `npx -y @agentclientprotocol/claude-agent-acp` |
@@ -455,7 +457,7 @@ Optional pi settings in `~/.pi/agent/settings.json`:
 - `"quietStartup": true` — suppress pi-acp's startup banner in the lane transcript.
 - Set env `PI_OFFLINE=1` to disable pi's update checks and install telemetry.
 
-**Pi-1 caveats.** Unlike regular lanes such as Codex, Claude, Gemini, OpenCode, Droid, and Cursor, Pi-1 deliberately:
+**Pi-1 caveats.** Unlike regular lanes such as Codex, Claude, OpenCode, Droid, and Cursor, Pi-1 deliberately:
 
 - Skips the project `.mcp.json` bridge — pi has no MCP host by design.
 - Skips the per-lane `krypton-harness-memory` server — same reason. Memory drawer entries from Pi-1 are not produced.
@@ -551,9 +553,8 @@ See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-
 
 The ACP Harness backend picker is code-defined in v1: installed built-in backends are listed, and the harness starts with no lanes until the user spawns one via `Cmd+P → +`. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
 
-**Lane model selection.** `<backend>` keys match the ACP backend ids: `gemini`, `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, `copilot`, `mimo`, and `cline`. Krypton applies `active` only for backends that support model selection in v1:
+**Lane model selection.** `<backend>` keys match the ACP Harness backend ids: `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, `copilot`, `mimo`, and `cline`. Krypton applies `active` only for backends that support model selection in v1:
 
-- **Gemini** — passes `--model <active>` as a CLI flag at spawn. Changing the model requires respawning the lane.
 - **OpenCode** — sends `session/set_config_option {model}` (with `session/set_model` fallback) right after `session/new`. If `active` is empty, Krypton falls back to the historical default `zai-coding-plan/glm-5.1`.
 - **Droid** — passes `-m <active>` to `droid exec` at spawn. Default if unset is Factory's `claude-opus-4-7`. Changing the model requires respawning the lane.
 - **Claude** (and any ACP-native backend that advertises model state) — applied via `session/set_model {sessionId, modelId}` right *after* `session/new`, for adapters whose `session/new` response carries a valid `models` object (an `availableModels` array or a `currentModelId` string). `active` is sent **verbatim**, so aliases like `opus`/`sonnet`/`haiku` resolve adapter-side. A failure (unknown id, timeout, adapter doesn't implement the method) is **non-fatal**: the lane keeps running on the agent default and the model chip turns amber with a tooltip. The set of available models is the *agent's* (advertised in `session/new`) — you don't maintain a catalog; the optional `models` array only curates/orders a future picker.
@@ -566,10 +567,6 @@ The ACP Harness backend picker is code-defined in v1: installed built-in backend
 Example:
 
 ```toml
-[acp_harness.lane_models.gemini]
-active = "gemini-2.5-pro"
-models = ["gemini-2.5-pro", "gemini-2.5-flash"]
-
 [acp_harness.lane_models.opencode]
 active = "anthropic/claude-sonnet-4-5"
 models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-5"]
