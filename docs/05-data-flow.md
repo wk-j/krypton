@@ -296,6 +296,43 @@
     d. #new! first clears that lane's persisted memory document through
        clear_harness_memory_lane, then follows the #new flow.
 
+## Diff Review Priority Flow (spec 160 — push out, pull on render)
+
+```
+PUSH (lane → harness), at end of an editing turn:
+1. The authoring lane calls the default-on MCP tool
+   mark_review_priority { ranges: [{ file, lineStart, lineEnd, level }] },
+   reporting only the non-default (high/routine) new-side ranges it just wrote.
+2. hook_server.rs validates (positive integer lines, level in high|routine,
+   <= 500 ranges), emits the acp-review-priority Tauri event, and awaits the
+   frontend reply (BUS_REPLY_TIMEOUT).
+3. AcpHarnessView.handleReviewPriority finds the lane by displayName and stores
+   the report in reviewPriorityReports keyed by laneId (latest call REPLACES the
+   prior report; an empty ranges array clears it). Replies { recorded: true }.
+   The report is dropped when the lane closes/#new's and on view dispose.
+
+PULL (window ← harness), on open and on every auto-refresh:
+4. openDiffView wires reviewPriority.resolve →
+   compositor.resolveDiffReviewPriority(repoRoot): walk listHarnessEntries(),
+   keep harnesses whose cwd resolves to repoRoot, call each one's
+   control('diff.review-priority') (returns its lanes' merged ranges), concat.
+   A pull (no ViewBus broadcast), exactly like resolveDiffReviewTargets.
+5. DiffContentView stores priorityRanges and, after diff2html draws the current
+   file, applyReviewPriority() splits each panel tbody into hunks (by .d2h-info
+   block-header rows), computes each hunk's priority = highest level of any range
+   overlapping its new-side lines, then:
+     - routine (not user-expanded) -> foldHunk(): hide the content rows, insert a
+       single "▸ N routine lines — Enter to expand" summary row in place (paired
+       blank spacer in the side-by-side old panel to keep rows aligned).
+     - high -> markHigh(): full-cell gutter tint + a ◆ high header badge; the
+       header row is recorded in highHunkAnchors for }/{ navigation.
+6. On a lane-idle auto-refresh (spec 155), doRefresh re-pulls the report in the
+   SAME round-trip as the new diff so folds/markers land in one render (no
+   full-then-folded flash); expandedHunks (session-remembered) keeps the human's
+   expanded folds open. A range that maps to no hunk is dropped -> normal
+   (under-collapse, never over-collapse; ADR-0009).
+```
+
 ## Window AI Credit Status Flow
 
 ```

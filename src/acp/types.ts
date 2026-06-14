@@ -378,6 +378,39 @@ export type DiffReviewSendResult = {
   status: 'accepted' | 'no-live-lane' | 'duplicate';
 };
 
+// Diff review priority (spec 160) — the authoring lane self-reports, per change,
+// how the human should spend reading attention on the working diff. The Diff
+// Window FOLDS `routine` hunks (always expandable) and MARKS + navigates to
+// `high` ones; it never hides or reorders. `normal` is the unreported default,
+// so silence yields today's full diff. See docs/160-diff-review-priority.md and
+// docs/adr/0009. Reuses the spec-158 line-range anchor concept (NOT the
+// DiffReviewComment type — this carries no human note or idempotency id).
+
+/** One lane-reported priority range over the working diff (spec 160). */
+export interface ReviewPriorityRange {
+  /** post-change (new-side) path, repo-relative. */
+  file: string;
+  /** new-side line numbers (inclusive) of the lines the lane wrote. */
+  lineStart: number;
+  lineEnd: number;
+  /** 'normal' is the unreported default — only the non-default levels appear. */
+  level: 'high' | 'routine';
+}
+
+/** The latest priority report from one authoring lane. */
+export interface ReviewPriorityReport {
+  laneId: string;
+  ranges: ReviewPriorityRange[];
+  reportedAt: number;
+}
+
+/** Snapshot of the merged priority ranges over a repo's working diff, resolved
+ *  on demand (a pull, like DiffReviewTargets — no broadcast). Merged across every
+ *  authoring lane in the repo; the Window takes the max level per hunk. */
+export interface ReviewPrioritySnapshot {
+  ranges: ReviewPriorityRange[];
+}
+
 export interface LaneSummary {
   laneId: string;
   displayName: string;

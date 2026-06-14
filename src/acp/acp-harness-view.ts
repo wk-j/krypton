@@ -37,6 +37,8 @@ import type {
   PermissionOption,
   PlanEntry,
   ProviderErrorPayload,
+  ReviewPriorityRange,
+  ReviewPriorityReport,
   StopReason,
   ToolCall,
   ToolCallUpdate,
@@ -423,7 +425,10 @@ const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resol
 // spec 146: review_outcome is default-on built-in harness-bus tooling (the
 // authoring lane self-reports a #review summary), so it must auto-allow like
 // the others — a permission prompt mid-synthesis would derail the round.
-const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome']);
+// spec 160: mark_review_priority is likewise default-on — the authoring lane
+// reports diff reading-order hints at end-of-turn; a permission prompt there
+// would interrupt the turn boundary for a purely-advisory signal.
+const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome', 'mark_review_priority']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
   ...HARNESS_PEER_TOOL_NAMES,
@@ -1163,6 +1168,12 @@ export class AcpHarnessView implements ContentView {
   private reviewMatrixOverlayOpen = false;
   private reviewMatrixSelectedLaneIndex = 0;
   private reviewOutcomeUnlisten: UnlistenFn | null = null;
+  /** spec 160: latest diff review-priority report per authoring lane (keyed by
+   *  laneId). The Diff Window pulls a merged snapshot on open / refresh via the
+   *  `diff.review-priority` control op; session-only, dropped when the lane
+   *  closes or the view disposes. */
+  private reviewPriorityReports = new Map<string, ReviewPriorityReport>();
+  private reviewPriorityUnlisten: UnlistenFn | null = null;
   private interLaneUnlisten: UnlistenFn | null = null;
   private peerListUnlisten: UnlistenFn | null = null;
   private memoryEntries: HarnessMemoryEntry[] = [];
@@ -1530,6 +1541,18 @@ export class AcpHarnessView implements ContentView {
         : null;
       const def = activeName ?? (lanes.length === 1 ? lanes[0].displayName : null);
       return { lanes, default: def };
+    }
+    // spec 160: pull the merged review-priority snapshot for this harness's
+    // lanes. A pull (no broadcast), like diff.review-targets — the Diff Window
+    // gets a fresh snapshot on open and on each refresh. Reports from lanes that
+    // have since closed are dropped (their reports were removed on close).
+    if (operation === 'diff.review-priority') {
+      const ranges: ReviewPriorityRange[] = [];
+      for (const lane of this.lanes) {
+        const report = this.reviewPriorityReports.get(lane.id);
+        if (report) ranges.push(...report.ranges);
+      }
+      return { ranges };
     }
     if (operation === 'diff.review-send') {
       const target = requiredString(params, 'target');
@@ -2144,6 +2167,53 @@ export class AcpHarnessView implements ContentView {
       };
       reply(this.handleReviewOutcome(env));
     });
+
+    // spec 160: the authoring lane self-reports diff review-priority ranges at
+    // end-of-turn. Store the latest report per lane; the Diff Window pulls a
+    // merged snapshot on open / refresh. Mirrors the review_outcome round-trip.
+    type ReviewPriorityEvent = {
+      fromLaneId: string; // display name from Rust
+      ranges: ReviewPriorityRange[];
+      harnessId?: string;
+      requestId?: string;
+    };
+    this.reviewPriorityUnlisten = await listen<ReviewPriorityEvent>('acp-review-priority', (e) => {
+      const env = e.payload;
+      const requestId = env.requestId;
+      if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
+      const reply = (result: { recorded: boolean; reason?: string }): void => {
+        if (!requestId) return;
+        void invoke('acp_bus_reply', { requestId, result }).catch((err) => {
+          console.warn('acp_bus_reply (mark_review_priority) failed', err);
+        });
+      };
+      reply(this.handleReviewPriority(env));
+    });
+  }
+
+  /**
+   * spec 160: record (or replace) one authoring lane's diff review-priority
+   * report. The latest call wins — the working diff is cumulative state, so the
+   * freshest read is the one the Window should triage by. An empty `ranges`
+   * array clears the lane's report (reverts its hunks to the full diff).
+   */
+  private handleReviewPriority(env: {
+    fromLaneId: string;
+    ranges: ReviewPriorityRange[];
+  }): { recorded: boolean; reason?: string } {
+    const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
+    if (!lane) return { recorded: false, reason: 'unknown_sender' };
+    const ranges = Array.isArray(env.ranges) ? env.ranges : [];
+    if (ranges.length === 0) {
+      this.reviewPriorityReports.delete(lane.id);
+    } else {
+      this.reviewPriorityReports.set(lane.id, {
+        laneId: lane.id,
+        ranges,
+        reportedAt: Date.now(),
+      });
+    }
+    return { recorded: true };
   }
 
   /**
@@ -2841,6 +2911,11 @@ export class AcpHarnessView implements ContentView {
       this.reviewOutcomeUnlisten();
       this.reviewOutcomeUnlisten = null;
     }
+    if (this.reviewPriorityUnlisten) {
+      this.reviewPriorityUnlisten();
+      this.reviewPriorityUnlisten = null;
+    }
+    this.reviewPriorityReports.clear();
     if (this.peerListUnlisten) {
       this.peerListUnlisten();
       this.peerListUnlisten = null;
@@ -4368,6 +4443,13 @@ export class AcpHarnessView implements ContentView {
     lines.push(
       'Attention triage: at the end of a turn where you hit a real fork — you picked among two or more genuinely viable approaches the user could reasonably decide differently on, you resolved a consequential ambiguity in their intent (one that changes the user-visible outcome, architecture, or workflow) by guessing, or you did something costly or hard to undo — surface ONE such decision to the human review queue with attention_flag { question, chosen, rationale, traded_off, uncertainty, reversibility }, then keep working (non-blocking; proceed with `chosen`). Calibrate in both directions: both a silent genuine fork and a trivia flag degrade the queue, so flag the consequential forks but skip the routine, reversible, machine-verifiable 80%, at most one per turn, and never flag just to cover yourself. Use attention_resolve { item_id } if you later settle it yourself. Write the free-text fields (question, chosen, rationale, traded_off, uncertainty) in Thai, for a human who is NOT reading the code: `question` names the real stake in plain language (not just an API or data-structure name), and `rationale` explains the consequence — why it matters — not only the technical mechanism; if a technical term is unavoidable, follow it with one plain sentence on its concrete impact.',
     );
+    // spec 160: mark_review_priority is default-on for every harness-memory lane
+    // (it triages a diff the lane wrote — relevant even for a solo lane), so name
+    // it unconditionally for discoverability under a capped tool search, like the
+    // attention tools. Purely advisory: the Window only folds/marks, never hides.
+    lines.push(
+      'Diff reading priority: at the end of a turn where you edited files, you MAY call mark_review_priority { ranges } to tell the human\'s Diff Window where to spend reading attention. Report only the non-default ranges — `high` for core logic / interface / risk to read first, `routine` for mechanical churn (generated code, renames, imports, formatting) — anchored on the NEW side (the post-change line numbers you wrote); everything you omit stays `normal` and renders in full. The Window only folds `routine` (always one keystroke from full) and marks/navigates `high`; it never hides or reorders, so a small honest report is right and silence yields the full diff. At most once per turn, only when you changed files.',
+    );
     // spec 146: review_outcome is default-on but only used during a #review
     // round (which needs reviewer lanes), so name it for discoverability only
     // when peers exist. The #review prompt already instructs the call; this just
@@ -4857,6 +4939,9 @@ export class AcpHarnessView implements ContentView {
     // Drop any queued-but-undrained feedback for the lane's now-dead session.
     this.feedbackQueue.dropLane(lane.id);
     this.diffReviewQueue.dropLane(lane.id);
+    // spec 160: the lane's diff review-priority report describes a diff its now
+    // dead session produced — drop it so the Diff Window stops triaging by it.
+    this.reviewPriorityReports.delete(lane.id);
   }
 
   private describePermission(lane: HarnessLane, permission: HarnessPermission): PermissionPayload {

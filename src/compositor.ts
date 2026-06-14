@@ -64,6 +64,8 @@ import type {
   DiffReviewBatch,
   DiffReviewSendResult,
   DiffReviewTargets,
+  ReviewPriorityRange,
+  ReviewPrioritySnapshot,
 } from './acp/types';
 
 interface AcpLanePeekCommands {
@@ -2088,6 +2090,27 @@ export class Compositor {
     return res ?? { status: 'no-live-lane' };
   }
 
+  /**
+   * spec 160: pull the merged diff review-priority snapshot for a repo. Walks
+   * every harness whose cwd resolves to this repo root and merges their lanes'
+   * reported ranges (the Diff Window takes the max level per hunk). A pull on
+   * demand, like `resolveDiffReviewTargets` — a freshly-opened or just-refreshed
+   * diff always sees current state, with no broadcast/replay problem.
+   */
+  private async resolveDiffReviewPriority(repoRoot: string): Promise<ReviewPrioritySnapshot> {
+    const ranges: ReviewPriorityRange[] = [];
+    for (const entry of listHarnessEntries()) {
+      if (!entry.cwd) continue;
+      const root = await this.resolveRepoRoot(entry.cwd);
+      if (root === null || root !== repoRoot) continue;
+      const res = (await entry.control?.('diff.review-priority', {})) as
+        | ReviewPrioritySnapshot
+        | undefined;
+      if (res?.ranges) ranges.push(...res.ranges);
+    }
+    return { ranges };
+  }
+
   private async resolveRepoRoot(cwd: string): Promise<string | null> {
     const cached = this.repoRootCache.get(cwd);
     if (cached !== undefined) return cached;
@@ -2156,6 +2179,11 @@ export class Compositor {
       review: {
         resolveTargets: () => this.resolveDiffReviewTargets(initial.repoRoot),
         send: (batch) => this.sendDiffReview(batch),
+      },
+      // spec 160: the authoring lane's self-reported reading-order hints, pulled
+      // on open and on each refresh (same broker pattern as `review` above).
+      reviewPriority: {
+        resolve: () => this.resolveDiffReviewPriority(initial.repoRoot),
       },
     });
 

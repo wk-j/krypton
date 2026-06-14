@@ -1,6 +1,6 @@
 # Diff Review Priority — Implementation Spec
 
-> Status: Design — awaiting implementation
+> Status: Implemented
 > Date: 2026-06-14
 > Milestone: M8 — Polish
 > Decision record: [ADR-0009](adr/0009-diff-review-priority-is-lane-self-reported.md)
@@ -176,12 +176,35 @@ export interface ReviewPriorityReport {
 `DiffReviewComment` type — that carries a human note and an idempotency id this
 signal has no use for.)
 
-## Open implementation details (reversible — settle in code)
+## Open implementation details (settled in code)
 
-- Exact navigation keybinding for `high`-only jumps (avoid clashing with `n`/`N`
-  and `[`/`]`; no Alt).
-- Collapsed-summary line wording and the `high` gutter marker glyph/tint.
-- Whether expanded-fold state survives a window close or only an auto-refresh.
+- **`high`-only navigation:** `}` (next) / `{` (prev), cycling with wrap. Plain
+  `n`/`N` still walk all hunks; `[`/`]` stay file nav; no Alt. The targets are the
+  current file's high-hunk block-header rows (`highHunkAnchors`).
+- **Routine summary line:** `▸ N routine line(s) — Enter to expand`, a single
+  muted clickable row with a faint accent tint at the hunk's file-order position.
+  In side-by-side the matching old-panel row is a blank spacer (keeps the split
+  rows aligned without duplicating the label).
+- **`high` marker:** a full-cell gutter tint (`.krypton-diff__hl-high` on the
+  hunk rows' line-number cells) plus a `◆ high` heading-colour badge on the
+  block header — no left accent rail (house rule).
+- **Expanded-fold state** is remembered for the session (`expandedHunks`, keyed
+  `${fileKey}#${hunkIndex}`), so it survives an auto-refresh / re-render but not a
+  window close (the view is disposed).
+
+## Implementation note — the MCP tool lives in Rust
+
+The spec's "No Rust" framing held for the *window* (all folding/marking is
+frontend DOM work on the already-rendered diff). But the `krypton-harness-bus`
+MCP server itself is the Rust hook server, so a new bus tool's schema +
+validation + frontend round-trip necessarily land in `src-tauri/src/hook_server.rs`
+— exactly as `review_outcome` (spec 146) and `attention_flag` (spec 130) do.
+`mark_review_priority` validates the ranges (positive integer new-side lines,
+`high`/`routine` level, ≤ 500 ranges), emits `acp-review-priority`, and awaits
+the frontend's `{ recorded }`. The frontend (`AcpHarnessView`) stores the latest
+report per authoring lane and exposes it via the `diff.review-priority` control
+op; the compositor broker merges across harnesses on the repo. No HTTP, no
+filesystem watcher, no new persistence — that part of the "no Rust" intent holds.
 
 ## Docs to update on implementation
 

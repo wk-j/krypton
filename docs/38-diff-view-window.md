@@ -184,6 +184,8 @@ openDiffView(options?: { staged?: boolean; path?: string }): Promise<void>
 | `r` | Diff view focused | Refresh working diff now (spec 155) |
 | `c` | Diff view focused | Comment on the selection / current hunk (spec 158) |
 | `Shift+C` | Diff view focused | Open the review-comments overlay (spec 158) |
+| `}` / `{` | Diff view focused | Jump to next / previous `high` hunk (spec 160) |
+| `Enter` | Diff view focused | Expand the folded `routine` hunk nearest the top (spec 160) |
 | `q` | Diff view focused | Close diff view window |
 | `j` / `k`, `↓` / `↑` | File-list overlay open | Move selection |
 | `g` / `G` | File-list overlay open | Select first / last file |
@@ -196,6 +198,10 @@ openDiffView(options?: { staged?: boolean; path?: string }): Promise<void>
 ### Review comments (spec 158)
 
 The diff view can attach review comments to a hunk or selection and send them to a working ACP lane as a system turn — closing the "review → tell the agent what to fix" loop without leaving the diff. Comments batch (multiple before submit, GitHub-style), carry a precise `file:line` + quoted code anchor read from the diff2html DOM (both side-by-side and line-by-line renderers), and route to the target lane through the `HarnessDirectory` (no ViewBus broadcast). Delivery reuses the spec-149 drain-on-idle pattern via a sibling `DiffReviewQueue`. Sent comments are marked and kept (never silently dropped). See `docs/158-diff-review-comments.md`.
+
+### Review priority (spec 160)
+
+The authoring lane self-reports a per-change reading-order hint via the default-on `mark_review_priority { ranges }` MCP tool (new-side line anchors; `high` / `routine` — `normal` is the unreported default). The diff view pre-triages: `routine` hunks **collapse in place** to a one-line `▸ N routine lines — Enter to expand` summary (click or `Enter` on the nearest fold expands; expanded state is remembered for the session), and `high` hunks get a full-cell gutter tint + a `◆ high` header badge plus a dedicated `}`/`{` jump (plain `n`/`N` still walk all hunks). The diff **always stays in file order — nothing is hidden or reordered**; a range that maps to no hunk reverts to `normal`. The nav bar shows a static `N high · N routine` depth count. The report is pulled on demand from the owning harness(es) on open and on each auto-refresh (compositor broker → `diff.review-priority` control op), merged across lanes. Silence (a lane that never calls the tool) yields today's full diff. Advisory only — the human keeps the lock (ADR-0009). See `docs/160-diff-review-priority.md`.
 
 ### File-list quick-switcher
 

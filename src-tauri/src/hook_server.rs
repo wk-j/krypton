@@ -981,6 +981,10 @@ const MEMORY_DETAIL_MAX: usize = 8000;
 
 /// Max characters for an artifact title (card label only).
 const ARTIFACT_TITLE_MAX: usize = 200;
+/// spec 160: max review-priority ranges a single mark_review_priority call may
+/// carry. A reading-order hint, not a per-line audit — cap keeps the frontend
+/// round-trip bounded against a pathological flood of one-line ranges.
+const MAX_REVIEW_PRIORITY_RANGES: usize = 500;
 /// Max bytes for an artifact file, enforced on every write/edit and at
 /// register/open. A live edit past this makes the card unavailable rather than
 /// silently opening.
@@ -1387,6 +1391,9 @@ async fn handle_bus_tool_call(
         "attention_flag" => attention_flag(state, harness_id, lane_label, arguments).await,
         "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
         "review_outcome" => review_outcome(state, harness_id, lane_label, arguments).await,
+        "mark_review_priority" => {
+            mark_review_priority(state, harness_id, lane_label, arguments).await
+        }
         "artifact_new" => artifact_tool_new(state, harness_id, lane_label, arguments),
         "artifact_register" => artifact_tool_register(state, harness_id, lane_label, arguments),
         "artifact_cancel" => artifact_tool_cancel(state, harness_id, lane_label, arguments),
@@ -1717,6 +1724,100 @@ async fn review_outcome(
         Err(_) => {
             state.hook_server.drop_bus_reply(&request_id);
             Err("review_outcome: frontend reply timed out".to_string())
+        }
+    }
+}
+
+/// mark_review_priority — the authoring lane self-reports a per-change review
+/// priority over the working diff it just produced (spec 160). It reports only
+/// the non-default ranges (`high` / `routine`), anchored on the NEW side (the
+/// lines it wrote). The latest call replaces the lane's prior report. Round-trips
+/// to the frontend, which stores the report (keyed by the authoring lane) for the
+/// Diff Window to pull on open / refresh, and replies `{ recorded }`. The Window
+/// only ever folds or marks — never hides, never reorders — so a stale or wrong
+/// range degrades to `normal`, never a missed change (ADR-0009).
+async fn mark_review_priority(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let raw = arguments
+        .get("ranges")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| {
+            "ranges is required (an array of {file, lineStart, lineEnd, level})".to_string()
+        })?;
+    // Cap the payload — a report is a reading-order hint, not a per-line audit.
+    // A pathological lane that flags thousands of one-line ranges should not be
+    // able to balloon a frontend round-trip.
+    if raw.len() > MAX_REVIEW_PRIORITY_RANGES {
+        return Err(format!(
+            "too many ranges ({}); cap is {MAX_REVIEW_PRIORITY_RANGES}",
+            raw.len()
+        ));
+    }
+    let mut ranges: Vec<Value> = Vec::with_capacity(raw.len());
+    for (i, item) in raw.iter().enumerate() {
+        let file = item
+            .get("file")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| format!("ranges[{i}].file must be a non-empty string"))?;
+        let line_start = count_value(item.get("lineStart").unwrap_or(&Value::Null))
+            .filter(|n| *n >= 1)
+            .ok_or_else(|| format!("ranges[{i}].lineStart must be a positive integer"))?;
+        let line_end = count_value(item.get("lineEnd").unwrap_or(&Value::Null))
+            .filter(|n| *n >= 1)
+            .ok_or_else(|| format!("ranges[{i}].lineEnd must be a positive integer"))?;
+        if line_end < line_start {
+            return Err(format!("ranges[{i}].lineEnd must be >= lineStart"));
+        }
+        let level = item.get("level").and_then(|v| v.as_str()).unwrap_or("");
+        if level != "high" && level != "routine" {
+            return Err(format!(
+                "ranges[{i}].level must be 'high' or 'routine' (omit a range to leave it 'normal')"
+            ));
+        }
+        ranges.push(json!({
+            "file": file,
+            "lineStart": line_start,
+            "lineEnd": line_end,
+            "level": level,
+        }));
+    }
+
+    let request_id = format!("rvp-{}-{}", now_ms(), rand_suffix());
+    let payload = json!({
+        "fromLaneId": from_lane,
+        "ranges": ranges,
+        "harnessId": harness_id,
+        "requestId": request_id,
+        "sentAt": now_ms(),
+    });
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state.app_handle.emit_or_log("acp-review-priority", payload);
+    match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => {
+            if value
+                .get("recorded")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                Ok(json!({ "recorded": true, "ranges": ranges.len() }))
+            } else {
+                let reason = value
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("record_failed");
+                Err(format!("mark_review_priority failed: {reason}"))
+            }
+        }
+        Ok(Err(_)) => Err("mark_review_priority: frontend coordinator did not respond".to_string()),
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            Err("mark_review_priority: frontend reply timed out".to_string())
         }
     }
 }
@@ -2795,6 +2896,30 @@ fn attention_tool_descriptors() -> Vec<Value> {
                 "required": ["reviewer_count", "subject_label"]
             }
         }),
+        json!({
+            "name": "mark_review_priority",
+            "description": "At the end of a turn in which you edited files, tell the human's Diff Window how to spend their reading attention on the diff you just produced. Report ONLY the non-default ranges: `high` for the core logic / interface / risk the user would want to read first, `routine` for mechanical churn (generated code, renames, import shuffles, formatting). Everything you DON'T report stays `normal` and renders in full — so a small, honest report is correct; do not annotate the whole diff. The Window only FOLDS `routine` hunks (always one keystroke from full) and MARKS + navigates to `high` ones — it never hides or reorders anything, so an over-broad `routine` label only costs the human reading time, never a missed change. Anchor each range on the NEW side (the post-change line numbers you just wrote). The latest call REPLACES your previous report for this working diff. Default-on; call it at most once per turn, only when you actually changed files. Silence is fine — it yields today's full, untriaged diff.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ranges": {
+                        "type": "array",
+                        "description": "The non-default priority ranges over the diff. Omit a region entirely to leave it 'normal'.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "file": { "type": "string", "description": "Repo-relative post-change path (the file's new name)." },
+                                "lineStart": { "type": "integer", "minimum": 1, "description": "First new-side line of the range (inclusive)." },
+                                "lineEnd": { "type": "integer", "minimum": 1, "description": "Last new-side line of the range (inclusive); >= lineStart." },
+                                "level": { "enum": ["high", "routine"], "description": "'high' = read first; 'routine' = mechanical, fold by default. 'normal' is the unreported default." }
+                            },
+                            "required": ["file", "lineStart", "lineEnd", "level"]
+                        }
+                    }
+                },
+                "required": ["ranges"]
+            }
+        }),
     ]
 }
 
@@ -3302,6 +3427,27 @@ mod tests {
         for tool in ["artifact_new", "artifact_register", "artifact_cancel"] {
             assert!(names.contains(&tool), "{tool} should be advertised");
         }
+    }
+
+    // ─── Diff review priority (spec 160) ────────────────────────────────────
+
+    #[test]
+    fn bus_tools_include_mark_review_priority() {
+        let tools = bus_tool_descriptors();
+        let tool = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .find(|t| t.get("name").and_then(|n| n.as_str()) == Some("mark_review_priority"))
+            .expect("mark_review_priority should be advertised default-on");
+        // The level enum must offer only the two non-default levels — 'normal' is
+        // the unreported default and must never be a reportable value (ADR-0009).
+        let level_enum = tool
+            .pointer("/inputSchema/properties/ranges/items/properties/level/enum")
+            .and_then(|v| v.as_array())
+            .expect("level enum");
+        let levels: Vec<&str> = level_enum.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(levels, vec!["high", "routine"]);
     }
 
     #[test]

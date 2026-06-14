@@ -13,6 +13,8 @@ import type {
   DiffReviewComment,
   DiffReviewSendResult,
   DiffReviewTargets,
+  ReviewPriorityRange,
+  ReviewPrioritySnapshot,
 } from './acp/types';
 
 /** Untracked file whose content the backend declined to render (spec 155). */
@@ -39,6 +41,13 @@ export interface DiffReviewChannel {
   send: (batch: DiffReviewBatch) => Promise<DiffReviewSendResult>;
 }
 
+/** Channel for pulling the authoring lane's diff review-priority report (spec
+ *  160). Resolved on demand (a pull, no broadcast) — same broker pattern as the
+ *  review channel; the diff view stays decoupled from the harness. */
+export interface ReviewPriorityChannel {
+  resolve: () => Promise<ReviewPrioritySnapshot>;
+}
+
 export interface DiffViewOptions {
   skipped?: SkippedFile[];
   /** Re-collects the working diff (spec 155). When absent the view is a
@@ -46,6 +55,40 @@ export interface DiffViewOptions {
   refreshProvider?: () => Promise<WorkingDiffResult>;
   /** Inline review comments (spec 158). Absent when no harness backs the repo. */
   review?: DiffReviewChannel;
+  /** Lane-reported reading-order hints (spec 160). Absent when no harness backs
+   *  the repo; when present the view pre-triages the diff (fold/mark). */
+  reviewPriority?: ReviewPriorityChannel;
+}
+
+/** A hunk's rows partitioned out of a panel tbody (spec 160 folding). */
+interface RenderedHunk {
+  /** the @@-block-header `<tr>`, or null for a leading headerless run. */
+  header: Element | null;
+  /** the content `<tr>` rows of the hunk (excludes the header). */
+  rows: Element[];
+}
+
+/** Per-hunk review priority — the highest level of any reported range
+ *  overlapping the hunk's new-side lines (spec 160). */
+export type HunkPriority = 'high' | 'normal' | 'routine';
+
+/** The priority a hunk spanning new-side lines [lo, hi] takes: the highest level
+ *  (`high` > `routine`) of any reported range overlapping it; `normal` if none
+ *  overlap. Pure — the folding/marking authority of spec 160 lives here so the
+ *  "high wins / no-overlap → normal / drift → normal" rule (ADR-0009) is
+ *  testable without the diff2html DOM. */
+export function priorityForLineRange(
+  lo: number,
+  hi: number,
+  ranges: ReviewPriorityRange[],
+): HunkPriority {
+  let result: HunkPriority = 'normal';
+  for (const r of ranges) {
+    if (r.lineEnd < lo || r.lineStart > hi) continue; // no overlap
+    if (r.level === 'high') return 'high'; // high wins outright
+    result = 'routine';
+  }
+  return result;
 }
 
 /** A review comment plus its local send state. The shared payload is never
@@ -121,9 +164,22 @@ export class DiffContentView implements ContentView {
   private reviewNotice = '';
   private sending = false;
 
+  // Review priority (spec 160) — lane-reported reading-order hints. The window
+  // FOLDS routine hunks (expandable) and MARKS + navigates to high ones; it
+  // never hides or reorders. Empty ranges = today's full diff (safe degrade).
+  private reviewPriority: ReviewPriorityChannel | null;
+  private priorityRanges: ReviewPriorityRange[] = [];
+  /** Routine folds the human expanded, keyed `${fileKey}#${hunkIndex}`. Remembered
+   *  for the session so a refresh / re-render keeps them open. */
+  private expandedHunks = new Set<string>();
+  /** High-priority hunk header rows in the current file's new panel, in file
+   *  order — the targets of `{`/`}` priority navigation. */
+  private highHunkAnchors: Element[] = [];
+
   constructor(unifiedDiff: string, container: HTMLElement, options?: DiffViewOptions) {
     this.refreshProvider = options?.refreshProvider ?? null;
     this.review = options?.review ?? null;
+    this.reviewPriority = options?.reviewPriority ?? null;
     this.skipped = options?.skipped ?? [];
     if (this.refreshProvider) this.lastSyncedAt = new Date();
 
@@ -188,6 +244,12 @@ export class DiffContentView implements ContentView {
     } else {
       this.renderCurrentFile();
     }
+
+    // spec 160: pull the lane's reading-order hints. The full diff is already
+    // on screen (above); this re-renders once with folds/markers when it
+    // resolves (an in-process control call), so the human first sees everything,
+    // then the routine churn collapses — never the other way around.
+    if (this.reviewPriority) void this.refreshPriority();
   }
 
   /** Set callback to invoke when user presses q/Escape to close */
@@ -235,9 +297,28 @@ export class DiffContentView implements ContentView {
     this.navEl.appendChild(path);
     this.navEl.appendChild(stats);
     this.navEl.appendChild(mode);
+    this.appendPrioritySummary();
     this.appendReviewIndicator();
     this.appendSyncIndicator();
     this.appendHelpHint();
+  }
+
+  /** Static `N high · N routine` count of the lane's reported ranges across the
+   *  whole diff (spec 160) — depth, never motion, matching the sync/backpressure
+   *  philosophy. Counts reported regions, not folded hunks (a region is the unit
+   *  the lane chose to flag). Hidden when nothing was reported. */
+  private appendPrioritySummary(): void {
+    if (!this.reviewPriority || this.priorityRanges.length === 0) return;
+    const high = this.priorityRanges.filter((r) => r.level === 'high').length;
+    const routine = this.priorityRanges.filter((r) => r.level === 'routine').length;
+    const parts: string[] = [];
+    if (high > 0) parts.push(`${high} high`);
+    if (routine > 0) parts.push(`${routine} routine`);
+    if (parts.length === 0) return;
+    const el = document.createElement('span');
+    el.className = 'krypton-diff__priority-summary';
+    el.textContent = parts.join(' · ');
+    this.navEl.appendChild(el);
   }
 
   /** Static `? help` affordance at the end of the nav bar so the keybindings
@@ -760,6 +841,204 @@ export class DiffContentView implements ContentView {
     // Pins must run AFTER draw — renderNav (which runs before the redraw) would
     // mark the about-to-be-deleted DOM (Codex-1 Warning-1).
     this.renderPins();
+    // spec 160: fold routine hunks / mark high ones on the freshly-drawn DOM.
+    this.applyReviewPriority();
+  }
+
+  // ─── Review priority (spec 160) ───
+
+  /** Pull the lane's report on demand and re-render the current file with the
+   *  resulting folds/markers. A pull, like the review-targets roster — a freshly
+   *  opened or just-refreshed diff always sees current state. */
+  private async refreshPriority(): Promise<void> {
+    if (!this.reviewPriority) return;
+    try {
+      const snap = await this.reviewPriority.resolve();
+      this.priorityRanges = Array.isArray(snap?.ranges) ? snap.ranges : [];
+    } catch {
+      this.priorityRanges = [];
+    }
+    if (this.files.length > 0) {
+      const scroll = this.fileContainer.scrollTop;
+      this.renderCurrentFile();
+      this.fileContainer.scrollTop = scroll;
+    }
+  }
+
+  /** Fold routine hunks and mark high ones on the current file's drawn DOM.
+   *  Maps each git/diff2html hunk to the reported ranges (same file, overlapping
+   *  new-side lines) and takes the highest level. A hunk that no range overlaps
+   *  stays normal; a range that maps to no hunk is silently dropped — the failure
+   *  mode is always under-collapse (show more), never over-collapse (ADR-0009). */
+  private applyReviewPriority(): void {
+    this.highHunkAnchors = [];
+    if (!this.reviewPriority || this.priorityRanges.length === 0) return;
+    const file = this.currentFilePath();
+    if (!file) return;
+    const ranges = this.priorityRanges.filter((r) => r.file === file);
+    if (ranges.length === 0) return;
+
+    // The NEW (right) panel carries the post-change line numbers the ranges are
+    // anchored to. Side-by-side has two panels (old left / new right); the
+    // line-by-line renderer has one tbody whose cells carry both numbers.
+    const panels = Array.from(this.fileContainer.querySelectorAll('.d2h-file-side-diff'));
+    const sideBySide = panels.length > 1;
+    const newScope: ParentNode = sideBySide ? panels[1] : this.fileContainer;
+    const newTbody = newScope.querySelector('.d2h-diff-tbody');
+    if (!newTbody) return;
+
+    const newHunks = this.splitHunks(newTbody);
+    if (newHunks.length === 0) return;
+    const oldTbody = sideBySide ? panels[0]?.querySelector('.d2h-diff-tbody') ?? null : null;
+    const oldHunks = oldTbody ? this.splitHunks(oldTbody) : [];
+
+    const fileKey = this.fileKey(this.files[this.currentFileIndex]);
+    newHunks.forEach((hunk, i) => {
+      const level = this.hunkPriority(hunk, ranges);
+      const key = `${fileKey}#${i}`;
+      if (level === 'routine' && !this.expandedHunks.has(key)) {
+        this.foldHunk(hunk, key, true);
+        if (oldHunks[i]) this.foldHunk(oldHunks[i], key, false);
+      } else if (level === 'high') {
+        if (hunk.header) this.highHunkAnchors.push(hunk.header);
+        // Badge the header that carries the @@ context text: the old/left panel
+        // in side-by-side, or the sole panel in line-by-line. Row tint on both.
+        const old = oldHunks[i];
+        this.markHigh(hunk, !old);
+        if (old) this.markHigh(old, true);
+      }
+    });
+  }
+
+  /** Partition a panel tbody into hunks. diff2html emits ONE tbody per panel
+   *  with all hunks inside, each prefixed by a `.d2h-info` block-header row;
+   *  hunk index N is the same in both side-by-side panels (paired folding). */
+  private splitHunks(tbody: Element | null): RenderedHunk[] {
+    if (!tbody) return [];
+    const hunks: RenderedHunk[] = [];
+    let cur: RenderedHunk | null = null;
+    for (const row of Array.from(tbody.children)) {
+      if (row.tagName !== 'TR') continue;
+      if (row.querySelector('.d2h-info')) {
+        cur = { header: row, rows: [] };
+        hunks.push(cur);
+      } else {
+        if (!cur) {
+          cur = { header: null, rows: [] };
+          hunks.push(cur);
+        }
+        cur.rows.push(row);
+      }
+    }
+    return hunks;
+  }
+
+  /** Highest priority of any reported range overlapping the hunk's new-side
+   *  lines. A hunk with no new-side lines (pure deletion) can't be anchored on
+   *  the new side and stays normal. */
+  private hunkPriority(hunk: RenderedHunk, ranges: ReviewPriorityRange[]): HunkPriority {
+    const lines: number[] = [];
+    for (const row of hunk.rows) {
+      const info = this.lineInfoForRow(row);
+      if (info && info.side === 'new') lines.push(info.line);
+    }
+    if (lines.length === 0) return 'normal';
+    return priorityForLineRange(Math.min(...lines), Math.max(...lines), ranges);
+  }
+
+  /** Collapse a routine hunk's content rows to a single in-place summary row.
+   *  `withLabel` shows the count on the new (right) panel only — the old panel's
+   *  spacer keeps the side-by-side rows aligned without duplicating the text. */
+  private foldHunk(hunk: RenderedHunk, key: string, withLabel: boolean): void {
+    if (hunk.rows.length === 0) return;
+    const colSpan = hunk.rows[0].children.length || 2;
+    for (const row of hunk.rows) (row as HTMLElement).style.display = 'none';
+    const summary = document.createElement('tr');
+    summary.className = 'krypton-diff__fold';
+    summary.dataset.foldKey = key;
+    const cell = document.createElement('td');
+    cell.colSpan = colSpan;
+    cell.className = 'krypton-diff__fold-cell';
+    if (withLabel) {
+      const n = hunk.rows.length;
+      cell.textContent = `▸ ${n} routine line${n === 1 ? '' : 's'} — Enter to expand`;
+    } else {
+      cell.innerHTML = '&nbsp;';
+    }
+    summary.appendChild(cell);
+    const anchor = hunk.header ?? hunk.rows[0];
+    anchor.parentElement?.insertBefore(
+      summary,
+      hunk.header ? hunk.header.nextSibling : hunk.rows[0],
+    );
+    // Mouse is secondary, but a click on the summary expands the fold.
+    summary.addEventListener('click', () => this.expandHunk(key));
+  }
+
+  /** Expand a folded hunk: remember it open for the session and re-render (which
+   *  rebuilds the rows the fold hid). Scroll is preserved. */
+  private expandHunk(key: string): void {
+    this.expandedHunks.add(key);
+    const scroll = this.fileContainer.scrollTop;
+    this.renderCurrentFile();
+    this.fileContainer.scrollTop = scroll;
+  }
+
+  /** Mark a high hunk: a full-cell tint on its rows + a heading-colour badge on
+   *  the block header. Never a left accent rail (house rule). */
+  private markHigh(hunk: RenderedHunk, withBadge: boolean): void {
+    for (const row of hunk.rows) row.classList.add('krypton-diff__hl-high');
+    if (withBadge && hunk.header && !hunk.header.querySelector('.krypton-diff__high-badge')) {
+      const badge = document.createElement('span');
+      badge.className = 'krypton-diff__high-badge';
+      badge.textContent = '◆ high';
+      const content = hunk.header.querySelector('.d2h-code-side-line, .d2h-code-line') ?? hunk.header.lastElementChild;
+      content?.appendChild(badge);
+    }
+  }
+
+  /** Jump to the next/previous high hunk (spec 160). Distinct from n/N which walk
+   *  all hunks — this targets only what the lane flagged high. */
+  private navigateHighHunk(delta: number): void {
+    if (this.highHunkAnchors.length === 0) return;
+    const scrollTop = this.fileContainer.scrollTop;
+    const containerTop = this.fileContainer.getBoundingClientRect().top;
+    const offsets = this.highHunkAnchors.map(
+      (el) => el.getBoundingClientRect().top - containerTop + scrollTop,
+    );
+    let target: Element | null = null;
+    if (delta > 0) {
+      for (let i = 0; i < offsets.length; i++) {
+        if (offsets[i] > scrollTop + 10) {
+          target = this.highHunkAnchors[i];
+          break;
+        }
+      }
+      target = target ?? this.highHunkAnchors[0]; // wrap to first
+    } else {
+      for (let i = offsets.length - 1; i >= 0; i--) {
+        if (offsets[i] < scrollTop - 10) {
+          target = this.highHunkAnchors[i];
+          break;
+        }
+      }
+      target = target ?? this.highHunkAnchors[this.highHunkAnchors.length - 1];
+    }
+    target?.scrollIntoView({ behavior: 'auto', block: 'start' });
+  }
+
+  /** Expand the routine fold nearest the top of the viewport (Enter). Returns
+   *  true if one was expanded. */
+  private expandNearestFold(): boolean {
+    const folds = Array.from(this.fileContainer.querySelectorAll<HTMLElement>('.krypton-diff__fold'));
+    if (folds.length === 0) return false;
+    const containerTop = this.fileContainer.getBoundingClientRect().top;
+    const target =
+      folds.find((f) => f.getBoundingClientRect().bottom - containerTop > 0) ?? folds[0];
+    const key = target.dataset.foldKey;
+    if (!key) return false;
+    this.expandHunk(key);
+    return true;
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
@@ -785,6 +1064,22 @@ export class DiffContentView implements ContentView {
       if (e.key === 'C') {
         this.openCommentsOverlay();
         return true;
+      }
+    }
+
+    // Review priority (spec 160): `}`/`{` jump only between high hunks (n/N still
+    // walk all hunks); Enter expands the routine fold nearest the viewport top.
+    if (this.reviewPriority) {
+      if (e.key === '}') {
+        this.navigateHighHunk(1);
+        return true;
+      }
+      if (e.key === '{') {
+        this.navigateHighHunk(-1);
+        return true;
+      }
+      if (e.key === 'Enter') {
+        return this.expandNearestFold();
       }
     }
 
@@ -1114,6 +1409,16 @@ export class DiffContentView implements ContentView {
       });
     }
 
+    if (this.reviewPriority) {
+      sections.push({
+        title: 'Priority',
+        rows: [
+          ['} / {', 'next / prev high hunk'],
+          ['Enter', 'expand folded routine hunk'],
+        ],
+      });
+    }
+
     sections.push({
       title: 'General',
       rows: [
@@ -1202,6 +1507,18 @@ export class DiffContentView implements ContentView {
     this.updateSyncIndicator();
     try {
       const result = await this.refreshProvider();
+      // spec 160: re-pull the priority report alongside the diff so the
+      // re-mapped folds/markers land in the SAME render as the new hunks (no
+      // flash of full-then-folded on a live refresh). Best-effort — a failed
+      // pull just leaves the diff untriaged.
+      if (this.reviewPriority) {
+        try {
+          const snap = await this.reviewPriority.resolve();
+          this.priorityRanges = Array.isArray(snap?.ranges) ? snap.ranges : [];
+        } catch {
+          this.priorityRanges = [];
+        }
+      }
       this.syncFailed = false;
       this.lastSyncedAt = new Date();
       this.applyRefresh(result);

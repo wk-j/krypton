@@ -249,6 +249,54 @@
   margin-left: 12px;
 }
 
+/* spec 160: static `N high · N routine` depth count — same philosophy as the
+   sync indicator (depth, never motion; no blink/pulse). Sits in the left nav
+   cluster after the mode label. */
+.krypton-diff__priority-summary {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.55);
+  white-space: nowrap;
+}
+
+/* spec 160: a routine hunk collapsed in place — one muted, clickable summary
+   row at the hunk's natural file-order position. Always one keystroke from full
+   (Enter / click). Flat surface, no left accent rail. */
+.krypton-diff__fold > .krypton-diff__fold-cell {
+  padding: 2px 12px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-family: var(--krypton-chrome-font, monospace);
+  letter-spacing: 0.5px;
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.05);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.krypton-diff__fold > .krypton-diff__fold-cell:hover {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.85);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1);
+}
+
+/* spec 160: high-priority hunk — full-cell gutter tint on its rows plus a
+   heading-colour badge on the block header. Never a left accent rail. */
+.krypton-diff__hl-high .d2h-code-side-linenumber,
+.krypton-diff__hl-high .d2h-code-linenumber {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.14);
+}
+.krypton-diff__high-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-family: var(--krypton-chrome-font, monospace);
+  letter-spacing: 0.5px;
+  color: var(--krypton-window-accent, #00ccff);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
 /* Inline composer — a small sheet at the bottom; one flat surface, no inner
    card, no backdrop-filter (macOS WKWebView freeze). */
 .krypton-diff__composer {
