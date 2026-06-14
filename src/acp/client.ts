@@ -79,12 +79,14 @@ export class AcpClient {
     cwd: string | null,
     mcpServers: AcpMcpServerDescriptor[] = [],
     junieMcpLocation: string | null = null,
+    clineMcpSettingsPath: string | null = null,
   ): Promise<AcpClient> {
     const session = await invoke<number>('acp_spawn', {
       backendId,
       cwd,
       mcpServers,
       junieMcpLocation,
+      clineMcpSettingsPath,
     });
     const client = new AcpClient(session, backendId);
     client.unlisten = await setupListener<RawAcpEvent>(`acp-event-${session}`, (payload) => {

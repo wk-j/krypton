@@ -36,6 +36,29 @@ export interface ClaudeMcpFile {
   mcpServers?: Record<string, ClaudeMcpServer>;
 }
 
+// Cline's `cline_mcp_settings.json` discriminates transport on an explicit
+// `type` field and maps a URL-only entry to `sse` by default — so an http
+// server MUST be tagged `streamableHttp` or it connects as SSE and fails.
+// Verified against cline 3.0.24 (`type` enum: stdio | sse | streamableHttp).
+interface ClineMcpStdio {
+  type: 'stdio';
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+interface ClineMcpRemote {
+  type: 'streamableHttp' | 'sse';
+  url: string;
+  headers?: Record<string, string>;
+}
+
+type ClineMcpServer = ClineMcpStdio | ClineMcpRemote;
+
+export interface ClineMcpFile {
+  mcpServers: Record<string, ClineMcpServer>;
+}
+
 /** Junie advertises http+sse in ACP; used when building overlays before initialize. */
 export const JUNIE_MCP_CAPABILITIES: AcpMcpCapabilities = { http: true, sse: true };
 
@@ -304,6 +327,54 @@ export function toClaudeMcpFile(servers: AcpMcpServerDescriptor[]): ClaudeMcpFil
     }
   }
   return { mcpServers };
+}
+
+/** Serialize servers for Cline's `cline_mcp_settings.json` — explicit `type`
+ *  per entry (http → `streamableHttp`) so URL servers don't default to SSE. */
+export function toClineMcpFile(servers: AcpMcpServerDescriptor[]): ClineMcpFile {
+  const mcpServers: Record<string, ClineMcpServer> = {};
+  for (const s of servers) {
+    const type = s.type ?? 'stdio';
+    if (type === 'stdio') {
+      const stdio = s as AcpMcpServerStdio;
+      const env = pairsToObject(stdio.env);
+      mcpServers[s.name] = {
+        type: 'stdio',
+        command: stdio.command,
+        ...(stdio.args.length > 0 ? { args: stdio.args } : {}),
+        ...(env ? { env } : {}),
+      };
+      continue;
+    }
+    const remote = s as AcpMcpServerHttp | AcpMcpServerSse;
+    const headers = pairsToObject(remote.headers);
+    mcpServers[s.name] = {
+      type: type === 'sse' ? 'sse' : 'streamableHttp',
+      url: remote.url,
+      ...(headers ? { headers } : {}),
+    };
+  }
+  return { mcpServers };
+}
+
+/** Write a per-lane `cline_mcp_settings.json` under
+ *  ~/.config/krypton/runtime/cline/<harness>/<lane>/; returns the file path to
+ *  pass as `CLINE_MCP_SETTINGS_PATH` at spawn (Cline drops `session/new` MCP). */
+export async function writeClineMcpOverlay(
+  harnessId: string,
+  laneLabel: string,
+  servers: AcpMcpServerDescriptor[],
+): Promise<string> {
+  const content = JSON.stringify(toClineMcpFile(servers), null, 2);
+  return invoke<string>('write_cline_mcp_overlay', { harnessId, laneLabel, content });
+}
+
+export async function removeClineMcpOverlay(harnessId: string, laneLabel: string): Promise<void> {
+  await invoke('remove_cline_mcp_overlay', { harnessId, laneLabel });
+}
+
+export async function gcClineMcpOverlays(harnessId: string): Promise<void> {
+  await invoke('gc_cline_mcp_overlays', { harnessId });
 }
 
 /** Write `.junie/mcp/mcp.json` under ~/.config/krypton/runtime/junie/<harness>/<lane>/ for `--mcp-location`. */

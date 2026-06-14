@@ -489,7 +489,7 @@ pub struct AcpHarnessConfig {
     pub idle_flash_sound: bool,
     pub memory_footer: bool,
     /// Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
-    /// `claude`, `codex`, `cursor`, `droid`, `junie`, `mimo`). `active` is the
+    /// `claude`, `codex`, `cursor`, `droid`, `junie`, `mimo`, `cline`). `active` is the
     /// model applied to the lane: Gemini via `--model`, Droid via `-m`, OpenCode
     /// via `session/set_config_option`, and any ACP-native backend that advertises
     /// model state in `session/new` (verified: `claude`, `mimo`) via a post-`session/new`
@@ -498,7 +498,7 @@ pub struct AcpHarnessConfig {
     /// default). MiMo defaults to its anonymous free `mimo/mimo-auto` model when
     /// `active` is empty. `models` is an informational allow-list shown in the UI; it is
     /// not enforced and is not the model discovery source. Backends that do not
-    /// advertise model state yet (Cursor, Junie, OMP, Pi, Grok) are accepted but
+    /// advertise model state yet (Cursor, Junie, OMP, Pi, Grok, Cline) are accepted but
     /// ignored at spawn — the entry only drives the model chip; they auto-enable
     /// if/when their adapter advertises model state. `active` is snapshotted at
     /// spawn: editing it takes effect only on the next spawn/`#new`/`#new!`/lane

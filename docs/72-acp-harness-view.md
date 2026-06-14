@@ -149,7 +149,7 @@ interface HarnessMemoryEntry {
 }
 ```
 
-Default roster: **none.** The harness boots empty (`lanes = []`) and the user spawns lanes on demand via the lane-picker leader key (`Cmd+P → +`). Backend display names are mapped through `BACKEND_LABELS` (`codex` → "Codex", `claude` → "Claude", `gemini` → "Gemini", `opencode` → "OpenCode", `pi-acp` → "Pi", `droid` → "Droid", `cursor` → "Cursor", `junie` → "Junie", `omp` → "OMP"); unknown backend ids fall back to a capitalized form. See `docs/92-acp-lane-picker.md` for the picker UI and lane lifecycle. Earlier versions auto-spawned every installed backend on view open — that path was removed because it forked long-running ACP subprocesses before the user typed anything.
+Default roster: **none.** The harness boots empty (`lanes = []`). On first open, instead of auto-spawning a default lane, `start()` opens the lane picker automatically (when at least one backend is installed) so the user chooses which ACP backend to start; dismissing the picker with `Esc`/`q` leaves the harness empty with the `press Cmd+P then + to add a lane` hint. Thereafter the user spawns more lanes on demand via the lane-picker leader key (`Cmd+P → +`). Backend display names are mapped through `BACKEND_LABELS` (`codex` → "Codex", `claude` → "Claude", `gemini` → "Gemini", `opencode` → "OpenCode", `pi-acp` → "Pi", `droid` → "Droid", `cursor` → "Cursor", `junie` → "Junie", `omp` → "OMP"); unknown backend ids fall back to a capitalized form. See `docs/92-acp-lane-picker.md` for the picker UI and lane lifecycle. Earlier versions auto-spawned every installed backend on view open — that path was removed because it forked long-running ACP subprocesses before the user typed anything.
 
 ### API / Commands
 

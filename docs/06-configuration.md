@@ -421,7 +421,7 @@ To switch models, change `active` to the name of another preset. Changes take ef
 
 ### ACP Agent Backends
 
-ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, `pi-acp`, `droid`, `cursor`, `junie`, `omp`, `grok`, and `copilot`.
+ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, `pi-acp`, `droid`, `cursor`, `junie`, `omp`, `grok`, `copilot`, `mimo`, and `cline`.
 
 | Backend | Command |
 |---------|---------|
@@ -436,8 +436,10 @@ ACP agent backends are built into Krypton rather than configured in `krypton.tom
 | OMP | `omp acp` |
 | Grok | `grok agent stdio` |
 | Copilot | `copilot --acp --stdio` |
+| MiMo | `mimo acp` |
+| Cline | `cline --acp` |
 
-Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`, `copilot` `/login` device flow or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`).
+Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`, `copilot` `/login` device flow or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`, `mimo` first-run provider setup, `cline auth`).
 
 **Pi lane prerequisites.** The Pi-1 lane uses the third-party [`pi-acp`](https://github.com/svkozak/pi-acp) adapter to drive the [`pi`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) coding agent. Install both globally:
 
@@ -526,7 +528,17 @@ Then authenticate outside Krypton by running `copilot` and the `/login` device f
 
 Copilot is a regular permission-gated lane: the project `.mcp.json` bridge (spec 83) and the per-lane `krypton-harness-memory` MCP server both apply, capability-gated by what Copilot advertises at `initialize` (verified against Copilot CLI 1.0.60: `mcpCapabilities {http, sse}`, `promptCapabilities.image`). Optional `acp_harness.lane_models.copilot.active` drives the lane model chip; Copilot's ACP server documents no model-selection flag, so the value is applied only via the generic `session/set_model` path if Copilot advertises model state at `session/new` (it did not at `initialize` in 1.0.60), otherwise the chip is display-only and Copilot runs its default.
 
-See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-lane.md` for Pi-1, `docs/86-acp-droid-lane.md` for Droid-1, `docs/113-acp-cursor-lane.md` for Cursor, `docs/119-acp-junie-lane.md` for Junie, `docs/122-acp-omp-lane.md` for OMP, `docs/135-acp-grok-lane.md` for Grok, and `docs/150-acp-copilot-lane.md` for Copilot.
+**Cline lane prerequisites.** The Cline lane uses the Cline CLI's native ACP server (`cline --acp`, stdio). Install the CLI globally:
+
+```sh
+npm i -g cline
+```
+
+Then authenticate outside Krypton by running `cline auth` once. Krypton does not provide a TTY for Cline's interactive auth flow, so it must be completed outside Krypton. Startup failures include Cline-specific install, old-CLI-without-ACP, auth, token, and empty-stderr hints.
+
+Cline is a regular permission-gated lane, but it gets its MCP servers through a **native-config overlay**, not `session/new`. Verified against cline 3.0.24, the `initialize` response advertises no `mcpCapabilities`, so any http/sse server injected through `session/new.mcpServers` is silently dropped and never connects. Instead Krypton writes a per-lane `cline_mcp_settings.json` — carrying the per-lane `krypton-harness-memory` server (tagged `streamableHttp`) plus the project `.mcp.json` bridge (spec 83) — under `~/.config/krypton/runtime/cline/<harness>/<lane>/`, and points the `CLINE_MCP_SETTINGS_PATH` env var at it at spawn. This overrides only the MCP settings file, so the global `~/.cline` auth/providers from `cline auth` stay shared across lanes. The overlay is removed on lane close and garbage-collected on harness start. Optional `acp_harness.lane_models.cline.active` drives the lane model chip; Cline does expose `-m`/`--provider` CLI flags, but v1 leaves the model to `cline auth`/config, so the chip is display-only unless Cline advertises model state at `session/new` (then the generic `session/set_model` path applies).
+
+See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-lane.md` for Pi-1, `docs/86-acp-droid-lane.md` for Droid-1, `docs/113-acp-cursor-lane.md` for Cursor, `docs/119-acp-junie-lane.md` for Junie, `docs/122-acp-omp-lane.md` for OMP, `docs/135-acp-grok-lane.md` for Grok, `docs/150-acp-copilot-lane.md` for Copilot, and `docs/159-acp-cline-lane.md` for Cline.
 
 ### ACP Harness Configuration
 
@@ -539,7 +551,7 @@ See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-
 
 The ACP Harness backend picker is code-defined in v1: installed built-in backends are listed, and the harness starts with no lanes until the user spawns one via `Cmd+P → +`. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
 
-**Lane model selection.** `<backend>` keys match the ACP backend ids: `gemini`, `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, and `copilot`. Krypton applies `active` only for backends that support model selection in v1:
+**Lane model selection.** `<backend>` keys match the ACP backend ids: `gemini`, `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, `copilot`, `mimo`, and `cline`. Krypton applies `active` only for backends that support model selection in v1:
 
 - **Gemini** — passes `--model <active>` as a CLI flag at spawn. Changing the model requires respawning the lane.
 - **OpenCode** — sends `session/set_config_option {model}` (with `session/set_model` fallback) right after `session/new`. If `active` is empty, Krypton falls back to the historical default `zai-coding-plan/glm-5.1`.

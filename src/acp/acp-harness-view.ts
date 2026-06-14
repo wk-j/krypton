@@ -115,6 +115,9 @@ import {
   gcJunieMcpOverlays,
   removeJunieMcpOverlay,
   writeJunieMcpOverlay,
+  gcClineMcpOverlays,
+  removeClineMcpOverlay,
+  writeClineMcpOverlay,
   prepareCursorMcp,
   cleanupCursorMcp,
   JUNIE_MCP_CAPABILITIES,
@@ -665,6 +668,9 @@ interface HarnessLane {
   streamingMarkdownItemId: string | null;
   /** Junie native MCP overlay dir passed to `--mcp-location`. */
   junieMcpOverlayDir: string | null;
+  /** Cline native MCP overlay file passed via `CLINE_MCP_SETTINGS_PATH`
+   *  (Cline drops `session/new` mcpServers). null when not a Cline lane. */
+  clineMcpOverlayDir: string | null;
   /** spec 113 rev — krypton server names written into `<project>/.cursor/mcp.json`
    *  for the Cursor lane (removed on close). null when not a Cursor lane. */
   cursorMcpNames: string[] | null;
@@ -802,6 +808,7 @@ const BACKEND_LABELS: Record<string, string> = {
   grok: 'Grok',
   copilot: 'Copilot',
   mimo: 'MiMo',
+  cline: 'Cline',
 };
 
 function backendLabel(backendId: string): string {
@@ -894,6 +901,8 @@ export function backendLogoId(backendId: string): string {
       return 'krypton-logo-copilot';
     case 'mimo':
       return 'krypton-logo-mimo';
+    case 'cline':
+      return 'krypton-logo-cline';
     default:
       return 'krypton-logo-omp';
   }
@@ -909,7 +918,7 @@ export function trimBackendPrefix(title: string, backendId: string): string {
   return title.startsWith(prefix) ? title.slice(prefix.length) : title;
 }
 
-// Inline <symbol> defs for the twelve built-in backends. Geometry is copied
+// Inline <symbol> defs for the thirteen built-in backends. Geometry is copied
 // from docs/prototypes/125-lane-rail-disambiguation.html — keep both sides
 // in sync if iterated. All strokes/fills use currentColor so the rail can
 // recolor via a single CSS class.
@@ -981,6 +990,12 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<rect x="2" y="2" width="12" height="12" rx="3.2" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
     '<path d="M4.8 11 V6 H7.6 Q8.8 6 8.8 7.2 V11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<line x1="11.2" y1="6" x2="11.2" y2="11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+    '</symbol>',
+  // cline: terminal prompt bracket + caret (CLI coding agent)
+  '<symbol id="krypton-logo-cline" viewBox="0 0 16 16">' +
+    '<rect x="2" y="2.5" width="12" height="11" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+    '<path d="M5 6.2 L7.4 8 L5 9.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<line x1="8.6" y1="10.2" x2="11" y2="10.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
     '</symbol>',
 ].join('');
 
@@ -1083,6 +1098,7 @@ const LANE_DEFAULTS = {
   streamingMarkdownBody: null,
   streamingMarkdownItemId: null,
   junieMcpOverlayDir: null,
+  clineMcpOverlayDir: null,
   cursorMcpNames: null,
   pendingCoordinatorDrain: null,
   coordinatorDrainProvenanceUsed: false,
@@ -3591,8 +3607,13 @@ export class AcpHarnessView implements ContentView {
       ];
     }
     this.render();
-    if (this.lanes.length === 0 && this.pickerEntries.some((e) => e.id === 'claude')) {
-      await this.addLane('claude');
+    // On first open, let the user pick which ACP backend to start instead of
+    // auto-creating a default lane. Falls back to the empty system rows (with
+    // the "press Cmd+P then + to add a lane" hint) if no backends are installed.
+    if (this.lanes.length === 0 && this.pickerEntries.length > 0) {
+      this.pickerOpen = true;
+      this.pickerCursor = 0;
+      this.render();
     }
   }
 
@@ -3612,6 +3633,11 @@ export class AcpHarnessView implements ContentView {
       await gcJunieMcpOverlays(session.harnessId);
     } catch (e) {
       console.warn('[acp-harness] gc junie mcp overlays failed:', e);
+    }
+    try {
+      await gcClineMcpOverlays(session.harnessId);
+    } catch (e) {
+      console.warn('[acp-harness] gc cline mcp overlays failed:', e);
     }
     this.memoryUnlisten = await listen<{ harnessId: string }>('acp-harness-memory-changed', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMemory();
@@ -3781,6 +3807,7 @@ export class AcpHarnessView implements ContentView {
     try {
       let seedMcp = this.memoryServerForLane(lane);
       let junieMcpLocation: string | null = null;
+      let clineMcpSettingsPath: string | null = null;
       if (lane.backendId === 'junie') {
         seedMcp = [];
         if (this.harnessMemoryId) {
@@ -3791,6 +3818,20 @@ export class AcpHarnessView implements ContentView {
             overlayServers,
           );
           lane.junieMcpOverlayDir = junieMcpLocation;
+        }
+      } else if (lane.backendId === 'cline') {
+        // Cline advertises no `mcpCapabilities`, so `session/new` mcpServers are
+        // dropped (verified cline 3.0.24). Deliver them through a per-lane
+        // `cline_mcp_settings.json` pointed at by `CLINE_MCP_SETTINGS_PATH`.
+        seedMcp = [];
+        if (this.harnessMemoryId) {
+          const overlayServers = await this.clineOverlayServersForLane(lane);
+          clineMcpSettingsPath = await writeClineMcpOverlay(
+            this.harnessMemoryId,
+            lane.displayName,
+            overlayServers,
+          );
+          lane.clineMcpOverlayDir = clineMcpSettingsPath;
         }
       } else if (lane.backendId === 'cursor') {
         // cursor-agent ignores `session/new` mcpServers (upstream regression);
@@ -3809,7 +3850,13 @@ export class AcpHarnessView implements ContentView {
         }
       }
       // Non-Junie: seed memory only; project `.mcp.json` is injected after `initialize`.
-      client = await AcpClient.spawn(lane.backendId, this.projectDir, seedMcp, junieMcpLocation);
+      client = await AcpClient.spawn(
+        lane.backendId,
+        this.projectDir,
+        seedMcp,
+        junieMcpLocation,
+        clineMcpSettingsPath,
+      );
       if (lane.spawnEpoch !== spawnEpoch) {
         await client.dispose();
         return;
@@ -3853,6 +3900,16 @@ export class AcpHarnessView implements ContentView {
     return dedupeByName(gated, memoryServers);
   }
 
+  private async clineOverlayServersForLane(lane: HarnessLane): Promise<AcpMcpServerDescriptor[]> {
+    // Cline's native config reads stdio/sse/streamableHttp directly, so no ACP
+    // capability gating is needed — forward the per-lane memory server plus the
+    // project `.mcp.json` bridge (spec 83) as-is.
+    const memoryServers = this.memoryServerForLane(lane);
+    const projectServers = await loadProjectMcpServers(this.projectDir);
+    if (projectServers.length === 0) return memoryServers;
+    return dedupeByName(projectServers, memoryServers);
+  }
+
   private memoryServerForLane(lane: HarnessLane): AcpMcpServerDescriptor[] {
     // Pi has no MCP host — emit nothing rather than ship an unreachable URL.
     if (lane.backendId === 'pi-acp') return [];
@@ -3873,6 +3930,8 @@ export class AcpHarnessView implements ContentView {
     // ACP would duplicate every entry. Pi has no MCP host at all (by design),
     // so the bridge has nowhere to land for Pi-1.
     // Junie loads MCP via `--mcp-location` overlay; session/new mcpServers is a no-op.
+    // Cline advertises no mcpCapabilities and drops session/new mcpServers; it
+    // gets servers via a native `cline_mcp_settings.json` (CLINE_MCP_SETTINGS_PATH).
     // Cursor ignores session/new mcpServers entirely (upstream regression); it
     // gets the harness memory server via native `.cursor/mcp.json` at spawn time.
     // OMP native-loads root `.mcp.json` in ACP mode but still accepts injected
@@ -3881,10 +3940,15 @@ export class AcpHarnessView implements ContentView {
       lane.backendId === 'claude' ||
       lane.backendId === 'pi-acp' ||
       lane.backendId === 'junie' ||
+      lane.backendId === 'cline' ||
       lane.backendId === 'cursor' ||
       lane.backendId === 'omp'
     ) {
-      return lane.backendId === 'junie' || lane.backendId === 'cursor' ? [] : memoryServers;
+      return lane.backendId === 'junie' ||
+        lane.backendId === 'cline' ||
+        lane.backendId === 'cursor'
+        ? []
+        : memoryServers;
     }
     const projectServers = await loadProjectMcpServers(this.projectDir);
     if (projectServers.length === 0) return memoryServers;
@@ -5621,6 +5685,12 @@ export class AcpHarnessView implements ContentView {
       });
     }
     lane.junieMcpOverlayDir = null;
+    if (lane.backendId === 'cline' && this.harnessMemoryId) {
+      void removeClineMcpOverlay(this.harnessMemoryId, lane.displayName).catch((e) => {
+        console.warn('[acp-harness] remove cline mcp overlay failed:', e);
+      });
+    }
+    lane.clineMcpOverlayDir = null;
     if (lane.backendId === 'cursor' && lane.cursorMcpNames?.length && this.projectDir) {
       void cleanupCursorMcp(this.projectDir, lane.cursorMcpNames).catch((e) => {
         console.warn('[acp-harness] cleanup cursor mcp failed:', e);
@@ -10633,6 +10703,7 @@ export function laneAccent(index: number): string {
     '#5ce6a8',
     '#7fa8ff',
     '#ff8552',
+    '#56d6c0',
   ];
   return accents[(index - 1) % accents.length];
 }
@@ -10650,6 +10721,7 @@ export function laneAccentForLabel(label: string): string {
   if (/grok/i.test(label)) return laneAccent(10);
   if (/copilot/i.test(label)) return laneAccent(11);
   if (/mimo/i.test(label)) return laneAccent(12);
+  if (/cline/i.test(label)) return laneAccent(13);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }

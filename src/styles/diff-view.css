@@ -119,12 +119,17 @@
   z-index: 1;
   /* diff2html keeps line numbers `position: absolute` (out of flow) so they
      never drive row height; our sticky override puts them back in flow. The
-     cell is a fixed 4em wide with 0.5em side padding, so on a 4-digit number
-     the default `white-space: normal` wraps to two lines and balloons the whole
-     row to ~2× (the code cell stays one line). Pin to a single line — diff2html
-     already ships `overflow: hidden; text-overflow: ellipsis` here for exactly
-     this, so wide numbers ellipsize instead of wrapping. */
+     cell is a fixed 4em wide, so the default `white-space: normal` wraps a
+     multi-digit number to two lines and balloons the whole row to ~2× (the
+     code cell stays one line). Pin to a single line so rows stay uniform. */
   white-space: nowrap;
+  /* …but a fixed 4em then CLIPS 5–6 digit numbers — diff2html's own
+     `overflow: hidden; text-overflow: ellipsis` (plus `direction: rtl`) chops
+     the leading digits to `…400`. Drop the fixed width and let the table column
+     auto-size to the widest line number: the gutter stays uniform across rows
+     (table-layout: auto equalises the column) and nothing is ever clipped. */
+  width: auto;
+  overflow: visible;
 }
 
 /* File-list quick-switcher — a centered popup over the diff; one flat surface,

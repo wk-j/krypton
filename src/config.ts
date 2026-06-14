@@ -159,10 +159,10 @@ export interface AcpHarnessConfig {
   memory_footer: boolean;
   /** Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
    * `droid`, `cursor`, `claude`, `codex`, `junie`, `omp`, `grok`, `copilot`,
-   * `mimo`).
-   * Empty `active` means use the adapter default. Junie/OMP/Grok/Copilot are
+   * `mimo`, `cline`).
+   * Empty `active` means use the adapter default. Junie/OMP/Grok/Copilot/Cline are
    * display-only in v1 (their model-selection paths under native ACP mode are
-   * unverified; Copilot's ACP server documents no model flag). */
+   * unverified; Copilot's and Cline's ACP servers document no model flag). */
   lane_models: Record<string, LaneModelConfig>;
 }
 

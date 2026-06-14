@@ -155,6 +155,25 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "MiMo".to_string(),
             },
         ),
+        (
+            "cline",
+            AcpBackend {
+                command: "cline".to_string(),
+                // Cline CLI native ACP server over stdio (`npm i -g cline`,
+                // auth via `cline auth`). MCP delivery is native-config, NOT
+                // ACP `session/new`: verified against cline 3.0.24, `initialize`
+                // advertises NO `mcpCapabilities`, so any http/sse server passed
+                // through `session/new` is dropped — the per-lane harness memory
+                // server never lands and peer/memory tools are missing. Instead
+                // Krypton writes a per-lane `cline_mcp_settings.json` and points
+                // `CLINE_MCP_SETTINGS_PATH` at it at spawn (see
+                // write_cline_mcp_overlay + acp_spawn). The model is selectable
+                // via the CLI `-m`/`--provider` flags, but v1 leaves it to
+                // `cline auth`/config (chip-only). See docs/159-acp-cline-lane.md.
+                args: vec!["--acp".to_string()],
+                display_name: "Cline".to_string(),
+            },
+        ),
     ]
 }
 
@@ -984,11 +1003,13 @@ pub fn acp_list_backends() -> Result<Vec<AcpBackendDescriptor>, String> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command: each arg is an IPC field.
 pub async fn acp_spawn(
     backend_id: String,
     cwd: Option<String>,
     mcp_servers: Option<Vec<Value>>,
     junie_mcp_location: Option<String>,
+    cline_mcp_settings_path: Option<String>,
     app: AppHandle,
     registry: State<'_, Arc<AcpRegistry>>,
     config: State<'_, Arc<RwLock<crate::config::KryptonConfig>>>,
@@ -1046,6 +1067,15 @@ pub async fn acp_spawn(
     cmd.process_group(0);
     if let Some(d) = cwd.as_ref() {
         cmd.current_dir(d);
+    }
+    // Cline reads MCP servers from `cline_mcp_settings.json`, not ACP
+    // `session/new` (no `mcpCapabilities` advertised). Point it at the per-lane
+    // overlay so the harness-memory server lands; global `~/.cline` auth is left
+    // intact (we override only the MCP settings file path, not the data dir).
+    if backend_id == "cline" {
+        if let Some(p) = cline_mcp_settings_path.filter(|s| !s.is_empty()) {
+            cmd.env("CLINE_MCP_SETTINGS_PATH", p);
+        }
     }
 
     let mut child = cmd.spawn().map_err(|e| {
@@ -1750,7 +1780,7 @@ pub fn acp_login_env() -> HashMap<String, String> {
 
 // ─── Junie native MCP overlay (ACP session/new mcpServers is a no-op) ──
 
-fn sanitize_junie_path_component(s: &str) -> String {
+fn sanitize_overlay_path_component(s: &str) -> String {
     s.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
@@ -1771,8 +1801,8 @@ fn junie_overlay_lane_dir(
     Ok(base
         .join("runtime")
         .join("junie")
-        .join(sanitize_junie_path_component(harness_id))
-        .join(sanitize_junie_path_component(lane_label)))
+        .join(sanitize_overlay_path_component(harness_id))
+        .join(sanitize_overlay_path_component(lane_label)))
 }
 
 /// Write `mcp.json` for Junie `--mcp-location` (overlay root returned).
@@ -1811,7 +1841,69 @@ pub fn gc_junie_mcp_overlays(harness_id: String) -> Result<(), String> {
     let dir = base
         .join("runtime")
         .join("junie")
-        .join(sanitize_junie_path_component(&harness_id));
+        .join(sanitize_overlay_path_component(&harness_id));
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
+    }
+    Ok(())
+}
+
+// ─── Cline native MCP overlay (ACP session/new mcpServers is dropped) ──
+//
+// cline 3.0.24 `initialize` advertises no `mcpCapabilities`, so http/sse servers
+// passed via `session/new` never connect. Cline instead reads MCP servers from
+// `cline_mcp_settings.json`; `CLINE_MCP_SETTINGS_PATH` overrides the full path to
+// that file. Krypton writes a per-lane file (each lane has its own harness-memory
+// URL) under ~/.config/krypton/runtime/cline/<harness>/<lane>/ and points the env
+// var at it at spawn, leaving the global `~/.cline` auth/providers untouched.
+
+fn cline_overlay_lane_dir(
+    harness_id: &str,
+    lane_label: &str,
+) -> Result<std::path::PathBuf, String> {
+    let base = crate::config::config_dir()
+        .ok_or_else(|| "Could not determine config directory".to_string())?;
+    Ok(base
+        .join("runtime")
+        .join("cline")
+        .join(sanitize_overlay_path_component(harness_id))
+        .join(sanitize_overlay_path_component(lane_label)))
+}
+
+/// Write `cline_mcp_settings.json` for a Cline lane; returns the full file path
+/// to pass as `CLINE_MCP_SETTINGS_PATH`.
+#[tauri::command]
+pub fn write_cline_mcp_overlay(
+    harness_id: String,
+    lane_label: String,
+    content: String,
+) -> Result<String, String> {
+    let dir = cline_overlay_lane_dir(&harness_id, &lane_label)?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+    let path = dir.join("cline_mcp_settings.json");
+    std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn remove_cline_mcp_overlay(harness_id: String, lane_label: String) -> Result<(), String> {
+    let dir = cline_overlay_lane_dir(&harness_id, &lane_label)?;
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
+    }
+    Ok(())
+}
+
+/// Remove stale Cline overlays for a harness (crash recovery) before new lanes spawn.
+#[tauri::command]
+pub fn gc_cline_mcp_overlays(harness_id: String) -> Result<(), String> {
+    let Some(base) = crate::config::config_dir() else {
+        return Ok(());
+    };
+    let dir = base
+        .join("runtime")
+        .join("cline")
+        .join(sanitize_overlay_path_component(&harness_id));
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
     }
@@ -2132,6 +2224,36 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
             || s.contains("/login")
         {
             return "Run `mimo` once in a terminal to complete its first-launch provider setup (MiMo Auto / Xiaomi OAuth / custom provider), then retry.".to_string();
+        }
+    }
+    if backend_id == "cline" {
+        // Before the generic `/login`/`not authenticated` branch below — that
+        // one names `claude /login`, which is wrong advice for a Cline lane.
+        if s.contains("command not found") || s.contains("enoent") || s.contains("no such file") {
+            return "Install the Cline CLI: `npm i -g cline`, then restart Krypton so the login-shell PATH cache includes `cline`.".to_string();
+        }
+        if s.contains("unknown option")
+            || s.contains("unrecognized option")
+            || s.contains("unrecognized argument")
+            || s.contains("unexpected argument")
+            || s.contains("invalid option")
+        {
+            return "Your Cline CLI predates ACP mode (`cline --acp`). Update via `npm i -g cline`.".to_string();
+        }
+        if s.contains("not authenticated")
+            || s.contains("please log in")
+            || s.contains("please login")
+            || s.contains("authentication required")
+            || s.contains("unauthorized")
+            || s.contains("/login")
+        {
+            return "Run `cline auth` once in a terminal to authenticate, then retry.".to_string();
+        }
+        if s.contains("invalid api key") || s.contains("bad token") || s.contains("api key") {
+            return "Cline reports an API/token problem. Re-run `cline auth`, or re-check your provider key in the login shell used to launch Krypton.".to_string();
+        }
+        if stderr.is_empty() {
+            return "Cline did not return an initialize response and no stderr was captured. First-run `cline auth` or install input is a likely cause; run `cline auth` in a terminal, then retry.".to_string();
         }
     }
     if s.contains("/login") || s.contains("not authenticated") {
@@ -2492,6 +2614,44 @@ mod tests {
     }
 
     #[test]
+    fn cline_startup_hint_reports_missing_cli() {
+        let hint = startup_hint("cline", "No such file or directory (os error 2)");
+
+        assert!(hint.contains("Install the Cline CLI"));
+        assert!(hint.contains("npm i -g cline"));
+    }
+
+    #[test]
+    fn cline_startup_hint_reports_unknown_acp_flag() {
+        let hint = startup_hint("cline", "error: unknown option '--acp'");
+
+        assert!(hint.contains("predates ACP mode"));
+        assert!(hint.contains("cline --acp"));
+    }
+
+    #[test]
+    fn cline_startup_hint_reports_auth_when_explicit() {
+        let hint = startup_hint("cline", "Error: not authenticated, run cline auth");
+
+        assert!(hint.contains("cline auth"));
+    }
+
+    #[test]
+    fn cline_startup_hint_empty_stderr_is_non_diagnostic() {
+        let hint = startup_hint("cline", "");
+
+        assert!(hint.contains("no stderr was captured"));
+        assert!(hint.contains("cline auth"));
+    }
+
+    #[test]
+    fn cline_startup_hint_does_not_leak_to_other_backends() {
+        let hint = startup_hint("claude", "cline: unknown option '--acp'");
+
+        assert!(!hint.contains("Cline CLI predates ACP mode"));
+    }
+
+    #[test]
     fn junie_overlay_path_sanitizes_lane_label() {
         let dir = super::junie_overlay_lane_dir("h1", "Junie-1").expect("dir");
         let s = dir.to_string_lossy();
@@ -2506,7 +2666,25 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_junie_path_component_replaces_spaces() {
-        assert_eq!(super::sanitize_junie_path_component("lane a"), "lane_a");
+    fn sanitize_overlay_path_component_replaces_spaces() {
+        assert_eq!(super::sanitize_overlay_path_component("lane a"), "lane_a");
+    }
+
+    #[test]
+    fn cline_overlay_path_sanitizes_lane_label() {
+        let dir = super::cline_overlay_lane_dir("h1", "Cline-1").expect("dir");
+        let s = dir.to_string_lossy();
+        assert!(
+            s.contains("runtime/cline/h1/Cline-1") || s.contains("runtime\\cline\\h1\\Cline-1")
+        );
+        let settings = dir.join("cline_mcp_settings.json");
+        assert!(
+            settings
+                .to_string_lossy()
+                .ends_with("Cline-1/cline_mcp_settings.json")
+                || settings
+                    .to_string_lossy()
+                    .ends_with("Cline-1\\cline_mcp_settings.json")
+        );
     }
 }
