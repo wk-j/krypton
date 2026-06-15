@@ -68,6 +68,21 @@ interface RenderedHunk {
   rows: Element[];
 }
 
+/** One hunk's pre-measured focus-tracking entry (spec 158 ext), built once per
+ *  render so scrolling only does cheap math against `bottom`. */
+interface FocusEntry {
+  /** scroll-space bottom offset of the hunk (independent of current scrollTop). */
+  bottom: number;
+  /** new-panel content rows — the anchor + nav-readout source. */
+  newRows: Element[];
+  /** every row to mark (header + content, both panels in side-by-side). */
+  rows: Element[];
+  /** the header cell that hosts the `← here` chip, or null. */
+  chipCell: Element | null;
+  /** new-side line span for the nav readout, null for a pure-deletion hunk. */
+  range: { lineStart: number; lineEnd: number } | null;
+}
+
 /** Per-hunk review priority — the highest level of any reported range
  *  overlapping the hunk's new-side lines (spec 160). */
 export type HunkPriority = 'high' | 'normal' | 'routine';
@@ -175,6 +190,34 @@ export class DiffContentView implements ContentView {
   /** High-priority hunk header rows in the current file's new panel, in file
    *  order — the targets of `{`/`}` priority navigation. */
   private highHunkAnchors: Element[] = [];
+  /** Priority panel (spec 160 ext) — a cross-file dock that live-PREVIEWS every
+   *  reported range (`high` first, then `routine`) as you walk it with `j`/`k`,
+   *  no `Enter` needed. Docks right of the diff (`hidden` when closed, so the
+   *  diff reflows to full width). `}`/`{` still do in-file high-hunk nav. */
+  private priorityListEl: HTMLElement | null = null;
+  private priorityOpen = false;
+  private prioritySelectedIndex = 0;
+  /** Reported ranges resolved to a diff file index (drift-dropped), sorted
+   *  high→routine then file order — the panel rows + preview targets. */
+  private priorityItems: { range: ReviewPriorityRange; fileIndex: number }[] = [];
+  /** Where the diff sat when the panel opened, so `Esc` can restore it (a
+   *  cancelled browse); `Enter`/`q`/`p` keep the previewed position instead. */
+  private priorityReturnFile = 0;
+  private priorityReturnScroll = 0;
+  /** Coalesces cross-file re-renders while `j`/`k` is held — same-file moves
+   *  scroll immediately, file switches wait out a brief pause. */
+  private priorityPreviewTimer: number | null = null;
+  /** Focus-hunk indicator (spec 158 ext) — the hunk at the top of the viewport is
+   *  the one `c` anchors to / `n`·`N` step from, so it gets a header marker (A) +
+   *  a `hunk L<a>–<b>` nav readout (B), tracked on scroll (rAF-throttled). */
+  private focusReadoutEl: HTMLElement | null = null;
+  private focusRaf: number | null = null;
+  /** Per-hunk focus entries for the current file (rebuilt each render); scrolling
+   *  reads these instead of re-walking the DOM. */
+  private focusCache: FocusEntry[] = [];
+  /** Index of the currently-marked focus hunk in `focusCache`, or -1. Lets the
+   *  scroll handler skip all DOM work while the focus hunk is unchanged. */
+  private focusIndex = -1;
 
   constructor(unifiedDiff: string, container: HTMLElement, options?: DiffViewOptions) {
     this.refreshProvider = options?.refreshProvider ?? null;
@@ -207,10 +250,39 @@ export class DiffContentView implements ContentView {
     this.element.appendChild(this.skippedEl);
     this.renderSkipped();
 
+    // Content row: the diff (grows) beside the priority panel (docks right,
+    // shrinks the diff only while open). A flex row so the diff reflows on its
+    // own when the panel hides — no manual width math, no re-render.
+    const contentRow = document.createElement('div');
+    contentRow.className = 'krypton-diff__content-row';
+    this.element.appendChild(contentRow);
+
     // Diff content area
     this.fileContainer = document.createElement('div');
     this.fileContainer.className = 'krypton-diff__content';
-    this.element.appendChild(this.fileContainer);
+    contentRow.appendChild(this.fileContainer);
+
+    // Track the focus hunk (the one `c`/`n` act on) as the human scrolls. Coalesced
+    // to one update per frame, and — crucially — driven off a cache built at render
+    // time so a scroll only does cheap arithmetic + touches the DOM when the focus
+    // hunk actually changes (no per-frame splitHunks / layout reads / writes).
+    const onScroll = (): void => {
+      if (this.focusRaf !== null) return;
+      this.focusRaf = window.requestAnimationFrame(() => {
+        this.focusRaf = null;
+        this.applyFocusMarker(this.computeFocusIndex());
+      });
+    };
+    this.fileContainer.addEventListener('scroll', onScroll, { passive: true });
+    this.disposeListeners.push(() => this.fileContainer.removeEventListener('scroll', onScroll));
+
+    // Priority panel (spec 160 ext) — docked, hidden until toggled with `p`.
+    if (this.reviewPriority) {
+      this.priorityListEl = document.createElement('div');
+      this.priorityListEl.className = 'krypton-diff__priority';
+      this.priorityListEl.hidden = true;
+      contentRow.appendChild(this.priorityListEl);
+    }
 
     // File-list overlay — hidden until toggled with `t`
     this.listEl = document.createElement('div');
@@ -297,6 +369,7 @@ export class DiffContentView implements ContentView {
     this.navEl.appendChild(path);
     this.navEl.appendChild(stats);
     this.navEl.appendChild(mode);
+    this.appendFocusReadout();
     this.appendPrioritySummary();
     this.appendReviewIndicator();
     this.appendSyncIndicator();
@@ -321,12 +394,25 @@ export class DiffContentView implements ContentView {
     this.navEl.appendChild(el);
   }
 
+  /** Focus-hunk readout (spec 158 ext, B) — `hunk L<a>–<b>` for the hunk `c` would
+   *  anchor to. Created here each render; the scroll handler updates its text via
+   *  the stored ref. Hidden until `applyFocusMarker` populates it. */
+  private appendFocusReadout(): void {
+    const el = document.createElement('span');
+    el.className = 'krypton-diff__focus';
+    el.hidden = true;
+    this.focusReadoutEl = el;
+    this.navEl.appendChild(el);
+  }
+
   /** Static `? help` affordance at the end of the nav bar so the keybindings
    *  overlay is discoverable. Chrome text, no border rail. */
   private appendHelpHint(): void {
     const el = document.createElement('span');
     el.className = 'krypton-diff__help-hint';
-    el.textContent = '? help';
+    // Advertise the priority panel only when there is something to jump to.
+    const hasPriority = !!this.reviewPriority && this.priorityRanges.length > 0;
+    el.textContent = hasPriority ? 'p priority · ? help' : '? help';
     this.navEl.appendChild(el);
   }
 
@@ -445,23 +531,107 @@ export class DiffContentView implements ContentView {
     return this.currentHunkAnchor(file);
   }
 
-  private currentHunkAnchor(file: string): CapturedAnchor | null {
-    // In side-by-side each panel has its OWN tbodies; scope the search to the
-    // NEW (right) panel so a whole-hunk anchor lands on the editable post-change
-    // lines, not the old/left side (Codex-1 B2). Line-by-line has no split
-    // panels, so the whole container is the scope and prefer-new picks the new
-    // number from the shared cell.
-    const panels = this.fileContainer.querySelectorAll('.d2h-file-side-diff');
-    const scope: ParentNode = panels.length > 1 ? panels[1] : this.fileContainer;
-    const blocks = Array.from(scope.querySelectorAll('.d2h-diff-tbody'));
-    if (blocks.length === 0) return null;
-    const containerTop = this.fileContainer.getBoundingClientRect().top;
-    // First block whose bottom is still below the viewport top = the hunk the
-    // human is looking at.
-    const block =
-      blocks.find((b) => b.getBoundingClientRect().bottom - containerTop > 0) ?? blocks[0];
+  /** New-side line span of a hunk (for the nav readout); null for a pure-deletion
+   *  hunk with no new-side lines. */
+  private hunkNewRange(hunk: RenderedHunk): { lineStart: number; lineEnd: number } | null {
+    const lines: number[] = [];
+    for (const row of hunk.rows) {
+      const info = this.lineInfoForRow(row);
+      if (info && info.side === 'new') lines.push(info.line);
+    }
+    if (lines.length === 0) return null;
+    return { lineStart: Math.min(...lines), lineEnd: Math.max(...lines) };
+  }
 
-    const infos = Array.from(block.querySelectorAll('tr'))
+  /** Build the focus cache once per render: split the new (and paired old) panel
+   *  tbody into hunks and pre-measure each hunk's scroll-space bottom. diff2html
+   *  emits ONE tbody per file per side with hunks separated by `.d2h-info` headers,
+   *  so the hunk unit comes from `splitHunks`, not a per-tbody pick. After this,
+   *  scrolling never re-walks the DOM — it only compares `scrollTop` to `bottom`. */
+  private rebuildFocusCache(): void {
+    this.focusCache = [];
+    this.focusIndex = -1;
+    const panels = Array.from(this.fileContainer.querySelectorAll('.d2h-file-side-diff'));
+    const sideBySide = panels.length > 1;
+    // NEW (right) panel in side-by-side so anchors land on editable post-change
+    // lines (Codex-1 B2); line-by-line has one tbody whose cells carry both.
+    const newScope: ParentNode = sideBySide ? panels[1] : this.fileContainer;
+    const newTbody = newScope.querySelector('.d2h-diff-tbody');
+    if (!newTbody) {
+      this.setFocusReadout(null);
+      return;
+    }
+    const newHunks = this.splitHunks(newTbody);
+    if (newHunks.length === 0) {
+      this.setFocusReadout(null);
+      return;
+    }
+    const oldTbody = sideBySide ? panels[0]?.querySelector('.d2h-diff-tbody') ?? null : null;
+    const oldHunks = oldTbody ? this.splitHunks(oldTbody) : [];
+
+    const containerTop = this.fileContainer.getBoundingClientRect().top;
+    const scrollTop = this.fileContainer.scrollTop;
+    newHunks.forEach((h, i) => {
+      const old = oldHunks[i] ?? null;
+      const els = [h.header, ...h.rows].filter((e): e is Element => !!e);
+      const last = els[els.length - 1];
+      const bottom = last ? last.getBoundingClientRect().bottom - containerTop + scrollTop : 0;
+      const chipHost = old?.header ?? h.header;
+      const chipCell =
+        chipHost?.querySelector('.d2h-code-side-line, .d2h-code-line') ??
+        chipHost?.lastElementChild ??
+        null;
+      const rows = [h.header, ...h.rows, old?.header ?? null, ...(old?.rows ?? [])].filter(
+        (e): e is Element => !!e,
+      );
+      this.focusCache.push({ bottom, newRows: h.rows, rows, chipCell, range: this.hunkNewRange(h) });
+    });
+    this.applyFocusMarker(this.computeFocusIndex());
+  }
+
+  /** Index of the focus hunk (first whose bottom is below the viewport top; the
+   *  last if all are scrolled past). Pure arithmetic against the cache — no DOM. */
+  private computeFocusIndex(): number {
+    if (this.focusCache.length === 0) return -1;
+    const scrollTop = this.fileContainer.scrollTop;
+    const idx = this.focusCache.findIndex((c) => c.bottom > scrollTop);
+    return idx < 0 ? this.focusCache.length - 1 : idx;
+  }
+
+  /** Move the focus marker (A) + readout (B) to `idx`. Returns immediately when
+   *  the focus hunk is unchanged, so a scroll within one hunk does zero DOM work.
+   *  Marks every row of the hunk (both panels) — the marker shows on the gutter,
+   *  visible wherever the human is in the hunk, not just on the (possibly
+   *  scrolled-off) header. */
+  private applyFocusMarker(idx: number): void {
+    if (idx === this.focusIndex) return;
+    const prev = this.focusIndex >= 0 ? this.focusCache[this.focusIndex] : null;
+    if (prev) for (const r of prev.rows) r.classList.remove('krypton-diff__hunk-focus');
+    for (const chip of Array.from(this.fileContainer.querySelectorAll('.krypton-diff__here'))) {
+      chip.remove();
+    }
+    this.focusIndex = idx;
+    const entry = idx >= 0 ? this.focusCache[idx] : null;
+    if (!entry) {
+      this.setFocusReadout(null);
+      return;
+    }
+    for (const r of entry.rows) r.classList.add('krypton-diff__hunk-focus');
+    if (entry.chipCell && !entry.chipCell.querySelector('.krypton-diff__here')) {
+      const chip = document.createElement('span');
+      chip.className = 'krypton-diff__here';
+      chip.textContent = '← here';
+      entry.chipCell.appendChild(chip);
+    }
+    this.setFocusReadout(entry.range);
+  }
+
+  private currentHunkAnchor(file: string): CapturedAnchor | null {
+    const idx = this.computeFocusIndex();
+    if (idx < 0) return null;
+    const block = this.focusCache[idx];
+
+    const infos = block.newRows
       .map((row) => this.lineInfoForRow(row))
       .filter((i): i is { side: 'old' | 'new'; line: number } => i !== null);
     if (infos.length === 0) return null;
@@ -469,11 +639,27 @@ export class DiffContentView implements ContentView {
     const chosen = preferred.length > 0 ? preferred : infos;
     const side = chosen[0].side;
     const lines = chosen.filter((i) => i.side === side).map((i) => i.line);
-    const quote = Array.from(block.querySelectorAll('.d2h-code-line-ctn'))
-      .map((e) => e.textContent ?? '')
+    const quote = block.newRows
+      .map((r) => r.querySelector('.d2h-code-line-ctn')?.textContent ?? '')
+      .filter((t) => t.length > 0)
       .join('\n')
       .slice(0, QUOTE_CAP);
     return { file, side, lineStart: Math.min(...lines), lineEnd: Math.max(...lines), quote };
+  }
+
+  private setFocusReadout(range: { lineStart: number; lineEnd: number } | null): void {
+    const el = this.focusReadoutEl;
+    if (!el) return;
+    if (!range) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    el.hidden = false;
+    el.textContent =
+      range.lineStart === range.lineEnd
+        ? `hunk L${range.lineStart}`
+        : `hunk L${range.lineStart}–${range.lineEnd}`;
   }
 
   // ─── Composer ───
@@ -843,6 +1029,8 @@ export class DiffContentView implements ContentView {
     this.renderPins();
     // spec 160: fold routine hunks / mark high ones on the freshly-drawn DOM.
     this.applyReviewPriority();
+    // spec 158 ext: pre-measure hunks + mark the viewport-top focus hunk + readout.
+    this.rebuildFocusCache();
   }
 
   // ─── Review priority (spec 160) ───
@@ -1041,6 +1229,250 @@ export class DiffContentView implements ContentView {
     return true;
   }
 
+  // ─── Priority panel (spec 160 ext) — cross-file live-preview dock ───
+
+  /** Resolve every reported range to a diff file index, dropping ranges whose
+   *  file is not in the current diff (drift), and sort `high` first then by file
+   *  order. Builds the panel rows + the preview targets. */
+  private buildPriorityItems(): void {
+    this.priorityItems = [];
+    for (const range of this.priorityRanges) {
+      const fileIndex = this.files.findIndex((f) => this.fileKey(f) === range.file);
+      if (fileIndex < 0) continue;
+      this.priorityItems.push({ range, fileIndex });
+    }
+    const rank = (level: string): number => (level === 'high' ? 0 : 1);
+    this.priorityItems.sort(
+      (a, b) =>
+        rank(a.range.level) - rank(b.range.level) ||
+        a.fileIndex - b.fileIndex ||
+        a.range.lineStart - b.range.lineStart,
+    );
+  }
+
+  /** Open the dock and preview the first item. Remembers the current diff
+   *  position so `Esc` can restore it. No-op when nothing was reported. */
+  private openPriorityList(): void {
+    if (!this.priorityListEl) return;
+    this.buildPriorityItems();
+    if (this.priorityItems.length === 0) return;
+    this.priorityReturnFile = this.currentFileIndex;
+    this.priorityReturnScroll = this.fileContainer.scrollTop;
+    this.priorityOpen = true;
+    this.prioritySelectedIndex = 0;
+    this.priorityListEl.hidden = false;
+    this.renderPriorityList();
+    this.previewSelected(true);
+  }
+
+  /** Close the dock. `restore` (Esc) returns the diff to where it was when the
+   *  panel opened — a cancelled browse; `Enter`/`q`/`p` keep the previewed spot. */
+  private closePriorityList(restore: boolean): void {
+    if (!this.priorityOpen) return;
+    this.priorityOpen = false;
+    if (this.priorityPreviewTimer !== null) {
+      window.clearTimeout(this.priorityPreviewTimer);
+      this.priorityPreviewTimer = null;
+    }
+    if (this.priorityListEl) this.priorityListEl.hidden = true;
+    this.clearPreviewHighlight();
+    if (restore) {
+      if (this.currentFileIndex !== this.priorityReturnFile && this.files[this.priorityReturnFile]) {
+        this.currentFileIndex = this.priorityReturnFile;
+        this.renderCurrentFile();
+      }
+      this.fileContainer.scrollTop = this.priorityReturnScroll;
+    }
+  }
+
+  private onPriorityKey(e: KeyboardEvent): boolean {
+    switch (e.key) {
+      case 'j':
+      case 'ArrowDown':
+        this.movePrioritySelection(1);
+        return true;
+      case 'k':
+      case 'ArrowUp':
+        this.movePrioritySelection(-1);
+        return true;
+      case 'g':
+        this.jumpPrioritySelection(e.shiftKey ? this.priorityItems.length - 1 : 0);
+        return true;
+      case 'G':
+        this.jumpPrioritySelection(this.priorityItems.length - 1);
+        return true;
+      case 'Enter':
+        this.closePriorityList(false);
+        return true;
+      case 'Escape':
+        this.closePriorityList(true);
+        return true;
+      case 'q':
+      case 'p':
+        this.closePriorityList(false);
+        return true;
+      default:
+        return true; // modal: swallow everything so the diff never scrolls behind
+    }
+  }
+
+  private movePrioritySelection(delta: number): void {
+    const n = this.priorityItems.length;
+    if (n === 0) return;
+    this.prioritySelectedIndex = (this.prioritySelectedIndex + delta + n) % n;
+    this.renderPriorityList();
+    this.previewSelected(false);
+  }
+
+  private jumpPrioritySelection(index: number): void {
+    const n = this.priorityItems.length;
+    if (n === 0) return;
+    this.prioritySelectedIndex = Math.max(0, Math.min(index, n - 1));
+    this.renderPriorityList();
+    this.previewSelected(false);
+  }
+
+  /** Live preview: scroll the diff to the selected range and tint it. Same-file
+   *  moves are immediate; a file switch needs a re-render, so it is debounced
+   *  (~80ms) to coalesce fast `j`/`k` runs — the panel selection still updates
+   *  every keystroke, the diff catches up on the pause. `immediate` (open / a
+   *  single jump) skips the debounce. */
+  private previewSelected(immediate: boolean): void {
+    const item = this.priorityItems[this.prioritySelectedIndex];
+    if (!item) return;
+    if (this.priorityPreviewTimer !== null) {
+      window.clearTimeout(this.priorityPreviewTimer);
+      this.priorityPreviewTimer = null;
+    }
+    if (item.fileIndex === this.currentFileIndex) {
+      this.highlightAndScrollToRange(item.range);
+      return;
+    }
+    const apply = (): void => {
+      this.currentFileIndex = item.fileIndex;
+      this.renderCurrentFile();
+      this.highlightAndScrollToRange(item.range);
+    };
+    if (immediate) {
+      apply();
+    } else {
+      this.priorityPreviewTimer = window.setTimeout(() => {
+        this.priorityPreviewTimer = null;
+        apply();
+      }, 80);
+    }
+  }
+
+  private clearPreviewHighlight(): void {
+    for (const el of Array.from(this.fileContainer.querySelectorAll('.krypton-diff__preview-row'))) {
+      el.classList.remove('krypton-diff__preview-row');
+    }
+  }
+
+  /** Tint the hunk overlapping the range and scroll it into view. For a folded
+   *  routine hunk the content rows are hidden, so tint + scroll its block header
+   *  / fold summary row instead. Best-effort, like the high marker. */
+  private highlightAndScrollToRange(range: ReviewPriorityRange): void {
+    this.clearPreviewHighlight();
+    const panels = Array.from(this.fileContainer.querySelectorAll('.d2h-file-side-diff'));
+    const sideBySide = panels.length > 1;
+    const newScope: ParentNode = sideBySide ? panels[1] : this.fileContainer;
+    const newTbody = newScope.querySelector('.d2h-diff-tbody');
+    if (!newTbody) return;
+    const hunks = this.splitHunks(newTbody);
+
+    let target: Element | null = null;
+    for (const hunk of hunks) {
+      const lines: number[] = [];
+      for (const row of hunk.rows) {
+        const info = this.lineInfoForRow(row);
+        if (info && info.side === 'new') lines.push(info.line);
+      }
+      if (lines.length === 0) continue;
+      if (Math.min(...lines) <= range.lineEnd && Math.max(...lines) >= range.lineStart) {
+        if (hunk.header) hunk.header.classList.add('krypton-diff__preview-row');
+        const visible = hunk.rows.filter((r) => (r as HTMLElement).style.display !== 'none');
+        for (const row of visible) row.classList.add('krypton-diff__preview-row');
+        // Folded routine hunk: tint its in-place summary row too.
+        const fold = (hunk.header?.nextElementSibling ?? hunk.rows[0]?.previousElementSibling) ?? null;
+        if (fold && fold.classList.contains('krypton-diff__fold')) {
+          fold.classList.add('krypton-diff__preview-row');
+        }
+        target = hunk.header ?? visible[0] ?? hunk.rows[0];
+        break;
+      }
+    }
+    target?.scrollIntoView({ behavior: 'auto', block: 'center' });
+  }
+
+  /** Single-letter status badge for a level, mirroring the diff's own markers
+   *  (`◆ high`, `▸ routine`) so the panel and the diff body read identically. */
+  private renderPriorityList(): void {
+    const root = this.priorityListEl;
+    if (!root) return;
+    root.innerHTML = '';
+
+    const high = this.priorityItems.filter((it) => it.range.level === 'high').length;
+    const routine = this.priorityItems.length - high;
+    const header = document.createElement('div');
+    header.className = 'krypton-diff__priority-head';
+    const title = document.createElement('span');
+    title.textContent = 'Priority';
+    const counts = document.createElement('span');
+    counts.className = 'krypton-diff__priority-counts';
+    counts.textContent = `${high} high · ${routine} routine`;
+    header.appendChild(title);
+    header.appendChild(counts);
+    root.appendChild(header);
+
+    const items = document.createElement('div');
+    items.className = 'krypton-diff__priority-items';
+    root.appendChild(items);
+
+    let lastLevel: string | null = null;
+    this.priorityItems.forEach((it, i) => {
+      if (it.range.level !== lastLevel) {
+        lastLevel = it.range.level;
+        const group = document.createElement('div');
+        group.className = 'krypton-diff__priority-group';
+        group.textContent = it.range.level === 'high' ? 'High — read first' : 'Routine — folded';
+        items.appendChild(group);
+      }
+      const row = document.createElement('div');
+      row.className = 'krypton-diff__priority-item';
+      if (i === this.prioritySelectedIndex) row.classList.add('krypton-diff__priority-item--selected');
+
+      const top = document.createElement('div');
+      top.className = 'krypton-diff__priority-item-top';
+      const badge = document.createElement('span');
+      badge.className = `krypton-diff__priority-badge krypton-diff__priority-badge--${it.range.level}`;
+      badge.textContent = it.range.level === 'high' ? '◆ high' : '▸ routine';
+      const lines = document.createElement('span');
+      lines.className = 'krypton-diff__priority-lines';
+      lines.textContent = `L${it.range.lineStart}–${it.range.lineEnd}`;
+      top.appendChild(badge);
+      top.appendChild(lines);
+
+      const path = document.createElement('span');
+      path.className = 'krypton-diff__priority-path';
+      path.textContent = this.filePath(this.files[it.fileIndex]);
+
+      row.appendChild(top);
+      row.appendChild(path);
+      // Mouse is secondary, but a click previews the row immediately.
+      row.addEventListener('click', () => this.jumpPrioritySelection(i));
+      items.appendChild(row);
+    });
+
+    const footer = document.createElement('div');
+    footer.className = 'krypton-diff__priority-footer';
+    footer.textContent = 'j/k preview · Enter keep · Esc back · q close';
+    root.appendChild(footer);
+
+    (items.querySelectorAll('.krypton-diff__priority-item')[this.prioritySelectedIndex] as HTMLElement | undefined)
+      ?.scrollIntoView({ block: 'nearest' });
+  }
+
   onKeyDown(e: KeyboardEvent): boolean {
     // Composer is a focused <textarea>: intercept only submit/cancel, let every
     // other key fall through (return false) so typing reaches the textarea.
@@ -1049,6 +1481,7 @@ export class DiffContentView implements ContentView {
     if (this.helpOpen) return this.onHelpKey(e);
     if (this.listOpen) return this.onFileListKey(e);
     if (this.commentsOverlayOpen) return this.onCommentsKey(e);
+    if (this.priorityOpen) return this.onPriorityKey(e);
 
     if (e.key === '?') {
       this.openHelp();
@@ -1080,6 +1513,12 @@ export class DiffContentView implements ContentView {
       }
       if (e.key === 'Enter') {
         return this.expandNearestFold();
+      }
+      // `p` opens the cross-file priority panel (no-op when nothing was
+      // reported — degrades to today's diff).
+      if (e.key === 'p') {
+        this.openPriorityList();
+        return true;
       }
     }
 
@@ -1167,9 +1606,17 @@ export class DiffContentView implements ContentView {
   }
 
   private navigateHunk(delta: number): void {
-    // Navigate between diff blocks (d2h-diff-tbody sections)
-    const blocks = this.fileContainer.querySelectorAll('.d2h-diff-tbody');
-    if (blocks.length === 0) {
+    // Walk between HUNKS, not tbodies: diff2html packs every hunk into one tbody
+    // per side (querying `.d2h-diff-tbody` would yield 1–2 file-wide blocks), so
+    // split the new-panel tbody on its `.d2h-info` headers and step those.
+    const panels = this.fileContainer.querySelectorAll('.d2h-file-side-diff');
+    const scope: ParentNode = panels.length > 1 ? panels[1] : this.fileContainer;
+    const tbody = scope.querySelector('.d2h-diff-tbody');
+    const hunks = tbody ? this.splitHunks(tbody) : [];
+    const anchors = hunks
+      .map((h) => h.header ?? h.rows[0])
+      .filter((e): e is Element => !!e);
+    if (anchors.length === 0) {
       this.fileContainer.scrollBy({ top: delta * 200, behavior: 'auto' });
       return;
     }
@@ -1179,18 +1626,18 @@ export class DiffContentView implements ContentView {
     let target: Element | null = null;
 
     if (delta > 0) {
-      for (const block of blocks) {
-        const offset = block.getBoundingClientRect().top - containerTop + scrollTop;
+      for (const anchor of anchors) {
+        const offset = anchor.getBoundingClientRect().top - containerTop + scrollTop;
         if (offset > scrollTop + 10) {
-          target = block;
+          target = anchor;
           break;
         }
       }
     } else {
-      for (let i = blocks.length - 1; i >= 0; i--) {
-        const offset = blocks[i].getBoundingClientRect().top - containerTop + scrollTop;
+      for (let i = anchors.length - 1; i >= 0; i--) {
+        const offset = anchors[i].getBoundingClientRect().top - containerTop + scrollTop;
         if (offset < scrollTop - 10) {
-          target = blocks[i];
+          target = anchors[i];
           break;
         }
       }
@@ -1413,6 +1860,7 @@ export class DiffContentView implements ContentView {
       sections.push({
         title: 'Priority',
         rows: [
+          ['p', 'priority panel (cross-file, live preview)'],
           ['} / {', 'next / prev high hunk'],
           ['Enter', 'expand folded routine hunk'],
         ],
@@ -1560,6 +2008,34 @@ export class DiffContentView implements ContentView {
       return;
     }
 
+    // Priority panel open: the human is browsing the previewed region, not a
+    // scroll position. Re-map ranges to the new file set and render the selected
+    // item's file ONCE here (the panel path owns the single draw — don't also run
+    // the file-preserving render below, which would draw twice).
+    if (this.priorityOpen) {
+      if (this.priorityPreviewTimer !== null) {
+        window.clearTimeout(this.priorityPreviewTimer);
+        this.priorityPreviewTimer = null;
+      }
+      this.buildPriorityItems();
+      if (this.priorityItems.length > 0) {
+        this.prioritySelectedIndex = Math.min(this.prioritySelectedIndex, this.priorityItems.length - 1);
+        this.priorityReturnFile = Math.min(this.priorityReturnFile, this.files.length - 1);
+        const item = this.priorityItems[this.prioritySelectedIndex];
+        this.currentFileIndex = item.fileIndex;
+        this.renderCurrentFile();
+        this.renderPriorityList();
+        this.highlightAndScrollToRange(item.range);
+        this.refreshedCallback?.(this.files.length);
+        return;
+      }
+      // Everything the panel pointed at drifted away — close it and fall through
+      // to the normal file-preserving refresh.
+      this.priorityOpen = false;
+      if (this.priorityListEl) this.priorityListEl.hidden = true;
+      this.clearPreviewHighlight();
+    }
+
     // Preserve the file the human was reading; if it left the diff, clamp to
     // the nearest index and reset scroll.
     const matched = prevKey === null
@@ -1631,6 +2107,14 @@ export class DiffContentView implements ContentView {
     if (this.debounceTimer !== null) {
       window.clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
+    }
+    if (this.priorityPreviewTimer !== null) {
+      window.clearTimeout(this.priorityPreviewTimer);
+      this.priorityPreviewTimer = null;
+    }
+    if (this.focusRaf !== null) {
+      window.cancelAnimationFrame(this.focusRaf);
+      this.focusRaf = null;
     }
     for (const cb of this.disposeListeners) cb();
     this.disposeListeners = [];

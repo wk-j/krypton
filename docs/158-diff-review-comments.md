@@ -186,6 +186,28 @@ A **second review round** on the implementation found B1 had only been half-fixe
 
 Also: `DiffReviewQueue` constructed after `ArtifactFeedbackQueue` with a status re-check so the three idle-drainers don't collide (W2 round 1).
 
+## Follow-ups (post-implementation)
+
+- **Per-hunk anchoring fix.** `currentHunkAnchor` (no-selection `c`) and
+  `navigateHunk` (`n`/`N`) originally partitioned by `.d2h-diff-tbody`, but
+  diff2html emits exactly **one tbody per file per side** with hunks separated by
+  `.d2h-info` header rows (verified in the `side-by-side-file-diff` template). So
+  the anchor always spanned the *whole file* and `n`/`N` could not step hunks
+  within a file. Both now split that tbody with `splitHunks()` (the spec-160
+  helper) via a shared `focusHunkInfo()`, picking the hunk at the viewport top.
+- **Focus-hunk indicator.** Because a no-selection `c` anchors to the
+  viewport-top hunk, that hunk is now made visible: (A) the **whole hunk's gutter**
+  (line numbers) takes an accent colour — visible wherever the human is in a long
+  hunk, since the `@@` header scrolls off when you read deep into it; the header
+  also tints + gets a `← here` chip — and (B) the nav bar shows `hunk L<a>–<b>`.
+  Driven off a **`focusCache`** rebuilt once per render (each hunk's scroll-space
+  `bottom` pre-measured), so the `scroll` handler (rAF-throttled) only does
+  arithmetic and touches the DOM when the focus hunk actually changes — no
+  per-frame `splitHunks`/layout reads (the first cut recomputed everything every
+  frame and made scrolling janky). `computeFocusIndex()` is shared with
+  `currentHunkAnchor` so the marker and the anchor target are always the same hunk.
+  Cache + rAF are cleaned up in `dispose`.
+
 ## Out of Scope
 
 - **Per-hunk staging / revert** from the diff view (the "item 3" git-tooling feature) — separate spec.

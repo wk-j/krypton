@@ -192,6 +192,42 @@ signal has no use for.)
   `${fileKey}#${hunkIndex}`), so it survives an auto-refresh / re-render but not a
   window close (the view is disposed).
 
+## Cross-file priority panel (variant B — live preview)
+
+The in-file `}`/`{` nav (above) only walks the **current** file's high hunks. When
+`high`/`routine` regions are spread across files, the human had no overview and
+had to `t`-switch files by hand. The **priority panel** is a cross-file table of
+contents over *every* reported range, opened with **`p`**.
+
+- **Docked, not modal.** The panel docks to the **right** of the diff (300px) in
+  a flex content row; `[hidden]` collapses it so the diff reflows to full width —
+  no width math, no re-render. It does not cover the diff (unlike the `t`/`?`
+  modal overlays), because the whole point is to *watch the diff while browsing*.
+- **Live preview on navigate (no `Enter`).** `j`/`k` move the selection **and the
+  diff jumps + tints the selected region immediately** — a fast overview without
+  committing. This is the deliberate difference from the `t` file switcher
+  (confirm-to-jump): the panel is for *scrubbing* the flagged regions.
+  - Same-file moves scroll instantly; a **file switch is debounced ~80ms** so a
+    fast `j`/`k` run coalesces re-renders (the panel selection still updates every
+    keystroke; the diff catches up on the pause).
+  - The previewed hunk gets a full-row tint (`.krypton-diff__preview-row`),
+    distinct from the `high` line-number marker.
+- **Contents & order.** Rows list **`high` first, then `routine`**, each in file
+  order (badge `◆ high` / `▸ routine` + `L<start>–<end>` + file path). The diff
+  itself is **never reordered** (ADR-0009) — only the panel groups by level.
+  Ranges whose file is not in the diff (drift) are dropped.
+- **Close semantics.** `Enter` / `q` / `p` close the panel and **keep** the
+  previewed position; `Esc` closes and **restores** the diff to where it was when
+  the panel opened (a cancelled browse).
+- **Auto-refresh.** When a `harness:lane-idle` refresh re-renders the diff while
+  the panel is open, the items are re-mapped to the new file set, the selection is
+  clamped, and the current item is re-previewed (closes if everything drifted).
+
+State lives in `DiffContentView` (`priorityItems`, `prioritySelectedIndex`,
+`priorityReturn*`); the panel is built only when the `reviewPriority` channel is
+wired, so a diff opened without the harness never grows the dock. Discoverability:
+the nav bar shows `p priority · ? help` whenever ranges were reported.
+
 ## Implementation note — the MCP tool lives in Rust
 
 The spec's "No Rust" framing held for the *window* (all folding/marking is

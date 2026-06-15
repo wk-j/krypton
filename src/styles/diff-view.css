@@ -73,10 +73,20 @@
   text-transform: none;
 }
 
-.krypton-diff__content {
+/* Row wrapper: the diff (grows) beside the priority panel (docks right). The
+   diff reflows on its own when the panel hides — no width math, no re-render. */
+.krypton-diff__content-row {
   flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.krypton-diff__content {
+  flex: 1 1 0;
   overflow: auto;
   min-height: 0;
+  min-width: 0;
 }
 
 /* diff2html integration */
@@ -259,6 +269,41 @@
   white-space: nowrap;
 }
 
+/* spec 158 ext (B): focus-hunk readout in the nav bar — `hunk L120–145` for the
+   hunk `c` would anchor to. Static chrome text, no border rail. */
+.krypton-diff__focus {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.65);
+  white-space: nowrap;
+}
+
+/* spec 158 ext (A): the focus hunk (the one `c`/`n` act on). The marker class is
+   on EVERY row of the hunk (both panels) so it stays visible wherever the human
+   scrolls within it — not just on the `@@` header, which scrolls off when you are
+   deep in a long hunk. Gutter accent on the line numbers (no row-bg shift over
+   add/del lines, no left rail); the header also gets a tint + underline. */
+.krypton-diff__hunk-focus .line-num1,
+.krypton-diff__hunk-focus .line-num2,
+.krypton-diff__hunk-focus .d2h-code-side-linenumber {
+  color: var(--krypton-window-accent, #00ccff);
+}
+.krypton-diff__hunk-focus .d2h-info {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  box-shadow: inset 0 -1px 0 rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.55);
+}
+.krypton-diff__here {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  color: var(--krypton-window-accent, #00ccff);
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
 /* spec 160: a routine hunk collapsed in place — one muted, clickable summary
    row at the hunk's natural file-order position. Always one keystroke from full
    (Enter / click). Flat surface, no left accent rail. */
@@ -295,6 +340,120 @@
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
   border-radius: 3px;
   vertical-align: middle;
+}
+
+/* spec 160 ext: the docked priority panel (variant B, live preview). Sits in
+   the content row right of the diff; `[hidden]` collapses it so the diff
+   reflows to full width. Flat surface, no left accent rail. */
+.krypton-diff__priority {
+  flex-shrink: 0;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--krypton-background, #0b0e14);
+  border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.25);
+}
+.krypton-diff__priority[hidden] {
+  display: none;
+}
+.krypton-diff__priority-head {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
+  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+}
+.krypton-diff__priority-counts {
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
+}
+.krypton-diff__priority-items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.krypton-diff__priority-group {
+  padding: 6px 12px 3px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.35);
+}
+.krypton-diff__priority-item {
+  padding: 4px 12px;
+  cursor: pointer;
+}
+/* selection: full-row background tint (never a left accent rail) */
+.krypton-diff__priority-item--selected {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+}
+.krypton-diff__priority-item-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.krypton-diff__priority-badge {
+  flex-shrink: 0;
+  min-width: 62px;
+  white-space: nowrap;
+  text-align: center;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  border: 1px solid transparent;
+}
+.krypton-diff__priority-badge--high {
+  color: var(--krypton-window-accent, #00ccff);
+  border-color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+}
+.krypton-diff__priority-badge--routine {
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
+  border-color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.2);
+}
+.krypton-diff__priority-lines {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.45);
+}
+.krypton-diff__priority-path {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;     /* keep the meaningful file tail visible when truncated */
+  text-align: left;
+}
+.krypton-diff__priority-item--selected .krypton-diff__priority-path {
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.9);
+}
+.krypton-diff__priority-footer {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  font-size: 10.5px;
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.4);
+  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+}
+
+/* spec 160 ext: the hunk currently previewed by the panel — full-row tint so it
+   reads at a glance over the high-marker line-number tint. */
+.krypton-diff__preview-row,
+.krypton-diff__preview-row > td {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.10);
+}
+/* A folded routine hunk's summary cell carries its own bg at higher specificity
+   (`.krypton-diff__fold > .krypton-diff__fold-cell`, 0,2,0), so the preview tint
+   on a folded row needs an equally-specific selector to land (0,3,0). */
+.krypton-diff__preview-row.krypton-diff__fold > .krypton-diff__fold-cell {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
 }
 
 /* Inline composer — a small sheet at the bottom; one flat surface, no inner
