@@ -20,6 +20,15 @@
 > unchanged. The lost capability is agent-initiated **cross-lane assignment**
 > (`directive_apply action:assign`); user-driven assignment via the picker remains.
 
+> **Superseded (spec 163, 2026-06-15):** The `backend` field has been **removed** —
+> directives are now backend-agnostic and assignable to ANY lane (the
+> `directiveCompatible` backend gate is gone). Picker keys: **Enter** switches the
+> focused lane's directive in place; **Shift+Enter** spawns a new lane and first
+> shows the lane backend picker to choose the backend, then applies the directive.
+> The backend-mismatch edge case below and any `backend = "..."` field references
+> no longer apply (stale `backend` lines in an existing `acp-harness.toml` are
+> ignored on load). See [spec 163](163-generic-directives.md).
+
 ## Problem
 
 ACP Harness settings currently live inside the global `krypton.toml`, and the harness has no workspace UI for applying reusable directives tied to a backend and task. Users who want directives such as "Codex implementation", "Claude review", or "Cursor exploration" must either paste the same system-style instructions manually or manage a config file themselves. The desired ownership is user-first: users pick predefined directives from Harness config into the active workspace/lane, while lanes can still propose, create, update, list, and assign directives through MCP tools when asked.
@@ -251,7 +260,8 @@ Assignment scope behavior:
 | `Cmd+P` then `.` | Focused ACP Harness | Open the directive picker overlay for the focused lane |
 | Click | Composer directive chip | Open the directive picker for the focused lane (secondary, mouse-only) |
 | `ArrowUp` / `ArrowDown` (or `j`/`k`) | Directive picker | Move through predefined directives loaded from `acp-harness.toml` |
-| `Enter` | Directive picker | Spawn a new lane initialized with the selected directive |
+| `Enter` | Directive picker | Switch the focused lane's directive in place (busy lanes defer the change to the next send) |
+| `Shift+Enter` | Directive picker | Spawn a new lane initialized with the selected directive |
 | `Backspace` | Directive picker | Clear directive from the focused lane |
 | `Esc` (or `q`) | Directive picker | Close without changing assignment |
 

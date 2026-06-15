@@ -197,8 +197,6 @@ export interface HarnessDirective {
   title: string;
   icon: string;
   description: string;
-  /** Empty = all backends. */
-  backend: string;
   /** Free-form task key (implementation/review/research/...). */
   task: string;
   system_prompt: string;

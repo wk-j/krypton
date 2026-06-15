@@ -15,7 +15,6 @@ import {
   callTargetsArtifactScratch,
   generateArtifactHintLabels,
   harnessBackends,
-  harnessDirectives,
   normalizeArtifactPath,
   hashBucket,
   isDirectPeerPeekReasonKey,
@@ -764,18 +763,6 @@ describe('harnessBackends', () => {
 
     expect(harnessBackends(backends).map((backend) => backend.id)).toEqual(['claude', 'codex']);
     expect(backends.map((backend) => backend.id)).toEqual(['claude', 'gemini', 'codex']);
-  });
-});
-
-describe('harnessDirectives', () => {
-  it('excludes legacy Gemini-scoped directives', () => {
-    const directives = [
-      { id: 'all', title: 'All', icon: '', description: '', backend: '', task: '', system_prompt: '', enabled: true, triage_equipped: false },
-      { id: 'gemini', title: 'Gemini', icon: '', description: '', backend: 'gemini', task: '', system_prompt: '', enabled: true, triage_equipped: false },
-      { id: 'codex', title: 'Codex', icon: '', description: '', backend: 'codex', task: '', system_prompt: '', enabled: true, triage_equipped: false },
-    ];
-
-    expect(harnessDirectives(directives).map((directive) => directive.id)).toEqual(['all', 'codex']);
   });
 });
 

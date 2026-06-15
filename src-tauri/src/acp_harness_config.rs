@@ -1,6 +1,6 @@
 // ACP Harness Directive Management — Krypton-owned config file.
 //
-// Stores reusable, backend/task-scoped "directives" (system-style prompt
+// Stores reusable, backend-agnostic "directives" (system-style prompt
 // blocks) in `~/.config/krypton/acp-harness.toml`. Unlike `krypton.toml`
 // (hand-edited, never written by Krypton), this file is Krypton-managed: it is
 // created on first load and rewritten atomically when an agent mutates a
@@ -17,13 +17,6 @@ use crate::config::config_dir;
 /// Hard cap on a directive's system prompt (16 KiB) to avoid accidental huge
 /// context injection.
 pub const DIRECTIVE_SYSTEM_PROMPT_MAX: usize = 16 * 1024;
-
-/// Built-in ACP backend ids a directive may target. An empty `backend` means
-/// "all backends". Mirrors the frontend `BACKEND_LABELS` keys.
-pub const BUILTIN_BACKEND_IDS: &[&str] = &[
-    "codex", "claude", "opencode", "pi-acp", "droid", "cursor", "junie", "omp", "grok", "copilot",
-    "mimo", "cline",
-];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -51,8 +44,6 @@ pub struct HarnessDirective {
     /// Short glyph or 1-2 character label for picker scanning.
     pub icon: String,
     pub description: String,
-    /// Empty = all backends.
-    pub backend: String,
     /// Free-form task key, e.g. implementation/review/research.
     pub task: String,
     /// Reusable system-style prompt block.
@@ -74,7 +65,6 @@ impl Default for HarnessDirective {
             title: String::new(),
             icon: String::new(),
             description: String::new(),
-            backend: String::new(),
             task: String::new(),
             system_prompt: String::new(),
             enabled: true,
@@ -189,7 +179,6 @@ fn normalize(d: &mut HarnessDirective) {
     d.title = d.title.trim().to_string();
     d.icon = d.icon.trim().to_string();
     d.description = d.description.trim().to_string();
-    d.backend = d.backend.trim().to_string();
     d.task = d.task.trim().to_string();
     d.system_prompt = d.system_prompt.trim().to_string();
     if d.icon.is_empty() {
@@ -197,9 +186,9 @@ fn normalize(d: &mut HarnessDirective) {
     }
 }
 
-/// Deterministic single-glyph fallback derived from task, then backend, then id.
+/// Deterministic single-glyph fallback derived from task, then id, then title.
 fn fallback_icon(d: &HarnessDirective) -> String {
-    for source in [&d.task, &d.backend, &d.id, &d.title] {
+    for source in [&d.task, &d.id, &d.title] {
         if let Some(c) = source.chars().next() {
             return c.to_uppercase().to_string();
         }
@@ -236,10 +225,6 @@ pub fn validate_directive(
     // Uniqueness is resolved by `upsert_directive` matching on id (replace vs
     // add), so an id already in `existing` is not an error here.
     let _ = existing;
-    let backend = d.backend.trim();
-    if !backend.is_empty() && !BUILTIN_BACKEND_IDS.contains(&backend) {
-        return Err(format!("unknown backend '{backend}'"));
-    }
     let task = d.task.trim();
     if !task.is_empty() && !is_kebab_case(task) {
         return Err(format!("task '{task}' must be lowercase kebab-case"));
@@ -321,17 +306,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_backend() {
-        let mut d = directive("ok");
-        d.backend = "nope".to_string();
-        assert!(validate_directive(&d, &[]).is_err());
-    }
-
-    #[test]
-    fn rejects_gemini_backend() {
-        let mut d = directive("ok");
-        d.backend = "gemini".to_string();
-        assert!(validate_directive(&d, &[]).is_err());
+    fn ignores_legacy_backend_field() {
+        // The `backend` field was removed (spec 163). A pre-existing config that
+        // still carries it must load fine — exercise the real lenient load path
+        // (`parse_contents` → per-entry `try_into::<HarnessDirective>()`), which
+        // ignores the now-unknown field rather than skipping the whole entry.
+        let cfg = parse_contents(
+            "version = 1\n[[directives]]\nid = \"x\"\ntitle = \"X\"\nbackend = \"claude\"\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.directives.len(), 1);
+        assert_eq!(cfg.directives[0].id, "x");
     }
 
     #[test]
