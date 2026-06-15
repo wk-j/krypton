@@ -38,7 +38,6 @@ import type {
   PlanEntry,
   ProviderErrorPayload,
   ReviewPriorityRange,
-  ReviewPriorityReport,
   StopReason,
   ToolCall,
   ToolCallUpdate,
@@ -51,6 +50,11 @@ import {
   type TriageOverlayViewModel,
 } from './attention-overlay';
 import { ReviewQualityStore } from './review-quality';
+import { ReviewPriorityStore } from './review-priority-store';
+import {
+  renderReviewPriorityOverlay,
+  type ReviewPriorityOverlayViewModel,
+} from './review-priority-overlay';
 import { ArtifactFeedbackQueue } from './artifact-feedback';
 import { DiffReviewQueue } from './diff-review';
 import {
@@ -1164,6 +1168,8 @@ export class AcpHarnessView implements ContentView {
   private lastPublishedTier: AttentionTier | null = null;
   /** spec 146: last review count published to the footer; dedupes the signal. */
   private lastPublishedReviews = -1;
+  /** spec 162: last review-priority high-count published to the footer; dedupes. */
+  private lastPublishedPriority = -1;
   private lanes: HarnessLane[] = [];
   private usageProviderListeners = new Set<() => void>();
   private activeLaneId = '';
@@ -1182,11 +1188,14 @@ export class AcpHarnessView implements ContentView {
   private reviewMatrixOverlayOpen = false;
   private reviewMatrixSelectedLaneIndex = 0;
   private reviewOutcomeUnlisten: UnlistenFn | null = null;
-  /** spec 160: latest diff review-priority report per authoring lane (keyed by
-   *  laneId). The Diff Window pulls a merged snapshot on open / refresh via the
-   *  `diff.review-priority` control op; session-only, dropped when the lane
-   *  closes or the view disposes. */
-  private reviewPriorityReports = new Map<string, ReviewPriorityReport>();
+  /** spec 160/162: latest diff review-priority report per authoring lane. The
+   *  Diff Window pulls a merged snapshot on open / refresh via the
+   *  `diff.review-priority` control op; the footer + summon overlay (spec 162)
+   *  read the same store. Session-only, dropped when the lane closes or the view
+   *  disposes. */
+  private reviewPriorityStore = new ReviewPriorityStore(this.laneBus);
+  private reviewPriorityOverlayOpen = false;
+  private reviewPrioritySelectedLaneIndex = 0;
   private reviewPriorityUnlisten: UnlistenFn | null = null;
   private interLaneUnlisten: UnlistenFn | null = null;
   private peerListUnlisten: UnlistenFn | null = null;
@@ -1288,6 +1297,8 @@ export class AcpHarnessView implements ContentView {
   private triagePanelEl!: HTMLElement;
   private reviewMatrixOverlayEl!: HTMLElement;
   private reviewMatrixPanelEl!: HTMLElement;
+  private reviewPriorityOverlayEl!: HTMLElement;
+  private reviewPriorityPanelEl!: HTMLElement;
   private pickerEl!: HTMLElement;
   private directivePickerEl!: HTMLElement;
   private modelPickerEl!: HTMLElement;
@@ -1360,6 +1371,11 @@ export class AcpHarnessView implements ContentView {
         // overlay, if open) whenever a round is recorded or a lane is dropped.
         this.renderReviewGaugeEl();
         if (this.reviewMatrixOverlayOpen) this.renderReviewMatrixOverlayEl();
+      } else if (e.type === 'review:priority') {
+        // spec 162: refresh the neutral footer priority indicator (and the
+        // roll-up overlay, if open) whenever a lane re-reports or is dropped.
+        this.publishReviewPriority(this.reviewPriorityStore.highCount());
+        if (this.reviewPriorityOverlayOpen) this.renderReviewPriorityOverlayEl();
       }
     });
     this.buildDOM();
@@ -1557,12 +1573,7 @@ export class AcpHarnessView implements ContentView {
     // gets a fresh snapshot on open and on each refresh. Reports from lanes that
     // have since closed are dropped (their reports were removed on close).
     if (operation === 'diff.review-priority') {
-      const ranges: ReviewPriorityRange[] = [];
-      for (const lane of this.lanes) {
-        const report = this.reviewPriorityReports.get(lane.id);
-        if (report) ranges.push(...report.ranges);
-      }
-      return { ranges };
+      return { ranges: this.reviewPriorityStore.allRanges() };
     }
     if (operation === 'diff.review-send') {
       const target = requiredString(params, 'target');
@@ -2192,15 +2203,9 @@ export class AcpHarnessView implements ContentView {
     const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
     if (!lane) return { recorded: false, reason: 'unknown_sender' };
     const ranges = Array.isArray(env.ranges) ? env.ranges : [];
-    if (ranges.length === 0) {
-      this.reviewPriorityReports.delete(lane.id);
-    } else {
-      this.reviewPriorityReports.set(lane.id, {
-        laneId: lane.id,
-        ranges,
-        reportedAt: Date.now(),
-      });
-    }
+    // The store emits `review:priority`, which drives the footer + overlay
+    // refresh via the LaneBus subscription (spec 162).
+    this.reviewPriorityStore.record(lane.id, ranges);
     return { recorded: true };
   }
 
@@ -2536,6 +2541,17 @@ export class AcpHarnessView implements ContentView {
         isEnabled: () => this.reviewQualityStore.totalReviews() > 0,
         disabledReason: () => 'no reviews recorded yet',
       },
+      {
+        // spec 162: review-priority roll-up overlay. `/` is the next free key in
+        // the bottom punctuation cluster (`; ' , .`) where the harness overlays
+        // live. Read-only; inside, j/k switch lane.
+        key: '/',
+        label: 'Review Priority',
+        group: 'Harness',
+        run: () => this.openReviewPriorityOverlay(),
+        isEnabled: () => this.reviewPriorityStore.lanesWithReports().length > 0,
+        disabledReason: () => 'no reading priority reported',
+      },
     ];
   }
 
@@ -2588,6 +2604,11 @@ export class AcpHarnessView implements ContentView {
     if (this.reviewMatrixOverlayOpen) {
       e.preventDefault();
       this.handleReviewMatrixKey(e);
+      return true;
+    }
+    if (this.reviewPriorityOverlayOpen) {
+      e.preventDefault();
+      this.handleReviewPriorityKey(e);
       return true;
     }
     if (this.metricsPanelOpen && e.key === 'Escape') {
@@ -2847,6 +2868,8 @@ export class AcpHarnessView implements ContentView {
     this.publishAttention(0, null);
     // spec 146: clear the footer review-count indicator — the harness is going away.
     this.publishReviews(0);
+    // spec 162: clear the footer review-priority indicator — going away.
+    this.publishReviewPriority(0);
     this.stopComposerTick();
     this.stopMetricsTick();
     this.stopSpinnerTicker();
@@ -2888,7 +2911,9 @@ export class AcpHarnessView implements ContentView {
       this.reviewPriorityUnlisten();
       this.reviewPriorityUnlisten = null;
     }
-    this.reviewPriorityReports.clear();
+    // The store is a private member GC'd with the view, and dispose already
+    // re-published `highCount: 0` to the footer above — no explicit clear needed
+    // (mirrors ReviewQualityStore; OpenCode-1 review W2).
     if (this.peerListUnlisten) {
       this.peerListUnlisten();
       this.peerListUnlisten = null;
@@ -3085,7 +3110,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   private openTriageOverlay(): void {
-    this.closeReviewMatrixOverlay(); // mutual-exclude: never stack the two full-screen overlays
+    this.closeReviewMatrixOverlay(); // mutual-exclude: never stack the full-screen overlays
+    this.closeReviewPriorityOverlay();
     this.triageOverlayOpen = true;
     this.triageRedirect = null;
     const open = this.triageStore.openItems();
@@ -3250,7 +3276,8 @@ export class AcpHarnessView implements ContentView {
 
   private openReviewMatrixOverlay(): void {
     if (this.reviewQualityStore.totalReviews() === 0) return;
-    this.closeTriageOverlay(); // mutual-exclude: never stack the two full-screen overlays
+    this.closeTriageOverlay(); // mutual-exclude: never stack the full-screen overlays
+    this.closeReviewPriorityOverlay();
     this.reviewMatrixOverlayOpen = true;
     const lanes = this.reviewQualityStore.lanesWithHistory();
     this.reviewMatrixSelectedLaneIndex = Math.min(
@@ -3400,6 +3427,79 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  // ── spec 162: review-priority roll-up overlay + footer indicator ──────────
+
+  private openReviewPriorityOverlay(): void {
+    if (this.reviewPriorityStore.lanesWithReports().length === 0) return;
+    this.closeTriageOverlay(); // mutual-exclude: never stack the full-screen overlays
+    this.closeReviewMatrixOverlay();
+    this.reviewPriorityOverlayOpen = true;
+    const lanes = this.reviewPriorityStore.lanesWithReports();
+    this.reviewPrioritySelectedLaneIndex = Math.min(
+      this.reviewPrioritySelectedLaneIndex,
+      Math.max(0, lanes.length - 1),
+    );
+    this.helpOpen = false;
+    this.memoryDrawerOpen = false;
+    this.renderReviewPriorityOverlayEl();
+  }
+
+  private closeReviewPriorityOverlay(): void {
+    if (!this.reviewPriorityOverlayOpen) return;
+    this.reviewPriorityOverlayOpen = false;
+    this.reviewPriorityOverlayEl.hidden = true;
+  }
+
+  /** spec 162: surface the count of `high` review-priority ranges on the global
+   * footer. Deduped so a no-op does not churn the footer. Neutral — never
+   * coloured; an advisory reading hint, not an action queue (ADR-0009). */
+  private publishReviewPriority(highCount: number): void {
+    if (highCount === this.lastPublishedPriority) return;
+    this.lastPublishedPriority = highCount;
+    this.viewBus?.publishSignal({
+      kind: 'review:priority',
+      source: SYSTEM_SOURCE,
+      value: { sourceId: this.attentionSourceId, highCount },
+    });
+  }
+
+  private renderReviewPriorityOverlayEl(): void {
+    this.reviewPriorityOverlayEl.hidden = !this.reviewPriorityOverlayOpen;
+    if (!this.reviewPriorityOverlayOpen) return;
+    const lanes = this.reviewPriorityStore.lanesWithReports();
+    if (this.reviewPrioritySelectedLaneIndex >= lanes.length) {
+      this.reviewPrioritySelectedLaneIndex = Math.max(0, lanes.length - 1);
+    }
+    const selectedLaneId = lanes[this.reviewPrioritySelectedLaneIndex];
+    const vm: ReviewPriorityOverlayViewModel = {
+      lanes,
+      selectedIndex: this.reviewPrioritySelectedLaneIndex,
+      laneName: (laneId) => this.lanes.find((l) => l.id === laneId)?.displayName ?? laneId,
+      highCountFor: (laneId) => this.reviewPriorityStore.highCountFor(laneId),
+      report: selectedLaneId ? this.reviewPriorityStore.reportFor(selectedLaneId) ?? null : null,
+    };
+    renderReviewPriorityOverlay(this.reviewPriorityPanelEl, vm);
+  }
+
+  /** Overlay key handling. Read-only: j/k switch lane, Esc/q close. */
+  private handleReviewPriorityKey(e: KeyboardEvent): void {
+    if (e.key === 'Escape' || e.key === 'q') {
+      this.closeReviewPriorityOverlay();
+      return;
+    }
+    const lanes = this.reviewPriorityStore.lanesWithReports();
+    if (lanes.length < 2) return;
+    if (e.key === 'j' || e.key === 'ArrowDown') {
+      this.reviewPrioritySelectedLaneIndex =
+        (this.reviewPrioritySelectedLaneIndex + 1) % lanes.length;
+      this.renderReviewPriorityOverlayEl();
+    } else if (e.key === 'k' || e.key === 'ArrowUp') {
+      this.reviewPrioritySelectedLaneIndex =
+        (this.reviewPrioritySelectedLaneIndex - 1 + lanes.length) % lanes.length;
+      this.renderReviewPriorityOverlayEl();
+    }
+  }
+
   private buildDOM(): void {
     // spec 125 — inject reusable backend logo <symbol> defs once. Hidden
     // off-screen so <use href="#krypton-logo-*"/> resolves from the rail.
@@ -3475,6 +3575,15 @@ export class AcpHarnessView implements ContentView {
     this.reviewMatrixPanelEl.className = 'acp-review__panel';
     this.reviewMatrixOverlayEl.appendChild(this.reviewMatrixPanelEl);
     body.appendChild(this.reviewMatrixOverlayEl);
+
+    // spec 162: review-priority roll-up overlay (summon-on-demand, read-only).
+    this.reviewPriorityOverlayEl = document.createElement('aside');
+    this.reviewPriorityOverlayEl.className = 'acp-harness__priority-overlay';
+    this.reviewPriorityOverlayEl.hidden = true;
+    this.reviewPriorityPanelEl = document.createElement('div');
+    this.reviewPriorityPanelEl.className = 'acp-priority__panel';
+    this.reviewPriorityOverlayEl.appendChild(this.reviewPriorityPanelEl);
+    body.appendChild(this.reviewPriorityOverlayEl);
 
     this.planEl = document.createElement('aside');
     this.planEl.className = 'acp-harness__plan';
@@ -4902,7 +5011,8 @@ export class AcpHarnessView implements ContentView {
     this.diffReviewQueue.dropLane(lane.id);
     // spec 160: the lane's diff review-priority report describes a diff its now
     // dead session produced — drop it so the Diff Window stops triaging by it.
-    this.reviewPriorityReports.delete(lane.id);
+    // The store re-emits `review:priority`, ticking the footer/overlay down.
+    this.reviewPriorityStore.onLaneClosed(lane.id);
   }
 
   private describePermission(lane: HarnessLane, permission: HarnessPermission): PermissionPayload {

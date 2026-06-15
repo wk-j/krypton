@@ -60,6 +60,15 @@ export interface SignalValueMap {
   // score (ADR-0004); it means "N rounds recorded — press to inspect", not
   // "act on me" (contrast the attention gauge).
   'review:quality': { sourceId: string; totalReviews: number };
+  // spec 162: count of `high` review-priority ranges across this harness's
+  // lanes (mark_review_priority roll-up), published globally so the workspace
+  // footer can show a neutral "read these first" depth indicator regardless of
+  // focused view. `sourceId` identifies the publishing harness so the footer
+  // sums across all of them. A harness publishes `highCount: 0` for its id on
+  // dispose. Neutral, never coloured — review priority is an advisory reading
+  // hint (ADR-0009), not an action queue; it means "N spots marked to read
+  // first — press to inspect", not "act on me".
+  'review:priority': { sourceId: string; highCount: number };
   // spec 155: published by an ACP harness whenever one of its lanes
   // transitions to `idle` — a lane quiet point (ADR-0008). `cwd` is the
   // harness's projectDir; consumers (the Diff Window) resolve it to a repo

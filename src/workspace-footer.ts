@@ -216,6 +216,10 @@ export class WorkspaceFooter {
   /** spec 146: recorded #review rounds per publishing harness instance, summed
    * for the neutral depth indicator (distinct from the attention gauge). */
   private reviewsBySource = new Map<string, number>();
+  private priorityEl: HTMLElement;
+  /** spec 162: count of `high` review-priority ranges per publishing harness,
+   * summed for the neutral "read these first" depth indicator. */
+  private priorityBySource = new Map<string, number>();
   private musicEl: HTMLElement;
   private musicProgressFillEl: HTMLElement;
   private musicIconEl: HTMLElement | null = null;
@@ -284,6 +288,14 @@ export class WorkspaceFooter {
     this.reviewsEl.className =
       'krypton-workspace-footer__segment krypton-workspace-footer__segment--reviews';
     this.reviewsEl.hidden = true;
+    // spec 162: neutral review-priority depth indicator (mark_review_priority
+    // roll-up), published via `review:priority`. Like the review-count gauge it
+    // means "N spots marked to read first — press to inspect", never "act on
+    // me"; an advisory reading hint, never coloured (ADR-0009).
+    this.priorityEl = document.createElement('span');
+    this.priorityEl.className =
+      'krypton-workspace-footer__segment krypton-workspace-footer__segment--priority';
+    this.priorityEl.hidden = true;
     this.musicEl = document.createElement('div');
     this.musicEl.className = 'krypton-workspace-footer__music';
     this.musicEl.setAttribute('aria-label', 'music mini player');
@@ -299,7 +311,13 @@ export class WorkspaceFooter {
     this.brandEl.setAttribute('aria-label', 'Krypton');
     this.brandEl.innerHTML = KRYPTON_LOGO_SVG;
 
-    this.rightEl.append(this.reviewsEl, this.attentionEl, this.hintEl, this.musicEl);
+    this.rightEl.append(
+      this.priorityEl,
+      this.reviewsEl,
+      this.attentionEl,
+      this.hintEl,
+      this.musicEl,
+    );
     this.root.append(this.brandEl, this.leftEl, this.centerEl, this.rightEl);
 
     deps.inputRouter.onModeChange((mode) => {
@@ -361,6 +379,14 @@ export class WorkspaceFooter {
       if (totalReviews > 0) this.reviewsBySource.set(sourceId, totalReviews);
       else this.reviewsBySource.delete(sourceId);
       this.renderReviews();
+    });
+
+    // spec 162: global (not focus-gated) review-priority depth indicator.
+    this.bus.onSignal({ kind: 'review:priority' }, (s) => {
+      const { sourceId, highCount } = s.value;
+      if (highCount > 0) this.priorityBySource.set(sourceId, highCount);
+      else this.priorityBySource.delete(sourceId);
+      this.renderPriority();
     });
 
     this.timer = setInterval(() => {
@@ -512,6 +538,7 @@ export class WorkspaceFooter {
 
   private renderRight(summary: FocusSummary): void {
     this.hintEl.textContent = this.hintFor(summary);
+    this.renderPriority();
     this.renderReviews();
     this.renderAttention();
     this.renderMusic();
@@ -538,6 +565,28 @@ export class WorkspaceFooter {
     label.textContent = `${n} review${n === 1 ? '' : 's'}`;
     this.reviewsEl.replaceChildren(glyph, label);
     this.reviewsEl.title = `${n} recorded review round${n === 1 ? '' : 's'} — press ⌘P ' to inspect the review quality matrix`;
+  }
+
+  /** spec 162: neutral count of `high` review-priority spots summed across
+   * sources. Hidden at zero so the footer stays quiet when no lane has marked a
+   * reading priority. Depth ("inspect"), never demand — never coloured. */
+  private renderPriority(): void {
+    let n = 0;
+    for (const total of this.priorityBySource.values()) n += total;
+    if (n <= 0) {
+      this.priorityEl.hidden = true;
+      this.priorityEl.replaceChildren();
+      this.priorityEl.removeAttribute('title');
+      return;
+    }
+    this.priorityEl.hidden = false;
+    const glyph = document.createElement('span');
+    glyph.className = 'krypton-workspace-footer__priority-glyph';
+    glyph.textContent = '▤';
+    const label = document.createElement('span');
+    label.textContent = `${n} priority`;
+    this.priorityEl.replaceChildren(glyph, label);
+    this.priorityEl.title = `${n} spot${n === 1 ? '' : 's'} marked to read first — press ⌘P / to inspect the review priority roll-up`;
   }
 
   /** spec 128/138: render the open attention-triage gauge — count summed across

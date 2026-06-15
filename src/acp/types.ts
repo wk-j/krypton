@@ -540,7 +540,8 @@ export type LaneBusEvent =
   | { type: 'lane:spawned'; payload: { laneId: string } }
   | { type: 'lane:closed'; payload: { laneId: string; displayName: string } }
   | { type: 'triage:changed'; payload: { openCount: number } }
-  | { type: 'review:quality'; payload: { totalReviews: number } };
+  | { type: 'review:quality'; payload: { totalReviews: number } }
+  | { type: 'review:priority'; payload: { highCount: number } };
 
 export type AcpEvent =
   | { type: 'user_message_chunk'; text: string }

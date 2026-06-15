@@ -259,6 +259,27 @@
   font-size: 0.96em;
 }
 
+/* spec 162: review-priority depth indicator — same muted, never-coloured,
+   never-pulsing treatment as the reviews chip. "N spots marked to read first —
+   inspect", not "act on me" (ADR-0009). */
+.krypton-workspace-footer__segment--priority {
+  flex: 0 0 auto;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  overflow: visible;
+  text-overflow: clip;
+  letter-spacing: 0.04em;
+  color: rgba(216, 232, 216, 0.5);
+}
+
+.krypton-workspace-footer__priority-glyph {
+  color: rgba(216, 232, 216, 0.42);
+  font-size: 0.96em;
+}
+
 /* Tier colours — same palette as the triage-overlay cards so the footer chip
    and the overlay agree on what each colour means (cyan < amber < red). */
 .krypton-workspace-footer__segment--rev-reversible {
