@@ -579,7 +579,7 @@ Reusable, backend/task-scoped **directives** (system-style prompt blocks) live i
 | File | `~/.config/krypton/acp-harness.toml` |
 |------|--------------------------------------|
 
-Unlike `krypton.toml` (hand-edited, never written by Krypton), `acp-harness.toml` is Krypton-managed: it is **created empty on first harness open** and rewritten atomically when an agent mutates a directive (and you approve). Edits made by hand are picked up the next time the harness loads it; there is no live hot-reload in v1. See `docs/124-acp-harness-directive-management.md`.
+Unlike `krypton.toml` (hand-edited, never written by Krypton), `acp-harness.toml` may be edited three ways: **by hand**, by the **`#directive` command** (which directs the focused lane to edit it with its own file tools — spec 161), or it is **created empty on first harness open**. Edits are picked up the next time the harness loads it — and the directive picker re-reads it on every open — so there is no live hot-reload in v1. A directive entry that fails to parse is skipped with a warning rather than breaking the whole file. See `docs/124-acp-harness-directive-management.md` and `docs/161-directive-tools-on-demand.md`.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -595,7 +595,7 @@ Unlike `krypton.toml` (hand-edited, never written by Krypton), `acp-harness.toml
 | `[[directives]].enabled` | bool | `true` | Disabled directives show in the picker but cannot be assigned |
 | `[[directives]].triage_equipped` | bool | `false` | Legacy spec-129 metadata. Since spec 130, `attention_flag` / `attention_resolve` are default-on for every lane that receives the `krypton-harness-memory` MCP server, so this field no longer controls tool visibility or assignment approval. Krypton still accepts and displays it as a legacy directive badge for compatibility. See `docs/130-default-attention-triage.md`. |
 
-A directive's `system_prompt` is injected into the same leading context packet as the lane-context stub, after it and before the user's prompt. Assign a directive to the focused lane with `Cmd+P → .` (the directive picker) or by clicking the composer `directive …` chip. Agents can also list/preview/create/update/delete/assign directives through the harness MCP tools (`directive_list`, `directive_preview`, `directive_remove`, `directive_apply`); persistent changes and cross-lane assignment require your approval in the lane transcript.
+A directive's `system_prompt` is injected into the same leading context packet as the lane-context stub, after it and before the user's prompt. Assign a directive to the focused lane with `Cmd+P → .` (the directive picker) or by clicking the composer `directive …` chip. To **create or edit** a directive, type `#directive <what you want>` in the composer (spec 161): the focused lane reads `acp-harness.toml`, adds/edits the `[[directives]]` entry with its own file tools, and the picker shows it on the next open. (The earlier dedicated directive MCP tools — `directive_list`/`directive_preview`/`directive_apply`/`directive_remove` — were removed to cut per-turn token overhead; agent-initiated cross-lane assignment is no longer available.)
 
 Example:
 

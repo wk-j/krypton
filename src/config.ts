@@ -218,3 +218,9 @@ export interface AcpHarnessUserConfig {
 export async function getAcpHarnessConfig(): Promise<AcpHarnessUserConfig> {
   return invoke<AcpHarnessUserConfig>('get_acp_harness_config');
 }
+
+/** Absolute path to `acp-harness.toml`. Surfaced to the `#directive` command so
+ * the agent edits the real file (resolving `~` / `XDG_CONFIG_HOME`). */
+export async function getAcpHarnessConfigPath(): Promise<string> {
+  return invoke<string>('get_acp_harness_config_path');
+}

@@ -88,11 +88,34 @@ pub fn acp_harness_config_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join("acp-harness.toml"))
 }
 
+/// A directive list whose entries are parsed leniently. Each `[[directives]]`
+/// block is captured as a raw `toml::Value` so one malformed entry can be
+/// skipped without failing the whole file — important since spec 161 lets an
+/// agent hand-author this file via `#directive`. Only a syntactically broken
+/// file (which has nothing salvageable) fails outright.
+#[derive(Deserialize)]
+#[serde(default)]
+struct RawConfig {
+    version: u32,
+    directives: Vec<toml::Value>,
+}
+
+impl Default for RawConfig {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            directives: Vec::new(),
+        }
+    }
+}
+
 /// Load the directive config from disk. Returns in-memory defaults when the
-/// file is missing (without creating it) or when it fails to parse — callers
-/// that mutate will persist on save. Every loaded directive is normalized
-/// (trimmed + icon fallback) so the frontend always receives display-ready
-/// values.
+/// file is missing (without creating it). A directive entry that fails to
+/// deserialize (e.g. a wrong field type written by hand) is skipped with a
+/// warning rather than failing the whole config — the rest still load. Only a
+/// syntactically invalid TOML file (nothing to salvage) returns an error. Every
+/// loaded directive is normalized (trimmed + icon fallback) so the frontend
+/// always receives display-ready values.
 pub fn load() -> Result<AcpHarnessUserConfig, String> {
     let path = acp_harness_config_path()
         .ok_or_else(|| "Could not determine config directory".to_string())?;
@@ -101,10 +124,31 @@ pub fn load() -> Result<AcpHarnessUserConfig, String> {
     }
     let contents =
         fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
-    let mut cfg: AcpHarnessUserConfig = toml::from_str(&contents)
-        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
-    for d in &mut cfg.directives {
-        normalize(d);
+    parse_contents(&contents).map_err(|e| format!("Failed to parse {}: {e}", path.display()))
+}
+
+/// Parse the directive config text leniently: skip malformed `[[directives]]`
+/// entries (with a warning) instead of failing the whole file. Split out from
+/// `load()` so it can be unit-tested without touching disk.
+fn parse_contents(contents: &str) -> Result<AcpHarnessUserConfig, String> {
+    let raw: RawConfig = toml::from_str(contents).map_err(|e| e.to_string())?;
+    let mut cfg = AcpHarnessUserConfig {
+        version: raw.version.max(1),
+        directives: Vec::with_capacity(raw.directives.len()),
+    };
+    for (i, value) in raw.directives.into_iter().enumerate() {
+        match value.try_into::<HarnessDirective>() {
+            Ok(mut d) => {
+                normalize(&mut d);
+                cfg.directives.push(d);
+            }
+            Err(e) => {
+                log::warn!(
+                    "acp-harness.toml: skipping malformed directive #{i}: {e} \
+                     (the other directives still load)"
+                );
+            }
+        }
     }
     Ok(cfg)
 }
@@ -298,6 +342,26 @@ mod tests {
         assert_eq!(cfg.directives.len(), 1);
         assert!(delete_directive(&mut cfg, "a"));
         assert!(!delete_directive(&mut cfg, "a"));
+    }
+
+    #[test]
+    fn parse_skips_malformed_entry_keeps_rest() {
+        // spec 161: an agent hand-authoring acp-harness.toml could write one bad
+        // entry (here `enabled` as a string instead of a bool). The good entries
+        // must still load so the picker isn't wiped by a single mistake.
+        let toml = "version = 1\n\
+            [[directives]]\nid = \"good-a\"\ntitle = \"A\"\n\
+            [[directives]]\nid = \"bad\"\ntitle = \"B\"\nenabled = \"yes\"\n\
+            [[directives]]\nid = \"good-b\"\ntitle = \"C\"\n";
+        let cfg = parse_contents(toml).expect("lenient parse");
+        let ids: Vec<&str> = cfg.directives.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, ["good-a", "good-b"]);
+    }
+
+    #[test]
+    fn parse_rejects_syntactically_broken_file() {
+        // A broken file has nothing salvageable — surface the error.
+        assert!(parse_contents("this is = = not toml [[").is_err());
     }
 
     #[test]

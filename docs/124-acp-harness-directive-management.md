@@ -1,8 +1,24 @@
 # ACP Harness Directive Management — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented — **MCP surface superseded by [spec 161](161-directive-tools-on-demand.md)**
 > Date: 2026-05-28
 > Milestone: M8 — Polish
+
+> **Superseded (spec 161, 2026-06-15):** The four directive MCP tools described
+> below — `directive_list`, `directive_preview`, `directive_apply`,
+> `directive_remove` — were **removed** to reclaim ~1,224 tokens/turn of always-on
+> tool-schema overhead (they were advertised to every lane every turn, yet a
+> directive is authored rarely). Directive **authoring** is now the one-shot
+> `#directive <intent>` composer command: it injects a prompt carrying the config
+> path + TOML schema + safety rules, and the lane edits
+> `~/.config/krypton/acp-harness.toml` with its **own** read/edit/write tools (the
+> `#wiki` pattern). The frontend approval-card round-trip
+> (`acp-directive-apply-requested` / `acp-harness-directives-changed`) is gone with
+> it. Everything else in this doc still holds: the config file format, the keyboard
+> **directive picker** (`Cmd+P → .`, which assigns an existing directive and reloads
+> from disk on open), the composer directive chip, and prompt injection are
+> unchanged. The lost capability is agent-initiated **cross-lane assignment**
+> (`directive_apply action:assign`); user-driven assignment via the picker remains.
 
 ## Problem
 
