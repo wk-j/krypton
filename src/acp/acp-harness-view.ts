@@ -6927,34 +6927,35 @@ export class AcpHarnessView implements ContentView {
         const active = i === cursor ? ' acp-harness__directive-row--active' : '';
         const state = d.enabled ? '' : ' acp-harness__directive-row--disabled';
         const assigned = d.id === currentId ? '<span class="acp-harness__directive-assigned">assigned</span>' : '';
-        // spec 163: directives are backend-agnostic — meta carries the id and the
-        // optional free-form task only; no backend scope or backend logo.
-        const meta = [d.id, d.task].filter(Boolean).join(' · ');
-        const badge = d.enabled ? '' : 'disabled';
-        const badgeEl = badge ? `<span class="acp-harness__directive-badge">${esc(badge)}</span>` : '';
+        const badgeEl = d.enabled ? '' : '<span class="acp-harness__directive-badge">disabled</span>';
         // spec 130: keep legacy triage metadata visible, but it no longer gates
-        // attention_flag visibility.
+        // attention_flag visibility. Concise picker: a glyph only (full label in
+        // the title tooltip), so it costs no row width when scanning many rows.
         const triageEl = d.triage_equipped
-          ? '<span class="acp-harness__directive-badge acp-harness__directive-badge--triage" title="legacy triage metadata; attention tools are default-on">◆ triage</span>'
+          ? '<span class="acp-harness__directive-badge acp-harness__directive-badge--triage" title="legacy triage metadata; attention tools are default-on">◆</span>'
+          : '';
+        // Single-line row: icon · title · badges · dimmed truncated description,
+        // so many directives stay scannable without scrolling. The id and task
+        // (dev-facing detail) move to the preview head, not each row.
+        const desc = d.description
+          ? `<span class="acp-harness__directive-desc">${esc(d.description)}</span>`
           : '';
         return (
           `<li class="acp-harness__directive-row${active}${state}" data-directive-index="${i}">` +
           `<span class="acp-harness__directive-icon">${esc(d.icon)}</span>` +
-          `<span class="acp-harness__directive-main">` +
-          `<span class="acp-harness__directive-title">${esc(d.title || d.id)}${assigned}${badgeEl}${triageEl}</span>` +
-          `<span class="acp-harness__directive-meta">${esc(meta)}</span>` +
-          (d.description ? `<span class="acp-harness__directive-desc">${esc(d.description)}</span>` : '') +
-          `</span>` +
+          `<span class="acp-harness__directive-title">${esc(d.title || d.id)}</span>` +
+          `${assigned}${badgeEl}${triageEl}${desc}` +
           `</li>`
         );
       })
       .join('');
     const selected = ordered[cursor];
+    const selectedMeta = selected ? [selected.id, selected.task].filter(Boolean).join(' · ') : '';
     const preview = selected
       ? `<div class="acp-harness__directive-preview">` +
         `<div class="acp-harness__directive-preview-head">` +
         `<span>// prompt</span>` +
-        `<span class="acp-harness__directive-preview-scope">${esc(selected.title || selected.id)}</span>` +
+        `<span class="acp-harness__directive-preview-scope">${esc(selectedMeta)}</span>` +
         `</div>` +
         `<div class="acp-harness__directive-preview-body">${esc(selected.system_prompt || '(empty prompt)')}</div>` +
         `</div>`

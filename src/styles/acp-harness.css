@@ -3616,15 +3616,15 @@
   list-style: none;
   margin: 0;
   padding: 6px 0;
-  max-height: 44vh;
+  max-height: 52vh;
   overflow-y: auto;
 }
 
 .acp-harness__directive-row {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 7px 14px;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 14px;
   color: rgba(216, 232, 216, 0.84);
   cursor: default;
 }
@@ -3640,34 +3640,6 @@
   color: rgba(216, 232, 216, 0.4);
 }
 
-.acp-harness__directive-logo {
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  margin-top: 2px;
-  color: rgba(216, 232, 216, 0.55);
-}
-
-.acp-harness__directive-logo svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.acp-harness__directive-logo--all      { visibility: hidden; }
-.acp-harness__directive-logo--claude   { color: var(--krypton-backend-claude); }
-.acp-harness__directive-logo--codex    { color: var(--krypton-backend-codex); }
-.acp-harness__directive-logo--opencode { color: var(--krypton-backend-opencode); }
-.acp-harness__directive-logo--pi       { color: var(--krypton-backend-pi); }
-.acp-harness__directive-logo--droid    { color: var(--krypton-backend-droid); }
-.acp-harness__directive-logo--cursor   { color: var(--krypton-backend-cursor); }
-.acp-harness__directive-logo--junie    { color: var(--krypton-backend-junie); }
-.acp-harness__directive-logo--omp      { color: var(--krypton-backend-omp); }
-.acp-harness__directive-logo--grok     { color: var(--krypton-backend-grok); }
-.acp-harness__directive-logo--copilot  { color: var(--krypton-backend-copilot); }
-.acp-harness__directive-logo--mimo     { color: var(--krypton-backend-mimo); }
-.acp-harness__directive-logo--cline    { color: var(--krypton-backend-cline); }
-
 .acp-harness__directive-icon {
   flex: 0 0 auto;
   width: 1.4em;
@@ -3675,18 +3647,18 @@
   color: var(--krypton-window-accent, #0cf);
 }
 
-.acp-harness__directive-main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
 .acp-harness__directive-title {
+  /* flex-shrink:0 so a short title (the common case) shows in full and never
+     gets squeezed by the long dimmed description sharing the row — only the
+     description truncates. max-width caps a pathologically long title so it
+     can't eat the whole row; past the cap it ellipsizes via overflow below. */
+  flex: 0 0 auto;
+  max-width: 40%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   letter-spacing: 0.03em;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
   font-weight: 600;
   color: rgba(216, 232, 216, 0.9);
 }
@@ -3696,24 +3668,30 @@
 }
 
 .acp-harness__directive-assigned {
+  flex: 0 0 auto;
   color: rgba(122, 255, 178, 0.9);
   font-size: 0.74em;
   letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
 .acp-harness__directive-badge {
+  flex: 0 0 auto;
   color: rgba(255, 196, 122, 0.85);
   font-size: 0.74em;
   letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
-.acp-harness__directive-meta {
-  color: rgba(216, 232, 216, 0.46);
-  font-size: 0.82em;
-}
-
+/* Dimmed inline summary that fills the rest of the single-line row and
+   truncates — context while scanning without spending a second line. */
 .acp-harness__directive-desc {
-  color: rgba(216, 232, 216, 0.62);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(216, 232, 216, 0.5);
   font-size: 0.85em;
 }
 
