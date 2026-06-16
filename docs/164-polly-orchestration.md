@@ -1,6 +1,6 @@
 # `#polly` — Any-Lane Orchestrator + Fixed Worker Trio — Implementation Spec
 
-> Status: Approved (rev 5 — review fixes from Claude-1 2026-06-16)
+> Status: Implemented (rev 5)
 > Date: 2026-06-16
 > Milestone: M-ACP — Harness Multi-Agent
 > Builds on: `docs/145-harness-design-review-panel.md`, `docs/106-inter-lane-messaging.md`

@@ -83,6 +83,20 @@ import {
   mentionPaletteVisible,
 } from './mention-palette';
 import {
+  type HashCommand,
+  filteredHashCommands,
+  hashPaletteVisible,
+} from './hash-commands';
+import {
+  POLLY_WORKER_BACKENDS,
+  POLLY_ROLE_PROMPTS,
+  parsePollyTask,
+  pollyRequestPrompt,
+  type PollyEnsureOutcome,
+  type PollyRoster,
+  type PollyWorkerBackend,
+} from './polly';
+import {
   reviewRequestPrompt,
   REVIEW_INTENT_CAP,
   type ReviewSubject,
@@ -694,6 +708,8 @@ interface HarnessLane {
   slashPaletteDismissed: boolean;
   mentionPaletteIndex: number;
   mentionPaletteDismissed: boolean;
+  hashPaletteIndex: number;
+  hashPaletteDismissed: boolean;
   plan: PlanEntry[] | null;
   planCollapsed: boolean;
   lastKilled: string;
@@ -738,6 +754,9 @@ interface HarnessLane {
   turnDirectiveOverride: { directiveId: string | null } | null;
   /** spec 124: restored after a next-turn override completes. */
   previousDirectiveId: string | null;
+  /** spec 164: built-in Polly role overlay (orchestrator / implementer). Overrides
+   *  user directives while set. */
+  pollyBuiltinRole: 'orchestrator' | 'implementer' | null;
   /** spec 130: lane participates in attention-triage audit. Attention tools are
    *  default-on for every harness-memory-capable lane; this flag now drives local
    *  audit/UI behavior rather than MCP tool visibility. */
@@ -1104,6 +1123,8 @@ const LANE_DEFAULTS = {
   slashPaletteDismissed: false,
   mentionPaletteIndex: 0,
   mentionPaletteDismissed: false,
+  hashPaletteIndex: 0,
+  hashPaletteDismissed: false,
   plan: null,
   planCollapsed: false,
   lastKilled: '',
@@ -1123,6 +1144,7 @@ const LANE_DEFAULTS = {
   pendingDirectiveChange: null,
   turnDirectiveOverride: null,
   previousDirectiveId: null,
+  pollyBuiltinRole: null,
   triageEquipped: true,
   triageOverride: null,
   flaggedThisTurn: false,
@@ -2457,6 +2479,143 @@ export class AcpHarnessView implements ContentView {
     );
   }
 
+  /**
+   * spec 164: `#polly <task>` — any lane orchestrates; harness ensures
+   * cursor/claude/codex worker lanes and injects a fan-out orchestration prompt.
+   */
+  private async runPollyCommand(lane: HarnessLane, task: string): Promise<void> {
+    if (!task) {
+      this.flashChip('#polly: no task');
+      return;
+    }
+    if (lane.status !== 'idle') {
+      this.flashChip('lane busy - #cancel first');
+      return;
+    }
+    if (!lane.client) {
+      this.flashChip('#polly: lane not ready');
+      return;
+    }
+
+    this.reserveCommandTurn(lane, 'orchestrating');
+    const outcome = await this.ensurePollyWorkers(lane);
+    if (!outcome.ok) {
+      this.releaseReservedTurn(lane);
+      if (outcome.missing.length > 0) {
+        this.flashChip(`#polly: ${outcome.missing.join(', ')} not installed`);
+      } else if (outcome.errored.length > 0) {
+        this.flashChip(`#polly: ${outcome.errored.join(', ')} failed to start`);
+      } else {
+        this.flashChip('#polly: worker roster incomplete');
+      }
+      return;
+    }
+
+    const { roster } = outcome;
+    if (roster.spawned.length > 0) {
+      const names = roster.workers
+        .filter((w) => roster.spawned.includes(w.backendId))
+        .map((w) => w.displayName);
+      this.flashChip(`#polly: spawned ${names.join(', ')}`);
+    }
+
+    const prompt = pollyRequestPrompt({
+      task,
+      roster,
+      intent: this.collectReviewIntent(lane),
+    });
+    await this.dispatchTurn(lane, prompt);
+    this.flashChip(`#polly → ${roster.workers.map((w) => w.displayName).join(', ')}`);
+  }
+
+  private findPollyWorkerLane(
+    orchestratorLaneId: string,
+    backendId: PollyWorkerBackend,
+  ): HarnessLane | undefined {
+    return this.lanes.find(
+      (l) =>
+        l.backendId === backendId &&
+        l.id !== orchestratorLaneId &&
+        l.status !== 'stopped' &&
+        l.status !== 'error',
+    );
+  }
+
+  private async addPollyWorkerLane(
+    orchestratorLane: HarnessLane,
+    backendId: PollyWorkerBackend,
+  ): Promise<HarnessLane | null> {
+    const beforeCount = this.lanes.length;
+    await this.addLane(backendId);
+    if (this.lanes.length <= beforeCount) return null;
+    const candidates = this.lanes.filter(
+      (l) => l.backendId === backendId && l.id !== orchestratorLane.id,
+    );
+    return candidates[candidates.length - 1] ?? null;
+  }
+
+  private async ensurePollyWorkers(orchestratorLane: HarnessLane): Promise<PollyEnsureOutcome> {
+    orchestratorLane.pollyBuiltinRole = 'orchestrator';
+    let installed: Set<string>;
+    try {
+      installed = new Set((await AcpClient.listBackends()).map((b) => b.id));
+    } catch {
+      return { ok: false, missing: [...POLLY_WORKER_BACKENDS], errored: [] };
+    }
+
+    const workers: PollyRoster['workers'] = [];
+    const spawned: PollyWorkerBackend[] = [];
+    const missing: PollyWorkerBackend[] = [];
+    const errored: PollyWorkerBackend[] = [];
+
+    for (const backend of POLLY_WORKER_BACKENDS) {
+      let workerLane = this.findPollyWorkerLane(orchestratorLane.id, backend);
+      if (!workerLane) {
+        if (!installed.has(backend)) {
+          missing.push(backend);
+          continue;
+        }
+        workerLane = (await this.addPollyWorkerLane(orchestratorLane, backend)) ?? undefined;
+        if (!workerLane) {
+          errored.push(backend);
+          continue;
+        }
+        spawned.push(backend);
+      }
+      if (workerLane.status === 'error' || !workerLane.client) {
+        errored.push(backend);
+        continue;
+      }
+      workerLane.pollyBuiltinRole = 'implementer';
+      workers.push({
+        displayName: workerLane.displayName,
+        laneId: workerLane.id,
+        backendId: backend,
+      });
+    }
+
+    this.activateLane(orchestratorLane.id);
+
+    if (missing.length > 0 || errored.length > 0 || workers.length !== POLLY_WORKER_BACKENDS.length) {
+      return { ok: false, missing, errored };
+    }
+
+    return {
+      ok: true,
+      roster: {
+        orchestrator: {
+          displayName: orchestratorLane.displayName,
+          laneId: orchestratorLane.id,
+          backendId: orchestratorLane.backendId,
+        },
+        workers,
+        spawned,
+        missing,
+        errored,
+      },
+    };
+  }
+
   getWorkingDirectory(): string | null {
     return this.projectDir;
   }
@@ -2621,6 +2780,9 @@ export class AcpHarnessView implements ContentView {
       if (composerLane && slashPaletteVisible(composerLane)) {
         return this.handleSlashPaletteKey(e, composerLane);
       }
+      if (composerLane && hashPaletteVisible(composerLane.draft, composerLane.hashPaletteDismissed)) {
+        return this.handleHashPaletteKey(e, composerLane);
+      }
       e.preventDefault();
       this.activateLaneByDelta(e.key === 'n' || e.key === 'N' ? 1 : -1);
       return true;
@@ -2697,6 +2859,7 @@ export class AcpHarnessView implements ContentView {
     }
 
     if (this.handleSlashPaletteKey(e, lane)) return true;
+    if (this.handleHashPaletteKey(e, lane)) return true;
     if (this.handleHistoryKey(e, lane)) return true;
     if (this.handleEditingKey(e, lane)) return true;
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -2820,6 +2983,68 @@ export class AcpHarnessView implements ContentView {
       return true;
     }
     return false;
+  }
+
+  /** Built-in `#` command palette. Mirrors the slash palette: Tab completes the
+   *  highlighted command to `#name ` (a trailing space closes the palette via the
+   *  regex), while Enter falls through to submit — so a fully-typed `#cancel` + Enter
+   *  still fires immediately and only Tab is needed to autocomplete a partial token. */
+  private handleHashPaletteKey(e: KeyboardEvent, lane: HarnessLane): boolean {
+    if (!hashPaletteVisible(lane.draft, lane.hashPaletteDismissed)) return false;
+    const matches = filteredHashCommands(lane.draft);
+    if (matches.length === 0) return false;
+    if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
+      e.preventDefault();
+      lane.hashPaletteIndex = (lane.hashPaletteIndex + 1) % matches.length;
+      this.renderComposer();
+      return true;
+    }
+    if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
+      e.preventDefault();
+      lane.hashPaletteIndex = (lane.hashPaletteIndex - 1 + matches.length) % matches.length;
+      this.renderComposer();
+      return true;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const cmd = matches[Math.max(0, Math.min(lane.hashPaletteIndex, matches.length - 1))];
+      if (cmd) this.setDraft(lane, `#${cmd.name} `, cmd.name.length + 2);
+      return true;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      lane.hashPaletteDismissed = true;
+      this.renderComposer();
+      return true;
+    }
+    return false;
+  }
+
+  private renderHashPalette(lane: HarnessLane): string {
+    if (!hashPaletteVisible(lane.draft, lane.hashPaletteDismissed)) return '';
+    const matches = filteredHashCommands(lane.draft);
+    if (matches.length === 0) return '';
+    const safeIndex = Math.max(0, Math.min(lane.hashPaletteIndex, matches.length - 1));
+    const rows = matches
+      .map((cmd: HashCommand, i: number) => {
+        const sel = i === safeIndex ? ' acp-harness__slash-palette-row--selected' : '';
+        const hint = cmd.args ? `<span class="acp-harness__slash-palette-hint">${esc(cmd.args)}</span>` : '';
+        const desc = `<span class="acp-harness__slash-palette-desc">${esc(cmd.description)}</span>`;
+        return (
+          `<div class="acp-harness__slash-palette-row${sel}">` +
+          `<span class="acp-harness__slash-palette-name">#${esc(cmd.name)}</span>` +
+          hint +
+          desc +
+          `</div>`
+        );
+      })
+      .join('');
+    return (
+      `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
+      `<div class="acp-harness__slash-palette-meta">↑↓ / ⌃n⌃p select · Tab complete · Esc dismiss</div>` +
+      rows +
+      `</div>`
+    );
   }
 
   onResize(_width: number, _height: number): void {
@@ -4450,6 +4675,12 @@ export class AcpHarnessView implements ContentView {
   /** Join the lane-context stub and the active directive into one block. */
   private composeLeadingContext(lane: HarnessLane): string {
     const packet = this.renderPromptMemoryPacket(lane);
+    if (lane.pollyBuiltinRole) {
+      const heading =
+        lane.pollyBuiltinRole === 'orchestrator' ? '## Polly orchestrator' : '## Polly worker';
+      const block = `${heading}\n${POLLY_ROLE_PROMPTS[lane.pollyBuiltinRole]}`;
+      return packet ? `${packet}\n\n${block}` : block;
+    }
     const directive = this.effectiveDirective(lane);
     if (!directive) return packet;
     const heading = directive.title.trim()
@@ -6100,6 +6331,13 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
+    if (parts[0] === '#polly') {
+      this.setDraft(lane, '', 0);
+      const task = parsePollyTask(text);
+      await this.runPollyCommand(lane, task);
+      this.render();
+      return;
+    }
     if (parts[0] === '#unqueue') {
       this.setDraft(lane, '', 0); // consume the command text on every branch
       this.unqueuePrompt(lane, parts[1]);
@@ -7360,6 +7598,7 @@ export class AcpHarnessView implements ContentView {
     }
     const mentionPalette = this.renderMentionPalette(lane);
     const palette = renderSlashPalette(lane);
+    const hashPalette = this.renderHashPalette(lane);
     const peerStrip = buildComposerPeerStrip(
       lane.status,
       this.coordinator.pendingPeersFor(lane.id),
@@ -7379,6 +7618,7 @@ export class AcpHarnessView implements ContentView {
       staging +
       mentionPalette +
       palette +
+      hashPalette +
       `<div class="acp-harness__input-line">` +
       `<span class="acp-harness__lane-tag">${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__prompt">${lane.status === 'busy'
@@ -7676,6 +7916,7 @@ export class AcpHarnessView implements ContentView {
             <dt>Ctrl+K</dt><dd>Kill to end of line</dd>
             <dt>Ctrl+Y</dt><dd>Yank last killed text</dd>
             <dt>Ctrl+T</dt><dd>Transpose chars around cursor</dd>
+            <dt># / @ / /</dt><dd>Type at line start to autocomplete built-in #commands / @lanes / agent /commands · ↑↓ select, Tab completes</dd>
           </dl>
         </section>
         <section class="acp-harness__help-section">
@@ -7719,6 +7960,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#goal &lt;text&gt;</dt><dd>Set a focus scope: clears the lane (keeps memory) and anchors it to this task</dd>
             <dt>#goal</dt><dd>Show the active goal · #goal clear removes it</dd>
             <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
+            <dt>#polly &lt;task&gt;</dt><dd>Polly orchestration from this lane — auto-spawns Cursor, Claude, and Codex workers</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
             <dt>#mem</dt><dd>Show memory command hint</dd>
             <dt>#mem clear</dt><dd>Clear active lane memory only</dd>
@@ -7728,6 +7970,8 @@ export class AcpHarnessView implements ContentView {
             <dt>#recall &lt;question&gt;</dt><dd>Answer a question from the project wiki, with citations</dd>
             <dt>#directive &lt;intent&gt;</dt><dd>Have the active lane create/edit a reusable directive in acp-harness.toml</dd>
             <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
+            <dt>#queue [clear | edit N]</dt><dd>Manage prompts queued while the lane is busy</dd>
+            <dt>#unqueue [N]</dt><dd>Remove the last (or Nth) queued prompt</dd>
             <dt>!cmd</dt><dd>Run shell command in project cwd, output goes to transcript</dd>
           </dl>
         </section>
@@ -8441,6 +8685,8 @@ export class AcpHarnessView implements ContentView {
     lane.slashPaletteDismissed = false;
     lane.mentionPaletteIndex = 0;
     lane.mentionPaletteDismissed = false;
+    lane.hashPaletteIndex = 0;
+    lane.hashPaletteDismissed = false;
     lane.historyIndex = null;
     lane.historySavedDraft = null;
     this.renderComposer();
@@ -8454,6 +8700,8 @@ export class AcpHarnessView implements ContentView {
     lane.slashPaletteDismissed = false;
     lane.mentionPaletteIndex = 0;
     lane.mentionPaletteDismissed = false;
+    lane.hashPaletteIndex = 0;
+    lane.hashPaletteDismissed = false;
     this.renderComposer();
   }
 

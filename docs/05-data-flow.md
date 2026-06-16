@@ -295,8 +295,11 @@
        increments a spawn epoch, and spawns the same backend in the same cwd.
     d. #new! first clears that lane's persisted memory document through
        clear_harness_memory_lane, then follows the #new flow.
-
-## Diff Review Priority Flow (spec 160 — push out, pull on render)
+    e. #polly <task> (spec 164) runs from any lane: the active lane is the
+       Polly orchestrator; ensurePollyWorkers auto-spawns cursor/claude/codex
+       worker lanes (if installed), applies built-in role overlays, re-activates
+       the orchestrator, and dispatchTurn injects pollyRequestPrompt (peer_send
+       fan-out orchestration — sibling of #review). (spec 160 — push out, pull on render)
 
 ```
 PUSH (lane → harness), at end of an editing turn:
@@ -406,7 +409,15 @@ PULL (window ← harness), on open and on every auto-refresh:
        palette popup filtered by the typed prefix.
     c. ↑/↓ moves selection, Enter/Tab inserts `/<name> ` at the cursor, Esc
        dismisses for the current draft.
-    d. current_mode_update follows the same path; modes are looked up against
+    d. Built-in `#` commands (handled by the harness itself, not the agent) get a
+       sibling palette from the static `HASH_COMMANDS` registry in
+       `src/acp/hash-commands.ts`. When the draft is a bare `#token` at the line
+       start (`^#[A-Za-z0-9!_-]*$`), the composer renders the same popup filtered
+       by prefix. ↑/↓ (or ⌃n/⌃p) selects, Tab completes to `#<name> ` (the trailing
+       space closes the palette), Esc dismisses. Enter is left to submit, so a
+       fully-typed `#cancel` + Enter still fires immediately. The registry is the
+       single source of truth and must stay in sync with `runHashCommand`.
+    e. current_mode_update follows the same path; modes are looked up against
        agentCapabilities.availableModes captured during initialize, and the lane
        head paints `renderModeChip()` between the model and MCP chips.
 17. fs/* activity surfacing:
