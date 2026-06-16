@@ -142,7 +142,7 @@ Rendered in `renderTranscriptItem()` for `kind === 'inter_lane'`:
 
 - Label column: `mail` (uppercase, purple/blue via row modifier).
 - Row modifiers: `.acp-harness__msg--inter_lane`, `.acp-harness__msg--mail-in` | `--mail-out` — color tokens only (label + meta); **no colored left border** on lane-mail rows (user feedback).
-- Body modifier: `.acp-harness__msg-body--lane-mail` — slightly smaller type, muted foreground (quieter than assistant). Optional **flat** `background` tint on the body only (no border, no inset shadow).
+- Body modifier: `.acp-harness__msg-body--lane-mail` — same body text size as assistant rows, muted foreground (quieter than assistant). Optional **flat** `background` tint on the body only (no border, no inset shadow). Meta/provenance lines may stay smaller.
 - Body children (no wrapper div):
   - `span.acp-harness__lane-mail-meta` — one dim line: `← from codex-1 · lane mail` or `→ to claude-1 · lane mail` (lowercase display names; arrow + text, not icon-only).
   - `span.acp-harness__lane-mail-text` — `textContent` only, `white-space: pre-wrap` (no markdown).
@@ -157,7 +157,7 @@ For `kind === 'system'` where `text.startsWith('[inter-lane]')` or `item.harness
 
 - Label: `event`.
 - Classes: `.acp-harness__msg--harness-event`, `.acp-harness__harness-event-body`.
-- Single-line when possible; wrap only if long. No markdown. **No left border** — dim purple text + smaller size only (same as lane-mail: typography, not chrome bars).
+- Single-line when possible; wrap only if long. No markdown. **No left border** — dim purple text + typography only, not chrome bars.
 
 ### UI — Awaiting peer (align Spec 118)
 
