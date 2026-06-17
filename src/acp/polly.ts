@@ -14,8 +14,8 @@ export type PollyBuiltinRole = 'orchestrator' | 'implementer';
 
 export const POLLY_ROLE_PROMPTS: Record<PollyBuiltinRole, string> = {
   orchestrator:
-    'You are the Polly tech lead. You do NOT write source code or tests — delegate to the ' +
-    'Cursor, Claude, and Codex worker lanes via peer_send. You MAY edit docs/Markdown and your ' +
+    'You are the Polly tech lead. You do NOT write source code or tests — delegate to your ' +
+    'Polly worker lanes via peer_send. You MAY edit docs/Markdown and your ' +
     'lane memory. Integrate results; never commit or merge.',
   implementer:
     'You are a Polly worker (Cursor, Claude, or Codex). Execute only the scoped task in the peer ' +
@@ -51,7 +51,7 @@ export type PollyEnsureOutcome =
 /** Everything after the `#polly` token in the composer line. */
 export function parsePollyTask(text: string): string {
   const trimmed = text.trim();
-  if (!trimmed.startsWith('#polly')) return '';
+  if (!/^#polly(?:\s|$)/.test(trimmed)) return '';
   return trimmed.slice('#polly'.length).trim();
 }
 
@@ -60,8 +60,24 @@ export function isPollyWorkerBackend(backendId: string): backendId is PollyWorke
 }
 
 /**
+ * The two worker backends `#polly` should spawn for a given orchestrator.
+ *
+ * `#polly` runs with the active lane as orchestrator + 2 workers = 3 lanes total.
+ * If the orchestrator is itself one of the pool backends, exclude it (so e.g. a
+ * Cursor orchestrator spawns Claude + Codex, not a redundant second Cursor). If
+ * the orchestrator is outside the pool (grok/pi/etc.), fall back to the first two
+ * pool backends (`cursor`, `claude`).
+ */
+export function pollyWorkerBackendsFor(orchestratorBackendId: string): PollyWorkerBackend[] {
+  if (isPollyWorkerBackend(orchestratorBackendId)) {
+    return POLLY_WORKER_BACKENDS.filter((b) => b !== orchestratorBackendId);
+  }
+  return POLLY_WORKER_BACKENDS.slice(0, 2);
+}
+
+/**
  * One-shot instruction telling the orchestrator lane to decompose the task,
- * fan out to all three workers, cross-review, and synthesize.
+ * fan out to its workers, cross-review, and synthesize.
  */
 export function pollyRequestPrompt(input: PollyRequestPromptInput): string {
   const { task, roster, intent } = input;
@@ -78,7 +94,7 @@ export function pollyRequestPrompt(input: PollyRequestPromptInput): string {
   lines.push(
     `Orchestrator: ${roster.orchestrator.displayName} (you, backend: ${roster.orchestrator.backendId})`,
   );
-  lines.push('Workers (always peer_send these three):');
+  lines.push(`Workers (peer_send all ${roster.workers.length}):`);
   lines.push(workerLines);
   lines.push('');
   lines.push('## Task');
@@ -87,8 +103,8 @@ export function pollyRequestPrompt(input: PollyRequestPromptInput): string {
   lines.push('## Intent (from this session)');
   lines.push(intent.trim().length > 0 ? intent.trim() : '(none recorded — infer from the task.)');
   lines.push('');
-  lines.push('Cross-review: Claude built → peer_send Codex to review; Codex built → peer_send Claude; ' +
-    'Cursor built → peer_send Claude or Codex. Reviewers get diff + contract only — not implementer transcripts.');
+  lines.push('Cross-review: route each finished slice to a DIFFERENT worker than its implementer ' +
+    '(diff + contract only — not implementer transcripts).');
   lines.push('');
   lines.push('Do this, in order:');
   lines.push(

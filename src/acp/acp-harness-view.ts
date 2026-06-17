@@ -88,10 +88,10 @@ import {
   hashPaletteVisible,
 } from './hash-commands';
 import {
-  POLLY_WORKER_BACKENDS,
   POLLY_ROLE_PROMPTS,
   parsePollyTask,
   pollyRequestPrompt,
+  pollyWorkerBackendsFor,
   type PollyEnsureOutcome,
   type PollyRoster,
   type PollyWorkerBackend,
@@ -757,6 +757,10 @@ interface HarnessLane {
   /** spec 164: built-in Polly role overlay (orchestrator / implementer). Overrides
    *  user directives while set. */
   pollyBuiltinRole: 'orchestrator' | 'implementer' | null;
+  /** spec 164: while a lane serves as a Polly implementer it auto-accepts
+   *  permissions (`permissionMode = 'bypass'`). This stashes the user's own mode
+   *  so `clearPollyBuiltinRole` can restore it; null when not enlisted. */
+  pollySavedPermissionMode: 'normal' | 'acceptEdits' | 'bypass' | null;
   /** spec 130: lane participates in attention-triage audit. Attention tools are
    *  default-on for every harness-memory-capable lane; this flag now drives local
    *  audit/UI behavior rather than MCP tool visibility. */
@@ -1145,6 +1149,7 @@ const LANE_DEFAULTS = {
   turnDirectiveOverride: null,
   previousDirectiveId: null,
   pollyBuiltinRole: null,
+  pollySavedPermissionMode: null,
   triageEquipped: true,
   triageOverride: null,
   flaggedThisTurn: false,
@@ -2532,6 +2537,7 @@ export class AcpHarnessView implements ContentView {
     orchestratorLaneId: string,
     backendId: PollyWorkerBackend,
   ): HarnessLane | undefined {
+    // Includes `starting` lanes — peer_send queues to the inbox and drains on idle.
     return this.lanes.find(
       (l) =>
         l.backendId === backendId &&
@@ -2539,6 +2545,18 @@ export class AcpHarnessView implements ContentView {
         l.status !== 'stopped' &&
         l.status !== 'error',
     );
+  }
+
+  /** Drop this lane's Polly role overlay (self-scoped — no cross-lane sweep). */
+  private clearPollyBuiltinRole(lane: HarnessLane): void {
+    // Restore the user's own permission mode if this lane was bypassed as a
+    // Polly implementer (null saved mode = orchestrator or never enlisted, so
+    // its permissionMode is left untouched).
+    if (lane.pollySavedPermissionMode !== null) {
+      lane.permissionMode = lane.pollySavedPermissionMode;
+      lane.pollySavedPermissionMode = null;
+    }
+    lane.pollyBuiltinRole = null;
   }
 
   private async addPollyWorkerLane(
@@ -2555,20 +2573,21 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async ensurePollyWorkers(orchestratorLane: HarnessLane): Promise<PollyEnsureOutcome> {
-    orchestratorLane.pollyBuiltinRole = 'orchestrator';
+    const workerBackends = pollyWorkerBackendsFor(orchestratorLane.backendId);
     let installed: Set<string>;
     try {
       installed = new Set((await AcpClient.listBackends()).map((b) => b.id));
     } catch {
-      return { ok: false, missing: [...POLLY_WORKER_BACKENDS], errored: [] };
+      return { ok: false, missing: [...workerBackends], errored: [] };
     }
 
     const workers: PollyRoster['workers'] = [];
     const spawned: PollyWorkerBackend[] = [];
+    const spawnedLanes: HarnessLane[] = [];
     const missing: PollyWorkerBackend[] = [];
     const errored: PollyWorkerBackend[] = [];
 
-    for (const backend of POLLY_WORKER_BACKENDS) {
+    for (const backend of workerBackends) {
       let workerLane = this.findPollyWorkerLane(orchestratorLane.id, backend);
       if (!workerLane) {
         if (!installed.has(backend)) {
@@ -2581,12 +2600,12 @@ export class AcpHarnessView implements ContentView {
           continue;
         }
         spawned.push(backend);
+        spawnedLanes.push(workerLane);
       }
       if (workerLane.status === 'error' || !workerLane.client) {
         errored.push(backend);
         continue;
       }
-      workerLane.pollyBuiltinRole = 'implementer';
       workers.push({
         displayName: workerLane.displayName,
         laneId: workerLane.id,
@@ -2596,9 +2615,28 @@ export class AcpHarnessView implements ContentView {
 
     this.activateLane(orchestratorLane.id);
 
-    if (missing.length > 0 || errored.length > 0 || workers.length !== POLLY_WORKER_BACKENDS.length) {
+    // spawn/collect first; prune dead spawns on failure; stamp roles only on full roster.
+    if (missing.length > 0 || errored.length > 0 || workers.length !== workerBackends.length) {
+      for (const lane of spawnedLanes) {
+        if (lane.status === 'error') await this.closeLane(lane);
+      }
       return { ok: false, missing, errored };
     }
+
+    orchestratorLane.pollyBuiltinRole = 'orchestrator';
+    for (const worker of workers) {
+      const workerLane = this.lanes.find((l) => l.id === worker.laneId);
+      if (!workerLane) continue;
+      workerLane.pollyBuiltinRole = 'implementer';
+      // Polly implementers auto-accept permissions for the run; stash the user's
+      // own mode once (guard against re-stamping a reused lane that is already
+      // bypassed) so clearPollyBuiltinRole can restore it.
+      if (workerLane.pollySavedPermissionMode === null) {
+        workerLane.pollySavedPermissionMode = workerLane.permissionMode;
+      }
+      workerLane.permissionMode = 'bypass';
+    }
+    this.render();
 
     return {
       ok: true,
@@ -5956,6 +5994,7 @@ export class AcpHarnessView implements ContentView {
       });
     }
     lane.cursorMcpNames = null;
+    this.clearPollyBuiltinRole(lane);
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
     this.notifyUsageProvidersChanged();
@@ -6046,6 +6085,7 @@ export class AcpHarnessView implements ContentView {
     lane.plan = null;
     lane.planCollapsed = false;
     lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
+    this.clearPollyBuiltinRole(lane);
     // spec 133: a restart reuses the display name — drop any pending artifact
     // write grant so the restarted lane can't inherit it.
     this.cancelPendingArtifactsForLane(lane);
@@ -6121,6 +6161,7 @@ export class AcpHarnessView implements ContentView {
     lane.plan = null;
     lane.planCollapsed = false;
     lane.transcriptWindow = TRANSCRIPT_WINDOW_DEFAULT;
+    this.clearPollyBuiltinRole(lane);
     this.updateComposerTick();
     this.render();
     await this.spawnLane(lane);
@@ -7611,6 +7652,7 @@ export class AcpHarnessView implements ContentView {
       // spec 157: persistent token explaining why tool detail is absent — the
       // flag survives reopen, so the cue must too.
       (this.conciseMode ? `<span class="acp-harness__concise-tag">concise</span>` : '') +
+      renderPollyBypassChip(lane) +
       this.renderDirectiveChip(lane) +
       projectStatus +
       `</div>` +
@@ -7960,7 +8002,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#goal &lt;text&gt;</dt><dd>Set a focus scope: clears the lane (keeps memory) and anchors it to this task</dd>
             <dt>#goal</dt><dd>Show the active goal · #goal clear removes it</dd>
             <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
-            <dt>#polly &lt;task&gt;</dt><dd>Polly orchestration from this lane — auto-spawns Cursor, Claude, and Codex workers</dd>
+            <dt>#polly &lt;task&gt;</dt><dd>Polly orchestration from this lane — auto-spawns two other Cursor/Claude/Codex workers (orchestrator covers its own backend when in pool)</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
             <dt>#mem</dt><dd>Show memory command hint</dd>
             <dt>#mem clear</dt><dd>Clear active lane memory only</dd>
@@ -10682,8 +10724,9 @@ function renderLaneHead(
   const modelChip = renderModelChip(lane.modelName, lane.modelApplyFailed);
   const modeChip = renderModeChip(lane);
   const sandboxChip = renderSandboxChip(lane);
+  const pollyBypassChip = renderPollyBypassChip(lane);
   const metricsChip = renderMetricsChip(metrics);
-  const chipGroup = modelChip + modeChip + mcpChip + sandboxChip + metricsChip;
+  const chipGroup = modelChip + modeChip + mcpChip + sandboxChip + pollyBypassChip + metricsChip;
   const chips = chipGroup
     ? `<span class="acp-harness__lane-chips">${chipGroup}</span>`
     : '';
@@ -10921,6 +10964,18 @@ function renderModeChip(lane: HarnessLane): string {
   return `<span class="acp-harness__lane-mode" title="${esc(title)}">${esc(lane.currentMode.name)}</span>`;
 }
 
+function isPollyImplementerBypass(lane: HarnessLane): boolean {
+  return lane.pollyBuiltinRole === 'implementer' && lane.permissionMode === 'bypass';
+}
+
+/** spec 164 — Polly implementers run with permissionMode bypass; surface in chrome. */
+function renderPollyBypassChip(lane: HarnessLane): string {
+  if (!isPollyImplementerBypass(lane)) return '';
+  const title =
+    'Polly worker — all tool permissions auto-accepted for this lane until the Polly role clears';
+  return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">polly-bypass</span>`;
+}
+
 function renderSandboxChip(lane: HarnessLane): string {
   // Surface backend-specific safety caveats directly in the lane chrome:
   // Pi is known to bypass the permission rail, while Cursor still needs
@@ -11085,6 +11140,7 @@ function renderLaneStats(lane: HarnessLane, projectDir: string | null): string {
   if (lane.acceptAllForTurn) spans.push(text('accept-all'));
   if (lane.rejectAllForTurn) spans.push(text('reject-all'));
   if (lane.peerAutoAcceptForTurn) spans.push(text('peer-auto'));
+  if (isPollyImplementerBypass(lane)) spans.push(text('polly-bypass'));
   if (lane.error) spans.push(text(`err: ${truncate(lane.error, 48)}`));
 
   return spans.join('');
