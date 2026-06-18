@@ -300,6 +300,13 @@
        worker lanes (if installed), applies built-in role overlays, re-activates
        the orchestrator, and dispatchTurn injects pollyRequestPrompt (peer_send
        fan-out orchestration — sibling of #review). (spec 160 — push out, pull on render)
+    f. #debby <question> (spec 167) runs from any lane: the active lane is the
+       Debby orchestrator; ensureDebbyHeads finds or auto-spawns separate claude
+       and codex head lanes (excluding the orchestrator lane id even when the
+       backend matches), applies built-in Debby role overlays, re-activates the
+       orchestrator, and dispatchTurn injects debbyRequestPrompt for peer_send
+       fan-out. Debby heads are plain responders and do not receive a bypass
+       permission mode.
 
 ```
 PUSH (lane → harness), at end of an editing turn:

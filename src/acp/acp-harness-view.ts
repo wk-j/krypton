@@ -97,6 +97,16 @@ import {
   type PollyWorkerBackend,
 } from './polly';
 import {
+  DEBBY_ROLE_PROMPTS,
+  debbyHeadBackendsFor,
+  debbyRequestPrompt,
+  parseDebbyTask,
+  type DebbyBuiltinRole,
+  type DebbyEnsureOutcome,
+  type DebbyHeadBackend,
+  type DebbyRoster,
+} from './debby';
+import {
   reviewRequestPrompt,
   REVIEW_INTENT_CAP,
   type ReviewSubject,
@@ -761,6 +771,9 @@ interface HarnessLane {
    *  permissions (`permissionMode = 'bypass'`). This stashes the user's own mode
    *  so `clearPollyBuiltinRole` can restore it; null when not enlisted. */
   pollySavedPermissionMode: 'normal' | 'acceptEdits' | 'bypass' | null;
+  /** spec 167: built-in Debby role overlay (orchestrator / head). Heads are
+   *  plain responders; unlike Polly implementers this never changes permissions. */
+  debbyBuiltinRole: DebbyBuiltinRole | null;
   /** spec 130: lane participates in attention-triage audit. Attention tools are
    *  default-on for every harness-memory-capable lane; this flag now drives local
    *  audit/UI behavior rather than MCP tool visibility. */
@@ -1150,6 +1163,7 @@ const LANE_DEFAULTS = {
   previousDirectiveId: null,
   pollyBuiltinRole: null,
   pollySavedPermissionMode: null,
+  debbyBuiltinRole: null,
   triageEquipped: true,
   triageOverride: null,
   flaggedThisTurn: false,
@@ -2533,9 +2547,73 @@ export class AcpHarnessView implements ContentView {
     this.flashChip(`#polly → ${roster.workers.map((w) => w.displayName).join(', ')}`);
   }
 
+  /**
+   * spec 167: `#debby <question>` — any lane orchestrates; harness ensures
+   * claude/codex head lanes and injects a brainstorm prompt. Debby heads are
+   * responders only, so this does not alter permissionMode.
+   */
+  private async runDebbyCommand(lane: HarnessLane, question: string): Promise<void> {
+    if (!question) {
+      this.flashChip('#debby: no question');
+      return;
+    }
+    if (lane.status !== 'idle') {
+      this.flashChip('lane busy - #cancel first');
+      return;
+    }
+    if (!lane.client) {
+      this.flashChip('#debby: lane not ready');
+      return;
+    }
+
+    this.reserveCommandTurn(lane, 'brainstorming');
+    const outcome = await this.ensureDebbyHeads(lane);
+    if (!outcome.ok) {
+      this.releaseReservedTurn(lane);
+      if (outcome.missing.length > 0) {
+        this.flashChip(`#debby: ${outcome.missing.join(', ')} not installed`);
+      } else if (outcome.errored.length > 0) {
+        this.flashChip(`#debby: ${outcome.errored.join(', ')} failed to start`);
+      } else {
+        this.flashChip('#debby: head roster incomplete');
+      }
+      return;
+    }
+
+    const { roster } = outcome;
+    if (roster.spawned.length > 0) {
+      const names = roster.heads
+        .filter((h) => roster.spawned.includes(h.backendId))
+        .map((h) => h.displayName);
+      this.flashChip(`#debby: spawned ${names.join(', ')}`);
+    }
+
+    const prompt = debbyRequestPrompt({
+      task: question,
+      roster,
+      intent: this.collectReviewIntent(lane),
+    });
+    await this.dispatchTurn(lane, prompt);
+    this.flashChip(`#debby → ${roster.heads.map((h) => h.displayName).join(', ')}`);
+  }
+
   private findPollyWorkerLane(
     orchestratorLaneId: string,
     backendId: PollyWorkerBackend,
+  ): HarnessLane | undefined {
+    // Includes `starting` lanes — peer_send queues to the inbox and drains on idle.
+    return this.lanes.find(
+      (l) =>
+        l.backendId === backendId &&
+        l.id !== orchestratorLaneId &&
+        l.status !== 'stopped' &&
+        l.status !== 'error',
+    );
+  }
+
+  private findDebbyHeadLane(
+    orchestratorLaneId: string,
+    backendId: DebbyHeadBackend,
   ): HarnessLane | undefined {
     // Includes `starting` lanes — peer_send queues to the inbox and drains on idle.
     return this.lanes.find(
@@ -2559,9 +2637,27 @@ export class AcpHarnessView implements ContentView {
     lane.pollyBuiltinRole = null;
   }
 
+  /** Drop this lane's Debby role overlay (self-scoped — no cross-lane sweep). */
+  private clearDebbyBuiltinRole(lane: HarnessLane): void {
+    lane.debbyBuiltinRole = null;
+  }
+
   private async addPollyWorkerLane(
     orchestratorLane: HarnessLane,
     backendId: PollyWorkerBackend,
+  ): Promise<HarnessLane | null> {
+    const beforeCount = this.lanes.length;
+    await this.addLane(backendId);
+    if (this.lanes.length <= beforeCount) return null;
+    const candidates = this.lanes.filter(
+      (l) => l.backendId === backendId && l.id !== orchestratorLane.id,
+    );
+    return candidates[candidates.length - 1] ?? null;
+  }
+
+  private async addDebbyHeadLane(
+    orchestratorLane: HarnessLane,
+    backendId: DebbyHeadBackend,
   ): Promise<HarnessLane | null> {
     const beforeCount = this.lanes.length;
     await this.addLane(backendId);
@@ -2624,10 +2720,12 @@ export class AcpHarnessView implements ContentView {
     }
 
     orchestratorLane.pollyBuiltinRole = 'orchestrator';
+    this.clearDebbyBuiltinRole(orchestratorLane);
     for (const worker of workers) {
       const workerLane = this.lanes.find((l) => l.id === worker.laneId);
       if (!workerLane) continue;
       workerLane.pollyBuiltinRole = 'implementer';
+      this.clearDebbyBuiltinRole(workerLane);
       // Polly implementers auto-accept permissions for the run; stash the user's
       // own mode once (guard against re-stamping a reused lane that is already
       // bypassed) so clearPollyBuiltinRole can restore it.
@@ -2647,6 +2745,83 @@ export class AcpHarnessView implements ContentView {
           backendId: orchestratorLane.backendId,
         },
         workers,
+        spawned,
+        missing,
+        errored,
+      },
+    };
+  }
+
+  private async ensureDebbyHeads(orchestratorLane: HarnessLane): Promise<DebbyEnsureOutcome> {
+    const headBackends = debbyHeadBackendsFor();
+    let installed: Set<string>;
+    try {
+      installed = new Set((await AcpClient.listBackends()).map((b) => b.id));
+    } catch {
+      return { ok: false, missing: [...headBackends], errored: [] };
+    }
+
+    const heads: DebbyRoster['heads'] = [];
+    const spawned: DebbyHeadBackend[] = [];
+    const spawnedLanes: HarnessLane[] = [];
+    const missing: DebbyHeadBackend[] = [];
+    const errored: DebbyHeadBackend[] = [];
+
+    for (const backend of headBackends) {
+      let headLane = this.findDebbyHeadLane(orchestratorLane.id, backend);
+      if (!headLane) {
+        if (!installed.has(backend)) {
+          missing.push(backend);
+          continue;
+        }
+        headLane = (await this.addDebbyHeadLane(orchestratorLane, backend)) ?? undefined;
+        if (!headLane) {
+          errored.push(backend);
+          continue;
+        }
+        spawned.push(backend);
+        spawnedLanes.push(headLane);
+      }
+      if (headLane.status === 'error' || !headLane.client) {
+        errored.push(backend);
+        continue;
+      }
+      heads.push({
+        displayName: headLane.displayName,
+        laneId: headLane.id,
+        backendId: backend,
+      });
+    }
+
+    this.activateLane(orchestratorLane.id);
+
+    // spawn/collect first; prune dead spawns on failure; stamp roles only on full roster.
+    if (missing.length > 0 || errored.length > 0 || heads.length !== headBackends.length) {
+      for (const lane of spawnedLanes) {
+        if (lane.status === 'error') await this.closeLane(lane);
+      }
+      return { ok: false, missing, errored };
+    }
+
+    orchestratorLane.debbyBuiltinRole = 'orchestrator';
+    this.clearPollyBuiltinRole(orchestratorLane);
+    for (const head of heads) {
+      const headLane = this.lanes.find((l) => l.id === head.laneId);
+      if (!headLane) continue;
+      headLane.debbyBuiltinRole = 'head';
+      this.clearPollyBuiltinRole(headLane);
+    }
+    this.render();
+
+    return {
+      ok: true,
+      roster: {
+        orchestrator: {
+          displayName: orchestratorLane.displayName,
+          laneId: orchestratorLane.id,
+          backendId: orchestratorLane.backendId,
+        },
+        heads,
         spawned,
         missing,
         errored,
@@ -4719,6 +4894,12 @@ export class AcpHarnessView implements ContentView {
       const block = `${heading}\n${POLLY_ROLE_PROMPTS[lane.pollyBuiltinRole]}`;
       return packet ? `${packet}\n\n${block}` : block;
     }
+    if (lane.debbyBuiltinRole) {
+      const heading =
+        lane.debbyBuiltinRole === 'orchestrator' ? '## Debby orchestrator' : '## Debby head';
+      const block = `${heading}\n${DEBBY_ROLE_PROMPTS[lane.debbyBuiltinRole]}`;
+      return packet ? `${packet}\n\n${block}` : block;
+    }
     const directive = this.effectiveDirective(lane);
     if (!directive) return packet;
     const heading = directive.title.trim()
@@ -5995,6 +6176,7 @@ export class AcpHarnessView implements ContentView {
     }
     lane.cursorMcpNames = null;
     this.clearPollyBuiltinRole(lane);
+    this.clearDebbyBuiltinRole(lane);
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
     this.notifyUsageProvidersChanged();
@@ -6086,6 +6268,7 @@ export class AcpHarnessView implements ContentView {
     lane.planCollapsed = false;
     lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
     this.clearPollyBuiltinRole(lane);
+    this.clearDebbyBuiltinRole(lane);
     // spec 133: a restart reuses the display name — drop any pending artifact
     // write grant so the restarted lane can't inherit it.
     this.cancelPendingArtifactsForLane(lane);
@@ -6162,6 +6345,7 @@ export class AcpHarnessView implements ContentView {
     lane.planCollapsed = false;
     lane.transcriptWindow = TRANSCRIPT_WINDOW_DEFAULT;
     this.clearPollyBuiltinRole(lane);
+    this.clearDebbyBuiltinRole(lane);
     this.updateComposerTick();
     this.render();
     await this.spawnLane(lane);
@@ -6376,6 +6560,13 @@ export class AcpHarnessView implements ContentView {
       this.setDraft(lane, '', 0);
       const task = parsePollyTask(text);
       await this.runPollyCommand(lane, task);
+      this.render();
+      return;
+    }
+    if (parts[0] === '#debby') {
+      this.setDraft(lane, '', 0);
+      const question = parseDebbyTask(text);
+      await this.runDebbyCommand(lane, question);
       this.render();
       return;
     }
@@ -8003,6 +8194,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#goal</dt><dd>Show the active goal · #goal clear removes it</dd>
             <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
             <dt>#polly &lt;task&gt;</dt><dd>Polly orchestration from this lane — auto-spawns two other Cursor/Claude/Codex workers (orchestrator covers its own backend when in pool)</dd>
+            <dt>#debby &lt;question&gt;</dt><dd>Debby brainstorming from this lane — auto-spawns Claude and Codex heads as plain responders</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
             <dt>#mem</dt><dd>Show memory command hint</dd>
             <dt>#mem clear</dt><dd>Clear active lane memory only</dd>

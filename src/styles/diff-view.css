@@ -106,6 +106,9 @@
 .krypton-diff__content .d2h-code-side-linenumber {
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
   font-size: var(--krypton-font-size);
+  /* Diff view uses its own leading (1.4) for readable code rows, independent
+     of the global `[font] line_height` config (which terminals follow). */
+  line-height: 1.4;
 }
 
 /* highlight.js themes target `.hljs` as a whole code block. diff2html adds
