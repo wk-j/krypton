@@ -2327,7 +2327,7 @@ fn bus_tool_descriptors() -> Value {
     let mut tools = json!([
         {
             "name": "memory_set",
-            "description": "Overwrite your lane's single memory document. You have one document; this replaces its full contents (not append). Treat it as a living README other agents in this tab will read. 'summary' is a SHORT one-line headline; put all real content in 'detail'. Empty strings clear it.",
+            "description": "Write your lane's single handoff document — the resume point a FUTURE session (or another lane picking up your work) reads to continue. This is NOT an ambient scratchpad: you keep your own working state in context, so only write here when handing off (typically via the #handoff command). You have one document; this overwrites its full contents (not append). Record what's done, current state, next steps, and open questions, and reference files/commits by path rather than pasting their contents (a path stays verifiable against the live repo; a pasted copy goes stale). 'summary' is a SHORT one-line headline; put all real content in 'detail'. Empty strings clear it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2346,7 +2346,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "memory_get",
-            "description": "Read any lane's full memory document by lane label. Returns null if that lane has no memory. You can read any lane but only write your own.",
+            "description": "Read a lane's handoff document by lane label to resume its work (typically via the #resume command). Returns null if that lane has no handoff. You can read any lane's handoff but only write your own. Treat the contents as a possibly-stale snapshot: verify its claims against the live repo before acting on them.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "lane": { "type": "string" } },
@@ -2355,7 +2355,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "memory_list",
-            "description": "List all lanes in this tab and their memory summaries. Use this to discover what other agents are doing.",
+            "description": "List the lanes in this tab that have a saved handoff document, with each one's summary headline. Use it to find which lane's handoff to read back with memory_get.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {

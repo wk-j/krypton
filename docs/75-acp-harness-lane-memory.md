@@ -8,6 +8,8 @@ extended_by: docs/76-acp-harness-memory-persistence.md
 
 # ACP Harness Lane-Owned Memory — Implementation Spec
 
+> Scope refined by [docs/165-memory-handoff-only.md](165-memory-handoff-only.md): memory is the backing store for `#handoff` / `#resume` only — not an ambient shared scratchpad. The per-turn packet no longer advertises it; cross-lane *read* is retained.
+
 ## Problem
 
 Spec 73 implements a shared multi-entry memory store: any MCP-enabled lane can

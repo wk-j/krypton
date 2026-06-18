@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-08
 > Milestone: M-ACP — Harness
+> Scope refined by [docs/165-memory-handoff-only.md](165-memory-handoff-only.md): the on-demand stub no longer advertises memory at all — memory is scoped to the `#handoff` / `#resume` handoff store. The peering stub is unaffected.
 
 ## Problem
 
@@ -17,7 +18,7 @@ Stop injecting the memory body. Replace the packet with a **short identity stub*
 - `renderPromptMemoryPacket()` (`src/acp/acp-harness-view.ts:1094-1119`) builds the full markdown packet from `this.memoryEntries` every call.
 - `buildPromptBlocks()` (`src/acp/acp-harness-view.ts:1063-1092`) prepends the packet either as a `resource` block (when `lane.supportsEmbeddedContext`) or as a leading `text` block. Both paths are currently triggered for every prompt.
 - `lane.supportsEmbeddedContext` is set from `agent_capabilities.promptCapabilities.embeddedContext` in `configureLaneFromInfo()` (`src/acp/acp-harness-view.ts:909`). Claude-acp and Codex advertise it; Pi does not (`docs/84-acp-pi-lane.md:49`).
-- The MCP server `krypton-harness-memory` is implemented in `src-tauri/src/hook_server.rs:177-814`. It exposes three tools: `memory_set` (writes only the caller's lane, identified by URL path), `memory_get(lane)`, and `memory_list()` (full roster). Server URL is per-lane: `/mcp/harness/{harness_id}/lane/{lane_label}`.
+- The MCP server `krypton-harness-memory` is implemented in `src-tauri/src/hook_server.rs:177-814`. It exposes three tools: `memory_set` (writes only the caller's lane, identified by URL path), `memory_get(lane)`, and `memory_list()` (lists only the lanes that have a saved document, not the full roster). Server URL is per-lane: `/mcp/harness/{harness_id}/lane/{lane_label}`.
 - The MCP server does **not** expose lane identity. The agent has no `whoami` tool and cannot read the URL it was wired with. Identity is conveyed only through the prompt packet today. Therefore the stub must keep the identity line.
 - `mcpServersForLane()` (`src/acp/acp-harness-view.ts` ~1300) only attaches the memory server to `claude` and `pi-acp` lanes for native adapters; codex and opencode get it via the `.mcp.json` bridge. Pi lanes receive an empty MCP array (`docs/77` / Pi-lane comment) so memory tools are unreachable to Pi regardless.
 - Spec 72 (`docs/72-acp-harness-view.md:25-29, 197-216`) is the authoritative spec for memory packet behavior and must be amended.

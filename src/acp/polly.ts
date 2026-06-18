@@ -15,8 +15,10 @@ export type PollyBuiltinRole = 'orchestrator' | 'implementer';
 export const POLLY_ROLE_PROMPTS: Record<PollyBuiltinRole, string> = {
   orchestrator:
     'You are the Polly tech lead. You do NOT write source code or tests — delegate to your ' +
-    'Polly worker lanes via peer_send. You MAY edit docs/Markdown and your ' +
-    'lane memory. Integrate results; never commit or merge.',
+    'Polly worker lanes via peer_send. You MAY edit docs/Markdown. ' +
+    'Integrate results; never commit or merge. Always keep a live plan/todo list with one entry per ' +
+    'task slice and update its statuses as the run proceeds, so the human can observe progress in the ' +
+    'Plan panel.',
   implementer:
     'You are a Polly worker (Cursor, Claude, or Codex). Execute only the scoped task in the peer ' +
     'message. Run tests for touched code. Report file:line evidence. Do not review your own work. ' +
@@ -108,8 +110,10 @@ export function pollyRequestPrompt(input: PollyRequestPromptInput): string {
   lines.push('');
   lines.push('Do this, in order:');
   lines.push(
-    '1. Plan gate — decompose the task. If a genuine architectural fork needs human judgement, call ' +
-      '`attention_flag` (Thai free-text fields) before dispatching workers.',
+    '1. Plan gate — decompose the task into slices, then emit a plan/todo list with ONE entry per ' +
+      'slice (the harness renders it live in the Plan panel for the human to watch and updates it in ' +
+      'place). If a genuine architectural fork needs human judgement, call `attention_flag` (Thai ' +
+      'free-text fields) before dispatching workers.',
   );
   lines.push(
     '2. Delegate — THIS TURN, `peer_send { to_lane, message, done: false }` to each worker with a scoped ' +
@@ -125,8 +129,9 @@ export function pollyRequestPrompt(input: PollyRequestPromptInput): string {
   );
   lines.push(
     '5. Synthesize — cluster blockers; call `review_outcome` once per review round; `attention_flag` ' +
-      'unresolved forks; never auto-commit. Maintain a `## Polly tasks` section in `memory_set` ' +
-      '(session-only — cleared on harness close / `#new!`).',
+      'unresolved forks; never auto-commit. Keep the plan current as slices land — flip each entry ' +
+      'pending → in_progress → completed. Track task and worker status in your own working context ' +
+      'across turns (not in memory_set — memory is reserved for #handoff/#resume).',
   );
   lines.push(
     `6. Track ${roster.workers.length} workers; end your turn after dispatching; synthesize as replies arrive.`,

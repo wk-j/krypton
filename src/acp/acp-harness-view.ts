@@ -4754,16 +4754,16 @@ export class AcpHarnessView implements ContentView {
       this.insertGoalLine(lines, lane);
       return lines.join('\n');
     }
+    // Memory is intentionally NOT advertised here. Per the handoff-only decision,
+    // memory_set/memory_get/memory_list are the backing store for #handoff/#resume
+    // ONLY — not an ambient shared scratchpad. Surfacing them every turn pushed
+    // lanes to record/read state proactively, and a reader cannot tell a stale
+    // snapshot from current truth (the cache-coherence hazard). The #handoff and
+    // #resume prompts name the tools explicitly when the user invokes them, so the
+    // model still reaches them at the right moment without a per-turn stub.
     if (hasPeers) {
       lines.push(
-        'Shared memory is available through the krypton-harness-memory MCP server: call memory_list to see which lanes have entries, memory_get { lane } to read another lane, and memory_set { summary, detail } to update your own. Writes go to your own lane automatically; you cannot write to other lanes.',
-      );
-      lines.push(
         'Inter-lane peering: when the user asks you to consult, ask, or peer with another lane, call peer_send { to_lane, message, done } (use the display name shown above; recipient processes on its next idle turn). Use peer_list to see live peer lanes and their inbox depths. End your turn after peer_send; the reply (if any) arrives as a new user message. Leave `done` false when sending a request — `done:true` silences the recipient and is only for closing the conversation after their reply. Never peer proactively.',
-      );
-    } else {
-      lines.push(
-        'Shared memory is available through the krypton-harness-memory MCP server: call memory_set { summary, detail } to record state for future turns and memory_get { lane } / memory_list to read it back.',
       );
     }
     // spec 130: attention tools are default-on for every harness-memory-capable

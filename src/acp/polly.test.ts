@@ -66,7 +66,13 @@ describe('pollyRequestPrompt', () => {
     expect(prompt).toContain('Add JWT refresh');
     expect(prompt).toContain('peer_send');
     expect(prompt).toContain('Cross-review');
-    expect(prompt).toContain('memory_set');
+    // Handoff-only (spec 165): the orchestrator tracks task/worker status in its own
+    // working context, NOT in memory_set as a scratchpad task board.
+    expect(prompt).toContain('working context');
+    // spec 166: orchestrator emits a live plan/todo list (one entry per slice) so the
+    // human can observe progress in the harness Plan panel.
+    expect(prompt).toContain('Plan panel');
+    expect(prompt).toContain('entry per slice');
   });
 
   it('lists a two-worker roster when cursor orchestrates', () => {

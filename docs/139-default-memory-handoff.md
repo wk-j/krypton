@@ -3,6 +3,7 @@
 > Status: Implemented. Redesigned to **user-triggered** per user direction (the always-on draft Codex-1 reviewed was rejected).
 > Date: 2026-06-02
 > Extends: `docs/98-acp-harness-memory-on-demand.md` (spec 98), `docs/76-acp-harness-memory-persistence.md` (spec 76)
+> Updated by [docs/165-memory-handoff-only.md](165-memory-handoff-only.md): the lane-context stub described as "unchanged / only states that memory exists" below was *subsequently* changed — spec 165 removed the ambient memory stub entirely, so `#handoff` / `#resume` are now the ONLY surfaces that name the memory tools. The mechanism in this spec is otherwise intact.
 
 ## Problem
 

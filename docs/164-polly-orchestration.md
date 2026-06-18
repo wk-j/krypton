@@ -128,13 +128,15 @@ export function pollyWorkerBackendsFor(orchestratorBackendId: string): PollyWork
 
 ```ts
 export const POLLY_ROLE_PROMPTS: Record<'orchestrator' | 'implementer', string> = {
-  orchestrator: `You are the Polly tech lead. You do NOT write source code or tests — delegate to the two worker lanes via peer_send. You MAY edit docs/Markdown and your lane memory. Integrate results; never commit or merge.`,
+  orchestrator: `You are the Polly tech lead. You do NOT write source code or tests — delegate to the two worker lanes via peer_send. You MAY edit docs/Markdown. Integrate results; never commit or merge. Always keep a live plan/todo list with one entry per task slice and update its statuses as the run proceeds, so the human can observe progress in the Plan panel.`, // spec 165: dropped "and your lane memory" (memory is handoff-only — track task/worker status in working context, not memory_set). spec 166: appended the live-plan clause.
   implementer: `You are a Polly worker (Cursor, Claude, or Codex). Execute only the scoped task in the peer message. Run tests for touched code. Report file:line evidence. When asked to review another worker's diff, judge ONLY the diff + contract — ### Blockers / ### Warnings, no edits.`,
 };
 ```
 
 - **Orchestrator lane** (active): `pollyBuiltinRole = 'orchestrator'`.
 - **Worker lanes** (cursor/claude/codex): `pollyBuiltinRole = 'implementer'`.
+
+> **Live plan (spec 166):** the orchestrator role prompt + `pollyRequestPrompt` steps 1/5 instruct the orchestrator to **always emit and maintain an ACP plan** (one entry per task slice, statuses flipped `pending → in_progress → completed` as slices land) so the human watches progress in the existing harness Plan panel. Best-effort (agent-emitted, not harness-enforced); all Polly backends support the ACP plan channel. See `docs/166-polly-live-plan.md`.
 
 ### Polly implementer permission mode
 
