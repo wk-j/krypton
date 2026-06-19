@@ -21,6 +21,8 @@ import {
   laneAccent,
   laneAccentForLabel,
   parseQueueIndex,
+  permissionArgsPreview,
+  renderPermissionBody,
   rawOutputSections,
   stringifyToolValue,
   formatLaneMailMetaLine,
@@ -1229,5 +1231,124 @@ describe('parseReviewCommandArgs (spec 145)', () => {
       nameTokens: ['Codex-2', 'Cursor-1'],
       tail: 'check the cap',
     });
+  });
+});
+
+describe('permissionArgsPreview density (spec 167)', () => {
+  it('caps the rendered preview to the tightened 96-char limit', () => {
+    const input = {
+      command: 'x'.repeat(200),
+      cwd: '/some/very/long/working/directory/path/that/keeps/going',
+      flag: true,
+    };
+    const preview = permissionArgsPreview(input);
+    expect(preview.length).toBeLessThanOrEqual(96);
+    expect(preview).toContain('command:');
+  });
+
+  it('keeps at most three arg parts', () => {
+    const input = { a: 1, b: 2, c: 3, d: 4, e: 5 };
+    const preview = permissionArgsPreview(input);
+    expect(preview).toContain('a: 1');
+    expect(preview).toContain('c: 3');
+    expect(preview).not.toContain('d: 4');
+  });
+
+  it('bounds a bare scalar value to 90 chars', () => {
+    const preview = permissionArgsPreview('y'.repeat(200));
+    expect(preview.length).toBeLessThanOrEqual(90);
+  });
+
+  it('surfaces safety-critical keys before the 3-part cap', () => {
+    const input = { foo: 1, bar: 2, baz: 3, command: 'rm -rf dist', path: '/etc/hosts' };
+    const preview = permissionArgsPreview(input);
+    // command + path are safety keys and must survive the cap even though they
+    // appear after three benign keys in insertion order.
+    expect(preview).toContain('command: rm -rf dist');
+    expect(preview).toContain('path: /etc/hosts');
+    expect(preview).not.toContain('baz');
+  });
+});
+
+// Minimal DOM stub — the test runner uses the node environment (no document), and
+// renderPermissionBody only touches createElement/className/dataset/textContent/
+// title/appendChild, so a tiny fake captures the rendered structure.
+interface FakeEl {
+  tagName: string;
+  className: string;
+  textContent: string;
+  title: string;
+  dataset: Record<string, string>;
+  children: FakeEl[];
+  appendChild(child: FakeEl): FakeEl;
+}
+function makeFakeEl(tag: string): FakeEl {
+  return {
+    tagName: tag,
+    className: '',
+    textContent: '',
+    title: '',
+    dataset: {},
+    children: [],
+    appendChild(child: FakeEl): FakeEl {
+      this.children.push(child);
+      return child;
+    },
+  };
+}
+function collectClasses(el: FakeEl): string[] {
+  return el.children.flatMap((child) => [child.className, ...collectClasses(child)]);
+}
+function renderPermFixture(perm: Record<string, unknown>): FakeEl {
+  const prevDoc = (globalThis as { document?: unknown }).document;
+  (globalThis as { document?: unknown }).document = { createElement: (tag: string) => makeFakeEl(tag) };
+  try {
+    const body = makeFakeEl('div');
+    renderPermissionBody(
+      body as unknown as HTMLElement,
+      perm as unknown as Parameters<typeof renderPermissionBody>[1],
+    );
+    return body;
+  } finally {
+    (globalThis as { document?: unknown }).document = prevDoc;
+  }
+}
+
+describe('renderPermissionBody density (spec 167)', () => {
+  const basePerm = {
+    id: 1,
+    toolName: 'Write',
+    toolFamily: 'file',
+    serverName: null,
+    kind: 'write',
+    subject: 'src/app.ts',
+    suffix: '· also Codex-2 3s ago',
+    argsPreview: 'path: src/app.ts',
+    autoReason: 'mode:acceptEdits',
+    options: [
+      { optionId: 'a', name: 'accept', action: 'accept' },
+      { optionId: 'r', name: 'reject', action: 'reject' },
+    ],
+  };
+
+  it('collapses a resolved card to a single line (no suffix/reason/preview/actions)', () => {
+    const body = renderPermFixture({ ...basePerm, decision: 'accepted', decisionLabel: 'accepted' });
+    const classes = collectClasses(body);
+    expect(classes).toContain('acp-harness__perm-decision');
+    expect(classes).toContain('acp-harness__perm-tool');
+    expect(classes).toContain('acp-harness__perm-subject');
+    expect(classes).not.toContain('acp-harness__perm-suffix');
+    expect(classes).not.toContain('acp-harness__perm-reason');
+    expect(classes).not.toContain('acp-harness__perm-preview');
+    expect(classes).not.toContain('acp-harness__perm-actions');
+  });
+
+  it('keeps actions + preview + suffix on a pending card, but no decision label', () => {
+    const body = renderPermFixture({ ...basePerm, decision: 'pending' });
+    const classes = collectClasses(body);
+    expect(classes).toContain('acp-harness__perm-actions');
+    expect(classes).toContain('acp-harness__perm-preview');
+    expect(classes).toContain('acp-harness__perm-suffix');
+    expect(classes).not.toContain('acp-harness__perm-decision');
   });
 });

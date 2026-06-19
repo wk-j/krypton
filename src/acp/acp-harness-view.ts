@@ -7726,9 +7726,12 @@ export class AcpHarnessView implements ContentView {
         pendingHint +
         `</span>`;
     } else {
+      const permissionMeta = lane.status === 'needs_permission' && lane.pendingPermissions.length > 0
+        ? compactPermissionMeta(lane.pendingPermissions[0])
+        : statusLabel(lane.status);
       metaHtml =
         `<span class="acp-harness__rail-meta">` +
-        `<span class="acp-harness__rail-meta__hint">${esc(statusLabel(lane.status))}</span>` +
+        `<span class="acp-harness__rail-meta__hint">${esc(permissionMeta)}</span>` +
         `</span>`;
     }
 
@@ -7796,10 +7799,13 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (lane.pendingPermissions.length > 0) {
+      const permission = lane.pendingPermissions[0];
+      const label = compactPermissionLabel(permission, 'composer');
       this.composerEl.className = 'acp-harness__composer acp-harness__composer--permission';
+      this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
       this.composerEl.innerHTML =
-        `<div class="acp-harness__composer-meta">! permission required - see lane</div>` +
-        `<div class="acp-harness__permission-options">a accept &nbsp;&nbsp; A accept-all-turn &nbsp;&nbsp; r reject &nbsp;&nbsp; R reject-all-turn &nbsp;&nbsp; Esc cancel</div>`;
+        `<div class="acp-harness__composer-meta">perm ${esc(label)}</div>` +
+        `<div class="acp-harness__permission-options">a accept · A all · r reject · R all · Esc</div>`;
       return;
     }
     this.composerEl.className =
@@ -9574,15 +9580,28 @@ function stringValueForKeys(value: unknown, keys: string[], depth = 0): string |
   return null;
 }
 
-function permissionArgsPreview(value: unknown): string {
+// spec 167: tightened limits — the pending card shows this on one compact line,
+// so favour a short scannable head over an exhaustive arg dump.
+const PERMISSION_SAFETY_KEYS = new Set([
+  'command', 'cmd', 'path', 'file', 'file_path', 'filepath', 'cwd', 'url', 'target',
+]);
+export function permissionArgsPreview(value: unknown): string {
   const args = extractToolArguments(value);
-  if (!args || typeof args !== 'object' || Array.isArray(args)) return boundedInlineValue(args ?? value);
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return boundedInlineValue(args ?? value, 90);
+  // The 3-part cap can drop a safety-critical arg (the command/path being run) if
+  // it sits late in the object, so surface those keys first before the cap bites.
+  const entries = Object.entries(args as Record<string, unknown>);
+  entries.sort(([a], [b]) => {
+    const aSafe = PERMISSION_SAFETY_KEYS.has(a.toLowerCase()) ? 0 : 1;
+    const bSafe = PERMISSION_SAFETY_KEYS.has(b.toLowerCase()) ? 0 : 1;
+    return aSafe - bSafe;
+  });
   const parts: string[] = [];
-  for (const [key, raw] of Object.entries(args as Record<string, unknown>)) {
-    if (parts.length >= 4) break;
-    parts.push(`${key}: ${boundedInlineValue(raw, 42)}`);
+  for (const [key, raw] of entries) {
+    if (parts.length >= 3) break;
+    parts.push(`${key}: ${boundedInlineValue(raw, 30)}`);
   }
-  return truncate(parts.join(' · '), 140);
+  return truncate(parts.join(' · '), 96);
 }
 
 function extractToolArguments(value: unknown): unknown {
@@ -10416,16 +10435,22 @@ function renderFsWriteReviewBody(body: HTMLElement, payload: FsWriteReviewPayloa
   }
 }
 
-function renderPermissionBody(body: HTMLElement, perm: PermissionPayload): void {
+export function renderPermissionBody(body: HTMLElement, perm: PermissionPayload): void {
+  const pending = perm.decision === 'pending';
   const card = document.createElement('div');
   card.className = 'acp-harness__perm-card';
   card.dataset.decision = perm.decision;
   const head = document.createElement('div');
   head.className = 'acp-harness__perm-row';
-  const family = document.createElement('span');
-  family.className = 'acp-harness__perm-family';
-  family.textContent = perm.toolFamily;
-  head.appendChild(family);
+  // spec 167: collapse permission cards. A resolved card leads with its decision
+  // (accepted/rejected/auto-allowed); a pending card drops the redundant
+  // family/"pending" noise — the actions line already signals it awaits input.
+  if (!pending) {
+    const decision = document.createElement('span');
+    decision.className = 'acp-harness__perm-decision';
+    decision.textContent = permissionDecisionLabel(perm);
+    head.appendChild(decision);
+  }
   const tool = document.createElement('span');
   tool.className = 'acp-harness__perm-tool';
   tool.textContent = perm.toolName;
@@ -10435,30 +10460,29 @@ function renderPermissionBody(body: HTMLElement, perm: PermissionPayload): void 
   subject.textContent = perm.subject;
   subject.title = perm.subject;
   head.appendChild(subject);
-  const decision = document.createElement('span');
-  decision.className = 'acp-harness__perm-decision';
-  decision.textContent = permissionDecisionLabel(perm);
-  head.appendChild(decision);
   card.appendChild(head);
-  if (perm.suffix) {
+  // spec 167: a resolved card stays strictly one line (decision + tool + subject).
+  // The cross-touch suffix and auto-allow reason only carry decision-time signal,
+  // so — like argsPreview — they render on the pending card only.
+  if (pending && perm.suffix) {
     const suffix = document.createElement('span');
     suffix.className = 'acp-harness__perm-suffix';
     suffix.textContent = perm.suffix;
     card.appendChild(suffix);
   }
-  if (perm.autoReason) {
+  if (pending && perm.autoReason) {
     const reason = document.createElement('div');
     reason.className = 'acp-harness__perm-reason';
     reason.textContent = perm.autoReason;
     card.appendChild(reason);
   }
-  if (perm.argsPreview) {
+  if (pending && perm.argsPreview) {
     const preview = document.createElement('div');
     preview.className = 'acp-harness__perm-preview';
     preview.textContent = perm.argsPreview;
     card.appendChild(preview);
   }
-  if (perm.decision === 'pending') {
+  if (pending) {
     const actions = document.createElement('div');
     actions.className = 'acp-harness__perm-actions';
     const labels = perm.options
@@ -10926,10 +10950,11 @@ function renderLaneHead(
     ? `<span class="acp-harness__lane-inbox" title="${inboxDepth} pending peer message${inboxDepth === 1 ? '' : 's'}">${harnessIcon('inbox', 'acp-harness__icon--dot')}${inboxDepth}</span>`
     : '';
   if (!active) {
+    const statusText = lane.status === 'needs_permission' ? 'perm' : statusLabel(lane.status);
     return (
       renderLaneSymbol(lane.status) +
       `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
-      `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
+      `<span class="acp-harness__lane-status">${esc(statusText)}</span>` +
       inboxChip +
       chips +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>`
@@ -12211,11 +12236,49 @@ function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {
 
 function laneActivity(lane: HarnessLane, pendingPeers: PendingPeerSummary[] = []): string {
   if (lane.status === 'error') return `error: ${lane.error ?? 'failed'}`;
-  if (lane.status === 'needs_permission') return `perm: ${lane.pendingPermissions[0]?.toolCall.title ?? 'required'}`;
+  if (lane.status === 'needs_permission') {
+    const permission = lane.pendingPermissions[0];
+    if (!permission) return 'perm required';
+    return `perm ${compactPermissionSubject(permission.toolCall) || compactPermissionTool(permission)}`;
+  }
   if (lane.status === 'awaiting_peer') return awaitingPeerText(pendingPeers);
   const latest = lane.transcript[lane.transcript.length - 1];
   if (!latest) return lane.status;
   return latest.text.replace(/\s+/g, ' ').slice(0, 60);
+}
+
+function compactPermissionLabel(permission: HarnessPermission, surface: 'compact' | 'composer' = 'compact'): string {
+  const tool = compactPermissionTool(permission);
+  const subject = compactPermissionSubject(permission.toolCall, surface);
+  const max = surface === 'composer' ? 96 : 48;
+  return truncateInline(subject ? `${tool} ${subject}` : tool, max);
+}
+
+function compactPermissionMeta(permission: HarnessPermission): string {
+  return `${compactPermissionLabel(permission)} · a/r/Esc`;
+}
+
+function compactPermissionTool(permission: HarnessPermission): string {
+  const call = permission.toolCall;
+  const kind = inferToolLabel(call);
+  return harnessAutoAllowToolName(permission) ?? (cleanToolTitle(call.title, kind) || kind);
+}
+
+function compactPermissionSubject(call: ToolCall | ToolCallUpdate, surface: 'compact' | 'composer' = 'compact'): string {
+  const path = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? '';
+  if (path) return surface === 'composer' ? abbreviatePath(path) : basename(path);
+  const command = extractCommandLine(call.rawInput);
+  if (command) return surface === 'composer' ? truncateInlineHeadTail(command, 72) : truncateInline(command, 28);
+  return '';
+}
+
+function truncateInlineHeadTail(value: string, max: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= max) return normalized;
+  if (max <= 3) return '...';
+  const head = Math.ceil((max - 3) * 0.55);
+  const tail = Math.max(0, max - 3 - head);
+  return `${normalized.slice(0, head).trimEnd()}...${normalized.slice(-tail).trimStart()}`;
 }
 
 function awaitingPeerText(pendingPeers: PendingPeerSummary[]): string {

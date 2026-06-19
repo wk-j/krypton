@@ -1900,8 +1900,8 @@
 
 .acp-harness__perm-card {
   display: grid;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: 2px;
+  padding: 3px 8px;
   background: rgba(255, 176, 0, 0.045);
 }
 
@@ -1920,11 +1920,10 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
-  line-height: 1.4;
+  line-height: 1.3;
   font-size: var(--krypton-font-size, 13px);
 }
 
-.acp-harness__perm-family,
 .acp-harness__perm-decision {
   color: rgba(255, 209, 102, 0.72);
   font-size: 0.78em;
@@ -1946,10 +1945,6 @@
   color: rgba(216, 232, 216, 0.92);
 }
 
-.acp-harness__perm-decision {
-  margin-left: auto;
-}
-
 .acp-harness__perm-suffix {
   color: rgba(216, 232, 216, 0.55);
 }
@@ -1959,7 +1954,7 @@
 .acp-harness__perm-actions {
   color: rgba(216, 232, 216, 0.62);
   font-size: 0.86em;
-  line-height: 1.35;
+  line-height: 1.25;
 }
 
 .acp-harness__perm-preview {
@@ -2188,6 +2183,25 @@
 .acp-harness__composer {
   min-height: 42px;
   padding: 5px 10px 7px;
+}
+
+.acp-harness__composer--permission {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+  padding-block: 5px;
+  background: color-mix(in srgb, var(--acp-lane-accent, #ffd166) 8%, transparent);
+}
+
+.acp-harness__composer--permission .acp-harness__composer-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #ffe3a0;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* spec 118 — peer activity hint (informational; does not block input) */
@@ -2459,8 +2473,12 @@
 }
 
 .acp-harness__permission-options {
+  flex: 0 0 auto;
   color: #ffd166;
-  line-height: 1.3;
+  font-size: 0.72em;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 @keyframes acp-harness-caret {
