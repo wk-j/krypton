@@ -1331,7 +1331,14 @@ describe('renderPermissionBody density (spec 167)', () => {
     ],
   };
 
-  it('collapses a resolved card to a single line (no suffix/reason/preview/actions)', () => {
+  it('renders flat on the body (no nested perm-card container)', () => {
+    const body = renderPermFixture({ ...basePerm, decision: 'accepted', decisionLabel: 'accepted' });
+    expect(body.dataset.decision).toBe('accepted');
+    expect(collectClasses(body)).not.toContain('acp-harness__perm-card');
+    expect(body.children.some((child) => child.className === 'acp-harness__perm-row')).toBe(true);
+  });
+
+  it('collapses a resolved row to a single line (no suffix/reason/preview/actions)', () => {
     const body = renderPermFixture({ ...basePerm, decision: 'accepted', decisionLabel: 'accepted' });
     const classes = collectClasses(body);
     expect(classes).toContain('acp-harness__perm-decision');
@@ -1343,7 +1350,24 @@ describe('renderPermissionBody density (spec 167)', () => {
     expect(classes).not.toContain('acp-harness__perm-actions');
   });
 
-  it('keeps actions + preview + suffix on a pending card, but no decision label', () => {
+  it('leads a resolved row with a glyph cell so it aligns with tool rows', () => {
+    const body = renderPermFixture({ ...basePerm, decision: 'auto_allowed', decisionLabel: '✓ Allow (auto-turn)' });
+    const classes = collectClasses(body);
+    // The glyph element also carries a --<decision> modifier class.
+    expect(classes.some((c) => c.split(' ').includes('acp-harness__perm-glyph'))).toBe(true);
+    // The glyph carries the ✓, so the decision chip strips it.
+    const row = body.children.find((child) => child.className === 'acp-harness__perm-row');
+    const decision = row?.children.find((child) => child.className === 'acp-harness__perm-decision');
+    expect(decision?.textContent).toBe('Allow (auto-turn)');
+  });
+
+  it('drops the tool tag when it duplicates the subject (execute commands)', () => {
+    const cmd = 'dotnet test src/SocWebApi.Test';
+    const body = renderPermFixture({ ...basePerm, decision: 'auto_allowed', decisionLabel: 'accepted', toolName: cmd, subject: cmd });
+    expect(collectClasses(body)).not.toContain('acp-harness__perm-tool');
+  });
+
+  it('keeps actions + preview + suffix on a pending row, but no decision label', () => {
     const body = renderPermFixture({ ...basePerm, decision: 'pending' });
     const classes = collectClasses(body);
     expect(classes).toContain('acp-harness__perm-actions');

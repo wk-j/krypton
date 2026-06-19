@@ -64,6 +64,7 @@ import {
   type LaneHost,
   type PendingPeerSummary,
 } from './inter-lane';
+import { HarnessTelemetryPublisher } from './harness-telemetry';
 import {
   nextLaneNumber,
   registerHarness,
@@ -222,6 +223,7 @@ interface InterLanePayload {
   direction: 'in' | 'out';
   peerId: string;
   peerDisplayName: string;
+  peerBackendId?: string;
   done: boolean;
   envelopeId?: string;
   channel?: InterLaneRowChannel;
@@ -1253,6 +1255,7 @@ export class AcpHarnessView implements ContentView {
    *  (a dedicated queue, NOT the peer LaneInbox). Constructed in the ctor. */
   private feedbackQueue: ArtifactFeedbackQueue;
   private diffReviewQueue: DiffReviewQueue;
+  private telemetryPublisher: HarnessTelemetryPublisher | null = null;
   private feedbackUnlisten: UnlistenFn | null = null;
   /** spec 133: artifact hint mode (open-artifact labels), active only when on. */
   private artifactHintMode = false;
@@ -1517,6 +1520,7 @@ export class AcpHarnessView implements ContentView {
           direction,
           peerId: peer.id,
           peerDisplayName: peer.displayName,
+          peerBackendId: this.lanes.find((x) => x.id === peer.id)?.backendId,
           done,
           envelopeId: meta?.envelopeId,
           channel: meta?.channel,
@@ -1573,6 +1577,20 @@ export class AcpHarnessView implements ContentView {
     };
     this.directoryEntry = entry;
     registerHarness(entry);
+  }
+
+  private startTelemetryPublisher(): void {
+    if (!this.harnessMemoryId || this.telemetryPublisher) return;
+    this.telemetryPublisher = new HarnessTelemetryPublisher({
+      harnessId: this.harnessMemoryId,
+      projectDir: this.projectDir,
+      laneBus: this.laneBus,
+      coordinator: this.coordinator,
+      lanes: () => this.lanes,
+      triageStore: this.triageStore,
+      reviewQualityStore: this.reviewQualityStore,
+      reviewPriorityStore: this.reviewPriorityStore,
+    });
   }
 
   async handleControlOperation(operation: string, params: Record<string, unknown>): Promise<unknown> {
@@ -3292,6 +3310,10 @@ export class AcpHarnessView implements ContentView {
       unregisterHarness(this.directoryEntry.harnessId);
       this.directoryEntry = null;
     }
+    if (this.telemetryPublisher) {
+      this.telemetryPublisher.dispose();
+      this.telemetryPublisher = null;
+    }
     // spec 142: drop the active-lane accent while this.element is still in the
     // DOM (closePaneInTab disposes the contentView BEFORE removing the element),
     // so a surviving host window (sibling pane promoted) reverts to its
@@ -4163,6 +4185,7 @@ export class AcpHarnessView implements ContentView {
     // spec 141: join the cross-harness directory once the harness id is known.
     // No-op when memory init failed (no id). Removal is in dispose().
     this.registerWithDirectory();
+    this.startTelemetryPublisher();
 
     try {
       const cfg = await loadConfig();
@@ -5022,6 +5045,7 @@ export class AcpHarnessView implements ContentView {
     // already counted by the store on insert.
     if (stopReason === 'end_turn' && !lane.error && lane.triageEquipped) {
       this.triageStore.recordTurnEnd(lane.id, lane.flaggedThisTurn);
+      this.telemetryPublisher?.schedule();
       // The audit counters (shown in each card header) aren't a queue mutation,
       // so the store doesn't emit — refresh the overlay directly if it is open.
       if (this.triageOverlayOpen) this.renderTriageOverlayEl();
@@ -6470,6 +6494,22 @@ export class AcpHarnessView implements ContentView {
       this.setDraft(lane, '', 0);
       await this.printMcpStatus(lane);
       this.render();
+      return;
+    }
+    if (parts[0] === '#dashboard') {
+      this.setDraft(lane, '', 0);
+      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
+      if (!port) {
+        this.flashChip('dashboard unavailable - hook server not ready');
+        return;
+      }
+      const url = `http://127.0.0.1:${port}/dashboard`;
+      try {
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`dashboard open failed: ${errorText(e)}`);
+      }
       return;
     }
     // spec 139: user-triggered handoff. #handoff writes a resume-ready memory_set
@@ -10221,7 +10261,7 @@ function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boole
     ? `${item.providerError.category}\u001e${item.providerError.code ?? ''}\u001e${item.providerError.headline}\u001e${item.providerError.hint ?? ''}\u001e${item.providerError.retryable}\u001e${item.providerError.raw}`
     : '';
   const interLane = item.interLane
-    ? `${item.interLane.direction}\u001e${item.interLane.peerId}\u001e${item.interLane.peerDisplayName}\u001e${item.interLane.done ? '1' : '0'}\u001e${item.interLane.channel ?? ''}`
+    ? `${item.interLane.direction}\u001e${item.interLane.peerId}\u001e${item.interLane.peerDisplayName}\u001e${item.interLane.done ? '1' : '0'}\u001e${item.interLane.channel ?? ''}\u001e${item.interLane.peerBackendId ?? ''}`
     : '';
   const provenance = item.replyingToLaneMail
     ? `${item.replyingToLaneMail.envelopeId}\u001e${item.replyingToLaneMail.peerDisplayName}\u001e${item.replyingToLaneMail.envelopeCount}`
@@ -10281,12 +10321,23 @@ function renderLaneMailBody(
   body.classList.add('acp-harness__msg-body--lane-mail');
   const meta = document.createElement('span');
   meta.className = 'acp-harness__lane-mail-meta';
-  meta.textContent = formatLaneMailMetaLine(
+  if (payload.peerBackendId) {
+    const logo = document.createElement('span');
+    logo.className = `acp-harness__lane-mail-logo acp-harness__lane-mail-logo--${payload.peerBackendId}`;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#${backendLogoId(payload.peerBackendId)}`);
+    svg.setAttribute('aria-hidden', 'true');
+    svg.appendChild(use);
+    logo.appendChild(svg);
+    meta.appendChild(logo);
+  }
+  meta.appendChild(document.createTextNode(formatLaneMailMetaLine(
     payload.direction,
     payload.peerDisplayName,
     payload.done,
     payload.channel,
-  );
+  )));
   const text = document.createElement('div');
   text.className = 'acp-harness__lane-mail-text';
   // Render the mail body as markdown, mirroring normal agent messages (same
@@ -10437,50 +10488,60 @@ function renderFsWriteReviewBody(body: HTMLElement, payload: FsWriteReviewPayloa
 
 export function renderPermissionBody(body: HTMLElement, perm: PermissionPayload): void {
   const pending = perm.decision === 'pending';
-  const card = document.createElement('div');
-  card.className = 'acp-harness__perm-card';
-  card.dataset.decision = perm.decision;
+  body.dataset.decision = perm.decision;
   const head = document.createElement('div');
   head.className = 'acp-harness__perm-row';
-  // spec 167: collapse permission cards. A resolved card leads with its decision
-  // (accepted/rejected/auto-allowed); a pending card drops the redundant
+  // spec 167: collapse permission rows. A resolved row leads with its decision
+  // (accepted/rejected/auto-allowed); a pending row drops the redundant
   // family/"pending" noise — the actions line already signals it awaits input.
+  // The head mirrors the tool row's layout (glyph + tag + inline subject) so
+  // permission and tool rows align in the shared body column.
   if (!pending) {
+    const glyph = document.createElement('span');
+    glyph.className = `acp-harness__perm-glyph acp-harness__perm-glyph--${perm.decision}`;
+    glyph.textContent = permissionDecisionGlyph(perm.decision);
+    head.appendChild(glyph);
     const decision = document.createElement('span');
     decision.className = 'acp-harness__perm-decision';
-    decision.textContent = permissionDecisionLabel(perm);
+    // The glyph now carries the ✓/✗, so strip it from the chip text.
+    decision.textContent = permissionDecisionLabel(perm).replace(/^[✓✗]\s*/u, '');
     head.appendChild(decision);
   }
-  const tool = document.createElement('span');
-  tool.className = 'acp-harness__perm-tool';
-  tool.textContent = perm.toolName;
-  head.appendChild(tool);
+  // For execute permissions the toolName is the command — i.e. identical to the
+  // subject — so rendering both would print the command twice. Only show the
+  // tool tag when it carries signal the subject doesn't (e.g. Write src/app.ts).
+  if (perm.toolName && perm.toolName !== perm.subject) {
+    const tool = document.createElement('span');
+    tool.className = 'acp-harness__perm-tool';
+    tool.textContent = perm.toolName;
+    head.appendChild(tool);
+  }
   const subject = document.createElement('span');
   subject.className = 'acp-harness__perm-subject';
   subject.textContent = perm.subject;
   subject.title = perm.subject;
   head.appendChild(subject);
-  card.appendChild(head);
-  // spec 167: a resolved card stays strictly one line (decision + tool + subject).
+  body.appendChild(head);
+  // spec 167: a resolved row stays strictly one line (decision + tool + subject).
   // The cross-touch suffix and auto-allow reason only carry decision-time signal,
-  // so — like argsPreview — they render on the pending card only.
+  // so — like argsPreview — they render on the pending row only.
   if (pending && perm.suffix) {
     const suffix = document.createElement('span');
     suffix.className = 'acp-harness__perm-suffix';
     suffix.textContent = perm.suffix;
-    card.appendChild(suffix);
+    body.appendChild(suffix);
   }
   if (pending && perm.autoReason) {
     const reason = document.createElement('div');
     reason.className = 'acp-harness__perm-reason';
     reason.textContent = perm.autoReason;
-    card.appendChild(reason);
+    body.appendChild(reason);
   }
   if (pending && perm.argsPreview) {
     const preview = document.createElement('div');
     preview.className = 'acp-harness__perm-preview';
     preview.textContent = perm.argsPreview;
-    card.appendChild(preview);
+    body.appendChild(preview);
   }
   if (pending) {
     const actions = document.createElement('div');
@@ -10489,9 +10550,12 @@ export function renderPermissionBody(body: HTMLElement, perm: PermissionPayload)
       .filter((option) => option.action === 'accept' || option.action === 'reject')
       .map((option) => option.action === 'accept' ? 'a accept' : 'r reject');
     actions.textContent = Array.from(new Set(labels)).join(' · ');
-    card.appendChild(actions);
+    body.appendChild(actions);
   }
-  body.appendChild(card);
+}
+
+function permissionDecisionGlyph(decision: string): string {
+  return decision === 'rejected' || decision === 'failed' ? '✗' : '✓';
 }
 
 function permissionDecisionLabel(perm: PermissionPayload): string {

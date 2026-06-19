@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness lane monitor</title>
+<style>
+  :root {
+    --bg: #0b0e11; --fg: #eaecef; --muted: #707a8a; --border: #2b3139;
+    --accent: #fcd535; --card: #1e2329; --code-bg: #181a20;
+    --add: #0ecb81; --del: #f6465d; color-scheme: dark;
+    --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+  }
+  body { margin: 0; font-family: var(--sans); font-size: 14px; line-height: 1.5;
+         background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  .main { max-width: 1140px; margin: 0 auto; padding: 16px 20px 48px; }
+  h2, h3 { letter-spacing: .04em; }
+  h2 { font-size: 14px; margin: 0; }
+  h3 { font-size: 11px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .top { display: flex; justify-content: space-between; align-items: center;
+         gap: 16px; flex-wrap: wrap; padding: 14px 16px; margin: 6px 0 14px;
+         background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.live { background: var(--add); animation: beacon 2s infinite; }
+  @keyframes beacon { 0% { box-shadow: 0 0 0 0 rgba(14,203,129,.55); }
+                      70% { box-shadow: 0 0 0 10px rgba(14,203,129,0); }
+                      100% { box-shadow: 0 0 0 0 rgba(14,203,129,0); } }
+  .title { font-size: 15px; font-weight: 700; }
+  .sub, .state, .footer { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .stats { display: flex; gap: 22px; flex-wrap: wrap; }
+  .stat { text-align: right; }
+  .stat b { display: block; font-family: var(--mono); font-size: 19px; color: var(--accent);
+            font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 10px; color: var(--muted); }
+  .state { padding: 10px 12px; margin-bottom: 14px; background: rgba(252,213,53,.06);
+           border: 1px solid var(--border); border-radius: 8px; color: var(--accent); }
+  .harness { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .harness-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .harness-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .layout { display: grid; grid-template-columns: minmax(220px, 340px) minmax(0, 1fr); gap: 18px; align-items: start; }
+  @media (max-width: 780px) { .layout { grid-template-columns: 1fr; } }
+  .gauge canvas { display: block; width: 100%; }
+  .gauge-val { text-align: center; margin-top: -6px; }
+  .gauge-val b { font-family: var(--mono); font-size: 30px; color: var(--accent);
+                 font-variant-numeric: tabular-nums; }
+  .gauge-val span { display: block; font-size: 10px; color: var(--muted); }
+  .lanes { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 12px; }
+  .lane { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; }
+  .lane-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .lane-name { font-weight: 700; font-size: 13px; }
+  .lane-agent { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .pill { font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+          padding: 2px 7px; border-radius: 20px; border: 1px solid currentColor; white-space: nowrap; }
+  .pill::before { content: "●"; margin-right: 4px; font-size: 8px; vertical-align: middle; }
+  .st-starting, .st-needs_permission { color: var(--accent); }
+  .st-idle, .st-stopped, .st-unknown { color: var(--muted); }
+  .st-busy { color: var(--add); }
+  .st-awaiting_peer, .st-error { color: var(--del); }
+  .turn { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 8px 0 6px; min-height: 16px; }
+  .pulse { width: 100%; height: 38px; display: block; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+  .chip { font-family: var(--mono); font-size: 10px; color: var(--muted);
+          background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; }
+  .chip b { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .chip.alert b { color: var(--del); }
+  .foreign { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 14px 0 0; padding: 0; list-style: none; }
+  .foreign li { padding: 3px 0; border-bottom: 1px solid var(--border); }
+  .foreign li:last-child { border-bottom: none; }
+  .foreign .name { color: var(--fg); }
+  .feed { font-family: var(--mono); font-size: 12px; display: flex; flex-direction: column; gap: 1px;
+          margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .feed .row { display: grid; grid-template-columns: 64px 96px 1fr; gap: 10px;
+               padding: 4px 2px; border-bottom: 1px solid var(--border); align-items: baseline; }
+  .feed .row:last-child { border-bottom: none; }
+  .feed .t { color: var(--muted); }
+  .feed .who { color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed .msg { color: var(--fg); }
+  .footer { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<main class="main">
+  <div class="top">
+    <div class="brand">
+      <span class="dot" id="dot"></span>
+      <div>
+        <div class="title">Harness lane monitor</div>
+        <div class="sub" id="session">connecting...</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="clock">00:00:00</b><span>uptime</span></div>
+      <div class="stat"><b id="harness-count">0</b><span>harnesses</span></div>
+      <div class="stat"><b id="lane-count">0</b><span>lanes</span></div>
+      <div class="stat"><b id="turn-count">0</b><span>observed turns</span></div>
+    </div>
+  </div>
+  <div class="state" id="state">connecting...</div>
+  <div id="harnesses"></div>
+  <div class="footer">read-only observation · polls /telemetry · pulse = lane activity, not token rate</div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var SCHEMA_VERSION = 1;
+  var POLL_MS = 1000;
+  var FEED_CAP = 14;
+  var ACTIVE = { busy: 1, needs_permission: 1, awaiting_peer: 1 };
+  var STATUS_COL = {
+    starting: "#fcd535", idle: "#707a8a", busy: "#0ecb81",
+    needs_permission: "#fcd535", awaiting_peer: "#f6465d",
+    error: "#f6465d", stopped: "#707a8a", unknown: "#707a8a"
+  };
+  var STATUS_LABEL = {
+    starting: "starting", idle: "idle", busy: "busy",
+    needs_permission: "needs permission", awaiting_peer: "awaiting peer",
+    error: "error", stopped: "stopped", unknown: "unknown"
+  };
+  var dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  var startedAt = Date.now();
+  var snapshots = [];
+  var lastSignature = "";
+  var hasSuccessfulPoll = false;
+  var pollInFlight = false;
+  var harnessEls = {};
+  var runtimes = {};
+
+  function R(id) { return document.getElementById(id); }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function statusKey(status) { return STATUS_LABEL[status] ? status : "unknown"; }
+  function statusLabel(status) { return STATUS_LABEL[statusKey(status)]; }
+  function statusColor(status) { return STATUS_COL[statusKey(status)]; }
+  function isActiveStatus(status) { return !!ACTIVE[statusKey(status)]; }
+  function formatClock(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
+  }
+  function formatElapsed(ms) {
+    if (ms < 1000) return "<1s";
+    var s = Math.floor(ms / 1000);
+    if (s < 60) return s + "s";
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + "m " + (s % 60) + "s";
+    return Math.floor(m / 60) + "h " + (m % 60) + "m";
+  }
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+  function fit(cv, h) {
+    var w = cv.clientWidth || (cv.parentElement && cv.parentElement.clientWidth) || 320;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    cv.style.height = h + "px";
+    var x = cv.getContext("2d");
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { x: x, w: w, h: h };
+  }
+  function sumObservedTurns(lanes) {
+    return (lanes || []).reduce(function (n, lane) { return n + (lane.observedTurns || 0); }, 0);
+  }
+  function formatTriage(snap) {
+    var busy = 0, awaiting = 0;
+    (snap.lanes || []).forEach(function (lane) {
+      if (lane.status === "busy" || lane.status === "needs_permission") busy++;
+      if (lane.status === "awaiting_peer") awaiting++;
+    });
+    var flags = snap.attention ? snap.attention.openCount || 0 : 0;
+    var bits = [];
+    if (busy) bits.push(busy + " busy");
+    if (awaiting) bits.push(awaiting + " awaiting");
+    if (flags) bits.push(flags + " flags");
+    return bits.length ? bits.join(" · ") : "all clear";
+  }
+  function agentLine(lane) {
+    var bits = [lane.backendId || "?"];
+    if (lane.modelName) bits.push(lane.modelName);
+    return bits.join(" · ");
+  }
+  function turnLine(lane) {
+    return lane.turnActiveSince ? "turn active " + formatElapsed(Date.now() - lane.turnActiveSince) : "";
+  }
+  function formatDelta(label, detail) {
+    var parts = String(detail || "").split("->");
+    if (parts.length === 2) return label + " " + parts[0] + "→" + parts[1];
+    return label + (detail ? " " + detail : "");
+  }
+  function formatEvent(ev) {
+    var d = ev.detail || "";
+    switch (ev.kind) {
+      case "status": {
+        var parts = d.split("->");
+        return parts.length === 2 ? "status → " + statusLabel(parts[1].trim()) : "status changed";
+      }
+      case "attention": return formatDelta("attention queue", d);
+      case "review": return formatDelta("reviews", d);
+      case "priority": return formatDelta("high-priority hunks", d);
+      case "peer": return formatDelta("peer inbox", d);
+      case "lane": return d === "spawned" ? "lane spawned" : d === "closed" ? "lane closed" : "lane " + d;
+      default: return d || String(ev.kind || "event");
+    }
+  }
+  function runtimeFor(harnessId, laneId) {
+    var key = harnessId + "::" + laneId;
+    if (!runtimes[key]) runtimes[key] = { buf: new Array(120).fill(0), _sp: 0 };
+    return runtimes[key];
+  }
+  function renderFeed(feed, events) {
+    var rows = (events || []).slice(-FEED_CAP).reverse();
+    if (!rows.length) {
+      feed.innerHTML = '<div class="row"><span class="t">-</span><span class="who">-</span><span class="msg">waiting for events</span></div>';
+      return;
+    }
+    feed.innerHTML = rows.map(function (ev) {
+      var d = new Date(ev.at || Date.now());
+      var t = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+      return '<div class="row"><span class="t">' + esc(t) + '</span><span class="who">' +
+        esc(ev.laneName || "-") + '</span><span class="msg">' + esc(formatEvent(ev)) + '</span></div>';
+    }).join("");
+  }
+  function renderForeign(el, peers) {
+    if (!peers || !peers.length) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = peers.map(function (p) {
+      var cwd = p.cwd ? " · " + p.cwd : "";
+      return '<li><span class="name">' + esc(p.displayName) + '</span> · ' +
+        esc(p.backendId) + ' · ' + esc(p.status || "unknown") + esc(cwd) + '</li>';
+    }).join("");
+  }
+  function harnessShell(snap) {
+    var id = snap.harnessId || "harness";
+    var el = harnessEls[id];
+    if (el) return el;
+    el = document.createElement("section");
+    el.className = "harness";
+    el.innerHTML =
+      '<div class="harness-head"><div><h2></h2><div class="harness-meta"></div></div><div class="harness-meta triage"></div></div>' +
+      '<div class="layout"><div class="gauge"><h3>Attention triage</h3><canvas></canvas><div class="gauge-val"><b>0</b><span>flags in review queue</span></div></div>' +
+      '<div><h3>Active lanes</h3><div class="lanes"></div><ul class="foreign" hidden></ul></div></div>' +
+      '<div class="feed"></div>';
+    R("harnesses").appendChild(el);
+    el._gauge = fit(el.querySelector(".gauge canvas"), 150);
+    harnessEls[id] = el;
+    return el;
+  }
+  function updateLaneCard(harnessId, wrap, lane) {
+    var rt = runtimeFor(harnessId, lane.id);
+    var card = wrap.querySelector('[data-lane-id="' + CSS.escape(lane.id) + '"]');
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "lane";
+      card.dataset.laneId = lane.id;
+      card.innerHTML =
+        '<div class="lane-head"><div><div class="lane-name"></div><div class="lane-agent"></div></div><span class="pill"></span></div>' +
+        '<div class="turn"></div><canvas class="pulse"></canvas><div class="chips">' +
+        '<span class="chip">attn <b class="c-attn">0</b></span><span class="chip">rev <b class="c-rev">0</b></span>' +
+        '<span class="chip">pri <b class="c-pri">0</b></span><span class="chip">peer <b class="c-peer">0</b></span></div>';
+      wrap.appendChild(card);
+      rt.pulse = card.querySelector(".pulse");
+      rt.pC = fit(rt.pulse, 38);
+    }
+    var sk = statusKey(lane.status);
+    card.querySelector(".lane-name").textContent = lane.displayName || lane.id;
+    card.querySelector(".lane-agent").textContent = agentLine(lane);
+    var pill = card.querySelector(".pill");
+    pill.className = "pill st-" + sk;
+    pill.textContent = statusLabel(lane.status);
+    card.querySelector(".turn").textContent = turnLine(lane);
+    card.querySelector(".c-attn").textContent = lane.attnOpen || 0;
+    card.querySelector(".c-rev").textContent = lane.reviews || 0;
+    card.querySelector(".c-pri").textContent = lane.highPriority || 0;
+    card.querySelector(".c-peer").textContent = lane.inboxDepth || 0;
+    card.querySelector(".c-attn").parentElement.classList.toggle("alert", (lane.attnOpen || 0) > 0);
+    rt.status = lane.status;
+    rt.turnActiveSince = lane.turnActiveSince;
+  }
+  function drawGauge(el, snap) {
+    var c = el._gauge;
+    if (!c) return;
+    var x = c.x, w = c.w, h = c.h, cx = w / 2, cy = h - 12, r = Math.min(w / 2 - 16, h - 24);
+    x.clearRect(0, 0, w, h);
+    var total = snap.attention ? snap.attention.openCount || 0 : 0;
+    var frac = Math.min(1, total / 8);
+    x.lineWidth = 12;
+    x.lineCap = "round";
+    x.strokeStyle = "rgba(255,255,255,.07)";
+    x.beginPath(); x.arc(cx, cy, r, Math.PI, Math.PI * 2); x.stroke();
+    var col = total === 0 ? "#0ecb81" : total <= 2 ? "#fcd535" : "#f6465d";
+    x.strokeStyle = col;
+    x.beginPath(); x.arc(cx, cy, r, Math.PI, Math.PI + Math.PI * frac); x.stroke();
+    el.querySelector(".gauge-val b").textContent = String(total);
+    el.querySelector(".gauge-val b").style.color = col;
+  }
+  function samplePulse(rt) {
+    var status = rt.status || "idle";
+    if (status === "awaiting_peer") return Math.sin(performance.now() * 0.003) * 0.18 + (Math.random() - 0.5) * 0.05;
+    if (status === "needs_permission") return Math.sin(performance.now() * 0.006) * 0.35 + (Math.random() - 0.5) * 0.08;
+    if (status === "busy") {
+      var boost = rt.turnActiveSince ? Math.min(0.35, (Date.now() - rt.turnActiveSince) / 120000) : 0;
+      if (Math.random() < 0.04 + boost) rt._sp = 1;
+      var v = rt._sp > 0.02 ? rt._sp : (Math.random() - 0.5) * 0.12;
+      rt._sp *= 0.55;
+      return Math.max(-1, Math.min(1, v));
+    }
+    return (Math.random() - 0.5) * 0.06;
+  }
+  function drawPulse(rt) {
+    if (!rt.pC || !rt.pulse) return;
+    var c = rt.pC, x = c.x, w = c.w, h = c.h, mid = h / 2, status = rt.status || "idle";
+    x.clearRect(0, 0, w, h);
+    if (!isActiveStatus(status)) {
+      x.strokeStyle = STATUS_COL.idle; x.lineWidth = 1; x.globalAlpha = 0.5;
+      x.beginPath(); x.moveTo(0, mid); x.lineTo(w, mid); x.stroke(); x.globalAlpha = 1;
+      return;
+    }
+    rt.buf.push(samplePulse(rt)); rt.buf.shift();
+    x.strokeStyle = statusColor(status); x.lineWidth = 1.5; x.globalAlpha = 0.95; x.beginPath();
+    for (var i = 0; i < rt.buf.length; i++) {
+      var px = (i / (rt.buf.length - 1)) * w;
+      var py = mid - rt.buf[i] * (h * 0.42);
+      if (i === 0) x.moveTo(px, py); else x.lineTo(px, py);
+    }
+    x.stroke(); x.globalAlpha = 1;
+  }
+  function applyHarnesses(next) {
+    snapshots = next;
+    var ids = {};
+    var runtimeIds = {};
+    var laneCount = 0, turns = 0;
+    next.forEach(function (snap) {
+      var id = snap.harnessId || "harness";
+      ids[id] = true;
+      var el = harnessShell(snap);
+      var lanes = snap.lanes || [];
+      laneCount += lanes.length;
+      turns += sumObservedTurns(lanes);
+      el.querySelector("h2").textContent = id;
+      el.querySelector(".harness-meta").textContent = snap.projectDir || "no project";
+      el.querySelector(".triage").textContent = formatTriage(snap);
+      var wrap = el.querySelector(".lanes");
+      var laneIds = {};
+      lanes.forEach(function (lane) {
+        laneIds[lane.id] = true;
+        runtimeIds[id + "::" + lane.id] = true;
+        updateLaneCard(id, wrap, lane);
+      });
+      Array.prototype.slice.call(wrap.querySelectorAll(".lane")).forEach(function (card) {
+        if (!laneIds[card.dataset.laneId]) {
+          delete runtimes[id + "::" + card.dataset.laneId];
+          card.remove();
+        }
+      });
+      renderForeign(el.querySelector(".foreign"), snap.foreignPeers || []);
+      renderFeed(el.querySelector(".feed"), snap.recentEvents || []);
+      drawGauge(el, snap);
+    });
+    Object.keys(harnessEls).forEach(function (id) {
+      if (!ids[id]) {
+        harnessEls[id].remove();
+        delete harnessEls[id];
+      }
+    });
+    Object.keys(runtimes).forEach(function (key) {
+      if (!runtimeIds[key]) delete runtimes[key];
+    });
+    R("harness-count").textContent = String(next.length);
+    R("lane-count").textContent = String(laneCount);
+    R("turn-count").textContent = String(turns);
+    R("dot").classList.toggle("live", next.length > 0);
+    R("session").textContent = next.length ? "live" : "no active harness yet";
+    R("state").textContent = next.length ? "live telemetry" : "no active harness yet";
+  }
+  function poll() {
+    if (pollInFlight) return;
+    pollInFlight = true;
+    fetch("/telemetry", { cache: "no-store" }).then(function (res) {
+      if (!res.ok) throw new Error("http " + res.status);
+      return res.json();
+    }).then(function (body) {
+      var raw = Array.isArray(body && body.harnesses) ? body.harnesses : [];
+      var next = raw.filter(function (snap) { return snap && snap.schemaVersion === SCHEMA_VERSION; });
+      hasSuccessfulPoll = true;
+      if (raw.length > 0 && next.length === 0) {
+        snapshots = [];
+        lastSignature = "";
+        applyHarnesses([]);
+        R("state").textContent = "refresh the dashboard (schema mismatch)";
+        R("session").textContent = "schema mismatch";
+        return;
+      }
+      var sig = JSON.stringify(next.map(function (snap) {
+        return [snap.harnessId, snap.version, snap.generatedAt];
+      }));
+      if (sig !== lastSignature) {
+        lastSignature = sig;
+        applyHarnesses(next);
+      } else if (next.length === 0 && hasSuccessfulPoll) {
+        R("state").textContent = "no active harness yet";
+        R("session").textContent = "no active harness yet";
+      }
+    }).catch(function () {
+      R("state").textContent = snapshots.length || hasSuccessfulPoll ? "reconnecting..." : "connecting...";
+      R("session").textContent = snapshots.length || hasSuccessfulPoll ? "reconnecting..." : "connecting...";
+    }).finally(function () {
+      pollInFlight = false;
+    });
+  }
+  function frame() {
+    R("clock").textContent = formatClock(Date.now() - startedAt);
+    snapshots.forEach(function (snap) {
+      (snap.lanes || []).forEach(function (lane) {
+        var el = harnessEls[snap.harnessId || "harness"];
+        if (!el) return;
+        var card = el.querySelector('[data-lane-id="' + CSS.escape(lane.id) + '"]');
+        if (card) card.querySelector(".turn").textContent = turnLine(lane);
+      });
+    });
+    Object.keys(harnessEls).forEach(function (id) {
+      var snap = snapshots.find(function (s) { return (s.harnessId || "harness") === id; });
+      if (snap) drawGauge(harnessEls[id], snap);
+    });
+    Object.keys(runtimes).forEach(function (key) { drawPulse(runtimes[key]); });
+    requestAnimationFrame(frame);
+  }
+  window.addEventListener("resize", function () {
+    Object.keys(harnessEls).forEach(function (id) {
+      harnessEls[id]._gauge = fit(harnessEls[id].querySelector(".gauge canvas"), 150);
+    });
+    Object.keys(runtimes).forEach(function (key) {
+      var rt = runtimes[key];
+      if (rt.pulse) rt.pC = fit(rt.pulse, 38);
+    });
+  });
+  poll();
+  setInterval(poll, POLL_MS);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

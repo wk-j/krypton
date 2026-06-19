@@ -364,7 +364,8 @@ impl Default for SshConfig {
 pub struct HooksConfig {
     /// Enable the HTTP hook server for Claude Code integration
     pub enabled: bool,
-    /// Port to listen on (0 = auto-assign available port)
+    /// Port to listen on. Defaults to 8765; 0 requests an ephemeral port. If a
+    /// configured nonzero port is busy, startup falls back to an ephemeral port.
     pub port: u16,
     /// Show toast notifications for hook events
     pub show_toasts: bool,
@@ -378,7 +379,7 @@ impl Default for HooksConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            port: 0,
+            port: 8765,
             show_toasts: false,
             max_toasts: 20,
             animation: "brainwave".to_string(),

@@ -636,6 +636,37 @@
   color: rgba(120, 200, 255, 0.8);
 }
 
+.acp-harness__lane-mail-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  color: rgba(216, 232, 216, 0.55);
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.acp-harness__lane-mail-logo svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.acp-harness__lane-mail-logo--claude   { color: var(--krypton-backend-claude); }
+.acp-harness__lane-mail-logo--codex    { color: var(--krypton-backend-codex); }
+.acp-harness__lane-mail-logo--opencode { color: var(--krypton-backend-opencode); }
+.acp-harness__lane-mail-logo--pi-acp   { color: var(--krypton-backend-pi); }
+.acp-harness__lane-mail-logo--droid    { color: var(--krypton-backend-droid); }
+.acp-harness__lane-mail-logo--cursor   { color: var(--krypton-backend-cursor); }
+.acp-harness__lane-mail-logo--junie    { color: var(--krypton-backend-junie); }
+.acp-harness__lane-mail-logo--omp      { color: var(--krypton-backend-omp); }
+.acp-harness__lane-mail-logo--grok     { color: var(--krypton-backend-grok); }
+.acp-harness__lane-mail-logo--copilot  { color: var(--krypton-backend-copilot); }
+.acp-harness__lane-mail-logo--mimo     { color: var(--krypton-backend-mimo); }
+.acp-harness__lane-mail-logo--cline    { color: var(--krypton-backend-cline); }
+
 .acp-harness__lane-mail-text {
   display: block;
   white-space: pre-wrap;
@@ -1626,21 +1657,43 @@
   letter-spacing: 0.08em;
 }
 
+/* Custom markers via ::before instead of native list markers: the browser
+   right-aligns ordered-list numbers to the content edge, so `1.` and `•` land
+   in different columns and the lists look unaligned. A fixed-width marker
+   column (left-aligned at the list's left edge, content hanging-indented past
+   it) keeps every marker — numbers and bullets — in one tidy column. */
 .acp-harness__msg-body--markdown ul,
 .acp-harness__msg-body--markdown ol {
   margin: 0.15em 0 0.35em;
-  padding-left: 2ch;
+  padding-left: 0;
+  list-style: none;
+}
+
+.acp-harness__msg-body--markdown ol {
+  counter-reset: acp-ol;
 }
 
 .acp-harness__msg-body--markdown li {
+  position: relative;
   margin: 0.12em 0;
+  padding-left: 2.6ch;
 }
 
-.acp-harness__msg-body--markdown ul li::marker {
+.acp-harness__msg-body--markdown ul > li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
   color: var(--agent-accent, #8effb0);
 }
 
-.acp-harness__msg-body--markdown ol li::marker {
+.acp-harness__msg-body--markdown ol > li {
+  counter-increment: acp-ol;
+}
+
+.acp-harness__msg-body--markdown ol > li::before {
+  content: counter(acp-ol) '.';
+  position: absolute;
+  left: 0;
   color: var(--agent-user, #6dd0ff);
   font-weight: 700;
 }
@@ -1898,23 +1951,30 @@
   color: #ffd166;
 }
 
-.acp-harness__perm-card {
+/* Spec 120 pattern — flat perm body, no nested card container. No horizontal
+   padding so the perm row's content lines up flush with the tool rows in the
+   same body column; no background tint either, so the perm row reads like a
+   tool row (glyph + tag + subject carry the meaning, not a coloured band). */
+.acp-harness__msg-body.acp-harness__perm {
   display: grid;
   gap: 2px;
-  padding: 3px 8px;
-  background: rgba(255, 176, 0, 0.045);
+  padding: 2px 0;
 }
 
-.acp-harness__perm-card[data-decision='auto_allowed'] .acp-harness__perm-decision,
-.acp-harness__perm-card[data-decision='accepted'] .acp-harness__perm-decision {
+/* The glyph (not the chip) carries the decision colour, mirroring the tool
+   row's status glyph. */
+.acp-harness__msg-body.acp-harness__perm[data-decision='auto_allowed'] .acp-harness__perm-glyph,
+.acp-harness__msg-body.acp-harness__perm[data-decision='accepted'] .acp-harness__perm-glyph {
   color: #8effb0;
 }
 
-.acp-harness__perm-card[data-decision='rejected'] .acp-harness__perm-decision,
-.acp-harness__perm-card[data-decision='failed'] .acp-harness__perm-decision {
+.acp-harness__msg-body.acp-harness__perm[data-decision='rejected'] .acp-harness__perm-glyph,
+.acp-harness__msg-body.acp-harness__perm[data-decision='failed'] .acp-harness__perm-glyph {
   color: #ff6b8b;
 }
 
+/* Mirrors .acp-harness__tool-head so permission and tool rows share the same
+   glyph + tag + inline-subject layout in the body column. */
 .acp-harness__perm-row {
   display: flex;
   flex-wrap: wrap;
@@ -1924,25 +1984,43 @@
   font-size: var(--krypton-font-size, 13px);
 }
 
+/* Mirrors .acp-harness__tool-glyph (1.4ch fixed cell). */
+.acp-harness__perm-glyph {
+  display: inline-block;
+  width: 1.4ch;
+  text-align: center;
+  color: rgba(216, 232, 216, 0.5);
+}
+
+/* Mirrors .acp-harness__tool-kind — a compact neutral tag, not a coloured pill. */
 .acp-harness__perm-decision {
-  color: rgba(255, 209, 102, 0.72);
-  font-size: 0.78em;
-  letter-spacing: 0.08em;
+  flex: none;
+  white-space: nowrap;
   text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.78em;
+  color: rgba(216, 232, 216, 0.6);
+  border: 1px solid rgba(216, 232, 216, 0.18);
+  border-radius: 2px;
+  padding: 0 5px;
 }
 
 .acp-harness__perm-tool {
+  flex: none;
   color: #ffd166;
   text-shadow: 0 0 8px rgba(255, 209, 102, 0.24);
 }
 
+/* Mirrors .acp-harness__tool-subject: flex so the command sits inline with a
+   hanging indent instead of wrapping the whole element to the body's left edge. */
 .acp-harness__perm-subject {
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: 34em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: rgba(216, 232, 216, 0.92);
+  font-family: var(--agent-font, monospace);
 }
 
 .acp-harness__perm-suffix {

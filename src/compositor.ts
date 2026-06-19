@@ -2343,6 +2343,30 @@ export class Compositor {
   }
 
   /**
+   * Open the live harness lane monitor dashboard in the system browser.
+   */
+  async openDashboard(): Promise<void> {
+    let port = 0;
+    try {
+      port = await invoke<number>('get_hook_server_port');
+    } catch (e) {
+      console.error('[Dashboard] failed to read hook server port:', e);
+    }
+    if (!port) {
+      this.showNotification('dashboard unavailable — hook server not ready');
+      return;
+    }
+    const url = `http://127.0.0.1:${port}/dashboard`;
+    try {
+      await invoke('open_url', { url });
+      this.showNotification(url);
+    } catch (e) {
+      console.error('[Dashboard] failed to open dashboard:', e);
+      this.showNotification('dashboard open failed');
+    }
+  }
+
+  /**
    * Open a Pencil (Excalidraw) window. With no path it shows the picker
    * over the configured `[pencil] dir`; with a path it opens that file
    * directly (refocusing an existing tab if the same file is already open).

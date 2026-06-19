@@ -802,6 +802,13 @@ export class CommandPalette {
       keybinding: 'Leader $',
       execute: () => c.openUsageView(),
     });
+    this.register({
+      id: 'dashboard.open',
+      label: 'Open Lane Monitor Dashboard',
+      category: 'Window',
+      keybinding: 'Leader Shift+L',
+      execute: () => c.openDashboard(),
+    });
 
     // ── Hurl Client ──
     this.register({

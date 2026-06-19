@@ -156,6 +156,7 @@ pub fn run() {
             commands::list_harness_memory,
             commands::dispose_harness_memory,
             commands::acp_bus_reply,
+            commands::acp_publish_telemetry,
             commands::acp_control_reply,
             commands::get_acp_harness_config,
             commands::get_acp_harness_config_path,

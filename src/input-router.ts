@@ -703,8 +703,12 @@ export class InputRouter {
         }
         break;
       case 'l':
-        this.compositor.focusDirection('right');
-        this.toNormal();
+        if (e.shiftKey) {
+          this.compositor.openDashboard().then(() => this.toNormal());
+        } else {
+          this.compositor.focusDirection('right');
+          this.toNormal();
+        }
         break;
 
       // Focus by index

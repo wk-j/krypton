@@ -186,6 +186,10 @@ pub struct HookServer {
     /// is set (not removed) on lane close/`#new` so a later request reports
     /// `410 revoked` rather than an ambiguous `404`.
     feedback_tokens: std::sync::Mutex<HashMap<String, FeedbackToken>>,
+    /// Spec 168: harness-wide telemetry snapshots for the lane-monitor dashboard.
+    /// Keyed by harness id; value is `(version, opaque snapshot JSON)`. Last-writer-wins
+    /// with a monotonic version guard in `store_telemetry`.
+    telemetry: std::sync::Mutex<HashMap<String, (u64, Value)>>,
 }
 
 /// Spec 149: registry record for an artifact feedback token. Maps the
@@ -237,6 +241,7 @@ impl Default for HookServer {
             artifacts: std::sync::Mutex::new(HashMap::new()),
             next_artifact_seq: AtomicU64::new(1),
             feedback_tokens: std::sync::Mutex::new(HashMap::new()),
+            telemetry: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }
@@ -255,6 +260,7 @@ impl HookServer {
             artifacts: std::sync::Mutex::new(HashMap::new()),
             next_artifact_seq: AtomicU64::new(1),
             feedback_tokens: std::sync::Mutex::new(HashMap::new()),
+            telemetry: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -563,6 +569,47 @@ impl HookServer {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .retain(|_, t| t.harness_id != harness_id);
+        self.telemetry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(harness_id);
+    }
+
+    /// Spec 168: cache a harness telemetry snapshot. Drops stale publishes when
+    /// `version` is less than or equal to the cached version (last-writer-wins).
+    /// Returns `true` when stored, `false` when dropped as stale.
+    pub fn store_telemetry(&self, harness_id: &str, version: u64, snapshot: Value) -> bool {
+        let mut map = self.telemetry.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((cached_version, _)) = map.get(harness_id) {
+            if version <= *cached_version {
+                return false;
+            }
+        }
+        map.insert(harness_id.to_string(), (version, snapshot));
+        true
+    }
+
+    /// Spec 168: read the cached telemetry snapshot for a harness, if any.
+    pub fn telemetry_for_harness(&self, harness_id: &str) -> Option<(u64, Value)> {
+        self.telemetry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(harness_id)
+            .cloned()
+    }
+
+    /// Spec 168 pivot: fixed `/telemetry` exposes every live harness snapshot
+    /// currently cached by the frontend publisher. Snapshots stay opaque to Rust.
+    pub fn all_telemetry_snapshots(&self) -> Vec<Value> {
+        let mut entries: Vec<(String, Value)> = self
+            .telemetry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(harness_id, (_, snapshot))| (harness_id.clone(), snapshot.clone()))
+            .collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        entries.into_iter().map(|(_, snapshot)| snapshot).collect()
     }
 
     /// `artifact_new` — allocate an id, issue a destination path inside the
@@ -1233,6 +1280,33 @@ async fn handle_artifact_state(
     };
     let mut resp = Json(json!({ "hash": hash, "registered": info.registered && !hash.is_empty() }))
         .into_response();
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    resp
+}
+
+const DASHBOARD_HTML: &str = include_str!("../../src/acp/artifact-dashboard.html");
+
+/// GET /dashboard — fixed external-browser lane monitor page (spec 168 pivot).
+async fn handle_dashboard() -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(DASHBOARD_HTML))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// GET /telemetry — read-only snapshots for all live harness dashboards.
+async fn handle_telemetry(AxumState(state): AxumState<Arc<HookServerState>>) -> Response {
+    let mut resp = Json(json!({
+        "harnesses": state.hook_server.all_telemetry_snapshots(),
+    }))
+    .into_response();
     resp.headers_mut().insert(
         header::CACHE_CONTROL,
         header::HeaderValue::from_static("no-store"),
@@ -2747,6 +2821,8 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                     "/mcp/harness/{harness_id}/lane/{lane_label}",
                     get(handle_harness_memory_mcp_sse).post(handle_harness_memory_mcp),
                 )
+                .route("/dashboard", get(handle_dashboard))
+                .route("/telemetry", get(handle_telemetry))
                 // spec 149 — artifact inline feedback. Served over loopback HTTP
                 // so the OS-browser page is same-origin with the feedback POST
                 // (no CORS, no `Origin: null`). The token in the path is the sole
@@ -2760,10 +2836,21 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
             let listener = match tokio::net::TcpListener::bind(addr).await {
                 Ok(l) => l,
                 Err(e) => {
-                    let error = format!("Failed to bind hook server on {addr}: {e}");
-                    hook_server.set_error(error.clone());
-                    log::error!("{error}");
-                    return;
+                    let fallback = SocketAddr::from(([127, 0, 0, 1], 0));
+                    log::warn!(
+                        "Failed to bind hook server on {addr}: {e}; falling back to an ephemeral port"
+                    );
+                    match tokio::net::TcpListener::bind(fallback).await {
+                        Ok(l) => l,
+                        Err(fallback_error) => {
+                            let error = format!(
+                                "Failed to bind hook server on {addr} and fallback {fallback}: {fallback_error}"
+                            );
+                            hook_server.set_error(error.clone());
+                            log::error!("{error}");
+                            return;
+                        }
+                    }
                 }
             };
 
@@ -3078,9 +3165,102 @@ mod tests {
                 "/mcp/harness/{harness_id}/lane/{lane_label}",
                 get(ok).post(ok),
             )
+            .route("/dashboard", get(ok))
+            .route("/telemetry", get(ok))
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
             .route("/artifact/feedback/{token}", post(ok));
+    }
+
+    #[test]
+    fn telemetry_store_version_guard() {
+        let server = HookServer::new();
+        let snap1 = json!({ "lanes": [] });
+        let snap2 = json!({ "lanes": [{ "id": "a" }] });
+        assert!(server.store_telemetry("hm-1", 1, snap1.clone()));
+        assert_eq!(
+            server.telemetry_for_harness("hm-1"),
+            Some((1, snap1.clone()))
+        );
+        // equal version → drop
+        assert!(!server.store_telemetry("hm-1", 1, snap2.clone()));
+        assert_eq!(
+            server.telemetry_for_harness("hm-1"),
+            Some((1, snap1.clone()))
+        );
+        // stale version → drop
+        assert!(!server.store_telemetry("hm-1", 0, snap2.clone()));
+        assert_eq!(server.telemetry_for_harness("hm-1"), Some((1, snap1)));
+        // newer version → store
+        assert!(server.store_telemetry("hm-1", 2, snap2.clone()));
+        assert_eq!(server.telemetry_for_harness("hm-1"), Some((2, snap2)));
+    }
+
+    #[test]
+    fn dispose_harness_artifacts_clears_telemetry() {
+        let server = HookServer::new();
+        server.store_telemetry("hm-7", 1, json!({}));
+        server.dispose_harness_artifacts("hm-7");
+        assert_eq!(server.telemetry_for_harness("hm-7"), None);
+    }
+
+    fn telemetry_contract_response(server: &HookServer) -> Response {
+        let mut resp = Json(json!({
+            "harnesses": server.all_telemetry_snapshots(),
+        }))
+        .into_response();
+        resp.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("no-store"),
+        );
+        resp
+    }
+
+    async fn telemetry_response(server: &HookServer) -> (StatusCode, Option<String>, Value) {
+        let resp = telemetry_contract_response(server);
+        let status = resp.status();
+        let cache_control = resp
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("response body should read");
+        let body = if bytes.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes).expect("response body should be JSON")
+        };
+        (status, cache_control, body)
+    }
+
+    #[tokio::test]
+    async fn telemetry_returns_empty_harnesses_without_snapshots() {
+        let server = Arc::new(HookServer::new());
+        let (status, cache_control, body) = telemetry_response(&server).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(cache_control.as_deref(), Some("no-store"));
+        assert_eq!(body, json!({ "harnesses": [] }));
+    }
+
+    #[tokio::test]
+    async fn telemetry_returns_all_opaque_snapshots_and_no_store() {
+        let server = Arc::new(HookServer::new());
+        let snapshot_a = json!({ "harnessId": "hm-a", "lanes": [{ "id": "a" }] });
+        let snapshot_b = json!({ "harnessId": "hm-b", "extra": ["opaque", 3] });
+        assert!(server.store_telemetry("hm-b", 7, snapshot_b.clone()));
+        assert!(server.store_telemetry("hm-a", 3, snapshot_a.clone()));
+
+        let (status, cache_control, body) = telemetry_response(&server).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(cache_control.as_deref(), Some("no-store"));
+        assert_eq!(
+            body,
+            json!({
+                "harnesses": [snapshot_a, snapshot_b],
+            })
+        );
     }
 
     #[test]

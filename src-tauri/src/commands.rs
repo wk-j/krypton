@@ -260,6 +260,20 @@ pub fn acp_bus_reply(
     Ok(())
 }
 
+/// Frontend push of a harness-wide telemetry snapshot for the lane-monitor
+/// dashboard (spec 168). Opaque JSON is cached per harness with a monotonic
+/// version guard on the Rust side.
+#[tauri::command]
+pub fn acp_publish_telemetry(
+    harness_id: String,
+    version: u64,
+    snapshot: serde_json::Value,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.store_telemetry(&harness_id, version, snapshot);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn acp_control_reply(
     request_id: String,
