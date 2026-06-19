@@ -8624,46 +8624,32 @@ export class AcpHarnessView implements ContentView {
     const entries = lane.plan;
     const done = entries.filter((e) => e.status === 'completed').length;
     const total = entries.length;
-    const activeIdx = entries.findIndex((e) => e.status === 'in_progress');
-    const stepNum = activeIdx >= 0 ? activeIdx + 1 : done < total ? done + 1 : total;
     const collapsed = lane.planCollapsed;
+    const progressPct = Math.round((done / total) * 100);
+    this.planEl.title = `p ${collapsed ? 'expand' : 'collapse'}`;
 
     const header =
       `<div class="acp-harness__plan-header">` +
       `<span class="acp-harness__plan-title">plan</span>` +
-      `<span class="acp-harness__plan-step">step <b>${stepNum}</b> of ${total}</span>` +
-      `<span class="acp-harness__plan-count"><b>${done}</b>/${total}</span>` +
+      `<span class="acp-harness__plan-count"><b>${done}</b> / ${total}</span>` +
       `</div>`;
 
-    const segs = entries
-      .map((e) => {
-        const cls =
-          e.status === 'completed'
-            ? 'acp-harness__plan-seg acp-harness__plan-seg--done'
-            : e.status === 'in_progress'
-              ? 'acp-harness__plan-seg acp-harness__plan-seg--prog'
-              : 'acp-harness__plan-seg';
-        return `<span class="${cls}"></span>`;
-      })
-      .join('');
-    const bar = `<div class="acp-harness__plan-bar">${segs}</div>`;
+    const progress =
+      `<div class="acp-harness__plan-progress">` +
+      `<span class="acp-harness__plan-progress-fill" style="width: ${progressPct}%"></span>` +
+      `</div>`;
 
-    const priorityLabel: Record<'low' | 'medium' | 'high', string> = {
-      low: 'low',
-      medium: 'med',
-      high: 'high',
-    };
     const rows = entries
       .map((entry) => {
         const cls = `acp-harness__plan-entry acp-harness__plan-entry--${entry.status}`;
-        const tag = entry.priority
-          ? `<span class="acp-harness__plan-tag acp-harness__plan-tag--${entry.priority}">${priorityLabel[entry.priority]}</span>`
-          : `<span class="acp-harness__plan-tag-spacer"></span>`;
+        const marker = entry.status === 'completed' ? '✓' : entry.status === 'in_progress' ? '▸' : '·';
+        const priority = entry.priority === 'high'
+          ? `<span class="acp-harness__plan-priority">high</span>`
+          : '';
         return (
           `<div class="${cls}">` +
-          `<span class="acp-harness__plan-dot"></span>` +
-          `<span class="acp-harness__plan-entry-text">${esc(entry.content)}</span>` +
-          tag +
+          `<span class="acp-harness__plan-entry-mark">${marker}</span>` +
+          `<span class="acp-harness__plan-entry-text">${esc(entry.content)}${priority}</span>` +
           `</div>`
         );
       })
@@ -8672,12 +8658,16 @@ export class AcpHarnessView implements ContentView {
       ? ''
       : `<div class="acp-harness__plan-entries">${rows}</div>`;
 
-    const footer =
-      `<div class="acp-harness__plan-footer">` +
-      `<span class="acp-harness__plan-key"><b>p</b> ${collapsed ? 'expand' : 'collapse'}</span>` +
-      `</div>`;
-
-    this.planEl.innerHTML = header + bar + entriesBlock + footer;
+    this.planEl.innerHTML = header + progress + entriesBlock;
+    if (!collapsed) {
+      const entriesEl = this.planEl.querySelector('.acp-harness__plan-entries');
+      if (entriesEl) {
+        const scrollTarget =
+          entriesEl.querySelector<HTMLElement>('.acp-harness__plan-entry--in_progress') ??
+          entriesEl.querySelector<HTMLElement>('.acp-harness__plan-entry:last-child');
+        scrollTarget?.scrollIntoView({ block: 'nearest' });
+      }
+    }
     this.planEl.classList.toggle('acp-harness__plan--collapsed', collapsed);
     this.planEl.hidden = false;
     this.planSlotEl.hidden = false;
