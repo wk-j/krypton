@@ -16,7 +16,7 @@ import type {
   ReviewOutcome,
 } from './types';
 
-const TELEMETRY_SCHEMA_VERSION = 1;
+const TELEMETRY_SCHEMA_VERSION = 2;
 const TELEMETRY_DEBOUNCE_MS = 300;
 const RECENT_EVENT_CAP = 14;
 
@@ -35,6 +35,11 @@ export interface TelemetryLane {
   attnOpen: number;
   reviews: number;
   highPriority: number;
+  // spec 169 — resource status (current sample; history is accumulated client-side).
+  cpuPercent: number | null; // total_cpu_percent, summed over the process tree (can exceed 100)
+  rssMb: number | null; // total_rss_mb
+  procCount: number; // proc_count (0 when no live process)
+  rootAlive: boolean; // false → dashboard renders "—" + flat baseline, never "0%"
 }
 
 export interface TelemetryEvent {
@@ -98,6 +103,17 @@ export interface HarnessTelemetryPublisherOptions {
   triageStore: TelemetryTriageStore;
   reviewQualityStore: TelemetryReviewQualityStore;
   reviewPriorityStore: TelemetryReviewPriorityStore;
+  // spec 169 — current resource sample for a lane, or null when it has no live
+  // client session yet. Maps lane.id → lane.client.sessionId → metricsBySession
+  // inside AcpHarnessView (the publisher never sees the numeric-session dual key).
+  metricsFor: (laneId: string) => LaneResourceSample | null;
+}
+
+export interface LaneResourceSample {
+  cpuPercent: number;
+  rssMb: number;
+  procCount: number;
+  rootAlive: boolean;
 }
 
 export class HarnessTelemetryPublisher {
@@ -186,6 +202,7 @@ export class HarnessTelemetryPublisher {
     const openItems = this.options.triageStore.openItems();
     return this.options.coordinator.listLanes().map((lane) => {
       const stats = this.options.triageStore.statsFor(lane.laneId);
+      const metrics = this.options.metricsFor(lane.laneId);
       return {
         id: lane.laneId,
         displayName: lane.displayName,
@@ -198,6 +215,10 @@ export class HarnessTelemetryPublisher {
         attnOpen: openItems.filter((item) => item.laneId === lane.laneId).length,
         reviews: this.options.reviewQualityStore.historyFor(lane.laneId).length,
         highPriority: this.options.reviewPriorityStore.highCountFor(lane.laneId),
+        cpuPercent: metrics ? metrics.cpuPercent : null,
+        rssMb: metrics ? metrics.rssMb : null,
+        procCount: metrics ? metrics.procCount : 0,
+        rootAlive: metrics ? metrics.rootAlive : false,
       };
     });
   }

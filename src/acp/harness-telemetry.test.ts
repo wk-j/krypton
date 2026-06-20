@@ -8,7 +8,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: invokeMock,
 }));
 
-import { HarnessTelemetryPublisher, type TelemetryEvent, type TelemetrySnapshot } from './harness-telemetry';
+import {
+  HarnessTelemetryPublisher,
+  type LaneResourceSample,
+  type TelemetryEvent,
+  type TelemetrySnapshot,
+} from './harness-telemetry';
 import { LaneBus } from './lane-bus';
 import type { HarnessLaneStatus, JudgementItem, LaneSummary, LaneTriageStats, ReviewOutcome } from './types';
 
@@ -20,6 +25,7 @@ interface TestHarness {
   stats: Map<string, LaneTriageStats>;
   reviews: Map<string, ReviewOutcome[]>;
   priorities: Map<string, number>;
+  metrics: Map<string, LaneResourceSample>;
 }
 
 function laneSummary(
@@ -78,6 +84,7 @@ function makeHarness(): TestHarness {
     stats: new Map(),
     reviews: new Map(),
     priorities: new Map(),
+    metrics: new Map(),
   };
 }
 
@@ -101,6 +108,7 @@ function makePublisher(harness: TestHarness): HarnessTelemetryPublisher {
       highCount: () => [...harness.priorities.values()].reduce((sum, count) => sum + count, 0),
       highCountFor: (laneId) => harness.priorities.get(laneId) ?? 0,
     },
+    metricsFor: (laneId) => harness.metrics.get(laneId) ?? null,
   });
 }
 
@@ -168,6 +176,29 @@ describe('HarnessTelemetryPublisher', () => {
     expect(lastSnapshot().recentEvents.some((event: TelemetryEvent) => event.kind === 'lane' && event.detail === 'closed')).toBe(true);
   });
 
+  it('folds the per-lane resource sample into the snapshot, null when absent', async () => {
+    const harness = makeHarness();
+    harness.metrics.set('lane-1', { cpuPercent: 142.5, rssMb: 612, procCount: 4, rootAlive: true });
+    makePublisher(harness);
+    await flushPublish();
+
+    const lane = lastSnapshot().lanes[0];
+    expect(lane.cpuPercent).toBe(142.5);
+    expect(lane.rssMb).toBe(612);
+    expect(lane.procCount).toBe(4);
+    expect(lane.rootAlive).toBe(true);
+
+    harness.metrics.delete('lane-1');
+    harness.bus.emit({ type: 'lane:status', payload: { laneId: 'lane-1', prev: 'idle', next: 'busy', at: 9 } });
+    await flushPublish();
+
+    const after = lastSnapshot().lanes[0];
+    expect(after.cpuPercent).toBeNull();
+    expect(after.rssMb).toBeNull();
+    expect(after.procCount).toBe(0);
+    expect(after.rootAlive).toBe(false);
+  });
+
   it('trims the event ring to fourteen rows', async () => {
     const harness = makeHarness();
     makePublisher(harness);
@@ -233,6 +264,7 @@ describe('HarnessTelemetryPublisher', () => {
         highCount: () => 0,
         highCountFor: () => 0,
       },
+      metricsFor: () => null,
     });
 
     await flushPublish();
