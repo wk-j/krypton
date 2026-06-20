@@ -387,15 +387,14 @@ impl HookServer {
             save_pending: Arc::new(AtomicBool::new(false)),
         };
 
-        let live_harness_ids: HashSet<String> = {
+        {
             let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
             memories.insert(harness_id.clone(), store);
-            memories.keys().cloned().collect()
-        };
+        }
 
-        // Spec 133: register the artifact store and stale-sweep crash leftovers
-        // (harness dirs absent from the live registry) for this project.
-        self.init_harness_artifacts(&harness_id, artifact_project_dir, &live_harness_ids);
+        // Spec 133: register the in-memory artifact store. On-disk files persist
+        // as append-only history across harness close and app restarts.
+        self.init_harness_artifacts(&harness_id, artifact_project_dir);
         harness_id
     }
 
@@ -504,7 +503,8 @@ impl HookServer {
     }
 
     pub fn dispose_harness_memory(&self, harness_id: &str) {
-        // Spec 133: sweep this harness's artifact scratch dir on normal close.
+        // Spec 133: drop this harness from the in-memory artifact registry on
+        // normal close. On-disk artifact files are preserved (append-only history).
         self.dispose_harness_artifacts(harness_id);
         let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
         memories.remove(harness_id);
@@ -521,22 +521,11 @@ impl HookServer {
 
     // ─── Artifact store (spec 133) ──────────────────────────────────────────
 
-    /// Register an artifact store for a harness and stale-sweep crash leftovers.
-    /// The sweep removes any `harnessId` subdir under this project's artifact
-    /// root that is NOT in the live registry — never the live set (so a second
-    /// harness tab sharing the project keeps its artifacts), and only crash
-    /// leftovers from prior app runs are reclaimed.
-    fn init_harness_artifacts(
-        &self,
-        harness_id: &str,
-        project_dir: Option<String>,
-        live_harness_ids: &HashSet<String>,
-    ) {
-        if let Some(ref dir) = project_dir {
-            if let Some(root) = artifacts_root(dir) {
-                sweep_stale_artifacts(&root, live_harness_ids);
-            }
-        }
+    /// Register an in-memory artifact store for a harness. Does not delete any
+    /// on-disk files — artifact history under `.krypton/artifacts/` persists
+    /// across harness close and app restarts; only the live registry drives the
+    /// gallery.
+    fn init_harness_artifacts(&self, harness_id: &str, project_dir: Option<String>) {
         let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
         artifacts.insert(
             harness_id.to_string(),
@@ -547,24 +536,15 @@ impl HookServer {
         );
     }
 
-    /// Remove a harness's artifact store and delete its scratch dir.
+    /// Drop a harness from the in-memory artifact registry. On-disk files are
+    /// preserved (append-only history); feedback tokens and telemetry are cleared.
     fn dispose_harness_artifacts(&self, harness_id: &str) {
-        let store = {
+        {
             let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
-            artifacts.remove(harness_id)
-        };
-        if let Some(store) = store {
-            if let Some(ref dir) = store.project_dir {
-                if let Some(root) = artifacts_root(dir) {
-                    let harness_dir = root.join(harness_id);
-                    if harness_dir.exists() {
-                        let _ = std::fs::remove_dir_all(&harness_dir);
-                    }
-                }
-            }
+            artifacts.remove(harness_id);
         }
-        // spec 149: the artifacts are gone — drop every feedback token for this
-        // harness so the map does not accumulate dead tokens across a session.
+        // spec 149: delisted — drop every feedback token for this harness so the
+        // map does not accumulate dead tokens across a session.
         self.feedback_tokens
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -610,6 +590,50 @@ impl HookServer {
             .collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         entries.into_iter().map(|(_, snapshot)| snapshot).collect()
+    }
+
+    /// Read-only artifact gallery listing: every live harness store and its
+    /// pending + registered artifacts, sorted deterministically for `/artifacts`.
+    pub fn list_all_artifacts_for_gallery(&self) -> Vec<Value> {
+        let artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+        let mut harness_ids: Vec<&String> = artifacts.keys().collect();
+        harness_ids.sort();
+        harness_ids
+            .into_iter()
+            .map(|harness_id| {
+                let store = &artifacts[harness_id];
+                let mut entries: Vec<&ArtifactEntry> = store.entries.values().collect();
+                entries.sort_by(|a, b| {
+                    a.lane_label
+                        .cmp(&b.lane_label)
+                        .then_with(|| a.id.cmp(&b.id))
+                });
+                let artifact_rows: Vec<Value> = entries
+                    .iter()
+                    .map(|entry| {
+                        let state = if entry.state == ArtifactState::RegisteredLive {
+                            "live"
+                        } else {
+                            "pending"
+                        };
+                        json!({
+                            "id": entry.id,
+                            "laneLabel": entry.lane_label,
+                            "title": entry.title,
+                            "state": state,
+                            "size": entry.size,
+                            "hash": entry.hash,
+                            "tail": entry.tail,
+                            "token": entry.feedback_token,
+                        })
+                    })
+                    .collect();
+                json!({
+                    "harnessId": harness_id,
+                    "artifacts": artifact_rows,
+                })
+            })
+            .collect()
     }
 
     /// `artifact_new` — allocate an id, issue a destination path inside the
@@ -782,8 +806,9 @@ impl HookServer {
         }))
     }
 
-    /// `artifact_cancel` — `pending` only: drop the entry and best-effort delete
-    /// the pending file. Errors `already_registered` on a live id.
+    /// `artifact_cancel` — `pending` only: drop the registry entry and its
+    /// feedback token. The on-disk file is preserved. Errors `already_registered`
+    /// on a live id.
     fn artifact_cancel(
         &self,
         harness_id: &str,
@@ -804,7 +829,6 @@ impl HookServer {
                 "already_registered: cannot cancel a live artifact (no retire in v1)".to_string(),
             );
         }
-        let path = entry.path.clone();
         let token = entry.feedback_token.clone();
         store.entries.remove(id);
         drop(artifacts);
@@ -813,8 +837,6 @@ impl HookServer {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(&token);
-        // Best-effort: the file may not exist yet (new → cancel without write).
-        let _ = std::fs::remove_file(&path);
         Ok(json!({ "ok": true, "id": id }))
     }
 
@@ -831,12 +853,10 @@ impl HookServer {
             .filter(|e| e.lane_label == lane_label && e.state == ArtifactState::Pending)
             .map(|e| e.id.clone())
             .collect();
-        let mut paths = Vec::new();
         let mut tokens = Vec::new();
         for id in &pending_ids {
             if let Some(entry) = store.entries.remove(id) {
                 tokens.push(entry.feedback_token);
-                paths.push(entry.path);
             }
         }
         drop(artifacts);
@@ -849,9 +869,6 @@ impl HookServer {
             for token in &tokens {
                 map.remove(token);
             }
-        }
-        for path in paths {
-            let _ = std::fs::remove_file(&path);
         }
         pending_ids
     }
@@ -1288,6 +1305,7 @@ async fn handle_artifact_state(
 }
 
 const DASHBOARD_HTML: &str = include_str!("../../src/acp/artifact-dashboard.html");
+const GALLERY_HTML: &str = include_str!("../../src/acp/artifact-gallery.html");
 
 /// GET /dashboard — fixed external-browser lane monitor page (spec 168 pivot).
 async fn handle_dashboard() -> Response {
@@ -1305,6 +1323,31 @@ async fn handle_dashboard() -> Response {
 async fn handle_telemetry(AxumState(state): AxumState<Arc<HookServerState>>) -> Response {
     let mut resp = Json(json!({
         "harnesses": state.hook_server.all_telemetry_snapshots(),
+    }))
+    .into_response();
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    resp
+}
+
+/// GET /gallery — fixed external-browser artifact gallery page.
+async fn handle_gallery() -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(GALLERY_HTML))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// GET /artifacts — read-only artifact listings for all live harness stores.
+async fn handle_artifacts(AxumState(state): AxumState<Arc<HookServerState>>) -> Response {
+    let mut resp = Json(json!({
+        "harnesses": state.hook_server.list_all_artifacts_for_gallery(),
     }))
     .into_response();
     resp.headers_mut().insert(
@@ -2694,28 +2737,6 @@ fn ensure_artifacts_gitignore(root: &StdPath) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Remove harness subdirs under `root` that are NOT in the live registry —
-/// crash leftovers from prior app runs. Never touches the live set or the
-/// `.gitignore`.
-fn sweep_stale_artifacts(root: &StdPath, live_harness_ids: &HashSet<String>) {
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if !file_type.is_dir() {
-            continue;
-        }
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.starts_with("hm-") && !live_harness_ids.contains(name.as_ref()) {
-            let _ = std::fs::remove_dir_all(entry.path());
-        }
-    }
-}
-
 /// Validate the issued artifact file at register/refresh time and return
 /// `(size, sha256-hex)`. Rejects symlinks in any path component, hardlinks,
 /// non-regular files, wrong basename, paths outside the scratch root, and files
@@ -2823,6 +2844,8 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 )
                 .route("/dashboard", get(handle_dashboard))
                 .route("/telemetry", get(handle_telemetry))
+                .route("/gallery", get(handle_gallery))
+                .route("/artifacts", get(handle_artifacts))
                 // spec 149 — artifact inline feedback. Served over loopback HTTP
                 // so the OS-browser page is same-origin with the feedback POST
                 // (no CORS, no `Origin: null`). The token in the path is the sole
@@ -3002,7 +3025,7 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
         let project = tmp.to_string_lossy().to_string();
 
-        server.init_harness_artifacts("hm-1", Some(project.clone()), &HashSet::new());
+        server.init_harness_artifacts("hm-1", Some(project.clone()));
 
         // new issues a path + creates the gitignore + seeds a styled scaffold.
         let issued = server
@@ -3060,21 +3083,27 @@ mod tests {
     }
 
     #[test]
-    fn artifact_cancel_drops_pending_file() {
+    fn cancel_preserves_pending_artifact_file() {
         let server = HookServer::new();
         let tmp = std::env::temp_dir().join(format!("krypton-art-{}", rand_suffix()));
         std::fs::create_dir_all(&tmp).unwrap();
-        server.init_harness_artifacts(
-            "hm-2",
-            Some(tmp.to_string_lossy().to_string()),
-            &HashSet::new(),
-        );
+        server.init_harness_artifacts("hm-2", Some(tmp.to_string_lossy().to_string()));
         let issued = server.artifact_new("hm-2", "Claude-1", "scratch").unwrap();
         let id = issued["id"].as_str().unwrap().to_string();
         let path = PathBuf::from(issued["path"].as_str().unwrap());
         std::fs::write(&path, "<html></html>").unwrap();
         server.artifact_cancel("hm-2", "Claude-1", &id).unwrap();
-        assert!(!path.exists(), "cancel should delete the pending file");
+        assert!(path.exists(), "cancel must preserve the on-disk file");
+        let listing = server.list_all_artifacts_for_gallery();
+        assert_eq!(listing.len(), 1);
+        assert!(
+            listing[0]["artifacts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|a| a["id"].as_str() != Some(id.as_str())),
+            "cancelled artifact must be delisted from gallery"
+        );
         // register-after-cancel errors.
         assert!(server.artifact_register("hm-2", "Claude-1", &id).is_err());
         let _ = std::fs::remove_dir_all(&tmp);
@@ -3085,11 +3114,7 @@ mod tests {
         let server = HookServer::new();
         let tmp = std::env::temp_dir().join(format!("krypton-fb-{}", rand_suffix()));
         std::fs::create_dir_all(&tmp).unwrap();
-        server.init_harness_artifacts(
-            "hm-9",
-            Some(tmp.to_string_lossy().to_string()),
-            &HashSet::new(),
-        );
+        server.init_harness_artifacts("hm-9", Some(tmp.to_string_lossy().to_string()));
         let issued = server.artifact_new("hm-9", "Claude-1", "Pricing").unwrap();
         let id = issued["id"].as_str().unwrap().to_string();
         let token = issued["feedbackToken"].as_str().unwrap().to_string();
@@ -3167,6 +3192,8 @@ mod tests {
             )
             .route("/dashboard", get(ok))
             .route("/telemetry", get(ok))
+            .route("/gallery", get(ok))
+            .route("/artifacts", get(ok))
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
             .route("/artifact/feedback/{token}", post(ok));
@@ -3202,6 +3229,41 @@ mod tests {
         server.store_telemetry("hm-7", 1, json!({}));
         server.dispose_harness_artifacts("hm-7");
         assert_eq!(server.telemetry_for_harness("hm-7"), None);
+    }
+
+    #[test]
+    fn dispose_preserves_artifact_files_on_close() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-dispose-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.init_harness_artifacts("hm-close", Some(tmp.to_string_lossy().to_string()));
+        let issued = server
+            .artifact_new("hm-close", "Claude-1", "Persist me")
+            .unwrap();
+        let id = issued["id"].as_str().unwrap().to_string();
+        let path = PathBuf::from(issued["path"].as_str().unwrap());
+        let token = issued["feedbackToken"].as_str().unwrap().to_string();
+        server
+            .artifact_register("hm-close", "Claude-1", &id)
+            .unwrap();
+
+        let before = server.list_all_artifacts_for_gallery();
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0]["artifacts"].as_array().unwrap().len(), 1);
+
+        server.dispose_harness_artifacts("hm-close");
+
+        assert!(
+            path.exists(),
+            "dispose must preserve the on-disk artifact file"
+        );
+        assert!(server.list_all_artifacts_for_gallery().is_empty());
+        assert!(matches!(
+            server.lookup_feedback_token(&token),
+            FeedbackLookup::Unknown
+        ));
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     fn telemetry_contract_response(server: &HookServer) -> Response {
@@ -3264,15 +3326,246 @@ mod tests {
     }
 
     #[test]
+    fn gallery_lists_pending_and_live_across_two_harnesses() {
+        let server = HookServer::new();
+        let tmp_a = std::env::temp_dir().join(format!("krypton-gal-a-{}", rand_suffix()));
+        let tmp_b = std::env::temp_dir().join(format!("krypton-gal-b-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp_a).unwrap();
+        std::fs::create_dir_all(&tmp_b).unwrap();
+        server.init_harness_artifacts("hm-b", Some(tmp_b.to_string_lossy().to_string()));
+        server.init_harness_artifacts("hm-a", Some(tmp_a.to_string_lossy().to_string()));
+
+        let pending = server
+            .artifact_new("hm-a", "Cursor-1", "Pending view")
+            .unwrap();
+        let pending_id = pending["id"].as_str().unwrap().to_string();
+        let pending_token = pending["feedbackToken"].as_str().unwrap().to_string();
+        let pending_tail = format!(".krypton/artifacts/hm-a/Cursor-1/{pending_id}.html");
+
+        let live = server
+            .artifact_new("hm-b", "OpenCode-1", "Live dashboard")
+            .unwrap();
+        let live_id = live["id"].as_str().unwrap().to_string();
+        let live_token = live["feedbackToken"].as_str().unwrap().to_string();
+        let live_tail = format!(".krypton/artifacts/hm-b/OpenCode-1/{live_id}.html");
+        let reg = server
+            .artifact_register("hm-b", "OpenCode-1", &live_id)
+            .unwrap();
+        let live_size = reg["size"].as_u64().unwrap();
+        let live_hash = reg["hash"].as_str().unwrap().to_string();
+
+        let listing = server.list_all_artifacts_for_gallery();
+        assert_eq!(listing.len(), 2);
+        assert_eq!(listing[0]["harnessId"], json!("hm-a"));
+        assert_eq!(listing[1]["harnessId"], json!("hm-b"));
+
+        let hm_a = &listing[0]["artifacts"];
+        assert_eq!(hm_a.as_array().unwrap().len(), 1);
+        assert_eq!(
+            hm_a[0],
+            json!({
+                "id": pending_id,
+                "laneLabel": "Cursor-1",
+                "title": "Pending view",
+                "state": "pending",
+                "size": 0,
+                "hash": "",
+                "tail": pending_tail,
+                "token": pending_token,
+            })
+        );
+
+        let hm_b = &listing[1]["artifacts"];
+        assert_eq!(hm_b.as_array().unwrap().len(), 1);
+        assert_eq!(hm_b[0]["state"], json!("live"));
+        assert_eq!(hm_b[0]["size"], json!(live_size));
+        assert_eq!(hm_b[0]["hash"], json!(live_hash));
+        assert_eq!(hm_b[0]["laneLabel"], json!("OpenCode-1"));
+        assert_eq!(hm_b[0]["title"], json!("Live dashboard"));
+        assert_eq!(hm_b[0]["tail"], json!(live_tail));
+        assert_eq!(hm_b[0]["token"], json!(live_token));
+
+        let _ = std::fs::remove_dir_all(&tmp_a);
+        let _ = std::fs::remove_dir_all(&tmp_b);
+    }
+
+    #[test]
+    fn gallery_includes_empty_live_harness() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-gal-empty-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.init_harness_artifacts("hm-empty", Some(tmp.to_string_lossy().to_string()));
+
+        let listing = server.list_all_artifacts_for_gallery();
+        assert_eq!(
+            listing,
+            vec![json!({
+                "harnessId": "hm-empty",
+                "artifacts": [],
+            })]
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn gallery_sorts_artifacts_within_harness_by_lane_then_id() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-gal-sort-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.init_harness_artifacts("hm-sort", Some(tmp.to_string_lossy().to_string()));
+
+        // Creation order is Zeta then Alpha; listing must sort laneLabel asc, id asc.
+        let zeta = server.artifact_new("hm-sort", "Zeta", "Zeta view").unwrap();
+        let zeta_id = zeta["id"].as_str().unwrap().to_string();
+        let alpha = server
+            .artifact_new("hm-sort", "Alpha", "Alpha view")
+            .unwrap();
+        let alpha_id = alpha["id"].as_str().unwrap().to_string();
+
+        let listing = server.list_all_artifacts_for_gallery();
+        assert_eq!(listing.len(), 1);
+        assert_eq!(listing[0]["harnessId"], json!("hm-sort"));
+        let arts = listing[0]["artifacts"].as_array().unwrap();
+        assert_eq!(arts.len(), 2);
+        assert_eq!(arts[0]["laneLabel"], json!("Alpha"));
+        assert_eq!(arts[0]["id"], json!(alpha_id));
+        assert_eq!(arts[1]["laneLabel"], json!("Zeta"));
+        assert_eq!(arts[1]["id"], json!(zeta_id));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn gallery_omits_cancelled_artifact() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-gal-cancel-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.init_harness_artifacts("hm-cancel", Some(tmp.to_string_lossy().to_string()));
+
+        let keep = server
+            .artifact_new("hm-cancel", "Claude-1", "Keep me")
+            .unwrap();
+        let keep_id = keep["id"].as_str().unwrap().to_string();
+
+        let doomed = server
+            .artifact_new("hm-cancel", "Codex-1", "Cancel me")
+            .unwrap();
+        let doomed_id = doomed["id"].as_str().unwrap().to_string();
+
+        let before = server.list_all_artifacts_for_gallery();
+        assert_eq!(before.len(), 1);
+        let ids_before: Vec<&str> = before[0]["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["id"].as_str().unwrap())
+            .collect();
+        assert!(ids_before.contains(&keep_id.as_str()));
+        assert!(ids_before.contains(&doomed_id.as_str()));
+
+        server
+            .artifact_cancel("hm-cancel", "Codex-1", &doomed_id)
+            .unwrap();
+
+        let after = server.list_all_artifacts_for_gallery();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0]["harnessId"], json!("hm-cancel"));
+        let arts = after[0]["artifacts"].as_array().unwrap();
+        assert_eq!(arts.len(), 1);
+        assert_eq!(arts[0]["id"], json!(keep_id));
+        assert!(
+            !arts
+                .iter()
+                .any(|a| a["id"].as_str() == Some(doomed_id.as_str())),
+            "cancelled artifact must not appear in gallery listing"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn artifacts_contract_response(server: &HookServer) -> Response {
+        let mut resp = Json(json!({
+            "harnesses": server.list_all_artifacts_for_gallery(),
+        }))
+        .into_response();
+        resp.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("no-store"),
+        );
+        resp
+    }
+
+    async fn artifacts_response(server: &HookServer) -> (StatusCode, Option<String>, Value) {
+        let resp = artifacts_contract_response(server);
+        let status = resp.status();
+        let cache_control = resp
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("response body should read");
+        let body = if bytes.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes).expect("response body should be JSON")
+        };
+        (status, cache_control, body)
+    }
+
+    #[tokio::test]
+    async fn gallery_and_artifacts_routes_return_expected_shapes() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-gal-route-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.init_harness_artifacts("hm-route", Some(tmp.to_string_lossy().to_string()));
+        let issued = server
+            .artifact_new("hm-route", "Claude-1", "Route test")
+            .unwrap();
+        let artifact_id = issued["id"].as_str().unwrap().to_string();
+        let token = issued["feedbackToken"].as_str().unwrap().to_string();
+
+        let resp = handle_gallery().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("text/html; charset=utf-8")
+        );
+        assert_eq!(
+            resp.headers()
+                .get(header::CACHE_CONTROL)
+                .and_then(|v| v.to_str().ok()),
+            Some("no-store")
+        );
+
+        let (status, cache_control, body) = artifacts_response(&server).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(cache_control.as_deref(), Some("no-store"));
+        assert_eq!(body["harnesses"].as_array().unwrap().len(), 1);
+        assert_eq!(body["harnesses"][0]["harnessId"], json!("hm-route"));
+        assert_eq!(
+            body["harnesses"][0]["artifacts"][0]["id"],
+            json!(artifact_id)
+        );
+        assert_eq!(
+            body["harnesses"][0]["artifacts"][0]["state"],
+            json!("pending")
+        );
+        assert_eq!(body["harnesses"][0]["artifacts"][0]["token"], json!(token));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn artifact_cancel_drops_feedback_token() {
         let server = HookServer::new();
         let tmp = std::env::temp_dir().join(format!("krypton-fb-{}", rand_suffix()));
         std::fs::create_dir_all(&tmp).unwrap();
-        server.init_harness_artifacts(
-            "hm-10",
-            Some(tmp.to_string_lossy().to_string()),
-            &HashSet::new(),
-        );
+        server.init_harness_artifacts("hm-10", Some(tmp.to_string_lossy().to_string()));
         let issued = server.artifact_new("hm-10", "Claude-1", "scratch").unwrap();
         let id = issued["id"].as_str().unwrap().to_string();
         let token = issued["feedbackToken"].as_str().unwrap().to_string();
@@ -3325,11 +3618,7 @@ mod tests {
         let server = HookServer::new();
         let tmp = std::env::temp_dir().join(format!("krypton-art-{}", rand_suffix()));
         std::fs::create_dir_all(&tmp).unwrap();
-        server.init_harness_artifacts(
-            "hm-1",
-            Some(tmp.to_string_lossy().to_string()),
-            &HashSet::new(),
-        );
+        server.init_harness_artifacts("hm-1", Some(tmp.to_string_lossy().to_string()));
         for _ in 0..ARTIFACT_PENDING_PER_LANE_MAX {
             server.artifact_new("hm-1", "Claude-1", "t").unwrap();
         }
@@ -3338,22 +3627,6 @@ mod tests {
         assert!(err.contains("pending_cap"), "got: {err}");
         // A different lane is unaffected by Claude-1's pending count.
         assert!(server.artifact_new("hm-1", "Codex-1", "t").is_ok());
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn sweep_removes_only_dead_harness_dirs() {
-        let tmp = std::env::temp_dir().join(format!("krypton-art-{}", rand_suffix()));
-        let root = tmp.join(".krypton/artifacts");
-        std::fs::create_dir_all(root.join("hm-1")).unwrap();
-        std::fs::create_dir_all(root.join("hm-2")).unwrap();
-        std::fs::write(root.join(".gitignore"), "*\n!.gitignore\n").unwrap();
-        let mut live = HashSet::new();
-        live.insert("hm-2".to_string());
-        sweep_stale_artifacts(&root, &live);
-        assert!(!root.join("hm-1").exists(), "stale hm-1 must be swept");
-        assert!(root.join("hm-2").exists(), "live hm-2 must survive");
-        assert!(root.join(".gitignore").exists(), ".gitignore must survive");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

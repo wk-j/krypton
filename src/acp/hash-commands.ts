@@ -26,6 +26,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'mem', args: '[clear]', description: 'memory commands (clear lane memory)' },
   { name: 'mcp', args: '', description: 'print harness MCP server status' },
   { name: 'dashboard', args: '', description: 'open the live harness dashboard in a browser' },
+  { name: 'gallery', args: '', description: 'open the artifact gallery (pending + live artifacts) in a browser' },
   { name: 'handoff', args: '', description: 'write a resume-ready handoff doc to memory' },
   { name: 'resume', args: '', description: 'resume from the last handoff doc' },
   { name: 'wiki', args: '[<hint>]', description: 'ingest this conversation into the repo wiki' },

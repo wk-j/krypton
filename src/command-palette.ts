@@ -809,6 +809,12 @@ export class CommandPalette {
       keybinding: 'Leader Shift+L',
       execute: () => c.openDashboard(),
     });
+    this.register({
+      id: 'gallery.open',
+      label: 'Open Artifact Gallery',
+      category: 'Window',
+      execute: () => c.openGallery(),
+    });
 
     // ── Hurl Client ──
     this.register({

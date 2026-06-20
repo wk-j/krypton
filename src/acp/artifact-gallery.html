@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artifact gallery</title>
+<style>
+  :root {
+    --bg: #0b0e11; --fg: #eaecef; --muted: #707a8a; --border: #2b3139;
+    --accent: #fcd535; --card: #1e2329; --code-bg: #181a20;
+    --add: #0ecb81; --del: #f6465d; color-scheme: dark;
+    --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+  }
+  body { margin: 0; font-family: var(--sans); font-size: 14px; line-height: 1.5;
+         background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  .main { max-width: 1140px; margin: 0 auto; padding: 16px 20px 48px; }
+  h2, h3 { letter-spacing: .04em; }
+  h2 { font-size: 14px; margin: 0; }
+  h3 { font-size: 11px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .top { display: flex; justify-content: space-between; align-items: center;
+         gap: 16px; flex-wrap: wrap; padding: 14px 16px; margin: 6px 0 14px;
+         background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.live { background: var(--add); animation: beacon 2s infinite; }
+  @keyframes beacon { 0% { box-shadow: 0 0 0 0 rgba(14,203,129,.55); }
+                      70% { box-shadow: 0 0 0 10px rgba(14,203,129,0); }
+                      100% { box-shadow: 0 0 0 0 rgba(14,203,129,0); } }
+  .title { font-size: 15px; font-weight: 700; }
+  .sub, .state, .footer { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .stats { display: flex; gap: 22px; flex-wrap: wrap; }
+  .stat { text-align: right; }
+  .stat b { display: block; font-family: var(--mono); font-size: 19px; color: var(--accent);
+            font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 10px; color: var(--muted); }
+  .state { padding: 10px 12px; margin-bottom: 14px; background: rgba(252,213,53,.06);
+           border: 1px solid var(--border); border-radius: 8px; color: var(--accent); }
+  .harness { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .harness-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .harness-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); font-family: var(--mono); font-size: 12px;
+           padding: 64px 16px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 12px; }
+  .art { display: flex; flex-direction: column; gap: 8px;
+         background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; }
+  .art-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .art-title { font-weight: 700; font-size: 13px; line-height: 1.35; overflow: hidden;
+               display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .art-lane { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .pill { font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+          padding: 2px 7px; border-radius: 20px; border: 1px solid currentColor; white-space: nowrap; }
+  .pill::before { content: "\25CF"; margin-right: 4px; font-size: 8px; vertical-align: middle; }
+  .st-live { color: var(--add); }
+  .st-pending { color: var(--accent); }
+  .art-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .art-size { font-family: var(--mono); font-size: 12px; color: var(--fg);
+              font-variant-numeric: tabular-nums; }
+  .art-tail { font-family: var(--mono); font-size: 10px; color: var(--muted);
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .art-open { display: inline-block; align-self: flex-start; margin-top: 2px;
+              font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-decoration: none;
+              color: var(--bg); background: var(--accent); border-radius: 6px; padding: 4px 12px; }
+  .art-open.disabled { color: var(--muted); background: var(--code-bg);
+                       border: 1px solid var(--border); pointer-events: none; }
+  .footer { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }
+  @media (max-width: 780px) { .cards { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main class="main">
+  <div class="top">
+    <div class="brand">
+      <span class="dot" id="dot"></span>
+      <div>
+        <div class="title">Artifact gallery</div>
+        <div class="sub" id="session">connecting...</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="total-count">0</b><span>artifacts</span></div>
+      <div class="stat"><b id="live-count">0</b><span>live</span></div>
+      <div class="stat"><b id="pending-count">0</b><span>pending</span></div>
+    </div>
+  </div>
+  <div class="state" id="state">connecting...</div>
+  <div id="harnesses"></div>
+  <div class="footer">read-only gallery &middot; polls /artifacts &middot; open links serve the registered artifact on this origin</div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var POLL_MS = 1000;
+  var snapshots = [];
+  var lastSignature = "";
+  var hasSuccessfulPoll = false;
+  var pollInFlight = false;
+
+  function R(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+  function formatSize(bytes) {
+    var n = Number(bytes) || 0;
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / (1024 * 1024)).toFixed(1) + " MB";
+  }
+  function stateKey(state) { return state === "live" ? "live" : "pending"; }
+
+  function renderArtifact(art) {
+    var sk = stateKey(art.state);
+    var size = sk === "live" ? formatSize(art.size) : "writing...";
+    var hashPrefix = art.hash ? esc(String(art.hash).slice(0, 12)) + " &middot; " : "";
+    var open = sk === "live" && art.token
+      ? '<a class="art-open" href="/artifact/' + encodeURIComponent(art.token) + '" target="_blank" rel="noopener">Open</a>'
+      : '<span class="art-open disabled">pending</span>';
+    return '<div class="art">' +
+      '<div class="art-head"><div class="art-title">' + esc(art.title || "untitled") + '</div>' +
+      '<span class="pill st-' + sk + '">' + esc(sk) + '</span></div>' +
+      '<div class="art-lane">' + esc(art.laneLabel || "?") + '</div>' +
+      '<div class="art-meta"><span class="art-size">' + size + '</span></div>' +
+      '<div class="art-tail">' + hashPrefix + esc(art.tail || "") + '</div>' +
+      open +
+      '</div>';
+  }
+
+  function renderHarness(snap) {
+    var id = snap.harnessId || "harness";
+    var arts = Array.isArray(snap.artifacts) ? snap.artifacts : [];
+    var cards = arts.map(renderArtifact).join("");
+    return '<section class="harness">' +
+      '<div class="harness-head"><div><h2>' + esc(id) + '</h2></div>' +
+      '<div class="harness-meta">' + arts.length + (arts.length === 1 ? " artifact" : " artifacts") + '</div></div>' +
+      '<div class="cards">' + cards + '</div>' +
+      '</section>';
+  }
+
+  function apply(next) {
+    snapshots = next;
+    var total = 0, live = 0, pending = 0;
+    next.forEach(function (snap) {
+      (snap.artifacts || []).forEach(function (art) {
+        total++;
+        if (stateKey(art.state) === "live") live++; else pending++;
+      });
+    });
+    R("total-count").textContent = String(total);
+    R("live-count").textContent = String(live);
+    R("pending-count").textContent = String(pending);
+    R("dot").classList.toggle("live", total > 0);
+    R("session").textContent = total > 0 ? "live" : "no artifacts yet";
+    if (total === 0) {
+      R("harnesses").innerHTML =
+        '<div class="empty">No artifacts yet — lanes will surface HTML artifacts here as they register them.</div>';
+      R("state").textContent = "no artifacts yet";
+      return;
+    }
+    R("harnesses").innerHTML = next
+      .filter(function (snap) { return (snap.artifacts || []).length > 0; })
+      .map(renderHarness)
+      .join("");
+    R("state").textContent = "live gallery";
+  }
+
+  function poll() {
+    if (pollInFlight) return;
+    pollInFlight = true;
+    fetch("/artifacts", { cache: "no-store" }).then(function (res) {
+      if (!res.ok) throw new Error("http " + res.status);
+      return res.json();
+    }).then(function (body) {
+      var next = Array.isArray(body && body.harnesses) ? body.harnesses : [];
+      hasSuccessfulPoll = true;
+      var sig = JSON.stringify(next.map(function (snap) {
+        return [snap.harnessId, (snap.artifacts || []).map(function (a) {
+          return [a.id, a.state, a.size, a.hash, a.token, a.title, a.laneLabel, a.tail];
+        })];
+      }));
+      if (sig !== lastSignature) {
+        lastSignature = sig;
+        apply(next);
+      }
+    }).catch(function () {
+      R("state").textContent = snapshots.length || hasSuccessfulPoll ? "reconnecting..." : "connecting...";
+      R("session").textContent = snapshots.length || hasSuccessfulPoll ? "reconnecting..." : "connecting...";
+    }).finally(function () {
+      pollInFlight = false;
+    });
+  }
+
+  poll();
+  setInterval(poll, POLL_MS);
+})();
+</script>
+</body>
+</html>
