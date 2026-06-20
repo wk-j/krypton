@@ -65,6 +65,7 @@ import {
   type PendingPeerSummary,
 } from './inter-lane';
 import { HarnessTelemetryPublisher } from './harness-telemetry';
+import type { LaneResourceSample } from './harness-telemetry';
 import {
   nextLaneNumber,
   registerHarness,
@@ -1590,6 +1591,7 @@ export class AcpHarnessView implements ContentView {
       triageStore: this.triageStore,
       reviewQualityStore: this.reviewQualityStore,
       reviewPriorityStore: this.reviewPriorityStore,
+      metricsFor: (laneId) => this.laneResourceSample(laneId),
     });
   }
 
@@ -8070,6 +8072,38 @@ export class AcpHarnessView implements ContentView {
     // Lightweight refresh — only redraw chips and the breakdown panel,
     // not the whole transcript (which would thrash on every tick).
     this.refreshMetricsRender();
+    // spec 169 (option A-hybrid): nudge the telemetry publisher so the dashboard's
+    // CPU sparkline gets a fresh sample at the metrics cadence — but ONLY while a
+    // lane is active, so an idle harness still makes zero periodic publishes and
+    // keeps idle CPU < 1% (the one deliberate deviation from spec 168's no-tick rule).
+    if (this.anyLaneActive()) this.telemetryPublisher?.schedule();
+  }
+
+  /** spec 169: any lane doing work whose resource draw is worth streaming. */
+  private anyLaneActive(): boolean {
+    return this.lanes.some(
+      (lane) =>
+        lane.status === 'busy' ||
+        lane.status === 'needs_permission' ||
+        lane.status === 'awaiting_peer',
+    );
+  }
+
+  /** spec 169: current resource sample for a lane, mapping the publisher's string
+   *  laneId → the lane's numeric ACP client session → metricsBySession. Null when
+   *  the lane has no live client session or no metrics sample yet. */
+  private laneResourceSample(laneId: string): LaneResourceSample | null {
+    const lane = this.lanes.find((l) => l.id === laneId);
+    const sessionId = lane?.client?.sessionId ?? null;
+    if (sessionId === null) return null;
+    const m = this.metricsBySession.get(sessionId);
+    if (!m) return null;
+    return {
+      cpuPercent: m.total_cpu_percent,
+      rssMb: m.total_rss_mb,
+      procCount: m.proc_count,
+      rootAlive: m.root_alive,
+    };
   }
 
   private refreshMetricsRender(): void {

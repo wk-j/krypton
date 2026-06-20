@@ -3,6 +3,7 @@
 > Status: Implemented (rev 3 — served fixed page; radar removed)
 > Date: 2026-06-19
 > Milestone: ACP Harness — observability
+> Extended by: `docs/169-dashboard-resource-status.md` — adds per-lane CPU sparkline + memory bar; repurposes the activity-pulse canvas into a real CPU chart and adds a metrics-driven publish that fires only while a lane is active.
 
 ## Final architecture (rev 3 — supersedes the artifact/token transport below)
 

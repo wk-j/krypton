@@ -59,7 +59,15 @@
   .st-busy { color: var(--add); }
   .st-awaiting_peer, .st-error { color: var(--del); }
   .turn { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 8px 0 6px; min-height: 16px; }
-  .pulse { width: 100%; height: 38px; display: block; }
+  .beat { width: 100%; height: 22px; display: block; margin-top: 2px; }
+  .pulse { width: 100%; height: 40px; display: block; }
+  .res-row { display: flex; align-items: baseline; justify-content: space-between; }
+  .res-lbl { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--muted); }
+  .res-val { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .res-mem { margin-top: 7px; }
+  .res-bar { height: 6px; border-radius: 3px; background: var(--code-bg);
+             border: 1px solid var(--border); overflow: hidden; margin-top: 3px; }
+  .res-bar i { display: block; height: 100%; width: 0; background: var(--add); transition: width .3s ease; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
   .chip { font-family: var(--mono); font-size: 10px; color: var(--muted);
           background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; }
@@ -99,16 +107,17 @@
   </div>
   <div class="state" id="state">connecting...</div>
   <div id="harnesses"></div>
-  <div class="footer">read-only observation · polls /telemetry · pulse = lane activity, not token rate</div>
+  <div class="footer">read-only observation · polls /telemetry · activity = synthetic status pulse · sparkline = lane CPU% (live while active)</div>
 </main>
 
 <script>
 (function () {
   "use strict";
 
-  var SCHEMA_VERSION = 1;
+  var SCHEMA_VERSION = 2;
   var POLL_MS = 1000;
   var FEED_CAP = 14;
+  var MEM_FULL_MB = 2048;   // memory-bar full scale (spec 169)
   var ACTIVE = { busy: 1, needs_permission: 1, awaiting_peer: 1 };
   var STATUS_COL = {
     starting: "#fcd535", idle: "#707a8a", busy: "#0ecb81",
@@ -135,6 +144,8 @@
   function statusLabel(status) { return STATUS_LABEL[statusKey(status)]; }
   function statusColor(status) { return STATUS_COL[statusKey(status)]; }
   function isActiveStatus(status) { return !!ACTIVE[statusKey(status)]; }
+  // spec 169 — CPU heat: green < 50, yellow < 90, red ≥ 90 (multi-core sum can exceed 100).
+  function heatColor(v) { return v >= 90 ? "#f6465d" : v >= 50 ? "#fcd535" : "#0ecb81"; }
   function formatClock(ms) {
     var s = Math.max(0, Math.floor(ms / 1000));
     return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
@@ -209,7 +220,7 @@
   }
   function runtimeFor(harnessId, laneId) {
     var key = harnessId + "::" + laneId;
-    if (!runtimes[key]) runtimes[key] = { buf: new Array(120).fill(0), _sp: 0 };
+    if (!runtimes[key]) runtimes[key] = { buf: new Array(120).fill(0), beatBuf: new Array(120).fill(0), _sp: 0 };
     return runtimes[key];
   }
   function renderFeed(feed, events) {
@@ -263,12 +274,21 @@
       card.dataset.laneId = lane.id;
       card.innerHTML =
         '<div class="lane-head"><div><div class="lane-name"></div><div class="lane-agent"></div></div><span class="pill"></span></div>' +
-        '<div class="turn"></div><canvas class="pulse"></canvas><div class="chips">' +
+        '<div class="turn"></div>' +
+        '<div class="res-row"><span class="res-lbl">activity</span></div>' +
+        '<canvas class="beat"></canvas>' +
+        '<div class="res-row"><span class="res-lbl">cpu</span><span class="res-val c-cpu">—</span></div>' +
+        '<canvas class="pulse"></canvas>' +
+        '<div class="res-mem"><div class="res-row"><span class="res-lbl">mem</span><span class="res-val c-mem">—</span></div>' +
+        '<div class="res-bar"><i></i></div></div>' +
+        '<div class="chips">' +
         '<span class="chip">attn <b class="c-attn">0</b></span><span class="chip">rev <b class="c-rev">0</b></span>' +
         '<span class="chip">pri <b class="c-pri">0</b></span><span class="chip">peer <b class="c-peer">0</b></span></div>';
       wrap.appendChild(card);
+      rt.beat = card.querySelector(".beat");
+      rt.bC = fit(rt.beat, 22);
       rt.pulse = card.querySelector(".pulse");
-      rt.pC = fit(rt.pulse, 38);
+      rt.pC = fit(rt.pulse, 40);
     }
     var sk = statusKey(lane.status);
     card.querySelector(".lane-name").textContent = lane.displayName || lane.id;
@@ -284,6 +304,24 @@
     card.querySelector(".c-attn").parentElement.classList.toggle("alert", (lane.attnOpen || 0) > 0);
     rt.status = lane.status;
     rt.turnActiveSince = lane.turnActiveSince;
+    // spec 169 — resource status. lane.rootAlive false / null cpu → "—" + flat line.
+    rt.rootAlive = !!lane.rootAlive && lane.cpuPercent != null;
+    var cpuEl = card.querySelector(".c-cpu"), memEl = card.querySelector(".c-mem"), barEl = card.querySelector(".res-bar i");
+    if (rt.rootAlive) {
+      rt.cpu = lane.cpuPercent;
+      if (!rt.cpuSeeded) { for (var b = 0; b < rt.buf.length; b++) rt.buf[b] = rt.cpu; rt.cpuSeeded = true; }
+      rt.buf.push(rt.cpu); rt.buf.shift();   // one sample per published snapshot (~2s)
+      cpuEl.textContent = Math.round(rt.cpu) + "%"; cpuEl.style.color = heatColor(rt.cpu);
+      var rss = lane.rssMb || 0;
+      memEl.textContent = rss >= 1024 ? (rss / 1024).toFixed(1) + " GB" : Math.round(rss) + " MB";
+      memEl.style.color = "var(--fg)";
+      barEl.style.width = Math.min(100, (rss / MEM_FULL_MB) * 100) + "%";
+    } else {
+      rt.cpu = null; rt.cpuSeeded = false;
+      cpuEl.textContent = "—"; cpuEl.style.color = "var(--muted)";
+      memEl.textContent = "—"; memEl.style.color = "var(--muted)";
+      barEl.style.width = "0";
+    }
   }
   function drawGauge(el, snap) {
     var c = el._gauge;
@@ -302,6 +340,10 @@
     el.querySelector(".gauge-val b").textContent = String(total);
     el.querySelector(".gauge-val b").style.color = col;
   }
+  // spec 168 — synthetic activity heartbeat. Not real data: a status-coloured
+  // rhythm so a glance tells you a lane is alive and what it's doing (busy spikes,
+  // needs-permission/awaiting-peer breathe, idle/stopped flatline). Distinct from
+  // the CPU sparkline below, which IS real data.
   function samplePulse(rt) {
     var status = rt.status || "idle";
     if (status === "awaiting_peer") return Math.sin(performance.now() * 0.003) * 0.18 + (Math.random() - 0.5) * 0.05;
@@ -315,23 +357,57 @@
     }
     return (Math.random() - 0.5) * 0.06;
   }
-  function drawPulse(rt) {
-    if (!rt.pC || !rt.pulse) return;
-    var c = rt.pC, x = c.x, w = c.w, h = c.h, mid = h / 2, status = rt.status || "idle";
+  function drawBeat(rt) {
+    if (!rt.bC || !rt.beat) return;
+    var c = rt.bC, x = c.x, w = c.w, h = c.h, mid = h / 2, status = rt.status || "idle";
     x.clearRect(0, 0, w, h);
     if (!isActiveStatus(status)) {
       x.strokeStyle = STATUS_COL.idle; x.lineWidth = 1; x.globalAlpha = 0.5;
       x.beginPath(); x.moveTo(0, mid); x.lineTo(w, mid); x.stroke(); x.globalAlpha = 1;
       return;
     }
-    rt.buf.push(samplePulse(rt)); rt.buf.shift();
+    var buf = rt.beatBuf;
+    buf.push(samplePulse(rt)); buf.shift();
     x.strokeStyle = statusColor(status); x.lineWidth = 1.5; x.globalAlpha = 0.95; x.beginPath();
-    for (var i = 0; i < rt.buf.length; i++) {
-      var px = (i / (rt.buf.length - 1)) * w;
-      var py = mid - rt.buf[i] * (h * 0.42);
+    for (var i = 0; i < buf.length; i++) {
+      var px = (i / (buf.length - 1)) * w;
+      var py = mid - buf[i] * (h * 0.42);
       if (i === 0) x.moveTo(px, py); else x.lineTo(px, py);
     }
     x.stroke(); x.globalAlpha = 1;
+  }
+  // spec 169 — CPU sparkline. The series is accumulated client-side in rt.buf
+  // (one sample pushed per published snapshot, ~2s); this only renders it. No
+  // live process → flat muted baseline (never a fake 0% line).
+  function drawCpuSpark(rt) {
+    if (!rt.pC || !rt.pulse) return;
+    var c = rt.pC, x = c.x, w = c.w, h = c.h, mid = h / 2;
+    x.clearRect(0, 0, w, h);
+    if (!rt.rootAlive || rt.cpu == null) {
+      x.strokeStyle = STATUS_COL.idle; x.lineWidth = 1; x.globalAlpha = 0.5;
+      x.beginPath(); x.moveTo(0, mid); x.lineTo(w, mid); x.stroke(); x.globalAlpha = 1;
+      return;
+    }
+    var buf = rt.buf, n = buf.length, pad = 3, gh = h - pad * 2;
+    var peak = 100; for (var i = 0; i < n; i++) if (buf[i] > peak) peak = buf[i];
+    peak *= 1.12;
+    function py(v) { return pad + gh - (v / peak) * gh; }
+    var step = w / (n - 1), col = heatColor(rt.cpu);
+    // 100% reference line
+    x.strokeStyle = "rgba(255,255,255,.06)"; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(0, py(100)); x.lineTo(w, py(100)); x.stroke();
+    // area fill
+    var grad = x.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, col + "55"); grad.addColorStop(1, col + "08");
+    x.beginPath(); x.moveTo(0, h);
+    for (var j = 0; j < n; j++) x.lineTo(j * step, py(buf[j]));
+    x.lineTo(w, h); x.closePath(); x.fillStyle = grad; x.fill();
+    // line
+    x.beginPath();
+    for (var k = 0; k < n; k++) { var X = k * step, Y = py(buf[k]); k ? x.lineTo(X, Y) : x.moveTo(X, Y); }
+    x.strokeStyle = col; x.lineWidth = 1.6; x.lineJoin = "round"; x.stroke();
+    // head dot
+    x.beginPath(); x.arc((n - 1) * step, py(buf[n - 1]), 2.4, 0, Math.PI * 2); x.fillStyle = col; x.fill();
   }
   function applyHarnesses(next) {
     snapshots = next;
@@ -430,7 +506,7 @@
       var snap = snapshots.find(function (s) { return (s.harnessId || "harness") === id; });
       if (snap) drawGauge(harnessEls[id], snap);
     });
-    Object.keys(runtimes).forEach(function (key) { drawPulse(runtimes[key]); });
+    Object.keys(runtimes).forEach(function (key) { drawBeat(runtimes[key]); drawCpuSpark(runtimes[key]); });
     requestAnimationFrame(frame);
   }
   window.addEventListener("resize", function () {
@@ -439,7 +515,8 @@
     });
     Object.keys(runtimes).forEach(function (key) {
       var rt = runtimes[key];
-      if (rt.pulse) rt.pC = fit(rt.pulse, 38);
+      if (rt.beat) rt.bC = fit(rt.beat, 22);
+      if (rt.pulse) rt.pC = fit(rt.pulse, 40);
     });
   });
   poll();
