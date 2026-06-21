@@ -2391,6 +2391,30 @@ export class Compositor {
   }
 
   /**
+   * Open the docs browser in the system browser.
+   */
+  async openDocs(): Promise<void> {
+    let port = 0;
+    try {
+      port = await invoke<number>('get_hook_server_port');
+    } catch (e) {
+      console.error('[Docs] failed to read hook server port:', e);
+    }
+    if (!port) {
+      this.showNotification('docs unavailable — hook server not ready');
+      return;
+    }
+    const url = `http://127.0.0.1:${port}/docs`;
+    try {
+      await invoke('open_url', { url });
+      this.showNotification(url);
+    } catch (e) {
+      console.error('[Docs] failed to open docs:', e);
+      this.showNotification('docs open failed');
+    }
+  }
+
+  /**
    * Open a Pencil (Excalidraw) window. With no path it shows the picker
    * over the configured `[pencil] dir`; with a path it opens that file
    * directly (refocusing an existing tab if the same file is already open).

@@ -815,6 +815,12 @@ export class CommandPalette {
       category: 'Window',
       execute: () => c.openGallery(),
     });
+    this.register({
+      id: 'docs.open',
+      label: 'Open Docs Browser',
+      category: 'Window',
+      execute: () => c.openDocs(),
+    });
 
     // ── Hurl Client ──
     this.register({

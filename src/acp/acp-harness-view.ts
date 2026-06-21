@@ -6530,6 +6530,22 @@ export class AcpHarnessView implements ContentView {
       }
       return;
     }
+    if (parts[0] === '#docs') {
+      this.setDraft(lane, '', 0);
+      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
+      if (!port) {
+        this.flashChip('docs unavailable - hook server not ready');
+        return;
+      }
+      const url = `http://127.0.0.1:${port}/docs`;
+      try {
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`docs open failed: ${errorText(e)}`);
+      }
+      return;
+    }
     // spec 139: user-triggered handoff. #handoff writes a resume-ready memory_set
     // doc; #resume reads it back and continues. One-shot injection only — no
     // always-on stub, no per-turn cost. Guard like #new for user-facing feedback;

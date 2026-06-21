@@ -625,12 +625,18 @@
 
 .krypton-vault__article ul,
 .krypton-vault__article ol {
-  padding-left: 20px;
+  /* Marker sits in its own gutter (outside) so wrapped lines hang under the
+     item TEXT, not under the marker. Em-based gutter always fits the marker
+     (incl. two-digit ordinals) regardless of font size. */
+  list-style-position: outside;
+  padding-left: 1.75em;
   margin: 0.5em 0;
 }
 
 .krypton-vault__article li {
   margin: 0.25em 0;
+  /* Consistent gap between the marker and the item text. */
+  padding-left: 0.35em;
 }
 
 .krypton-vault__article li::marker {

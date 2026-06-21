@@ -4,7 +4,7 @@
 
 use axum::{
     body::Body,
-    extract::{Path, State as AxumState},
+    extract::{Path, Query, State as AxumState},
     http::{header, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -13,11 +13,17 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use comrak::{
+    format_html,
+    nodes::{AstNode, NodeValue},
+    parse_document, Arena, Options,
+};
 use futures_util::{stream, StreamExt};
+use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::{Path as StdPath, PathBuf};
@@ -636,6 +642,94 @@ impl HookServer {
             .collect()
     }
 
+    fn docs_project_dirs(&self) -> Vec<(String, String)> {
+        let artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries: Vec<(String, String)> = artifacts
+            .iter()
+            .filter_map(|(harness_id, store)| {
+                store
+                    .project_dir
+                    .as_ref()
+                    .map(|dir| (harness_id.clone(), dir.clone()))
+            })
+            .collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        entries
+    }
+
+    fn docs_project_dir(&self, harness_id: &str) -> Option<String> {
+        self.artifacts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(harness_id)
+            .and_then(|store| store.project_dir.clone())
+    }
+
+    /// Render the docs browser index as a two-pane file browser: a folder-only
+    /// tree in the sidebar and the selected folder's contents (subfolders + `.md`
+    /// files) as items on the right. `sel_harness`/`sel_dir` come from the query
+    /// (`None`/empty = first harness, repo root).
+    fn docs_index_page(&self, sel_harness: Option<&str>, sel_dir: Option<&str>) -> Response {
+        let dirs = self.docs_project_dirs();
+        if dirs.is_empty() {
+            let content = "<p class=\"welcome\">No harness working directory is available.</p>";
+            return render_docs_page("Docs", Some(""), content);
+        }
+
+        let trees: Vec<(String, String, DocsTreeNode)> = dirs
+            .into_iter()
+            .map(|(id, path)| {
+                let node = build_docs_tree(StdPath::new(&path));
+                (id, path, node)
+            })
+            .collect();
+
+        // Resolve the active harness (fall back to the first) and folder.
+        let selected_harness = sel_harness
+            .filter(|h| trees.iter().any(|(id, _, _)| id == h))
+            .map(str::to_string)
+            .unwrap_or_else(|| trees[0].0.clone());
+        let selected_dir = sel_dir
+            .map(|d| {
+                d.split('/')
+                    .filter(|c| !c.is_empty() && *c != "." && *c != "..")
+                    .collect::<Vec<_>>()
+                    .join("/")
+            })
+            .unwrap_or_default();
+
+        let nav = render_folder_nav(&trees, &selected_harness, &selected_dir);
+
+        let active = trees.iter().find(|(id, _, _)| id == &selected_harness);
+        let content = match active.and_then(|(_, _, root)| node_at(root, &selected_dir)) {
+            Some(node) => render_folder_listing(&selected_harness, &selected_dir, node),
+            None => "<p class=\"welcome\">Folder not found.</p>".to_string(),
+        };
+
+        let title = if selected_dir.is_empty() {
+            format!("Docs · {selected_harness}")
+        } else {
+            format!("Docs · {selected_harness} / {selected_dir}")
+        };
+        render_docs_page(&title, Some(&nav), &content)
+    }
+
+    fn render_doc_content(&self, harness_id: &str, rel: &str) -> Result<(String, String), String> {
+        let project_dir = self
+            .docs_project_dir(harness_id)
+            .ok_or_else(|| "not_found: unknown harness".to_string())?;
+        let normalized_rel =
+            normalize_relative_link(StdPath::new(""), rel).unwrap_or_else(|| rel.to_string());
+        let cwd = StdPath::new(&project_dir);
+        let path = validate_doc_path(cwd, &normalized_rel, &["md"])?;
+        let source =
+            std::fs::read_to_string(&path).map_err(|e| format!("not_found: read failed ({e})"))?;
+        Ok((
+            render_markdown_doc(&source, harness_id, &normalized_rel),
+            normalized_rel,
+        ))
+    }
+
     /// `artifact_new` — allocate an id, issue a destination path inside the
     /// project, ensure the scratch dirs + `.gitignore` exist, and record a
     /// `pending` entry. Returns `{ id, path }`. Fails closed if the gitignore
@@ -1108,6 +1202,30 @@ struct HarnessArtifactStore {
     entries: HashMap<String, ArtifactEntry>,
 }
 
+#[derive(Debug, Default)]
+struct DocsTreeNode {
+    dirs: BTreeMap<String, DocsTreeNode>,
+    files: Vec<DocFile>,
+}
+
+#[derive(Debug)]
+struct DocFile {
+    name: String,
+    modified: Option<SystemTime>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DocQuery {
+    harness: String,
+    path: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DocsQuery {
+    harness: Option<String>,
+    dir: Option<String>,
+}
+
 /// POST /hook — receive a Claude Code hook event.
 async fn handle_hook(
     AxumState(state): AxumState<Arc<HookServerState>>,
@@ -1306,17 +1424,11 @@ async fn handle_artifact_state(
 
 const DASHBOARD_HTML: &str = include_str!("../../src/acp/artifact-dashboard.html");
 const GALLERY_HTML: &str = include_str!("../../src/acp/artifact-gallery.html");
+const DOCS_HTML: &str = include_str!("../../src/acp/artifact-docs.html");
 
 /// GET /dashboard — fixed external-browser lane monitor page (spec 168 pivot).
 async fn handle_dashboard() -> Response {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .header(header::REFERRER_POLICY, "no-referrer")
-        .header(header::CACHE_CONTROL, "no-store")
-        .body(Body::from(DASHBOARD_HTML))
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+    html_response(DASHBOARD_HTML)
 }
 
 /// GET /telemetry — read-only snapshots for all live harness dashboards.
@@ -1334,14 +1446,7 @@ async fn handle_telemetry(AxumState(state): AxumState<Arc<HookServerState>>) -> 
 
 /// GET /gallery — fixed external-browser artifact gallery page.
 async fn handle_gallery() -> Response {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .header(header::REFERRER_POLICY, "no-referrer")
-        .header(header::CACHE_CONTROL, "no-store")
-        .body(Body::from(GALLERY_HTML))
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+    html_response(GALLERY_HTML)
 }
 
 /// GET /artifacts — read-only artifact listings for all live harness stores.
@@ -1355,6 +1460,70 @@ async fn handle_artifacts(AxumState(state): AxumState<Arc<HookServerState>>) -> 
         header::HeaderValue::from_static("no-store"),
     );
     resp
+}
+
+/// GET /docs — fixed external-browser docs browser index.
+async fn handle_docs(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocsQuery>,
+) -> Response {
+    state
+        .hook_server
+        .docs_index_page(query.harness.as_deref(), query.dir.as_deref())
+}
+
+/// GET /doc?harness=<id>&path=<rel> — render one repo markdown file.
+async fn handle_doc(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocQuery>,
+) -> Response {
+    let (content, rel) = match state
+        .hook_server
+        .render_doc_content(&query.harness, &query.path)
+    {
+        Ok(result) => result,
+        Err(error) if error.starts_with("not_found:") => {
+            return StatusCode::NOT_FOUND.into_response()
+        }
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    // Single-file view opens in its own tab as a clean reader — no tree sidebar.
+    render_docs_page(&rel, None, &content)
+}
+
+/// GET /doc-asset?harness=<id>&path=<rel> — serve a whitelisted repo image.
+async fn handle_doc_asset(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocQuery>,
+) -> Response {
+    let project_dir = match state.hook_server.docs_project_dir(&query.harness) {
+        Some(dir) => dir,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let path = match validate_doc_path(
+        StdPath::new(&project_dir),
+        &query.path,
+        &["png", "jpg", "jpeg", "gif", "svg", "webp"],
+    ) {
+        Ok(path) => path,
+        Err(error) if error.starts_with("not_found:") => {
+            return StatusCode::NOT_FOUND.into_response()
+        }
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let mime = doc_asset_mime(&path);
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(bytes))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
 /// POST /artifact/feedback/:token — the browser submits a comment batch (spec
@@ -2688,6 +2857,517 @@ fn html_escape(s: &str) -> String {
     out
 }
 
+fn docs_options() -> Options<'static> {
+    let mut options = Options::default();
+    options.extension.table = true;
+    options.extension.strikethrough = true;
+    options.extension.tasklist = true;
+    options.extension.autolink = true;
+    // Capture a leading `---`-delimited YAML block as a FrontMatter node so it is
+    // NOT mis-parsed as a thematic break + setext heading. `format_html` emits
+    // nothing for it; we extract and render it ourselves (render_front_matter).
+    options.extension.front_matter_delimiter = Some("---".to_string());
+    // Spec 171 rev 2: raw HTML embedded in a repo's markdown is rendered as live
+    // HTML (the user explicitly opted out of the rev-1 escaping). This reverses
+    // ADR-0010's sanitize-at-the-boundary stance — see that ADR for the accepted
+    // XSS exposure over the token-free loopback surface.
+    options.render.r#unsafe = true;
+    options.render.escape = false;
+    options
+}
+
+/// Walk `project_dir` (respecting `.gitignore`, skipping `.git/`) and build a
+/// nested tree of every `*.md` file found under it.
+fn build_docs_tree(project_dir: &StdPath) -> DocsTreeNode {
+    let mut root = DocsTreeNode::default();
+    for entry in WalkBuilder::new(project_dir)
+        .standard_filters(true)
+        .build()
+        .filter_map(Result::ok)
+    {
+        let path = entry.path();
+        if !entry
+            .file_type()
+            .is_some_and(|file_type| file_type.is_file())
+        {
+            continue;
+        }
+        let is_markdown = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+        if !is_markdown {
+            continue;
+        }
+        let Ok(rel) = path.strip_prefix(project_dir) else {
+            continue;
+        };
+        let modified = entry.metadata().ok().and_then(|m| m.modified().ok());
+        insert_docs_tree_path(&mut root, rel, modified);
+    }
+    root
+}
+
+/// Descend the in-memory tree to the node addressed by a `/`-joined folder path
+/// (`""` = root). Returns `None` if any component is missing.
+fn node_at<'a>(root: &'a DocsTreeNode, dir: &str) -> Option<&'a DocsTreeNode> {
+    let mut node = root;
+    for component in dir.split('/').filter(|c| !c.is_empty()) {
+        node = node.dirs.get(component)?;
+    }
+    Some(node)
+}
+
+/// Sidebar: folders only, all harnesses grouped, each folder a link that selects
+/// it (`/docs?harness=&dir=`). The active folder gets `is-active`.
+fn render_folder_nav(
+    trees: &[(String, String, DocsTreeNode)],
+    selected_harness: &str,
+    selected_dir: &str,
+) -> String {
+    fn render_dirs(
+        out: &mut String,
+        harness_id: &str,
+        node: &DocsTreeNode,
+        prefix: &mut Vec<String>,
+        selected_harness: &str,
+        selected_dir: &str,
+    ) {
+        for (dir, child) in &node.dirs {
+            prefix.push(dir.clone());
+            let rel = prefix.join("/");
+            let active = harness_id == selected_harness && rel == selected_dir;
+            out.push_str("<li class=\"tree-dir\"><details open><summary><a");
+            if active {
+                out.push_str(" class=\"is-active\"");
+            }
+            out.push_str(" href=\"/docs?harness=");
+            out.push_str(&url_encode(harness_id));
+            out.push_str("&amp;dir=");
+            out.push_str(&url_encode(&rel));
+            out.push_str("\">");
+            out.push_str(&html_escape(dir));
+            out.push_str("</a></summary><ul class=\"tree\">");
+            render_dirs(out, harness_id, child, prefix, selected_harness, selected_dir);
+            out.push_str("</ul></details></li>");
+            prefix.pop();
+        }
+    }
+
+    let mut out = String::from("<ul class=\"tree\">");
+    for (harness_id, project_dir, root) in trees {
+        let root_active = harness_id == selected_harness && selected_dir.is_empty();
+        out.push_str("<li class=\"tree-group\"><a class=\"tree-group__label");
+        if root_active {
+            out.push_str(" is-active");
+        }
+        out.push_str("\" href=\"/docs?harness=");
+        out.push_str(&url_encode(harness_id));
+        out.push_str("\">");
+        out.push_str(&html_escape(&format!("{harness_id} · {project_dir}")));
+        out.push_str("</a><ul class=\"tree\">");
+        let mut prefix = Vec::new();
+        render_dirs(
+            &mut out,
+            harness_id,
+            root,
+            &mut prefix,
+            selected_harness,
+            selected_dir,
+        );
+        out.push_str("</ul></li>");
+    }
+    out.push_str("</ul>");
+    out
+}
+
+/// Right pane: the selected folder's immediate contents — subfolders (navigate
+/// in-page) then `.md` files (open in a new reader tab) — with breadcrumbs.
+fn render_folder_listing(harness_id: &str, dir: &str, node: &DocsTreeNode) -> String {
+    let mut out = String::from("<nav class=\"crumbs\">");
+    let root_only = dir.is_empty();
+    out.push_str("<a href=\"/docs?harness=");
+    out.push_str(&url_encode(harness_id));
+    out.push_str("\">");
+    out.push_str(&html_escape(harness_id));
+    out.push_str("</a>");
+    let mut acc: Vec<String> = Vec::new();
+    for segment in dir.split('/').filter(|c| !c.is_empty()) {
+        acc.push(segment.to_string());
+        out.push_str("<span class=\"crumbs__sep\">/</span><a href=\"/docs?harness=");
+        out.push_str(&url_encode(harness_id));
+        out.push_str("&amp;dir=");
+        out.push_str(&url_encode(&acc.join("/")));
+        out.push_str("\">");
+        out.push_str(&html_escape(segment));
+        out.push_str("</a>");
+    }
+    out.push_str("</nav>");
+
+    if node.dirs.is_empty() && node.files.is_empty() {
+        out.push_str("<p class=\"welcome\">Empty folder — no markdown here.</p>");
+        return out;
+    }
+
+    out.push_str("<ul class=\"browser\">");
+    if !root_only {
+        let parent = {
+            let mut parts: Vec<&str> = dir.split('/').filter(|c| !c.is_empty()).collect();
+            parts.pop();
+            parts.join("/")
+        };
+        out.push_str("<li class=\"browser__item browser__item--up\"><a href=\"/docs?harness=");
+        out.push_str(&url_encode(harness_id));
+        if !parent.is_empty() {
+            out.push_str("&amp;dir=");
+            out.push_str(&url_encode(&parent));
+        }
+        out.push_str("\"><span class=\"browser__icon\">↑</span><span class=\"browser__name\">..</span></a></li>");
+    }
+    for dir_name in node.dirs.keys() {
+        let rel = if root_only {
+            dir_name.clone()
+        } else {
+            format!("{dir}/{dir_name}")
+        };
+        out.push_str("<li class=\"browser__item browser__item--dir\"><a href=\"/docs?harness=");
+        out.push_str(&url_encode(harness_id));
+        out.push_str("&amp;dir=");
+        out.push_str(&url_encode(&rel));
+        out.push_str("\"><span class=\"browser__icon\">▸</span><span class=\"browser__name\">");
+        out.push_str(&html_escape(dir_name));
+        out.push_str("</span></a></li>");
+    }
+    let mut files: Vec<&DocFile> = node.files.iter().collect();
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    for file in files {
+        let rel = if root_only {
+            file.name.clone()
+        } else {
+            format!("{dir}/{}", file.name)
+        };
+        out.push_str("<li class=\"browser__item browser__item--file\"><a target=\"_blank\" rel=\"noopener\" href=\"/doc?harness=");
+        out.push_str(&url_encode(harness_id));
+        out.push_str("&amp;path=");
+        out.push_str(&url_encode(&rel));
+        out.push_str("\"><span class=\"browser__icon\">◆</span><span class=\"browser__name\">");
+        out.push_str(&html_escape(&file.name));
+        out.push_str("</span>");
+        if let Some((ms, label)) = file.modified.and_then(format_doc_mtime) {
+            out.push_str("<time class=\"browser__date\" data-ts=\"");
+            out.push_str(&ms.to_string());
+            out.push_str("\">");
+            out.push_str(&html_escape(&label));
+            out.push_str("</time>");
+        }
+        out.push_str("</a></li>");
+    }
+    out.push_str("</ul>");
+    out
+}
+
+fn insert_docs_tree_path(root: &mut DocsTreeNode, rel: &StdPath, modified: Option<SystemTime>) {
+    let mut node = root;
+    let mut components = rel.components().peekable();
+    while let Some(component) = components.next() {
+        let label = component.as_os_str().to_string_lossy().to_string();
+        if components.peek().is_none() {
+            node.files.push(DocFile {
+                name: label,
+                modified,
+            });
+        } else {
+            node = node.dirs.entry(label).or_default();
+        }
+    }
+}
+
+/// Format a file mtime for the docs browser. Returns `(epoch_ms, utc_label)`:
+/// the millis feed a tiny client script that localises the label, and the UTC
+/// `YYYY-MM-DD HH:MM` text is the no-JS fallback. Pure (no chrono dependency).
+fn format_doc_mtime(modified: SystemTime) -> Option<(i64, String)> {
+    let dur = modified.duration_since(UNIX_EPOCH).ok()?;
+    let secs = dur.as_secs() as i64;
+    let ms = dur.as_millis() as i64;
+    let days = secs.div_euclid(86_400);
+    let tod = secs.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = tod / 3600;
+    let minute = (tod % 3600) / 60;
+    Some((
+        ms,
+        format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}"),
+    ))
+}
+
+/// Days since the Unix epoch → `(year, month, day)`, proleptic Gregorian, UTC
+/// (Howard Hinnant's `civil_from_days`).
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32; // [1, 12]
+    (year + i64::from(month <= 2), month, day)
+}
+
+fn render_docs_page(title: &str, tree: Option<&str>, content: &str) -> Response {
+    let escaped_title = html_escape(title);
+    // `None` = single-file reader: drop the sidebar entirely so content is full width.
+    let nav = match tree {
+        Some(tree) => format!("<nav class=\"tree-pane\">{tree}</nav>"),
+        None => String::new(),
+    };
+    let html = DOCS_HTML
+        .replace("<!--DOCS_TITLE-->", &escaped_title)
+        .replace(
+            "<nav class=\"tree-pane\"><!--DOCS_TREE--></nav>",
+            &nav,
+        )
+        .replace(
+            "<article class=\"doc\"><!--DOCS_CONTENT--></article>",
+            &format!("<article class=\"doc\">{content}</article>"),
+        );
+    html_response(html)
+}
+
+fn html_response(html: impl Into<Body>) -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(html.into())
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+fn render_markdown_doc(source: &str, harness_id: &str, rel: &str) -> String {
+    let arena = Arena::new();
+    let options = docs_options();
+    let root = parse_document(&arena, source, &options);
+    rewrite_doc_links(root, harness_id, rel);
+    let mut html = String::new();
+    // Front matter renders first, as a readable key/value metadata card, ahead of
+    // the document body (comrak itself emits nothing for the FrontMatter node).
+    if let Some(front_matter) = extract_front_matter(root) {
+        html.push_str(&render_front_matter(&front_matter));
+    }
+    if format_html(root, &options, &mut html).is_err() {
+        return String::new();
+    }
+    html
+}
+
+/// Pull the raw text of the leading FrontMatter node (delimiters included), if
+/// the document opened with one. comrak guarantees at most one, at the top.
+fn extract_front_matter<'a>(root: &'a AstNode<'a>) -> Option<String> {
+    root.descendants().find_map(|node| {
+        if let NodeValue::FrontMatter(raw) = &node.data.borrow().value {
+            Some(raw.clone())
+        } else {
+            None
+        }
+    })
+}
+
+/// Render captured YAML front matter as a flat key/value metadata card. The
+/// common case in this repo is flat `key: value` scalars; non-scalar or
+/// delimiter-less lines fall back to a full-width row so nothing is dropped.
+fn render_front_matter(raw: &str) -> String {
+    let mut rows = String::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        // Skip the `---` fences and blank lines.
+        if trimmed.is_empty() || trimmed.chars().all(|c| c == '-') {
+            continue;
+        }
+        match trimmed.split_once(':') {
+            Some((key, value)) if !key.trim().is_empty() => {
+                rows.push_str(&format!(
+                    "<dt>{}</dt><dd>{}</dd>",
+                    html_escape(key.trim()),
+                    html_escape(value.trim())
+                ));
+            }
+            _ => {
+                rows.push_str(&format!("<dt></dt><dd>{}</dd>", html_escape(trimmed)));
+            }
+        }
+    }
+    if rows.is_empty() {
+        return String::new();
+    }
+    format!("<dl class=\"frontmatter\">{rows}</dl>")
+}
+
+fn rewrite_doc_links<'a>(root: &'a AstNode<'a>, harness_id: &str, rel: &str) {
+    let base = StdPath::new(rel)
+        .parent()
+        .unwrap_or_else(|| StdPath::new(""));
+    for node in root.descendants() {
+        let mut data = node.data.borrow_mut();
+        match &mut data.value {
+            NodeValue::Link(link) => {
+                if let Some(target) = rewrite_markdown_link(&link.url, harness_id, base) {
+                    link.url = target;
+                }
+            }
+            NodeValue::Image(image) => {
+                if let Some(target) = rewrite_doc_asset_link(&image.url, harness_id, base) {
+                    image.url = target;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn rewrite_markdown_link(url: &str, harness_id: &str, base: &StdPath) -> Option<String> {
+    if is_external_or_anchor(url) {
+        return None;
+    }
+    let (path_part, suffix) = split_link_suffix(url);
+    let has_md_ext = StdPath::new(path_part)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+    if !has_md_ext {
+        return None;
+    }
+    let resolved = normalize_relative_link(base, path_part)?;
+    Some(format!(
+        "/doc?harness={}&path={}{}",
+        url_encode(harness_id),
+        url_encode(&resolved),
+        suffix
+    ))
+}
+
+fn rewrite_doc_asset_link(url: &str, harness_id: &str, base: &StdPath) -> Option<String> {
+    if is_external_or_anchor(url) {
+        return None;
+    }
+    let (path_part, suffix) = split_link_suffix(url);
+    let ext = StdPath::new(path_part)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())?;
+    if !matches!(
+        ext.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp"
+    ) {
+        return None;
+    }
+    let resolved = normalize_relative_link(base, path_part)?;
+    Some(format!(
+        "/doc-asset?harness={}&path={}{}",
+        url_encode(harness_id),
+        url_encode(&resolved),
+        suffix
+    ))
+}
+
+fn is_external_or_anchor(url: &str) -> bool {
+    url.starts_with('#')
+        || url.starts_with('/')
+        || url.contains("://")
+        || url.starts_with("mailto:")
+        || url.starts_with("tel:")
+}
+
+fn split_link_suffix(url: &str) -> (&str, &str) {
+    let split_at = url
+        .char_indices()
+        .find_map(|(idx, c)| (c == '#' || c == '?').then_some(idx))
+        .unwrap_or(url.len());
+    url.split_at(split_at)
+}
+
+fn normalize_relative_link(base: &StdPath, link: &str) -> Option<String> {
+    let path = base.join(link);
+    let mut parts: Vec<String> = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                parts.pop()?;
+            }
+            std::path::Component::Normal(part) => {
+                parts.push(part.to_string_lossy().to_string());
+            }
+            _ => return None,
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+fn url_encode(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+fn doc_asset_mime(path: &StdPath) -> &'static str {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("webp") => "image/webp",
+        _ => "application/octet-stream",
+    }
+}
+
+fn validate_doc_path(cwd: &StdPath, rel: &str, exts: &[&str]) -> Result<PathBuf, String> {
+    if rel.is_empty() {
+        return Err("path_invalid: empty path".to_string());
+    }
+    let rel_path = StdPath::new(rel);
+    if rel_path.is_absolute() {
+        return Err("path_invalid: absolute path rejected".to_string());
+    }
+    let cwd_canon = cwd
+        .canonicalize()
+        .map_err(|e| format!("not_found: cwd unavailable ({e})"))?;
+    let candidate = cwd.join(rel_path);
+    let candidate_canon = candidate
+        .canonicalize()
+        .map_err(|e| format!("not_found: file unavailable ({e})"))?;
+    candidate_canon
+        .strip_prefix(&cwd_canon)
+        .map_err(|_| "path_invalid: outside cwd".to_string())?;
+    let ext = candidate_canon
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .ok_or_else(|| "path_invalid: missing extension".to_string())?;
+    if !exts.iter().any(|allowed| *allowed == ext) {
+        return Err("path_invalid: extension rejected".to_string());
+    }
+    let meta = std::fs::metadata(&candidate_canon)
+        .map_err(|e| format!("not_found: metadata failed ({e})"))?;
+    if !meta.is_file() {
+        return Err("path_invalid: not a regular file".to_string());
+    }
+    Ok(candidate_canon)
+}
+
 /// Write the seeded scaffold atomically: write to `<path>.tmp` then rename onto
 /// `<path>`, so an interrupted write never leaves a truncated file. Best-effort
 /// removes the tmp file on any failure (spec 134).
@@ -2846,6 +3526,9 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 .route("/telemetry", get(handle_telemetry))
                 .route("/gallery", get(handle_gallery))
                 .route("/artifacts", get(handle_artifacts))
+                .route("/docs", get(handle_docs))
+                .route("/doc", get(handle_doc))
+                .route("/doc-asset", get(handle_doc_asset))
                 // spec 149 — artifact inline feedback. Served over loopback HTTP
                 // so the OS-browser page is same-origin with the feedback POST
                 // (no CORS, no `Origin: null`). The token in the path is the sole
@@ -3194,9 +3877,126 @@ mod tests {
             .route("/telemetry", get(ok))
             .route("/gallery", get(ok))
             .route("/artifacts", get(ok))
+            .route("/docs", get(ok))
+            .route("/doc", get(ok))
+            .route("/doc-asset", get(ok))
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
             .route("/artifact/feedback/{token}", post(ok));
+    }
+
+    #[test]
+    fn format_doc_mtime_renders_utc_label() {
+        // 2026-06-19 13:45:00 UTC.
+        let secs = 1_781_876_700u64;
+        let t = UNIX_EPOCH + Duration::from_secs(secs);
+        let (ms, label) = format_doc_mtime(t).unwrap();
+        assert_eq!(ms, (secs as i64) * 1000);
+        assert_eq!(label, "2026-06-19 13:45");
+        // epoch and a leap-day boundary.
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        assert_eq!(civil_from_days(10_957), (2000, 1, 1));
+        assert_eq!(civil_from_days(-1), (1969, 12, 31));
+    }
+
+    #[test]
+    fn validate_doc_path_accepts_markdown_under_cwd() {
+        let tmp_raw = std::env::temp_dir().join(format!("krypton-docs-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp_raw).unwrap();
+        let tmp = tmp_raw.canonicalize().unwrap();
+        let docs = tmp.join("docs");
+        std::fs::create_dir_all(&docs).unwrap();
+        let file = docs.join("guide.md");
+        std::fs::write(&file, "# Guide").unwrap();
+        let resolved = validate_doc_path(&tmp, "docs/guide.md", &["md"]).unwrap();
+        assert_eq!(resolved, file.canonicalize().unwrap());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn validate_doc_path_rejects_parent_traversal() {
+        let tmp = std::env::temp_dir().join(format!("krypton-docs-{}", rand_suffix()));
+        let outside = tmp.with_extension("outside.md");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(&outside, "# Secret").unwrap();
+        let rel = format!("../{}", outside.file_name().unwrap().to_string_lossy());
+        let err = validate_doc_path(&tmp, &rel, &["md"]).unwrap_err();
+        assert!(err.contains("outside cwd"), "got: {err}");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_file(&outside);
+    }
+
+    #[test]
+    fn validate_doc_path_rejects_absolute_path() {
+        let tmp = std::env::temp_dir().join(format!("krypton-docs-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let file = tmp.join("guide.md");
+        std::fs::write(&file, "# Guide").unwrap();
+        let err = validate_doc_path(&tmp, &file.to_string_lossy(), &["md"]).unwrap_err();
+        assert!(err.contains("absolute path"), "got: {err}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn validate_doc_path_rejects_symlink_escape() {
+        let tmp = std::env::temp_dir().join(format!("krypton-docs-{}", rand_suffix()));
+        let outside = tmp.with_extension("secret.md");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(&outside, "# Secret").unwrap();
+        #[cfg(unix)]
+        {
+            let link = tmp.join("linked.md");
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+            let err = validate_doc_path(&tmp, "linked.md", &["md"]).unwrap_err();
+            assert!(err.contains("outside cwd"), "got: {err}");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_file(&outside);
+    }
+
+    #[test]
+    fn validate_doc_path_rejects_wrong_extension() {
+        let tmp = std::env::temp_dir().join(format!("krypton-docs-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("note.txt"), "nope").unwrap();
+        let err = validate_doc_path(&tmp, "note.txt", &["md"]).unwrap_err();
+        assert!(err.contains("extension rejected"), "got: {err}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn render_markdown_doc_renders_raw_html() {
+        // Spec 171 rev 2 (ADR-0010 reversed): raw HTML in repo markdown renders
+        // as live HTML rather than being escaped to visible text.
+        let html = render_markdown_doc("<div class=\"x\">live</div>", "hm-1", "README.md");
+        assert!(
+            html.contains("<div class=\"x\">live</div>"),
+            "raw HTML should render live, not escaped: {html}"
+        );
+    }
+
+    #[test]
+    fn render_markdown_doc_renders_front_matter_as_card() {
+        let source = "---\nstatus: Implemented\ndate: 2026-05-02\n---\n\n# Title\n\nBody text.";
+        let html = render_markdown_doc(source, "hm-1", "docs/76-spec.md");
+        // Front matter becomes a readable key/value card, not a stray <hr>/heading.
+        assert!(
+            html.contains("<dl class=\"frontmatter\">"),
+            "front matter should render as a metadata card: {html}"
+        );
+        assert!(
+            html.contains("<dt>status</dt><dd>Implemented</dd>"),
+            "scalar key/value should render: {html}"
+        );
+        assert!(
+            !html.contains("<hr"),
+            "delimiters must not survive as a thematic break: {html}"
+        );
+        // Body still renders after the card.
+        assert!(
+            html.contains("<h1>Title</h1>"),
+            "body should follow: {html}"
+        );
     }
 
     #[test]
