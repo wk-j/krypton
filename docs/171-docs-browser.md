@@ -148,8 +148,11 @@ fonts, light/auto toggle, `@media` responsive rules). Adds:
   top-level groups when more than one harness is open) — flat surface, tinted,
   no nested frame, no left accent rail;
 - a **content pane** holding the comrak output, styled for headings / code
-  blocks / tables / task lists. No `border-left` color rails on blocks (scaffold
-  strips them at runtime anyway).
+  blocks / tables / task lists. The reading body (`article.doc`) sets its own
+  `font-size: 15px; line-height: 1.65` rather than inheriting the 14px chrome
+  size, so prose reads comfortably while headings/code (sized in `em`) scale
+  with it. No `border-left` color rails on blocks (scaffold strips them at
+  runtime anyway).
 
 Because each navigation is a full page load, the page needs almost no JS — only
 the existing theme toggle and tree expand/collapse state (which may even be
