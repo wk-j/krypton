@@ -90,6 +90,4 @@ in `~/.config/krypton/themes/`. The authenticated loopback endpoint used by
 - **Frontend:** TypeScript, xterm.js, Vite, WAAPI (animations).
 - **AI:** pi-agent-core, Agent Client Protocol (ACP).
 
-## License
 
-MIT

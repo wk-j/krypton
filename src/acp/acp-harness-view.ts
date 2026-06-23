@@ -29,6 +29,8 @@ import type {
   HarnessMcpLaneStats,
   ArtifactComment,
   ArtifactFeedbackEnvelope,
+  DocComment,
+  DocFeedbackEnvelope,
   HarnessMemoryEntry,
   HarnessMemorySession,
   InterLaneEnvelope,
@@ -55,7 +57,7 @@ import {
   renderReviewPriorityOverlay,
   type ReviewPriorityOverlayViewModel,
 } from './review-priority-overlay';
-import { ArtifactFeedbackQueue } from './artifact-feedback';
+import { ArtifactFeedbackQueue, DocFeedbackQueue } from './artifact-feedback';
 import { DiffReviewQueue } from './diff-review';
 import {
   InterLaneCoordinator,
@@ -1255,9 +1257,11 @@ export class AcpHarnessView implements ContentView {
   /** spec 149: per-lane artifact feedback queue, drained on the lane's next idle
    *  (a dedicated queue, NOT the peer LaneInbox). Constructed in the ctor. */
   private feedbackQueue: ArtifactFeedbackQueue;
+  private docsFeedbackQueue: DocFeedbackQueue;
   private diffReviewQueue: DiffReviewQueue;
   private telemetryPublisher: HarnessTelemetryPublisher | null = null;
   private feedbackUnlisten: UnlistenFn | null = null;
+  private docsFeedbackUnlisten: UnlistenFn | null = null;
   /** spec 133: artifact hint mode (open-artifact labels), active only when on. */
   private artifactHintMode = false;
   private artifactHintBuffer = '';
@@ -1389,6 +1393,16 @@ export class AcpHarnessView implements ContentView {
         if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'artifact feedback');
       },
     });
+    // spec 172: docs-browser feedback drains the same way, into whichever lane was
+    // resolved as the recipient before accept(). Shares the drain-on-idle core.
+    this.docsFeedbackQueue = new DocFeedbackQueue(
+      this.laneBus,
+      (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
+      (laneId, text) => {
+        const lane = this.lanes.find((l) => l.id === laneId);
+        if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'docs feedback');
+      },
+    );
     // spec 158: diff review comments drain on the lane's next idle, same as
     // artifact feedback. Constructed AFTER the feedback queue (and the
     // coordinator) for the same reason: LaneBus dispatches in insertion order,
@@ -2122,6 +2136,55 @@ export class AcpHarnessView implements ContentView {
         lane,
         'system',
         `${n} comment${n === 1 ? '' : 's'} received on artifact «${p.artifactTitle}»`,
+      );
+      this.scheduleLaneRender(lane);
+      reply({ accepted: true });
+    });
+
+    // spec 172: a browser POSTed docs-browser feedback. A doc has no owning lane
+    // (it is a repo file, not a lane artifact), so the recipient is THIS harness's
+    // currently active lane — resolved here at delivery, redirectable by switching
+    // the active lane in-app. Rust blocks on this round-trip like artifact feedback.
+    this.docsFeedbackUnlisten = await listen<{
+      harnessId?: string;
+      docPath: string;
+      batchId: string;
+      comments: DocComment[];
+      requestId?: string;
+    }>('acp-docs-feedback-received', (e) => {
+      const p = e.payload;
+      if (!this.harnessMemoryId || p.harnessId !== this.harnessMemoryId) return;
+      const reply = (result: unknown): void => {
+        if (!p.requestId) return;
+        void invoke('acp_bus_reply', { requestId: p.requestId, result }).catch((err) => {
+          console.warn('acp_bus_reply (docs feedback) failed', err);
+        });
+      };
+      // No token/registry to resolve: route to the harness's active live lane.
+      // An idle/empty harness with no usable lane has no recipient → 409.
+      const lane = this.activeLane();
+      if (!lane || lane.status === 'stopped') {
+        reply({ accepted: false, reason: 'no_live_lane' });
+        return;
+      }
+      const envelope: DocFeedbackEnvelope = {
+        kind: 'doc_feedback',
+        batchId: p.batchId,
+        harnessId: this.harnessMemoryId,
+        docPath: p.docPath,
+        comments: p.comments ?? [],
+        sentAt: Date.now(),
+      };
+      const outcome = this.docsFeedbackQueue.accept(lane.id, envelope);
+      if (outcome === 'duplicate') {
+        reply({ accepted: true, reason: 'duplicate' });
+        return;
+      }
+      const n = envelope.comments.length;
+      this.appendTranscript(
+        lane,
+        'system',
+        `${n} comment${n === 1 ? '' : 's'} received on docs «${p.docPath}»`,
       );
       this.scheduleLaneRender(lane);
       reply({ accepted: true });
@@ -3388,7 +3451,12 @@ export class AcpHarnessView implements ContentView {
       this.feedbackUnlisten();
       this.feedbackUnlisten = null;
     }
+    if (this.docsFeedbackUnlisten) {
+      this.docsFeedbackUnlisten();
+      this.docsFeedbackUnlisten = null;
+    }
     this.feedbackQueue.dispose();
+    this.docsFeedbackQueue.dispose();
     this.diffReviewQueue.dispose();
     this.usageProviderListeners.clear();
     if (this.transcriptResizeObserver) {
@@ -4255,6 +4323,25 @@ export class AcpHarnessView implements ContentView {
     });
     await this.refreshMemory();
     await this.refreshMcpStats();
+    await this.refreshArtifacts();
+  }
+
+  /** spec 173: replay the harness's disk-rehydrated artifacts into the mirror.
+   *  Rehydration runs in `create_harness_memory` (Rust `register_harness`) before
+   *  the `acp-harness-artifact` listener above is attached, so those init-time
+   *  events are lost — we pull the entries here and feed them through the same
+   *  `handleArtifactEvent` path. That populates `this.artifacts` (the gate the
+   *  feedback listener checks) and raises a card under any matching live lane. */
+  private async refreshArtifacts(): Promise<void> {
+    if (!this.harnessMemoryId) return;
+    try {
+      const rows = await invoke<ArtifactEventPayload[]>('acp_list_harness_artifacts', {
+        harnessId: this.harnessMemoryId,
+      });
+      for (const row of rows) this.handleArtifactEvent(row);
+    } catch (e) {
+      console.warn('[acp-harness] refreshArtifacts failed:', e);
+    }
   }
 
   private async refreshGitBranch(): Promise<void> {
@@ -5480,6 +5567,7 @@ export class AcpHarnessView implements ContentView {
     }).catch(() => undefined);
     // Drop any queued-but-undrained feedback for the lane's now-dead session.
     this.feedbackQueue.dropLane(lane.id);
+    this.docsFeedbackQueue.dropLane(lane.id);
     this.diffReviewQueue.dropLane(lane.id);
     // spec 160: the lane's diff review-priority report describes a diff its now
     // dead session produced — drop it so the Diff Window stops triaging by it.

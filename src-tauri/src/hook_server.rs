@@ -527,19 +527,90 @@ impl HookServer {
 
     // ─── Artifact store (spec 133) ──────────────────────────────────────────
 
-    /// Register an in-memory artifact store for a harness. Does not delete any
-    /// on-disk files — artifact history under `.krypton/artifacts/` persists
-    /// across harness close and app restarts; only the live registry drives the
-    /// gallery.
+    /// Register an in-memory artifact store for a harness and **rehydrate it from
+    /// disk** (spec 173): every `*/<lane>/<id>.html` under the project's
+    /// `.krypton/artifacts/` is rebuilt into an entry — regardless of which
+    /// `harnessId` subdir it physically lives under — and **re-homed under this
+    /// live harness** so its feedback token routes to a currently-live lane
+    /// exactly like a same-session artifact. The on-disk files are the source of
+    /// truth (append-only history); this rebuilds the gallery + feedback registry
+    /// that an app restart would otherwise leave empty.
     fn init_harness_artifacts(&self, harness_id: &str, project_dir: Option<String>) {
-        let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
-        artifacts.insert(
-            harness_id.to_string(),
-            HarnessArtifactStore {
-                project_dir,
-                entries: HashMap::new(),
-            },
-        );
+        let (entries, tokens, max_seq) = project_dir
+            .as_deref()
+            .and_then(artifacts_root)
+            .map(|root| rehydrate_artifacts_from_disk(harness_id, &root))
+            .unwrap_or_default();
+
+        {
+            let mut artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+            artifacts.insert(
+                harness_id.to_string(),
+                HarnessArtifactStore {
+                    project_dir,
+                    entries,
+                },
+            );
+        }
+        if !tokens.is_empty() {
+            let mut map = self
+                .feedback_tokens
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            for (token, record) in tokens {
+                map.insert(token, record);
+            }
+        }
+        // Keep freshly-allocated ids past the rehydrated seqs. The random suffix
+        // already guarantees unique full ids across runs; this just keeps the
+        // numbering monotone within this session.
+        if max_seq > 0 {
+            let cur = self.next_artifact_seq.load(Ordering::Relaxed);
+            if max_seq >= cur {
+                self.next_artifact_seq.store(max_seq + 1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// spec 173: every artifact entry for one harness, shaped like the
+    /// `acp-harness-artifact` `registered` event, so the frontend can replay
+    /// rehydrated entries into its mirror after attaching its listener. Events
+    /// emitted during `register_harness` (when rehydration runs) are lost — the
+    /// frontend listener isn't attached yet — so it pulls instead. Sorted by lane
+    /// then id for a stable replay order.
+    pub fn list_harness_artifacts(&self, harness_id: &str) -> Vec<Value> {
+        let artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(store) = artifacts.get(harness_id) else {
+            return Vec::new();
+        };
+        let mut rows: Vec<&ArtifactEntry> = store.entries.values().collect();
+        rows.sort_by(|a, b| {
+            a.lane_label
+                .cmp(&b.lane_label)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        rows.into_iter()
+            .map(|e| {
+                let state = if e.state == ArtifactState::RegisteredLive {
+                    "registered"
+                } else {
+                    "pending"
+                };
+                json!({
+                    "harnessId": harness_id,
+                    "laneLabel": e.lane_label,
+                    "id": e.id,
+                    "path": e.path.to_string_lossy(),
+                    "tail": e.tail,
+                    "title": e.title,
+                    "size": e.size,
+                    "hash": e.hash,
+                    "state": state,
+                    "registered": true,
+                    "feedbackToken": e.feedback_token,
+                })
+            })
+            .collect()
     }
 
     /// Drop a harness from the in-memory artifact registry. On-disk files are
@@ -1524,6 +1595,143 @@ async fn handle_doc_asset(
         .header(header::CACHE_CONTROL, "no-store")
         .body(Body::from(bytes))
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// GET /doc-state?harness=<id>&path=<rel> — current sha256 of a repo `.md`, so
+/// the docs-browser feedback overlay can live-reload the page when a lane edits
+/// the source file (spec 172). Tokenless, keyed by harness+path like `/doc`.
+/// 404 on unknown harness / failed path validation / unreadable file.
+async fn handle_doc_state(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocQuery>,
+) -> Response {
+    let project_dir = match state.hook_server.docs_project_dir(&query.harness) {
+        Some(dir) => dir,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let normalized = normalize_relative_link(StdPath::new(""), &query.path)
+        .unwrap_or_else(|| query.path.clone());
+    let path = match validate_doc_path(StdPath::new(&project_dir), &normalized, &["md"]) {
+        Ok(path) => path,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let Some(hash) = doc_file_hash(&path) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut resp = Json(json!({ "hash": hash })).into_response();
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    resp
+}
+
+/// POST /doc-feedback?harness=<id>&path=<rel> — the browser submits a comment
+/// batch on a rendered doc (spec 172). Tokenless: keyed by harness+path, the same
+/// addressing the read uses (ADR-0010, amended — the surface gains a write
+/// channel). A doc has no owning lane, so the frontend routes the batch to the
+/// harness's ACTIVE lane. Validates path + caps, then runs the synchronous bus
+/// round-trip (fresh request id → emit `acp-docs-feedback-received` → await the
+/// frontend's accept). A 200 means the batch entered the lane's feedback queue,
+/// NOT that the lane acted on it. On bus timeout the browser may retry the same
+/// `batchId` (the frontend de-dupes).
+async fn handle_doc_feedback(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocQuery>,
+    Json(body): Json<Value>,
+) -> Response {
+    let project_dir = match state.hook_server.docs_project_dir(&query.harness) {
+        Some(dir) => dir,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let normalized = normalize_relative_link(StdPath::new(""), &query.path)
+        .unwrap_or_else(|| query.path.clone());
+    // Same containment boundary as `/doc`: a feedback POST can only target a real
+    // `.md` file under the harness <cwd> (traversal/symlink/wrong-ext → 404/400).
+    if validate_doc_path(StdPath::new(&project_dir), &normalized, &["md"]).is_err() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let batch_id = body.get("batchId").and_then(|v| v.as_str()).unwrap_or("");
+    if batch_id.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "missing batchId").into_response();
+    }
+    let Some(comments) = body.get("comments").and_then(|v| v.as_array()) else {
+        return (StatusCode::BAD_REQUEST, "missing comments").into_response();
+    };
+    if comments.is_empty() {
+        return (StatusCode::BAD_REQUEST, "empty comments").into_response();
+    }
+    if comments.len() > FEEDBACK_COMMENTS_MAX {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
+    // Validate the required shape BEFORE the bus round-trip so a malformed comment
+    // can't poison the batchId (queued + de-duped, then thrown in the composer).
+    for c in comments {
+        let body_ok = c
+            .get("body")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        if !body_ok {
+            return (StatusCode::BAD_REQUEST, "comment missing non-empty body").into_response();
+        }
+    }
+    // Cap the untrusted text fields server-side before they reach a composed prompt.
+    for c in comments {
+        let over = |key: &str, max: usize| {
+            c.get(key)
+                .and_then(|v| v.as_str())
+                .map(|s| s.chars().count() > max)
+                .unwrap_or(false)
+        };
+        if over("body", FEEDBACK_BODY_MAX) || over("quote", FEEDBACK_QUOTE_MAX) {
+            return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        }
+    }
+
+    let request_id = format!("df-{}-{}", now_ms(), rand_suffix());
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state.app_handle.emit_or_log(
+        "acp-docs-feedback-received",
+        json!({
+            "harnessId": query.harness,
+            "docPath": normalized,
+            "batchId": batch_id,
+            "comments": comments,
+            "requestId": request_id,
+        }),
+    );
+    let reply = match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(_)) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "retry" })),
+            )
+                .into_response();
+        }
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "retry" })),
+            )
+                .into_response();
+        }
+    };
+    if reply
+        .get("accepted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return Json(json!({ "status": "accepted" })).into_response();
+    }
+    (
+        StatusCode::CONFLICT,
+        Json(json!({ "status": "no-live-lane" })),
+    )
+        .into_response()
 }
 
 /// POST /artifact/feedback/:token — the browser submits a comment batch (spec
@@ -2857,6 +3065,154 @@ fn html_escape(s: &str) -> String {
     out
 }
 
+/// Inverse of [`html_escape`] for the five entities it emits — used to recover a
+/// rehydrated artifact's original `<title>` text (spec 173).
+fn html_unescape(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+}
+
+/// spec 173: extract the seq `<n>` from an `art-<n>-<hex>` artifact id stem, or
+/// `None` if it isn't that shape (so stray files / the `.gitignore` are ignored
+/// during rehydration).
+fn parse_artifact_seq(id: &str) -> Option<u64> {
+    let rest = id.strip_prefix("art-")?;
+    let (seq, suffix) = rest.split_once('-')?;
+    if suffix.is_empty() || !suffix.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    seq.parse::<u64>().ok()
+}
+
+/// spec 173: pull the `<title>…</title>` text back out of a served artifact file
+/// (it was html-escaped at `artifact_new`; unescape it for display).
+fn parse_artifact_title(html: &str) -> Option<String> {
+    let start = html.find("<title>")? + "<title>".len();
+    let end = html[start..].find("</title>")? + start;
+    let raw = html[start..end].trim();
+    if raw.is_empty() {
+        return None;
+    }
+    Some(html_unescape(raw))
+}
+
+/// spec 173: parse the baked feedback token out of
+/// `window.__KRYPTON_FEEDBACK__ = { token: "…", url: … }`. The token is the
+/// artifact's sole capability and MUST come from the file — the served page
+/// POSTs with it — so it is never re-minted. `None` for an unreplaced
+/// placeholder (`{{…}}`) or a malformed scaffold.
+fn parse_feedback_token(html: &str) -> Option<String> {
+    let anchor = html.find("__KRYPTON_FEEDBACK__")?;
+    let after_key = html[anchor..].find("token:")? + anchor + "token:".len();
+    let rest = html[after_key..].trim_start().strip_prefix('"')?;
+    let end = rest.find('"')?;
+    let token = &rest[..end];
+    if token.is_empty() || token.starts_with("{{") {
+        return None;
+    }
+    Some(token.to_string())
+}
+
+/// spec 173: rebuild artifact entries from every `*/<lane>/<id>.html` under the
+/// project's artifacts root. The on-disk harnessId subdir is ignored — each file
+/// is re-homed under `live_harness_id` so its feedback token routes to a
+/// currently-live lane exactly like a same-session artifact. Title + token are
+/// parsed back out of the file; size/hash are recomputed. Returns the entry map
+/// (keyed by id), the `(token, FeedbackToken)` pairs, and the max seq seen (to
+/// keep new-id numbering monotone).
+fn rehydrate_artifacts_from_disk(
+    live_harness_id: &str,
+    root: &StdPath,
+) -> (
+    HashMap<String, ArtifactEntry>,
+    Vec<(String, FeedbackToken)>,
+    u64,
+) {
+    let mut entries: HashMap<String, ArtifactEntry> = HashMap::new();
+    let mut tokens: Vec<(String, FeedbackToken)> = Vec::new();
+    let mut max_seq = 0u64;
+
+    let Ok(harness_dirs) = std::fs::read_dir(root) else {
+        return (entries, tokens, max_seq);
+    };
+    for harness_dir in harness_dirs.flatten() {
+        let harness_path = harness_dir.path();
+        if !harness_path.is_dir() {
+            continue;
+        }
+        let harness_dir_name = harness_dir.file_name().to_string_lossy().to_string();
+        let Ok(lane_dirs) = std::fs::read_dir(&harness_path) else {
+            continue;
+        };
+        for lane_dir in lane_dirs.flatten() {
+            let lane_path = lane_dir.path();
+            if !lane_path.is_dir() {
+                continue;
+            }
+            let lane_label = lane_dir.file_name().to_string_lossy().to_string();
+            let Ok(files) = std::fs::read_dir(&lane_path) else {
+                continue;
+            };
+            for file in files.flatten() {
+                let path = file.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("html") {
+                    continue;
+                }
+                let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                let Some(seq) = parse_artifact_seq(id) else {
+                    continue; // not an art-<n>-<hex> file — ignore strays
+                };
+                let Ok(bytes) = std::fs::read(&path) else {
+                    continue;
+                };
+                let html = String::from_utf8_lossy(&bytes);
+                let Some(token) = parse_feedback_token(&html) else {
+                    log::debug!("rehydrate: skipping {} (no feedback token)", path.display());
+                    continue;
+                };
+                let title = parse_artifact_title(&html).unwrap_or_else(|| id.to_string());
+                let size = bytes.len() as u64;
+                let mut hasher = Sha256::new();
+                hasher.update(&bytes);
+                let hash = format!("{:x}", hasher.finalize());
+                let tail = format!(".krypton/artifacts/{harness_dir_name}/{lane_label}/{id}.html");
+                let id = id.to_string();
+
+                entries.insert(
+                    id.clone(),
+                    ArtifactEntry {
+                        id: id.clone(),
+                        lane_label: lane_label.clone(),
+                        title,
+                        path,
+                        tail,
+                        state: ArtifactState::RegisteredLive,
+                        size,
+                        hash,
+                        feedback_token: token.clone(),
+                    },
+                );
+                tokens.push((
+                    token,
+                    FeedbackToken {
+                        harness_id: live_harness_id.to_string(),
+                        lane_label: lane_label.clone(),
+                        artifact_id: id,
+                        revoked: false,
+                    },
+                ));
+                max_seq = max_seq.max(seq);
+            }
+        }
+    }
+    (entries, tokens, max_seq)
+}
+
 fn docs_options() -> Options<'static> {
     let mut options = Options::default();
     options.extension.table = true;
@@ -3368,6 +3724,15 @@ fn validate_doc_path(cwd: &StdPath, rel: &str, exts: &[&str]) -> Result<PathBuf,
     Ok(candidate_canon)
 }
 
+/// sha256-hex of a doc file's bytes, for the spec-172 live-reload poll. `None` if
+/// the file can't be read. The path must already be `validate_doc_path`-checked.
+fn doc_file_hash(path: &StdPath) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Some(format!("{:x}", hasher.finalize()))
+}
+
 /// Write the seeded scaffold atomically: write to `<path>.tmp` then rename onto
 /// `<path>`, so an interrupted write never leaves a truncated file. Best-effort
 /// removes the tmp file on any failure (spec 134).
@@ -3529,6 +3894,12 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 .route("/docs", get(handle_docs))
                 .route("/doc", get(handle_doc))
                 .route("/doc-asset", get(handle_doc_asset))
+                // spec 172 — docs-browser inline feedback. Tokenless (keyed by
+                // harness+path, the same addressing the read uses); the POST
+                // injects a turn into the harness's active lane, and `/doc-state`
+                // backs the page's live-reload poll. Same-origin with `/doc`.
+                .route("/doc-state", get(handle_doc_state))
+                .route("/doc-feedback", post(handle_doc_feedback))
                 // spec 149 — artifact inline feedback. Served over loopback HTTP
                 // so the OS-browser page is same-origin with the feedback POST
                 // (no CORS, no `Origin: null`). The token in the path is the sole
@@ -3880,6 +4251,8 @@ mod tests {
             .route("/docs", get(ok))
             .route("/doc", get(ok))
             .route("/doc-asset", get(ok))
+            .route("/doc-state", get(ok))
+            .route("/doc-feedback", post(ok))
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
             .route("/artifact/feedback/{token}", post(ok));
@@ -4064,6 +4437,74 @@ mod tests {
         ));
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn rehydrate_reloads_artifacts_from_disk_across_restart() {
+        // spec 173: a first "session" registers an artifact; a second HookServer
+        // (the restart) re-homed under a DIFFERENT harness id must re-list it from
+        // disk and re-arm its feedback token, routed to the live harness.
+        let tmp = std::env::temp_dir().join(format!("krypton-rehydrate-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let project = tmp.to_string_lossy().to_string();
+
+        let s1 = HookServer::new();
+        s1.init_harness_artifacts("hm-1", Some(project.clone()));
+        let issued = s1.artifact_new("hm-1", "Claude-1", "Recover me").unwrap();
+        let id = issued["id"].as_str().unwrap().to_string();
+        let token = issued["feedbackToken"].as_str().unwrap().to_string();
+        s1.artifact_register("hm-1", "Claude-1", &id).unwrap();
+
+        // Restart: brand-new registry, re-homed under a different harness id.
+        let s2 = HookServer::new();
+        s2.init_harness_artifacts("hm-99", Some(project.clone()));
+
+        // Re-listed in the gallery under the live harness.
+        let gallery = s2.list_all_artifacts_for_gallery();
+        assert_eq!(gallery.len(), 1);
+        assert_eq!(gallery[0]["harnessId"], "hm-99");
+        let rows = gallery[0]["artifacts"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], id);
+        assert_eq!(rows[0]["title"], "Recover me");
+        assert_eq!(rows[0]["state"], "live");
+
+        // The baked token (parsed from the file, not re-minted) resolves and is
+        // re-homed to the live harness so feedback routes to its lanes.
+        match s2.lookup_feedback_token(&token) {
+            FeedbackLookup::Found(info) => {
+                assert_eq!(info.harness_id, "hm-99");
+                assert_eq!(info.lane_label, "Claude-1");
+                assert_eq!(info.artifact_id, id);
+            }
+            _ => panic!("expected the rehydrated token to resolve to Found"),
+        }
+
+        // The frontend replay endpoint surfaces the same row, registered.
+        let replay = s2.list_harness_artifacts("hm-99");
+        assert_eq!(replay.len(), 1);
+        assert_eq!(replay[0]["id"], id);
+        assert_eq!(replay[0]["state"], "registered");
+        assert_eq!(replay[0]["feedbackToken"], token);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn parse_helpers_recover_title_and_token() {
+        let html = "<head><title>Hello &amp; &lt;World&gt;</title></head>\
+            <script>window.__KRYPTON_FEEDBACK__ = { token: \"abc123\", url: \"x\" };</script>";
+        assert_eq!(parse_artifact_title(html).as_deref(), Some("Hello & <World>"));
+        assert_eq!(parse_feedback_token(html).as_deref(), Some("abc123"));
+        // Unreplaced placeholder → no token.
+        assert_eq!(
+            parse_feedback_token("__KRYPTON_FEEDBACK__ token: \"{{feedbackToken}}\""),
+            None
+        );
+        // Seq parsing rejects strays.
+        assert_eq!(parse_artifact_seq("art-7-deadbeef"), Some(7));
+        assert_eq!(parse_artifact_seq("notanart"), None);
+        assert_eq!(parse_artifact_seq("art-7-xyz"), None);
     }
 
     fn telemetry_contract_response(server: &HookServer) -> Response {

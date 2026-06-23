@@ -166,6 +166,7 @@ pub fn run() {
             commands::acp_cancel_pending_artifacts,
             commands::acp_revoke_artifact_feedback,
             commands::acp_refresh_artifact,
+            commands::acp_list_harness_artifacts,
             commands::acp_set_lane_triage_equipped,
             commands::save_temp_image,
             commands::capture_screen,

@@ -353,6 +353,19 @@ pub fn acp_revoke_artifact_feedback(
     hook_server.revoke_feedback_tokens_for_lane(&harness_id, &lane_label)
 }
 
+/// spec 173: list a harness's rehydrated/live artifact entries (shaped like the
+/// `acp-harness-artifact` registered event) so the frontend can replay them into
+/// its mirror on startup. Rehydration runs in `register_harness`, before the
+/// frontend's event listener is attached, so init-time events are lost — the
+/// frontend pulls instead.
+#[tauri::command]
+pub fn acp_list_harness_artifacts(
+    harness_id: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Vec<serde_json::Value> {
+    hook_server.list_harness_artifacts(&harness_id)
+}
+
 /// spec 133: re-stat/re-hash a live artifact after the harness observes a
 /// write/edit to its path, refreshing the card's size/hash. Errors (e.g. the
 /// edit grew the file past the cap) make the card unavailable rather than

@@ -241,5 +241,327 @@
     el.title = d.toLocaleString();
   }
 </script>
+<script>
+  // Preserve the folder-nav (sidebar) scroll position across the full-page
+  // reloads that index navigation triggers (spec 171 decision #9 = a fresh
+  // full page per folder click). Each click is a new URL, so the browser does
+  // NOT restore scroll (it only does that on back/forward) and the sidebar
+  // snaps back to the top — forcing the reader to re-scroll to where they were
+  // in a deep tree. We stash the sidebar scrollTop per harness and restore it
+  // on load. Index-only; the single-file reader has no sidebar.
+  (function () {
+    if (location.pathname !== '/docs') return;
+    var pane = document.querySelector('nav.tree-pane');
+    if (!pane) return;
+    var KEY = 'kds:' + (new URLSearchParams(location.search).get('harness') || '');
+    try {
+      var y = sessionStorage.getItem(KEY);
+      if (y != null) pane.scrollTop = +y;
+    } catch (e) {}
+    var raf = 0;
+    pane.addEventListener('scroll', function () {
+      if (raf) return;
+      raf = requestAnimationFrame(function () {
+        raf = 0;
+        try { sessionStorage.setItem(KEY, String(pane.scrollTop)); } catch (e) {}
+      });
+    }, { passive: true });
+  })();
+</script>
+<script>
+  // spec 172 — docs-browser inline feedback overlay. A mini element/text picker:
+  // hover-highlight + click-to-anchor a passage + comment, POSTed to the harness,
+  // which routes it to its active lane as a system turn. Self-gates to the
+  // single-file reader (`/doc`); the `/docs` index never arms it. Unlike the
+  // artifact overlay (spec 149) a doc has no owning lane and no token — it is a
+  // repo file keyed by harness+path (read from the query, same-origin POST), and
+  // the page is comrak OUTPUT, so the anchor is the QUOTED TEXT + heading trail,
+  // never a DOM selector (the lane edits the source `.md`, not this DOM).
+  (function () {
+    if (location.pathname !== "/doc") return;
+    var qp = new URLSearchParams(location.search);
+    var HARNESS = qp.get("harness") || "";
+    var DOCPATH = qp.get("path") || "";
+    if (!HARNESS || !DOCPATH) return;
+
+    var FEED = "/doc-feedback?harness=" + encodeURIComponent(HARNESS) + "&path=" + encodeURIComponent(DOCPATH);
+    var STATE = "/doc-state?harness=" + encodeURIComponent(HARNESS) + "&path=" + encodeURIComponent(DOCPATH);
+    var SKEY = "kdf:" + HARNESS + ":" + DOCPATH;   // harness+path-scoped sessionStorage
+    var BODY_MAX = 4000, QUOTE_MAX = 2000;
+
+    // ── persisted state ──────────────────────────────────────────────────
+    var pins = [];            // {id,pinNumber,body,quote,headingPath,createdAt,sent,drifted}
+    var pinSeq = 0;
+    var draft = null;
+    var batchId = null;
+    try {
+      var saved = JSON.parse(sessionStorage.getItem(SKEY) || "null");
+      if (saved) {
+        pins = (saved.pins || []).filter(function (p) { return !p.sent; });
+        pinSeq = saved.pinSeq || pins.length;
+        draft = saved.draft || null;
+        batchId = saved.batchId || null;
+      }
+    } catch (e) {}
+    function persist() {
+      try {
+        sessionStorage.setItem(SKEY, JSON.stringify({ pins: pins, pinSeq: pinSeq, draft: draft, batchId: batchId }));
+      } catch (e) {}
+    }
+
+    var armed = false, disabled = false, cycleIdx = -1;
+    var lastHash = null, pendingReload = null;
+    var SCOPE = document.querySelector("article.doc") || document.body;
+
+    // ── self-injected DOM (theme-token styled, fixed, high z) ──────────────
+    var ROOT = document.createElement("div");
+    ROOT.setAttribute("data-kdf", "root");
+    ROOT.innerHTML =
+      '<style>' +
+      '[data-kdf]{font-family:var(--mono,monospace);box-sizing:border-box}' +
+      '#kdf-pill{position:fixed;right:12px;bottom:12px;z-index:2147483646;' +
+        'background:var(--card,#21242a);color:var(--fg,#eaecef);border:1px solid var(--border,#2f353d);' +
+        'border-radius:6px;padding:6px 10px;font-size:12px;line-height:1.4;cursor:pointer;' +
+        'max-width:280px;box-shadow:0 2px 12px rgba(0,0,0,.4)}' +
+      '#kdf-pill b{color:var(--accent,#fcd535)}' +
+      '#kdf-pill .kdf-sub{color:var(--muted,#707a8a);display:block;margin-top:2px;font-size:11px}' +
+      '#kdf-hi{position:fixed;z-index:2147483645;pointer-events:none;border:2px solid var(--accent,#fcd535);' +
+        'background:rgba(252,213,53,.12);border-radius:3px;display:none}' +
+      '#kdf-box{position:fixed;right:12px;bottom:52px;z-index:2147483647;width:300px;' +
+        'background:var(--card,#21242a);color:var(--fg,#eaecef);border:1px solid var(--accent,#fcd535);' +
+        'border-radius:6px;padding:10px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5)}' +
+      '#kdf-box .kdf-tgt{color:var(--muted,#707a8a);font-size:11px;margin-bottom:6px;' +
+        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '#kdf-box textarea{width:100%;box-sizing:border-box;min-height:64px;resize:vertical;' +
+        'font:inherit;font-size:12px;background:var(--bg,#17191d);color:var(--fg,#eaecef);' +
+        'border:1px solid var(--border,#2f353d);border-radius:4px;padding:6px}' +
+      '#kdf-box .kdf-row{display:flex;justify-content:space-between;align-items:center;margin-top:8px}' +
+      '#kdf-box .kdf-keys{color:var(--muted,#707a8a);font-size:10px}' +
+      '#kdf-box button,#kdf-pill button{font:inherit;font-size:11px;cursor:pointer;' +
+        'background:transparent;border:1px solid var(--border,#2f353d);color:var(--accent,#fcd535);' +
+        'border-radius:4px;padding:3px 9px;margin-left:4px}' +
+      '</style>' +
+      '<div id="kdf-hi"></div>' +
+      '<div id="kdf-pill"></div>' +
+      '<div id="kdf-box">' +
+        '<div class="kdf-tgt" id="kdf-tgt"></div>' +
+        '<textarea id="kdf-text" placeholder="describe the change…"></textarea>' +
+        '<div class="kdf-row"><span class="kdf-keys">⌘↵ save · esc cancel</span>' +
+          '<span><button id="kdf-cancel" type="button">cancel</button>' +
+          '<button id="kdf-save" type="button">save</button></span></div>' +
+      '</div>';
+    document.body.appendChild(ROOT);
+    var pillEl = ROOT.querySelector("#kdf-pill");
+    var hiEl = ROOT.querySelector("#kdf-hi");
+    var boxEl = ROOT.querySelector("#kdf-box");
+    var tgtEl = ROOT.querySelector("#kdf-tgt");
+    var textEl = ROOT.querySelector("#kdf-text");
+
+    function cap(s, n) { s = s == null ? "" : String(s); return s.length > n ? s.slice(0, n) : s; }
+    function inOverlay(el) { return !!(el && el.closest && el.closest("[data-kdf]")); }
+    function inDoc(el) { return !!(el && SCOPE.contains(el)); }
+
+    // ── heading trail: nearest preceding heading + its higher-level ancestors ──
+    function headText(h) { return cap((h.textContent || "").trim(), 120); }
+    function headingPathFor(el) {
+      var heads = Array.prototype.slice.call(SCOPE.querySelectorAll("h1,h2,h3,h4,h5,h6"));
+      var preceding = heads.filter(function (h) {
+        return h === el || (el.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_PRECEDING);
+      });
+      if (!preceding.length) return [];
+      var idx = preceding.length - 1;
+      var level = +preceding[idx].tagName.slice(1);
+      var path = [headText(preceding[idx])];
+      for (var j = idx - 1; j >= 0 && level > 1; j--) {
+        var lv = +preceding[j].tagName.slice(1);
+        if (lv < level) { path.unshift(headText(preceding[j])); level = lv; }
+      }
+      return path;
+    }
+
+    // ── pick the most specific (shortest-text) element containing a quote ──
+    function resolveByQuote(q) {
+      if (!q) return null;
+      q = String(q).trim();
+      if (!q) return null;
+      var els = SCOPE.querySelectorAll("p,li,h1,h2,h3,h4,h5,h6,td,th,blockquote,pre,code,a,strong,em");
+      var best = null, bestLen = Infinity;
+      for (var i = 0; i < els.length; i++) {
+        var t = els[i].textContent || "";
+        if (t.indexOf(q) !== -1 && t.length < bestLen) { best = els[i]; bestLen = t.length; }
+      }
+      return best;
+    }
+
+    function highlight(el) {
+      if (!el) { hiEl.style.display = "none"; return; }
+      var r = el.getBoundingClientRect();
+      hiEl.style.left = r.left + "px"; hiEl.style.top = r.top + "px";
+      hiEl.style.width = r.width + "px"; hiEl.style.height = r.height + "px";
+      hiEl.style.display = "block";
+    }
+    function flashHighlight(el) {
+      highlight(el);
+      window.clearTimeout(flashHighlight._t);
+      flashHighlight._t = window.setTimeout(function () { if (!armed) hiEl.style.display = "none"; }, 1200);
+    }
+
+    var flashMsg = null;
+    function flash(msg) { flashMsg = msg; renderPill(); window.clearTimeout(flash._t); flash._t = window.setTimeout(function () { flashMsg = null; renderPill(); }, 2200); }
+
+    function renderPill() {
+      var unsent = pins.filter(function (p) { return !p.sent; }).length;
+      var drifted = pins.filter(function (p) { return p.drifted; }).length;
+      var main, sub;
+      if (disabled) { main = "✦ doc no longer available"; sub = "the file or harness is gone"; }
+      else if (armed) { main = "✦ click a passage"; sub = "esc to cancel"; }
+      else {
+        main = "✦ doc comments (" + pins.length + ")";
+        var bits = ["c add"];
+        if (unsent > 0) bits.push("s send " + unsent);
+        if (pins.length > 0) bits.push("j/k cycle");
+        sub = bits.join(" · ");
+      }
+      if (flashMsg) sub = flashMsg;
+      if (drifted > 0 && !flashMsg) sub += " · " + drifted + " drifted";
+      pillEl.innerHTML = "<b>" + main + "</b><span class='kdf-sub'>" + sub + "</span>";
+    }
+
+    function arm() { if (disabled) return; armed = true; renderPill(); }
+    function disarm() { armed = false; hiEl.style.display = "none"; renderPill(); maybeDeferredReload(); }
+
+    function onMove(e) {
+      if (!armed) return;
+      var el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el || inOverlay(el) || !inDoc(el)) { hiEl.style.display = "none"; return; }
+      highlight(el);
+    }
+    function onClick(e) {
+      if (!armed) return;
+      var el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el || inOverlay(el) || !inDoc(el)) return;
+      e.preventDefault(); e.stopPropagation();
+      armed = false;
+      var sel = "";
+      try { sel = String(window.getSelection ? window.getSelection() : "").trim(); } catch (x) {}
+      var quote = sel || (el.textContent || "").trim();
+      draft = { quote: cap(quote, QUOTE_MAX), headingPath: headingPathFor(el), body: "" };
+      openComposer();
+    }
+
+    function openComposer() {
+      if (!draft) return;
+      var head = (draft.headingPath || []).join(" › ");
+      tgtEl.textContent = (head ? head + "  " : "") + (draft.quote ? '“' + cap(draft.quote, 48) + '”' : "");
+      textEl.value = draft.body || "";
+      boxEl.style.display = "block";
+      hiEl.style.display = "none";
+      var el = resolveByQuote(draft.quote); if (el) highlight(el);
+      renderPill();
+      textEl.focus();
+    }
+    function closeComposer() { boxEl.style.display = "none"; renderPill(); }
+    function saveComposer() {
+      if (!draft) { closeComposer(); return; }
+      var body = cap(textEl.value.trim(), BODY_MAX);
+      if (!body) { flash("comment is empty"); return; }
+      pinSeq += 1;
+      pins.push({
+        id: "d-" + Date.now() + "-" + Math.random().toString(16).slice(2, 8),
+        pinNumber: pinSeq, body: body, quote: draft.quote, headingPath: draft.headingPath,
+        createdAt: Date.now(), sent: false, drifted: false
+      });
+      draft = null; persist(); closeComposer(); maybeDeferredReload();
+    }
+    function cancelComposer() { draft = null; persist(); closeComposer(); hiEl.style.display = "none"; maybeDeferredReload(); }
+
+    // ── send the unsent batch (idempotent on batchId) ──────────────────────
+    function sendBatch() {
+      if (disabled) return;
+      var unsent = pins.filter(function (p) { return !p.sent && !p.drifted; });
+      if (!unsent.length) { flash("nothing to send"); return; }
+      if (!batchId) batchId = "b-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+      persist();
+      var payload = {
+        batchId: batchId,
+        comments: unsent.map(function (p) {
+          return { id: p.id, pinNumber: p.pinNumber, body: p.body, quote: p.quote, headingPath: p.headingPath, createdAt: p.createdAt };
+        })
+      };
+      flash("sending…");
+      fetch(FEED, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+        .then(function (res) {
+          if (res.ok) {
+            unsent.forEach(function (p) { p.sent = true; });
+            batchId = null; persist();
+            flash("queued " + payload.comments.length + " ✓");
+          } else if (res.status === 409) { flash("no active lane — open one in this harness"); }
+          else if (res.status === 404) { disabled = true; renderPill(); flash("doc no longer available"); }
+          else if (res.status === 413) { flash("too large — trim a comment"); }
+          else if (res.status === 503) { flash("queued — retrying, press s"); }
+          else { flash("send failed (" + res.status + ")"); }
+        })
+        .catch(function () { flash("offline — press s to retry"); });
+    }
+
+    function cyclePins(dir) {
+      if (!pins.length) return;
+      cycleIdx = (cycleIdx + dir + pins.length) % pins.length;
+      var pin = pins[cycleIdx];
+      var el = resolveByQuote(pin.quote);
+      if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); flashHighlight(el); }
+      flash("pin #" + pin.pinNumber + ": " + cap(pin.body, 40));
+    }
+
+    // ── live-reload poll (hash change → reload, deferred while composing) ───
+    function composing() { return boxEl.style.display === "block" || armed; }
+    function maybeDeferredReload() { if (pendingReload && !composing()) { location.reload(); } }
+    function poll() {
+      if (disabled) return;
+      fetch(STATE, { cache: "no-store" }).then(function (res) {
+        if (res.status === 404) { disabled = true; renderPill(); return; }
+        if (!res.ok) return;
+        return res.json();
+      }).then(function (st) {
+        if (!st || !st.hash) return;
+        if (lastHash === null) { lastHash = st.hash; return; }
+        if (st.hash !== lastHash) {
+          lastHash = st.hash; pendingReload = st.hash;
+          if (!composing()) location.reload();
+        }
+      }).catch(function () { /* server gone — stop silently; manual refresh works */ });
+    }
+
+    // reconcile loaded pins against the current DOM (drift = quote text gone)
+    pins.forEach(function (p) { p.drifted = !resolveByQuote(p.quote); });
+    if (draft) openComposer();
+
+    document.addEventListener("mousemove", onMove, true);
+    document.addEventListener("click", onClick, true);
+    pillEl.addEventListener("click", function () { if (disabled) return; if (armed) disarm(); else arm(); });
+    ROOT.querySelector("#kdf-save").addEventListener("click", saveComposer);
+    ROOT.querySelector("#kdf-cancel").addEventListener("click", cancelComposer);
+    textEl.addEventListener("input", function () { if (draft) { draft.body = textEl.value; persist(); } });
+    document.addEventListener("keydown", function (e) {
+      if (boxEl.style.display === "block") {
+        if (e.key === "Escape") { e.preventDefault(); cancelComposer(); }
+        else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveComposer(); }
+        return;
+      }
+      var t = e.target;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || (t && t.isContentEditable)) return;
+      if (e.key === "Escape" && armed) { e.preventDefault(); disarm(); }
+      else if (e.key === "c" && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); arm(); }
+      else if (e.key === "s" && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); sendBatch(); }
+      else if (e.key === "j") { e.preventDefault(); cyclePins(1); }
+      else if (e.key === "k") { e.preventDefault(); cyclePins(-1); }
+    }, true);
+    window.addEventListener("scroll", function () { if (armed) hiEl.style.display = "none"; }, true);
+
+    renderPill();
+    poll();
+    setInterval(poll, 2500);
+  })();
+</script>
 </body>
 </html>

@@ -319,6 +319,38 @@ export interface ArtifactFeedbackEnvelope {
   sentAt: number;
 }
 
+// Docs browser inline feedback (spec 172). The browser POSTs comments captured
+// on a rendered `/doc` page; the harness routes them to its ACTIVE lane as a
+// system turn. Unlike artifact feedback (spec 149), a doc has no owning lane and
+// no token — it is a repo file addressed by harness + path. The page is comrak
+// HTML, not the source markdown, so the anchor is the QUOTED TEXT + enclosing
+// heading trail (a cssSelector into the rendered DOM is meaningless to a lane
+// editing the `.md`); the lane locates the passage in source by that quote.
+export interface DocComment {
+  /** stable client id, for frontend de-dupe. */
+  id: string;
+  /** 1-based, stable per page ("pin #3"). */
+  pinNumber: number;
+  /** the user's comment text. */
+  body: string;
+  /** rendered text the user selected / the element's text — the lane greps for it. */
+  quote?: string;
+  /** nearest enclosing heading trail, outermost→innermost ("Decisions" › "Path validation"). */
+  headingPath: string[];
+  createdAt: number;
+}
+
+export interface DocFeedbackEnvelope {
+  kind: 'doc_feedback';
+  /** idempotency key — a retried POST with the same id is dropped. */
+  batchId: string;
+  harnessId: string;
+  /** repo-relative `.md` path under the harness <cwd>. */
+  docPath: string;
+  comments: DocComment[];
+  sentAt: number;
+}
+
 // ─── Diff review comments (spec 158) ───
 // Human→lane inline review on the working diff. A comment carries a precise
 // file:line anchor (intrinsic to the diff, no synthesized selector) plus the

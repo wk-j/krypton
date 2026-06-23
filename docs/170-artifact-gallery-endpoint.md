@@ -24,6 +24,14 @@ The artifact gallery is a **second fixed page served by the built-in loopback HT
 
 ## Gallery = active set (registry), NOT disk
 
+> **Reversed by spec 173 (rev 1 of this doc no longer holds).** The "no disk
+> rehydration on startup" decision below was reversed: `init_harness_artifacts`
+> now rebuilds the in-memory registry from the whole on-disk tree under the
+> project's `.krypton/artifacts/` and re-homes every artifact under the live
+> harness, so a prior session's artifacts re-list and stay feedback-capable
+> after a restart. See `docs/173-gallery-disk-rehydration.md`. The text below is
+> kept for historical context; Caveat 2 no longer applies.
+
 The gallery reads **only the in-memory artifact registry** (`HookServer.artifacts: HashMap<String, HarnessArtifactStore>`). A disposed/closed harness is removed from that registry, so it delists automatically — the gallery shows only artifacts belonging to harnesses whose lanes are currently live. This is by design: **disk is append-only history; the registry is the active set.** There is intentionally no disk rehydration on startup, so a prior session's registered artifacts persist on disk yet do not reappear in the gallery after a restart (see "Caveats" below).
 
 ## Append-only artifact files (Slice 4 — resolved fork)
@@ -52,8 +60,8 @@ Shipped as-is (Option A) because:
 
 ## Caveats (from cross-review, documented by design)
 
-1. **Unbounded on-disk growth.** With `sweep_stale_artifacts` gone, `.krypton/artifacts/<harnessId>/<lane>/*.html` accumulates forever across restarts. There is no in-app GC, retention policy, or bound. Reclaiming disk is a manual `rm -rf .krypton/artifacts/`. The `.gitignore` is still auto-managed (so no git pollution). A future age/size-based GC is the natural follow-up if growth becomes a problem.
-2. **Persisted files are not browsable after restart.** `init_harness_artifacts` builds an empty `entries` map on every start; there is no disk rehydration. A prior session's registered artifacts persist on disk but vanish from the gallery the moment their harness closes — exactly the "gallery lists only active lanes' folders" requirement. This is correct by design but subtle: someone reading "files persist" may later expect them to re-list.
+1. **Unbounded on-disk growth.** With `sweep_stale_artifacts` gone, `.krypton/artifacts/<harnessId>/<lane>/*.html` accumulates forever across restarts. There is no in-app GC, retention policy, or bound. Reclaiming disk is a manual `rm -rf .krypton/artifacts/`. The `.gitignore` is still auto-managed (so no git pollution). A future age/size-based GC is the natural follow-up if growth becomes a problem. *(Spec 173 makes this growth more visible — every accumulated artifact now rehydrates and re-lists on startup, by explicit user direction: no retention.)*
+2. ~~**Persisted files are not browsable after restart.**~~ **Reversed by spec 173.** `init_harness_artifacts` now rehydrates the registry from the whole on-disk tree on startup (re-homed under the live harness), so prior-session artifacts re-list and stay feedback-capable after a restart. See `docs/173-gallery-disk-rehydration.md`.
 3. **Token enumerable over loopback** — see Security posture above.
 
 ## Affected Files

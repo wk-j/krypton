@@ -219,6 +219,17 @@ Theming behaviour is deliberately **per-surface**, by what the page is for:
 When adding a new loopback surface, pick the matching policy — don't add a
 toggle to a status wall or strip auto-theming from a reader.
 
+### Feedback overlay (artifact scaffold + docs browser)
+
+Both the artifact scaffold (spec 149) and the docs browser (spec 172) self-inject
+a small fixed comment overlay — a bottom-right pill, an accent hover-highlight
+box, and a composer card — built from the shared tokens (`--card`, `--accent`,
+`--border`, `--muted`, mono font), so it reads as one component across both
+surfaces. It is a high-`z-index` fixed widget, never inline chrome; keep it
+token-driven (no hard-coded colors beyond the `var(..., fallback)` defaults that
+let it render before the page's `:root` loads) and obey the house rules — full
+borders, no left rails, one accent.
+
 ## House rules
 
 1. **No left accent borders (`border-left` rails).** To color-code a block use a

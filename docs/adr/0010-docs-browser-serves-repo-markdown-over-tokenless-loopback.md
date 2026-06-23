@@ -60,6 +60,33 @@ This keeps per-file URLs **bookmarkable** (the value spec 168 established for th
 dashboard) and lets intra-repo `.md` links be rewritten to plain `href`s for
 in-browser navigation with near-zero client JS.
 
+## Amendment (spec 172) — tokenless feedback adds a write channel
+
+The Docs browser is no longer strictly read-only. Spec 172 adds an inline
+**feedback overlay** to the `/doc` reader: the user points at a passage, types a
+comment, and the page POSTs it to `POST /doc-feedback?harness=<id>&path=<rel>`,
+which **injects a system turn into the harness's active lane** (a doc has no
+owning lane, so the recipient is resolved by the frontend, not a token). A sibling
+`GET /doc-state` returns the file's sha256 for the overlay's live-reload poll.
+
+The feedback POST stays **tokenless**, keyed by the same `harness`+`path` the read
+uses, and runs the same `validate_doc_path` containment check (only a real `.md`
+under `<cwd>` is a valid target). This was an explicit user decision (Q1=A), for
+consistency with the surface's existing tokenless posture and the already-accepted
+loopback risks (the `/artifacts` gallery exposes the artifact feedback token, so
+loopback turn-injection is already reachable; spec 149/170).
+
+### Added consequence
+
+Turn-injection over loopback is a **write** side-effect, more sensitive than the
+prior reads: any local process reaching `127.0.0.1` can inject a prompt into the
+active lane of any open harness, with no token. The contents are framed as
+untrusted `<doc-comment>` data in the composed turn (never instructions) and the
+server caps comment count/body/quote — but the channel's reachability is the
+accepted trade-off. The cheap hardening declined here (a per-server-session
+feedback nonce baked into each served `/doc` page; Q1=B) remains a future option
+if the posture is revisited.
+
 ## Considered Options
 
 - **Token-per-file** (like artifacts). Rejected: the token would change on every

@@ -3,6 +3,19 @@
 > Status: Implemented (rev 3)
 > Date: 2026-06-21
 
+## Extended by spec 172 — inline feedback
+
+The `/doc` reader gained a **point-and-comment feedback overlay** (spec 172,
+modelled on the artifact overlay of spec 149): the user anchors a passage by its
+quoted text + heading trail, types a comment, and the page POSTs it to
+`POST /doc-feedback?harness=<id>&path=<rel>` (tokenless, same addressing as the
+read), which injects a system turn into the harness's **active** lane. A sibling
+`GET /doc-state` returns the file's sha256 so the overlay can live-reload the page
+when the lane edits the source — this **amends decision #9 (no polling) for `/doc`
+only**; the `/docs` index stays poll-free. The overlay is injected client-side and
+self-gates on `location.pathname === "/doc"`. ADR-0010 is amended (the surface is
+no longer strictly read-only). See `docs/172-docs-browser-inline-feedback.md`.
+
 ## As-built (rev 3)
 
 Index `/docs` reworked from a single full-tree sidebar into a **Finder-style
@@ -25,6 +38,14 @@ explicit user direction:
   no chrono dependency); a tiny page script localises the label to the viewer's
   locale. Locked by `format_doc_mtime_renders_utc_label`.
 - **UI centred on screen** — `.layout` gets `max-width: 1180px; margin: 0 auto`.
+- **Sidebar scroll survives index navigation** — because each folder click is a
+  full-page reload to a new URL (#9), the browser does not restore scroll
+  (back/forward only), so the folder-nav sidebar snapped back to the top on every
+  click and the reader lost their place in a deep tree. A tiny page script
+  stashes the `nav.tree-pane` `scrollTop` in `sessionStorage` (keyed per harness)
+  and restores it on load; the `.content-pane` still resets to the top (correct —
+  it shows a different folder). Index-only (`location.pathname === "/docs"`); the
+  single-file reader has no sidebar. Consistent with #9's "near-zero client JS".
 
 This supersedes rev-1 decisions #8 (single left tree + right content pane) and #9
 (file links live in the sidebar). Path validation / rendering (`/doc`,
