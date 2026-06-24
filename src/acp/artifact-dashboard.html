@@ -46,6 +46,18 @@
   .gauge-val b { font-family: var(--mono); font-size: 30px; color: var(--accent);
                  font-variant-numeric: tabular-nums; }
   .gauge-val span { display: block; font-size: 10px; color: var(--muted); }
+  .flags { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .flag { border: 1px solid var(--border); border-radius: 8px; background: rgba(252,213,53,.05); padding: 10px; }
+  .flag-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+  .flag-lane { font-family: var(--mono); font-size: 11px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .flag-tier { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .flag-tier.rev-irreversible { color: var(--del); }
+  .flag-tier.rev-costly { color: var(--accent); }
+  .flag-tier.rev-reversible { color: var(--add); }
+  .flag-q { font-size: 13px; color: var(--fg); overflow-wrap: anywhere; }
+  .flag-meta { margin-top: 7px; display: grid; gap: 3px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .flag-meta b { color: var(--fg); font-weight: 500; }
+  .flag-empty { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 10px 0; }
   .lanes { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 12px; }
   .lane { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; }
   .lane-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -114,7 +126,7 @@
 (function () {
   "use strict";
 
-  var SCHEMA_VERSION = 2;
+  var SCHEMA_VERSION = 3;
   var POLL_MS = 1000;
   var FEED_CAP = 14;
   var MEM_FULL_MB = 2048;   // memory-bar full scale (spec 169)
@@ -157,6 +169,9 @@
     var m = Math.floor(s / 60);
     if (m < 60) return m + "m " + (s % 60) + "s";
     return Math.floor(m / 60) + "h " + (m % 60) + "m";
+  }
+  function formatAge(ts) {
+    return ts ? formatElapsed(Date.now() - ts) + " ago" : "";
   }
   function esc(s) {
     return String(s == null ? "" : s)
@@ -249,6 +264,27 @@
         esc(p.backendId) + ' · ' + esc(p.status || "unknown") + esc(cwd) + '</li>';
     }).join("");
   }
+  function renderAttentionItems(el, items) {
+    var rows = items || [];
+    if (!rows.length) {
+      el.innerHTML = '<div class="flag-empty">no open attention flags</div>';
+      return;
+    }
+    el.innerHTML = rows.map(function (item) {
+      var tier = item.reversibility || "costly";
+      var traded = (item.tradedOff || []).join("; ");
+      return '<div class="flag">' +
+        '<div class="flag-head"><span class="flag-lane">' + esc(item.laneName || item.laneId || "-") +
+        '</span><span class="flag-tier rev-' + esc(tier) + '">' + esc(tier) + (item.createdAt ? " · " + esc(formatAge(item.createdAt)) : "") + '</span></div>' +
+        '<div class="flag-q">' + esc(item.question || "untitled attention flag") + '</div>' +
+        '<div class="flag-meta">' +
+        '<span><b>because</b> ' + esc(item.rationale || "-") + '</span>' +
+        '<span><b>chosen</b> ' + esc(item.chosen || "-") + '</span>' +
+        '<span><b>uncertainty</b> ' + esc(item.uncertainty || "-") + '</span>' +
+        (traded ? '<span><b>tradeoff</b> ' + esc(traded) + '</span>' : '') +
+        '</div></div>';
+    }).join("");
+  }
   function harnessShell(snap) {
     var id = snap.harnessId || "harness";
     var el = harnessEls[id];
@@ -257,7 +293,7 @@
     el.className = "harness";
     el.innerHTML =
       '<div class="harness-head"><div><h2></h2><div class="harness-meta"></div></div><div class="harness-meta triage"></div></div>' +
-      '<div class="layout"><div class="gauge"><h3>Attention triage</h3><canvas></canvas><div class="gauge-val"><b>0</b><span>flags in review queue</span></div></div>' +
+      '<div class="layout"><div class="gauge"><h3>Attention triage</h3><canvas></canvas><div class="gauge-val"><b>0</b><span>flags in review queue</span></div><div class="flags"></div></div>' +
       '<div><h3>Active lanes</h3><div class="lanes"></div><ul class="foreign" hidden></ul></div></div>' +
       '<div class="feed"></div>';
     R("harnesses").appendChild(el);
@@ -438,6 +474,7 @@
         }
       });
       renderForeign(el.querySelector(".foreign"), snap.foreignPeers || []);
+      renderAttentionItems(el.querySelector(".flags"), snap.attention && snap.attention.items ? snap.attention.items : []);
       renderFeed(el.querySelector(".feed"), snap.recentEvents || []);
       drawGauge(el, snap);
     });

@@ -16,7 +16,7 @@ import type {
   ReviewOutcome,
 } from './types';
 
-const TELEMETRY_SCHEMA_VERSION = 2;
+const TELEMETRY_SCHEMA_VERSION = 3;
 const TELEMETRY_DEBOUNCE_MS = 300;
 const RECENT_EVENT_CAP = 14;
 
@@ -49,6 +49,19 @@ export interface TelemetryEvent {
   detail?: string;
 }
 
+export interface TelemetryAttentionItem {
+  id: string;
+  laneId: string;
+  laneName: string;
+  createdAt: number;
+  question: string;
+  chosen: string;
+  rationale: string;
+  tradedOff: string[];
+  uncertainty: string;
+  reversibility: Reversibility;
+}
+
 export interface TelemetrySnapshot {
   schemaVersion: number;
   version: number;
@@ -58,6 +71,7 @@ export interface TelemetrySnapshot {
   attention: {
     openCount: number;
     maxReversibility: Reversibility | null;
+    items: TelemetryAttentionItem[];
   };
   reviewTotal: number;
   highPriorityTotal: number;
@@ -170,6 +184,7 @@ export class HarnessTelemetryPublisher {
     const lanes = this.buildLanes();
     const previous = this.previousSnapshot;
     this.appendLaneDiffEvents(previous, lanes);
+    const openItems = this.options.triageStore.openItems();
     const version = this.version + 1;
     this.version = version;
     const snapshot: TelemetrySnapshot = {
@@ -180,7 +195,8 @@ export class HarnessTelemetryPublisher {
       generatedAt: Date.now(),
       attention: {
         openCount: this.options.triageStore.openCount(),
-        maxReversibility: this.options.triageStore.openItems()[0]?.reversibility ?? null,
+        maxReversibility: openItems[0]?.reversibility ?? null,
+        items: this.buildAttentionItems(openItems, lanes),
       },
       reviewTotal: this.options.reviewQualityStore.totalReviews(),
       highPriorityTotal: this.options.reviewPriorityStore.highCount(),
@@ -195,6 +211,22 @@ export class HarnessTelemetryPublisher {
     };
     this.previousSnapshot = snapshot;
     return snapshot;
+  }
+
+  private buildAttentionItems(items: JudgementItem[], lanes: TelemetryLane[]): TelemetryAttentionItem[] {
+    const namesById = new Map(lanes.map((lane) => [lane.id, lane.displayName]));
+    return items.map((item) => ({
+      id: item.id,
+      laneId: item.laneId,
+      laneName: namesById.get(item.laneId) ?? item.laneId,
+      createdAt: item.createdAt,
+      question: item.question,
+      chosen: item.chosen,
+      rationale: item.rationale,
+      tradedOff: [...item.tradedOff],
+      uncertainty: item.uncertainty,
+      reversibility: item.reversibility,
+    }));
   }
 
   private buildLanes(): TelemetryLane[] {

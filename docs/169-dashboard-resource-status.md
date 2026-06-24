@@ -21,7 +21,7 @@ Surface per-lane CPU%/RSS on the dashboard as a **live CPU sparkline + memory ba
 - **The publisher rebuilds on `schedule()` (300 ms debounce).** Today only LaneBus events call it (no periodic timer). Option A-hybrid adds **one** extra caller: `pollMetrics()` calls `telemetryPublisher?.schedule()` after refreshing `metricsBySession`, **gated on `anyLaneActive()`**. Spaced 2 s apart, each nudge collapses to one publish → ~2 s cadence while active, none while idle.
 - **History stays client-side.** The dashboard already polls `/telemetry` ~1 s and keeps per-lane `runtimes[key]` (a ring buffer + a `pulse` canvas, currently a *synthetic* activity heartbeat). We repurpose that canvas into a **real CPU sparkline**: each poll pushes the latest `cpuPercent` into the ring. The snapshot stays O(lanes) — no series in the payload (addresses the "no history in snapshot" concern while still giving a chart).
 - **Key mapping wrinkle (Codex-2):** the accessor must map `lane.id → lane.client?.sessionId → metricsBySession`. `lane.sessionId` is the ACP *logical* session **string** and will not key the numeric `Map<number, …>`. The accessor lives in `AcpHarnessView` (owns both) so the publisher never sees the dual key.
-- **Schema constant must move in lockstep (Codex-2):** `artifact-dashboard.html` filters snapshots on an **exact** `SCHEMA_VERSION` match. Bumping `TELEMETRY_SCHEMA_VERSION` 1→2 without bumping the page constant in the same patch makes the page drop every new snapshot as a mismatch. Both change together.
+- **Schema constant must move in lockstep (Codex-2):** `artifact-dashboard.html` filters snapshots on an **exact** `SCHEMA_VERSION` match. Bumping `TELEMETRY_SCHEMA_VERSION` without bumping the page constant in the same patch makes the page drop every new snapshot as a mismatch. Both change together. Resource status introduced schema v2; attention-flag detail rows introduced schema v3.
 
 ## Prior Art
 
@@ -99,7 +99,7 @@ None.
 - **Lane with no client session yet** → `metricsFor` returns `null` → "—".
 - **CPU > 100%** (multi-core tree sum) → shown as-is; the sparkline auto-scales (`peak = max(100, observed) × 1.1`).
 - **Cold start of the ring** → buffer pre-filled with the first sample so the line doesn't sweep in from zero.
-- **schemaVersion 1 page vs 2 snapshot (or vice-versa)** → page and snapshot are co-deployed (`include_str!`), so this is only transient; the exact-match filter then hides stale snapshots until reload — acceptable.
+- **schemaVersion mismatch** → page and snapshot are co-deployed (`include_str!`), so this is only transient; the exact-match filter then hides stale snapshots until reload — acceptable.
 
 ## Open Questions
 
