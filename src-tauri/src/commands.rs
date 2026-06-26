@@ -286,6 +286,18 @@ pub fn acp_control_reply(
     Ok(())
 }
 
+/// Push a live harness event from the frontend (the state authority) to the
+/// control server's SSE subscribers. Best-effort; no-op when nobody is
+/// listening. See `docs/175-harness-web-control-api.md`.
+#[tauri::command]
+pub fn acp_control_publish(
+    event: crate::control::ControlStreamEvent,
+    control_server: State<'_, Arc<ControlServer>>,
+) -> Result<(), String> {
+    control_server.publish(event);
+    Ok(())
+}
+
 /// Load the ACP Harness directive config (`~/.config/krypton/acp-harness.toml`),
 /// creating an empty default file when missing so the user has something to
 /// hand-edit. See `docs/124-acp-harness-directive-management.md`.

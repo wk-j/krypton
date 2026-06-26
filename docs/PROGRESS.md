@@ -21,6 +21,52 @@
 
 ## Recent Landings
 
+- **Extension Obsidian-grade content extraction (spec 177)** — When the popup is
+  opened with **no selection**, the extension now extracts the page's main content
+  as Markdown client-side instead of sending URL-only, so pages a lane can't fetch
+  server-side (Reddit, YouTube, login-walled, JS-rendered SPAs) still work. Uses
+  **Defuddle** (`defuddle/full`, the library behind Obsidian Web Clipper) bundled by
+  esbuild into `extension/dist/content.bundle.js` and injected on demand via
+  `chrome.scripting.executeScript` (keeps the no-persistent-content-script model of
+  spec 176). A selection always wins; `{page}`/`{author}` template placeholders added;
+  the full extracted page is sent (no length cap — Open Question #2). New `extension/package.json`
+  + `make extension` build step (run from `make install`). See
+  `docs/177-harness-extension-content-extraction.md`.
+- **Harness browser extension + native-messaging bridge (spec 176)** — A
+  Chrome/Chromium MV3 extension (`extension/`) that sends the current page
+  selection into a running harness lane as a chosen *action* (predefined prompt:
+  Explain / Summarize / Translate / Find issues / Custom…, editable in the
+  options page). It is a thin client of the control API (doc 175): the popup
+  reads `lane.list` to pick a lane and `POST`s `lane.send`. **Zero-config token
+  discovery** via a new Native Messaging host — `krypton-bridge`
+  (`src-tauri/src/bin/krypton-bridge.rs`) reads the `0600` control descriptor as
+  the user and returns `{url, token, pid}` over the stdio length-prefixed
+  protocol; only the extension whose pinned ID matches the manifest's
+  `allowed_origins` can launch it. Krypton writes the host manifest into the
+  browser's `NativeMessagingHosts` dir on launch (`native_host.rs`, gated by
+  `[acp_controller].install_native_host` + `native_host_browsers`). The control
+  API now binds a **fixed port 8766** (`[acp_controller].port`, ephemeral
+  fallback) so the extension needs no port discovery. Selection captured via
+  `chrome.scripting.executeScript` (no persistent content script). `make install`
+  ships `krypton-bridge` alongside `kryptonctl`. Backend build + clippy + fmt +
+  3 native_host tests green; extension JSON/JS validated. See
+  `docs/176-harness-browser-extension.md`.
+- **Harness web control API + SSE stream (spec 175)** — Extends the existing
+  authenticated control server (`control.rs`, doc 154) so a separate same-machine
+  web app can remote-control a running harness with full feature coverage and a
+  live feed (Option A; frontend stays the authority per ADR-0007). Adds **(1)** a
+  `GET /control/v1/events` Server-Sent Events stream — the frontend pushes the
+  harness events it already processes (`src/acp/acp-harness-view.ts` event sink +
+  status transitions) through a new `acp_control_publish` command into a
+  per-server `broadcast` channel that Rust fans out to subscribers (auth via
+  bearer header or `?token=` for `EventSource`; `ready`/`gap`/heartbeat frames;
+  text-delta coalescing to ~30 ms in `src/acp/control-publish.ts`); **(2)** new
+  read operations `attention.list/resolve`, `artifact.list`, `lane.status`,
+  `lane.commands`, `lane.metrics`; **(3)** opt-in exact-origin CORS
+  (`[acp_controller].cors_origins`, empty = proxy-only secure default — never
+  `*`). This retires the SSE capability doc 154 had marked deferred. 8 Rust
+  control tests + `npm run check` + clippy green. See
+  `docs/175-harness-web-control-api.md`.
 - **Docs browser artifact export (spec 174)** — The `/doc` reader can now ask
   the active harness lane to generate a normal HTML artifact from the markdown
   file the user is reading. A fixed `artifact` pill and the `a` shortcut POST

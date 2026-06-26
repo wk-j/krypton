@@ -227,6 +227,21 @@ show_toasts = true             # Show toast notifications for hook events
 
 [acp_controller]
 enabled = true
+# Fixed loopback port for the control API so external clients (e.g. a browser
+# extension) get a stable URL. Falls back to an OS-assigned port on conflict;
+# 0 = always auto-assign. See docs/175-harness-web-control-api.md.
+port = 8766
+# Exact browser origins allowed to call the control API directly (CORS).
+# Empty = no CORS headers (proxy-only, the secure default): a web app must reach
+# the API through its own server-side proxy so the bearer token never enters the
+# browser. Never use "*". See docs/175-harness-web-control-api.md.
+cors_origins = []
+# Write the Chrome Native Messaging host manifest on launch so the browser
+# extension (docs/176) can fetch the control token with zero setup.
+install_native_host = true
+# Which browsers' NativeMessagingHosts dirs to target:
+# chrome | chromium | edge | brave | opera | opera-gx  (Opera GX users: ["opera-gx"])
+native_host_browsers = ["chrome"]
 
 # --- SSH Session Multiplexing ---
 # Clone SSH sessions into new tabs/windows via ControlMaster multiplexing.
@@ -639,6 +654,10 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | `[hooks]` | `port` | int | `0` | Port to listen on. 0 = OS auto-assigns an available port |
 | `[hooks]` | `show_toasts` | bool | `true` | Show toast notifications for hook events. Toggleable at runtime via command palette |
 | `[acp_controller]` | `enabled` | bool | `true` | Start the authenticated local `kryptonctl` control endpoint. Load-time only; restart Krypton after changing it |
+| `[acp_controller]` | `port` | int | `8766` | Fixed loopback port for the control API (stable URL for external clients). Ephemeral fallback on conflict; `0` = auto-assign. Load-time only. See doc 175 |
+| `[acp_controller]` | `cors_origins` | string[] | `[]` | Exact browser origins allowed to call the control API directly (CORS). Empty = proxy-only (secure default); never `"*"`. Load-time only. See doc 175 |
+| `[acp_controller]` | `install_native_host` | bool | `true` | Write the Chrome Native Messaging host manifest on launch (zero-config browser extension). Load-time only. See doc 176 |
+| `[acp_controller]` | `native_host_browsers` | string[] | `["chrome"]` | Browsers whose `NativeMessagingHosts` dir gets the manifest: `chrome`/`chromium`/`edge`/`brave`/`opera`/`opera-gx`. Load-time only. See doc 176 |
 
 ### Hints Configuration
 

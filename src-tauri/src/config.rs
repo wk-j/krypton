@@ -392,11 +392,33 @@ impl Default for HooksConfig {
 pub struct AcpControllerConfig {
     /// Start the authenticated local `kryptonctl` control endpoint at launch.
     pub enabled: bool,
+    /// Fixed loopback port for the control API so external clients (e.g. a
+    /// browser extension) have a stable, bindable URL instead of a random port.
+    /// On bind conflict the server falls back to an OS-assigned ephemeral port.
+    /// `0` = always auto-assign. See doc 175 / 176.
+    pub port: u16,
+    /// Exact browser origins allowed to call the control API directly (CORS).
+    /// Empty = no CORS headers emitted (proxy-only mode, the secure default);
+    /// a browser app must reach the API through its own server-side proxy.
+    /// Never use `"*"`. Example: `["http://localhost:5173"]`. See doc 175.
+    pub cors_origins: Vec<String>,
+    /// Write the Chrome Native Messaging host manifest on launch so the browser
+    /// extension can fetch the control token with zero setup. See doc 176.
+    pub install_native_host: bool,
+    /// Which browsers' `NativeMessagingHosts` dirs to target when installing the
+    /// host manifest: any of `chrome`, `chromium`, `edge`, `brave`.
+    pub native_host_browsers: Vec<String>,
 }
 
 impl Default for AcpControllerConfig {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            port: 8766,
+            cors_origins: Vec::new(),
+            install_native_host: true,
+            native_host_browsers: vec!["chrome".to_string()],
+        }
     }
 }
 

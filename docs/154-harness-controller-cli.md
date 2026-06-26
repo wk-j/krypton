@@ -20,13 +20,15 @@ The CLI is a **Harness Controller**, not a lane, ACP agent, or standalone ACP cl
 - `kryptonctl` is a separate Rust binary installed alongside the macOS app.
 - Krypton is treated as a single running application instance; multiple simultaneous Krypton processes are out of scope.
 - The control API is enabled by default and may be disabled with `[acp_controller].enabled = false`.
-- The control API uses a dedicated `127.0.0.1` listener, separate from the unauthenticated hook/MCP server.
+- The control API uses a dedicated `127.0.0.1` listener, separate from the unauthenticated hook/MCP server. As of doc 175/176 it binds a **fixed** configurable port (`[acp_controller].port`, default `8766`) with ephemeral fallback on conflict, so external clients have a stable URL; the descriptor still carries the resolved URL, so `kryptonctl` is unaffected.
 - A permission-`0600` runtime descriptor contains PID, URL, API/app versions, and a random bearer token.
 - The bearer token authenticates callers. There are no authorization roles or scopes; an authenticated caller may invoke every exposed operation.
 - The frontend owns live state. Rust authenticates, parses, forwards typed operations through a Tauri round-trip, and times out if the owning view does not answer.
 - Domain operations are typed endpoints. The API never simulates keys or submits hash commands.
 - Pretty structured output is the default. `--json` explicitly selects the stable JSON form for scripts.
-- Core v1 uses ordinary HTTP control requests; SSE remains a deferred capability.
+- Core v1 uses ordinary HTTP control requests; SSE was deferred here and later
+  shipped for the web-app use case — see `docs/175-harness-web-control-api.md`
+  (`GET /control/v1/events`). The `kryptonctl` CLI does not yet consume it.
 - CLI mutations produce only their natural UI result; no CLI-specific audit cards or labels are added.
 - v1 packages and supports macOS only. Protocol types should not deliberately prevent later Linux/Windows support.
 

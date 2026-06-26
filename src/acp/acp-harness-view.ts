@@ -80,6 +80,7 @@ import {
   listHarnessEntries,
   type HarnessEntry,
 } from './harness-directory';
+import { publishControlEvent, type ControlEventKind } from './control-publish';
 import { parseMentionFanOut } from './mention-parse';
 import {
   applyMentionSelection,
@@ -1473,6 +1474,9 @@ export class AcpHarnessView implements ContentView {
       type: 'lane:status',
       payload: { laneId: lane.id, prev, next, at: Date.now() },
     });
+    // Mirror status transitions to the control SSE stream (doc 175) so a web
+    // mirror sees the lane go busy/idle/error without polling.
+    this.publishStream(lane, 'status', { prev, next });
     // spec 155: a transition into `idle` is a lane quiet point (ADR-0008) —
     // announce it globally so a Diff Window over the same repo refreshes its
     // working diff. Payload is just the projectDir; no lane identity needed.
@@ -1676,8 +1680,101 @@ export class AcpHarnessView implements ContentView {
       });
       return { status: outcome === 'duplicate' ? 'duplicate' : 'accepted' };
     }
+    // spec 175: harness-scoped read operations for a web mirror.
+    if (operation === 'lane.status') {
+      return this.lanes.map((l) => {
+        const directive = this.directiveById(l.activeDirectiveId);
+        return {
+          laneId: l.id,
+          displayName: l.displayName,
+          backendId: l.backendId,
+          sessionId: l.sessionId,
+          status: l.status,
+          modelName: l.modelName,
+          currentModelId: l.currentModelId,
+          queueDepth: l.queuedPrompts.length,
+          pendingPermissions: l.pendingPermissions.length,
+          goal: l.goal ?? null,
+          permissionMode: l.permissionMode,
+          directive: directive
+            ? { id: directive.id, title: directive.title, task: directive.task }
+            : null,
+          activity: l.activity ?? null,
+        };
+      });
+    }
+    if (operation === 'directive.list') {
+      return this.directives.map((d) => ({
+        id: d.id,
+        title: d.title,
+        task: d.task,
+        description: d.description,
+        enabled: d.enabled,
+      }));
+    }
+    if (operation === 'review.outcomes') {
+      return this.reviewQualityStore
+        .lanesWithHistory()
+        .flatMap((laneId) => this.reviewQualityStore.historyFor(laneId));
+    }
+    if (operation === 'attention.list') {
+      return this.triageStore.openItems().map((item) => ({
+        id: item.id,
+        lane: this.lanes.find((l) => l.id === item.laneId)?.displayName ?? null,
+        question: item.question,
+        chosen: item.chosen,
+        rationale: item.rationale,
+        tradedOff: item.tradedOff,
+        uncertainty: item.uncertainty,
+        reversibility: item.reversibility,
+        diffstat: item.diffstat,
+        createdAt: item.createdAt,
+        status: item.status,
+      }));
+    }
+    if (operation === 'attention.resolve') {
+      const itemId = requiredString(params, 'itemId');
+      const resolved = this.triageStore.accept(itemId);
+      if (!resolved) throw controlError('attention_not_found', `no open attention item: ${itemId}`);
+      if (this.triageOverlayOpen) this.renderTriageOverlayEl();
+      return { resolved: true, itemId };
+    }
+    if (operation === 'artifact.list') {
+      return Array.from(this.artifacts.values()).map((record) => ({
+        id: record.id,
+        title: record.title,
+        path: record.path,
+        lane: record.laneLabel,
+        state: record.state, // 'pending' | 'registered_live'
+        size: record.size,
+        hash: record.hash,
+      }));
+    }
     const lane = this.controlLane(params);
     switch (operation) {
+      case 'lane.commands':
+        return lane.availableCommands.map((command) => ({
+          name: command.name,
+          description: command.description ?? null,
+        }));
+      case 'lane.metrics':
+        return {
+          lane: lane.displayName,
+          status: lane.status,
+          usage: lane.usage ?? null,
+          queueDepth: lane.queuedPrompts.length,
+          modelName: lane.modelName,
+        };
+      case 'lane.models':
+        return {
+          lane: lane.displayName,
+          currentModelId: lane.currentModelId,
+          models: lane.availableModels.map((m) => ({
+            modelId: m.model_id,
+            name: m.name,
+            description: m.description ?? null,
+          })),
+        };
       case 'lane.send': {
         const text = requiredString(params, 'text').trim();
         if (!text) throw controlError('invalid_request', 'text must not be empty');
@@ -4740,7 +4837,21 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  /** Forward a lane event to the control server's SSE subscribers (doc 175). */
+  private publishStream(lane: HarnessLane, kind: ControlEventKind, payload: unknown): void {
+    if (!this.harnessMemoryId) return;
+    publishControlEvent({
+      harnessId: this.harnessMemoryId,
+      lane: lane.displayName,
+      kind,
+      payload,
+    });
+  }
+
   private onLaneEvent(lane: HarnessLane, event: AcpEvent): void {
+    // Mirror every agent event to the control SSE stream (doc 175) before local
+    // handling. The frontend stays the authority; this only forwards.
+    this.publishStream(lane, event.type as ControlEventKind, event);
     let needsRender = true;
     switch (event.type) {
       case 'user_message_chunk':
