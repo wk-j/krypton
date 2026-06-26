@@ -87,6 +87,22 @@ accepted trade-off. The cheap hardening declined here (a per-server-session
 feedback nonce baked into each served `/doc` page; Q1=B) remains a future option
 if the posture is revisited.
 
+## Amendment (spec 174) — tokenless artifact-generation requests
+
+Spec 174 adds a second `/doc` write-side action:
+`POST /doc-artifact?harness=<id>&path=<rel>`. The browser sends an idempotency
+key and artifact title, Rust validates the same repo-relative `.md` path, and
+the frontend routes the request to the harness's active live lane. The lane then
+creates a normal HTML artifact through `artifact_new`, edits the issued scaffold,
+and calls `artifact_register`.
+
+This request stays **tokenless** for the same reason as docs feedback: it is
+keyed by the same `harness`+`path` as the read, preserves bookmarkable doc URLs,
+and reuses the accepted loopback turn-injection posture. It is a write
+side-effect, but it does not introduce a second artifact storage path: the final
+HTML still flows through the existing lane-authored artifact registry, write
+grant, transcript card, and feedback-token machinery.
+
 ## Considered Options
 
 - **Token-per-file** (like artifacts). Rejected: the token would change on every

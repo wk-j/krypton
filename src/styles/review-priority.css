@@ -106,7 +106,7 @@
 
 .acp-priority__row {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 10px;
   padding: 5px 14px;
   font-size: 0.9em;
@@ -150,6 +150,14 @@
    numbers — the actionable payload — never shrink or clip. `min-width: 0` lets
    the loc shrink below its content's min-content width inside the row flex
    (without it a long path pushes the lines off the clipped panel edge). */
+.acp-priority__row-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .acp-priority__loc {
   flex: 1 1 auto;
   min-width: 0;
@@ -170,6 +178,13 @@
   flex: 0 0 auto;
   white-space: nowrap;
   color: rgba(216, 232, 216, 0.5);
+}
+
+.acp-priority__reason {
+  display: block;
+  color: rgba(216, 232, 216, 0.5);
+  font-size: 0.86em;
+  line-height: 1.35;
 }
 
 /* ── Footer hint row ─────────────────────────────────────── */

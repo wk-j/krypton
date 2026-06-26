@@ -29,6 +29,7 @@ import type {
   HarnessMcpLaneStats,
   ArtifactComment,
   ArtifactFeedbackEnvelope,
+  DocArtifactRequestEnvelope,
   DocComment,
   DocFeedbackEnvelope,
   HarnessMemoryEntry,
@@ -57,7 +58,7 @@ import {
   renderReviewPriorityOverlay,
   type ReviewPriorityOverlayViewModel,
 } from './review-priority-overlay';
-import { ArtifactFeedbackQueue, DocFeedbackQueue } from './artifact-feedback';
+import { ArtifactFeedbackQueue, DocArtifactRequestQueue, DocFeedbackQueue } from './artifact-feedback';
 import { DiffReviewQueue } from './diff-review';
 import {
   InterLaneCoordinator,
@@ -1258,10 +1259,12 @@ export class AcpHarnessView implements ContentView {
    *  (a dedicated queue, NOT the peer LaneInbox). Constructed in the ctor. */
   private feedbackQueue: ArtifactFeedbackQueue;
   private docsFeedbackQueue: DocFeedbackQueue;
+  private docsArtifactQueue: DocArtifactRequestQueue;
   private diffReviewQueue: DiffReviewQueue;
   private telemetryPublisher: HarnessTelemetryPublisher | null = null;
   private feedbackUnlisten: UnlistenFn | null = null;
   private docsFeedbackUnlisten: UnlistenFn | null = null;
+  private docsArtifactUnlisten: UnlistenFn | null = null;
   /** spec 133: artifact hint mode (open-artifact labels), active only when on. */
   private artifactHintMode = false;
   private artifactHintBuffer = '';
@@ -1401,6 +1404,17 @@ export class AcpHarnessView implements ContentView {
       (laneId, text) => {
         const lane = this.lanes.find((l) => l.id === laneId);
         if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'docs feedback');
+      },
+    );
+    // spec 174: docs-browser artifact requests also route to the active lane and
+    // drain on idle/awaiting_peer, but compose an artifact-generation task rather
+    // than source-edit feedback.
+    this.docsArtifactQueue = new DocArtifactRequestQueue(
+      this.laneBus,
+      (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
+      (laneId, text) => {
+        const lane = this.lanes.find((l) => l.id === laneId);
+        if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'docs artifact');
       },
     );
     // spec 158: diff review comments drain on the lane's next idle, same as
@@ -2186,6 +2200,48 @@ export class AcpHarnessView implements ContentView {
         'system',
         `${n} comment${n === 1 ? '' : 's'} received on docs «${p.docPath}»`,
       );
+      this.scheduleLaneRender(lane);
+      reply({ accepted: true });
+    });
+
+    // spec 174: a browser POSTed a docs-browser artifact request. Like docs
+    // feedback, the recipient is this harness's active live lane. The lane still
+    // creates the artifact through artifact_new/edit/artifact_register so the
+    // normal artifact transcript, write grant, and feedback token all apply.
+    this.docsArtifactUnlisten = await listen<{
+      harnessId?: string;
+      docPath: string;
+      batchId: string;
+      title: string;
+      requestId?: string;
+    }>('acp-docs-artifact-requested', (e) => {
+      const p = e.payload;
+      if (!this.harnessMemoryId || p.harnessId !== this.harnessMemoryId) return;
+      const reply = (result: unknown): void => {
+        if (!p.requestId) return;
+        void invoke('acp_bus_reply', { requestId: p.requestId, result }).catch((err) => {
+          console.warn('acp_bus_reply (docs artifact) failed', err);
+        });
+      };
+      const lane = this.activeLane();
+      if (!lane || lane.status === 'stopped') {
+        reply({ accepted: false, reason: 'no_live_lane' });
+        return;
+      }
+      const envelope: DocArtifactRequestEnvelope = {
+        kind: 'doc_artifact_request',
+        batchId: p.batchId,
+        harnessId: this.harnessMemoryId,
+        docPath: p.docPath,
+        title: p.title,
+        sentAt: Date.now(),
+      };
+      const outcome = this.docsArtifactQueue.accept(lane.id, envelope);
+      if (outcome === 'duplicate') {
+        reply({ accepted: true, reason: 'duplicate' });
+        return;
+      }
+      this.appendTranscript(lane, 'system', `Artifact requested for docs «${p.docPath}»`);
       this.scheduleLaneRender(lane);
       reply({ accepted: true });
     });
@@ -3455,8 +3511,13 @@ export class AcpHarnessView implements ContentView {
       this.docsFeedbackUnlisten();
       this.docsFeedbackUnlisten = null;
     }
+    if (this.docsArtifactUnlisten) {
+      this.docsArtifactUnlisten();
+      this.docsArtifactUnlisten = null;
+    }
     this.feedbackQueue.dispose();
     this.docsFeedbackQueue.dispose();
+    this.docsArtifactQueue.dispose();
     this.diffReviewQueue.dispose();
     this.usageProviderListeners.clear();
     if (this.transcriptResizeObserver) {
@@ -5076,7 +5137,7 @@ export class AcpHarnessView implements ContentView {
     // it unconditionally for discoverability under a capped tool search, like the
     // attention tools. Purely advisory: the Window only folds/marks, never hides.
     lines.push(
-      'Diff reading priority: at the end of a turn where you edited files, you MAY call mark_review_priority { ranges } to tell the human\'s Diff Window where to spend reading attention. Report only the non-default ranges — `high` for core logic / interface / risk to read first, `routine` for mechanical churn (generated code, renames, imports, formatting) — anchored on the NEW side (the post-change line numbers you wrote); everything you omit stays `normal` and renders in full. The Window only folds `routine` (always one keystroke from full) and marks/navigates `high`; it never hides or reorders, so a small honest report is right and silence yields the full diff. At most once per turn, only when you changed files.',
+      'Diff reading priority: at the end of a turn where you edited files, you MAY call mark_review_priority { ranges } to tell the human\'s Diff Window where to spend reading attention. Report only the non-default ranges — `high` for core logic / interface / risk to read first, `routine` for mechanical churn (generated code, renames, imports, formatting) — anchored on the NEW side (the post-change line numbers you wrote); each range may include an optional short `reason` explaining why it was marked. Everything you omit stays `normal` and renders in full. The Window only folds `routine` (always one keystroke from full) and marks/navigates `high`; it never hides or reorders, so a small honest report is right and silence yields the full diff. At most once per turn, only when you changed files.',
     );
     // spec 146: review_outcome is default-on but only used during a #review
     // round (which needs reviewer lanes), so name it for discoverability only
@@ -5568,6 +5629,7 @@ export class AcpHarnessView implements ContentView {
     // Drop any queued-but-undrained feedback for the lane's now-dead session.
     this.feedbackQueue.dropLane(lane.id);
     this.docsFeedbackQueue.dropLane(lane.id);
+    this.docsArtifactQueue.dropLane(lane.id);
     this.diffReviewQueue.dropLane(lane.id);
     // spec 160: the lane's diff review-priority report describes a diff its now
     // dead session produced — drop it so the Diff Window stops triaging by it.

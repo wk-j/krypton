@@ -38,12 +38,21 @@ function rangeRow(r: ReviewPriorityRange): HTMLElement {
   const tag = document.createElement('span');
   tag.className = `acp-priority__tag acp-priority__tag--${r.level}`;
   tag.textContent = r.level;
+  const content = document.createElement('span');
+  content.className = 'acp-priority__row-content';
   const loc = document.createElement('span');
   loc.className = 'acp-priority__loc';
   // A single-line range shows just the line; a span shows start–end.
   const lines = r.lineStart === r.lineEnd ? `${r.lineStart}` : `${r.lineStart}–${r.lineEnd}`;
   loc.innerHTML = `<span class="acp-priority__file">${esc(r.file)}</span><span class="acp-priority__lines">:${lines}</span>`;
-  row.append(tag, loc);
+  content.appendChild(loc);
+  if (r.reason) {
+    const reason = document.createElement('span');
+    reason.className = 'acp-priority__reason';
+    reason.textContent = r.reason;
+    content.appendChild(reason);
+  }
+  row.append(tag, content);
   return row;
 }
 

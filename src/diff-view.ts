@@ -1459,6 +1459,12 @@ export class DiffContentView implements ContentView {
 
       row.appendChild(top);
       row.appendChild(path);
+      if (it.range.reason) {
+        const reason = document.createElement('span');
+        reason.className = 'krypton-diff__priority-reason';
+        reason.textContent = it.range.reason;
+        row.appendChild(reason);
+      }
       // Mouse is secondary, but a click previews the row immediately.
       row.addEventListener('click', () => this.jumpPrioritySelection(i));
       items.appendChild(row);

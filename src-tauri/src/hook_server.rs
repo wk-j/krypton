@@ -1734,6 +1734,65 @@ async fn handle_doc_feedback(
         .into_response()
 }
 
+/// POST /doc-artifact?harness=<id>&path=<rel> — the docs browser asks the
+/// harness's active lane to create a normal lane-authored HTML artifact from a
+/// source markdown file (spec 174). The browser owns the default title; Rust
+/// validates path/title and uses the same synchronous bus round-trip as docs
+/// feedback. A 200 means the request entered the active lane's queue, NOT that
+/// the artifact has been created yet.
+async fn handle_doc_artifact(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocQuery>,
+    Json(body): Json<Value>,
+) -> Response {
+    let project_dir = match state.hook_server.docs_project_dir(&query.harness) {
+        Some(dir) => dir,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let request = match validate_doc_artifact_request(&project_dir, &query.path, &body) {
+        Ok(request) => request,
+        Err(DocArtifactRequestError::NotFound) => return StatusCode::NOT_FOUND.into_response(),
+        Err(DocArtifactRequestError::BadRequest(message)) => {
+            return (StatusCode::BAD_REQUEST, message).into_response()
+        }
+        Err(DocArtifactRequestError::PayloadTooLarge) => {
+            return StatusCode::PAYLOAD_TOO_LARGE.into_response()
+        }
+    };
+
+    let request_id = format!("da-{}-{}", now_ms(), rand_suffix());
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state.app_handle.emit_or_log(
+        "acp-docs-artifact-requested",
+        json!({
+            "harnessId": query.harness,
+            "docPath": request.normalized_path,
+            "batchId": request.batch_id,
+            "title": request.title,
+            "requestId": request_id,
+        }),
+    );
+    let reply = match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(_)) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "retry" })),
+            )
+                .into_response();
+        }
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "retry" })),
+            )
+                .into_response();
+        }
+    };
+    doc_artifact_reply_response(&reply)
+}
+
 /// POST /artifact/feedback/:token — the browser submits a comment batch (spec
 /// 149). Validates the token + caps, then runs the synchronous bus round-trip
 /// (fresh request id → emit `acp-artifact-feedback-received` → await the
@@ -1921,6 +1980,66 @@ async fn handle_bus_tool_call(
 /// Timeout for the frontend round-trip on bus tools (peer_send, peer_list).
 /// Generous because the frontend may be mid-render or animating.
 const BUS_REPLY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(2500);
+
+#[derive(Debug, PartialEq, Eq)]
+struct DocArtifactRequest {
+    normalized_path: String,
+    batch_id: String,
+    title: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DocArtifactRequestError {
+    NotFound,
+    BadRequest(&'static str),
+    PayloadTooLarge,
+}
+
+fn validate_doc_artifact_request(
+    project_dir: &str,
+    raw_path: &str,
+    body: &Value,
+) -> Result<DocArtifactRequest, DocArtifactRequestError> {
+    let normalized =
+        normalize_relative_link(StdPath::new(""), raw_path).unwrap_or_else(|| raw_path.to_string());
+    if validate_doc_path(StdPath::new(project_dir), &normalized, &["md"]).is_err() {
+        return Err(DocArtifactRequestError::NotFound);
+    }
+
+    let batch_id = body.get("batchId").and_then(|v| v.as_str()).unwrap_or("");
+    if batch_id.trim().is_empty() {
+        return Err(DocArtifactRequestError::BadRequest("missing batchId"));
+    }
+    let title = body.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(DocArtifactRequestError::BadRequest("missing title"));
+    }
+    if title.chars().count() > ARTIFACT_TITLE_MAX {
+        return Err(DocArtifactRequestError::PayloadTooLarge);
+    }
+
+    Ok(DocArtifactRequest {
+        normalized_path: normalized,
+        batch_id: batch_id.to_string(),
+        title: title.to_string(),
+    })
+}
+
+fn doc_artifact_reply_response(reply: &Value) -> Response {
+    if reply
+        .get("accepted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return Json(json!({ "status": "accepted" })).into_response();
+    }
+    (
+        StatusCode::CONFLICT,
+        Json(json!({ "status": "no-live-lane" })),
+    )
+        .into_response()
+}
 
 /// peer_send — emit an `acp-inter-lane-message` Tauri event and await the
 /// frontend coordinator's delivery outcome. The frontend is the authority on
@@ -2281,12 +2400,26 @@ async fn mark_review_priority(
                 "ranges[{i}].level must be 'high' or 'routine' (omit a range to leave it 'normal')"
             ));
         }
-        ranges.push(json!({
+        let mut range = json!({
             "file": file,
             "lineStart": line_start,
             "lineEnd": line_end,
             "level": level,
-        }));
+        });
+        if let Some(reason) = item
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            if reason.chars().count() > 240 {
+                return Err(format!(
+                    "ranges[{i}].reason must be 240 characters or fewer"
+                ));
+            }
+            range["reason"] = json!(reason);
+        }
+        ranges.push(range);
     }
 
     let request_id = format!("rvp-{}-{}", now_ms(), rand_suffix());
@@ -2976,7 +3109,7 @@ fn attention_tool_descriptors() -> Vec<Value> {
         }),
         json!({
             "name": "mark_review_priority",
-            "description": "At the end of a turn in which you edited files, tell the human's Diff Window how to spend their reading attention on the diff you just produced. Report ONLY the non-default ranges: `high` for the core logic / interface / risk the user would want to read first, `routine` for mechanical churn (generated code, renames, import shuffles, formatting). Everything you DON'T report stays `normal` and renders in full — so a small, honest report is correct; do not annotate the whole diff. The Window only FOLDS `routine` hunks (always one keystroke from full) and MARKS + navigates to `high` ones — it never hides or reorders anything, so an over-broad `routine` label only costs the human reading time, never a missed change. Anchor each range on the NEW side (the post-change line numbers you just wrote). The latest call REPLACES your previous report for this working diff. Default-on; call it at most once per turn, only when you actually changed files. Silence is fine — it yields today's full, untriaged diff.",
+            "description": "At the end of a turn in which you edited files, tell the human's Diff Window how to spend their reading attention on the diff you just produced. Report ONLY the non-default ranges: `high` for the core logic / interface / risk the user would want to read first, `routine` for mechanical churn (generated code, renames, import shuffles, formatting). Include a brief optional `reason` when it helps the human understand why a range was marked. Everything you DON'T report stays `normal` and renders in full — so a small, honest report is correct; do not annotate the whole diff. The Window only FOLDS `routine` hunks (always one keystroke from full) and MARKS + navigates to `high` ones — it never hides or reorders anything, so an over-broad `routine` label only costs the human reading time, never a missed change. Anchor each range on the NEW side (the post-change line numbers you just wrote). The latest call REPLACES your previous report for this working diff. Default-on; call it at most once per turn, only when you actually changed files. Silence is fine — it yields today's full, untriaged diff.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2989,7 +3122,8 @@ fn attention_tool_descriptors() -> Vec<Value> {
                                 "file": { "type": "string", "description": "Repo-relative post-change path (the file's new name)." },
                                 "lineStart": { "type": "integer", "minimum": 1, "description": "First new-side line of the range (inclusive)." },
                                 "lineEnd": { "type": "integer", "minimum": 1, "description": "Last new-side line of the range (inclusive); >= lineStart." },
-                                "level": { "enum": ["high", "routine"], "description": "'high' = read first; 'routine' = mechanical, fold by default. 'normal' is the unreported default." }
+                                "level": { "enum": ["high", "routine"], "description": "'high' = read first; 'routine' = mechanical, fold by default. 'normal' is the unreported default." },
+                                "reason": { "type": "string", "maxLength": 240, "description": "Optional short human-readable explanation for this priority range, shown in the Diff Window." }
                             },
                             "required": ["file", "lineStart", "lineEnd", "level"]
                         }
@@ -3304,7 +3438,14 @@ fn render_folder_nav(
             out.push_str("\">");
             out.push_str(&html_escape(dir));
             out.push_str("</a></summary><ul class=\"tree\">");
-            render_dirs(out, harness_id, child, prefix, selected_harness, selected_dir);
+            render_dirs(
+                out,
+                harness_id,
+                child,
+                prefix,
+                selected_harness,
+                selected_dir,
+            );
             out.push_str("</ul></details></li>");
             prefix.pop();
         }
@@ -3480,10 +3621,7 @@ fn render_docs_page(title: &str, tree: Option<&str>, content: &str) -> Response 
     };
     let html = DOCS_HTML
         .replace("<!--DOCS_TITLE-->", &escaped_title)
-        .replace(
-            "<nav class=\"tree-pane\"><!--DOCS_TREE--></nav>",
-            &nav,
-        )
+        .replace("<nav class=\"tree-pane\"><!--DOCS_TREE--></nav>", &nav)
         .replace(
             "<article class=\"doc\"><!--DOCS_CONTENT--></article>",
             &format!("<article class=\"doc\">{content}</article>"),
@@ -3900,6 +4038,7 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 // backs the page's live-reload poll. Same-origin with `/doc`.
                 .route("/doc-state", get(handle_doc_state))
                 .route("/doc-feedback", post(handle_doc_feedback))
+                .route("/doc-artifact", post(handle_doc_artifact))
                 // spec 149 — artifact inline feedback. Served over loopback HTTP
                 // so the OS-browser page is same-origin with the feedback POST
                 // (no CORS, no `Origin: null`). The token in the path is the sole
@@ -4059,6 +4198,12 @@ mod tests {
             .expect("level enum");
         let levels: Vec<&str> = level_enum.iter().filter_map(|v| v.as_str()).collect();
         assert_eq!(levels, vec!["high", "routine"]);
+        let reason = tool
+            .pointer("/inputSchema/properties/ranges/items/properties/reason")
+            .and_then(|v| v.as_object())
+            .expect("reason schema");
+        assert_eq!(reason.get("type").and_then(|v| v.as_str()), Some("string"));
+        assert_eq!(reason.get("maxLength").and_then(|v| v.as_u64()), Some(240));
     }
 
     #[test]
@@ -4253,6 +4398,7 @@ mod tests {
             .route("/doc-asset", get(ok))
             .route("/doc-state", get(ok))
             .route("/doc-feedback", post(ok))
+            .route("/doc-artifact", post(ok))
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
             .route("/artifact/feedback/{token}", post(ok));
@@ -4335,6 +4481,76 @@ mod tests {
         let err = validate_doc_path(&tmp, "note.txt", &["md"]).unwrap_err();
         assert!(err.contains("extension rejected"), "got: {err}");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn validate_doc_artifact_request_accepts_and_normalizes_markdown() {
+        let tmp_raw = std::env::temp_dir().join(format!("krypton-doc-art-{}", rand_suffix()));
+        std::fs::create_dir_all(tmp_raw.join("docs")).unwrap();
+        std::fs::write(tmp_raw.join("docs").join("guide.md"), "# Guide").unwrap();
+        let tmp = tmp_raw.canonicalize().unwrap();
+        let request = validate_doc_artifact_request(
+            &tmp.to_string_lossy(),
+            "docs/./guide.md",
+            &json!({ "batchId": "da-1", "title": "  Docs artifact · guide.md  " }),
+        )
+        .unwrap();
+
+        assert_eq!(request.normalized_path, "docs/guide.md");
+        assert_eq!(request.batch_id, "da-1");
+        assert_eq!(request.title, "Docs artifact · guide.md");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn validate_doc_artifact_request_rejects_bad_body_or_path() {
+        let tmp_raw = std::env::temp_dir().join(format!("krypton-doc-art-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp_raw).unwrap();
+        std::fs::write(tmp_raw.join("guide.md"), "# Guide").unwrap();
+        let tmp = tmp_raw.canonicalize().unwrap();
+        let root = tmp.to_string_lossy();
+
+        assert_eq!(
+            validate_doc_artifact_request(&root, "guide.md", &json!({ "title": "t" })).unwrap_err(),
+            DocArtifactRequestError::BadRequest("missing batchId")
+        );
+        assert_eq!(
+            validate_doc_artifact_request(&root, "guide.md", &json!({ "batchId": "da-1" }))
+                .unwrap_err(),
+            DocArtifactRequestError::BadRequest("missing title")
+        );
+        assert_eq!(
+            validate_doc_artifact_request(
+                &root,
+                "guide.md",
+                &json!({ "batchId": "da-1", "title": "x".repeat(ARTIFACT_TITLE_MAX + 1) }),
+            )
+            .unwrap_err(),
+            DocArtifactRequestError::PayloadTooLarge
+        );
+        assert_eq!(
+            validate_doc_artifact_request(
+                &root,
+                "missing.md",
+                &json!({ "batchId": "da-1", "title": "t" }),
+            )
+            .unwrap_err(),
+            DocArtifactRequestError::NotFound
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn doc_artifact_reply_response_maps_acceptance() {
+        assert_eq!(
+            doc_artifact_reply_response(&json!({ "accepted": true })).status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            doc_artifact_reply_response(&json!({ "accepted": false, "reason": "no_live_lane" }))
+                .status(),
+            StatusCode::CONFLICT
+        );
     }
 
     #[test]
@@ -4494,7 +4710,10 @@ mod tests {
     fn parse_helpers_recover_title_and_token() {
         let html = "<head><title>Hello &amp; &lt;World&gt;</title></head>\
             <script>window.__KRYPTON_FEEDBACK__ = { token: \"abc123\", url: \"x\" };</script>";
-        assert_eq!(parse_artifact_title(html).as_deref(), Some("Hello & <World>"));
+        assert_eq!(
+            parse_artifact_title(html).as_deref(),
+            Some("Hello & <World>")
+        );
         assert_eq!(parse_feedback_token(html).as_deref(), Some("abc123"));
         // Unreplaced placeholder → no token.
         assert_eq!(

@@ -269,6 +269,118 @@
   })();
 </script>
 <script>
+  // spec 174 — docs-browser artifact export. The browser does not write the
+  // artifact; it asks the active harness lane to read this source markdown and
+  // create a normal lane-authored HTML artifact via artifact_new/register.
+  (function () {
+    if (location.pathname !== "/doc") return;
+    var qp = new URLSearchParams(location.search);
+    var HARNESS = qp.get("harness") || "";
+    var DOCPATH = qp.get("path") || "";
+    if (!HARNESS || !DOCPATH) return;
+
+    var ENDPOINT = "/doc-artifact?harness=" + encodeURIComponent(HARNESS) + "&path=" + encodeURIComponent(DOCPATH);
+    var batchId = null;
+    var state = "ready";
+    var resetTimer = 0;
+
+    var ROOT = document.createElement("div");
+    ROOT.setAttribute("data-kda", "root");
+    ROOT.innerHTML =
+      '<style>' +
+      '[data-kda]{font-family:var(--mono,monospace);box-sizing:border-box}' +
+      '#kda-pill{position:fixed;right:12px;bottom:58px;z-index:2147483644;' +
+        'background:var(--card,#21242a);color:var(--fg,#eaecef);border:1px solid var(--border,#2f353d);' +
+        'border-radius:6px;padding:10px 14px;font-size:12px;line-height:1.4;cursor:pointer;' +
+        'box-shadow:0 2px 12px rgba(0,0,0,.35)}' +
+      '#kda-pill b{color:var(--accent,#fcd535)}' +
+      '#kda-pill .kda-sub{color:var(--muted,#707a8a);display:block;margin-top:2px;font-size:11px}' +
+      '#kda-pill[data-state="sending"]{cursor:wait;opacity:.85}' +
+      '#kda-pill[data-state="queued"]{border-color:var(--accent,#fcd535)}' +
+      '#kda-pill[data-state="error"]{border-color:#f6465d;color:#f6465d}' +
+      '</style>' +
+      '<div id="kda-pill" role="button" tabindex="0" title="Generate an HTML artifact from this doc"></div>';
+    document.body.appendChild(ROOT);
+    var pillEl = ROOT.querySelector("#kda-pill");
+
+    function basename(path) {
+      var parts = String(path || "").split("/");
+      return parts[parts.length - 1] || "document.md";
+    }
+    function displayPath(path) {
+      var parts = [];
+      String(path || "").split("/").forEach(function (part) {
+        if (!part || part === ".") return;
+        if (part === "..") { parts.push(part); return; }
+        parts.push(part);
+      });
+      return parts.join("/") || path || "document.md";
+    }
+    var DISPLAY_PATH = displayPath(DOCPATH);
+    function titleForDoc() { return "Docs artifact · " + basename(DISPLAY_PATH); }
+    function setState(next, detail) {
+      state = next;
+      if (resetTimer) { clearTimeout(resetTimer); resetTimer = 0; }
+      pillEl.setAttribute("data-state", next);
+      var label = next === "queued" ? "queued" : next === "sending" ? "sending…" : next === "error" ? "retry" : "artifact";
+      pillEl.innerHTML = "<b>" + label + "</b><span class=\"kda-sub\">" + (detail || "press a") + "</span>";
+    }
+    function editableTarget(el) {
+      return !!(el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable));
+    }
+    function inFeedbackOverlay(el) {
+      return (
+        document.documentElement.getAttribute("data-kdf-armed") === "true" ||
+        !!(el && el.closest && el.closest("[data-kdf]"))
+      );
+    }
+    function requestArtifact() {
+      if (state === "sending" || state === "queued") return;
+      if (!batchId) batchId = "da-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+      setState("sending", titleForDoc());
+      fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchId: batchId, title: titleForDoc() })
+      }).then(function (res) {
+        if (res.ok) {
+          batchId = null;
+          setState("queued", "active lane will create it");
+          resetTimer = setTimeout(function () { setState("ready", "press a"); }, 2200);
+        } else if (res.status === 409) {
+          setState("error", "no active lane");
+        } else if (res.status === 404) {
+          setState("error", "doc unavailable");
+        } else if (res.status === 413) {
+          setState("error", "title too long");
+        } else if (res.status === 503) {
+          setState("error", "press a to retry");
+        } else {
+          setState("error", "failed " + res.status);
+        }
+      }).catch(function () {
+        setState("error", "press a to retry");
+      });
+    }
+    pillEl.addEventListener("click", requestArtifact);
+    pillEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        requestArtifact();
+      }
+    });
+    document.addEventListener("keydown", function (e) {
+      var t = e.target;
+      if (editableTarget(t) || inFeedbackOverlay(t)) return;
+      if (e.key === "a" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        requestArtifact();
+      }
+    }, true);
+    setState("ready", "press a");
+  })();
+</script>
+<script>
   // spec 172 — docs-browser inline feedback overlay. A mini element/text picker:
   // hover-highlight + click-to-anchor a passage + comment, POSTed to the harness,
   // which routes it to its active lane as a system turn. Self-gates to the
@@ -321,7 +433,7 @@
       '[data-kdf]{font-family:var(--mono,monospace);box-sizing:border-box}' +
       '#kdf-pill{position:fixed;right:12px;bottom:12px;z-index:2147483646;' +
         'background:var(--card,#21242a);color:var(--fg,#eaecef);border:1px solid var(--border,#2f353d);' +
-        'border-radius:6px;padding:6px 10px;font-size:12px;line-height:1.4;cursor:pointer;' +
+        'border-radius:6px;padding:10px 14px;font-size:12px;line-height:1.4;cursor:pointer;' +
         'max-width:280px;box-shadow:0 2px 12px rgba(0,0,0,.4)}' +
       '#kdf-pill b{color:var(--accent,#fcd535)}' +
       '#kdf-pill .kdf-sub{color:var(--muted,#707a8a);display:block;margin-top:2px;font-size:11px}' +
@@ -427,8 +539,12 @@
       pillEl.innerHTML = "<b>" + main + "</b><span class='kdf-sub'>" + sub + "</span>";
     }
 
-    function arm() { if (disabled) return; armed = true; renderPill(); }
-    function disarm() { armed = false; hiEl.style.display = "none"; renderPill(); maybeDeferredReload(); }
+    function setArmed(next) {
+      armed = next;
+      document.documentElement.setAttribute("data-kdf-armed", next ? "true" : "false");
+    }
+    function arm() { if (disabled) return; setArmed(true); renderPill(); }
+    function disarm() { setArmed(false); hiEl.style.display = "none"; renderPill(); maybeDeferredReload(); }
 
     function onMove(e) {
       if (!armed) return;
@@ -441,7 +557,7 @@
       var el = document.elementFromPoint(e.clientX, e.clientY);
       if (!el || inOverlay(el) || !inDoc(el)) return;
       e.preventDefault(); e.stopPropagation();
-      armed = false;
+      setArmed(false);
       var sel = "";
       try { sel = String(window.getSelection ? window.getSelection() : "").trim(); } catch (x) {}
       var quote = sel || (el.textContent || "").trim();

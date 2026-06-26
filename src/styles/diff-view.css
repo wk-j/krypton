@@ -438,6 +438,16 @@
 .krypton-diff__priority-item--selected .krypton-diff__priority-path {
   color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.9);
 }
+.krypton-diff__priority-reason {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  line-height: 1.35;
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.55);
+}
+.krypton-diff__priority-item--selected .krypton-diff__priority-reason {
+  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.78);
+}
 .krypton-diff__priority-footer {
   flex-shrink: 0;
   padding: 5px 12px;

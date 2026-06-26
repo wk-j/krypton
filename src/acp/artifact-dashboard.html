@@ -39,14 +39,16 @@
   .harness { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
   .harness-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
   .harness-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
-  .layout { display: grid; grid-template-columns: minmax(220px, 340px) minmax(0, 1fr); gap: 18px; align-items: start; }
-  @media (max-width: 780px) { .layout { grid-template-columns: 1fr; } }
+  .triage-section { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .triage-body { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 22px; align-items: start; }
+  .gauge { max-width: 260px; }
+  @media (max-width: 640px) { .triage-body { grid-template-columns: 1fr; } }
   .gauge canvas { display: block; width: 100%; }
   .gauge-val { text-align: center; margin-top: -6px; }
   .gauge-val b { font-family: var(--mono); font-size: 30px; color: var(--accent);
                  font-variant-numeric: tabular-nums; }
   .gauge-val span { display: block; font-size: 10px; color: var(--muted); }
-  .flags { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .flags { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; align-content: start; }
   .flag { border: 1px solid var(--border); border-radius: 8px; background: rgba(252,213,53,.05); padding: 10px; }
   .flag-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 7px; }
   .flag-lane { font-family: var(--mono); font-size: 11px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -293,8 +295,10 @@
     el.className = "harness";
     el.innerHTML =
       '<div class="harness-head"><div><h2></h2><div class="harness-meta"></div></div><div class="harness-meta triage"></div></div>' +
-      '<div class="layout"><div class="gauge"><h3>Attention triage</h3><canvas></canvas><div class="gauge-val"><b>0</b><span>flags in review queue</span></div><div class="flags"></div></div>' +
-      '<div><h3>Active lanes</h3><div class="lanes"></div><ul class="foreign" hidden></ul></div></div>' +
+      '<section class="triage-section"><h3>Attention triage</h3><div class="triage-body">' +
+        '<div class="gauge"><canvas></canvas><div class="gauge-val"><b>0</b><span>flags in review queue</span></div></div>' +
+        '<div class="flags"></div></div></section>' +
+      '<section class="lanes-section"><h3>Active lanes</h3><div class="lanes"></div><ul class="foreign" hidden></ul></section>' +
       '<div class="feed"></div>';
     R("harnesses").appendChild(el);
     el._gauge = fit(el.querySelector(".gauge canvas"), 150);

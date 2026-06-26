@@ -10,6 +10,7 @@
 import type {
   ArtifactComment,
   ArtifactFeedbackEnvelope,
+  DocArtifactRequestEnvelope,
   DocComment,
   DocFeedbackEnvelope,
   HarnessLaneStatus,
@@ -204,6 +205,39 @@ export class DocFeedbackQueue extends BaseFeedbackQueue<DocFeedbackEnvelope> {
         return `<doc-comment ${attrs.join(' ')}>\n${c.body ?? ''}\n</doc-comment>`;
       });
       sections.push(`### ${docPath}\n\n${blocks.join('\n\n')}`);
+    }
+
+    return `${header}\n\n${sections.join('\n\n')}`;
+  }
+}
+
+/** Docs browser artifact requests (spec 174). A request is browser→active-lane
+ *  work, not feedback: the lane reads the source markdown, creates a normal HTML
+ *  artifact through artifact_new, edits the scaffold, then registers it. */
+export class DocArtifactRequestQueue extends BaseFeedbackQueue<DocArtifactRequestEnvelope> {
+  protected composePrompt(envelopes: DocArtifactRequestEnvelope[]): string {
+    const groups = new Map<string, string[]>();
+    for (const env of envelopes) {
+      const titles = groups.get(env.docPath) ?? [];
+      titles.push(env.title);
+      groups.set(env.docPath, titles);
+    }
+
+    const total = [...groups.values()].reduce((n, titles) => n + titles.length, 0);
+    const many = total !== 1;
+    const header =
+      `The user is reading documentation in the Docs browser and asked you to generate ` +
+      `${total} HTML artifact${many ? 's' : ''} from source markdown.\n` +
+      'Read each SOURCE markdown file named below, then create a browser artifact for each requested title: ' +
+      'call artifact_new, edit the issued scaffold, and call artifact_register.\n\n' +
+      'Do not edit the source markdown. Preserve factual claims from the source, but you may restructure the artifact ' +
+      'for browser reading: tables, diagrams, checklists, summaries, or navigation are appropriate when they make the ' +
+      'document clearer. Keep a visible repo-relative source path in each artifact.';
+
+    const sections: string[] = [];
+    for (const [docPath, titles] of groups) {
+      const lines = titles.map((title) => `- Create artifact titled ${JSON.stringify(title)}.`);
+      sections.push(`### Source: ${docPath}\n\n${lines.join('\n')}`);
     }
 
     return `${header}\n\n${sections.join('\n\n')}`;

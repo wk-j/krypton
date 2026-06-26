@@ -351,6 +351,18 @@ export interface DocFeedbackEnvelope {
   sentAt: number;
 }
 
+export interface DocArtifactRequestEnvelope {
+  kind: 'doc_artifact_request';
+  /** idempotency key — a retried POST with the same id is dropped. */
+  batchId: string;
+  harnessId: string;
+  /** repo-relative `.md` path under the harness <cwd>. */
+  docPath: string;
+  /** title to pass to artifact_new. */
+  title: string;
+  sentAt: number;
+}
+
 // ─── Diff review comments (spec 158) ───
 // Human→lane inline review on the working diff. A comment carries a precise
 // file:line anchor (intrinsic to the diff, no synthesized selector) plus the
@@ -427,6 +439,8 @@ export interface ReviewPriorityRange {
   lineEnd: number;
   /** 'normal' is the unreported default — only the non-default levels appear. */
   level: 'high' | 'routine';
+  /** Optional short human-readable reason shown in priority panels. */
+  reason?: string;
 }
 
 /** The latest priority report from one authoring lane. */
