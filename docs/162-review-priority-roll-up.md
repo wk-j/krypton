@@ -71,7 +71,7 @@ interface ReviewPriorityOverlayVM {
 }
 ```
 
-Per selected lane, render `high` ranges first then `routine`, each row = `file:lineStart–lineEnd` + a `high`/`routine` tag (full border / background tint for the tag — **no left-accent rail**, per house style). routine rows may be shown dimmed; if a lane has only routine ranges its `high` group is omitted. Header shows `Review priority` + `selectedLane · N high`. Empty state ("No reading priority reported.") when no lanes.
+Per selected lane, render `high` ranges first then `routine`, each row = `file:lineStart–lineEnd` + a `high`/`routine` tag + optional short `reason` (full border / background tint for the tag — **no left-accent rail**, per house style). routine rows may be shown dimmed; if a lane has only routine ranges its `high` group is omitted. Header shows `Review priority` + `selectedLane · N high`. Empty state ("No reading priority reported.") when no lanes.
 
 ### Data Flow
 

@@ -636,5 +636,45 @@ The frontend remains the only authority for live harness state. Rust owns
 discovery, authentication, protocol parsing, and request timeout handling; it
 does not mirror lanes, queues, transcripts, or permissions. Core v1 uses
 ordinary request/response operations, and `kryptonctl acp send --wait` polls
-typed lane state. Prompt-specific IDs, SSE, and prompt-specific cancellation
-are deferred. See `docs/154-harness-controller-cli.md`.
+typed lane state. Prompt-specific IDs and prompt-specific cancellation are
+deferred. See `docs/154-harness-controller-cli.md`.
+
+The same control server also exposes a one-way **event stream** for web-app
+remote control (`GET /control/v1/events`, SSE — doc 175). Keeping the
+authority split, the frontend *pushes* the harness events it already processes
+(`acp-harness-view` event sink + status transitions) over `acp_control_publish`
+into a per-server `broadcast` channel that Rust fans out to subscribers; Rust
+still derives no state. Commands stay on `POST /operations`. A browser app
+either proxies server-side (default; bearer token stays off-browser) or calls
+directly when `[acp_controller].cors_origins` lists its exact origin. See
+`docs/175-harness-web-control-api.md`.
+
+A Chrome/Chromium **browser extension** (`extension/`) is a packaged client of
+this control API (doc 176): it sends the current page selection into a lane as a
+chosen action via `lane.send`. Token discovery is zero-config through a Native
+Messaging host, `krypton-bridge` (`src-tauri/src/bin/krypton-bridge.rs`), which
+reads the `0600` control descriptor as the user; Krypton writes the host
+manifest into the browser's `NativeMessagingHosts` dir on launch
+(`src-tauri/src/native_host.rs`). The control API binds a fixed loopback port
+(default `8766`) so the extension needs no port discovery.
+
+When the popup is opened with **no text selected**, the extension extracts the
+page's main content as Markdown client-side (doc 177): it injects a bundled
+**Defuddle** (`extension/content-extract.src.js` → `dist/content.bundle.js`, built
+by `make extension`) into the active tab on demand and sends the resulting
+Markdown + metadata, so pages a lane cannot fetch server-side (Reddit, YouTube,
+login-walled, JS-rendered) still work. A selection always takes precedence; the
+injection stays on-demand (activeTab) rather than a declared content script.
+
+**GitHub issue fixing** (doc 178) makes "fix this issue" a single surface-agnostic
+operation. Any surface — Krypton's command palette / `#fix-issue` verb, the
+extension popup, or a status card the extension injects onto the GitHub issue page
+(a declared `github.com/*/issues/*` content script) — converges on the frontend
+`dispatchIssue()` path (also the `github.dispatch-issue` control op), which records
+an issue↔lane binding (harness-level map keyed by `owner/repo#123`) and prompts a
+fresh lane. The lane self-reports progress via an `issue_report` MCP tool; status
+is snapshot-first (`github.issue-status`) plus an `issue_status` SSE event, so the
+injected card is refresh-safe and survives a Krypton restart (bindings persist to
+disk next to the per-harness memory file). The `issueKey`-addressed reads
+(`github.issue-status / list-issues / unlink-issue`) fan out across harnesses in
+`control-bridge`. Read-only overlay only — no write-back to GitHub.

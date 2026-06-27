@@ -77,12 +77,17 @@ mark_review_priority {
     lineStart: number;   // new-side line numbers (the lines it just wrote)
     lineEnd: number;
     level: 'high' | 'routine';   // 'normal' is the default — never reported
+    reason?: string;     // optional short explanation shown in priority panels
   }>
 }
 ```
 
 - The lane only reports the **non-default** ranges (`high` / `routine`);
   everything else stays `normal`. Keeps payloads small and intent explicit.
+- Each range may include an optional **short `reason`** (capped at 240 chars at
+  the tool boundary). Reasons are explanatory labels, not review comments: they
+  tell the human why the range was marked, while the range itself still controls
+  folding / marking.
 - Reported on the **new side** (the post-change lines the lane just wrote, which
   it knows the numbers of). Anchored exactly like a spec-158 comment.
 - **Push, not pull.** The lane has already finished its turn; the window cannot
@@ -162,6 +167,7 @@ export interface ReviewPriorityRange {
   lineStart: number;     // new-side line numbers (inclusive)
   lineEnd: number;
   level: 'high' | 'routine';   // 'normal' is the unreported default
+  reason?: string;       // optional short human-readable explanation
 }
 
 /** The latest priority report from one authoring lane. */
@@ -213,9 +219,9 @@ contents over *every* reported range, opened with **`p`**.
   - The previewed hunk gets a full-row tint (`.krypton-diff__preview-row`),
     distinct from the `high` line-number marker.
 - **Contents & order.** Rows list **`high` first, then `routine`**, each in file
-  order (badge `◆ high` / `▸ routine` + `L<start>–<end>` + file path). The diff
-  itself is **never reordered** (ADR-0009) — only the panel groups by level.
-  Ranges whose file is not in the diff (drift) are dropped.
+  order (badge `◆ high` / `▸ routine` + `L<start>–<end>` + file path + optional
+  reason). The diff itself is **never reordered** (ADR-0009) — only the panel
+  groups by level. Ranges whose file is not in the diff (drift) are dropped.
 - **Close semantics.** `Enter` / `q` / `p` close the panel and **keep** the
   previewed position; `Esc` closes and **restores** the diff to where it was when
   the panel opened (a cancelled browse).

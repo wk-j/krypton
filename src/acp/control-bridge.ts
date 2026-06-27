@@ -68,6 +68,46 @@ async function route(operation: string, params: Record<string, unknown>): Promis
   if (operation === 'peer.list') {
     return listHarnessEntries().flatMap((entry) => entry.listLanes());
   }
+  // spec 178: the extension popup has no harness picker, so lane.list must work
+  // regardless of how many harnesses are open. Lane displayNames are globally
+  // unique (same model peer.list uses), so fan out across every harness and
+  // concatenate — each lane row already carries its own harnessId + displayName.
+  if (operation === 'lane.list') {
+    const out: unknown[] = [];
+    for (const entry of listHarnessEntries()) {
+      if (!entry.control) continue;
+      const rows = await entry.control(operation, params);
+      if (Array.isArray(rows)) out.push(...rows);
+    }
+    return out;
+  }
+  // spec 178: github issue-fixing reads are addressed by issueKey, not by lane —
+  // the binding may live in any open harness. Fan out across harnesses.
+  if (operation === 'github.list-issues') {
+    const out: unknown[] = [];
+    for (const entry of listHarnessEntries()) {
+      if (!entry.control) continue;
+      const rows = await entry.control(operation, params);
+      if (Array.isArray(rows)) out.push(...rows);
+    }
+    return out;
+  }
+  if (operation === 'github.issue-status') {
+    for (const entry of listHarnessEntries()) {
+      if (!entry.control) continue;
+      const snap = await entry.control(operation, params);
+      if (snap && typeof snap === 'object' && (snap as { bound?: boolean }).bound) return snap;
+    }
+    return { bound: false };
+  }
+  if (operation === 'github.unlink-issue') {
+    for (const entry of listHarnessEntries()) {
+      if (!entry.control) continue;
+      const res = await entry.control(operation, params);
+      if (res && typeof res === 'object' && (res as { ok?: boolean }).ok) return res;
+    }
+    return { ok: false };
+  }
 
   const target = targetHarness(operation, params);
   if (!target.control) throw controlError('unsupported_operation', `${operation} is not supported by this harness`);

@@ -1,6 +1,6 @@
 # Harness Lane Monitor (Live Web Dashboard) — Implementation Spec
 
-> Status: Implemented (rev 3 — served fixed page; radar removed)
+> Status: Implemented (rev 4 — attention flag details in dashboard)
 > Date: 2026-06-19
 > Milestone: ACP Harness — observability
 > Extended by: `docs/169-dashboard-resource-status.md` — adds per-lane CPU sparkline + memory bar; repurposes the activity-pulse canvas into a real CPU chart and adds a metrics-driven publish that fires only while a lane is active.
@@ -87,7 +87,16 @@ interface TelemetrySnapshot {
   schemaVersion: number;  // contract version — old dashboards fail gracefully on a bump [Codex S5]
   version: number;        // monotonic freshness counter (staleness guard)
   harnessId: string; projectDir: string | null; generatedAt: number;
-  attention: { openCount: number; maxReversibility: 'reversible'|'costly'|'irreversible'|null };
+  attention: {
+    openCount: number;
+    maxReversibility: 'reversible'|'costly'|'irreversible'|null;
+    items: {
+      id: string; laneId: string; laneName: string; createdAt: number;
+      question: string; chosen: string; rationale: string;
+      tradedOff: string[]; uncertainty: string;
+      reversibility: 'reversible'|'costly'|'irreversible';
+    }[];
+  };
   reviewTotal: number; highPriorityTotal: number;
   lanes: TelemetryLane[];
   foreignPeers: { displayName: string; backendId: string; status: string; cwd: string | null }[];
@@ -130,7 +139,7 @@ interface TelemetrySnapshot {
 
 The dashboard (Binance-dark scaffold + cyberpunk layer; **flat chrome** — no card-in-card nesting, no left-border rails). Revised for the <2 s "who needs me?" grok after review:
 
-- **Primary glance zone** — the **attention triage** half-gauge + the **active-lane cards** are the focal answer. Each card: a status pill + attn/rev/pri/peer chips (owning lane ringed), plus an **activity pulse** canvas rendered ONLY for active lanes (`busy`/`needs_permission`/`awaiting_peer`); idle/stopped lanes show a flat muted line (cuts ~3–4 always-on animators). [Cursor B3/S4]
+- **Primary glance zone** — the **attention triage** half-gauge + the **active-lane cards** are the focal answer. The gauge column now includes the open `attention_flag` details (lane, reversibility, question, rationale, chosen path, uncertainty, trade-offs) so the browser dashboard can answer *what needs judgement*, not only *how many*. Each lane card: a status pill + attn/rev/pri/peer chips (owning lane ringed), plus an **activity pulse** canvas rendered ONLY for active lanes (`busy`/`needs_permission`/`awaiting_peer`); idle/stopped lanes show a flat muted line (cuts ~3–4 always-on animators). [Cursor B3/S4]
 - **History** — the **event stream** (≤14 rows) fed by `recentEvents`, text templated client-side from each `kind`; peer traffic is read here (and on the per-lane `peer` chip) rather than as a separate visual. [radar removed — human decision]
 
 **Each metric is surfaced exactly once** [Cursor B2]: rev/pri/peer live on the lane chips only (the duplicate "signals" bars are removed); attention lives in the gauge (+ per-lane chip). Top bar = one derived triage line (e.g. `2 busy · 1 awaiting · 3 flags`) + uptime — **no `tok/s`** (out of scope; false signal). [Cursor B1, Codex W6]

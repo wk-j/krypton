@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Krypton Harness",
+  "version": "0.1.0",
+  "description": "Send the current page selection to a Krypton harness lane as a chosen action.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3XPjFAqGjh3zAx7ZB7xprx6OEn85EsEqhb/EY+L6tEbvIbh/ptIKbVGMoz5h0rwzweJmeps3icbEEKsOf0F0KGRHq19XAr81owMJNXuaHhteqIm9DyD+Na03M5uJme/yIWYgqlq0leysY1cd8OLcisOfPQtFmeBMQnzj2PdQ8+Hz5HrDckqon/ud814vZPWgWtEU09rrTOtZ2pwW+W5dgjTWqFqlgg3JSk9smOzi/vY1qNr6nMwiAiTs1dACIaEEE9jIH2cFp0+dOjgaAbsjk1NTbl+YZRf7QcUy9uYgC8JNny+iVTtf/wFu3Vuv8GpFTA/WznH4agFKriX6ti840wIDAQAB",
+  "permissions": ["nativeMessaging", "activeTab", "scripting", "storage"],
+  "host_permissions": ["http://127.0.0.1:8766/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Krypton Harness", "default_popup": "popup.html" },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["github-issue.js"],
+      "css": ["github-issue.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

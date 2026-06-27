@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        max-width: 640px;
+        margin: 24px auto;
+        padding: 0 16px;
+        font: 14px/1.5 -apple-system, system-ui, sans-serif;
+        background: #14151a;
+        color: #e8e8ea;
+      }
+      h1 { font-size: 14px; letter-spacing: 0.08em; color: #f0b90b; }
+      p { color: #9aa0a6; font-size: 12px; }
+      .action {
+        background: #1e1f26;
+        border: 1px solid #2b2d36;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+      input, textarea {
+        width: 100%;
+        box-sizing: border-box;
+        background: #14151a;
+        color: #e8e8ea;
+        border: 1px solid #2b2d36;
+        border-radius: 6px;
+        padding: 6px 8px;
+        font: inherit;
+        margin-bottom: 6px;
+      }
+      textarea { min-height: 56px; resize: vertical; font-family: ui-monospace, monospace; }
+      button {
+        background: #f0b90b;
+        color: #14151a;
+        border: 0;
+        border-radius: 6px;
+        padding: 7px 12px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-right: 8px;
+      }
+      button.secondary { background: #2b2d36; color: #e8e8ea; }
+      #status { margin-left: 8px; font-size: 12px; color: #0ecb81; }
+    </style>
+  </head>
+  <body>
+    <h1>KRYPTON HARNESS — ACTIONS</h1>
+    <p>
+      Each action is a prompt sent with your selection. Placeholders:
+      <code>{selection}</code> <code>{title}</code> <code>{url}</code>, and
+      <code>{note}</code> (free text typed in the popup).
+    </p>
+    <div id="list"></div>
+    <button id="add" class="secondary">+ Add action</button>
+    <button id="save">Save</button>
+    <button id="reset" class="secondary">Reset to defaults</button>
+    <span id="status"></span>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

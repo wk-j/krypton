@@ -16,6 +16,15 @@ only**; the `/docs` index stays poll-free. The overlay is injected client-side a
 self-gates on `location.pathname === "/doc"`. ADR-0010 is amended (the surface is
 no longer strictly read-only). See `docs/172-docs-browser-inline-feedback.md`.
 
+## Extended by spec 174 — artifact export
+
+The `/doc` reader also has a compact **Generate artifact** action: click the
+`artifact` pill or press `a` while not typing. The page POSTs to
+`POST /doc-artifact?harness=<id>&path=<rel>` and the harness routes the request
+to its active live lane, which creates a normal lane-authored HTML artifact with
+`artifact_new`, edits the scaffold, and calls `artifact_register`. See
+`docs/174-docs-browser-artifact-export.md`.
+
 ## As-built (rev 3)
 
 Index `/docs` reworked from a single full-tree sidebar into a **Finder-style

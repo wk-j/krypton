@@ -1,22 +1,33 @@
 use axum::{
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    extract::{Query, State},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
+    response::{
+        sse::{Event as SseEvent, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     routing::{get, post},
     Json, Router,
 };
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
+    convert::Infallible,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tauri::AppHandle;
-use tokio::sync::oneshot;
+use tokio::sync::{broadcast, oneshot};
+use tower_http::cors::CorsLayer;
 
 use crate::util::emit::EmitExt;
+
+/// Capacity of the per-server broadcast channel that fans harness events out to
+/// SSE subscribers. A subscriber that falls this far behind receives a `gap`
+/// event and should re-snapshot via `lane.transcript`. See doc 175.
+const EVENT_CHANNEL_CAP: usize = 1024;
 
 pub const API_VERSION: &str = "1.0";
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -84,14 +95,94 @@ impl ControlReply {
     }
 }
 
-#[derive(Default)]
+/// A live harness event pushed by the TypeScript frontend (the state authority,
+/// per ADR-0007) for fan-out to SSE subscribers. Rust never derives these — it
+/// only forwards what the owning view already holds. See doc 175.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ControlStreamEvent {
+    pub harness_id: String,
+    #[serde(default)]
+    pub lane: Option<String>,
+    pub kind: String,
+    /// Monotonic per-server sequence, assigned on publish (any inbound value is
+    /// overwritten) so a reconnecting client can detect gaps.
+    #[serde(default)]
+    pub seq: u64,
+    pub payload: Value,
+}
+
+/// What actually travels over the broadcast channel: the pre-serialized event
+/// JSON plus the routing fields the SSE handler filters on.
+#[derive(Clone)]
+struct StreamFrame {
+    harness_id: String,
+    lane: Option<String>,
+    kind: String,
+    data: String,
+}
+
 pub struct ControlServer {
     token: Mutex<String>,
     pending: Mutex<HashMap<String, oneshot::Sender<ControlReply>>>,
     descriptor_path: Mutex<Option<PathBuf>>,
+    events: broadcast::Sender<StreamFrame>,
+    /// Next sequence to assign. A `Mutex` (not an atomic) so seq assignment and
+    /// the broadcast send happen under one lock — otherwise concurrent publishes
+    /// could push seq N+1 onto the channel before seq N and clients relying on
+    /// seq for gap/order detection would see false reordering (doc 175 review).
+    seq: Mutex<u64>,
+}
+
+impl Default for ControlServer {
+    fn default() -> Self {
+        let (events, _) = broadcast::channel(EVENT_CHANNEL_CAP);
+        Self {
+            token: Mutex::new(String::new()),
+            pending: Mutex::new(HashMap::new()),
+            descriptor_path: Mutex::new(None),
+            events,
+            seq: Mutex::new(0),
+        }
+    }
 }
 
 impl ControlServer {
+    /// Fan a frontend-published harness event out to all SSE subscribers. The
+    /// caller's `seq` is overwritten with the authoritative per-server counter.
+    /// Best-effort: silently drops when there are no subscribers.
+    pub fn publish(&self, mut event: ControlStreamEvent) {
+        // Hold the seq lock across serialize + send so subscribers observe seq
+        // strictly in send order under concurrent publishes (doc 175 review).
+        let mut seq = self.seq.lock().unwrap_or_else(|e| e.into_inner());
+        event.seq = *seq;
+        let data = match serde_json::to_string(&event) {
+            Ok(data) => data,
+            Err(e) => {
+                // seq is not consumed on failure — no gap, the value is reused.
+                log::warn!("control publish: serialize failed: {e}");
+                return;
+            }
+        };
+        *seq += 1;
+        let _ = self.events.send(StreamFrame {
+            harness_id: event.harness_id,
+            lane: event.lane,
+            kind: event.kind,
+            data,
+        });
+    }
+
+    /// Constant-time-ish bearer match for the SSE `?token=` query param, which
+    /// `EventSource` needs because it cannot set an `Authorization` header.
+    fn token_matches(&self, candidate: Option<&str>) -> bool {
+        let Some(candidate) = candidate else {
+            return false;
+        };
+        let expected = self.token.lock().unwrap_or_else(|e| e.into_inner());
+        !expected.is_empty() && candidate == expected.as_str()
+    }
+
     pub fn complete(&self, request_id: &str, reply: ControlReply) -> bool {
         let sender = self
             .pending
@@ -188,10 +279,100 @@ async fn capabilities(
                 "memory.list",
                 "memory.get",
                 "memory.clear",
-                "peer.list"
-            ]
+                "peer.list",
+                "attention.list",
+                "attention.resolve",
+                "artifact.list",
+                "lane.status",
+                "lane.commands",
+                "lane.metrics",
+                "lane.models",
+                "directive.list",
+                "review.outcomes",
+                "diff.review-targets",
+                "diff.review-priority",
+                "diff.review-send",
+                "github.dispatch-issue",
+                "github.issue-status",
+                "github.list-issues",
+                "github.unlink-issue"
+            ],
+            "streaming": {
+                "sse": "/control/v1/events"
+            }
         }))),
     )
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EventQuery {
+    /// Bearer token for `EventSource`, which cannot set request headers.
+    token: Option<String>,
+    /// Optional filters: only forward events for this harness / lane.
+    harness: Option<String>,
+    lane: Option<String>,
+}
+
+/// Server-Sent Events stream of live harness events (doc 175). One-way; commands
+/// still flow over `POST /operations`. Auth accepts either the bearer header or
+/// `?token=`. Emits a `ready` event on connect, the published harness events as
+/// named SSE events, a `gap` event if a slow client lags, and a 15s heartbeat.
+async fn events(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Query(query): Query<EventQuery>,
+) -> Response {
+    if !state.server.authenticated(&headers) && !state.server.token_matches(query.token.as_deref())
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ControlReply::error(
+                "authentication_failed",
+                "invalid bearer token",
+                false,
+            )),
+        )
+            .into_response();
+    }
+
+    let rx = state.server.events.subscribe();
+    let ready = futures_util::stream::once(async {
+        Ok::<_, Infallible>(SseEvent::default().event("ready").data("{}"))
+    });
+    let live = futures_util::stream::unfold(
+        (rx, query.harness, query.lane),
+        |(mut rx, harness, lane)| async move {
+            loop {
+                match rx.recv().await {
+                    Ok(frame) => {
+                        if harness.as_deref().is_some_and(|h| frame.harness_id != h) {
+                            continue;
+                        }
+                        if lane
+                            .as_deref()
+                            .is_some_and(|l| frame.lane.as_deref() != Some(l))
+                        {
+                            continue;
+                        }
+                        let event = SseEvent::default().event(frame.kind).data(frame.data);
+                        return Some((Ok::<_, Infallible>(event), (rx, harness, lane)));
+                    }
+                    Err(broadcast::error::RecvError::Lagged(dropped)) => {
+                        let event = SseEvent::default()
+                            .event("gap")
+                            .data(format!("{{\"dropped\":{dropped}}}"));
+                        return Some((Ok(event), (rx, harness, lane)));
+                    }
+                    Err(broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        },
+    );
+
+    Sse::new(ready.chain(live))
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+        .into_response()
 }
 
 async fn operation(
@@ -252,7 +433,12 @@ pub fn descriptor_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "could not determine config directory".to_string())
 }
 
-pub fn start(app: AppHandle, server: Arc<ControlServer>) {
+pub fn start(
+    app: AppHandle,
+    server: Arc<ControlServer>,
+    configured_port: u16,
+    cors_origins: Vec<String>,
+) {
     std::thread::spawn(move || {
         let rt = match tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
@@ -272,15 +458,37 @@ pub fn start(app: AppHandle, server: Arc<ControlServer>) {
                 app: app.clone(),
                 server: server.clone(),
             });
-            let router = Router::new()
+            let mut router = Router::new()
                 .route("/control/v1/capabilities", get(capabilities))
                 .route("/control/v1/operations", post(operation))
+                .route("/control/v1/events", get(events))
                 .with_state(state);
-            let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+            // Opt-in, exact-origin CORS so a browser app can call the API
+            // directly (doc 175). Empty = proxy-only (the secure default).
+            if let Some(cors) = build_cors(&cors_origins) {
+                router = router.layer(cors);
+            }
+            // Fixed loopback port so external clients (e.g. a browser extension)
+            // have a stable URL; fall back to an OS-assigned port on conflict so
+            // a port clash never silently disables the control server (doc 176).
+            let configured = format!("127.0.0.1:{configured_port}");
+            let listener = match tokio::net::TcpListener::bind(&configured).await {
                 Ok(listener) => listener,
                 Err(e) => {
-                    log::error!("failed to bind ACP control server: {e}");
-                    return;
+                    log::warn!(
+                        "failed to bind ACP control server on {configured}: {e}; \
+                         falling back to an ephemeral port"
+                    );
+                    match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+                        Ok(listener) => listener,
+                        Err(fallback_error) => {
+                            log::error!(
+                                "failed to bind ACP control server on {configured} \
+                                 and ephemeral fallback: {fallback_error}"
+                            );
+                            return;
+                        }
+                    }
                 }
             };
             let port = match listener.local_addr() {
@@ -316,6 +524,50 @@ pub fn start(app: AppHandle, server: Arc<ControlServer>) {
             server.remove_descriptor();
         });
     });
+}
+
+/// Build an exact-origin CORS layer, or `None` when no origins are configured
+/// (proxy-only mode). Never permits `*`; unparseable origins are dropped with a
+/// warning. See doc 175.
+fn build_cors(origins: &[String]) -> Option<CorsLayer> {
+    let parsed: Vec<HeaderValue> = origins
+        .iter()
+        .filter_map(|origin| {
+            if !is_exact_origin(origin) {
+                log::warn!(
+                    "control CORS: refusing non-exact origin {origin:?} — \
+                     use scheme://host[:port], never \"*\" or \"null\""
+                );
+                return None;
+            }
+            match origin.parse::<HeaderValue>() {
+                Ok(value) => Some(value),
+                Err(e) => {
+                    log::warn!("control CORS: ignoring invalid origin {origin:?}: {e}");
+                    None
+                }
+            }
+        })
+        .collect();
+    if parsed.is_empty() {
+        return None;
+    }
+    Some(
+        CorsLayer::new()
+            .allow_origin(parsed)
+            .allow_methods([Method::GET, Method::POST])
+            .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]),
+    )
+}
+
+/// An exact origin is `http://` or `https://` followed by a host — never the
+/// `*` wildcard, `null`, or any value containing `*`. The control API's CORS
+/// contract is exact-origin-only (doc 175 review).
+fn is_exact_origin(origin: &str) -> bool {
+    let rest = origin
+        .strip_prefix("https://")
+        .or_else(|| origin.strip_prefix("http://"));
+    matches!(rest, Some(host) if !host.is_empty() && !origin.contains('*'))
 }
 
 fn write_descriptor(descriptor: &RuntimeDescriptor) -> Result<PathBuf, String> {
@@ -401,5 +653,61 @@ mod tests {
     fn current_pid_is_live() {
         assert!(pid_is_live(std::process::id()));
         assert!(!pid_is_live(0));
+    }
+
+    #[test]
+    fn cors_is_none_without_origins() {
+        assert!(build_cors(&[]).is_none());
+        // Invalid origins are dropped; an all-invalid list yields no layer.
+        assert!(build_cors(&["not a header value\n".to_string()]).is_none());
+        assert!(build_cors(&["http://localhost:5173".to_string()]).is_some());
+    }
+
+    #[test]
+    fn cors_rejects_wildcard_and_non_origins() {
+        // Exact-origin contract: "*", "null", bare hosts, and *-containing
+        // values never build a layer (doc 175 review blocker).
+        assert!(build_cors(&["*".to_string()]).is_none());
+        assert!(build_cors(&["null".to_string()]).is_none());
+        assert!(build_cors(&["example.com".to_string()]).is_none());
+        assert!(build_cors(&["https://*.example.com".to_string()]).is_none());
+        assert!(is_exact_origin("http://localhost:5173"));
+        assert!(is_exact_origin("https://app.example.com"));
+        assert!(!is_exact_origin("https://"));
+    }
+
+    #[test]
+    fn publish_assigns_monotonic_seq() {
+        let server = ControlServer::default();
+        let mut rx = server.events.subscribe();
+        for _ in 0..3 {
+            server.publish(ControlStreamEvent {
+                harness_id: "h1".to_string(),
+                lane: Some("Claude-4".to_string()),
+                kind: "status".to_string(),
+                seq: 999, // caller value must be overwritten
+                payload: json!({ "next": "busy" }),
+            });
+        }
+        let seqs: Vec<u64> = (0..3)
+            .map(|_| {
+                let frame = rx.try_recv().expect("frame");
+                let value: Value = serde_json::from_str(&frame.data).unwrap();
+                value["seq"].as_u64().unwrap()
+            })
+            .collect();
+        assert_eq!(seqs, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn token_match_rejects_empty_and_mismatch() {
+        let server = ControlServer::default();
+        // Empty token (server not started) never matches, even an empty candidate.
+        assert!(!server.token_matches(Some("")));
+        assert!(!server.token_matches(None));
+        *server.token.lock().unwrap() = "secret".to_string();
+        assert!(server.token_matches(Some("secret")));
+        assert!(!server.token_matches(Some("nope")));
+        assert!(!server.token_matches(None));
     }
 }

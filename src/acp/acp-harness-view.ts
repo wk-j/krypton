@@ -29,6 +29,7 @@ import type {
   HarnessMcpLaneStats,
   ArtifactComment,
   ArtifactFeedbackEnvelope,
+  DocArtifactRequestEnvelope,
   DocComment,
   DocFeedbackEnvelope,
   HarnessMemoryEntry,
@@ -57,7 +58,7 @@ import {
   renderReviewPriorityOverlay,
   type ReviewPriorityOverlayViewModel,
 } from './review-priority-overlay';
-import { ArtifactFeedbackQueue, DocFeedbackQueue } from './artifact-feedback';
+import { ArtifactFeedbackQueue, DocArtifactRequestQueue, DocFeedbackQueue } from './artifact-feedback';
 import { DiffReviewQueue } from './diff-review';
 import {
   InterLaneCoordinator,
@@ -79,6 +80,7 @@ import {
   listHarnessEntries,
   type HarnessEntry,
 } from './harness-directory';
+import { publishControlEvent, type ControlEventKind } from './control-publish';
 import { parseMentionFanOut } from './mention-parse';
 import {
   applyMentionSelection,
@@ -463,11 +465,17 @@ const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resol
 // reports diff reading-order hints at end-of-turn; a permission prompt there
 // would interrupt the turn boundary for a purely-advisory signal.
 const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome', 'mark_review_priority']);
+// spec 178: issue_report is default-on built-in harness-bus tooling — the lane
+// reports github issue-fixing progress to refresh the live status card. It must
+// auto-allow like the others; a permission prompt on every progress report would
+// defeat the live-overlay story (and the report is advisory, never destructive).
+const HARNESS_ISSUE_TOOL_NAMES = new Set(['issue_report']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
   ...HARNESS_PEER_TOOL_NAMES,
   ...HARNESS_ATTENTION_TOOL_NAMES,
   ...HARNESS_REVIEW_TOOL_NAMES,
+  ...HARNESS_ISSUE_TOOL_NAMES,
 ]);
 const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
@@ -804,6 +812,41 @@ interface HarnessLane {
 interface LaneGoal {
   text: string;
   setAt: number;
+}
+
+/** spec 178: GitHub issue-fixing. A binding between a GitHub issue and the lane
+ *  fixing it. Lives in a harness-level map keyed by `issueKey`, persisted to disk
+ *  so it survives a Krypton restart (the lane process does not). `phase/summary/
+ *  prUrl` are lane self-reported via the `issue_report` MCP tool. */
+type IssuePhase =
+  | 'investigating' | 'fixing' | 'testing'
+  | 'review' | 'pr_opened' | 'done' | 'blocked';
+
+interface IssueBinding {
+  issueKey: string; // canonical id: "owner/repo#123"
+  issueUrl: string;
+  repo: string; // "owner/repo"
+  number: number;
+  title: string;
+  harnessId: string;
+  laneId: string;
+  laneDisplayName: string;
+  dispatchedAt: number;
+  phase?: IssuePhase;
+  summary?: string;
+  prUrl?: string;
+  updatedAt: number;
+}
+
+/** spec 178: the snapshot any surface pulls for one issue — the persisted binding
+ *  merged with the live lane status. Refresh-safe: a browser reload re-pulls this. */
+interface IssueStatusSnapshot {
+  bound: boolean;
+  binding?: IssueBinding;
+  laneStatus?: string;
+  lastMessage?: string;
+  pendingPermissions?: number;
+  attention?: number;
 }
 
 /** spec 136: one user prompt captured while the lane was busy, awaiting drain. */
@@ -1222,6 +1265,10 @@ export class AcpHarnessView implements ContentView {
   private triageRedirect: { itemId: string; draft: string } | null = null;
   private attentionFlagUnlisten: UnlistenFn | null = null;
   private attentionResolveUnlisten: UnlistenFn | null = null;
+  /** spec 178: github issue-fixing bindings, keyed by issueKey. Persisted to disk
+   *  (acp_save/load_issue_bindings) and rehydrated on register. */
+  private readonly issueBindings = new Map<string, IssueBinding>();
+  private issueReportUnlisten: UnlistenFn | null = null;
   /** spec 146: review quality matrix — summary-only #review history per lane. */
   private reviewQualityStore = new ReviewQualityStore(this.laneBus);
   private reviewMatrixOverlayOpen = false;
@@ -1258,10 +1305,12 @@ export class AcpHarnessView implements ContentView {
    *  (a dedicated queue, NOT the peer LaneInbox). Constructed in the ctor. */
   private feedbackQueue: ArtifactFeedbackQueue;
   private docsFeedbackQueue: DocFeedbackQueue;
+  private docsArtifactQueue: DocArtifactRequestQueue;
   private diffReviewQueue: DiffReviewQueue;
   private telemetryPublisher: HarnessTelemetryPublisher | null = null;
   private feedbackUnlisten: UnlistenFn | null = null;
   private docsFeedbackUnlisten: UnlistenFn | null = null;
+  private docsArtifactUnlisten: UnlistenFn | null = null;
   /** spec 133: artifact hint mode (open-artifact labels), active only when on. */
   private artifactHintMode = false;
   private artifactHintBuffer = '';
@@ -1403,6 +1452,17 @@ export class AcpHarnessView implements ContentView {
         if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'docs feedback');
       },
     );
+    // spec 174: docs-browser artifact requests also route to the active lane and
+    // drain on idle/awaiting_peer, but compose an artifact-generation task rather
+    // than source-edit feedback.
+    this.docsArtifactQueue = new DocArtifactRequestQueue(
+      this.laneBus,
+      (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
+      (laneId, text) => {
+        const lane = this.lanes.find((l) => l.id === laneId);
+        if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'docs artifact');
+      },
+    );
     // spec 158: diff review comments drain on the lane's next idle, same as
     // artifact feedback. Constructed AFTER the feedback queue (and the
     // coordinator) for the same reason: LaneBus dispatches in insertion order,
@@ -1459,6 +1519,9 @@ export class AcpHarnessView implements ContentView {
       type: 'lane:status',
       payload: { laneId: lane.id, prev, next, at: Date.now() },
     });
+    // Mirror status transitions to the control SSE stream (doc 175) so a web
+    // mirror sees the lane go busy/idle/error without polling.
+    this.publishStream(lane, 'status', { prev, next });
     // spec 155: a transition into `idle` is a lane quiet point (ADR-0008) —
     // announce it globally so a Diff Window over the same repo refreshes its
     // working diff. Payload is just the projectDir; no lane identity needed.
@@ -1662,8 +1725,131 @@ export class AcpHarnessView implements ContentView {
       });
       return { status: outcome === 'duplicate' ? 'duplicate' : 'accepted' };
     }
+    // spec 175: harness-scoped read operations for a web mirror.
+    if (operation === 'lane.status') {
+      return this.lanes.map((l) => {
+        const directive = this.directiveById(l.activeDirectiveId);
+        return {
+          laneId: l.id,
+          displayName: l.displayName,
+          backendId: l.backendId,
+          sessionId: l.sessionId,
+          status: l.status,
+          modelName: l.modelName,
+          currentModelId: l.currentModelId,
+          queueDepth: l.queuedPrompts.length,
+          pendingPermissions: l.pendingPermissions.length,
+          goal: l.goal ?? null,
+          permissionMode: l.permissionMode,
+          directive: directive
+            ? { id: directive.id, title: directive.title, task: directive.task }
+            : null,
+          activity: l.activity ?? null,
+        };
+      });
+    }
+    if (operation === 'directive.list') {
+      return this.directives.map((d) => ({
+        id: d.id,
+        title: d.title,
+        task: d.task,
+        description: d.description,
+        enabled: d.enabled,
+      }));
+    }
+    if (operation === 'review.outcomes') {
+      return this.reviewQualityStore
+        .lanesWithHistory()
+        .flatMap((laneId) => this.reviewQualityStore.historyFor(laneId));
+    }
+    if (operation === 'attention.list') {
+      return this.triageStore.openItems().map((item) => ({
+        id: item.id,
+        lane: this.lanes.find((l) => l.id === item.laneId)?.displayName ?? null,
+        question: item.question,
+        chosen: item.chosen,
+        rationale: item.rationale,
+        tradedOff: item.tradedOff,
+        uncertainty: item.uncertainty,
+        reversibility: item.reversibility,
+        diffstat: item.diffstat,
+        createdAt: item.createdAt,
+        status: item.status,
+      }));
+    }
+    if (operation === 'attention.resolve') {
+      const itemId = requiredString(params, 'itemId');
+      const resolved = this.triageStore.accept(itemId);
+      if (!resolved) throw controlError('attention_not_found', `no open attention item: ${itemId}`);
+      if (this.triageOverlayOpen) this.renderTriageOverlayEl();
+      return { resolved: true, itemId };
+    }
+    if (operation === 'artifact.list') {
+      return Array.from(this.artifacts.values()).map((record) => ({
+        id: record.id,
+        title: record.title,
+        path: record.path,
+        lane: record.laneLabel,
+        state: record.state, // 'pending' | 'registered_live'
+        size: record.size,
+        hash: record.hash,
+      }));
+    }
+    // spec 178: github issue-fixing. dispatch-issue runs the shared dispatchIssue
+    // path (also used by the Krypton palette / #fix-issue). The issueKey-addressed
+    // reads (status/list/unlink) are fanned out across harnesses by control-bridge.
+    if (operation === 'github.dispatch-issue') {
+      const repo = requiredString(params, 'repo');
+      const number = requiredNumber(params, 'number');
+      const issueKey =
+        (typeof params.issueKey === 'string' && params.issueKey) || `${repo}#${number}`;
+      const issueUrl =
+        (typeof params.issueUrl === 'string' && params.issueUrl) ||
+        `https://github.com/${repo}/issues/${number}`;
+      // dispatchIssue fetches metadata itself when title is absent (single fetch site).
+      const title = typeof params.title === 'string' ? params.title : undefined;
+      const body = typeof params.body === 'string' ? params.body : undefined;
+      const targetLane = typeof params.targetLane === 'string' ? params.targetLane : null;
+      const prompt = typeof params.prompt === 'string' ? params.prompt : undefined;
+      return this.dispatchIssue({ issueKey, issueUrl, repo, number, title, body, targetLane, prompt });
+    }
+    if (operation === 'github.issue-status') {
+      return this.issueStatusSnapshot(requiredString(params, 'issueKey'));
+    }
+    if (operation === 'github.list-issues') {
+      return Array.from(this.issueBindings.values());
+    }
+    if (operation === 'github.unlink-issue') {
+      const issueKey = requiredString(params, 'issueKey');
+      const had = this.issueBindings.delete(issueKey);
+      if (had) this.persistIssueBindings();
+      return { ok: had };
+    }
     const lane = this.controlLane(params);
     switch (operation) {
+      case 'lane.commands':
+        return lane.availableCommands.map((command) => ({
+          name: command.name,
+          description: command.description ?? null,
+        }));
+      case 'lane.metrics':
+        return {
+          lane: lane.displayName,
+          status: lane.status,
+          usage: lane.usage ?? null,
+          queueDepth: lane.queuedPrompts.length,
+          modelName: lane.modelName,
+        };
+      case 'lane.models':
+        return {
+          lane: lane.displayName,
+          currentModelId: lane.currentModelId,
+          models: lane.availableModels.map((m) => ({
+            modelId: m.model_id,
+            name: m.name,
+            description: m.description ?? null,
+          })),
+        };
       case 'lane.send': {
         const text = requiredString(params, 'text').trim();
         if (!text) throw controlError('invalid_request', 'text must not be empty');
@@ -2190,6 +2376,48 @@ export class AcpHarnessView implements ContentView {
       reply({ accepted: true });
     });
 
+    // spec 174: a browser POSTed a docs-browser artifact request. Like docs
+    // feedback, the recipient is this harness's active live lane. The lane still
+    // creates the artifact through artifact_new/edit/artifact_register so the
+    // normal artifact transcript, write grant, and feedback token all apply.
+    this.docsArtifactUnlisten = await listen<{
+      harnessId?: string;
+      docPath: string;
+      batchId: string;
+      title: string;
+      requestId?: string;
+    }>('acp-docs-artifact-requested', (e) => {
+      const p = e.payload;
+      if (!this.harnessMemoryId || p.harnessId !== this.harnessMemoryId) return;
+      const reply = (result: unknown): void => {
+        if (!p.requestId) return;
+        void invoke('acp_bus_reply', { requestId: p.requestId, result }).catch((err) => {
+          console.warn('acp_bus_reply (docs artifact) failed', err);
+        });
+      };
+      const lane = this.activeLane();
+      if (!lane || lane.status === 'stopped') {
+        reply({ accepted: false, reason: 'no_live_lane' });
+        return;
+      }
+      const envelope: DocArtifactRequestEnvelope = {
+        kind: 'doc_artifact_request',
+        batchId: p.batchId,
+        harnessId: this.harnessMemoryId,
+        docPath: p.docPath,
+        title: p.title,
+        sentAt: Date.now(),
+      };
+      const outcome = this.docsArtifactQueue.accept(lane.id, envelope);
+      if (outcome === 'duplicate') {
+        reply({ accepted: true, reason: 'duplicate' });
+        return;
+      }
+      this.appendTranscript(lane, 'system', `Artifact requested for docs «${p.docPath}»`);
+      this.scheduleLaneRender(lane);
+      reply({ accepted: true });
+    });
+
     // spec 161: the directive_* MCP tools were removed, so the Rust round-trip
     // events `acp-harness-directives-changed` / `acp-directive-apply-requested`
     // are no longer emitted and their listeners are gone. Directive authoring is
@@ -2261,6 +2489,55 @@ export class AcpHarnessView implements ContentView {
         if (this.triageOverlayOpen) this.renderTriageOverlayEl();
       },
     );
+
+    // spec 178: a lane self-reports github issue-fixing progress via the
+    // issue_report MCP tool. Mirrors the attention_flag round-trip: update the
+    // lane's most-recent binding, persist, republish status, reply inside the
+    // bus timeout so the agent never sees a false failure.
+    type IssueReportEvent = {
+      fromLaneId: string; // display name from Rust (lane label)
+      issueKey: string; // which issue this report is about (required on the tool)
+      phase?: IssuePhase;
+      summary?: string;
+      prUrl?: string;
+      harnessId?: string;
+      requestId?: string;
+    };
+    this.issueReportUnlisten = await listen<IssueReportEvent>('acp-issue-report', (e) => {
+      const env = e.payload;
+      const requestId = env.requestId;
+      if (!this.harnessMemoryId || env.harnessId !== this.harnessMemoryId) return;
+      const sendReply = (result: { ok: boolean; reason?: string }): void => {
+        if (!requestId) return;
+        void invoke('acp_bus_reply', { requestId, result }).catch((err) =>
+          console.warn('acp_bus_reply (issue_report) failed', err),
+        );
+      };
+      const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
+      if (!lane) {
+        sendReply({ ok: false, reason: 'unknown_lane' });
+        return;
+      }
+      // Resolve the binding by the issueKey the lane reported, not by guessing its
+      // most-recent dispatch — that breaks when one lane is fixing several issues.
+      const binding = this.issueBindings.get(env.issueKey);
+      if (!binding) {
+        sendReply({ ok: false, reason: 'no_binding' });
+        return;
+      }
+      // A lane may only report on an issue actually bound to it.
+      if (binding.laneId !== lane.id) {
+        sendReply({ ok: false, reason: 'wrong_lane' });
+        return;
+      }
+      if (env.phase) binding.phase = env.phase;
+      if (typeof env.summary === 'string') binding.summary = env.summary.slice(0, 300);
+      if (typeof env.prUrl === 'string') binding.prUrl = env.prUrl.slice(0, 500);
+      binding.updatedAt = Date.now();
+      this.persistIssueBindings();
+      this.publishIssueStatus(binding);
+      sendReply({ ok: true });
+    });
 
     // spec 146: the authoring lane self-reports a #review summary at synthesis
     // time. All fields are self-reported (no git collection, no session state) —
@@ -3424,6 +3701,10 @@ export class AcpHarnessView implements ContentView {
       this.attentionResolveUnlisten();
       this.attentionResolveUnlisten = null;
     }
+    if (this.issueReportUnlisten) {
+      this.issueReportUnlisten();
+      this.issueReportUnlisten = null;
+    }
     if (this.reviewOutcomeUnlisten) {
       this.reviewOutcomeUnlisten();
       this.reviewOutcomeUnlisten = null;
@@ -3455,8 +3736,13 @@ export class AcpHarnessView implements ContentView {
       this.docsFeedbackUnlisten();
       this.docsFeedbackUnlisten = null;
     }
+    if (this.docsArtifactUnlisten) {
+      this.docsArtifactUnlisten();
+      this.docsArtifactUnlisten = null;
+    }
     this.feedbackQueue.dispose();
     this.docsFeedbackQueue.dispose();
+    this.docsArtifactQueue.dispose();
     this.diffReviewQueue.dispose();
     this.usageProviderListeners.clear();
     if (this.transcriptResizeObserver) {
@@ -4324,6 +4610,200 @@ export class AcpHarnessView implements ContentView {
     await this.refreshMemory();
     await this.refreshMcpStats();
     await this.refreshArtifacts();
+    await this.refreshIssueBindings();
+  }
+
+  // ─── spec 178: GitHub issue fixing ────────────────────────────────────────
+
+  /** Rehydrate persisted issue bindings on register. After a Krypton restart the
+   *  lanes they reference are gone, so their snapshots report `stopped` — the card
+   *  still renders the last persisted phase/PR and offers re-dispatch. */
+  private async refreshIssueBindings(): Promise<void> {
+    if (!this.harnessMemoryId) return;
+    try {
+      const rows = await invoke<IssueBinding[]>('acp_load_issue_bindings', {
+        harnessId: this.harnessMemoryId,
+      });
+      for (const row of rows) this.issueBindings.set(row.issueKey, row);
+    } catch (e) {
+      console.warn('[acp-harness] refreshIssueBindings failed:', e);
+    }
+  }
+
+  private persistIssueBindings(): void {
+    if (!this.harnessMemoryId) return;
+    void invoke('acp_save_issue_bindings', {
+      harnessId: this.harnessMemoryId,
+      bindings: Array.from(this.issueBindings.values()),
+    }).catch((e) => console.warn('[acp-harness] persistIssueBindings failed:', e));
+  }
+
+  /** Parse a GitHub issue reference: a full issue URL or `owner/repo#123`. */
+  private parseIssueRef(input: string): { repo: string; number: number; url: string } | null {
+    const s = input.trim();
+    const build = (repo: string, raw: string): { repo: string; number: number; url: string } | null => {
+      const number = Number(raw);
+      // Reject zero / negatives: a positive integer issue number, like the
+      // extension's parseIssueRef, so the two free-text parsers validate alike.
+      if (!Number.isInteger(number) || number <= 0) return null;
+      return { repo, number, url: `https://github.com/${repo}/issues/${number}` };
+    };
+    const m = s.match(/github\.com\/([^/\s]+\/[^/\s]+)\/issues\/(\d+)/i);
+    if (m) return build(m[1], m[2]);
+    const m2 = s.match(/^([\w.-]+\/[\w.-]+)#(\d+)$/);
+    if (m2) return build(m2[1], m2[2]);
+    return null;
+  }
+
+  /** Fetch issue title/body via the local `gh` CLI. Returns null when `gh` is
+   *  missing/unauthed — the caller falls back to letting the lane fetch it. */
+  private async fetchIssueMeta(
+    repo: string,
+    issueNumber: number,
+  ): Promise<{ title?: string; body?: string } | null> {
+    try {
+      const raw = await invoke<string>('run_command', {
+        program: 'gh',
+        args: ['issue', 'view', String(issueNumber), '-R', repo, '--json', 'title,body'],
+        cwd: this.projectDir ?? undefined,
+      });
+      return JSON.parse(raw) as { title?: string; body?: string };
+    } catch (e) {
+      console.warn('[acp-harness] gh issue view failed (falling back to URL-only):', e);
+      return null;
+    }
+  }
+
+  private buildFixPrompt(binding: IssueBinding, body?: string): string {
+    const lines = [`Fix GitHub issue ${binding.issueKey}: ${binding.title}`, `URL: ${binding.issueUrl}`];
+    if (body && body.trim()) {
+      lines.push('', 'Issue description:', body.trim());
+    } else {
+      lines.push(
+        '',
+        `Fetch the issue first (e.g. \`gh issue view ${binding.number} -R ${binding.repo}\`), then investigate and fix it.`,
+      );
+    }
+    lines.push(
+      '',
+      `As you work, call issue_report { issue_key: "${binding.issueKey}", phase, summary, pr_url } ` +
+        'to report progress (phases: investigating, fixing, testing, review, pr_opened, done, blocked). ' +
+        'Pass that issue_key verbatim so the status lands on this issue.',
+    );
+    return lines.join('\n');
+  }
+
+  /** The single convergence point for "fix this issue", called by every surface
+   *  (Krypton palette / #fix-issue, and the github.dispatch-issue control op). */
+  private async dispatchIssue(args: {
+    issueKey: string;
+    issueUrl: string;
+    repo: string;
+    number: number;
+    title?: string;
+    body?: string;
+    targetLane?: string | null;
+    prompt?: string;
+  }): Promise<{ harnessId: string; lane: string; issueKey: string }> {
+    if (!this.harnessMemoryId) throw controlError('control_failed', 'harness memory not ready');
+    // Dedupe: if the issue is already bound to a live lane, focus it instead of
+    // spawning a duplicate. A stale binding (lane gone) is dropped + re-dispatched.
+    const existing = this.issueBindings.get(args.issueKey);
+    if (existing) {
+      const live = this.lanes.find((l) => l.id === existing.laneId && l.status !== 'stopped');
+      if (live) {
+        this.activateLane(live.id);
+        return { harnessId: this.harnessMemoryId, lane: live.displayName, issueKey: args.issueKey };
+      }
+      this.issueBindings.delete(args.issueKey);
+    }
+    // Resolve metadata here so every caller (control op, #fix-issue, palette) shares
+    // ONE fetch site + ONE fallback policy: fetch via `gh` only when title is absent.
+    let title = args.title?.trim() ?? '';
+    let body = args.body;
+    if (!title) {
+      const meta = await this.fetchIssueMeta(args.repo, args.number);
+      title = meta?.title?.trim() || args.issueKey;
+      if (body == null) body = meta?.body;
+    }
+    // Choose the lane: a named existing lane, or a fresh dedicated one (default).
+    let lane: HarnessLane;
+    const want = args.targetLane && args.targetLane !== '__new__' ? args.targetLane : null;
+    if (want) {
+      const found = this.lanes.find((l) => l.displayName === want);
+      if (!found) throw controlError('unknown_lane', `unknown lane: ${want}`);
+      lane = found;
+      // Refuse before mutating state if we can neither send nor queue — otherwise
+      // the card would show "bound/working" while the lane never receives the task.
+      if (lane.status !== 'idle' && lane.queuedPrompts.length >= PROMPT_QUEUE_MAX) {
+        throw controlError('queue_full', `${lane.displayName} prompt queue is full`);
+      }
+    } else {
+      const backendId = this.activeLane()?.backendId ?? this.pickerEntries[0]?.id;
+      if (!backendId) throw controlError('control_failed', 'no backend available to spawn a lane');
+      const before = new Set(this.lanes.map((l) => l.id));
+      await this.addLane(backendId);
+      lane = this.lanes.find((l) => !before.has(l.id)) ?? this.lanes[this.lanes.length - 1];
+    }
+    const now = Date.now();
+    const binding: IssueBinding = {
+      issueKey: args.issueKey,
+      issueUrl: args.issueUrl,
+      repo: args.repo,
+      number: args.number,
+      title,
+      harnessId: this.harnessMemoryId,
+      laneId: lane.id,
+      laneDisplayName: lane.displayName,
+      dispatchedAt: now,
+      updatedAt: now,
+    };
+    this.issueBindings.set(args.issueKey, binding);
+    // The lane badge rides the existing goal chip (spec 148) — set it directly so
+    // a freshly-spawned lane shows the issue without a session respawn.
+    lane.goal = { text: `Fix #${args.number}: ${title}`.slice(0, 200), setAt: now };
+    this.persistIssueBindings();
+    this.publishIssueStatus(binding);
+    const prompt = args.prompt?.trim() || this.buildFixPrompt(binding, body);
+    if (lane.status === 'idle') {
+      void this.sendUserPrompt(lane, prompt, [], { clearDraft: false });
+    } else {
+      // A just-spawned lane is 'starting' — queue; the queue drains on first idle.
+      // Capacity was checked above for the existing-lane path; a fresh lane is empty.
+      lane.queuedPrompts.push({ text: prompt, images: [], mentionTargets: [] });
+    }
+    this.render();
+    return { harnessId: this.harnessMemoryId, lane: lane.displayName, issueKey: args.issueKey };
+  }
+
+  private issueStatusSnapshot(issueKey: string): IssueStatusSnapshot {
+    const binding = this.issueBindings.get(issueKey);
+    if (!binding) return { bound: false };
+    const lane = this.lanes.find((l) => l.id === binding.laneId);
+    const lastMessage = lane
+      ? [...lane.transcript].reverse().find((t) => t.kind === 'assistant')?.text
+      : undefined;
+    const attention = lane
+      ? this.triageStore.openItems().filter((i) => i.laneId === lane.id).length
+      : 0;
+    return {
+      bound: true,
+      binding,
+      laneStatus: lane ? lane.status : 'stopped',
+      lastMessage: lastMessage ? truncate(lastMessage.replace(/\s+/g, ' ').trim(), 160) : undefined,
+      pendingPermissions: lane ? lane.pendingPermissions.length : 0,
+      attention,
+    };
+  }
+
+  private publishIssueStatus(binding: IssueBinding): void {
+    if (!this.harnessMemoryId) return;
+    publishControlEvent({
+      harnessId: this.harnessMemoryId,
+      lane: binding.laneDisplayName,
+      kind: 'issue_status',
+      payload: this.issueStatusSnapshot(binding.issueKey),
+    });
   }
 
   /** spec 173: replay the harness's disk-rehydrated artifacts into the mirror.
@@ -4679,7 +5159,21 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  /** Forward a lane event to the control server's SSE subscribers (doc 175). */
+  private publishStream(lane: HarnessLane, kind: ControlEventKind, payload: unknown): void {
+    if (!this.harnessMemoryId) return;
+    publishControlEvent({
+      harnessId: this.harnessMemoryId,
+      lane: lane.displayName,
+      kind,
+      payload,
+    });
+  }
+
   private onLaneEvent(lane: HarnessLane, event: AcpEvent): void {
+    // Mirror every agent event to the control SSE stream (doc 175) before local
+    // handling. The frontend stays the authority; this only forwards.
+    this.publishStream(lane, event.type as ControlEventKind, event);
     let needsRender = true;
     switch (event.type) {
       case 'user_message_chunk':
@@ -5076,7 +5570,7 @@ export class AcpHarnessView implements ContentView {
     // it unconditionally for discoverability under a capped tool search, like the
     // attention tools. Purely advisory: the Window only folds/marks, never hides.
     lines.push(
-      'Diff reading priority: at the end of a turn where you edited files, you MAY call mark_review_priority { ranges } to tell the human\'s Diff Window where to spend reading attention. Report only the non-default ranges — `high` for core logic / interface / risk to read first, `routine` for mechanical churn (generated code, renames, imports, formatting) — anchored on the NEW side (the post-change line numbers you wrote); everything you omit stays `normal` and renders in full. The Window only folds `routine` (always one keystroke from full) and marks/navigates `high`; it never hides or reorders, so a small honest report is right and silence yields the full diff. At most once per turn, only when you changed files.',
+      'Diff reading priority: at the end of a turn where you edited files, you MAY call mark_review_priority { ranges } to tell the human\'s Diff Window where to spend reading attention. Report only the non-default ranges — `high` for core logic / interface / risk to read first, `routine` for mechanical churn (generated code, renames, imports, formatting) — anchored on the NEW side (the post-change line numbers you wrote); each range may include an optional short `reason` explaining why it was marked. Everything you omit stays `normal` and renders in full. The Window only folds `routine` (always one keystroke from full) and marks/navigates `high`; it never hides or reorders, so a small honest report is right and silence yields the full diff. At most once per turn, only when you changed files.',
     );
     // spec 146: review_outcome is default-on but only used during a #review
     // round (which needs reviewer lanes), so name it for discoverability only
@@ -5568,6 +6062,7 @@ export class AcpHarnessView implements ContentView {
     // Drop any queued-but-undrained feedback for the lane's now-dead session.
     this.feedbackQueue.dropLane(lane.id);
     this.docsFeedbackQueue.dropLane(lane.id);
+    this.docsArtifactQueue.dropLane(lane.id);
     this.diffReviewQueue.dropLane(lane.id);
     // spec 160: the lane's diff review-priority report describes a diff its now
     // dead session produced — drop it so the Diff Window stops triaging by it.
@@ -6742,6 +7237,32 @@ export class AcpHarnessView implements ContentView {
       this.setDraft(lane, '', 0);
       this.runQueueCommand(lane, parts.slice(1));
       this.render();
+      return;
+    }
+    // spec 178: #fix-issue <url | owner/repo#123> — dispatch a GitHub issue fix to
+    // a fresh lane. Metadata via local `gh`; URL-only fallback when gh is absent.
+    if (parts[0] === '#fix-issue') {
+      this.setDraft(lane, '', 0);
+      const ref = this.parseIssueRef(parts.slice(1).join(' '));
+      if (!ref) {
+        this.flashChip('usage: #fix-issue <issue url | owner/repo#123>');
+        return;
+      }
+      const issueKey = `${ref.repo}#${ref.number}`;
+      this.flashChip(`fetching ${issueKey}…`);
+      try {
+        // dispatchIssue resolves the title via `gh` itself (single fetch site).
+        const res = await this.dispatchIssue({
+          issueKey,
+          issueUrl: ref.url,
+          repo: ref.repo,
+          number: ref.number,
+          targetLane: '__new__',
+        });
+        this.flashChip(`fixing ${issueKey} → ${res.lane}`);
+      } catch (e) {
+        this.flashChip(`fix-issue failed: ${errorText(e)}`);
+      }
       return;
     }
     this.flashChip('unknown command');
@@ -8674,10 +9195,17 @@ export class AcpHarnessView implements ContentView {
       } catch (e) {
         console.warn('[spec117] parser_end during seal failed', e);
       }
-      // Resolve agent-emitted local image paths on the LIVE body before caching:
-      // a sealed foreground row is not re-rendered (its renderSignature is
-      // stabilised below), so this is the only chance to fix its <img> srcs.
-      resolveLocalImageSrcs(body, this.projectDir);
+      // Spec 117 table fix: if the message contains a GFM table, re-render the
+      // sealed body with marked (smd's single-pass table parser is brittle);
+      // otherwise keep smd's output. Either branch resolves agent-emitted local
+      // image paths on the LIVE body before caching — a sealed foreground row is
+      // not re-rendered (renderSignature is stabilised below), so this is the
+      // only chance to fix its <img> srcs.
+      if (hasMarkdownTable(item.text)) {
+        rerenderAssistantMarkdownWithMarked(body, item.text, this.projectDir);
+      } else {
+        resolveLocalImageSrcs(body, this.projectDir);
+      }
       item.markdownHtml = body.innerHTML;
       item.markdownSource = item.text;
       // Stabilise signature so the next renderActiveTranscript() pass hits the
@@ -8691,11 +9219,16 @@ export class AcpHarnessView implements ContentView {
     } else {
       // Branch B — cold-cache offscreen capture for background-only streams.
       const offscreen = document.createElement('div');
-      const renderer = makeSafeRenderer(offscreen);
-      const parser = smd.parser(renderer);
       try {
-        smd.parser_write(parser, item.text);
-        smd.parser_end(parser);
+        if (hasMarkdownTable(item.text)) {
+          // Spec 117 table fix: marked renders the table correctly; smd would
+          // break it. No provenance node exists on this fresh offscreen div.
+          offscreen.innerHTML = md.parse(item.text, { async: false }) as string;
+        } else {
+          const parser = smd.parser(makeSafeRenderer(offscreen));
+          smd.parser_write(parser, item.text);
+          smd.parser_end(parser);
+        }
         resolveLocalImageSrcs(offscreen, this.projectDir);
         item.markdownHtml = offscreen.innerHTML;
         item.markdownSource = item.text;
@@ -9278,6 +9811,30 @@ export class AcpHarnessView implements ContentView {
       keybinding: 'Ctrl+M',
       execute: () => this.showMemoryDrawer(),
     });
+    // spec 178: prefill the #fix-issue verb (keyboard-first dispatch). The user
+    // pastes the issue URL inline and submits — reuses the hash-command path.
+    out.push({
+      id: 'acp.harness.fix-issue',
+      label: 'Fix GitHub Issue…',
+      category: 'ACP Harness',
+      execute: () => {
+        this.setDraft(lane, '#fix-issue ', '#fix-issue '.length);
+        this.render();
+      },
+    });
+    const boundForLane = Array.from(this.issueBindings.values()).find((b) => b.laneId === lane.id);
+    if (boundForLane) {
+      out.push({
+        id: 'acp.harness.open-issue',
+        label: `Open Bound GitHub Issue (#${boundForLane.number})`,
+        category: 'ACP Harness',
+        execute: () => {
+          void invoke('open_url', { url: boundForLane.issueUrl }).catch(() =>
+            this.flashChip('open issue failed'),
+          );
+        },
+      });
+    }
     return out;
   }
 
@@ -10086,6 +10643,44 @@ function updateStreamingAssistantMarkdownBody(
     }
     item.streamingMarkdownWritten = item.text.length;
   }
+}
+
+// Spec 117 table fix: streaming-markdown is a single-pass parser whose table
+// state machine desyncs if a stream chunk boundary lands mid-table — the rest of
+// the table then renders as literal `| … |` text and that broken DOM is frozen at
+// seal. marked is a full two-pass GFM parser that renders tables correctly, so at
+// seal we re-render with marked — but ONLY when the message actually contains a
+// table, so ordinary messages keep the cheaper smd output and pay no extra cost.
+// The guard matches a GFM delimiter row (the |---|---| line under the header)
+// with at least two columns.
+const MARKDOWN_TABLE_DELIMITER =
+  /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$/m;
+
+export function hasMarkdownTable(text: string): boolean {
+  return MARKDOWN_TABLE_DELIMITER.test(text);
+}
+
+// Re-render assistant markdown into `body` with marked (robust GFM tables),
+// preserving a leading lane-mail provenance node the streaming body may carry.
+// On parse failure the existing streaming-markdown body is left untouched.
+function rerenderAssistantMarkdownWithMarked(
+  body: HTMLElement,
+  text: string,
+  projectDir: string | null,
+): void {
+  const prov = body.querySelector<HTMLElement>(
+    ':scope > .acp-harness__lane-mail-provenance',
+  );
+  let html: string;
+  try {
+    html = md.parse(text, { async: false }) as string;
+  } catch (e) {
+    console.warn('[spec117] marked table re-render failed; keeping stream output', e);
+    return;
+  }
+  body.innerHTML = html;
+  if (prov) body.insertBefore(prov, body.firstChild);
+  resolveLocalImageSrcs(body, projectDir);
 }
 
 // Veiled thinking: providers that keep reasoning server-side (Claude Code on

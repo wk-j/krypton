@@ -467,6 +467,87 @@ impl HookServer {
         });
     }
 
+    /// spec 178: persist a harness's issue↔lane bindings to disk, atomically
+    /// (tmp-file + rename), in a `*.issue-bindings.json` sibling of the handoff
+    /// memory file. The `bindings` value is stored verbatim — the frontend owns
+    /// its shape. No-op (Ok) when the harness has no project dir / persistence
+    /// path. The frontend re-persists on every binding mutation.
+    pub fn save_issue_bindings(&self, harness_id: &str, bindings: Value) -> Result<(), String> {
+        let project_dir = {
+            let memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
+            match memories.get(harness_id) {
+                Some(store) => store.project_dir.clone(),
+                None => return Ok(()),
+            }
+        };
+        let project_dir = match project_dir {
+            Some(dir) => dir,
+            None => return Ok(()),
+        };
+        let path = match get_issue_bindings_path(&project_dir) {
+            Some(path) => path,
+            None => return Ok(()),
+        };
+
+        let persisted = json!({
+            "version": 1,
+            "harnessId": harness_id,
+            "savedAt": now_ms(),
+            "bindings": bindings,
+        });
+        let json = serde_json::to_string_pretty(&persisted)
+            .map_err(|e| format!("failed to serialize issue bindings: {e}"))?;
+        let tmp_path = path.with_extension("issue-bindings.json.tmp");
+        std::fs::write(&tmp_path, json)
+            .map_err(|e| format!("failed to write issue-bindings tmp file: {e}"))?;
+        std::fs::rename(&tmp_path, &path)
+            .map_err(|e| format!("failed to rename issue-bindings file: {e}"))?;
+        Ok(())
+    }
+
+    /// spec 178: load a harness's persisted issue bindings from disk. Returns the
+    /// stored `bindings` array verbatim, or an empty vec if the file is missing or
+    /// unparseable (a parse failure is logged, not surfaced, mirroring the memory
+    /// loader).
+    pub fn load_issue_bindings(&self, harness_id: &str) -> Result<Vec<Value>, String> {
+        let project_dir = {
+            let memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
+            match memories.get(harness_id) {
+                Some(store) => store.project_dir.clone(),
+                None => return Ok(vec![]),
+            }
+        };
+        let project_dir = match project_dir {
+            Some(dir) => dir,
+            None => return Ok(vec![]),
+        };
+        let path = match get_issue_bindings_path(&project_dir) {
+            Some(path) => path,
+            None => return Ok(vec![]),
+        };
+        if !path.exists() {
+            return Ok(vec![]);
+        }
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => {
+                log::warn!("Failed to read issue bindings at {}: {e}", path.display());
+                return Ok(vec![]);
+            }
+        };
+        match serde_json::from_str::<Value>(&content) {
+            Ok(parsed) => Ok(parsed
+                .get("bindings")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default()),
+            Err(e) => {
+                log::warn!("Failed to parse issue bindings at {}: {e}", path.display());
+                Ok(vec![])
+            }
+        }
+    }
+
     pub fn clear_harness_memory_lane(
         self: &Arc<Self>,
         harness_id: &str,
@@ -1734,6 +1815,65 @@ async fn handle_doc_feedback(
         .into_response()
 }
 
+/// POST /doc-artifact?harness=<id>&path=<rel> — the docs browser asks the
+/// harness's active lane to create a normal lane-authored HTML artifact from a
+/// source markdown file (spec 174). The browser owns the default title; Rust
+/// validates path/title and uses the same synchronous bus round-trip as docs
+/// feedback. A 200 means the request entered the active lane's queue, NOT that
+/// the artifact has been created yet.
+async fn handle_doc_artifact(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocQuery>,
+    Json(body): Json<Value>,
+) -> Response {
+    let project_dir = match state.hook_server.docs_project_dir(&query.harness) {
+        Some(dir) => dir,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let request = match validate_doc_artifact_request(&project_dir, &query.path, &body) {
+        Ok(request) => request,
+        Err(DocArtifactRequestError::NotFound) => return StatusCode::NOT_FOUND.into_response(),
+        Err(DocArtifactRequestError::BadRequest(message)) => {
+            return (StatusCode::BAD_REQUEST, message).into_response()
+        }
+        Err(DocArtifactRequestError::PayloadTooLarge) => {
+            return StatusCode::PAYLOAD_TOO_LARGE.into_response()
+        }
+    };
+
+    let request_id = format!("da-{}-{}", now_ms(), rand_suffix());
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state.app_handle.emit_or_log(
+        "acp-docs-artifact-requested",
+        json!({
+            "harnessId": query.harness,
+            "docPath": request.normalized_path,
+            "batchId": request.batch_id,
+            "title": request.title,
+            "requestId": request_id,
+        }),
+    );
+    let reply = match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(_)) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "retry" })),
+            )
+                .into_response();
+        }
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "retry" })),
+            )
+                .into_response();
+        }
+    };
+    doc_artifact_reply_response(&reply)
+}
+
 /// POST /artifact/feedback/:token — the browser submits a comment batch (spec
 /// 149). Validates the token + caps, then runs the synchronous bus round-trip
 /// (fresh request id → emit `acp-artifact-feedback-received` → await the
@@ -1898,6 +2038,7 @@ async fn handle_bus_tool_call(
         "artifact_new" => artifact_tool_new(state, harness_id, lane_label, arguments),
         "artifact_register" => artifact_tool_register(state, harness_id, lane_label, arguments),
         "artifact_cancel" => artifact_tool_cancel(state, harness_id, lane_label, arguments),
+        "issue_report" => issue_report(state, harness_id, lane_label, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -1921,6 +2062,66 @@ async fn handle_bus_tool_call(
 /// Timeout for the frontend round-trip on bus tools (peer_send, peer_list).
 /// Generous because the frontend may be mid-render or animating.
 const BUS_REPLY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(2500);
+
+#[derive(Debug, PartialEq, Eq)]
+struct DocArtifactRequest {
+    normalized_path: String,
+    batch_id: String,
+    title: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DocArtifactRequestError {
+    NotFound,
+    BadRequest(&'static str),
+    PayloadTooLarge,
+}
+
+fn validate_doc_artifact_request(
+    project_dir: &str,
+    raw_path: &str,
+    body: &Value,
+) -> Result<DocArtifactRequest, DocArtifactRequestError> {
+    let normalized =
+        normalize_relative_link(StdPath::new(""), raw_path).unwrap_or_else(|| raw_path.to_string());
+    if validate_doc_path(StdPath::new(project_dir), &normalized, &["md"]).is_err() {
+        return Err(DocArtifactRequestError::NotFound);
+    }
+
+    let batch_id = body.get("batchId").and_then(|v| v.as_str()).unwrap_or("");
+    if batch_id.trim().is_empty() {
+        return Err(DocArtifactRequestError::BadRequest("missing batchId"));
+    }
+    let title = body.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(DocArtifactRequestError::BadRequest("missing title"));
+    }
+    if title.chars().count() > ARTIFACT_TITLE_MAX {
+        return Err(DocArtifactRequestError::PayloadTooLarge);
+    }
+
+    Ok(DocArtifactRequest {
+        normalized_path: normalized,
+        batch_id: batch_id.to_string(),
+        title: title.to_string(),
+    })
+}
+
+fn doc_artifact_reply_response(reply: &Value) -> Response {
+    if reply
+        .get("accepted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return Json(json!({ "status": "accepted" })).into_response();
+    }
+    (
+        StatusCode::CONFLICT,
+        Json(json!({ "status": "no-live-lane" })),
+    )
+        .into_response()
+}
 
 /// peer_send — emit an `acp-inter-lane-message` Tauri event and await the
 /// frontend coordinator's delivery outcome. The frontend is the authority on
@@ -2281,12 +2482,26 @@ async fn mark_review_priority(
                 "ranges[{i}].level must be 'high' or 'routine' (omit a range to leave it 'normal')"
             ));
         }
-        ranges.push(json!({
+        let mut range = json!({
             "file": file,
             "lineStart": line_start,
             "lineEnd": line_end,
             "level": level,
-        }));
+        });
+        if let Some(reason) = item
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            if reason.chars().count() > 240 {
+                return Err(format!(
+                    "ranges[{i}].reason must be 240 characters or fewer"
+                ));
+            }
+            range["reason"] = json!(reason);
+        }
+        ranges.push(range);
     }
 
     let request_id = format!("rvp-{}-{}", now_ms(), rand_suffix());
@@ -2319,6 +2534,86 @@ async fn mark_review_priority(
         Err(_) => {
             state.hook_server.drop_bus_reply(&request_id);
             Err("mark_review_priority: frontend reply timed out".to_string())
+        }
+    }
+}
+
+/// issue_report — the lane self-reports progress on the GitHub issue it is fixing
+/// (spec 178). Mirrors the attention bus round-trip: it registers a pending reply,
+/// emits `acp-issue-report` to the frontend (which maps the report onto the lane's
+/// issue binding and refreshes the live status card), and awaits the frontend's
+/// `{ ok, reason? }` ack with the shared bus timeout.
+async fn issue_report(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    // The lane must say WHICH issue it is reporting on — the frontend resolves the
+    // binding by this key, not by guessing the lane's most-recent dispatch (which
+    // breaks when one lane is fixing more than one issue).
+    let issue_key = required_string(&arguments, "issue_key")?;
+    let issue_key = issue_key.trim().to_string();
+    if issue_key.is_empty() {
+        return Err("issue_key is required (the owner/repo#123 of the issue you are fixing)".to_string());
+    }
+    let phase = required_string(&arguments, "phase")?;
+    let phase = phase.trim().to_string();
+    if !matches!(
+        phase.as_str(),
+        "investigating" | "fixing" | "testing" | "review" | "pr_opened" | "done" | "blocked"
+    ) {
+        return Err(
+            "phase must be one of investigating | fixing | testing | review | pr_opened | done | blocked"
+                .to_string(),
+        );
+    }
+    let summary = arguments
+        .get("summary")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let pr_url = arguments
+        .get("pr_url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let request_id = format!("isr-{}-{}", now_ms(), rand_suffix());
+    let mut payload = json!({
+        "fromLaneId": from_lane,
+        "issueKey": issue_key,
+        "phase": phase,
+        "harnessId": harness_id,
+        "requestId": request_id,
+        "sentAt": now_ms(),
+    });
+    if let Some(ref summary) = summary {
+        payload["summary"] = json!(summary);
+    }
+    if let Some(ref pr_url) = pr_url {
+        payload["prUrl"] = json!(pr_url);
+    }
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state.app_handle.emit_or_log("acp-issue-report", payload);
+    match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => {
+            if value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                Ok(json!({ "ok": true }))
+            } else {
+                let reason = value
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("issue_report_failed");
+                Err(reason.to_string())
+            }
+        }
+        Ok(Err(_)) => Err("issue_report: frontend coordinator did not respond".to_string()),
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            Err("issue_report: frontend reply timed out".to_string())
         }
     }
 }
@@ -2976,7 +3271,7 @@ fn attention_tool_descriptors() -> Vec<Value> {
         }),
         json!({
             "name": "mark_review_priority",
-            "description": "At the end of a turn in which you edited files, tell the human's Diff Window how to spend their reading attention on the diff you just produced. Report ONLY the non-default ranges: `high` for the core logic / interface / risk the user would want to read first, `routine` for mechanical churn (generated code, renames, import shuffles, formatting). Everything you DON'T report stays `normal` and renders in full — so a small, honest report is correct; do not annotate the whole diff. The Window only FOLDS `routine` hunks (always one keystroke from full) and MARKS + navigates to `high` ones — it never hides or reorders anything, so an over-broad `routine` label only costs the human reading time, never a missed change. Anchor each range on the NEW side (the post-change line numbers you just wrote). The latest call REPLACES your previous report for this working diff. Default-on; call it at most once per turn, only when you actually changed files. Silence is fine — it yields today's full, untriaged diff.",
+            "description": "At the end of a turn in which you edited files, tell the human's Diff Window how to spend their reading attention on the diff you just produced. Report ONLY the non-default ranges: `high` for the core logic / interface / risk the user would want to read first, `routine` for mechanical churn (generated code, renames, import shuffles, formatting). Include a brief optional `reason` when it helps the human understand why a range was marked. Everything you DON'T report stays `normal` and renders in full — so a small, honest report is correct; do not annotate the whole diff. The Window only FOLDS `routine` hunks (always one keystroke from full) and MARKS + navigates to `high` ones — it never hides or reorders anything, so an over-broad `routine` label only costs the human reading time, never a missed change. Anchor each range on the NEW side (the post-change line numbers you just wrote). The latest call REPLACES your previous report for this working diff. Default-on; call it at most once per turn, only when you actually changed files. Silence is fine — it yields today's full, untriaged diff.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2989,13 +3284,28 @@ fn attention_tool_descriptors() -> Vec<Value> {
                                 "file": { "type": "string", "description": "Repo-relative post-change path (the file's new name)." },
                                 "lineStart": { "type": "integer", "minimum": 1, "description": "First new-side line of the range (inclusive)." },
                                 "lineEnd": { "type": "integer", "minimum": 1, "description": "Last new-side line of the range (inclusive); >= lineStart." },
-                                "level": { "enum": ["high", "routine"], "description": "'high' = read first; 'routine' = mechanical, fold by default. 'normal' is the unreported default." }
+                                "level": { "enum": ["high", "routine"], "description": "'high' = read first; 'routine' = mechanical, fold by default. 'normal' is the unreported default." },
+                                "reason": { "type": "string", "maxLength": 240, "description": "Optional short human-readable explanation for this priority range, shown in the Diff Window." }
                             },
                             "required": ["file", "lineStart", "lineEnd", "level"]
                         }
                     }
                 },
                 "required": ["ranges"]
+            }
+        }),
+        json!({
+            "name": "issue_report",
+            "description": "Report progress on the GitHub issue this lane is fixing. Updates the live status card shown on the issue page and in Krypton. Call it when your phase changes (e.g. you start fixing, open a PR, or finish). Always pass issue_key — the owner/repo#123 from your fix prompt — so the report lands on the right issue.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "issue_key": { "type": "string", "description": "Canonical id of the issue you are fixing, as owner/repo#123 — copy it verbatim from your fix prompt." },
+                    "phase": { "enum": ["investigating", "fixing", "testing", "review", "pr_opened", "done", "blocked"], "description": "The current phase of the fix: investigating | fixing | testing | review | pr_opened | done | blocked." },
+                    "summary": { "type": "string", "description": "Optional one-line, human-readable note on the current state." },
+                    "pr_url": { "type": "string", "description": "Optional URL of the pull request you opened for this issue." }
+                },
+                "required": ["issue_key", "phase"]
             }
         }),
     ]
@@ -3031,6 +3341,36 @@ fn get_persistence_path(project_dir: &str) -> Option<PathBuf> {
         let _ = std::fs::create_dir_all(&memory_dir);
     }
     Some(memory_dir.join(format!("{}.json", hash_prefix)))
+}
+
+/// Sibling of [`get_persistence_path`] holding spec 178 issue↔lane bindings.
+/// Lives in the same `acp-harness-memory` directory but in a `*.issue-bindings.json`
+/// file, kept separate from the handoff-only `PersistedMemory` store.
+fn get_issue_bindings_path(project_dir: &str) -> Option<PathBuf> {
+    let base = get_persistence_path(project_dir)?;
+    Some(base.with_extension("issue-bindings.json"))
+}
+
+/// spec 178: persist a harness's issue↔lane bindings to disk. The frontend
+/// (state authority, ADR-0007) calls this on every binding mutation; the
+/// `bindings` array is stored verbatim.
+#[tauri::command]
+pub fn acp_save_issue_bindings(
+    harness_id: String,
+    bindings: Value,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.save_issue_bindings(&harness_id, bindings)
+}
+
+/// spec 178: rehydrate a harness's persisted issue↔lane bindings from disk on
+/// `register_harness`. Returns the stored bindings array (empty if none).
+#[tauri::command]
+pub fn acp_load_issue_bindings(
+    harness_id: String,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<Vec<Value>, String> {
+    hook_server.load_issue_bindings(&harness_id)
 }
 
 // ─── Artifact path policy (spec 133) ────────────────────────────────────────
@@ -3304,7 +3644,14 @@ fn render_folder_nav(
             out.push_str("\">");
             out.push_str(&html_escape(dir));
             out.push_str("</a></summary><ul class=\"tree\">");
-            render_dirs(out, harness_id, child, prefix, selected_harness, selected_dir);
+            render_dirs(
+                out,
+                harness_id,
+                child,
+                prefix,
+                selected_harness,
+                selected_dir,
+            );
             out.push_str("</ul></details></li>");
             prefix.pop();
         }
@@ -3480,10 +3827,7 @@ fn render_docs_page(title: &str, tree: Option<&str>, content: &str) -> Response 
     };
     let html = DOCS_HTML
         .replace("<!--DOCS_TITLE-->", &escaped_title)
-        .replace(
-            "<nav class=\"tree-pane\"><!--DOCS_TREE--></nav>",
-            &nav,
-        )
+        .replace("<nav class=\"tree-pane\"><!--DOCS_TREE--></nav>", &nav)
         .replace(
             "<article class=\"doc\"><!--DOCS_CONTENT--></article>",
             &format!("<article class=\"doc\">{content}</article>"),
@@ -3900,6 +4244,7 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 // backs the page's live-reload poll. Same-origin with `/doc`.
                 .route("/doc-state", get(handle_doc_state))
                 .route("/doc-feedback", post(handle_doc_feedback))
+                .route("/doc-artifact", post(handle_doc_artifact))
                 // spec 149 — artifact inline feedback. Served over loopback HTTP
                 // so the OS-browser page is same-origin with the feedback POST
                 // (no CORS, no `Origin: null`). The token in the path is the sole
@@ -4059,6 +4404,12 @@ mod tests {
             .expect("level enum");
         let levels: Vec<&str> = level_enum.iter().filter_map(|v| v.as_str()).collect();
         assert_eq!(levels, vec!["high", "routine"]);
+        let reason = tool
+            .pointer("/inputSchema/properties/ranges/items/properties/reason")
+            .and_then(|v| v.as_object())
+            .expect("reason schema");
+        assert_eq!(reason.get("type").and_then(|v| v.as_str()), Some("string"));
+        assert_eq!(reason.get("maxLength").and_then(|v| v.as_u64()), Some(240));
     }
 
     #[test]
@@ -4253,6 +4604,7 @@ mod tests {
             .route("/doc-asset", get(ok))
             .route("/doc-state", get(ok))
             .route("/doc-feedback", post(ok))
+            .route("/doc-artifact", post(ok))
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
             .route("/artifact/feedback/{token}", post(ok));
@@ -4335,6 +4687,76 @@ mod tests {
         let err = validate_doc_path(&tmp, "note.txt", &["md"]).unwrap_err();
         assert!(err.contains("extension rejected"), "got: {err}");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn validate_doc_artifact_request_accepts_and_normalizes_markdown() {
+        let tmp_raw = std::env::temp_dir().join(format!("krypton-doc-art-{}", rand_suffix()));
+        std::fs::create_dir_all(tmp_raw.join("docs")).unwrap();
+        std::fs::write(tmp_raw.join("docs").join("guide.md"), "# Guide").unwrap();
+        let tmp = tmp_raw.canonicalize().unwrap();
+        let request = validate_doc_artifact_request(
+            &tmp.to_string_lossy(),
+            "docs/./guide.md",
+            &json!({ "batchId": "da-1", "title": "  Docs artifact · guide.md  " }),
+        )
+        .unwrap();
+
+        assert_eq!(request.normalized_path, "docs/guide.md");
+        assert_eq!(request.batch_id, "da-1");
+        assert_eq!(request.title, "Docs artifact · guide.md");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn validate_doc_artifact_request_rejects_bad_body_or_path() {
+        let tmp_raw = std::env::temp_dir().join(format!("krypton-doc-art-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp_raw).unwrap();
+        std::fs::write(tmp_raw.join("guide.md"), "# Guide").unwrap();
+        let tmp = tmp_raw.canonicalize().unwrap();
+        let root = tmp.to_string_lossy();
+
+        assert_eq!(
+            validate_doc_artifact_request(&root, "guide.md", &json!({ "title": "t" })).unwrap_err(),
+            DocArtifactRequestError::BadRequest("missing batchId")
+        );
+        assert_eq!(
+            validate_doc_artifact_request(&root, "guide.md", &json!({ "batchId": "da-1" }))
+                .unwrap_err(),
+            DocArtifactRequestError::BadRequest("missing title")
+        );
+        assert_eq!(
+            validate_doc_artifact_request(
+                &root,
+                "guide.md",
+                &json!({ "batchId": "da-1", "title": "x".repeat(ARTIFACT_TITLE_MAX + 1) }),
+            )
+            .unwrap_err(),
+            DocArtifactRequestError::PayloadTooLarge
+        );
+        assert_eq!(
+            validate_doc_artifact_request(
+                &root,
+                "missing.md",
+                &json!({ "batchId": "da-1", "title": "t" }),
+            )
+            .unwrap_err(),
+            DocArtifactRequestError::NotFound
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn doc_artifact_reply_response_maps_acceptance() {
+        assert_eq!(
+            doc_artifact_reply_response(&json!({ "accepted": true })).status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            doc_artifact_reply_response(&json!({ "accepted": false, "reason": "no_live_lane" }))
+                .status(),
+            StatusCode::CONFLICT
+        );
     }
 
     #[test]
@@ -4494,7 +4916,10 @@ mod tests {
     fn parse_helpers_recover_title_and_token() {
         let html = "<head><title>Hello &amp; &lt;World&gt;</title></head>\
             <script>window.__KRYPTON_FEEDBACK__ = { token: \"abc123\", url: \"x\" };</script>";
-        assert_eq!(parse_artifact_title(html).as_deref(), Some("Hello & <World>"));
+        assert_eq!(
+            parse_artifact_title(html).as_deref(),
+            Some("Hello & <World>")
+        );
         assert_eq!(parse_feedback_token(html).as_deref(), Some("abc123"));
         // Unreplaced placeholder → no token.
         assert_eq!(

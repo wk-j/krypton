@@ -1,0 +1,250 @@
+/* Krypton issue status card injected on github.com/<owner>/<repo>/issues/<n>
+ * (doc 178). Binance-dark visual identity (DESIGN.binance.md), matching the
+ * spec-178 mockup. All selectors are scoped under .krypton-issue-card so we
+ * never clobber GitHub's own styles. Honors GitHub light/dark via
+ * prefers-color-scheme. NEVER use border-left accent rails — full border + bg
+ * tint only. */
+
+.krypton-issue-card {
+  /* dark defaults (Binance dark) */
+  --kic-bg: #17191d;
+  --kic-fg: #eaecef;
+  --kic-muted: #707a8a;
+  --kic-border: #2f353d;
+  --kic-accent: #fcd535;
+  --kic-card: #21242a;
+  --kic-add: #0ecb81;
+  --kic-del: #f6465d;
+  --kic-blue: #58a6ff;
+
+  margin-top: 14px;
+  background: var(--kic-card);
+  color: var(--kic-fg);
+  border: 1px solid var(--kic-border);
+  border-radius: 10px;
+  padding: 12px;
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  box-sizing: border-box;
+}
+
+@media (prefers-color-scheme: light) {
+  .krypton-issue-card {
+    --kic-bg: #ffffff;
+    --kic-fg: #181a20;
+    --kic-muted: #707a8a;
+    --kic-border: #eaecef;
+    --kic-accent: #f0b90b;
+    --kic-card: #fafafa;
+    --kic-add: #0ecb81;
+    --kic-del: #f6465d;
+    --kic-blue: #2f6feb;
+  }
+}
+
+.krypton-issue-card--floating {
+  position: fixed;
+  /* clear GitHub's sticky global header (~64px) so the card doesn't overlap the
+     search bar / nav icons; sits just below it, pinned top-right. */
+  top: 76px;
+  right: 16px;
+  width: 264px;
+  margin-top: 0;
+  z-index: 2147483000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.krypton-issue-card *,
+.krypton-issue-card *::before,
+.krypton-issue-card *::after {
+  box-sizing: border-box;
+}
+
+.krypton-issue-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.krypton-issue-card__brand {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--kic-accent);
+}
+
+.krypton-issue-card__host {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--kic-muted);
+}
+
+.krypton-issue-card__msg {
+  font-size: 12.5px;
+  color: var(--kic-muted);
+  margin: 0 0 10px;
+}
+
+.krypton-issue-card__off {
+  color: var(--kic-del);
+}
+
+.krypton-issue-card__hint {
+  font-size: 11.5px;
+  color: var(--kic-muted);
+  margin: 0;
+}
+
+.krypton-issue-card__pick {
+  display: block;
+  font-size: 11px;
+  color: var(--kic-muted);
+  margin-bottom: 10px;
+}
+
+.krypton-issue-card__lane-select {
+  width: 100%;
+  margin-top: 4px;
+  font: inherit;
+  font-size: 12.5px;
+  background: var(--kic-bg);
+  color: var(--kic-fg);
+  border: 1px solid var(--kic-border);
+  border-radius: 6px;
+  padding: 5px 7px;
+}
+
+.krypton-issue-card__primary {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--kic-accent);
+  color: #17191d;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px;
+}
+
+.krypton-issue-card__primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.krypton-issue-card__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.krypton-issue-card__lane {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.krypton-issue-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.krypton-issue-card__dot--busy {
+  background: var(--kic-accent);
+  box-shadow: 0 0 0 3px rgba(252, 213, 53, 0.18);
+}
+
+.krypton-issue-card__dot--needs {
+  background: var(--kic-del);
+  box-shadow: 0 0 0 3px rgba(246, 70, 93, 0.18);
+}
+
+.krypton-issue-card__dot--done {
+  background: var(--kic-add);
+}
+
+.krypton-issue-card__dot--off {
+  background: var(--kic-muted);
+}
+
+.krypton-issue-card__phase {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--kic-border);
+  margin-left: auto;
+}
+
+.krypton-issue-card__phase-fixing {
+  color: var(--kic-accent);
+  border-color: rgba(252, 213, 53, 0.4);
+}
+
+.krypton-issue-card__phase-testing {
+  color: var(--kic-blue);
+  border-color: rgba(88, 166, 255, 0.4);
+}
+
+.krypton-issue-card__phase-done {
+  color: var(--kic-add);
+  border-color: rgba(14, 203, 129, 0.4);
+}
+
+.krypton-issue-card__summary {
+  font-size: 12.5px;
+  margin: 0 0 8px;
+  color: var(--kic-fg);
+}
+
+.krypton-issue-card__warn {
+  color: var(--kic-del);
+}
+
+.krypton-issue-card__last {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--kic-muted);
+  margin: 0 0 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-issue-card__pr {
+  display: block;
+  font-size: 12.5px;
+  margin: 4px 0 10px;
+  text-decoration: none;
+  color: var(--kic-accent);
+}
+
+.krypton-issue-card__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.krypton-issue-card__btn {
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--kic-bg);
+  color: var(--kic-fg);
+  border: 1px solid var(--kic-border);
+  border-radius: 6px;
+  padding: 5px;
+}
+
+.krypton-issue-card__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.krypton-issue-card__btn--danger {
+  color: var(--kic-del);
+  border-color: rgba(246, 70, 93, 0.4);
+}

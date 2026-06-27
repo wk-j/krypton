@@ -1,0 +1,15 @@
+{
+  "name": "krypton-harness-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build step for the injected Defuddle content-extraction bundle (doc 177).",
+  "scripts": {
+    "build": "esbuild content-extract.src.js --bundle --format=iife --outfile=dist/content.bundle.js --minify"
+  },
+  "dependencies": {
+    "defuddle": "^0.19.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

@@ -8,8 +8,9 @@ function range(
   lineStart: number,
   lineEnd: number,
   level: 'high' | 'routine',
+  reason?: string,
 ): ReviewPriorityRange {
-  return { file, lineStart, lineEnd, level };
+  return { file, lineStart, lineEnd, level, reason };
 }
 
 describe('ReviewPriorityStore', () => {
@@ -52,6 +53,15 @@ describe('ReviewPriorityStore', () => {
     store.record('lane-1', [range('a.ts', 1, 5, 'high')]);
     store.record('lane-2', [range('b.ts', 2, 4, 'routine')]);
     expect(store.allRanges()).toHaveLength(2);
+  });
+
+  it('preserves optional reasons for overlay and diff panel rendering', () => {
+    const store = new ReviewPriorityStore();
+    store.record('lane-1', [
+      range('a.ts', 1, 5, 'high', 'Core routing path for peer mail.'),
+    ]);
+    expect(store.reportFor('lane-1')?.ranges[0].reason).toBe('Core routing path for peer mail.');
+    expect(store.allRanges()[0].reason).toBe('Core routing path for peer mail.');
   });
 
   it('drops a closed lane and re-emits the high count', () => {

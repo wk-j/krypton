@@ -199,6 +199,32 @@ describe('HarnessTelemetryPublisher', () => {
     expect(after.rootAlive).toBe(false);
   });
 
+  it('publishes open attention flag details for the browser dashboard', async () => {
+    const harness = makeHarness();
+    harness.openItems = [judgement('lane-1', 'costly')];
+    harness.openItems[0].question = 'Which workflow should own the review handoff?';
+    harness.openItems[0].chosen = 'Keep it in the dashboard telemetry.';
+    harness.openItems[0].uncertainty = 'Whether the browser should show details or counts only.';
+    makePublisher(harness);
+    await flushPublish();
+
+    const attention = lastSnapshot().attention;
+    expect(attention.openCount).toBe(1);
+    expect(attention.maxReversibility).toBe('costly');
+    expect(attention.items).toEqual([
+      expect.objectContaining({
+        id: 'j-lane-1',
+        laneId: 'lane-1',
+        laneName: 'Claude-1',
+        question: 'Which workflow should own the review handoff?',
+        chosen: 'Keep it in the dashboard telemetry.',
+        uncertainty: 'Whether the browser should show details or counts only.',
+        tradedOff: ['x'],
+        reversibility: 'costly',
+      }),
+    ]);
+  });
+
   it('trims the event ring to fourteen rows', async () => {
     const harness = makeHarness();
     makePublisher(harness);

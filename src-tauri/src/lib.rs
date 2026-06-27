@@ -7,6 +7,7 @@ pub mod git;
 pub mod hook_server;
 pub mod hurl;
 pub mod music;
+pub mod native_host;
 pub mod pencil;
 mod process_metrics;
 mod pty;
@@ -158,6 +159,7 @@ pub fn run() {
             commands::acp_bus_reply,
             commands::acp_publish_telemetry,
             commands::acp_control_reply,
+            commands::acp_control_publish,
             commands::get_acp_harness_config,
             commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
@@ -168,6 +170,8 @@ pub fn run() {
             commands::acp_refresh_artifact,
             commands::acp_list_harness_artifacts,
             commands::acp_set_lane_triage_equipped,
+            hook_server::acp_save_issue_bindings,
+            hook_server::acp_load_issue_bindings,
             commands::save_temp_image,
             commands::capture_screen,
             commands::get_env_var,
@@ -352,12 +356,32 @@ pub fn run() {
             }
 
             {
-                let enabled = krypton_config
-                    .read()
-                    .map(|cfg| cfg.acp_controller.enabled)
-                    .unwrap_or(true);
+                let (enabled, control_port, cors_origins, install_native_host, native_browsers) =
+                    krypton_config
+                        .read()
+                        .map(|cfg| {
+                            (
+                                cfg.acp_controller.enabled,
+                                cfg.acp_controller.port,
+                                cfg.acp_controller.cors_origins.clone(),
+                                cfg.acp_controller.install_native_host,
+                                cfg.acp_controller.native_host_browsers.clone(),
+                            )
+                        })
+                        .unwrap_or((true, 8766, Vec::new(), true, vec!["chrome".to_string()]));
                 if enabled {
-                    control::start(app.handle().clone(), control_server.clone());
+                    control::start(
+                        app.handle().clone(),
+                        control_server.clone(),
+                        control_port,
+                        cors_origins,
+                    );
+                    // Zero-config browser-extension bridge: drop the native-messaging
+                    // host manifest so the extension can fetch the control token
+                    // without manual setup (doc 176). Best-effort.
+                    if install_native_host {
+                        native_host::install_manifests(&native_browsers);
+                    }
                 }
             }
 
