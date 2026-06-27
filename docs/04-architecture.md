@@ -665,3 +665,16 @@ by `make extension`) into the active tab on demand and sends the resulting
 Markdown + metadata, so pages a lane cannot fetch server-side (Reddit, YouTube,
 login-walled, JS-rendered) still work. A selection always takes precedence; the
 injection stays on-demand (activeTab) rather than a declared content script.
+
+**GitHub issue fixing** (doc 178) makes "fix this issue" a single surface-agnostic
+operation. Any surface — Krypton's command palette / `#fix-issue` verb, the
+extension popup, or a status card the extension injects onto the GitHub issue page
+(a declared `github.com/*/issues/*` content script) — converges on the frontend
+`dispatchIssue()` path (also the `github.dispatch-issue` control op), which records
+an issue↔lane binding (harness-level map keyed by `owner/repo#123`) and prompts a
+fresh lane. The lane self-reports progress via an `issue_report` MCP tool; status
+is snapshot-first (`github.issue-status`) plus an `issue_status` SSE event, so the
+injected card is refresh-safe and survives a Krypton restart (bindings persist to
+disk next to the per-harness memory file). The `issueKey`-addressed reads
+(`github.issue-status / list-issues / unlink-issue`) fan out across harnesses in
+`control-bridge`. Read-only overlay only — no write-back to GitHub.

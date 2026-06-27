@@ -643,6 +643,27 @@ on implementation, pointing at this spec for the new assistant behaviour.
 > custom renderer's `end_token('code_block')` callback to highlight that
 > block when it closes. Flagged as a possible polish follow-up.
 
+## Follow-up: table seal re-render (table guard)
+
+The original V1 note above ("on seal the body remains as the streaming parser
+wrote it — no post-seal swap to `marked`") held a latent bug for **GFM tables**.
+streaming-markdown is single-pass and cannot backtrack; its table state machine
+desyncs when a stream chunk boundary lands mid-table (`smd.js` `table_state`
+flips to `0`), after which the remaining `| … |` rows render as literal paragraph
+text — and that broken DOM was frozen at seal.
+
+Fix (`acp-harness-view.ts`): seal now does a **guarded post-seal swap to `marked`**.
+`hasMarkdownTable(item.text)` detects a GFM delimiter row (`|---|---|`, ≥2 cols);
+only then does `sealAssistantStreamingMarkdown` re-render the message with
+`md.parse` (full two-pass GFM, correct tables) — Branch A rewrites the live body
+(`rerenderAssistantMarkdownWithMarked`, preserving a leading lane-mail provenance
+node), Branch B parses straight to the offscreen cache. Messages **without** a
+table keep the cheaper streaming-markdown seal output untouched, so the common
+path pays no extra cost. The re-render is one-shot per message at turn-end, off
+the per-token streaming hot path, so the 16 ms budget is unaffected. Live
+streaming still shows the (briefly broken) smd table until it self-corrects at
+seal. Covered by `hasMarkdownTable` unit tests in `acp-harness-view.test.ts`.
+
 ## Resources
 
 - [streaming-markdown (thetarnav, GitHub)](https://github.com/thetarnav/streaming-markdown) — selected library; readme confirms API + optimistic model.

@@ -291,7 +291,11 @@ async fn capabilities(
                 "review.outcomes",
                 "diff.review-targets",
                 "diff.review-priority",
-                "diff.review-send"
+                "diff.review-send",
+                "github.dispatch-issue",
+                "github.issue-status",
+                "github.list-issues",
+                "github.unlink-issue"
             ],
             "streaming": {
                 "sse": "/control/v1/events"

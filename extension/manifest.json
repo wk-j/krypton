@@ -8,5 +8,13 @@
   "host_permissions": ["http://127.0.0.1:8766/*"],
   "background": { "service_worker": "background.js" },
   "action": { "default_title": "Krypton Harness", "default_popup": "popup.html" },
-  "options_page": "options.html"
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["github-issue.js"],
+      "css": ["github-issue.css"],
+      "run_at": "document_idle"
+    }
+  ]
 }

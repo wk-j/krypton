@@ -21,6 +21,37 @@
 
 ## Recent Landings
 
+- **GitHub issue fixing (spec 178)** — "Fix this issue" is a single, surface-agnostic
+  operation: it can be started from **anywhere** — Krypton's command palette ("Fix
+  GitHub Issue…") or the `#fix-issue <url | owner/repo#123>` verb, the extension
+  popup on any page, or a button injected onto the GitHub issue page — and every
+  surface can read its status. All entries converge on one frontend path,
+  `dispatchIssue()` (also reachable via the `github.dispatch-issue` control op),
+  which records an **issue↔lane binding** (harness-level map keyed by `owner/repo#123`),
+  sets the lane goal/badge, and prompts a fresh dedicated lane (default) to fix it.
+  Metadata for non-DOM surfaces comes from the local `gh issue view --json` with a
+  URL-only fallback. The lane self-reports progress via a new `issue_report
+  { phase, summary, pr_url }` MCP tool (bus round-trip mirroring `attention_flag`).
+  Status is **snapshot-first + stream**: `github.issue-status` returns the persisted
+  binding merged with live lane status (refresh-safe), and an `issue_status` SSE
+  event pushes live deltas; the extension injects a live status card (unbound /
+  working / needs-permission / done / offline) into the issue sidebar. Bindings are
+  disk-backed (`acp_save/load_issue_bindings`, atomic write next to the memory file,
+  rehydrate-on-register) so they survive a Krypton restart — the lane is then gone,
+  so the snapshot reports `stopped` and the card offers re-dispatch. New control ops:
+  `github.dispatch-issue / issue-status / list-issues / unlink-issue` (the
+  issueKey-addressed reads fan out across harnesses in `control-bridge`). Read-only
+  overlay only — no write-back to GitHub in v1. See `docs/178-github-issue-fixing.md`.
+- **Streaming-markdown table seal re-render (spec 117 follow-up)** — Fixed GFM
+  tables rendering broken in assistant messages: streaming-markdown's single-pass
+  table parser desyncs on a mid-table stream-chunk boundary and freezes literal
+  `| … |` text at seal. Seal now does a **guarded post-seal swap to `marked`** —
+  `hasMarkdownTable()` detects a delimiter row and only then re-renders the message
+  with `md.parse` (full GFM); table-free messages keep the cheaper smd output, so
+  the common path and the per-token streaming hot path are unaffected (one-shot at
+  turn-end). Branch A preserves the lane-mail provenance node. `tsc` green; 125
+  acp-harness-view tests pass (3 new `hasMarkdownTable` cases). See
+  `docs/117-streaming-markdown.md`.
 - **Extension Obsidian-grade content extraction (spec 177)** — When the popup is
   opened with **no selection**, the extension now extracts the page's main content
   as Markdown client-side instead of sending URL-only, so pages a lane can't fetch

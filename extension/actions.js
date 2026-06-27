@@ -35,6 +35,38 @@ export async function saveActions(actions) {
   await chrome.storage.sync.set({ [STORAGE_KEY]: actions });
 }
 
+// Parse a GitHub issue reference — either a full URL
+// (https://github.com/<owner>/<repo>/issues/<n>) or the shorthand
+// `owner/repo#123` — into the canonical fields dispatch needs (doc 178).
+// Returns null for anything that doesn't resolve to a repo + numeric issue.
+export function parseIssueRef(input) {
+  const raw = (input || '').trim();
+  if (!raw) return null;
+  let owner;
+  let repo;
+  let number;
+  const urlMatch = raw.match(/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/i);
+  if (urlMatch) {
+    owner = urlMatch[1];
+    repo = urlMatch[2];
+    number = parseInt(urlMatch[3], 10);
+  } else {
+    const shortMatch = raw.match(/^([^/\s]+)\/([^/#\s]+)#(\d+)$/);
+    if (!shortMatch) return null;
+    owner = shortMatch[1];
+    repo = shortMatch[2];
+    number = parseInt(shortMatch[3], 10);
+  }
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return {
+    owner,
+    repo: `${owner}/${repo}`,
+    number,
+    issueKey: `${owner}/${repo}#${number}`,
+    issueUrl: `https://github.com/${owner}/${repo}/issues/${number}`,
+  };
+}
+
 // Render a template into a final prompt. The body is the user selection when
 // present, otherwise the page content extracted client-side (doc 177); it is
 // wrapped so the lane treats it as quoted source rather than instructions. A

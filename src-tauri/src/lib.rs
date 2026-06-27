@@ -170,6 +170,8 @@ pub fn run() {
             commands::acp_refresh_artifact,
             commands::acp_list_harness_artifacts,
             commands::acp_set_lane_triage_equipped,
+            hook_server::acp_save_issue_bindings,
+            hook_server::acp_load_issue_bindings,
             commands::save_temp_image,
             commands::capture_screen,
             commands::get_env_var,

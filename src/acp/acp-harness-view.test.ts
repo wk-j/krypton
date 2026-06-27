@@ -34,6 +34,7 @@ import {
   parseReviewCommandArgs,
   wikiIngestPrompt,
   wikiRecallPrompt,
+  hasMarkdownTable,
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
 } from './acp-harness-view';
@@ -1374,5 +1375,28 @@ describe('renderPermissionBody density (spec 167)', () => {
     expect(classes).toContain('acp-harness__perm-preview');
     expect(classes).toContain('acp-harness__perm-suffix');
     expect(classes).not.toContain('acp-harness__perm-decision');
+  });
+});
+
+describe('hasMarkdownTable (spec 117 seal table guard)', () => {
+  it('detects a multi-column GFM table by its delimiter row', () => {
+    const md = [
+      '| Model | Role | Price |',
+      '|---|---|---|',
+      '| Sol | flagship | $5 |',
+    ].join('\n');
+    expect(hasMarkdownTable(md)).toBe(true);
+  });
+
+  it('accepts alignment colons and spaced delimiters', () => {
+    expect(hasMarkdownTable('| a | b |\n|:--|--:|\n| 1 | 2 |')).toBe(true);
+    expect(hasMarkdownTable('h1 | h2\n| --- | --- |\nx | y')).toBe(true);
+  });
+
+  it('ignores prose, horizontal rules, and lone pipes', () => {
+    expect(hasMarkdownTable('a paragraph with a | pipe in it')).toBe(false);
+    expect(hasMarkdownTable('above\n\n---\n\nbelow')).toBe(false); // hr, not a table
+    expect(hasMarkdownTable('- bullet one\n- bullet two')).toBe(false);
+    expect(hasMarkdownTable('no table here at all')).toBe(false);
   });
 });

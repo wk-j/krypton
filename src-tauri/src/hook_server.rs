@@ -467,6 +467,87 @@ impl HookServer {
         });
     }
 
+    /// spec 178: persist a harness's issue↔lane bindings to disk, atomically
+    /// (tmp-file + rename), in a `*.issue-bindings.json` sibling of the handoff
+    /// memory file. The `bindings` value is stored verbatim — the frontend owns
+    /// its shape. No-op (Ok) when the harness has no project dir / persistence
+    /// path. The frontend re-persists on every binding mutation.
+    pub fn save_issue_bindings(&self, harness_id: &str, bindings: Value) -> Result<(), String> {
+        let project_dir = {
+            let memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
+            match memories.get(harness_id) {
+                Some(store) => store.project_dir.clone(),
+                None => return Ok(()),
+            }
+        };
+        let project_dir = match project_dir {
+            Some(dir) => dir,
+            None => return Ok(()),
+        };
+        let path = match get_issue_bindings_path(&project_dir) {
+            Some(path) => path,
+            None => return Ok(()),
+        };
+
+        let persisted = json!({
+            "version": 1,
+            "harnessId": harness_id,
+            "savedAt": now_ms(),
+            "bindings": bindings,
+        });
+        let json = serde_json::to_string_pretty(&persisted)
+            .map_err(|e| format!("failed to serialize issue bindings: {e}"))?;
+        let tmp_path = path.with_extension("issue-bindings.json.tmp");
+        std::fs::write(&tmp_path, json)
+            .map_err(|e| format!("failed to write issue-bindings tmp file: {e}"))?;
+        std::fs::rename(&tmp_path, &path)
+            .map_err(|e| format!("failed to rename issue-bindings file: {e}"))?;
+        Ok(())
+    }
+
+    /// spec 178: load a harness's persisted issue bindings from disk. Returns the
+    /// stored `bindings` array verbatim, or an empty vec if the file is missing or
+    /// unparseable (a parse failure is logged, not surfaced, mirroring the memory
+    /// loader).
+    pub fn load_issue_bindings(&self, harness_id: &str) -> Result<Vec<Value>, String> {
+        let project_dir = {
+            let memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
+            match memories.get(harness_id) {
+                Some(store) => store.project_dir.clone(),
+                None => return Ok(vec![]),
+            }
+        };
+        let project_dir = match project_dir {
+            Some(dir) => dir,
+            None => return Ok(vec![]),
+        };
+        let path = match get_issue_bindings_path(&project_dir) {
+            Some(path) => path,
+            None => return Ok(vec![]),
+        };
+        if !path.exists() {
+            return Ok(vec![]);
+        }
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => {
+                log::warn!("Failed to read issue bindings at {}: {e}", path.display());
+                return Ok(vec![]);
+            }
+        };
+        match serde_json::from_str::<Value>(&content) {
+            Ok(parsed) => Ok(parsed
+                .get("bindings")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default()),
+            Err(e) => {
+                log::warn!("Failed to parse issue bindings at {}: {e}", path.display());
+                Ok(vec![])
+            }
+        }
+    }
+
     pub fn clear_harness_memory_lane(
         self: &Arc<Self>,
         harness_id: &str,
@@ -1957,6 +2038,7 @@ async fn handle_bus_tool_call(
         "artifact_new" => artifact_tool_new(state, harness_id, lane_label, arguments),
         "artifact_register" => artifact_tool_register(state, harness_id, lane_label, arguments),
         "artifact_cancel" => artifact_tool_cancel(state, harness_id, lane_label, arguments),
+        "issue_report" => issue_report(state, harness_id, lane_label, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -2452,6 +2534,86 @@ async fn mark_review_priority(
         Err(_) => {
             state.hook_server.drop_bus_reply(&request_id);
             Err("mark_review_priority: frontend reply timed out".to_string())
+        }
+    }
+}
+
+/// issue_report — the lane self-reports progress on the GitHub issue it is fixing
+/// (spec 178). Mirrors the attention bus round-trip: it registers a pending reply,
+/// emits `acp-issue-report` to the frontend (which maps the report onto the lane's
+/// issue binding and refreshes the live status card), and awaits the frontend's
+/// `{ ok, reason? }` ack with the shared bus timeout.
+async fn issue_report(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    // The lane must say WHICH issue it is reporting on — the frontend resolves the
+    // binding by this key, not by guessing the lane's most-recent dispatch (which
+    // breaks when one lane is fixing more than one issue).
+    let issue_key = required_string(&arguments, "issue_key")?;
+    let issue_key = issue_key.trim().to_string();
+    if issue_key.is_empty() {
+        return Err("issue_key is required (the owner/repo#123 of the issue you are fixing)".to_string());
+    }
+    let phase = required_string(&arguments, "phase")?;
+    let phase = phase.trim().to_string();
+    if !matches!(
+        phase.as_str(),
+        "investigating" | "fixing" | "testing" | "review" | "pr_opened" | "done" | "blocked"
+    ) {
+        return Err(
+            "phase must be one of investigating | fixing | testing | review | pr_opened | done | blocked"
+                .to_string(),
+        );
+    }
+    let summary = arguments
+        .get("summary")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let pr_url = arguments
+        .get("pr_url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let request_id = format!("isr-{}-{}", now_ms(), rand_suffix());
+    let mut payload = json!({
+        "fromLaneId": from_lane,
+        "issueKey": issue_key,
+        "phase": phase,
+        "harnessId": harness_id,
+        "requestId": request_id,
+        "sentAt": now_ms(),
+    });
+    if let Some(ref summary) = summary {
+        payload["summary"] = json!(summary);
+    }
+    if let Some(ref pr_url) = pr_url {
+        payload["prUrl"] = json!(pr_url);
+    }
+    let rx = state.hook_server.register_bus_reply(request_id.clone());
+    state.app_handle.emit_or_log("acp-issue-report", payload);
+    match tokio::time::timeout(BUS_REPLY_TIMEOUT, rx).await {
+        Ok(Ok(value)) => {
+            if value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                Ok(json!({ "ok": true }))
+            } else {
+                let reason = value
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("issue_report_failed");
+                Err(reason.to_string())
+            }
+        }
+        Ok(Err(_)) => Err("issue_report: frontend coordinator did not respond".to_string()),
+        Err(_) => {
+            state.hook_server.drop_bus_reply(&request_id);
+            Err("issue_report: frontend reply timed out".to_string())
         }
     }
 }
@@ -3132,6 +3294,20 @@ fn attention_tool_descriptors() -> Vec<Value> {
                 "required": ["ranges"]
             }
         }),
+        json!({
+            "name": "issue_report",
+            "description": "Report progress on the GitHub issue this lane is fixing. Updates the live status card shown on the issue page and in Krypton. Call it when your phase changes (e.g. you start fixing, open a PR, or finish). Always pass issue_key — the owner/repo#123 from your fix prompt — so the report lands on the right issue.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "issue_key": { "type": "string", "description": "Canonical id of the issue you are fixing, as owner/repo#123 — copy it verbatim from your fix prompt." },
+                    "phase": { "enum": ["investigating", "fixing", "testing", "review", "pr_opened", "done", "blocked"], "description": "The current phase of the fix: investigating | fixing | testing | review | pr_opened | done | blocked." },
+                    "summary": { "type": "string", "description": "Optional one-line, human-readable note on the current state." },
+                    "pr_url": { "type": "string", "description": "Optional URL of the pull request you opened for this issue." }
+                },
+                "required": ["issue_key", "phase"]
+            }
+        }),
     ]
 }
 
@@ -3165,6 +3341,36 @@ fn get_persistence_path(project_dir: &str) -> Option<PathBuf> {
         let _ = std::fs::create_dir_all(&memory_dir);
     }
     Some(memory_dir.join(format!("{}.json", hash_prefix)))
+}
+
+/// Sibling of [`get_persistence_path`] holding spec 178 issue↔lane bindings.
+/// Lives in the same `acp-harness-memory` directory but in a `*.issue-bindings.json`
+/// file, kept separate from the handoff-only `PersistedMemory` store.
+fn get_issue_bindings_path(project_dir: &str) -> Option<PathBuf> {
+    let base = get_persistence_path(project_dir)?;
+    Some(base.with_extension("issue-bindings.json"))
+}
+
+/// spec 178: persist a harness's issue↔lane bindings to disk. The frontend
+/// (state authority, ADR-0007) calls this on every binding mutation; the
+/// `bindings` array is stored verbatim.
+#[tauri::command]
+pub fn acp_save_issue_bindings(
+    harness_id: String,
+    bindings: Value,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.save_issue_bindings(&harness_id, bindings)
+}
+
+/// spec 178: rehydrate a harness's persisted issue↔lane bindings from disk on
+/// `register_harness`. Returns the stored bindings array (empty if none).
+#[tauri::command]
+pub fn acp_load_issue_bindings(
+    harness_id: String,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<Vec<Value>, String> {
+    hook_server.load_issue_bindings(&harness_id)
 }
 
 // ─── Artifact path policy (spec 133) ────────────────────────────────────────
