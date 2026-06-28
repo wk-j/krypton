@@ -21,6 +21,19 @@
 
 ## Recent Landings
 
+- **`#polly` Omnigent supervisor-contract refresh (spec 164 rev 8)** — The
+  `#polly` role and request prompts now mirror the latest Omnigent Polly
+  supervisor contract where it fits Krypton's live-lane architecture: the
+  orchestrator is explicitly not the coder/investigator/reviewer, coding work
+  and real investigation are delegated, each worker `peer_send` must carry a
+  task title, purpose (`implement`/`review`/`explore`/`search`), scope,
+  acceptance, gates, and report shape, cross-review stays different-worker
+  diff+contract only, blocking findings loop back to the same implementer
+  thread, and synthesis must read worker reports plus deterministic gates rather
+  than infer success from `git status`. This does not port Omnigent's separate
+  worktrees/PR registry mechanics; Krypton `#polly` remains shared-worktree live
+  ACP lanes. See `docs/164-polly-orchestration.md`.
+
 - **YouTube transcript extraction (spec 179)** — The popup's on-demand
   extractor now runs Defuddle's **async** parse (`parseAsync()` instead of the
   sync `parse()`), unlocking Defuddle 0.19.1's built-in YouTube extractor, which

@@ -1,7 +1,7 @@
 # `#polly` — Any-Lane Orchestrator + Two-Worker Cap — Implementation Spec
 
-> Status: Implemented (rev 7)
-> Date: 2026-06-16
+> Status: Implemented (rev 8)
+> Date: 2026-06-29
 > Milestone: M-ACP — Harness Multi-Agent
 > Builds on: `docs/145-harness-design-review-panel.md`, `docs/106-inter-lane-messaging.md`
 
@@ -34,7 +34,12 @@ Add **`#polly <task description>`**:
    - Bail if any worker backend is not installed.
 
 4. **`pollyRequestPrompt`** on the active (orchestrator) lane — fan-out to the
-   two workers via `peer_send`; cross-review between workers.
+   two workers via `peer_send`; cross-review between workers. The prompt mirrors
+   current Omnigent Polly's supervisor contract where it fits Krypton: coding
+   work and real investigation are delegated, worker requests carry title +
+   purpose + scope + acceptance criteria, cross-review is done by a different
+   worker using diff + contract only, and synthesis reads worker reports plus
+   deterministic gates rather than trusting git status alone.
 
 **Shared worktree**, **no PR/worktree automation** — unchanged.
 
@@ -51,6 +56,7 @@ Add **`#polly <task description>`**:
 | **5** | **any active lane** | **fixed trio, with duplicate same-backend worker** |
 | **6** | **any active lane** | **two workers; three lanes total** |
 | **7** | **any active lane** | **two workers; implementers run in bypass permission mode** |
+| **8** | **any active lane** | **Omnigent-style dispatch/review/failure prompt contract** |
 
 Rev 4 matches: "No any lane can start #polly but app will spawn only cursor,
 claude and codex."
@@ -82,7 +88,28 @@ same-backend worker is spawned for the orchestrator.
 | Krypton `#review` | Convening lane = whoever typed the command |
 
 **Krypton delta** — orchestrator = any lane; workers = two lanes selected from
-the fixed pool.
+the fixed pool. Omnigent's latest Polly also has per-subagent git worktrees,
+PR-per-implementer, `sys_session_send` title/purpose fields, roster CLI
+preflight, `.polly/registry.json`, inbox wakeups, and cancellation rules.
+Krypton does **not** port those mechanics here: `#polly` still runs over live
+ACP lanes in one shared project worktree. The part adopted in rev 8 is the
+supervisor contract that can be enforced by role/prompt text: structured
+peer_send contracts, delegation boundaries, independent review, same-thread
+fix loops, and report/gate-based synthesis.
+
+`Title:` / `Purpose:` / `Scope:` / `Acceptance:` / `Files/areas:` /
+`Tests/Gates:` / `Report:` are the Krypton peer-message adaptation of
+Omnigent's structured `sys_session_send` fields (`title`, `args.purpose`, and
+input contract). They are literal free-text headings here because `peer_send`
+does not carry typed sub-agent metadata.
+
+**Roster divergence:** Omnigent Polly's current worker names are
+`claude_code`, `codex`, and `pi`. Krypton keeps its existing ACP worker pool
+`cursor`, `claude`, `codex` for this spec because these are the live lane
+backends `ensurePollyWorkers()` can spawn and the two-worker cap is an explicit
+Krypton UX constraint. If Krypton later adopts Pi as a Polly worker or adds
+PR/worktree automation, that is a separate architecture change rather than this
+prompt-contract refresh.
 
 ## Affected Files
 
@@ -128,8 +155,8 @@ export function pollyWorkerBackendsFor(orchestratorBackendId: string): PollyWork
 
 ```ts
 export const POLLY_ROLE_PROMPTS: Record<'orchestrator' | 'implementer', string> = {
-  orchestrator: `You are the Polly tech lead. You do NOT write source code or tests — delegate to the two worker lanes via peer_send. You MAY edit docs/Markdown. Integrate results; never commit or merge. Always keep a live plan/todo list with one entry per task slice and update its statuses as the run proceeds, so the human can observe progress in the Plan panel.`, // spec 165: dropped "and your lane memory" (memory is handoff-only — track task/worker status in working context, not memory_set). spec 166: appended the live-plan clause.
-  implementer: `You are a Polly worker (Cursor, Claude, or Codex). Execute only the scoped task in the peer message. Run tests for touched code. Report file:line evidence. When asked to review another worker's diff, judge ONLY the diff + contract — ### Blockers / ### Warnings, no edits.`,
+  orchestrator: `You are the Polly tech lead, not the coder, investigator, or reviewer. Do NOT write source code or tests — delegate coding work, real investigation, debugging, and audits to your Polly worker lanes via peer_send. You MAY edit docs/Markdown directly and run deterministic gates. Every worker request must include a short task title, purpose (implement/review/explore/search), scope, acceptance contract, and expected report shape. Integrate results; never commit or merge. Do not infer success from git status alone — read worker reports and run deterministic gates. Always keep a live plan/todo list with one entry per task slice and update its statuses as the run proceeds, so the human can observe progress in the Plan panel.`, // spec 165: dropped "and your lane memory" (memory is handoff-only — track task/worker status in working context, not memory_set). spec 166: appended the live-plan clause. spec 164 rev 8: mirrored Omnigent Polly's delegation/dispatch/gate contract.
+  implementer: `You are a Polly worker (Cursor, Claude, or Codex). Execute only the scoped task in the peer message. Honor its purpose: implement changes, review a diff, or explore/search read-only. Run tests for touched code. Report file:line evidence plus commands/results. Do not review your own work. When asked to review another worker's diff, judge ONLY the diff + contract — ### Blocking issues / ### Non-blocking issues / ### Suggestions, no edits.`,
 };
 ```
 
@@ -223,7 +250,38 @@ Cross-review: workers review each other; orchestrator synthesizes
 ```
 
 Plus fan-out, synthesize, `review_outcome`, `attention_flag`, ephemeral task
-memory, peer reply contract (workers omit `done: true`).
+state in the orchestrator's working context, peer reply contract (workers omit
+`done: true`), and Omnigent-style worker message sections:
+
+```
+Title: <task label>
+Purpose: implement | review | explore | search
+Scope: <files/areas and constraints>
+Acceptance: <observable completion contract>
+Files/areas: <allowed write/read scope>
+Tests/Gates: <commands or checks to run>
+Report: <required evidence, file:line refs, commands/results>
+```
+
+Collection rules:
+- Use only the worker lanes listed by the harness roster for that run. The
+  harness already selected live lanes; if a listed worker reports it cannot
+  participate, treat it as unavailable for the rest of the run and surface any
+  lost cross-review coverage.
+- Do not infer success from `git status` alone; read the worker's report and run
+  deterministic gates where practical.
+- Review uses only diff + contract, never the implementer's transcript, and
+  reports `### Blocking issues`, `### Non-blocking issues`, and
+  `### Suggestions` with file:line evidence. Do not give reviewers the
+  implementer transcript or ambient worker context.
+- When recording the round with `review_outcome`, map `Blocking issues` to
+  `blockers`, map `Non-blocking issues` to `warnings`, and keep `Suggestions`
+  in the synthesis text because `review_outcome` intentionally has no
+  suggestions bucket.
+- Blocking review issues go back to the same implementer thread with a concrete
+  fix contract, then gates + review repeat.
+- If no different worker is available for an independent review, the
+  orchestrator surfaces that limitation instead of self-reviewing.
 
 ### Data Flow
 
@@ -270,7 +328,11 @@ None:
 ## Out of Scope
 
 - Spawning backends outside cursor/claude/codex
+- Replacing the Krypton worker pool with Omnigent's `claude_code` / `codex` /
+  `pi` roster
 - Git worktrees / PR-per-task
+- Omnigent's `.polly/registry.json`, sub-agent `conversation_id` registry, and
+  PR readiness tracking
 - Cross-harness `#polly`
 
 ## Resources

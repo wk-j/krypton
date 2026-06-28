@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  POLLY_ROLE_PROMPTS,
   POLLY_WORKER_BACKENDS,
   parsePollyTask,
   pollyWorkerBackendsFor,
@@ -66,6 +67,28 @@ describe('pollyRequestPrompt', () => {
     expect(prompt).toContain('Add JWT refresh');
     expect(prompt).toContain('peer_send');
     expect(prompt).toContain('Cross-review');
+    // Omnigent parity: dispatches are structured by task title + purpose, and
+    // synthesis reads worker reports/gates rather than trusting git status alone.
+    expect(prompt).toContain('Title:');
+    expect(prompt).toContain('Purpose:');
+    expect(prompt).toContain('Scope:');
+    expect(prompt).toContain('Acceptance:');
+    expect(prompt).toContain('Files/areas:');
+    expect(prompt).toContain('Tests/Gates:');
+    expect(prompt).toContain('Report:');
+    expect(prompt).toContain('implement');
+    expect(prompt).toContain('explore');
+    expect(prompt).toContain('search');
+    expect(prompt).toContain('Use only the workers listed above');
+    expect(prompt).toContain('unavailable for the rest of the run');
+    expect(prompt).toContain('do not infer success from git status alone');
+    expect(prompt).toContain('same implementer thread');
+    expect(prompt).toContain('never auto-commit or auto-merge');
+    expect(prompt).toContain('Blocking issues');
+    expect(prompt).toContain('Non-blocking issues');
+    expect(prompt).toContain('Suggestions');
+    expect(prompt).toContain('diff + contract only');
+    expect(prompt).toContain('Do not give reviewers the implementer transcript');
     // Handoff-only (spec 165): the orchestrator tracks task/worker status in its own
     // working context, NOT in memory_set as a scratchpad task board.
     expect(prompt).toContain('working context');
@@ -90,5 +113,26 @@ describe('pollyRequestPrompt', () => {
 
   it('covers fixed worker backends constant', () => {
     expect(POLLY_WORKER_BACKENDS).toEqual(['cursor', 'claude', 'codex']);
+  });
+});
+
+describe('POLLY_ROLE_PROMPTS', () => {
+  it('keeps orchestrator as delegating lead with gate verification', () => {
+    const prompt = POLLY_ROLE_PROMPTS.orchestrator;
+    expect(prompt).toContain('not the coder, investigator, or reviewer');
+    expect(prompt).toContain('delegate coding work');
+    expect(prompt).toContain('real investigation');
+    expect(prompt).toContain('run deterministic gates');
+    expect(prompt).toContain('never commit or merge');
+  });
+
+  it('keeps implementer review contract structured and read-only', () => {
+    const prompt = POLLY_ROLE_PROMPTS.implementer;
+    expect(prompt).toContain('Do not review your own work');
+    expect(prompt).toContain('diff + contract');
+    expect(prompt).toContain('Blocking issues');
+    expect(prompt).toContain('Non-blocking issues');
+    expect(prompt).toContain('Suggestions');
+    expect(prompt).toContain('no edits');
   });
 });
