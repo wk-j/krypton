@@ -21,6 +21,17 @@
 
 ## Recent Landings
 
+- **YouTube transcript extraction (spec 179)** — The popup's on-demand
+  extractor now runs Defuddle's **async** parse (`parseAsync()` instead of the
+  sync `parse()`), unlocking Defuddle 0.19.1's built-in YouTube extractor, which
+  fetches the transcript via the InnerTube API (DOM-panel fallback). No custom
+  transcript-fetching code — same engine Obsidian Web Clipper uses. The same
+  async switch also reaches Defuddle's X/Twitter `x-oembed` extractor; host
+  permissions added for `https://www.youtube.com/*` and
+  `https://publish.twitter.com/*` (the X oEmbed endpoint). Runtime verification
+  on real pages still pending (cannot launch the Chrome extension in CI). See
+  `docs/179-youtube-transcript-extraction.md`.
+
 - **GitHub issue fixing (spec 178)** — "Fix this issue" is a single, surface-agnostic
   operation: it can be started from **anywhere** — Krypton's command palette ("Fix
   GitHub Issue…") or the `#fix-issue <url | owner/repo#123>` verb, the extension

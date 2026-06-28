@@ -21,6 +21,31 @@ export const BUILTIN_ACTIONS = [
   { id: 'custom', label: 'Custom…', template: '{note}\n\n{selection}' },
 ];
 
+// Fixed, always-rendered action: ingest the current page (or selection) into the
+// target lane's LLM wiki (docs/concepts/llm-wiki.md, spec 144). Unlike the
+// editable BUILTIN_ACTIONS it is defined in code and never stored, so it appears
+// regardless of the user's saved action list. The selected lane is expected to
+// run in a wiki repo and to follow its own ingest workflow when prompted; this
+// template just hands it the source. `{selection}` carries the selection when
+// present, else the full extracted page (see renderTemplate).
+export const INGEST_ACTION = {
+  id: 'ingest',
+  label: 'Ingest',
+  template: [
+    'Ingest this web source into the wiki you maintain. Follow your wiki ingest',
+    'workflow: write or update a source page, update index.md, update any related',
+    'entity/concept pages, and append a log.md entry. Preserve existing claims —',
+    'if something conflicts, keep both sides as an open question rather than',
+    'overwriting.',
+    '',
+    'Title: {title}',
+    'URL: {url}',
+    'Author: {author}',
+    '',
+    '{selection}',
+  ].join('\n'),
+};
+
 const STORAGE_KEY = 'actions';
 
 export async function loadActions() {
@@ -33,38 +58,6 @@ export async function loadActions() {
 
 export async function saveActions(actions) {
   await chrome.storage.sync.set({ [STORAGE_KEY]: actions });
-}
-
-// Parse a GitHub issue reference — either a full URL
-// (https://github.com/<owner>/<repo>/issues/<n>) or the shorthand
-// `owner/repo#123` — into the canonical fields dispatch needs (doc 178).
-// Returns null for anything that doesn't resolve to a repo + numeric issue.
-export function parseIssueRef(input) {
-  const raw = (input || '').trim();
-  if (!raw) return null;
-  let owner;
-  let repo;
-  let number;
-  const urlMatch = raw.match(/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/i);
-  if (urlMatch) {
-    owner = urlMatch[1];
-    repo = urlMatch[2];
-    number = parseInt(urlMatch[3], 10);
-  } else {
-    const shortMatch = raw.match(/^([^/\s]+)\/([^/#\s]+)#(\d+)$/);
-    if (!shortMatch) return null;
-    owner = shortMatch[1];
-    repo = shortMatch[2];
-    number = parseInt(shortMatch[3], 10);
-  }
-  if (!Number.isFinite(number) || number <= 0) return null;
-  return {
-    owner,
-    repo: `${owner}/${repo}`,
-    number,
-    issueKey: `${owner}/${repo}#${number}`,
-    issueUrl: `https://github.com/${owner}/${repo}/issues/${number}`,
-  };
 }
 
 // Render a template into a final prompt. The body is the user selection when

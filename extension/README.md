@@ -34,6 +34,11 @@ Highlight text on any page → click the extension → pick a lane and an action
 (Explain / Summarize / Translate / Find issues / Custom…). Edit the action list
 on the extension's **Options** page.
 
+A fixed **Ingest** button sits after the editable actions: it sends the page (or
+selection) to the chosen lane with a prompt to file it into the lane's LLM wiki
+(`docs/concepts/llm-wiki.md`). Point it at a lane running in your wiki repo. It is
+defined in code (not the editable list), so it always appears.
+
 If you **don't** select anything, the extension extracts the page's main content
 as Markdown client-side (via Defuddle, injected on demand) and sends that — so
 pages the lane can't fetch server-side (Reddit, YouTube, login-walled, SPAs) still

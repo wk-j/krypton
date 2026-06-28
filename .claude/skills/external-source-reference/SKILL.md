@@ -1,11 +1,11 @@
 ---
 name: external-source-reference
-description: Reference for the local external-source repos that are ground truth for Krypton's vendored deps and ACP prior art — pi-mono (@mariozechner/pi-agent-core, pi-ai, pi-coding-agent), pretext (@chenglou/pretext text layout/measurement), and the Zed editor (ACP / MCP / agent-server / model-selection prior art). Use when working on src/agent/, debugging agent events, adding tools, or changing models/providers (pi-mono); creating text layouts/animations, measuring text without DOM, or rendering text to canvas/SVG (pretext); or studying how Zed implements ACP, MCP context-server forwarding, external agent servers, or model selection for the ACP harness (zed).
+description: Reference for the local external-source repos that are ground truth for Krypton's vendored deps and prior art — pi-mono (@mariozechner/pi-agent-core, pi-ai, pi-coding-agent), pretext (@chenglou/pretext text layout/measurement), Zed editor (ACP / MCP / agent-server / model-selection prior art), and Obsidian Web Clipper (browser clipping, extraction, template rendering, Obsidian handoff). Use when working on src/agent/, debugging agent events, adding tools, or changing models/providers (pi-mono); creating text layouts/animations, measuring text without DOM, or rendering text to canvas/SVG (pretext); studying how Zed implements ACP, MCP context-server forwarding, external agent servers, or model selection for the ACP harness (zed); or designing clipping/import flows, Markdown extraction, template engines, browser-extension surfaces, highlights, or Obsidian URI/CLI handoff (obsidian-clipper).
 ---
 
 # External Source Reference
 
-Krypton depends on or studies three local repos as **ground truth**. npm dist types and blog
+Krypton depends on or studies these local repos as **ground truth**. npm dist types and blog
 posts lag — when a question touches one of these, **read the local source before answering.**
 This skill is a router: load the one reference file for the source you need.
 
@@ -14,6 +14,7 @@ This skill is a router: load the one reference file for the source you need.
 | **pi-mono** | `/Users/wk/Source/pi-mono` | `src/agent/`, agent events, adding tools, model/provider changes, anything touching `@mariozechner/pi-agent-core` / `pi-ai` / `pi-coding-agent` | [pi-mono.md](pi-mono.md) |
 | **pretext** | `/Users/wk/Source/pretext` | text layout, text animation, measuring text height without DOM reflow, rendering text to canvas/SVG, multiline measurement, `@chenglou/pretext` | [pretext.md](pretext.md) |
 | **zed** | `/Users/wk/Source/zed` | ACP harness work — how Zed implements the ACP client, forwards MCP `context_servers` into `session/new`, manages external agent servers, and selects models | [zed.md](zed.md) |
+| **obsidian-clipper** | `/Users/wk/Source/obsidian-clipper` | browser clipping/import flows, Markdown extraction, template variables/filters/logic, highlights, reader mode, cross-browser extension packaging, Obsidian URI/CLI handoff | [obsidian-clipper.md](obsidian-clipper.md) |
 
 ## How to use
 

@@ -19,16 +19,16 @@ Make "fix this issue" a single, surface-agnostic operation. One control op,
 trigger it, and **every** surface can read the resulting status:
 
 1. **Dispatch from anywhere** — the same op is invoked from (a) Krypton's command
-   palette / a keybinding (keyboard-first, the primary in-app path), (b) the
-   extension popup on any page, and (c) a button injected on the GitHub issue page.
-   It records an **issue↔lane binding** and prompts a lane to fix the issue.
+   palette / a keybinding (keyboard-first, the primary in-app path) and (b) a card
+   injected on the GitHub issue page. It records an **issue↔lane binding** and
+   prompts a lane to fix the issue.
 2. **Status from anywhere** — bindings + live lane status are exposed via
    `github.issue-status` / `github.list-issues`. Krypton shows an issue badge on the
    bound lane; the extension injects a live status card onto the GitHub issue page,
    streamed over the existing SSE channel (`/control/v1/events`).
 
-Issue metadata (title/body) is obtained per surface: the issue-page button scrapes
-the authenticated DOM (no token); Krypton and the generic popup fetch via the local
+Issue metadata (title/body) is obtained per surface: the issue-page card scrapes
+the authenticated DOM (no token); Krypton's command palette fetches via the local
 `gh` CLI, falling back to letting the lane fetch it. Writing back to GitHub
 (comments, labels, PR creation) is explicitly **out of scope for v1**.
 
@@ -80,7 +80,6 @@ No market equivalent overlays a local agent's live status on the GitHub issue pa
 | `extension/github-issue.js` (new) | Content script: self-gate to issue URLs, scrape title/body, inject status card, open Port to background; SPA-navigation aware (mounts/re-keys/tears down on client-side URL changes) |
 | `extension/github-issue.css` (new) | Status-card styling (light/dark, no left-border rails) |
 | `extension/background.js` | SSE subscription + per-tab Port relay; `dispatchIssue` + `issueStatus` control calls |
-| `extension/popup.js` / `actions.js` | "Fix this issue in Krypton" entry with lane picker |
 | `DESIGN.binance.md` or extension styles | Note the on-GitHub card styling rules |
 
 ## Design
@@ -162,8 +161,7 @@ only in how they reach it and how they obtain issue metadata:
 |---------|---------|-----------------|
 | **Krypton command palette** (`getPaletteActions`, primary keyboard path) | "Fix GitHub Issue…" → input prompts for URL or `owner/repo#123` | `gh issue view <n> -R <repo> --json title,body` via `run_command` |
 | **Krypton `#` harness palette** | `#fix-issue <url>` | same `gh` fetch |
-| **Extension issue-page button** | injected card on `/issues/<n>` | scrape DOM (no token) |
-| **Extension popup (any page)** | "Fix GitHub Issue in Krypton" + URL field | `gh` fetch on the Krypton side |
+| **Extension issue-page card** | injected card on `/issues/<n>` | scrape DOM (no token) |
 
 In-Krypton surfaces call `dispatchIssue` directly (no control round-trip). Browser
 surfaces call it through `POST /control/v1/operations { github.dispatch-issue }`.
@@ -183,7 +181,7 @@ prompt instructs the lane to fetch the issue itself.
 
 **Dispatch from the browser:**
 ```
-1. User clicks "Fix in Krypton" (issue-page card or popup); metadata scraped/typed
+1. User clicks "Fix in Krypton" on the issue-page card; metadata scraped from DOM
 2. background.js → POST /control/v1/operations { github.dispatch-issue, params }
 3. control.rs routes to frontend; same dispatchIssue() path as above runs
 4. Frontend publishes a status event; reply { harnessId, lane, issueKey } returns
@@ -267,9 +265,9 @@ GitHub Enterprise is noted as out of scope.
 - **Lane closed/restarted/stopped** — snapshot reports `laneStatus: stopped`; card
   offers re-dispatch; binding retained until unlinked.
 - **Krypton offline** — native handshake fails; card shows offline state, no error spam.
-- **Private repo** — issue-page surface reads the authenticated DOM; Krypton/popup
-  surfaces rely on the user's already-authed local `gh`.
-- **`gh` missing/unauthed** — Krypton/popup dispatch proceeds with the URL only; the
+- **Private repo** — issue-page surface reads the authenticated DOM; Krypton's
+  command palette relies on the user's already-authed local `gh`.
+- **`gh` missing/unauthed** — Krypton dispatch proceeds with the URL only; the
   prompt tells the lane to fetch the issue (e.g. via its own `gh`/web tools).
 - **Malformed issue input** — Krypton input rejects strings that don't parse to a
   repo + number (or full `/issues/<n>` URL) with an inline error, no binding created.

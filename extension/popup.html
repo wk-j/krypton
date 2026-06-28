@@ -54,21 +54,6 @@
       #status.ok { color: #0ecb81; }
       #note-row { display: none; }
       #note-row.show { display: block; }
-      .divider { height: 1px; background: #2b2d36; margin: 14px 0 4px; }
-      input[type='text'] {
-        width: 100%;
-        box-sizing: border-box;
-        background: #1e1f26;
-        color: #e8e8ea;
-        border: 1px solid #2b2d36;
-        border-radius: 6px;
-        padding: 6px 8px;
-        font: inherit;
-      }
-      #issue-send { width: 100%; margin-top: 8px; }
-      #issue-status { margin-top: 6px; font-size: 11px; min-height: 12px; color: #9aa0a6; }
-      #issue-status.err { color: #f6465d; }
-      #issue-status.ok { color: #0ecb81; }
     </style>
   </head>
   <body>
@@ -85,15 +70,6 @@
     <label>Action</label>
     <div class="actions" id="action-list"></div>
     <div id="status"></div>
-
-    <div class="divider"></div>
-    <h1>FIX GITHUB ISSUE IN KRYPTON</h1>
-    <label for="issue-ref">Issue URL or owner/repo#123</label>
-    <input type="text" id="issue-ref" placeholder="owner/repo#123" />
-    <label for="issue-lane">Target lane</label>
-    <select id="issue-lane"></select>
-    <button id="issue-send">Fix GitHub Issue in Krypton ▸</button>
-    <div id="issue-status"></div>
 
     <script type="module" src="popup.js"></script>
   </body>

@@ -198,6 +198,15 @@ _Recommended defaults below; confirm or adjust at approval:_
 4. **Markdown vs cleaned HTML** — send Markdown (`markdown: true`). Confirm (vs sending
    cleaned HTML, which is noisier for an LLM)?
 
+## Update — async parse (doc 179)
+
+`__kryptonExtract` now awaits Defuddle's `parseAsync()` rather than the sync
+`parse()`. The return shape is unchanged, but the async path lets Defuddle's
+site-specific extractors run their async work — notably the **YouTube
+transcript** extractor (InnerTube fetch, DOM-panel fallback). `popup.js`'s
+`executeScript({func})` already returns the call result, which MV3 awaits when
+it is a Promise. See `docs/179-youtube-transcript-extraction.md`.
+
 ## Out of Scope
 
 - DOMPurify sanitization round-trip — we send Markdown text to a trusted local lane, not

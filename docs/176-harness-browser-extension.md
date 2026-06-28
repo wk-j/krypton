@@ -39,6 +39,14 @@ Because the extension declares `host_permissions` for that origin, MV3 exempts
 the request from CORS — the new `cors_origins` config is **not** needed for the
 extension path.
 
+A fixed **Ingest** action (`INGEST_ACTION` in `actions.js`) is rendered after the
+editable list. It is the same `lane.send` path, but its prompt asks the target
+lane to file the page (or selection) into the LLM wiki it maintains
+(`docs/concepts/llm-wiki.md`, spec 144) — write/update a source page, update
+`index.md`, touch related pages, append to `log.md`. It is defined in code rather
+than seeded into `chrome.storage.sync`, so it always appears even for installs
+whose action list was seeded before it existed (and it is not user-deletable).
+
 ## Research
 
 - **Control API reuse (doc 175).** `lane.send`, `lane.list`, `harness.list`
