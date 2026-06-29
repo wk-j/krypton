@@ -33,6 +33,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'recall', args: '<question>', description: 'answer a question from the repo wiki' },
   { name: 'directive', args: '<what to create/change>', description: 'author a reusable harness directive' },
   { name: 'review', args: '[<lane>…] [-- <doc | note>]', description: 'run a multi-reviewer design/diff review' },
+  { name: 'orchestrator', args: '', description: 'designate this lane the orchestrator seat + open the console' },
   { name: 'polly', args: '<task>', description: 'Polly orchestration — spawns Cursor + Claude + Codex workers' },
   { name: 'debby', args: '<question>', description: 'Debby brainstorming — asks Claude + Codex heads' },
   { name: 'queue', args: '[clear | edit N]', description: 'manage queued prompts' },

@@ -1,0 +1,333 @@
+/* Orchestrator console (spec 180) — in-app, acting, keyboard-driven overlay
+   opened from the orchestrator seat with #orchestrator. The acting counterpart
+   to the read-only lane monitor dashboard (spec 168). Mirrors the harness
+   overlay shell (review-priority.css / attention-triage.css): flat surface, no
+   per-card accent rails, no nested boxes. The region shell (lanes · feed ·
+   reserved) is the spec-111 slot pattern — fixed regions plus one reserved slot
+   future panels mount into. */
+
+/* ── Overlay shell ────────────────────────────────────────── */
+
+.acp-harness__orchestrator {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 13, 0.8);
+}
+
+.acp-harness__orchestrator[hidden] {
+  display: none;
+}
+
+.acp-orchestrator__panel {
+  display: flex;
+  flex-direction: column;
+  width: clamp(640px, 86vw, 1180px);
+  max-height: 88vh;
+  background: rgba(8, 14, 18, 0.98);
+  border: 1px solid rgba(0, 204, 255, 0.32);
+  border-radius: 3px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+/* ── Head ─────────────────────────────────────────────────── */
+
+.acp-orchestrator__head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.22);
+  color: var(--krypton-window-accent, #0cf);
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+}
+
+.acp-orchestrator__title {
+  font-weight: 600;
+}
+
+.acp-orchestrator__seat {
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: rgba(0, 204, 255, 0.12);
+  color: var(--krypton-window-accent, #0cf);
+  font-size: 0.78em;
+  text-shadow: none;
+}
+
+.acp-orchestrator__summary {
+  margin-left: auto;
+  color: rgba(216, 232, 216, 0.5);
+  font-size: 0.8em;
+  text-shadow: none;
+  letter-spacing: 0.04em;
+}
+
+/* ── Region shell (spec 111 slot pattern) ─────────────────── */
+
+.acp-orchestrator__body {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 1px;
+  min-height: 0;
+  flex: 1;
+  background: rgba(0, 204, 255, 0.1);
+  overflow: hidden;
+}
+
+.acp-orchestrator__region {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 10px 14px;
+  background: rgba(8, 14, 18, 0.98);
+  overflow: auto;
+}
+
+.acp-orchestrator__region[data-region='lanes'] {
+  grid-row: 1 / span 2;
+}
+
+.acp-orchestrator__region--reserved {
+  align-items: center;
+  justify-content: center;
+}
+
+.acp-orchestrator__region-title {
+  margin: 0 0 8px;
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(216, 232, 216, 0.45);
+}
+
+.acp-orchestrator__reserved-note {
+  color: rgba(216, 232, 216, 0.32);
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+}
+
+.acp-orchestrator__empty {
+  padding: 16px 4px;
+  color: rgba(216, 232, 216, 0.45);
+  font-size: 0.82em;
+  letter-spacing: 0.03em;
+}
+
+/* ── Lane grid ────────────────────────────────────────────── */
+
+.acp-orchestrator__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+  min-height: 0;
+}
+
+/* Cards are one flat tinted surface. Selection = full ring, never a left rail.
+   The seat is marked by its badge + a faint background tint, not a border bar. */
+.acp-orchestrator__card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 11px;
+  border-radius: 3px;
+  background: rgba(216, 232, 216, 0.05);
+}
+
+.acp-orchestrator__card--seat {
+  background: rgba(0, 204, 255, 0.08);
+}
+
+.acp-orchestrator__card--selected {
+  outline: 1px solid rgba(0, 204, 255, 0.6);
+  outline-offset: -1px;
+}
+
+.acp-orchestrator__card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.acp-orchestrator__card-name {
+  color: rgba(216, 232, 216, 0.92);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.acp-orchestrator__card-status {
+  font-size: 0.72em;
+  letter-spacing: 0.05em;
+  color: rgba(216, 232, 216, 0.5);
+}
+
+.acp-orchestrator__card-status--busy,
+.acp-orchestrator__card-status--needs_permission {
+  color: #ffcf70;
+}
+
+.acp-orchestrator__card-status--awaiting_peer {
+  color: var(--krypton-window-accent, #0cf);
+}
+
+.acp-orchestrator__card-status--error {
+  color: #ff8b8b;
+}
+
+.acp-orchestrator__card-meta {
+  color: rgba(216, 232, 216, 0.5);
+  font-size: 0.74em;
+  letter-spacing: 0.03em;
+}
+
+.acp-orchestrator__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.acp-orchestrator__badge,
+.acp-orchestrator__tag {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.7em;
+  letter-spacing: 0.04em;
+  background: rgba(216, 232, 216, 0.07);
+  color: rgba(216, 232, 216, 0.66);
+}
+
+.acp-orchestrator__badge {
+  background: rgba(0, 204, 255, 0.14);
+  color: var(--krypton-window-accent, #0cf);
+}
+
+.acp-orchestrator__tag--attn {
+  background: rgba(255, 207, 112, 0.14);
+  color: #ffcf70;
+}
+
+.acp-orchestrator__goal {
+  color: rgba(216, 232, 216, 0.6);
+  font-size: 0.76em;
+  letter-spacing: 0.02em;
+}
+
+/* ── Feed ─────────────────────────────────────────────────── */
+
+.acp-orchestrator__feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.acp-orchestrator__feed-row {
+  display: flex;
+  gap: 8px;
+  font-size: 0.78em;
+}
+
+.acp-orchestrator__feed-who {
+  flex: 0 0 auto;
+  color: var(--krypton-window-accent, #0cf);
+  letter-spacing: 0.03em;
+}
+
+.acp-orchestrator__feed-text {
+  min-width: 0;
+  color: rgba(216, 232, 216, 0.66);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Dispatch ─────────────────────────────────────────────── */
+
+.acp-orchestrator__dispatch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(0, 204, 255, 0.22);
+  background: rgba(8, 14, 18, 0.98);
+}
+
+.acp-orchestrator__dispatch--active {
+  background: rgba(0, 204, 255, 0.06);
+}
+
+.acp-orchestrator__dispatch-label {
+  flex: 0 0 auto;
+  color: rgba(216, 232, 216, 0.82);
+  letter-spacing: 0.04em;
+}
+
+.acp-orchestrator__dispatch-hint,
+.acp-orchestrator__dispatch-disabled {
+  color: rgba(216, 232, 216, 0.4);
+  font-size: 0.8em;
+  letter-spacing: 0.03em;
+}
+
+.acp-orchestrator__purposes {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.acp-orchestrator__purpose {
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 0.74em;
+  letter-spacing: 0.04em;
+  background: rgba(216, 232, 216, 0.06);
+  color: rgba(216, 232, 216, 0.5);
+}
+
+.acp-orchestrator__purpose--active {
+  background: rgba(0, 204, 255, 0.16);
+  color: var(--krypton-window-accent, #0cf);
+}
+
+.acp-orchestrator__dispatch-input {
+  flex: 1;
+  min-width: 0;
+  color: rgba(216, 232, 216, 0.92);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-orchestrator__dispatch-placeholder {
+  color: rgba(216, 232, 216, 0.34);
+}
+
+/* ── Keybinding legend ────────────────────────────────────── */
+
+.acp-orchestrator__keys {
+  padding: 7px 14px;
+  border-top: 1px solid rgba(0, 204, 255, 0.14);
+  color: rgba(216, 232, 216, 0.42);
+  font-size: 0.74em;
+  letter-spacing: 0.04em;
+}
+
+/* ── Lane-head seat badge (visible outside the console) ───── */
+
+.acp-harness__lane-orchestrator {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(0, 204, 255, 0.14);
+  color: var(--krypton-window-accent, #0cf);
+  font-size: 0.72em;
+  letter-spacing: 0.04em;
+  text-shadow: none;
+  white-space: nowrap;
+}

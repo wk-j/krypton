@@ -1234,6 +1234,38 @@ const md = new Marked(
  * attention counts under a distinct `sourceId`, letting the footer sum them. */
 let harnessViewSeq = 0;
 
+/** spec 180: orchestrator dispatch purpose — mirrors the `#polly` worker brief. */
+export type DispatchPurpose = 'implement' | 'review' | 'explore' | 'search';
+export const DISPATCH_PURPOSES: readonly DispatchPurpose[] = ['implement', 'review', 'explore', 'search'];
+
+/** spec 180: cycle the dispatch purpose (Tab in the dispatch input). */
+export function nextDispatchPurpose(current: DispatchPurpose): DispatchPurpose {
+  const i = DISPATCH_PURPOSES.indexOf(current);
+  return DISPATCH_PURPOSES[(i + 1) % DISPATCH_PURPOSES.length];
+}
+
+/** spec 180: the dispatch message body. A dispatch is a plain `peer_send` (it
+ *  carries a purpose-tagged task), NOT a Goal-set — so the body is just the
+ *  bracketed purpose + task, never a directive/goal envelope. */
+export function orchestratorDispatchBody(purpose: DispatchPurpose, text: string): string {
+  return `[${purpose}] ${text.trim()}`;
+}
+
+/** spec 180: why a dispatch to `targetId` is not allowed from `seatId`, or null
+ *  when it is. The orchestrator cannot dispatch to itself, needs a real seat, and
+ *  needs at least one other lane. */
+export function dispatchDisabledReason(opts: {
+  seatId: string | null;
+  targetId: string | null;
+  laneCount: number;
+}): string | null {
+  if (!opts.seatId) return 'no orchestrator seat';
+  if (!opts.targetId) return 'no target';
+  if (opts.targetId === opts.seatId) return 'cannot dispatch to the seat';
+  if (opts.laneCount < 2) return 'no other lanes';
+  return null;
+}
+
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
@@ -1287,6 +1319,16 @@ export class AcpHarnessView implements ContentView {
   private reviewPriorityOverlayOpen = false;
   private reviewPrioritySelectedLaneIndex = 0;
   private reviewPriorityUnlisten: UnlistenFn | null = null;
+  /** spec 180: the designated Orchestrator seat (≤1 per harness). A prompt-free
+   *  badge field — NOT `pollyBuiltinRole`, which injects a prompt. Autonomy stays
+   *  opt-in via `#polly`. Cleared when the seat lane closes/stops. */
+  private orchestratorLaneId: string | null = null;
+  private orchestratorConsoleOpen = false;
+  /** j/k cursor over lane cards while the console is open. */
+  private orchestratorSelectedLaneId: string | null = null;
+  /** Non-null while the dispatch one-line input is open for the selected target. */
+  private orchestratorDispatch: { draft: string; purpose: DispatchPurpose } | null = null;
+  private orchestratorLaneBusUnsub: (() => void) | null = null;
   private interLaneUnlisten: UnlistenFn | null = null;
   private peerListUnlisten: UnlistenFn | null = null;
   private memoryEntries: HarnessMemoryEntry[] = [];
@@ -1397,6 +1439,8 @@ export class AcpHarnessView implements ContentView {
   private reviewMatrixPanelEl!: HTMLElement;
   private reviewPriorityOverlayEl!: HTMLElement;
   private reviewPriorityPanelEl!: HTMLElement;
+  private orchestratorConsoleEl!: HTMLElement;
+  private orchestratorPanelEl!: HTMLElement;
   private pickerEl!: HTMLElement;
   private directivePickerEl!: HTMLElement;
   private modelPickerEl!: HTMLElement;
@@ -3347,6 +3391,11 @@ export class AcpHarnessView implements ContentView {
       this.handleReviewPriorityKey(e);
       return true;
     }
+    if (this.orchestratorConsoleOpen) {
+      e.preventDefault();
+      this.handleOrchestratorKey(e);
+      return true;
+    }
     if (this.metricsPanelOpen && e.key === 'Escape') {
       e.preventDefault();
       this.toggleMetricsPanel(false);
@@ -3676,6 +3725,9 @@ export class AcpHarnessView implements ContentView {
     this.publishReviews(0);
     // spec 162: clear the footer review-priority indicator — going away.
     this.publishReviewPriority(0);
+    // spec 180: drop the orchestrator console's live lane-bus subscription.
+    this.orchestratorLaneBusUnsub?.();
+    this.orchestratorLaneBusUnsub = null;
     this.stopComposerTick();
     this.stopMetricsTick();
     this.stopSpinnerTicker();
@@ -4440,6 +4492,353 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  // ── spec 180: orchestrator console (in-app, acting) ──────────────────────
+
+  /** The lane currently holding the orchestrator seat, or null. Resolved each
+   *  read so a stopped/closed seat is treated as vacant. */
+  private orchestratorLane(): HarnessLane | null {
+    if (!this.orchestratorLaneId) return null;
+    const lane = this.lanes.find(
+      (l) => l.id === this.orchestratorLaneId && l.status !== 'stopped',
+    );
+    return lane ?? null;
+  }
+
+  /** Promote `lane` to the orchestrator seat (one-per-harness; transfers the seat
+   *  if another lane already holds it). Behavior-neutral — no prompt injected. */
+  private designateOrchestrator(lane: HarnessLane): void {
+    if (this.orchestratorLaneId === lane.id) return;
+    const prev = this.orchestratorLane();
+    this.orchestratorLaneId = lane.id;
+    if (prev) this.scheduleLaneRender(prev);
+    this.scheduleLaneRender(lane);
+    this.flashChip(`orchestrator → ${lane.displayName}`);
+  }
+
+  /** #orchestrator / #console entry: designate the active lane the seat if there
+   *  is none yet, then open the console. An existing seat is left untouched. */
+  private openOrchestratorConsole(lane: HarnessLane): void {
+    if (!this.orchestratorLane()) this.designateOrchestrator(lane);
+    this.closeTriageOverlay(); // mutual-exclude: never stack full-screen overlays
+    this.closeReviewMatrixOverlay();
+    this.closeReviewPriorityOverlay();
+    this.helpOpen = false;
+    this.memoryDrawerOpen = false;
+    this.orchestratorConsoleOpen = true;
+    this.orchestratorDispatch = null;
+    // Default the selection to the first non-orchestrator lane (a dispatch target).
+    const seatId = this.orchestratorLaneId;
+    const cards = this.lanes.filter((l) => l.status !== 'stopped');
+    const firstTarget = cards.find((l) => l.id !== seatId) ?? cards[0] ?? null;
+    if (!this.orchestratorSelectedLaneId || !cards.some((l) => l.id === this.orchestratorSelectedLaneId)) {
+      this.orchestratorSelectedLaneId = firstTarget?.id ?? null;
+    }
+    // Live re-render while open: any lane-bus signal refreshes the grid/feed.
+    this.orchestratorLaneBusUnsub?.();
+    this.orchestratorLaneBusUnsub = this.laneBus.subscribe(() => {
+      if (this.orchestratorConsoleOpen) this.renderOrchestratorConsoleEl();
+    });
+    this.renderOrchestratorConsoleEl();
+  }
+
+  private closeOrchestratorConsole(): void {
+    if (!this.orchestratorConsoleOpen) return;
+    this.orchestratorConsoleOpen = false;
+    this.orchestratorDispatch = null;
+    this.orchestratorLaneBusUnsub?.();
+    this.orchestratorLaneBusUnsub = null;
+    this.orchestratorConsoleEl.hidden = true;
+  }
+
+  /** Console lane cards: every live lane (the orchestrator included, badged). */
+  private orchestratorCards(): HarnessLane[] {
+    return this.lanes.filter((l) => l.status !== 'stopped');
+  }
+
+  private orchestratorSelectedLane(): HarnessLane | null {
+    const cards = this.orchestratorCards();
+    return cards.find((l) => l.id === this.orchestratorSelectedLaneId) ?? cards[0] ?? null;
+  }
+
+  private renderOrchestratorConsoleEl(): void {
+    this.orchestratorConsoleEl.hidden = !this.orchestratorConsoleOpen;
+    if (!this.orchestratorConsoleOpen) return;
+    const cards = this.orchestratorCards();
+    if (!cards.some((l) => l.id === this.orchestratorSelectedLaneId)) {
+      this.orchestratorSelectedLaneId = cards[0]?.id ?? null;
+    }
+    const seatId = this.orchestratorLaneId;
+    const selected = this.orchestratorSelectedLane();
+
+    const busy = cards.filter((l) => l.status === 'busy' || l.status === 'needs_permission').length;
+    const awaiting = cards.filter((l) => l.status === 'awaiting_peer').length;
+    const flags = this.triageStore.openCount();
+    const seatLane = this.orchestratorLane();
+    const summary =
+      `${cards.length} lane${cards.length === 1 ? '' : 's'} · ${busy} busy · ` +
+      `${awaiting} awaiting · ${flags} flag${flags === 1 ? '' : 's'}`;
+
+    const cardHtml = cards
+      .map((l) => {
+        const isSeat = l.id === seatId;
+        const isSel = l.id === this.orchestratorSelectedLaneId;
+        const cls =
+          'acp-orchestrator__card' +
+          (isSel ? ' acp-orchestrator__card--selected' : '') +
+          (isSeat ? ' acp-orchestrator__card--seat' : '');
+        const triageOpen = this.triageStore.openItems().filter((i) => i.laneId === l.id).length;
+        const high = this.reviewPriorityStore.highCountFor(l.id);
+        const tags: string[] = [];
+        if (isSeat) tags.push(`<span class="acp-orchestrator__badge">◆ orchestrator</span>`);
+        const inbox = this.coordinator.inboxDepth(l.id);
+        if (inbox > 0) tags.push(`<span class="acp-orchestrator__tag">inbox ${inbox}</span>`);
+        if (triageOpen > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--attn">⚑ ${triageOpen}</span>`);
+        if (high > 0) tags.push(`<span class="acp-orchestrator__tag">diff ${high}</span>`);
+        const goal = l.goal ? `<div class="acp-orchestrator__goal">${esc(truncate(l.goal.text, 72))}</div>` : '';
+        const model = l.modelName ? ` · ${esc(l.modelName)}` : '';
+        return (
+          `<div class="${cls}" data-orch-lane="${esc(l.id)}">` +
+          `<div class="acp-orchestrator__card-head">` +
+          `<span class="acp-orchestrator__card-name">${esc(l.displayName)}</span>` +
+          `<span class="acp-orchestrator__card-status acp-orchestrator__card-status--${esc(l.status)}">${esc(statusLabel(l.status))}</span>` +
+          `</div>` +
+          `<div class="acp-orchestrator__card-meta">${esc(backendLabel(l.backendId))}${model}</div>` +
+          (tags.length ? `<div class="acp-orchestrator__tags">${tags.join('')}</div>` : '') +
+          goal +
+          `</div>`
+        );
+      })
+      .join('');
+
+    // Orchestration feed: recent inter-lane + flag rows from the seat's transcript.
+    const feedHtml = this.renderOrchestratorFeed(seatLane);
+
+    const dispatchHtml = this.renderOrchestratorDispatch(selected, seatId);
+
+    this.orchestratorPanelEl.innerHTML =
+      `<header class="acp-orchestrator__head">` +
+      `<span class="acp-orchestrator__title">Orchestrator console</span>` +
+      `<span class="acp-orchestrator__seat">${seatLane ? esc(seatLane.displayName) : 'no seat'}</span>` +
+      `<span class="acp-orchestrator__summary">${esc(summary)}</span>` +
+      `</header>` +
+      `<div class="acp-orchestrator__body">` +
+      `<section class="acp-orchestrator__region" data-region="lanes">` +
+      `<h3 class="acp-orchestrator__region-title">Lanes</h3>` +
+      `<div class="acp-orchestrator__grid">${cardHtml || '<div class="acp-orchestrator__empty">no lanes</div>'}</div>` +
+      `</section>` +
+      `<section class="acp-orchestrator__region" data-region="feed">` +
+      `<h3 class="acp-orchestrator__region-title">Feed</h3>${feedHtml}` +
+      `</section>` +
+      `<section class="acp-orchestrator__region acp-orchestrator__region--reserved" data-region="reserved">` +
+      `<div class="acp-orchestrator__reserved-note">reserved — task list · delegation graph (future)</div>` +
+      `</section>` +
+      `</div>` +
+      dispatchHtml +
+      `<footer class="acp-orchestrator__keys">` +
+      `j/k select · Enter jump · d dispatch · c interrupt · x kill · r restart · o set seat · Esc close` +
+      `</footer>`;
+  }
+
+  private renderOrchestratorFeed(seat: HarnessLane | null): string {
+    if (!seat) return `<div class="acp-orchestrator__empty">designate a seat to see its feed</div>`;
+    const rows = seat.transcript
+      .filter((t) => t.kind === 'inter_lane' || t.kind === 'system')
+      .slice(-8)
+      .reverse()
+      .map((t) => {
+        const who = t.interLane
+          ? `${t.interLane.direction === 'out' ? '→' : '←'} ${esc(t.interLane.peerDisplayName)}`
+          : 'system';
+        return (
+          `<div class="acp-orchestrator__feed-row">` +
+          `<span class="acp-orchestrator__feed-who">${who}</span>` +
+          `<span class="acp-orchestrator__feed-text">${esc(truncate(t.text.replace(/\s+/g, ' ').trim(), 96))}</span>` +
+          `</div>`
+        );
+      })
+      .join('');
+    return rows
+      ? `<div class="acp-orchestrator__feed">${rows}</div>`
+      : `<div class="acp-orchestrator__empty">no coordination activity yet</div>`;
+  }
+
+  private renderOrchestratorDispatch(selected: HarnessLane | null, seatId: string | null): string {
+    const disabledReason = dispatchDisabledReason({
+      seatId,
+      targetId: selected?.id ?? null,
+      laneCount: this.orchestratorCards().length,
+    });
+    const target = selected ? esc(selected.displayName) : '—';
+    if (!this.orchestratorDispatch) {
+      const hint = disabledReason
+        ? `<span class="acp-orchestrator__dispatch-disabled">${esc(disabledReason)}</span>`
+        : `<span class="acp-orchestrator__dispatch-hint">press d to dispatch to ${target}</span>`;
+      return (
+        `<section class="acp-orchestrator__dispatch" data-region="dispatch">` +
+        `<span class="acp-orchestrator__dispatch-label">dispatch → ${target}</span>${hint}` +
+        `</section>`
+      );
+    }
+    const purposes = DISPATCH_PURPOSES.map(
+      (p) =>
+        `<span class="acp-orchestrator__purpose${p === this.orchestratorDispatch?.purpose ? ' acp-orchestrator__purpose--active' : ''}">${esc(p)}</span>`,
+    ).join('');
+    return (
+      `<section class="acp-orchestrator__dispatch acp-orchestrator__dispatch--active" data-region="dispatch">` +
+      `<span class="acp-orchestrator__dispatch-label">dispatch → ${target}</span>` +
+      `<span class="acp-orchestrator__purposes" title="Tab cycles purpose">${purposes}</span>` +
+      `<span class="acp-orchestrator__dispatch-input">${esc(this.orchestratorDispatch.draft) || '<span class="acp-orchestrator__dispatch-placeholder">type a task · Enter send · Esc cancel</span>'}</span>` +
+      `</section>`
+    );
+  }
+
+  /** Console key handling. Dispatch input sub-mode captures keys until Enter/Esc. */
+  private handleOrchestratorKey(e: KeyboardEvent): void {
+    if (this.orchestratorDispatch) {
+      this.handleOrchestratorDispatchKey(e);
+      return;
+    }
+    if (e.key === 'Escape' || e.key === 'q') {
+      this.closeOrchestratorConsole();
+      this.render();
+      return;
+    }
+    const cards = this.orchestratorCards();
+    if (cards.length === 0) return;
+    let idx = cards.findIndex((l) => l.id === this.orchestratorSelectedLaneId);
+    if (idx < 0) idx = 0;
+    if (e.key === 'j' || e.key === 'ArrowDown') {
+      this.orchestratorSelectedLaneId = cards[(idx + 1) % cards.length].id;
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (e.key === 'k' || e.key === 'ArrowUp') {
+      this.orchestratorSelectedLaneId = cards[(idx - 1 + cards.length) % cards.length].id;
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    const selected = this.orchestratorSelectedLane();
+    if (!selected) return;
+    if (e.key === 'Enter') {
+      this.closeOrchestratorConsole();
+      this.activateLane(selected.id);
+      this.render();
+      return;
+    }
+    if (e.key === 'o') {
+      this.designateOrchestrator(selected);
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (e.key === 'd') {
+      const reason = dispatchDisabledReason({
+        seatId: this.orchestratorLaneId,
+        targetId: selected.id,
+        laneCount: this.orchestratorCards().length,
+      });
+      if (reason) {
+        this.flashChip(`dispatch: ${reason}`);
+        return;
+      }
+      this.orchestratorDispatch = { draft: '', purpose: 'implement' };
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (e.key === 'c') {
+      void this.cancelLane(selected);
+      this.flashChip(`interrupt → ${selected.displayName}`);
+      return;
+    }
+    if (e.key === 'x') {
+      void this.closeLane(selected);
+      this.flashChip(`kill → ${selected.displayName}`);
+      return;
+    }
+    if (e.key === 'r') {
+      void this.restartLane(selected);
+      this.flashChip(`restart → ${selected.displayName}`);
+      return;
+    }
+  }
+
+  private handleOrchestratorDispatchKey(e: KeyboardEvent): void {
+    const dispatch = this.orchestratorDispatch;
+    if (!dispatch) return;
+    if (e.key === 'Escape') {
+      this.orchestratorDispatch = null;
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (e.key === 'Tab') {
+      dispatch.purpose = nextDispatchPurpose(dispatch.purpose);
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const text = dispatch.draft.trim();
+      if (!text) {
+        this.orchestratorDispatch = null;
+        this.renderOrchestratorConsoleEl();
+        return;
+      }
+      this.dispatchFromConsole(dispatch.purpose, text);
+      return;
+    }
+    if (e.key === 'Backspace') {
+      dispatch.draft = dispatch.draft.slice(0, -1);
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      dispatch.draft += e.key;
+      this.renderOrchestratorConsoleEl();
+    }
+  }
+
+  /** spec 180: a dispatch is an ordinary `peer_send` from the orchestrator seat to
+   *  the selected lane (inbox drop, drained on the target's own idle turn). It is
+   *  NOT a Goal-set — the worker keeps its session and context. */
+  private dispatchFromConsole(purpose: DispatchPurpose, text: string): void {
+    const seat = this.orchestratorLane();
+    const target = this.orchestratorSelectedLane();
+    this.orchestratorDispatch = null;
+    if (!seat) {
+      this.flashChip('dispatch: no orchestrator seat');
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    const reason = dispatchDisabledReason({
+      seatId: seat.id,
+      targetId: target?.id ?? null,
+      laneCount: this.orchestratorCards().length,
+    });
+    if (!target || reason) {
+      this.flashChip(`dispatch: ${reason ?? 'pick another lane'}`);
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    const body = orchestratorDispatchBody(purpose, text);
+    const result = this.coordinator.deliverMentionFanOut(
+      seat.id,
+      seat.displayName,
+      [{ laneId: target.id, displayName: target.displayName }],
+      body,
+      this.harnessMemoryId ?? undefined,
+    );
+    if (result.delivered.length === 0) {
+      const reason = result.failed[0]?.reason ?? 'no target';
+      this.flashChip(`dispatch failed: ${reason}`);
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (this.coordinator.pendingPeersFor(seat.id).length > 0) {
+      this.setLaneStatus(seat, 'awaiting_peer');
+    }
+    this.flashChip(`dispatched ${purpose} → ${target.displayName}`);
+    this.scheduleLaneRender(seat);
+    this.renderOrchestratorConsoleEl();
+  }
+
   private buildDOM(): void {
     // spec 125 — inject reusable backend logo <symbol> defs once. Hidden
     // off-screen so <use href="#krypton-logo-*"/> resolves from the rail.
@@ -4524,6 +4923,15 @@ export class AcpHarnessView implements ContentView {
     this.reviewPriorityPanelEl.className = 'acp-priority__panel';
     this.reviewPriorityOverlayEl.appendChild(this.reviewPriorityPanelEl);
     body.appendChild(this.reviewPriorityOverlayEl);
+
+    // spec 180: orchestrator console (in-app, acting; opened with #orchestrator).
+    this.orchestratorConsoleEl = document.createElement('aside');
+    this.orchestratorConsoleEl.className = 'acp-harness__orchestrator';
+    this.orchestratorConsoleEl.hidden = true;
+    this.orchestratorPanelEl = document.createElement('div');
+    this.orchestratorPanelEl.className = 'acp-orchestrator__panel';
+    this.orchestratorConsoleEl.appendChild(this.orchestratorPanelEl);
+    body.appendChild(this.orchestratorConsoleEl);
 
     this.planEl = document.createElement('aside');
     this.planEl.className = 'acp-harness__plan';
@@ -6914,6 +7322,12 @@ export class AcpHarnessView implements ContentView {
     lane.cursorMcpNames = null;
     this.clearPollyBuiltinRole(lane);
     this.clearDebbyBuiltinRole(lane);
+    // spec 180: the orchestrator seat is vacated when its lane closes; close the
+    // console too (a re-promote is needed before it can be reopened).
+    if (this.orchestratorLaneId === lane.id) {
+      this.orchestratorLaneId = null;
+      this.closeOrchestratorConsole();
+    }
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
     this.notifyUsageProvidersChanged();
@@ -7348,6 +7762,15 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
+    // spec 180: #orchestrator — designate the active lane the orchestrator seat
+    // (if none yet) and open the in-app console. Behavior-neutral: it injects no
+    // prompt; autonomy stays opt-in via #polly.
+    if (parts[0] === '#orchestrator' || parts[0] === '#console') {
+      this.setDraft(lane, '', 0);
+      this.openOrchestratorConsole(lane);
+      this.render();
+      return;
+    }
     if (parts[0] === '#debby') {
       this.setDraft(lane, '', 0);
       const question = parseDebbyTask(text);
@@ -7670,6 +8093,7 @@ export class AcpHarnessView implements ContentView {
         laneMetrics,
         this.coordinator.inboxDepth(lane.id),
         this.coordinator.pendingPeersFor(lane.id),
+        lane.id === this.orchestratorLaneId,
       );
     }
     const stats = laneEl.querySelector<HTMLElement>('.acp-harness__lane-stats');
@@ -8417,6 +8841,7 @@ export class AcpHarnessView implements ContentView {
         laneMetrics,
         this.coordinator.inboxDepth(lane.id),
         this.coordinator.pendingPeersFor(lane.id),
+        lane.id === this.orchestratorLaneId,
       );
       laneEl.appendChild(head);
       if (active) {
@@ -8891,6 +9316,7 @@ export class AcpHarnessView implements ContentView {
           m,
           this.coordinator.inboxDepth(lane.id),
           this.coordinator.pendingPeersFor(lane.id),
+          lane.id === this.orchestratorLaneId,
         );
       }
     }
@@ -11866,6 +12292,7 @@ function renderLaneHead(
   metrics: AcpLaneMetrics | null,
   inboxDepth: number,
   pendingPeers: PendingPeerSummary[],
+  isOrchestrator = false,
 ): string {
   const mcpChip = renderMcpChip(mcp);
   const modelChip = renderModelChip(lane.modelName, lane.modelApplyFailed);
@@ -11873,7 +12300,11 @@ function renderLaneHead(
   const sandboxChip = renderSandboxChip(lane);
   const pollyBypassChip = renderPollyBypassChip(lane);
   const metricsChip = renderMetricsChip(metrics);
-  const chipGroup = modelChip + modeChip + mcpChip + sandboxChip + pollyBypassChip + metricsChip;
+  // spec 180: behavior-neutral orchestrator-seat badge (≤1 per harness).
+  const orchestratorChip = isOrchestrator
+    ? `<span class="acp-harness__lane-orchestrator" title="orchestrator seat (#orchestrator)">◆ orch</span>`
+    : '';
+  const chipGroup = orchestratorChip + modelChip + modeChip + mcpChip + sandboxChip + pollyBypassChip + metricsChip;
   const chips = chipGroup
     ? `<span class="acp-harness__lane-chips">${chipGroup}</span>`
     : '';

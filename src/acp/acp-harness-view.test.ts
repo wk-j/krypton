@@ -35,6 +35,10 @@ import {
   wikiIngestPrompt,
   wikiRecallPrompt,
   hasMarkdownTable,
+  nextDispatchPurpose,
+  orchestratorDispatchBody,
+  dispatchDisabledReason,
+  DISPATCH_PURPOSES,
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
 } from './acp-harness-view';
@@ -1398,5 +1402,34 @@ describe('hasMarkdownTable (spec 117 seal table guard)', () => {
     expect(hasMarkdownTable('above\n\n---\n\nbelow')).toBe(false); // hr, not a table
     expect(hasMarkdownTable('- bullet one\n- bullet two')).toBe(false);
     expect(hasMarkdownTable('no table here at all')).toBe(false);
+  });
+});
+
+// spec 180: orchestrator console dispatch helpers.
+describe('orchestrator dispatch', () => {
+  it('cycles purpose through the fixed brief order and wraps', () => {
+    expect(DISPATCH_PURPOSES).toEqual(['implement', 'review', 'explore', 'search']);
+    expect(nextDispatchPurpose('implement')).toBe('review');
+    expect(nextDispatchPurpose('review')).toBe('explore');
+    expect(nextDispatchPurpose('explore')).toBe('search');
+    expect(nextDispatchPurpose('search')).toBe('implement'); // wraps
+  });
+
+  it('composes a purpose-tagged peer body, not a Goal/directive envelope', () => {
+    expect(orchestratorDispatchBody('implement', '  build the parser  ')).toBe('[implement] build the parser');
+    expect(orchestratorDispatchBody('review', 'check #45')).toBe('[review] check #45');
+    // It is a plain tagged body — no "goal"/"directive" framing that would clear a session.
+    expect(orchestratorDispatchBody('explore', 'x')).not.toMatch(/goal|directive/i);
+  });
+
+  it('disallows dispatch to self, with no seat, no target, or a lone lane', () => {
+    expect(dispatchDisabledReason({ seatId: null, targetId: 'b', laneCount: 2 })).toBe('no orchestrator seat');
+    expect(dispatchDisabledReason({ seatId: 'a', targetId: null, laneCount: 2 })).toBe('no target');
+    expect(dispatchDisabledReason({ seatId: 'a', targetId: 'a', laneCount: 2 })).toBe('cannot dispatch to the seat');
+    expect(dispatchDisabledReason({ seatId: 'a', targetId: 'b', laneCount: 1 })).toBe('no other lanes');
+  });
+
+  it('allows a dispatch to a distinct lane when a seat and ≥2 lanes exist', () => {
+    expect(dispatchDisabledReason({ seatId: 'a', targetId: 'b', laneCount: 2 })).toBeNull();
   });
 });

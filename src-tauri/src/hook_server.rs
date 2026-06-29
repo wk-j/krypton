@@ -751,7 +751,11 @@ impl HookServer {
     }
 
     /// Read-only artifact gallery listing: every live harness store and its
-    /// pending + registered artifacts, sorted deterministically for `/artifacts`.
+    /// pending + registered artifacts. Within each harness, artifacts are ordered
+    /// latest-creation-first for `/artifacts` (newest at the top of the gallery).
+    /// The `art-<seq>-<hex>` seq is monotonic per session, so a descending seq sort
+    /// is the creation order; ids aren't zero-padded, so we compare the parsed seq
+    /// rather than the raw string (which would put `art-10` before `art-2`).
     pub fn list_all_artifacts_for_gallery(&self) -> Vec<Value> {
         let artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
         let mut harness_ids: Vec<&String> = artifacts.keys().collect();
@@ -762,9 +766,9 @@ impl HookServer {
                 let store = &artifacts[harness_id];
                 let mut entries: Vec<&ArtifactEntry> = store.entries.values().collect();
                 entries.sort_by(|a, b| {
-                    a.lane_label
-                        .cmp(&b.lane_label)
-                        .then_with(|| a.id.cmp(&b.id))
+                    let sa = parse_artifact_seq(&a.id).unwrap_or(0);
+                    let sb = parse_artifact_seq(&b.id).unwrap_or(0);
+                    sb.cmp(&sa).then_with(|| b.id.cmp(&a.id))
                 });
                 let artifact_rows: Vec<Value> = entries
                     .iter()
@@ -5323,29 +5327,46 @@ mod tests {
     }
 
     #[test]
-    fn gallery_sorts_artifacts_within_harness_by_lane_then_id() {
+    fn gallery_orders_artifacts_latest_creation_first() {
         let server = HookServer::new();
         let tmp = std::env::temp_dir().join(format!("krypton-gal-sort-{}", rand_suffix()));
         std::fs::create_dir_all(&tmp).unwrap();
         server.init_harness_artifacts("hm-sort", Some(tmp.to_string_lossy().to_string()));
 
-        // Creation order is Zeta then Alpha; listing must sort laneLabel asc, id asc.
-        let zeta = server.artifact_new("hm-sort", "Zeta", "Zeta view").unwrap();
-        let zeta_id = zeta["id"].as_str().unwrap().to_string();
-        let alpha = server
-            .artifact_new("hm-sort", "Alpha", "Alpha view")
-            .unwrap();
-        let alpha_id = alpha["id"].as_str().unwrap().to_string();
+        // Create enough artifacts to cross the 10-boundary so the parsed-seq sort is
+        // exercised against the unpadded-id trap: lexically "art-10"/"art-11" sort
+        // BEFORE "art-2" (a raw-string compare would mis-order them), but by creation
+        // order seq 10/11 are newer than seq 2 and must come first.
+        let mut ids: Vec<String> = Vec::new();
+        for n in 1..=11 {
+            // Alternate lane labels so the result can't accidentally satisfy the old
+            // laneLabel-then-id ordering.
+            let lane = if n % 2 == 0 { "Alpha" } else { "Zeta" };
+            let art = server
+                .artifact_new("hm-sort", lane, &format!("View {n}"))
+                .unwrap();
+            let id = art["id"].as_str().unwrap().to_string();
+            // Register each (the scaffold file already exists) so it leaves the
+            // pending state — otherwise the per-lane pending cap (4) rejects the run.
+            server.artifact_register("hm-sort", lane, &id).unwrap();
+            ids.push(id);
+        }
 
         let listing = server.list_all_artifacts_for_gallery();
         assert_eq!(listing.len(), 1);
         assert_eq!(listing[0]["harnessId"], json!("hm-sort"));
         let arts = listing[0]["artifacts"].as_array().unwrap();
-        assert_eq!(arts.len(), 2);
-        assert_eq!(arts[0]["laneLabel"], json!("Alpha"));
-        assert_eq!(arts[0]["id"], json!(alpha_id));
-        assert_eq!(arts[1]["laneLabel"], json!("Zeta"));
-        assert_eq!(arts[1]["id"], json!(zeta_id));
+        assert_eq!(arts.len(), 11);
+
+        // Full order is strict latest-creation-first (seq 11 → 1), regardless of lane.
+        let listed: Vec<&str> = arts.iter().map(|a| a["id"].as_str().unwrap()).collect();
+        let expected: Vec<&str> = ids.iter().rev().map(|s| s.as_str()).collect();
+        assert_eq!(listed, expected);
+
+        // Regression guard: the highest seq (art-11) must sort before art-2, which a
+        // raw-string descending sort would get backwards ("art-2" > "art-11" lexically).
+        let pos = |id: &str| listed.iter().position(|x| *x == id).unwrap();
+        assert!(pos(&ids[10]) < pos(&ids[1]), "art-11 must precede art-2");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

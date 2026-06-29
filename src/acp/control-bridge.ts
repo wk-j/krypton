@@ -51,7 +51,9 @@ async function handleAndReply(event: ControlEvent): Promise<void> {
   await reply(event.requestId, response);
 }
 
-async function route(operation: string, params: Record<string, unknown>): Promise<unknown> {
+// Exported for tests. The browser-facing operation router: resolves the target
+// harness and forwards (or fans out) the typed control op.
+export async function route(operation: string, params: Record<string, unknown>): Promise<unknown> {
   if (operation === 'harness.create') {
     if (!compositor) throw controlError('control_failed', 'compositor is unavailable');
     const cwd = typeof params.cwd === 'string' ? params.cwd : null;
@@ -107,6 +109,26 @@ async function route(operation: string, params: Record<string, unknown>): Promis
       if (res && typeof res === 'object' && (res as { ok?: boolean }).ok) return res;
     }
     return { ok: false };
+  }
+  // spec 178: github.dispatch-issue carries its target as `targetLane` (a globally
+  // unique lane displayName) or the `__new__` sentinel — never `lane`/`harnessId`,
+  // since the extension popup has no harness picker. Resolve the owning harness
+  // from the displayName so a dispatch lands on the right harness when several are
+  // open. `__new__`/absent falls through to the sole-harness rule below (errors if
+  // ambiguous), consistent with spec 176. This is the dispatch analogue of #8's
+  // `lane.list requires harnessId`.
+  if (operation === 'github.dispatch-issue') {
+    const targetLane = typeof params.targetLane === 'string' ? params.targetLane : null;
+    if (targetLane && targetLane !== '__new__') {
+      const resolved = resolveDisplayName(targetLane);
+      if (!resolved) throw controlError('unknown_lane', `unknown lane: ${targetLane}`);
+      const entry = harnessEntry(resolved.harnessId);
+      if (!entry) throw controlError('harness_closed', `harness closed: ${resolved.harnessId}`);
+      if (!entry.control) {
+        throw controlError('unsupported_operation', `${operation} is not supported by this harness`);
+      }
+      return entry.control(operation, params);
+    }
   }
 
   const target = targetHarness(operation, params);

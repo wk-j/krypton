@@ -288,7 +288,18 @@ GitHub Enterprise is noted as out of scope.
   `control-bridge` **fans it out across every open harness and concatenates** the
   rows — the same pattern as the `github.*` reads. Lane `displayName`s are globally
   unique, so the lane picker stays usable with two or more harnesses open instead
-  of failing with `lane.list requires harnessId` (fixes #8).
+  of failing with `lane.list requires harnessId` (fixes #8). For the same reason a
+  **dispatch** carries its target as `targetLane` (a displayName) — never
+  `lane`/`harnessId` — so `control-bridge` resolves the owning harness from that
+  displayName and routes there; the `__new__` sentinel (or an absent target) falls
+  back to the sole-harness rule and errors `ambiguous_harness` when two or more are
+  open. Without this, dispatching to a named lane failed with `github.dispatch-issue
+  requires harnessId` (the dispatch analogue of #8).
+  > **Naming note** — "dispatch" here (`github.dispatch-issue`: hand an issue to a
+  > lane, which **sets that lane's Goal** and clears its session) is a *different*
+  > verb from spec 180's **Dispatch** (an orchestrator `peer_send` that **never**
+  > sets a Goal and never clears the worker's session — see `CONTEXT.md` → Dispatch).
+  > Same word, opposite session semantics.
 - **SSE gap** (slow client) — on a `gap` frame, background re-fetches
   `github.issue-status` for visible tabs (re-snapshot).
 

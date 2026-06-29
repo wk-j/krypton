@@ -18,7 +18,7 @@ The artifact gallery is a **second fixed page served by the built-in loopback HT
       "tail": ".krypton/artifacts/hm-1/cursor-1/art-3-....html",
       "token": "<feedbackToken>" } ] } ] }
   ```
-  Deterministic ordering: harnesses by id asc; artifacts within a harness by `laneLabel` then `id`. Includes both `pending` and `live` artifacts. Backed by `HookServer::list_all_artifacts_for_gallery()` — a read-only iteration over the in-memory `artifacts` registry.
+  Deterministic ordering: harnesses by id asc; artifacts within a harness **latest-creation-first** (newest at the top), comparing the parsed `art-<seq>-<hex>` seq descending (ids aren't zero-padded, so the raw string would mis-order `art-10` vs `art-2`). Includes both `pending` and `live` artifacts. Backed by `HookServer::list_all_artifacts_for_gallery()` — a read-only iteration over the in-memory `artifacts` registry.
 - **Open commands** (mirror the dashboard wiring exactly): command palette `Open Artifact Gallery` (`gallery.open`) → `compositor.openGallery()`; the harness **`#gallery`** composer command. Both build the URL from `get_hook_server_port` + `open_url`. No dedicated keybinding (the dashboard's `Leader Shift+L` slot is taken; palette + `#gallery` are sufficient).
 - **The gallery page** (`src/acp/artifact-gallery.html`) reuses the dashboard's exact Binance-dark shell (`:root` vars, `.top` brand bar, `.dot.live` beacon, `.stats`, `.state` banner, mono fonts, `@media (max-width: 780px)`) and adds a `.cards` grid of artifact cards. Each card shows title (2-line clamp), lane, a `live`/`pending` state pill, human-readable size, the hash prefix + tail, and an **Open** link — same-origin relative `href="/artifact/<encodeURIComponent(token)>"` with `target="_blank" rel="noopener"`. Pending cards render a disabled chip (no open) + "writing..." size. A 1 s `setInterval` poll with a JSON-signature stale check avoids DOM thrash; bad fetches fall back to a `reconnecting...` banner and retain the last good render. The Open link derives the origin from `window.location`, so the page is build-time-port-free.
 
@@ -81,7 +81,7 @@ Shipped as-is (Option A) because:
 - `gallery_lists_pending_and_live_across_two_harnesses` — JSON shape, states, tokens, tails, sort across harnesses.
 - `gallery_includes_empty_live_harness` — `{ harnessId, artifacts: [] }` for a zero-artifact live harness.
 - `gallery_and_artifacts_routes_return_expected_shapes` — `GET /gallery` → 200 + `text/html`; `GET /artifacts` → 200 + `{ harnesses: [...] }` + `no-store`.
-- `gallery_sorts_artifacts_within_harness_by_lane_then_id` — locks down the within-harness ordering.
+- `gallery_orders_artifacts_latest_creation_first` — locks down the within-harness ordering (newest seq first).
 - `gallery_omits_cancelled_artifact` — cancelled id absent from the listing (security-model guarantee).
 - `cancel_preserves_pending_artifact_file` — cancel drops the entry but the file remains on disk.
 - `dispose_preserves_artifact_files_on_close` — dispose drops registry + token + telemetry, but the file remains on disk AND the harness delists from the gallery.
