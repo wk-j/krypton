@@ -1,6 +1,6 @@
 # Review Quality Matrix — Implementation Spec
 
-> Status: Implemented (summary-only design)
+> Status: Implemented
 > Date: 2026-06-06
 > Milestone: M-ACP — Harness Peering
 > Builds on `docs/145-harness-design-review-panel.md` (agent-orchestrated `#review`).
@@ -10,6 +10,9 @@
 > review-session state. The user chose a **summary-only** record — no stored
 > diff size, no transcript anchor, no `verdict` — which removes the retention
 > need entirely. This spec reflects that simplification.
+> 2026-06 update: the record now remains count-first but can also carry
+> optional embedded reviewer findings detail. See
+> `docs/adr/0004-review-matrix-observation-not-score.md` for the evolution note.
 
 ## Problem
 
@@ -22,10 +25,11 @@ The user, running the "one lane edits, the others review" workflow, wants to
 is it producing more bugs / bad design over time, or fewer?
 
 This spec adds a **review quality matrix** (`CONTEXT.md`): a per-session,
-in-memory accumulation of a **summary** per review round per lane, surfaced
-like attention triage. Per ADR-0004 it is an **observation, not a score** —
-raw blocker/warning counts shown as history, never blended into a quality
-number, never graded, and never a lane leaderboard.
+in-memory accumulation of review outcomes per lane, surfaced like attention
+triage. Per ADR-0004 it is an **observation, not a score** — raw
+blocker/warning counts shown as history, optional embedded findings shown as
+evidence, never blended into a quality number, never graded, and never a lane
+leaderboard.
 
 ## Non-goals
 
@@ -38,6 +42,9 @@ number, never graded, and never a lane leaderboard.
   self-report tool + one in-memory stats store.
 - **No automatic flagging.** A bad trend never auto-raises an attention
   judgement item; the matrix is observed on demand, not pushed.
+- **No persistence for findings.** Findings are stored only inside the same
+  session-only in-memory record as the counts; they do not revive spec-112
+  review sessions, cards, or disk state.
 
 ## Domain model
 
@@ -50,11 +57,18 @@ Two settled domain terms (already in `CONTEXT.md`):
 ### The record
 
 Each completed `#review` round contributes one `ReviewOutcome` to the
-authoring lane's history. It is a **small summary**, entirely self-reported by
-the authoring lane at synthesis time — no harness-side review-session state,
-no git-collector retention, no transcript anchor:
+authoring lane's history. It is a **small observation record**, entirely
+self-reported by the authoring lane at synthesis time — no harness-side
+review-session state, no git-collector retention, no transcript anchor:
 
 ```ts
+interface ReviewFinding {
+  file: string; // repo-relative path, non-empty
+  line?: number; // optional 1-based integer anchor
+  severity: 'blocking' | 'non-blocking' | 'suggestion';
+  note: string; // one-line concern, non-empty
+}
+
 interface ReviewOutcome {
   authoringLaneId: string;   // the lane being observed (convening lane of the round)
   authoringLaneName: string; // displayName snapshot, so the overlay still labels a closed lane's rows
@@ -62,6 +76,7 @@ interface ReviewOutcome {
   reviewerCount: number;     // how many reviewers the round fanned out to (self-reported)
   blockers: number;          // total blockers reported across reviewers
   warnings: number;          // total warnings reported across reviewers
+  findings?: ReviewFinding[]; // optional structured detail, max 500 items
   at: number;                // ms timestamp, stamped by the store on record()
 }
 ```
@@ -70,9 +85,18 @@ Counts are **raw** — `blockers` and `warnings` are kept separate; the spec
 never derives a combined figure and never grades the round. There is
 deliberately **no `verdict`** (a self-graded `clean/ok/revise` would relaunder
 a score — ADR-0004) and **no stored diff size** (it required retaining the
-reviewed snapshot, and is meaningless for design-doc rounds). Per ADR-0004 this
-keeps only the summary; the actual reviewer replies stay in scrollback as the
-evidence behind the counts.
+reviewed snapshot, and is meaningless for design-doc rounds).
+
+`findings` is additive detail for inspection, not a verdict. The authoring lane
+extracts it from reviewer replies when it calls `review_outcome`; omission is
+the backward-compatible count-only path. Each item must have non-empty `file`,
+non-empty one-line `note`, and `severity` in
+`blocking | non-blocking | suggestion`; `line`, when present, must be an
+integer `>= 1`. The backend caps the array at **500 findings** (the same bound
+as review-priority ranges) and rejects invalid items all-or-nothing; the
+frontend treats the IPC payload as untrusted and records detail only if the
+entire array validates. Per ADR-0004, the original reviewer replies still stay
+in scrollback as the fuller evidence behind both the counts and embedded detail.
 
 ### Store
 
@@ -100,14 +124,17 @@ time. Because the record holds only self-reported fields, the tool needs **no
 frontend enrichment and no retained collector/session state** — the blocker
 that two reviewers flagged against the earlier design dissolves. Mechanism:
 
-1. **New MCP tool `review_outcome`** on the existing `krypton-harness-bus`
+1. **MCP tool `review_outcome`** on the existing `krypton-harness-bus`
    server (`src-tauri/src/hook_server.rs`), alongside `peer_send` / `peer_list`
-   / `attention_flag`. Arguments: `{ blockers, warnings, reviewer_count, subject_label }`
-   — all four supplied by the authoring lane itself (it knows them: it counted
-   the reviewers it fanned out to and tallied their replies while synthesizing).
+   / `attention_flag`. Arguments:
+   `{ blockers, warnings, reviewer_count, subject_label, findings? }` — supplied
+   by the authoring lane itself (it knows them: it counted the reviewers it
+   fanned out to, tallied their replies while synthesizing, and extracts
+   structured findings from those replies when present).
    The tool emits `acp-review-outcome` to the frontend, which simply calls
    `store.record(...)`; the bus reply is a bare ack (no `review_id`, since there
    is no anchor to mint). It does **not** read `acp_collect_review_git_state`.
+   `findings` is optional and capped at 500 items.
 2. The tool is **default-on built-in harness tooling**, so it is **auto-allowed**.
    Register it in the built-in allow-list `HARNESS_AUTO_ALLOW_TOOL_NAMES` and
    the `harnessAutoAllowToolName()` enforcement point in `acp-harness-view.ts`,
@@ -115,10 +142,13 @@ that two reviewers flagged against the earlier design dissolves. Mechanism:
    for discoverability in `renderPromptMemoryPacket`, and document it in
    `docs/96-acp-built-in-memory-auto-approval.md`. (Spec 145 *removed*
    `review_request`/`review_reply` from that list; this adds one back, narrower.)
-3. **Prompt wiring:** `reviewRequestPrompt()` (`src/acp/review.ts`) step 3
-   (synthesis) gains one clause: after synthesizing, call `review_outcome` once
-   with the blocker/warning totals you reported, the number of reviewers, and a
-   short subject label. This is the only `#review` prompt change.
+3. **Prompt wiring:** `reviewRequestPrompt()` (`src/acp/review.ts`) asks
+   reviewers to keep file:line evidence in their Blockers, Warnings /
+   Non-blocking, and Suggestions sections. During synthesis, the authoring lane
+   calls `review_outcome` once with the blocker/warning totals, reviewer count,
+   short subject label, and the structured `findings[]` it extracted from those
+   reviewer replies (`Blockers` → `blocking`, `Warnings` / `Non-blocking` →
+   `non-blocking`, `Suggestions` → `suggestion`).
 
 ### Under-report mitigation (not a guard)
 
@@ -149,11 +179,15 @@ posture as ADR-0001's silent-turn audit.
   attention triage; pick e.g. `Leader '` if free, else propose at
   implementation). Opens a `renderReviewMatrixOverlay()` modelled on
   `renderTriageOverlayEl()` (`acp-harness-view.ts`).
-- Layout: one lane selected at a time (j/k to switch lanes if >1 has history),
+- Layout: one lane selected at a time (`h` / `l` to switch lanes if >1 has history),
   showing that lane's `ReviewOutcome[]` as a table — newest on top:
   `round · subject · reviewers · 🔴 blockers · 🟡 warnings`.
-- Actions: `Esc` closes; that is all. No row activation / jump-to-transcript
-  (no anchor is stored), no accept/score actions — it is read-only observation.
+- Actions: `j` / `k` selects a round. If the selected row has findings,
+  `Enter` / `Space` expands or collapses a flat detail section grouped by
+  severity; each line renders as `file:line — severity — note` (or
+  `file — severity — note` when no line is present). `Esc` closes. There is no
+  jump-to-transcript (no anchor is stored), no accept/score actions — it is
+  read-only observation.
 
 ## Files touched
 
@@ -172,8 +206,9 @@ posture as ADR-0001's silent-turn audit.
   `src/styles/workspace-footer.css` (`__segment--reviews`). (Reuse triage
   classes where possible).
 - `src-tauri/src/hook_server.rs` — `review_outcome` tool: `tools/list`
-  registration + handler that emits `acp-review-outcome` and acks (mirror the
-  `attention_flag` round-trip, minus any return payload). No git collection.
+  registration + handler that validates counts plus optional capped findings,
+  emits `acp-review-outcome`, and acks (mirror the `attention_flag` round-trip,
+  minus any return payload). No git collection.
 - `docs/96-…md` — add `review_outcome` to the auto-allow built-in list.
 - `CLAUDE.md`, `docs/04-architecture.md`, `docs/72-acp-harness-view.md`,
   `docs/PROGRESS.md` — document the surface (per `/feature-implementation`).
@@ -186,12 +221,16 @@ What is unit-tested (matches the shipped suite):
   newest-first ordering, per-lane isolation, `at`-stamping, and `onLaneClosed`
   drop + re-emit (the store API; the harness no longer calls it on lane close).
 - `review.test.ts` — `reviewRequestPrompt()` includes the `review_outcome`
-  synthesis clause and wires `reviewer_count` to the reviewer total.
+  synthesis clause, wires `reviewer_count` to the reviewer total, and instructs
+  the convening lane to pass extracted structured findings.
 - `acp-harness-view.test.ts` — `review_outcome` auto-allow detection (Codex-style
   namespaced, hyphenated bus marker, and rejection without a bus marker).
 - Rust `parse_count_field` — absent → `None` (caller defaults to 0); valid
   int/integer-float/numeric-string → `Some`; present-but-invalid (negative,
   fractional, junk) → `Err` (never coerced to 0).
+- Rust `parse_review_findings` — absent findings keep the legacy payload shape;
+  valid findings emit; invalid fields reject; `MAX_REVIEW_FINDINGS + 1`
+  rejects; exactly `MAX_REVIEW_FINDINGS` parses.
 
 Integration-level (not unit-tested, consistent with `attention_flag`, which is
 also not unit-tested): the Rust `review_outcome` emit + bus round-trip and the
@@ -210,8 +249,11 @@ are exercised manually, not in vitest/cargo unit tests.
 
 ## Open questions
 
-- **Leader chord** for the overlay — needs a confirmed-free key (`Leader ;` is
-  taken by attention triage; proposed `Leader '` — verify at implementation).
 - **Multiple authoring lanes in one session** — supported by keying on lane,
   but the indicator's single `N reviews` count is a sum; the overlay separates
   by lane. Confirm that is the desired at-a-glance behaviour.
+
+## Settled implementation notes
+
+- **Leader chord** for the overlay is shipped as `Leader '`; attention triage
+  remains on `Leader ;`.

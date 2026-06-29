@@ -37,6 +37,7 @@ export class ReviewQualityStore {
       reviewerCount: outcome.reviewerCount,
       blockers: outcome.blockers,
       warnings: outcome.warnings,
+      findings: outcome.findings,
       at: outcome.at ?? Date.now(),
     };
     const list = this.history.get(entry.authoringLaneId);

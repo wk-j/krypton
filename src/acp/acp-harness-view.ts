@@ -119,6 +119,7 @@ import {
 } from './review';
 import type {
   JudgementItem,
+  ReviewFinding,
   ReviewGitState,
 } from './types';
 import type {
@@ -1273,6 +1274,9 @@ export class AcpHarnessView implements ContentView {
   private reviewQualityStore = new ReviewQualityStore(this.laneBus);
   private reviewMatrixOverlayOpen = false;
   private reviewMatrixSelectedLaneIndex = 0;
+  private reviewMatrixSelectedRowIndex = 0;
+  /** Index of the expanded findings detail row within the selected lane, or null. */
+  private reviewMatrixExpandedRowIndex: number | null = null;
   private reviewOutcomeUnlisten: UnlistenFn | null = null;
   /** spec 160/162: latest diff review-priority report per authoring lane. The
    *  Diff Window pulls a merged snapshot on open / refresh via the
@@ -2548,6 +2552,7 @@ export class AcpHarnessView implements ContentView {
       warnings: number;
       reviewerCount: number;
       subjectLabel: string;
+      findings?: unknown;
       harnessId?: string;
       requestId?: string;
     };
@@ -2617,10 +2622,12 @@ export class AcpHarnessView implements ContentView {
     warnings: number;
     reviewerCount: number;
     subjectLabel: string;
+    findings?: unknown;
   }): { recorded: boolean; reason?: string } {
     const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
     if (!lane) return { recorded: false, reason: 'unknown_sender' };
     const label = env.subjectLabel.trim() || '(review)';
+    const findings = parseReviewFindings(env.findings);
     this.reviewQualityStore.record({
       authoringLaneId: lane.id,
       authoringLaneName: lane.displayName,
@@ -2628,6 +2635,7 @@ export class AcpHarnessView implements ContentView {
       reviewerCount: Math.max(0, Math.trunc(env.reviewerCount)),
       blockers: Math.max(0, Math.trunc(env.blockers)),
       warnings: Math.max(0, Math.trunc(env.warnings)),
+      findings,
     });
     this.appendTranscript(
       lane,
@@ -4096,6 +4104,8 @@ export class AcpHarnessView implements ContentView {
       this.reviewMatrixSelectedLaneIndex,
       Math.max(0, lanes.length - 1),
     );
+    this.reviewMatrixSelectedRowIndex = 0;
+    this.reviewMatrixExpandedRowIndex = null;
     this.helpOpen = false;
     this.memoryDrawerOpen = false;
     this.renderReviewMatrixOverlayEl();
@@ -4104,6 +4114,7 @@ export class AcpHarnessView implements ContentView {
   private closeReviewMatrixOverlay(): void {
     if (!this.reviewMatrixOverlayOpen) return;
     this.reviewMatrixOverlayOpen = false;
+    this.reviewMatrixExpandedRowIndex = null;
     this.reviewMatrixOverlayEl.hidden = true;
   }
 
@@ -4177,6 +4188,15 @@ export class AcpHarnessView implements ContentView {
 
     const selectedLaneId = lanes[this.reviewMatrixSelectedLaneIndex];
     const rows = this.reviewQualityStore.historyFor(selectedLaneId);
+    if (this.reviewMatrixSelectedRowIndex >= rows.length) {
+      this.reviewMatrixSelectedRowIndex = Math.max(0, rows.length - 1);
+    }
+    if (
+      this.reviewMatrixExpandedRowIndex !== null
+      && this.reviewMatrixExpandedRowIndex >= rows.length
+    ) {
+      this.reviewMatrixExpandedRowIndex = null;
+    }
 
     const table = document.createElement('table');
     table.className = 'acp-review__table';
@@ -4189,14 +4209,23 @@ export class AcpHarnessView implements ContentView {
       '<th class="acp-review__col-num acp-review__col-warn">warn</th>' +
       '</tr></thead>';
     const tbody = document.createElement('tbody');
-    for (const row of rows) {
+    rows.forEach((row, rowIndex) => {
+      const hasFindings = (row.findings?.length ?? 0) > 0;
+      const isSelected = rowIndex === this.reviewMatrixSelectedRowIndex;
+      const isExpanded = hasFindings && this.reviewMatrixExpandedRowIndex === rowIndex;
+
       const tr = document.createElement('tr');
+      if (isSelected) {
+        tr.style.background = 'rgba(0, 204, 255, 0.08)';
+      }
       const when = document.createElement('td');
       when.className = 'acp-review__when';
       when.textContent = formatReviewRoundTime(row.at);
       const subj = document.createElement('td');
       subj.className = 'acp-review__subj';
-      subj.textContent = row.subjectLabel;
+      subj.textContent = hasFindings
+        ? `${isExpanded ? '▾' : '▸'} ${row.subjectLabel}`
+        : row.subjectLabel;
       const rev = document.createElement('td');
       rev.className = 'acp-review__num acp-review__rev';
       rev.textContent = String(row.reviewerCount);
@@ -4208,33 +4237,132 @@ export class AcpHarnessView implements ContentView {
       warn.textContent = String(row.warnings);
       tr.append(when, subj, rev, block, warn);
       tbody.appendChild(tr);
-    }
+
+      if (isExpanded && row.findings) {
+        const detailTr = document.createElement('tr');
+        const detailTd = document.createElement('td');
+        detailTd.colSpan = 5;
+        detailTd.style.padding = '0 14px 8px';
+        detailTd.style.background = 'rgba(0, 204, 255, 0.05)';
+        detailTd.style.borderBottom = '1px solid rgba(0, 204, 255, 0.08)';
+        detailTd.appendChild(this.renderReviewFindingsDetail(row.findings));
+        detailTr.appendChild(detailTd);
+        tbody.appendChild(detailTr);
+      }
+    });
     table.appendChild(tbody);
     panel.appendChild(table);
 
     const foot = document.createElement('div');
     foot.className = 'acp-review__foot';
+    const hints: string[] = [];
+    const rowsHaveFindings = rows.some((row) => (row.findings?.length ?? 0) > 0);
+    if (rows.length > 0) {
+      hints.push('<span><kbd>j</kbd> <kbd>k</kbd> select round</span>');
+      if (rowsHaveFindings) {
+        hints.push('<span><kbd>enter</kbd> <kbd>space</kbd> expand findings</span>');
+      }
+    }
+    if (lanes.length > 1) {
+      hints.unshift('<span><kbd>h</kbd> <kbd>l</kbd> switch lane</span>');
+    }
+    hints.push('<span><kbd>esc</kbd> close</span>');
     foot.innerHTML =
-      (lanes.length > 1 ? '<span><kbd>j</kbd> <kbd>k</kbd> switch lane</span>' : '') +
-      '<span><kbd>esc</kbd> close</span>' +
+      hints.join('') +
       '<span class="acp-review__foot-note">read-only — observation, not a score</span>';
     panel.appendChild(foot);
   }
 
-  /** Overlay key handling. Read-only: j/k switch lane, Esc/q close. */
+  /** Flat detail block grouped by severity; content font, no nested panels. */
+  private renderReviewFindingsDetail(findings: ReviewFinding[]): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.style.padding = '6px 0 2px';
+    wrap.style.fontFamily = 'var(--agent-font, var(--krypton-font-family, monospace))';
+    wrap.style.fontSize = '0.88em';
+    wrap.style.letterSpacing = 'normal';
+    wrap.style.lineHeight = 'var(--krypton-content-line-height, 1.5)';
+
+    const groups: Array<{ severity: ReviewFinding['severity']; label: string; color: string }> = [
+      { severity: 'blocking', label: 'blocking', color: '#ff5d6c' },
+      { severity: 'non-blocking', label: 'non-blocking', color: '#ffb454' },
+      { severity: 'suggestion', label: 'suggestion', color: 'rgba(216, 232, 216, 0.72)' },
+    ];
+
+    let groupIndex = 0;
+    for (const group of groups) {
+      const items = findings.filter((f) => f.severity === group.severity);
+      if (items.length === 0) continue;
+
+      const heading = document.createElement('div');
+      heading.textContent = group.label;
+      heading.style.fontSize = '0.72em';
+      heading.style.letterSpacing = '0.08em';
+      heading.style.textTransform = 'uppercase';
+      heading.style.color = group.color;
+      heading.style.marginTop = groupIndex === 0 ? '0' : '8px';
+      heading.style.marginBottom = '4px';
+      wrap.appendChild(heading);
+
+      for (const finding of items) {
+        const line = document.createElement('div');
+        const loc = finding.line !== undefined ? `${finding.file}:${finding.line}` : finding.file;
+        line.textContent = `${loc} — ${finding.severity} — ${finding.note}`;
+        line.style.color = 'rgba(216, 232, 216, 0.86)';
+        line.style.padding = '2px 0';
+        wrap.appendChild(line);
+      }
+      groupIndex += 1;
+    }
+    return wrap;
+  }
+
+  /** Overlay key handling. Read-only: h/l switch lane, j/k select round, Enter/Space expand. */
   private handleReviewMatrixKey(e: KeyboardEvent): void {
     if (e.key === 'Escape' || e.key === 'q') {
       this.closeReviewMatrixOverlay();
       return;
     }
     const lanes = this.reviewQualityStore.lanesWithHistory();
-    if (lanes.length < 2) return;
-    if (e.key === 'j' || e.key === 'ArrowDown') {
-      this.reviewMatrixSelectedLaneIndex = (this.reviewMatrixSelectedLaneIndex + 1) % lanes.length;
-      this.renderReviewMatrixOverlayEl();
-    } else if (e.key === 'k' || e.key === 'ArrowUp') {
+    if (lanes.length > 1 && (e.key === 'h' || e.key === 'ArrowLeft')) {
       this.reviewMatrixSelectedLaneIndex =
         (this.reviewMatrixSelectedLaneIndex - 1 + lanes.length) % lanes.length;
+      this.reviewMatrixSelectedRowIndex = 0;
+      this.reviewMatrixExpandedRowIndex = null;
+      this.renderReviewMatrixOverlayEl();
+      return;
+    }
+    if (lanes.length > 1 && (e.key === 'l' || e.key === 'ArrowRight')) {
+      this.reviewMatrixSelectedLaneIndex = (this.reviewMatrixSelectedLaneIndex + 1) % lanes.length;
+      this.reviewMatrixSelectedRowIndex = 0;
+      this.reviewMatrixExpandedRowIndex = null;
+      this.renderReviewMatrixOverlayEl();
+      return;
+    }
+
+    const selectedLaneId = lanes[this.reviewMatrixSelectedLaneIndex];
+    const rows = selectedLaneId ? this.reviewQualityStore.historyFor(selectedLaneId) : [];
+    if (rows.length === 0) return;
+
+    if (e.key === 'j' || e.key === 'ArrowDown') {
+      this.reviewMatrixSelectedRowIndex = (this.reviewMatrixSelectedRowIndex + 1) % rows.length;
+      this.reviewMatrixExpandedRowIndex = null;
+      this.renderReviewMatrixOverlayEl();
+      return;
+    }
+    if (e.key === 'k' || e.key === 'ArrowUp') {
+      this.reviewMatrixSelectedRowIndex =
+        (this.reviewMatrixSelectedRowIndex - 1 + rows.length) % rows.length;
+      this.reviewMatrixExpandedRowIndex = null;
+      this.renderReviewMatrixOverlayEl();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      const row = rows[this.reviewMatrixSelectedRowIndex];
+      if (!row?.findings?.length) return;
+      this.reviewMatrixExpandedRowIndex =
+        this.reviewMatrixExpandedRowIndex === this.reviewMatrixSelectedRowIndex
+          ? null
+          : this.reviewMatrixSelectedRowIndex;
       this.renderReviewMatrixOverlayEl();
     }
   }
@@ -13440,6 +13568,37 @@ function formatReviewRoundTime(epochMs: number): string {
   const sameDay = new Date().toDateString() === d.toDateString();
   if (sameDay) return time;
   return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time}`;
+}
+
+/** Parse optional review_outcome findings from the acp-review-outcome event payload.
+ * Untrusted IPC input — all-or-nothing: one malformed item rejects the whole array. */
+function parseReviewFindings(raw: unknown): ReviewFinding[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const findings: ReviewFinding[] = [];
+  for (const item of raw) {
+    const finding = parseReviewFindingItem(item);
+    if (!finding) return undefined;
+    findings.push(finding);
+  }
+  return findings;
+}
+
+function parseReviewFindingItem(item: unknown): ReviewFinding | null {
+  if (!item || typeof item !== 'object') return null;
+  const obj = item as Record<string, unknown>;
+  const file = typeof obj.file === 'string' ? obj.file.trim() : '';
+  if (!file) return null;
+  const note = typeof obj.note === 'string' ? obj.note.trim() : '';
+  if (!note) return null;
+  const severity = obj.severity;
+  if (severity !== 'blocking' && severity !== 'non-blocking' && severity !== 'suggestion') return null;
+  const finding: ReviewFinding = { file, severity, note };
+  if (obj.line !== undefined) {
+    const line = obj.line;
+    if (typeof line !== 'number' || !Number.isInteger(line) || line < 1) return null;
+    finding.line = line;
+  }
+  return finding;
 }
 
 function formatSessionUpdatedAt(value: string | null | undefined): string | null {

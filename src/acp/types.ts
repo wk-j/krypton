@@ -563,6 +563,16 @@ export interface AttentionResolvePayload {
 // The authoring lane self-reports the totals at synthesis time; the matrix keeps
 // no fine-grained detail (no stored diff size, no transcript anchor) — see
 // docs/146-review-quality-matrix.md and docs/adr/0004. Observation, not a score.
+export interface ReviewFinding {
+  /** Repo-relative path. */
+  file: string;
+  /** Optional 1-based line anchor. */
+  line?: number;
+  severity: 'blocking' | 'non-blocking' | 'suggestion';
+  /** One-line concern. */
+  note: string;
+}
+
 export interface ReviewOutcome {
   /** The lane credited with the work under review (the convening lane). */
   authoringLaneId: string;
@@ -577,6 +587,8 @@ export interface ReviewOutcome {
   blockers: number;
   /** Total warnings reported across reviewers (self-reported). */
   warnings: number;
+  /** Optional per-finding detail captured at synthesis time. */
+  findings?: ReviewFinding[];
   /** ms timestamp, stamped by the store on record(). */
   at: number;
 }

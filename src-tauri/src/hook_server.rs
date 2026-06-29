@@ -1295,6 +1295,9 @@ const ARTIFACT_TITLE_MAX: usize = 200;
 /// carry. A reading-order hint, not a per-line audit — cap keeps the frontend
 /// round-trip bounded against a pathological flood of one-line ranges.
 const MAX_REVIEW_PRIORITY_RANGES: usize = 500;
+/// spec 146: max structured findings a single review_outcome call may carry.
+/// Mirrors the review-priority range cap to keep the frontend bus payload bounded.
+const MAX_REVIEW_FINDINGS: usize = MAX_REVIEW_PRIORITY_RANGES;
 /// Max bytes for an artifact file, enforced on every write/edit and at
 /// register/open. A live edit past this makes the card unavailable rather than
 /// silently opening.
@@ -2392,17 +2395,18 @@ async fn review_outcome(
     if reviewer_count < 1 {
         return Err("reviewer_count must be at least 1".to_string());
     }
+    let findings = parse_review_findings(&arguments)?;
 
     let request_id = format!("rvo-{}-{}", now_ms(), rand_suffix());
-    let payload = json!({
-        "fromLaneId": from_lane,
-        "blockers": blockers,
-        "warnings": warnings,
-        "reviewerCount": reviewer_count,
-        "subjectLabel": subject_label,
-        "harnessId": harness_id,
-        "requestId": request_id,
-        "sentAt": now_ms(),
+    let payload = build_review_outcome_payload(ReviewOutcomePayloadInput {
+        from_lane,
+        blockers,
+        warnings,
+        reviewer_count,
+        subject_label: &subject_label,
+        harness_id,
+        request_id: &request_id,
+        findings,
     });
     let rx = state.hook_server.register_bus_reply(request_id.clone());
     state.app_handle.emit_or_log("acp-review-outcome", payload);
@@ -2428,6 +2432,102 @@ async fn review_outcome(
             Err("review_outcome: frontend reply timed out".to_string())
         }
     }
+}
+
+struct ReviewOutcomePayloadInput<'a> {
+    from_lane: &'a str,
+    blockers: u64,
+    warnings: u64,
+    reviewer_count: u64,
+    subject_label: &'a str,
+    harness_id: &'a str,
+    request_id: &'a str,
+    findings: Option<Vec<Value>>,
+}
+
+fn build_review_outcome_payload(input: ReviewOutcomePayloadInput<'_>) -> Value {
+    let mut payload = json!({
+        "fromLaneId": input.from_lane,
+        "blockers": input.blockers,
+        "warnings": input.warnings,
+        "reviewerCount": input.reviewer_count,
+        "subjectLabel": input.subject_label,
+        "harnessId": input.harness_id,
+        "requestId": input.request_id,
+        "sentAt": now_ms(),
+    });
+    if let Some(findings) = input.findings {
+        payload["findings"] = json!(findings);
+    }
+    payload
+}
+
+fn parse_review_findings(arguments: &Value) -> Result<Option<Vec<Value>>, String> {
+    let Some(raw) = arguments.get("findings") else {
+        return Ok(None);
+    };
+    let findings = raw
+        .as_array()
+        .ok_or_else(|| "findings must be an array when present".to_string())?;
+    if findings.len() > MAX_REVIEW_FINDINGS {
+        return Err(format!(
+            "too many findings ({}); cap is {MAX_REVIEW_FINDINGS}",
+            findings.len()
+        ));
+    }
+    let mut parsed: Vec<Value> = Vec::with_capacity(findings.len());
+    for (i, item) in findings.iter().enumerate() {
+        let object = item
+            .as_object()
+            .ok_or_else(|| format!("findings[{i}] must be an object"))?;
+        let file = object
+            .get("file")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| format!("findings[{i}].file must be a non-empty string"))?;
+        let note = object
+            .get("note")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| format!("findings[{i}].note must be a non-empty string"))?;
+        if note.contains('\n') || note.contains('\r') {
+            return Err(format!("findings[{i}].note must be one line"));
+        }
+        let severity = object
+            .get("severity")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("findings[{i}].severity is required"))?;
+        if !matches!(severity, "blocking" | "non-blocking" | "suggestion") {
+            return Err(format!(
+                "findings[{i}].severity must be one of blocking | non-blocking | suggestion"
+            ));
+        }
+        let mut finding = json!({
+            "file": file,
+            "severity": severity,
+            "note": note,
+        });
+        if let Some(line) = object.get("line") {
+            finding["line"] = json!(review_finding_line_value(line)
+                .ok_or_else(|| format!("findings[{i}].line must be an integer >= 1"))?);
+        }
+        parsed.push(finding);
+    }
+    Ok(Some(parsed))
+}
+
+fn review_finding_line_value(value: &Value) -> Option<u64> {
+    if let Some(n) = value.as_u64() {
+        return (n >= 1).then_some(n);
+    }
+    if let Some(f) = value.as_f64() {
+        if f >= 1.0 && f.fract() == 0.0 {
+            return Some(f as u64);
+        }
+    }
+    None
 }
 
 /// mark_review_priority — the authoring lane self-reports a per-change review
@@ -2555,7 +2655,9 @@ async fn issue_report(
     let issue_key = required_string(&arguments, "issue_key")?;
     let issue_key = issue_key.trim().to_string();
     if issue_key.is_empty() {
-        return Err("issue_key is required (the owner/repo#123 of the issue you are fixing)".to_string());
+        return Err(
+            "issue_key is required (the owner/repo#123 of the issue you are fixing)".to_string(),
+        );
     }
     let phase = required_string(&arguments, "phase")?;
     let phase = phase.trim().to_string();
@@ -3257,14 +3359,29 @@ fn attention_tool_descriptors() -> Vec<Value> {
         }),
         json!({
             "name": "review_outcome",
-            "description": "After you synthesize a #review round you convened (you fanned the subject out to reviewer lanes and aggregated their Blockers/Warnings), record a one-row summary of the outcome against your own work. This feeds the review quality matrix — a session-only, per-lane history the human inspects to observe whether a lane keeps producing problems across successive reviews. It is an OBSERVATION, NOT A SCORE: it stores only the raw counts, never a grade or ranking. Call it exactly once per review round, only for a real review you actually convened; never fabricate one. Counts are the combined totals across all reviewers.",
+            "description": "After you synthesize a #review round you convened (you fanned the subject out to reviewer lanes and aggregated their Blockers/Warnings), record a one-row summary of the outcome against your own work. This feeds the review quality matrix — a session-only, per-lane history the human inspects to observe whether a lane keeps producing problems across successive reviews. It is an OBSERVATION, NOT A SCORE: it stores only the raw counts, never a grade or ranking. Call it exactly once per review round, only for a real review you actually convened; never fabricate one. Counts are the combined totals across all reviewers. Optionally include findings for richer per-concern detail: each finding has file (repo-relative path), optional line (integer >= 1), severity (blocking | non-blocking | suggestion), and note (one-line concern).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "blockers": { "type": "integer", "minimum": 0, "description": "Total blockers reported across all reviewers this round (0 if none)." },
                     "warnings": { "type": "integer", "minimum": 0, "description": "Total warnings reported across all reviewers this round (0 if none)." },
                     "reviewer_count": { "type": "integer", "minimum": 1, "description": "How many reviewers you fanned the review out to." },
-                    "subject_label": { "type": "string", "description": "Short tag for what was reviewed — a diff summary or the doc path." }
+                    "subject_label": { "type": "string", "description": "Short tag for what was reviewed — a diff summary or the doc path." },
+                    "findings": {
+                        "type": "array",
+                        "maxItems": MAX_REVIEW_FINDINGS,
+                        "description": "Optional structured concerns from the review. Omit to preserve the legacy count-only outcome.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "file": { "type": "string", "description": "Repo-relative path for the concern; must be non-empty." },
+                                "line": { "type": "integer", "minimum": 1, "description": "Optional 1-based line number for the concern." },
+                                "severity": { "enum": ["blocking", "non-blocking", "suggestion"], "description": "Finding severity, separate from the 2-way blocker/warning counts." },
+                                "note": { "type": "string", "description": "One-line human-readable concern; must be non-empty." }
+                            },
+                            "required": ["file", "severity", "note"]
+                        }
+                    }
                 },
                 "required": ["reviewer_count", "subject_label"]
             }
@@ -4348,6 +4465,137 @@ mod tests {
         assert!(parse_count_field(&args, "junk").is_err());
         assert!(parse_count_field(&args, "neg").is_err());
         assert!(parse_count_field(&args, "frac").is_err());
+    }
+
+    #[test]
+    fn review_outcome_payload_omits_findings_when_absent() {
+        let args = json!({
+            "blockers": 0,
+            "warnings": 0,
+            "reviewer_count": 1,
+            "subject_label": "clean diff"
+        });
+        let findings = parse_review_findings(&args).unwrap();
+        assert!(findings.is_none());
+
+        let payload = build_review_outcome_payload(ReviewOutcomePayloadInput {
+            from_lane: "Claude-1",
+            blockers: 0,
+            warnings: 0,
+            reviewer_count: 1,
+            subject_label: "clean diff",
+            harness_id: "hm-1",
+            request_id: "rvo-test",
+            findings,
+        });
+        assert!(payload.get("findings").is_none());
+        assert_eq!(payload["blockers"], json!(0));
+        assert_eq!(payload["warnings"], json!(0));
+        assert_eq!(payload["reviewerCount"], json!(1));
+        assert_eq!(payload["subjectLabel"], json!("clean diff"));
+    }
+
+    #[test]
+    fn review_outcome_payload_emits_valid_findings() {
+        let args = json!({
+            "findings": [
+                {
+                    "file": " src-tauri/src/hook_server.rs ",
+                    "line": 42,
+                    "severity": "blocking",
+                    "note": "Rejects legacy callers"
+                },
+                {
+                    "file": "src/main.ts",
+                    "severity": "suggestion",
+                    "note": "Clarify empty state"
+                }
+            ]
+        });
+        let findings = parse_review_findings(&args).unwrap();
+        let payload = build_review_outcome_payload(ReviewOutcomePayloadInput {
+            from_lane: "Claude-1",
+            blockers: 1,
+            warnings: 2,
+            reviewer_count: 3,
+            subject_label: "review matrix",
+            harness_id: "hm-1",
+            request_id: "rvo-test",
+            findings,
+        });
+
+        assert_eq!(
+            payload["findings"],
+            json!([
+                {
+                    "file": "src-tauri/src/hook_server.rs",
+                    "line": 42,
+                    "severity": "blocking",
+                    "note": "Rejects legacy callers"
+                },
+                {
+                    "file": "src/main.ts",
+                    "severity": "suggestion",
+                    "note": "Clarify empty state"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn review_outcome_findings_reject_invalid_severity_and_empty_file() {
+        let invalid_severity = json!({
+            "findings": [{
+                "file": "src/main.ts",
+                "severity": "warning",
+                "note": "Uses legacy severity"
+            }]
+        });
+        let err = parse_review_findings(&invalid_severity).unwrap_err();
+        assert!(err.contains("severity must be one of"));
+
+        let empty_file = json!({
+            "findings": [{
+                "file": " ",
+                "severity": "non-blocking",
+                "note": "Missing path"
+            }]
+        });
+        let err = parse_review_findings(&empty_file).unwrap_err();
+        assert!(err.contains("file must be a non-empty string"));
+    }
+
+    #[test]
+    fn review_outcome_findings_reject_over_cap() {
+        let findings: Vec<Value> = (0..=MAX_REVIEW_FINDINGS)
+            .map(|i| {
+                json!({
+                    "file": format!("src/file-{i}.ts"),
+                    "severity": "suggestion",
+                    "note": "Bounded finding"
+                })
+            })
+            .collect();
+        let args = json!({ "findings": findings });
+        let err = parse_review_findings(&args).unwrap_err();
+        assert!(err.contains("too many findings"));
+        assert!(err.contains(&format!("cap is {MAX_REVIEW_FINDINGS}")));
+    }
+
+    #[test]
+    fn review_outcome_findings_accept_exact_cap() {
+        let findings: Vec<Value> = (0..MAX_REVIEW_FINDINGS)
+            .map(|i| {
+                json!({
+                    "file": format!("src/file-{i}.ts"),
+                    "severity": "suggestion",
+                    "note": "Bounded finding"
+                })
+            })
+            .collect();
+        let args = json!({ "findings": findings });
+        let parsed = parse_review_findings(&args).unwrap().unwrap();
+        assert_eq!(parsed.len(), MAX_REVIEW_FINDINGS);
     }
 
     #[test]

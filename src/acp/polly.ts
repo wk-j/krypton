@@ -141,14 +141,18 @@ export function pollyRequestPrompt(input: PollyRequestPromptInput): string {
     '4. Cross-review — peer_send the non-implementer worker with diff + contract only. Fan out reviewers ' +
       'in one turn when multiple slices finish together. If there is no different worker available for an ' +
       'independent review, stop and surface that limitation instead of self-reviewing. Review reports should ' +
-      'use `### Blocking issues`, `### Non-blocking issues`, and `### Suggestions` with file:line evidence. ' +
+      'use `### Blocking issues`, `### Non-blocking issues`, and `### Suggestions`; every finding should ' +
+      'be one line with file:line evidence as `path:line — concern` (or `path — concern` only when no useful ' +
+      'line anchor exists). ' +
       'Do not give reviewers the implementer transcript or ambient worker context.',
   );
   lines.push(
     '5. Synthesize — cluster blockers; call `review_outcome` once per review round; `attention_flag` ' +
-      'unresolved forks; never auto-commit or auto-merge. Blocking review issues go back to the same ' +
-      'implementer thread with a concrete fix contract, then repeat gates + review. Keep the plan current ' +
-      'as slices land — flip each entry ' +
+      'unresolved forks; never auto-commit or auto-merge. When calling `review_outcome`, include structured ' +
+      '`findings[]` extracted from review replies when there are findings: `Blocking issues` → `blocking`, `Non-blocking issues` ' +
+      '/ `Warnings` → `non-blocking`, `Suggestions` → `suggestion`, each as `{ file, line?, severity, note }`. ' +
+      'Blocking review issues go back to the same implementer thread with a concrete fix contract, then ' +
+      'repeat gates + review. Keep the plan current as slices land — flip each entry ' +
       'pending → in_progress → completed. Track task and worker status in your own working context ' +
       'across turns (not in memory_set — memory is reserved for #handoff/#resume).',
   );

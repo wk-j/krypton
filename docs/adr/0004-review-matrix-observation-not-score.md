@@ -2,6 +2,8 @@
 
 > Status: accepted
 > Date: 2026-06-06
+> Updated: 2026-06-29 — superseded in part by embedded findings detail; see
+> `docs/146-review-quality-matrix.md`.
 
 ## Context
 
@@ -24,14 +26,36 @@ rank lanes**:
   counts the reviewers reported (plus a subject label and reviewer count) — and
   shows them as a trend the human eyeballs. It never blends them into one
   number, never records a self-graded verdict, and never produces a leaderboard.
-- It keeps **no fine-grained per-review detail** (no stored diff size, no
-  jump-back-to-transcript anchor). The actual reviewer replies live in the
-  authoring lane's scrollback, so the counts stay an index into real evidence
-  the human can re-read, never the final word.
+- It keeps **no diff-size metric and no jump-back-to-transcript anchor**. The
+  actual reviewer replies live in the authoring lane's scrollback, so the counts
+  and any embedded detail stay an index into real evidence the human can re-read,
+  never the final word.
 - It is surfaced exactly like attention triage (a precedent it mirrors): a
   **neutral depth indicator** in the workspace status bar (a count of reviews
   recorded — *not* an alarm, *not* coloured by badness) plus a
   summon-on-demand overlay.
+
+## 2026-06-29 Update: Embedded Findings Detail
+
+The original decision intentionally chose a summary-only row to avoid retained
+review-session state. That part is **superseded in part**: the matrix now also
+stores an optional `findings[]` array embedded in the same session-only
+`review_outcome` self-report. Each finding is a small evidence row
+(`file`, optional `line`, `severity`, `note`) extracted from reviewer replies,
+capped at 500 items, and rendered only on demand inside the matrix row.
+
+This does **not** reverse the core ADR:
+
+- Findings are evidence, not a verdict. They are never rolled into a grade,
+  score, rank, or alarm colour.
+- Findings do not revive spec-112 review sessions, diff snapshots, review cards,
+  or transcript anchors. They are stored in-memory with the row and disappear
+  with the harness session.
+- Counts remain the matrix's first-level signal; findings are expandable detail
+  for the human to inspect when the row needs context.
+
+The implementation details and tool contract live in
+`docs/146-review-quality-matrix.md`.
 
 ## Considered Options
 

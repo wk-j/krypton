@@ -39,11 +39,15 @@ describe('reviewRequestPrompt', () => {
     expect(prompt).toContain(`C — lens: ${REVIEW_LENSES[2]}`);
   });
 
-  it('requests the skim template (Blockers / Warnings, path:line — concern)', () => {
+  it('requests the skim template with extractable findings sections', () => {
     const prompt = reviewRequestPrompt({ reviewers: ['A'], subject: diffSubject, intent: '' });
     expect(prompt).toContain('### Blockers');
     expect(prompt).toContain('### Warnings');
+    expect(prompt).toContain('### Non-blocking');
+    expect(prompt).toContain('### Suggestions');
     expect(prompt).toContain('path:line — concern');
+    expect(prompt).toContain('path — concern');
+    expect(prompt).toContain('Each finding must be one line');
   });
 
   it('embeds the diff subject (diffstat + diff + untracked) for a diff review', () => {
@@ -102,5 +106,10 @@ describe('reviewRequestPrompt', () => {
     expect(prompt).toContain('warnings');
     // reviewer_count is wired to the actual reviewer total.
     expect(prompt).toContain('`reviewer_count` is 3');
+    expect(prompt).toContain('structured `findings` array');
+    expect(prompt).toContain('`Blockers` to severity `blocking`');
+    expect(prompt).toContain('`Warnings` / `Non-blocking` to `non-blocking`');
+    expect(prompt).toContain('`Suggestions` to `suggestion`');
+    expect(prompt).toContain('{ file, line?, severity, note }');
   });
 });

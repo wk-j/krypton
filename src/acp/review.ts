@@ -129,8 +129,9 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
       'the intent, the focus note if any, that reviewer\'s assigned lens, and this skim-format request:',
   );
   lines.push(
-    '   "Reply with a light markdown skim format: a `### Blockers` section and a `### Warnings` section, ' +
-      'each item as `path:line — concern` (one line each). Omit a section if empty; say `LGTM` if clean."',
+    '   "Reply with a light markdown skim format: `### Blockers`, `### Warnings` / `### Non-blocking`, ' +
+      'and `### Suggestions` sections as applicable. Each finding must be one line as `path:line — concern` ' +
+      '(use `path — concern` only when there is no useful line anchor). Omit empty sections; say `LGTM` if clean."',
   );
   lines.push('2. End your turn. Each reply arrives later as a separate user message.');
   lines.push(
@@ -140,8 +141,12 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
       'unique catches. Report the synthesis in your turn text. After synthesizing (not on #cancel), ' +
       'call `review_outcome` once with the totals you reported — `blockers` and `warnings` are the ' +
       `combined counts across all reviewers, \`reviewer_count\` is ${reviewers.length}, and ` +
-      '`subject_label` is a short tag for what was reviewed (the diff summary or doc path). This ' +
-      'records a summary row in the review quality matrix; it stores no scores and no grades.',
+      '`subject_label` is a short tag for what was reviewed (the diff summary or doc path). Also pass ' +
+      'a structured `findings` array extracted from reviewer replies when there are findings: map ' +
+      '`Blockers` to severity `blocking`, `Warnings` / `Non-blocking` to `non-blocking`, and ' +
+      '`Suggestions` to `suggestion`; each item is `{ file, line?, severity, note }` with repo-relative ' +
+      'file, optional integer line, and one-line note. This records a review quality matrix row; it stores ' +
+      'no scores and no grades.',
   );
   lines.push(
     '4. Do NOT auto-commit or auto-apply fixes. If the reviews surface a genuine unresolved fork (a real ' +
