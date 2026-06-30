@@ -21,6 +21,18 @@
 
 ## Recent Landings
 
+- **Orchestrator console — prompt the seat (spec 182)** — A second send verb in
+  the console: `i` opens a one-line input that sends a **normal user turn to the
+  orchestrator seat** (the lane you're seated on), distinct from `d` dispatch (a
+  `peer_send` to *another* lane). Routed through a new shared `submitLanePrompt`
+  helper extracted from `submitActiveLane`, so `#`-commands, `!`-shell, mention
+  fan-out, and the spec-136 busy-queue behave exactly as in the lane composer; the
+  composer keeps its draft lifecycle via a `clearComposer` callback. Seat-scoped
+  (ignores the `j/k` selection); blocked only when there is no live seat
+  (`seatPromptDisabledReason`, unit-tested). Frontend-only (`acp-harness-view.ts`,
+  reuses the dispatch CSS); `tsc` + vitest green. See
+  `docs/182-orchestrator-console-seat-prompt.md`.
+
 - **Attention acknowledge sends feedback (spec 183)** — Acknowledging a flagged
   judgement item (`a` in the triage overlay) is **no longer silent**: it now
   notifies the flagging lane that its `chosen` path is approved via

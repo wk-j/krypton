@@ -113,9 +113,10 @@ No pause/resume (grill Q8). No setting another lane's permission *mode* in v1 (d
 |-----|---------|--------|
 | `#orchestrator` / `#console` | Harness composer | promote active lane (if no seat) + open console |
 | `Leader` `` ` `` | Harness | promote active lane (if no seat) + open console (same as `#orchestrator`) |
-| `j` / `k` | Console | move selection across lane cards |
-| `Enter` | Console, card selected | jump to that lane + close console |
+| `j` / `k` | Console | move selection across lane cards — the **background active lane follows the selection** (`selectOrchestratorCard` → `activateLane`), so the transcript behind the console previews the selected card live; the overlay is a separate element `render()` never touches, so it stays open and on top |
+| `Enter` | Console, card selected | jump to that lane + close console (the background is already on it, so this just dismisses the overlay) |
 | `d` | Console, card selected | dispatch to selected (focus input; Enter sends) |
+| `i` | Console (live seat) | prompt the seat — a normal turn, not a dispatch (spec 182; focus input, Enter sends) |
 | `Tab` | Dispatch input | cycle purpose |
 | `c` / `x` / `r` | Console, card selected | interrupt / kill / restart |
 | `o` | Console, card selected | transfer orchestrator designation to it |

@@ -40,6 +40,7 @@ import {
   dispatchDisabledReason,
   consolePermissionAction,
   armConsolePermissionFlags,
+  seatPromptDisabledReason,
   DISPATCH_PURPOSES,
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
@@ -1467,5 +1468,22 @@ describe('orchestrator console permission action (spec 181)', () => {
     expect(armConsolePermissionFlags('a', 'accept')).toEqual({ acceptAll: false, rejectAll: false });
     expect(armConsolePermissionFlags('r', 'reject')).toEqual({ acceptAll: false, rejectAll: false });
     expect(armConsolePermissionFlags('A', 'none')).toEqual({ acceptAll: false, rejectAll: false });
+  });
+});
+
+describe('orchestrator console seat prompt (spec 182)', () => {
+  it('blocks the seat prompt only when there is no live seat', () => {
+    expect(seatPromptDisabledReason(null)).toBe('no orchestrator seat');
+    expect(seatPromptDisabledReason({ status: 'starting' })).toBe('seat starting');
+    expect(seatPromptDisabledReason({ status: 'error' })).toBe('seat error');
+    expect(seatPromptDisabledReason({ status: 'stopped' })).toBe('seat stopped');
+  });
+
+  it('allows the seat prompt for a live seat — busy/awaiting queue via spec 136', () => {
+    // idle, busy, needs_permission, awaiting_peer are all promptable (busy queues).
+    expect(seatPromptDisabledReason({ status: 'idle' })).toBeNull();
+    expect(seatPromptDisabledReason({ status: 'busy' })).toBeNull();
+    expect(seatPromptDisabledReason({ status: 'needs_permission' })).toBeNull();
+    expect(seatPromptDisabledReason({ status: 'awaiting_peer' })).toBeNull();
   });
 });

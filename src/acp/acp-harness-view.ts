@@ -1298,6 +1298,18 @@ export function armConsolePermissionFlags(
   };
 }
 
+/** spec 182: why the orchestrator seat cannot be prompted from the console, or
+ *  null when it can. A `busy` / `needs_permission` / `awaiting_peer` seat is fine
+ *  — the prompt queues (spec 136) and drains on idle; only a missing or not-yet/
+ *  no-longer-live seat blocks it. */
+export function seatPromptDisabledReason(seat: { status: string } | null): string | null {
+  if (!seat) return 'no orchestrator seat';
+  if (seat.status === 'starting' || seat.status === 'error' || seat.status === 'stopped') {
+    return `seat ${seat.status}`;
+  }
+  return null;
+}
+
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
@@ -1360,6 +1372,9 @@ export class AcpHarnessView implements ContentView {
   private orchestratorSelectedLaneId: string | null = null;
   /** Non-null while the dispatch one-line input is open for the selected target. */
   private orchestratorDispatch: { draft: string; purpose: DispatchPurpose } | null = null;
+  /** spec 182: non-null while the seat-prompt one-line input is open. Targets the
+   *  orchestrator seat (a normal turn), independent of the j/k card selection. */
+  private orchestratorSeatPrompt: { draft: string } | null = null;
   private orchestratorLaneBusUnsub: (() => void) | null = null;
   private interLaneUnlisten: UnlistenFn | null = null;
   private peerListUnlisten: UnlistenFn | null = null;
@@ -4581,6 +4596,7 @@ export class AcpHarnessView implements ContentView {
     this.memoryDrawerOpen = false;
     this.orchestratorConsoleOpen = true;
     this.orchestratorDispatch = null;
+    this.orchestratorSeatPrompt = null;
     // Default the selection to the first non-orchestrator lane (a dispatch target).
     const seatId = this.orchestratorLaneId;
     const cards = this.lanes.filter((l) => l.status !== 'stopped');
@@ -4600,6 +4616,7 @@ export class AcpHarnessView implements ContentView {
     if (!this.orchestratorConsoleOpen) return;
     this.orchestratorConsoleOpen = false;
     this.orchestratorDispatch = null;
+    this.orchestratorSeatPrompt = null;
     this.orchestratorLaneBusUnsub?.();
     this.orchestratorLaneBusUnsub = null;
     this.orchestratorConsoleEl.hidden = true;
@@ -4686,6 +4703,7 @@ export class AcpHarnessView implements ContentView {
     const feedHtml = this.renderOrchestratorFeed(seatLane);
 
     const dispatchHtml = this.renderOrchestratorDispatch(selected, seatId);
+    const seatPromptHtml = this.renderOrchestratorSeatPrompt(seatLane);
 
     this.orchestratorPanelEl.innerHTML =
       `<header class="acp-orchestrator__head">` +
@@ -4706,9 +4724,34 @@ export class AcpHarnessView implements ContentView {
       `</section>` +
       `</div>` +
       dispatchHtml +
+      seatPromptHtml +
       `<footer class="acp-orchestrator__keys">` +
       esc(this.orchestratorKeyLegend(selected)) +
       `</footer>`;
+  }
+
+  /** spec 182: the seat-prompt line (a normal turn to the orchestrator seat),
+   *  below dispatch. Mirrors the dispatch line: a hint when idle, an input while
+   *  open. Disabled (with the reason) when there is no live seat. */
+  private renderOrchestratorSeatPrompt(seat: HarnessLane | null): string {
+    const reason = seatPromptDisabledReason(seat);
+    const target = seat ? esc(seat.displayName) : '—';
+    if (!this.orchestratorSeatPrompt) {
+      const hint = reason
+        ? `<span class="acp-orchestrator__dispatch-disabled">${esc(reason)}</span>`
+        : `<span class="acp-orchestrator__dispatch-hint">press i to prompt ${target}</span>`;
+      return (
+        `<section class="acp-orchestrator__dispatch" data-region="seat-prompt">` +
+        `<span class="acp-orchestrator__dispatch-label">prompt → ${target}</span>${hint}` +
+        `</section>`
+      );
+    }
+    return (
+      `<section class="acp-orchestrator__dispatch acp-orchestrator__dispatch--active" data-region="seat-prompt">` +
+      `<span class="acp-orchestrator__dispatch-label">prompt → ${target}</span>` +
+      `<span class="acp-orchestrator__dispatch-input">${esc(this.orchestratorSeatPrompt.draft) || '<span class="acp-orchestrator__dispatch-placeholder">type a prompt · Enter send · Esc cancel</span>'}</span>` +
+      `</section>`
+    );
   }
 
   /** Footer legend. While the selected card has a pending permission, a/r answer
@@ -4717,7 +4760,7 @@ export class AcpHarnessView implements ContentView {
     if (selected && selected.pendingPermissions.length > 0) {
       return 'j/k select · a accept · r reject (A/R all) · Enter review in lane · c interrupt · x kill · Esc close';
     }
-    return 'j/k select · Enter jump · d dispatch · c interrupt · x kill · r restart · o set seat · Esc close';
+    return 'j/k select · Enter jump · d dispatch · i prompt seat · c interrupt · x kill · r restart · o set seat · Esc close';
   }
 
   private renderOrchestratorFeed(seat: HarnessLane | null): string {
@@ -4794,10 +4837,26 @@ export class AcpHarnessView implements ContentView {
     );
   }
 
-  /** Console key handling. Dispatch input sub-mode captures keys until Enter/Esc. */
+  /** j/k card selection. The console overlay (`orchestratorConsoleEl`) is a
+   *  separate element `render()` never touches, so switching the background
+   *  active lane to the selected card keeps the transcript behind the console in
+   *  sync without disturbing the overlay — the console stays open and on top, and
+   *  closing it (Esc / Enter) lands on the lane the operator was just inspecting. */
+  private selectOrchestratorCard(id: string): void {
+    this.orchestratorSelectedLaneId = id;
+    if (id !== this.activeLaneId) this.activateLane(id); // re-renders the background
+    this.renderOrchestratorConsoleEl();
+  }
+
+  /** Console key handling. Dispatch / seat-prompt input sub-modes capture keys
+   *  until Enter/Esc. */
   private handleOrchestratorKey(e: KeyboardEvent): void {
     if (this.orchestratorDispatch) {
       this.handleOrchestratorDispatchKey(e);
+      return;
+    }
+    if (this.orchestratorSeatPrompt) {
+      this.handleOrchestratorSeatPromptKey(e);
       return;
     }
     if (e.key === 'Escape' || e.key === 'q') {
@@ -4810,13 +4869,11 @@ export class AcpHarnessView implements ContentView {
     let idx = cards.findIndex((l) => l.id === this.orchestratorSelectedLaneId);
     if (idx < 0) idx = 0;
     if (e.key === 'j' || e.key === 'ArrowDown') {
-      this.orchestratorSelectedLaneId = cards[(idx + 1) % cards.length].id;
-      this.renderOrchestratorConsoleEl();
+      this.selectOrchestratorCard(cards[(idx + 1) % cards.length].id);
       return;
     }
     if (e.key === 'k' || e.key === 'ArrowUp') {
-      this.orchestratorSelectedLaneId = cards[(idx - 1 + cards.length) % cards.length].id;
-      this.renderOrchestratorConsoleEl();
+      this.selectOrchestratorCard(cards[(idx - 1 + cards.length) % cards.length].id);
       return;
     }
     const selected = this.orchestratorSelectedLane();
@@ -4854,6 +4911,17 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       this.orchestratorDispatch = { draft: '', purpose: 'implement' };
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (e.key === 'i') {
+      // spec 182: prompt the SEAT (a normal turn), independent of the selection.
+      const reason = seatPromptDisabledReason(this.orchestratorLane());
+      if (reason) {
+        this.flashChip(`prompt: ${reason}`);
+        return;
+      }
+      this.orchestratorSeatPrompt = { draft: '' };
       this.renderOrchestratorConsoleEl();
       return;
     }
@@ -4906,6 +4974,54 @@ export class AcpHarnessView implements ContentView {
       dispatch.draft += e.key;
       this.renderOrchestratorConsoleEl();
     }
+  }
+
+  /** spec 182: seat-prompt input — Enter sends a normal turn to the seat, Esc
+   *  cancels (input only; does not close the console). Mirrors the dispatch input. */
+  private handleOrchestratorSeatPromptKey(e: KeyboardEvent): void {
+    const prompt = this.orchestratorSeatPrompt;
+    if (!prompt) return;
+    if (e.key === 'Escape') {
+      this.orchestratorSeatPrompt = null;
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const text = prompt.draft.trim();
+      this.orchestratorSeatPrompt = null;
+      if (!text) {
+        this.renderOrchestratorConsoleEl();
+        return;
+      }
+      this.sendSeatPrompt(text);
+      return;
+    }
+    if (e.key === 'Backspace') {
+      prompt.draft = prompt.draft.slice(0, -1);
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      prompt.draft += e.key;
+      this.renderOrchestratorConsoleEl();
+    }
+  }
+
+  /** spec 182: send a normal user turn to the orchestrator seat from the console
+   *  (NOT a `peer_send` — the human is the seat's operator). Routes through the
+   *  shared `submitLanePrompt`, so `#`-commands, `!`-shell, and the spec-136
+   *  busy-queue behave exactly as in the lane composer. */
+  private sendSeatPrompt(text: string): void {
+    const seat = this.orchestratorLane();
+    const reason = seatPromptDisabledReason(seat);
+    if (!seat || reason) {
+      this.flashChip(`prompt: ${reason ?? 'no seat'}`);
+      this.renderOrchestratorConsoleEl();
+      return;
+    }
+    this.flashChip(`prompt → ${seat.displayName}`);
+    void this.submitLanePrompt(seat, text, []);
+    this.renderOrchestratorConsoleEl();
   }
 
   /** spec 180: a dispatch is an ordinary `peer_send` from the orchestrator seat to
@@ -5977,13 +6093,37 @@ export class AcpHarnessView implements ContentView {
     }
     lane.historyIndex = null;
     lane.historySavedDraft = null;
+    const images = lane.stagedImages.slice();
+    // The composer owns its draft/staged-image lifecycle; submitLanePrompt clears
+    // them at the right moment via this callback (a `#` command returns before it
+    // fires, preserving the composer's existing "leave the draft" behavior there).
+    await this.submitLanePrompt(lane, text, images, () => {
+      this.setDraft(lane, '', 0);
+      lane.stagedImages = [];
+    });
+  }
+
+  /**
+   * spec 136/182: route + send a user prompt to `lane` — the shared tail of the
+   * lane composer (`submitActiveLane`) and the orchestrator console seat prompt
+   * (spec 182). Handles `#`-commands, `!`-shell, the not-ready guard, the
+   * busy-queue, and the mention-aware send identically for both. `clearComposer`
+   * (optional) lets a composer caller clear its draft/staged images at the right
+   * moment; the console passes nothing (it has no composer draft).
+   */
+  private async submitLanePrompt(
+    lane: HarnessLane,
+    text: string,
+    images: StagedImage[],
+    clearComposer?: () => void,
+  ): Promise<void> {
     if (text.startsWith('#')) {
       await this.runHashCommand(lane, text);
       return;
     }
     if (text.startsWith('!')) {
       const command = text.slice(1).trim();
-      this.setDraft(lane, '', 0);
+      clearComposer?.();
       this.render();
       if (!command) {
         this.flashChip('empty shell command');
@@ -6004,22 +6144,19 @@ export class AcpHarnessView implements ContentView {
         this.flashChip(`queue full (${PROMPT_QUEUE_MAX})`);
         return;
       }
-      const queuedImages = lane.stagedImages.map((img) => Object.freeze({ ...img }) as StagedImage);
+      const queuedImages = images.map((img) => Object.freeze({ ...img }) as StagedImage);
       lane.queuedPrompts.push({
         text,
         images: queuedImages,
         mentionTargets: this.resolveMentionTargets(text, lane),
       });
-      this.setDraft(lane, '', 0);
-      lane.stagedImages = [];
+      clearComposer?.();
       this.flashChip(`queued (${lane.queuedPrompts.length})`);
       this.render();
       return;
     }
-    const images = lane.stagedImages.slice();
-    this.setDraft(lane, '', 0);
-    lane.stagedImages = [];
-    await this.sendUserPrompt(lane, text, images, { clearDraft: true });
+    clearComposer?.();
+    await this.sendUserPrompt(lane, text, images);
   }
 
   /**

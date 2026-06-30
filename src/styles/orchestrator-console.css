@@ -15,8 +15,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  background: rgba(4, 8, 13, 0.8);
+  justify-content: flex-start;
+  padding-top: 5vh;
+  /* No scrim — the panel floats over the live lane without dimming it. */
+  background: transparent;
 }
 
 .acp-harness__orchestrator[hidden] {
