@@ -105,7 +105,7 @@ so the testable logic is extracted — same convention as the rest of that test 
 | `x` | kill the selected lane | `closeLane(lane)` |
 | `r` | restart the selected lane | `restartLane(lane)` |
 
-No pause/resume (grill Q8). No setting another lane's permission *mode* in v1 (deferred — safety). **Follow-up (spec 181):** answering a worker's *pending* `needs_permission` request — accept/reject in place via `a`/`r` — is added in `docs/181-orchestrator-console-permission-action.md` (the persistent *mode* stays deferred); while the selected card has a pending permission, `r` is reject and restart is shadowed.
+No pause/resume (grill Q8). No setting another lane's permission *mode* in v1 (deferred — safety). **Follow-up (spec 181 → 184):** answering a worker's *pending* `needs_permission` request — accept/reject in place via `a`/`r`, **high-risk commands included** (the full command is surfaced for review, so no lane jump is required). Spec 181 added it on the *selected card*; **spec 184 makes it a global fleet queue** (`docs/184-orchestrator-console-global-permission-queue.md`) — a band above the body lists every awaiting lane and `a`/`r` answer the **focused queue item without switching lane** (`Tab` steps the focus). The persistent *mode* stays deferred; while any permission is pending, `r` is reject and restart is shadowed.
 
 ### Keybindings
 

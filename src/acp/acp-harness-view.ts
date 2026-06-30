@@ -1266,30 +1266,25 @@ export function dispatchDisabledReason(opts: {
   return null;
 }
 
-/** spec 181: what answering the selected console card does. Reject is always
- *  allowed inline; accepting a high-risk command (rm / force-push / network /
- *  script / unparseable) is blocked from the compact card — the operator must
- *  open the lane to see the full tool detail/diff before accepting. No pending
- *  permission → `none`. The caller MUST branch on this BEFORE mutating any
- *  accept/reject-all flag, so a `blocked_highrisk` accept never arms accept-all. */
+/** spec 181 (+ follow-up): what answering the selected console card does. A
+ *  pending request resolves to its action — `accept` or `reject` — inline; no
+ *  pending permission → `none`. High-risk commands are no longer blocked from
+ *  the console: the selected-card strip surfaces the FULL command so the human
+ *  reviews it in place (the lane view is no longer required to accept). */
 export function consolePermissionAction(opts: {
   pending: boolean;
-  highRisk: boolean;
   action: 'accept' | 'reject';
-}): 'accept' | 'reject' | 'blocked_highrisk' | 'none' {
+}): 'accept' | 'reject' | 'none' {
   if (!opts.pending) return 'none';
-  if (opts.action === 'reject') return 'reject';
-  return opts.highRisk ? 'blocked_highrisk' : 'accept';
+  return opts.action;
 }
 
 /** spec 181: which all-for-turn flag an `A`/`R` press arms, given the resolved
- *  `consolePermissionAction` decision. The safety invariant lives here: a
- *  `blocked_highrisk` (or `none`) decision arms NOTHING, so an `A` on a blocked
- *  high-risk command can never silently enable accept-all-for-turn. `a`/`r`
+ *  `consolePermissionAction` decision. A `none` decision arms NOTHING. `a`/`r`
  *  (lower-case, single answer) arm nothing either — only the shift-variants do. */
 export function armConsolePermissionFlags(
   key: 'a' | 'A' | 'r' | 'R',
-  decision: 'accept' | 'reject' | 'blocked_highrisk' | 'none',
+  decision: 'accept' | 'reject' | 'none',
 ): { acceptAll: boolean; rejectAll: boolean } {
   const all = key === 'A' || key === 'R';
   return {
@@ -1370,6 +1365,11 @@ export class AcpHarnessView implements ContentView {
   private orchestratorConsoleOpen = false;
   /** j/k cursor over lane cards while the console is open. */
   private orchestratorSelectedLaneId: string | null = null;
+  /** spec 184: cursor over the GLOBAL pending-permission queue (the laneId whose
+   *  head request `a`/`r` answers). Independent of the card selection, so the
+   *  operator confirms a worker's permission without switching the active lane.
+   *  Falls back to the queue head when the focused lane is no longer pending. */
+  private orchestratorPermFocusId: string | null = null;
   /** Non-null while the dispatch one-line input is open for the selected target. */
   private orchestratorDispatch: { draft: string; purpose: DispatchPurpose } | null = null;
   /** spec 182: non-null while the seat-prompt one-line input is open. Targets the
@@ -4632,6 +4632,23 @@ export class AcpHarnessView implements ContentView {
     return cards.find((l) => l.id === this.orchestratorSelectedLaneId) ?? cards[0] ?? null;
   }
 
+  /** spec 184: the fleet-wide pending-permission queue — every live lane that is
+   *  awaiting a permission, in grid order (top-to-bottom). The head of THIS list
+   *  is the default answer target; one row per lane (its head request), with
+   *  `(+N more)` flagging a per-lane backlog. Drives the console's global
+   *  permission region and the `a`/`r` target. */
+  private pendingPermissionLanes(): HarnessLane[] {
+    return this.orchestratorCards().filter((l) => l.pendingPermissions.length > 0);
+  }
+
+  /** spec 184: the focused queue lane (whose head request `a`/`r` answers).
+   *  Honors `orchestratorPermFocusId` while that lane is still pending; otherwise
+   *  falls back to the queue head, so answering one auto-advances to the next. */
+  private orchestratorPermFocusLane(): HarnessLane | null {
+    const queue = this.pendingPermissionLanes();
+    return queue.find((l) => l.id === this.orchestratorPermFocusId) ?? queue[0] ?? null;
+  }
+
   /** spec 181 follow-up: the console mirrors the live permission queue, but the
    *  `LaneBus` subscription only fires on status *transitions*. A queue mutation
    *  that keeps the lane `needs_permission` — answering the head when >1 are
@@ -4657,10 +4674,12 @@ export class AcpHarnessView implements ContentView {
     const busy = cards.filter((l) => l.status === 'busy' || l.status === 'needs_permission').length;
     const awaiting = cards.filter((l) => l.status === 'awaiting_peer').length;
     const flags = this.triageStore.openCount();
+    const permLanes = this.pendingPermissionLanes();
     const seatLane = this.orchestratorLane();
     const summary =
       `${cards.length} lane${cards.length === 1 ? '' : 's'} · ${busy} busy · ` +
-      `${awaiting} awaiting · ${flags} flag${flags === 1 ? '' : 's'}`;
+      `${awaiting} awaiting · ${flags} flag${flags === 1 ? '' : 's'}` +
+      (permLanes.length > 0 ? ` · ${permLanes.length} perm` : '');
 
     const cardHtml = cards
       .map((l) => {
@@ -4681,9 +4700,6 @@ export class AcpHarnessView implements ContentView {
         if (l.pendingPermissions.length > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--perm">⚠ perm</span>`);
         const goal = l.goal ? `<div class="acp-orchestrator__goal">${esc(truncate(l.goal.text, 72))}</div>` : '';
         const model = l.modelName ? ` · ${esc(l.modelName)}` : '';
-        // spec 181: the selected card surfaces the head pending permission + the
-        // contextual answer hint (a/r, or high-risk → Enter-to-review · r).
-        const permStrip = isSel ? this.renderOrchestratorPermission(l) : '';
         return (
           `<div class="${cls}" data-orch-lane="${esc(l.id)}">` +
           `<div class="acp-orchestrator__card-head">` +
@@ -4693,11 +4709,15 @@ export class AcpHarnessView implements ContentView {
           `<div class="acp-orchestrator__card-meta">${esc(backendLabel(l.backendId))}${model}</div>` +
           (tags.length ? `<div class="acp-orchestrator__tags">${tags.join('')}</div>` : '') +
           goal +
-          permStrip +
           `</div>`
         );
       })
       .join('');
+
+    // spec 184: the GLOBAL pending-permission region — a fleet-wide queue shown
+    // above the body whenever any lane is awaiting permission, so the operator
+    // confirms from a single place without selecting (and activating) each card.
+    const permQueueHtml = this.renderOrchestratorPermQueue(permLanes);
 
     // Orchestration feed: recent inter-lane + flag rows from the seat's transcript.
     const feedHtml = this.renderOrchestratorFeed(seatLane);
@@ -4711,6 +4731,7 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-orchestrator__seat">${seatLane ? esc(seatLane.displayName) : 'no seat'}</span>` +
       `<span class="acp-orchestrator__summary">${esc(summary)}</span>` +
       `</header>` +
+      permQueueHtml +
       `<div class="acp-orchestrator__body">` +
       `<section class="acp-orchestrator__region" data-region="lanes">` +
       `<h3 class="acp-orchestrator__region-title">Lanes</h3>` +
@@ -4756,9 +4777,11 @@ export class AcpHarnessView implements ContentView {
 
   /** Footer legend. While the selected card has a pending permission, a/r answer
    *  it (r shadows restart, per spec 181); otherwise the standard action keys. */
-  private orchestratorKeyLegend(selected: HarnessLane | null): string {
-    if (selected && selected.pendingPermissions.length > 0) {
-      return 'j/k select · a accept · r reject (A/R all) · Enter review in lane · c interrupt · x kill · Esc close';
+  private orchestratorKeyLegend(_selected: HarnessLane | null): string {
+    if (this.pendingPermissionLanes().length > 0) {
+      // spec 184: a/r answer the FOCUSED queue item (global, no lane switch); Tab
+      // steps the focus; j/k still select cards beneath the queue.
+      return 'a accept · r reject (A/R all) · Tab next perm · j/k select · c interrupt · x kill · Esc close';
     }
     return 'j/k select · Enter jump · d dispatch · i prompt seat · c interrupt · x kill · r restart · o set seat · Esc close';
   }
@@ -4786,24 +4809,57 @@ export class AcpHarnessView implements ContentView {
       : `<div class="acp-orchestrator__empty">no coordination activity yet</div>`;
   }
 
-  /** spec 181: the selected card's head pending-permission strip. Shows the
-   *  compact tool label + the answer hint — `a accept · r reject`, or for a
-   *  high-risk command `⚠ high-risk · Enter to review · r reject` (accept is
-   *  blocked from the compact card; reject stays inline). `(+N more)` flags a
-   *  queue so the operator knows answering reveals the next request. */
-  private renderOrchestratorPermission(lane: HarnessLane): string {
-    const permission = lane.pendingPermissions[0];
-    if (!permission) return '';
-    const more = lane.pendingPermissions.length - 1;
-    const moreTag = more > 0 ? `<span class="acp-orchestrator__perm-more">(+${more} more)</span>` : '';
-    const hint = this.isHighRiskPermission(permission)
-      ? `<span class="acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk">⚠ high-risk · Enter to review · r reject</span>`
-      : `<span class="acp-orchestrator__perm-hint">a accept · r reject</span>`;
+  /** spec 184: the global pending-permission queue region. One row per awaiting
+   *  lane (its head request), in grid order, rendered above the body whenever any
+   *  lane is paused on a permission — so the operator answers from a single fleet
+   *  view without selecting (and activating) each lane. The FOCUSED row (`a`/`r`
+   *  target) is ringed; `Tab` steps the focus when more than one lane is queued.
+   *  A high-risk request (rm / force-push / network / script / unparseable) shows
+   *  its FULL, UNTRUNCATED command (`extractCommandLineRaw` — never the 48-char
+   *  label, which could hide a destructive tail) + a `⚠ high-risk` marker, so the
+   *  dangerous accept is reviewed in place. `(+N more)` flags a per-lane backlog. */
+  private renderOrchestratorPermQueue(permLanes: HarnessLane[]): string {
+    if (permLanes.length === 0) return '';
+    const focus = this.orchestratorPermFocusLane();
+    const rows = permLanes
+      .map((l) => {
+        const permission = l.pendingPermissions[0];
+        if (!permission) return '';
+        const isFocus = focus !== null && l.id === focus.id;
+        const more = l.pendingPermissions.length - 1;
+        const moreTag = more > 0 ? `<span class="acp-orchestrator__perm-more">(+${more} more)</span>` : '';
+        const highRisk = this.isHighRiskPermission(permission);
+        const fullCommand = highRisk ? extractCommandLineRaw(permission.toolCall.rawInput) : '';
+        const detail = fullCommand
+          ? `<span class="acp-orchestrator__perm-command">${esc(fullCommand)}</span>`
+          : '';
+        const hint = isFocus
+          ? highRisk
+            ? `<span class="acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk">⚠ high-risk · a accept · r reject</span>`
+            : `<span class="acp-orchestrator__perm-hint">a accept · r reject</span>`
+          : highRisk
+            ? `<span class="acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk">⚠ high-risk</span>`
+            : '';
+        const cls =
+          'acp-orchestrator__perm' +
+          (isFocus ? ' acp-orchestrator__perm--focus' : '') +
+          (highRisk ? ' acp-orchestrator__perm--highrisk' : '');
+        return (
+          `<div class="${cls}">` +
+          `<span class="acp-orchestrator__perm-lane">${esc(l.displayName)}</span>` +
+          `<span class="acp-orchestrator__perm-label">${esc(compactPermissionLabel(permission, 'compact'))}</span>${moreTag}` +
+          detail +
+          hint +
+          `</div>`
+        );
+      })
+      .join('');
+    const stepHint = permLanes.length > 1 ? ' · Tab next' : '';
     return (
-      `<div class="acp-orchestrator__perm">` +
-      `<span class="acp-orchestrator__perm-label">${esc(compactPermissionLabel(permission, 'compact'))}</span>${moreTag}` +
-      hint +
-      `</div>`
+      `<section class="acp-orchestrator__permq" data-region="permissions">` +
+      `<h3 class="acp-orchestrator__region-title">Pending permissions${esc(stepHint)}</h3>` +
+      rows +
+      `</section>`
     );
   }
 
@@ -4876,19 +4932,30 @@ export class AcpHarnessView implements ContentView {
       this.selectOrchestratorCard(cards[(idx - 1 + cards.length) % cards.length].id);
       return;
     }
+    // spec 184: the GLOBAL pending-permission queue takes precedence for a/A/r/R
+    // and Tab, fleet-wide — mirroring the lane view, where a pending permission
+    // shadows other keys. The target is the FOCUSED queue lane (not the card
+    // selection), and answering does NOT switch the active lane, so the operator
+    // confirms a worker's permission without leaving their vantage. While any
+    // permission is pending, `r` is reject (shadowing restart); `a` accepts inline
+    // even for a high-risk command (its full command is shown for review).
+    const permQueue = this.pendingPermissionLanes();
+    if (permQueue.length > 0) {
+      if (e.key === 'Tab') {
+        const fIdx = permQueue.findIndex((l) => l.id === this.orchestratorPermFocusLane()?.id);
+        const step = e.shiftKey ? -1 : 1;
+        this.orchestratorPermFocusId = permQueue[(fIdx + step + permQueue.length) % permQueue.length].id;
+        this.renderOrchestratorConsoleEl();
+        return;
+      }
+      if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R') {
+        const focus = this.orchestratorPermFocusLane();
+        if (focus) this.answerConsolePermission(focus, e.key);
+        return;
+      }
+    }
     const selected = this.orchestratorSelectedLane();
     if (!selected) return;
-    // spec 181: a pending permission on the SELECTED card takes precedence for
-    // a/A/r/R — mirroring the lane view, where handlePermissionKey runs before
-    // any other lane key. While pending, `r` is reject (shadowing restart);
-    // Enter still jumps to the lane (and is required to accept a high-risk one).
-    if (
-      selected.pendingPermissions.length > 0 &&
-      (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R')
-    ) {
-      this.answerSelectedConsolePermission(selected, e.key);
-      return;
-    }
     if (e.key === 'Enter') {
       this.closeOrchestratorConsole();
       this.activateLane(selected.id);
@@ -5068,24 +5135,17 @@ export class AcpHarnessView implements ContentView {
     this.renderOrchestratorConsoleEl();
   }
 
-  /** spec 181: answer the selected lane's head pending permission from the
-   *  console, reusing `resolvePermission`. Ordering is exact: compute the
-   *  decision FIRST; a blocked high-risk accept mutates no flag (the operator
-   *  must open the lane); set accept/reject-all only after the action resolves,
-   *  immediately before resolving. `A`/`R` mirror the lane view's all-for-turn. */
-  private answerSelectedConsolePermission(lane: HarnessLane, key: 'a' | 'A' | 'r' | 'R'): void {
+  /** spec 181/184: answer a lane's head pending permission from the console,
+   *  reusing `resolvePermission` — high-risk commands included (their full command
+   *  is shown in the queue row for review). The lane is the focused queue item, so
+   *  this never switches the active lane. Set accept/reject-all only after the
+   *  action resolves, immediately before resolving. `A`/`R` mirror the lane view's
+   *  all-for-turn. The re-render falls the focus back to the new queue head. */
+  private answerConsolePermission(lane: HarnessLane, key: 'a' | 'A' | 'r' | 'R'): void {
     const permission = lane.pendingPermissions[0];
     const action: 'accept' | 'reject' = key === 'a' || key === 'A' ? 'accept' : 'reject';
-    const decision = consolePermissionAction({
-      pending: !!permission,
-      highRisk: !!permission && this.isHighRiskPermission(permission),
-      action,
-    });
+    const decision = consolePermissionAction({ pending: !!permission, action });
     if (decision === 'none') return;
-    if (decision === 'blocked_highrisk') {
-      this.flashChip('high-risk — Enter to review in lane');
-      return;
-    }
     const flags = armConsolePermissionFlags(key, decision);
     if (flags.acceptAll) lane.acceptAllForTurn = true;
     if (flags.rejectAll) lane.rejectAllForTurn = true;

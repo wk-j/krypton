@@ -21,6 +21,23 @@
 
 ## Recent Landings
 
+- **Orchestrator console — global permission queue (spec 184)** — pending worker
+  permissions now render as **global fleet state** in the console and are answered
+  **without switching lane**. A queue band sits above the body whenever any live
+  lane is awaiting permission — one row per awaiting lane (its head request), grid
+  order, the **focused** row ringed as the `a`/`r` target. `a`/`A` accept (+all),
+  `r`/`R` reject (+all) answer the **focused queue item** (`answerConsolePermission`,
+  reusing `resolvePermission`) and **do not** `activateLane`, so confirming never
+  moves the operator's vantage; `Tab`/`Shift+Tab` step the focus. This supersedes
+  spec 181's *selected-card* answer surface (the `⚠ perm` card tag stays); the
+  high-risk follow-up is preserved per row (full untruncated command +
+  `⚠ high-risk`). While any permission is pending, `r` is reject (shadowing restart),
+  mirroring the lane view's precedence but fleet-wide; `j/k` still select cards.
+  The summary gains `· N perm`. New state is just a focus cursor
+  (`orchestratorPermFocusId`); no Rust command / MCP tool / lane state. Frontend-only
+  (`acp-harness-view.ts` + `orchestrator-console.css`); `tsc` + 275 acp vitest green.
+  See `docs/184-orchestrator-console-global-permission-queue.md`.
+
 - **Orchestrator console — prompt the seat (spec 182)** — A second send verb in
   the console: `i` opens a one-line input that sends a **normal user turn to the
   orchestrator seat** (the lane you're seated on), distinct from `d` dispatch (a
@@ -84,11 +101,15 @@
   compact tool label + hint and `a`/`A` accept (+accept-all), `r`/`R` reject
   (+reject-all) answer the head request — permission keys take **precedence** on the
   selected card exactly as in the lane view, so `r` is reject (shadowing restart)
-  while pending. **Safety:** a **high-risk** command (spec 140/143 classifier) cannot
-  be *accepted* from the compact card — reject is inline, accept requires `Enter`
-  into the lane (full detail/diff); `Esc` stays close-only (never rejects). Decision
-  helper `consolePermissionAction()` is unit-tested; flag-ordering is exact (a
-  blocked high-risk accept arms no accept-all). Multi-reviewer review (Cursor-1 +
+  while pending. **High-risk (revised):** a **high-risk** command (spec 140/143
+  classifier) is now **accepted inline from the console too** — no lane jump required.
+  The first cut blocked it; per the operator's call the whole confirm lives in the
+  console, and the safety is preserved differently: the selected-card strip surfaces
+  the **full, untruncated command** (`extractCommandLineRaw`, the same source the
+  classifier reads, so a destructive tail past the 48-char label is never hidden)
+  under a `⚠ high-risk` marker, so the dangerous accept is informed in place rather
+  than deferred to the lane. `Esc` stays close-only (never rejects). Decision
+  helper `consolePermissionAction({ pending, action })` is unit-tested. Multi-reviewer review (Cursor-1 +
   Codex-1, 0 blockers) → follow-up fixes folded in: the console is refreshed
   directly at every permission-queue mutation (`refreshOrchestratorConsole()` — the
   `LaneBus` only fires on status transitions, so a queued answer / stacked request /

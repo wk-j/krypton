@@ -1439,29 +1439,18 @@ describe('orchestrator dispatch', () => {
 
 describe('orchestrator console permission action (spec 181)', () => {
   it('returns none when no permission is pending', () => {
-    expect(consolePermissionAction({ pending: false, highRisk: false, action: 'accept' })).toBe('none');
-    expect(consolePermissionAction({ pending: false, highRisk: true, action: 'reject' })).toBe('none');
+    expect(consolePermissionAction({ pending: false, action: 'accept' })).toBe('none');
+    expect(consolePermissionAction({ pending: false, action: 'reject' })).toBe('none');
   });
 
-  it('allows reject inline regardless of risk', () => {
-    expect(consolePermissionAction({ pending: true, highRisk: false, action: 'reject' })).toBe('reject');
-    expect(consolePermissionAction({ pending: true, highRisk: true, action: 'reject' })).toBe('reject');
+  it('resolves a pending request to its action inline — high-risk included', () => {
+    // Follow-up: high-risk is no longer blocked from the console; the strip
+    // surfaces the full command for review, so accept/reject both act in place.
+    expect(consolePermissionAction({ pending: true, action: 'accept' })).toBe('accept');
+    expect(consolePermissionAction({ pending: true, action: 'reject' })).toBe('reject');
   });
 
-  it('accepts a non-high-risk request inline', () => {
-    expect(consolePermissionAction({ pending: true, highRisk: false, action: 'accept' })).toBe('accept');
-  });
-
-  it('blocks accepting a high-risk request from the compact card', () => {
-    // Must open the lane to accept — the caller branches on this BEFORE arming
-    // any accept-all flag, so a blocked accept never sets acceptAllForTurn.
-    expect(consolePermissionAction({ pending: true, highRisk: true, action: 'accept' })).toBe('blocked_highrisk');
-  });
-
-  it('arms accept-all only for A on a resolved accept — never for a blocked high-risk accept', () => {
-    // The safety invariant: A on a high-risk command (decision blocked_highrisk)
-    // must arm NOTHING, so it cannot silently enable accept-all-for-turn.
-    expect(armConsolePermissionFlags('A', 'blocked_highrisk')).toEqual({ acceptAll: false, rejectAll: false });
+  it('arms accept-all only for A on a resolved accept; none arms nothing', () => {
     expect(armConsolePermissionFlags('A', 'accept')).toEqual({ acceptAll: true, rejectAll: false });
     expect(armConsolePermissionFlags('R', 'reject')).toEqual({ acceptAll: false, rejectAll: true });
     // lower-case (single answer) and 'none' arm nothing.

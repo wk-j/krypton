@@ -60,7 +60,18 @@ spec revisits it.
 
 **Follow-up (spec 181):** the console may now answer a worker's *pending*
 `needs_permission` request (a human-driven accept/reject in place, reusing
-`resolvePermission`). This stays inside the "human keeps judgement" bound — it is
-the human acting, accepting a high-risk command is blocked from the compact card
-(must open the lane for full context), and the *persistent* per-lane permission
-*mode* remains deferred per the option above.
+`resolvePermission`) — **high-risk commands included** (revised; the first cut
+blocked them and required opening the lane). This stays inside the "human keeps
+judgement" bound: it is the human acting, and for a high-risk command the
+selected-card strip surfaces the **full, untruncated command** (the same source
+the spec-143 classifier reads) so the judgement is informed in the console rather
+than deferred to the lane view. The *persistent* per-lane permission *mode*
+remains deferred per the option above.
+
+**Follow-up (spec 184):** the per-card answer surface became a **global pending-
+permission queue** — a fleet-wide band listing every awaiting lane, answered at the
+**focused queue item without switching the active lane** (the per-card `j/k`
+selection still activates a lane, but `a`/`r` no longer do). This stays inside the
+same bound — it is still the human acting, per-request, with high-risk commands
+shown in full for review; only the *vantage* changed (one global list instead of
+navigating to each paused lane). The persistent *mode* is still deferred.

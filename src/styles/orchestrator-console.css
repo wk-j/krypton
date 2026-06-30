@@ -30,10 +30,16 @@
   flex-direction: column;
   width: clamp(640px, 86vw, 1180px);
   max-height: 88vh;
-  background: rgba(8, 14, 18, 0.98);
-  border: 1px solid rgba(0, 204, 255, 0.32);
+  /* Fully opaque so live-lane text never bleeds through the panel. */
+  background: rgb(7, 12, 16);
+  border: 1px solid rgba(0, 204, 255, 0.55);
   border-radius: 3px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  /* Dark inset ring (0 0 0 1px) separates the cyan edge from a bright lane
+     behind it; deep drop shadow lifts the whole panel off the workspace —
+     this is what carries separation now that there is no scrim. */
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 18px 44px rgba(0, 0, 0, 0.78);
   overflow: hidden;
 }
 
@@ -228,8 +234,22 @@
   letter-spacing: 0.02em;
 }
 
-/* spec 181 — selected card's pending-permission strip. Flat tinted surface, no
-   left rail; high-risk shifts the hint to the danger hue. */
+/* spec 184 — global pending-permission queue. A fleet-wide band above the body,
+   one row per awaiting lane, so the operator answers from a single place without
+   selecting each card. Flat tinted surface, no left rail. */
+.acp-orchestrator__permq {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.22);
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+/* spec 181/184 — a queue row. High-risk shifts the hint to the danger hue (+ a
+   full-bleed danger tint, no rail) and reveals the full command for in-console
+   review; the focused row (the a/r target) gets a ring. */
 .acp-orchestrator__perm {
   display: flex;
   flex-wrap: wrap;
@@ -237,13 +257,41 @@
   gap: 6px;
   padding: 6px 8px;
   border-radius: 3px;
+  border: 1px solid transparent;
   background: rgba(255, 207, 112, 0.1);
   font-size: 0.76em;
   letter-spacing: 0.02em;
 }
 
+.acp-orchestrator__perm--highrisk {
+  background: rgba(255, 139, 139, 0.12);
+}
+
+.acp-orchestrator__perm--focus {
+  border-color: rgba(255, 207, 112, 0.55);
+}
+
+.acp-orchestrator__perm--focus.acp-orchestrator__perm--highrisk {
+  border-color: rgba(255, 139, 139, 0.6);
+}
+
+.acp-orchestrator__perm-lane {
+  color: var(--krypton-window-accent, #0cf);
+  font-weight: 600;
+}
+
 .acp-orchestrator__perm-label {
   color: rgba(216, 232, 216, 0.92);
+}
+
+/* High-risk: the FULL untruncated command, monospace, wraps onto its own line so
+   a destructive tail is always visible before the human accepts. */
+.acp-orchestrator__perm-command {
+  flex-basis: 100%;
+  font-family: var(--agent-font, var(--krypton-font-family, monospace));
+  color: #ffd5d5;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 
 .acp-orchestrator__perm-more {
