@@ -39,7 +39,7 @@ Introduce the **Orchestrator** — a privileged, **behavior-neutral** lane role 
 | File | Change |
 |------|--------|
 | `src/acp/acp-harness-view.ts` | New `orchestratorLaneId` (the designated seat — a dedicated, prompt-free field, **not** `pollyBuiltinRole`, which injects a prompt) + `orchestratorConsoleOpen` state + lazy `this.orchestratorConsoleEl` overlay; `renderOrchestratorConsole()` (region shell: lane-grid + orchestration-feed + dispatch + reserved slot) reading `coordinator.listLanes()` + stores + `this.lanes[]`; selection model + keyboard (`j/k/Enter/d/c/x/r/o/Esc`); dispatch → existing `InterLaneCoordinator` path; override → `cancelLane`/`closeLane`/`restartLane`; live re-render on `LaneBus` while open. |
-| `src/acp/acp-harness-view.ts` (commands) | `#orchestrator` (alias `#console`) composer command = promote active lane (if no seat) + open console; `o` in console = transfer designation to selected lane. Enforce one-per-harness. **No leader key** — `Leader Shift+O` collides (`o`/`O` are both reserved *global* leader keys, `leader-keys.ts`); the command is the entry, matching the `#polly`/`#review` precedent (Q1). |
+| `src/acp/acp-harness-view.ts` (commands) | `#orchestrator` (alias `#console`) composer command = promote active lane (if no seat) + open console; `o` in console = transfer designation to selected lane. Enforce one-per-harness. Primary entry is the command; **leader key `` Leader ` ``** also opens it — `Leader Shift+O` was unavailable (`o`/`O` are reserved *global* leader keys, `leader-keys.ts`), so the backtick (free, adjacent to the `; ' , . /` cluster) substitutes per the spec-124/127/128 precedent (Q1). |
 | `src/styles/orchestrator-console.css` *(new)* | `.acp-harness__orchestrator` overlay + `.acp-orchestrator__` region/grid/card/feed/dispatch + `--reserved` slot + the `.acp-harness__lane-orchestrator` lane-head badge. Flat chrome, no left-border rails, no nested boxes; `minmax(0, …)` grid tracks (WebKit collapse guard). Imported in `src/styles/index.css`. |
 | `src/acp/hash-commands.ts` | `#orchestrator` added to the `#` palette catalog (discoverable autocomplete). |
 | `src/acp/acp-harness-view.test.ts` | Unit tests for the exported dispatch helpers (`nextDispatchPurpose`, `orchestratorDispatchBody`, `dispatchDisabledReason`): purpose cycle/wrap; purpose-tagged body that is not a Goal/directive; dispatch eligibility (self / no-seat / no-target / lone-lane / allowed). The view needs a DOM, so the logic is extracted and tested — same convention as the rest of the file. |
@@ -105,13 +105,14 @@ so the testable logic is extracted — same convention as the rest of that test 
 | `x` | kill the selected lane | `closeLane(lane)` |
 | `r` | restart the selected lane | `restartLane(lane)` |
 
-No pause/resume (grill Q8). No setting another lane's permission mode in v1 (deferred — safety).
+No pause/resume (grill Q8). No setting another lane's permission *mode* in v1 (deferred — safety). **Follow-up (spec 181):** answering a worker's *pending* `needs_permission` request — accept/reject in place via `a`/`r` — is added in `docs/181-orchestrator-console-permission-action.md` (the persistent *mode* stays deferred); while the selected card has a pending permission, `r` is reject and restart is shadowed.
 
 ### Keybindings
 
 | Key | Context | Action |
 |-----|---------|--------|
 | `#orchestrator` / `#console` | Harness composer | promote active lane (if no seat) + open console |
+| `Leader` `` ` `` | Harness | promote active lane (if no seat) + open console (same as `#orchestrator`) |
 | `j` / `k` | Console | move selection across lane cards |
 | `Enter` | Console, card selected | jump to that lane + close console |
 | `d` | Console, card selected | dispatch to selected (focus input; Enter sends) |
@@ -137,7 +138,7 @@ While open, subscribe `LaneBus` to `renderOrchestratorConsoleEl()` (any lane sig
 
 ## Open Questions
 
-1. **Keybinding `Leader Shift+O`** — *Resolved:* it collides (`o`/`O` are both reserved global leader keys in `leader-keys.ts`). Shipped with **no leader key** — `#orchestrator`/`#console` is the entry, matching `#polly`/`#review` (which also have no leader key).
+1. **Keybinding `Leader Shift+O`** — *Resolved:* it collides (`o`/`O` are both reserved global leader keys in `leader-keys.ts`). Originally shipped with **no leader key** (`#orchestrator`/`#console` as the only entry). **Follow-up:** a leader key was added on request — `` Leader ` `` (backtick), the one free non-reserved punctuation key adjacent to the harness overlay cluster (`; ' , . /`), per the spec-124/127/128 free-symbol substitution precedent. The composer command remains the primary, discoverable entry.
 2. **Cross-harness foreign peers in the console** — same-harness lanes only in v1 (dispatch + override); foreign peers (spec 141) listed read-only or omitted. **Proposed: omit in v1.** Confirm at implementation.
 3. **Reserved-region placement** — right column (per mockup) vs bottom strip. Cosmetic; settle during CSS.
 

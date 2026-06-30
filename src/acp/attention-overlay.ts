@@ -127,7 +127,7 @@ function renderJudgementCard(item: JudgementItem, vm: TriageOverlayViewModel): H
     const hint = document.createElement('div');
     hint.className = 'acp-triage__action-hint';
     hint.innerHTML =
-      `<kbd>a</kbd> acknowledge · <kbd>r</kbd> redirect · <kbd>o</kbd> dig (open lane) · <kbd>j</kbd>/<kbd>k</kbd> prev/next · <kbd>Esc</kbd> close`;
+      `<kbd>a</kbd> acknowledge (tells lane) · <kbd>r</kbd> redirect · <kbd>o</kbd> dig (open lane) · <kbd>j</kbd>/<kbd>k</kbd> prev/next · <kbd>Esc</kbd> close`;
     actions.appendChild(hint);
   }
   card.appendChild(actions);

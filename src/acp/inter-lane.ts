@@ -391,6 +391,30 @@ export class InterLaneCoordinator {
   }
 
   /**
+   * spec 183: the human acknowledged a decision the lane flagged — approving the
+   * `chosen` path. Unlike redirect (a typed steer), this is a fixed approve-and-
+   * proceed confirmation, and it is deliberately no-op-friendly: a lane whose
+   * flagged work is already complete is told it need not reply or start new work,
+   * so a confirmation never forces a vacuous turn. Same delivery as deliverRedirect.
+   */
+  deliverAcknowledge(
+    laneId: string,
+  ): { delivered: boolean; reason?: 'unknown_lane' | 'lane_stopped' } {
+    const lane = this.host.getLane(laneId);
+    if (!lane) return { delivered: false, reason: 'unknown_lane' };
+    if (lane.status === 'stopped' || lane.status === 'error') {
+      return { delivered: false, reason: 'lane_stopped' };
+    }
+    const message =
+      '[attention] The human reviewed the decision you flagged and acknowledged it — ' +
+      'your chosen approach is approved; no course change is needed.\n\n' +
+      'This is a confirmation only: if the flagged work is already complete, no reply or new ' +
+      'work is required. Continue only if there is remaining work on this task.';
+    this.injectHarnessEnvelope(laneId, message);
+    return { delivered: true };
+  }
+
+  /**
    * Called by the harness when a lane finishes a turn (stop event).
    * If the lane has pending sends, transition to awaiting_peer.
    * Returns the suggested next status, or null to leave it untouched.

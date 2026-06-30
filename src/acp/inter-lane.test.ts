@@ -103,3 +103,58 @@ describe('InterLaneCoordinator transcript dedup (spec 120 phase 0)', () => {
     expect(inbound.length).toBe(1);
   });
 });
+
+describe('InterLaneCoordinator.deliverAcknowledge (spec 183)', () => {
+  function makeHost(initial: Record<string, HarnessLaneStatus>): LaneHost & {
+    prompts: Array<{ laneId: string; text: string }>;
+  } {
+    const statuses = new Map<string, HarnessLaneStatus>(Object.entries(initial));
+    const names = new Map<string, string>([['claude-1', 'Claude-1']]);
+    const prompts: Array<{ laneId: string; text: string }> = [];
+    return {
+      prompts,
+      listLanes: () =>
+        [...statuses.entries()].map(([laneId, status]) => ({
+          laneId, status, displayName: names.get(laneId) ?? laneId,
+          backendId: laneId.split('-')[0], modelName: null, inboxDepth: 0, activeDirective: null,
+        })),
+      getLane: (laneId) => {
+        const status = statuses.get(laneId);
+        return status ? { status, displayName: names.get(laneId) ?? laneId } : null;
+      },
+      setLaneStatus: (laneId, next) => { statuses.set(laneId, next); },
+      enqueueSystemPrompt: (laneId, text) => { prompts.push({ laneId, text }); },
+      appendInterLaneRow: () => {},
+      appendSystemNotice: () => {},
+    };
+  }
+
+  it('delivers an approve-and-proceed, no-op-friendly envelope to a live lane', () => {
+    const host = makeHost({ 'claude-1': 'idle' });
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+
+    const result = coordinator.deliverAcknowledge('claude-1');
+
+    expect(result).toEqual({ delivered: true });
+    expect(host.prompts).toHaveLength(1);
+    expect(host.prompts[0]?.laneId).toBe('claude-1');
+    expect(host.prompts[0]?.text).toContain('approved');
+    // no-op-friendly: a completed lane is told it need not reply / start new work.
+    expect(host.prompts[0]?.text).toContain('no reply or new');
+  });
+
+  it('reports lane_stopped for a stopped lane and notifies nothing', () => {
+    const host = makeHost({ 'claude-1': 'stopped' });
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+
+    expect(coordinator.deliverAcknowledge('claude-1')).toEqual({ delivered: false, reason: 'lane_stopped' });
+    expect(host.prompts).toHaveLength(0);
+  });
+
+  it('reports unknown_lane for a missing lane', () => {
+    const host = makeHost({ 'claude-1': 'idle' });
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+
+    expect(coordinator.deliverAcknowledge('ghost-9')).toEqual({ delivered: false, reason: 'unknown_lane' });
+  });
+});

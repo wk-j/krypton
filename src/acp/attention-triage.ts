@@ -109,7 +109,9 @@ export class AttentionTriageStore {
     this.emitChanged();
   }
 
-  /** Human acknowledges: pure bookkeeping, no lane effect. Open items only. */
+  /** Human acknowledges: pure bookkeeping (dequeue) here. Open items only. The
+   *  lane-notify effect (spec 183 — `deliverAcknowledge`) lives in the harness
+   *  handler alongside redirect, so this store stays transport-free. */
   accept(itemId: string): boolean {
     return this.transition(itemId, 'accepted');
   }

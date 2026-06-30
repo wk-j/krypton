@@ -57,3 +57,10 @@ Because the role is behavior-neutral and the human keeps the kill switch, the
 bottleneck for every dispatch" is relaxed (and only while `#polly` autonomy runs).
 AI-driven command of other lanes remains explicitly out of scope until a future
 spec revisits it.
+
+**Follow-up (spec 181):** the console may now answer a worker's *pending*
+`needs_permission` request (a human-driven accept/reject in place, reusing
+`resolvePermission`). This stays inside the "human keeps judgement" bound — it is
+the human acting, accepting a high-risk command is blocked from the compact card
+(must open the lane for full context), and the *persistent* per-lane permission
+*mode* remains deferred per the option above.

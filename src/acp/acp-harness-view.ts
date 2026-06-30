@@ -1266,6 +1266,38 @@ export function dispatchDisabledReason(opts: {
   return null;
 }
 
+/** spec 181: what answering the selected console card does. Reject is always
+ *  allowed inline; accepting a high-risk command (rm / force-push / network /
+ *  script / unparseable) is blocked from the compact card — the operator must
+ *  open the lane to see the full tool detail/diff before accepting. No pending
+ *  permission → `none`. The caller MUST branch on this BEFORE mutating any
+ *  accept/reject-all flag, so a `blocked_highrisk` accept never arms accept-all. */
+export function consolePermissionAction(opts: {
+  pending: boolean;
+  highRisk: boolean;
+  action: 'accept' | 'reject';
+}): 'accept' | 'reject' | 'blocked_highrisk' | 'none' {
+  if (!opts.pending) return 'none';
+  if (opts.action === 'reject') return 'reject';
+  return opts.highRisk ? 'blocked_highrisk' : 'accept';
+}
+
+/** spec 181: which all-for-turn flag an `A`/`R` press arms, given the resolved
+ *  `consolePermissionAction` decision. The safety invariant lives here: a
+ *  `blocked_highrisk` (or `none`) decision arms NOTHING, so an `A` on a blocked
+ *  high-risk command can never silently enable accept-all-for-turn. `a`/`r`
+ *  (lower-case, single answer) arm nothing either — only the shift-variants do. */
+export function armConsolePermissionFlags(
+  key: 'a' | 'A' | 'r' | 'R',
+  decision: 'accept' | 'reject' | 'blocked_highrisk' | 'none',
+): { acceptAll: boolean; rejectAll: boolean } {
+  const all = key === 'A' || key === 'R';
+  return {
+    acceptAll: all && decision === 'accept',
+    rejectAll: all && decision === 'reject',
+  };
+}
+
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
@@ -3332,6 +3364,23 @@ export class AcpHarnessView implements ContentView {
         isEnabled: () => this.reviewPriorityStore.lanesWithReports().length > 0,
         disabledReason: () => 'no reading priority reported',
       },
+      {
+        // spec 180 shipped with no leader key (`o`/`O`, the "orchestrator"
+        // mnemonic, are reserved *global* leader keys). Per the spec-124/127/128
+        // precedent of substituting a free symbol, the backtick `` ` `` — the one
+        // free non-reserved punctuation key adjacent to the harness cluster
+        // (`; ' , . /`) — opens the console (promoting the active lane to the seat
+        // if there is none yet, exactly like `#orchestrator`/`#console`).
+        key: '`',
+        label: 'Orchestrator',
+        group: 'Harness',
+        run: () => {
+          const lane = this.activeLane();
+          if (lane) this.openOrchestratorConsole(lane);
+        },
+        isEnabled: () => this.lanes.length > 0,
+        disabledReason: () => 'no active lane',
+      },
     ];
   }
 
@@ -4075,8 +4124,14 @@ export class AcpHarnessView implements ContentView {
     const item = this.selectedTriageItem();
     if (!item) return;
     if (e.key === 'a') {
+      // spec 183: acknowledge is no longer silent — tell the flagging lane its
+      // chosen path is approved (deliver before the store transition; the item
+      // clears from the queue regardless of delivery).
+      const ack = this.coordinator.deliverAcknowledge(item.laneId);
       this.triageStore.accept(item.id);
-      this.flashChip('acknowledged');
+      const lane = this.lanes.find((l) => l.id === item.laneId);
+      const who = lane?.displayName ?? item.laneId;
+      this.flashChip(ack.delivered ? `acknowledged → ${who}` : 'acknowledged (lane stopped — not notified)');
       this.renderTriageOverlayEl();
       return;
     }
@@ -4560,6 +4615,18 @@ export class AcpHarnessView implements ContentView {
     return cards.find((l) => l.id === this.orchestratorSelectedLaneId) ?? cards[0] ?? null;
   }
 
+  /** spec 181 follow-up: the console mirrors the live permission queue, but the
+   *  `LaneBus` subscription only fires on status *transitions*. A queue mutation
+   *  that keeps the lane `needs_permission` — answering the head when >1 are
+   *  queued, a new request arriving while the lane is already paused, or a
+   *  transport rollback back into the same status — emits nothing, so the strip /
+   *  `(+N more)` / footer legend would go stale while `a`/`r` act on the real new
+   *  head. Re-render the console directly on those mutations. No-op (guarded) when
+   *  the console is closed, so the generic permission path stays unaffected. */
+  private refreshOrchestratorConsole(): void {
+    if (this.orchestratorConsoleOpen) this.renderOrchestratorConsoleEl();
+  }
+
   private renderOrchestratorConsoleEl(): void {
     this.orchestratorConsoleEl.hidden = !this.orchestratorConsoleOpen;
     if (!this.orchestratorConsoleOpen) return;
@@ -4594,8 +4661,12 @@ export class AcpHarnessView implements ContentView {
         if (inbox > 0) tags.push(`<span class="acp-orchestrator__tag">inbox ${inbox}</span>`);
         if (triageOpen > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--attn">⚑ ${triageOpen}</span>`);
         if (high > 0) tags.push(`<span class="acp-orchestrator__tag">diff ${high}</span>`);
+        if (l.pendingPermissions.length > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--perm">⚠ perm</span>`);
         const goal = l.goal ? `<div class="acp-orchestrator__goal">${esc(truncate(l.goal.text, 72))}</div>` : '';
         const model = l.modelName ? ` · ${esc(l.modelName)}` : '';
+        // spec 181: the selected card surfaces the head pending permission + the
+        // contextual answer hint (a/r, or high-risk → Enter-to-review · r).
+        const permStrip = isSel ? this.renderOrchestratorPermission(l) : '';
         return (
           `<div class="${cls}" data-orch-lane="${esc(l.id)}">` +
           `<div class="acp-orchestrator__card-head">` +
@@ -4605,6 +4676,7 @@ export class AcpHarnessView implements ContentView {
           `<div class="acp-orchestrator__card-meta">${esc(backendLabel(l.backendId))}${model}</div>` +
           (tags.length ? `<div class="acp-orchestrator__tags">${tags.join('')}</div>` : '') +
           goal +
+          permStrip +
           `</div>`
         );
       })
@@ -4635,8 +4707,17 @@ export class AcpHarnessView implements ContentView {
       `</div>` +
       dispatchHtml +
       `<footer class="acp-orchestrator__keys">` +
-      `j/k select · Enter jump · d dispatch · c interrupt · x kill · r restart · o set seat · Esc close` +
+      esc(this.orchestratorKeyLegend(selected)) +
       `</footer>`;
+  }
+
+  /** Footer legend. While the selected card has a pending permission, a/r answer
+   *  it (r shadows restart, per spec 181); otherwise the standard action keys. */
+  private orchestratorKeyLegend(selected: HarnessLane | null): string {
+    if (selected && selected.pendingPermissions.length > 0) {
+      return 'j/k select · a accept · r reject (A/R all) · Enter review in lane · c interrupt · x kill · Esc close';
+    }
+    return 'j/k select · Enter jump · d dispatch · c interrupt · x kill · r restart · o set seat · Esc close';
   }
 
   private renderOrchestratorFeed(seat: HarnessLane | null): string {
@@ -4660,6 +4741,27 @@ export class AcpHarnessView implements ContentView {
     return rows
       ? `<div class="acp-orchestrator__feed">${rows}</div>`
       : `<div class="acp-orchestrator__empty">no coordination activity yet</div>`;
+  }
+
+  /** spec 181: the selected card's head pending-permission strip. Shows the
+   *  compact tool label + the answer hint — `a accept · r reject`, or for a
+   *  high-risk command `⚠ high-risk · Enter to review · r reject` (accept is
+   *  blocked from the compact card; reject stays inline). `(+N more)` flags a
+   *  queue so the operator knows answering reveals the next request. */
+  private renderOrchestratorPermission(lane: HarnessLane): string {
+    const permission = lane.pendingPermissions[0];
+    if (!permission) return '';
+    const more = lane.pendingPermissions.length - 1;
+    const moreTag = more > 0 ? `<span class="acp-orchestrator__perm-more">(+${more} more)</span>` : '';
+    const hint = this.isHighRiskPermission(permission)
+      ? `<span class="acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk">⚠ high-risk · Enter to review · r reject</span>`
+      : `<span class="acp-orchestrator__perm-hint">a accept · r reject</span>`;
+    return (
+      `<div class="acp-orchestrator__perm">` +
+      `<span class="acp-orchestrator__perm-label">${esc(compactPermissionLabel(permission, 'compact'))}</span>${moreTag}` +
+      hint +
+      `</div>`
+    );
   }
 
   private renderOrchestratorDispatch(selected: HarnessLane | null, seatId: string | null): string {
@@ -4719,6 +4821,17 @@ export class AcpHarnessView implements ContentView {
     }
     const selected = this.orchestratorSelectedLane();
     if (!selected) return;
+    // spec 181: a pending permission on the SELECTED card takes precedence for
+    // a/A/r/R — mirroring the lane view, where handlePermissionKey runs before
+    // any other lane key. While pending, `r` is reject (shadowing restart);
+    // Enter still jumps to the lane (and is required to accept a high-risk one).
+    if (
+      selected.pendingPermissions.length > 0 &&
+      (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R')
+    ) {
+      this.answerSelectedConsolePermission(selected, e.key);
+      return;
+    }
     if (e.key === 'Enter') {
       this.closeOrchestratorConsole();
       this.activateLane(selected.id);
@@ -4837,6 +4950,31 @@ export class AcpHarnessView implements ContentView {
     this.flashChip(`dispatched ${purpose} → ${target.displayName}`);
     this.scheduleLaneRender(seat);
     this.renderOrchestratorConsoleEl();
+  }
+
+  /** spec 181: answer the selected lane's head pending permission from the
+   *  console, reusing `resolvePermission`. Ordering is exact: compute the
+   *  decision FIRST; a blocked high-risk accept mutates no flag (the operator
+   *  must open the lane); set accept/reject-all only after the action resolves,
+   *  immediately before resolving. `A`/`R` mirror the lane view's all-for-turn. */
+  private answerSelectedConsolePermission(lane: HarnessLane, key: 'a' | 'A' | 'r' | 'R'): void {
+    const permission = lane.pendingPermissions[0];
+    const action: 'accept' | 'reject' = key === 'a' || key === 'A' ? 'accept' : 'reject';
+    const decision = consolePermissionAction({
+      pending: !!permission,
+      highRisk: !!permission && this.isHighRiskPermission(permission),
+      action,
+    });
+    if (decision === 'none') return;
+    if (decision === 'blocked_highrisk') {
+      this.flashChip('high-risk — Enter to review in lane');
+      return;
+    }
+    const flags = armConsolePermissionFlags(key, decision);
+    if (flags.acceptAll) lane.acceptAllForTurn = true;
+    if (flags.rejectAll) lane.rejectAllForTurn = true;
+    this.flashChip(`${decision} → ${lane.displayName}`);
+    void this.resolvePermission(lane, decision, flags.acceptAll || flags.rejectAll, 'orchestrator console');
   }
 
   private buildDOM(): void {
@@ -6221,6 +6359,9 @@ export class AcpHarnessView implements ContentView {
     }
     lane.pendingPermissions.push(permission);
     this.setLaneStatus(lane, 'needs_permission');
+    // A second request while already paused does not transition status, so the
+    // LaneBus emit the console relies on never fires — refresh it directly.
+    this.refreshOrchestratorConsole();
     if (lane.permissionMode === 'bypass' || (lane.permissionMode === 'acceptEdits' && toolCall.kind === 'edit')) {
       void this.resolvePermission(lane, 'accept', true, `mode:${lane.permissionMode}`);
       return;
@@ -6265,6 +6406,9 @@ export class AcpHarnessView implements ContentView {
     if (lane.pendingPermissions.length === 0 && lane.status === 'needs_permission') this.setLaneStatus(lane, 'busy');
     this.updateComposerTick();
     this.render();
+    // The head shifted; when the queue is non-empty the status stays
+    // `needs_permission` (no LaneBus emit), so refresh the console on the new head.
+    this.refreshOrchestratorConsole();
     try {
       await lane.client.respondPermission(permission.requestId, option?.optionId ?? null);
     } catch (e) {
@@ -6274,6 +6418,7 @@ export class AcpHarnessView implements ContentView {
       this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
       this.updateComposerTick();
       this.render();
+      this.refreshOrchestratorConsole();
       return;
     }
     this.render();

@@ -215,10 +215,46 @@
   color: #ffcf70;
 }
 
+.acp-orchestrator__tag--perm {
+  background: rgba(255, 207, 112, 0.16);
+  color: #ffcf70;
+}
+
 .acp-orchestrator__goal {
   color: rgba(216, 232, 216, 0.6);
   font-size: 0.76em;
   letter-spacing: 0.02em;
+}
+
+/* spec 181 — selected card's pending-permission strip. Flat tinted surface, no
+   left rail; high-risk shifts the hint to the danger hue. */
+.acp-orchestrator__perm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  background: rgba(255, 207, 112, 0.1);
+  font-size: 0.76em;
+  letter-spacing: 0.02em;
+}
+
+.acp-orchestrator__perm-label {
+  color: rgba(216, 232, 216, 0.92);
+}
+
+.acp-orchestrator__perm-more {
+  color: rgba(216, 232, 216, 0.5);
+}
+
+.acp-orchestrator__perm-hint {
+  margin-left: auto;
+  color: #ffcf70;
+}
+
+.acp-orchestrator__perm-hint--highrisk {
+  color: #ff8b8b;
 }
 
 /* ── Feed ─────────────────────────────────────────────────── */

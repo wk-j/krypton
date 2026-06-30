@@ -173,7 +173,7 @@ Pure self-report means a lane that mis-judges its own work and *never flags* pro
 
 ### Actions (overlay)
 
-- **Acknowledge** — pure bookkeeping: marks `accepted`, removes from demand queue. **No mechanical effect on the lane** (the lane already proceeded with `chosen`). Acknowledge is the human discharging the item, not a signal to the lane.
+- **Acknowledge** — marks `accepted`, removes from demand queue, **and notifies the lane** that its `chosen` path is approved via `InterLaneCoordinator.deliverAcknowledge(laneId)` (spec 183 — same `injectHarnessEnvelope` delivery as redirect, drains on the lane's next idle). The store transition stays pure bookkeeping; the lane-notify lives in the harness handler. The envelope is **no-op-friendly** — a lane whose flagged work is already complete is told no reply or new work is required, so a confirmation never forces a vacuous turn. *(Was silent in v1 — reversed per spec 183: a human sign-off should reach the actor, like a PR "Approve", not just clear the queue. The cost is waking an idle lane for one drain, mitigated by the no-op wording.)*
 - **Redirect** — opens a one-line input; the text is delivered via `InterLaneCoordinator.enqueueSystemPrompt(laneId, text)` on the lane's **next idle** (`canDrainInbound`). Marks `redirected`, removes from queue. Late-arrival rework is accepted (ADR-0001).
 - **Dig** — opens the lane's transcript window for full review. Item stays `open`.
 - Doing nothing = defer (item stays ranked in the queue). There is no dismiss action.

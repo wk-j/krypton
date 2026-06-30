@@ -21,6 +21,19 @@
 
 ## Recent Landings
 
+- **Attention acknowledge sends feedback (spec 183)** — Acknowledging a flagged
+  judgement item (`a` in the triage overlay) is **no longer silent**: it now
+  notifies the flagging lane that its `chosen` path is approved via
+  `InterLaneCoordinator.deliverAcknowledge(laneId)` (same `injectHarnessEnvelope`
+  delivery as redirect, drains on the lane's next idle), then clears the item as
+  before. The envelope is **no-op-friendly** — a lane whose flagged work is done is
+  told no reply/new work is needed, so a confirmation never forces a vacuous turn.
+  Reverses the v1 "acknowledge = pure bookkeeping, no lane effect" decision: a human
+  sign-off should reach the actor (like a PR "Approve"), not just clear the queue.
+  Frontend-only (`inter-lane.ts` + `acp-harness-view.ts` + `attention-overlay.ts`
+  hint); `deliverAcknowledge` unit-tested; `tsc` + vitest green. See
+  `docs/183-attention-acknowledge-feedback.md`.
+
 - **Orchestrator console (spec 180)** — A privileged, **behavior-neutral** lane
   role (the **Orchestrator**, ≤1 per harness) and a full-surface in-app
   **Orchestrator console** opened from it with `#orchestrator` (alias `#console`).
@@ -37,9 +50,11 @@
   `[implement|review|explore|search]`) and **overrides** lanes by reusing existing
   primitives (`cancelLane`/`closeLane`/`restartLane` — no pause/resume, which does
   not fit ACP). Keys: `j/k` select · `Enter` jump · `d` dispatch (`Tab` cycles
-  purpose) · `c/x/r` interrupt/kill/restart · `o` transfer seat · `Esc` close. No
-  leader key (`Leader Shift+O` collides — `o`/`O` are reserved global keys; the
-  command is the entry, per the `#polly`/`#review` precedent). Division: **AI owns
+  purpose) · `c/x/r` interrupt/kill/restart · `o` transfer seat · `Esc` close.
+  Entry: `#orchestrator`/`#console` (primary, discoverable) **and** leader key
+  `` Leader ` `` (backtick — `Leader Shift+O` collides, `o`/`O` are reserved global
+  keys, so the free punctuation key adjacent to the harness cluster substitutes per
+  the spec-124/127/128 precedent). Division: **AI owns
   coordination, human owns judgement + the kill switch.** Governed by
   `docs/adr/0011-orchestrator-privileged-lane-and-acting-console.md` (first
   asymmetric lane role + first mutating cross-lane surface, deliberately bounded);
@@ -48,6 +63,27 @@
   `hash-commands.ts`); dispatch helpers unit-tested (`tsc` + `vite build` + 140 acp
   vitest green). Deferred: orchestrator-only MCP tools, AI-driven command of other
   lanes. See `docs/180-orchestrator-console.md`.
+
+- **Orchestrator console — permission action (spec 181)** — a worker lane paused
+  on `needs_permission` can now be **answered from the console** without jumping
+  to it, reusing the existing `resolvePermission(lane, action, auto)` primitive
+  (no new permission path / Rust command / MCP tool / lane state). Every
+  `needs_permission` lane card gets a `⚠ perm` tag; the **selected** card shows the
+  compact tool label + hint and `a`/`A` accept (+accept-all), `r`/`R` reject
+  (+reject-all) answer the head request — permission keys take **precedence** on the
+  selected card exactly as in the lane view, so `r` is reject (shadowing restart)
+  while pending. **Safety:** a **high-risk** command (spec 140/143 classifier) cannot
+  be *accepted* from the compact card — reject is inline, accept requires `Enter`
+  into the lane (full detail/diff); `Esc` stays close-only (never rejects). Decision
+  helper `consolePermissionAction()` is unit-tested; flag-ordering is exact (a
+  blocked high-risk accept arms no accept-all). Multi-reviewer review (Cursor-1 +
+  Codex-1, 0 blockers) → follow-up fixes folded in: the console is refreshed
+  directly at every permission-queue mutation (`refreshOrchestratorConsole()` — the
+  `LaneBus` only fires on status transitions, so a queued answer / stacked request /
+  rollback that stays `needs_permission` would otherwise leave the strip stale), and
+  the flag-arming is an extracted, unit-tested pure helper (`armConsolePermissionFlags`).
+  Frontend-only (`acp-harness-view.ts` + `orchestrator-console.css`); `tsc` + vitest
+  green. See `docs/181-orchestrator-console-permission-action.md`.
 
 - **Artifact gallery newest-first ordering (spec 170)** — `/artifacts` now lists
   each harness's artifacts **latest-creation-first** (newest at the top) instead of

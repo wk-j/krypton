@@ -38,6 +38,8 @@ import {
   nextDispatchPurpose,
   orchestratorDispatchBody,
   dispatchDisabledReason,
+  consolePermissionAction,
+  armConsolePermissionFlags,
   DISPATCH_PURPOSES,
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
@@ -1431,5 +1433,39 @@ describe('orchestrator dispatch', () => {
 
   it('allows a dispatch to a distinct lane when a seat and ≥2 lanes exist', () => {
     expect(dispatchDisabledReason({ seatId: 'a', targetId: 'b', laneCount: 2 })).toBeNull();
+  });
+});
+
+describe('orchestrator console permission action (spec 181)', () => {
+  it('returns none when no permission is pending', () => {
+    expect(consolePermissionAction({ pending: false, highRisk: false, action: 'accept' })).toBe('none');
+    expect(consolePermissionAction({ pending: false, highRisk: true, action: 'reject' })).toBe('none');
+  });
+
+  it('allows reject inline regardless of risk', () => {
+    expect(consolePermissionAction({ pending: true, highRisk: false, action: 'reject' })).toBe('reject');
+    expect(consolePermissionAction({ pending: true, highRisk: true, action: 'reject' })).toBe('reject');
+  });
+
+  it('accepts a non-high-risk request inline', () => {
+    expect(consolePermissionAction({ pending: true, highRisk: false, action: 'accept' })).toBe('accept');
+  });
+
+  it('blocks accepting a high-risk request from the compact card', () => {
+    // Must open the lane to accept — the caller branches on this BEFORE arming
+    // any accept-all flag, so a blocked accept never sets acceptAllForTurn.
+    expect(consolePermissionAction({ pending: true, highRisk: true, action: 'accept' })).toBe('blocked_highrisk');
+  });
+
+  it('arms accept-all only for A on a resolved accept — never for a blocked high-risk accept', () => {
+    // The safety invariant: A on a high-risk command (decision blocked_highrisk)
+    // must arm NOTHING, so it cannot silently enable accept-all-for-turn.
+    expect(armConsolePermissionFlags('A', 'blocked_highrisk')).toEqual({ acceptAll: false, rejectAll: false });
+    expect(armConsolePermissionFlags('A', 'accept')).toEqual({ acceptAll: true, rejectAll: false });
+    expect(armConsolePermissionFlags('R', 'reject')).toEqual({ acceptAll: false, rejectAll: true });
+    // lower-case (single answer) and 'none' arm nothing.
+    expect(armConsolePermissionFlags('a', 'accept')).toEqual({ acceptAll: false, rejectAll: false });
+    expect(armConsolePermissionFlags('r', 'reject')).toEqual({ acceptAll: false, rejectAll: false });
+    expect(armConsolePermissionFlags('A', 'none')).toEqual({ acceptAll: false, rejectAll: false });
   });
 });
