@@ -3228,8 +3228,33 @@ export class Compositor {
     const { AcpHarnessView } = await import('./acp/acp-harness-view');
     const projectDir = projectDirOverride ?? await this.getFocusedCwd();
     const view = new AcpHarnessView(projectDir, this.bus);
+
+    // Replace the launching terminal tab: open the harness as a content tab in
+    // the SAME window, then close the terminal tab it launched from — so the
+    // harness takes the terminal's place (leader+Y intent) without spawning a
+    // new window or disturbing sibling tabs / other windows.
+    const launchWin = this.focusedWindowId ? this.windows.get(this.focusedWindowId) : undefined;
+    if (!launchWin) {
+      // No window to host a tab (empty workspace) — fall back to a dedicated
+      // window so leader+Y still opens the harness.
+      const harnessWindowId = await this.createContentWindow('ACP Harness', view);
+      view.onClose(() => this.closeWindow(harnessWindowId));
+      return;
+    }
+
+    const launchTabId = launchWin.tabs[launchWin.activeTabIndex]?.id ?? null;
+
+    // Harness is a tab now — closing it closes its tab, not the window.
     view.onClose(() => this.closeTab());
     await this.createContentTab('ACP Harness', view);
+
+    // Drop the terminal tab we launched from. createContentTab appended the
+    // harness tab and made it active, so it survives; only the terminal tab is
+    // removed and the harness slides into its place.
+    if (launchTabId) {
+      const tabIndex = launchWin.tabs.findIndex((t) => t.id === launchTabId);
+      if (tabIndex !== -1) this.closeTabByIndex(launchWin, tabIndex);
+    }
   }
 
   // ─── Inline AI Overlay ──────────────────────────────────────────────
@@ -3905,11 +3930,14 @@ export class Compositor {
         }
       }
 
-      // Expand to full viewport
+      // Expand to fill the workspace area: full width, but full height MINUS the
+      // fixed bottom footer rail — otherwise the maximized window overlaps the
+      // workspace status bar. Mirrors the reservation grid layouts make (see
+      // relayoutGrid's `vh - FOOTER_HEIGHT`).
       const vw = window.innerWidth;
       const vh = window.innerHeight;
 
-      win.bounds = { x: 0, y: 0, width: vw, height: vh };
+      win.bounds = { x: 0, y: 0, width: vw, height: vh - Compositor.FOOTER_HEIGHT };
       this.applyBounds(win);
       await this.nextFrame();
       this.fitWindow(this.focusedWindowId);

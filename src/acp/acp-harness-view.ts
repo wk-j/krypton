@@ -3467,7 +3467,11 @@ export class AcpHarnessView implements ContentView {
       this.handleReviewPriorityKey(e);
       return true;
     }
-    if (this.orchestratorConsoleOpen) {
+    // The console captures keys only while it is the visible top surface. When a
+    // modal (metrics/memory, which are checked below it) has collapsed it, keys
+    // must fall through to that modal — otherwise Escape would close the hidden
+    // console instead of the modal on top. Modals checked ABOVE already win.
+    if (this.orchestratorConsoleOpen && !this.consoleObscuringModalOpen()) {
       e.preventDefault();
       this.handleOrchestratorKey(e);
       return true;
@@ -4067,6 +4071,7 @@ export class AcpHarnessView implements ContentView {
     this.helpOpen = false;
     this.memoryDrawerOpen = false;
     this.renderTriageOverlayEl();
+    this.syncOrchestratorConsoleVisibility();
   }
 
   private closeTriageOverlay(): void {
@@ -4074,6 +4079,7 @@ export class AcpHarnessView implements ContentView {
     this.triageOverlayOpen = false;
     this.triageRedirect = null;
     this.triageOverlayEl.hidden = true;
+    this.syncOrchestratorConsoleVisibility();
   }
 
   private renderTriageGaugeEl(): void {
@@ -4243,6 +4249,7 @@ export class AcpHarnessView implements ContentView {
     this.helpOpen = false;
     this.memoryDrawerOpen = false;
     this.renderReviewMatrixOverlayEl();
+    this.syncOrchestratorConsoleVisibility();
   }
 
   private closeReviewMatrixOverlay(): void {
@@ -4250,6 +4257,7 @@ export class AcpHarnessView implements ContentView {
     this.reviewMatrixOverlayOpen = false;
     this.reviewMatrixExpandedRowIndex = null;
     this.reviewMatrixOverlayEl.hidden = true;
+    this.syncOrchestratorConsoleVisibility();
   }
 
   private renderReviewGaugeEl(): void {
@@ -4522,12 +4530,14 @@ export class AcpHarnessView implements ContentView {
     this.helpOpen = false;
     this.memoryDrawerOpen = false;
     this.renderReviewPriorityOverlayEl();
+    this.syncOrchestratorConsoleVisibility();
   }
 
   private closeReviewPriorityOverlay(): void {
     if (!this.reviewPriorityOverlayOpen) return;
     this.reviewPriorityOverlayOpen = false;
     this.reviewPriorityOverlayEl.hidden = true;
+    this.syncOrchestratorConsoleVisibility();
   }
 
   /** spec 162: surface the count of `high` review-priority ranges on the global
@@ -4640,6 +4650,40 @@ export class AcpHarnessView implements ContentView {
     this.orchestratorConsoleEl.hidden = true;
   }
 
+  /** Modals that render as their own full-screen surface. While any is open, the
+   *  orchestrator console is collapsed (hidden) so the two never stack, then
+   *  restored when the modal closes. These modals reach the user via the leader
+   *  menu (Cmd+P → key, handled by the InputRouter), which bypasses the console's
+   *  own key capture — so a picker/overlay really can open on top of the console. */
+  private consoleObscuringModalOpen(): boolean {
+    return this.helpOpen
+      || this.pickerOpen
+      || this.directivePickerOpen
+      || this.modelPickerOpen
+      || this.sessionPicker.open
+      || this.triageOverlayOpen
+      || this.reviewMatrixOverlayOpen
+      || this.reviewPriorityOverlayOpen
+      || this.metricsPanelOpen
+      || this.memoryDrawerOpen;
+  }
+
+  /** Collapse the console while a modal covers it; restore it — repainted from
+   *  current state — when the modal closes. The console's OPEN state is untouched
+   *  throughout (only its visibility changes), so the seat, `j/k` selection, and
+   *  `a/r` permission target all survive the round-trip. No-op unless open. */
+  private syncOrchestratorConsoleVisibility(): void {
+    if (!this.orchestratorConsoleOpen) return;
+    if (this.consoleObscuringModalOpen()) {
+      this.orchestratorConsoleEl.hidden = true;
+    } else if (this.orchestratorConsoleEl.hidden) {
+      // Restoring from a collapse — lanes/permissions may have moved while the
+      // modal was up, so repaint before showing (renderOrchestratorConsoleEl
+      // clears `hidden` itself once no modal obscures it).
+      this.renderOrchestratorConsoleEl();
+    }
+  }
+
   /** Console lane cards: every live lane (the orchestrator included, badged). */
   private orchestratorCards(): HarnessLane[] {
     return this.lanes.filter((l) => l.status !== 'stopped');
@@ -4680,7 +4724,9 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderOrchestratorConsoleEl(): void {
-    this.orchestratorConsoleEl.hidden = !this.orchestratorConsoleOpen;
+    // Hidden when closed OR while a modal is collapsing the console over it — so
+    // a background laneBus re-render never un-hides a collapsed console.
+    this.orchestratorConsoleEl.hidden = !this.orchestratorConsoleOpen || this.consoleObscuringModalOpen();
     if (!this.orchestratorConsoleOpen) return;
     const cards = this.orchestratorCards();
     if (!cards.some((l) => l.id === this.orchestratorSelectedLaneId)) {
@@ -8349,6 +8395,9 @@ export class AcpHarnessView implements ContentView {
     this.renderTriageOverlayEl();
     this.renderActiveLaneQueue();
     this.renderComposer();
+    // Collapse/restore the orchestrator console around whichever modal render()
+    // just opened or closed (lane/session/directive/model picker, help, memory).
+    this.syncOrchestratorConsoleVisibility();
     this.scheduleStickyScroll();
   }
 
@@ -9718,6 +9767,7 @@ export class AcpHarnessView implements ContentView {
     if (next === this.metricsPanelOpen) return;
     this.metricsPanelOpen = next;
     this.renderMetricsPanel();
+    this.syncOrchestratorConsoleVisibility();
   }
 
   private renderMetricsPanel(): void {
@@ -12976,16 +13026,12 @@ function renderPollyBypassChip(lane: HarnessLane): string {
 
 function renderSandboxChip(lane: HarnessLane): string {
   // Surface backend-specific safety caveats directly in the lane chrome:
-  // Pi is known to bypass the permission rail, while Cursor still needs
-  // manual verification of ACP write-permission semantics.
+  // Pi is known to bypass the permission rail; Junie still needs manual
+  // verification of ACP write-permission semantics.
   const warn = harnessIcon('warn', 'acp-harness__icon--dot');
   if (lane.backendId === 'pi-acp') {
     const title = 'No permission gate — Pi runs edits and shell commands immediately. Use a sandboxed cwd or container if untrusted.';
     return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">${warn} unsandboxed</span>`;
-  }
-  if (lane.backendId === 'cursor') {
-    const title = 'Cursor ACP write-permission behavior has not been verified yet. Krypton does not pass force/yolo flags, but use a trusted cwd until verified.';
-    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">${warn} permissions unverified</span>`;
   }
   if (lane.backendId === 'junie') {
     const title = 'Junie ACP write-permission behavior has not been verified yet. Krypton does not pass force/yolo/brave flags, but use a trusted cwd until verified.';

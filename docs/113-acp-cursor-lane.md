@@ -1,6 +1,6 @@
 # Cursor Lane (Cursor Agent Native ACP) — Implementation Spec
 
-> Status: Implemented (permission/model verification follow-ups remain)
+> Status: Implemented (model verification follow-up remains)
 > Date: 2026-05-20
 > Milestone: M-ACP — Harness convergence
 
@@ -100,9 +100,9 @@ Cursor is a regular lane:
 
 ### Permissions
 
-No `--force`, `--yolo`, `--trust`, or `--approve-mcps` flags are passed by default. Until Cursor ACP write-permission behavior is manually verified, the lane chrome shows a `⚠ permissions unverified` chip. This is intentionally weaker than Pi's `⚠ unsandboxed` chip because Krypton is not opting Cursor into force/yolo behavior, but it keeps the safety assumption visible.
+No `--force`, `--yolo`, `--trust`, or `--approve-mcps` flags are passed by default. Krypton does not opt Cursor into force/yolo; tool approvals go through the normal `session/request_permission` rail when the adapter emits them.
 
-Follow-up verification should run a scratch-directory probe that asks Cursor ACP to edit a file and verify whether it emits ACP permission requests, denies internally, or applies edits directly. If it emits permission requests or denies before writes, remove the unverified chip. If it applies edits directly, upgrade the v1 UI to an explicit unsandboxed Cursor warning comparable to other autonomy warnings.
+The v1 `⚠ permissions unverified` chip was **removed (2026-07)** at user request — it duplicated the permission rail on lanes that already prompt. **This was not preceded by a recorded scratch-directory write probe** (no pinned `cursor-agent` version + observed permission prompt on file write). Cursor can regress per build — it advertised `mcpCapabilities` then ignored `session/new` (Revision 2026-05-29) — so permission behavior should be re-checked after upgrades. If a future build applies writes without prompting, reintroduce a Pi-style `⚠ unsandboxed` chip.
 
 ### Startup Diagnostics
 
@@ -135,7 +135,7 @@ Match specific Keychain strings such as `SecItemCopyMatching failed` before gene
 
 - Lane picker shows `Cursor`.
 - Lane display names follow existing numbering: `Cursor-1`, `Cursor-2`, etc.
-- Cursor shows a `⚠ permissions unverified` chip until a scratch-directory permission probe confirms Cursor ACP emits permission requests or denies before writes. Cursor is not treated as unsandboxed solely because we do not pass `--force`/`--yolo`.
+- No extra safety chip (removed 2026-07; see **Permissions** — not probe-verified).
 - Session picker (`Cmd+P → 0`) should attempt `session/list` like other lanes. If Cursor does not support it, the existing unsupported-session message is enough.
 
 ### Configuration
@@ -166,7 +166,7 @@ Whether `active` is passed as `--model` depends on implementation verification a
 ## Open Questions
 
 - Does `cursor-agent acp --model <id>` affect ACP sessions? If yes, wire `acp_harness.lane_models.cursor.active` into the spawn args. If no, keep Cursor model config display-only and document that behavior.
-- Does Cursor ACP emit `session/request_permission` before file writes, deny internally, or mutate directly? Verify with a scratch-directory write probe before deciding that the lane needs no warning chip.
+- ~~Does Cursor ACP emit `session/request_permission` before file writes?~~ **Chip removed (2026-07) without a recorded probe** — operational assumption only. Re-run the scratch-directory write probe after `cursor-agent` upgrades; if writes apply directly, upgrade to `⚠ unsandboxed`.
 
 ## Out of Scope
 
