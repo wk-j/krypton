@@ -395,6 +395,29 @@
   color: rgba(216, 232, 216, 0.34);
 }
 
+/* The dispatch/seat-prompt box is a custom-rendered span, not a native input,
+   so it has no OS caret. Render a blinking block caret to show focus + keystroke
+   acceptance. Sits inline after the draft text (or before the placeholder). */
+.acp-orchestrator__caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin: 0 1px -0.18em 0;
+  background: var(--krypton-window-accent, #0cf);
+  animation: acp-orchestrator-caret-blink 1.06s steps(1) infinite;
+}
+
+@keyframes acp-orchestrator-caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
 /* ── Keybinding legend ────────────────────────────────────── */
 
 .acp-orchestrator__keys {

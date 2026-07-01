@@ -2274,7 +2274,9 @@
 }
 
 .acp-harness__composer--permission .acp-harness__composer-meta {
-  flex: 1 1 auto;
+  /* Don't grow: keep the "perm" label and the action buttons grouped together
+     on the left rather than pushing the buttons to the far right edge. */
+  flex: 0 0 auto;
   min-width: 0;
   color: #ffe3a0;
   font-weight: 700;

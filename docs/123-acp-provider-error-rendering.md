@@ -147,8 +147,7 @@ Recommended user-facing copy:
    - set `item.kind = 'provider_error'`,
    - set `item.providerError = payload`,
    - set `item.text = payload.headline`,
-   - set `lane.status = 'error'`,
-   - set `lane.error = payload.headline`,
+   - apply the retryable-aware lane-status decision (see **Lane status & recovery** below),
    - clear turn timing/extraction state if the turn is still active.
 8. Renderer uses `renderProviderErrorBody()` and never passes `payload.raw` through markdown.
 ```
@@ -186,6 +185,18 @@ DOM shape:
 
 The label remains `agent` so the row is visually associated with the failed agent turn, but the body styling makes it clearly non-prose. Category colors should reuse existing theme variables and avoid `backdrop-filter`.
 
+### Lane status & recovery
+
+A provider fault is classified over a **live** session — a classified `provider_error` (whether it arrived as a sealed assistant row, a typed `provider_error` event, or a rejected `session/prompt` call, e.g. `-32603 "API Error: Overloaded"`) means the agent subprocess answered; only the request failed, not the process. `lane.error` is the **single source of truth for the terminal status**, and the choke point `markLaneProviderError()` sets it by the payload's `retryable` flag:
+
+- **Retryable** (`rate_limit`, `network`, `provider`, `unknown`) → `lane.error = null`, lane returns to **`idle`**. The RETRYABLE card still renders, but the lane stays usable so the user can resend the same prompt in the same session. This avoids stranding the composer (which refuses input on an errored lane) and forcing a lane restart that discards all session context.
+- **Non-retryable** (`auth`, `quota`, `context`) → `lane.error = payload.headline`, lane goes to **`error`**. Resending cannot succeed; the card's hint tells the user what to fix, and recovery is a restart.
+
+**Who performs the status transition** matters, because `setLaneStatus(idle)` can synchronously drain queued peer mail (re-entrantly starting the next turn):
+
+- The **seal-time** conversion (`convertAssistantRowToProviderError`) runs inside `finishTurn()`'s `sealStreaming()` — *before* `finishTurn` resets the turn pointers and performs its single status transition. It therefore calls `markLaneProviderError(..., { deferStatus: true })`: it sets `lane.error` only and does **not** transition. `finishTurn()` then owns the one correctly-ordered transition (it reads `lane.error`: null → `idle`/coordinator-suggested; set → `error`). Transitioning during the seal would race that cleanup and get clobbered.
+- The **`sendUserPrompt` catch** (a rejected `session/prompt`) has no following stop event, so it transitions directly: classified faults route through `appendProviderError → markLaneProviderError` (non-deferred). An **unclassifiable** rejection is treated as genuine transport/subprocess death — it flips the lane to `error` with the raw message (restart-only recovery). If the lane recovered to `idle`, the catch drains one queued prompt (mirroring `finishTurn`).
+
 ### API / Commands
 
 No new Tauri command in phase 1.
@@ -206,11 +217,13 @@ Optional future Rust/frontend event:
 }
 ```
 
+> **Contract:** a typed `provider_error` event MUST be **terminal for its turn** — an adapter may not emit further turn events after it. The handler transitions the lane immediately (a retryable one to `idle`, making the lane promptable again), so a non-terminal `provider_error` followed by more streaming would let the user submit into a turn the adapter still considers live. Adapters that can recover mid-turn must instead surface the fault as assistant text (caught by the seal-time classifier) or defer it to the `stop`/`error` event.
+
 ### Keybindings
 
 No new keybinding in phase 1.
 
-Future retry work may add `r` / command-palette retry only when focus is on a retryable provider-error row or the active lane is in `error` state. That work must store a safe `lastSubmittedPrompt` payload and is intentionally out of scope for this spec.
+A retryable provider fault now leaves the lane **`idle`** (see **Lane status & recovery**), so "retry" is simply resending the prompt through the normal composer — no dedicated keybinding is required. Future work may still add an `r` / command-palette shortcut that replays the last prompt for the focused retryable row (storing a safe `lastSubmittedPrompt` payload); that convenience remains out of scope for this spec.
 
 ## Edge Cases
 
@@ -222,7 +235,7 @@ Future retry work may add `r` / command-palette retry only when focus is on a re
 - **System startup errors**: keep existing startup hint handling; this spec targets prompt-time provider/API failures.
 - **Provider raw text contains HTML/markdown**: render raw details with `textContent` inside `<pre>`, never `innerHTML`.
 - **Repeated identical failures**: render each failed turn separately. Coalescing would hide when retries were attempted.
-- **Lane peek / rail**: `lane.error` stores only the headline so rail summaries remain short.
+- **Lane peek / rail**: `lane.error` stores only the headline so rail summaries remain short. A retryable fault clears `lane.error` (the lane is idle, not broken), so it produces no rail error summary — the transcript card is the only trace.
 - **Non-harness ACP view**: out of scope for phase 1; implementation may share classifier helpers so `acp-view.ts` can adopt the same UI later.
 
 ## Open Questions

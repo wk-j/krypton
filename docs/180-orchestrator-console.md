@@ -126,7 +126,7 @@ No Alt modifier (project constraint).
 
 ### Live update
 
-While open, subscribe `LaneBus` to `renderOrchestratorConsoleEl()` (any lane signal — status / spawned / closed / triage / review-priority — refreshes the grid + feed); unsubscribe on close and on view dispose. The re-render only rebuilds the panel's `innerHTML` (cheap) and `LaneBus` is purely event-driven — an idle harness emits nothing, so there is no idle CPU cost (no debounce needed).
+While open, subscribe `LaneBus` to `renderOrchestratorConsoleEl()` (any lane signal — status *transition* / closed / triage / review-priority — refreshes the grid + feed); unsubscribe on close and on view dispose. The re-render only rebuilds the panel's `innerHTML` (cheap) and `LaneBus` is purely event-driven — an idle harness emits nothing, so there is no idle CPU cost (no debounce needed). **Roster growth is not a LaneBus event:** a newly added lane starts at `starting`, and `spawnLane` re-sets `starting` (a `setLaneStatus` no-op that emits nothing), so the bus would not fire until the lane's *first real transition*. That can be far off for a slow/blocking startup (cursor awaits `cursor-agent mcp enable` before connecting), leaving the new card invisible. `addLane` therefore calls `refreshOrchestratorConsole()` directly after the roster grows so the `starting` card shows at once; removal already refreshes via the `lane:closed` emit.
 
 ## Edge Cases
 

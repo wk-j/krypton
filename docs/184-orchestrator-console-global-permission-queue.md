@@ -87,7 +87,7 @@ The focus is a *soft* pointer: when the focused lane drains (answered, or resolv
 ### Display
 
 - The band renders only when ≥1 lane is awaiting; the head summary always shows `· N perm` while pending, so a glance (even with the band scrolled) reports fleet permission state.
-- The **focused** row is ringed and carries the `a accept · r reject` hint; non-focused rows show their label (and a `⚠ high-risk` marker if applicable) but no hint.
+- The **focused** row is ringed and carries the `a accept · A all · r reject · R all` hint (the accept/reject-all-for-turn keys are surfaced on the row, mirroring the lane-view composer, not just the footer legend); non-focused rows show their label (and a `⚠ high-risk` marker if applicable) but no hint.
 - High-risk rows render the **full untruncated command** (`extractCommandLineRaw`) on its own line — the destructive tail is never hidden behind the 48-char label.
 
 ## Edge Cases

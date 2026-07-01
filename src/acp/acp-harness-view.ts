@@ -1305,6 +1305,18 @@ export function seatPromptDisabledReason(seat: { status: string } | null): strin
   return null;
 }
 
+/** spec 182/184: inner HTML for an active dispatch/seat-prompt input. The box is
+ *  a custom-rendered <span> (not a native <input>), so it has no OS caret — we
+ *  render a blinking caret ourselves: after the draft text, or before the
+ *  placeholder when the draft is still empty, so the operator can see the
+ *  console is focused and accepting keystrokes. */
+export function orchestratorInputHtml(draft: string, placeholder: string): string {
+  const caret = '<span class="acp-orchestrator__caret"></span>';
+  return draft
+    ? `${esc(draft)}${caret}`
+    : `${caret}<span class="acp-orchestrator__dispatch-placeholder">${esc(placeholder)}</span>`;
+}
+
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
@@ -4400,7 +4412,13 @@ export class AcpHarnessView implements ContentView {
     const wrap = document.createElement('div');
     wrap.style.padding = '6px 0 2px';
     wrap.style.fontFamily = 'var(--agent-font, var(--krypton-font-family, monospace))';
-    wrap.style.fontSize = '0.88em';
+    // Findings are reading content (file paths + human-written notes), so anchor
+    // to the standard content font size rather than shrinking it — the parent
+    // table cell is already 0.9em, and a further em reduction here compounded the
+    // notes down to ~10px. An absolute var() resets that compounding to the
+    // user's configured body size; the group headings below stay a small label
+    // kicker (0.72em of this), matching the table's column headers.
+    wrap.style.fontSize = 'var(--krypton-font-size, 13px)';
     wrap.style.letterSpacing = 'normal';
     wrap.style.lineHeight = 'var(--krypton-content-line-height, 1.5)';
 
@@ -4770,7 +4788,7 @@ export class AcpHarnessView implements ContentView {
     return (
       `<section class="acp-orchestrator__dispatch acp-orchestrator__dispatch--active" data-region="seat-prompt">` +
       `<span class="acp-orchestrator__dispatch-label">prompt → ${target}</span>` +
-      `<span class="acp-orchestrator__dispatch-input">${esc(this.orchestratorSeatPrompt.draft) || '<span class="acp-orchestrator__dispatch-placeholder">type a prompt · Enter send · Esc cancel</span>'}</span>` +
+      `<span class="acp-orchestrator__dispatch-input">${orchestratorInputHtml(this.orchestratorSeatPrompt.draft, 'type a prompt · Enter send · Esc cancel')}</span>` +
       `</section>`
     );
   }
@@ -4835,8 +4853,8 @@ export class AcpHarnessView implements ContentView {
           : '';
         const hint = isFocus
           ? highRisk
-            ? `<span class="acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk">⚠ high-risk · a accept · r reject</span>`
-            : `<span class="acp-orchestrator__perm-hint">a accept · r reject</span>`
+            ? `<span class="acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk">⚠ high-risk · a accept · A all · r reject · R all</span>`
+            : `<span class="acp-orchestrator__perm-hint">a accept · A all · r reject · R all</span>`
           : highRisk
             ? `<span class="acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk">⚠ high-risk</span>`
             : '';
@@ -4847,7 +4865,7 @@ export class AcpHarnessView implements ContentView {
         return (
           `<div class="${cls}">` +
           `<span class="acp-orchestrator__perm-lane">${esc(l.displayName)}</span>` +
-          `<span class="acp-orchestrator__perm-label">${esc(compactPermissionLabel(permission, 'compact'))}</span>${moreTag}` +
+          `<span class="acp-orchestrator__perm-label">${esc(compactPermissionLabel(permission))}</span>${moreTag}` +
           detail +
           hint +
           `</div>`
@@ -4888,7 +4906,7 @@ export class AcpHarnessView implements ContentView {
       `<section class="acp-orchestrator__dispatch acp-orchestrator__dispatch--active" data-region="dispatch">` +
       `<span class="acp-orchestrator__dispatch-label">dispatch → ${target}</span>` +
       `<span class="acp-orchestrator__purposes" title="Tab cycles purpose">${purposes}</span>` +
-      `<span class="acp-orchestrator__dispatch-input">${esc(this.orchestratorDispatch.draft) || '<span class="acp-orchestrator__dispatch-placeholder">type a task · Enter send · Esc cancel</span>'}</span>` +
+      `<span class="acp-orchestrator__dispatch-input">${orchestratorInputHtml(this.orchestratorDispatch.draft, 'type a task · Enter send · Esc cancel')}</span>` +
       `</section>`
     );
   }
@@ -6265,18 +6283,36 @@ export class AcpHarnessView implements ContentView {
       await lane.client.prompt(blocks);
     } catch (e) {
       const message = String(e);
-      this.setLaneStatus(lane, 'error');
-      lane.error = message;
+      this.sealStreaming(lane);
+      // Reset this turn's pointers first, matching finishTurn — an errored (or
+      // recovered) lane must not carry a stale active assistant/thought row
+      // (Grok-1 R3 #1).
       lane.activeTurnStartedAt = null;
-      lane.pendingTurnExtractions = [];
-      // Clear the streaming pointers too, matching finishTurn's reset — an errored
-      // lane must not carry a stale active assistant/thought row (Grok-1 R3 #1).
       lane.currentAssistantId = null;
       this.dropVeiledThoughtRow(lane);
       lane.currentThoughtId = null;
+      const providerError = classifyProviderError(message);
+      if (providerError) {
+        // A classified provider fault came back as a JSON-RPC error *response* —
+        // the agent subprocess answered, so the session is still alive.
+        // markLaneProviderError owns the status decision: a retryable fault keeps
+        // the lane usable (idle) so the user can resend in the same session; a
+        // fatal one (auth/quota/context) flips it to error.
+        this.appendProviderError(lane, providerError);
+      } else {
+        // Unclassifiable — genuine transport / subprocess death. The lane is gone;
+        // flip it to error (only a restart recovers it).
+        this.setLaneStatus(lane, 'error');
+        lane.error = message;
+        lane.pendingTurnExtractions = [];
+        this.appendTranscript(lane, 'system', `prompt failed: ${message}`);
+      }
       this.updateComposerTick();
-      this.appendClassifiedError(lane, message, `prompt failed: ${message}`);
       this.render();
+      // Mirror finishTurn: if the lane recovered to idle, drain a queued prompt.
+      if (lane.status === 'idle' && lane.queuedPrompts.length > 0) {
+        queueMicrotask(() => this.maybeDrainPromptQueue(lane));
+      }
     }
     return { handled: true, delivered: true };
   }
@@ -6972,7 +7008,7 @@ export class AcpHarnessView implements ContentView {
       kind,
       subject,
       suffix,
-      argsPreview: isArtifact ? 'html artifact · contents hidden' : permissionArgsPreview(call.rawInput),
+      argsPreview: isArtifact ? 'html artifact · contents hidden' : permissionArgsPreview(call.rawInput, subject),
       options: permission.options.map((option) => ({
         optionId: option.optionId,
         name: option.name,
@@ -7613,6 +7649,15 @@ export class AcpHarnessView implements ContentView {
     }
     this.lanes.push(lane);
     this.notifyUsageProvidersChanged();
+    // A lane added while the orchestrator console is open must appear at once.
+    // The console only re-renders on a LaneBus *transition*, but spawnLane sets
+    // 'starting'→'starting' (a setLaneStatus no-op that emits nothing), so the
+    // card would otherwise stay invisible until the FIRST real transition. For a
+    // slow/blocking backend startup (notably cursor, which awaits
+    // `cursor-agent mcp enable` in prepareCursorMcp before connecting) that
+    // transition can be far off or never arrive — so the new card never shows.
+    // Refresh the console directly on the roster growth (guarded; no-op closed).
+    this.refreshOrchestratorConsole();
     this.activateLane(lane.id);
     await this.spawnLane(lane);
   }
@@ -9377,12 +9422,14 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (lane.pendingPermissions.length > 0) {
-      const permission = lane.pendingPermissions[0];
-      const label = compactPermissionLabel(permission, 'composer');
+      // The pending request's command/subject already renders in the transcript
+      // permission row directly above; repeating it here just prints the command
+      // twice. The composer is the decision surface, so it carries only the
+      // "perm" prompt label and the action buttons.
       this.composerEl.className = 'acp-harness__composer acp-harness__composer--permission';
       this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
       this.composerEl.innerHTML =
-        `<div class="acp-harness__composer-meta">perm ${esc(label)}</div>` +
+        `<div class="acp-harness__composer-meta">perm</div>` +
         `<div class="acp-harness__permission-options">a accept · A all · r reject · R all · Esc</div>`;
       return;
     }
@@ -9915,18 +9962,41 @@ export class AcpHarnessView implements ContentView {
     item.streamingMarkdownWritten = undefined;
     item.pretextSource = undefined;
     item.pretextLines = undefined;
-    this.markLaneProviderError(lane, payload);
+    // Seal-time reclassification can run inside finishTurn's sealStreaming — defer
+    // the status transition to finishTurn (which reads lane.error) to avoid the
+    // re-entrant peer-mail-drain race. Non-seal callers set status directly.
+    this.markLaneProviderError(lane, payload, { deferStatus: true });
   }
 
-  private markLaneProviderError(lane: HarnessLane, payload: ProviderErrorPayload): void {
-    this.setLaneStatus(lane, 'error');
-    lane.error = payload.headline;
+  private markLaneProviderError(
+    lane: HarnessLane,
+    payload: ProviderErrorPayload,
+    opts?: { deferStatus?: boolean },
+  ): void {
     lane.activeTurnStartedAt = null;
     lane.pendingTurnExtractions = [];
     lane.pendingPermissions = [];
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
     lane.peerAutoAcceptForTurn = false;
+    // `lane.error` is the single source of truth for the terminal status, read by
+    // finishTurn (null → idle/coordinator-suggested; set → error). A retryable
+    // fault (rate limit / network blip / overloaded, e.g. a `session/prompt` reply
+    // of `-32603 "API Error: Overloaded"`) arrives over a LIVE session — the agent
+    // subprocess answered, only this one request failed — so keep the lane usable
+    // rather than stranding it at `error` (which freezes the composer and forces a
+    // context-discarding restart). A fatal fault (auth / quota / context) can't be
+    // resent, so it stays errored; the card's hint tells the user what to fix.
+    lane.error = payload.retryable ? null : payload.headline;
+    if (opts?.deferStatus) {
+      // Seal-time conversion runs INSIDE finishTurn's sealStreaming, BEFORE its
+      // pointer cleanup and single status transition. Transitioning here — the
+      // retryable `idle` especially, which re-entrantly drains queued peer mail —
+      // would race that cleanup and be clobbered. Set `lane.error` only and let
+      // finishTurn own the one correctly-ordered transition.
+      return;
+    }
+    this.setLaneStatus(lane, payload.retryable ? 'idle' : 'error');
     this.updateComposerTick();
   }
 
@@ -11222,12 +11292,19 @@ function stringValueForKeys(value: unknown, keys: string[], depth = 0): string |
 const PERMISSION_SAFETY_KEYS = new Set([
   'command', 'cmd', 'path', 'file', 'file_path', 'filepath', 'cwd', 'url', 'target',
 ]);
-export function permissionArgsPreview(value: unknown): string {
+export function permissionArgsPreview(value: unknown, subject?: string): string {
   const args = extractToolArguments(value);
   if (!args || typeof args !== 'object' || Array.isArray(args)) return boundedInlineValue(args ?? value, 90);
+  // Drop any arg that merely echoes the subject line — an execute permission's
+  // `command` is already shown in full as the subject, so repeating it in the
+  // preview just prints the command twice. Keeps signal-carrying args (e.g.
+  // `description`) so the preview still earns its line.
+  const subjectNorm = subject ? subject.replace(/\s+/g, ' ').trim() : '';
   // The 3-part cap can drop a safety-critical arg (the command/path being run) if
   // it sits late in the object, so surface those keys first before the cap bites.
-  const entries = Object.entries(args as Record<string, unknown>);
+  const entries = Object.entries(args as Record<string, unknown>).filter(
+    ([, raw]) => !(subjectNorm && typeof raw === 'string' && raw.replace(/\s+/g, ' ').trim() === subjectNorm),
+  );
   entries.sort(([a], [b]) => {
     const aSafe = PERMISSION_SAFETY_KEYS.has(a.toLowerCase()) ? 0 : 1;
     const bSafe = PERMISSION_SAFETY_KEYS.has(b.toLowerCase()) ? 0 : 1;
@@ -13951,11 +14028,10 @@ function laneActivity(lane: HarnessLane, pendingPeers: PendingPeerSummary[] = []
   return latest.text.replace(/\s+/g, ' ').slice(0, 60);
 }
 
-function compactPermissionLabel(permission: HarnessPermission, surface: 'compact' | 'composer' = 'compact'): string {
+function compactPermissionLabel(permission: HarnessPermission): string {
   const tool = compactPermissionTool(permission);
-  const subject = compactPermissionSubject(permission.toolCall, surface);
-  const max = surface === 'composer' ? 96 : 48;
-  return truncateInline(subject ? `${tool} ${subject}` : tool, max);
+  const subject = compactPermissionSubject(permission.toolCall);
+  return truncateInline(subject ? `${tool} ${subject}` : tool, 48);
 }
 
 function compactPermissionMeta(permission: HarnessPermission): string {
@@ -13968,21 +14044,12 @@ function compactPermissionTool(permission: HarnessPermission): string {
   return harnessAutoAllowToolName(permission) ?? (cleanToolTitle(call.title, kind) || kind);
 }
 
-function compactPermissionSubject(call: ToolCall | ToolCallUpdate, surface: 'compact' | 'composer' = 'compact'): string {
+function compactPermissionSubject(call: ToolCall | ToolCallUpdate): string {
   const path = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? '';
-  if (path) return surface === 'composer' ? abbreviatePath(path) : basename(path);
+  if (path) return basename(path);
   const command = extractCommandLine(call.rawInput);
-  if (command) return surface === 'composer' ? truncateInlineHeadTail(command, 72) : truncateInline(command, 28);
+  if (command) return truncateInline(command, 28);
   return '';
-}
-
-function truncateInlineHeadTail(value: string, max: number): string {
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  if (normalized.length <= max) return normalized;
-  if (max <= 3) return '...';
-  const head = Math.ceil((max - 3) * 0.55);
-  const tail = Math.max(0, max - 3 - head);
-  return `${normalized.slice(0, head).trimEnd()}...${normalized.slice(-tail).trimStart()}`;
 }
 
 function awaitingPeerText(pendingPeers: PendingPeerSummary[]): string {

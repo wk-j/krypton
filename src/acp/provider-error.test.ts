@@ -54,6 +54,18 @@ describe('classifyProviderError', () => {
     });
   });
 
+  it('classifies a JSON-RPC session/prompt overloaded failure as retryable provider', () => {
+    // The exact string surfaced when `session/prompt` rejects over a live
+    // connection — the lane must stay usable (idle), not flip to a dead `error`.
+    const payload = classifyProviderError(
+      'session/prompt failed: {"code":-32603,"data":{"errorKind":"unknown"},"message":"Internal error: API Error: Overloaded"}',
+    );
+    expect(payload).toMatchObject({
+      category: 'provider',
+      retryable: true,
+    });
+  });
+
   it('does not classify normal assistant prose mentioning errors', () => {
     const payload = classifyProviderError(
       'The error handling path should preserve the original result. Here is a complete explanation with several implementation details and no provider failure marker.',

@@ -1276,6 +1276,27 @@ describe('permissionArgsPreview density (spec 167)', () => {
     expect(preview).toContain('path: /etc/hosts');
     expect(preview).not.toContain('baz');
   });
+
+  it('drops an arg that merely echoes the subject line', () => {
+    const input = { command: 'grep -rln foo ~/proj', description: 'Find original foo' };
+    // The subject already shows the command in full, so the preview must not
+    // repeat it — only the description-bearing part survives.
+    const preview = permissionArgsPreview(input, 'grep -rln foo ~/proj');
+    expect(preview).not.toContain('command:');
+    expect(preview).toContain('description: Find original foo');
+  });
+
+  it('matches the subject regardless of internal whitespace', () => {
+    const input = { command: 'grep  -rln   foo' };
+    const preview = permissionArgsPreview(input, 'grep -rln foo');
+    expect(preview).toBe('');
+  });
+
+  it('keeps args when no subject echo matches', () => {
+    const input = { command: 'ls -la', description: 'list' };
+    const preview = permissionArgsPreview(input, 'different command');
+    expect(preview).toContain('command: ls -la');
+  });
 });
 
 // Minimal DOM stub — the test runner uses the node environment (no document), and
