@@ -117,7 +117,7 @@ describe('debbyRequestPrompt', () => {
     expect(prompt).toContain('Debate');
     expect(prompt).toContain('default 1 round');
     expect(prompt).toContain('Synthesis');
-    // Handoff-only (spec 165): track head status in working context, not memory_set.
+    // Handoff-only (spec 165): track head status in working context, not handoff_set.
     expect(prompt).toContain('working context');
   });
 

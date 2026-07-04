@@ -148,3 +148,81 @@ describe('artifact-commands.html render', () => {
     expect(elements.stats.innerHTML).toContain(`${manifest.length}</b><span>commands`);
   });
 });
+
+// spec 186: same smoke-render for the /tools page script. The real payload
+// comes from Rust (`bus_tool_descriptors()` — covered by a Rust test); here a
+// fixture in the same descriptor shape guards the page's rendering contract
+// (field names, schema traversal, chips) without a browser.
+describe('artifact-tools.html render', () => {
+  it('renders descriptor-shaped tools from /tools.json', async () => {
+    const html = readFileSync(join(__dirname, 'artifact-tools.html'), 'utf8');
+    const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
+    expect(script, 'inline script missing').toBeTruthy();
+
+    const tools = [
+      {
+        name: 'handoff_set',
+        category: 'memory',
+        description: "Write your lane's single handoff document.",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            summary: { type: 'string', description: 'One short headline.' },
+            detail: { type: 'string', maxLength: 8000, description: 'The full body.' },
+          },
+          required: ['summary', 'detail'],
+        },
+      },
+      {
+        name: 'peer_list',
+        category: 'peering',
+        description: 'List live peer lanes.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'mark_review_priority',
+        category: 'review',
+        description: 'Tell the Diff Window where to spend reading attention.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            ranges: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  file: { type: 'string' },
+                  level: { enum: ['high', 'routine'] },
+                },
+                required: ['file', 'level'],
+              },
+            },
+          },
+          required: ['ranges'],
+        },
+      },
+    ];
+    const elements: Record<string, { innerHTML: string }> = {
+      content: { innerHTML: '' },
+      stats: { innerHTML: '' },
+    };
+    const doc = { getElementById: (id: string) => elements[id] };
+    const fetchStub = () =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ tools }) });
+
+    new Function('document', 'fetch', script as string)(doc, fetchStub);
+    await new Promise((r) => setTimeout(r, 0));
+
+    for (const t of tools) {
+      expect(elements.content.innerHTML, `${t.name} card missing`).toContain(t.name);
+    }
+    // Params table: required star + maxLength chip; zero-param fallback.
+    expect(elements.content.innerHTML).toContain('max 8000');
+    expect(elements.content.innerHTML).toContain('no parameters');
+    // Array-of-object item shape renders sub-params with enum chips.
+    expect(elements.content.innerHTML).toContain('<span class="chip">high</span>');
+    // Stats reflect the payload, not hardcoded numbers.
+    expect(elements.stats.innerHTML).toContain(`${tools.length}</b><span>tools`);
+    expect(elements.stats.innerHTML).toContain('3</b><span>categories');
+  });
+});

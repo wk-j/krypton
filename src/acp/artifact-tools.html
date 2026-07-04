@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Built-in MCP tools</title>
+<style>
+  :root {
+    --bg: #17191d; --fg: #eaecef; --muted: #707a8a; --border: #2f353d;
+    --accent: #fcd535; --card: #21242a; --code-bg: #1d1f24;
+    --add: #0ecb81; --del: #f6465d; color-scheme: dark;
+    --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+  }
+  body { margin: 0; font-family: var(--sans); font-size: 14px; line-height: 1.5;
+         background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  .main { max-width: 1140px; margin: 0 auto; padding: 16px 20px 48px; }
+  .top { display: flex; justify-content: space-between; align-items: center;
+         gap: 16px; flex-wrap: wrap; padding: 14px 16px; margin: 6px 0 14px;
+         background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .title { font-size: 15px; font-weight: 700; }
+  .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .stats { display: flex; gap: 22px; flex-wrap: wrap; }
+  .stat { text-align: right; }
+  .stat b { display: block; font-family: var(--mono); font-size: 19px; color: var(--accent);
+            font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 10px; color: var(--muted); }
+  .nav { font-family: var(--mono); font-size: 11px; }
+  .nav a { color: var(--accent); text-decoration: none; margin-left: 14px; }
+  .note { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 0 2px 4px; }
+  .note .req { color: var(--del); }
+  .sect { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .sect h3 { font-size: 11px; color: var(--muted); margin: 0 0 10px; font-weight: 600;
+             letter-spacing: .04em; text-transform: uppercase; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(500px, 1fr)); gap: 12px; }
+  @media (max-width: 560px) { .cards { grid-template-columns: 1fr; } }
+  .tool { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+          padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .name { font-family: var(--mono); font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
+  .cat { font-family: var(--mono); font-size: 9.5px; padding: 2px 7px; border-radius: 5px;
+         border: 1px solid var(--border); color: var(--muted); }
+  .cat.c-memory { background: rgba(252,213,53,.10); border-color: rgba(252,213,53,.35); color: var(--accent); }
+  .cat.c-peering { background: rgba(14,203,129,.08); border-color: rgba(14,203,129,.30); color: var(--add); }
+  .cat.c-artifacts { background: rgba(96,165,250,.10); border-color: rgba(96,165,250,.35); color: #60a5fa; }
+  .cat.c-attention { background: rgba(246,70,93,.08); border-color: rgba(246,70,93,.30); color: var(--del); }
+  .cat.c-review { background: rgba(192,132,252,.10); border-color: rgba(192,132,252,.35); color: #c084fc; }
+  .cat.c-issues { border-style: dashed; }
+  .excerpt { font-size: 12px; line-height: 1.5; color: #b7bdc6; margin: 0;
+             display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  details.full summary { font-family: var(--mono); font-size: 10px; color: var(--accent);
+                         cursor: pointer; list-style-position: inside; }
+  .desc { margin: 6px 0 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border);
+          border-radius: 6px; font-family: var(--mono); font-size: 10px; line-height: 1.6;
+          color: #b7bdc6; max-height: 260px; overflow: auto; }
+  table.params { border-collapse: collapse; width: 100%; font-size: 11px; }
+  .params th { font-family: var(--mono); font-size: 9.5px; font-weight: 600; color: var(--muted);
+               text-transform: uppercase; letter-spacing: .04em;
+               border-bottom: 1px solid var(--border); padding: 3px 8px 5px 0; text-align: left; }
+  .params td { border-bottom: 1px solid var(--border); padding: 5px 8px 5px 0; vertical-align: top; }
+  .params tr:last-child td { border-bottom: 0; }
+  .p { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+  .p b { color: var(--accent); font-weight: 700; }
+  .req { color: var(--del); }
+  .ty { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .pd { color: #b7bdc6; font-size: 11px; line-height: 1.45; }
+  .pd code { font-family: var(--mono); font-size: 10px; background: var(--code-bg);
+             padding: 1px 4px; border-radius: 3px; }
+  .chip { font-family: var(--mono); font-size: 9px; padding: 1px 5px; border-radius: 4px;
+          background: var(--code-bg); border: 1px solid var(--border); color: var(--muted);
+          white-space: nowrap; }
+  .noparams { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); font-family: var(--mono); font-size: 12px;
+           padding: 64px 16px; }
+  .footer { font-family: var(--mono); font-size: 11px; color: var(--muted);
+            margin-top: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="main">
+  <div class="top">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>
+        <div class="title">Built-in MCP tools</div>
+        <div class="sub">krypton-harness-bus · served from the live tools/list descriptors</div>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <nav class="nav"><a href="/commands">/commands</a><a href="/dashboard">/dashboard</a><a href="/gallery">/gallery</a><a href="/docs">/docs</a></nav>
+  </div>
+  <p class="note">Every lane gets all of these tools. Descriptions are the verbatim agent-facing contract — exactly what the lane reads. <span class="req">*</span> = required parameter.</p>
+  <div id="content"><div class="empty">loading…</div></div>
+  <div class="footer">rendered from the same descriptors the MCP tools/list handler serves — zero drift by construction</div>
+</div>
+<script>
+  // Static reference (spec 186): one fetch, no polling — the descriptors are
+  // compile-time data served straight from bus_tool_descriptors() in Rust.
+  (function () {
+    var SECTIONS = [
+      { id: 'memory', title: 'Handoff — resume documents' },
+      { id: 'peering', title: 'Peering — inter-lane messaging' },
+      { id: 'artifacts', title: 'Artifacts — browser HTML views' },
+      { id: 'attention', title: 'Attention — human judgement queue' },
+      { id: 'review', title: 'Review — diff triage & quality matrix' },
+      { id: 'issues', title: 'Issues — GitHub fix tracking' },
+      { id: 'other', title: 'Other' },
+    ];
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Constraint chips for one property schema (enum, default, bounds).
+    function chips(schema) {
+      var out = [];
+      (schema.enum || []).forEach(function (v) { out.push(esc(v)); });
+      if (schema.default !== undefined) out.push('default ' + esc(JSON.stringify(schema.default)));
+      if (schema.minimum !== undefined) out.push('min ' + esc(schema.minimum));
+      if (schema.maximum !== undefined) out.push('max ' + esc(schema.maximum));
+      if (schema.maxLength !== undefined) out.push('max ' + esc(schema.maxLength));
+      if (schema.minItems !== undefined) out.push('min ' + esc(schema.minItems));
+      if (schema.maxItems !== undefined) out.push('max ' + esc(schema.maxItems));
+      return out.map(function (c) { return '<span class="chip">' + c + '</span>'; }).join(' ');
+    }
+
+    function typeLabel(schema) {
+      if (schema.enum) return 'enum';
+      if (schema.type === 'array') {
+        var item = schema.items || {};
+        return (item.type || 'any') + '[]';
+      }
+      return schema.type || 'any';
+    }
+
+    // Inline summary of an array-of-object item shape: `file`* · `line` · …
+    function itemShape(schema) {
+      var item = schema.items;
+      if (!item || !item.properties) return '';
+      var req = item.required || [];
+      return Object.keys(item.properties).map(function (k) {
+        var sub = item.properties[k];
+        var star = req.indexOf(k) !== -1 ? '<span class="req">*</span>' : '';
+        var c = chips(sub);
+        return '<code>' + esc(k) + '</code>' + star + (c ? ' ' + c : '');
+      }).join(' · ');
+    }
+
+    function paramsHtml(inputSchema) {
+      var props = (inputSchema && inputSchema.properties) || {};
+      var names = Object.keys(props);
+      if (!names.length) return '<p class="noparams">no parameters</p>';
+      var req = (inputSchema && inputSchema.required) || [];
+      var rows = names.map(function (k) {
+        var p = props[k];
+        var star = req.indexOf(k) !== -1 ? '<span class="req">*</span>' : '';
+        var desc = esc(p.description || '');
+        var shape = p.type === 'array' ? itemShape(p) : '';
+        if (shape) desc += (desc ? '<br>' : '') + 'Each: ' + shape;
+        var c = p.type === 'array' ? chips({ maxItems: p.maxItems, minItems: p.minItems }) : chips(p);
+        return '<tr><td class="p"><b>' + esc(k) + '</b>' + star + '</td>' +
+               '<td class="ty">' + esc(typeLabel(p)) + (c ? ' ' + c : '') + '</td>' +
+               '<td class="pd">' + desc + '</td></tr>';
+      });
+      return '<table class="params"><tr><th>param</th><th>type</th><th>description</th></tr>' +
+             rows.join('') + '</table>';
+    }
+
+    function cardHtml(t) {
+      return '<article class="tool">' +
+        '<div class="head"><span class="name">' + esc(t.name) + '</span>' +
+        '<span class="cat c-' + esc(t.category) + '">' + esc(t.category) + '</span></div>' +
+        '<p class="excerpt">' + esc(t.description) + '</p>' +
+        paramsHtml(t.inputSchema) +
+        '<details class="full"><summary>agent-facing description</summary>' +
+        '<div class="desc">' + esc(t.description) + '</div></details>' +
+        '</article>';
+    }
+
+    function render(tools) {
+      var content = document.getElementById('content');
+      if (!tools || !tools.length) {
+        content.innerHTML = '<div class="empty">no tool descriptors — is the hook server running?</div>';
+        return;
+      }
+      var html = '';
+      SECTIONS.forEach(function (s) {
+        var list = tools.filter(function (t) { return t.category === s.id; });
+        if (!list.length) return;
+        html += '<div class="sect"><h3>' + s.title + '</h3><div class="cards">' +
+                list.map(cardHtml).join('') + '</div></div>';
+      });
+      content.innerHTML = html;
+
+      var categories = {};
+      var params = 0;
+      tools.forEach(function (t) {
+        categories[t.category] = true;
+        params += Object.keys((t.inputSchema && t.inputSchema.properties) || {}).length;
+      });
+      document.getElementById('stats').innerHTML =
+        '<div class="stat"><b>' + tools.length + '</b><span>tools</span></div>' +
+        '<div class="stat"><b>' + Object.keys(categories).length + '</b><span>categories</span></div>' +
+        '<div class="stat"><b>' + params + '</b><span>parameters</span></div>';
+    }
+
+    fetch('/tools.json', { cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) { render(data && data.tools ? data.tools : null); })
+      .catch(function () {
+        document.getElementById('content').innerHTML =
+          '<div class="empty">could not load /tools.json — is the hook server running?</div>';
+      });
+  })();
+</script>
+</body>
+</html>

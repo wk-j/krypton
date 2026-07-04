@@ -141,22 +141,22 @@ describe('consumeOptimisticUserEcho', () => {
 describe('ACP harness auto-allow permission detection', () => {
   it('accepts Codex-style namespaced built-in memory tool names', () => {
     expect(harnessAutoAllowToolName(permissionFor({
-      title: 'mcp__krypton_harness_memory__memory_set',
+      title: 'mcp__krypton_harness_memory__handoff_set',
       rawInput: {
-        toolName: 'mcp__krypton_harness_memory__memory_set',
+        toolName: 'mcp__krypton_harness_memory__handoff_set',
         arguments: { summary: 'done', detail: 'details' },
       },
-    }))).toBe('memory_set');
+    }))).toBe('handoff_set');
   });
 
   it('accepts built-in memory endpoint markers with plain tool names', () => {
     expect(harnessAutoAllowToolName(permissionFor({
-      title: 'memory_get',
+      title: 'handoff_get',
       rawInput: {
-        name: 'memory_get',
+        name: 'handoff_get',
         serverUrl: 'http://127.0.0.1:34123/mcp/harness/H1/lane/Codex-1',
       },
-    }))).toBe('memory_get');
+    }))).toBe('handoff_get');
   });
 
   it('accepts rendered ACP memory tool labels from permission content', () => {
@@ -166,21 +166,21 @@ describe('ACP harness auto-allow permission detection', () => {
         type: 'content',
         content: {
           type: 'text',
-          text: 'Tool: krypton-harness-memory/memory_set',
+          text: 'Tool: krypton-harness-memory/handoff_set',
         },
       }],
       rawInput: {
         summary: 'done',
         detail: 'details',
       },
-    }))).toBe('memory_set');
+    }))).toBe('handoff_set');
   });
 
   it('rejects memory-like tool names without a built-in memory marker', () => {
     expect(harnessAutoAllowToolName(permissionFor({
-      title: 'memory_set',
+      title: 'handoff_set',
       rawInput: {
-        name: 'memory_set',
+        name: 'handoff_set',
         server: 'third-party-memory',
       },
     }))).toBeNull();

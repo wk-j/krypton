@@ -178,7 +178,7 @@ export function debbyRequestPrompt(input: DebbyRequestPromptInput): string {
     '4. Stay even-handed: you are the moderator, not a third debater — your own opinion enters only in ' +
       'the Synthesis. If a head returns an empty or unclear result, ask it to retry before dropping its ' +
       'voice. Never commit. Track each head\'s status in your own working context across turns (not in ' +
-      'memory_set — memory is reserved for #handoff/#resume).',
+      'handoff_set — the handoff document is reserved for #handoff/#resume).',
   );
   return lines.join('\n');
 }

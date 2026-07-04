@@ -90,7 +90,7 @@ describe('pollyRequestPrompt', () => {
     expect(prompt).toContain('diff + contract only');
     expect(prompt).toContain('Do not give reviewers the implementer transcript');
     // Handoff-only (spec 165): the orchestrator tracks task/worker status in its own
-    // working context, NOT in memory_set as a scratchpad task board.
+    // working context, NOT in handoff_set as a scratchpad task board.
     expect(prompt).toContain('working context');
     // spec 166: orchestrator emits a live plan/todo list (one entry per slice) so the
     // human can observe progress in the harness Plan panel.

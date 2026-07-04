@@ -258,8 +258,8 @@
 7. On Enter, the active lane's draft is sent through acp_prompt with a short
    lane-context stub: the lane's own label, the full lane roster, and a
    one-line nudge describing the krypton-harness-memory MCP tools. Memory
-   bodies (summary + detail) are not injected — agents call memory_list /
-   memory_get on demand (Spec 98).
+   bodies (summary + detail) are not injected — agents call handoff_list /
+   handoff_get on demand (Spec 98).
    a. Prompt queue (Spec 136): if the active lane is busy / needs_permission,
       Enter does NOT discard the prompt — it captures {text, frozen image
       snapshot, mention targets} into the lane's FIFO queuedPrompts (cap 10).
@@ -268,13 +268,13 @@
       synchronous peer-mail drain wins). sendUserPrompt is the shared dispatch
       core (immediate + drain) and never clears the live draft. A drained
       mention whose target vanished re-arms the drain so the queue can't stall.
-8. MCP-capable agents call memory_set, memory_get, and memory_list against
+8. MCP-capable agents call handoff_set, handoff_get, and handoff_list against
    /mcp/harness/<harnessId>/lane/<laneLabel>.
-   a. memory_set overwrites the caller's own document in RAM.
+   a. handoff_set overwrites the caller's own document in RAM.
    b. On every set/clear, the hook server schedules a debounced (500ms) save.
    c. Save is atomic: serialize -> write .tmp -> rename to final .json.
-   d. memory_get reads any lane's document by label from RAM.
-   e. memory_list lists all lanes' summaries from RAM.
+   d. handoff_get reads any lane's document by label from RAM.
+   e. handoff_list lists all lanes' summaries from RAM.
 9. The hook server emits a memory-changed event so the harness refreshes the read-only board.
 10. session/update notifications append transcript rows and maintain
     file-touch warnings for permission context. Memory is not inferred from
@@ -370,8 +370,8 @@ PULL (window ← harness), on open and on every auto-refresh:
        to edit and re-send (Spec 136).
     g. #handoff / #resume (Spec 139) inject a one-shot instruction turn into the
        active lane via enqueueSystemPrompt (no acp_* command): #handoff tells the
-       lane to write/refresh a resume-ready memory_set document; #resume tells it
-       to memory_get its own lane and continue. Both no-op with a flashChip when
+       lane to write/refresh a resume-ready handoff_set document; #resume tells it
+       to handoff_get its own lane and continue. Both no-op with a flashChip when
        memory is unavailable or the lane is mid-work (busy/needs_permission/
        starting); they are allowed while awaiting_peer (soft-awaiting, spec 116).
        Cross-session handoff is user-triggered only — no always-on stub, no

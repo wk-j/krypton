@@ -46,6 +46,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'dashboard', args: '', description: 'open the live harness dashboard in a browser' },
   { name: 'gallery', args: '', description: 'open the artifact gallery (pending + live artifacts) in a browser' },
   { name: 'commands', args: '', description: 'open the built-in # command reference in a browser' },
+  { name: 'tools', args: '', description: 'open the built-in MCP tool reference in a browser' },
   { name: 'handoff', args: '', description: 'write a resume-ready handoff doc to memory' },
   { name: 'resume', args: '', description: 'resume from the last handoff doc' },
   { name: 'wiki', args: '[<hint>]', description: 'ingest this conversation into the repo wiki' },
@@ -117,6 +118,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     gallery: { category: 'surface', badges: [] },
     docs: { category: 'surface', badges: ['hidden'] },
     commands: { category: 'surface', badges: [] },
+    tools: { category: 'surface', badges: [] },
     handoff: {
       category: 'agent',
       badges: ['workflow'],

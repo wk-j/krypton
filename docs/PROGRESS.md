@@ -21,6 +21,25 @@
 
 ## Recent Landings
 
+- **Built-in MCP tool reference page (spec 186)** — a fifth read-only loopback
+  surface: `GET /tools` serves a static shell (`src/acp/artifact-tools.html`,
+  Binance dark) that fetches `GET /tools.json`. No manifest push, unlike spec
+  185: the tool descriptors already live in Rust as the exact `tools/list`
+  payload (`bus_tool_descriptors()`), so `handle_tools_json` serializes them
+  directly and injects a page-only `category` per entry (`tool_category()` —
+  never added to the MCP response, which strict clients parse by shape). The
+  page groups the 12 tools into memory / peering / artifacts / attention /
+  review / issues sections; each card renders a 2-line excerpt, a params table
+  built from `inputSchema` (required stars, enum/default/bounds chips,
+  array-item shapes), and the **verbatim agent-facing description** in an
+  expander — the behavioral contract (peer_send lifecycle, attention
+  calibration) previously readable only in source. Works with zero harnesses
+  registered (compile-time data). New `#tools` palette entry opens it (mirrors
+  `#commands`). Drift guards: a Rust test pins every descriptor to a
+  non-`other` category, and a page smoke test renders descriptor-shaped
+  fixtures through the real inline script. See
+  `docs/186-mcp-tool-reference-page.md`.
+
 - **Built-in `#` command reference page (spec 185)** — a fourth read-only loopback
   surface: `GET /commands` serves a static shell (`src/acp/artifact-commands.html`,
   Binance dark) that fetches `GET /commands.json` — a **command manifest** the

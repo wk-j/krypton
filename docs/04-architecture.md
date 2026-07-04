@@ -672,7 +672,7 @@ extension popup, or a status card the extension injects onto the GitHub issue pa
 (a declared `github.com/*/issues/*` content script) — converges on the frontend
 `dispatchIssue()` path (also the `github.dispatch-issue` control op), which records
 an issue↔lane binding (harness-level map keyed by `owner/repo#123`) and prompts a
-fresh lane. The lane self-reports progress via an `issue_report` MCP tool; status
+fresh lane. The lane self-reports progress via an `issue_progress` MCP tool; status
 is snapshot-first (`github.issue-status`) plus an `issue_status` SSE event, so the
 injected card is refresh-safe and survives a Krypton restart (bindings persist to
 disk next to the per-harness memory file). The `issueKey`-addressed reads

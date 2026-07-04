@@ -71,10 +71,10 @@ No market equivalent overlays a local agent's live status on the GitHub issue pa
 | File | Change |
 |------|--------|
 | `src/acp/types.ts` (or where lane types live) | Add `IssueBinding`, `IssueStatusSnapshot` types |
-| `src/acp/acp-harness-view.ts` | Lane carries `issueBinding`; `dispatchIssue()` shared path; handle `github.*` control ops; `getPaletteActions` "Fix GitHub Issue…" + "Open Bound Issue"; `#fix-issue` palette verb; `gh issue view` metadata fetch via `run_command`; agent-view badge; persist/restore binding; wire `issue_report` MCP tool |
+| `src/acp/acp-harness-view.ts` | Lane carries `issueBinding`; `dispatchIssue()` shared path; handle `github.*` control ops; `getPaletteActions` "Fix GitHub Issue…" + "Open Bound Issue"; `#fix-issue` palette verb; `gh issue view` metadata fetch via `run_command`; agent-view badge; persist/restore binding; wire `issue_progress` MCP tool |
 | `src/acp/control-bridge.ts` | Route `github.list-issues` (global) like `peer.list`; per-lane ops resolve by binding/harness |
 | `src-tauri/src/control.rs` | Advertise `github.*` ops in `capabilities` |
-| `src-tauri/src/hook_server.rs` | Add `issue_report` MCP JSON-RPC method on the harness-memory server; disk-backed bindings store (atomic write + rehydrate on `register_harness`) |
+| `src-tauri/src/hook_server.rs` | Add `issue_progress` MCP JSON-RPC method on the harness-memory server; disk-backed bindings store (atomic write + rehydrate on `register_harness`) |
 | `src-tauri/src/lib.rs` | Register Tauri commands to save/load persisted issue bindings |
 | `extension/manifest.json` | Add a `github.com/*` content script (broad match: GitHub is an SPA, so a narrow `/issues/<n>` match misses the issues-list page and never injects on soft navigation) + `scripting` for that origin |
 | `extension/github-issue.js` (new) | Content script: self-gate to issue URLs, scrape title/body, inject status card, open Port to background; SPA-navigation aware (mounts/re-keys/tears down on client-side URL changes) |
@@ -101,7 +101,7 @@ interface IssueBinding {
   laneId: string;
   laneDisplayName: string;
   dispatchedAt: number;   // epoch ms
-  // optional rich status, set only by the lane via issue_report:
+  // optional rich status, set only by the lane via issue_progress:
   phase?: IssuePhase;
   summary?: string;       // one-line, lane-authored
   prUrl?: string;
@@ -141,7 +141,7 @@ New MCP tool on `krypton-harness-memory` (per-lane, no token — same channel as
 `memory_*`/`peer_*`):
 
 ```
-issue_report { issue_key: string, phase: IssuePhase, summary?: string, pr_url?: string }
+issue_progress { issue_key: string, phase: IssuePhase, summary?: string, pr_url?: string }
 ```
 
 The lane reports its own fix progress, naming the issue with `issue_key`
@@ -214,7 +214,7 @@ disk-backed, reusing the existing atomic-write pattern (`hook_server.rs:445-460`
 tmp-file + rename) and the rehydrate-on-`register_harness` pattern that artifacts
 use (spec 173):
 
-- On every binding mutation (dispatch, `issue_report`, unlink) the frontend calls
+- On every binding mutation (dispatch, `issue_progress`, unlink) the frontend calls
   a Tauri command to persist the harness's bindings to disk (sibling to the
   `PersistedMemory` file, e.g. `issue-bindings.json`, **separate** from the
   handoff-only `memory_*` store).
@@ -305,7 +305,7 @@ GitHub Enterprise is noted as out of scope.
 
 ## Decisions (resolved 2026-06-27)
 
-1. **Rich status tool** — *include* the `issue_report` MCP tool so the lane can
+1. **Rich status tool** — *include* the `issue_progress` MCP tool so the lane can
    report *PR opened / done* (lane status alone can't express that).
 2. **Dispatch target** — offer both. The issue-page card **defaults to the first
    existing lane** when one is running (reuse over spawn); only when there are no

@@ -154,7 +154,7 @@ export function pollyRequestPrompt(input: PollyRequestPromptInput): string {
       'Blocking review issues go back to the same implementer thread with a concrete fix contract, then ' +
       'repeat gates + review. Keep the plan current as slices land — flip each entry ' +
       'pending → in_progress → completed. Track task and worker status in your own working context ' +
-      'across turns (not in memory_set — memory is reserved for #handoff/#resume).',
+      'across turns (not in handoff_set — the handoff document is reserved for #handoff/#resume).',
   );
   lines.push(
     `6. Track ${roster.workers.length} workers; end your turn after dispatching; synthesize as replies arrive.`,

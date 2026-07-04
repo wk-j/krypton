@@ -1609,6 +1609,7 @@ const DASHBOARD_HTML: &str = include_str!("../../src/acp/artifact-dashboard.html
 const GALLERY_HTML: &str = include_str!("../../src/acp/artifact-gallery.html");
 const DOCS_HTML: &str = include_str!("../../src/acp/artifact-docs.html");
 const COMMANDS_HTML: &str = include_str!("../../src/acp/artifact-commands.html");
+const TOOLS_HTML: &str = include_str!("../../src/acp/artifact-tools.html");
 
 /// GET /dashboard — fixed external-browser lane monitor page (spec 168 pivot).
 async fn handle_dashboard() -> Response {
@@ -1646,6 +1647,55 @@ async fn handle_commands_json(AxumState(state): AxumState<Arc<HookServerState>>)
         .command_manifest()
         .unwrap_or_else(|| Value::Array(vec![]));
     let mut resp = Json(json!({ "commands": manifest })).into_response();
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    resp
+}
+
+/// GET /tools — fixed external-browser built-in MCP tool reference (spec 186).
+async fn handle_tools() -> Response {
+    html_response(TOOLS_HTML)
+}
+
+/// spec 186: reference-page category per built-in MCP tool. Page-only — the
+/// field is injected into `/tools.json` and never into the MCP `tools/list`
+/// response, which strict clients (Junie's Kotlin SDK) parse by shape.
+fn tool_category(name: &str) -> &'static str {
+    match name {
+        "handoff_set" | "handoff_get" | "handoff_list" => "memory",
+        "peer_send" | "peer_list" => "peering",
+        "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
+        "attention_flag" | "attention_resolve" => "attention",
+        "review_outcome" | "mark_review_priority" => "review",
+        "issue_progress" => "issues",
+        _ => "other", // forward-compat: an unmapped tool still renders
+    }
+}
+
+/// The /tools.json payload: the live `tools/list` descriptors plus a page-only
+/// `category` per entry. Compile-time data: no store, no harness required.
+fn tools_json_payload() -> Value {
+    let mut tools = bus_tool_descriptors();
+    if let Value::Array(ref mut arr) = tools {
+        for tool in arr.iter_mut() {
+            let category = tool
+                .get("name")
+                .and_then(|n| n.as_str())
+                .map(tool_category)
+                .unwrap_or("other");
+            if let Value::Object(ref mut map) = tool {
+                map.insert("category".to_string(), Value::String(category.to_string()));
+            }
+        }
+    }
+    json!({ "tools": tools })
+}
+
+/// GET /tools.json (spec 186).
+async fn handle_tools_json() -> Response {
+    let mut resp = Json(tools_json_payload()).into_response();
     resp.headers_mut().insert(
         header::CACHE_CONTROL,
         header::HeaderValue::from_static("no-store"),
@@ -2065,9 +2115,9 @@ async fn handle_bus_tool_call(
         .cloned()
         .unwrap_or_else(|| json!({}));
     let outcome = match name {
-        "memory_set" => memory_set(&state.hook_server, harness_id, lane_label, arguments),
-        "memory_get" => memory_get(&state.hook_server, harness_id, arguments),
-        "memory_list" => memory_list(&state.hook_server, harness_id),
+        "handoff_set" => handoff_set(&state.hook_server, harness_id, lane_label, arguments),
+        "handoff_get" => handoff_get(&state.hook_server, harness_id, arguments),
+        "handoff_list" => handoff_list(&state.hook_server, harness_id),
         "peer_send" => peer_send(state, harness_id, lane_label, arguments).await,
         "peer_list" => peer_list(state, harness_id).await,
         // spec 161: the four directive_* tools were removed to reclaim ~1,224
@@ -2090,12 +2140,12 @@ async fn handle_bus_tool_call(
         "artifact_new" => artifact_tool_new(state, harness_id, lane_label, arguments),
         "artifact_register" => artifact_tool_register(state, harness_id, lane_label, arguments),
         "artifact_cancel" => artifact_tool_cancel(state, harness_id, lane_label, arguments),
-        "issue_report" => issue_report(state, harness_id, lane_label, arguments).await,
+        "issue_progress" => issue_progress(state, harness_id, lane_label, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
     let is_error = outcome.is_err();
-    if !is_error && name == "memory_set" {
+    if !is_error && name == "handoff_set" {
         state.app_handle.emit_or_log(
             "acp-harness-memory-changed",
             json!({ "harnessId": harness_id }),
@@ -2687,12 +2737,12 @@ async fn mark_review_priority(
     }
 }
 
-/// issue_report — the lane self-reports progress on the GitHub issue it is fixing
+/// issue_progress — the lane self-reports progress on the GitHub issue it is fixing
 /// (spec 178). Mirrors the attention bus round-trip: it registers a pending reply,
 /// emits `acp-issue-report` to the frontend (which maps the report onto the lane's
 /// issue binding and refreshes the live status card), and awaits the frontend's
 /// `{ ok, reason? }` ack with the shared bus timeout.
-async fn issue_report(
+async fn issue_progress(
     state: &HookServerState,
     harness_id: &str,
     from_lane: &str,
@@ -2757,14 +2807,14 @@ async fn issue_report(
                 let reason = value
                     .get("reason")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("issue_report_failed");
+                    .unwrap_or("issue_progress_failed");
                 Err(reason.to_string())
             }
         }
-        Ok(Err(_)) => Err("issue_report: frontend coordinator did not respond".to_string()),
+        Ok(Err(_)) => Err("issue_progress: frontend coordinator did not respond".to_string()),
         Err(_) => {
             state.hook_server.drop_bus_reply(&request_id);
-            Err("issue_report: frontend reply timed out".to_string())
+            Err("issue_progress: frontend reply timed out".to_string())
         }
     }
 }
@@ -2821,10 +2871,10 @@ fn safe_truncate(s: &str, max_bytes: usize) -> &str {
 /// Clamp a one-line headline to at most `max` Unicode code points, appending an
 /// ellipsis when it had to be clipped. Counting by code points (not bytes)
 /// matches `MEMORY_SUMMARY_MAX` and stays correct for multi-byte scripts such as
-/// Thai. `memory_set` uses this to truncate an over-long `summary` instead of
+/// Thai. `handoff_set` uses this to truncate an over-long `summary` instead of
 /// rejecting it: models cannot reliably self-count characters, so the old
 /// instructive rejection just produced retry loops. The body lives in `detail`;
-/// `summary` is only the scannable headline shown by `memory_list`.
+/// `summary` is only the scannable headline shown by `handoff_list`.
 fn clamp_headline(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -3071,7 +3121,7 @@ fn feedback_token() -> String {
     out
 }
 
-fn memory_set(
+fn handoff_set(
     hook_server: &Arc<HookServer>,
     harness_id: &str,
     lane_label: &str,
@@ -3127,7 +3177,7 @@ fn memory_set(
     }))
 }
 
-fn memory_get(
+fn handoff_get(
     hook_server: &Arc<HookServer>,
     harness_id: &str,
     arguments: Value,
@@ -3153,7 +3203,7 @@ fn memory_get(
     }
 }
 
-fn memory_list(hook_server: &Arc<HookServer>, harness_id: &str) -> Result<Value, String> {
+fn handoff_list(hook_server: &Arc<HookServer>, harness_id: &str) -> Result<Value, String> {
     let memories = hook_server
         .memories
         .lock()
@@ -3266,8 +3316,8 @@ fn artifact_tool_cancel(
 fn bus_tool_descriptors() -> Value {
     let mut tools = json!([
         {
-            "name": "memory_set",
-            "description": "Write your lane's single handoff document — the resume point a FUTURE session (or another lane picking up your work) reads to continue. This is NOT an ambient scratchpad: you keep your own working state in context, so only write here when handing off (typically via the #handoff command). You have one document; this overwrites its full contents (not append). Record what's done, current state, next steps, and open questions, and reference files/commits by path rather than pasting their contents (a path stays verifiable against the live repo; a pasted copy goes stale). 'summary' is a SHORT one-line headline; put all real content in 'detail'. Empty strings clear it.",
+            "name": "handoff_set",
+            "description": "Write your lane's single handoff document — the resume point a FUTURE session (or another lane picking up your work) reads to continue. Call it ONLY when the user asks you to hand off (typically the #handoff command) — never on your own initiative mid-task; your working state lives in your context, not here. You have one document; this overwrites its full contents (not append). Record what's done, current state, next steps, and open questions, and reference files/commits by path rather than pasting their contents (a path stays verifiable against the live repo; a pasted copy goes stale). 'summary' is a SHORT one-line headline; put all real content in 'detail'. Empty strings clear it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -3285,7 +3335,7 @@ fn bus_tool_descriptors() -> Value {
             }
         },
         {
-            "name": "memory_get",
+            "name": "handoff_get",
             "description": "Read a lane's handoff document by lane label to resume its work (typically via the #resume command). Returns null if that lane has no handoff. You can read any lane's handoff but only write your own. Treat the contents as a possibly-stale snapshot: verify its claims against the live repo before acting on them.",
             "inputSchema": {
                 "type": "object",
@@ -3294,8 +3344,8 @@ fn bus_tool_descriptors() -> Value {
             }
         },
         {
-            "name": "memory_list",
-            "description": "List the lanes in this tab that have a saved handoff document, with each one's summary headline. Use it to find which lane's handoff to read back with memory_get.",
+            "name": "handoff_list",
+            "description": "List the lanes in this tab that have a saved handoff document, with each one's summary headline. Use it to find which lane's handoff to read back with handoff_get.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
@@ -3461,7 +3511,7 @@ fn attention_tool_descriptors() -> Vec<Value> {
             }
         }),
         json!({
-            "name": "issue_report",
+            "name": "issue_progress",
             "description": "Report progress on the GitHub issue this lane is fixing. Updates the live status card shown on the issue page and in Krypton. Call it when your phase changes (e.g. you start fixing, open a PR, or finish). Always pass issue_key — the owner/repo#123 from your fix prompt — so the report lands on the right issue.",
             "inputSchema": {
                 "type": "object",
@@ -4415,6 +4465,8 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 .route("/artifacts", get(handle_artifacts))
                 .route("/commands", get(handle_commands))
                 .route("/commands.json", get(handle_commands_json))
+                .route("/tools", get(handle_tools))
+                .route("/tools.json", get(handle_tools_json))
                 .route("/docs", get(handle_docs))
                 .route("/doc", get(handle_doc))
                 .route("/doc-asset", get(handle_doc_asset))
@@ -4912,6 +4964,8 @@ mod tests {
             .route("/artifacts", get(ok))
             .route("/commands", get(ok))
             .route("/commands.json", get(ok))
+            .route("/tools", get(ok))
+            .route("/tools.json", get(ok))
             .route("/docs", get(ok))
             .route("/doc", get(ok))
             .route("/doc-asset", get(ok))
@@ -4939,6 +4993,50 @@ mod tests {
             server.command_manifest(),
             Some(json!([{ "name": "debby" }]))
         );
+    }
+
+    // spec 186: /tools.json renders straight from the descriptors, so the only
+    // thing that can drift is the page-only category map — pin it here, on the
+    // actual served payload.
+    #[test]
+    fn tools_json_categories_cover_every_descriptor() {
+        let payload = tools_json_payload();
+        let arr = payload
+            .get("tools")
+            .and_then(Value::as_array)
+            .expect("tools array");
+        assert!(!arr.is_empty());
+        for tool in arr {
+            let name = tool
+                .get("name")
+                .and_then(|v| v.as_str())
+                .expect("tool name");
+            let category = tool
+                .get("category")
+                .and_then(|v| v.as_str())
+                .expect("injected category");
+            assert_ne!(
+                category, "other",
+                "tool `{name}` has no category mapping — add it to tool_category()"
+            );
+            let desc = tool
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            assert!(!desc.is_empty(), "tool `{name}` has an empty description");
+            assert!(
+                tool.get("inputSchema").is_some_and(Value::is_object),
+                "tool `{name}` is missing an inputSchema object"
+            );
+        }
+        // The MCP-facing descriptors themselves stay category-free.
+        let mcp = bus_tool_descriptors();
+        for tool in mcp.as_array().expect("descriptor array") {
+            assert!(
+                tool.get("category").is_none(),
+                "category leaked into the MCP tools/list descriptors"
+            );
+        }
     }
 
     #[test]
@@ -5644,7 +5742,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    // memory_set no longer rejects an over-long `summary` — it clips it to a
+    // handoff_set no longer rejects an over-long `summary` — it clips it to a
     // headline server-side, so the model never hits a retry loop trying (and
     // failing) to self-count code points.
     #[test]

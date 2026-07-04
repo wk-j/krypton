@@ -9,7 +9,7 @@
 // Exported pure builders so the schema is testable.
 
 export const HANDOFF_WRITE_PROMPT =
-  'Write or refresh your memory_set handoff document now so a future session can resume. ' +
+  'Write or refresh your handoff_set handoff document now so a future session can resume. ' +
   'Shape it as: what\'s done, current state, next steps, open questions. ' +
   'Reference files, commits, and artifacts by path rather than pasting their contents. ' +
   'Never write secrets, tokens, or credentials (this document is not redacted). ' +
@@ -29,9 +29,9 @@ export function goalSeedPrompt(text: string): string {
 
 export function handoffResumePrompt(displayName: string): string {
   // JSON.stringify quotes + escapes — a backend-derived display name containing a
-  // double-quote can't break the memory_get { lane: "…" } example (Codex-1 review).
+  // double-quote can't break the handoff_get { lane: "…" } example (Codex-1 review).
   return (
-    `Call memory_get { lane: ${JSON.stringify(displayName)} } to load your handoff document from a ` +
+    `Call handoff_get { lane: ${JSON.stringify(displayName)} } to load your handoff document from a ` +
     'previous session, then continue the work from where it left off. ' +
     'If the document is empty or missing, start fresh.'
   );
@@ -159,7 +159,7 @@ export function issueFixPrompt(binding: IssueFixPromptInput, body?: string): str
   }
   lines.push(
     '',
-    `As you work, call issue_report { issue_key: "${binding.issueKey}", phase, summary, pr_url } ` +
+    `As you work, call issue_progress { issue_key: "${binding.issueKey}", phase, summary, pr_url } ` +
       'to report progress (phases: investigating, fixing, testing, review, pr_opened, done, blocked). ' +
       'Pass that issue_key verbatim so the status lands on this issue.',
   );

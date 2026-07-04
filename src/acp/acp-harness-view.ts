@@ -467,7 +467,7 @@ interface ArtifactEventPayload {
   feedbackToken?: string;
 }
 
-const HARNESS_MEMORY_TOOL_NAMES = new Set(['memory_set', 'memory_get', 'memory_list']);
+const HARNESS_MEMORY_TOOL_NAMES = new Set(['handoff_set', 'handoff_get', 'handoff_list']);
 const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
 // spec 130: attention triage is default-on built-in harness-bus tooling, so its
 // calls must auto-allow like memory/peer — a permission prompt here also
@@ -480,11 +480,11 @@ const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resol
 // reports diff reading-order hints at end-of-turn; a permission prompt there
 // would interrupt the turn boundary for a purely-advisory signal.
 const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome', 'mark_review_priority']);
-// spec 178: issue_report is default-on built-in harness-bus tooling — the lane
+// spec 178: issue_progress is default-on built-in harness-bus tooling — the lane
 // reports github issue-fixing progress to refresh the live status card. It must
 // auto-allow like the others; a permission prompt on every progress report would
 // defeat the live-overlay story (and the report is advisory, never destructive).
-const HARNESS_ISSUE_TOOL_NAMES = new Set(['issue_report']);
+const HARNESS_ISSUE_TOOL_NAMES = new Set(['issue_progress']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
   ...HARNESS_PEER_TOOL_NAMES,
@@ -708,7 +708,7 @@ interface LaneGoal {
 /** spec 178: GitHub issue-fixing. A binding between a GitHub issue and the lane
  *  fixing it. Lives in a harness-level map keyed by `issueKey`, persisted to disk
  *  so it survives a Krypton restart (the lane process does not). `phase/summary/
- *  prUrl` are lane self-reported via the `issue_report` MCP tool. */
+ *  prUrl` are lane self-reported via the `issue_progress` MCP tool. */
 type IssuePhase =
   | 'investigating' | 'fixing' | 'testing'
   | 'review' | 'pr_opened' | 'done' | 'blocked';
@@ -2510,7 +2510,7 @@ export class AcpHarnessView implements ContentView {
     );
 
     // spec 178: a lane self-reports github issue-fixing progress via the
-    // issue_report MCP tool. Mirrors the attention_flag round-trip: update the
+    // issue_progress MCP tool. Mirrors the attention_flag round-trip: update the
     // lane's most-recent binding, persist, republish status, reply inside the
     // bus timeout so the agent never sees a false failure.
     type IssueReportEvent = {
@@ -2529,7 +2529,7 @@ export class AcpHarnessView implements ContentView {
       const sendReply = (result: { ok: boolean; reason?: string }): void => {
         if (!requestId) return;
         void invoke('acp_bus_reply', { requestId, result }).catch((err) =>
-          console.warn('acp_bus_reply (issue_report) failed', err),
+          console.warn('acp_bus_reply (issue_progress) failed', err),
         );
       };
       const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
@@ -6411,7 +6411,7 @@ export class AcpHarnessView implements ContentView {
       return lines.join('\n');
     }
     // Memory is intentionally NOT advertised here. Per the handoff-only decision,
-    // memory_set/memory_get/memory_list are the backing store for #handoff/#resume
+    // handoff_set/handoff_get/handoff_list are the backing store for #handoff/#resume
     // ONLY — not an ambient shared scratchpad. Surfacing them every turn pushed
     // lanes to record/read state proactively, and a reader cannot tell a stale
     // snapshot from current truth (the cache-coherence hazard). The #handoff and
@@ -8039,7 +8039,24 @@ export class AcpHarnessView implements ContentView {
       }
       return;
     }
-    // spec 139: user-triggered handoff. #handoff writes a resume-ready memory_set
+    // spec 186: fixed external-browser reference for the built-in MCP tools.
+    if (parts[0] === '#tools') {
+      this.setDraft(lane, '', 0);
+      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
+      if (!port) {
+        this.flashChip('tools unavailable - hook server not ready');
+        return;
+      }
+      const url = `http://127.0.0.1:${port}/tools`;
+      try {
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`tools open failed: ${errorText(e)}`);
+      }
+      return;
+    }
+    // spec 139: user-triggered handoff. #handoff writes a resume-ready handoff_set
     // doc; #resume reads it back and continues. One-shot injection only — no
     // always-on stub, no per-turn cost. Guard like #new for user-facing feedback;
     // enqueueSystemPrompt re-checks lane.client + idle status internally.
@@ -11246,7 +11263,7 @@ function harnessToolNameFromString(value: string | undefined): string | null {
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(memory_set|memory_get|memory_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 
