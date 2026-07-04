@@ -348,6 +348,9 @@
 
 .acp-orchestrator__dispatch--active {
   background: rgba(0, 204, 255, 0.06);
+  /* The input wraps onto multiple lines once open, so pin the label/purposes to
+     the top instead of centering them against a growing multi-line draft. */
+  align-items: flex-start;
 }
 
 .acp-orchestrator__dispatch-label {
@@ -386,9 +389,13 @@
   flex: 1;
   min-width: 0;
   color: rgba(216, 232, 216, 0.92);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* A long prompt wraps onto multiple lines and stays fully visible instead of
+     scrolling its tail (and the caret) off the right edge. Cap the height so a
+     very long draft scrolls internally rather than blowing up the console. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  max-height: 6em;
 }
 
 .acp-orchestrator__dispatch-placeholder {
