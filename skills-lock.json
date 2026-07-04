@@ -11,7 +11,13 @@
       "source": "mattpocock/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/grill-with-docs/SKILL.md",
-      "computedHash": "eb0e91e84277283dc2b23ed544399e53afd6b5287e5b6929f25fe8aa608e164b"
+      "computedHash": "e7ef25bbee50cda2eb7b3a8ef541db0a0396dad7d369f7d14fb610671dd1864b"
+    },
+    "maintain-github-wiki": {
+      "source": "wk-j/skills",
+      "sourceType": "github",
+      "skillPath": "maintain-github-wiki/SKILL.md",
+      "computedHash": "c9bc2ff6aea215c620ed8dfc9a7c161ba6e1798597e466b1c01c98e333a27890"
     }
   }
 }
