@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-06-24
+> Last updated: 2026-07-04
 
 ## Overview
 
@@ -20,6 +20,29 @@
 ---
 
 ## Recent Landings
+
+- **Built-in `#` command reference page (spec 185)** — a fourth read-only loopback
+  surface: `GET /commands` serves a static shell (`src/acp/artifact-commands.html`,
+  Binance dark) that fetches `GET /commands.json` — a **command manifest** the
+  frontend builds from the *same* `HASH_COMMANDS` roster and the *same* exported
+  prompt builders the dispatch calls (`buildCommandManifest()` in
+  `hash-commands.ts`), pushed once per harness register via
+  `acp_store_command_manifest` into a single global slot (compile-time data, last
+  write wins). The page groups all 23 manifest entries (21 palette + 2
+  dispatch-only; `#console` rides the `#orchestrator` entry as an alias) into
+  session / surface / orchestration sections with badges (`workflow`, `agent`,
+  `not in palette`,
+  `alias #console`), workflow-anatomy blocks with lane cost, and — the reason the
+  manifest exists — an expandable **system prompt** template on the ten
+  prompt-backed commands (`#goal set`, `#handoff`, `#resume`, `#wiki`, `#recall`,
+  `#directive`, `#review`, `#polly`, `#debby`, `#fix-issue`), placeholder args as
+  `<token>`. New `#commands` palette entry opens it (mirrors `#docs`). The prompt
+  builders moved from `acp-harness-view.ts` to a new leaf module
+  `src/acp/harness-prompts.ts` (re-exported for existing import sites) so the
+  manifest can render them without a circular import; `buildFixPrompt` became the
+  exported pure `issueFixPrompt`. Manifest coverage tests in
+  `hash-commands.test.ts` are the drift guard. `tsc` + 411 vitest + 143 cargo
+  tests green. See `docs/185-hash-command-reference-page.md`.
 
 - **Orchestrator console — global permission queue (spec 184)** — pending worker
   permissions now render as **global fleet state** in the console and are answered

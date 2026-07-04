@@ -5,10 +5,11 @@ appliesTo: >
   Loopback HTTP surfaces served by src-tauri/src/hook_server.rs and opened in the
   OS browser — the artifact scaffold (src-tauri/resources/artifact-scaffold.html),
   lane-monitor dashboard (src/acp/artifact-dashboard.html), artifact gallery
-  (src/acp/artifact-gallery.html), and docs browser (src/acp/artifact-docs.html).
+  (src/acp/artifact-gallery.html), docs browser (src/acp/artifact-docs.html), and
+  command reference (src/acp/artifact-commands.html).
 colors:
   primary: "#fcd535"     # the single yellow accent (== accent below)
-  bg: "#17191d"          # soft near-black canvas (shared by all four surfaces)
+  bg: "#17191d"          # soft near-black canvas (shared by all five surfaces)
   fg: "#eaecef"          # primary text / headings
   text: "#b7bdc6"        # docs-reader body text (softer than fg; docs only)
   muted: "#707a8a"       # secondary labels, metadata, idle dots
@@ -67,7 +68,7 @@ a lane's generated artifact, the lane-monitor dashboard, the artifact gallery,
 and the docs browser all read as one product when the user flips between browser
 tabs.
 
-The four surfaces:
+The five surfaces:
 
 | Surface | File | Role | Theming |
 | --- | --- | --- | --- |
@@ -75,10 +76,11 @@ The four surfaces:
 | Lane-monitor dashboard | `src/acp/artifact-dashboard.html` | Live status of all lanes (polls `/telemetry`) | Fixed dark |
 | Artifact gallery | `src/acp/artifact-gallery.html` | Index of every lane's artifacts (polls `/artifacts`) | Fixed dark |
 | Docs browser | `src/acp/artifact-docs.html` | Read-only repo markdown reader (`/docs`, `/doc`) | Auto (follows OS `prefers-color-scheme`) |
+| Command reference | `src/acp/artifact-commands.html` | Built-in `#` command + system-prompt reference (`/commands`, fetches `/commands.json` once) | Fixed dark |
 
 Per-surface behaviour and endpoints are specified in `docs/134`, `docs/168`,
-`docs/170`, `docs/171` and `docs/adr/0002`/`0010`. **This file is the visual
-contract only** — it does not restate those specs.
+`docs/170`, `docs/171`, `docs/185` and `docs/adr/0002`/`0010`. **This file is the
+visual contract only** — it does not restate those specs.
 
 ## Colors
 
@@ -111,7 +113,7 @@ so the two surfaces agree:
 
 ### One canvas, two docs-only refinements
 
-All four surfaces share the same soft canvas family — `--bg #17191d`, `--card
+All five surfaces share the same soft canvas family — `--bg #17191d`, `--card
 #21242a`, `--border #2f353d`, `--code-bg #1d1f24`. (This soft canvas, originally
 the docs reader's, is now the single standard; the harder `#0b0e11` it replaced
 is retired.) The docs reader keeps just two prose-only refinements, recorded in

@@ -196,6 +196,10 @@ pub struct HookServer {
     /// Keyed by harness id; value is `(version, opaque snapshot JSON)`. Last-writer-wins
     /// with a monotonic version guard in `store_telemetry`.
     telemetry: std::sync::Mutex<HashMap<String, (u64, Value)>>,
+    /// Spec 185: built-in `#` command manifest for the `/commands` reference
+    /// page. Compile-time frontend data, identical across harnesses — a single
+    /// global slot, last write wins (harmless by construction).
+    command_manifest: std::sync::Mutex<Option<Value>>,
 }
 
 /// Spec 149: registry record for an artifact feedback token. Maps the
@@ -248,6 +252,7 @@ impl Default for HookServer {
             next_artifact_seq: AtomicU64::new(1),
             feedback_tokens: std::sync::Mutex::new(HashMap::new()),
             telemetry: std::sync::Mutex::new(HashMap::new()),
+            command_manifest: std::sync::Mutex::new(None),
         }
     }
 }
@@ -267,6 +272,7 @@ impl HookServer {
             next_artifact_seq: AtomicU64::new(1),
             feedback_tokens: std::sync::Mutex::new(HashMap::new()),
             telemetry: std::sync::Mutex::new(HashMap::new()),
+            command_manifest: std::sync::Mutex::new(None),
         }
     }
 
@@ -748,6 +754,24 @@ impl HookServer {
             .collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         entries.into_iter().map(|(_, snapshot)| snapshot).collect()
+    }
+
+    /// Spec 185: cache the built-in `#` command manifest for `/commands.json`.
+    /// Compile-time frontend data — no version guard needed (every harness of a
+    /// given build pushes identical content).
+    pub fn store_command_manifest(&self, manifest: Value) {
+        *self
+            .command_manifest
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(manifest);
+    }
+
+    /// Spec 185: read the cached command manifest, if any harness pushed one.
+    pub fn command_manifest(&self) -> Option<Value> {
+        self.command_manifest
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Read-only artifact gallery listing: every live harness store and its
@@ -1584,6 +1608,7 @@ async fn handle_artifact_state(
 const DASHBOARD_HTML: &str = include_str!("../../src/acp/artifact-dashboard.html");
 const GALLERY_HTML: &str = include_str!("../../src/acp/artifact-gallery.html");
 const DOCS_HTML: &str = include_str!("../../src/acp/artifact-docs.html");
+const COMMANDS_HTML: &str = include_str!("../../src/acp/artifact-commands.html");
 
 /// GET /dashboard — fixed external-browser lane monitor page (spec 168 pivot).
 async fn handle_dashboard() -> Response {
@@ -1606,6 +1631,26 @@ async fn handle_telemetry(AxumState(state): AxumState<Arc<HookServerState>>) -> 
 /// GET /gallery — fixed external-browser artifact gallery page.
 async fn handle_gallery() -> Response {
     html_response(GALLERY_HTML)
+}
+
+/// GET /commands — fixed external-browser built-in `#` command reference (spec 185).
+async fn handle_commands() -> Response {
+    html_response(COMMANDS_HTML)
+}
+
+/// GET /commands.json — the command manifest the frontend pushed at register.
+/// `{ "commands": [] }` until a harness registers.
+async fn handle_commands_json(AxumState(state): AxumState<Arc<HookServerState>>) -> Response {
+    let manifest = state
+        .hook_server
+        .command_manifest()
+        .unwrap_or_else(|| Value::Array(vec![]));
+    let mut resp = Json(json!({ "commands": manifest })).into_response();
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    resp
 }
 
 /// GET /artifacts — read-only artifact listings for all live harness stores.
@@ -3494,6 +3539,18 @@ pub fn acp_load_issue_bindings(
     hook_server.load_issue_bindings(&harness_id)
 }
 
+/// spec 185: cache the built-in `#` command manifest for the `/commands`
+/// reference page. The frontend pushes it once per harness register; the
+/// content is compile-time data, so last write wins.
+#[tauri::command]
+pub fn acp_store_command_manifest(
+    manifest: Value,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.store_command_manifest(manifest);
+    Ok(())
+}
+
 // ─── Artifact path policy (spec 133) ────────────────────────────────────────
 
 /// The artifact scratch root for a project: `<project>/.krypton/artifacts`.
@@ -4356,6 +4413,8 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 .route("/telemetry", get(handle_telemetry))
                 .route("/gallery", get(handle_gallery))
                 .route("/artifacts", get(handle_artifacts))
+                .route("/commands", get(handle_commands))
+                .route("/commands.json", get(handle_commands_json))
                 .route("/docs", get(handle_docs))
                 .route("/doc", get(handle_doc))
                 .route("/doc-asset", get(handle_doc_asset))
@@ -4851,6 +4910,8 @@ mod tests {
             .route("/telemetry", get(ok))
             .route("/gallery", get(ok))
             .route("/artifacts", get(ok))
+            .route("/commands", get(ok))
+            .route("/commands.json", get(ok))
             .route("/docs", get(ok))
             .route("/doc", get(ok))
             .route("/doc-asset", get(ok))
@@ -4860,6 +4921,24 @@ mod tests {
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
             .route("/artifact/feedback/{token}", post(ok));
+    }
+
+    // spec 185: /commands.json serves exactly what the frontend last pushed.
+    #[test]
+    fn command_manifest_round_trip() {
+        let server = HookServer::new();
+        assert!(server.command_manifest().is_none());
+        server.store_command_manifest(json!([{ "name": "polly" }]));
+        assert_eq!(
+            server.command_manifest(),
+            Some(json!([{ "name": "polly" }]))
+        );
+        // Compile-time data: last write wins, no version guard.
+        server.store_command_manifest(json!([{ "name": "debby" }]));
+        assert_eq!(
+            server.command_manifest(),
+            Some(json!([{ "name": "debby" }]))
+        );
     }
 
     #[test]

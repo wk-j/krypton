@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Built-in # commands</title>
+<style>
+  :root {
+    --bg: #17191d; --fg: #eaecef; --muted: #707a8a; --border: #2f353d;
+    --accent: #fcd535; --card: #21242a; --code-bg: #1d1f24;
+    --add: #0ecb81; --del: #f6465d; color-scheme: dark;
+    --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+  }
+  body { margin: 0; font-family: var(--sans); font-size: 14px; line-height: 1.5;
+         background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  .main { max-width: 1140px; margin: 0 auto; padding: 16px 20px 48px; }
+  .top { display: flex; justify-content: space-between; align-items: center;
+         gap: 16px; flex-wrap: wrap; padding: 14px 16px; margin: 6px 0 14px;
+         background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .title { font-size: 15px; font-weight: 700; }
+  .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .stats { display: flex; gap: 22px; flex-wrap: wrap; }
+  .stat { text-align: right; }
+  .stat b { display: block; font-family: var(--mono); font-size: 19px; color: var(--accent);
+            font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 10px; color: var(--muted); }
+  .nav { font-family: var(--mono); font-size: 11px; }
+  .nav a { color: var(--accent); text-decoration: none; margin-left: 14px; }
+  .sect { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .sect h3 { font-size: 11px; color: var(--muted); margin: 0 0 10px; font-weight: 600;
+             letter-spacing: .04em; text-transform: uppercase; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 12px; }
+  .cmd { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+         padding: 11px 13px; display: flex; flex-direction: column; gap: 6px; }
+  .cmd-name { font-family: var(--mono); font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+  .cmd-args { font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 400; }
+  .cmd-desc { font-size: 12px; line-height: 1.45; color: #b7bdc6; flex: 1; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { font-family: var(--mono); font-size: 9.5px; padding: 2px 7px; border-radius: 5px;
+           border: 1px solid var(--border); color: var(--muted); }
+  .badge.wf { background: rgba(252,213,53,.1); border-color: rgba(252,213,53,.35); color: var(--accent); }
+  .badge.ag { background: rgba(14,203,129,.08); border-color: rgba(14,203,129,.3); color: var(--add); }
+  .badge.hid { border-style: dashed; }
+  details.pr summary { font-family: var(--mono); font-size: 10px; color: var(--accent);
+                       cursor: pointer; list-style-position: inside; }
+  details.pr pre { margin: 6px 0 0; padding: 8px 10px; background: var(--bg);
+                   border: 1px solid var(--border); border-radius: 6px; font-family: var(--mono);
+                   font-size: 10px; line-height: 1.55; white-space: pre-wrap;
+                   color: #b7bdc6; max-height: 300px; overflow: auto; }
+  .ph { color: var(--accent); }
+  .flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .flow { font-family: var(--mono); font-size: 10.5px; line-height: 1.7; color: #b7bdc6;
+          background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+          padding: 10px 12px; }
+  .flow b { color: var(--accent); font-weight: 700; display: block; margin-bottom: 2px; }
+  .flow .lanes { color: var(--add); }
+  .flow .sep { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); font-family: var(--mono); font-size: 12px;
+           padding: 64px 16px; }
+  .footer { font-family: var(--mono); font-size: 11px; color: var(--muted);
+            margin-top: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="main">
+  <div class="top">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>
+        <div class="title">Built-in # commands</div>
+        <div class="sub">krypton acp harness · composer palette reference</div>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <nav class="nav"><a href="/dashboard">/dashboard</a><a href="/gallery">/gallery</a><a href="/docs">/docs</a></nav>
+  </div>
+  <div id="content"><div class="empty">loading…</div></div>
+  <div class="footer">templates rendered from the same prompt builders the dispatch uses — placeholder args shown as &lt;token&gt;</div>
+</div>
+<script>
+  // Static reference (spec 185): one fetch, no polling — the manifest only
+  // changes with a new build, pushed by the frontend at harness register.
+  (function () {
+    var SECTIONS = [
+      { id: 'session', title: 'Session & lane control' },
+      { id: 'surface', title: 'Browser surfaces' },
+      { id: 'agent', title: 'Orchestration & agent-driven' },
+    ];
+    var BADGE_CLASS = { workflow: 'wf', agent: 'ag', hidden: 'hid' };
+    var BADGE_LABEL = { workflow: 'workflow', agent: 'agent', hidden: 'not in palette' };
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+    // Accent-tint `<placeholder>` tokens inside an already-escaped prompt.
+    function promptHtml(prompt) {
+      return esc(prompt).replace(/&lt;[^&\n]{1,48}?&gt;/g, function (m) {
+        return '<span class="ph">' + m + '</span>';
+      });
+    }
+
+    function cardHtml(c) {
+      var h = '<div class="cmd"><div class="cmd-name">#' + esc(c.name);
+      if (c.args) h += ' <span class="cmd-args">' + esc(c.args) + '</span>';
+      h += '</div><div class="cmd-desc">' + esc(c.description) + '</div>';
+      if (c.prompt) {
+        h += '<details class="pr"><summary>system prompt</summary><pre>' +
+             promptHtml(c.prompt) + '</pre></details>';
+      }
+      var badges = (c.badges || []).map(function (b) {
+        return '<span class="badge ' + (BADGE_CLASS[b] || '') + '">' + (BADGE_LABEL[b] || esc(b)) + '</span>';
+      });
+      if (c.alias) badges.push('<span class="badge">alias #' + esc(c.alias) + '</span>');
+      if (badges.length) h += '<div class="badges">' + badges.join('') + '</div>';
+      return h + '</div>';
+    }
+
+    function render(commands) {
+      var content = document.getElementById('content');
+      if (!commands || !commands.length) {
+        content.innerHTML = '<div class="empty">no command manifest yet — open an ACP harness in Krypton, then reload<br>' +
+          '(if a harness is already open, its manifest push failed — check the app log)</div>';
+        return;
+      }
+      var html = '';
+      SECTIONS.forEach(function (s) {
+        var list = commands.filter(function (c) { return c.category === s.id; });
+        if (!list.length) return;
+        html += '<div class="sect"><h3>' + s.title + '</h3><div class="cards">' +
+                list.map(cardHtml).join('') + '</div></div>';
+      });
+      var flows = commands.filter(function (c) { return c.anatomy; });
+      if (flows.length) {
+        html += '<div class="sect"><h3>Workflow anatomy</h3><div class="flows">' +
+          flows.map(function (c) {
+            return '<div class="flow"><b>#' + esc(c.name) + '</b>' +
+              esc(c.anatomy).replace(/→/g, '<span class="sep">→</span>') +
+              (c.lanes ? ' <span class="sep">·</span> <span class="lanes">' + esc(c.lanes) + '</span>' : '') +
+              '</div>';
+          }).join('') + '</div></div>';
+      }
+      content.innerHTML = html;
+
+      var workflows = commands.filter(function (c) { return (c.badges || []).indexOf('workflow') !== -1; }).length;
+      var prompts = commands.filter(function (c) { return c.prompt; }).length;
+      document.getElementById('stats').innerHTML =
+        '<div class="stat"><b>' + commands.length + '</b><span>commands</span></div>' +
+        '<div class="stat"><b>' + workflows + '</b><span>workflows</span></div>' +
+        '<div class="stat"><b>' + prompts + '</b><span>system prompts</span></div>';
+    }
+
+    fetch('/commands.json', { cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) { render(data && data.commands ? data.commands : null); })
+      .catch(function () {
+        document.getElementById('content').innerHTML =
+          '<div class="empty">could not load /commands.json — is the harness running?</div>';
+      });
+  })();
+</script>
+</body>
+</html>

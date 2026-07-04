@@ -39,6 +39,7 @@ import {
   orchestratorDispatchBody,
   dispatchDisabledReason,
   consolePermissionAction,
+  consumeOptimisticUserEcho,
   armConsolePermissionFlags,
   seatPromptDisabledReason,
   DISPATCH_PURPOSES,
@@ -74,6 +75,68 @@ function laneSnapshot(partial: Partial<LanePeekSnapshot> & { laneId: string }): 
     error: partial.error ?? null,
   };
 }
+
+describe('consumeOptimisticUserEcho', () => {
+  it('consumes a full echoed prompt without appending duplicate text', () => {
+    expect(consumeOptimisticUserEcho('Always answer in Thai', '', 'Always answer in Thai')).toEqual({
+      matched: true,
+      received: 'Always answer in Thai',
+    });
+  });
+
+  it('consumes echoed prompt chunks incrementally', () => {
+    const first = consumeOptimisticUserEcho('Always answer in Thai', '', 'Always ');
+    expect(first).toEqual({ matched: true, received: 'Always ' });
+    expect(consumeOptimisticUserEcho('Always answer in Thai', first.received, 'answer in Thai')).toEqual({
+      matched: true,
+      received: 'Always answer in Thai',
+    });
+  });
+
+  it('continues to ignore a duplicate full echo after the prompt was consumed', () => {
+    expect(consumeOptimisticUserEcho('Always answer in Thai', 'Always answer in Thai', 'Always answer in Thai')).toEqual({
+      matched: true,
+      received: 'Always answer in Thai',
+    });
+  });
+
+  it('rejects mismatched user chunks so real backend text can still render', () => {
+    expect(consumeOptimisticUserEcho('Always answer in Thai', '', 'Different prompt')).toEqual({
+      matched: false,
+      received: '',
+    });
+  });
+
+  it('rejects a mismatch after a partial match without corrupting received state', () => {
+    expect(consumeOptimisticUserEcho('Hello world', 'Hello ', 'world EXTRA')).toEqual({
+      matched: false,
+      received: 'Hello ',
+    });
+  });
+
+  it('ignores whitespace-only chunks after the prompt was fully consumed', () => {
+    expect(consumeOptimisticUserEcho('Hello world', 'Hello world', '\n')).toEqual({
+      matched: true,
+      received: 'Hello world',
+    });
+  });
+
+  it('restarts the cycle when a duplicate echo arrives chunked', () => {
+    const first = consumeOptimisticUserEcho('Hello world', 'Hello world', 'Hello ');
+    expect(first).toEqual({ matched: true, received: 'Hello ' });
+    expect(consumeOptimisticUserEcho('Hello world', first.received, 'world')).toEqual({
+      matched: true,
+      received: 'Hello world',
+    });
+  });
+
+  it('rejects trailing non-echo text after the prompt was fully consumed', () => {
+    expect(consumeOptimisticUserEcho('Hello world', 'Hello world', 'and more')).toEqual({
+      matched: false,
+      received: 'Hello world',
+    });
+  });
+});
 
 describe('ACP harness auto-allow permission detection', () => {
   it('accepts Codex-style namespaced built-in memory tool names', () => {

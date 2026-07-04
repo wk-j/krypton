@@ -172,6 +172,7 @@ pub fn run() {
             commands::acp_set_lane_triage_equipped,
             hook_server::acp_save_issue_bindings,
             hook_server::acp_load_issue_bindings,
+            hook_server::acp_store_command_manifest,
             commands::save_temp_image,
             commands::capture_screen,
             commands::get_env_var,
