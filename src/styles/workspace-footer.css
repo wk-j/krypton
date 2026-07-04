@@ -29,25 +29,6 @@
      separator (a hard line, not a gradient). */
 }
 
-/* spec 132: Krypton brand anchor — identity mark at the leading edge. Persistent
-   chrome (not data), so it is never hidden by the responsive segment rules below. */
-.krypton-workspace-footer__brand {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  line-height: 0;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
-  filter:
-    drop-shadow(0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6))
-    drop-shadow(0 0 10px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.18));
-}
-
-.krypton-workspace-footer__brand svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-
 .krypton-workspace-footer__left,
 .krypton-workspace-footer__center,
 .krypton-workspace-footer__right,
@@ -59,8 +40,13 @@
 }
 
 .krypton-workspace-footer__left {
+  /* Hug the mode + role/title content (min-width: 0 lets it shrink and
+     ellipsize when crowded) instead of reserving a fixed 190px column. The
+     center telemetry deck sits immediately after, so there is no dead gap —
+     the trade is that the deck shifts slightly as the left label's width
+     changes (e.g. NORMAL → COMMAND_PALETTE, or a focus change). */
   flex: 0 1 auto;
-  min-width: 190px;
+  min-width: 0;
 }
 
 .krypton-workspace-footer__center {
@@ -117,11 +103,18 @@
   display: inline-flex;
   align-items: center;
   padding: 0 7px;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.38);
+  border: 0;
   color: var(--krypton-cyan, #00d4ff);
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.krypton-workspace-footer__segment--mode-normal {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .krypton-workspace-footer__segment--role {

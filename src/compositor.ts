@@ -5091,10 +5091,11 @@ export class Compositor {
       if (!win) return;
 
       if (this.layoutMode === LayoutMode.Focus) {
-        // Focus mode: full height, 65% width, left-aligned
+        // Focus mode: full height, 65% width, left-aligned.
+        // Reserve the bottom footer rail so the window doesn't overlap it.
         const w = Math.round(vw * Compositor.FOCUS_MAIN_RATIO);
         win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
-        win.bounds = { x: 0, y: 0, width: w, height: vh };
+        win.bounds = { x: 0, y: 0, width: w, height: vh - Compositor.FOOTER_HEIGHT };
       } else if (this.layoutMode === LayoutMode.Depth) {
         // Depth mode: centered inset, single window
         const w = Math.round(vw * Compositor.DEPTH_WIDTH_RATIO);
@@ -5179,6 +5180,9 @@ export class Compositor {
     const gap = this.windowGap;
     const mainW = Math.round(vw * Compositor.FOCUS_MAIN_RATIO);
     const stackW = vw - mainW - gap;
+    // Reserve the fixed bottom footer rail so windows don't overlap the
+    // workspace status bar (Grid does the same in relayoutGrid).
+    const availH = vh - Compositor.FOOTER_HEIGHT;
 
     // Separate windows into unpinned and pinned lists (preserving creation order)
     const unpinnedIds: WindowId[] = [];
@@ -5237,7 +5241,7 @@ export class Compositor {
     // unpinned and pinned sections (2x gap).
     const pinSeparatorGap = (unpinnedStack.length > 0 && pinnedIds.length > 0) ? gap : 0;
     const totalGaps = (stackCount > 1 ? gap * (stackCount - 1) : 0) + pinSeparatorGap;
-    const stackCellH = stackCount > 0 ? (vh - totalGaps) / stackCount : vh;
+    const stackCellH = stackCount > 0 ? (availH - totalGaps) / stackCount : availH;
 
     // Build visual order and apply bounds
     this.focusVisualOrder = [mainId];
@@ -5246,7 +5250,7 @@ export class Compositor {
     const mainWin = this.windows.get(mainId);
     if (mainWin) {
       mainWin.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: Math.max(1, stackCount) };
-      mainWin.bounds = { x: 0, y: 0, width: mainW, height: vh };
+      mainWin.bounds = { x: 0, y: 0, width: mainW, height: availH };
       this.applyBounds(mainWin);
     }
 

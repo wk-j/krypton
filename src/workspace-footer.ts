@@ -55,18 +55,7 @@ const ATTENTION_TIER_WEIGHT: Record<AttentionTier, number> = {
 };
 const ATTENTION_PIP_MAX = 6;
 
-// spec 132: Krypton app mark — "K" = solid cursor stem-bar + monoline command-prompt
-// chevron ("stem-bar" candidate). Singleton in the footer, so the SVG is inlined
-// directly (no <symbol>/<use> indirection). Strokes/fills use currentColor so it
-// recolors with the theme via the footer's accent color.
-const KRYPTON_LOGO_SVG =
-  '<svg viewBox="0 0 32 32" aria-hidden="true">' +
-  '<rect x="8" y="6" width="3.4" height="20" rx="0.4" fill="currentColor"/>' +
-  '<g stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
-  '<path d="M12 16 L23 6"/><path d="M12 16 L23 26"/>' +
-  '</g></svg>';
-
-// Footer telemetry icons — monoline SVGs in the brand mark's style, sized to the
+// Footer telemetry icons — monoline SVGs sized to the
 // text cell in CSS (currentColor + em → theme-aware, scales with the chrome font,
 // no glyph-font dependency so they never fall back to tofu). Each is parsed once
 // into a cached node (see `icon()`) and cloned per segment, so the render hot path
@@ -202,7 +191,6 @@ export class WorkspaceFooter {
   private density: WorkspaceFooterDensity = 'compact';
   private visible = true;
   private root: HTMLElement;
-  private brandEl: HTMLElement;
   private leftEl: HTMLElement;
   private centerEl: HTMLElement;
   private rightEl: HTMLElement;
@@ -303,14 +291,6 @@ export class WorkspaceFooter {
     this.musicProgressFillEl = document.createElement('div');
     this.musicProgressFillEl.className = 'krypton-workspace-footer__music-progress-fill';
 
-    // spec 132: persistent Krypton brand anchor at the leading edge — created once,
-    // never re-rendered (renderLeft/Center/Right only touch their own cells), so it
-    // stays off the refresh hot path. Like the Apple mark at the left of the menu bar.
-    this.brandEl = document.createElement('span');
-    this.brandEl.className = 'krypton-workspace-footer__brand';
-    this.brandEl.setAttribute('aria-label', 'Krypton');
-    this.brandEl.innerHTML = KRYPTON_LOGO_SVG;
-
     this.rightEl.append(
       this.priorityEl,
       this.reviewsEl,
@@ -318,7 +298,7 @@ export class WorkspaceFooter {
       this.hintEl,
       this.musicEl,
     );
-    this.root.append(this.brandEl, this.leftEl, this.centerEl, this.rightEl);
+    this.root.append(this.leftEl, this.centerEl, this.rightEl);
 
     deps.inputRouter.onModeChange((mode) => {
       this.mode = mode;
@@ -515,7 +495,7 @@ export class WorkspaceFooter {
 
   private renderLeft(summary: FocusSummary): void {
     this.leftEl.replaceChildren(
-      this.segment(modeLabel(this.mode), 'mode'),
+      this.segment(modeLabel(this.mode), this.mode === Mode.Normal ? 'mode mode-normal' : 'mode'),
       this.segment(composeRoleTitle(summary.role, summary.title, summary.cwd), 'p0 role'),
     );
   }
