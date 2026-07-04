@@ -45,6 +45,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'mcp', args: '', description: 'print harness MCP server status' },
   { name: 'dashboard', args: '', description: 'open the live harness dashboard in a browser' },
   { name: 'gallery', args: '', description: 'open the artifact gallery (pending + live artifacts) in a browser' },
+  { name: 'docs', args: '', description: 'open the repo docs browser in a browser' },
   { name: 'commands', args: '', description: 'open the built-in # command reference in a browser' },
   { name: 'tools', args: '', description: 'open the built-in MCP tool reference in a browser' },
   { name: 'handoff', args: '', description: 'write a resume-ready handoff doc to memory' },
@@ -56,6 +57,11 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'orchestrator', args: '', description: 'designate this lane the orchestrator seat + open the console' },
   { name: 'polly', args: '<task>', description: 'Polly orchestration — spawns Cursor + Claude + Codex workers' },
   { name: 'debby', args: '<question>', description: 'Debby brainstorming — asks Claude + Codex heads' },
+  {
+    name: 'fix-issue',
+    args: '<issue url | owner/repo#123>',
+    description: 'fetch a GitHub issue and dispatch it to a fresh lane',
+  },
   { name: 'queue', args: '[clear | edit N]', description: 'manage queued prompts' },
   { name: 'unqueue', args: '[N]', description: 'remove the last (or Nth) queued prompt' },
 ];
@@ -116,7 +122,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     unqueue: { category: 'session', badges: [] },
     dashboard: { category: 'surface', badges: [] },
     gallery: { category: 'surface', badges: [] },
-    docs: { category: 'surface', badges: ['hidden'] },
+    docs: { category: 'surface', badges: [] },
     commands: { category: 'surface', badges: [] },
     tools: { category: 'surface', badges: [] },
     handoff: {
@@ -204,7 +210,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     },
     'fix-issue': {
       category: 'agent',
-      badges: ['workflow', 'hidden'],
+      badges: ['workflow'],
       anatomy: 'parse ref → gh fetch title → spawn lane → dispatch fix',
       lanes: '+1 lane',
       prompt: issueFixPrompt({
@@ -218,24 +224,14 @@ export function commandMeta(): Record<string, CommandMeta> {
   };
 }
 
-/** Dispatch-only commands: handled by `runHashCommand` but not in the palette. */
-const DISPATCH_ONLY_COMMANDS: readonly HashCommand[] = [
-  { name: 'docs', args: '', description: 'open the repo docs browser in a browser' },
-  {
-    name: 'fix-issue',
-    args: '<issue url | owner/repo#123>',
-    description: 'fetch a GitHub issue and dispatch it to a fresh lane',
-  },
-];
-
 /**
  * The full built-in command manifest served at GET /commands.json. Built from
- * the SAME roster (`HASH_COMMANDS` + the dispatch-only list) and the SAME
- * prompt builders the dispatch uses, so the reference page cannot drift.
+ * the SAME roster (`HASH_COMMANDS`) and the SAME prompt builders the dispatch
+ * uses, so the reference page cannot drift.
  */
 export function buildCommandManifest(): CommandManifestEntry[] {
   const meta = commandMeta();
-  return [...HASH_COMMANDS, ...DISPATCH_ONLY_COMMANDS].map((c) => {
+  return HASH_COMMANDS.map((c) => {
     const m = meta[c.name] ?? { category: 'session' as const, badges: [] };
     return { name: c.name, args: c.args, description: c.description, ...m };
   });

@@ -72,12 +72,17 @@ describe('buildCommandManifest', () => {
     }
   });
 
-  // Keep in sync with the dispatch-only branches in `runHashCommand`
-  // (#docs, #console alias, #fix-issue).
-  it('covers the dispatch-only commands and the console alias', () => {
-    expect(byName.get('docs')?.badges).toContain('hidden');
-    expect(byName.get('fix-issue')?.badges).toContain('hidden');
+  // Keep in sync with the console alias on the orchestrator entry.
+  it('covers the console alias', () => {
     expect(byName.get('orchestrator')?.alias).toBe('console');
+  });
+
+  it('includes docs and fix-issue in the palette roster', () => {
+    const names = HASH_COMMANDS.map((c) => c.name);
+    expect(names).toContain('docs');
+    expect(names).toContain('fix-issue');
+    expect(byName.get('docs')?.badges).not.toContain('hidden');
+    expect(byName.get('fix-issue')?.badges).not.toContain('hidden');
   });
 
   it('carries the real prompt template on every prompt-backed command', () => {
