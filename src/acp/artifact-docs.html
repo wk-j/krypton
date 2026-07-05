@@ -289,7 +289,7 @@
     ROOT.innerHTML =
       '<style>' +
       '[data-kda]{font-family:var(--mono,monospace);box-sizing:border-box}' +
-      '#kda-pill{position:fixed;right:12px;bottom:58px;z-index:2147483644;' +
+      '#kda-pill{' +
         'background:var(--card,#21242a);color:var(--fg,#eaecef);border:1px solid var(--border,#2f353d);' +
         'border-radius:6px;padding:10px 14px;font-size:12px;line-height:1.4;cursor:pointer;' +
         'box-shadow:0 2px 12px rgba(0,0,0,.35)}' +
@@ -299,9 +299,27 @@
       '#kda-pill[data-state="queued"]{border-color:var(--accent,#fcd535)}' +
       '#kda-pill[data-state="error"]{border-color:#f6465d;color:#f6465d}' +
       '</style>' +
-      '<div id="kda-pill" role="button" tabindex="0" title="Generate an HTML artifact from this doc"></div>';
+      '<div id="kda-pill" data-kda="" role="button" tabindex="0" title="Generate an HTML artifact from this doc"></div>';
     document.body.appendChild(ROOT);
     var pillEl = ROOT.querySelector("#kda-pill");
+    pillDock().appendChild(pillEl);
+
+    // The artifact pill (this script) and the feedback pill (spec 172 script
+    // below) are independent overlays sharing the bottom-right corner; fixed
+    // offsets can't know each other's height, so both stack inside one shared
+    // flex dock. Get-or-create so either script can run alone.
+    function pillDock() {
+      var dock = document.getElementById("k-pill-dock");
+      if (!dock) {
+        dock = document.createElement("div");
+        dock.id = "k-pill-dock";
+        dock.style.cssText =
+          "position:fixed;right:12px;bottom:12px;z-index:2147483646;" +
+          "display:flex;flex-direction:column;align-items:flex-end;gap:8px";
+        document.body.appendChild(dock);
+      }
+      return dock;
+    }
 
     function basename(path) {
       var parts = String(path || "").split("/");
@@ -431,7 +449,7 @@
     ROOT.innerHTML =
       '<style>' +
       '[data-kdf]{font-family:var(--mono,monospace);box-sizing:border-box}' +
-      '#kdf-pill{position:fixed;right:12px;bottom:12px;z-index:2147483646;' +
+      '#kdf-pill{' +
         'background:var(--card,#21242a);color:var(--fg,#eaecef);border:1px solid var(--border,#2f353d);' +
         'border-radius:6px;padding:10px 14px;font-size:12px;line-height:1.4;cursor:pointer;' +
         'max-width:280px;box-shadow:0 2px 12px rgba(0,0,0,.4)}' +
@@ -439,7 +457,7 @@
       '#kdf-pill .kdf-sub{color:var(--muted,#707a8a);display:block;margin-top:2px;font-size:11px}' +
       '#kdf-hi{position:fixed;z-index:2147483645;pointer-events:none;border:2px solid var(--accent,#fcd535);' +
         'background:rgba(252,213,53,.12);border-radius:3px;display:none}' +
-      '#kdf-box{position:fixed;right:12px;bottom:52px;z-index:2147483647;width:300px;' +
+      '#kdf-box{width:300px;' +
         'background:var(--card,#21242a);color:var(--fg,#eaecef);border:1px solid var(--accent,#fcd535);' +
         'border-radius:6px;padding:10px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5)}' +
       '#kdf-box .kdf-tgt{color:var(--muted,#707a8a);font-size:11px;margin-bottom:6px;' +
@@ -454,8 +472,8 @@
         'border-radius:4px;padding:3px 9px;margin-left:4px}' +
       '</style>' +
       '<div id="kdf-hi"></div>' +
-      '<div id="kdf-pill"></div>' +
-      '<div id="kdf-box">' +
+      '<div id="kdf-pill" data-kdf=""></div>' +
+      '<div id="kdf-box" data-kdf="">' +
         '<div class="kdf-tgt" id="kdf-tgt"></div>' +
         '<textarea id="kdf-text" placeholder="describe the change…"></textarea>' +
         '<div class="kdf-row"><span class="kdf-keys">⌘↵ save · esc cancel</span>' +
@@ -468,6 +486,24 @@
     var boxEl = ROOT.querySelector("#kdf-box");
     var tgtEl = ROOT.querySelector("#kdf-tgt");
     var textEl = ROOT.querySelector("#kdf-text");
+
+    // Shared bottom-right stack with the artifact pill (spec 174 script above)
+    // so the two overlays never overlap whatever height either renders at. The
+    // composer box goes on top of the stack; pill order stays artifact-first.
+    // Get-or-create so either script can run alone.
+    (function () {
+      var dock = document.getElementById("k-pill-dock");
+      if (!dock) {
+        dock = document.createElement("div");
+        dock.id = "k-pill-dock";
+        dock.style.cssText =
+          "position:fixed;right:12px;bottom:12px;z-index:2147483646;" +
+          "display:flex;flex-direction:column;align-items:flex-end;gap:8px";
+        document.body.appendChild(dock);
+      }
+      dock.insertBefore(boxEl, dock.firstChild);
+      dock.appendChild(pillEl);
+    })();
 
     function cap(s, n) { s = s == null ? "" : String(s); return s.length > n ? s.slice(0, n) : s; }
     function inOverlay(el) { return !!(el && el.closest && el.closest("[data-kdf]")); }
@@ -655,8 +691,8 @@
     document.addEventListener("mousemove", onMove, true);
     document.addEventListener("click", onClick, true);
     pillEl.addEventListener("click", function () { if (disabled) return; if (armed) disarm(); else arm(); });
-    ROOT.querySelector("#kdf-save").addEventListener("click", saveComposer);
-    ROOT.querySelector("#kdf-cancel").addEventListener("click", cancelComposer);
+    boxEl.querySelector("#kdf-save").addEventListener("click", saveComposer);
+    boxEl.querySelector("#kdf-cancel").addEventListener("click", cancelComposer);
     textEl.addEventListener("input", function () { if (draft) { draft.body = textEl.value; persist(); } });
     document.addEventListener("keydown", function (e) {
       if (boxEl.style.display === "block") {

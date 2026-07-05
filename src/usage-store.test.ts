@@ -16,6 +16,7 @@ const claudeUsage: ClaudeUsage = {
   sevenDay: { utilization: 84, resetsAt: null },
   sevenDayOpus: { utilization: 101, resetsAt: null },
   sevenDaySonnet: null,
+  weeklyScoped: [{ name: 'Fable', utilization: 79, resetsAt: '2026-07-07T16:00:00Z' }],
   extraUsage: null,
   subscriptionType: 'max',
   rateLimitTier: null,
@@ -36,6 +37,7 @@ describe('usage summaries', () => {
       { label: '5h', usedPercent: 27 },
       { label: 'week', usedPercent: 84 },
       { label: 'opus', usedPercent: 100 },
+      { label: 'fable', usedPercent: 79 },
     ]);
     expect(summary.mostConstrained).toEqual({ label: 'opus', usedPercent: 100 });
     expect(summary.freshness).toBe('live');

@@ -128,7 +128,7 @@ when membership changes, not for lane status/model changes.
 
 | Provider | Normal-width quota labels | Notes |
 |----------|---------------------------|-------|
-| Claude | `5h`, `week`, optional `opus`, optional `sonnet` | Extra-credit dollars remain detail-view only |
+| Claude | `5h`, `week`, optional `opus`, optional `sonnet`, one label per model-scoped weekly window (lowercased name, e.g. `fable` — spec 187) | Extra-credit dollars remain detail-view only |
 | Codex | `5h`, `week` | Local snapshot may be stale |
 | Copilot | `premium`, `chat`, `complete` | Unlimited quotas omitted |
 | Cursor | `month`; legacy fallback `requests` | Spend dollars remain detail-view only |

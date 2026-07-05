@@ -69,6 +69,9 @@ struct ClaudeUsage {
     seven_day: UsageWindow,
     seven_day_opus: Option<UsageWindow>,
     seven_day_sonnet: Option<UsageWindow>,
+    weekly_scoped: Vec<ScopedUsageWindow>,  // { name, utilization, resets_at } — model-scoped
+                                            // weekly buckets from the `limits` array (spec 187,
+                                            // e.g. Fable); renders as `week · <name>` gauges
     extra_usage: Option<ExtraUsage>,        // { is_enabled, monthly_limit, used_credits, utilization }
     subscription_type: Option<String>,      // from credentials: "team", "max", ...
     rate_limit_tier: Option<String>,        // "default_claude_max_5x"
@@ -154,6 +157,9 @@ None. Poll cadences are fixed (180 s / 60 s); provider sections appear by auto-d
 - **App restart during a rate-limit window** → the disk cache restores the last good payload immediately, so the widget never opens blank just because the process restarted (dev iteration restarts used to cost one request each and start empty).
 - **`codex exec`-only recent activity** (`rate_limits: null`) → scanner keeps walking older events/files; if nothing in ~7 days → “no recent data — run codex once”.
 - **`seven_day_opus`/`seven_day_sonnet` null** → row hidden, no empty gauge.
+- **`weekly_scoped` entry duplicating a legacy top-level window** (same model
+  name) → the scoped entry wins; the top-level one is dropped at parse time
+  (spec 187).
 - **Multiple usage views / window status segments** → allowed; all subscribers
   share one frontend poll timer per provider, backed by the Rust cache.
 - **Secrets hygiene** → tokens never logged, never serialized into any Result; error strings are static sentinels, never raw HTTP bodies.

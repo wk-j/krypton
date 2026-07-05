@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-07-04
+> Last updated: 2026-07-05
 
 ## Overview
 
@@ -20,6 +20,20 @@
 ---
 
 ## Recent Landings
+
+- **Claude Fable weekly usage meter (spec 187)** — the OAuth usage payload now
+  carries model-scoped weekly buckets (Fable today) only in its new `limits`
+  array; the legacy top-level fields never see them. `usage.rs` parses
+  `kind: "weekly_scoped"` entries into `ClaudeUsage.weeklyScoped`
+  (`{ name, utilization, resetsAt }`, generic over the model display name, so
+  future scoped buckets surface with zero code change; scoped entries supersede
+  matching legacy `seven_day_opus/sonnet` fields; `serde(default)` keeps old
+  disk caches loading). The usage view renders one `week · fable` gauge per
+  entry and `summarizeUsage` adds matching chip quotas, so window-chrome credit
+  chips (spec 153) inherit the meter for free. Chose direct `limits`-array
+  parsing over orca's approach (guessed OAuth field names + hidden-PTY `/usage`
+  panel scraping) — the JSON is already authoritative. See
+  `docs/187-claude-fable-weekly-usage.md`.
 
 - **Built-in MCP tool reference page (spec 186)** — a fifth read-only loopback
   surface: `GET /tools` serves a static shell (`src/acp/artifact-tools.html`,

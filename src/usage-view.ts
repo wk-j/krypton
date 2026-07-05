@@ -273,6 +273,9 @@ export class UsageContentView implements ContentView {
       if (u.sevenDaySonnet) {
         this.gauge(widget, 'week · sonnet', u.sevenDaySonnet.utilization, isoMs(u.sevenDaySonnet));
       }
+      for (const scoped of u.weeklyScoped) {
+        this.gauge(widget, `week · ${scoped.name.toLowerCase()}`, scoped.utilization, isoMs(scoped));
+      }
       if (u.extraUsage?.isEnabled) {
         const used = u.extraUsage.usedCredits ?? 0;
         const limit = u.extraUsage.monthlyLimit;

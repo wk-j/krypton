@@ -46,6 +46,18 @@ pub struct ExtraUsage {
     pub utilization: Option<f64>,
 }
 
+/// Model-scoped weekly window from the `limits` array of the OAuth usage
+/// payload (spec 187), e.g. the Fable weekly bucket. Unlike the legacy
+/// top-level `seven_day_*` fields, these are keyed by the model display name
+/// the server sends, so new scoped buckets surface without a code change.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopedUsageWindow {
+    pub name: String,
+    pub utilization: f64,
+    pub resets_at: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeUsage {
@@ -53,6 +65,9 @@ pub struct ClaudeUsage {
     pub seven_day: UsageWindow,
     pub seven_day_opus: Option<UsageWindow>,
     pub seven_day_sonnet: Option<UsageWindow>,
+    /// `serde(default)` so disk caches written before spec 187 still load.
+    #[serde(default)]
+    pub weekly_scoped: Vec<ScopedUsageWindow>,
     pub extra_usage: Option<ExtraUsage>,
     pub subscription_type: Option<String>,
     pub rate_limit_tier: Option<String>,
@@ -272,6 +287,40 @@ fn window_from(v: Option<&Value>) -> Option<UsageWindow> {
     })
 }
 
+/// Model-scoped weekly windows from the `limits` array. Session and
+/// weekly-all entries are skipped (the top-level fields already carry them);
+/// surface-scoped entries without a model are skipped too.
+fn scoped_windows_from(limits: Option<&Value>) -> Vec<ScopedUsageWindow> {
+    let Some(entries) = limits.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            if entry.get("kind").and_then(Value::as_str) != Some("weekly_scoped") {
+                return None;
+            }
+            let name = entry
+                .get("scope")?
+                .get("model")?
+                .get("display_name")?
+                .as_str()?
+                .trim();
+            if name.is_empty() {
+                return None;
+            }
+            Some(ScopedUsageWindow {
+                name: name.to_string(),
+                utilization: entry.get("percent").and_then(Value::as_f64)?,
+                resets_at: entry
+                    .get("resets_at")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+            })
+        })
+        .collect()
+}
+
 fn cached_claude(token: &str, max_age_ms: Option<i64>) -> Option<ClaudeUsage> {
     let mut guard = CLAUDE_CACHE.lock().ok()?;
     let usage = match guard.as_ref() {
@@ -393,11 +442,22 @@ pub async fn usage_fetch_claude() -> Result<ClaudeUsage, String> {
             utilization: o.get("utilization").and_then(Value::as_f64),
         });
 
+    // A scoped entry supersedes the matching legacy top-level window — the
+    // server may report both during the transition; don't render it twice.
+    let weekly_scoped = scoped_windows_from(body.get("limits"));
+    let scoped_has = |model: &str| {
+        weekly_scoped
+            .iter()
+            .any(|w| w.name.eq_ignore_ascii_case(model))
+    };
+
     let usage = ClaudeUsage {
         five_hour,
         seven_day,
-        seven_day_opus: window_from(body.get("seven_day_opus")),
-        seven_day_sonnet: window_from(body.get("seven_day_sonnet")),
+        seven_day_opus: window_from(body.get("seven_day_opus")).filter(|_| !scoped_has("opus")),
+        seven_day_sonnet: window_from(body.get("seven_day_sonnet"))
+            .filter(|_| !scoped_has("sonnet")),
+        weekly_scoped,
         extra_usage,
         subscription_type: creds.subscription_type,
         rate_limit_tier: creds.rate_limit_tier,
@@ -982,6 +1042,11 @@ mod tests {
             },
             seven_day_opus: None,
             seven_day_sonnet: None,
+            weekly_scoped: vec![ScopedUsageWindow {
+                name: "Fable".into(),
+                utilization: 79.0,
+                resets_at: Some("2026-07-07T16:00:00Z".into()),
+            }],
             extra_usage: None,
             subscription_type: Some("team".into()),
             rate_limit_tier: None,
@@ -997,10 +1062,72 @@ mod tests {
         assert_eq!(loaded.seven_day.utilization, 80.5);
         assert_eq!(loaded.fetched_at, 1_781_100_000_000);
         assert_eq!(loaded.subscription_type.as_deref(), Some("team"));
+        assert_eq!(loaded.weekly_scoped.len(), 1);
+        assert_eq!(loaded.weekly_scoped[0].name, "Fable");
+        assert_eq!(loaded.weekly_scoped[0].utilization, 79.0);
         // A different token must not see the cached payload.
         assert!(load_disk_claude_from(&path, "tok-b").is_none());
 
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn disk_cache_from_before_weekly_scoped_still_loads() {
+        let dir = std::env::temp_dir().join("krypton-usage-test-legacy");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("claude-usage.json");
+        // Payload shape written before spec 187 — no weeklyScoped key.
+        let legacy = serde_json::json!({
+            "tokenFingerprint": token_fingerprint("tok-a"),
+            "usage": {
+                "fiveHour": { "utilization": 10.0, "resetsAt": null },
+                "sevenDay": { "utilization": 20.0, "resetsAt": null },
+                "sevenDayOpus": null,
+                "sevenDaySonnet": null,
+                "extraUsage": null,
+                "subscriptionType": null,
+                "rateLimitTier": null,
+                "fetchedAt": 1_781_100_000_000i64,
+            },
+        });
+        std::fs::write(&path, legacy.to_string()).expect("write legacy cache");
+
+        let loaded = load_disk_claude_from(&path, "tok-a").expect("should load");
+        assert!(loaded.weekly_scoped.is_empty());
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn parses_weekly_scoped_limits() {
+        // Redacted live /api/oauth/usage shape (2026-07-05): session and
+        // weekly_all repeat the top-level windows; the Fable bucket only
+        // exists here. Surface-scoped and model-less entries are skipped.
+        let body: Value = serde_json::json!({
+            "limits": [
+                { "kind": "session", "group": "session", "percent": 14,
+                  "resets_at": "2026-07-05T12:50:00Z", "scope": null },
+                { "kind": "weekly_all", "group": "weekly", "percent": 47,
+                  "resets_at": "2026-07-07T16:00:00Z", "scope": null },
+                { "kind": "weekly_scoped", "group": "weekly", "percent": 79,
+                  "severity": "warning", "resets_at": "2026-07-07T16:00:00Z",
+                  "scope": { "model": { "id": null, "display_name": "Fable" }, "surface": null },
+                  "is_active": true },
+                { "kind": "weekly_scoped", "group": "weekly", "percent": 12,
+                  "resets_at": null,
+                  "scope": { "model": null, "surface": "cowork" } },
+                { "kind": "weekly_scoped", "group": "weekly", "percent": 5,
+                  "scope": { "model": { "display_name": "  " } } }
+            ]
+        });
+        let scoped = scoped_windows_from(body.get("limits"));
+        assert_eq!(scoped.len(), 1);
+        assert_eq!(scoped[0].name, "Fable");
+        assert_eq!(scoped[0].utilization, 79.0);
+        assert_eq!(scoped[0].resets_at.as_deref(), Some("2026-07-07T16:00:00Z"));
+
+        assert!(scoped_windows_from(None).is_empty());
+        assert!(scoped_windows_from(Some(&Value::Null)).is_empty());
     }
 
     #[test]

@@ -10,6 +10,13 @@ export interface UsageWindow {
   resetsAt: string | null;
 }
 
+/** Model-scoped weekly window (spec 187), e.g. the Fable weekly bucket. */
+export interface ScopedUsageWindow {
+  name: string;
+  utilization: number;
+  resetsAt: string | null;
+}
+
 export interface ExtraUsage {
   isEnabled: boolean;
   monthlyLimit: number | null;
@@ -22,6 +29,7 @@ export interface ClaudeUsage {
   sevenDay: UsageWindow;
   sevenDayOpus: UsageWindow | null;
   sevenDaySonnet: UsageWindow | null;
+  weeklyScoped: ScopedUsageWindow[];
   extraUsage: ExtraUsage | null;
   subscriptionType: string | null;
   rateLimitTier: string | null;
@@ -131,6 +139,9 @@ export function summarizeUsage(state: ProviderUsageState): ProviderUsageSummary 
     quotas.push(quota('5h', u.fiveHour.utilization), quota('week', u.sevenDay.utilization));
     if (u.sevenDayOpus) quotas.push(quota('opus', u.sevenDayOpus.utilization));
     if (u.sevenDaySonnet) quotas.push(quota('sonnet', u.sevenDaySonnet.utilization));
+    for (const scoped of u.weeklyScoped) {
+      quotas.push(quota(scoped.name.toLowerCase(), scoped.utilization));
+    }
   } else if (state.provider === 'codex' && data) {
     const u = data as CodexUsage;
     if (u.primary) quotas.push(quota('5h', u.primary.usedPercent));
