@@ -223,6 +223,10 @@ export interface KryptonWindow {
   contentElement: HTMLElement;
   /** Whether this window is pinned (sticks to right column in Focus layout, skipped in focus cycle) */
   pinned: boolean;
+  /** Live oscilloscope band in the window head (terminal windows only), fed by
+   *  PTY throughput. Null when the header-accent style is 'ticks'. See
+   *  docs/188-oscilloscope-header-band.md. */
+  headerScope?: import('./header-scope').HeaderScope | null;
 }
 
 // ─── Animation Types ──────────────────────────────────────────

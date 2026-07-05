@@ -88,6 +88,9 @@ export interface ChromeHeaderAccent {
   height: number;
   color: string;
   margin_horizontal: number;
+  /** 'oscilloscope' (live canvas trace fed by PTY throughput) or 'ticks'
+   *  (static striped gradient). See docs/188-oscilloscope-header-band.md. */
+  style: 'oscilloscope' | 'ticks';
 }
 
 export interface ChromeCornerAccents {

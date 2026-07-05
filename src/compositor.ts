@@ -48,6 +48,7 @@ import { DashboardManager } from './dashboard';
 import type { ClaudeHookManager } from './claude-hooks';
 import type { NotificationController } from './notification';
 import { installPerspectiveMouseFix } from './perspective-fix';
+import { HeaderScope } from './header-scope';
 import { ProgressGauge } from './progress-gauge';
 import { parseOsc7Sequences } from './osc7';
 import { probeRemoteCwd, type SshConnectionInfo } from './ssh-session';
@@ -330,6 +331,8 @@ export class Compositor {
   private qtElement: HTMLElement | null = null;
   /** xterm.js terminal instance for Quick Terminal */
   private qtTerminal: TerminalInstance | null = null;
+  /** Oscilloscope header band for Quick Terminal (null when style is 'ticks') */
+  private qtHeaderScope: HeaderScope | null = null;
   /** PTY session ID for Quick Terminal */
   private qtSessionId: number | null = null;
   /** Whether the Quick Terminal is currently visible */
@@ -1400,6 +1403,32 @@ export class Compositor {
     if (this.qtTerminal) {
       this.qtTerminal.terminal.options.theme = xtermTheme;
     }
+
+    // Refresh oscilloscope band accents (per-lane color may have changed)
+    for (const [, win] of this.windows) win.headerScope?.refreshColor();
+    this.qtHeaderScope?.refreshColor();
+  }
+
+  /**
+   * Build the header-accent element below the titlebar and append it to `chrome`.
+   * When the theme's `chrome.header_accent.style` is 'oscilloscope' (default), a
+   * live canvas oscilloscope (fed by PTY throughput, idle-stopping) is created and
+   * its HeaderScope returned; when 'ticks', the static striped div is used and
+   * null is returned. See docs/188-oscilloscope-header-band.md.
+   */
+  private buildHeaderAccent(chrome: HTMLElement): HeaderScope | null {
+    const accent = this.themeEngine?.theme?.chrome.header_accent;
+    const enabled = accent?.enabled ?? true;
+    const style = accent?.style ?? 'oscilloscope';
+    if (enabled && style === 'oscilloscope') {
+      const scope = new HeaderScope();
+      chrome.appendChild(scope.getElement());
+      return scope;
+    }
+    const div = document.createElement('div');
+    div.className = 'krypton-window__header-accent';
+    chrome.appendChild(div);
+    return null;
   }
 
   /**
@@ -1739,10 +1768,9 @@ export class Compositor {
     titlebar.appendChild(ptyStatus);
     chrome.appendChild(titlebar);
 
-    // Header accent bar (striped decoration below titlebar)
-    const headerAccent = document.createElement('div');
-    headerAccent.className = 'krypton-window__header-accent';
-    chrome.appendChild(headerAccent);
+    // Header accent bar below titlebar — live oscilloscope (fed by PTY
+    // throughput) or the static striped div, per theme config.
+    const headerScope = this.buildHeaderAccent(chrome);
 
     // Tab bar
     const tabBar = document.createElement('div');
@@ -1805,6 +1833,7 @@ export class Compositor {
       tabBarElement: tabBar,
       contentElement: content,
       pinned: false,
+      headerScope,
     };
     this.windows.set(id, win);
     this.updateTabBar(win);
@@ -3374,6 +3403,9 @@ export class Compositor {
       this.disposePaneTree(tab.paneTree);
     }
 
+    // Dispose the oscilloscope band (cancels rAF, disconnects ResizeObserver)
+    win.headerScope?.dispose();
+
     // Dispose flame animation for this window
     if (this.claudeHookManager) {
       const animCanvas = win.contentElement.querySelector('.krypton-flame-canvas, .krypton-brainwave-canvas, .krypton-matrix-canvas') as HTMLCanvasElement | null;
@@ -4666,6 +4698,10 @@ export class Compositor {
       this.qtTerminal = null;
     }
 
+    // Dispose the oscilloscope band
+    this.qtHeaderScope?.dispose();
+    this.qtHeaderScope = null;
+
     // Remove DOM element
     if (this.qtElement) {
       this.qtElement.remove();
@@ -4714,9 +4750,7 @@ export class Compositor {
     titlebar.appendChild(qtPtyStatus);
     chrome.appendChild(titlebar);
 
-    const headerAccent = document.createElement('div');
-    headerAccent.className = 'krypton-window__header-accent';
-    chrome.appendChild(headerAccent);
+    this.qtHeaderScope = this.buildHeaderAccent(chrome);
 
     const content = document.createElement('div');
     content.className = 'krypton-window__content';
@@ -5549,6 +5583,7 @@ export class Compositor {
       // Check Quick Terminal first
       if (this.qtSessionId === sid && this.qtTerminal) {
         this.qtTerminal.terminal.write(new Uint8Array(data));
+        this.qtHeaderScope?.pump(data.length);
         return;
       }
 
@@ -5557,6 +5592,8 @@ export class Compositor {
       if (loc) {
         const win = this.windows.get(loc.windowId);
         if (win) {
+          // Drive the window's oscilloscope band with output throughput.
+          win.headerScope?.pump(data.length);
           const tab = win.tabs.find((t) => t.id === loc.tabId);
           if (tab) {
             const pane = this.findPaneInTree(tab.paneTree, loc.paneId);

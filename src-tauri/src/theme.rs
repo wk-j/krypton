@@ -128,6 +128,9 @@ pub struct ChromeHeaderAccent {
     pub height: u32,
     pub color: String,
     pub margin_horizontal: u32,
+    /// Band rendering: "oscilloscope" (live canvas trace fed by PTY throughput)
+    /// or "ticks" (static striped gradient). See docs/188-oscilloscope-header-band.md.
+    pub style: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -359,6 +362,7 @@ impl Default for ChromeHeaderAccent {
             height: 6,
             color: "rgba(0, 200, 255, 0.15)".to_string(),
             margin_horizontal: 20,
+            style: "oscilloscope".to_string(),
         }
     }
 }

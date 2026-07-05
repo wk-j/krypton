@@ -94,6 +94,15 @@
   flex-shrink: 0;
 }
 
+/* Oscilloscope variant — a <canvas> drawn by HeaderScope (fed by PTY
+   throughput). Override the striped gradient so only the canvas trace shows;
+   keep the shared height/margin so themes still control the band's box.
+   See docs/188-oscilloscope-header-band.md. */
+.krypton-window__header-accent--scope {
+  display: block;
+  background: none;
+}
+
 /* ─── Chrome — title bar ─── */
 .krypton-window__chrome {
   flex-shrink: 0;

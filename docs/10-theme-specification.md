@@ -241,22 +241,24 @@ shape = "square"                    # "square" or "circle"
 
 #### `[chrome.header_accent]`
 
-The decorative striped bar below the title bar.
+The signal band below the title bar.
 
 ```toml
 [chrome.header_accent]
 enabled = true
 height = 6                          # Bar height in pixels
-color = "rgba(0, 200, 255, 0.15)"   # Stripe color (unfocused)
+color = "rgba(0, 200, 255, 0.15)"   # Stripe color (unfocused; ticks style only)
 margin_horizontal = 20              # Left/right margin in pixels
+style = "oscilloscope"              # "oscilloscope" (live trace) | "ticks" (static)
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | bool | `true` | Show/hide the accent bar |
 | `height` | int | `6` | Accent bar height (px) |
-| `color` | color | `"rgba(0, 200, 255, 0.15)"` | Stripe color (unfocused) |
+| `color` | color | `"rgba(0, 200, 255, 0.15)"` | Stripe color (unfocused; `ticks` style only) |
 | `margin_horizontal` | int | `20` | Horizontal margin (px) |
+| `style` | string | `"oscilloscope"` | `"oscilloscope"` — live canvas trace fed by PTY output throughput (rAF stops at idle → 0% idle CPU; `prefers-reduced-motion` → static hairline; trace color follows the per-lane window accent). `"ticks"` — the classic static striped gradient. Terminal + Quick Terminal windows only; content-view windows keep the static band. See `docs/188-oscilloscope-header-band.md`. |
 
 #### `[chrome.corner_accents]`
 

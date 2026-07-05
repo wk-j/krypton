@@ -204,7 +204,10 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
           </div>
           <span class="krypton-window__pty-status">~/projects</span>
         </div>
-        <div class="krypton-window__header-accent"></div>
+        <!-- header-accent: a <canvas> oscilloscope (HeaderScope, fed by PTY
+             throughput; rAF stops at idle) by default, or a static striped
+             <div> when chrome.header_accent.style = "ticks". See spec 188. -->
+        <canvas class="krypton-window__header-accent krypton-window__header-accent--scope"></canvas>
       </div>
 
       <!-- Tab bar: auto-shown when >1 tab or always_show_tabbar = true -->
