@@ -100,6 +100,10 @@
    See docs/188-oscilloscope-header-band.md. */
 .krypton-window__header-accent--scope {
   display: block;
+  /* <canvas> is a replaced element: without an explicit width it stays at its
+     intrinsic 300px instead of tracking the window. Fill the band minus the
+     shared horizontal margin so the trace spans the whole head. */
+  width: calc(100% - 2 * var(--krypton-header-accent-margin, 20px));
   background: none;
 }
 

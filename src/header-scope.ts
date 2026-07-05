@@ -15,8 +15,11 @@ import { BackgroundAnimation } from './flame';
 /** Per-frame energy decay — energy falls below EPS ~0.6s after the last pump,
  *  which is what guarantees the loop self-stops when output ceases. */
 const DECAY = 0.9;
-/** Bytes that map to roughly a full-scale energy bump. */
-const BYTES_SCALE = 2048;
+/** Bytes that map to roughly a full-scale energy bump. Tuned low so that
+ *  ordinary interactive output (command results, prompt redraws — tens to a
+ *  few hundred bytes) produces a visible deflection on the ~6px band, not just
+ *  multi-kilobyte bursts. */
+const BYTES_SCALE = 512;
 /** Below this, energy and buffer are treated as silence and the loop stops. */
 const EPS = 0.02;
 /** Safety net: force-stop if the loop is somehow still running long after the
