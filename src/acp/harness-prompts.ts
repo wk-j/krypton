@@ -165,3 +165,164 @@ export function issueFixPrompt(binding: IssueFixPromptInput, body?: string): str
   );
   return lines.join('\n');
 }
+
+// ─── spec 191: composable GitHub-issue verbs ───────────────────────────────
+//
+// Each verb below is a prompt-verb: it may be invoked directly (`#analyze-github-issue
+// <url>`, ref concrete) OR embedded as a composition token (`{{#analyze-github-issue}}`,
+// ref absent — the surrounding composed verb named the issue once, so the prompt refers
+// back to "the issue you are working on"). The lane does the work with its own
+// `gh`/`curl`/edit tools; the harness observes via issue_progress + auto-bind (spec 190).
+
+/** Ref fields the composable issue verbs render. All optional: absent when the verb
+ *  is embedded as a token (see module note above). `number` admits a string so the
+ *  command manifest (spec 185) can render placeholders. */
+export interface GithubIssueVerbInput {
+  issueKey?: string;
+  repo?: string;
+  number?: number | string;
+  url?: string;
+}
+
+/** How a verb names its subject: a concrete `owner/repo#123` when known, else a
+ *  back-reference to the issue the surrounding prompt already established. */
+function issueSubject(input?: GithubIssueVerbInput): string {
+  return input?.issueKey ? `GitHub issue ${input.issueKey}` : 'the GitHub issue you are working on';
+}
+
+/** `<number> -R <owner/repo>` args for `gh`, concrete when known else placeholders. */
+function ghTarget(input?: GithubIssueVerbInput): string {
+  return input?.repo && input.number != null ? `${input.number} -R ${input.repo}` : '<number> -R <owner/repo>';
+}
+
+/** The issue_progress reporting line every issue verb shares (spec 178/190). */
+function issueProgressLine(input?: GithubIssueVerbInput): string {
+  const key = input?.issueKey
+    ? `"${input.issueKey}"`
+    : 'the issue_key (owner/repo#123, verbatim) of the issue you are working on';
+  return (
+    `Call issue_progress { issue_key: ${key}, phase, summary?, pr_url? } to report progress ` +
+    '(phases: investigating, fixing, testing, review, pr_opened, done, blocked) — this is how Krypton ' +
+    'tracks the work and binds it to your lane.'
+  );
+}
+
+export function analyzeGithubIssuePrompt(input?: GithubIssueVerbInput): string {
+  const bundle =
+    input?.repo && input.number != null
+      ? `.krypton/analyses/${input.repo}/${input.number}/`
+      : '.krypton/analyses/<owner>/<repo>/<number>/';
+  return [
+    `Analyze ${issueSubject(input)} to find a fix solution.`,
+    '',
+    `1. Read the issue in full — fetch it with \`gh issue view ${ghTarget(input)} --json title,body,comments,labels\` ` +
+      '— and read any linked issues/PRs.',
+    `2. Download the issue's attached resources (images, logs, files referenced in the body/comments) into the ` +
+      `per-issue bundle folder \`${bundle}\` using \`gh\`/\`curl\`; create the folder if it does not exist.`,
+    '3. Investigate the codebase to locate the root cause.',
+    `4. Write your analysis as one or more markdown files in that same bundle folder (e.g. \`root-cause.md\`, ` +
+      '`fix-plan.md`): what the bug is, why it happens, which files are involved, and a concrete fix plan. ' +
+      'This folder is local working knowledge (it is gitignored) — do not commit it.',
+    '',
+    'Write the analysis for a non-technical reader in plain, natural Thai — compose it in Thai from scratch, do ' +
+      'NOT write in English and translate word-for-word. Explain any technical term, file name, or code concept ' +
+      'in everyday language, and focus on what the problem means in practice over jargon. Keep unavoidable code ' +
+      'identifiers and file paths as-is, but describe them in Thai on first use.',
+    'End each analysis file with a footer line: `🤖 Analyzed by AI (Claude <MODEL_NAME>)` — replace ' +
+      '`<MODEL_NAME>` with your actual model name.',
+    '',
+    issueProgressLine(input),
+  ].join('\n');
+}
+
+export function tagGithubIssuePrompt(input?: GithubIssueVerbInput, labels?: string[]): string {
+  const which =
+    labels && labels.length
+      ? `Apply these labels: ${labels.join(', ')}.`
+      : 'Choose the labels that fit the issue (kind, area, severity); prefer labels that already exist in the repo.';
+  return [
+    `Label ${issueSubject(input)} on GitHub.`,
+    which,
+    `Apply them with \`gh issue edit ${ghTarget(input)} --add-label "<label>[,<label>…]"\`. ` +
+      'This writes to GitHub immediately.',
+    'Report the labels you applied in your reply.',
+    issueProgressLine(input),
+  ].join('\n');
+}
+
+export function postGithubCommentPrompt(input?: GithubIssueVerbInput): string {
+  return [
+    `Post a comment on ${issueSubject(input)}.`,
+    'Draft a clear, concise comment for the issue thread (status, findings, or a summary of the fix — whatever ' +
+      'the current context calls for).',
+    'Write the comment for a non-technical reader in plain, natural Thai — compose it in Thai from scratch, do ' +
+      'NOT write in English and translate word-for-word. Use everyday wording, explain any technical term simply, ' +
+      'and keep unavoidable code identifiers or file paths as-is while describing them in Thai.',
+    'End the comment with a footer line: `🤖 Analyzed by AI (Claude <MODEL_NAME>)` — replace `<MODEL_NAME>` with ' +
+      'your actual model name.',
+    `Post it with \`gh issue comment ${ghTarget(input)} --body "<your comment>"\`. This writes to a PUBLIC GitHub ` +
+      'thread immediately and is hard to undo — make sure the comment is correct and complete before you post.',
+    'Report the comment URL in your reply.',
+    issueProgressLine(input),
+  ].join('\n');
+}
+
+export function fixGithubIssuePrompt(input?: GithubIssueVerbInput): string {
+  return [
+    `Fix ${issueSubject(input)} in the current lane (do NOT dispatch it to another lane).`,
+    'Implement the fix directly here: edit the code, then build/test to verify it works. If an analysis bundle ' +
+      'exists for this issue under `.krypton/analyses/…`, read it first and follow its fix plan.',
+    'Keep the change scoped to this issue.',
+    issueProgressLine(input),
+  ].join('\n');
+}
+
+/** Create a brand-new GitHub issue from a free-text request. Unlike the other issue
+ *  verbs this does NOT reference an existing issue (no issueKey/number), so it is not a
+ *  composition token — it takes the user's description and an optional target repo. */
+export function createGithubIssuePrompt(description: string, repo?: string): string {
+  const where = repo ? `in \`${repo}\`` : 'in the current repository';
+  const target = repo ? ` -R ${repo}` : '';
+  const desc = description.trim() || '<describe the bug/feature to file>';
+  return [
+    `Create a new GitHub issue ${where} from this request:`,
+    `"${desc}"`,
+    '',
+    "1. Understand what the user wants filed and gather any needed context from the codebase (don't fix anything — " +
+      'just file the issue). If the target repo is unclear, infer it from the current git remote ' +
+      '(`gh repo view --json nameWithOwner`).',
+    '2. Draft a concise, descriptive title and a well-structured body: what the problem or request is, steps to ' +
+      'reproduce or the motivation, and the expected outcome. Use markdown sections/checklists where they help.',
+    '3. Write the issue for a non-technical reader in plain, natural Thai — compose it in Thai from scratch, do ' +
+      'NOT write in English and translate word-for-word. Explain any technical term, file name, or code concept ' +
+      'in everyday language. Keep unavoidable code identifiers and file paths as-is, but describe them in Thai ' +
+      'on first use.',
+    'End the body with a footer line: `🤖 Analyzed by AI (Claude <MODEL_NAME>)` — replace `<MODEL_NAME>` with ' +
+      'your actual model name.',
+    `4. Create it with \`gh issue create${target} --title "<title>" --body "<body>"\`. This writes to a PUBLIC ` +
+      'GitHub repository immediately and is hard to undo — make sure the title and body are correct and complete ' +
+      'before you create it.',
+    'Report the created issue URL in your reply.',
+  ].join('\n');
+}
+
+/** Composed verb (spec 191): free-form prose that embeds the leaf verbs as tokens.
+ *  The resolver (verb-compose.ts) substitutes each `{{#…}}` with that verb's rendered
+ *  prompt, yielding one combined prompt. NOT a serial runner (ADR-0012). */
+export function handleGithubIssuePrompt(input?: GithubIssueVerbInput): string {
+  const subject = input?.issueKey ? `GitHub issue ${input.issueKey}` : 'the GitHub issue';
+  const url = input?.url ? ` (${input.url})` : '';
+  return [
+    `Handle ${subject}${url} end to end. Work through the stages below in order; the detailed instructions for ` +
+      'each stage follow inline.',
+    '',
+    'STAGE 1 — Understand and analyze the issue:',
+    '{{#analyze-github-issue}}',
+    '',
+    'STAGE 2 — Only if this is a real, actionable bug (not a duplicate, a question, or already fixed), implement the fix:',
+    '{{#fix-github-issue}}',
+    '',
+    'STAGE 3 — Only after the fix is implemented and verified (or, if you skipped the fix, to explain why), post a summary comment:',
+    '{{#post-github-comment}}',
+  ].join('\n');
+}

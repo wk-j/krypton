@@ -138,6 +138,9 @@ export class AgentView implements ContentView {
   readonly type: PaneContentType = 'agent';
   readonly element: HTMLElement;
 
+  /** Set by the compositor to drive the window's oscilloscope band. See docs/189. */
+  onOutputPump?: (chars: number) => void;
+
   private messagesEl!: HTMLElement;
   private inputRowEl!: HTMLElement;
   private promptGlyphEl!: HTMLElement;
@@ -1351,6 +1354,7 @@ export class AgentView implements ContentView {
         }
         // Accumulate raw text and render markdown on next animation frame
         this.currentAssistantBuffer += e.delta;
+        this.onOutputPump?.(e.delta.length);
         if (this.streamRenderRaf === null) {
           this.streamRenderRaf = requestAnimationFrame(() => {
             this.streamRenderRaf = null;

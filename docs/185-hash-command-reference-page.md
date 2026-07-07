@@ -22,11 +22,20 @@ page shell (`src/acp/artifact-commands.html`, Binance-dark per
 `DESIGN.binance.md`) that fetches **`GET /commands.json`** — a command
 manifest the frontend builds from the *same* `HASH_COMMANDS` array and the
 *same* exported prompt-builder functions the dispatch actually calls, and
-pushes to the hook server once at harness register. Each command card shows
-name, args grammar, description, category, badges, and — for the ten
-prompt-backed commands — an expandable **system prompt** block rendering the
-real template with placeholder args. A new `#commands` palette entry opens the
-page like `#docs`.
+pushes to the hook server once at harness register. A new `#commands` palette
+entry opens the page like `#docs`.
+
+**Layout (rev 2 — master/detail):** the page is a two-pane split rather than a
+card grid, because the primary task is *reviewing a system prompt*, and a full
+template read poorly inside a narrow grid card behind a `<details>` toggle. The
+left pane is a searchable command list grouped by the three categories (each
+entry carries a dot marking whether it has an injected prompt); the right pane
+is a full-height detail view for the selected command: name, args grammar,
+description, badges, alias, lanes, and workflow anatomy pinned above a
+full-width **system prompt** panel that scrolls independently, with placeholder
+`<token>`s accent-tinted and a copy button. Selection defaults to the first
+prompt-backed command. Keyboard: `↑/↓` or `j/k` navigate, `/` focuses search,
+`c` copies the prompt. No left-border rails, flat chrome (one surface per pane).
 
 ## Research
 
@@ -80,7 +89,7 @@ Keyboard-first: opened by typing `#commands`.
 
 | File | Change |
 |------|--------|
-| `src/acp/artifact-commands.html` | **New.** Static shell (Binance dark); fetches `/commands.json`, renders sections/cards/prompt expanders |
+| `src/acp/artifact-commands.html` | **New.** Static shell (Binance dark); fetches `/commands.json`, renders the searchable master list + full-height detail/system-prompt pane (rev 2; see Overview) |
 | `src/acp/hash-commands.ts` | Add `commands` entry; add manifest metadata (category, badges, anatomy) + `buildCommandManifest()` calling the prompt builders with placeholder args |
 | `src/acp/acp-harness-view.ts` | Export `issueFixPrompt` (extracted from private `buildFixPrompt`); push manifest at register; `#commands` branch in `runHashCommand` (mirrors `#docs`) |
 | `src-tauri/src/hook_server.rs` | `COMMANDS_HTML` const + `handle_commands` + manifest store + `acp_store_command_manifest` Tauri command + `/commands` + `/commands.json` routes + canary-test entries |
@@ -130,20 +139,24 @@ pub fn acp_store_command_manifest(manifest: Value, hook_server: State<Arc<HookSe
    invoke('acp_store_command_manifest', { manifest })
 2. User types #commands → runHashCommand resolves get_hook_server_port →
    open_url http://127.0.0.1:{port}/commands (flashChip like #docs)
-3. Page shell loads, fetches /commands.json, renders three sections +
-   workflow-anatomy blocks; prompt-backed cards get a <details> "system
-   prompt" expander with the template in <pre>
+3. Page shell loads, fetches /commands.json, renders the searchable master
+   list (grouped by the three categories) + a full-height detail pane; the
+   selected command's template renders full-width in the scrolling system-prompt
+   panel with anatomy/badges pinned above it
 4. No polling — the manifest changes only with a new build
 ```
 
 ### UI
 
-Same visual system as the approved mockup (rev 1) plus: a `system prompt`
-expander row on the ten prompt-backed cards (collapsed by default, mono
-10.5px, placeholder tokens tinted accent), header stat tiles computed from the
-manifest (23 commands · 7 workflow badges · 10 prompts; `#console` is an alias
-on the `#orchestrator` entry, not its own card). No left-border rails, no
-nested containers, dark-only.
+Binance-dark visual system. **Rev 2** replaces the rev-1 card grid with a
+master/detail split (see Overview): a searchable left list (a green dot marks
+prompt-backed commands) and a right detail pane whose scrolling system-prompt
+panel (mono 11.5px, placeholder tokens tinted accent, copy button) gets the
+full window height instead of a collapsed 300px `<details>` box. Header stat
+tiles are computed from the manifest (29 commands · workflow badges · 15
+prompts; `#console` is an alias on the `#orchestrator` entry, not its own
+list row). Keyboard nav (`↑/↓`·`j/k`·`/`·`c`). No left-border rails, one flat
+surface per pane, dark-only.
 
 ## Edge Cases
 

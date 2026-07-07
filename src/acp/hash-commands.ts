@@ -14,16 +14,24 @@
 
 import {
   HANDOFF_WRITE_PROMPT,
+  analyzeGithubIssuePrompt,
+  createGithubIssuePrompt,
   directivePrompt,
+  fixGithubIssuePrompt,
   goalSeedPrompt,
+  handleGithubIssuePrompt,
   handoffResumePrompt,
   issueFixPrompt,
+  postGithubCommentPrompt,
+  tagGithubIssuePrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
 import { pollyRequestPrompt } from './polly';
 import { debbyRequestPrompt } from './debby';
 import { reviewRequestPrompt } from './review';
+import { resolveVerbTokens } from './verb-compose';
+import { injectableVerbPrompt } from './verb-registry';
 
 export interface HashCommand {
   /** Command token WITHOUT the leading `#` (e.g. `review`, `new!`). */
@@ -46,6 +54,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'dashboard', args: '', description: 'open the live harness dashboard in a browser' },
   { name: 'gallery', args: '', description: 'open the artifact gallery (pending + live artifacts) in a browser' },
   { name: 'docs', args: '', description: 'open the repo docs browser in a browser' },
+  { name: 'analyses', args: '', description: 'open the GitHub issue analysis viewer in a browser' },
   { name: 'commands', args: '', description: 'open the built-in # command reference in a browser' },
   { name: 'tools', args: '', description: 'open the built-in MCP tool reference in a browser' },
   { name: 'handoff', args: '', description: 'write a resume-ready handoff doc to memory' },
@@ -58,9 +67,39 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'polly', args: '<task>', description: 'Polly orchestration — spawns Cursor + Claude + Codex workers' },
   { name: 'debby', args: '<question>', description: 'Debby brainstorming — asks Claude + Codex heads' },
   {
-    name: 'fix-issue',
+    name: 'dispatch-github-issue',
     args: '<issue url | owner/repo#123>',
-    description: 'fetch a GitHub issue and dispatch it to a fresh lane',
+    description: 'fetch a GitHub issue and dispatch it to a fresh lane (alias: #fix-issue)',
+  },
+  {
+    name: 'create-github-issue',
+    args: '<what to file> [-R owner/repo]',
+    description: 'draft and create a new GitHub issue from a plain-language request',
+  },
+  {
+    name: 'analyze-github-issue',
+    args: '<issue url | owner/repo#123>',
+    description: 'analyze an issue for a fix solution + download its resources into a .krypton bundle',
+  },
+  {
+    name: 'fix-github-issue',
+    args: '<issue url | owner/repo#123>',
+    description: 'fix a GitHub issue in the current lane',
+  },
+  {
+    name: 'tag-github-issue',
+    args: '<issue url | owner/repo#123> [labels…]',
+    description: 'apply labels to a GitHub issue',
+  },
+  {
+    name: 'post-github-comment',
+    args: '<issue url | owner/repo#123>',
+    description: 'post a comment to a GitHub issue',
+  },
+  {
+    name: 'handle-github-issue',
+    args: '<issue url | owner/repo#123>',
+    description: 'analyze → fix → comment on a GitHub issue (composed)',
   },
   { name: 'queue', args: '[clear | edit N]', description: 'manage queued prompts' },
   { name: 'unqueue', args: '[N]', description: 'remove the last (or Nth) queued prompt' },
@@ -123,6 +162,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     dashboard: { category: 'surface', badges: [] },
     gallery: { category: 'surface', badges: [] },
     docs: { category: 'surface', badges: [] },
+    analyses: { category: 'surface', badges: [] },
     commands: { category: 'surface', badges: [] },
     tools: { category: 'surface', badges: [] },
     handoff: {
@@ -208,9 +248,10 @@ export function commandMeta(): Record<string, CommandMeta> {
         },
       }),
     },
-    'fix-issue': {
+    'dispatch-github-issue': {
       category: 'agent',
       badges: ['workflow'],
+      alias: 'fix-issue',
       anatomy: 'parse ref → gh fetch title → spawn lane → dispatch fix',
       lanes: '+1 lane',
       prompt: issueFixPrompt({
@@ -221,8 +262,54 @@ export function commandMeta(): Record<string, CommandMeta> {
         number: '<123>',
       }),
     },
+    'create-github-issue': {
+      category: 'agent',
+      badges: ['agent'],
+      lanes: 'same lane',
+      prompt: createGithubIssuePrompt('<what to file>', '<owner/repo>'),
+    },
+    'analyze-github-issue': {
+      category: 'agent',
+      badges: ['agent'],
+      lanes: 'same lane',
+      prompt: analyzeGithubIssuePrompt(ISSUE_VERB_PLACEHOLDER),
+    },
+    'fix-github-issue': {
+      category: 'agent',
+      badges: ['agent'],
+      lanes: 'same lane',
+      prompt: fixGithubIssuePrompt(ISSUE_VERB_PLACEHOLDER),
+    },
+    'tag-github-issue': {
+      category: 'agent',
+      badges: ['agent'],
+      lanes: 'same lane',
+      prompt: tagGithubIssuePrompt(ISSUE_VERB_PLACEHOLDER),
+    },
+    'post-github-comment': {
+      category: 'agent',
+      badges: ['agent'],
+      lanes: 'same lane',
+      prompt: postGithubCommentPrompt(ISSUE_VERB_PLACEHOLDER),
+    },
+    'handle-github-issue': {
+      category: 'agent',
+      badges: ['workflow'],
+      anatomy: 'analyze → fix (in lane) → comment',
+      lanes: 'same lane',
+      // Render the composed verb the way the lane receives it: tokens resolved.
+      prompt: resolveVerbTokens(handleGithubIssuePrompt(ISSUE_VERB_PLACEHOLDER), injectableVerbPrompt),
+    },
   };
 }
+
+/** Placeholder ref for rendering the issue verbs in the /commands manifest. */
+const ISSUE_VERB_PLACEHOLDER = {
+  issueKey: '<owner/repo#123>',
+  repo: '<owner/repo>',
+  number: '<123>',
+  url: '<issue-url>',
+} as const;
 
 /**
  * The full built-in command manifest served at GET /commands.json. Built from

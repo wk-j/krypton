@@ -204,9 +204,11 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
           </div>
           <span class="krypton-window__pty-status">~/projects</span>
         </div>
-        <!-- header-accent: a <canvas> oscilloscope (HeaderScope, fed by PTY
-             throughput; rAF stops at idle) by default, or a static striped
-             <div> when chrome.header_accent.style = "ticks". See spec 188. -->
+        <!-- header-accent: a <canvas> oscilloscope (HeaderScope) by default, or a
+             static striped <div> when chrome.header_accent.style = "ticks". Fed by
+             PTY throughput on terminal windows, or streamed model output on content
+             windows (agent/ACP/harness, via ContentView.onOutputPump); rAF stops at
+             idle. See specs 188 and 189. -->
         <canvas class="krypton-window__header-accent krypton-window__header-accent--scope"></canvas>
       </div>
 

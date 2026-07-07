@@ -144,6 +144,9 @@ export class AcpView implements ContentView {
   readonly type: PaneContentType = 'acp';
   readonly element: HTMLElement;
 
+  /** Set by the compositor to drive the window's oscilloscope band. See docs/189. */
+  onOutputPump?: (chars: number) => void;
+
   private messagesEl!: HTMLElement;
   private inputRowEl!: HTMLElement;
   private state: 'input' | 'scroll' = 'input';
@@ -871,6 +874,7 @@ export class AcpView implements ContentView {
         }
         this.ensureAssistantBlock();
         this.currentAssistant!.raw += e.text;
+        this.onOutputPump?.(e.text.length);
         this.scheduleFlush();
         break;
       }
@@ -880,6 +884,7 @@ export class AcpView implements ContentView {
         }
         this.ensureThoughtBlock();
         this.currentThought!.raw += e.text;
+        this.onOutputPump?.(e.text.length);
         this.scheduleFlush();
         break;
       }

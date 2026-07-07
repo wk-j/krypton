@@ -12,11 +12,17 @@
     --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
   }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body { margin: 0; font-family: var(--sans); font-size: 14px; line-height: 1.5;
-         background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
-  .main { max-width: 1140px; margin: 0 auto; padding: 16px 20px 48px; }
+         background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased;
+         overflow: hidden; }
+  .main { max-width: 1400px; height: 100%; margin: 0 auto; padding: 16px 20px;
+          display: flex; flex-direction: column; }
+
+  /* ── header ─────────────────────────────────────────────── */
   .top { display: flex; justify-content: space-between; align-items: center;
-         gap: 16px; flex-wrap: wrap; padding: 14px 16px; margin: 6px 0 14px;
+         gap: 16px; flex-wrap: wrap; padding: 14px 16px; margin: 0 0 14px; flex-shrink: 0;
          background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
   .brand { display: flex; align-items: center; gap: 12px; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
@@ -29,39 +35,86 @@
   .stat span { font-size: 10px; color: var(--muted); }
   .nav { font-family: var(--mono); font-size: 11px; }
   .nav a { color: var(--accent); text-decoration: none; margin-left: 14px; }
-  .sect { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
-  .sect h3 { font-size: 11px; color: var(--muted); margin: 0 0 10px; font-weight: 600;
-             letter-spacing: .04em; text-transform: uppercase; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 12px; }
-  .cmd { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-         padding: 11px 13px; display: flex; flex-direction: column; gap: 6px; }
-  .cmd-name { font-family: var(--mono); font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
-  .cmd-args { font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 400; }
-  .cmd-desc { font-size: 12px; line-height: 1.45; color: #b7bdc6; flex: 1; }
-  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
-  .badge { font-family: var(--mono); font-size: 9.5px; padding: 2px 7px; border-radius: 5px;
+
+  /* ── master / detail split ─────────────────────────────── */
+  .split { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr);
+           gap: 14px; }
+
+  /* left: searchable command list */
+  .list { min-height: 0; display: flex; flex-direction: column;
+          background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .search { flex-shrink: 0; padding: 10px; border-bottom: 1px solid var(--border); }
+  .search input { width: 100%; font-family: var(--mono); font-size: 12px; color: var(--fg);
+                  background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+                  padding: 7px 9px; outline: none; }
+  .search input:focus { border-color: var(--accent); }
+  .items { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; }
+  .grp { font-family: var(--mono); font-size: 10px; color: var(--muted); font-weight: 600;
+         letter-spacing: .05em; text-transform: uppercase; padding: 10px 8px 4px; }
+  .item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 7px;
+          cursor: pointer; border: 1px solid transparent; }
+  .item:hover { background: rgba(255,255,255,.03); }
+  .item.sel { background: rgba(252,213,53,.12); border-color: rgba(252,213,53,.35); }
+  .item-name { font-family: var(--mono); font-size: 12.5px; font-weight: 600; flex: 1;
+               overflow-wrap: anywhere; }
+  .item.sel .item-name { color: var(--accent); }
+  .item-pdot { width: 6px; height: 6px; border-radius: 50%; background: var(--add); flex-shrink: 0; }
+  .item-pdot.off { background: transparent; }
+  .no-hits { color: var(--muted); font-family: var(--mono); font-size: 11px;
+             padding: 20px 8px; text-align: center; }
+
+  /* right: full-height command detail */
+  .detail { min-height: 0; display: flex; flex-direction: column;
+            background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+            padding: 16px 18px; }
+  .d-head { flex-shrink: 0; }
+  .d-name { font-family: var(--mono); font-size: 19px; font-weight: 700; overflow-wrap: anywhere; }
+  .d-args { font-family: var(--mono); font-size: 13px; color: var(--muted); font-weight: 400; }
+  .d-desc { font-size: 13.5px; line-height: 1.55; color: #b7bdc6; margin-top: 8px; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .badge { font-family: var(--mono); font-size: 10px; padding: 3px 8px; border-radius: 5px;
            border: 1px solid var(--border); color: var(--muted); }
   .badge.wf { background: rgba(252,213,53,.1); border-color: rgba(252,213,53,.35); color: var(--accent); }
   .badge.ag { background: rgba(14,203,129,.08); border-color: rgba(14,203,129,.3); color: var(--add); }
   .badge.hid { border-style: dashed; }
-  details.pr summary { font-family: var(--mono); font-size: 10px; color: var(--accent);
-                       cursor: pointer; list-style-position: inside; }
-  details.pr pre { margin: 6px 0 0; padding: 8px 10px; background: var(--bg);
-                   border: 1px solid var(--border); border-radius: 6px; font-family: var(--mono);
-                   font-size: 10px; line-height: 1.55; white-space: pre-wrap;
-                   color: #b7bdc6; max-height: 300px; overflow: auto; }
+  .anatomy { font-family: var(--mono); font-size: 11.5px; line-height: 1.7; color: #b7bdc6;
+             margin-top: 12px; }
+  .anatomy .sep { color: var(--muted); }
+  .anatomy .lanes { color: var(--add); }
+
+  .prompt-label { display: flex; justify-content: space-between; align-items: baseline;
+                  margin: 16px 0 6px; flex-shrink: 0; }
+  .prompt-label span { font-family: var(--mono); font-size: 10px; color: var(--muted);
+                       font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+  .copy { font-family: var(--mono); font-size: 10px; color: var(--accent); background: none;
+          border: 1px solid rgba(252,213,53,.35); border-radius: 6px; padding: 3px 9px;
+          cursor: pointer; }
+  .copy:hover { background: rgba(252,213,53,.1); }
+  .prompt { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 12px 14px;
+            background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+            font-family: var(--mono); font-size: 11.5px; line-height: 1.6; white-space: pre-wrap;
+            overflow-wrap: anywhere; color: #b7bdc6; }
   .ph { color: var(--accent); }
-  .flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-  .flow { font-family: var(--mono); font-size: 10.5px; line-height: 1.7; color: #b7bdc6;
-          background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
-          padding: 10px 12px; }
-  .flow b { color: var(--accent); font-weight: 700; display: block; margin-bottom: 2px; }
-  .flow .lanes { color: var(--add); }
-  .flow .sep { color: var(--muted); }
+  .no-prompt { flex: 1; display: flex; align-items: center; justify-content: center;
+               color: var(--muted); font-family: var(--mono); font-size: 12px;
+               text-align: center; padding: 24px; border: 1px dashed var(--border);
+               border-radius: 8px; margin-top: 8px; }
+
   .empty { text-align: center; color: var(--muted); font-family: var(--mono); font-size: 12px;
            padding: 64px 16px; }
-  .footer { font-family: var(--mono); font-size: 11px; color: var(--muted);
-            margin-top: 24px; text-align: center; }
+  .hint { flex-shrink: 0; font-family: var(--mono); font-size: 10px; color: var(--muted);
+          text-align: center; padding-top: 10px; }
+  .hint kbd { color: var(--fg); background: var(--bg); border: 1px solid var(--border);
+              border-radius: 4px; padding: 1px 5px; font-family: var(--mono); }
+
+  @media (max-width: 820px) {
+    body { overflow: auto; }
+    .main { height: auto; }
+    .split { display: block; }
+    .list { margin-bottom: 14px; }
+    .items { max-height: 40vh; }
+    .prompt { max-height: 60vh; }
+  }
 </style>
 </head>
 <body>
@@ -77,12 +130,13 @@
     <div class="stats" id="stats"></div>
     <nav class="nav"><a href="/dashboard">/dashboard</a><a href="/gallery">/gallery</a><a href="/docs">/docs</a></nav>
   </div>
-  <div id="content"><div class="empty">loading…</div></div>
-  <div class="footer">templates rendered from the same prompt builders the dispatch uses — placeholder args shown as &lt;token&gt;</div>
+  <div id="content" class="split"><div class="empty">loading…</div></div>
 </div>
 <script>
   // Static reference (spec 185): one fetch, no polling — the manifest only
   // changes with a new build, pushed by the frontend at harness register.
+  // Master/detail: pick a command on the left, review its full system prompt
+  // full-width on the right (name + description stay pinned as you scroll).
   (function () {
     var SECTIONS = [
       { id: 'session', title: 'Session & lane control' },
@@ -91,6 +145,11 @@
     ];
     var BADGE_CLASS = { workflow: 'wf', agent: 'ag', hidden: 'hid' };
     var BADGE_LABEL = { workflow: 'workflow', agent: 'agent', hidden: 'not in palette' };
+
+    var commands = [];   // full manifest
+    var visible = [];    // flat list after filter, in section order
+    var selected = null; // selected command name
+    var filter = '';
 
     function esc(s) {
       return String(s == null ? '' : s)
@@ -103,63 +162,161 @@
         return '<span class="ph">' + m + '</span>';
       });
     }
+    function find(name) {
+      for (var i = 0; i < commands.length; i++) if (commands[i].name === name) return commands[i];
+      return null;
+    }
+    function matches(c) {
+      if (!filter) return true;
+      var hay = (c.name + ' ' + (c.args || '') + ' ' + (c.description || '') +
+                 ' ' + (c.alias || '')).toLowerCase();
+      return hay.indexOf(filter) !== -1;
+    }
 
-    function cardHtml(c) {
-      var h = '<div class="cmd"><div class="cmd-name">#' + esc(c.name);
-      if (c.args) h += ' <span class="cmd-args">' + esc(c.args) + '</span>';
-      h += '</div><div class="cmd-desc">' + esc(c.description) + '</div>';
-      if (c.prompt) {
-        h += '<details class="pr"><summary>system prompt</summary><pre>' +
-             promptHtml(c.prompt) + '</pre></details>';
-      }
+    function renderList() {
+      var root = document.getElementById('list-items');
+      var html = '';
+      visible = [];
+      SECTIONS.forEach(function (s) {
+        var list = commands.filter(function (c) { return c.category === s.id && matches(c); });
+        if (!list.length) return;
+        html += '<div class="grp">' + esc(s.title) + '</div>';
+        list.forEach(function (c) {
+          visible.push(c.name);
+          html += '<div class="item' + (c.name === selected ? ' sel' : '') +
+            '" data-name="' + esc(c.name) + '" title="' + esc(c.description) + '">' +
+            '<span class="item-pdot' + (c.prompt ? '' : ' off') + '"></span>' +
+            '<span class="item-name">#' + esc(c.name) + '</span></div>';
+        });
+      });
+      root.innerHTML = html || '<div class="no-hits">no command matches “' + esc(filter) + '”</div>';
+    }
+
+    function renderDetail() {
+      var pane = document.getElementById('detail');
+      var c = find(selected);
+      if (!c) { pane.innerHTML = '<div class="no-prompt">select a command on the left</div>'; return; }
+
       var badges = (c.badges || []).map(function (b) {
         return '<span class="badge ' + (BADGE_CLASS[b] || '') + '">' + (BADGE_LABEL[b] || esc(b)) + '</span>';
       });
       if (c.alias) badges.push('<span class="badge">alias #' + esc(c.alias) + '</span>');
+      if (c.lanes) badges.push('<span class="badge">' + esc(c.lanes) + '</span>');
+
+      var h = '<div class="d-head"><div class="d-name">#' + esc(c.name) +
+        (c.args ? ' <span class="d-args">' + esc(c.args) + '</span>' : '') + '</div>' +
+        '<div class="d-desc">' + esc(c.description) + '</div>';
       if (badges.length) h += '<div class="badges">' + badges.join('') + '</div>';
-      return h + '</div>';
+      if (c.anatomy) {
+        h += '<div class="anatomy">' + esc(c.anatomy).replace(/→/g, '<span class="sep">→</span>') +
+             '</div>';
+      }
+      h += '</div>';
+
+      if (c.prompt) {
+        h += '<div class="prompt-label"><span>injected system prompt</span>' +
+             '<button class="copy" id="copy-btn">copy</button></div>' +
+             '<pre class="prompt" id="prompt-pre">' + promptHtml(c.prompt) + '</pre>';
+      } else {
+        h += '<div class="no-prompt">no injected system prompt —<br>the composer dispatches this command directly</div>';
+      }
+      h += '<div class="hint"><kbd>↑</kbd><kbd>↓</kbd> / <kbd>j</kbd><kbd>k</kbd> navigate · ' +
+           '<kbd>/</kbd> search · <kbd>c</kbd> copy prompt · ' +
+           '<span class="ph">&lt;token&gt;</span> = placeholder arg</div>';
+      pane.innerHTML = h;
+
+      var btn = document.getElementById('copy-btn');
+      if (btn) btn.addEventListener('click', function () { copyPrompt(c, btn); });
     }
 
-    function render(commands) {
+    function copyPrompt(c, btn) {
+      if (!c || !c.prompt || !navigator.clipboard) return;
+      navigator.clipboard.writeText(c.prompt).then(function () {
+        var prev = btn.textContent; btn.textContent = 'copied';
+        setTimeout(function () { btn.textContent = prev; }, 1200);
+      }).catch(function () {});
+    }
+
+    function select(name) {
+      if (name === selected) return;
+      selected = name;
+      renderList();
+      renderDetail();
+      var el = document.querySelector('.item.sel');
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+    function step(delta) {
+      if (!visible.length) return;
+      var i = visible.indexOf(selected);
+      i = i === -1 ? 0 : Math.min(visible.length - 1, Math.max(0, i + delta));
+      select(visible[i]);
+    }
+
+    function render(cmds) {
       var content = document.getElementById('content');
-      if (!commands || !commands.length) {
+      if (!cmds || !cmds.length) {
+        content.className = '';
         content.innerHTML = '<div class="empty">no command manifest yet — open an ACP harness in Krypton, then reload<br>' +
           '(if a harness is already open, its manifest push failed — check the app log)</div>';
         return;
       }
-      var html = '';
-      SECTIONS.forEach(function (s) {
-        var list = commands.filter(function (c) { return c.category === s.id; });
-        if (!list.length) return;
-        html += '<div class="sect"><h3>' + s.title + '</h3><div class="cards">' +
-                list.map(cardHtml).join('') + '</div></div>';
-      });
-      var flows = commands.filter(function (c) { return c.anatomy; });
-      if (flows.length) {
-        html += '<div class="sect"><h3>Workflow anatomy</h3><div class="flows">' +
-          flows.map(function (c) {
-            return '<div class="flow"><b>#' + esc(c.name) + '</b>' +
-              esc(c.anatomy).replace(/→/g, '<span class="sep">→</span>') +
-              (c.lanes ? ' <span class="sep">·</span> <span class="lanes">' + esc(c.lanes) + '</span>' : '') +
-              '</div>';
-          }).join('') + '</div></div>';
-      }
-      content.innerHTML = html;
+      commands = cmds;
+      content.className = 'split';
+      content.innerHTML =
+        '<div class="list">' +
+          '<div class="search"><input id="search" type="text" placeholder="filter commands…" ' +
+            'autocomplete="off" spellcheck="false"></div>' +
+          '<div class="items" id="list-items"></div>' +
+        '</div>' +
+        '<div class="detail" id="detail"></div>';
 
-      var workflows = commands.filter(function (c) { return (c.badges || []).indexOf('workflow') !== -1; }).length;
-      var prompts = commands.filter(function (c) { return c.prompt; }).length;
+      // Default to the first command that actually has a prompt (the review target).
+      var firstWithPrompt = cmds.filter(function (c) { return c.prompt; })[0];
+      selected = (firstWithPrompt || cmds[0]).name;
+      renderList();
+      renderDetail();
+
+      content.querySelector('#list-items').addEventListener('click', function (e) {
+        var item = e.target.closest('.item');
+        if (item) select(item.getAttribute('data-name'));
+      });
+      var search = content.querySelector('#search');
+      search.addEventListener('input', function () {
+        filter = search.value.trim().toLowerCase();
+        renderList();
+      });
+
+      var workflows = cmds.filter(function (c) { return (c.badges || []).indexOf('workflow') !== -1; }).length;
+      var prompts = cmds.filter(function (c) { return c.prompt; }).length;
       document.getElementById('stats').innerHTML =
-        '<div class="stat"><b>' + commands.length + '</b><span>commands</span></div>' +
+        '<div class="stat"><b>' + cmds.length + '</b><span>commands</span></div>' +
         '<div class="stat"><b>' + workflows + '</b><span>workflows</span></div>' +
         '<div class="stat"><b>' + prompts + '</b><span>system prompts</span></div>';
     }
+
+    document.addEventListener('keydown', function (e) {
+      var typing = document.activeElement && document.activeElement.id === 'search';
+      if (e.key === '/' && !typing) {
+        var s = document.getElementById('search');
+        if (s) { e.preventDefault(); s.focus(); s.select(); }
+        return;
+      }
+      if (typing) { if (e.key === 'Escape') document.activeElement.blur(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); step(1); }
+      else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); step(-1); }
+      else if (e.key === 'c') {
+        var c = find(selected), btn = document.getElementById('copy-btn');
+        if (c && btn) copyPrompt(c, btn);
+      }
+    });
 
     fetch('/commands.json', { cache: 'no-store' })
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (data) { render(data && data.commands ? data.commands : null); })
       .catch(function () {
-        document.getElementById('content').innerHTML =
-          '<div class="empty">could not load /commands.json — is the harness running?</div>';
+        var content = document.getElementById('content');
+        content.className = '';
+        content.innerHTML = '<div class="empty">could not load /commands.json — is the harness running?</div>';
       });
   })();
 </script>

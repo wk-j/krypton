@@ -77,18 +77,24 @@ describe('buildCommandManifest', () => {
     expect(byName.get('orchestrator')?.alias).toBe('console');
   });
 
-  it('includes docs and fix-issue in the palette roster', () => {
+  it('includes docs and the github-issue verbs in the palette roster', () => {
     const names = HASH_COMMANDS.map((c) => c.name);
     expect(names).toContain('docs');
-    expect(names).toContain('fix-issue');
+    // spec 191: #fix-issue was renamed to #dispatch-github-issue (alias kept for
+    // back-compat but not a palette entry).
+    expect(names).toContain('dispatch-github-issue');
+    expect(names).not.toContain('fix-issue');
     expect(byName.get('docs')?.badges).not.toContain('hidden');
-    expect(byName.get('fix-issue')?.badges).not.toContain('hidden');
+    expect(byName.get('dispatch-github-issue')?.badges).not.toContain('hidden');
+    expect(byName.get('dispatch-github-issue')?.alias).toBe('fix-issue');
   });
 
   it('carries the real prompt template on every prompt-backed command', () => {
     const promptBacked = [
       'goal', 'handoff', 'resume', 'wiki', 'recall',
-      'directive', 'review', 'polly', 'debby', 'fix-issue',
+      'directive', 'review', 'polly', 'debby', 'dispatch-github-issue',
+      'analyze-github-issue', 'fix-github-issue', 'tag-github-issue',
+      'post-github-comment', 'handle-github-issue',
     ];
     for (const name of promptBacked) {
       const prompt = byName.get(name)?.prompt ?? '';
@@ -98,7 +104,10 @@ describe('buildCommandManifest', () => {
     expect(byName.get('resume')?.prompt).toContain('"<lane>"');
     expect(byName.get('polly')?.prompt).toContain('<task>');
     expect(byName.get('debby')?.prompt).toContain('<question>');
-    expect(byName.get('fix-issue')?.prompt).toContain('<owner/repo#123>');
+    expect(byName.get('dispatch-github-issue')?.prompt).toContain('<owner/repo#123>');
+    // The composed verb's manifest prompt has its tokens resolved (spec 191).
+    expect(byName.get('handle-github-issue')?.prompt).not.toContain('{{#');
+    expect(byName.get('handle-github-issue')?.prompt).toContain('issue_progress');
   });
 
   it('assigns a category to every entry and anatomy to every workflow', () => {
@@ -126,31 +135,70 @@ describe('buildCommandManifest', () => {
 // document/fetch. Guards the page↔manifest contract (field names, JSON shape)
 // without a browser.
 describe('artifact-commands.html render', () => {
-  it('renders every manifest command from /commands.json', async () => {
+  // Minimal DOM stub for the rev-2 master/detail page. Elements are looked up by id and
+  // persist, so the page's `getElementById('x')` and `el.querySelector('#x')` resolve to
+  // the SAME fake node whose innerHTML we can assert. The page renders the command list
+  // into #list-items and the selected command's prompt into #detail (not one big blob),
+  // so we assert against those instead of a single `content` element.
+  type FakeEl = {
+    innerHTML: string;
+    className: string;
+    value: string;
+    textContent: string;
+    addEventListener: () => void;
+    getAttribute: () => null;
+    closest: () => null;
+    scrollIntoView: () => void;
+    focus: () => void;
+    select: () => void;
+    querySelector: (sel: string) => FakeEl | null;
+  };
+
+  it('renders every manifest command into the master/detail page', async () => {
     const html = readFileSync(join(__dirname, 'artifact-commands.html'), 'utf8');
     const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
     expect(script, 'inline script missing').toBeTruthy();
 
     const manifest = buildCommandManifest();
-    const elements: Record<string, { innerHTML: string }> = {
-      content: { innerHTML: '' },
-      stats: { innerHTML: '' },
+    const store: Record<string, FakeEl> = {};
+    const getEl = (id: string): FakeEl => (store[id] ??= makeEl());
+    function makeEl(): FakeEl {
+      return {
+        innerHTML: '',
+        className: '',
+        value: '',
+        textContent: '',
+        addEventListener: () => {},
+        getAttribute: () => null,
+        closest: () => null,
+        scrollIntoView: () => {},
+        focus: () => {},
+        select: () => {},
+        querySelector: (sel: string) => (sel.startsWith('#') ? getEl(sel.slice(1)) : null),
+      };
+    }
+    const doc = {
+      getElementById: (id: string) => getEl(id),
+      querySelector: () => null,
+      addEventListener: () => {},
+      activeElement: null,
     };
-    const doc = { getElementById: (id: string) => elements[id] };
     const fetchStub = () =>
       Promise.resolve({ ok: true, json: () => Promise.resolve({ commands: manifest }) });
 
     new Function('document', 'fetch', script as string)(doc, fetchStub);
     await new Promise((r) => setTimeout(r, 0));
 
+    // Every command appears as a row in the searchable master list.
     for (const e of manifest) {
-      expect(elements.content.innerHTML, `#${e.name} card missing`).toContain(`#${e.name}`);
+      expect(getEl('list-items').innerHTML, `#${e.name} list row missing`).toContain(`#${e.name}`);
     }
-    // Prompt expanders render with placeholder tokens accent-tinted.
-    expect(elements.content.innerHTML).toContain('system prompt');
-    expect(elements.content.innerHTML).toContain('<span class="ph">&lt;task&gt;</span>');
+    // The detail pane shows the default-selected (first prompt-backed) command's
+    // injected system prompt, with placeholder <token>s accent-tinted.
+    expect(getEl('detail').innerHTML).toContain('injected system prompt');
+    expect(getEl('detail').innerHTML).toContain('<span class="ph">');
     // Stats reflect the manifest, not hardcoded numbers.
-    expect(elements.stats.innerHTML).toContain(`${manifest.length}</b><span>commands`);
+    expect(getEl('stats').innerHTML).toContain(`${manifest.length}</b><span>commands`);
   });
 });
 

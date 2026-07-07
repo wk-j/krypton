@@ -89,6 +89,7 @@ import {
   mentionPaletteVisible,
 } from './mention-palette';
 import {
+  HASH_COMMANDS,
   type HashCommand,
   buildCommandManifest,
   filteredHashCommands,
@@ -96,13 +97,23 @@ import {
 } from './hash-commands';
 import {
   HANDOFF_WRITE_PROMPT,
+  type GithubIssueVerbInput,
+  analyzeGithubIssuePrompt,
+  createGithubIssuePrompt,
   directivePrompt,
+  fixGithubIssuePrompt,
   goalSeedPrompt,
+  handleGithubIssuePrompt,
   handoffResumePrompt,
   issueFixPrompt,
+  postGithubCommentPrompt,
+  tagGithubIssuePrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
+import { hasVerbTokens, resolveVerbTokens } from './verb-compose';
+import { injectableVerbNames, injectableVerbPrompt } from './verb-registry';
+import { applyVerbSelection, filteredVerbNames, verbPaletteContext } from './verb-palette';
 
 // Re-exported from their new home (spec 185 moved the prompt builders to
 // harness-prompts.ts) so existing import sites — tests included — keep working.
@@ -624,6 +635,8 @@ interface HarnessLane {
   mentionPaletteDismissed: boolean;
   hashPaletteIndex: number;
   hashPaletteDismissed: boolean;
+  verbPaletteIndex: number;
+  verbPaletteDismissed: boolean;
   plan: PlanEntry[] | null;
   planCollapsed: boolean;
   lastKilled: string;
@@ -1082,6 +1095,8 @@ const LANE_DEFAULTS = {
   mentionPaletteDismissed: false,
   hashPaletteIndex: 0,
   hashPaletteDismissed: false,
+  verbPaletteIndex: 0,
+  verbPaletteDismissed: false,
   plan: null,
   planCollapsed: false,
   lastKilled: '',
@@ -1232,6 +1247,10 @@ export function orchestratorInputHtml(draft: string, placeholder: string): strin
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
+
+  /** Set by the compositor to drive the window's oscilloscope band. Pumped by any
+   *  lane's streamed output — the band reads aggregate window activity. See docs/189. */
+  onOutputPump?: (chars: number) => void;
 
   private projectDir: string | null;
   /** spec 128: global ViewBus, used to publish the open attention count so the
@@ -2537,17 +2556,37 @@ export class AcpHarnessView implements ContentView {
         sendReply({ ok: false, reason: 'unknown_lane' });
         return;
       }
+      // spec 190: normalize the reported key to canonical `owner/repo#123` (a lane may
+      // report a URL) so lookup/delete/auto-bind all key off the SAME string dispatchIssue
+      // stores under — otherwise a URL report would miss its own binding and duplicate it.
+      const ref = this.parseIssueRef(env.issueKey);
+      const issueKey = ref ? `${ref.repo}#${ref.number}` : env.issueKey;
       // Resolve the binding by the issueKey the lane reported, not by guessing its
       // most-recent dispatch — that breaks when one lane is fixing several issues.
-      const binding = this.issueBindings.get(env.issueKey);
-      if (!binding) {
-        sendReply({ ok: false, reason: 'no_binding' });
-        return;
+      let binding = this.issueBindings.get(issueKey);
+      if (binding && binding.laneId !== lane.id) {
+        // spec 190: a live owner keeps its binding (misroute guard). But a binding
+        // whose owner lane is gone (stale, e.g. post-restart) is taken over by the
+        // reporting live lane — same stale-binding handling as dispatchIssue.
+        const owner = this.lanes.find((l) => l.id === binding!.laneId);
+        if (owner && owner.status !== 'stopped') {
+          sendReply({ ok: false, reason: 'wrong_lane' });
+          return;
+        }
+        this.issueBindings.delete(issueKey);
+        binding = undefined;
       }
-      // A lane may only report on an issue actually bound to it.
-      if (binding.laneId !== lane.id) {
-        sendReply({ ok: false, reason: 'wrong_lane' });
-        return;
+      // spec 190: auto-bind. A lane that picked up an issue directly in the harness
+      // (no prior dispatchIssue) has no binding — self-register one from issue_key
+      // instead of rejecting, so issue_progress works whether the fix started from
+      // the browser plugin or straight in the lane.
+      if (!binding) {
+        const bound = this.autoBindIssue(lane, issueKey);
+        if (!bound) {
+          sendReply({ ok: false, reason: 'invalid_issue_key' });
+          return;
+        }
+        binding = bound;
       }
       if (env.phase) binding.phase = env.phase;
       if (typeof env.summary === 'string') binding.summary = env.summary.slice(0, 300);
@@ -3405,6 +3444,9 @@ export class AcpHarnessView implements ContentView {
       if (composerLane && hashPaletteVisible(composerLane.draft, composerLane.hashPaletteDismissed)) {
         return this.handleHashPaletteKey(e, composerLane);
       }
+      if (composerLane && this.verbPaletteVisibleFor(composerLane)) {
+        return this.handleInlineVerbPaletteKey(e, composerLane);
+      }
       e.preventDefault();
       this.activateLaneByDelta(e.key === 'n' || e.key === 'N' ? 1 : -1);
       return true;
@@ -3444,6 +3486,9 @@ export class AcpHarnessView implements ContentView {
       if (this.mentionPaletteVisibleFor(lane)) {
         lane.mentionPaletteDismissed = true;
         this.renderComposer();
+      } else if (this.verbPaletteVisibleFor(lane)) {
+        lane.verbPaletteDismissed = true;
+        this.renderComposer();
       } else if (this.helpOpen) this.toggleHelp(false);
       else if (this.memoryDrawerOpen) this.toggleMemoryDrawer(false);
       else if (lane.stagedImages.length > 0) this.clearStagedImages(lane);
@@ -3482,6 +3527,7 @@ export class AcpHarnessView implements ContentView {
 
     if (this.handleSlashPaletteKey(e, lane)) return true;
     if (this.handleHashPaletteKey(e, lane)) return true;
+    if (this.handleInlineVerbPaletteKey(e, lane)) return true;
     if (this.handleHistoryKey(e, lane)) return true;
     if (this.handleEditingKey(e, lane)) return true;
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -3664,6 +3710,88 @@ export class AcpHarnessView implements ContentView {
     return (
       `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
       `<div class="acp-harness__slash-palette-meta">↑↓ / ⌃n⌃p select · Tab complete · Esc dismiss</div>` +
+      rows +
+      `</div>`
+    );
+  }
+
+  /** spec 191: inline verb-injection palette. Cursor-aware — fires when the user types
+   *  a bare `#<prefix>` ANYWHERE mid-prompt (not the whole-draft `#command` case, which
+   *  the command palette owns) and offers only injectable verbs. Tab inserts the full
+   *  `{{#verb-name}}` token so the user never types the double braces by hand. */
+  private verbPaletteEntriesFor(lane: HarnessLane): { name: string; description: string }[] {
+    // The whole-draft `#command` palette owns a bare leading `#token` (regex-only check,
+    // ignoring dismiss state) — so the two palettes never show at once.
+    if (hashPaletteVisible(lane.draft, false)) return [];
+    const ctx = verbPaletteContext(lane.draft, lane.cursor);
+    if (!ctx) return [];
+    return filteredVerbNames(injectableVerbNames(), ctx.prefix).map((name) => ({
+      name,
+      description: HASH_COMMANDS.find((c) => c.name === name)?.description ?? '',
+    }));
+  }
+
+  private verbPaletteVisibleFor(lane: HarnessLane): boolean {
+    if (lane.verbPaletteDismissed) return false;
+    return this.verbPaletteEntriesFor(lane).length > 0;
+  }
+
+  private handleInlineVerbPaletteKey(e: KeyboardEvent, lane: HarnessLane): boolean {
+    if (!this.verbPaletteVisibleFor(lane)) return false;
+    const matches = this.verbPaletteEntriesFor(lane);
+    if (matches.length === 0) return false;
+    if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
+      e.preventDefault();
+      lane.verbPaletteIndex = (lane.verbPaletteIndex + 1) % matches.length;
+      this.renderComposer();
+      return true;
+    }
+    if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
+      e.preventDefault();
+      lane.verbPaletteIndex = (lane.verbPaletteIndex - 1 + matches.length) % matches.length;
+      this.renderComposer();
+      return true;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const pick = matches[Math.max(0, Math.min(lane.verbPaletteIndex, matches.length - 1))];
+      if (pick) {
+        const next = applyVerbSelection(lane.draft, lane.cursor, pick.name);
+        this.setDraft(lane, next.draft, next.cursor);
+      }
+      return true;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      lane.verbPaletteDismissed = true;
+      this.renderComposer();
+      return true;
+    }
+    return false;
+  }
+
+  private renderInlineVerbPalette(lane: HarnessLane): string {
+    if (!this.verbPaletteVisibleFor(lane)) return '';
+    const matches = this.verbPaletteEntriesFor(lane);
+    if (matches.length === 0) return '';
+    const safeIndex = Math.max(0, Math.min(lane.verbPaletteIndex, matches.length - 1));
+    const rows = matches
+      .map((entry, i) => {
+        const sel = i === safeIndex ? ' acp-harness__slash-palette-row--selected' : '';
+        const desc = entry.description
+          ? `<span class="acp-harness__slash-palette-desc">${esc(entry.description)}</span>`
+          : '';
+        return (
+          `<div class="acp-harness__slash-palette-row${sel}">` +
+          `<span class="acp-harness__slash-palette-name">{{#${esc(entry.name)}}}</span>` +
+          desc +
+          `</div>`
+        );
+      })
+      .join('');
+    return (
+      `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
+      `<div class="acp-harness__slash-palette-meta">inject verb · ↑↓ / ⌃n⌃p select · Tab insert · Esc dismiss</div>` +
       rows +
       `</div>`
     );
@@ -5522,6 +5650,51 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  /** spec 190: self-register a binding for a lane reporting progress on an issue it
+   *  picked up directly (no prior dispatchIssue). Mirrors dispatchIssue's binding
+   *  creation but never spawns/targets a lane or sends a fix prompt — the lane is
+   *  already working. Returns null on an unparseable issue_key. Title is enriched
+   *  via `gh` in the background so the ok reply is never gated on the fetch. */
+  private autoBindIssue(lane: HarnessLane, issueKey: string): IssueBinding | null {
+    const ref = this.parseIssueRef(issueKey);
+    if (!ref || !this.harnessMemoryId) return null;
+    // Canonicalize: bind under `owner/repo#123` even if the lane reported a URL, so the
+    // key/value match dispatchIssue and every status/browser surface (which expect it).
+    const canonicalKey = `${ref.repo}#${ref.number}`;
+    const now = Date.now();
+    const placeholderGoal = `Fix #${ref.number}`;
+    const binding: IssueBinding = {
+      issueKey: canonicalKey,
+      issueUrl: ref.url,
+      repo: ref.repo,
+      number: ref.number,
+      title: canonicalKey, // enriched below, in the background
+      harnessId: this.harnessMemoryId,
+      laneId: lane.id,
+      laneDisplayName: lane.displayName,
+      dispatchedAt: now,
+      updatedAt: now,
+    };
+    this.issueBindings.set(canonicalKey, binding);
+    // Don't clobber a user/agent-set goal — only surface the issue if there's none.
+    if (!lane.goal) lane.goal = { text: placeholderGoal, setAt: now };
+    this.persistIssueBindings();
+    this.publishIssueStatus(binding);
+    // Background enrich: fetch the title, then re-publish + refine the goal chip.
+    void this.fetchIssueMeta(ref.repo, ref.number).then((meta) => {
+      const t = meta?.title?.trim();
+      if (!t || this.issueBindings.get(canonicalKey) !== binding) return;
+      binding.title = t;
+      if (lane.goal && lane.goal.text === placeholderGoal) {
+        lane.goal = { text: `Fix #${ref.number}: ${t}`.slice(0, 200), setAt: binding.dispatchedAt };
+      }
+      this.persistIssueBindings();
+      this.publishIssueStatus(binding);
+      this.render();
+    });
+    return binding;
+  }
+
   /** The single convergence point for "fix this issue", called by every surface
    *  (Krypton palette / #fix-issue, and the github.dispatch-issue control op). */
   private async dispatchIssue(args: {
@@ -6174,6 +6347,20 @@ export class AcpHarnessView implements ContentView {
     if (!lane.client || lane.status === 'starting' || lane.status === 'error' || lane.status === 'stopped') {
       this.flashChip(`lane ${lane.status}`);
       return;
+    }
+    // spec 191: inline verb injection — a free-form user prompt may embed a verb as
+    // a `{{#verb}}` token at ANY position; expand each to its rendered prompt (same
+    // registry + resolver as composed verbs) before the prompt is queued or sent, so
+    // the lane receives one combined prompt. Bad token → flash + abort, never send a
+    // half-expanded prompt. Expanding here (once) means a queued prompt stores the
+    // resolved text and the drain path sends it verbatim.
+    if (hasVerbTokens(text)) {
+      try {
+        text = resolveVerbTokens(text, injectableVerbPrompt);
+      } catch (e) {
+        this.flashChip(errorText(e));
+        return;
+      }
     }
     if (lane.status === 'busy' || lane.status === 'needs_permission') {
       // spec 136: queue the prompt instead of discarding it — it drains on the
@@ -8022,6 +8209,23 @@ export class AcpHarnessView implements ContentView {
       }
       return;
     }
+    // spec 192: GitHub issue analysis viewer (.krypton/analyses bundles).
+    if (parts[0] === '#analyses') {
+      this.setDraft(lane, '', 0);
+      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
+      if (!port) {
+        this.flashChip('analyses unavailable - hook server not ready');
+        return;
+      }
+      const url = `http://127.0.0.1:${port}/analyses`;
+      try {
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`analyses open failed: ${errorText(e)}`);
+      }
+      return;
+    }
     // spec 185: fixed external-browser reference for the built-in # commands.
     if (parts[0] === '#commands') {
       this.setDraft(lane, '', 0);
@@ -8175,13 +8379,15 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
-    // spec 178: #fix-issue <url | owner/repo#123> — dispatch a GitHub issue fix to
-    // a fresh lane. Metadata via local `gh`; URL-only fallback when gh is absent.
-    if (parts[0] === '#fix-issue') {
+    // spec 178: dispatch a GitHub issue fix to a FRESH lane (control-op — spawns a
+    // lane, sets its goal, clears its session). Renamed #fix-issue → #dispatch-github-issue
+    // in spec 191; #fix-issue kept as a back-compat alias. Metadata via local `gh`;
+    // URL-only fallback when gh is absent. This is NOT the #fix-github-issue prompt-verb.
+    if (parts[0] === '#dispatch-github-issue' || parts[0] === '#fix-issue') {
       this.setDraft(lane, '', 0);
       const ref = this.parseIssueRef(parts.slice(1).join(' '));
       if (!ref) {
-        this.flashChip('usage: #fix-issue <issue url | owner/repo#123>');
+        this.flashChip(`usage: ${parts[0]} <issue url | owner/repo#123>`);
         return;
       }
       const issueKey = `${ref.repo}#${ref.number}`;
@@ -8197,11 +8403,130 @@ export class AcpHarnessView implements ContentView {
         });
         this.flashChip(`fixing ${issueKey} → ${res.lane}`);
       } catch (e) {
-        this.flashChip(`fix-issue failed: ${errorText(e)}`);
+        this.flashChip(`dispatch-github-issue failed: ${errorText(e)}`);
       }
       return;
     }
+    // spec 191: composable GitHub-issue prompt-verbs. Each injects a one-shot prompt
+    // into THIS lane (the lane does the work with its own gh/edit tools); the composed
+    // #create-github-issue files a NEW issue from free text (no existing ref).
+    if (parts[0] === '#create-github-issue') {
+      this.setDraft(lane, '', 0);
+      await this.runCreateGithubIssue(lane, parts.slice(1));
+      return;
+    }
+    // #handle-github-issue embeds the others as tokens, resolved into one prompt.
+    if (parts[0] === '#analyze-github-issue') {
+      this.setDraft(lane, '', 0);
+      await this.runGithubIssuePromptVerb(lane, 'analyze-github-issue', parts.slice(1));
+      return;
+    }
+    if (parts[0] === '#fix-github-issue') {
+      this.setDraft(lane, '', 0);
+      await this.runGithubIssuePromptVerb(lane, 'fix-github-issue', parts.slice(1));
+      return;
+    }
+    if (parts[0] === '#tag-github-issue') {
+      this.setDraft(lane, '', 0);
+      await this.runGithubIssuePromptVerb(lane, 'tag-github-issue', parts.slice(1));
+      return;
+    }
+    if (parts[0] === '#post-github-comment') {
+      this.setDraft(lane, '', 0);
+      await this.runGithubIssuePromptVerb(lane, 'post-github-comment', parts.slice(1));
+      return;
+    }
+    if (parts[0] === '#handle-github-issue') {
+      this.setDraft(lane, '', 0);
+      await this.runGithubIssuePromptVerb(lane, 'handle-github-issue', parts.slice(1));
+      return;
+    }
     this.flashChip('unknown command');
+  }
+
+  /** spec 191: run a composable GitHub-issue prompt-verb. Parses the issue ref from
+   *  `args[0]` (URL or owner/repo#123), builds the verb's prompt, resolves any
+   *  embedded verb tokens (composed verbs), and injects it as a one-shot prompt into
+   *  the current lane. The lane does the work with its own tools; the harness observes
+   *  via issue_progress + auto-bind (spec 190). */
+  private async runGithubIssuePromptVerb(
+    lane: HarnessLane,
+    verb: 'analyze-github-issue' | 'fix-github-issue' | 'tag-github-issue' | 'post-github-comment' | 'handle-github-issue',
+    args: string[],
+  ): Promise<void> {
+    const ref = this.parseIssueRef(args[0] ?? '');
+    if (!ref) {
+      this.flashChip(`usage: #${verb} <issue url | owner/repo#123>`);
+      return;
+    }
+    if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+      this.flashChip('lane busy - #cancel first');
+      return;
+    }
+    const input: GithubIssueVerbInput = {
+      issueKey: `${ref.repo}#${ref.number}`,
+      repo: ref.repo,
+      number: ref.number,
+      url: ref.url,
+    };
+    let prompt: string;
+    let label: string;
+    switch (verb) {
+      case 'analyze-github-issue':
+        prompt = analyzeGithubIssuePrompt(input);
+        label = 'analyzing issue';
+        break;
+      case 'fix-github-issue':
+        prompt = fixGithubIssuePrompt(input);
+        label = 'fixing issue';
+        break;
+      case 'tag-github-issue':
+        prompt = tagGithubIssuePrompt(input, args.slice(1));
+        label = 'labelling issue';
+        break;
+      case 'post-github-comment':
+        prompt = postGithubCommentPrompt(input);
+        label = 'commenting on issue';
+        break;
+      case 'handle-github-issue':
+        prompt = handleGithubIssuePrompt(input);
+        label = 'handling issue';
+        break;
+    }
+    try {
+      prompt = resolveVerbTokens(prompt, injectableVerbPrompt);
+    } catch (e) {
+      this.flashChip(`#${verb}: ${errorText(e)}`);
+      return;
+    }
+    await this.enqueueSystemPrompt(lane, prompt, undefined, label);
+  }
+
+  /** Create a NEW GitHub issue from a plain-language request. Args are the free-text
+   *  description, with an optional `-R owner/repo` flag naming the target repo (else the
+   *  lane infers it from the current git remote). Unlike the other issue verbs this does
+   *  not reference an existing issue, so it uses no issue ref. */
+  private async runCreateGithubIssue(lane: HarnessLane, args: string[]): Promise<void> {
+    let repo: string | undefined;
+    const rest: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if ((args[i] === '-R' || args[i] === '--repo') && i + 1 < args.length) {
+        repo = args[++i];
+      } else {
+        rest.push(args[i]);
+      }
+    }
+    const description = rest.join(' ').trim();
+    if (!description) {
+      this.flashChip('usage: #create-github-issue <what to file> [-R owner/repo]');
+      return;
+    }
+    if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+      this.flashChip('lane busy - #cancel first');
+      return;
+    }
+    const prompt = createGithubIssuePrompt(description, repo);
+    await this.enqueueSystemPrompt(lane, prompt, undefined, 'creating issue');
   }
 
   /** spec 136: #unqueue [N] — remove the last queued item, or the 1-indexed N. */
@@ -9463,6 +9788,7 @@ export class AcpHarnessView implements ContentView {
     const mentionPalette = this.renderMentionPalette(lane);
     const palette = renderSlashPalette(lane);
     const hashPalette = this.renderHashPalette(lane);
+    const inlineVerbPalette = this.renderInlineVerbPalette(lane);
     const peerStrip = buildComposerPeerStrip(
       lane.status,
       this.coordinator.pendingPeersFor(lane.id),
@@ -9484,6 +9810,7 @@ export class AcpHarnessView implements ContentView {
       mentionPalette +
       palette +
       hashPalette +
+      inlineVerbPalette +
       `<div class="acp-harness__input-line">` +
       `<span class="acp-harness__lane-tag">${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__prompt">${lane.status === 'busy'
@@ -10078,6 +10405,7 @@ export class AcpHarnessView implements ContentView {
       } else lane.currentThoughtId = item.id;
     }
     item.text += text;
+    this.onOutputPump?.(text.length);
   }
 
   private appendUserStreaming(lane: HarnessLane, text: string): void {
@@ -10633,6 +10961,8 @@ export class AcpHarnessView implements ContentView {
     lane.mentionPaletteDismissed = false;
     lane.hashPaletteIndex = 0;
     lane.hashPaletteDismissed = false;
+    lane.verbPaletteIndex = 0;
+    lane.verbPaletteDismissed = false;
     lane.historyIndex = null;
     lane.historySavedDraft = null;
     this.renderComposer();
@@ -10800,14 +11130,15 @@ export class AcpHarnessView implements ContentView {
       keybinding: 'Ctrl+M',
       execute: () => this.showMemoryDrawer(),
     });
-    // spec 178: prefill the #fix-issue verb (keyboard-first dispatch). The user
-    // pastes the issue URL inline and submits — reuses the hash-command path.
+    // spec 178/191: prefill the #dispatch-github-issue verb (keyboard-first dispatch
+    // to a fresh lane). The user pastes the issue URL inline and submits — reuses the
+    // hash-command path.
     out.push({
-      id: 'acp.harness.fix-issue',
+      id: 'acp.harness.dispatch-github-issue',
       label: 'Fix GitHub Issue…',
       category: 'ACP Harness',
       execute: () => {
-        this.setDraft(lane, '#fix-issue ', '#fix-issue '.length);
+        this.setDraft(lane, '#dispatch-github-issue ', '#dispatch-github-issue '.length);
         this.render();
       },
     });

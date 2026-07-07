@@ -1940,9 +1940,12 @@ export class Compositor {
     titlebar.appendChild(ptyStatus);
     chrome.appendChild(titlebar);
 
-    const headerAccent = document.createElement('div');
-    headerAccent.className = 'krypton-window__header-accent';
-    chrome.appendChild(headerAccent);
+    // Header accent bar below titlebar — live oscilloscope (fed by the content
+    // view's streamed output) or the static striped div, per theme config.
+    const headerScope = this.buildHeaderAccent(chrome);
+    if (headerScope) {
+      contentView.onOutputPump = (chars: number): void => headerScope.pump(chars);
+    }
 
     const tabBar = document.createElement('div');
     tabBar.className = 'krypton-window__tabbar';
@@ -2018,6 +2021,7 @@ export class Compositor {
       tabBarElement: tabBar,
       contentElement: content,
       pinned: false,
+      headerScope,
     };
     this.windows.set(id, win);
     this.updateTabBar(win);
@@ -2440,6 +2444,30 @@ export class Compositor {
     } catch (e) {
       console.error('[Docs] failed to open docs:', e);
       this.showNotification('docs open failed');
+    }
+  }
+
+  /**
+   * Open the GitHub issue analysis viewer in the system browser (spec 192).
+   */
+  async openAnalyses(): Promise<void> {
+    let port = 0;
+    try {
+      port = await invoke<number>('get_hook_server_port');
+    } catch (e) {
+      console.error('[Analyses] failed to read hook server port:', e);
+    }
+    if (!port) {
+      this.showNotification('analyses unavailable — hook server not ready');
+      return;
+    }
+    const url = `http://127.0.0.1:${port}/analyses`;
+    try {
+      await invoke('open_url', { url });
+      this.showNotification(url);
+    } catch (e) {
+      console.error('[Analyses] failed to open analyses:', e);
+      this.showNotification('analyses open failed');
     }
   }
 
@@ -4080,6 +4108,16 @@ export class Compositor {
     const ctGlowBottom = document.createElement('div');
     ctGlowBottom.className = 'krypton-glow-overlay krypton-glow-overlay--bottom';
     paneEl.appendChild(ctGlowBottom);
+
+    // Drive the host window's oscilloscope band from this view's streamed
+    // output (spec 189). The band lives on the window chrome and is shared by
+    // every tab/pane, so a content tab pumps the same scope the launching
+    // terminal fed — matching the "all panes pump the single window band" rule.
+    // Null when the header-accent style is 'ticks' (pump stays unwired → no-op).
+    const scope = win.headerScope;
+    if (scope) {
+      contentView.onOutputPump = (chars: number): void => scope.pump(chars);
+    }
 
     const pane: Pane = {
       id: paneId,

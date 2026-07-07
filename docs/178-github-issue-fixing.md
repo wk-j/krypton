@@ -4,6 +4,15 @@
 > Date: 2026-06-27
 > Milestone: M9 — Harness loopback & web control
 
+> **Update (spec 191):** the `#fix-issue` verb below was renamed
+> `#dispatch-github-issue` (a control-op that dispatches the fix to a *fresh* lane);
+> `#fix-issue` is kept as a back-compat alias. Spec 191 adds a composable
+> GitHub-issue verb set that runs *in the current lane* — `#analyze-github-issue`,
+> `#fix-github-issue`, `#tag-github-issue`, `#post-github-comment`, and the composed
+> `#handle-github-issue`. Those verbs reuse this spec's `issue_progress` + auto-bind
+> plumbing but do the earlier-out-of-scope write-backs (labels, comments) directly
+> via `gh`. See `docs/191-composable-verbs-github-issue-toolset.md`.
+
 ## Problem
 
 A user has no way to hand a GitHub issue to a Krypton lane to fix, nor to see how a
@@ -151,6 +160,19 @@ would misroute when one lane is fixing more than one issue — verifies the bind
 belongs to the reporting lane, updates `phase/summary/prUrl/updatedAt`, and
 publishes a `status` event so the overlay refreshes live.
 
+**Auto-bind (spec 190).** `issue_progress` must work whether the fix started from
+the browser plugin *or* straight in the harness (the user just tells a lane to fix
+`owner/repo#123` in conversation, with no prior `dispatchIssue`). So when a valid
+`issue_key` has **no binding**, the harness **self-registers** one against the
+reporting lane (parse `issue_key`, create the `IssueBinding`, set the lane goal chip
+if unset, enrich the title via `gh` in the background) and then applies the update —
+rather than rejecting. The misroute guard is kept: a key already bound to a
+**different live lane** returns `wrong_lane`; a **stale** binding whose lane is gone
+is taken over by the reporting live lane. Reason codes: `unknown_lane` (reporting
+name is not a live lane), `wrong_lane`, and `invalid_issue_key` (unparseable key,
+no binding created). The former `no_binding` reason is **retired** — a valid key
+always binds. See `docs/190-issue-progress-auto-bind.md`.
+
 ### Dispatch Surfaces
 
 All surfaces converge on the **same** `dispatchIssue(params)` path in
@@ -262,6 +284,9 @@ GitHub Enterprise is noted as out of scope.
 
 - **Duplicate dispatch** — `issueKey` already bound: focus the existing binding,
   do not create a second lane.
+- **`issue_progress` with no binding (spec 190)** — a lane that picked up the issue
+  directly (no dispatch) auto-binds itself from `issue_key` instead of getting
+  `no_binding`; an unparseable key yields `invalid_issue_key` and creates nothing.
 - **Lane closed/restarted/stopped** — snapshot reports `laneStatus: stopped`; card
   offers re-dispatch; binding retained until unlinked.
 - **Krypton offline** — native handshake fails; card shows offline state, no error spam.

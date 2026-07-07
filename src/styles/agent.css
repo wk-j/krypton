@@ -92,7 +92,11 @@
   box-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.6) !important;
 }
 
-.krypton-window[data-content-type="agent"] .krypton-window__header-accent {
+/* Amber gradient applies only to the static striped div. When the header accent
+   is the live oscilloscope canvas (--scope), leave it transparent so the trace —
+   which draws from the window's own accent color — is not painted over. See docs/189. */
+.krypton-window[data-content-type="agent"]
+  .krypton-window__header-accent:not(.krypton-window__header-accent--scope) {
   background: linear-gradient(
     90deg,
     transparent,

@@ -171,7 +171,10 @@ a field in `src-tauri/src/config.rs` + `theme.ts` `ChromeHeaderAccent`.
 ## Out of Scope
 
 - Content-view windows (agent/vault) and dashboard panels — they keep the static band.
+  _(Superseded: agent/ACP/harness windows gained the band from streamed model output in
+  [189-oscilloscope-harness-band.md](189-oscilloscope-harness-band.md). Vault + dashboard still static.)_
 - Feeding the band from non-PTY signals (agent tokens, OSC 9;4 progress, audio) — future.
+  _(Agent/ACP tokens now feed it via spec 189; OSC progress + audio remain future.)_
 - OffscreenCanvas/worker offload — only if profiling demands it.
 - Any new keybinding (purely visual feature).
 

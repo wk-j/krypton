@@ -821,6 +821,12 @@ export class CommandPalette {
       category: 'Window',
       execute: () => c.openDocs(),
     });
+    this.register({
+      id: 'analyses.open',
+      label: 'Open Issue Analysis Viewer',
+      category: 'Window',
+      execute: () => c.openAnalyses(),
+    });
 
     // ── Hurl Client ──
     this.register({

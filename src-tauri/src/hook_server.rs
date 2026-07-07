@@ -905,9 +905,61 @@ impl HookServer {
         let source =
             std::fs::read_to_string(&path).map_err(|e| format!("not_found: read failed ({e})"))?;
         Ok((
-            render_markdown_doc(&source, harness_id, &normalized_rel),
+            render_markdown_doc(&source, harness_id, &normalized_rel, "/doc-asset"),
             normalized_rel,
         ))
+    }
+
+    /// Discover analysis bundles for every harness: `(harness_id, project_dir,
+    /// bundles)`. One filesystem walk per harness; callers reuse this for both the
+    /// index/bundle content AND the sidebar so `/analysis` walks the tree once.
+    fn discover_analyses_per_harness(&self) -> Vec<(String, String, Vec<AnalysisBundle>)> {
+        self.docs_project_dirs()
+            .into_iter()
+            .map(|(id, path)| {
+                let bundles = discover_analysis_bundles(&path);
+                (id, path, bundles)
+            })
+            .collect()
+    }
+
+    /// Render the `/analyses` index: every harness's analysis bundles in the
+    /// sidebar, the selected harness's bundles as rows on the right. `sel_harness`
+    /// defaults to the first harness that actually has bundles.
+    fn analyses_index_page(&self, sel_harness: Option<&str>) -> Response {
+        let per = self.discover_analyses_per_harness();
+        if per.is_empty() {
+            return render_analyses_page(
+                "Issue analyses",
+                Some(""),
+                "<p class=\"welcome\">No harness working directory is available.</p>",
+            );
+        }
+        let selected = sel_harness
+            .filter(|h| per.iter().any(|(id, _, b)| id == h && !b.is_empty()))
+            .map(str::to_string)
+            .or_else(|| {
+                per.iter()
+                    .find(|(_, _, b)| !b.is_empty())
+                    .map(|(id, _, _)| id.clone())
+            });
+        let nav = render_analyses_nav(&per, selected.as_deref().unwrap_or(""), "");
+        let content = match &selected {
+            Some(harness_id) => {
+                let bundles = per
+                    .iter()
+                    .find(|(id, _, _)| id == harness_id)
+                    .map(|(_, _, b)| b.as_slice())
+                    .unwrap_or(&[]);
+                render_analyses_index(harness_id, bundles)
+            }
+            None => "<p class=\"welcome\">ยังไม่มีบทวิเคราะห์ issue — รัน #analyze-github-issue ในเลนเพื่อสร้างบทวิเคราะห์</p>".to_string(),
+        };
+        let title = match &selected {
+            Some(harness_id) => format!("Issue analyses · {harness_id}"),
+            None => "Issue analyses".to_string(),
+        };
+        render_analyses_page(&title, Some(&nav), &content)
     }
 
     /// `artifact_new` — allocate an id, issue a destination path inside the
@@ -1409,6 +1461,24 @@ struct DocsQuery {
     dir: Option<String>,
 }
 
+/// Query for the analyses index (`/analyses`). `harness` selects which harness's
+/// bundles fill the right pane (defaults to the first with bundles).
+#[derive(Debug, Default, Deserialize)]
+struct AnalysesQuery {
+    harness: Option<String>,
+}
+
+/// Query for one issue's analysis bundle (`/analysis`). `issue` is the
+/// `owner/repo/number` path (slash-joined, NOT `owner/repo#number`). `harness` is
+/// optional (like `/docs`): when omitted, the handler picks the harness that owns
+/// the issue, else the first harness with bundles — so a bare
+/// `/analysis?issue=…` bookmark still resolves.
+#[derive(Debug, Deserialize)]
+struct AnalysisQuery {
+    harness: Option<String>,
+    issue: String,
+}
+
 /// POST /hook — receive a Claude Code hook event.
 async fn handle_hook(
     AxumState(state): AxumState<Arc<HookServerState>>,
@@ -1608,6 +1678,7 @@ async fn handle_artifact_state(
 const DASHBOARD_HTML: &str = include_str!("../../src/acp/artifact-dashboard.html");
 const GALLERY_HTML: &str = include_str!("../../src/acp/artifact-gallery.html");
 const DOCS_HTML: &str = include_str!("../../src/acp/artifact-docs.html");
+const ANALYSES_HTML: &str = include_str!("../../src/acp/artifact-analyses.html");
 const COMMANDS_HTML: &str = include_str!("../../src/acp/artifact-commands.html");
 const TOOLS_HTML: &str = include_str!("../../src/acp/artifact-tools.html");
 
@@ -1779,6 +1850,115 @@ async fn handle_doc_asset(
         .body(Body::from(bytes))
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
+
+/// GET /analyses?harness=<id> — the Issue Analysis Viewer index (spec 192).
+async fn handle_analyses(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<AnalysesQuery>,
+) -> Response {
+    state
+        .hook_server
+        .analyses_index_page(query.harness.as_deref())
+}
+
+/// GET /analysis?harness=<id>&issue=<owner/repo/number> — one issue's bundle.
+/// `harness` is optional: without it we pick the harness that owns the issue,
+/// else the first harness with bundles (a bare `?issue=…` bookmark resolves).
+/// One filesystem walk feeds both the bundle content and the sidebar.
+async fn handle_analysis(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<AnalysisQuery>,
+) -> Response {
+    let per = state.hook_server.discover_analyses_per_harness();
+    // Resolve the harness: an explicit (existing) one, else the harness that owns
+    // this issue, else the first harness that has any bundle.
+    let harness_id = query
+        .harness
+        .as_deref()
+        .filter(|h| per.iter().any(|(id, _, _)| id == h))
+        .map(str::to_string)
+        .or_else(|| {
+            per.iter()
+                .find(|(_, _, b)| b.iter().any(|x| bundle_matches_issue(x, &query.issue)))
+                .map(|(id, _, _)| id.clone())
+        })
+        .or_else(|| {
+            per.iter()
+                .find(|(_, _, b)| !b.is_empty())
+                .map(|(id, _, _)| id.clone())
+        });
+    let Some(harness_id) = harness_id else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some((_, project_dir, bundles)) = per.iter().find(|(id, _, _)| id == &harness_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some(bundle) = bundles
+        .iter()
+        .find(|b| bundle_matches_issue(b, &query.issue))
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let content = render_analysis_bundle(project_dir, &harness_id, bundle);
+    let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
+    let nav = render_analyses_nav(&per, &harness_id, &issue_ref);
+    render_analyses_page(&bundle.issue_key, Some(&nav), &content)
+}
+
+/// GET /analysis-asset?harness=<id>&path=<rel> — serve a whitelisted image from
+/// an analysis bundle. Same traversal/symlink/extension guard + headers as
+/// `/doc-asset`, but additionally scoped to `.krypton/analyses/` (this route
+/// only ever serves bundle resources) and byte-capped.
+async fn handle_analysis_asset(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocQuery>,
+) -> Response {
+    let project_dir = match state.hook_server.docs_project_dir(&query.harness) {
+        Some(dir) => dir,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let path = match validate_doc_path(
+        StdPath::new(&project_dir),
+        &query.path,
+        &["png", "jpg", "jpeg", "gif", "svg", "webp"],
+    ) {
+        Ok(path) => path,
+        Err(error) if error.starts_with("not_found:") => {
+            return StatusCode::NOT_FOUND.into_response()
+        }
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    // Scope this route to the analyses bundle root — it must never serve an
+    // arbitrary project image the way `/doc-asset` may. `path` is already
+    // canonical (validate_doc_path); compare against the canonical analyses root.
+    let Some(analyses_root) = analyses_root(&project_dir).and_then(|r| r.canonicalize().ok())
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !path.starts_with(&analyses_root) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    // Cap the served size so a huge downloaded resource can't spike memory.
+    if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > ANALYSIS_ASSET_MAX_BYTES {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
+    let mime = doc_asset_mime(&path);
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(bytes))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// Max bytes `/analysis-asset` will stream for one downloaded resource (25 MiB).
+const ANALYSIS_ASSET_MAX_BYTES: u64 = 25 * 1024 * 1024;
 
 /// GET /doc-state?harness=<id>&path=<rel> — current sha256 of a repo `.md`, so
 /// the docs-browser feedback overlay can live-reload the page when a lane edits
@@ -4046,6 +4226,354 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (year + i64::from(month <= 2), month, day)
 }
 
+// ─── Issue Analysis Viewer (spec 192) ───────────────────────────────────────
+
+/// The analysis-bundle root for a project: `<project>/.krypton/analyses`. Sibling
+/// of `artifacts_root`. Gitignored working knowledge — the docs walker skips it,
+/// so this surface reads it directly.
+fn analyses_root(project_dir: &str) -> Option<PathBuf> {
+    let base = StdPath::new(project_dir);
+    if base.as_os_str().is_empty() {
+        return None;
+    }
+    Some(base.join(".krypton").join("analyses"))
+}
+
+/// A non-`.md` file in an analysis bundle (a downloaded issue resource).
+#[derive(Debug)]
+struct AnalysisAsset {
+    rel: String, // project-relative path
+    size: u64,   // bytes, for the attachment strip label
+}
+
+/// One issue's analysis bundle discovered on disk under
+/// `.krypton/analyses/<owner>/<repo>/<number>/`.
+#[derive(Debug)]
+struct AnalysisBundle {
+    issue_key: String, // "owner/repo#123", for display + GitHub link
+    owner: String,
+    repo: String,
+    number: String,
+    md_files: Vec<String>, // project-relative paths, ordered (root-cause, fix-plan, rest)
+    assets: Vec<AnalysisAsset>, // non-.md files (downloaded resources)
+    modified: Option<SystemTime>,
+}
+
+/// Order within a bundle: `root-cause.md`, then `fix-plan.md`, then the rest.
+fn analysis_md_rank(name: &str) -> u8 {
+    match name.to_ascii_lowercase().as_str() {
+        "root-cause.md" => 0,
+        "fix-plan.md" => 1,
+        _ => 2,
+    }
+}
+
+/// Numeric key for ordering issues newest-first; non-numeric folder names sort last.
+fn issue_number_sort_key(number: &str) -> u64 {
+    number.parse::<u64>().unwrap_or(0)
+}
+
+/// Walk `<project>/.krypton/analyses/<owner>/<repo>/<number>/` (unfiltered — the
+/// dir is gitignored, so `build_docs_tree` never sees it) and return one bundle
+/// per numbered leaf holding at least one file. Only exact 3-level leaves are
+/// treated as bundles. Ordered repo asc, then issue number desc (newest first).
+fn discover_analysis_bundles(project_dir: &str) -> Vec<AnalysisBundle> {
+    let Some(root) = analyses_root(project_dir) else {
+        return Vec::new();
+    };
+    let mut bundles: Vec<AnalysisBundle> = Vec::new();
+    let Ok(owners) = std::fs::read_dir(&root) else {
+        return bundles;
+    };
+    for owner_entry in owners.filter_map(Result::ok) {
+        if !owner_entry.file_type().is_ok_and(|t| t.is_dir()) {
+            continue;
+        }
+        let owner = owner_entry.file_name().to_string_lossy().to_string();
+        let Ok(repos) = std::fs::read_dir(owner_entry.path()) else {
+            continue;
+        };
+        for repo_entry in repos.filter_map(Result::ok) {
+            if !repo_entry.file_type().is_ok_and(|t| t.is_dir()) {
+                continue;
+            }
+            let repo = repo_entry.file_name().to_string_lossy().to_string();
+            let Ok(numbers) = std::fs::read_dir(repo_entry.path()) else {
+                continue;
+            };
+            for num_entry in numbers.filter_map(Result::ok) {
+                if !num_entry.file_type().is_ok_and(|t| t.is_dir()) {
+                    continue;
+                }
+                let number = num_entry.file_name().to_string_lossy().to_string();
+                let Ok(files) = std::fs::read_dir(num_entry.path()) else {
+                    continue;
+                };
+                let mut md_named: Vec<String> = Vec::new();
+                let mut assets: Vec<AnalysisAsset> = Vec::new();
+                let mut modified: Option<SystemTime> = None;
+                for file in files.filter_map(Result::ok) {
+                    if !file.file_type().is_ok_and(|t| t.is_file()) {
+                        continue;
+                    }
+                    let name = file.file_name().to_string_lossy().to_string();
+                    let meta = file.metadata().ok();
+                    if let Some(mt) = meta.as_ref().and_then(|m| m.modified().ok()) {
+                        modified = Some(modified.map_or(mt, |cur| cur.max(mt)));
+                    }
+                    let is_md = StdPath::new(&name)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+                    if is_md {
+                        md_named.push(name);
+                    } else {
+                        assets.push(AnalysisAsset {
+                            rel: format!(".krypton/analyses/{owner}/{repo}/{number}/{name}"),
+                            size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
+                        });
+                    }
+                }
+                if md_named.is_empty() && assets.is_empty() {
+                    continue;
+                }
+                md_named
+                    .sort_by(|a, b| analysis_md_rank(a).cmp(&analysis_md_rank(b)).then(a.cmp(b)));
+                let md_files = md_named
+                    .into_iter()
+                    .map(|name| format!(".krypton/analyses/{owner}/{repo}/{number}/{name}"))
+                    .collect();
+                assets.sort_by(|a, b| a.rel.cmp(&b.rel));
+                bundles.push(AnalysisBundle {
+                    issue_key: format!("{owner}/{repo}#{number}"),
+                    owner: owner.clone(),
+                    repo: repo.clone(),
+                    number,
+                    md_files,
+                    assets,
+                    modified,
+                });
+            }
+        }
+    }
+    bundles.sort_by(|a, b| {
+        a.owner
+            .cmp(&b.owner)
+            .then_with(|| a.repo.cmp(&b.repo))
+            .then_with(|| issue_number_sort_key(&b.number).cmp(&issue_number_sort_key(&a.number)))
+            // Deterministic tiebreak for non-numeric folder names (both key to 0).
+            .then_with(|| a.number.cmp(&b.number))
+    });
+    bundles
+}
+
+fn render_analyses_page(title: &str, tree: Option<&str>, content: &str) -> Response {
+    let escaped_title = html_escape(title);
+    let nav = match tree {
+        Some(tree) => format!("<nav class=\"tree-pane\">{tree}</nav>"),
+        None => String::new(),
+    };
+    let html = ANALYSES_HTML
+        .replace("<!--ANALYSES_TITLE-->", &escaped_title)
+        .replace("<nav class=\"tree-pane\"><!--ANALYSES_TREE--></nav>", &nav)
+        .replace(
+            "<article class=\"doc\"><!--ANALYSES_CONTENT--></article>",
+            &format!("<article class=\"doc\">{content}</article>"),
+        );
+    html_response(html)
+}
+
+/// Sidebar: every harness with bundles, grouped by `owner/repo`, each issue a
+/// link to `/analysis`. The current issue (bundle page) gets `is-active`.
+fn render_analyses_nav(
+    per: &[(String, String, Vec<AnalysisBundle>)],
+    sel_harness: &str,
+    sel_issue: &str,
+) -> String {
+    let multi = per.iter().filter(|(_, _, b)| !b.is_empty()).count() > 1;
+    let mut out = String::from("<ul class=\"tree\">");
+    for (harness_id, _project_dir, bundles) in per {
+        if bundles.is_empty() {
+            continue;
+        }
+        let mut cur_repo = String::new();
+        for bundle in bundles {
+            let repo_full = format!("{}/{}", bundle.owner, bundle.repo);
+            if repo_full != cur_repo {
+                if !cur_repo.is_empty() {
+                    out.push_str("</ul></li>");
+                }
+                cur_repo = repo_full.clone();
+                let label = if multi {
+                    format!("{harness_id} · {repo_full}")
+                } else {
+                    repo_full.clone()
+                };
+                out.push_str("<li class=\"tree-group\"><div class=\"tree-group__label\">");
+                out.push_str(&html_escape(&label));
+                out.push_str("</div><ul class=\"tree\">");
+            }
+            let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
+            let active = harness_id == sel_harness && issue_ref == sel_issue;
+            out.push_str("<li class=\"tree-file\"><a");
+            if active {
+                out.push_str(" class=\"is-active\"");
+            }
+            out.push_str(" href=\"/analysis?harness=");
+            out.push_str(&url_encode(harness_id));
+            out.push_str("&amp;issue=");
+            out.push_str(&url_encode(&issue_ref));
+            out.push_str("\">#");
+            out.push_str(&html_escape(&bundle.number));
+            out.push_str(" <span class=\"tree-file__count\">");
+            out.push_str(&html_escape(&analysis_count_label(bundle.md_files.len())));
+            out.push_str("</span></a></li>");
+        }
+        if !cur_repo.is_empty() {
+            out.push_str("</ul></li>");
+        }
+    }
+    out.push_str("</ul>");
+    out
+}
+
+/// Right pane of `/analyses`: one selected harness's bundles as rows grouped by
+/// repo, each linking to its `/analysis` page with a GitHub deep link.
+fn render_analyses_index(harness_id: &str, bundles: &[AnalysisBundle]) -> String {
+    if bundles.is_empty() {
+        return "<p class=\"welcome\">ยังไม่มีบทวิเคราะห์ issue สำหรับเลนนี้ — รัน #analyze-github-issue ในเลนเพื่อสร้างบทวิเคราะห์</p>".to_string();
+    }
+    let mut out = String::from("<ul class=\"analyses-index\">");
+    let mut cur_repo = String::new();
+    for bundle in bundles {
+        let repo_full = format!("{}/{}", bundle.owner, bundle.repo);
+        if repo_full != cur_repo {
+            cur_repo = repo_full.clone();
+            out.push_str("<li class=\"ai-group\">");
+            out.push_str(&html_escape(&repo_full));
+            out.push_str("</li>");
+        }
+        let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
+        out.push_str("<li class=\"ai-row\"><a class=\"ai-row__main\" href=\"/analysis?harness=");
+        out.push_str(&url_encode(harness_id));
+        out.push_str("&amp;issue=");
+        out.push_str(&url_encode(&issue_ref));
+        out.push_str("\"><span class=\"ai-row__key\">");
+        out.push_str(&html_escape(&bundle.issue_key));
+        out.push_str("</span><span class=\"ai-row__meta\">");
+        out.push_str(&html_escape(&analysis_count_label(bundle.md_files.len())));
+        if !bundle.assets.is_empty() {
+            out.push_str(&format!(" · {} ไฟล์แนบ", bundle.assets.len()));
+        }
+        if let Some((ms, label)) = bundle.modified.and_then(format_doc_mtime) {
+            out.push_str(" · <time class=\"ai-date\" data-ts=\"");
+            out.push_str(&ms.to_string());
+            out.push_str("\">");
+            out.push_str(&html_escape(&label));
+            out.push_str("</time>");
+        }
+        out.push_str(
+            "</span></a><a class=\"ai-gh\" target=\"_blank\" rel=\"noopener noreferrer\" href=\"",
+        );
+        out.push_str(&html_escape(&format!(
+            "https://github.com/{}/{}/issues/{}",
+            bundle.owner, bundle.repo, bundle.number
+        )));
+        out.push_str("\">เปิดใน GitHub ↗</a></li>");
+    }
+    out.push_str("</ul>");
+    out
+}
+
+fn analysis_count_label(n: usize) -> String {
+    format!("{n} การวิเคราะห์")
+}
+
+/// Does this bundle correspond to the `owner/repo/number` slug from the query?
+fn bundle_matches_issue(bundle: &AnalysisBundle, issue_ref: &str) -> bool {
+    format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number) == issue_ref
+}
+
+/// Human-readable byte size for the attachment strip (B / KB / MB).
+fn human_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{} KB", bytes.div_ceil(KB))
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Build one issue's bundle page: every `.md` rendered and stacked (with the
+/// filename as a sub-header), then an attachment strip (images inline, other
+/// files as name + size). `bundle` is already discovered; `project_dir` is its
+/// harness's working dir (each `.md` is re-validated with `validate_doc_path`).
+fn render_analysis_bundle(project_dir: &str, harness_id: &str, bundle: &AnalysisBundle) -> String {
+    let cwd = StdPath::new(project_dir);
+    let mut content = String::new();
+    for rel in &bundle.md_files {
+        let Ok(path) = validate_doc_path(cwd, rel, &["md"]) else {
+            continue;
+        };
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let name = rel.rsplit('/').next().unwrap_or(rel);
+        content.push_str("<section class=\"analysis-file\"><div class=\"analysis-file__name\">");
+        content.push_str(&html_escape(name));
+        content.push_str("</div>");
+        content.push_str(&render_markdown_doc(
+            &source,
+            harness_id,
+            rel,
+            "/analysis-asset",
+        ));
+        content.push_str("</section>");
+    }
+    if content.is_empty() {
+        content.push_str("<p class=\"welcome\">ยังไม่มีไฟล์วิเคราะห์ในโฟลเดอร์นี้ — มีเฉพาะไฟล์แนบ</p>");
+    }
+    if !bundle.assets.is_empty() {
+        content.push_str(
+            "<section class=\"attachments\"><h3>ไฟล์แนบจาก issue</h3><div class=\"attachments__grid\">",
+        );
+        for asset in &bundle.assets {
+            let name = asset.rel.rsplit('/').next().unwrap_or(&asset.rel);
+            let is_img = StdPath::new(name)
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase())
+                .is_some_and(|e| {
+                    matches!(e.as_str(), "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp")
+                });
+            if is_img {
+                content.push_str(
+                    "<figure class=\"att\"><img loading=\"lazy\" src=\"/analysis-asset?harness=",
+                );
+                content.push_str(&url_encode(harness_id));
+                content.push_str("&amp;path=");
+                content.push_str(&url_encode(&asset.rel));
+                content.push_str("\" alt=\"");
+                content.push_str(&html_escape(name));
+                content.push_str("\"><figcaption>");
+                content.push_str(&html_escape(name));
+                content.push_str("</figcaption></figure>");
+            } else {
+                content.push_str("<div class=\"att att--file\"><span class=\"att__name\">◆ ");
+                content.push_str(&html_escape(name));
+                content.push_str(" · ");
+                content.push_str(&html_escape(&human_size(asset.size)));
+                content.push_str("</span></div>");
+            }
+        }
+        content.push_str("</div></section>");
+    }
+    content
+}
+
 fn render_docs_page(title: &str, tree: Option<&str>, content: &str) -> Response {
     let escaped_title = html_escape(title);
     // `None` = single-file reader: drop the sidebar entirely so content is full width.
@@ -4074,11 +4602,16 @@ fn html_response(html: impl Into<Body>) -> Response {
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-fn render_markdown_doc(source: &str, harness_id: &str, rel: &str) -> String {
+/// Render one markdown file to HTML. `asset_route` is the loopback route inline
+/// images are rewritten to (`/doc-asset` for the docs browser, `/analysis-asset`
+/// for the Issue Analysis Viewer) so each surface's images ride its own route +
+/// policy. Relative `.md` links always resolve to `/doc` (a validated reader for
+/// any repo `.md`, gitignore-agnostic).
+fn render_markdown_doc(source: &str, harness_id: &str, rel: &str, asset_route: &str) -> String {
     let arena = Arena::new();
     let options = docs_options();
     let root = parse_document(&arena, source, &options);
-    rewrite_doc_links(root, harness_id, rel);
+    rewrite_doc_links(root, harness_id, rel, asset_route);
     let mut html = String::new();
     // Front matter renders first, as a readable key/value metadata card, ahead of
     // the document body (comrak itself emits nothing for the FrontMatter node).
@@ -4133,7 +4666,7 @@ fn render_front_matter(raw: &str) -> String {
     format!("<dl class=\"frontmatter\">{rows}</dl>")
 }
 
-fn rewrite_doc_links<'a>(root: &'a AstNode<'a>, harness_id: &str, rel: &str) {
+fn rewrite_doc_links<'a>(root: &'a AstNode<'a>, harness_id: &str, rel: &str, asset_route: &str) {
     let base = StdPath::new(rel)
         .parent()
         .unwrap_or_else(|| StdPath::new(""));
@@ -4146,7 +4679,9 @@ fn rewrite_doc_links<'a>(root: &'a AstNode<'a>, harness_id: &str, rel: &str) {
                 }
             }
             NodeValue::Image(image) => {
-                if let Some(target) = rewrite_doc_asset_link(&image.url, harness_id, base) {
+                if let Some(target) =
+                    rewrite_doc_asset_link(&image.url, harness_id, base, asset_route)
+                {
                     image.url = target;
                 }
             }
@@ -4176,7 +4711,12 @@ fn rewrite_markdown_link(url: &str, harness_id: &str, base: &StdPath) -> Option<
     ))
 }
 
-fn rewrite_doc_asset_link(url: &str, harness_id: &str, base: &StdPath) -> Option<String> {
+fn rewrite_doc_asset_link(
+    url: &str,
+    harness_id: &str,
+    base: &StdPath,
+    asset_route: &str,
+) -> Option<String> {
     if is_external_or_anchor(url) {
         return None;
     }
@@ -4193,7 +4733,7 @@ fn rewrite_doc_asset_link(url: &str, harness_id: &str, base: &StdPath) -> Option
     }
     let resolved = normalize_relative_link(base, path_part)?;
     Some(format!(
-        "/doc-asset?harness={}&path={}{}",
+        "{asset_route}?harness={}&path={}{}",
         url_encode(harness_id),
         url_encode(&resolved),
         suffix
@@ -4470,6 +5010,9 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 .route("/docs", get(handle_docs))
                 .route("/doc", get(handle_doc))
                 .route("/doc-asset", get(handle_doc_asset))
+                .route("/analyses", get(handle_analyses))
+                .route("/analysis", get(handle_analysis))
+                .route("/analysis-asset", get(handle_analysis_asset))
                 // spec 172 — docs-browser inline feedback. Tokenless (keyed by
                 // harness+path, the same addressing the read uses); the POST
                 // injects a turn into the harness's active lane, and `/doc-state`
@@ -4969,6 +5512,9 @@ mod tests {
             .route("/docs", get(ok))
             .route("/doc", get(ok))
             .route("/doc-asset", get(ok))
+            .route("/analyses", get(ok))
+            .route("/analysis", get(ok))
+            .route("/analysis-asset", get(ok))
             .route("/doc-state", get(ok))
             .route("/doc-feedback", post(ok))
             .route("/doc-artifact", post(ok))
@@ -5192,7 +5738,12 @@ mod tests {
     fn render_markdown_doc_renders_raw_html() {
         // Spec 171 rev 2 (ADR-0010 reversed): raw HTML in repo markdown renders
         // as live HTML rather than being escaped to visible text.
-        let html = render_markdown_doc("<div class=\"x\">live</div>", "hm-1", "README.md");
+        let html = render_markdown_doc(
+            "<div class=\"x\">live</div>",
+            "hm-1",
+            "README.md",
+            "/doc-asset",
+        );
         assert!(
             html.contains("<div class=\"x\">live</div>"),
             "raw HTML should render live, not escaped: {html}"
@@ -5202,7 +5753,7 @@ mod tests {
     #[test]
     fn render_markdown_doc_renders_front_matter_as_card() {
         let source = "---\nstatus: Implemented\ndate: 2026-05-02\n---\n\n# Title\n\nBody text.";
-        let html = render_markdown_doc(source, "hm-1", "docs/76-spec.md");
+        let html = render_markdown_doc(source, "hm-1", "docs/76-spec.md", "/doc-asset");
         // Front matter becomes a readable key/value card, not a stray <hr>/heading.
         assert!(
             html.contains("<dl class=\"frontmatter\">"),
@@ -5910,5 +6461,190 @@ mod git_state_tests {
         assert!(diff.len() <= CAP, "diff {} exceeds cap {CAP}", diff.len());
         assert!(diff.contains("truncated"), "truncation marker missing");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ─── Issue Analysis Viewer (spec 192) ───────────────────────────────────
+
+    /// Build `<tmp>/.krypton/analyses/<owner>/<repo>/<number>/<file>` = `body`.
+    fn seed_analysis_file(
+        root: &StdPath,
+        owner: &str,
+        repo: &str,
+        number: &str,
+        file: &str,
+        body: &str,
+    ) {
+        let dir = root
+            .join(".krypton")
+            .join("analyses")
+            .join(owner)
+            .join(repo)
+            .join(number);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(file), body).unwrap();
+    }
+
+    #[test]
+    fn discover_analysis_bundles_orders_and_classifies() {
+        // Distinct per-test infix: rand_suffix() is only sub-second nanos (no
+        // counter), so same-prefix tests could otherwise collide under parallelism.
+        let tmp = std::env::temp_dir().join(format!("krypton-analyses-disc-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        // Issue 12: three md files (out-of-order names) + an image asset.
+        seed_analysis_file(&tmp, "acme", "widget", "12", "notes.md", "n");
+        seed_analysis_file(&tmp, "acme", "widget", "12", "fix-plan.md", "f");
+        seed_analysis_file(&tmp, "acme", "widget", "12", "root-cause.md", "r");
+        seed_analysis_file(&tmp, "acme", "widget", "12", "shot.png", "img");
+        // Issue 9: one md file.
+        seed_analysis_file(&tmp, "acme", "widget", "9", "root-cause.md", "r");
+        // Empty leaf (no files) must be skipped.
+        std::fs::create_dir_all(tmp.join(".krypton/analyses/acme/widget/1")).unwrap();
+
+        let bundles = discover_analysis_bundles(&tmp.to_string_lossy());
+        assert_eq!(bundles.len(), 2, "empty leaf skipped, two real bundles");
+        // Newest issue number first.
+        assert_eq!(bundles[0].number, "12");
+        assert_eq!(bundles[1].number, "9");
+        assert_eq!(bundles[0].issue_key, "acme/widget#12");
+        // md order: root-cause, fix-plan, then the rest alphabetically.
+        let names: Vec<&str> = bundles[0]
+            .md_files
+            .iter()
+            .map(|p| p.rsplit('/').next().unwrap())
+            .collect();
+        assert_eq!(names, vec!["root-cause.md", "fix-plan.md", "notes.md"]);
+        // The image is an asset, not an md file.
+        assert_eq!(bundles[0].assets.len(), 1);
+        assert!(bundles[0].assets[0].rel.ends_with("shot.png"));
+        assert_eq!(bundles[0].assets[0].size, 3, "\"img\" is 3 bytes");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn render_analyses_index_and_nav_link_to_analysis() {
+        let tmp = std::env::temp_dir().join(format!("krypton-analyses-idx-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        seed_analysis_file(&tmp, "acme", "widget", "12", "root-cause.md", "r");
+        let bundles = discover_analysis_bundles(&tmp.to_string_lossy());
+
+        let index = render_analyses_index("hm-1", &bundles);
+        assert!(
+            index.contains("acme/widget#12"),
+            "index shows the issue key: {index}"
+        );
+        assert!(
+            index.contains("/analysis?harness=hm-1&amp;issue=acme%2Fwidget%2F12"),
+            "index row links to the bundle page: {index}"
+        );
+        assert!(
+            index.contains("https://github.com/acme/widget/issues/12"),
+            "index row has a GitHub deep link: {index}"
+        );
+
+        let per = vec![(
+            "hm-1".to_string(),
+            tmp.to_string_lossy().to_string(),
+            bundles,
+        )];
+        let nav = render_analyses_nav(&per, "hm-1", "acme/widget/12");
+        assert!(nav.contains("acme/widget"), "sidebar groups by repo: {nav}");
+        assert!(
+            nav.contains("class=\"is-active\""),
+            "current issue is highlighted: {nav}"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn render_analyses_page_substitutes_placeholders() {
+        let page = render_analyses_page(
+            "Issue analyses · hm-1",
+            Some("<ul class=\"tree\"></ul>"),
+            "<p>hi</p>",
+        );
+        let body = String::from_utf8(
+            axum::body::to_bytes(page.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(body.contains("<title>Issue analyses · hm-1</title>"));
+        assert!(body.contains("<p>hi</p>"));
+        assert!(
+            body.contains("<ul class=\"tree\">"),
+            "tree injected: {body}"
+        );
+        // The real placeholder tokens are fully replaced (the bare words survive
+        // in the shell's explanatory comment, exactly as the docs shell does).
+        assert!(!body.contains("<!--ANALYSES_CONTENT-->"));
+        assert!(!body.contains("<!--ANALYSES_TREE-->"));
+        assert!(!body.contains("<!--ANALYSES_TITLE-->"));
+    }
+
+    #[test]
+    fn render_analysis_bundle_renders_md_and_sized_attachments() {
+        let tmp = std::env::temp_dir().join(format!("krypton-analyses-bundle-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        seed_analysis_file(
+            &tmp,
+            "acme",
+            "widget",
+            "12",
+            "root-cause.md",
+            "# หัวข้อ\n\nเนื้อหา",
+        );
+        seed_analysis_file(&tmp, "acme", "widget", "12", "shot.png", "img");
+        seed_analysis_file(
+            &tmp,
+            "acme",
+            "widget",
+            "12",
+            "console.log",
+            "x".repeat(2048).as_str(),
+        );
+        let bundles = discover_analysis_bundles(&tmp.to_string_lossy());
+        let html = render_analysis_bundle(&tmp.to_string_lossy(), "hm-1", &bundles[0]);
+
+        assert!(html.contains("root-cause.md"), "md filename header: {html}");
+        assert!(html.contains("หัวข้อ"), "rendered md body: {html}");
+        // Image attachment rides the analysis-asset route.
+        assert!(
+            html.contains("src=\"/analysis-asset?harness=hm-1&amp;path="),
+            "image uses /analysis-asset: {html}"
+        );
+        // Non-image attachment shows name + human size (spec §UI).
+        assert!(html.contains("console.log"), "non-image name shown: {html}");
+        assert!(html.contains("2 KB"), "non-image size shown: {html}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn analysis_markdown_inline_image_uses_analysis_asset_route() {
+        // An image embedded in analysis markdown must route to /analysis-asset,
+        // not the docs browser's /doc-asset (spec 192; the two routes differ in
+        // scope + policy).
+        let html = render_markdown_doc(
+            "![cap](shot.png)",
+            "hm-1",
+            "root-cause.md",
+            "/analysis-asset",
+        );
+        assert!(
+            html.contains("/analysis-asset?"),
+            "inline image route: {html}"
+        );
+        assert!(
+            !html.contains("/doc-asset?"),
+            "must not use /doc-asset: {html}"
+        );
+    }
+
+    #[test]
+    fn human_size_formats_units() {
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(2048), "2 KB");
+        assert_eq!(human_size(3 * 1024 * 1024), "3.0 MB");
     }
 }

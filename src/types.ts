@@ -160,6 +160,10 @@ export interface ContentView {
   /** Called when the hosting tab becomes the visible one (spec 155). May fire
    *  redundantly while already visible — implementations must be idempotent. */
   onShow?(): void;
+  /** Set by the compositor when the window has a live oscilloscope band. The view
+   *  calls it with the char length of each streamed output delta to drive the
+   *  band's amplitude (analogous to PTY byte throughput). See docs/189. */
+  onOutputPump?: (chars: number) => void;
   /** Optional working directory associated with this content view */
   getWorkingDirectory?(): string | null;
   /** AI subscription providers represented by this view in window chrome. */
@@ -223,9 +227,9 @@ export interface KryptonWindow {
   contentElement: HTMLElement;
   /** Whether this window is pinned (sticks to right column in Focus layout, skipped in focus cycle) */
   pinned: boolean;
-  /** Live oscilloscope band in the window head (terminal windows only), fed by
-   *  PTY throughput. Null when the header-accent style is 'ticks'. See
-   *  docs/188-oscilloscope-header-band.md. */
+  /** Live oscilloscope band in the window head, fed by PTY throughput (terminal
+   *  windows) or streamed model output (content views, via ContentView.onOutputPump).
+   *  Null when the header-accent style is 'ticks'. See docs/188 and docs/189. */
   headerScope?: import('./header-scope').HeaderScope | null;
 }
 
