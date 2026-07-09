@@ -22,13 +22,14 @@ never create duplicate polling loops.
 
 The footer shows all primary quota windows when space permits. At constrained
 widths, each provider collapses to its most-used quota window. Provider names stay
-short (`CLAUDE`, `CODEX`, `COPILOT`, `CURSOR`); the redundant word `credit` is
+short (`CLAUDE`, `CODEX`, `COPILOT`, `CURSOR`, `GROK`); the redundant word `credit` is
 never rendered.
 
 ## Research
 
 - The Rust usage backend already exposes read-only commands for Claude, Codex,
-  Copilot, and Cursor and caches network-backed providers for 180 seconds.
+  Copilot, Cursor, and Grok (spec 193) and caches network-backed providers for
+  180 seconds.
 - `UsageContentView` currently owns four independent polling loops and duplicates
   all usage payload types. Moving that responsibility into one shared store lets
   the detailed view and every window footer consume the same snapshots.

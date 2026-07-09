@@ -22,8 +22,10 @@ Add a dedicated read-only **loopback browser surface** — the "Issue Analysis V
 — that mirrors the Docs browser but is rooted at `.krypton/analyses/` and is
 issue-centric rather than a raw folder tree. An index page (`/analyses`) lists every
 issue that has an analysis bundle, grouped `owner/repo → #number`, with a link out to
-the GitHub issue; a per-issue page (`/analysis`) renders all `.md` files in that
-bundle stacked as one reader, with a resource strip for downloaded images/logs. It is
+the GitHub issue; a per-issue page (`/analysis`) shows a file strip listing every
+`.md` in the bundle and renders **one selected file at a time** (default: the first
+in bundle order, i.e. `root-cause.md` when present), with a resource strip for
+downloaded images/logs. It is
 opened from the harness with a new `#analyses` hash command, consistent with
 `#docs`/`#gallery`/`#dashboard`. Chosen over folding into the Docs browser because
 (a) the bundles are gitignored working knowledge the Docs browser intentionally
@@ -74,10 +76,11 @@ own loopback surfaces and general doc viewers.
 **Krypton delta** — matches the Docs-browser look (Binance-dark loopback aesthetic,
 `DESIGN.binance.md`) and the `#`-command opener convention for familiarity;
 diverges by (1) being rooted at gitignored `.krypton/analyses`, (2) grouping by
-`owner/repo#number` instead of a raw tree, (3) stacking every `.md` in a bundle into
-one continuous reader (analyses are short, related, and read top-down) rather than
-one-file-per-page, and (4) rendering the Thai prose exactly as written for a
-non-technical reviewer.
+`owner/repo#number` instead of a raw tree, (3) rendering **one `.md` per page** with
+a file strip for switching between the bundle's files (originally every file was
+stacked into one continuous reader; changed 2026-07-09 by user request — per-file
+navigation reads better than one long scroll), and (4) rendering the Thai prose
+exactly as written for a non-technical reviewer.
 
 ## Affected Files
 
@@ -116,16 +119,18 @@ No serde types cross IPC — the surface is HTML-over-HTTP like the Docs browser
 
 ```
 GET /analyses                              → index: all bundles, grouped owner/repo → #number
-GET /analysis?harness=<id>&issue=<owner/repo/number>
-                                           → one bundle: every .md rendered, stacked; asset strip
+GET /analysis?harness=<id>&issue=<owner/repo/number>[&file=<name.md>]
+                                           → one bundle: file strip + the selected .md; asset strip
 GET /analysis-asset?harness=<id>&path=<rel-within-.krypton/analyses>
                                            → serve a downloaded image (png/jpg/jpeg/gif/svg/webp)
 ```
 
 - All three take `harness` like `/docs` (defaults to first harness when omitted).
 - `/analysis` orders `.md` files with `root-cause.md`, then `fix-plan.md`, then the
-  rest alphabetically; each file rendered with `render_markdown_doc` under a heading
-  showing its filename.
+  rest alphabetically. `file` picks which one to render (by filename); omitted or
+  unknown falls back to the first in that order, so old bookmarks resolve. When the
+  bundle has more than one `.md`, a `nav.file-strip` of links (one per file, the
+  shown one `is-active`) precedes the rendered file.
 - Non-image assets (`.log`, `.txt`, …) are listed by name in the asset strip as plain
   text (name + size), not linked for download in MVP (see Out of Scope).
 
@@ -139,8 +144,9 @@ GET /analysis-asset?harness=<id>&path=<rel-within-.krypton/analyses>
    <dir>/.krypton/analyses/*/*/*/ (unfiltered), build AnalysisBundle list.
 4. Render index into ANALYSES_HTML shell (grouped list + link to each /analysis).
 5. User clicks an issue → GET /analysis?harness=&issue=owner/repo/number.
-6. render_analysis_bundle(): validate the dir under analyses_root, read each .md,
-   render_markdown_doc, concatenate; build asset strip with <img src="/analysis-asset?…">.
+6. render_analysis_bundle(): build the file strip from md_files, validate the
+   selected .md under analyses_root, render_markdown_doc it; build asset strip
+   with <img src="/analysis-asset?…">.
 7. Images load via handle_analysis_asset → validate_doc_path(analyses_root, path,
    IMAGE_EXTS) → bytes with nosniff/no-store headers.
 ```
@@ -158,8 +164,9 @@ palette (`analyses.open`) which is reachable via the existing palette keybinding
   color / background tint per `DESIGN.binance.md` and user preference.
 - Index rows show `owner/repo#number`, a relative "modified" time, the count of `.md`
   files, and a ↗ link to `https://github.com/<owner>/<repo>/issues/<number>`.
-- Bundle page shows each `.md` under an `<h2>` with the filename, then its rendered
-  body, then an "Attachments" strip of inline images.
+- Bundle page shows a file strip (pill links, one per `.md`; hidden for single-file
+  bundles), the selected file's name + rendered body, then an "Attachments" strip of
+  inline images. The attachment strip is shown regardless of which file is selected.
 
 ### Configuration
 

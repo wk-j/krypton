@@ -80,13 +80,11 @@ describe('buildCommandManifest', () => {
   it('includes docs and the github-issue verbs in the palette roster', () => {
     const names = HASH_COMMANDS.map((c) => c.name);
     expect(names).toContain('docs');
-    // spec 191: #fix-issue was renamed to #dispatch-github-issue (alias kept for
-    // back-compat but not a palette entry).
     expect(names).toContain('dispatch-github-issue');
     expect(names).not.toContain('fix-issue');
     expect(byName.get('docs')?.badges).not.toContain('hidden');
     expect(byName.get('dispatch-github-issue')?.badges).not.toContain('hidden');
-    expect(byName.get('dispatch-github-issue')?.alias).toBe('fix-issue');
+    expect(byName.get('dispatch-github-issue')?.alias).toBeUndefined();
   });
 
   it('carries the real prompt template on every prompt-backed command', () => {

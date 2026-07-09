@@ -59,6 +59,11 @@ const PROVIDER_LOGOS: Record<string, string> = {
     '<svg class="krypton-usage__logo" viewBox="0 0 16 16" aria-hidden="true">' +
     '<path d="M3 2 L13 8.5 L8.4 9.4 L10.7 13.8 L9.2 14.6 L6.9 10.2 L4 12.5 Z" fill="currentColor"/>' +
     '</svg>',
+  // grok/xai: angular bolt — mirrors krypton-logo-grok in acp-harness-view.ts.
+  grok:
+    '<svg class="krypton-usage__logo" viewBox="0 0 16 16" aria-hidden="true">' +
+    '<path d="M9.2 1.5 L3.8 8.8 H6.9 L5.8 14.5 L12.2 6.6 H8.8 Z" fill="currentColor"/>' +
+    '</svg>',
 };
 
 function errorHint(err: unknown): string {
@@ -102,7 +107,7 @@ export class UsageContentView implements ContentView {
   readonly element: HTMLElement;
 
   private body: HTMLElement;
-  private readonly providers: readonly UsageProvider[] = ['claude', 'codex', 'copilot', 'cursor'];
+  private readonly providers: readonly UsageProvider[] = ['claude', 'codex', 'copilot', 'cursor', 'grok'];
   /** Text nodes re-rendered by the 1 s tick (countdowns + data ages). */
   private liveTexts: Array<{ el: HTMLElement; text: () => string }> = [];
   private unsubscribe: (() => void) | null = null;
@@ -146,6 +151,7 @@ export class UsageContentView implements ContentView {
     this.body.appendChild(this.renderCodex());
     this.body.appendChild(this.renderCopilot());
     this.body.appendChild(this.renderCursor());
+    this.body.appendChild(this.renderGrok());
   }
 
   /** One provider widget: head (logo + name + meta + dot), rows, foot line. */
@@ -435,6 +441,47 @@ export class UsageContentView implements ContentView {
       }
     } else if (state.pending) {
       this.skeleton(widget, 2);
+      this.foot(widget, 'loading', () => 'connecting…');
+    } else {
+      const error = state.error;
+      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
+    }
+    return widget;
+  }
+
+  private renderGrok(): HTMLElement {
+    const state = usageStore.get('grok');
+    const u = state.data;
+    const metaParts: string[] = [];
+    if (u?.email) metaParts.push(u.email);
+    if (u?.tier) metaParts.push(u.tier);
+
+    const widgetState: WidgetState = state.pending
+      ? 'loading'
+      : u
+        ? state.error
+          ? 'stale'
+          : 'ok'
+        : 'off';
+    const widget = this.widget('grok', metaParts.join(' · '), widgetState);
+
+    if (u) {
+      if (u.monthlyLimit !== null && u.monthlyLimit > 0) {
+        // Monthly credit balance — the only pollable Grok quota (spec 193).
+        const used = u.used ?? 0;
+        this.gauge(widget, 'credits', (used / u.monthlyLimit) * 100, u.periodEnd);
+        this.note(widget, `${Math.round(used)} / ${Math.round(u.monthlyLimit)} credits this cycle`);
+      } else {
+        this.note(widget, 'credit usage not exposed for this plan — see grok.com');
+      }
+      const error = state.error;
+      if (error) {
+        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
+      } else {
+        this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
+      }
+    } else if (state.pending) {
+      this.skeleton(widget, 1);
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
       const error = state.error;

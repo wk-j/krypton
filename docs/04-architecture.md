@@ -672,7 +672,7 @@ login-walled, JS-rendered) still work. A selection always takes precedence; the
 injection stays on-demand (activeTab) rather than a declared content script.
 
 **GitHub issue fixing** (doc 178) makes "fix this issue" a single surface-agnostic
-operation. Any surface — Krypton's command palette / `#fix-issue` verb, the
+operation. Any surface — Krypton's command palette / `#dispatch-github-issue` verb, the
 extension popup, or a status card the extension injects onto the GitHub issue page
 (a declared `github.com/*/issues/*` content script) — converges on the frontend
 `dispatchIssue()` path (also the `github.dispatch-issue` control op), which records

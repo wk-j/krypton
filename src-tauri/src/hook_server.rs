@@ -1472,11 +1472,14 @@ struct AnalysesQuery {
 /// `owner/repo/number` path (slash-joined, NOT `owner/repo#number`). `harness` is
 /// optional (like `/docs`): when omitted, the handler picks the harness that owns
 /// the issue, else the first harness with bundles — so a bare
-/// `/analysis?issue=…` bookmark still resolves.
+/// `/analysis?issue=…` bookmark still resolves. `file` selects which `.md` in the
+/// bundle to render (by filename); omitted or unknown falls back to the first
+/// file in bundle order (root-cause.md when present), so old bookmarks resolve.
 #[derive(Debug, Deserialize)]
 struct AnalysisQuery {
     harness: Option<String>,
     issue: String,
+    file: Option<String>,
 }
 
 /// POST /hook — receive a Claude Code hook event.
@@ -1899,7 +1902,20 @@ async fn handle_analysis(
     else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let content = render_analysis_bundle(project_dir, &harness_id, bundle);
+    // Resolve which `.md` to render: the requested filename when it exists in
+    // the bundle, else the first file in bundle order (root-cause.md first).
+    let sel_file = query
+        .file
+        .as_deref()
+        .and_then(|f| {
+            bundle
+                .md_files
+                .iter()
+                .find(|rel| rel.rsplit('/').next() == Some(f))
+        })
+        .or_else(|| bundle.md_files.first())
+        .cloned();
+    let content = render_analysis_bundle(project_dir, &harness_id, bundle, sel_file.as_deref());
     let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
     let nav = render_analyses_nav(&per, &harness_id, &issue_ref);
     render_analyses_page(&bundle.issue_key, Some(&nav), &content)
@@ -4507,33 +4523,64 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
-/// Build one issue's bundle page: every `.md` rendered and stacked (with the
-/// filename as a sub-header), then an attachment strip (images inline, other
-/// files as name + size). `bundle` is already discovered; `project_dir` is its
-/// harness's working dir (each `.md` is re-validated with `validate_doc_path`).
-fn render_analysis_bundle(project_dir: &str, harness_id: &str, bundle: &AnalysisBundle) -> String {
+/// Build one issue's bundle page: a file strip listing every `.md` in the bundle
+/// (shown when there is more than one), the selected file rendered below it, then
+/// an attachment strip (images inline, other files as name + size). `sel_file` is
+/// the project-relative path of the `.md` to render — the caller resolves it from
+/// the `file` query param (`None` only when the bundle has no `.md` at all).
+/// `bundle` is already discovered; `project_dir` is its harness's working dir
+/// (the selected `.md` is re-validated with `validate_doc_path`).
+fn render_analysis_bundle(
+    project_dir: &str,
+    harness_id: &str,
+    bundle: &AnalysisBundle,
+    sel_file: Option<&str>,
+) -> String {
     let cwd = StdPath::new(project_dir);
     let mut content = String::new();
-    for rel in &bundle.md_files {
-        let Ok(path) = validate_doc_path(cwd, rel, &["md"]) else {
-            continue;
-        };
-        let Ok(source) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let name = rel.rsplit('/').next().unwrap_or(rel);
-        content.push_str("<section class=\"analysis-file\"><div class=\"analysis-file__name\">");
-        content.push_str(&html_escape(name));
-        content.push_str("</div>");
-        content.push_str(&render_markdown_doc(
-            &source,
-            harness_id,
-            rel,
-            "/analysis-asset",
-        ));
-        content.push_str("</section>");
+    if bundle.md_files.len() > 1 {
+        let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
+        content.push_str("<nav class=\"file-strip\">");
+        for rel in &bundle.md_files {
+            let name = rel.rsplit('/').next().unwrap_or(rel);
+            content.push_str("<a");
+            if Some(rel.as_str()) == sel_file {
+                content.push_str(" class=\"is-active\"");
+            }
+            content.push_str(" href=\"/analysis?harness=");
+            content.push_str(&url_encode(harness_id));
+            content.push_str("&amp;issue=");
+            content.push_str(&url_encode(&issue_ref));
+            content.push_str("&amp;file=");
+            content.push_str(&url_encode(name));
+            content.push_str("\">");
+            content.push_str(&html_escape(name));
+            content.push_str("</a>");
+        }
+        content.push_str("</nav>");
     }
-    if content.is_empty() {
+    let mut rendered_doc = false;
+    if let Some(rel) = sel_file {
+        if let Ok(path) = validate_doc_path(cwd, rel, &["md"]) {
+            if let Ok(source) = std::fs::read_to_string(&path) {
+                let name = rel.rsplit('/').next().unwrap_or(rel);
+                content.push_str(
+                    "<section class=\"analysis-file\"><div class=\"analysis-file__name\">",
+                );
+                content.push_str(&html_escape(name));
+                content.push_str("</div>");
+                content.push_str(&render_markdown_doc(
+                    &source,
+                    harness_id,
+                    rel,
+                    "/analysis-asset",
+                ));
+                content.push_str("</section>");
+                rendered_doc = true;
+            }
+        }
+    }
+    if !rendered_doc {
         content.push_str("<p class=\"welcome\">ยังไม่มีไฟล์วิเคราะห์ในโฟลเดอร์นี้ — มีเฉพาะไฟล์แนบ</p>");
     }
     if !bundle.assets.is_empty() {
@@ -6604,9 +6651,18 @@ mod git_state_tests {
             "x".repeat(2048).as_str(),
         );
         let bundles = discover_analysis_bundles(&tmp.to_string_lossy());
-        let html = render_analysis_bundle(&tmp.to_string_lossy(), "hm-1", &bundles[0]);
+        let html = render_analysis_bundle(
+            &tmp.to_string_lossy(),
+            "hm-1",
+            &bundles[0],
+            bundles[0].md_files.first().map(String::as_str),
+        );
 
         assert!(html.contains("root-cause.md"), "md filename header: {html}");
+        assert!(
+            !html.contains("file-strip"),
+            "single-file bundle has no file strip: {html}"
+        );
         assert!(html.contains("หัวข้อ"), "rendered md body: {html}");
         // Image attachment rides the analysis-asset route.
         assert!(
@@ -6616,6 +6672,58 @@ mod git_state_tests {
         // Non-image attachment shows name + human size (spec §UI).
         assert!(html.contains("console.log"), "non-image name shown: {html}");
         assert!(html.contains("2 KB"), "non-image size shown: {html}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn render_analysis_bundle_renders_one_selected_file_with_strip() {
+        let tmp = std::env::temp_dir().join(format!("krypton-analyses-sel-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        seed_analysis_file(&tmp, "acme", "widget", "12", "root-cause.md", "สาเหตุ");
+        seed_analysis_file(&tmp, "acme", "widget", "12", "fix-plan.md", "แผนแก้");
+        seed_analysis_file(&tmp, "acme", "widget", "12", "notes.md", "โน้ต");
+        let bundles = discover_analysis_bundles(&tmp.to_string_lossy());
+        let dir = tmp.to_string_lossy();
+
+        // Default selection (first in bundle order) renders root-cause only.
+        let html = render_analysis_bundle(
+            &dir,
+            "hm-1",
+            &bundles[0],
+            bundles[0].md_files.first().map(String::as_str),
+        );
+        assert!(html.contains("สาเหตุ"), "selected file rendered: {html}");
+        assert!(
+            !html.contains("แผนแก้") && !html.contains("โน้ต"),
+            "other files are not rendered: {html}"
+        );
+        // The strip lists every file with a file= link; the selected one is active.
+        assert!(
+            html.contains("file-strip"),
+            "multi-file strip shown: {html}"
+        );
+        assert!(
+            html.contains("&amp;file=fix-plan.md") && html.contains("&amp;file=notes.md"),
+            "strip links carry the file param: {html}"
+        );
+        let active = html
+            .split("<a class=\"is-active\"")
+            .nth(1)
+            .expect("one active strip entry");
+        assert!(
+            active.contains("file=root-cause.md"),
+            "default selection is the first file: {html}"
+        );
+
+        // Selecting another file renders that file instead.
+        let sel = bundles[0]
+            .md_files
+            .iter()
+            .find(|rel| rel.ends_with("notes.md"))
+            .unwrap();
+        let html = render_analysis_bundle(&dir, "hm-1", &bundles[0], Some(sel));
+        assert!(html.contains("โน้ต"), "notes.md rendered: {html}");
+        assert!(!html.contains("สาเหตุ"), "root-cause not rendered: {html}");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

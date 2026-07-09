@@ -8,6 +8,7 @@ import {
   providerForBackend,
   summarizeUsage,
   type ClaudeUsage,
+  type GrokUsage,
   type ProviderUsageState,
 } from './usage-store';
 
@@ -59,11 +60,38 @@ describe('usage summaries', () => {
     }).freshness).toBe('off');
   });
 
+  it('summarizes grok as a single credits gauge, and emits none without a limit', () => {
+    const grok: GrokUsage = {
+      used: 14,
+      monthlyLimit: 4000,
+      onDemandCap: 0,
+      onDemandUsed: null,
+      periodStart: null,
+      periodEnd: null,
+      tier: 'tier 3',
+      email: 'a@b.co',
+      fetchedAt: 1,
+    };
+    const grokQuotas = summarizeUsage({ provider: 'grok', data: grok, error: null, pending: false }).quotas;
+    expect(grokQuotas).toHaveLength(1);
+    expect(grokQuotas[0].label).toBe('credits');
+    expect(grokQuotas[0].usedPercent).toBeCloseTo(0.35, 5);
+    expect(
+      summarizeUsage({
+        provider: 'grok',
+        data: { ...grok, monthlyLimit: null },
+        error: null,
+        pending: false,
+      }).quotas,
+    ).toEqual([]);
+  });
+
   it('maps only providers with existing authoritative usage sources', () => {
     expect(providerForBackend('claude')).toBe('claude');
     expect(providerForBackend('codex')).toBe('codex');
     expect(providerForBackend('cursor')).toBe('cursor');
     expect(providerForBackend('copilot')).toBe('copilot');
+    expect(providerForBackend('grok')).toBe('grok');
     expect(providerForBackend('gemini')).toBeNull();
     expect(providerForBackend('opencode')).toBeNull();
   });

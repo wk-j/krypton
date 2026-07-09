@@ -101,6 +101,18 @@ export interface PendingPeerSummary {
 const REPLY_HINT =
   'End your turn now. The reply (if any) will arrive as a new user message.';
 
+// Codex defers ALL MCP tools behind its tool_search once the combined tool
+// count crosses its direct-exposure threshold (codex-rs
+// DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD = 100); the model then answers
+// "peer_send is not available in this lane" without ever searching. Appended
+// to every drained reply instruction (and the lane-context peering line) so a
+// deferred-tool backend searches instead of denying. Harmless elsewhere: the
+// sentence is conditional on the tool being absent from the visible list.
+export const PEER_SEND_DEFERRED_TOOL_HINT =
+  'peer_send IS available in this lane: if it is not in your visible tool list, ' +
+  'it is deferred behind your tool-search mechanism — search for "peer_send" ' +
+  'rather than concluding it is unavailable.';
+
 /** spec 116: inbound peer mail may drain while visually awaiting. */
 export function canDrainInbound(status: HarnessLaneStatus): boolean {
   return status === 'idle' || status === 'awaiting_peer';
@@ -782,14 +794,16 @@ export class InterLaneCoordinator {
         parts.push(
           `[inter-lane] Reply with peer_send({ to_lane: "${senderName}", message }) to continue, ` +
             `or peer_send({ to_lane: "${senderName}", message, done: true }) to close the conversation. ` +
-            'Only the original initiator (you) may set done:true.',
+            'Only the original initiator (you) may set done:true. ' +
+            PEER_SEND_DEFERRED_TOOL_HINT,
         );
       } else {
         // Peer initiated; we are the callee. Reply without done — only the
         // initiator can close.
         parts.push(
           `[inter-lane] Reply by calling peer_send({ to_lane: "${senderName}", message }). ` +
-            'Omit `done` — only the original initiator may close the conversation with done:true.',
+            'Omit `done` — only the original initiator may close the conversation with done:true. ' +
+            PEER_SEND_DEFERRED_TOOL_HINT,
         );
       }
     }

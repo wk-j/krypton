@@ -27,6 +27,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_CACHE_TTL_MS: i64 = 180_000;
 const CODEX_MAX_FILES: usize = 10;
+const GROK_USAGE_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing";
+// Sent defensively so the request looks like the CLI's own; the endpoint
+// accepts a bare Bearer without it (verified), so it is not required.
+const GROK_CLIENT_VERSION: &str = "0.2.93";
 
 // ─── Payload types (camelCase over IPC) ─────────────────────────────────────
 
@@ -131,6 +135,32 @@ pub struct CursorUsage {
     pub cycle_end: Option<i64>,
     pub requests_used: Option<f64>,
     pub requests_limit: Option<f64>,
+    pub email: Option<String>,
+    pub fetched_at: i64,
+}
+
+/// Grok subscription credit usage from `cli-chat-proxy.grok.com/v1/billing`
+/// (spec 193). Grok's CLI does not persist rate-limit data locally, so this is
+/// the only pollable surface: the monthly credit balance (`used`/`monthlyLimit`)
+/// plus billing-cycle bounds. All fields are optional — an on-demand-only or
+/// non-subscription account omits `monthlyLimit`, in which case there is no
+/// gauge to draw.
+///
+/// `Deserialize` so the disk cache (below) can warm the payload on a fresh
+/// process; every field is `Option`, so a cache written by an older shape
+/// still loads.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokUsage {
+    pub used: Option<f64>,
+    pub monthly_limit: Option<f64>,
+    pub on_demand_cap: Option<f64>,
+    pub on_demand_used: Option<f64>,
+    /// Billing-cycle bounds, epoch ms.
+    pub period_start: Option<i64>,
+    pub period_end: Option<i64>,
+    /// JWT `tier` claim rendered as "tier N".
+    pub tier: Option<String>,
     pub email: Option<String>,
     pub fetched_at: i64,
 }
@@ -900,6 +930,202 @@ pub async fn usage_fetch_cursor() -> Result<CursorUsage, String> {
     Ok(usage)
 }
 
+// ─── Grok usage fetch ────────────────────────────────────────────────────────
+
+static GROK_CACHE: Mutex<Option<(String, GrokUsage)>> = Mutex::new(None);
+
+struct GrokCreds {
+    access_token: String,
+    expires_at_ms: i64,
+    email: Option<String>,
+    tier: Option<String>,
+}
+
+/// Decode the JWT payload segment (base64url, no padding) and render the
+/// `tier` claim as "tier N" for the widget meta line. Best-effort — any parse
+/// failure yields None (the token is still used for the request).
+fn jwt_tier(jwt: &str) -> Option<String> {
+    use base64::Engine;
+    let payload = jwt.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    let claims: Value = serde_json::from_slice(&bytes).ok()?;
+    let tier = claims.get("tier").and_then(Value::as_i64)?;
+    Some(format!("tier {tier}"))
+}
+
+/// The `grok` CLI stores OAuth creds in ~/.grok/auth.json — an object keyed by
+/// "<issuer>::<client_id>", each value carrying `key` (JWT access token),
+/// `expires_at` (ISO-8601), and `email`. File-only; no Keychain (unlike
+/// Claude/Cursor). When several entries exist, keep the one expiring latest.
+fn load_grok_creds() -> Result<GrokCreds, String> {
+    let home = dirs::home_dir().ok_or_else(|| "not-connected".to_string())?;
+    let raw = std::fs::read_to_string(home.join(".grok/auth.json"))
+        .map_err(|_| "not-connected".to_string())?;
+    let v: Value = serde_json::from_str(&raw).map_err(|_| "not-connected".to_string())?;
+    let entries = v.as_object().ok_or_else(|| "not-connected".to_string())?;
+
+    let mut best: Option<GrokCreds> = None;
+    for entry in entries.values() {
+        let Some(token) = entry
+            .get("key")
+            .and_then(Value::as_str)
+            .filter(|t| !t.is_empty())
+        else {
+            continue;
+        };
+        let expires_at_ms = entry
+            .get("expires_at")
+            .and_then(Value::as_str)
+            .and_then(chrono_free_epoch)
+            .map(|s| s * 1_000)
+            .unwrap_or(0);
+        let candidate = GrokCreds {
+            access_token: token.to_string(),
+            expires_at_ms,
+            email: entry.get("email").and_then(Value::as_str).map(String::from),
+            tier: jwt_tier(token),
+        };
+        best = match best {
+            Some(b) if b.expires_at_ms >= candidate.expires_at_ms => Some(b),
+            _ => Some(candidate),
+        };
+    }
+    best.ok_or_else(|| "not-connected".to_string())
+}
+
+/// Parse the `config` object of the billing response. Each amount is wrapped
+/// as `{ "val": N }`; period bounds are ISO-8601 strings.
+fn parse_grok_usage(
+    body: &Value,
+    tier: Option<String>,
+    email: Option<String>,
+    fetched_at: i64,
+) -> GrokUsage {
+    let config = body.get("config");
+    let val = |k: &str| {
+        config
+            .and_then(|c| c.get(k))
+            .and_then(|v| v.get("val"))
+            .and_then(Value::as_f64)
+    };
+    let epoch_ms = |k: &str| {
+        config
+            .and_then(|c| c.get(k))
+            .and_then(Value::as_str)
+            .and_then(chrono_free_epoch)
+            .map(|s| s * 1_000)
+    };
+    GrokUsage {
+        used: val("used"),
+        monthly_limit: val("monthlyLimit"),
+        on_demand_cap: val("onDemandCap"),
+        on_demand_used: val("onDemandUsed"),
+        period_start: epoch_ms("billingPeriodStart"),
+        period_end: epoch_ms("billingPeriodEnd"),
+        tier,
+        email,
+        fetched_at,
+    }
+}
+
+fn grok_disk_cache_path() -> Option<PathBuf> {
+    Some(dirs::cache_dir()?.join("krypton/grok-usage.json"))
+}
+
+fn load_disk_grok_from(path: &PathBuf, token: &str) -> Option<GrokUsage> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let v: Value = serde_json::from_str(&raw).ok()?;
+    if v.get("tokenFingerprint")?.as_str()? != token_fingerprint(token) {
+        return None;
+    }
+    serde_json::from_value(v.get("usage")?.clone()).ok()
+}
+
+fn store_disk_grok_to(path: &PathBuf, token: &str, usage: &GrokUsage) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let payload = serde_json::json!({
+        "tokenFingerprint": token_fingerprint(token),
+        "usage": usage,
+    });
+    let _ = std::fs::write(path, payload.to_string());
+}
+
+fn cached_grok(token: &str, max_age_ms: Option<i64>) -> Option<GrokUsage> {
+    let mut guard = GROK_CACHE.lock().ok()?;
+    let usage = match guard.as_ref() {
+        Some((cached_token, usage)) if cached_token == token => usage.clone(),
+        // Memory miss (fresh process) — warm from the disk cache.
+        _ => {
+            let usage = grok_disk_cache_path().and_then(|p| load_disk_grok_from(&p, token))?;
+            *guard = Some((token.to_string(), usage.clone()));
+            usage
+        }
+    };
+    if let Some(max_age) = max_age_ms {
+        if now_ms() - usage.fetched_at > max_age {
+            return None;
+        }
+    }
+    Some(usage)
+}
+
+#[tauri::command]
+pub async fn usage_fetch_grok() -> Result<GrokUsage, String> {
+    let creds = load_grok_creds()?;
+
+    if let Some(fresh) = cached_grok(&creds.access_token, Some(CLAUDE_CACHE_TTL_MS)) {
+        return Ok(fresh);
+    }
+    // A locally-known-expired token can't succeed; the grok CLI owns refresh,
+    // so surface the state instead of spending a request that 401s.
+    if creds.expires_at_ms > 0 && creds.expires_at_ms <= now_ms() {
+        return Err("token-expired".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|_| "network-error".to_string())?;
+    let response = client
+        .get(GROK_USAGE_URL)
+        .header("Authorization", format!("Bearer {}", creds.access_token))
+        .header("x-grok-client-version", GROK_CLIENT_VERSION)
+        .send()
+        .await;
+
+    // Any failure falls back to the last good payload (frontend shows its age).
+    let stale = || cached_grok(&creds.access_token, None);
+
+    let response = match response {
+        Ok(r) => r,
+        Err(_) => return stale().ok_or_else(|| "network-error".to_string()),
+    };
+    let status = response.status();
+    if status.as_u16() == 401 || status.as_u16() == 403 {
+        return Err("token-expired".to_string());
+    }
+    if !status.is_success() {
+        return stale().ok_or_else(|| format!("http-{}", status.as_u16()));
+    }
+    let body: Value = match response.json().await {
+        Ok(v) => v,
+        Err(_) => return stale().ok_or_else(|| "network-error".to_string()),
+    };
+
+    let usage = parse_grok_usage(&body, creds.tier, creds.email, now_ms());
+    if let Some(path) = grok_disk_cache_path() {
+        store_disk_grok_to(&path, &creds.access_token, &usage);
+    }
+    if let Ok(mut guard) = GROK_CACHE.lock() {
+        *guard = Some((creds.access_token, usage.clone()));
+    }
+    Ok(usage)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -914,6 +1140,47 @@ mod tests {
         // Unix epoch sanity
         assert_eq!(chrono_free_epoch("1970-01-01T00:00:00Z"), Some(0));
         assert_eq!(chrono_free_epoch("garbage"), None);
+    }
+
+    #[test]
+    fn parses_grok_billing_config() {
+        // Live shape from cli-chat-proxy.grok.com/v1/billing (2026-07-09).
+        let body: Value = serde_json::from_str(
+            r#"{"config":{"monthlyLimit":{"val":4000},"used":{"val":14},"onDemandCap":{"val":0},"billingPeriodStart":"2026-07-01T00:00:00+00:00","billingPeriodEnd":"2026-08-01T00:00:00+00:00"}}"#,
+        )
+        .expect("valid json");
+        let u = parse_grok_usage(&body, Some("tier 3".into()), Some("a@b.co".into()), 1_000);
+        assert_eq!(u.used, Some(14.0));
+        assert_eq!(u.monthly_limit, Some(4000.0));
+        assert_eq!(u.on_demand_cap, Some(0.0));
+        assert_eq!(u.on_demand_used, None);
+        // 2026-08-01T00:00:00Z → epoch ms
+        assert_eq!(u.period_end, Some(1_785_542_400_000));
+        assert_eq!(u.tier.as_deref(), Some("tier 3"));
+        assert_eq!(u.fetched_at, 1_000);
+    }
+
+    #[test]
+    fn grok_credits_shape_has_no_gauge_numbers() {
+        // `?format=credits` shape carries a period window but no used/limit,
+        // so the frontend draws no gauge.
+        let body: Value = serde_json::from_str(
+            r#"{"config":{"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY"},"onDemandCap":{"val":0},"isUnifiedBillingUser":true}}"#,
+        )
+        .expect("valid json");
+        let u = parse_grok_usage(&body, None, None, 0);
+        assert_eq!(u.used, None);
+        assert_eq!(u.monthly_limit, None);
+    }
+
+    #[test]
+    fn decodes_jwt_tier_claim() {
+        // header.payload.signature — payload is base64url(no-pad) of {"tier":3}.
+        use base64::Engine;
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"tier":3}"#);
+        let jwt = format!("aGVhZGVy.{payload}.c2ln");
+        assert_eq!(jwt_tier(&jwt).as_deref(), Some("tier 3"));
+        assert_eq!(jwt_tier("not-a-jwt"), None);
     }
 
     #[test]

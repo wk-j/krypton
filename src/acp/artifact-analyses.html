@@ -23,6 +23,7 @@
     li.tree-group        > .tree-group__label  (one per repo: "owner/repo")
     li.tree-file         > a (href to /analysis; a.is-active = current issue)
     ul.analyses-index    > li.ai-group | li.ai-row (index page rows)
+    nav.file-strip       > a (one per .md in the bundle; a.is-active = shown file)
     section.analysis-file, section.attachments (bundle page)
 -->
 <style>
@@ -127,9 +128,28 @@
     flex-shrink: 0; color: var(--accent); text-decoration: none;
     font-size: 12px; white-space: nowrap;
   }
-  a.ai-gh:hover { text-decoration: underline; }
+  /* Index rows render inside article.doc; opt them out of the prose-link
+     underline (`article.doc a`, below) which otherwise wins on specificity. */
+  article.doc .analyses-index a,
+  article.doc .analyses-index a:hover { text-decoration: none; }
 
-  /* bundle (right pane): stacked markdown files + attachment strip */
+  /* bundle (right pane): file strip (one chip per .md; click renders that
+     file), the selected markdown file, then the attachment strip */
+  nav.file-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 20px; }
+  nav.file-strip a {
+    font-family: var(--mono); font-size: 12px; color: var(--text);
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--card); text-decoration: none;
+  }
+  nav.file-strip a:hover { color: var(--accent); border-color: var(--accent); }
+  nav.file-strip a.is-active {
+    color: var(--accent); border-color: var(--accent);
+    background: rgba(252, 213, 53, .08); font-weight: 600;
+  }
+  /* Same specificity opt-out as .analyses-index: the strip renders inside
+     article.doc, whose prose-link underline would otherwise win. */
+  article.doc .file-strip a,
+  article.doc .file-strip a:hover { text-decoration: none; }
   section.analysis-file { margin: 0 0 28px; }
   .analysis-file__name {
     font-family: var(--mono); font-size: 12px; color: var(--muted);

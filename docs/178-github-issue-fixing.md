@@ -4,9 +4,9 @@
 > Date: 2026-06-27
 > Milestone: M9 — Harness loopback & web control
 
-> **Update (spec 191):** the `#fix-issue` verb below was renamed
+> **Update (spec 191):** the original issue-dispatch verb was renamed
 > `#dispatch-github-issue` (a control-op that dispatches the fix to a *fresh* lane);
-> `#fix-issue` is kept as a back-compat alias. Spec 191 adds a composable
+> the old `#fix-issue` alias has been removed. Spec 191 adds a composable
 > GitHub-issue verb set that runs *in the current lane* — `#analyze-github-issue`,
 > `#fix-github-issue`, `#tag-github-issue`, `#post-github-comment`, and the composed
 > `#handle-github-issue`. Those verbs reuse this spec's `issue_progress` + auto-bind
@@ -80,7 +80,7 @@ No market equivalent overlays a local agent's live status on the GitHub issue pa
 | File | Change |
 |------|--------|
 | `src/acp/types.ts` (or where lane types live) | Add `IssueBinding`, `IssueStatusSnapshot` types |
-| `src/acp/acp-harness-view.ts` | Lane carries `issueBinding`; `dispatchIssue()` shared path; handle `github.*` control ops; `getPaletteActions` "Fix GitHub Issue…" + "Open Bound Issue"; `#fix-issue` palette verb; `gh issue view` metadata fetch via `run_command`; agent-view badge; persist/restore binding; wire `issue_progress` MCP tool |
+| `src/acp/acp-harness-view.ts` | Lane carries `issueBinding`; `dispatchIssue()` shared path; handle `github.*` control ops; `getPaletteActions` "Fix GitHub Issue…" + "Open Bound Issue"; `#dispatch-github-issue` palette verb; `gh issue view` metadata fetch via `run_command`; agent-view badge; persist/restore binding; wire `issue_progress` MCP tool |
 | `src/acp/control-bridge.ts` | Route `github.list-issues` (global) like `peer.list`; per-lane ops resolve by binding/harness |
 | `src-tauri/src/control.rs` | Advertise `github.*` ops in `capabilities` |
 | `src-tauri/src/hook_server.rs` | Add `issue_progress` MCP JSON-RPC method on the harness-memory server; disk-backed bindings store (atomic write + rehydrate on `register_harness`) |
@@ -182,7 +182,7 @@ only in how they reach it and how they obtain issue metadata:
 | Surface | Trigger | Metadata source |
 |---------|---------|-----------------|
 | **Krypton command palette** (`getPaletteActions`, primary keyboard path) | "Fix GitHub Issue…" → input prompts for URL or `owner/repo#123` | `gh issue view <n> -R <repo> --json title,body` via `run_command` |
-| **Krypton `#` harness palette** | `#fix-issue <url>` | same `gh` fetch |
+| **Krypton `#` harness palette** | `#dispatch-github-issue <url>` | same `gh` fetch |
 | **Extension issue-page card** | injected card on `/issues/<n>` | scrape DOM (no token) |
 
 In-Krypton surfaces call `dispatchIssue` directly (no control round-trip). Browser
@@ -252,7 +252,7 @@ use (spec 173):
 | Key | Context | Action |
 |-----|---------|--------|
 | (palette) | Agent view | "Fix GitHub Issue…" command (`getPaletteActions`) — opens the URL input |
-| `#fix-issue <url>` | Harness `#` palette | Dispatch inline without leaving the prompt |
+| `#dispatch-github-issue <url>` | Harness `#` palette | Dispatch inline without leaving the prompt |
 | (palette) | Agent view, bound lane | "Open Bound GitHub Issue" → `open_url(issueUrl)` |
 
 The bound lane shows the issue as its goal badge. On the GitHub page itself there

@@ -6,7 +6,7 @@
 
 ## Problem
 
-Krypton ships built-in [[Verb]]s (`#fix-issue`, `#polly`, `#wiki`, `#review`, …)
+Krypton ships built-in [[Verb]]s (`#dispatch-github-issue`, `#polly`, `#wiki`, `#review`, …)
 — one-job system prompts injected into a [[Lane]] from the `#` palette, working in
 every project with no per-project `.claude/skills/`. Two gaps:
 
@@ -30,7 +30,7 @@ verb's rendered prompt text**, producing ONE combined prompt sent to the lane in
 **single turn**. It is NOT a serial pipeline and there is NO runner — the
 composing verb is free-form prompt prose with verb tokens dropped into it wherever
 (and however often, and under whatever conditions) the author writes them. Only
-prompt-verbs are injectable; a control-op verb (e.g. the `#fix-issue` dispatch)
+prompt-verbs are injectable; a control-op verb (e.g. the `#dispatch-github-issue` dispatch)
 has no text to substitute and cannot be a token.
 
 **B. A GitHub-issue verb set** as the first consumers:
@@ -42,7 +42,7 @@ has no text to substitute and cannot be a token.
 | `#tag-github-issue <url> [labels…]` | prompt | Apply labels via `gh issue edit … --add-label …` |
 | `#post-github-comment <url>` | prompt | Draft and post a comment via `gh issue comment …` (writes immediately — see §Risk) |
 | `#fix-github-issue <url>` | prompt | Fix the issue's bug **in the current lane** (injectable) |
-| `#dispatch-github-issue <url>` | control-op | Existing spec-178 dispatch (spawn/target a fresh lane, set goal, send fix prompt). Renamed from `#fix-issue`; `#fix-issue` kept as alias. **Not injectable.** |
+| `#dispatch-github-issue <url>` | control-op | Existing spec-178 dispatch (spawn/target a fresh lane, set goal, send fix prompt). **Not injectable.** |
 
 Plus one composed verb demonstrating (A) over (B):
 
@@ -101,9 +101,9 @@ which the verb prompts instruct the lane to call.
 | `src/acp/harness-prompts.ts` | Add builders: `analyzeGithubIssuePrompt`, `tagGithubIssuePrompt`, `postGithubCommentPrompt`, `fixGithubIssuePrompt`. Each reuses `parseIssueRef`-style input and states the `issue_progress` reporting contract + `.krypton/analyses/…` bundle convention. |
 | `src/acp/verb-compose.ts` (new) | `resolveVerbTokens(promptText, lookup, opts)` — scan `{{#verb-name}}` tokens, substitute each with the referenced verb's rendered prompt, with a visited-set + max-depth cycle guard. Pure + unit-tested. |
 | `src/acp/verb-registry.ts` (new) or extend `hash-commands.ts` | Map from verb name → its prompt builder (the `lookup` the resolver uses), and a `composed` roster (built-in composed verbs like `#handle-github-issue`, whose prompt bodies contain tokens). |
-| `src/acp/hash-commands.ts` | Add the new verbs to `HASH_COMMANDS` + `commandMeta()`; rename `fix-issue` → `dispatch-github-issue` with `alias: 'fix-issue'`; mark composed verbs with an `anatomy` listing embedded verbs; render resolved prompts in the manifest. |
-| `src/acp/acp-harness-view.ts` | `runHashCommand`: route the new tokens; run `resolveVerbTokens` on any verb prompt before `enqueueSystemPrompt`; keep `#fix-issue`/`#dispatch-github-issue` on the existing dispatch path (control-op, unresolved). |
-| `docs/178-github-issue-fixing.md` | Note the `#fix-issue` → `#dispatch-github-issue` rename + alias; cross-link the new verb set. |
+| `src/acp/hash-commands.ts` | Add the new verbs to `HASH_COMMANDS` + `commandMeta()`; use `dispatch-github-issue` for the issue-dispatch control-op; mark composed verbs with an `anatomy` listing embedded verbs; render resolved prompts in the manifest. |
+| `src/acp/acp-harness-view.ts` | `runHashCommand`: route the new tokens; run `resolveVerbTokens` on any verb prompt before `enqueueSystemPrompt`; keep `#dispatch-github-issue` on the existing dispatch path (control-op, unresolved). |
+| `docs/178-github-issue-fixing.md` | Note the `#dispatch-github-issue` control-op and cross-link the new verb set. |
 | `docs/PROGRESS.md` | Index entry for this spec. |
 | `hash-commands.test.ts`, `verb-compose.test.ts` (new) | Drift guard stays green; resolver cycle/depth/substitution tests. |
 
@@ -139,8 +139,11 @@ the exception — it files a new issue from free text, so it carries no ref and 
 - **`#analyze-github-issue`** — prompt: investigate the codebase + issue to find a
   fix solution; download the issue's attached resources (images, logs) into the
   bundle; write one or more markdown analysis files (e.g. `root-cause.md`,
-  `fix-plan.md`) into `.krypton/analyses/<owner>/<repo>/<number>/`. The lane uses
-  `gh`/`curl`/its edit tool; report `phase: investigating` then a summary.
+  `fix-plan.md`) into `.krypton/analyses/<owner>/<repo>/<number>/`; then **always
+  tag the issue with the `status: Analyzed` label** (`gh issue edit … --add-label
+  "status: Analyzed"`, creating the label first if it is missing — writes to GitHub
+  immediately). The lane uses `gh`/`curl`/its edit tool; report `phase:
+  investigating` then a summary.
 - **`#tag-github-issue`** — prompt: choose/confirm labels and apply with
   `gh issue edit <n> -R <repo> --add-label …`.
 - **`#post-github-comment`** — prompt: draft a comment and post with
@@ -251,8 +254,8 @@ types the braces.
   via `issue_progress` rather than pretending success.
 - **Composed verb embeds a control-op token** (`{{#dispatch-github-issue}}`) →
   rejected by the resolver: control-op verbs are not in the injectable `lookup`.
-- **Alias** — `#fix-issue` continues to dispatch (maps to
-  `#dispatch-github-issue`), so spec-178 docs/extension references keep working.
+- **Retired alias** — `#fix-issue` no longer dispatches; use
+  `#dispatch-github-issue`.
 
 ## Decisions (resolved in grilling, 2026-07-07)
 
@@ -270,13 +273,11 @@ types the braces.
 
 ### Open for approval
 
-- **The `#fix-issue` → `#dispatch-github-issue` rename + new `#fix-github-issue`
+- **The `#dispatch-github-issue` control-op + new `#fix-github-issue`
   prompt-verb.** The grill settled on renaming the *existing dispatch* to
-  `#dispatch-github-issue` (alias `#fix-issue`) so the clearer name
-  `#fix-github-issue` is free for the injectable fix-in-place prompt-verb the
-  composed verb needs. Confirm this split (two distinct "fix" concepts, two names)
-  — the alternative is to leave dispatch as `#fix-issue` and name the prompt-verb
-  something else.
+  `#dispatch-github-issue` so the clearer name `#fix-github-issue` is free for the
+  injectable fix-in-place prompt-verb the composed verb needs. This split keeps two
+  distinct "fix" concepts under two names.
 
 ## Risk
 

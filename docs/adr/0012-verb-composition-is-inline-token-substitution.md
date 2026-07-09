@@ -6,7 +6,7 @@
 ## Context
 
 Krypton ships built-in [[Verb]]s — one-job system prompts injected into a
-[[Lane]] from the `#` palette (`#fix-issue`, `#polly`, `#wiki`, `#review`, …),
+[[Lane]] from the `#` palette (`#dispatch-github-issue`, `#polly`, `#wiki`, `#review`, …),
 project-agnostic and needing no per-project `.claude/skills/`. We want authors to
 build **bigger** verbs out of smaller ones (e.g. a GitHub-issue verb that first
 analyses, then fixes, then comments) without re-writing each sub-prompt.
@@ -35,7 +35,7 @@ Verb composition is **inline token substitution**, not a pipeline:
   combined prompt and carries out the work in its own flow.
 - **Only prompt-verbs are injectable.** A token resolves to prompt *text*, so a
   verb must have text to substitute. A **control-op verb** — one that performs an
-  operation rather than carrying a prompt, e.g. the `#fix-issue` **dispatch**
+  operation rather than carrying a prompt, e.g. the `#dispatch-github-issue`
   (spawns/targets a lane, sets its [[Goal]], clears its session) — has nothing to
   substitute and **cannot be a token**.
 - **Resolution is guarded.** The resolver tracks a visited set and a max depth so

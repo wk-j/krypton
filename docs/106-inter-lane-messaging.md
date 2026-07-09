@@ -174,9 +174,14 @@ When a lane transitions to `idle` *and* its inbox is non-empty, the coordinator 
 
 [inter-lane] Reply by calling peer_send({ to_lane: "Claude-1", message }).
 Omit `done` — only the original initiator may close the conversation with done:true.
+peer_send IS available in this lane: if it is not in your visible tool list,
+it is deferred behind your tool-search mechanism — search for "peer_send"
+rather than concluding it is unavailable.
 ```
 
 The trailing instruction is injected by the coordinator — it survives even if the sender forgets to include it.
+
+The final availability sentence (`PEER_SEND_DEFERRED_TOOL_HINT`) exists because Codex defers **all** MCP tools behind its `tool_search` once the combined tool count reaches its direct-exposure threshold (codex-rs `DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD = 100`); without the hint the model answers "peer_send is not available in this lane" instead of searching. It is appended to both reply instructions below and to the lane-context peering paragraph.
 
 When the recipient was the initiator of the pair (the envelope is a *reply* to them), the trailing line instead reads:
 
@@ -184,6 +189,7 @@ When the recipient was the initiator of the pair (the envelope is a *reply* to t
 [inter-lane] Reply with peer_send({ to_lane: "Claude-1", message }) to continue,
 or peer_send({ to_lane: "Claude-1", message, done: true }) to close the conversation.
 Only the original initiator (you) may set done:true.
+peer_send IS available in this lane: … (same availability sentence as above)
 ```
 
 If `done: true` was set on the incoming envelope (initiator closed), the trailing line becomes:

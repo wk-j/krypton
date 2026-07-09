@@ -9,11 +9,11 @@
 
 The harness has 23 built-in `#` commands but no place that explains them. The
 composer palette (`src/acp/hash-commands.ts`) shows only a one-line hint per
-command, three commands (`#docs`, `#console`, `#fix-issue`) are dispatch-only
+command, three commands (`#docs`, `#console`, `#dispatch-github-issue`) are dispatch-only
 and invisible in the palette, and — the part the palette can never show — ten
 commands inject a **system prompt** into the lane that the user cannot read
 anywhere today (`#goal set`, `#handoff`, `#resume`, `#wiki`, `#recall`,
-`#directive`, `#review`, `#polly`, `#debby`, `#fix-issue`).
+`#directive`, `#review`, `#polly`, `#debby`, `#dispatch-github-issue`).
 
 ## Solution
 
@@ -193,7 +193,7 @@ None — content source (manifest-driven), route names, palette entry, and the
 
 ## Out of Scope
 
-- Adding `#docs` / `#fix-issue` to the composer palette (separate decision).
+- Adding `#docs` / `#dispatch-github-issue` to the composer palette (separate decision).
 - Documenting agent-provided `/` slash commands, `@lane` mentions, or
   user-authored directives (config, not built-ins).
 - Live per-lane prompt preview with real args (the page shows templates with

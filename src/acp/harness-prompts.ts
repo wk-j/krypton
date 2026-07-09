@@ -223,6 +223,9 @@ export function analyzeGithubIssuePrompt(input?: GithubIssueVerbInput): string {
     `4. Write your analysis as one or more markdown files in that same bundle folder (e.g. \`root-cause.md\`, ` +
       '`fix-plan.md`): what the bug is, why it happens, which files are involved, and a concrete fix plan. ' +
       'This folder is local working knowledge (it is gitignored) — do not commit it.',
+    `5. When the analysis is complete, ALWAYS tag the issue on GitHub with the label \`status: Analyzed\` — ` +
+      `\`gh issue edit ${ghTarget(input)} --add-label "status: Analyzed"\`. If the label does not exist yet, ` +
+      'create it first with `gh label create "status: Analyzed" -R <owner/repo>`, then add it. This writes to GitHub immediately.',
     '',
     'Write the analysis for a non-technical reader in plain, natural Thai — compose it in Thai from scratch, do ' +
       'NOT write in English and translate word-for-word. Explain any technical term, file name, or code concept ' +

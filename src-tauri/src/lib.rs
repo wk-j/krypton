@@ -252,6 +252,7 @@ pub fn run() {
             usage::usage_fetch_codex,
             usage::usage_fetch_copilot,
             usage::usage_fetch_cursor,
+            usage::usage_fetch_grok,
             pencil::read_pencil_file,
             pencil::write_pencil_file,
             pencil::rename_pencil_file,

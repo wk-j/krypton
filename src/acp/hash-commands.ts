@@ -69,7 +69,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   {
     name: 'dispatch-github-issue',
     args: '<issue url | owner/repo#123>',
-    description: 'fetch a GitHub issue and dispatch it to a fresh lane (alias: #fix-issue)',
+    description: 'fetch a GitHub issue and dispatch it to a fresh lane',
   },
   {
     name: 'create-github-issue',
@@ -79,7 +79,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   {
     name: 'analyze-github-issue',
     args: '<issue url | owner/repo#123>',
-    description: 'analyze an issue for a fix solution + download its resources into a .krypton bundle',
+    description: 'analyze an issue for a fix solution + download its resources into a .krypton bundle, then tag it "status: Analyzed"',
   },
   {
     name: 'fix-github-issue',
@@ -251,7 +251,6 @@ export function commandMeta(): Record<string, CommandMeta> {
     'dispatch-github-issue': {
       category: 'agent',
       badges: ['workflow'],
-      alias: 'fix-issue',
       anatomy: 'parse ref → gh fetch title → spawn lane → dispatch fix',
       lanes: '+1 lane',
       prompt: issueFixPrompt({

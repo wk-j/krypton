@@ -62,6 +62,7 @@ import { ArtifactFeedbackQueue, DocArtifactRequestQueue, DocFeedbackQueue } from
 import { DiffReviewQueue } from './diff-review';
 import {
   InterLaneCoordinator,
+  PEER_SEND_DEFERRED_TOOL_HINT,
   type CoordinatorDrainContext,
   type InterLaneRowChannel,
   type LaneHost,
@@ -1834,7 +1835,7 @@ export class AcpHarnessView implements ContentView {
       }));
     }
     // spec 178: github issue-fixing. dispatch-issue runs the shared dispatchIssue
-    // path (also used by the Krypton palette / #fix-issue). The issueKey-addressed
+    // path (also used by the Krypton palette / #dispatch-github-issue). The issueKey-addressed
     // reads (status/list/unlink) are fanned out across harnesses by control-bridge.
     if (operation === 'github.dispatch-issue') {
       const repo = requiredString(params, 'repo');
@@ -5696,7 +5697,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   /** The single convergence point for "fix this issue", called by every surface
-   *  (Krypton palette / #fix-issue, and the github.dispatch-issue control op). */
+   *  (Krypton palette / #dispatch-github-issue, and the github.dispatch-issue control op). */
   private async dispatchIssue(args: {
     issueKey: string;
     issueUrl: string;
@@ -5719,7 +5720,7 @@ export class AcpHarnessView implements ContentView {
       }
       this.issueBindings.delete(args.issueKey);
     }
-    // Resolve metadata here so every caller (control op, #fix-issue, palette) shares
+    // Resolve metadata here so every caller (control op, #dispatch-github-issue, palette) shares
     // ONE fetch site + ONE fallback policy: fetch via `gh` only when title is absent.
     let title = args.title?.trim() ?? '';
     let body = args.body;
@@ -6606,7 +6607,8 @@ export class AcpHarnessView implements ContentView {
     // model still reaches them at the right moment without a per-turn stub.
     if (hasPeers) {
       lines.push(
-        'Inter-lane peering: when the user asks you to consult, ask, or peer with another lane, call peer_send { to_lane, message, done } (use the display name shown above; recipient processes on its next idle turn). Use peer_list to see live peer lanes and their inbox depths. End your turn after peer_send; the reply (if any) arrives as a new user message. Leave `done` false when sending a request — `done:true` silences the recipient and is only for closing the conversation after their reply. Never peer proactively.',
+        'Inter-lane peering: when the user asks you to consult, ask, or peer with another lane, call peer_send { to_lane, message, done } (use the display name shown above; recipient processes on its next idle turn). Use peer_list to see live peer lanes and their inbox depths. End your turn after peer_send; the reply (if any) arrives as a new user message. Leave `done` false when sending a request — `done:true` silences the recipient and is only for closing the conversation after their reply. Never peer proactively. ' +
+          PEER_SEND_DEFERRED_TOOL_HINT,
       );
     }
     // spec 130: attention tools are default-on for every harness-memory-capable
@@ -8380,10 +8382,9 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     // spec 178: dispatch a GitHub issue fix to a FRESH lane (control-op — spawns a
-    // lane, sets its goal, clears its session). Renamed #fix-issue → #dispatch-github-issue
-    // in spec 191; #fix-issue kept as a back-compat alias. Metadata via local `gh`;
-    // URL-only fallback when gh is absent. This is NOT the #fix-github-issue prompt-verb.
-    if (parts[0] === '#dispatch-github-issue' || parts[0] === '#fix-issue') {
+    // lane, sets its goal, clears its session). Metadata via local `gh`; URL-only
+    // fallback when gh is absent. This is NOT the #fix-github-issue prompt-verb.
+    if (parts[0] === '#dispatch-github-issue') {
       this.setDraft(lane, '', 0);
       const ref = this.parseIssueRef(parts.slice(1).join(' '));
       if (!ref) {

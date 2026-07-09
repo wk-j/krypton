@@ -2,7 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-export type UsageProvider = 'claude' | 'codex' | 'copilot' | 'cursor';
+export type UsageProvider = 'claude' | 'codex' | 'copilot' | 'cursor' | 'grok';
 export type UsageFreshness = 'loading' | 'live' | 'stale' | 'off';
 
 export interface UsageWindow {
@@ -80,11 +80,25 @@ export interface CursorUsage {
   fetchedAt: number;
 }
 
+/** Grok subscription credit usage (spec 193), from cli-chat-proxy billing. */
+export interface GrokUsage {
+  used: number | null;
+  monthlyLimit: number | null;
+  onDemandCap: number | null;
+  onDemandUsed: number | null;
+  periodStart: number | null;
+  periodEnd: number | null;
+  tier: string | null;
+  email: string | null;
+  fetchedAt: number;
+}
+
 export interface UsagePayloads {
   claude: ClaudeUsage;
   codex: CodexUsage;
   copilot: CopilotUsage;
   cursor: CursorUsage;
+  grok: GrokUsage;
 }
 
 export interface ProviderUsageState<P extends UsageProvider = UsageProvider> {
@@ -107,12 +121,13 @@ export interface ProviderUsageSummary {
   error: string | null;
 }
 
-const PROVIDERS: readonly UsageProvider[] = ['claude', 'codex', 'copilot', 'cursor'];
+const PROVIDERS: readonly UsageProvider[] = ['claude', 'codex', 'copilot', 'cursor', 'grok'];
 const POLL_MS: Record<UsageProvider, number> = {
   claude: 180_000,
   codex: 60_000,
   copilot: 180_000,
   cursor: 180_000,
+  grok: 180_000,
 };
 
 function clampPercent(value: number): number {
@@ -124,7 +139,13 @@ function quota(label: string, value: number): UsageQuotaSummary {
 }
 
 export function providerForBackend(backendId: string): UsageProvider | null {
-  if (backendId === 'claude' || backendId === 'codex' || backendId === 'copilot' || backendId === 'cursor') {
+  if (
+    backendId === 'claude' ||
+    backendId === 'codex' ||
+    backendId === 'copilot' ||
+    backendId === 'cursor' ||
+    backendId === 'grok'
+  ) {
     return backendId;
   }
   return null;
@@ -157,6 +178,11 @@ export function summarizeUsage(state: ProviderUsageState): ProviderUsageSummary 
       quotas.push(quota('month', u.totalPercentUsed));
     } else if (u.requestsLimit !== null && u.requestsLimit > 0) {
       quotas.push(quota('requests', ((u.requestsUsed ?? 0) / u.requestsLimit) * 100));
+    }
+  } else if (state.provider === 'grok' && data) {
+    const u = data as GrokUsage;
+    if (u.monthlyLimit !== null && u.monthlyLimit > 0) {
+      quotas.push(quota('credits', ((u.used ?? 0) / u.monthlyLimit) * 100));
     }
   }
 

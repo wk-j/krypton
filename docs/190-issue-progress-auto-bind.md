@@ -8,7 +8,7 @@
 
 `issue_progress` only succeeds when an issue↔lane **binding already exists**, and a
 binding is created **only** by `dispatchIssue` (the extension's "Fix in Krypton"
-card, `#fix-issue`, or the palette). A lane that picks up an issue **directly in
+card, `#dispatch-github-issue`, or the palette). A lane that picks up an issue **directly in
 the harness** — the user just tells it to fix `owner/repo#151` in conversation —
 has no binding, so the tool returns `no_binding`, and the lane has to fall back to
 editing the GitHub label by hand. The status card and lane-monitor never reflect
