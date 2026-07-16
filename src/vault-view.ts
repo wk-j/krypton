@@ -178,7 +178,7 @@ export class VaultContentView implements ContentView {
     this.statusBarEl.textContent = `FILES: ${fileCount}  LINKS: ${linkCount}`;
 
     if (fileCount > 0) {
-      const readme = this.findFile('README.md') ?? this.findFile('index.md');
+      const readme = this.findFile('README.md');
       if (readme) {
         this.openFile(readme);
       } else {
@@ -207,6 +207,8 @@ export class VaultContentView implements ContentView {
         let all = [...this.index.files.keys()].filter((f) => {
           const file = this.index!.files.get(f);
           if (file == null) return false;
+          const basename = f.split('/').pop() ?? '';
+          if (basename === 'index.md' || basename === 'log.md') return false;
           // Show files that are typed (any `type` frontmatter / inferred doc type)
           // or tagged. Keeps tag-based Obsidian vaults working while also listing
           // vaults that classify pages by `type:` instead of `tags:`.
@@ -285,9 +287,6 @@ export class VaultContentView implements ContentView {
     if (relativePath.startsWith('raw/')) return 'clipping';
     const fmSource = file.frontmatter['source'];
     if (typeof fmSource === 'string' && fmSource.startsWith('http')) return 'clipping';
-    const basename = relativePath.split('/').pop() ?? '';
-    if (basename === 'log.md') return 'log';
-    if (basename === 'index.md') return 'index';
     return '';
   }
 
@@ -297,8 +296,6 @@ export class VaultContentView implements ContentView {
       entity: 'ENT',
       source: 'SRC',
       clipping: 'CLIP',
-      log: 'LOG',
-      index: 'IDX',
       analysis: 'ANA',
       endpoint: 'ENDP',
       table: 'TBL',

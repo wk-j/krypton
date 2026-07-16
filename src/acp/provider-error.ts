@@ -135,7 +135,7 @@ function normalizeProviderErrorText(text: string): string {
     .trim();
 }
 
-function stripAnsi(text: string): string {
+export function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
 }
 

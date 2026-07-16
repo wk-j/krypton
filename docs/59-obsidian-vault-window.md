@@ -183,7 +183,7 @@ Resolution order: if `path` is set, use it directly. If `paths` is set, show pic
 3. VaultContentView calls vault-parser.ts buildIndex(vaultRoot)
 4. vault-parser invokes Tauri commands to list/read .md files
 5. Parser returns VaultIndex (files, backlinks, tags maps)
-6. VaultContentView renders sidebar (file tree) and opens README.md or index.md
+6. VaultContentView renders sidebar (file tree; index.md and log.md are hidden) and opens README.md
 7. On file select: render markdown, highlight wikilinks, show backlink count in status bar
 ```
 

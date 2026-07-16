@@ -24,6 +24,7 @@ import {
   permissionArgsPreview,
   renderPermissionBody,
   rawOutputSections,
+  boundedOutputLines,
   stringifyToolValue,
   formatLaneMailMetaLine,
   formatLaneMailProvenanceLine,
@@ -35,6 +36,7 @@ import {
   wikiIngestPrompt,
   wikiRecallPrompt,
   hasMarkdownTable,
+  agentLinkOpenAction,
   nextDispatchPurpose,
   orchestratorDispatchBody,
   dispatchDisabledReason,
@@ -1138,6 +1140,26 @@ describe('byte-array tool output decoding (spec 135 — Grok lane)', () => {
   });
 });
 
+describe('ANSI / control-char stripping in tool output', () => {
+  it('strips SGR color codes a backend forwarded (e.g. gh JSON coloring)', () => {
+    const colored = '\x1b[1;34m"body"\x1b[m\x1b[1;37m:\x1b[m \x1b[32m"Something"\x1b[m';
+    expect(boundedOutputLines(colored, 40)).toBe('"body": "Something"');
+  });
+
+  it('drops the bare ESC (0x1b) byte that renders as a garbage glyph', () => {
+    expect(boundedOutputLines('a\x1bb', 40)).toBe('ab');
+    expect(boundedOutputLines('x\x00\x07y', 40)).toBe('xy');
+  });
+
+  it('keeps tabs and newlines intact while stripping other control chars', () => {
+    expect(boundedOutputLines('one\ttwo\nthree', 40)).toBe('one\ttwo\nthree');
+  });
+
+  it('leaves plain output untouched (no regression)', () => {
+    expect(boundedOutputLines('On branch master', 40)).toBe('On branch master');
+  });
+});
+
 describe('prompt queue index parsing (spec 136)', () => {
   it('accepts positive base-10 integers', () => {
     expect(parseQueueIndex('1')).toBe(1);
@@ -1558,5 +1580,29 @@ describe('orchestrator console seat prompt (spec 182)', () => {
     expect(seatPromptDisabledReason({ status: 'busy' })).toBeNull();
     expect(seatPromptDisabledReason({ status: 'needs_permission' })).toBeNull();
     expect(seatPromptDisabledReason({ status: 'awaiting_peer' })).toBeNull();
+  });
+});
+
+describe('agentLinkOpenAction', () => {
+  it('opens http/https/mailto links in the OS browser', () => {
+    expect(agentLinkOpenAction('https://github.com/wk/krypton/issues/31')).toBe('external');
+    expect(agentLinkOpenAction('http://127.0.0.1:8080/status')).toBe('external');
+    expect(agentLinkOpenAction('mailto:somnuk.wk@bcircle.co.th')).toBe('external');
+    expect(agentLinkOpenAction('HTTPS://EXAMPLE.COM')).toBe('external');
+  });
+
+  it('suppresses everything else so the app webview never navigates', () => {
+    expect(agentLinkOpenAction('#')).toBe('suppress'); // sanitizeHref fallback
+    expect(agentLinkOpenAction('#section')).toBe('suppress');
+    expect(agentLinkOpenAction('/abs/path.md')).toBe('suppress');
+    expect(agentLinkOpenAction('./relative.md')).toBe('suppress');
+    expect(agentLinkOpenAction('javascript:alert(1)')).toBe('suppress');
+    expect(agentLinkOpenAction('file:///etc/passwd')).toBe('suppress');
+    expect(agentLinkOpenAction('')).toBe('suppress');
+  });
+
+  it('normalises whitespace and control chars before matching the scheme', () => {
+    expect(agentLinkOpenAction('  https://example.com  ')).toBe('external');
+    expect(agentLinkOpenAction('\x01java\x02script:alert(1)')).toBe('suppress');
   });
 });

@@ -23,6 +23,7 @@ import {
   handoffResumePrompt,
   issueFixPrompt,
   postGithubCommentPrompt,
+  renderActiveTicketPin,
   tagGithubIssuePrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
@@ -66,6 +67,11 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'orchestrator', args: '', description: 'designate this lane the orchestrator seat + open the console' },
   { name: 'polly', args: '<task>', description: 'Polly orchestration — spawns Cursor + Claude + Codex workers' },
   { name: 'debby', args: '<question>', description: 'Debby brainstorming — asks Claude + Codex heads' },
+  {
+    name: 'ticket',
+    args: '[<issue url | owner/repo#123> | refresh | clear]',
+    description: 'set the shared working ticket for all lanes (picker when no args)',
+  },
   {
     name: 'dispatch-github-issue',
     args: '<issue url | owner/repo#123>',
@@ -145,6 +151,15 @@ type CommandMeta = Omit<CommandManifestEntry, 'name' | 'args' | 'description'>;
 /** Placeholder roster shared by the polly/debby templates. */
 const PLACEHOLDER_ORCHESTRATOR = { displayName: '<lane>', laneId: '<lane-id>', backendId: '<backend>' };
 
+/** spec 194: placeholder ticket for the manifest's `#ticket` pin template. */
+const PLACEHOLDER_TICKET = {
+  issueKey: '<owner/repo#123>',
+  repo: '<owner/repo>',
+  number: '<number>',
+  title: '<title>',
+  revision: 1,
+};
+
 /** Exported ONLY for the drift-guard test, which asserts this map's key set
  *  equals the manifest name set — so a new roster entry cannot silently fall
  *  through to the `session`/no-badge fallback in `buildCommandManifest`. */
@@ -153,6 +168,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     new: { category: 'session', badges: [] },
     'new!': { category: 'session', badges: [] },
     goal: { category: 'session', badges: [], prompt: goalSeedPrompt('<text>') },
+    ticket: { category: 'session', badges: [], prompt: renderActiveTicketPin(PLACEHOLDER_TICKET) },
     cancel: { category: 'session', badges: [] },
     restart: { category: 'session', badges: [] },
     mem: { category: 'session', badges: [] },

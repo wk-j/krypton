@@ -554,6 +554,81 @@ impl HookServer {
         }
     }
 
+    /// spec 194: persist the harness's shared working ticket, atomically
+    /// (tmp-file + rename), in a `*.active-ticket.json` sibling of the handoff
+    /// memory file. A `null` ticket clears it. Stored verbatim — the frontend
+    /// owns its shape. No-op (Ok) when the harness has no persistence path.
+    pub fn save_active_ticket(&self, harness_id: &str, ticket: Value) -> Result<(), String> {
+        let project_dir = {
+            let memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
+            match memories.get(harness_id) {
+                Some(store) => store.project_dir.clone(),
+                None => return Ok(()),
+            }
+        };
+        let project_dir = match project_dir {
+            Some(dir) => dir,
+            None => return Ok(()),
+        };
+        let path = match get_active_ticket_path(&project_dir) {
+            Some(path) => path,
+            None => return Ok(()),
+        };
+
+        let persisted = json!({
+            "version": 1,
+            "harnessId": harness_id,
+            "savedAt": now_ms(),
+            "ticket": ticket,
+        });
+        let json = serde_json::to_string_pretty(&persisted)
+            .map_err(|e| format!("failed to serialize active ticket: {e}"))?;
+        let tmp_path = path.with_extension("active-ticket.json.tmp");
+        std::fs::write(&tmp_path, json)
+            .map_err(|e| format!("failed to write active-ticket tmp file: {e}"))?;
+        std::fs::rename(&tmp_path, &path)
+            .map_err(|e| format!("failed to rename active-ticket file: {e}"))?;
+        Ok(())
+    }
+
+    /// spec 194: load the harness's persisted working ticket. Returns the stored
+    /// `ticket` value verbatim, or `Null` when the file is missing/unparseable
+    /// (a parse failure is logged, not surfaced, mirroring the bindings loader).
+    pub fn load_active_ticket(&self, harness_id: &str) -> Result<Value, String> {
+        let project_dir = {
+            let memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
+            match memories.get(harness_id) {
+                Some(store) => store.project_dir.clone(),
+                None => return Ok(Value::Null),
+            }
+        };
+        let project_dir = match project_dir {
+            Some(dir) => dir,
+            None => return Ok(Value::Null),
+        };
+        let path = match get_active_ticket_path(&project_dir) {
+            Some(path) => path,
+            None => return Ok(Value::Null),
+        };
+        if !path.exists() {
+            return Ok(Value::Null);
+        }
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => {
+                log::warn!("Failed to read active ticket at {}: {e}", path.display());
+                return Ok(Value::Null);
+            }
+        };
+        match serde_json::from_str::<Value>(&content) {
+            Ok(parsed) => Ok(parsed.get("ticket").cloned().unwrap_or(Value::Null)),
+            Err(e) => {
+                log::warn!("Failed to parse active ticket at {}: {e}", path.display());
+                Ok(Value::Null)
+            }
+        }
+    }
+
     pub fn clear_harness_memory_lane(
         self: &Arc<Self>,
         harness_id: &str,
@@ -3763,6 +3838,13 @@ fn get_issue_bindings_path(project_dir: &str) -> Option<PathBuf> {
     Some(base.with_extension("issue-bindings.json"))
 }
 
+/// spec 194: sibling of [`get_issue_bindings_path`] holding the harness's shared
+/// working ticket (`ActiveWorkTicket`) in a `*.active-ticket.json` file.
+fn get_active_ticket_path(project_dir: &str) -> Option<PathBuf> {
+    let base = get_persistence_path(project_dir)?;
+    Some(base.with_extension("active-ticket.json"))
+}
+
 /// spec 178: persist a harness's issue↔lane bindings to disk. The frontend
 /// (state authority, ADR-0007) calls this on every binding mutation; the
 /// `bindings` array is stored verbatim.
@@ -3783,6 +3865,27 @@ pub fn acp_load_issue_bindings(
     hook_server: tauri::State<'_, Arc<HookServer>>,
 ) -> Result<Vec<Value>, String> {
     hook_server.load_issue_bindings(&harness_id)
+}
+
+/// spec 194: persist the harness's shared working ticket (`null` clears it).
+/// The frontend (state authority, ADR-0007) calls this on every ticket mutation.
+#[tauri::command]
+pub fn acp_save_active_ticket(
+    harness_id: String,
+    ticket: Value,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.save_active_ticket(&harness_id, ticket)
+}
+
+/// spec 194: rehydrate the harness's persisted working ticket on
+/// `register_harness`. Returns `Null` when none is stored.
+#[tauri::command]
+pub fn acp_load_active_ticket(
+    harness_id: String,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<Value, String> {
+    hook_server.load_active_ticket(&harness_id)
 }
 
 /// spec 185: cache the built-in `#` command manifest for the `/commands`

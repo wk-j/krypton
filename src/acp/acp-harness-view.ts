@@ -108,6 +108,7 @@ import {
   handoffResumePrompt,
   issueFixPrompt,
   postGithubCommentPrompt,
+  renderActiveTicketPin,
   tagGithubIssuePrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
@@ -171,7 +172,7 @@ import {
 } from '../config';
 import { extractModifiedPath } from './acp-harness-memory';
 import { classifyBashCommand } from '../agent/tools';
-import { classifyProviderError, shouldAppendProviderError } from './provider-error';
+import { classifyProviderError, shouldAppendProviderError, stripAnsi } from './provider-error';
 import {
   loadProjectMcpServers,
   filterByCapability,
@@ -743,6 +744,33 @@ interface IssueBinding {
   updatedAt: number;
 }
 
+/** spec 194: one shared working ticket per harness — reference context for every
+ *  lane, NOT an assignment and NOT an `IssueBinding` (single-owner progress
+ *  semantics stay with the binding). Persisted like issue bindings; the frontend
+ *  is the state authority (ADR-0007). */
+interface ActiveWorkTicket {
+  issueKey: string; // canonical "owner/repo#123"
+  issueUrl: string;
+  repo: string; // "owner/repo"
+  number: number;
+  title: string; // issueKey until the background `gh` enrich resolves
+  state?: 'open' | 'closed';
+  labels?: string[];
+  fetchedAt: number;
+  sourceUpdatedAt?: string; // GitHub updatedAt — staleness signal
+  revision: number; // bumped on every set/refresh of the same issue
+}
+
+/** spec 194: one row in the `#ticket` picker (from `gh issue list`). */
+interface TicketPickerRow {
+  number: number;
+  title: string;
+  labels: string[];
+  state: 'open' | 'closed';
+  updatedAt?: string;
+  url: string;
+}
+
 /** spec 178: the snapshot any surface pulls for one issue — the persisted binding
  *  merged with the live lane status. Refresh-safe: a browser reload re-pulls this. */
 interface IssueStatusSnapshot {
@@ -1284,6 +1312,12 @@ export class AcpHarnessView implements ContentView {
   /** spec 178: github issue-fixing bindings, keyed by issueKey. Persisted to disk
    *  (acp_save/load_issue_bindings) and rehydrated on register. */
   private readonly issueBindings = new Map<string, IssueBinding>();
+  /** spec 194: the harness's shared working ticket (one per harness, or none). */
+  private activeTicket: ActiveWorkTicket | null = null;
+  /** spec 194: open `#ticket` picker — its own modal dialog (not a composer
+   *  popup); the filter is typed live into the dialog (the draft was consumed
+   *  by #ticket). */
+  private ticketPicker: { rows: TicketPickerRow[]; filter: string; index: number } | null = null;
   private issueReportUnlisten: UnlistenFn | null = null;
   /** spec 146: review quality matrix — summary-only #review history per lane. */
   private reviewQualityStore = new ReviewQualityStore(this.laneBus);
@@ -1430,6 +1464,8 @@ export class AcpHarnessView implements ContentView {
   private reviewMatrixPanelEl!: HTMLElement;
   private reviewPriorityOverlayEl!: HTMLElement;
   private reviewPriorityPanelEl!: HTMLElement;
+  private ticketOverlayEl!: HTMLElement;
+  private ticketPanelEl!: HTMLElement;
   private orchestratorConsoleEl!: HTMLElement;
   private orchestratorPanelEl!: HTMLElement;
   private pickerEl!: HTMLElement;
@@ -1439,6 +1475,7 @@ export class AcpHarnessView implements ContentView {
   private laneRailEl!: HTMLElement;
   private planSlotEl!: HTMLElement;
   private peekSlotEl!: HTMLElement;
+  private pinSlotEl!: HTMLElement;
   private queueSlotEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private pretextRaf = false;
@@ -3404,6 +3441,10 @@ export class AcpHarnessView implements ContentView {
       void this.handleModelPickerKey(e);
       return true;
     }
+    // spec 194: `#ticket` picker modal — owns typing/arrows/Enter/Esc while
+    // open, regardless of composer/transcript focus. Unclaimed combos (e.g.
+    // Cmd+W) fall through so app-level shortcuts keep working.
+    if (this.ticketPicker && this.handleTicketPickerKey(e)) return true;
     if (this.triageOverlayOpen) {
       e.preventDefault();
       this.handleTriageKey(e);
@@ -3714,6 +3755,49 @@ export class AcpHarnessView implements ContentView {
       rows +
       `</div>`
     );
+  }
+
+  /** spec 194: `#ticket` picker — its own modal dialog (same overlay shell family
+   *  as triage/review), keeping the palette keyboard grammar. The live filter
+   *  renders as a dialog input line because the draft was consumed when #ticket
+   *  opened the picker. */
+  private renderTicketOverlayEl(): void {
+    const picker = this.ticketPicker;
+    this.ticketOverlayEl.hidden = !picker;
+    if (!picker) return;
+    const matches = this.ticketPickerMatches();
+    const safeIndex = Math.max(0, Math.min(picker.index, matches.length - 1));
+    const filter = picker.filter
+      ? esc(picker.filter)
+      : `<span class="acp-ticket__filter-hint">type to filter</span>`;
+    const rows = matches.length === 0
+      ? `<div class="acp-ticket__empty">no matching issues</div>`
+      : matches
+          .map((row, i) => {
+            const sel = i === safeIndex ? ' acp-ticket__row--selected' : '';
+            const labels = row.labels.length > 0
+              ? `<span class="acp-ticket__labels">${esc(row.labels.join(', '))}</span>`
+              : '';
+            const updated = Date.parse(row.updatedAt ?? '');
+            const age = Number.isNaN(updated) ? '' : formatAge(Date.now() - updated);
+            const state = row.state === 'closed' ? ' · closed' : '';
+            return (
+              `<div class="acp-ticket__row${sel}">` +
+              `<span class="acp-ticket__num">#${row.number}</span>` +
+              `<span class="acp-ticket__title">${esc(row.title)}</span>` +
+              labels +
+              `<span class="acp-ticket__age">${esc(age)}${state}</span>` +
+              `</div>`
+            );
+          })
+          .join('');
+    this.ticketPanelEl.innerHTML =
+      `<header class="acp-ticket__head">working ticket` +
+      `<span class="acp-ticket__sub">↑↓ / ⌃n⌃p select · Enter set · Esc dismiss</span></header>` +
+      `<div class="acp-ticket__filter">${filter}<span class="acp-harness__caret">█</span></div>` +
+      `<div class="acp-ticket__rows" data-count="${matches.length}">${rows}</div>` +
+      `<footer class="acp-ticket__foot">shared with all ${this.lanes.length} lanes in this harness · read-only</footer>`;
+    this.ticketPanelEl.querySelector('.acp-ticket__row--selected')?.scrollIntoView({ block: 'nearest' });
   }
 
   /** spec 191: inline verb-injection palette. Cursor-aware — fires when the user types
@@ -5298,6 +5382,21 @@ export class AcpHarnessView implements ContentView {
     );
     body.appendChild(this.dashboardEl);
 
+    // Agent-rendered markdown anchors (the only <a> elements anywhere in this
+    // view — transcript, peek, plan) always open in the OS browser; the click
+    // is intercepted so the app webview never navigates. See agentLinkOpenAction.
+    this.element.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest<HTMLAnchorElement>('a[href]');
+      if (!anchor) return;
+      e.preventDefault();
+      const href = anchor.getAttribute('href') ?? '';
+      if (agentLinkOpenAction(href) === 'external') {
+        openExternalUrl(href, { external: true });
+      }
+    });
+
     this.memoryOverlayEl = document.createElement('aside');
     this.memoryOverlayEl.className = 'acp-harness__memory-overlay';
     this.memoryOverlayEl.hidden = true;
@@ -5357,6 +5456,15 @@ export class AcpHarnessView implements ContentView {
     this.reviewPriorityOverlayEl.appendChild(this.reviewPriorityPanelEl);
     body.appendChild(this.reviewPriorityOverlayEl);
 
+    // spec 194: `#ticket` picker — its own modal dialog, not a composer popup.
+    this.ticketOverlayEl = document.createElement('aside');
+    this.ticketOverlayEl.className = 'acp-harness__ticket-overlay';
+    this.ticketOverlayEl.hidden = true;
+    this.ticketPanelEl = document.createElement('div');
+    this.ticketPanelEl.className = 'acp-ticket__panel';
+    this.ticketOverlayEl.appendChild(this.ticketPanelEl);
+    body.appendChild(this.ticketOverlayEl);
+
     // spec 180: orchestrator console (in-app, acting; opened with #orchestrator).
     this.orchestratorConsoleEl = document.createElement('aside');
     this.orchestratorConsoleEl.className = 'acp-harness__orchestrator';
@@ -5372,6 +5480,13 @@ export class AcpHarnessView implements ContentView {
 
     this.laneRailEl = document.createElement('div');
     this.laneRailEl.className = 'acp-harness__lane-rail';
+    // spec 148/194: ticket + goal pins — top rail slot, same surface cluster as
+    // the lane peek (moved out of the composer).
+    this.pinSlotEl = document.createElement('div');
+    this.pinSlotEl.className = 'acp-harness__lane-rail__slot';
+    this.pinSlotEl.dataset.slot = 'pins';
+    this.pinSlotEl.hidden = true;
+    this.laneRailEl.appendChild(this.pinSlotEl);
     this.planSlotEl = document.createElement('div');
     this.planSlotEl.className = 'acp-harness__lane-rail__slot';
     this.planSlotEl.dataset.slot = 'plan';
@@ -5588,6 +5703,7 @@ export class AcpHarnessView implements ContentView {
     await this.refreshMcpStats();
     await this.refreshArtifacts();
     await this.refreshIssueBindings();
+    await this.refreshActiveTicket();
   }
 
   // ─── spec 178: GitHub issue fixing ────────────────────────────────────────
@@ -5649,6 +5765,238 @@ export class AcpHarnessView implements ContentView {
       console.warn('[acp-harness] gh issue view failed (falling back to URL-only):', e);
       return null;
     }
+  }
+
+  // ─── spec 194: shared working ticket ───────────────────────────────────────
+
+  /** Rehydrate the persisted working ticket on register (survives restart). */
+  private async refreshActiveTicket(): Promise<void> {
+    if (!this.harnessMemoryId) return;
+    try {
+      const stored = await invoke<ActiveWorkTicket | null>('acp_load_active_ticket', {
+        harnessId: this.harnessMemoryId,
+      });
+      if (stored && typeof stored.issueKey === 'string') this.activeTicket = stored;
+    } catch (e) {
+      console.warn('[acp-harness] refreshActiveTicket failed:', e);
+    }
+  }
+
+  private persistActiveTicket(): void {
+    if (!this.harnessMemoryId) return;
+    void invoke('acp_save_active_ticket', {
+      harnessId: this.harnessMemoryId,
+      ticket: this.activeTicket,
+    }).catch((e) => console.warn('[acp-harness] persistActiveTicket failed:', e));
+  }
+
+  /** Set (or refresh) the working ticket from a parsed ref. Re-pointing at the
+   *  SAME issue bumps `revision` and keeps the last snapshot until the background
+   *  `gh` enrich lands — the chip and pin never gate on the fetch. Never touches
+   *  issue bindings: a ticket is context, not an assignment (spec 194). */
+  private setActiveTicket(ref: { repo: string; number: number; url: string }): void {
+    const issueKey = `${ref.repo}#${ref.number}`;
+    const prev = this.activeTicket;
+    const same = prev !== null && prev.issueKey === issueKey;
+    const ticket: ActiveWorkTicket = {
+      issueKey,
+      issueUrl: ref.url,
+      repo: ref.repo,
+      number: ref.number,
+      title: same ? prev.title : issueKey,
+      state: same ? prev.state : undefined,
+      labels: same ? prev.labels : undefined,
+      fetchedAt: Date.now(),
+      sourceUpdatedAt: same ? prev.sourceUpdatedAt : undefined,
+      revision: same ? prev.revision + 1 : 1,
+    };
+    this.activeTicket = ticket;
+    this.persistActiveTicket();
+    this.flashChip(`ticket ${same ? 'refreshed' : 'set'} → ${issueKey} (r${ticket.revision})`);
+    this.render();
+    void this.enrichActiveTicket(ticket);
+  }
+
+  /** Background `gh` enrich for the pin/chip: title, state, labels, updatedAt.
+   *  Drops the result when the ticket was replaced or cleared mid-fetch. */
+  private async enrichActiveTicket(ticket: ActiveWorkTicket): Promise<void> {
+    try {
+      const raw = await invoke<string>('run_command', {
+        program: 'gh',
+        args: ['issue', 'view', String(ticket.number), '-R', ticket.repo, '--json', 'title,state,labels,updatedAt'],
+        cwd: this.projectDir ?? undefined,
+      });
+      const meta = JSON.parse(raw) as {
+        title?: string;
+        state?: string;
+        labels?: { name: string }[];
+        updatedAt?: string;
+      };
+      if (this.activeTicket !== ticket) return;
+      const title = meta.title?.trim();
+      if (title) ticket.title = title;
+      ticket.state = meta.state?.toLowerCase() === 'closed' ? 'closed' : 'open';
+      ticket.labels = (meta.labels ?? []).map((l) => l.name);
+      ticket.sourceUpdatedAt = meta.updatedAt;
+      ticket.fetchedAt = Date.now();
+      this.persistActiveTicket();
+      this.render();
+    } catch (e) {
+      console.warn('[acp-harness] ticket gh enrich failed (URL-only ticket):', e);
+    }
+  }
+
+  private clearActiveTicket(): void {
+    if (!this.activeTicket) {
+      this.flashChip('no working ticket set');
+      return;
+    }
+    const key = this.activeTicket.issueKey;
+    this.activeTicket = null;
+    this.persistActiveTicket();
+    this.flashChip(`ticket cleared (${key})`);
+    this.render();
+  }
+
+  /** spec 194: `#ticket [<ref> | refresh | clear]` — manage the shared ticket. */
+  private async runTicketCommand(args: string[]): Promise<void> {
+    const sub = args[0];
+    if (!sub) {
+      await this.openTicketPicker();
+      return;
+    }
+    if (sub === 'clear') {
+      this.clearActiveTicket();
+      return;
+    }
+    if (sub === 'refresh') {
+      const t = this.activeTicket;
+      if (!t) {
+        this.flashChip('no working ticket set - #ticket to pick one');
+        return;
+      }
+      this.setActiveTicket({ repo: t.repo, number: t.number, url: t.issueUrl });
+      return;
+    }
+    const ref = this.parseIssueRef(args.join(' '));
+    if (!ref) {
+      this.flashChip('usage: #ticket [<issue url | owner/repo#123> | refresh | clear]');
+      return;
+    }
+    this.setActiveTicket(ref);
+  }
+
+  /** Open the `#ticket` picker over the harness repo's open issues. Read-only
+   *  toward GitHub — the picker never comments, labels, or assigns. The repo is
+   *  resolved by `gh` from the git remote of `projectDir`; each row's `url`
+   *  carries the canonical owner/repo for selection. */
+  private async openTicketPicker(): Promise<void> {
+    this.flashChip('fetching issues…');
+    try {
+      const raw = await invoke<string>('run_command', {
+        program: 'gh',
+        args: ['issue', 'list', '--json', 'number,title,labels,state,updatedAt,url', '--limit', '50'],
+        cwd: this.projectDir ?? undefined,
+      });
+      const parsed = JSON.parse(raw) as {
+        number: number;
+        title?: string;
+        labels?: { name: string }[];
+        state?: string;
+        updatedAt?: string;
+        url?: string;
+      }[];
+      const rows: TicketPickerRow[] = parsed
+        .filter((r) => typeof r.number === 'number' && typeof r.url === 'string')
+        .map((r) => ({
+          number: r.number,
+          title: r.title?.trim() ?? `#${r.number}`,
+          labels: (r.labels ?? []).map((l) => l.name),
+          state: r.state?.toLowerCase() === 'closed' ? 'closed' : 'open',
+          updatedAt: r.updatedAt,
+          url: r.url as string,
+        }));
+      if (rows.length === 0) {
+        this.flashChip('no open issues');
+        return;
+      }
+      this.ticketPicker = { rows, filter: '', index: 0 };
+      this.renderTicketOverlayEl();
+    } catch (e) {
+      this.flashChip(`gh issue list failed: ${errorText(e)}`);
+    }
+  }
+
+  private ticketPickerMatches(): TicketPickerRow[] {
+    const picker = this.ticketPicker;
+    if (!picker) return [];
+    const filter = picker.filter.trim().toLowerCase();
+    if (!filter) return picker.rows;
+    return picker.rows.filter((r) =>
+      `#${r.number} ${r.title} ${r.labels.join(' ')}`.toLowerCase().includes(filter),
+    );
+  }
+
+  /** Modal-dialog key handling while the ticket picker is open: printable keys
+   *  build the filter, ↑↓/⌃n⌃p move, Enter selects, Esc dismisses. Unclaimed
+   *  combos fall through so app-level shortcuts keep working. */
+  private handleTicketPickerKey(e: KeyboardEvent): boolean {
+    const picker = this.ticketPicker;
+    if (!picker) return false;
+    const matches = this.ticketPickerMatches();
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      this.ticketPicker = null;
+      this.renderTicketOverlayEl();
+      return true;
+    }
+    if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
+      e.preventDefault();
+      if (matches.length > 0) picker.index = (picker.index + 1) % matches.length;
+      this.renderTicketOverlayEl();
+      return true;
+    }
+    if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
+      e.preventDefault();
+      if (matches.length > 0) picker.index = (picker.index - 1 + matches.length) % matches.length;
+      this.renderTicketOverlayEl();
+      return true;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const row = matches[Math.max(0, Math.min(picker.index, matches.length - 1))];
+      this.ticketPicker = null;
+      this.renderTicketOverlayEl();
+      if (row) {
+        const ref = this.parseIssueRef(row.url);
+        if (ref) this.setActiveTicket(ref);
+        else this.flashChip(`could not parse issue url: ${row.url}`);
+      }
+      return true;
+    }
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      picker.filter = picker.filter.slice(0, -1);
+      picker.index = 0;
+      this.renderTicketOverlayEl();
+      return true;
+    }
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      picker.filter += e.key;
+      picker.index = 0;
+      this.renderTicketOverlayEl();
+      return true;
+    }
+    return false;
+  }
+
+  /** spec 194: insert the working-ticket pin right after the goal line (or the
+   *  identity line when no goal) — same head-placement rationale as spec 148:
+   *  shared scope must not be buried under the tool-discoverability blocks. */
+  private insertTicketPin(lines: string[], lane: HarnessLane): void {
+    if (!this.activeTicket) return;
+    lines.splice(lane.goal ? 2 : 1, 0, renderActiveTicketPin(this.activeTicket));
   }
 
   /** spec 190: self-register a binding for a lane reporting progress on an issue it
@@ -6596,6 +6944,7 @@ export class AcpHarnessView implements ContentView {
     if (!this.harnessMemoryId || !this.harnessMemoryPort) {
       lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
       this.insertGoalLine(lines, lane);
+      this.insertTicketPin(lines, lane);
       return lines.join('\n');
     }
     // Memory is intentionally NOT advertised here. Per the handoff-only decision,
@@ -6645,6 +6994,7 @@ export class AcpHarnessView implements ContentView {
       'HTML artifacts: when the user asks for a visual or interactive view (side-by-side, diagram, annotated diff, dashboard), call artifact_new { title }. It returns a path to a file that ALREADY EXISTS — a styled scaffold (Binance dark theme + light/auto toggle); EDIT it with your normal edit tool (do not recreate it with Write) to replace the placeholder inside <main data-artifact-content>, then artifact_register { id }; the user opens it in their browser. Opt-in only — keep ordinary prose, plans, and answers in your turn text. Style rule: never color-code blocks with left accent borders (border-left rails) — use a full border, background tint, or heading color; the scaffold strips left-only borders at runtime.',
     );
     this.insertGoalLine(lines, lane);
+    this.insertTicketPin(lines, lane);
     return lines.join('\n');
   }
 
@@ -8133,6 +8483,12 @@ export class AcpHarnessView implements ContentView {
       await this.runGoalCommand(lane, text);
       return;
     }
+    // spec 194: shared working ticket — picker (no args), direct ref, refresh, clear.
+    if (parts[0] === '#ticket') {
+      this.setDraft(lane, '', 0);
+      await this.runTicketCommand(parts.slice(1));
+      return;
+    }
     if (parts[0] === '#cancel') {
       await this.cancelLane(lane);
       this.setDraft(lane, '', 0);
@@ -8386,9 +8742,15 @@ export class AcpHarnessView implements ContentView {
     // fallback when gh is absent. This is NOT the #fix-github-issue prompt-verb.
     if (parts[0] === '#dispatch-github-issue') {
       this.setDraft(lane, '', 0);
-      const ref = this.parseIssueRef(parts.slice(1).join(' '));
+      // spec 194: with no args, dispatch the shared working ticket.
+      const ticket = this.activeTicket;
+      const ref =
+        this.parseIssueRef(parts.slice(1).join(' ')) ??
+        (parts.length === 1 && ticket
+          ? { repo: ticket.repo, number: ticket.number, url: ticket.issueUrl }
+          : null);
       if (!ref) {
-        this.flashChip(`usage: ${parts[0]} <issue url | owner/repo#123>`);
+        this.flashChip(`usage: ${parts[0]} <issue url | owner/repo#123> (or set one with #ticket)`);
         return;
       }
       const issueKey = `${ref.repo}#${ref.number}`;
@@ -8455,9 +8817,17 @@ export class AcpHarnessView implements ContentView {
     verb: 'analyze-github-issue' | 'fix-github-issue' | 'tag-github-issue' | 'post-github-comment' | 'handle-github-issue',
     args: string[],
   ): Promise<void> {
-    const ref = this.parseIssueRef(args[0] ?? '');
+    let ref = this.parseIssueRef(args[0] ?? '');
+    // Args after the ref token are verb payload (labels for #tag-github-issue).
+    let payload = args.slice(1);
+    if (!ref && this.activeTicket) {
+      // spec 194: a no-ref verb resolves to the shared working ticket. No ref
+      // token was consumed, so ALL args are payload.
+      ref = { repo: this.activeTicket.repo, number: this.activeTicket.number, url: this.activeTicket.issueUrl };
+      payload = args;
+    }
     if (!ref) {
-      this.flashChip(`usage: #${verb} <issue url | owner/repo#123>`);
+      this.flashChip(`usage: #${verb} <issue url | owner/repo#123> (or set one with #ticket)`);
       return;
     }
     if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
@@ -8482,7 +8852,7 @@ export class AcpHarnessView implements ContentView {
         label = 'fixing issue';
         break;
       case 'tag-github-issue':
-        prompt = tagGithubIssuePrompt(input, args.slice(1));
+        prompt = tagGithubIssuePrompt(input, payload);
         label = 'labelling issue';
         break;
       case 'post-github-comment':
@@ -8672,6 +9042,7 @@ export class AcpHarnessView implements ContentView {
     this.renderTriageGaugeEl();
     this.renderTriageOverlayEl();
     this.renderActiveLaneQueue();
+    this.renderPinSlot();
     this.renderComposer();
     // Collapse/restore the orchestrator console around whichever modal render()
     // just opened or closed (lane/session/directive/model picker, help, memory).
@@ -8734,6 +9105,7 @@ export class AcpHarnessView implements ContentView {
     this.renderLanePeek();
     this.renderPlanPanel(lane);
     this.renderActiveLaneQueue();
+    this.renderPinSlot();
     this.renderComposer();
     this.scheduleStickyScroll();
   }
@@ -9796,7 +10168,6 @@ export class AcpHarnessView implements ContentView {
       this.coordinator.inboxDepth(lane.id),
     );
     this.composerEl.innerHTML =
-      this.renderGoalBar(lane) +
       `<div class="acp-harness__composer-meta">` +
       `<span class="${chipClass}">${esc(chip)}</span>` +
       // spec 157: persistent token explaining why tool detail is absent — the
@@ -9821,10 +10192,21 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-harness__help-hint">? help</span></div>`;
   }
 
-  /** spec 148: static goal-bar above the composer meta row, shown only when the
+  /** spec 148/194: ticket + goal pins in the lane rail's top slot (same surface
+   *  cluster as the lane peek — moved out of the composer). Rendered on
+   *  lane/state changes only, never per keystroke; hidden when neither is set. */
+  private renderPinSlot(): void {
+    const lane = this.activeLane();
+    if (lane) this.pinSlotEl.style.setProperty('--acp-lane-accent', lane.accent);
+    const html = this.renderTicketBar() + (lane ? this.renderGoalBar(lane) : '');
+    this.pinSlotEl.innerHTML = html;
+    this.pinSlotEl.hidden = html === '';
+  }
+
+  /** spec 148: static goal-bar in the rail pin slot, shown only when the
    *  active lane has a focus-scope goal. Quiet depth indicator — never blinks. The
    *  age is a snapshot refreshed on each render, deliberately NOT driven by a live
-   *  1s ticker (an idle lane with a goal must not keep the composer re-rendering —
+   *  1s ticker (an idle lane with a goal must not keep the rail re-rendering —
    *  idle CPU budget). Minutes-granularity makes the staleness invisible in practice. */
   private renderGoalBar(lane: HarnessLane): string {
     if (!lane.goal) return '';
@@ -9834,6 +10216,24 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-harness__goal-label">◎ goal</span>` +
       `<span class="acp-harness__goal-text">${esc(lane.goal.text)}</span>` +
       `<span class="acp-harness__goal-age">${esc(age)}</span>` +
+      `</div>`
+    );
+  }
+
+  /** spec 194: harness-scoped working-ticket bar, sibling of the goal bar in the
+   *  rail pin slot. Shown while a ticket is set regardless of the active lane —
+   *  the ticket is shared. Quiet, never blinks (same budget as the goal bar). */
+  private renderTicketBar(): string {
+    const t = this.activeTicket;
+    if (!t) return '';
+    const title = t.title && t.title !== t.issueKey ? t.title : '';
+    const state = t.state === 'closed' ? ' · closed' : '';
+    return (
+      `<div class="acp-harness__ticket-bar">` +
+      `<span class="acp-harness__ticket-label">⬡ ticket</span>` +
+      `<span class="acp-harness__ticket-key">${esc(t.issueKey)}</span>` +
+      (title ? `<span class="acp-harness__ticket-title">${esc(title)}</span>` : '') +
+      `<span class="acp-harness__ticket-rev">r${t.revision}${state}</span>` +
       `</div>`
     );
   }
@@ -11840,6 +12240,15 @@ function sanitizeSrc(value: string): string | null {
   const scheme = v.slice(0, colon).toLowerCase();
   if (scheme === 'http' || scheme === 'https') return v;
   return null;
+}
+
+/** Decide what a click on a transcript anchor does. The chrome never creates
+ *  <a> elements, so every anchor in this view is agent-rendered markdown — and
+ *  the single app webview must never navigate away, so every click is
+ *  intercepted: http/https/mailto always open in the OS browser; anything else
+ *  (sanitizeHref '#' fallbacks, fragments, relative paths) is suppressed. */
+export function agentLinkOpenAction(href: string): 'external' | 'suppress' {
+  return /^(https?|mailto):/i.test(normalizeUrl(href)) ? 'external' : 'suppress';
 }
 
 /** Resolve local <img src> in a rendered transcript body to Tauri asset URLs so
@@ -14663,8 +15072,14 @@ export function stringifyToolValue(value: unknown): string {
   return '';
 }
 
-function boundedOutputLines(value: string, maxLines: number): string {
-  const kept = value
+export function boundedOutputLines(value: string, maxLines: number): string {
+  // Backends that captured their tool output under a PTY / forced color (e.g. `gh`
+  // colorizing JSON) hand us raw ANSI SGR codes. This panel renders via
+  // `pre.textContent`, so an unhandled ESC (0x1b) byte shows as a garbage glyph and
+  // the trailing `[1;37m` shows as literal text. Strip ANSI + leftover C0/C1 control
+  // chars here (keeping \t and \n) so every lane's output reads clean.
+  const kept = stripAnsi(value)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
     .replace(/\r/g, '')
     .split('\n')
     .map((line) => line.replace(/\s+$/, ''))

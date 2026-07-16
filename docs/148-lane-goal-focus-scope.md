@@ -7,7 +7,7 @@
 > `src/acp/acp-harness-view.ts` — `LaneGoal` type + `goal?` field; `goalSeedPrompt()`;
 > `runGoalCommand()` + `#goal` branch in `runHashCommand()`; `newLaneSession()` now
 > returns `Promise<boolean>`; `insertGoalLine()` injects the pin at the packet head in both return paths of
-> `renderPromptMemoryPacket()`; `renderGoalBar()` above the composer meta row;
+> `renderPromptMemoryPacket()`; `renderGoalBar()` in the lane-rail pin slot (`renderPinSlot()`);
 > help-drawer entries. Styling: `.acp-harness__goal-bar` in `src/styles/acp-harness.css`.
 > No new MCP tools, no Rust changes. 191 harness tests green.
 >
@@ -43,8 +43,8 @@ A per-lane **Goal**: a short statement of what the lane is currently working on,
 - **`#goal clear`** — remove the scope. Does **not** clear the session (see *Clear semantics*).
 
 While a goal is active it is (a) injected as one line into the per-turn `lane-context.md`
-packet so the agent stays anchored to the task, and (c) shown as a static goal-bar above the
-composer meta row so the human always sees which task the lane is on.
+packet so the agent stays anchored to the task, and (c) shown as a static goal-bar in the
+lane rail's pin slot (with the lane peek) so the human always sees which task the lane is on.
 
 **This deliberately is NOT Claude Code's `/goal`.** It borrows the *name* and the
 *clear-on-new* behaviour, but **not** the autonomy loop or the evaluator. There is no
@@ -92,7 +92,7 @@ So Krypton's goal drops the loop and the evaluator entirely and keeps focus-scop
   blocks the agent treated it as background and often drifted off-goal; up top it reads as a
   standing instruction.
 - **Composer meta row** — `.acp-harness__composer-meta` (flat telemetry deck, middot-separated).
-  The goal-bar sits just above it.
+  The goal-bar renders separately, in the lane rail's pin slot.
 
 ### Pin-mechanism options considered
 
@@ -201,16 +201,21 @@ lane's next normal turn.
 
 ### UI (c) — the goal-bar
 
-A static, single-line bar rendered **above** `.acp-harness__composer-meta`, only when
-`lane.goal` is set:
+A static, single-line bar rendered in the lane rail's top **pin slot**
+(`data-slot="pins"`, the same surface cluster as the lane peek; `renderPinSlot()`),
+below the spec-194 ticket bar when both are set, only when `lane.goal` is set.
+(Originally shipped above `.acp-harness__composer-meta`; moved to the rail so the
+composer stays a pure input surface.)
 
 - Label `◎ goal` (uppercase chrome label, letter-spaced, dimmed lane-accent).
-- The goal text in the harness text colour, single line, ellipsised if long (it is user-typed
-  prose — **not** uppercased, per the path-casing rule).
+- The goal text in the harness text colour, wrapping to multiple lines in the narrow rail so
+  the full content stays readable — never ellipsised (it is user-typed prose — **not**
+  uppercased, per the path-casing rule).
 - A right-aligned age (`2m`, `1h`) in muted text.
-- Background: a faint `color-mix(lane-accent 8%, transparent)` tint — **flat**, no border, no
-  left rail, no nested box (consistent with the meta-row telemetry surface and the project's
-  flat-chrome rules).
+- Chrome: the same panel formula as the lane peek / plan slots — opaque dark gradient
+  backdrop, 1px border (lane-accent tinted), drop shadow — so the rail reads as one family.
+  No left rail, no nested box. (Originally shipped as a borderless flat tint; restyled to
+  match the sibling rail panels after user feedback.)
 
 Reads like the backpressure gauge: a quiet depth/state indicator, never blinking, never an
 alert. Mockup: `docs/prototypes/` (the registered artifact from the grill — to be committed as
@@ -238,7 +243,7 @@ alert. Mockup: `docs/prototypes/` (the registered artifact from the grill — to
   no-ops. (Bare `#goal` view and `#goal clear` are allowed any time — they do not touch the
   session.) This is stricter than an earlier draft that allowed `awaiting_peer` (Blocker 1).
 - **`#goal clear` with no active goal** — flash `no active goal`, no-op.
-- **Goal text with newlines / very long** — store as-is; the goal-bar ellipsises, the packet
+- **Goal text with newlines / very long** — store as-is; the goal-bar wraps, the packet
   line is single-line (collapse internal newlines to spaces for the injected line only).
 - **`#new` / `#new!` while a goal is active** — leave the goal in place (the agent refocuses on
   the same task with a fresh session). The goal-bar persists; the next turn re-injects the pin.
@@ -267,7 +272,8 @@ alert. Mockup: `docs/prototypes/` (the registered artifact from the grill — to
     the code round — see revisions).
   - `goalSeedPrompt(text)` helper (embeds the goal); `renderGoalBar()` in the composer markup;
     help-drawer entries.
-- `src/styles/acp-harness.css` — `.acp-harness__goal-bar` (+ label/text/age) flat styling.
+- `src/styles/acp-harness.css` — `.acp-harness__goal-bar` (+ label/text/age); panel chrome
+  shared with the peek/plan slots (originally flat, restyled per user feedback).
 - `CONTEXT.md` — *Goal* term (added during grill).
 - `docs/PROGRESS.md` — Recent Landing entry; harness command help-drawer lists `#goal`.
 
