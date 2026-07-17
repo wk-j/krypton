@@ -151,6 +151,21 @@ export function providerForBackend(backendId: string): UsageProvider | null {
   return null;
 }
 
+/** Codex quota label derived from the window's ACTUAL duration. The windows
+ *  are not fixed contract — the 5h primary disappeared mid-2026 when Codex
+ *  moved to a weekly-only limit (primary became `window_minutes: 10080`,
+ *  secondary null) — so never hard-code "5h"/"week" for a slot. */
+export function codexWindowLabel(windowMinutes: number): string {
+  if (!Number.isFinite(windowMinutes) || windowMinutes <= 0) return 'window';
+  if (windowMinutes % 10080 === 0) {
+    const weeks = windowMinutes / 10080;
+    return weeks === 1 ? 'week' : `${weeks}w`;
+  }
+  if (windowMinutes % 1440 === 0) return `${windowMinutes / 1440}d`;
+  if (windowMinutes % 60 === 0) return `${windowMinutes / 60}h`;
+  return `${windowMinutes}m`;
+}
+
 export function summarizeUsage(state: ProviderUsageState): ProviderUsageSummary {
   const quotas: UsageQuotaSummary[] = [];
   const data = state.data;
@@ -165,8 +180,8 @@ export function summarizeUsage(state: ProviderUsageState): ProviderUsageSummary 
     }
   } else if (state.provider === 'codex' && data) {
     const u = data as CodexUsage;
-    if (u.primary) quotas.push(quota('5h', u.primary.usedPercent));
-    if (u.secondary) quotas.push(quota('week', u.secondary.usedPercent));
+    if (u.primary) quotas.push(quota(codexWindowLabel(u.primary.windowMinutes), u.primary.usedPercent));
+    if (u.secondary) quotas.push(quota(codexWindowLabel(u.secondary.windowMinutes), u.secondary.usedPercent));
   } else if (state.provider === 'copilot' && data) {
     const u = data as CopilotUsage;
     if (u.premium && !u.premium.unlimited) quotas.push(quota('premium', u.premium.usedPercent));

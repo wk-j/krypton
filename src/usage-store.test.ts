@@ -5,9 +5,11 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 
 import {
   UsageStore,
+  codexWindowLabel,
   providerForBackend,
   summarizeUsage,
   type ClaudeUsage,
+  type CodexUsage,
   type GrokUsage,
   type ProviderUsageState,
 } from './usage-store';
@@ -84,6 +86,42 @@ describe('usage summaries', () => {
         pending: false,
       }).quotas,
     ).toEqual([]);
+  });
+
+  it('labels codex windows by their actual duration, not a fixed 5h/week slot', () => {
+    // Post-mid-2026 Codex payload: primary IS the weekly window, no secondary.
+    const weeklyOnly: CodexUsage = {
+      primary: { usedPercent: 19, windowMinutes: 10080, resetsAt: 1784783452 },
+      secondary: null,
+      planType: 'plus',
+      observedAt: '2026-07-16T17:11:11Z',
+      sessionFile: '/tmp/rollout.jsonl',
+    };
+    expect(
+      summarizeUsage({ provider: 'codex', data: weeklyOnly, error: null, pending: false }).quotas,
+    ).toEqual([{ label: 'week', usedPercent: 19 }]);
+
+    // Legacy dual-window payload keeps its old labels.
+    const legacy: CodexUsage = {
+      ...weeklyOnly,
+      primary: { usedPercent: 3, windowMinutes: 300, resetsAt: 1781076474 },
+      secondary: { usedPercent: 34, windowMinutes: 10080, resetsAt: 1781141354 },
+    };
+    expect(
+      summarizeUsage({ provider: 'codex', data: legacy, error: null, pending: false }).quotas,
+    ).toEqual([
+      { label: '5h', usedPercent: 3 },
+      { label: 'week', usedPercent: 34 },
+    ]);
+  });
+
+  it('derives codex window labels from minutes', () => {
+    expect(codexWindowLabel(300)).toBe('5h');
+    expect(codexWindowLabel(10080)).toBe('week');
+    expect(codexWindowLabel(20160)).toBe('2w');
+    expect(codexWindowLabel(1440)).toBe('1d');
+    expect(codexWindowLabel(90)).toBe('90m');
+    expect(codexWindowLabel(0)).toBe('window');
   });
 
   it('maps only providers with existing authoritative usage sources', () => {

@@ -10,7 +10,9 @@
 import type { ContentView, PaneContentType } from './types';
 import type { PaletteAction } from './palette-types';
 import {
+  codexWindowLabel,
   usageStore,
+  type CodexWindow,
   type CopilotQuota,
   type UsageProvider,
   type UsageWindow,
@@ -19,12 +21,22 @@ import {
 /** Static error sentinels from the Rust side, mapped to display hints. */
 const ERROR_HINTS: Record<string, string> = {
   'not-connected': 'not connected',
-  'token-expired': 'token expired — open a Claude lane or run claude to refresh',
   'usage-scope-missing': 'Claude login lacks user:profile scope — usage unavailable',
   'rate-limited': 'rate limited — retrying next cycle',
   'no-recent-data': 'no recent data — run codex once',
   'unexpected-response': 'unexpected response — retrying next cycle',
   'network-error': 'fetch failed — retrying next cycle',
+};
+
+/** `token-expired` names the PROVIDER's own credential, so the remedy must be
+ *  provider-specific — each CLI owns its token refresh (claude OAuth,
+ *  ~/.config/github-copilot, ~/.cursor/cli-config.json, ~/.grok/auth.json). */
+const TOKEN_EXPIRED_HINTS: Record<UsageProvider, string> = {
+  claude: 'token expired — open a Claude lane or run claude to refresh',
+  codex: 'token expired — run codex to refresh',
+  copilot: 'token expired — sign in to GitHub Copilot again to refresh',
+  cursor: 'token expired — run cursor-agent login to refresh',
+  grok: 'token expired — run grok to refresh',
 };
 
 /** Widget freshness states — dot color is always paired with the foot text. */
@@ -66,7 +78,7 @@ const PROVIDER_LOGOS: Record<string, string> = {
     '</svg>',
 };
 
-function errorHint(err: unknown): string {
+function errorHint(err: unknown, provider: UsageProvider): string {
   const key = String(err);
   // "rate-limited:<epochMs>" — Retry-After deadline from the backend. Foot
   // closures re-evaluate this every tick, so the countdown stays live.
@@ -77,6 +89,7 @@ function errorHint(err: unknown): string {
     }
     return ERROR_HINTS['rate-limited'];
   }
+  if (key === 'token-expired') return TOKEN_EXPIRED_HINTS[provider];
   return ERROR_HINTS[key] ?? `fetch failed (${key}) — retrying next cycle`;
 }
 
@@ -292,7 +305,7 @@ export class UsageContentView implements ContentView {
       }
       const error = state.error;
       if (error) {
-        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
+        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error, 'claude')}`);
       } else {
         this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
       }
@@ -301,7 +314,7 @@ export class UsageContentView implements ContentView {
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
       const error = state.error;
-      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
+      this.foot(widget, 'off', () => (error ? errorHint(error, 'claude') : 'not connected'));
     }
     return widget;
   }
@@ -322,17 +335,24 @@ export class UsageContentView implements ContentView {
     const widget = this.widget('codex', metaParts.join(' · '), widgetState);
 
     if (u) {
+      // Label each window by its ACTUAL duration — Codex windows changed shape
+      // mid-2026 (5h primary dropped; primary became the weekly window), so a
+      // fixed "session 5h" label misreports the live payload.
+      const gaugeLabel = (w: CodexWindow): string =>
+        w.windowMinutes > 0 && w.windowMinutes < 1440
+          ? `session ${codexWindowLabel(w.windowMinutes)}`
+          : codexWindowLabel(w.windowMinutes);
       if (u.primary) {
-        this.gauge(widget, 'session 5h', u.primary.usedPercent, u.primary.resetsAt * 1000);
+        this.gauge(widget, gaugeLabel(u.primary), u.primary.usedPercent, u.primary.resetsAt * 1000);
       }
       if (u.secondary) {
-        this.gauge(widget, 'week', u.secondary.usedPercent, u.secondary.resetsAt * 1000);
+        this.gauge(widget, gaugeLabel(u.secondary), u.secondary.usedPercent, u.secondary.resetsAt * 1000);
       }
       const observed = Date.parse(u.observedAt);
       const error = state.error;
       const asOf = () => (Number.isNaN(observed) ? 'as of last session' : `as of ${formatAge(observed)}`);
       if (error) {
-        this.foot(widget, 'stale', () => `${asOf()} — ${errorHint(error)}`);
+        this.foot(widget, 'stale', () => `${asOf()} — ${errorHint(error, 'codex')}`);
       } else {
         // Codex data is a local snapshot: freshness is the last codex
         // activity, not the last poll, so the foot always says "as of".
@@ -343,7 +363,7 @@ export class UsageContentView implements ContentView {
       this.foot(widget, 'loading', () => 'reading sessions…');
     } else {
       const error = state.error;
-      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
+      this.foot(widget, 'off', () => (error ? errorHint(error, 'codex') : 'not connected'));
     }
     return widget;
   }
@@ -379,7 +399,7 @@ export class UsageContentView implements ContentView {
       row('completions', u.completions);
       const error = state.error;
       if (error) {
-        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
+        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error, 'copilot')}`);
       } else {
         this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
       }
@@ -388,7 +408,7 @@ export class UsageContentView implements ContentView {
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
       const error = state.error;
-      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
+      this.foot(widget, 'off', () => (error ? errorHint(error, 'copilot') : 'not connected'));
     }
     return widget;
   }
@@ -430,7 +450,7 @@ export class UsageContentView implements ContentView {
       }
       const error = state.error;
       if (error) {
-        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
+        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error, 'cursor')}`);
       } else if (u.totalPercentUsed !== null) {
         this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
       } else if (u.cycleStart !== null) {
@@ -444,7 +464,7 @@ export class UsageContentView implements ContentView {
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
       const error = state.error;
-      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
+      this.foot(widget, 'off', () => (error ? errorHint(error, 'cursor') : 'not connected'));
     }
     return widget;
   }
@@ -476,7 +496,7 @@ export class UsageContentView implements ContentView {
       }
       const error = state.error;
       if (error) {
-        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error)}`);
+        this.foot(widget, 'stale', () => `stale · ${formatAge(u.fetchedAt)} — ${errorHint(error, 'grok')}`);
       } else {
         this.foot(widget, 'ok', () => `live · updated ${formatAge(u.fetchedAt)}`);
       }
@@ -485,7 +505,7 @@ export class UsageContentView implements ContentView {
       this.foot(widget, 'loading', () => 'connecting…');
     } else {
       const error = state.error;
-      this.foot(widget, 'off', () => (error ? errorHint(error) : 'not connected'));
+      this.foot(widget, 'off', () => (error ? errorHint(error, 'grok') : 'not connected'));
     }
     return widget;
   }
