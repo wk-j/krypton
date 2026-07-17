@@ -25,11 +25,13 @@ import {
   postGithubCommentPrompt,
   renderActiveTicketPin,
   tagGithubIssuePrompt,
+  tldrawDrawPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
 import { pollyRequestPrompt } from './polly';
 import { debbyRequestPrompt } from './debby';
+import { saltyRequestPrompt } from './salty';
 import { reviewRequestPrompt } from './review';
 import { resolveVerbTokens } from './verb-compose';
 import { injectableVerbPrompt } from './verb-registry';
@@ -63,10 +65,16 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'wiki', args: '[<hint>]', description: 'ingest this conversation into the repo wiki' },
   { name: 'recall', args: '<question>', description: 'answer a question from the repo wiki' },
   { name: 'directive', args: '<what to create/change>', description: 'author a reusable harness directive' },
+  { name: 'draw', args: '<request>', description: 'draw in the focused tldraw Offline canvas' },
   { name: 'review', args: '[<lane>…] [-- <doc | note>]', description: 'run a multi-reviewer design/diff review' },
   { name: 'orchestrator', args: '', description: 'designate this lane the orchestrator seat + open the console' },
   { name: 'polly', args: '<task>', description: 'Polly orchestration — spawns Cursor + Claude + Codex workers' },
   { name: 'debby', args: '<question>', description: 'Debby brainstorming — asks Claude + Codex heads' },
+  {
+    name: 'salty',
+    args: '[+fellow] <task> | clear',
+    description: 'Salty model-tiered orchestration — Sonnet/Opus/Codex executors with a plan-pushback gate',
+  },
   {
     name: 'ticket',
     args: '[<issue url | owner/repo#123> | refresh | clear]',
@@ -212,6 +220,13 @@ export function commandMeta(): Record<string, CommandMeta> {
       badges: ['agent'],
       prompt: directivePrompt('<config-path>', '<intent>'),
     },
+    draw: {
+      category: 'agent',
+      badges: ['workflow'],
+      anatomy: 'discover canvas → inspect shapes → batch edit via /exec → verify screenshot',
+      lanes: 'same lane',
+      prompt: tldrawDrawPrompt('<drawing request>'),
+    },
     review: {
       category: 'agent',
       badges: ['workflow'],
@@ -257,6 +272,46 @@ export function commandMeta(): Record<string, CommandMeta> {
           heads: [
             { displayName: '<head-1>', laneId: '<lane-id>', backendId: 'claude' },
             { displayName: '<head-2>', laneId: '<lane-id>', backendId: 'codex' },
+          ],
+          spawned: [],
+          missing: [],
+          errored: [],
+        },
+      }),
+    },
+    salty: {
+      category: 'agent',
+      badges: ['workflow'],
+      anatomy:
+        'ensure tiered executors (sonnet/opus/codex, +fable opt-in) → plan → thinker/codex pushback → dispatch by tier → gates + cross-review → synthesis',
+      lanes: '4 lanes (+fellow: 5)',
+      prompt: saltyRequestPrompt({
+        task: '<task>',
+        intent: '',
+        roster: {
+          orchestrator: PLACEHOLDER_ORCHESTRATOR,
+          executors: [
+            {
+              displayName: '<mechanical>',
+              laneId: '<lane-id>',
+              backendId: 'claude',
+              role: 'mechanical',
+              modelApply: { requested: 'sonnet', effective: '<model-id>', applied: true },
+            },
+            {
+              displayName: '<thinker>',
+              laneId: '<lane-id>',
+              backendId: 'claude',
+              role: 'thinker',
+              modelApply: { requested: 'opus', effective: '<model-id>', applied: true },
+            },
+            {
+              displayName: '<codex-peer>',
+              laneId: '<lane-id>',
+              backendId: 'codex',
+              role: 'codexPeer',
+              modelApply: { effective: '<model-id>', applied: true },
+            },
           ],
           spawned: [],
           missing: [],

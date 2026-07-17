@@ -2391,16 +2391,15 @@
   gap: 6px;
 }
 
-/* spec 148: active goal — a quiet focus-scope bar in the rail pin slot. Same
-   panel chrome as the lane peek / plan slots (gradient backdrop, 1px border,
-   shadow) so the rail reads as one family, with the lane accent on the border.
-   A static depth indicator, never animated. The rail is narrow (320px), so the
-   text WRAPS to keep the full content readable — never ellipsised away. */
-.acp-harness__goal-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 8px;
+/* spec 148/194: goal + ticket bars share one inline flow so wrapped titles and
+   goals return to the card's left content edge instead of carrying a hanging
+   indent. The meta marker floats at the top-right; placing it first in the DOM
+   lets only the first line reserve its width. Same panel chrome as the lane
+   peek / plan slots (gradient backdrop, 1px border, shadow); quiet, never
+   animated, never ellipsised. */
+.acp-harness__goal-bar,
+.acp-harness__ticket-bar {
+  display: flow-root;
   padding: 6px 12px;
   font-size: 0.78em;
   letter-spacing: 0.02em;
@@ -2408,75 +2407,48 @@
   line-height: 1.55;
   background:
     linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
-  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, #8effb0) 28%, transparent);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
-.acp-harness__goal-label {
-  flex: 0 0 auto;
+/* spec 148: the goal bar carries the active lane's accent… */
+.acp-harness__goal-bar {
+  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, #8effb0) 28%, transparent);
+}
+
+/* spec 194: …while the ticket bar is harness-scoped (same whichever lane is
+   active), so it keeps a fixed amber accent instead. */
+.acp-harness__ticket-bar {
+  border: 1px solid rgba(255, 176, 0, 0.28);
+}
+
+.acp-harness__goal-label,
+.acp-harness__ticket-label {
+  margin-right: 8px;
   text-transform: uppercase;
   letter-spacing: 0.10em;
   font-size: 0.86em;
   color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 55%, #d8e8d8);
 }
 
-.acp-harness__goal-text {
-  flex: 1 1 12ch;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: rgba(216, 232, 216, 0.95);
-}
-
-.acp-harness__goal-age {
-  flex: 0 0 auto;
-  color: rgba(216, 232, 216, 0.40);
-}
-
-/* spec 194: shared working-ticket bar — sibling of the goal bar in the rail
-   pin slot, but harness-scoped (same whichever lane is active), so it keeps a
-   fixed amber accent instead of the per-lane accent. Same panel chrome as the
-   goal bar / peek / plan. Quiet, never blinks. Wraps like the goal bar — full
-   content, never ellipsised. */
-.acp-harness__ticket-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 8px;
-  padding: 6px 12px;
-  font-size: 0.78em;
-  letter-spacing: 0.02em;
-  /* Same leading as the goal bar — wrapped Thai needs it. */
-  line-height: 1.55;
-  background:
-    linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
-  border: 1px solid rgba(255, 176, 0, 0.28);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
 .acp-harness__ticket-label {
-  flex: 0 0 auto;
-  text-transform: uppercase;
-  letter-spacing: 0.10em;
-  font-size: 0.86em;
   color: color-mix(in srgb, #ffb000 55%, #d8e8d8);
 }
 
-.acp-harness__ticket-key {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: #ffd880;
-}
-
-.acp-harness__ticket-title {
-  flex: 1 1 12ch;
+.acp-harness__goal-text,
+.acp-harness__ticket-body {
   min-width: 0;
   overflow-wrap: anywhere;
   color: rgba(216, 232, 216, 0.95);
 }
 
+.acp-harness__ticket-key {
+  color: #ffd880;
+}
+
+.acp-harness__goal-age,
 .acp-harness__ticket-rev {
-  flex: 0 0 auto;
+  float: right;
+  margin-left: 8px;
   color: rgba(216, 232, 216, 0.40);
 }
 

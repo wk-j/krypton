@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-07-15
+> Last updated: 2026-07-17
 
 ## Overview
 
@@ -20,6 +20,42 @@
 ---
 
 ## Recent Landings
+
+- **tldraw Offline local-agent command (spec 196)** — `#draw <request>` now
+  injects a one-shot, version-aware workflow into the active ACP lane: discover
+  the running tldraw Offline server, read its runtime `/readme`, find and inspect
+  the focused open document, batch edits through `/api/doc/:id/exec`, then
+  verify shape records plus a screenshot and remind the user to save. The
+  command is palette/help/`/commands`-manifest visible and uses the lane's
+  existing shell tools and permission policy—no always-on MCP schema, Rust
+  proxy, Tauri IPC, lane state, or permission bypass. Its prompt treats the
+  request/canvas as untrusted data, keeps the per-launch bearer token transient
+  and out of commands/transcripts/files, and explicitly prohibits direct
+  `.tldraw`/SQLite writes; the desktop app remains the sole document owner.
+  Prompt, manifest, and dispatcher contracts are covered by focused tests. See
+  `docs/196-tldraw-local-agent-command.md`.
+
+- **`#salty` model-tiered orchestration (spec 195)** — third orchestration
+  sibling of `#polly`/`#debby`, adapting SaltyAom's orchestrator-workflow gist:
+  the active lane becomes a planning-only orchestrator and the harness ensures a
+  **model-tiered** executor roster — mechanical (claude@sonnet, bypass), thinker
+  (claude@opus, responder), codex-peer (codex, bypass; model intentionally
+  inherited from `lane_models.codex.active`), `+fellow` opt-in adds
+  claude@fable. The one new mechanism is per-lane spawn-time model application:
+  `applySaltyModel` resolves a spec-126 alias against the agent-advertised
+  `availableModels` (exact/unique-substring; unresolved = degrade, never guess)
+  and reuses the spec-127 `switchLaneModel` path; the `{requested, effective,
+  applied}` outcome is embedded in `saltyRequestPrompt` so the orchestrator
+  routes around degraded tiers. The plan → thinker/codex **pushback gate** →
+  dispatch-by-tier (single executor, no fan-out for ordinary slices) → gates +
+  cross-review → synthesize loop is prompt-driven best-effort (ADR-0012); the
+  gist's worktree merge maps to the shared-worktree single unstaged change-set.
+  Reuse is idle-stamped-lanes-only with per-run tier revalidation; built-in
+  roles are now mutually exclusive across Salty/Polly/Debby with permission
+  snapshot restore; partial-roster contract aborts without a thinker or any
+  implementer; `#salty clear` sweeps roles; `salty-bypass` chrome chip. Draft
+  spec was peer-reviewed by Codex-2 (5 blockers folded in pre-approval).
+  `tsc` + 357 acp vitest green. See `docs/195-salty-tiered-orchestration.md`.
 
 - **Working-ticket picker + active-ticket pin (spec 194)** — `#ticket` opens a
   keyboard-first fuzzy picker — its own modal dialog, not a composer popup —

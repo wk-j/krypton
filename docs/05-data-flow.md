@@ -308,6 +308,13 @@
        orchestrator, and dispatchTurn injects debbyRequestPrompt for peer_send
        fan-out. Debby heads are plain responders and do not receive a bypass
        permission mode.
+    g. #draw <request> (spec 196) injects one version-aware tldraw Offline
+       workflow into the active lane. The lane discovers the app's loopback
+       server, reads its runtime /readme, inspects the focused open document,
+       mutates it through /api/doc/:id/exec, and verifies records plus a
+       screenshot using its normal tools and permission flow. Krypton never
+       receives or persists the bearer token and never writes the native
+       .tldraw format; tldraw Offline remains the sole document owner.
 
 ```
 PUSH (lane → harness), at end of an editing turn:

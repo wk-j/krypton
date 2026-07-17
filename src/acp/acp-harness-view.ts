@@ -110,6 +110,7 @@ import {
   postGithubCommentPrompt,
   renderActiveTicketPin,
   tagGithubIssuePrompt,
+  tldrawDrawPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
@@ -119,7 +120,7 @@ import { applyVerbSelection, filteredVerbNames, verbPaletteContext } from './ver
 
 // Re-exported from their new home (spec 185 moved the prompt builders to
 // harness-prompts.ts) so existing import sites — tests included — keep working.
-export { directivePrompt, wikiIngestPrompt, wikiRecallPrompt } from './harness-prompts';
+export { directivePrompt, tldrawDrawPrompt, wikiIngestPrompt, wikiRecallPrompt } from './harness-prompts';
 import {
   POLLY_ROLE_PROMPTS,
   parsePollyTask,
@@ -139,6 +140,19 @@ import {
   type DebbyHeadBackend,
   type DebbyRoster,
 } from './debby';
+import {
+  SALTY_ROLE_PROMPTS,
+  parseSaltyCommand,
+  resolveSaltyModel,
+  saltyExecutorPlan,
+  saltyRequestPrompt,
+  type SaltyEnsureOutcome,
+  type SaltyExecutorRole,
+  type SaltyExecutorSpec,
+  type SaltyModelApply,
+  type SaltyRole,
+  type SaltyRoster,
+} from './salty';
 import {
   reviewRequestPrompt,
   REVIEW_INTENT_CAP,
@@ -693,6 +707,13 @@ interface HarnessLane {
   /** spec 167: built-in Debby role overlay (orchestrator / head). Heads are
    *  plain responders; unlike Polly implementers this never changes permissions. */
   debbyBuiltinRole: DebbyBuiltinRole | null;
+  /** spec 195: built-in Salty role overlay (orchestrator / model-tiered executor).
+   *  Mutually exclusive with the Polly/Debby overlays. */
+  saltyBuiltinRole: SaltyRole | null;
+  /** spec 195: stashes the user's own permission mode while a lane serves as a
+   *  bypassed Salty executor (mechanical/codex-peer), mirroring
+   *  `pollySavedPermissionMode`; null when not enlisted. */
+  saltySavedPermissionMode: 'normal' | 'acceptEdits' | 'bypass' | null;
   /** spec 130: lane participates in attention-triage audit. Attention tools are
    *  default-on for every harness-memory-capable lane; this flag now drives local
    *  audit/UI behavior rather than MCP tool visibility. */
@@ -1148,6 +1169,8 @@ const LANE_DEFAULTS = {
   pollyBuiltinRole: null,
   pollySavedPermissionMode: null,
   debbyBuiltinRole: null,
+  saltyBuiltinRole: null,
+  saltySavedPermissionMode: null,
   triageEquipped: true,
   triageOverride: null,
   flaggedThisTurn: false,
@@ -3181,11 +3204,13 @@ export class AcpHarnessView implements ContentView {
 
     orchestratorLane.pollyBuiltinRole = 'orchestrator';
     this.clearDebbyBuiltinRole(orchestratorLane);
+    this.clearSaltyBuiltinRole(orchestratorLane);
     for (const worker of workers) {
       const workerLane = this.lanes.find((l) => l.id === worker.laneId);
       if (!workerLane) continue;
       workerLane.pollyBuiltinRole = 'implementer';
       this.clearDebbyBuiltinRole(workerLane);
+      this.clearSaltyBuiltinRole(workerLane);
       // Polly implementers auto-accept permissions for the run; stash the user's
       // own mode once (guard against re-stamping a reused lane that is already
       // bypassed) so clearPollyBuiltinRole can restore it.
@@ -3265,11 +3290,13 @@ export class AcpHarnessView implements ContentView {
 
     orchestratorLane.debbyBuiltinRole = 'orchestrator';
     this.clearPollyBuiltinRole(orchestratorLane);
+    this.clearSaltyBuiltinRole(orchestratorLane);
     for (const head of heads) {
       const headLane = this.lanes.find((l) => l.id === head.laneId);
       if (!headLane) continue;
       headLane.debbyBuiltinRole = 'head';
       this.clearPollyBuiltinRole(headLane);
+      this.clearSaltyBuiltinRole(headLane);
     }
     this.render();
 
@@ -3287,6 +3314,257 @@ export class AcpHarnessView implements ContentView {
         errored,
       },
     };
+  }
+
+  /** Drop this lane's Salty role overlay (self-scoped — no cross-lane sweep). */
+  private clearSaltyBuiltinRole(lane: HarnessLane): void {
+    // Restore the user's own permission mode if this lane was bypassed as a
+    // Salty mechanical/codex-peer executor (null saved mode = orchestrator,
+    // responder, or never enlisted — its permissionMode is left untouched).
+    if (lane.saltySavedPermissionMode !== null) {
+      lane.permissionMode = lane.saltySavedPermissionMode;
+      lane.saltySavedPermissionMode = null;
+    }
+    lane.saltyBuiltinRole = null;
+  }
+
+  /** spec 195: reuse ONLY an idle lane already stamped with this exact role —
+   *  never conscript an arbitrary user lane (that would hijack its session and
+   *  silently change its model). Busy/awaiting stamped lanes are skipped
+   *  (never `session/set_model` mid-turn) — a fresh lane is spawned instead. */
+  private findSaltyExecutorLane(
+    spec: SaltyExecutorSpec,
+    claimed: Set<string>,
+  ): HarnessLane | undefined {
+    return this.lanes.find(
+      (l) =>
+        !claimed.has(l.id) &&
+        l.saltyBuiltinRole === spec.role &&
+        l.backendId === spec.backendId &&
+        l.status === 'idle' &&
+        !!l.client,
+    );
+  }
+
+  private async addSaltyExecutorLane(
+    backendId: string,
+    claimed: Set<string>,
+  ): Promise<HarnessLane | null> {
+    const beforeCount = this.lanes.length;
+    await this.addLane(backendId);
+    if (this.lanes.length <= beforeCount) return null;
+    const candidates = this.lanes.filter(
+      (l) => l.backendId === backendId && !claimed.has(l.id) && l.saltyBuiltinRole === null,
+    );
+    return candidates[candidates.length - 1] ?? null;
+  }
+
+  /** spec 195: apply an executor's model tier via the spec-127 switch path.
+   *  Resolution: exact/unique-substring match against the agent-advertised
+   *  list; an unresolved alias degrades (never sends a guessed id to
+   *  `session/set_model`) and lights the existing modelApplyFailed amber chip.
+   *  The returned outcome is embedded in `saltyRequestPrompt` so the
+   *  orchestrator can route around a degraded tier. */
+  private async applySaltyModel(
+    lane: HarnessLane,
+    spec: SaltyExecutorSpec,
+  ): Promise<SaltyModelApply> {
+    const current = lane.currentModelId ?? lane.modelName ?? undefined;
+    if (!spec.modelAlias) return { effective: current, applied: true };
+    const resolved = resolveSaltyModel(spec.modelAlias, lane.availableModels);
+    if (!resolved) {
+      lane.modelApplyFailed = true;
+      return { requested: spec.modelAlias, effective: current, applied: false };
+    }
+    if (resolved.model_id === lane.currentModelId) {
+      return { requested: spec.modelAlias, effective: resolved.model_id, applied: true };
+    }
+    await this.switchLaneModel(lane, resolved);
+    const applied = lane.currentModelId === resolved.model_id && !lane.modelApplyFailed;
+    return { requested: spec.modelAlias, effective: lane.currentModelId ?? current, applied };
+  }
+
+  private async ensureSaltyExecutors(
+    orchestratorLane: HarnessLane,
+    includeFellow: boolean,
+  ): Promise<SaltyEnsureOutcome> {
+    const plan = saltyExecutorPlan(includeFellow);
+    let installed: Set<string>;
+    try {
+      installed = new Set((await AcpClient.listBackends()).map((b) => b.id));
+    } catch {
+      return { ok: false, missing: plan.map((s) => s.role), errored: [] };
+    }
+
+    // spec 195: invoking #salty from a stamped executor promotes it to
+    // orchestrator — clear its old executor role (restoring any permission
+    // snapshot) before the roster is built, so it can never double-assign.
+    if (orchestratorLane.saltyBuiltinRole && orchestratorLane.saltyBuiltinRole !== 'orchestrator') {
+      this.clearSaltyBuiltinRole(orchestratorLane);
+    }
+
+    const executors: SaltyRoster['executors'] = [];
+    const spawned: SaltyExecutorRole[] = [];
+    const spawnedLanes: HarnessLane[] = [];
+    const missing: SaltyExecutorRole[] = [];
+    const errored: SaltyExecutorRole[] = [];
+    const claimed = new Set<string>([orchestratorLane.id]);
+
+    for (const spec of plan) {
+      let executorLane = this.findSaltyExecutorLane(spec, claimed);
+      if (!executorLane) {
+        if (!installed.has(spec.backendId)) {
+          missing.push(spec.role);
+          continue;
+        }
+        executorLane = (await this.addSaltyExecutorLane(spec.backendId, claimed)) ?? undefined;
+        if (!executorLane) {
+          errored.push(spec.role);
+          continue;
+        }
+        spawned.push(spec.role);
+        spawnedLanes.push(executorLane);
+      }
+      if (executorLane.status === 'error' || !executorLane.client) {
+        errored.push(spec.role);
+        continue;
+      }
+      claimed.add(executorLane.id);
+      // Revalidate the tier on EVERY run (a reused lane's model may have
+      // drifted via the live picker); the lane is idle here, so the switch
+      // never lands mid-turn. Degradation is non-fatal by contract.
+      const modelApply = await this.applySaltyModel(executorLane, spec);
+      executors.push({
+        displayName: executorLane.displayName,
+        laneId: executorLane.id,
+        backendId: spec.backendId,
+        role: spec.role,
+        modelApply,
+      });
+    }
+
+    this.activateLane(orchestratorLane.id);
+
+    // spec 195 partial-roster contract: abort when the thinker is unavailable
+    // (the pushback gate is the workflow's spine) or when NO implementer
+    // (mechanical/codex-peer) is live; otherwise proceed degraded — fellow is
+    // best-effort. Prune dead spawns on abort (Polly parity).
+    const unavailable = new Set<SaltyExecutorRole>([...missing, ...errored]);
+    const abort =
+      unavailable.has('thinker') ||
+      (unavailable.has('mechanical') && unavailable.has('codexPeer'));
+    if (abort) {
+      for (const spawnedLane of spawnedLanes) {
+        if (spawnedLane.status === 'error') await this.closeLane(spawnedLane);
+      }
+      return { ok: false, missing, errored };
+    }
+
+    orchestratorLane.saltyBuiltinRole = 'orchestrator';
+    this.clearPollyBuiltinRole(orchestratorLane);
+    this.clearDebbyBuiltinRole(orchestratorLane);
+    for (const executor of executors) {
+      const executorLane = this.lanes.find((l) => l.id === executor.laneId);
+      if (!executorLane) continue;
+      executorLane.saltyBuiltinRole = executor.role;
+      this.clearPollyBuiltinRole(executorLane);
+      this.clearDebbyBuiltinRole(executorLane);
+      const spec = plan.find((s) => s.role === executor.role);
+      if (spec?.bypass) {
+        // Stash the user's own mode once (guard against re-stamping a reused
+        // lane that is already bypassed) so clearSaltyBuiltinRole can restore it.
+        if (executorLane.saltySavedPermissionMode === null) {
+          executorLane.saltySavedPermissionMode = executorLane.permissionMode;
+        }
+        executorLane.permissionMode = 'bypass';
+      }
+    }
+    this.render();
+
+    return {
+      ok: true,
+      roster: {
+        orchestrator: {
+          displayName: orchestratorLane.displayName,
+          laneId: orchestratorLane.id,
+          backendId: orchestratorLane.backendId,
+        },
+        executors,
+        spawned,
+        missing,
+        errored,
+      },
+    };
+  }
+
+  /**
+   * spec 195: `#salty <task>` — model-tiered orchestration (SaltyAom workflow).
+   * The active lane orchestrates; the harness ensures mechanical (claude@sonnet),
+   * thinker (claude@opus), codex-peer (codex), optionally fellow (claude@fable)
+   * executor lanes and injects the plan→pushback→dispatch→gate→cross-review
+   * prompt. `#salty clear` sweeps all Salty roles and restores permission modes.
+   */
+  private async runSaltyCommand(
+    lane: HarnessLane,
+    command: ReturnType<typeof parseSaltyCommand>,
+  ): Promise<void> {
+    if (command.kind === 'clear') {
+      let cleared = 0;
+      for (const l of this.lanes) {
+        if (l.saltyBuiltinRole !== null) {
+          this.clearSaltyBuiltinRole(l);
+          cleared += 1;
+        }
+      }
+      this.flashChip(
+        cleared > 0
+          ? `#salty: cleared ${cleared} role${cleared === 1 ? '' : 's'}`
+          : '#salty: no roles to clear',
+      );
+      return;
+    }
+    if (!command.task) {
+      this.flashChip('#salty: no task');
+      return;
+    }
+    if (lane.status !== 'idle') {
+      this.flashChip('lane busy - #cancel first');
+      return;
+    }
+    if (!lane.client) {
+      this.flashChip('#salty: lane not ready');
+      return;
+    }
+
+    this.reserveCommandTurn(lane, 'orchestrating');
+    const outcome = await this.ensureSaltyExecutors(lane, command.includeFellow);
+    if (!outcome.ok) {
+      this.releaseReservedTurn(lane);
+      if (outcome.missing.length > 0) {
+        this.flashChip(`#salty: ${outcome.missing.join(', ')} not installed`);
+      } else if (outcome.errored.length > 0) {
+        this.flashChip(`#salty: ${outcome.errored.join(', ')} failed to start`);
+      } else {
+        this.flashChip('#salty: executor roster incomplete');
+      }
+      return;
+    }
+
+    const { roster } = outcome;
+    if (roster.spawned.length > 0) {
+      const names = roster.executors
+        .filter((e) => roster.spawned.includes(e.role))
+        .map((e) => e.displayName);
+      this.flashChip(`#salty: spawned ${names.join(', ')}`);
+    }
+
+    const prompt = saltyRequestPrompt({
+      task: command.task,
+      roster,
+      intent: this.collectReviewIntent(lane),
+    });
+    await this.dispatchTurn(lane, prompt);
+    this.flashChip(`#salty → ${roster.executors.map((e) => e.displayName).join(', ')}`);
   }
 
   getWorkingDirectory(): string | null {
@@ -6911,6 +7189,14 @@ export class AcpHarnessView implements ContentView {
       const block = `${heading}\n${DEBBY_ROLE_PROMPTS[lane.debbyBuiltinRole]}`;
       return packet ? `${packet}\n\n${block}` : block;
     }
+    if (lane.saltyBuiltinRole) {
+      const heading =
+        lane.saltyBuiltinRole === 'orchestrator'
+          ? '## Salty orchestrator'
+          : `## Salty executor — ${lane.saltyBuiltinRole}`;
+      const block = `${heading}\n${SALTY_ROLE_PROMPTS[lane.saltyBuiltinRole]}`;
+      return packet ? `${packet}\n\n${block}` : block;
+    }
     const directive = this.effectiveDirective(lane);
     if (!directive) return packet;
     const heading = directive.title.trim()
@@ -8211,6 +8497,7 @@ export class AcpHarnessView implements ContentView {
     lane.cursorMcpNames = null;
     this.clearPollyBuiltinRole(lane);
     this.clearDebbyBuiltinRole(lane);
+    this.clearSaltyBuiltinRole(lane);
     // spec 180: the orchestrator seat is vacated when its lane closes; close the
     // console too (a re-promote is needed before it can be reopened).
     if (this.orchestratorLaneId === lane.id) {
@@ -8309,6 +8596,7 @@ export class AcpHarnessView implements ContentView {
     lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
     this.clearPollyBuiltinRole(lane);
     this.clearDebbyBuiltinRole(lane);
+    this.clearSaltyBuiltinRole(lane);
     // spec 133: a restart reuses the display name — drop any pending artifact
     // write grant so the restarted lane can't inherit it.
     this.cancelPendingArtifactsForLane(lane);
@@ -8387,6 +8675,7 @@ export class AcpHarnessView implements ContentView {
     lane.transcriptWindow = TRANSCRIPT_WINDOW_DEFAULT;
     this.clearPollyBuiltinRole(lane);
     this.clearDebbyBuiltinRole(lane);
+    this.clearSaltyBuiltinRole(lane);
     this.updateComposerTick();
     this.render();
     await this.spawnLane(lane);
@@ -8696,6 +8985,23 @@ export class AcpHarnessView implements ContentView {
       await this.enqueueSystemPrompt(lane, directivePrompt(configPath, intent), undefined, 'authoring directive');
       return;
     }
+    // spec 196: one-shot tldraw Offline local-agent workflow. The lane uses its
+    // existing shell tools and permission policy; Krypton never receives the
+    // app's token or writes the native document format.
+    if (parts[0] === '#draw') {
+      this.setDraft(lane, '', 0);
+      const intent = text.trim().slice('#draw'.length).trim();
+      if (!intent) {
+        this.flashChip('usage: #draw <drawing request>');
+        return;
+      }
+      if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+        this.flashChip('lane busy - #cancel first');
+        return;
+      }
+      await this.enqueueSystemPrompt(lane, tldrawDrawPrompt(intent), undefined, 'drawing in tldraw');
+      return;
+    }
     if (parts[0] === '#review') {
       this.setDraft(lane, '', 0);
       await this.runReviewCommand(lane, parts.slice(1));
@@ -8722,6 +9028,12 @@ export class AcpHarnessView implements ContentView {
       this.setDraft(lane, '', 0);
       const question = parseDebbyTask(text);
       await this.runDebbyCommand(lane, question);
+      this.render();
+      return;
+    }
+    if (parts[0] === '#salty') {
+      this.setDraft(lane, '', 0);
+      await this.runSaltyCommand(lane, parseSaltyCommand(text));
       this.render();
       return;
     }
@@ -10174,6 +10486,7 @@ export class AcpHarnessView implements ContentView {
       // flag survives reopen, so the cue must too.
       (this.conciseMode ? `<span class="acp-harness__concise-tag">concise</span>` : '') +
       renderPollyBypassChip(lane) +
+      renderSaltyBypassChip(lane) +
       this.renderDirectiveChip(lane) +
       projectStatus +
       `</div>` +
@@ -10213,9 +10526,9 @@ export class AcpHarnessView implements ContentView {
     const age = formatAge(Date.now() - lane.goal.setAt);
     return (
       `<div class="acp-harness__goal-bar">` +
+      `<span class="acp-harness__goal-age">${esc(age)}</span>` +
       `<span class="acp-harness__goal-label">◎ goal</span>` +
       `<span class="acp-harness__goal-text">${esc(lane.goal.text)}</span>` +
-      `<span class="acp-harness__goal-age">${esc(age)}</span>` +
       `</div>`
     );
   }
@@ -10230,10 +10543,12 @@ export class AcpHarnessView implements ContentView {
     const state = t.state === 'closed' ? ' · closed' : '';
     return (
       `<div class="acp-harness__ticket-bar">` +
-      `<span class="acp-harness__ticket-label">⬡ ticket</span>` +
-      `<span class="acp-harness__ticket-key">${esc(t.issueKey)}</span>` +
-      (title ? `<span class="acp-harness__ticket-title">${esc(title)}</span>` : '') +
       `<span class="acp-harness__ticket-rev">r${t.revision}${state}</span>` +
+      `<span class="acp-harness__ticket-label">⬡ ticket</span>` +
+      `<span class="acp-harness__ticket-body">` +
+      `<span class="acp-harness__ticket-key">${esc(t.issueKey)}</span>` +
+      (title ? ` <span class="acp-harness__ticket-title">${esc(title)}</span>` : '') +
+      `</span>` +
       `</div>`
     );
   }
@@ -10597,6 +10912,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#wiki [hint]</dt><dd>Compound this session into the project wiki (docs/wiki/)</dd>
             <dt>#recall &lt;question&gt;</dt><dd>Answer a question from the project wiki, with citations</dd>
             <dt>#directive &lt;intent&gt;</dt><dd>Have the active lane create/edit a reusable directive in acp-harness.toml</dd>
+            <dt>#draw &lt;request&gt;</dt><dd>Draw in the focused tldraw Offline document through its local agent API</dd>
             <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
             <dt>#queue [clear | edit N]</dt><dd>Manage prompts queued while the lane is busy</dd>
             <dt>#unqueue [N]</dt><dd>Remove the last (or Nth) queued prompt</dd>
@@ -13482,12 +13798,13 @@ function renderLaneHead(
   const modeChip = renderModeChip(lane);
   const sandboxChip = renderSandboxChip(lane);
   const pollyBypassChip = renderPollyBypassChip(lane);
+  const saltyBypassChip = renderSaltyBypassChip(lane);
   const metricsChip = renderMetricsChip(metrics);
   // spec 180: behavior-neutral orchestrator-seat badge (≤1 per harness).
   const orchestratorChip = isOrchestrator
     ? `<span class="acp-harness__lane-orchestrator" title="orchestrator seat (#orchestrator)">◆ orch</span>`
     : '';
-  const chipGroup = orchestratorChip + modelChip + modeChip + mcpChip + sandboxChip + pollyBypassChip + metricsChip;
+  const chipGroup = orchestratorChip + modelChip + modeChip + mcpChip + sandboxChip + pollyBypassChip + saltyBypassChip + metricsChip;
   const chips = chipGroup
     ? `<span class="acp-harness__lane-chips">${chipGroup}</span>`
     : '';
@@ -13736,6 +14053,21 @@ function renderPollyBypassChip(lane: HarnessLane): string {
   const title =
     'Polly worker — all tool permissions auto-accepted for this lane until the Polly role clears';
   return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">polly-bypass</span>`;
+}
+
+function isSaltyExecutorBypass(lane: HarnessLane): boolean {
+  return (
+    (lane.saltyBuiltinRole === 'mechanical' || lane.saltyBuiltinRole === 'codexPeer') &&
+    lane.permissionMode === 'bypass'
+  );
+}
+
+/** spec 195 — Salty mechanical/codex-peer executors run bypassed; surface in chrome. */
+function renderSaltyBypassChip(lane: HarnessLane): string {
+  if (!isSaltyExecutorBypass(lane)) return '';
+  const title =
+    'Salty executor — all tool permissions auto-accepted for this lane until the Salty role clears (#salty clear)';
+  return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">salty-bypass</span>`;
 }
 
 function renderSandboxChip(lane: HarnessLane): string {
