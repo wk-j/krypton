@@ -1,9 +1,12 @@
 # `#draw` — tldraw Offline Local-Agent Command — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented (amended in part)
 > Date: 2026-07-17
 > Milestone: M-ACP — Harness Multi-Agent
 > Builds on: `docs/144-harness-wiki-command.md`, `docs/185-hash-command-reference-page.md`
+> Amended by: `docs/197-tldraw-document-script-support.md` — prompt clauses 5–6
+> (exec-only mutation and the blanket direct-file prohibition) are superseded by
+> the durable document-script branch; discovery, token, and issue #11 clauses stand.
 
 ## Problem
 

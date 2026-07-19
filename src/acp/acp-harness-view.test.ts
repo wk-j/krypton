@@ -1328,12 +1328,65 @@ describe('tldrawDrawPrompt', () => {
 
   it('requires inspect-before-edit, batching, verification, and a save reminder', () => {
     const p = tldrawDrawPrompt('draw a deployment diagram');
-    expect(p).toContain('Inspect its existing shapes, bindings, and bounds before editing');
+    expect(p).toContain("Inspect the target's existing shapes, bindings, and bounds before editing");
     expect(p).toContain('Batch related shapes and bindings');
     expect(p).toContain('Verify the resulting shape records');
     expect(p).toContain('request a screenshot');
     expect(p).toContain('remind the user to save the document');
     expect(p).toContain('Do not fabricate success');
+  });
+
+  // spec 197: a request that names a document targets it explicitly instead of
+  // trusting focus order; the substring filter can match several open docs, so
+  // mutation requires a unique match and a closed document is never touched.
+  it('targets a named document via the docs-listing filter, requiring a unique match', () => {
+    const p = tldrawDrawPrompt('add a legend to nn-digits');
+    expect(p).toContain('api.getDocs({ name })');
+    expect(p).toContain('case-insensitive substring match');
+    expect(p).toContain('mutate only when exactly one match remains');
+    expect(p).toContain('stop and ask the user which document to target');
+    expect(p).toContain('stop and ask the user to open it');
+  });
+
+  // spec 197: durable behavior must not be built on ephemeral /exec runtime JS;
+  // it goes through the app's document-script workspace, recipes-first.
+  it('routes durable behavior through script-workspace with recipes read first', () => {
+    const p = tldrawDrawPrompt('make the button move the box');
+    expect(p).toContain('do NOT build it with `/exec`');
+    expect(p).toContain('ephemeral and disappears when the document closes');
+    expect(p).toContain('/api/doc/:id/script-workspace');
+    expect(p).toContain('read the matching `api.recipes` entry BEFORE writing any script');
+    expect(p).toContain('`script/config.js`');
+    expect(p).toContain('The branches are not exclusive: a mixed request uses both surfaces');
+  });
+
+  it('extends an existing document script instead of clobbering it', () => {
+    const p = tldrawDrawPrompt('make the button move the box');
+    expect(p).toContain('Honor `isDefaultScript`');
+    expect(p).toContain('never overwrite or regenerate it');
+    expect(p).toContain("resets the editor's undo history");
+  });
+
+  // all five runtime states have a prescribed path, not just the happy three.
+  it('gates durable success on script-status state applied', () => {
+    const p = tldrawDrawPrompt('make the button move the box');
+    expect(p).toContain('NEVER report success while `state` is not "applied"');
+    expect(p).toContain('`lastApplyError`/`errorLogPath`');
+    expect(p).toContain('"not-watching" or "no-entry"');
+    expect(p).toContain('re-open `script-workspace`');
+    expect(p).toContain("`mode: 'window'` screenshot");
+  });
+
+  // spec 197: the file prohibition is narrowed to the packed archive and the
+  // app-owned files; the app-declared editable paths are the sole exception,
+  // and the RETURNED lists (not the prompt's example set) are authoritative.
+  it('keeps the appOwned boundary and degrades honestly on older apps', () => {
+    const p = tldrawDrawPrompt('make the button move the box');
+    expect(p).toContain('ANY path on the returned `appOwned` list');
+    expect(p).toContain('`editable` and `appOwned` lists as authoritative');
+    expect(p).toContain('ONLY sanctioned direct file edits');
+    expect(p).toContain('documents no script-workspace endpoint');
+    expect(p).toContain('deliver the static part and report the limitation');
   });
 
   it('neutralizes an injection-laden multiline request via JSON.stringify', () => {

@@ -10912,7 +10912,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#wiki [hint]</dt><dd>Compound this session into the project wiki (docs/wiki/)</dd>
             <dt>#recall &lt;question&gt;</dt><dd>Answer a question from the project wiki, with citations</dd>
             <dt>#directive &lt;intent&gt;</dt><dd>Have the active lane create/edit a reusable directive in acp-harness.toml</dd>
-            <dt>#draw &lt;request&gt;</dt><dd>Draw in the focused tldraw Offline document through its local agent API</dd>
+            <dt>#draw &lt;request&gt;</dt><dd>Draw in an open tldraw Offline document (focused or named) — static shapes or durable document scripts</dd>
             <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
             <dt>#queue [clear | edit N]</dt><dd>Manage prompts queued while the lane is busy</dd>
             <dt>#unqueue [N]</dt><dd>Remove the last (or Nth) queued prompt</dd>

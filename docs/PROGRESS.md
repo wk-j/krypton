@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-07-17
+> Last updated: 2026-07-19
 
 ## Overview
 
@@ -20,6 +20,27 @@
 ---
 
 ## Recent Landings
+
+- **`#draw` document-script support (spec 197)** — the `#draw` prompt gains a
+  second, explicitly-gated branch for durable/interactive drawings (the
+  `nn-digits.tldraw` class: clickable UI, animation loops, custom shape types).
+  Static content keeps the spec-196 `/exec` path verbatim; behavior that must
+  survive reload routes through tldraw Offline's document-script workspace —
+  `script-workspace` → read the matching `api.recipes` entry first →
+  edit only app-declared `editable` script files (`config.js` for editor
+  construction, `main.js` for run-on-mount), extending any existing script
+  (`isDefaultScript`) — with success gated on `script-status`
+  `state: "applied"` and window-mode screenshots for off-canvas UI. The blanket
+  direct-file prohibition is narrowed to the packed archive + `appOwned` files
+  (the app's watcher alone embeds script edits into the document), and requests
+  that name a document target it via `api.getDocs({ name })` instead of focus
+  order. Prompt-only change (`tldrawDrawPrompt` + `draw` anatomy string): no
+  Rust, IPC, MCP tool, or lane state. Verified against the running app 1.10.x
+  and the live `nn-digits` document (agent-authored `config.js` registering an
+  `agent-shape` MNIST network). New clause pins cover ephemeral-`/exec`,
+  recipes-first, extend-not-overwrite, the applied gate, and the
+  `appOwned`/`editable` boundary. See
+  `docs/197-tldraw-document-script-support.md`.
 
 - **tldraw Offline local-agent command (spec 196)** — `#draw <request>` now
   injects a one-shot, version-aware workflow into the active ACP lane: discover

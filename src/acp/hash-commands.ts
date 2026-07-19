@@ -65,7 +65,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'wiki', args: '[<hint>]', description: 'ingest this conversation into the repo wiki' },
   { name: 'recall', args: '<question>', description: 'answer a question from the repo wiki' },
   { name: 'directive', args: '<what to create/change>', description: 'author a reusable harness directive' },
-  { name: 'draw', args: '<request>', description: 'draw in the focused tldraw Offline canvas' },
+  { name: 'draw', args: '<request>', description: 'draw in an open tldraw Offline canvas (focused or named)' },
   { name: 'review', args: '[<lane>…] [-- <doc | note>]', description: 'run a multi-reviewer design/diff review' },
   { name: 'orchestrator', args: '', description: 'designate this lane the orchestrator seat + open the console' },
   { name: 'polly', args: '<task>', description: 'Polly orchestration — spawns Cursor + Claude + Codex workers' },
@@ -223,7 +223,8 @@ export function commandMeta(): Record<string, CommandMeta> {
     draw: {
       category: 'agent',
       badges: ['workflow'],
-      anatomy: 'discover canvas → inspect shapes → batch edit via /exec → verify screenshot',
+      anatomy:
+        'discover canvas → inspect shapes → static: batch /exec · durable: script-workspace + recipes → verify applied + screenshot',
       lanes: 'same lane',
       prompt: tldrawDrawPrompt('<drawing request>'),
     },
