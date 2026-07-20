@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Terminal Control Monitor</title>
+  <style>
+    :root {
+      --bg: #17191d;
+      --fg: #eaecef;
+      --muted: #707a8a;
+      --border: #2f353d;
+      --accent: #fcd535;
+      --card: #21242a;
+      --code-bg: #1d1f24;
+      --add: #0ecb81;
+      --del: #f6465d;
+      --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px clamp(14px, 2.5vw, 34px); border-bottom: 1px solid var(--border); }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .brand-mark { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); font: 600 12px var(--mono); }
+    .brand strong { display: block; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .brand span { color: var(--muted); font: 10px var(--mono); }
+    .readonly { border: 1px solid var(--border); border-radius: 5px; padding: 3px 7px; color: var(--muted); font: 600 10px var(--mono); letter-spacing: .04em; }
+    main { max-width: 1440px; margin: 0 auto; padding: 18px clamp(14px, 2.5vw, 34px) 36px; }
+    .statusbar { display: grid; grid-template-columns: minmax(210px, 1.5fr) repeat(3, minmax(130px, .7fr)); gap: 1px; overflow: hidden; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--border); }
+    .stat { min-width: 0; padding: 11px 13px; background: var(--card); }
+    .stat-label { display: block; margin-bottom: 3px; color: var(--muted); font: 10px var(--mono); }
+    .stat-value { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; font: 600 12px/1.3 var(--mono); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+    .dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--accent); }
+    .dot.live { background: var(--add); animation: beacon 2s ease-in-out infinite; box-shadow: 0 0 0 4px rgba(14, 203, 129, .1); }
+    .dot.error { background: var(--del); }
+    .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: min(690px, calc(100vh - 160px)); overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+    .roster { display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--border); }
+    .roster-head { padding: 13px; border-bottom: 1px solid var(--border); }
+    .roster-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+    .roster-title h1 { margin: 0; font-size: 13px; line-height: 1.2; }
+    .count { color: var(--muted); font: 10px var(--mono); font-variant-numeric: tabular-nums; }
+    .filter { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; outline: none; background: var(--code-bg); color: var(--fg); font: 12px var(--mono); }
+    .filter::placeholder { color: #9aa3af; }
+    .filter:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(252, 213, 53, .1); }
+    .session-list { display: flex; flex: 1; flex-direction: column; gap: 6px; min-height: 0; padding: 8px; overflow: auto; }
+    .session { width: 100%; border: 1px solid transparent; border-radius: 7px; padding: 9px; background: transparent; text-align: left; cursor: pointer; transition: background 120ms ease, border-color 120ms ease; }
+    .session:hover { background: rgba(234, 236, 239, .04); }
+    .session:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .session[aria-selected="true"] { border-color: var(--accent); background: rgba(252, 213, 53, .07); }
+    .session-top, .session-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .session-name { overflow: hidden; font: 600 12px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .session-command { display: block; overflow: hidden; margin: 4px 0 7px; color: var(--muted); font: 10px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .session-meta { color: var(--muted); font: 10px var(--mono); }
+    .pill { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font: 600 9px var(--mono); }
+    .pill::before { width: 5px; height: 5px; border-radius: 50%; background: currentColor; content: ''; }
+    .pill.running { color: var(--add); }
+    .pill.recording { color: var(--accent); }
+    .pill.exited, .pill.stale { color: var(--muted); }
+    .pill.incompatible, .pill.unknown { color: var(--del); }
+    .preview { display: flex; min-width: 0; flex-direction: column; }
+    .preview-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; padding: 10px 13px; border-bottom: 1px solid var(--border); }
+    .selected-meta { min-width: 0; }
+    .selected-meta strong, .selected-meta code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .selected-meta strong { margin-bottom: 3px; font: 600 12px var(--mono); }
+    .selected-meta code { padding: 0; background: transparent; color: var(--muted); font: 10px var(--mono); }
+    .refresh { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; background: transparent; color: var(--accent); cursor: pointer; }
+    .refresh:hover { border-color: var(--accent); background: rgba(252, 213, 53, .06); }
+    .refresh:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .refresh:disabled { color: var(--muted); cursor: default; }
+    .screen-wrap { position: relative; flex: 1; min-height: 0; padding: 12px; background: #101216; }
+    .screen { height: 100%; min-height: 470px; margin: 0; overflow: auto; border: 1px solid #2a2e35; border-radius: 8px; padding: 17px; background: #0c0e11; color: #d9dde4; font: 12px/1.58 var(--mono); tab-size: 2; white-space: pre; }
+    .screen-state { position: absolute; right: 23px; top: 21px; border: 1px solid #3c424c; border-radius: 5px; padding: 2px 6px; background: rgba(12, 14, 17, .9); color: #9aa3af; font: 9px var(--mono); }
+    .empty { display: grid; flex: 1; min-height: 470px; place-items: center; padding: 28px; background: var(--code-bg); text-align: center; }
+    .empty-inner { max-width: 440px; }
+    .empty-icon { display: grid; width: 46px; height: 46px; margin: 0 auto 14px; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--accent); font: 18px var(--mono); }
+    .empty-icon.error { color: var(--del); }
+    .empty h2 { margin: 0 0 7px; font-size: 17px; }
+    .empty p { max-width: 65ch; margin: 0; color: #9aa3af; }
+    .empty code { display: inline-block; margin-top: 13px; border: 1px solid var(--border); border-radius: 5px; padding: 7px 9px; background: var(--bg); color: var(--fg); font: 11px var(--mono); }
+    .skeleton { height: 69px; border: 1px solid var(--border); border-radius: 7px; background: linear-gradient(90deg, var(--code-bg) 25%, #282c33 50%, var(--code-bg) 75%); background-size: 200% 100%; animation: loading 1.3s linear infinite; }
+    .shortcuts { display: flex; flex-wrap: wrap; gap: 13px; padding-top: 10px; color: var(--muted); font: 10px var(--mono); }
+    kbd { border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; background: var(--card); color: var(--fg); font: 9px var(--mono); }
+    .hidden { display: none !important; }
+    @keyframes beacon { 50% { opacity: .55; transform: scale(.82); } }
+    @keyframes loading { to { background-position: -200% 0; } }
+    @media (prefers-reduced-motion: reduce) { .dot.live, .skeleton { animation: none; } }
+    @media (max-width: 760px) {
+      .statusbar { grid-template-columns: 1fr 1fr; }
+      .layout { grid-template-columns: 1fr; }
+      .roster { max-height: 330px; border-right: 0; border-bottom: 1px solid var(--border); }
+      .screen { min-height: 390px; font-size: 11px; }
+    }
+    @media (max-width: 460px) { .statusbar { grid-template-columns: 1fr; } .readonly { display: none; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">›_</span><div><strong>Terminal Control Monitor</strong><span>local session observability</span></div></div>
+    <span class="readonly">READ ONLY</span>
+  </header>
+  <main>
+    <section class="statusbar" aria-label="Monitor status">
+      <div class="stat"><span class="stat-label">Connection</span><span class="stat-value"><i class="dot" id="connection-dot"></i><span id="connection">Connecting</span></span></div>
+      <div class="stat"><span class="stat-label">Version</span><span class="stat-value" id="version">detecting</span></div>
+      <div class="stat"><span class="stat-label">Sessions</span><span class="stat-value" id="session-count">loading</span></div>
+      <div class="stat"><span class="stat-label">Last refresh</span><span class="stat-value" id="last-refresh">waiting</span></div>
+    </section>
+
+    <section class="layout">
+      <aside class="roster" aria-label="Terminal sessions">
+        <div class="roster-head">
+          <div class="roster-title"><h1>Sessions</h1><span class="count" id="visible-count">0 visible</span></div>
+          <input class="filter" id="filter" type="search" placeholder="/  Filter sessions" aria-label="Filter sessions" autocomplete="off">
+        </div>
+        <div class="session-list" id="session-list" role="listbox" aria-label="Tracked terminal sessions">
+          <span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span>
+        </div>
+      </aside>
+
+      <article class="preview" id="preview" aria-live="polite">
+        <div class="preview-head" id="preview-head">
+          <div class="selected-meta"><strong id="selected-command">Waiting for sessions</strong><code id="selected-context">No session selected</code></div>
+          <button class="refresh" id="refresh" type="button" title="Refresh now (r)">↻ Refresh</button>
+        </div>
+        <div class="screen-wrap" id="screen-wrap"><span class="screen-state">VISIBLE SCREEN</span><pre class="screen" id="screen" aria-label="Selected terminal visible screen"></pre></div>
+        <div class="empty hidden" id="empty"><div class="empty-inner"><span class="empty-icon">›_</span><h2 id="empty-title">No tracked sessions</h2><p id="empty-copy">Start a named session and it will appear here.</p><code id="empty-command">termctrl start remote -- ssh user@host</code></div></div>
+      </article>
+    </section>
+    <footer class="shortcuts"><span><kbd>/</kbd> filter</span><span><kbd>j</kbd> <kbd>k</kbd> select</span><span><kbd>r</kbd> refresh</span><span><kbd>esc</kbd> clear filter</span><span>list 2s · screen 1s · pauses when hidden</span></footer>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+      var token = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+      var apiBase = '/termctrl/api/' + encodeURIComponent(token);
+      var sessions = [];
+      var selectedName = null;
+      var listTimer = null;
+      var screenTimer = null;
+      var listInFlight = false;
+      var screenInFlight = false;
+      var firstLoad = true;
+      var screenCache = new Map();
+
+      var listEl = document.getElementById('session-list');
+      var filterEl = document.getElementById('filter');
+      var visibleCountEl = document.getElementById('visible-count');
+      var connectionEl = document.getElementById('connection');
+      var connectionDotEl = document.getElementById('connection-dot');
+      var versionEl = document.getElementById('version');
+      var sessionCountEl = document.getElementById('session-count');
+      var lastRefreshEl = document.getElementById('last-refresh');
+      var commandEl = document.getElementById('selected-command');
+      var contextEl = document.getElementById('selected-context');
+      var screenEl = document.getElementById('screen');
+      var screenWrapEl = document.getElementById('screen-wrap');
+      var emptyEl = document.getElementById('empty');
+      var emptyTitleEl = document.getElementById('empty-title');
+      var emptyCopyEl = document.getElementById('empty-copy');
+      var emptyCommandEl = document.getElementById('empty-command');
+      var refreshEl = document.getElementById('refresh');
+
+      function fetchJson(url) {
+        return fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } }).then(function (response) {
+          if (!response.ok) throw new Error('request failed');
+          return response.json();
+        });
+      }
+
+      function setConnection(kind, text) {
+        connectionEl.textContent = text;
+        connectionDotEl.className = 'dot' + (kind ? ' ' + kind : '');
+      }
+
+      function formatAgo(ms) {
+        if (ms == null) return '';
+        if (ms < 1000) return 'active now';
+        if (ms < 60000) return Math.floor(ms / 1000) + 's idle';
+        return Math.floor(ms / 60000) + 'm idle';
+      }
+
+      function commandLabel(session) {
+        return session.command && session.command.length ? session.command.join(' ') : 'session metadata unavailable';
+      }
+
+      function visibleSessions() {
+        var query = filterEl.value.trim().toLowerCase();
+        if (!query) return sessions;
+        return sessions.filter(function (session) {
+          return [session.name, session.state, commandLabel(session), session.cwd || ''].join(' ').toLowerCase().indexOf(query) !== -1;
+        });
+      }
+
+      function showEmpty(title, copy, command, isError) {
+        screenWrapEl.classList.add('hidden');
+        emptyEl.classList.remove('hidden');
+        emptyTitleEl.textContent = title;
+        emptyCopyEl.textContent = copy;
+        emptyCommandEl.textContent = command;
+        emptyEl.querySelector('.empty-icon').classList.toggle('error', !!isError);
+      }
+
+      function showScreen() {
+        emptyEl.classList.add('hidden');
+        screenWrapEl.classList.remove('hidden');
+      }
+
+      function selectSession(name, scrollOnMobile) {
+        selectedName = name;
+        renderSessions();
+        renderSelection();
+        refreshScreen();
+        if (scrollOnMobile && window.matchMedia('(max-width: 760px)').matches) {
+          document.getElementById('preview-head').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+
+      function renderSessions() {
+        var visible = visibleSessions();
+        var focusedName = document.activeElement && document.activeElement.dataset
+          ? document.activeElement.dataset.sessionName
+          : null;
+        listEl.replaceChildren();
+        visibleCountEl.textContent = visible.length + ' visible';
+        visible.forEach(function (session) {
+          var row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'session';
+          row.dataset.sessionName = session.name;
+          row.setAttribute('role', 'option');
+          row.setAttribute('aria-selected', String(session.name === selectedName));
+
+          var top = document.createElement('span'); top.className = 'session-top';
+          var name = document.createElement('span'); name.className = 'session-name'; name.textContent = session.name;
+          var pill = document.createElement('span');
+          pill.className = 'pill ' + (session.recording && session.state === 'running' ? 'recording' : session.state);
+          pill.textContent = session.recording && session.state === 'running' ? 'recording' : session.state;
+          top.append(name, pill);
+
+          var command = document.createElement('span'); command.className = 'session-command'; command.textContent = commandLabel(session);
+          var bottom = document.createElement('span'); bottom.className = 'session-bottom';
+          var viewport = document.createElement('span'); viewport.className = 'session-meta'; viewport.textContent = session.cols && session.rows ? session.cols + ' × ' + session.rows : 'no viewport';
+          var idle = document.createElement('span'); idle.className = 'session-meta'; idle.textContent = formatAgo(session.idleForMs) || (session.state === 'exited' ? 'final screen' : 'unavailable');
+          bottom.append(viewport, idle);
+          row.append(top, command, bottom);
+          row.addEventListener('click', function () { selectSession(session.name, true); });
+          listEl.appendChild(row);
+          if (session.name === focusedName) row.focus({ preventScroll: true });
+        });
+        if (!visible.length && sessions.length) {
+          var message = document.createElement('span'); message.className = 'session-meta'; message.textContent = 'No sessions match the filter.'; listEl.appendChild(message);
+        }
+      }
+
+      function selectedSession() {
+        return sessions.find(function (session) { return session.name === selectedName; }) || null;
+      }
+
+      function renderSelection() {
+        var session = selectedSession();
+        if (!session) {
+          commandEl.textContent = 'No session selected';
+          contextEl.textContent = 'Choose a session from the roster';
+          showEmpty('No tracked sessions', 'Start a named session and it will appear on the next refresh.', 'termctrl start remote -- ssh user@host', false);
+          return;
+        }
+        commandEl.textContent = commandLabel(session);
+        contextEl.textContent = (session.cwd || 'cwd unavailable') + (session.cols && session.rows ? ' · ' + session.cols + ' × ' + session.rows : '');
+        if (session.state === 'stale' || session.state === 'incompatible') {
+          showEmpty(
+            session.state === 'stale' ? 'Session is stale' : 'Session protocol is incompatible',
+            session.error || 'Terminal Control cannot read this session.',
+            'termctrl status ' + session.name,
+            session.state === 'incompatible'
+          );
+          return;
+        }
+        if (session.state === 'exited' && screenCache.has(session.name)) {
+          screenEl.textContent = screenCache.get(session.name);
+        }
+        showScreen();
+      }
+
+      async function refreshList() {
+        if (listInFlight || document.visibilityState === 'hidden') return;
+        listInFlight = true;
+        refreshEl.disabled = true;
+        try {
+          var payload = await fetchJson(apiBase + '/sessions');
+          if (!payload.available) {
+            sessions = [];
+            selectedName = null;
+            screenCache.clear();
+            setConnection('error', 'termctrl unavailable');
+            versionEl.textContent = 'not detected';
+            sessionCountEl.textContent = 'unknown';
+            listEl.replaceChildren();
+            visibleCountEl.textContent = '0 visible';
+            var windows = /Win/.test(navigator.platform || '');
+            firstLoad = false;
+            showEmpty(
+              'termctrl is unavailable',
+              windows ? 'Persistent sessions currently require macOS or Linux.' : (payload.error || 'Install Terminal Control and refresh this page.'),
+              windows ? 'macOS or Linux required' : 'cargo install terminal-control',
+              true
+            );
+            return;
+          }
+          var previousStates = new Map(sessions.map(function (session) { return [session.name, session.state]; }));
+          sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+          sessions.forEach(function (session) {
+            if (session.state === 'exited' && previousStates.get(session.name) !== 'exited') {
+              screenCache.delete(session.name);
+            }
+          });
+          screenCache.forEach(function (_, name) {
+            if (!sessions.some(function (session) { return session.name === name; })) screenCache.delete(name);
+          });
+          if (!sessions.some(function (session) { return session.name === selectedName; })) selectedName = sessions.length ? sessions[0].name : null;
+          setConnection(payload.error ? 'error' : 'live', payload.error ? 'CLI response error' : 'Connected to termctrl');
+          versionEl.textContent = payload.terminalControlVersion || 'unknown';
+          var running = sessions.filter(function (session) { return session.state === 'running'; }).length;
+          sessionCountEl.textContent = sessions.length + ' total · ' + running + ' running';
+          lastRefreshEl.textContent = 'just now';
+          renderSessions();
+          renderSelection();
+          if (selectedName) refreshScreen();
+          firstLoad = false;
+        } catch (_) {
+          setConnection('error', 'Monitor request failed');
+          if (firstLoad) showEmpty('Monitor request failed', 'Krypton could not read the local monitor endpoint.', 'Press r to retry', true);
+        } finally {
+          listInFlight = false;
+          refreshEl.disabled = false;
+        }
+      }
+
+      async function refreshScreen() {
+        var session = selectedSession();
+        if (!session || screenInFlight || document.visibilityState === 'hidden') return;
+        if (session.state === 'stale' || session.state === 'incompatible') return;
+        if (session.state === 'exited' && screenCache.has(session.name)) {
+          screenEl.textContent = screenCache.get(session.name);
+          showScreen();
+          return;
+        }
+        screenInFlight = true;
+        try {
+          var selectedAtStart = session.name;
+          var payload = await fetchJson(apiBase + '/screen/' + encodeURIComponent(session.name));
+          var text = typeof payload.text === 'string' ? payload.text : '';
+          var current = selectedSession();
+          if (session.state === 'exited' && current && current.name === selectedAtStart && current.state === 'exited') {
+            screenCache.set(selectedAtStart, text);
+          }
+          if (selectedName === selectedAtStart) {
+            screenEl.textContent = text;
+            showScreen();
+          }
+        } catch (_) {
+          if (selectedName === session.name) {
+            screenEl.textContent = 'Visible screen is temporarily unavailable.\nThe next poll will retry.';
+          }
+        } finally {
+          screenInFlight = false;
+        }
+      }
+
+      function refreshNow() {
+        lastRefreshEl.textContent = 'refreshing';
+        refreshList();
+        refreshScreen();
+      }
+
+      function stopTimers() {
+        if (listTimer) clearInterval(listTimer);
+        if (screenTimer) clearInterval(screenTimer);
+        listTimer = null;
+        screenTimer = null;
+      }
+
+      function startTimers() {
+        stopTimers();
+        listTimer = setInterval(refreshList, 2000);
+        screenTimer = setInterval(refreshScreen, 1000);
+      }
+
+      filterEl.addEventListener('input', renderSessions);
+      refreshEl.addEventListener('click', refreshNow);
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') stopTimers();
+        else { refreshNow(); startTimers(); }
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.key === '/' && document.activeElement !== filterEl) { event.preventDefault(); filterEl.focus(); return; }
+        if (event.key === 'Escape') {
+          if (filterEl.value) { filterEl.value = ''; renderSessions(); }
+          else filterEl.blur();
+          return;
+        }
+        if (document.activeElement === filterEl) return;
+        if (event.key === 'r') { event.preventDefault(); refreshNow(); return; }
+        if (event.key === 'j' || event.key === 'k' || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          var visible = visibleSessions();
+          if (!visible.length) return;
+          event.preventDefault();
+          var index = visible.findIndex(function (session) { return session.name === selectedName; });
+          var delta = event.key === 'j' || event.key === 'ArrowDown' ? 1 : -1;
+          selectSession(visible[(index + delta + visible.length) % visible.length].name, false);
+        }
+      });
+
+      refreshList();
+      startTimers();
+    })();
+  </script>
+</body>
+</html>

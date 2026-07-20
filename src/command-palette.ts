@@ -827,6 +827,12 @@ export class CommandPalette {
       category: 'Window',
       execute: () => c.openAnalyses(),
     });
+    this.register({
+      id: 'termctrl.open',
+      label: 'Open Terminal Control Monitor',
+      category: 'Window',
+      execute: () => c.openTermctrlMonitor(),
+    });
 
     // ── Hurl Client ──
     this.register({

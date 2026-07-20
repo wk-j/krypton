@@ -7,10 +7,11 @@ appliesTo: >
   lane-monitor dashboard (src/acp/artifact-dashboard.html), artifact gallery
   (src/acp/artifact-gallery.html), docs browser (src/acp/artifact-docs.html),
   command reference (src/acp/artifact-commands.html), and MCP tool reference
-  (src/acp/artifact-tools.html).
+  (src/acp/artifact-tools.html), and Terminal Control monitor
+  (src/acp/artifact-termctrl.html).
 colors:
   primary: "#fcd535"     # the single yellow accent (== accent below)
-  bg: "#17191d"          # soft near-black canvas (shared by all six surfaces)
+  bg: "#17191d"          # soft near-black canvas (shared by all seven surfaces)
   fg: "#eaecef"          # primary text / headings
   text: "#b7bdc6"        # docs-reader body text (softer than fg; docs only)
   muted: "#707a8a"       # secondary labels, metadata, idle dots
@@ -69,7 +70,7 @@ a lane's generated artifact, the lane-monitor dashboard, the artifact gallery,
 and the docs browser all read as one product when the user flips between browser
 tabs.
 
-The six surfaces:
+The seven surfaces:
 
 | Surface | File | Role | Theming |
 | --- | --- | --- | --- |
@@ -79,6 +80,7 @@ The six surfaces:
 | Docs browser | `src/acp/artifact-docs.html` | Read-only repo markdown reader (`/docs`, `/doc`) | Auto (follows OS `prefers-color-scheme`) |
 | Command reference | `src/acp/artifact-commands.html` | Built-in `#` command + system-prompt reference (`/commands`, fetches `/commands.json` once) | Fixed dark |
 | MCP tool reference | `src/acp/artifact-tools.html` | Built-in MCP tool contract reference (`/tools`, fetches `/tools.json` once) | Fixed dark |
+| Terminal Control monitor | `src/acp/artifact-termctrl.html` | Read-only named-session roster and visible-screen preview (capability routes under `/termctrl`) | Fixed dark |
 
 Per-surface behaviour and endpoints are specified in `docs/134`, `docs/168`,
 `docs/170`, `docs/171`, `docs/185`, `docs/186` and `docs/adr/0002`/`0010`. **This file is the
@@ -115,7 +117,7 @@ so the two surfaces agree:
 
 ### One canvas, two docs-only refinements
 
-All five surfaces share the same soft canvas family — `--bg #17191d`, `--card
+All seven surfaces share the same soft canvas family — `--bg #17191d`, `--card
 #21242a`, `--border #2f353d`, `--code-bg #1d1f24`. (This soft canvas, originally
 the docs reader's, is now the single standard; the harder `#0b0e11` it replaced
 is retired.) The docs reader keeps just two prose-only refinements, recorded in

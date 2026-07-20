@@ -630,6 +630,27 @@ Packs are bundled as Tauri resources (declared in `tauri.conf.json`) and loaded 
 
 ### Harness Controller CLI
 
+### Terminal Control Session Monitor
+
+`src-tauri/src/termctrl_monitor.rs` is a read-only adapter around the installed
+`termctrl` CLI. It resolves an absolute executable from `TERMCTRL_BINARY`, the
+process and login-shell `PATH`, and standard Cargo/Homebrew locations, then
+invokes `list --json`, `show NAME`, and `--version` directly without a shell.
+Each invocation has a two-second timeout and a one-MiB combined-output cap.
+Successful discovery is cached; failed discovery retries on the next browser
+poll, and a cached path is invalidated if the executable later disappears.
+
+The existing hook server owns the process-lifetime 128-bit capability and serves
+the fixed Binance-dark page at `/termctrl/{token}`, normalized session JSON at
+`/termctrl/api/{token}/sessions`, and selected visible text at
+`/termctrl/api/{token}/screen/{name}`. All three routes require the token and use
+no-store, no-referrer, and nosniff headers. The page has no input, lifecycle,
+resize, logs, or recording endpoints. `#termctrl` and the command palette obtain
+the URL through `get_termctrl_monitor_url`; terminal text reaches a `<pre>` only
+through `textContent`. Running screens poll every second; an exited screen is
+read once and cached because its contents are final. See
+`docs/198-termctrl-session-monitor.md`.
+
 `kryptonctl` is an external Harness Controller, not an ACP lane. The Rust
 control server (`src-tauri/src/control.rs`) publishes an authenticated
 loopback HTTP endpoint and a user-private runtime descriptor. Requests cross

@@ -58,6 +58,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'gallery', args: '', description: 'open the artifact gallery (pending + live artifacts) in a browser' },
   { name: 'docs', args: '', description: 'open the repo docs browser in a browser' },
   { name: 'analyses', args: '', description: 'open the GitHub issue analysis viewer in a browser' },
+  { name: 'termctrl', args: '', description: 'open the read-only Terminal Control monitor in a browser' },
   { name: 'commands', args: '', description: 'open the built-in # command reference in a browser' },
   { name: 'tools', args: '', description: 'open the built-in MCP tool reference in a browser' },
   { name: 'handoff', args: '', description: 'write a resume-ready handoff doc to memory' },
@@ -187,6 +188,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     gallery: { category: 'surface', badges: [] },
     docs: { category: 'surface', badges: [] },
     analyses: { category: 'surface', badges: [] },
+    termctrl: { category: 'surface', badges: [] },
     commands: { category: 'surface', badges: [] },
     tools: { category: 'surface', badges: [] },
     handoff: {

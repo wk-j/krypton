@@ -904,6 +904,12 @@ pub fn get_hook_server_port(hook_server: State<'_, Arc<HookServer>>) -> u16 {
     hook_server.get_port()
 }
 
+/// Return the capability URL for the read-only Terminal Control monitor.
+#[tauri::command]
+pub fn get_termctrl_monitor_url(hook_server: State<'_, Arc<HookServer>>) -> Result<String, String> {
+    hook_server.termctrl_monitor_url()
+}
+
 /// Update the active agent model preset for the running session.
 /// In-memory only — the user's `krypton.toml` is never rewritten. To make
 /// the change permanent, edit `[agent] active` in the config file.

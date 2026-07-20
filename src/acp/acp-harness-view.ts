@@ -8873,6 +8873,18 @@ export class AcpHarnessView implements ContentView {
       }
       return;
     }
+    // spec 198: capability-gated, read-only Terminal Control monitor.
+    if (parts[0] === '#termctrl') {
+      this.setDraft(lane, '', 0);
+      try {
+        const url = await invoke<string>('get_termctrl_monitor_url');
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`termctrl monitor open failed: ${errorText(e)}`);
+      }
+      return;
+    }
     // spec 185: fixed external-browser reference for the built-in # commands.
     if (parts[0] === '#commands') {
       this.setDraft(lane, '', 0);

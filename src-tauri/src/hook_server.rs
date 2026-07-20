@@ -33,6 +33,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::sync::oneshot;
 
+use crate::termctrl_monitor::{TermctrlMonitor, TermctrlSessionList};
 use crate::util::emit::EmitExt;
 
 /// Hook event received from Claude Code via HTTP POST.
@@ -200,6 +201,8 @@ pub struct HookServer {
     /// page. Compile-time frontend data, identical across harnesses — a single
     /// global slot, last write wins (harmless by construction).
     command_manifest: std::sync::Mutex<Option<Value>>,
+    /// Spec 198: read-only Terminal Control adapter and process-lifetime page token.
+    termctrl_monitor: TermctrlMonitor,
 }
 
 /// Spec 149: registry record for an artifact feedback token. Maps the
@@ -253,6 +256,7 @@ impl Default for HookServer {
             feedback_tokens: std::sync::Mutex::new(HashMap::new()),
             telemetry: std::sync::Mutex::new(HashMap::new()),
             command_manifest: std::sync::Mutex::new(None),
+            termctrl_monitor: TermctrlMonitor::new(),
         }
     }
 }
@@ -273,6 +277,7 @@ impl HookServer {
             feedback_tokens: std::sync::Mutex::new(HashMap::new()),
             telemetry: std::sync::Mutex::new(HashMap::new()),
             command_manifest: std::sync::Mutex::new(None),
+            termctrl_monitor: TermctrlMonitor::new(),
         }
     }
 
@@ -328,6 +333,10 @@ impl HookServer {
 
     pub fn get_port(&self) -> u16 {
         *self.port.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn termctrl_monitor_url(&self) -> Result<String, String> {
+        self.termctrl_monitor.url(self.get_port())
     }
 
     pub fn unavailable_reason(&self) -> String {
@@ -1759,6 +1768,81 @@ const DOCS_HTML: &str = include_str!("../../src/acp/artifact-docs.html");
 const ANALYSES_HTML: &str = include_str!("../../src/acp/artifact-analyses.html");
 const COMMANDS_HTML: &str = include_str!("../../src/acp/artifact-commands.html");
 const TOOLS_HTML: &str = include_str!("../../src/acp/artifact-tools.html");
+const TERMCTRL_HTML: &str = include_str!("../../src/acp/artifact-termctrl.html");
+
+fn secured_json_response<T: Serialize>(status: StatusCode, payload: T) -> Response {
+    let mut response = (status, Json(payload)).into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        header::HeaderValue::from_static("nosniff"),
+    );
+    response.headers_mut().insert(
+        header::REFERRER_POLICY,
+        header::HeaderValue::from_static("no-referrer"),
+    );
+    response
+}
+
+fn termctrl_token_matches(state: &HookServerState, token: &str) -> bool {
+    constant_time_token_eq(token, state.hook_server.termctrl_monitor.token())
+}
+
+fn constant_time_token_eq(candidate: &str, expected: &str) -> bool {
+    if candidate.len() != expected.len() {
+        return false;
+    }
+    candidate
+        .bytes()
+        .zip(expected.bytes())
+        .fold(0u8, |difference, (left, right)| difference | (left ^ right))
+        == 0
+}
+
+/// GET /termctrl/{token}: read-only Terminal Control session monitor.
+async fn handle_termctrl_page(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    if !termctrl_token_matches(&state, &token) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    html_response(TERMCTRL_HTML)
+}
+
+/// GET /termctrl/api/{token}/sessions: normalized session inventory.
+async fn handle_termctrl_sessions(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    if !termctrl_token_matches(&state, &token) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let payload: TermctrlSessionList = state.hook_server.termctrl_monitor.list_sessions().await;
+    secured_json_response(StatusCode::OK, payload)
+}
+
+/// GET /termctrl/api/{token}/screen/{name}: visible text for one session.
+async fn handle_termctrl_screen(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path((token, name)): Path<(String, String)>,
+) -> Response {
+    if !termctrl_token_matches(&state, &token)
+        || !crate::termctrl_monitor::valid_session_name(&name)
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match state.hook_server.termctrl_monitor.screen(&name).await {
+        Ok(payload) => secured_json_response(StatusCode::OK, payload),
+        Err(_) => secured_json_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({ "error": "session screen unavailable" }),
+        ),
+    }
+}
 
 /// GET /dashboard — fixed external-browser lane monitor page (spec 168 pivot).
 async fn handle_dashboard() -> Response {
@@ -5157,6 +5241,15 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 .route("/commands.json", get(handle_commands_json))
                 .route("/tools", get(handle_tools))
                 .route("/tools.json", get(handle_tools_json))
+                .route("/termctrl/{token}", get(handle_termctrl_page))
+                .route(
+                    "/termctrl/api/{token}/sessions",
+                    get(handle_termctrl_sessions),
+                )
+                .route(
+                    "/termctrl/api/{token}/screen/{name}",
+                    get(handle_termctrl_screen),
+                )
                 .route("/docs", get(handle_docs))
                 .route("/doc", get(handle_doc))
                 .route("/doc-asset", get(handle_doc_asset))
@@ -5659,6 +5752,9 @@ mod tests {
             .route("/commands.json", get(ok))
             .route("/tools", get(ok))
             .route("/tools.json", get(ok))
+            .route("/termctrl/{token}", get(ok))
+            .route("/termctrl/api/{token}/sessions", get(ok))
+            .route("/termctrl/api/{token}/screen/{name}", get(ok))
             .route("/docs", get(ok))
             .route("/doc", get(ok))
             .route("/doc-asset", get(ok))
@@ -5671,6 +5767,42 @@ mod tests {
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
             .route("/artifact/feedback/{token}", post(ok));
+    }
+
+    #[test]
+    fn termctrl_monitor_url_is_capability_gated() {
+        let server = HookServer::new();
+        *server.port.lock().unwrap() = 64732;
+        let url = server.termctrl_monitor_url().expect("monitor URL");
+        assert!(url.starts_with("http://127.0.0.1:64732/termctrl/"));
+        let token = url.rsplit('/').next().unwrap();
+        assert_eq!(token.len(), 32);
+        assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(token, server.termctrl_monitor.token());
+    }
+
+    #[test]
+    fn termctrl_capability_comparison_checks_the_full_token() {
+        assert!(constant_time_token_eq(
+            "0123456789abcdef",
+            "0123456789abcdef"
+        ));
+        assert!(!constant_time_token_eq(
+            "0123456789abcdee",
+            "0123456789abcdef"
+        ));
+        assert!(!constant_time_token_eq("short", "0123456789abcdef"));
+    }
+
+    #[test]
+    fn termctrl_json_responses_disable_storage_and_sniffing() {
+        let response = secured_json_response(StatusCode::OK, json!({ "ok": true }));
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
+        assert_eq!(response.headers()[header::REFERRER_POLICY], "no-referrer");
     }
 
     // spec 185: /commands.json serves exactly what the frontend last pushed.

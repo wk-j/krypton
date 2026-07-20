@@ -2472,6 +2472,27 @@ export class Compositor {
   }
 
   /**
+   * Open the capability-gated, read-only Terminal Control monitor.
+   */
+  async openTermctrlMonitor(): Promise<void> {
+    let url: string;
+    try {
+      url = await invoke<string>('get_termctrl_monitor_url');
+    } catch (e) {
+      console.error('[Termctrl] failed to get monitor URL:', e);
+      this.showNotification('termctrl monitor unavailable');
+      return;
+    }
+    try {
+      await invoke('open_url', { url });
+      this.showNotification(url);
+    } catch (e) {
+      console.error('[Termctrl] failed to open monitor:', e);
+      this.showNotification('termctrl monitor open failed');
+    }
+  }
+
+  /**
    * Open a Pencil (Excalidraw) window. With no path it shows the picker
    * over the configured `[pencil] dir`; with a path it opens that file
    * directly (refocusing an existing tab if the same file is already open).

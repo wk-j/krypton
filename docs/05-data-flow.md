@@ -738,3 +738,27 @@ Sessions live in a shared pool. Windows reference sessions by ID. When a workspa
 ```
 
 The CLI never simulates keys, submits hash commands, or registers as a lane.
+
+## Terminal Control Monitor Flow
+
+1. The user runs `#termctrl` or selects **Open Terminal Control Monitor** from
+   the command palette.
+2. The frontend invokes `get_termctrl_monitor_url`; Rust returns the hook-server
+   port plus its process-lifetime capability token, then `open_url` launches the
+   system browser.
+3. While the page is visible, it requests the normalized session list every two
+   seconds. `TermctrlMonitor` resolves the external binary if needed and runs
+   the absolute path with `list --json` under a two-second timeout and one-MiB
+   output cap.
+4. The page retains selection by session name. It requests only the selected
+   session's `show NAME` visible text and assigns the response with
+   `textContent` to its `<pre>`. Running screens refresh every second; an exited
+   screen is fetched once and cached because it can no longer change.
+5. Stale and incompatible entries render their list diagnostics without a
+   screen request. If a session disappears, selection moves to the first
+   remaining row; zero sessions render startup guidance.
+6. `visibilitychange` stops both timers when the tab is hidden. Returning to the
+   tab triggers one immediate refresh before the timers resume. One list and one
+   screen request may be in flight; slow cycles are skipped, never queued.
+7. No route accepts terminal input or session lifecycle operations. The browser
+   is an observer only. See `docs/198-termctrl-session-monitor.md`.

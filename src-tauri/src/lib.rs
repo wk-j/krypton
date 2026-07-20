@@ -15,6 +15,7 @@ mod quick_search;
 mod session;
 pub mod sound;
 pub mod ssh;
+pub mod termctrl_monitor;
 pub mod theme;
 pub mod usage;
 pub mod util;
@@ -206,6 +207,7 @@ pub fn run() {
             music::music_get_state,
             commands::set_agent_active,
             commands::get_hook_server_port,
+            commands::get_termctrl_monitor_url,
             commands::get_hook_server_config_snippet,
             session::session_create,
             session::session_append,

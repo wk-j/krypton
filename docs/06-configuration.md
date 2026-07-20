@@ -761,6 +761,23 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 
 ---
 
+## Terminal Control Monitor Environment
+
+The read-only Terminal Control monitor has no TOML settings. It accepts two
+optional environment overrides:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TERMCTRL_BINARY` | Auto-detect | Absolute path or executable name for the `termctrl` CLI |
+| `TERMCTRL_RUNTIME_DIR` | Terminal Control default | Existing Terminal Control runtime-directory override, forwarded unchanged |
+
+Binary auto-detection checks the process `PATH`, the cached login-shell `PATH`,
+`~/.cargo/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. This keeps Finder or
+Spotlight launches working on macOS even when the GUI process receives a sparse
+environment. The monitor is opened through `#termctrl` or the command palette;
+it does not require a configuration entry and does not write one during config
+flush.
+
 ## Config Flush Defaults
 
 > Status: Implemented — Date: 2026-03-22
