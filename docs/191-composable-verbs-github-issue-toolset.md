@@ -162,7 +162,10 @@ person will read — `#analyze-github-issue` (the markdown analysis), `#post-git
 (the thread comment), and `#create-github-issue` (the issue title + body) — instruct
 the lane to write in **plain, natural Thai composed from scratch** (not a word-for-word
 translation from English) for a non-technical reader, and to end the document/comment/body
-with the footer `🤖 Analyzed by AI (Claude <MODEL_NAME>)`.
+with the footer `🤖 Analyzed by AI (Claude <MODEL_NAME>)`. Readability is silent: the
+lane must not add meta-narration that announces the writing approach, such as heading
+annotations like “(explained in plain language)” or sentence prefixes like “in plain
+terms:” / “translated to human language:”. It writes the explanation directly.
 
 ### The per-issue bundle
 

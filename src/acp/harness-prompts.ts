@@ -318,6 +318,11 @@ function issueProgressLine(input?: GithubIssueVerbInput): string {
   );
 }
 
+const PLAIN_LANGUAGE_WITHOUT_META_NARRATION =
+  'Make the content readable without announcing that writing choice. Do NOT add meta-narration such as ' +
+  'parenthetical heading annotations like "(explained in plain language)" or inline prefixes like "in plain terms:" ' +
+  'and "translated to human language:". Write the plain explanation directly.';
+
 export function analyzeGithubIssuePrompt(input?: GithubIssueVerbInput): string {
   const bundle =
     input?.repo && input.number != null
@@ -342,6 +347,7 @@ export function analyzeGithubIssuePrompt(input?: GithubIssueVerbInput): string {
       'NOT write in English and translate word-for-word. Explain any technical term, file name, or code concept ' +
       'in everyday language, and focus on what the problem means in practice over jargon. Keep unavoidable code ' +
       'identifiers and file paths as-is, but describe them in Thai on first use.',
+    PLAIN_LANGUAGE_WITHOUT_META_NARRATION,
     'End each analysis file with a footer line: `🤖 Analyzed by AI (Claude <MODEL_NAME>)` — replace ' +
       '`<MODEL_NAME>` with your actual model name.',
     '',
@@ -372,6 +378,7 @@ export function postGithubCommentPrompt(input?: GithubIssueVerbInput): string {
     'Write the comment for a non-technical reader in plain, natural Thai — compose it in Thai from scratch, do ' +
       'NOT write in English and translate word-for-word. Use everyday wording, explain any technical term simply, ' +
       'and keep unavoidable code identifiers or file paths as-is while describing them in Thai.',
+    PLAIN_LANGUAGE_WITHOUT_META_NARRATION,
     'End the comment with a footer line: `🤖 Analyzed by AI (Claude <MODEL_NAME>)` — replace `<MODEL_NAME>` with ' +
       'your actual model name.',
     `Post it with \`gh issue comment ${ghTarget(input)} --body "<your comment>"\`. This writes to a PUBLIC GitHub ` +
@@ -411,6 +418,7 @@ export function createGithubIssuePrompt(description: string, repo?: string): str
       'NOT write in English and translate word-for-word. Explain any technical term, file name, or code concept ' +
       'in everyday language. Keep unavoidable code identifiers and file paths as-is, but describe them in Thai ' +
       'on first use.',
+    PLAIN_LANGUAGE_WITHOUT_META_NARRATION,
     'End the body with a footer line: `🤖 Analyzed by AI (Claude <MODEL_NAME>)` — replace `<MODEL_NAME>` with ' +
       'your actual model name.',
     `4. Create it with \`gh issue create${target} --title "<title>" --body "<body>"\`. This writes to a PUBLIC ` +

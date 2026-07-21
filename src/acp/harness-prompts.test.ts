@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderActiveTicketPin } from './harness-prompts';
+import {
+  analyzeGithubIssuePrompt,
+  createGithubIssuePrompt,
+  postGithubCommentPrompt,
+  renderActiveTicketPin,
+} from './harness-prompts';
 
 // spec 194: the pin is shared reference context — it must stay neutral (never an
 // assignment) and must not tell every lane to report issue_progress.
@@ -40,5 +45,21 @@ describe('renderActiveTicketPin', () => {
   it('surfaces a closed state and defaults to open when unknown', () => {
     expect(renderActiveTicketPin({ ...ticket, state: 'closed' })).toContain('(closed, snapshot r4)');
     expect(renderActiveTicketPin({ ...ticket, state: undefined })).toContain('(open, snapshot r4)');
+  });
+});
+
+describe('human-facing GitHub issue prompts', () => {
+  const prompts = [
+    ['analysis', analyzeGithubIssuePrompt()],
+    ['comment', postGithubCommentPrompt()],
+    ['new issue', createGithubIssuePrompt('describe the request')],
+  ] as const;
+
+  it.each(prompts)('%s forbids plain-language meta-narration', (_name, prompt) => {
+    expect(prompt).toContain('Make the content readable without announcing that writing choice.');
+    expect(prompt).toContain('Do NOT add meta-narration');
+    expect(prompt).toContain('parenthetical heading annotations');
+    expect(prompt).toContain('inline prefixes');
+    expect(prompt).toContain('Write the plain explanation directly.');
   });
 });
