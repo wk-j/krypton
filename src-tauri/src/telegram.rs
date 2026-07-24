@@ -30,6 +30,7 @@ const STATE_VERSION: u8 = 1;
 const POLL_TIMEOUT_SECS: u64 = 25;
 const PAIRING_TTL_SECS: u64 = 300;
 const MESSAGE_LIMIT: usize = 4000;
+static NEXT_DRAFT_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -117,6 +118,7 @@ struct TelegramTarget {
     harness_id: String,
     lane: String,
     session_id: Option<String>,
+    private_chat: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -512,6 +514,7 @@ impl TelegramService {
     async fn stream_events(self, api: BotApi, _bot: TelegramBotIdentity, generation: u64) {
         let mut events = self.inner.control.subscribe();
         let mut drafts: HashMap<String, DigestDraft> = HashMap::new();
+        let mut tool_statuses: HashMap<String, ToolStatusDraft> = HashMap::new();
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         loop {
             if !self.is_generation(generation) {
@@ -519,10 +522,15 @@ impl TelegramService {
             }
             tokio::select! {
                 _ = tick.tick() => {
-                    let chats: Vec<String> = drafts.keys().cloned().collect();
+                    let chats: BTreeSet<String> = drafts
+                        .keys()
+                        .chain(tool_statuses.keys())
+                        .cloned()
+                        .collect();
                     for chat_id in chats {
                         if !self.is_subscribed(&chat_id) {
                             drafts.remove(&chat_id);
+                            tool_statuses.remove(&chat_id);
                             continue;
                         }
                         if let Some(draft) = drafts.get_mut(&chat_id) {
@@ -530,16 +538,27 @@ impl TelegramService {
                                 log::warn!("telegram digest delivery: {}", sanitize_error(&error));
                             }
                         }
+                        if let Some(status) = tool_statuses.get_mut(&chat_id) {
+                            if let Err(error) = status.flush(&api, &chat_id).await {
+                                log::warn!("telegram status delivery: {}", sanitize_error(&error));
+                            }
+                        }
                     }
                 }
                 event = events.recv() => {
                     match event {
-                        Ok(event) => self.handle_stream_event(&api, event, &mut drafts).await,
+                        Ok(event) => self.handle_stream_event(
+                            &api,
+                            event,
+                            &mut drafts,
+                            &mut tool_statuses,
+                        ).await,
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                             for chat_id in self.subscribed_chats() {
                                 let _ = api.send_text(&chat_id, "Krypton event stream resynchronized. Use /transcript for details.").await;
                             }
                             drafts.clear();
+                            tool_statuses.clear();
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                     }
@@ -553,6 +572,7 @@ impl TelegramService {
         api: &BotApi,
         event: ControlStreamEvent,
         drafts: &mut HashMap<String, DigestDraft>,
+        tool_statuses: &mut HashMap<String, ToolStatusDraft>,
     ) {
         if event.kind == "thought_chunk" || event.kind == "user_message_chunk" {
             return;
@@ -569,51 +589,56 @@ impl TelegramService {
                     .and_then(Value::as_str)
                     .unwrap_or_default();
                 for chat in chats {
-                    drafts.entry(chat).or_default().text.push_str(text);
+                    let private_chat = self.is_private_chat(&chat);
+                    drafts
+                        .entry(chat)
+                        .or_insert_with(|| DigestDraft::new(private_chat))
+                        .text
+                        .push_str(text);
                 }
             }
             "stop" | "error" => {
                 for chat in chats {
-                    if let Some(mut draft) = drafts.remove(&chat) {
-                        let _ = draft.finalize(api, &chat).await;
-                    }
                     let label = if event.kind == "stop" {
                         format!("{} · idle", event.lane.as_deref().unwrap_or("lane"))
                     } else {
                         format!("{} · error", event.lane.as_deref().unwrap_or("lane"))
                     };
-                    let _ = api.send_text(&chat, &label).await;
+                    if let Some(mut status) = tool_statuses.remove(&chat) {
+                        status.finish(label);
+                        let _ = status.flush(api, &chat).await;
+                    } else {
+                        let _ = api.send_text(&chat, &label).await;
+                    }
+                    if let Some(mut draft) = drafts.remove(&chat) {
+                        let _ = draft.finalize(api, &chat).await;
+                    }
                 }
             }
             "tool_call" | "tool_call_update" => {
-                let title = event
+                let payload = event
                     .payload
-                    .pointer("/call/title")
-                    .or_else(|| event.payload.pointer("/update/title"))
-                    .or_else(|| event.payload.get("title"))
+                    .get("call")
+                    .or_else(|| event.payload.get("update"))
+                    .unwrap_or(&event.payload);
+                let tool_call_id = payload
+                    .get("toolCallId")
                     .and_then(Value::as_str)
-                    .unwrap_or("tool");
-                let status = event
-                    .payload
-                    .pointer("/call/status")
-                    .or_else(|| event.payload.pointer("/update/status"))
-                    .or_else(|| event.payload.get("status"))
+                    .unwrap_or("unknown");
+                let title = payload.get("title").and_then(Value::as_str);
+                let kind = payload.get("kind").and_then(Value::as_str);
+                let label = telegram_tool_label(title, kind, payload.get("rawInput"));
+                let status = payload
+                    .get("status")
                     .and_then(Value::as_str)
-                    .unwrap_or("running");
-                if status == "completed" || status == "failed" {
-                    for chat in chats {
-                        let _ = api
-                            .send_text(
-                                &chat,
-                                &format!(
-                                    "{} · tool: {} · {}",
-                                    event.lane.as_deref().unwrap_or("lane"),
-                                    bounded_line(title, 80),
-                                    status
-                                ),
-                            )
-                            .await;
-                    }
+                    .unwrap_or("in_progress");
+                for chat in chats {
+                    tool_statuses.entry(chat).or_default().record(
+                        event.lane.as_deref().unwrap_or("lane"),
+                        tool_call_id,
+                        &label,
+                        status,
+                    );
                 }
             }
             "permission_resolved" => {
@@ -639,6 +664,7 @@ impl TelegramService {
                 let invalidated = self.invalidate_targets(&event);
                 for chat in invalidated {
                     drafts.remove(&chat);
+                    tool_statuses.remove(&chat);
                     let _ = api
                         .send_text(
                             &chat,
@@ -847,6 +873,10 @@ impl TelegramService {
             self.report_lanes(app, api, chat_id, caller).await;
             return;
         }
+        let private_chat = caller
+            .telegram
+            .as_ref()
+            .is_some_and(|telegram| telegram.chat_kind == "private");
         let reply = self.dispatch(app, "lane.list", json!({}), caller).await;
         let lane = reply
             .result
@@ -873,6 +903,7 @@ impl TelegramService {
                 .get("sessionId")
                 .and_then(Value::as_str)
                 .map(ToString::to_string),
+            private_chat,
         };
         lock(&self.inner.targets).insert(chat_id.to_string(), target);
         let _ = api
@@ -1201,6 +1232,12 @@ impl TelegramService {
         lock(&self.inner.targets).contains_key(chat_id)
     }
 
+    fn is_private_chat(&self, chat_id: &str) -> bool {
+        lock(&self.inner.targets)
+            .get(chat_id)
+            .is_some_and(|target| target.private_chat)
+    }
+
     fn invalidate_targets(&self, event: &ControlStreamEvent) -> Vec<String> {
         let lane = event.lane.as_deref();
         let new_session = event.payload.get("sessionId").and_then(Value::as_str);
@@ -1419,6 +1456,19 @@ impl BotApi {
         Ok(message.message_id)
     }
 
+    async fn send_draft(&self, chat_id: &str, draft_id: i64, text: &str) -> Result<(), String> {
+        let numeric_chat_id = chat_id
+            .parse::<i64>()
+            .map_err(|_| "Telegram private chat ID is invalid".to_string())?;
+        let _: bool = self
+            .call(
+                "sendMessageDraft",
+                json!({"chat_id": numeric_chat_id, "draft_id": draft_id, "text": text}),
+            )
+            .await?;
+        Ok(())
+    }
+
     async fn edit_message(&self, chat_id: &str, message_id: i64, text: &str) -> Result<(), String> {
         let _: Value = self
             .call(
@@ -1526,14 +1576,25 @@ struct TelegramSentMessage {
     message_id: i64,
 }
 
-#[derive(Default)]
 struct DigestDraft {
     text: String,
     message_id: Option<i64>,
     sent_text: String,
+    ephemeral: bool,
+    draft_id: i64,
 }
 
 impl DigestDraft {
+    fn new(private_chat: bool) -> Self {
+        Self {
+            text: String::new(),
+            message_id: None,
+            sent_text: String::new(),
+            ephemeral: private_chat,
+            draft_id: next_draft_id(),
+        }
+    }
+
     async fn flush(&mut self, api: &BotApi, chat_id: &str) -> Result<(), String> {
         if self.text.is_empty() || self.text == self.sent_text {
             return Ok(());
@@ -1546,6 +1607,21 @@ impl DigestDraft {
         } else {
             self.text.clone()
         };
+        if self.ephemeral {
+            match api.send_draft(chat_id, self.draft_id, &preview).await {
+                Ok(()) => {
+                    self.sent_text = self.text.clone();
+                    return Ok(());
+                }
+                Err(error) => {
+                    log::debug!(
+                        "telegram sendMessageDraft unavailable, using persistent preview: {}",
+                        sanitize_error(&error)
+                    );
+                    self.ephemeral = false;
+                }
+            }
+        }
         match self.message_id {
             Some(message_id) => {
                 if let Err(error) = api.edit_message(chat_id, message_id, &preview).await {
@@ -1568,21 +1644,183 @@ impl DigestDraft {
         let Some(first) = parts.first() else {
             return Ok(());
         };
-        match self.message_id {
-            Some(message_id) => {
-                if let Err(error) = api.edit_message(chat_id, message_id, first).await {
-                    if !error.contains("message is not modified") {
-                        self.message_id = Some(api.send_message(chat_id, first).await?);
+        if self.ephemeral {
+            self.message_id = Some(api.send_message(chat_id, first).await?);
+        } else {
+            match self.message_id {
+                Some(message_id) => {
+                    if let Err(error) = api.edit_message(chat_id, message_id, first).await {
+                        if !error.contains("message is not modified") {
+                            self.message_id = Some(api.send_message(chat_id, first).await?);
+                        }
                     }
                 }
+                None => self.message_id = Some(api.send_message(chat_id, first).await?),
             }
-            None => self.message_id = Some(api.send_message(chat_id, first).await?),
         }
         for part in parts.iter().skip(1) {
             api.send_text(chat_id, part).await?;
         }
         self.sent_text = self.text.clone();
         Ok(())
+    }
+}
+
+#[derive(Default)]
+struct ToolStatusDraft {
+    lane: String,
+    calls: HashMap<String, ToolStatusItem>,
+    order: Vec<String>,
+    final_label: Option<String>,
+    message_id: Option<i64>,
+    sent_text: String,
+}
+
+struct ToolStatusItem {
+    label: String,
+    status: String,
+}
+
+impl ToolStatusDraft {
+    fn record(&mut self, lane: &str, tool_call_id: &str, label: &str, status: &str) {
+        self.lane = lane.to_string();
+        if !self.calls.contains_key(tool_call_id) {
+            self.order.push(tool_call_id.to_string());
+            self.calls.insert(
+                tool_call_id.to_string(),
+                ToolStatusItem {
+                    label: label.to_string(),
+                    status: status.to_string(),
+                },
+            );
+        }
+        let Some(entry) = self.calls.get_mut(tool_call_id) else {
+            return;
+        };
+        if entry.label == "tool" && label != "tool" {
+            entry.label = label.to_string();
+        }
+        entry.status = status.to_string();
+    }
+
+    fn finish(&mut self, label: String) {
+        self.final_label = Some(label);
+    }
+
+    fn render(&self) -> String {
+        const VISIBLE_TOOLS: usize = 6;
+        let completed = self
+            .calls
+            .values()
+            .filter(|call| call.status == "completed")
+            .count();
+        let failed = self
+            .calls
+            .values()
+            .filter(|call| call.status == "failed")
+            .count();
+        let running = self.calls.len().saturating_sub(completed + failed);
+        let mut counts = vec![format!("✓ {completed}")];
+        if failed > 0 {
+            counts.push(format!("✗ {failed}"));
+        }
+        if running > 0 {
+            counts.push(format!("⟳ {running}"));
+        }
+        let mut lines = vec![
+            format!("{} · {} tools", self.lane, self.calls.len()),
+            counts.join(" · "),
+        ];
+        let hidden = self.order.len().saturating_sub(VISIBLE_TOOLS);
+        if hidden > 0 {
+            lines.push(format!("… {hidden} earlier"));
+        }
+        for tool_call_id in self.order.iter().skip(hidden) {
+            if let Some(call) = self.calls.get(tool_call_id) {
+                lines.push(format!(
+                    "{} {}",
+                    telegram_tool_status_glyph(&call.status),
+                    call.label
+                ));
+            }
+        }
+        if let Some(label) = &self.final_label {
+            lines.push(label.clone());
+        }
+        lines.join("\n")
+    }
+
+    async fn flush(&mut self, api: &BotApi, chat_id: &str) -> Result<(), String> {
+        let text = self.render();
+        if text == self.sent_text {
+            return Ok(());
+        }
+        match self.message_id {
+            Some(message_id) => {
+                if let Err(error) = api.edit_message(chat_id, message_id, &text).await {
+                    if !error.contains("message is not modified") {
+                        self.message_id = Some(api.send_message(chat_id, &text).await?);
+                    }
+                }
+            }
+            None => self.message_id = Some(api.send_message(chat_id, &text).await?),
+        }
+        self.sent_text = text;
+        Ok(())
+    }
+}
+
+fn telegram_tool_label(
+    title: Option<&str>,
+    kind: Option<&str>,
+    raw_input: Option<&Value>,
+) -> String {
+    if let Some(raw_input) = raw_input.and_then(Value::as_object) {
+        if let (Some(server), Some(tool)) = (
+            raw_input.get("server").and_then(Value::as_str),
+            raw_input.get("tool").and_then(Value::as_str),
+        ) {
+            return bounded_line(&format!("{server} · {tool}"), 96);
+        }
+        for key in ["name", "toolName", "tool_name", "tool"] {
+            if let Some(name) = raw_input.get(key).and_then(Value::as_str) {
+                return bounded_line(&friendly_tool_name(name), 96);
+            }
+        }
+    }
+    let kind = kind.unwrap_or("other");
+    let title = title
+        .map(str::trim)
+        .filter(|title| !title.is_empty() && !title.eq_ignore_ascii_case("tool"));
+    if kind == "execute" {
+        return "execute command".to_string();
+    }
+    title
+        .map(|title| bounded_line(title, 96))
+        .unwrap_or_else(|| {
+            if kind == "other" {
+                "tool".to_string()
+            } else {
+                kind.to_string()
+            }
+        })
+}
+
+fn friendly_tool_name(name: &str) -> String {
+    if let Some(tool) = name
+        .strip_prefix("mcp__")
+        .and_then(|name| name.rsplit("__").next())
+    {
+        return tool.to_string();
+    }
+    name.replace("__", ".")
+}
+
+fn telegram_tool_status_glyph(status: &str) -> &'static str {
+    match status {
+        "completed" => "✓",
+        "failed" => "✗",
+        _ => "⟳",
     }
 }
 
@@ -1708,6 +1946,11 @@ fn bounded_line(text: &str, max_chars: usize) -> String {
 
 fn advertised_operation(operation: &str) -> bool {
     crate::control::ADVERTISED_OPERATIONS.contains(&operation)
+}
+
+fn next_draft_id() -> i64 {
+    let id = NEXT_DRAFT_ID.fetch_add(1, Ordering::Relaxed) & i64::MAX as u64;
+    i64::try_from(id.max(1)).unwrap_or(1)
 }
 
 fn random_pair_code() -> Result<String, String> {
@@ -2019,5 +2262,57 @@ mod tests {
             Some(17)
         );
         assert_eq!(parse_retry_after("500 unavailable"), None);
+    }
+
+    #[test]
+    fn private_chat_digest_uses_ephemeral_draft_until_finalize() {
+        let private = DigestDraft::new(true);
+        let group = DigestDraft::new(false);
+
+        assert!(private.ephemeral);
+        assert!(private.draft_id > 0);
+        assert!(!group.ephemeral);
+    }
+
+    #[test]
+    fn tool_status_compacts_updates_into_one_summary() {
+        let mut status = ToolStatusDraft::default();
+        status.record("Codex-1", "call-1", "read telegram.rs", "in_progress");
+        status.record("Codex-1", "call-2", "cargo clippy", "failed");
+        status.record("Codex-1", "call-1", "tool", "completed");
+        status.finish("Codex-1 · error".to_string());
+
+        assert_eq!(
+            status.render(),
+            "Codex-1 · 2 tools\n✓ 1 · ✗ 1\n✓ read telegram.rs\n✗ cargo clippy\nCodex-1 · error"
+        );
+    }
+
+    #[test]
+    fn telegram_tool_labels_are_useful_without_exposing_shell_commands() {
+        assert_eq!(
+            telegram_tool_label(
+                Some("tool"),
+                Some("other"),
+                Some(&json!({"name": "web__run"}))
+            ),
+            "web.run"
+        );
+        assert_eq!(
+            telegram_tool_label(
+                Some("rm -rf sensitive-path"),
+                Some("execute"),
+                Some(&json!({"command": "rm -rf sensitive-path"}))
+            ),
+            "execute command"
+        );
+        assert_eq!(
+            telegram_tool_label(
+                Some("tool"),
+                Some("other"),
+                Some(&json!({"server": "krypton-harness-memory", "tool": "attention_flag"}))
+            ),
+            "krypton-harness-memory · attention_flag"
+        );
     }
 }

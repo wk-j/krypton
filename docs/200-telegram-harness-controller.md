@@ -1030,6 +1030,9 @@ Implemented on 2026-07-24 with:
 - queued Telegram provenance and one-turn permission/filesystem-write bypass in
   the existing `AcpHarnessView` prompt path;
 - lifecycle and permission-resolution control events;
+- ephemeral `sendMessageDraft` streaming in private chats, followed by a fresh
+  persistent final message, plus one edited tool/status summary per chat that
+  merges partial ACP updates by call ID and shows the latest six named tools;
 - a keyboard-first Telegram Settings content view, command-palette entry, and
   exact `#telegram` ACP harness command.
 
@@ -1040,7 +1043,7 @@ only `message` updates and cannot strand a Telegram callback spinner. Live Bot
 API validation likewise requires an operator-owned token.
 
 Automated evidence: `npm run check`, production `npm run build`, 511 full
-Vitest tests (including 172 focused control/harness tests), 177 Rust library
+Vitest tests (including 172 focused control/harness tests), 180 Rust library
 tests plus 3 `kryptonctl` tests, `cargo fmt
 -- --check`, and `cargo clippy --all-targets -- -D warnings` all pass. The manual
 Telegram sandbox checklist remains intentionally unexecuted because no real bot

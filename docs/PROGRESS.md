@@ -396,11 +396,16 @@
   permission/fs-write bypass for that exact turn only, without changing the
   lane's persistent mode. A dedicated keyboard-first Settings content view is
   available from the command palette and exact `#telegram` harness command
-  (no arguments or credential text accepted). `npm run check`, production
-  build, 511 Vitest tests, 177 Rust library tests + 3 CLI tests, fmt, and
-  all-target clippy pass. Live Telegram validation requires the operator's own
-  bot token; inline callback buttons remain a documented follow-up while text
-  commands and `/ctl` provide the implemented operation surface. See
+  (no arguments or credential text accepted). Private chats stream through an
+  ephemeral Bot API draft and persist the final answer only after the single
+  edited tool/status summary, which merges ACP updates by call ID and shows the
+  latest six named tools instead of emitting anonymous completion bubbles. This
+  prevents final output from being stranded above later tool bubbles. `npm run
+  check`, production build, 511 Vitest tests, 180 Rust library tests + 3 CLI
+  tests, fmt, and all-target clippy pass. Live
+  Telegram validation requires the operator's own bot token; inline callback
+  buttons remain a documented follow-up while text commands and `/ctl` provide
+  the implemented operation surface. See
   `docs/200-telegram-harness-controller.md` and ADR-0013–0015.
 - **Docs browser artifact export (spec 174)** — The `/doc` reader can now ask
   the active harness lane to generate a normal HTML artifact from the markdown
