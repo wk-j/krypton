@@ -157,6 +157,20 @@ Memory commands preserve the lane-owned memory model:
 
 `peer list` is read-only. There is no CLI-originated `peer send`.
 
+## Trusted Internal Control Callers
+
+The HTTP handler and internal adapters now share
+`ControlServer::dispatch(request, caller)`. Public HTTP JSON cannot supply the
+caller: the handler always constructs `ControlCaller::control_api()`.
+`TelegramService` may construct `ControlCaller::telegram(...)` only after its
+numeric user/chat admission succeeds.
+
+The caller travels through `acp-control-request` beside operation params.
+`control-bridge.ts` forwards it to the owning harness without copying it into
+caller-controlled params. `AcpHarnessView` uses it only to derive Telegram
+prompt provenance and a one-turn bypass policy; CLI and browser calls retain
+their existing permission behavior. See spec 200.
+
 ## Concurrency And Idempotency
 
 UI and CLI operations serialize through the frontend authority.

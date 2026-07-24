@@ -20,6 +20,7 @@
 
 import type { InterLaneEnvelope, LaneSummary } from './types';
 import type { AcceptInboundResult } from './inter-lane';
+import type { ControlCaller } from './control-types';
 
 // ──────────────────────────────────────────────────────────────────────────
 // (a) Name allocator — monotonic per rendered display-label prefix, never
@@ -66,7 +67,11 @@ export interface HarnessEntry {
   // Close notification: the directory calls this on every OTHER registered
   // harness when some harness disposes, handing it a snapshot taken before removal.
   onForeignHarnessClosed(closed: HarnessEntrySnapshot): void;
-  control?(operation: string, params: Record<string, unknown>): Promise<unknown>;
+  control?(
+    operation: string,
+    params: Record<string, unknown>,
+    caller?: ControlCaller,
+  ): Promise<unknown>;
 }
 
 const harnesses = new Map<string, HarnessEntry>();

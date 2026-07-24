@@ -212,10 +212,16 @@ async function main(): Promise<void> {
   // Create the first terminal window
   await compositor.createWindow();
 
-  // Initialize cursor trail (rainbow flame effect on mouse + text cursor)
+  // Initialize cursor trail (rainbow flame effect on mouse + text cursor).
+  // Disabled via [terminal] cursor_trail = false; hot-reload toggles it live.
   const cursorTrail = createCursorTrail();
   cursorTrail.setCompositor(compositor);
-  cursorTrail.init();
+  if (config?.terminal.cursor_trail !== false) {
+    cursorTrail.init();
+  }
+  compositor.onConfigReload((newConfig) => {
+    cursorTrail.setEnabled(newConfig.terminal.cursor_trail);
+  });
 
   // Play startup sound after first window is ready
   compositor.soundEngine.play('startup');

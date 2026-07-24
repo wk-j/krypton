@@ -61,6 +61,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'termctrl', args: '', description: 'open the read-only Terminal Control monitor in a browser' },
   { name: 'commands', args: '', description: 'open the built-in # command reference in a browser' },
   { name: 'tools', args: '', description: 'open the built-in MCP tool reference in a browser' },
+  { name: 'telegram', args: '', description: 'open Telegram controller settings' },
   { name: 'handoff', args: '', description: 'write a resume-ready handoff doc to memory' },
   { name: 'resume', args: '', description: 'resume from the last handoff doc' },
   { name: 'wiki', args: '[<hint>]', description: 'ingest this conversation into the repo wiki' },
@@ -191,6 +192,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     termctrl: { category: 'surface', badges: [] },
     commands: { category: 'surface', badges: [] },
     tools: { category: 'surface', badges: [] },
+    telegram: { category: 'surface', badges: [] },
     handoff: {
       category: 'agent',
       badges: ['workflow'],

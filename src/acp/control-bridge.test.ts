@@ -17,10 +17,12 @@ import {
   type HarnessEntry,
 } from './harness-directory';
 import type { LaneSummary } from './types';
+import type { ControlCaller } from './control-types';
 
 interface ControlCall {
   operation: string;
   params: Record<string, unknown>;
+  caller?: ControlCaller;
 }
 
 /** A minimal harness entry that records the control ops routed to it and owns a
@@ -56,8 +58,8 @@ function makeHarness(harnessId: string, displayNames: string[]): {
     acceptForeignCancellation: () => {},
     clearCancellationTombstone: () => {},
     onForeignHarnessClosed: () => {},
-    control: (operation, params) => {
-      calls.push({ operation, params });
+    control: (operation, params, caller) => {
+      calls.push({ operation, params, caller });
       return Promise.resolve({ harnessId, lane: (params.targetLane as string) ?? null });
     },
   };
@@ -116,5 +118,25 @@ describe('control-bridge route: github.dispatch-issue', () => {
 
     expect(a.calls).toHaveLength(1);
     expect(a.calls[0].operation).toBe('github.dispatch-issue');
+  });
+
+  it('forwards trusted Telegram caller metadata without putting it in params', async () => {
+    const a = makeHarness('hm-a', ['Claude-1']);
+    registerHarness(a.entry);
+    const caller: ControlCaller = {
+      source: 'telegram',
+      telegram: {
+        updateId: '901',
+        userId: '42',
+        displayName: 'Niran',
+        chatId: '42',
+        chatKind: 'private',
+      },
+    };
+
+    await route('lane.list', {}, caller);
+
+    expect(a.calls[0].caller).toEqual(caller);
+    expect(a.calls[0].params).toEqual({});
   });
 });

@@ -64,13 +64,17 @@ class CursorTrailWorker {
   }
 
   toggle(): void {
-    if (this.running) {
-      this.running = false;
-      this.worker.postMessage({ type: 'stop' });
-    } else {
-      this.running = true;
-      this.worker.postMessage({ type: 'start' });
+    this.setEnabled(!this.running);
+  }
+
+  setEnabled(enabled: boolean): void {
+    if (enabled && !this.bound) {
+      this.init();
+      return;
     }
+    if (enabled === this.running) return;
+    this.running = enabled;
+    this.worker.postMessage({ type: enabled ? 'start' : 'stop' });
   }
 
   destroy(): void {
@@ -198,8 +202,16 @@ class CursorTrailDOM {
   }
 
   toggle(): void {
-    this.enabled = !this.enabled;
-    if (!this.enabled) this.clearAll();
+    this.setEnabled(!this.enabled);
+  }
+
+  setEnabled(enabled: boolean): void {
+    if (enabled && !this.bound) {
+      this.init();
+    }
+    if (enabled === this.enabled) return;
+    this.enabled = enabled;
+    if (!enabled) this.clearAll();
   }
 
   destroy(): void {
@@ -337,6 +349,7 @@ export interface CursorTrailAPI {
   setCompositor(compositor: Compositor): void;
   init(): void;
   toggle(): void;
+  setEnabled(enabled: boolean): void;
   destroy(): void;
 }
 

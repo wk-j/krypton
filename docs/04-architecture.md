@@ -675,6 +675,25 @@ either proxies server-side (default; bearer token stays off-browser) or calls
 directly when `[acp_controller].cors_origins` lists its exact origin. See
 `docs/175-harness-web-control-api.md`.
 
+### Telegram Harness Controller
+
+`src-tauri/src/telegram.rs` is a privileged remote adapter over that same
+control boundary. It owns Bot API long polling, OS-vault credential access,
+application-managed allowlists/pairing, the update watermark, per-chat targets,
+and compact outbound digests. It calls `ControlServer::dispatch` directly and
+subscribes to the server's typed event broadcast; it does not loop back through
+HTTP and does not know the control bearer token.
+
+Rust attaches trusted numeric sender/chat provenance only after admission.
+`control-bridge.ts` forwards that metadata separately from operation params, and
+`AcpHarnessView` remains the sole lane authority. A Telegram `lane.send` carries
+the provenance through the existing FIFO prompt queue and arms full permission
+bypass only for that exact turn. It never changes the lane's persistent
+permission mode. The dedicated DOM Settings view edits
+`~/.config/krypton/telegram.toml` through sanitized Tauri commands; the bot token
+never crosses into the frontend. See `docs/200-telegram-harness-controller.md`
+and ADR-0013 through ADR-0015.
+
 A Chrome/Chromium **browser extension** (`extension/`) is a packaged client of
 this control API (doc 176): it sends the current page selection into a lane as a
 chosen action via `lane.send`. Token discovery is zero-config through a Native

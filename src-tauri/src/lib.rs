@@ -15,6 +15,7 @@ mod quick_search;
 mod session;
 pub mod sound;
 pub mod ssh;
+pub mod telegram;
 pub mod termctrl_monitor;
 pub mod theme;
 pub mod usage;
@@ -78,6 +79,7 @@ pub fn run() {
     // Initialize hook server state
     let hook_server = Arc::new(hook_server::HookServer::new());
     let control_server = Arc::new(control::ControlServer::default());
+    let telegram_service = telegram::TelegramService::new(control_server.clone());
 
     // Initialize SSH manager
     let ssh_socket_dir = config::config_dir()
@@ -124,6 +126,7 @@ pub fn run() {
         .manage(ssh_manager)
         .manage(hook_server.clone())
         .manage(control_server.clone())
+        .manage(telegram_service.clone())
         .manage(hurl_state)
         .manage(quick_search::QuickSearchState::new())
         .manage(Arc::new(acp::AcpRegistry::new()))
@@ -209,6 +212,19 @@ pub fn run() {
             commands::get_hook_server_port,
             commands::get_termctrl_monitor_url,
             commands::get_hook_server_config_snippet,
+            telegram::telegram_get_status,
+            telegram::telegram_set_enabled,
+            telegram::telegram_set_token,
+            telegram::telegram_remove_token,
+            telegram::telegram_test_connection,
+            telegram::telegram_add_user,
+            telegram::telegram_remove_user,
+            telegram::telegram_add_group,
+            telegram::telegram_remove_group,
+            telegram::telegram_start_pairing,
+            telegram::telegram_cancel_pairing,
+            telegram::telegram_accept_pairing,
+            telegram::telegram_reject_pairing,
             session::session_create,
             session::session_append,
             session::session_load,
@@ -391,6 +407,11 @@ pub fn run() {
                 }
             }
 
+            // Telegram is an app-managed transport over the same typed control
+            // dispatcher. Attaching starts it only when its own setting and
+            // credential are both present.
+            telegram_service.attach(app.handle().clone());
+
             // Start process detection poller for context-aware extensions
             let poller_handle = app.handle().clone();
             let poller_config = krypton_config.clone();
@@ -429,6 +450,7 @@ pub fn run() {
                 // and get reparented to launchd.
                 let registry = app.state::<Arc<acp::AcpRegistry>>().inner().clone();
                 let control = app.state::<Arc<control::ControlServer>>().inner().clone();
+                app.state::<telegram::TelegramService>().shutdown();
                 control.remove_descriptor();
                 tauri::async_runtime::block_on(async move {
                     acp::dispose_all(&registry).await;

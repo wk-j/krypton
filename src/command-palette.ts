@@ -803,6 +803,12 @@ export class CommandPalette {
       execute: () => c.openUsageView(),
     });
     this.register({
+      id: 'telegram.settings',
+      label: 'Open Telegram Controller Settings',
+      category: 'Window',
+      execute: () => c.openTelegramSettings(),
+    });
+    this.register({
       id: 'dashboard.open',
       label: 'Open Lane Monitor Dashboard',
       category: 'Window',

@@ -20,6 +20,50 @@ _Avoid_: agent (ambiguous — could mean the backend process or the pi-agent), t
 An external command-line client that connects to the running Krypton instance to observe and control its ACP harnesses and lanes. It controls Krypton itself; it is neither an ACP agent lane nor a standalone ACP client that bypasses Krypton.
 _Avoid_: ACP agent CLI, standalone ACP client
 
+**Telegram Controller**:
+A remote conversational control surface, available in private and group chats while the Krypton application is running, through which an authorized Telegram user can exercise the full control authority of Krypton's ACP harness, including lane lifecycle actions and permission decisions. It controls existing harnesses and lanes; it is neither a [[Lane]] nor an inter-lane peer.
+_Avoid_: notification bot (it can act, not merely notify), Telegram lane (it is a controller, not an ACP session), peer
+
+**Authorized Telegram user**:
+A Telegram account whose immutable numeric user ID appears in Krypton's configured allowlist. Only messages attributable to an account on this allowlist may exercise [[Telegram Controller]] authority.
+_Avoid_: Telegram username (mutable and reusable), chat ID (identifies a conversation rather than the acting person), bot administrator
+
+**Authorized Telegram chat**:
+A private chat belonging to an [[Authorized Telegram user]], or a group chat whose immutable numeric chat ID appears in Krypton's separate configured chat allowlist. A group command is admitted only when both the acting user and the group are authorized.
+_Avoid_: known chat (prior contact does not grant authority), bot-member group (adding the bot does not authorize a group), public group
+
+**Telegram target lane**:
+The process-local [[Lane]] selected for one [[Authorized Telegram chat]] as the destination for its admitted Telegram messages and control actions. Selecting it also subscribes that chat to all subsequent observable activity in the shared lane, regardless of who initiated that activity. The selection remains until an authorized user changes it, its harness or lane closes, its ACP session is replaced, or Krypton exits; Krypton never persists the selection or silently substitutes another lane.
+_Avoid_: active lane (already means the lane active in the in-app harness UI), per-user target (members of one group share a target), default lane (the target is an explicit per-chat selection), bound lane (the selection is replaceable)
+
+**Telegram message provenance**:
+Trusted metadata attached by Krypton to a Telegram-originated prompt that identifies Telegram as the source and records the sender's numeric user ID and display name. It remains separate from user-authored prompt text so the sender cannot forge or erase the audit identity.
+_Avoid_: sender prefix (ordinary text can be forged), username tag (usernames are mutable), prompt decoration
+
+**Admitted Telegram message**:
+A message from an [[Authorized Telegram user]] in an [[Authorized Telegram chat]] that the [[Telegram Controller]] accepts as intentional input. Ordinary text is intentional in a private chat; in a group it must use `/ask`, mention the bot, or reply directly to a bot message.
+_Avoid_: group message (most group conversation is ignored), Telegram update (updates also include callbacks and unrelated events), forwarded message
+
+**Telegram operational digest**:
+The compact Telegram projection of a [[Lane]]'s observable activity: live assistant text, summarized tool progress, permission requests, status changes, and errors. It omits thought/reasoning events and keeps detailed history available on demand through the transcript command.
+_Avoid_: transcript mirror (the digest intentionally suppresses noisy event detail), notification feed (it is live interactive session output), reasoning stream
+
+**Telegram bypass policy**:
+The permission policy carried by every Telegram-originated prompt, including while it waits in a lane queue: all permission requests raised during that prompt's turn are accepted automatically, including high-risk operations. The policy ends with that turn and never changes the lane's persistent permission mode or applies to turns from another source.
+_Avoid_: lane bypass (the whole lane is not placed in bypass mode), permission approval (there is no interactive decision), trusted prompt (the content remains untrusted even though its turn has execution authority)
+
+**Telegram bot credential**:
+The secret Bot API token used by Krypton's Telegram backend, stored in the operating system's credential vault and never returned to the frontend or control clients. Application configuration records only whether Telegram is enabled and which identities are authorized.
+_Avoid_: bot token setting (ordinary settings are frontend-visible), environment variable (GUI launches do not reliably inherit shell state), config value
+
+**Telegram Settings**:
+The keyboard-operable in-app configuration surface for enabling the [[Telegram Controller]], setting or removing its credential, managing user and chat allowlists, and observing redacted connection health. It exposes credential presence but never the stored token value.
+_Avoid_: general settings (Krypton has no general settings view), token viewer, Telegram dashboard (session control remains in Telegram and the harness)
+
+**Telegram pairing request**:
+A short-lived enrollment proposal created when someone submits a locally generated single-use code to the Telegram bot. It records the numeric sender and chat identities for local review but grants no authority until a human accepts it in [[Telegram Settings]].
+_Avoid_: login (Telegram already authenticated the account), authorization code (the code alone grants nothing), invitation (acceptance changes Krypton's local allowlists)
+
 **Goal**:
 A declared, single-task **focus scope** bound to one [[Lane]]: a short statement of what this lane is currently working on. Its purpose is *scoping and focus*, not autonomy — it (a) keeps the agent anchored to that task so it does not drift onto unrelated work, and (c) reminds the human which task this lane is on. Setting a goal **clears the lane** (fresh ACP session + empty transcript, equivalent to `#new`) so the lane refocuses with nothing from before bleeding in; harness `memory_*` state and the peer inbox/pending sends are **left untouched**. A goal does **not** auto-continue the lane across turns and is **not** checked for completion — there is no evaluator and no self-reported "done". It persists, purely as scope, until the human replaces it (a new goal) or clears it.
 _Avoid_: completion condition / "keep working until met" (that is Claude Code's `/goal`, a different feature — autonomy via an independent evaluator; Krypton's goal borrows the name and the clear-on-new behaviour but **not** the auto-loop or the evaluator), directive (a [[Lane]] directive is a persistent role/persona; a goal is the current *task*, set ad-hoc and cleared freely), task/todo (a goal is one active scope per lane, not a tracked list)

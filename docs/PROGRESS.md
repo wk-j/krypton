@@ -387,6 +387,21 @@
   `*`). This retires the SSE capability doc 154 had marked deferred. 8 Rust
   control tests + `npm run check` + clippy green. See
   `docs/175-harness-web-control-api.md`.
+- **Telegram Harness Controller (spec 200)** — Adds an app-lifetime Telegram Bot
+  API long-polling adapter over the existing typed Harness Control dispatcher
+  and event stream. Rust owns the OS-vault token, numeric user+group allowlists,
+  local-confirmed pairing, update watermark, per-chat lane target, and compact
+  thought-free digests; `AcpHarnessView` remains the state authority. Trusted
+  Telegram provenance survives the existing FIFO prompt queue and grants full
+  permission/fs-write bypass for that exact turn only, without changing the
+  lane's persistent mode. A dedicated keyboard-first Settings content view is
+  available from the command palette and exact `#telegram` harness command
+  (no arguments or credential text accepted). `npm run check`, production
+  build, 511 Vitest tests, 177 Rust library tests + 3 CLI tests, fmt, and
+  all-target clippy pass. Live Telegram validation requires the operator's own
+  bot token; inline callback buttons remain a documented follow-up while text
+  commands and `/ctl` provide the implemented operation surface. See
+  `docs/200-telegram-harness-controller.md` and ADR-0013–0015.
 - **Docs browser artifact export (spec 174)** — The `/doc` reader can now ask
   the active harness lane to generate a normal HTML artifact from the markdown
   file the user is reading. A fixed `artifact` pill and the `a` shortcut POST

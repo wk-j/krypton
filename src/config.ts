@@ -20,6 +20,7 @@ export interface TerminalConfig {
   scrollback_lines: number;
   cursor_style: 'block' | 'underline' | 'bar';
   cursor_blink: boolean;
+  cursor_trail: boolean;
 }
 
 export interface ThemeColors {

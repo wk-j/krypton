@@ -24,6 +24,7 @@ import type {
   AcpSessionInfo,
   AgentInfo,
   AgentInitInfo,
+  AgentSessionInfo,
   ContentBlock,
   HarnessLaneStatus,
   HarnessMcpLaneStats,
@@ -82,6 +83,7 @@ import {
   type HarnessEntry,
 } from './harness-directory';
 import { publishControlEvent, type ControlEventKind } from './control-publish';
+import type { ControlCaller, TelegramControlCaller } from './control-types';
 import { parseMentionFanOut } from './mention-parse';
 import {
   applyMentionSelection,
@@ -235,6 +237,7 @@ interface HarnessTranscriptItem {
   pretextLineHeight?: number;
   pretextLines?: string[];
   imageCount?: number;
+  telegramProvenance?: TelegramControlCaller;
   status?: string;
   diff?: { title: string; unified: string };
   tool?: ToolPayload;
@@ -617,6 +620,8 @@ interface HarnessLane {
   acceptAllForTurn: boolean;
   rejectAllForTurn: boolean;
   permissionMode: 'normal' | 'acceptEdits' | 'bypass';
+  /** Trusted per-turn origin set only by Rust-admitted Telegram control calls. */
+  activeTelegramTurn: TelegramControlCaller | null;
   /** spec 143: armed for one peer-injected turn (auto_accept). Auto-accepts every
    *  permission EXCEPT high-risk commands, which still prompt. Reset at turn end. */
   peerAutoAcceptForTurn: boolean;
@@ -727,6 +732,15 @@ interface HarnessLane {
   /** spec 136: prompts the user submitted while the lane was busy. FIFO — the
    *  head drains first on the next idle transition. Capped at PROMPT_QUEUE_MAX. */
   queuedPrompts: QueuedPrompt[];
+  /** spec 199: timestamp of the first unacknowledged session/cancel of the
+   *  current turn; null when no cancel is outstanding. Survives the
+   *  busy ↔ needs_permission flap (same turn); cleared when the turn ends. */
+  cancelRequestedAt: number | null;
+  /** spec 199: true once CANCEL_ESCALATION_MS elapsed with the cancel still
+   *  unacknowledged — the next Ctrl+C force-restarts (and resumes) the lane. */
+  cancelUnacked: boolean;
+  /** spec 199: pending escalation timer handle; null when disarmed. */
+  cancelEscalationTimer: number | null;
   /** spec 148: active focus-scope goal, or undefined. Session-only harness-lane
    *  runtime state confined to THIS lane: it rides this lane's own turns via
    *  renderPromptMemoryPacket (never other lanes' / programmatic turns) and survives
@@ -812,6 +826,8 @@ interface QueuedPrompt {
   /** Lane display names resolved via parseMentionFanOut AT ENQUEUE (empty if not a
    *  mention); drives the →lane row tag without re-parsing at render. */
   mentionTargets: string[];
+  /** Frozen trusted origin; a queued Telegram turn keeps its one-turn bypass. */
+  telegramCaller?: TelegramControlCaller;
 }
 
 interface TranscriptScrollAnchor {
@@ -1106,6 +1122,10 @@ const SPEC114_DEV = Boolean(
 /** spec 136: cap on queued-while-busy prompts per lane. */
 const PROMPT_QUEUE_MAX = 10;
 
+/** spec 199: how long a session/cancel may go unacknowledged before the lane
+ *  is treated as hung and Ctrl+C escalates to a force-restart. */
+const CANCEL_ESCALATION_MS = 10_000;
+
 const LANE_DEFAULTS = {
   client: null,
   status: 'starting' as const,
@@ -1125,6 +1145,7 @@ const LANE_DEFAULTS = {
   acceptAllForTurn: false,
   rejectAllForTurn: false,
   permissionMode: 'normal' as const,
+  activeTelegramTurn: null,
   peerAutoAcceptForTurn: false,
   currentUserId: null,
   pendingUserEcho: null,
@@ -1174,6 +1195,9 @@ const LANE_DEFAULTS = {
   triageEquipped: true,
   triageOverride: null,
   flaggedThisTurn: false,
+  cancelRequestedAt: null,
+  cancelUnacked: false,
+  cancelEscalationTimer: null,
 };
 
 const md = new Marked(
@@ -1475,6 +1499,7 @@ export class AcpHarnessView implements ContentView {
   /** spec 127: lane the model picker is acting on (captured at open). */
   private modelPickerLaneId: string | null = null;
   private closeCb: (() => void) | null = null;
+  private readonly openTelegramSettingsCb: (() => Promise<void>) | null;
 
   private dashboardEl!: HTMLElement;
   private memoryOverlayEl!: HTMLElement;
@@ -1516,9 +1541,14 @@ export class AcpHarnessView implements ContentView {
   private observedTranscriptBody: HTMLElement | null = null;
   private observedTranscriptRows = new Set<HTMLElement>();
 
-  constructor(projectDir: string | null = null, bus: ViewBus | null = null) {
+  constructor(
+    projectDir: string | null = null,
+    bus: ViewBus | null = null,
+    openTelegramSettings: (() => Promise<void>) | null = null,
+  ) {
     this.projectDir = projectDir;
     this.viewBus = bus;
+    this.openTelegramSettingsCb = openTelegramSettings;
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
     this.element = document.createElement('div');
@@ -1613,7 +1643,11 @@ export class AcpHarnessView implements ContentView {
     // turn, and it resumes to `busy` after the human decides (Codex-1 B2). Clear it
     // only when the turn truly ends (idle / awaiting_peer / error / stopped / starting)
     // so the chip never shows a stale 'reviewing'.
-    if (next !== 'busy' && next !== 'needs_permission') lane.activeSystemLabel = null;
+    if (next !== 'busy' && next !== 'needs_permission') {
+      lane.activeSystemLabel = null;
+      // spec 199: same carve-out — an unacknowledged cancel belongs to the turn.
+      this.clearCancelEscalation(lane);
+    }
     this.laneBus.emit({
       type: 'lane:status',
       payload: { laneId: lane.id, prev, next, at: Date.now() },
@@ -1750,7 +1784,7 @@ export class AcpHarnessView implements ContentView {
       onForeignHarnessClosed: (snapshot) => {
         this.coordinator.onForeignHarnessClosed(snapshot);
       },
-      control: (operation, params) => this.handleControlOperation(operation, params),
+      control: (operation, params, caller) => this.handleControlOperation(operation, params, caller),
     };
     this.directoryEntry = entry;
     registerHarness(entry);
@@ -1771,7 +1805,11 @@ export class AcpHarnessView implements ContentView {
     });
   }
 
-  async handleControlOperation(operation: string, params: Record<string, unknown>): Promise<unknown> {
+  async handleControlOperation(
+    operation: string,
+    params: Record<string, unknown>,
+    caller?: ControlCaller,
+  ): Promise<unknown> {
     if (operation === 'lane.list') return this.controlLaneList();
     if (operation === 'lane.spawn') {
       const backendId = requiredString(params, 'backendId');
@@ -1951,6 +1989,10 @@ export class AcpHarnessView implements ContentView {
         };
       case 'lane.send': {
         const text = requiredString(params, 'text').trim();
+        const telegramCaller = caller?.source === 'telegram' ? caller.telegram : undefined;
+        if (caller?.source === 'telegram' && !telegramCaller) {
+          throw controlError('invalid_request', 'trusted Telegram caller metadata is missing');
+        }
         if (!text) throw controlError('invalid_request', 'text must not be empty');
         if (!lane.client || lane.status === 'starting' || lane.status === 'error' || lane.status === 'stopped') {
           throw controlError('lane_not_ready', `${lane.displayName} is ${lane.status}`);
@@ -1959,11 +2001,19 @@ export class AcpHarnessView implements ContentView {
           if (lane.queuedPrompts.length >= PROMPT_QUEUE_MAX) {
             throw controlError('queue_full', `${lane.displayName} prompt queue is full`);
           }
-          lane.queuedPrompts.push({ text, images: [], mentionTargets: [] });
+          lane.queuedPrompts.push({
+            text,
+            images: [],
+            mentionTargets: [],
+            ...(telegramCaller ? { telegramCaller } : {}),
+          });
           this.render();
           return { status: 'queued', lane: lane.displayName, queueDepth: lane.queuedPrompts.length };
         }
-        void this.sendUserPrompt(lane, text, [], { clearDraft: false });
+        void this.sendUserPrompt(lane, text, [], {
+          clearDraft: false,
+          telegramCaller,
+        });
         return { status: 'started', lane: lane.displayName };
       }
       case 'lane.cancel':
@@ -2027,6 +2077,7 @@ export class AcpHarnessView implements ContentView {
           status: item.status ?? null,
           permission: item.permission ?? null,
           providerError: item.providerError ?? null,
+          telegramProvenance: item.telegramProvenance ?? null,
         }));
       case 'permission.list':
         return lane.pendingPermissions.map((permission) => ({
@@ -2209,9 +2260,14 @@ export class AcpHarnessView implements ContentView {
 
   private async dispatchTurn(lane: HarnessLane, text: string): Promise<void> {
     if (!lane.client) return;
+    // spec 199: same orphaned-promise guard as sendUserPrompt — a force-restart
+    // mid-turn must not have its fresh session flipped to error by this catch.
+    const promptEpoch = lane.spawnEpoch;
+    const promptClient = lane.client;
     try {
-      await lane.client.prompt([{ type: 'text', text }]);
+      await promptClient.prompt([{ type: 'text', text }]);
     } catch (e) {
+      if (lane.spawnEpoch !== promptEpoch || lane.client !== promptClient) return;
       this.setLaneStatus(lane, 'error');
       lane.error = String(e);
       // spec 143: the turn never started — clear the arm so it cannot leak into a
@@ -4187,6 +4243,13 @@ export class AcpHarnessView implements ContentView {
     // and unregister (which captures a close snapshot from the still-intact lanes
     // and fans a "peer closed" notice out to other harnesses) — all before
     // tearing lanes/clients/listeners down.
+    if (this.harnessMemoryId) {
+      publishControlEvent({
+        harnessId: this.harnessMemoryId,
+        kind: 'harness_closed',
+        payload: {},
+      });
+    }
     if (this.directoryEntry) {
       this.directoryEntry.alive = false;
       unregisterHarness(this.directoryEntry.harnessId);
@@ -6599,12 +6662,19 @@ export class AcpHarnessView implements ContentView {
     return lane;
   }
 
-  private async spawnLane(lane: HarnessLane): Promise<void> {
+  /** Spawn (or respawn) the lane's agent process. With `resumeSessionId`
+   *  (spec 199: force-restart of a hung lane) the fresh process is steered
+   *  back into that agent session — `session/resume` preferred, `session/load`
+   *  fallback, fresh `session/new` when neither works — so context survives. */
+  private async spawnLane(lane: HarnessLane, resumeSessionId?: string | null): Promise<void> {
     const spawnEpoch = lane.spawnEpoch;
     this.setLaneStatus(lane, 'starting');
     lane.error = null;
     this.render();
     let client: AcpClient | null = null;
+    // spec 199: session/load replays the whole history as live updates; the
+    // lane still holds its rendered transcript, so mute events during a load.
+    let suppressLoadReplay = false;
     try {
       let seedMcp = this.memoryServerForLane(lane);
       let junieMcpLocation: string | null = null;
@@ -6664,20 +6734,81 @@ export class AcpHarnessView implements ContentView {
       }
       lane.client = client;
       client.onEvent((event) => {
+        if (suppressLoadReplay) return;
         if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) return;
         this.onLaneEvent(lane, event);
       });
-      const info: AgentInfo = await client.initialize(async (caps) => {
-        return this.mcpServersForLane(lane, caps);
-      });
-      if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
-        await client.dispose();
-        return;
+      if (resumeSessionId) {
+        // Mirrors the session picker's restore block: initialize without
+        // session/new, inject MCP servers, then steer into the old session.
+        const init = await client.initializeOnly();
+        if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
+          await client.dispose();
+          return;
+        }
+        const servers = await this.mcpServersForLane(lane, init.agent_capabilities);
+        await client.setMcpServers(servers ?? []);
+        const caps = sessionCapabilitiesFromAgent(init.agent_capabilities);
+        const mode: 'resume' | 'load' | null = caps.canResume ? 'resume' : caps.canLoad ? 'load' : null;
+        let session: AgentSessionInfo | null = null;
+        if (!mode) {
+          this.appendTranscript(lane, 'system', 'backend cannot resume sessions - starting fresh session');
+        } else {
+          try {
+            suppressLoadReplay = mode === 'load';
+            session = mode === 'resume'
+              ? await client.resumeSession(resumeSessionId)
+              : await client.loadSession(resumeSessionId);
+          } catch (e) {
+            session = null;
+            this.appendTranscript(lane, 'system', `session ${mode} failed: ${errorText(e)} - starting fresh session`);
+          } finally {
+            suppressLoadReplay = false;
+          }
+        }
+        if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
+          await client.dispose();
+          return;
+        }
+        const restored = session !== null;
+        if (!session) session = await client.sessionNew();
+        if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
+          await client.dispose();
+          return;
+        }
+        lane.sessionId = session.session_id;
+        this.publishStream(lane, 'lane_session_changed', {
+          sessionId: lane.sessionId,
+        });
+        this.configureLaneFromInfo(lane, init);
+        // spec 127: resume/load/new all surface model state; init has none.
+        lane.availableModels = session.available_models ?? [];
+        lane.currentModelId = session.current_model_id ?? null;
+        lane.modelApplyFailed = session.model_apply_failed ?? false;
+        this.setLaneStatus(lane, 'idle');
+        this.appendTranscript(
+          lane,
+          'system',
+          restored
+            ? `resumed session ${resumeSessionId.slice(0, 8)} - context preserved`
+            : `connected to ${lane.displayName}.`,
+        );
+      } else {
+        const info: AgentInfo = await client.initialize(async (caps) => {
+          return this.mcpServersForLane(lane, caps);
+        });
+        if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
+          await client.dispose();
+          return;
+        }
+        lane.sessionId = info.session_id ?? null;
+        this.publishStream(lane, 'lane_session_changed', {
+          sessionId: lane.sessionId,
+        });
+        this.configureLaneFromInfo(lane, info);
+        this.setLaneStatus(lane, 'idle');
+        this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
       }
-      lane.sessionId = info.session_id ?? null;
-      this.configureLaneFromInfo(lane, info);
-      this.setLaneStatus(lane, 'idle');
-      this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
       if (this.harnessMemoryWarning) {
         this.appendTranscript(lane, 'system', `warning: harness memory unavailable: ${this.harnessMemoryWarning}`);
       }
@@ -6902,6 +7033,7 @@ export class AcpHarnessView implements ContentView {
         lane.acceptAllForTurn = false;
         lane.rejectAllForTurn = false;
         lane.peerAutoAcceptForTurn = false;
+        lane.activeTelegramTurn = null;
         this.updateComposerTick();
         this.appendClassifiedError(lane, event.message, `error: ${event.message}`);
         break;
@@ -7025,14 +7157,21 @@ export class AcpHarnessView implements ContentView {
     lane: HarnessLane,
     text: string,
     images: StagedImage[],
-    opts?: { clearDraft?: boolean },
+    opts?: {
+      clearDraft?: boolean;
+      telegramCaller?: TelegramControlCaller;
+    },
   ): Promise<{ handled: boolean; delivered: boolean }> {
     if (!lane.client) return { handled: false, delivered: false };
     const mention = this.tryMentionFanOut(lane, text, images.length > 0, {
       clearDraftOnDeliver: opts?.clearDraft === true,
     });
     if (mention.handled) return mention;
-    const userItem = this.appendTranscript(lane, 'user', text, { imageCount: images.length });
+    lane.activeTelegramTurn = opts?.telegramCaller ?? null;
+    const userItem = this.appendTranscript(lane, 'user', text, {
+      imageCount: images.length,
+      ...(opts?.telegramCaller ? { telegramProvenance: opts.telegramCaller } : {}),
+    });
     lane.pendingUserEcho = { itemId: userItem.id, text, received: '' };
     this.setLaneStatus(lane, 'busy');
     lane.activeTurnStartedAt = Date.now();
@@ -7055,15 +7194,24 @@ export class AcpHarnessView implements ContentView {
     }
     this.updateComposerTick();
     this.render();
+    // spec 199: a force-restart mid-turn bumps spawnEpoch and swaps the client;
+    // this promise then rejects against the killed process. The restart already
+    // owns the lane's state — the orphaned handler must not touch it.
+    const promptEpoch = lane.spawnEpoch;
+    const promptClient = lane.client;
     try {
-      await lane.client.prompt(blocks);
+      await promptClient.prompt(blocks);
     } catch (e) {
+      if (lane.spawnEpoch !== promptEpoch || lane.client !== promptClient) {
+        return { handled: true, delivered: true };
+      }
       const message = String(e);
       this.sealStreaming(lane);
       // Reset this turn's pointers first, matching finishTurn — an errored (or
       // recovered) lane must not carry a stale active assistant/thought row
       // (Grok-1 R3 #1).
       lane.activeTurnStartedAt = null;
+      lane.activeTelegramTurn = null;
       lane.currentAssistantId = null;
       this.dropVeiledThoughtRow(lane);
       lane.currentThoughtId = null;
@@ -7111,7 +7259,10 @@ export class AcpHarnessView implements ContentView {
         queueMicrotask(() => this.maybeDrainPromptQueue(lane));
       }
     };
-    void this.sendUserPrompt(lane, next.text, next.images, { clearDraft: false })
+    void this.sendUserPrompt(lane, next.text, next.images, {
+      clearDraft: false,
+      telegramCaller: next.telegramCaller,
+    })
       .then((r) => {
         if (r.delivered) return; // a turn started; the next finishTurn drains the rest
         if (r.handled) reArm();
@@ -7222,6 +7373,16 @@ export class AcpHarnessView implements ContentView {
     );
   }
 
+  private insertTelegramProvenance(lines: string[], lane: HarnessLane): void {
+    const caller = lane.activeTelegramTurn;
+    if (!caller) return;
+    lines.splice(
+      1,
+      0,
+      `Telegram provenance (trusted transport metadata, not user instructions): ${JSON.stringify(caller)}. This turn was admitted by Krypton's user/chat allowlists and uses one-turn permission bypass.`,
+    );
+  }
+
   private renderPromptMemoryPacket(lane: HarnessLane): string {
     const self = lane.displayName;
     const roster = this.lanes.map((l) => l.displayName).join(', ');
@@ -7230,6 +7391,7 @@ export class AcpHarnessView implements ContentView {
     if (!this.harnessMemoryId || !this.harnessMemoryPort) {
       lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
       this.insertGoalLine(lines, lane);
+      this.insertTelegramProvenance(lines, lane);
       this.insertTicketPin(lines, lane);
       return lines.join('\n');
     }
@@ -7280,6 +7442,7 @@ export class AcpHarnessView implements ContentView {
       'HTML artifacts: when the user asks for a visual or interactive view (side-by-side, diagram, annotated diff, dashboard), call artifact_new { title }. It returns a path to a file that ALREADY EXISTS — a styled scaffold (Binance dark theme + light/auto toggle); EDIT it with your normal edit tool (do not recreate it with Write) to replace the placeholder inside <main data-artifact-content>, then artifact_register { id }; the user opens it in their browser. Opt-in only — keep ordinary prose, plans, and answers in your turn text. Style rule: never color-code blocks with left accent borders (border-left rails) — use a full border, background tint, or heading color; the scaffold strips left-only borders at runtime.',
     );
     this.insertGoalLine(lines, lane);
+    this.insertTelegramProvenance(lines, lane);
     this.insertTicketPin(lines, lane);
     return lines.join('\n');
   }
@@ -7298,6 +7461,7 @@ export class AcpHarnessView implements ContentView {
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
     lane.peerAutoAcceptForTurn = false;
+    lane.activeTelegramTurn = null;
     // Reset this turn's pointers BEFORE the status transition below. setLaneStatus
     // can synchronously drain queued peer mail (InterLaneCoordinator.onBus ->
     // enqueueSystemPrompt), which stamps the NEXT turn's activeTurnStartedAt /
@@ -7383,6 +7547,15 @@ export class AcpHarnessView implements ContentView {
     // A second request while already paused does not transition status, so the
     // LaneBus emit the console relies on never fires — refresh it directly.
     this.refreshOrchestratorConsole();
+    if (lane.activeTelegramTurn) {
+      void this.resolvePermission(
+        lane,
+        'accept',
+        true,
+        `telegram-bypass:${lane.activeTelegramTurn.userId}`,
+      );
+      return;
+    }
     if (lane.permissionMode === 'bypass' || (lane.permissionMode === 'acceptEdits' && toolCall.kind === 'edit')) {
       void this.resolvePermission(lane, 'accept', true, `mode:${lane.permissionMode}`);
       return;
@@ -7442,6 +7615,12 @@ export class AcpHarnessView implements ContentView {
       this.refreshOrchestratorConsole();
       return;
     }
+    this.publishStream(lane, 'permission_resolved', {
+      requestId: permission.requestId,
+      action,
+      auto,
+      reason: auto ? autoReason : 'operator',
+    });
     this.render();
   }
 
@@ -8373,6 +8552,10 @@ export class AcpHarnessView implements ContentView {
     this.setLaneStatus(lane, 'starting');
     lane.transcript = [{ id: makeId(), kind: 'system', text: `${mode === 'resume' ? 'resuming' : 'loading'} ${shortId(session.sessionId)}...` }];
     this.lanes.push(lane);
+    this.publishStream(lane, 'lane_opened', {
+      backendId: lane.backendId,
+      status: lane.status,
+    });
     this.notifyUsageProvidersChanged();
     this.activateLane(lane.id);
     this.sessionPicker.probeClient = null;
@@ -8393,6 +8576,9 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       lane.sessionId = info.session_id;
+      this.publishStream(lane, 'lane_session_changed', {
+        sessionId: lane.sessionId,
+      });
       this.configureLaneFromInfo(lane, init);
       // spec 127: resume/load surfaces its own model state — merge it in (init,
       // an AgentInitInfo, has none). The picker then works on restored lanes too.
@@ -8436,6 +8622,10 @@ export class AcpHarnessView implements ContentView {
       }
     }
     this.lanes.push(lane);
+    this.publishStream(lane, 'lane_opened', {
+      backendId: lane.backendId,
+      status: lane.status,
+    });
     this.notifyUsageProvidersChanged();
     // A lane added while the orchestrator console is open must appear at once.
     // The console only re-renders on a LaneBus *transition*, but spawnLane sets
@@ -8458,6 +8648,9 @@ export class AcpHarnessView implements ContentView {
 
   private async closeLane(lane: HarnessLane): Promise<void> {
     lane.spawnEpoch += 1;
+    this.publishStream(lane, 'lane_closed', {
+      sessionId: lane.sessionId,
+    });
     // spec 133: the lane is being removed — drop all its artifact records
     // (pending grants + registered entries) so a later same-name lane can't
     // inherit them.
@@ -8565,14 +8758,96 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
+    // spec 199: a cancel already went unacknowledged past the escalation
+    // window — this Ctrl+C is the force-restart gesture.
+    if (lane.cancelUnacked) {
+      await this.forceRestartLane(lane);
+      return;
+    }
     lane.pendingTurnExtractions = [];
     try {
       await lane.client.cancel();
       this.appendTranscript(lane, 'system', 'cancel requested');
+      this.armCancelEscalation(lane);
     } catch (e) {
       this.appendTranscript(lane, 'system', `cancel failed: ${String(e)}`);
     }
     this.render();
+  }
+
+  /** spec 199: stamp the first unacknowledged cancel of this turn and arm the
+   *  escalation window. Re-cancels inside the window keep the original stamp —
+   *  the earliest unanswered cancel is what measures unresponsiveness. */
+  private armCancelEscalation(lane: HarnessLane): void {
+    if (lane.cancelRequestedAt !== null) return;
+    const stamp = Date.now();
+    lane.cancelRequestedAt = stamp;
+    lane.cancelEscalationTimer = window.setTimeout(() => {
+      lane.cancelEscalationTimer = null;
+      // The lane may have been closed, restarted, or the turn may have ended
+      // (a new cancel would carry a new stamp) while the timer was pending.
+      if (!this.lanes.includes(lane) || lane.cancelRequestedAt !== stamp) return;
+      if (lane.status !== 'busy' && lane.status !== 'needs_permission') return;
+      lane.cancelUnacked = true;
+      this.appendTranscript(
+        lane,
+        'system',
+        `cancel not acknowledged for ${CANCEL_ESCALATION_MS / 1000}s - Ctrl+C again to force-restart (resumes this session)`,
+      );
+      this.render();
+    }, CANCEL_ESCALATION_MS);
+  }
+
+  /** spec 199: disarm cancel escalation (turn ended / lane torn down). */
+  private clearCancelEscalation(lane: HarnessLane): void {
+    if (lane.cancelEscalationTimer !== null) {
+      window.clearTimeout(lane.cancelEscalationTimer);
+      lane.cancelEscalationTimer = null;
+    }
+    lane.cancelRequestedAt = null;
+    lane.cancelUnacked = false;
+  }
+
+  /** spec 199: the hung-lane escape hatch (issue #13). The agent subprocess is
+   *  ignoring session/cancel, so kill its process group (dispose's existing
+   *  SIGTERM→SIGKILL) and respawn, resuming the same agent session so the
+   *  conversation context survives. Unlike restartLane this runs from `busy` —
+   *  the spawnEpoch bump orphans the still-pending prompt promise. */
+  private async forceRestartLane(lane: HarnessLane): Promise<void> {
+    if (!lane.client || lane.status === 'starting') return; // restart already in flight
+    this.clearCancelEscalation(lane);
+    const resumeSessionId = lane.sessionId;
+    lane.spawnEpoch += 1;
+    this.appendTranscript(lane, 'system', 'force restart: cancel unacknowledged');
+    // The hung turn dies with the process — seal its streaming rows and drop
+    // this-turn pointers, the work the orphaned prompt handler now skips.
+    this.sealStreaming(lane);
+    lane.activeTurnStartedAt = null;
+    lane.currentAssistantId = null;
+    this.dropVeiledThoughtRow(lane);
+    lane.currentThoughtId = null;
+    lane.activity = null;
+    lane.pendingUserEcho = null;
+    lane.pendingPermissions = [];
+    lane.pendingTurnExtractions = [];
+    lane.acceptAllForTurn = false;
+    lane.rejectAllForTurn = false;
+    lane.peerAutoAcceptForTurn = false;
+    lane.activeTelegramTurn = null;
+    lane.pendingCoordinatorDrain = null;
+    lane.plan = null;
+    lane.planCollapsed = false;
+    lane.sessionId = null;
+    lane.error = null;
+    // spec 133: a restart reuses the display name — drop any pending artifact
+    // write grant so the restarted lane can't inherit it. (Registered artifacts
+    // stay: the transcript survives, unlike #new.)
+    this.cancelPendingArtifactsForLane(lane);
+    const client = lane.client;
+    lane.client = null;
+    await client.dispose();
+    this.appendTranscript(lane, 'restart', '--- session restarted ---');
+    await this.spawnLane(lane, resumeSessionId);
   }
 
   private async restartLane(lane: HarnessLane): Promise<void> {
@@ -8589,6 +8864,7 @@ export class AcpHarnessView implements ContentView {
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
     lane.peerAutoAcceptForTurn = false;
+    lane.activeTelegramTurn = null;
     lane.sessionId = null;
     lane.error = null;
     lane.plan = null;
@@ -8660,6 +8936,7 @@ export class AcpHarnessView implements ContentView {
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
     lane.peerAutoAcceptForTurn = false;
+    lane.activeTelegramTurn = null;
     lane.currentUserId = null;
     lane.pendingUserEcho = null;
     lane.currentAssistantId = null;
@@ -8806,6 +9083,19 @@ export class AcpHarnessView implements ContentView {
       this.setDraft(lane, '', 0);
       await this.printMcpStatus(lane);
       this.render();
+      return;
+    }
+    if (parts.length === 1 && parts[0] === '#telegram') {
+      this.setDraft(lane, '', 0);
+      if (!this.openTelegramSettingsCb) {
+        this.flashChip('Telegram settings unavailable');
+        return;
+      }
+      try {
+        await this.openTelegramSettingsCb();
+      } catch (e) {
+        this.flashChip(`Telegram settings open failed: ${errorText(e)}`);
+      }
       return;
     }
     if (parts[0] === '#dashboard') {
@@ -10925,6 +11215,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#recall &lt;question&gt;</dt><dd>Answer a question from the project wiki, with citations</dd>
             <dt>#directive &lt;intent&gt;</dt><dd>Have the active lane create/edit a reusable directive in acp-harness.toml</dd>
             <dt>#draw &lt;request&gt;</dt><dd>Draw in an open tldraw Offline document (focused or named) — static shapes or durable document scripts</dd>
+            <dt>#telegram</dt><dd>Open Telegram controller settings</dd>
             <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
             <dt>#queue [clear | edit N]</dt><dd>Manage prompts queued while the lane is busy</dd>
             <dt>#unqueue [N]</dt><dd>Remove the last (or Nth) queued prompt</dd>
@@ -10943,7 +11234,7 @@ export class AcpHarnessView implements ContentView {
     lane: HarnessLane,
     kind: HarnessTranscriptItem['kind'],
     text: string,
-    metadata: Pick<HarnessTranscriptItem, 'imageCount'> = {},
+    metadata: Pick<HarnessTranscriptItem, 'imageCount' | 'telegramProvenance'> = {},
   ): HarnessTranscriptItem {
     const item: HarnessTranscriptItem = { id: makeId(), kind, text, createdAt: Date.now(), ...metadata };
     lane.transcript.push(item);
@@ -11037,6 +11328,7 @@ export class AcpHarnessView implements ContentView {
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
     lane.peerAutoAcceptForTurn = false;
+    lane.activeTelegramTurn = null;
     // `lane.error` is the single source of truth for the terminal status, read by
     // finishTurn (null → idle/coordinator-suggested; set → error). A retryable
     // fault (rate limit / network blip / overloaded, e.g. a `session/prompt` reply
@@ -11068,7 +11360,9 @@ export class AcpHarnessView implements ContentView {
     this.sealStreaming(lane);
     const item = this.appendTranscript(lane, 'fs_write_review', '');
     item.fsReview = { requestId, path, oldText, newText };
-    if (lane.acceptAllForTurn || lane.rejectAllForTurn) {
+    if (lane.activeTelegramTurn) {
+      void this.resolveFsWriteReview(lane, item.id, 'accepted', true);
+    } else if (lane.acceptAllForTurn || lane.rejectAllForTurn) {
       void this.resolveFsWriteReview(lane, item.id, lane.rejectAllForTurn ? 'rejected' : 'accepted', true);
     } else if (lane.permissionMode === 'acceptEdits' || lane.permissionMode === 'bypass') {
       void this.resolveFsWriteReview(lane, item.id, 'accepted', true);
@@ -11088,6 +11382,7 @@ export class AcpHarnessView implements ContentView {
     const item = lane.transcript.find((t) => t.id === itemId);
     if (!item || !item.fsReview || item.fsReview.resolved) return;
     if (!lane.client) return;
+    const telegramUserId = lane.activeTelegramTurn?.userId;
     item.fsReview.resolved = decision;
     this.render();
     try {
@@ -11095,6 +11390,17 @@ export class AcpHarnessView implements ContentView {
     } catch (e) {
       this.appendTranscript(lane, 'system', `fs_write reply failed: ${String(e)}`);
     }
+    this.publishStream(lane, 'permission_resolved', {
+      requestId: item.fsReview.requestId,
+      action: decision,
+      auto,
+      reason: telegramUserId
+        ? `telegram-bypass:${telegramUserId}`
+        : auto
+          ? 'auto-turn'
+          : 'operator',
+      surface: 'fs_write',
+    });
     if (auto) {
       // No-op; flag set externally for accept-all/reject-all bulk flows.
     }

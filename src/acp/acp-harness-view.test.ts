@@ -1455,6 +1455,49 @@ describe('#draw dispatch', () => {
   });
 });
 
+describe('#telegram dispatch', () => {
+  type TestLane = { status: string };
+  type TelegramRunner = { runHashCommand(lane: TestLane, text: string): Promise<void> };
+  const runHashCommand = (AcpHarnessView.prototype as unknown as TelegramRunner).runHashCommand;
+
+  it('clears the draft and opens Telegram settings without starting a lane turn', async () => {
+    const drafts: string[] = [];
+    let opens = 0;
+    await runHashCommand.call(
+      {
+        openTelegramSettingsCb: async () => {
+          opens++;
+        },
+        setDraft: (_lane: TestLane, value: string) => drafts.push(value),
+        flashChip: () => {},
+      },
+      { status: 'busy' },
+      '#telegram',
+    );
+
+    expect(drafts).toEqual(['']);
+    expect(opens).toBe(1);
+  });
+
+  it('rejects arguments instead of treating them as Telegram configuration', async () => {
+    const flashes: string[] = [];
+    let opens = 0;
+    await runHashCommand.call(
+      {
+        openTelegramSettingsCb: async () => {
+          opens++;
+        },
+        flashChip: (value: string) => flashes.push(value),
+      },
+      { status: 'idle' },
+      '#telegram token secret',
+    );
+
+    expect(opens).toBe(0);
+    expect(flashes).toEqual(['unknown command']);
+  });
+});
+
 describe('parseReviewCommandArgs (spec 145)', () => {
   it('treats every token as a reviewer name when there is no -- separator', () => {
     expect(parseReviewCommandArgs(['Codex-2', 'Cursor-1'])).toEqual({

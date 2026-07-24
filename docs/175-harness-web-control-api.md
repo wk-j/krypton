@@ -189,6 +189,19 @@ Event (harness → web app), new path:
 5. Web app's EventSource receives it, updates the web mirror
 ```
 
+### Typed internal subscribers and lifecycle events
+
+`ControlServer` retains typed `ControlStreamEvent` values in its broadcast
+channel and serializes only at the SSE boundary. Internal transports such as
+the Telegram controller call `subscribe()` and therefore consume exactly the
+same frontend-authored stream—there is no second lane observer or Rust state
+mirror.
+
+The stream additionally carries `lane_opened`, `lane_closed`,
+`lane_session_changed`, `harness_closed`, and `permission_resolved`. These let
+remote clients invalidate stale targets and explain automatic decisions. They
+do not transfer harness authority out of `AcpHarnessView`. See spec 200.
+
 ### Configuration
 
 ```toml

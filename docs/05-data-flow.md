@@ -739,6 +739,34 @@ Sessions live in a shared pool. Windows reference sessions by ID. When a workspa
 
 The CLI never simulates keys, submits hash commands, or registers as a lane.
 
+## Telegram Harness Controller Flow
+
+```text
+1. TelegramService long-polls getUpdates after getMe verifies the vault token.
+2. Rust canonicalizes numeric IDs and checks the user allowlist; groups also
+   require the chat allowlist plus an explicit command/mention/reply.
+3. A chat selects a process-local lane target with /use <display-name>.
+4. The service dispatches the typed operation through ControlServer::dispatch
+   with trusted ControlCaller::Telegram metadata.
+5. control-bridge forwards caller metadata separately from params and routes
+   through HarnessDirectory to the owning AcpHarnessView.
+6. lane.send starts immediately or enters the existing FIFO queue. The queued
+   item retains its Telegram caller and one-turn bypass policy.
+7. During that turn, ACP permission and fs-write requests resolve automatically
+   with reason telegram-bypass:<user-id>; the persistent lane mode is unchanged.
+8. Frontend events use acp_control_publish. TelegramService consumes the same
+   typed broadcast as SSE, filters thought/raw tool detail, and edits a compact
+   per-chat digest.
+9. stop/error clears the turn policy. Lane/session/harness lifecycle events
+   invalidate stale chat targets instead of silently retargeting.
+10. The handled update ID is persisted under
+    ~/.config/krypton/runtime/telegram-state.json for restart-safe polling.
+```
+
+Pairing is the only pre-authorization command: `/pair CODE` consumes a
+five-minute code and creates a pending identity record, but grants nothing until
+the local Telegram Settings view accepts it.
+
 ## Terminal Control Monitor Flow
 
 1. The user runs `#termctrl` or selects **Open Terminal Control Monitor** from

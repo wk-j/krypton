@@ -2375,6 +2375,20 @@ export class Compositor {
     });
   }
 
+  /** Open the app-managed Telegram Harness Controller settings. */
+  async openTelegramSettings(): Promise<void> {
+    const { TelegramSettingsContentView } = await import('./telegram-settings-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const view = new TelegramSettingsContentView(container);
+    await this.createContentTab('TELEGRAM // controller', view);
+
+    view.onClose(() => {
+      this.closeTab();
+    });
+  }
+
   /**
    * Open the live harness lane monitor dashboard in the system browser.
    */
@@ -3305,7 +3319,11 @@ export class Compositor {
   async openAcpHarnessView(projectDirOverride: string | null = null): Promise<void> {
     const { AcpHarnessView } = await import('./acp/acp-harness-view');
     const projectDir = projectDirOverride ?? await this.getFocusedCwd();
-    const view = new AcpHarnessView(projectDir, this.bus);
+    const view = new AcpHarnessView(
+      projectDir,
+      this.bus,
+      () => this.openTelegramSettings(),
+    );
 
     // Replace the launching terminal tab: open the harness as a content tab in
     // the SAME window, then close the terminal tab it launched from — so the

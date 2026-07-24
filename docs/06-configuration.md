@@ -34,6 +34,7 @@ ligatures = true
 scrollback_lines = 10000
 cursor_style = "block"       # block | underline | bar
 cursor_blink = true
+cursor_trail = true          # rainbow flame particles following mouse + text cursor
 
 [theme]
 name = "krypton-dark"        # built-in or custom theme name
@@ -243,6 +244,10 @@ install_native_host = true
 # chrome | chromium | edge | brave | opera | opera-gx  (Opera GX users: ["opera-gx"])
 native_host_browsers = ["chrome"]
 
+# Telegram Harness Controller is intentionally NOT configured here. Krypton's
+# Settings view owns ~/.config/krypton/telegram.toml, while the Bot API token
+# lives in the operating-system credential vault. See the section below.
+
 # --- SSH Session Multiplexing ---
 # Clone SSH sessions into new tabs/windows via ControlMaster multiplexing.
 # Krypton detects active SSH connections and manages control sockets automatically.
@@ -408,6 +413,7 @@ name = "custom-fixed"
 | `[terminal]` | `scrollback_lines` | int | `10000` | Scrollback buffer size |
 | `[terminal]` | `cursor_style` | string | `"block"` | `block`, `underline`, or `bar` |
 | `[terminal]` | `cursor_blink` | bool | `true` | Enable cursor blinking |
+| `[terminal]` | `cursor_trail` | bool | `true` | Rainbow flame trail following the mouse and text cursor |
 | `[theme]` | `name` | string | `"krypton-dark"` | Built-in or custom theme name (see [Theme Specification](./10-theme-specification.md)) |
 | `[theme.colors]` | *(various)* | string | — | Hex color overrides (applied on top of named theme) |
 | `[keybindings]` | `leader` | string | `"Ctrl+Space"` | Leader key to enter compositor mode |
@@ -641,6 +647,35 @@ system_prompt = """
 You are the review lane. Do not edit files. Prioritize bugs, regressions, risky assumptions, and missing tests.
 """
 ```
+
+### Telegram Harness Controller (app-managed)
+
+Telegram settings do not belong to the user-authored `krypton.toml`. Open
+**Telegram Controller Settings** from the command palette; Krypton atomically
+writes the non-secret settings to:
+
+```text
+~/.config/krypton/telegram.toml
+```
+
+```toml
+schema_version = 1
+enabled = false
+authorized_user_ids = ["123456789"]
+authorized_group_chat_ids = ["-1001234567890"]
+```
+
+IDs are canonical signed decimal strings: user IDs are positive and group chat
+IDs are negative. Private control requires an authorized user. Group control
+requires both an authorized sender and authorized group. Removing an entry
+invalidates process-local chat targets immediately.
+
+The Bot API token is stored under service/account
+`com.krypton.telegram / bot-token` in macOS Keychain, Windows Credential
+Manager, or Linux Secret Service. It has no TOML/environment fallback and is
+never returned to the frontend. The non-secret polling watermark lives at
+`~/.config/krypton/runtime/telegram-state.json`; changing bot identity resets
+it. See spec 200 and ADR-0013 through ADR-0015.
 
 ### ACP Harness Attention Triage (spec 128)
 

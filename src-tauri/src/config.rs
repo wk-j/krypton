@@ -83,6 +83,7 @@ pub struct TerminalConfig {
     pub scrollback_lines: u32,
     pub cursor_style: String,
     pub cursor_blink: bool,
+    pub cursor_trail: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -615,6 +616,7 @@ impl Default for TerminalConfig {
             scrollback_lines: 10000,
             cursor_style: "block".to_string(),
             cursor_blink: true,
+            cursor_trail: true,
         }
     }
 }

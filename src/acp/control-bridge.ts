@@ -6,6 +6,7 @@ import {
   listHarnessEntries,
   resolveDisplayName,
 } from './harness-directory';
+import type { ControlCaller } from './control-types';
 import type { Compositor } from '../compositor';
 
 interface ControlEvent {
@@ -13,6 +14,7 @@ interface ControlEvent {
   operationId: string;
   operation: string;
   params: Record<string, unknown>;
+  caller: ControlCaller;
 }
 
 interface ControlReply {
@@ -39,7 +41,7 @@ async function handleAndReply(event: ControlEvent): Promise<void> {
   }
   let response: ControlReply;
   try {
-    response = { result: await route(event.operation, event.params ?? {}) };
+    response = { result: await route(event.operation, event.params ?? {}, event.caller) };
   } catch (error) {
     response = normalizeError(error);
   }
@@ -53,7 +55,11 @@ async function handleAndReply(event: ControlEvent): Promise<void> {
 
 // Exported for tests. The browser-facing operation router: resolves the target
 // harness and forwards (or fans out) the typed control op.
-export async function route(operation: string, params: Record<string, unknown>): Promise<unknown> {
+export async function route(
+  operation: string,
+  params: Record<string, unknown>,
+  caller?: ControlCaller,
+): Promise<unknown> {
   if (operation === 'harness.create') {
     if (!compositor) throw controlError('control_failed', 'compositor is unavailable');
     const cwd = typeof params.cwd === 'string' ? params.cwd : null;
@@ -78,7 +84,7 @@ export async function route(operation: string, params: Record<string, unknown>):
     const out: unknown[] = [];
     for (const entry of listHarnessEntries()) {
       if (!entry.control) continue;
-      const rows = await entry.control(operation, params);
+      const rows = await entry.control(operation, params, caller);
       if (Array.isArray(rows)) out.push(...rows);
     }
     return out;
@@ -89,7 +95,7 @@ export async function route(operation: string, params: Record<string, unknown>):
     const out: unknown[] = [];
     for (const entry of listHarnessEntries()) {
       if (!entry.control) continue;
-      const rows = await entry.control(operation, params);
+      const rows = await entry.control(operation, params, caller);
       if (Array.isArray(rows)) out.push(...rows);
     }
     return out;
@@ -97,7 +103,7 @@ export async function route(operation: string, params: Record<string, unknown>):
   if (operation === 'github.issue-status') {
     for (const entry of listHarnessEntries()) {
       if (!entry.control) continue;
-      const snap = await entry.control(operation, params);
+      const snap = await entry.control(operation, params, caller);
       if (snap && typeof snap === 'object' && (snap as { bound?: boolean }).bound) return snap;
     }
     return { bound: false };
@@ -105,7 +111,7 @@ export async function route(operation: string, params: Record<string, unknown>):
   if (operation === 'github.unlink-issue') {
     for (const entry of listHarnessEntries()) {
       if (!entry.control) continue;
-      const res = await entry.control(operation, params);
+      const res = await entry.control(operation, params, caller);
       if (res && typeof res === 'object' && (res as { ok?: boolean }).ok) return res;
     }
     return { ok: false };
@@ -127,13 +133,13 @@ export async function route(operation: string, params: Record<string, unknown>):
       if (!entry.control) {
         throw controlError('unsupported_operation', `${operation} is not supported by this harness`);
       }
-      return entry.control(operation, params);
+      return entry.control(operation, params, caller);
     }
   }
 
   const target = targetHarness(operation, params);
   if (!target.control) throw controlError('unsupported_operation', `${operation} is not supported by this harness`);
-  return target.control(operation, params);
+  return target.control(operation, params, caller);
 }
 
 function targetHarness(operation: string, params: Record<string, unknown>) {
