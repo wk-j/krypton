@@ -598,16 +598,12 @@ impl TelegramService {
                             tool_statuses.remove(&chat_id);
                             continue;
                         }
-                        if let Some(draft) = drafts.get_mut(&chat_id) {
-                            if let Err(error) = draft.flush(&api, &chat_id).await {
-                                log::warn!("telegram digest delivery: {}", sanitize_error(&error));
-                            }
-                        }
-                        if let Some(status) = tool_statuses.get_mut(&chat_id) {
-                            if let Err(error) = status.flush(&api, &chat_id).await {
-                                log::warn!("telegram status delivery: {}", sanitize_error(&error));
-                            }
-                        }
+                        flush_conversation_surfaces(
+                            &api,
+                            &chat_id,
+                            tool_statuses.get_mut(&chat_id),
+                            drafts.get_mut(&chat_id),
+                        ).await;
                     }
                 }
                 event = events.recv() => {
@@ -1101,6 +1097,7 @@ impl TelegramService {
         lines.push(format!("Current: {}", current.unwrap_or("none")));
         lines.push(String::new());
         for lane in visible {
+            let cwd = lane.get("cwd").and_then(Value::as_str);
             lines.push(format!(
                 "{} · {} · {}",
                 lane.get("displayName")
@@ -1111,12 +1108,14 @@ impl TelegramService {
                     .and_then(Value::as_str)
                     .unwrap_or("default")
             ));
+            if let Some(cwd) = cwd {
+                lines.push(format!("  {cwd}"));
+            }
         }
         lines.push(String::new());
         lines.push("Tap a lane, or type /use <lane>.".to_string());
 
         let mut rows = Vec::<Vec<Value>>::new();
-        let mut row = Vec::<Value>::new();
         let mut tokens = Vec::new();
         for lane in visible {
             let harness_id = lane
@@ -1143,20 +1142,19 @@ impl TelegramService {
             let selected = target
                 .as_ref()
                 .is_some_and(|target| lane_matches_target(lane, target));
-            row.push(json!({
+            let cwd = lane.get("cwd").and_then(Value::as_str);
+            let label = match cwd {
+                Some(cwd) => format!("{lane_name} · {cwd}"),
+                None => lane_name.to_string(),
+            };
+            rows.push(vec![json!({
                 "text": if selected {
-                    format!("✓ {lane_name}")
+                    format!("✓ {label}")
                 } else {
-                    lane_name.to_string()
+                    label
                 },
                 "callback_data": token,
-            }));
-            if row.len() == 2 {
-                rows.push(std::mem::take(&mut row));
-            }
-        }
-        if !row.is_empty() {
-            rows.push(row);
+            })]);
         }
         if total_pages > 1 {
             let mut navigation = Vec::new();
@@ -1863,6 +1861,28 @@ impl TelegramService {
         let mut actions = lock(&self.inner.actions);
         for token in tokens {
             actions.remove(token);
+        }
+    }
+}
+
+async fn flush_conversation_surfaces(
+    api: &BotApi,
+    chat_id: &str,
+    status: Option<&mut ToolStatusDraft>,
+    draft: Option<&mut DigestDraft>,
+) {
+    // Telegram renders a private-chat draft at the bottom of the conversation.
+    // Resize the persistent tool message first so the draft is laid out against
+    // the final stack for this tick; editing the status after the draft can make
+    // clients overlap the two bubbles until their next full relayout.
+    if let Some(status) = status {
+        if let Err(error) = status.flush(api, chat_id).await {
+            log::warn!("telegram status delivery: {}", sanitize_error(&error));
+        }
+    }
+    if let Some(draft) = draft {
+        if let Err(error) = draft.flush(api, chat_id).await {
+            log::warn!("telegram digest delivery: {}", sanitize_error(&error));
         }
     }
 }
@@ -3112,6 +3132,7 @@ mod tests {
                     "sessionId": format!("session-{}", index + 1),
                     "status": if index == 0 { "idle" } else { "busy" },
                     "modelName": "sonnet",
+                    "cwd": "/Users/wk/Source/krypton",
                 })
             })
             .collect()
@@ -3176,16 +3197,20 @@ mod tests {
             .expect("picker");
         assert!(picker.text.contains("Choose a target lane · 1/2"));
         assert!(picker.text.contains("Current: Claude-1"));
+        assert!(picker.text.contains("/Users/wk/Source/krypton"));
         let rows = picker
             .keyboard
             .as_ref()
             .and_then(|keyboard| keyboard.get("inline_keyboard"))
             .and_then(Value::as_array)
             .expect("keyboard rows");
-        assert_eq!(rows.len(), 5);
-        assert_eq!(rows[0][0].get("text"), Some(&json!("✓ Claude-1")));
-        assert_eq!(rows[0].as_array().map(Vec::len), Some(2));
-        assert_eq!(rows[4].as_array().map(Vec::len), Some(2));
+        assert_eq!(rows.len(), 9);
+        assert_eq!(
+            rows[0][0].get("text"),
+            Some(&json!("✓ Claude-1 · /Users/wk/Source/krypton"))
+        );
+        assert_eq!(rows[0].as_array().map(Vec::len), Some(1));
+        assert_eq!(rows[8].as_array().map(Vec::len), Some(2));
         assert_eq!(picker.tokens.len(), 10);
     }
 
@@ -3373,7 +3398,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bot_api_picker_methods_match_the_wire_contract() {
+    async fn bot_api_methods_and_stream_order_match_the_wire_contract() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -3386,6 +3411,8 @@ mod tests {
                 json!([]),
                 json!({"message_id": 7}),
                 json!({"message_id": 7}),
+                json!(true),
+                json!({"message_id": 8}),
                 json!(true),
             ];
             let mut requests = Vec::new();
@@ -3459,6 +3486,11 @@ mod tests {
         api.answer_callback("callback-1", None)
             .await
             .expect("answer callback");
+        let mut status = ToolStatusDraft::default();
+        status.record("Codex-1", "call-1", "execute command", "in_progress");
+        let mut draft = DigestDraft::new(true, true);
+        draft.text = "Working".to_string();
+        flush_conversation_surfaces(&api, "42", Some(&mut status), Some(&mut draft)).await;
 
         let requests = server.await.expect("fake Telegram server");
         assert!(requests[0].0.ends_with("/setMyCommands"));
@@ -3476,6 +3508,8 @@ mod tests {
         assert!(requests[3].0.ends_with("/editMessageText"));
         assert!(requests[4].0.ends_with("/answerCallbackQuery"));
         assert_eq!(requests[4].1, json!({"callback_query_id": "callback-1"}));
+        assert!(requests[5].0.ends_with("/sendMessage"));
+        assert!(requests[6].0.ends_with("/sendRichMessageDraft"));
     }
 
     #[test]

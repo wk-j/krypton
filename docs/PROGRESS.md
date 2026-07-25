@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-07-24
+> Last updated: 2026-07-25
 
 ## Overview
 
@@ -21,11 +21,21 @@
 
 ## Recent Landings
 
+- **Telegram conversation overlap fix** — Private-chat streaming now edits the
+  persistent tool-status message before updating the bottom-anchored assistant
+  draft. Telegram therefore lays out each ephemeral draft against the final
+  message heights for that tick instead of letting a later status resize place
+  both bubbles in the same space. Rich/plain fallback, final message order, and
+  target routing are unchanged. See `docs/201-telegram-rich-responses.md`.
+
 - **Telegram mobile lane picker (spec 202)** — Authorized users no longer need
   to type exact targets such as `/use Claude-1`. After token verification the
   controller best-effort publishes common commands through `setMyCommands`;
   bare `/use` and `/lanes` render an eight-lane paged inline keyboard with the
-  current target marked. Buttons carry only five-minute 96-bit random nonces.
+  current target marked. Each lane occupies one button row labeled with its
+  harness working directory, so lanes from different project contexts are
+  distinguishable before selection. Buttons carry only five-minute 96-bit
+  random nonces.
   Callback updates are acknowledged immediately, repeat numeric user/group
   authorization, atomically claim the action, and re-read `lane.list`; target
   selection requires the exact harness ID + globally unique display name +

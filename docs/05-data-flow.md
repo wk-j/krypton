@@ -747,7 +747,8 @@ The CLI never simulates keys, submits hash commands, or registers as a lane.
    and callback_query updates.
 2. Rust canonicalizes numeric IDs and checks the user allowlist; groups also
    require the chat allowlist plus an explicit command/mention/reply.
-3. Bare /use or /lanes dispatches lane.list and returns paged inline buttons.
+3. Bare /use or /lanes dispatches lane.list and returns paged inline buttons,
+   one lane per row with its harness working directory visible in the label.
    A tap is acknowledged immediately, re-authorized by numeric user/chat IDs,
    resolved from a five-minute opaque nonce, and accepted only if a fresh
    lane.list still matches its harness ID, display name, and session ID.
@@ -769,6 +770,9 @@ The CLI never simulates keys, submits hash commands, or registers as a lane.
    one persistent rich preview. Nested-block/depth/byte overflow and rich API
    failures continue through the plain path, resetting dedup state and retaining
    already accepted chunks so content is neither lost nor duplicated.
+   On every private-chat streaming tick, the persistent tool summary is edited
+   before the draft update so the draft is positioned after the final message
+   stack height rather than overlapping a resized status bubble.
 10. stop/error finalizes the plain tool summary before the persistent answer,
    then clears the turn policy. Lane/session/harness lifecycle events
    invalidate stale chat targets instead of silently retargeting.

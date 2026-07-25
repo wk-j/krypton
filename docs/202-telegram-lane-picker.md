@@ -90,18 +90,20 @@ Choose a target lane · 1/2
 Current: Claude-1
 
 Claude-1 · idle · claude-sonnet
+  /Users/wk/Source/krypton
 Codex-1 · busy · gpt-5
+  /Users/wk/Source/another-project
 ...
 
-[✓ Claude-1] [Codex-1]
-[  Cursor-1] [  Pi-1]
+[✓ Claude-1 · /Users/wk/Source/krypton]
+[Codex-1 · /Users/wk/Source/another-project]
 [‹ Previous] [↻ 1/2] [Next ›]
 ```
 
 - Pages contain at most eight lanes, in `lane.list` order.
-- Lane buttons use two columns and display only `✓` plus the globally unique
-  display name; status/model remain in the message where they do not make
-  buttons too wide.
+- Each lane button occupies one row and displays its globally unique display
+  name plus the harness working directory; the text summary repeats the full
+  working directory under status/model so long paths remain readable.
 - The current target receives `✓` only when its harness, display name, and
   session snapshot still match.
 - The center navigation button refreshes the current page from live state.

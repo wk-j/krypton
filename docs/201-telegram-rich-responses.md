@@ -237,8 +237,8 @@ Telegram Settings view or changing the visible toggle invokes
    If a rich chunk fails after earlier chunks succeeded, keep the accepted rich
    chunks and send that failed chunk plus all remaining chunks as plain text;
    never duplicate already accepted content.
-9. ToolStatusDraft remains one edited plain-text message and is finalized before
-   the persistent assistant answer, preserving current message order.
+9. ToolStatusDraft remains one edited plain-text message; each tick edits it
+   before the private-chat draft, and stop/error finalizes it before the answer.
 ```
 
 Changing the setting affects new responses. It does not restart polling, clear

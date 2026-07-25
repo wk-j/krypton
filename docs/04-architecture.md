@@ -682,7 +682,9 @@ control boundary. It owns Bot API long polling, OS-vault credential access,
 application-managed allowlists/pairing, the update watermark, per-chat targets,
 compact outbound digests, and the spec-202 mobile lane picker. After `getMe`,
 the service best-effort registers common commands with `setMyCommands`; bare
-`/use` and `/lanes` render paged inline keyboards from a fresh `lane.list`.
+`/use` and `/lanes` render paged inline keyboards from a fresh `lane.list`;
+each lane occupies one row labeled with its display name and harness working
+directory so same-named project contexts remain distinguishable on Telegram.
 Button payloads are random five-minute nonces resolved through a bounded,
 process-local action registry. Callback handling acknowledges Telegram first,
 then repeats numeric user/chat authorization and verifies the exact harness,
@@ -693,10 +695,13 @@ The optional spec-201 rich-answer path remains
 backend-owned: `telegram/rich.rs` parses assistant Markdown with Comrak and emits
 only a Telegram-safe HTML subset before `sendRichMessageDraft`,
 `sendRichMessage`, or rich `editMessageText`; raw model HTML and media never
-cross that boundary. Any render/API failure degrades only that response to the
-existing plain path. `TelegramService` calls `ControlServer::dispatch` directly
-and subscribes to the server's typed event broadcast; it does not loop back
-through HTTP and does not know the control bearer token.
+cross that boundary. Streaming ticks edit the persistent tool-status message
+before updating the bottom-anchored private-chat draft, preventing a resized
+status bubble from colliding with the draft in Telegram clients. Any render/API
+failure degrades only that response to the existing plain path.
+`TelegramService` calls `ControlServer::dispatch` directly and subscribes to the
+server's typed event broadcast; it does not loop back through HTTP and does not
+know the control bearer token.
 
 Rust attaches trusted numeric sender/chat provenance only after admission.
 `control-bridge.ts` forwards that metadata separately from operation params, and
