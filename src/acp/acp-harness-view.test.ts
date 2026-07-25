@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AcpHarnessView,
@@ -1809,5 +1809,274 @@ describe('agentLinkOpenAction', () => {
   it('normalises whitespace and control chars before matching the scheme', () => {
     expect(agentLinkOpenAction('  https://example.com  ')).toBe('external');
     expect(agentLinkOpenAction('\x01java\x02script:alert(1)')).toBe('suppress');
+  });
+});
+
+describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
+  type EscClient = { cancel(): Promise<void>; dispose(): Promise<void> };
+  type EscLane = {
+    id: string;
+    status: string;
+    client: EscClient | null;
+    sessionId: string | null;
+    spawnEpoch: number;
+    cancelRequestedAt: number | null;
+    cancelUnacked: boolean;
+    cancelEscalationTimer: number | null;
+    queuedPrompts: unknown[];
+    pendingTurnExtractions: unknown[];
+    activeSystemLabel: string | null;
+  };
+  type EscHost = {
+    armCancelEscalation(lane: EscLane): void;
+    clearCancelEscalation(lane: EscLane): void;
+    cancelLane(lane: EscLane): Promise<void>;
+    forceRestartLane(lane: EscLane): Promise<void>;
+    setLaneStatus(lane: EscLane, next: string): void;
+  };
+
+  const proto = AcpHarnessView.prototype as unknown as EscHost;
+  const arm = proto.armCancelEscalation;
+  const clear = proto.clearCancelEscalation;
+  const cancelLane = proto.cancelLane;
+  const forceRestartLane = proto.forceRestartLane;
+  const setLaneStatus = proto.setLaneStatus;
+
+  const makeLane = (over: Partial<EscLane> = {}): EscLane => ({
+    id: 'lane-1',
+    status: 'busy',
+    client: { cancel: async () => {}, dispose: async () => {} },
+    sessionId: 'sess-2b042cbb',
+    spawnEpoch: 3,
+    cancelRequestedAt: null,
+    cancelUnacked: false,
+    cancelEscalationTimer: null,
+    queuedPrompts: [],
+    pendingTurnExtractions: [],
+    activeSystemLabel: null,
+    ...over,
+  });
+
+  // The escalation timer rides window.setTimeout; the test env has no DOM, so
+  // point `window` at the (fake-timer patched) global.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    (globalThis as { window?: unknown }).window = globalThis;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  const armHost = (lane: EscLane) => {
+    const rows: string[] = [];
+    const host = {
+      lanes: [lane],
+      appendTranscript: (_l: EscLane, _kind: string, text: string) => rows.push(text),
+      render: () => {},
+    };
+    return { host, rows };
+  };
+
+  it('flags the lane for force-restart when the cancel goes unacknowledged for 10s', () => {
+    const lane = makeLane();
+    const { host, rows } = armHost(lane);
+
+    arm.call(host, lane);
+    expect(lane.cancelRequestedAt).not.toBeNull();
+    expect(lane.cancelUnacked).toBe(false);
+
+    vi.advanceTimersByTime(10_000);
+
+    expect(lane.cancelUnacked).toBe(true);
+    expect(lane.cancelEscalationTimer).toBeNull();
+    expect(rows.some((r) => r.includes('Ctrl+C again to force-restart'))).toBe(true);
+  });
+
+  it('keeps the first cancel stamp when Ctrl+C is pressed again inside the window', () => {
+    const lane = makeLane();
+    const { host } = armHost(lane);
+
+    arm.call(host, lane);
+    const firstStamp = lane.cancelRequestedAt;
+    const firstTimer = lane.cancelEscalationTimer;
+
+    vi.advanceTimersByTime(4_000);
+    arm.call(host, lane);
+
+    expect(lane.cancelRequestedAt).toBe(firstStamp);
+    expect(lane.cancelEscalationTimer).toBe(firstTimer);
+
+    // The original deadline still governs — the re-cancel didn't extend it.
+    vi.advanceTimersByTime(6_000);
+    expect(lane.cancelUnacked).toBe(true);
+  });
+
+  it('still escalates while the turn is paused on a permission prompt', () => {
+    const lane = makeLane({ status: 'needs_permission' });
+    const { host } = armHost(lane);
+
+    arm.call(host, lane);
+    vi.advanceTimersByTime(10_000);
+
+    expect(lane.cancelUnacked).toBe(true);
+  });
+
+  it('does not flag a lane whose turn ended before the window closed', () => {
+    const lane = makeLane();
+    const { host, rows } = armHost(lane);
+
+    arm.call(host, lane);
+    lane.status = 'idle';
+    vi.advanceTimersByTime(10_000);
+
+    expect(lane.cancelUnacked).toBe(false);
+    expect(rows).toEqual([]);
+  });
+
+  it('does not flag a lane that was closed while the window was open', () => {
+    const lane = makeLane();
+    const { host, rows } = armHost(lane);
+
+    arm.call(host, lane);
+    host.lanes = [];
+    vi.advanceTimersByTime(10_000);
+
+    expect(lane.cancelUnacked).toBe(false);
+    expect(rows).toEqual([]);
+  });
+
+  it('disarms the timer on clear so a later tick cannot flag the lane', () => {
+    const lane = makeLane();
+    const { host } = armHost(lane);
+
+    arm.call(host, lane);
+    clear.call(host, lane);
+
+    expect(lane.cancelRequestedAt).toBeNull();
+    expect(lane.cancelEscalationTimer).toBeNull();
+
+    vi.advanceTimersByTime(60_000);
+    expect(lane.cancelUnacked).toBe(false);
+  });
+
+  it('clears escalation when the turn really ends, but not across a permission pause', () => {
+    const statusHost = {
+      laneBus: { emit: () => {} },
+      viewBus: null,
+      projectDir: null,
+      publishStream: () => {},
+      updateComposerTick: () => {},
+      updateSpinnerTicker: () => {},
+      clearCancelEscalation: clear,
+    };
+
+    // busy → needs_permission is the same turn: escalation survives.
+    const paused = makeLane({ cancelRequestedAt: 1, cancelUnacked: true });
+    setLaneStatus.call(statusHost, paused, 'needs_permission');
+    expect(paused.cancelUnacked).toBe(true);
+    expect(paused.cancelRequestedAt).toBe(1);
+
+    // busy → idle means the CLI answered after all: escalation is dropped.
+    const finished = makeLane({ cancelRequestedAt: 1, cancelUnacked: true });
+    setLaneStatus.call(statusHost, finished, 'idle');
+    expect(finished.cancelUnacked).toBe(false);
+    expect(finished.cancelRequestedAt).toBeNull();
+  });
+
+  it('sends session/cancel and arms escalation on the first Ctrl+C', async () => {
+    let cancels = 0;
+    const lane = makeLane({
+      client: { cancel: async () => { cancels++; }, dispose: async () => {} },
+    });
+    const rows: string[] = [];
+    let forced = 0;
+    const host = {
+      lanes: [lane],
+      coordinator: { pendingPeersFor: () => [] },
+      appendTranscript: (_l: EscLane, _kind: string, text: string) => rows.push(text),
+      render: () => {},
+      armCancelEscalation: arm,
+      forceRestartLane: async () => { forced++; },
+    };
+
+    await cancelLane.call(host, lane);
+
+    expect(cancels).toBe(1);
+    expect(forced).toBe(0);
+    expect(lane.cancelRequestedAt).not.toBeNull();
+    expect(rows).toContain('cancel requested');
+  });
+
+  it('force-restarts instead of re-sending cancel once the window has passed', async () => {
+    let cancels = 0;
+    const lane = makeLane({
+      cancelUnacked: true,
+      client: { cancel: async () => { cancels++; }, dispose: async () => {} },
+    });
+    const forcedWith: EscLane[] = [];
+    const host = {
+      coordinator: { pendingPeersFor: () => [] },
+      appendTranscript: () => {},
+      render: () => {},
+      forceRestartLane: async (l: EscLane) => { forcedWith.push(l); },
+    };
+
+    await cancelLane.call(host, lane);
+
+    expect(forcedWith).toEqual([lane]);
+    // Re-sending would just vanish into the hung process again.
+    expect(cancels).toBe(0);
+  });
+
+  it('kills the process chain and respawns resuming the same agent session', async () => {
+    let disposed = 0;
+    const lane = makeLane({
+      cancelUnacked: true,
+      cancelRequestedAt: 1,
+      client: { cancel: async () => {}, dispose: async () => { disposed++; } },
+    });
+    const resumed: Array<string | null | undefined> = [];
+    const rows: string[] = [];
+    const host = {
+      lanes: [lane],
+      appendTranscript: (_l: EscLane, _kind: string, text: string) => rows.push(text),
+      sealStreaming: () => {},
+      dropVeiledThoughtRow: () => {},
+      cancelPendingArtifactsForLane: () => {},
+      clearCancelEscalation: clear,
+      spawnLane: async (_l: EscLane, resumeSessionId?: string | null) => {
+        resumed.push(resumeSessionId);
+      },
+    };
+
+    await forceRestartLane.call(host, lane);
+
+    expect(disposed).toBe(1);
+    // Context survives: the same session id is handed back to spawnLane.
+    expect(resumed).toEqual(['sess-2b042cbb']);
+    // The epoch bump is what orphans the still-pending prompt promise.
+    expect(lane.spawnEpoch).toBe(4);
+    expect(lane.client).toBeNull();
+    expect(lane.cancelUnacked).toBe(false);
+    expect(lane.cancelRequestedAt).toBeNull();
+  });
+
+  it('ignores repeated force-restart gestures while a restart is already in flight', async () => {
+    const spawns: unknown[] = [];
+    const host = {
+      lanes: [],
+      appendTranscript: () => {},
+      sealStreaming: () => {},
+      dropVeiledThoughtRow: () => {},
+      cancelPendingArtifactsForLane: () => {},
+      clearCancelEscalation: clear,
+      spawnLane: async () => { spawns.push(1); },
+    };
+
+    await forceRestartLane.call(host, makeLane({ status: 'starting' }));
+    await forceRestartLane.call(host, makeLane({ client: null }));
+
+    expect(spawns).toEqual([]);
   });
 });

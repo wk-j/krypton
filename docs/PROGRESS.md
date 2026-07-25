@@ -21,6 +21,26 @@
 
 ## Recent Landings
 
+- **Cancel escalation → force-restart (spec 199)** — A hung agent CLI (upstream
+  `anthropics/claude-code#19195` family: turn finished, turn-end never signalled)
+  used to leave a lane `busy` forever with no in-app recovery — `session/cancel`
+  died inside the hung process and `#restart` refuses non-`error`/`stopped`
+  lanes. `Ctrl+C` now stamps the cancel and arms a 10 s window
+  (`CANCEL_ESCALATION_MS`); if the turn is still `busy`/`needs_permission` when
+  it closes, the lane is flagged `cancelUnacked`, the transcript says so, and the
+  lane header switches to `⌃C force restart`. The next `Ctrl+C` runs
+  `forceRestartLane()`: bump `spawnEpoch` (orphaning the pending prompt promise),
+  dispose the client (existing `acp_dispose` SIGTERM→SIGKILL of the process
+  group), then respawn via `spawnLane(lane, resumeSessionId)` so the **same agent
+  session resumes and the conversation survives** — falling back to a fresh
+  session only when the backend can't resume. A pending shell cancel still wins
+  the key, so it keeps the plain hint. Escalation clears whenever the turn truly
+  ends, but survives a `busy` ↔ `needs_permission` permission pause. Normal
+  `#restart` semantics (fresh session) are unchanged, and no Rust changes were
+  needed. Verified with `tsc --noEmit`, 526 Vitest tests (11 new escalation
+  state-machine tests, each confirmed to fail under mutation of the code it
+  covers). See `docs/199-cancel-escalation-force-restart.md`.
+
 - **Telegram conversation overlap fix** — Private-chat streaming keeps the
   animated ephemeral draft while no tools are active. Once a tool-status bubble
   exists, the assistant preview is promoted to a persistent editable message

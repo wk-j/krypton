@@ -1,7 +1,7 @@
 # Cancel Escalation → Force-Restart for Hung ACP Lanes — Implementation Spec
 
-> Status: Draft
-> Date: 2026-07-23
+> Status: Implemented
+> Date: 2026-07-23 (implemented 2026-07-25)
 > Issue: [#13](https://github.com/wk-j/krypton/issues/13)
 
 ## Problem
@@ -165,10 +165,14 @@ gating is unchanged.
 
 ### UI Changes
 
-- Lane header hint (`acp-harness__lane-cancel-hint`, line ~13838): when
+- Lane header hint (`acp-harness__lane-cancel-hint`, `renderLaneHead`): when
   `lane.cancelUnacked`, text becomes `⌃C force restart` with a
-  `acp-harness__lane-cancel-hint--force` modifier (alert color via existing
-  theme variables — full-color text, no border rails).
+  `acp-harness__lane-cancel-hint--force` modifier (alert color from the existing
+  `--acp-accent-danger` token plus a background tint — chrome stays flat). The
+  header is the durable signal; the transcript row that announced the escalation
+  scrolls away. Gated on `!lane.pendingShellId`, because a pending shell cancel
+  still takes the key — that case keeps the plain `⌃C cancel` hint so the hint
+  never promises an action the key won't perform.
 - Transcript system rows narrate both the escalation offer and the force
   restart; no new DOM surfaces, no modal.
 
