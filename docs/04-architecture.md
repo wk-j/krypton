@@ -695,10 +695,11 @@ The optional spec-201 rich-answer path remains
 backend-owned: `telegram/rich.rs` parses assistant Markdown with Comrak and emits
 only a Telegram-safe HTML subset before `sendRichMessageDraft`,
 `sendRichMessage`, or rich `editMessageText`; raw model HTML and media never
-cross that boundary. Streaming ticks edit the persistent tool-status message
-before updating the bottom-anchored private-chat draft, preventing a resized
-status bubble from colliding with the draft in Telegram clients. Any render/API
-failure degrades only that response to the existing plain path.
+cross that boundary. Private-chat answers use an ephemeral draft only while no
+tool-status surface exists. Once tool activity begins, the answer preview is
+promoted to a persistent editable message after the status message; standard
+message layout then prevents the two growing bubbles from overlapping. Any
+render/API failure degrades only that response to the existing plain path.
 `TelegramService` calls `ControlServer::dispatch` directly and subscribes to the
 server's typed event broadcast; it does not loop back through HTTP and does not
 know the control bearer token.

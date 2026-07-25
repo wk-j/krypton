@@ -1869,12 +1869,13 @@ async fn flush_conversation_surfaces(
     api: &BotApi,
     chat_id: &str,
     status: Option<&mut ToolStatusDraft>,
-    draft: Option<&mut DigestDraft>,
+    mut draft: Option<&mut DigestDraft>,
 ) {
-    // Telegram renders a private-chat draft at the bottom of the conversation.
-    // Resize the persistent tool message first so the draft is laid out against
-    // the final stack for this tick; editing the status after the draft can make
-    // clients overlap the two bubbles until their next full relayout.
+    if status.is_some() {
+        if let Some(draft) = draft.as_deref_mut() {
+            draft.promote_to_persistent();
+        }
+    }
     if let Some(status) = status {
         if let Err(error) = status.flush(api, chat_id).await {
             log::warn!("telegram status delivery: {}", sanitize_error(&error));
@@ -2568,6 +2569,13 @@ impl DigestDraft {
     fn degrade_to_plain(&mut self) {
         self.rich_active = false;
         self.sent_text.clear();
+    }
+
+    fn promote_to_persistent(&mut self) {
+        if self.ephemeral {
+            self.ephemeral = false;
+            self.sent_text.clear();
+        }
     }
 
     fn plain_preview(&self) -> String {
@@ -3412,8 +3420,9 @@ mod tests {
                 json!({"message_id": 7}),
                 json!({"message_id": 7}),
                 json!(true),
-                json!({"message_id": 8}),
                 json!(true),
+                json!({"message_id": 8}),
+                json!({"message_id": 9}),
             ];
             let mut requests = Vec::new();
             for result in responses {
@@ -3486,10 +3495,12 @@ mod tests {
         api.answer_callback("callback-1", None)
             .await
             .expect("answer callback");
+        let mut draft = DigestDraft::new(true, true);
+        draft.text = "Work".to_string();
+        draft.flush(&api, "42").await.expect("initial rich draft");
+        draft.text.push_str("ing");
         let mut status = ToolStatusDraft::default();
         status.record("Codex-1", "call-1", "execute command", "in_progress");
-        let mut draft = DigestDraft::new(true, true);
-        draft.text = "Working".to_string();
         flush_conversation_surfaces(&api, "42", Some(&mut status), Some(&mut draft)).await;
 
         let requests = server.await.expect("fake Telegram server");
@@ -3508,8 +3519,9 @@ mod tests {
         assert!(requests[3].0.ends_with("/editMessageText"));
         assert!(requests[4].0.ends_with("/answerCallbackQuery"));
         assert_eq!(requests[4].1, json!({"callback_query_id": "callback-1"}));
-        assert!(requests[5].0.ends_with("/sendMessage"));
-        assert!(requests[6].0.ends_with("/sendRichMessageDraft"));
+        assert!(requests[5].0.ends_with("/sendRichMessageDraft"));
+        assert!(requests[6].0.ends_with("/sendMessage"));
+        assert!(requests[7].0.ends_with("/sendRichMessage"));
     }
 
     #[test]

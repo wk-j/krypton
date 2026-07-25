@@ -641,9 +641,9 @@ Maintain one output coordinator per `(chat_id, harness_id, lane)`:
 2. At most once per second, update the current preview.
 3. In private chats, prefer `sendMessageDraft` when supported; if Telegram
    rejects or does not support it, fall back to a normal placeholder plus
-   `editMessageText`.
-   Flush the persistent tool-status edit before the draft update so the client
-   lays out the bottom-anchored draft against the latest message heights.
+   `editMessageText`. If tool activity begins, promote the answer preview to a
+   normal editable message after the tool-status message; do not keep an
+   ephemeral draft beside a status bubble whose height can still change.
 4. In groups, always use a placeholder plus `editMessageText`.
 5. On stop/error, finalize a persistent message.
 6. Plain output splits at 4,000 characters, leaving headroom below Telegram's

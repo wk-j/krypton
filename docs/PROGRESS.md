@@ -21,11 +21,11 @@
 
 ## Recent Landings
 
-- **Telegram conversation overlap fix** — Private-chat streaming now edits the
-  persistent tool-status message before updating the bottom-anchored assistant
-  draft. Telegram therefore lays out each ephemeral draft against the final
-  message heights for that tick instead of letting a later status resize place
-  both bubbles in the same space. Rich/plain fallback, final message order, and
+- **Telegram conversation overlap fix** — Private-chat streaming keeps the
+  animated ephemeral draft while no tools are active. Once a tool-status bubble
+  exists, the assistant preview is promoted to a persistent editable message
+  after it, so both growing surfaces use normal chat layout instead of
+  overlapping at the bottom. Rich/plain fallback, final message order, and
   target routing are unchanged. See `docs/201-telegram-rich-responses.md`.
 
 - **Telegram mobile lane picker (spec 202)** — Authorized users no longer need
