@@ -33,6 +33,7 @@ interface PendingPairing {
 
 interface TelegramStatus {
   enabled: boolean;
+  richMessages: boolean;
   credentialState: 'configured' | 'missing' | 'unavailable';
   authorizedUserIds: string[];
   authorizedGroupChatIds: string[];
@@ -44,6 +45,7 @@ interface TelegramStatus {
 
 const EMPTY_STATUS: TelegramStatus = {
   enabled: false,
+  richMessages: false,
   credentialState: 'missing',
   authorizedUserIds: [],
   authorizedGroupChatIds: [],
@@ -83,7 +85,7 @@ export class TelegramSettingsContentView implements ContentView {
 
     const hints = document.createElement('div');
     hints.className = 'krypton-telegram__hints';
-    hints.textContent = 'r refresh · j/k scroll · q close';
+    hints.textContent = 'r refresh · m rich messages · j/k scroll · q close';
     this.element.appendChild(hints);
 
     this.render();
@@ -120,6 +122,12 @@ export class TelegramSettingsContentView implements ContentView {
     }
     if (event.key === ' ') {
       void this.mutate('telegram_set_enabled', { enabled: !this.status.enabled });
+      return true;
+    }
+    if (event.key === 'm') {
+      void this.mutate('telegram_set_rich_messages', {
+        enabled: !this.status.richMessages,
+      });
       return true;
     }
     if (event.key === 'p') {
@@ -281,6 +289,25 @@ export class TelegramSettingsContentView implements ContentView {
     toggleCopy.textContent = 'ENABLE CONTROLLER';
     toggle.append(checkbox, toggleCopy);
 
+    const richToggle = document.createElement('label');
+    richToggle.className = 'krypton-telegram__toggle';
+    const richCheckbox = document.createElement('input');
+    richCheckbox.type = 'checkbox';
+    richCheckbox.checked = this.status.richMessages;
+    richCheckbox.disabled = this.busy;
+    richCheckbox.addEventListener(
+      'change',
+      () => {
+        void this.mutate('telegram_set_rich_messages', {
+          enabled: richCheckbox.checked,
+        });
+      },
+      { signal: this.events.signal },
+    );
+    const richToggleCopy = document.createElement('span');
+    richToggleCopy.textContent = 'NATIVE RICH MESSAGES';
+    richToggle.append(richCheckbox, richToggleCopy);
+
     const identity = this.fact(
       'BOT IDENTITY',
       this.status.bot
@@ -291,10 +318,16 @@ export class TelegramSettingsContentView implements ContentView {
     const test = this.button('TEST CONNECTION', () => this.mutate('telegram_test_connection'), 'primary');
     const control = document.createElement('div');
     control.className = 'krypton-telegram__controls';
-    control.append(toggle, test);
+    control.append(toggle, richToggle, test);
 
     grid.append(token.root, identity, health, control);
     section.appendChild(grid);
+    const richWarning = document.createElement('p');
+    richWarning.className = 'krypton-telegram__lede';
+    richWarning.textContent = this.status.richMessages
+      ? 'Rich delivery is active for new responses: headings, tables, lists, code, and quotes. Older or third-party Telegram clients may show unsupported content.'
+      : 'Messages use the compatible plain-text path. Enable native rich messages for structured agent responses.';
+    section.appendChild(richWarning);
     return section;
   }
 

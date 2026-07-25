@@ -742,10 +742,16 @@ The CLI never simulates keys, submits hash commands, or registers as a lane.
 ## Telegram Harness Controller Flow
 
 ```text
-1. TelegramService long-polls getUpdates after getMe verifies the vault token.
+1. TelegramService verifies the vault token with getMe, best-effort registers
+   common commands with setMyCommands, then long-polls getUpdates for message
+   and callback_query updates.
 2. Rust canonicalizes numeric IDs and checks the user allowlist; groups also
    require the chat allowlist plus an explicit command/mention/reply.
-3. A chat selects a process-local lane target with /use <display-name>.
+3. Bare /use or /lanes dispatches lane.list and returns paged inline buttons.
+   A tap is acknowledged immediately, re-authorized by numeric user/chat IDs,
+   resolved from a five-minute opaque nonce, and accepted only if a fresh
+   lane.list still matches its harness ID, display name, and session ID.
+   /use <display-name> remains the exact-name fallback.
 4. The service dispatches the typed operation through ControlServer::dispatch
    with trusted ControlCaller::Telegram metadata.
 5. control-bridge forwards caller metadata separately from params and routes
@@ -755,11 +761,18 @@ The CLI never simulates keys, submits hash commands, or registers as a lane.
 7. During that turn, ACP permission and fs-write requests resolve automatically
    with reason telegram-bypass:<user-id>; the persistent lane mode is unchanged.
 8. Frontend events use acp_control_publish. TelegramService consumes the same
-   typed broadcast as SSE, filters thought/raw tool detail, and edits a compact
-   per-chat digest.
-9. stop/error clears the turn policy. Lane/session/harness lifecycle events
+   typed broadcast as SSE, filters thought/raw tool detail, and appends assistant
+   Markdown to a per-chat DigestDraft. The draft captures rich/plain mode when
+   the response starts, so a Settings change never mutates an in-flight answer.
+9. With rich messages enabled, Comrak converts the answer to a strict Telegram
+   HTML subset. Private chats stream through sendRichMessageDraft; groups edit
+   one persistent rich preview. Nested-block/depth/byte overflow and rich API
+   failures continue through the plain path, resetting dedup state and retaining
+   already accepted chunks so content is neither lost nor duplicated.
+10. stop/error finalizes the plain tool summary before the persistent answer,
+   then clears the turn policy. Lane/session/harness lifecycle events
    invalidate stale chat targets instead of silently retargeting.
-10. The handled update ID is persisted under
+11. The handled update ID is persisted under
     ~/.config/krypton/runtime/telegram-state.json for restart-safe polling.
 ```
 

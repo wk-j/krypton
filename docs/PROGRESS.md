@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-07-19
+> Last updated: 2026-07-24
 
 ## Overview
 
@@ -20,6 +20,21 @@
 ---
 
 ## Recent Landings
+
+- **Telegram mobile lane picker (spec 202)** — Authorized users no longer need
+  to type exact targets such as `/use Claude-1`. After token verification the
+  controller best-effort publishes common commands through `setMyCommands`;
+  bare `/use` and `/lanes` render an eight-lane paged inline keyboard with the
+  current target marked. Buttons carry only five-minute 96-bit random nonces.
+  Callback updates are acknowledged immediately, repeat numeric user/group
+  authorization, atomically claim the action, and re-read `lane.list`; target
+  selection requires the exact harness ID + globally unique display name +
+  session ID snapshot, so a stale button refreshes instead of silently
+  retargeting. Direct `/use <lane>` remains the fallback. Verified with 32
+  focused Telegram tests including a local fake Bot API server, 201 Rust
+  library tests + 3 CLI tests, formatting, and all-target Clippy. Live mobile
+  validation still requires an operator-owned bot token. See
+  `docs/202-telegram-lane-picker.md`.
 
 - **`#draw` document-script support (spec 197)** — the `#draw` prompt gains a
   second, explicitly-gated branch for durable/interactive drawings (the
@@ -407,6 +422,23 @@
   buttons remain a documented follow-up while text commands and `/ctl` provide
   the implemented operation surface. See
   `docs/200-telegram-harness-controller.md` and ADR-0013–0015.
+- **Telegram native rich responses (spec 201)** — The Telegram controller can
+  now opt new responses into Bot API Rich Messages from the keyboard-first
+  Settings view (`m`). Rust parses assistant Markdown with the existing Comrak
+  dependency and emits a fixed Telegram HTML subset: raw HTML is escaped,
+  unsafe links are non-clickable, images become visible text, entity
+  auto-detection is disabled, and nested-block/depth/UTF-8 byte budgets split
+  safe structures or fall back to plain chunks. Private chats use
+  `sendRichMessageDraft`; groups edit one persistent rich preview. Presentation
+  mode is captured when the response starts, and a rich render/API failure
+  resets dedup state, reuses the existing group message where possible, and
+  sends only the failed plus remaining chunks as plain text—never content
+  already accepted by Telegram. Existing settings default to compatible plain
+  text because Bot API success cannot prove client rendering support. 191 Rust
+  library tests + 3 CLI tests, 511 Vitest tests, production build, type-check,
+  fmt, and all-target clippy pass. Live rich-client validation still requires
+  the operator's configured bot. See
+  `docs/201-telegram-rich-responses.md`.
 - **Docs browser artifact export (spec 174)** — The `/doc` reader can now ask
   the active harness lane to generate a normal HTML artifact from the markdown
   file the user is reading. A fixed `artifact` pill and the `a` shortcut POST

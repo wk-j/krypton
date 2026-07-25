@@ -214,6 +214,7 @@ pub fn run() {
             commands::get_hook_server_config_snippet,
             telegram::telegram_get_status,
             telegram::telegram_set_enabled,
+            telegram::telegram_set_rich_messages,
             telegram::telegram_set_token,
             telegram::telegram_remove_token,
             telegram::telegram_test_connection,

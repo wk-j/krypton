@@ -5,6 +5,8 @@
 //! through `ControlServer::dispatch`, and output consumes the same typed stream
 //! that backs the controller SSE endpoint.
 
+mod rich;
+
 use crate::config;
 use crate::control::{
     ControlCaller, ControlReply, ControlRequest, ControlServer, ControlStreamEvent, TelegramCaller,
@@ -12,6 +14,7 @@ use crate::control::{
 use crate::util::emit::EmitExt;
 use getrandom::getrandom;
 use keyring::Entry;
+use rich::{render_rich_chunks, render_rich_preview, TelegramOutputChunk};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeSet, HashMap};
@@ -30,6 +33,9 @@ const STATE_VERSION: u8 = 1;
 const POLL_TIMEOUT_SECS: u64 = 25;
 const PAIRING_TTL_SECS: u64 = 300;
 const MESSAGE_LIMIT: usize = 4000;
+const TELEGRAM_ACTION_TTL_SECS: u64 = 300;
+const TELEGRAM_ACTION_CAP: usize = 512;
+const LANE_PICKER_PAGE_SIZE: usize = 8;
 static NEXT_DRAFT_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +43,7 @@ static NEXT_DRAFT_ID: AtomicU64 = AtomicU64::new(1);
 pub struct TelegramSettings {
     pub schema_version: u8,
     pub enabled: bool,
+    pub rich_messages: bool,
     pub authorized_user_ids: BTreeSet<String>,
     pub authorized_group_chat_ids: BTreeSet<String>,
 }
@@ -46,6 +53,7 @@ impl Default for TelegramSettings {
         Self {
             schema_version: SETTINGS_VERSION,
             enabled: false,
+            rich_messages: false,
             authorized_user_ids: BTreeSet::new(),
             authorized_group_chat_ids: BTreeSet::new(),
         }
@@ -121,10 +129,52 @@ struct TelegramTarget {
     private_chat: bool,
 }
 
+#[derive(Debug, Clone)]
+struct TelegramAction {
+    chat_id: String,
+    expires_at: u64,
+    claimed_by_update: Option<i64>,
+    kind: TelegramActionKind,
+}
+
+#[derive(Debug, Clone)]
+enum TelegramActionKind {
+    SelectLane {
+        harness_id: String,
+        lane: String,
+        session_id: Option<String>,
+    },
+    ShowLanePage {
+        page: usize,
+    },
+}
+
+struct LanePickerMessage {
+    text: String,
+    keyboard: Option<Value>,
+    tokens: Vec<String>,
+}
+
+#[derive(Clone, Copy)]
+struct TelegramDelivery<'a> {
+    api: &'a BotApi,
+    chat_id: &'a str,
+    message_id: Option<i64>,
+}
+
+#[derive(Clone, Copy)]
+struct LaneSelection<'a> {
+    chat_kind: &'a str,
+    harness_id: &'a str,
+    lane_name: &'a str,
+    session_id: Option<&'a str>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TelegramStatus {
     pub enabled: bool,
+    pub rich_messages: bool,
     pub credential_state: String,
     pub authorized_user_ids: Vec<String>,
     pub authorized_group_chat_ids: Vec<String>,
@@ -142,6 +192,7 @@ struct TelegramInner {
     health: RwLock<TelegramHealth>,
     bot: RwLock<Option<TelegramBotIdentity>>,
     targets: Mutex<HashMap<String, TelegramTarget>>,
+    actions: Mutex<HashMap<String, TelegramAction>>,
     pairing: Mutex<Option<PairingCode>>,
     pending_pairing: Mutex<Option<PendingPairing>>,
     retryable_updates: Mutex<BTreeSet<i64>>,
@@ -168,6 +219,7 @@ impl TelegramService {
                 health: RwLock::new(TelegramHealth::default()),
                 bot: RwLock::new(None),
                 targets: Mutex::new(HashMap::new()),
+                actions: Mutex::new(HashMap::new()),
                 pairing: Mutex::new(None),
                 pending_pairing: Mutex::new(None),
                 retryable_updates: Mutex::new(BTreeSet::new()),
@@ -184,6 +236,7 @@ impl TelegramService {
     pub fn shutdown(&self) {
         self.inner.generation.fetch_add(1, Ordering::SeqCst);
         lock(&self.inner.targets).clear();
+        lock(&self.inner.actions).clear();
         lock(&self.inner.retryable_updates).clear();
         self.set_health("stopped", "Krypton is shutting down", None);
     }
@@ -192,6 +245,7 @@ impl TelegramService {
         let settings = read(&self.inner.settings).clone();
         TelegramStatus {
             enabled: settings.enabled,
+            rich_messages: settings.rich_messages,
             credential_state: credential_state(),
             authorized_user_ids: settings.authorized_user_ids.into_iter().collect(),
             authorized_group_chat_ids: settings.authorized_group_chat_ids.into_iter().collect(),
@@ -214,6 +268,11 @@ impl TelegramService {
     pub fn set_enabled(&self, enabled: bool) -> Result<TelegramStatus, String> {
         self.mutate_settings(|settings| settings.enabled = enabled)?;
         self.restart();
+        Ok(self.status())
+    }
+
+    pub fn set_rich_messages(&self, enabled: bool) -> Result<TelegramStatus, String> {
+        self.mutate_settings(|settings| settings.rich_messages = enabled)?;
         Ok(self.status())
     }
 
@@ -269,6 +328,7 @@ impl TelegramService {
             settings.authorized_group_chat_ids.remove(&id);
         })?;
         lock(&self.inner.targets).remove(&id);
+        lock(&self.inner.actions).retain(|_, action| action.chat_id != id);
         Ok(self.status())
     }
 
@@ -367,12 +427,14 @@ impl TelegramService {
         // selectively proven safe after a user is removed. Clear every target
         // and require an authorized sender to select a lane again.
         lock(&self.inner.targets).clear();
+        lock(&self.inner.actions).clear();
     }
 
     fn restart(&self) {
         let generation = self.inner.generation.fetch_add(1, Ordering::SeqCst) + 1;
         *write(&self.inner.bot) = None;
         lock(&self.inner.targets).clear();
+        lock(&self.inner.actions).clear();
         let settings = read(&self.inner.settings).clone();
         if !settings.enabled {
             self.set_health("disabled", "Telegram Controller is disabled", None);
@@ -422,6 +484,9 @@ impl TelegramService {
             };
             if !service.is_generation(generation) {
                 return;
+            }
+            if let Err(error) = api.set_commands().await {
+                log::warn!("telegram command menu: {}", sanitize_error(&error));
             }
             *write(&service.inner.bot) = Some(bot.clone());
             service.prepare_runtime_state(&bot.id);
@@ -588,11 +653,12 @@ impl TelegramService {
                     .get("text")
                     .and_then(Value::as_str)
                     .unwrap_or_default();
+                let rich_messages = read(&self.inner.settings).rich_messages;
                 for chat in chats {
                     let private_chat = self.is_private_chat(&chat);
                     drafts
                         .entry(chat)
-                        .or_insert_with(|| DigestDraft::new(private_chat))
+                        .or_insert_with(|| DigestDraft::new(private_chat, rich_messages))
                         .text
                         .push_str(text);
                 }
@@ -668,7 +734,7 @@ impl TelegramService {
                     let _ = api
                         .send_text(
                             &chat,
-                            "Selected lane changed or closed. Use /use <lane> again.",
+                            "Selected lane changed or closed. Use /use to choose again.",
                         )
                         .await;
                 }
@@ -684,6 +750,11 @@ impl TelegramService {
         bot: &TelegramBotIdentity,
         update: TelegramUpdate,
     ) -> bool {
+        let update_id = update.update_id;
+        if let Some(callback) = update.callback_query {
+            self.handle_callback(app, api, update_id, callback).await;
+            return !lock(&self.inner.retryable_updates).remove(&update_id);
+        }
         let Some(message) = update.message else {
             return true;
         };
@@ -718,7 +789,7 @@ impl TelegramService {
         }
         let display_name = sender.display_name();
         let caller = ControlCaller::telegram(TelegramCaller {
-            update_id: update.update_id.to_string(),
+            update_id: update_id.to_string(),
             user_id,
             display_name,
             chat_id: chat_id.clone(),
@@ -727,7 +798,91 @@ impl TelegramService {
         let input = strip_group_trigger(&text, &bot.username);
         self.handle_admitted_message(app, api, &chat_id, input, caller)
             .await;
-        !lock(&self.inner.retryable_updates).remove(&update.update_id)
+        !lock(&self.inner.retryable_updates).remove(&update_id)
+    }
+
+    async fn handle_callback(
+        &self,
+        app: &AppHandle,
+        api: &BotApi,
+        update_id: i64,
+        callback: TelegramCallbackQuery,
+    ) {
+        if let Err(error) = api.answer_callback(&callback.id, None).await {
+            log::warn!(
+                "telegram callback acknowledgement: {}",
+                sanitize_error(&error)
+            );
+        }
+        if callback.from.is_bot {
+            return;
+        }
+        let Some(message) = callback.message else {
+            return;
+        };
+        let user_id = callback.from.id.to_string();
+        let chat_id = message.chat.id.to_string();
+        let settings = read(&self.inner.settings).clone();
+        if !callback_authorized(&settings, &user_id, &message.chat) {
+            return;
+        }
+        let Some(token) = callback.data.as_deref() else {
+            return;
+        };
+        let Some(action) = self.claim_action(token, &chat_id, update_id) else {
+            let _ = api
+                .send_text(&chat_id, "Picker expired. Send /use again.")
+                .await;
+            return;
+        };
+        let caller = ControlCaller::telegram(TelegramCaller {
+            update_id: update_id.to_string(),
+            user_id,
+            display_name: callback.from.display_name(),
+            chat_id: chat_id.clone(),
+            chat_kind: message.chat.kind.clone(),
+        });
+        let retryable = match action.kind {
+            TelegramActionKind::ShowLanePage { page } => {
+                self.load_lane_picker(
+                    app,
+                    TelegramDelivery {
+                        api,
+                        chat_id: &chat_id,
+                        message_id: Some(message.message_id),
+                    },
+                    page,
+                    caller,
+                    None,
+                )
+                .await
+            }
+            TelegramActionKind::SelectLane {
+                harness_id,
+                lane,
+                session_id,
+            } => {
+                self.select_lane_callback(
+                    app,
+                    TelegramDelivery {
+                        api,
+                        chat_id: &chat_id,
+                        message_id: Some(message.message_id),
+                    },
+                    LaneSelection {
+                        chat_kind: &message.chat.kind,
+                        harness_id: &harness_id,
+                        lane_name: &lane,
+                        session_id: session_id.as_deref(),
+                    },
+                    caller,
+                )
+                .await
+            }
+        };
+        if !retryable {
+            self.finish_action(token, update_id);
+        }
     }
 
     async fn handle_admitted_message(
@@ -831,34 +986,353 @@ impl TelegramService {
         chat_id: &str,
         caller: ControlCaller,
     ) {
+        self.load_lane_picker(
+            app,
+            TelegramDelivery {
+                api,
+                chat_id,
+                message_id: None,
+            },
+            0,
+            caller,
+            None,
+        )
+        .await;
+    }
+
+    async fn load_lane_picker(
+        &self,
+        app: &AppHandle,
+        delivery: TelegramDelivery<'_>,
+        page: usize,
+        caller: ControlCaller,
+        notice: Option<&str>,
+    ) -> bool {
         let reply = self.dispatch(app, "lane.list", json!({}), caller).await;
-        match reply
-            .result
-            .as_ref()
-            .and_then(|result| result.as_array().cloned())
-        {
-            Some(lanes) if !lanes.is_empty() => {
-                let mut lines = vec!["Lanes:".to_string()];
-                for lane in lanes {
-                    lines.push(format!(
-                        "• {} · {} · {}",
-                        lane.get("displayName")
-                            .and_then(Value::as_str)
-                            .unwrap_or("?"),
-                        lane.get("status").and_then(Value::as_str).unwrap_or("?"),
-                        lane.get("modelName")
-                            .and_then(Value::as_str)
-                            .unwrap_or("default")
-                    ));
-                }
-                lines.push("Select with /use <lane>".to_string());
-                let _ = api.send_text(chat_id, &lines.join("\n")).await;
-            }
-            Some(_) => {
-                let _ = api.send_text(chat_id, "No live lanes.").await;
-            }
-            None => self.send_reply_error(api, chat_id, reply).await,
+        if reply.error.as_ref().is_some_and(|error| error.retryable) {
+            return true;
         }
+        let Some(lanes) = reply.result.as_ref().and_then(Value::as_array) else {
+            let text = reply
+                .error
+                .as_ref()
+                .map(|error| format!("{}: {}", error.code, bounded_line(&error.message, 320)))
+                .unwrap_or_else(|| "lane.list returned no result".to_string());
+            self.deliver_plain_control_message(
+                delivery.api,
+                delivery.chat_id,
+                delivery.message_id,
+                &text,
+            )
+            .await;
+            return false;
+        };
+        match self.build_lane_picker(delivery.chat_id, lanes, page, notice) {
+            Ok(picker) => {
+                self.deliver_lane_picker(
+                    delivery.api,
+                    delivery.chat_id,
+                    delivery.message_id,
+                    picker,
+                )
+                .await
+            }
+            Err(error) => {
+                self.deliver_plain_control_message(
+                    delivery.api,
+                    delivery.chat_id,
+                    delivery.message_id,
+                    &sanitize_error(&error),
+                )
+                .await;
+            }
+        }
+        false
+    }
+
+    fn build_lane_picker(
+        &self,
+        chat_id: &str,
+        lanes: &[Value],
+        requested_page: usize,
+        notice: Option<&str>,
+    ) -> Result<LanePickerMessage, String> {
+        let selectable = lanes
+            .iter()
+            .filter(|lane| {
+                lane.get("harnessId").and_then(Value::as_str).is_some()
+                    && lane.get("displayName").and_then(Value::as_str).is_some()
+            })
+            .collect::<Vec<_>>();
+        if selectable.is_empty() {
+            return Ok(LanePickerMessage {
+                text: notice
+                    .map(|notice| format!("{notice}\n\nNo live lanes."))
+                    .unwrap_or_else(|| "No live lanes.".to_string()),
+                keyboard: None,
+                tokens: Vec::new(),
+            });
+        }
+
+        let total_pages = selectable.len().div_ceil(LANE_PICKER_PAGE_SIZE);
+        let page = requested_page.min(total_pages - 1);
+        let start = page * LANE_PICKER_PAGE_SIZE;
+        let end = (start + LANE_PICKER_PAGE_SIZE).min(selectable.len());
+        let visible = &selectable[start..end];
+        let target = lock(&self.inner.targets).get(chat_id).cloned();
+        let current = target.as_ref().and_then(|target| {
+            selectable
+                .iter()
+                .find(|lane| lane_matches_target(lane, target))
+                .and_then(|lane| lane.get("displayName"))
+                .and_then(Value::as_str)
+        });
+
+        let mut lines = Vec::new();
+        if let Some(notice) = notice {
+            lines.push(notice.to_string());
+            lines.push(String::new());
+        }
+        lines.push(if total_pages > 1 {
+            format!("Choose a target lane · {}/{}", page + 1, total_pages)
+        } else {
+            "Choose a target lane".to_string()
+        });
+        lines.push(format!("Current: {}", current.unwrap_or("none")));
+        lines.push(String::new());
+        for lane in visible {
+            lines.push(format!(
+                "{} · {} · {}",
+                lane.get("displayName")
+                    .and_then(Value::as_str)
+                    .unwrap_or("?"),
+                lane.get("status").and_then(Value::as_str).unwrap_or("?"),
+                lane.get("modelName")
+                    .and_then(Value::as_str)
+                    .unwrap_or("default")
+            ));
+        }
+        lines.push(String::new());
+        lines.push("Tap a lane, or type /use <lane>.".to_string());
+
+        let mut rows = Vec::<Vec<Value>>::new();
+        let mut row = Vec::<Value>::new();
+        let mut tokens = Vec::new();
+        for lane in visible {
+            let harness_id = lane
+                .get("harnessId")
+                .and_then(Value::as_str)
+                .expect("filtered harnessId");
+            let lane_name = lane
+                .get("displayName")
+                .and_then(Value::as_str)
+                .expect("filtered displayName");
+            let session_id = lane
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let token = self.issue_picker_action(
+                chat_id,
+                TelegramActionKind::SelectLane {
+                    harness_id: harness_id.to_string(),
+                    lane: lane_name.to_string(),
+                    session_id,
+                },
+                &mut tokens,
+            )?;
+            let selected = target
+                .as_ref()
+                .is_some_and(|target| lane_matches_target(lane, target));
+            row.push(json!({
+                "text": if selected {
+                    format!("✓ {lane_name}")
+                } else {
+                    lane_name.to_string()
+                },
+                "callback_data": token,
+            }));
+            if row.len() == 2 {
+                rows.push(std::mem::take(&mut row));
+            }
+        }
+        if !row.is_empty() {
+            rows.push(row);
+        }
+        if total_pages > 1 {
+            let mut navigation = Vec::new();
+            if page > 0 {
+                let token = self.issue_picker_action(
+                    chat_id,
+                    TelegramActionKind::ShowLanePage { page: page - 1 },
+                    &mut tokens,
+                )?;
+                navigation.push(json!({"text": "‹ Previous", "callback_data": token}));
+            }
+            let refresh = self.issue_picker_action(
+                chat_id,
+                TelegramActionKind::ShowLanePage { page },
+                &mut tokens,
+            )?;
+            navigation
+                .push(json!({"text": format!("↻ {}/{}", page + 1, total_pages), "callback_data": refresh}));
+            if page + 1 < total_pages {
+                let token = self.issue_picker_action(
+                    chat_id,
+                    TelegramActionKind::ShowLanePage { page: page + 1 },
+                    &mut tokens,
+                )?;
+                navigation.push(json!({"text": "Next ›", "callback_data": token}));
+            }
+            rows.push(navigation);
+        }
+
+        Ok(LanePickerMessage {
+            text: lines.join("\n"),
+            keyboard: Some(json!({"inline_keyboard": rows})),
+            tokens,
+        })
+    }
+
+    async fn deliver_lane_picker(
+        &self,
+        api: &BotApi,
+        chat_id: &str,
+        message_id: Option<i64>,
+        picker: LanePickerMessage,
+    ) {
+        let LanePickerMessage {
+            text,
+            keyboard,
+            tokens,
+        } = picker;
+        let Some(keyboard) = keyboard else {
+            self.deliver_plain_control_message(api, chat_id, message_id, &text)
+                .await;
+            return;
+        };
+        let delivered = match message_id {
+            Some(message_id) => api
+                .edit_keyboard(chat_id, message_id, &text, Some(keyboard.clone()))
+                .await
+                .is_ok(),
+            None => api
+                .send_keyboard(chat_id, &text, keyboard.clone())
+                .await
+                .is_ok(),
+        };
+        if delivered {
+            return;
+        }
+        if message_id.is_some() && api.send_keyboard(chat_id, &text, keyboard).await.is_ok() {
+            return;
+        }
+        self.remove_actions(&tokens);
+        let _ = api
+            .send_text(chat_id, &format!("{text}\n\nType /use <lane> to select."))
+            .await;
+    }
+
+    async fn deliver_plain_control_message(
+        &self,
+        api: &BotApi,
+        chat_id: &str,
+        message_id: Option<i64>,
+        text: &str,
+    ) {
+        if let Some(message_id) = message_id {
+            if api
+                .edit_keyboard(chat_id, message_id, text, None)
+                .await
+                .is_ok()
+            {
+                return;
+            }
+        }
+        let _ = api.send_text(chat_id, text).await;
+    }
+
+    async fn select_lane_callback(
+        &self,
+        app: &AppHandle,
+        delivery: TelegramDelivery<'_>,
+        selection: LaneSelection<'_>,
+        caller: ControlCaller,
+    ) -> bool {
+        let reply = self.dispatch(app, "lane.list", json!({}), caller).await;
+        if reply.error.as_ref().is_some_and(|error| error.retryable) {
+            return true;
+        }
+        let Some(lanes) = reply.result.as_ref().and_then(Value::as_array) else {
+            let text = reply
+                .error
+                .as_ref()
+                .map(|error| format!("{}: {}", error.code, bounded_line(&error.message, 320)))
+                .unwrap_or_else(|| "lane.list returned no result".to_string());
+            self.deliver_plain_control_message(
+                delivery.api,
+                delivery.chat_id,
+                delivery.message_id,
+                &text,
+            )
+            .await;
+            return false;
+        };
+        let lane = lanes.iter().find(|lane| {
+            lane_snapshot_matches(
+                lane,
+                selection.harness_id,
+                selection.lane_name,
+                selection.session_id,
+            )
+        });
+        if let Some(lane) = lane {
+            let target = TelegramTarget {
+                harness_id: selection.harness_id.to_string(),
+                lane: selection.lane_name.to_string(),
+                session_id: selection.session_id.map(ToString::to_string),
+                private_chat: selection.chat_kind == "private",
+            };
+            lock(&self.inner.targets).insert(delivery.chat_id.to_string(), target);
+            let confirmation = format!(
+                "Target selected: {}\nState: {}\nTelegram turns: BYPASS ALL",
+                selection.lane_name,
+                lane.get("status").and_then(Value::as_str).unwrap_or("?")
+            );
+            self.deliver_plain_control_message(
+                delivery.api,
+                delivery.chat_id,
+                delivery.message_id,
+                &confirmation,
+            )
+            .await;
+            return false;
+        }
+        match self.build_lane_picker(
+            delivery.chat_id,
+            lanes,
+            0,
+            Some("That lane changed. Choose a current target."),
+        ) {
+            Ok(picker) => {
+                self.deliver_lane_picker(
+                    delivery.api,
+                    delivery.chat_id,
+                    delivery.message_id,
+                    picker,
+                )
+                .await;
+            }
+            Err(error) => {
+                self.deliver_plain_control_message(
+                    delivery.api,
+                    delivery.chat_id,
+                    delivery.message_id,
+                    &sanitize_error(&error),
+                )
+                .await;
+            }
+        }
+        false
     }
 
     async fn select_lane(
@@ -930,7 +1404,7 @@ impl TelegramService {
             let _ = api
                 .send_text(
                     chat_id,
-                    "Krypton connected\nTarget: none\nUse /lanes then /use <lane>",
+                    "Krypton connected\nTarget: none\nUse /use to choose a lane",
                 )
                 .await;
             return;
@@ -1004,7 +1478,7 @@ impl TelegramService {
     ) {
         let Some(target) = lock(&self.inner.targets).get(chat_id).cloned() else {
             let _ = api
-                .send_text(chat_id, "No target lane. Use /lanes then /use <lane>.")
+                .send_text(chat_id, "No target lane. Use /use to choose one.")
                 .await;
             return;
         };
@@ -1159,11 +1633,6 @@ impl TelegramService {
         let _ = api.send_text(chat_id, &rendered).await;
     }
 
-    async fn send_reply_error(&self, api: &BotApi, chat_id: &str, reply: ControlReply) {
-        self.send_reply_error_or(api, chat_id, reply, "Operation failed.")
-            .await;
-    }
-
     async fn send_reply_error_or(
         &self,
         api: &BotApi,
@@ -1307,6 +1776,95 @@ impl TelegramService {
             app.emit_or_log("telegram-pairing-changed", self.status());
         }
     }
+
+    fn issue_action(&self, chat_id: &str, kind: TelegramActionKind) -> Result<String, String> {
+        for _ in 0..4 {
+            let token = format!("lp:{}", random_hex(12)?);
+            let now = now_secs();
+            let mut actions = lock(&self.inner.actions);
+            actions.retain(|_, action| action.expires_at > now);
+            if actions.contains_key(&token) {
+                continue;
+            }
+            if actions.len() >= TELEGRAM_ACTION_CAP {
+                if let Some(oldest) = actions
+                    .iter()
+                    .min_by_key(|(_, action)| action.expires_at)
+                    .map(|(token, _)| token.clone())
+                {
+                    actions.remove(&oldest);
+                }
+            }
+            actions.insert(
+                token.clone(),
+                TelegramAction {
+                    chat_id: chat_id.to_string(),
+                    expires_at: now + TELEGRAM_ACTION_TTL_SECS,
+                    claimed_by_update: None,
+                    kind: kind.clone(),
+                },
+            );
+            return Ok(token);
+        }
+        Err("generate unique Telegram action".to_string())
+    }
+
+    fn issue_picker_action(
+        &self,
+        chat_id: &str,
+        kind: TelegramActionKind,
+        issued: &mut Vec<String>,
+    ) -> Result<String, String> {
+        match self.issue_action(chat_id, kind) {
+            Ok(token) => {
+                issued.push(token.clone());
+                Ok(token)
+            }
+            Err(error) => {
+                self.remove_actions(issued);
+                Err(error)
+            }
+        }
+    }
+
+    fn claim_action(&self, token: &str, chat_id: &str, update_id: i64) -> Option<TelegramAction> {
+        let now = now_secs();
+        let mut actions = lock(&self.inner.actions);
+        if actions
+            .get(token)
+            .is_some_and(|action| action.expires_at <= now)
+        {
+            actions.remove(token);
+            return None;
+        }
+        let action = actions.get_mut(token)?;
+        if action.chat_id != chat_id {
+            return None;
+        }
+        match action.claimed_by_update {
+            Some(claimed) if claimed != update_id => return None,
+            Some(_) => {}
+            None => action.claimed_by_update = Some(update_id),
+        }
+        Some(action.clone())
+    }
+
+    fn finish_action(&self, token: &str, update_id: i64) {
+        let mut actions = lock(&self.inner.actions);
+        if actions
+            .get(token)
+            .is_some_and(|action| action.claimed_by_update == Some(update_id))
+        {
+            actions.remove(token);
+        }
+    }
+
+    fn remove_actions(&self, tokens: &[String]) {
+        let mut actions = lock(&self.inner.actions);
+        for token in tokens {
+            actions.remove(token);
+        }
+    }
 }
 
 #[tauri::command]
@@ -1320,6 +1878,14 @@ pub fn telegram_set_enabled(
     enabled: bool,
 ) -> Result<TelegramStatus, String> {
     service.set_enabled(enabled)
+}
+
+#[tauri::command]
+pub fn telegram_set_rich_messages(
+    service: State<'_, TelegramService>,
+    enabled: bool,
+) -> Result<TelegramStatus, String> {
+    service.set_rich_messages(enabled)
 }
 
 #[tauri::command]
@@ -1428,13 +1994,18 @@ impl BotApi {
         })
     }
 
+    async fn set_commands(&self) -> Result<(), String> {
+        let _: bool = self.call("setMyCommands", command_menu_body()).await?;
+        Ok(())
+    }
+
     async fn get_updates(&self, offset: Option<i64>) -> Result<Vec<TelegramUpdate>, String> {
         self.call(
             "getUpdates",
             json!({
                 "offset": offset,
                 "timeout": POLL_TIMEOUT_SECS,
-                "allowed_updates": ["message"],
+                "allowed_updates": ["message", "callback_query"],
             }),
         )
         .await
@@ -1443,7 +2014,7 @@ impl BotApi {
     async fn send_text(&self, chat_id: &str, text: &str) -> Result<(), String> {
         for part in split_message(text, MESSAGE_LIMIT) {
             let _: TelegramSentMessage = self
-                .call("sendMessage", json!({"chat_id": chat_id, "text": part}))
+                .call("sendMessage", plain_message_body(chat_id, &part))
                 .await?;
         }
         Ok(())
@@ -1451,7 +2022,29 @@ impl BotApi {
 
     async fn send_message(&self, chat_id: &str, text: &str) -> Result<i64, String> {
         let message: TelegramSentMessage = self
-            .call("sendMessage", json!({"chat_id": chat_id, "text": text}))
+            .call("sendMessage", plain_message_body(chat_id, text))
+            .await?;
+        Ok(message.message_id)
+    }
+
+    async fn send_keyboard(
+        &self,
+        chat_id: &str,
+        text: &str,
+        keyboard: Value,
+    ) -> Result<i64, String> {
+        let message: TelegramSentMessage = self
+            .call(
+                "sendMessage",
+                keyboard_message_body(chat_id, text, keyboard),
+            )
+            .await?;
+        Ok(message.message_id)
+    }
+
+    async fn send_rich_message(&self, chat_id: &str, html: &str) -> Result<i64, String> {
+        let message: TelegramSentMessage = self
+            .call("sendRichMessage", rich_message_body(chat_id, html))
             .await?;
         Ok(message.message_id)
     }
@@ -1463,7 +2056,25 @@ impl BotApi {
         let _: bool = self
             .call(
                 "sendMessageDraft",
-                json!({"chat_id": numeric_chat_id, "draft_id": draft_id, "text": text}),
+                plain_draft_body(numeric_chat_id, draft_id, text),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn send_rich_draft(
+        &self,
+        chat_id: &str,
+        draft_id: i64,
+        html: &str,
+    ) -> Result<(), String> {
+        let numeric_chat_id = chat_id
+            .parse::<i64>()
+            .map_err(|_| "Telegram private chat ID is invalid".to_string())?;
+        let _: bool = self
+            .call(
+                "sendRichMessageDraft",
+                rich_draft_body(numeric_chat_id, draft_id, html),
             )
             .await?;
         Ok(())
@@ -1473,7 +2084,49 @@ impl BotApi {
         let _: Value = self
             .call(
                 "editMessageText",
-                json!({"chat_id": chat_id, "message_id": message_id, "text": text}),
+                plain_edit_body(chat_id, message_id, text),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn edit_keyboard(
+        &self,
+        chat_id: &str,
+        message_id: i64,
+        text: &str,
+        keyboard: Option<Value>,
+    ) -> Result<(), String> {
+        let _: Value = self
+            .call(
+                "editMessageText",
+                keyboard_edit_body(chat_id, message_id, text, keyboard),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn edit_rich_message(
+        &self,
+        chat_id: &str,
+        message_id: i64,
+        html: &str,
+    ) -> Result<(), String> {
+        let _: Value = self
+            .call("editMessageText", rich_edit_body(chat_id, message_id, html))
+            .await?;
+        Ok(())
+    }
+
+    async fn answer_callback(
+        &self,
+        callback_query_id: &str,
+        text: Option<&str>,
+    ) -> Result<(), String> {
+        let _: bool = self
+            .call(
+                "answerCallbackQuery",
+                answer_callback_body(callback_query_id, text),
             )
             .await?;
         Ok(())
@@ -1514,6 +2167,86 @@ impl BotApi {
     }
 }
 
+fn plain_message_body(chat_id: &str, text: &str) -> Value {
+    json!({"chat_id": chat_id, "text": text})
+}
+
+fn command_menu_body() -> Value {
+    json!({
+        "commands": [
+            {"command": "use", "description": "Choose a target lane"},
+            {"command": "lanes", "description": "Show live lanes"},
+            {"command": "status", "description": "Show selected lane status"},
+            {"command": "ask", "description": "Send a prompt"},
+            {"command": "cancel", "description": "Cancel the active turn"},
+            {"command": "new", "description": "Start a fresh lane session"},
+            {"command": "restart", "description": "Restart an errored lane"},
+            {"command": "transcript", "description": "Show recent lane activity"},
+            {"command": "help", "description": "Show controller help"},
+        ]
+    })
+}
+
+fn keyboard_message_body(chat_id: &str, text: &str, keyboard: Value) -> Value {
+    json!({"chat_id": chat_id, "text": text, "reply_markup": keyboard})
+}
+
+fn keyboard_edit_body(
+    chat_id: &str,
+    message_id: i64,
+    text: &str,
+    keyboard: Option<Value>,
+) -> Value {
+    json!({
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "reply_markup": keyboard.unwrap_or_else(|| json!({"inline_keyboard": []})),
+    })
+}
+
+fn answer_callback_body(callback_query_id: &str, text: Option<&str>) -> Value {
+    let mut body = json!({"callback_query_id": callback_query_id});
+    if let Some(text) = text {
+        body.as_object_mut()
+            .expect("callback body object")
+            .insert("text".to_string(), Value::String(text.to_string()));
+    }
+    body
+}
+
+fn plain_draft_body(chat_id: i64, draft_id: i64, text: &str) -> Value {
+    json!({"chat_id": chat_id, "draft_id": draft_id, "text": text})
+}
+
+fn plain_edit_body(chat_id: &str, message_id: i64, text: &str) -> Value {
+    json!({"chat_id": chat_id, "message_id": message_id, "text": text})
+}
+
+fn rich_content(html: &str) -> Value {
+    json!({"html": html, "skip_entity_detection": true})
+}
+
+fn rich_message_body(chat_id: &str, html: &str) -> Value {
+    json!({"chat_id": chat_id, "rich_message": rich_content(html)})
+}
+
+fn rich_draft_body(chat_id: i64, draft_id: i64, html: &str) -> Value {
+    json!({
+        "chat_id": chat_id,
+        "draft_id": draft_id,
+        "rich_message": rich_content(html),
+    })
+}
+
+fn rich_edit_body(chat_id: &str, message_id: i64, html: &str) -> Value {
+    json!({
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "rich_message": rich_content(html),
+    })
+}
+
 #[derive(Debug, Deserialize)]
 struct TelegramApiResponse<T> {
     ok: bool,
@@ -1532,6 +2265,21 @@ struct TelegramResponseParameters {
 struct TelegramUpdate {
     update_id: i64,
     message: Option<TelegramMessage>,
+    callback_query: Option<TelegramCallbackQuery>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TelegramCallbackQuery {
+    id: String,
+    from: TelegramUser,
+    message: Option<TelegramCallbackMessage>,
+    data: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TelegramCallbackMessage {
+    message_id: i64,
+    chat: TelegramChat,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1582,16 +2330,20 @@ struct DigestDraft {
     sent_text: String,
     ephemeral: bool,
     draft_id: i64,
+    rich_requested: bool,
+    rich_active: bool,
 }
 
 impl DigestDraft {
-    fn new(private_chat: bool) -> Self {
+    fn new(private_chat: bool, rich_messages: bool) -> Self {
         Self {
             text: String::new(),
             message_id: None,
             sent_text: String::new(),
             ephemeral: private_chat,
             draft_id: next_draft_id(),
+            rich_requested: rich_messages,
+            rich_active: rich_messages,
         }
     }
 
@@ -1599,20 +2351,54 @@ impl DigestDraft {
         if self.text.is_empty() || self.text == self.sent_text {
             return Ok(());
         }
-        let preview = if self.text.chars().count() > MESSAGE_LIMIT {
-            self.text
-                .chars()
-                .skip(self.text.chars().count() - MESSAGE_LIMIT)
-                .collect::<String>()
-        } else {
-            self.text.clone()
-        };
-        if self.ephemeral {
-            match api.send_draft(chat_id, self.draft_id, &preview).await {
+        if self.rich_requested && self.rich_active {
+            match self.flush_rich_preview(api, chat_id).await {
                 Ok(()) => {
                     self.sent_text = self.text.clone();
                     return Ok(());
                 }
+                Err(error) => {
+                    log::debug!(
+                        "telegram rich preview unavailable, using plain text: {}",
+                        sanitize_error(&error)
+                    );
+                    self.degrade_to_plain();
+                }
+            }
+        }
+        let preview = self.plain_preview();
+        self.flush_plain_preview(api, chat_id, &preview).await?;
+        self.sent_text = self.text.clone();
+        Ok(())
+    }
+
+    async fn flush_rich_preview(&mut self, api: &BotApi, chat_id: &str) -> Result<(), String> {
+        let html = render_rich_preview(&self.text)?;
+        if self.ephemeral {
+            return api.send_rich_draft(chat_id, self.draft_id, &html).await;
+        }
+        match self.message_id {
+            Some(message_id) => match api.edit_rich_message(chat_id, message_id, &html).await {
+                Ok(()) => Ok(()),
+                Err(error) if error.contains("message is not modified") => Ok(()),
+                Err(error) => Err(error),
+            },
+            None => {
+                self.message_id = Some(api.send_rich_message(chat_id, &html).await?);
+                Ok(())
+            }
+        }
+    }
+
+    async fn flush_plain_preview(
+        &mut self,
+        api: &BotApi,
+        chat_id: &str,
+        preview: &str,
+    ) -> Result<(), String> {
+        if self.ephemeral {
+            match api.send_draft(chat_id, self.draft_id, preview).await {
+                Ok(()) => return Ok(()),
                 Err(error) => {
                     log::debug!(
                         "telegram sendMessageDraft unavailable, using persistent preview: {}",
@@ -1624,15 +2410,14 @@ impl DigestDraft {
         }
         match self.message_id {
             Some(message_id) => {
-                if let Err(error) = api.edit_message(chat_id, message_id, &preview).await {
+                if let Err(error) = api.edit_message(chat_id, message_id, preview).await {
                     if !error.contains("message is not modified") {
-                        self.message_id = Some(api.send_message(chat_id, &preview).await?);
+                        self.message_id = Some(api.send_message(chat_id, preview).await?);
                     }
                 }
             }
-            None => self.message_id = Some(api.send_message(chat_id, &preview).await?),
+            None => self.message_id = Some(api.send_message(chat_id, preview).await?),
         }
-        self.sent_text = self.text.clone();
         Ok(())
     }
 
@@ -1640,29 +2425,138 @@ impl DigestDraft {
         if self.text.is_empty() {
             return Ok(());
         }
+        if self.rich_requested && self.rich_active {
+            let chunks = render_rich_chunks(&self.text);
+            if !chunks.is_empty() {
+                self.finalize_rich(api, chat_id, &chunks).await?;
+                self.sent_text = self.text.clone();
+                return Ok(());
+            }
+            self.degrade_to_plain();
+        }
+        self.finalize_plain(api, chat_id).await?;
+        self.sent_text = self.text.clone();
+        Ok(())
+    }
+
+    async fn finalize_rich(
+        &mut self,
+        api: &BotApi,
+        chat_id: &str,
+        chunks: &[TelegramOutputChunk],
+    ) -> Result<(), String> {
+        let mut rich_failed = false;
+        for (index, chunk) in chunks.iter().enumerate() {
+            if index == 0 {
+                match chunk {
+                    TelegramOutputChunk::Rich { html, plain } if !rich_failed => {
+                        if let Err(error) = self.deliver_first_rich(api, chat_id, html).await {
+                            log::debug!(
+                                "telegram rich final unavailable, using plain text: {}",
+                                sanitize_error(&error)
+                            );
+                            rich_failed = true;
+                            self.degrade_to_plain();
+                            self.deliver_first_plain(api, chat_id, plain).await?;
+                        }
+                    }
+                    _ => {
+                        self.deliver_first_plain(api, chat_id, chunk.plain())
+                            .await?
+                    }
+                }
+                continue;
+            }
+            match chunk {
+                TelegramOutputChunk::Rich { html, plain } if !rich_failed => {
+                    if let Err(error) = api.send_rich_message(chat_id, html).await {
+                        log::debug!(
+                            "telegram rich final chunk unavailable, using plain text: {}",
+                            sanitize_error(&error)
+                        );
+                        rich_failed = true;
+                        self.degrade_to_plain();
+                        api.send_message(chat_id, plain).await?;
+                    }
+                }
+                _ => {
+                    api.send_message(chat_id, chunk.plain()).await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn deliver_first_rich(
+        &mut self,
+        api: &BotApi,
+        chat_id: &str,
+        html: &str,
+    ) -> Result<(), String> {
+        if self.ephemeral {
+            self.message_id = Some(api.send_rich_message(chat_id, html).await?);
+            return Ok(());
+        }
+        match self.message_id {
+            Some(message_id) => match api.edit_rich_message(chat_id, message_id, html).await {
+                Ok(()) => Ok(()),
+                Err(error) if error.contains("message is not modified") => Ok(()),
+                Err(error) => Err(error),
+            },
+            None => {
+                self.message_id = Some(api.send_rich_message(chat_id, html).await?);
+                Ok(())
+            }
+        }
+    }
+
+    async fn deliver_first_plain(
+        &mut self,
+        api: &BotApi,
+        chat_id: &str,
+        text: &str,
+    ) -> Result<(), String> {
+        if self.ephemeral {
+            self.message_id = Some(api.send_message(chat_id, text).await?);
+            return Ok(());
+        }
+        match self.message_id {
+            Some(message_id) => {
+                if let Err(error) = api.edit_message(chat_id, message_id, text).await {
+                    if !error.contains("message is not modified") {
+                        self.message_id = Some(api.send_message(chat_id, text).await?);
+                    }
+                }
+            }
+            None => self.message_id = Some(api.send_message(chat_id, text).await?),
+        }
+        Ok(())
+    }
+
+    async fn finalize_plain(&mut self, api: &BotApi, chat_id: &str) -> Result<(), String> {
         let parts = split_message(&self.text, MESSAGE_LIMIT);
         let Some(first) = parts.first() else {
             return Ok(());
         };
-        if self.ephemeral {
-            self.message_id = Some(api.send_message(chat_id, first).await?);
-        } else {
-            match self.message_id {
-                Some(message_id) => {
-                    if let Err(error) = api.edit_message(chat_id, message_id, first).await {
-                        if !error.contains("message is not modified") {
-                            self.message_id = Some(api.send_message(chat_id, first).await?);
-                        }
-                    }
-                }
-                None => self.message_id = Some(api.send_message(chat_id, first).await?),
-            }
-        }
+        self.deliver_first_plain(api, chat_id, first).await?;
         for part in parts.iter().skip(1) {
             api.send_text(chat_id, part).await?;
         }
-        self.sent_text = self.text.clone();
         Ok(())
+    }
+
+    fn degrade_to_plain(&mut self) {
+        self.rich_active = false;
+        self.sent_text.clear();
+    }
+
+    fn plain_preview(&self) -> String {
+        let count = self.text.chars().count();
+        if count > MESSAGE_LIMIT {
+            self.text.chars().skip(count - MESSAGE_LIMIT).collect()
+        } else {
+            self.text.clone()
+        }
     }
 }
 
@@ -1828,6 +2722,39 @@ fn telegram_tool_status_glyph(status: &str) -> &'static str {
 enum IdKind {
     User,
     Group,
+}
+
+fn callback_authorized(settings: &TelegramSettings, user_id: &str, chat: &TelegramChat) -> bool {
+    if !settings.authorized_user_ids.contains(user_id) {
+        return false;
+    }
+    match chat.kind.as_str() {
+        "private" => true,
+        "group" | "supergroup" => settings
+            .authorized_group_chat_ids
+            .contains(&chat.id.to_string()),
+        _ => false,
+    }
+}
+
+fn lane_snapshot_matches(
+    lane: &Value,
+    harness_id: &str,
+    lane_name: &str,
+    session_id: Option<&str>,
+) -> bool {
+    lane.get("harnessId").and_then(Value::as_str) == Some(harness_id)
+        && lane.get("displayName").and_then(Value::as_str) == Some(lane_name)
+        && lane.get("sessionId").and_then(Value::as_str) == session_id
+}
+
+fn lane_matches_target(lane: &Value, target: &TelegramTarget) -> bool {
+    lane_snapshot_matches(
+        lane,
+        &target.harness_id,
+        &target.lane,
+        target.session_id.as_deref(),
+    )
 }
 
 fn canonical_id(raw: &str, kind: IdKind) -> Result<String, String> {
@@ -2119,7 +3046,7 @@ const HELP: &str = "\
 Krypton Telegram Controller
 
 /lanes · list live lanes
-/use <lane> · select this chat's target
+/use [lane] · tap or type this chat's target
 /status · selected lane status
 /ask <text> · send a prompt
 /cancel · cancel active turn
@@ -2135,6 +3062,10 @@ Telegram-originated turns bypass all permissions.";
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn service() -> TelegramService {
+        TelegramService::new(Arc::new(ControlServer::default()))
+    }
 
     fn message(text: &str, kind: &str, reply_from: Option<i64>) -> TelegramMessage {
         TelegramMessage {
@@ -2172,6 +3103,20 @@ mod tests {
         }
     }
 
+    fn lanes(count: usize) -> Vec<Value> {
+        (0..count)
+            .map(|index| {
+                json!({
+                    "harnessId": "hm-1",
+                    "displayName": format!("Claude-{}", index + 1),
+                    "sessionId": format!("session-{}", index + 1),
+                    "status": if index == 0 { "idle" } else { "busy" },
+                    "modelName": "sonnet",
+                })
+            })
+            .collect()
+    }
+
     #[test]
     fn canonical_ids_preserve_64_bit_values() {
         assert_eq!(
@@ -2184,6 +3129,353 @@ mod tests {
         );
         assert!(canonical_id("-1", IdKind::User).is_err());
         assert!(canonical_id("1", IdKind::Group).is_err());
+    }
+
+    #[test]
+    fn command_menu_descriptors_fit_telegram_contract() {
+        let body = command_menu_body();
+        let commands = body
+            .get("commands")
+            .and_then(Value::as_array)
+            .expect("commands");
+        assert!(commands.len() <= 100);
+        assert!(commands
+            .iter()
+            .any(|entry| entry.get("command") == Some(&json!("use"))));
+        for entry in commands {
+            let command = entry
+                .get("command")
+                .and_then(Value::as_str)
+                .expect("command");
+            let description = entry
+                .get("description")
+                .and_then(Value::as_str)
+                .expect("description");
+            assert!((1..=32).contains(&command.len()));
+            assert!(command
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'));
+            assert!((1..=256).contains(&description.chars().count()));
+        }
+    }
+
+    #[test]
+    fn lane_picker_pages_buttons_and_marks_the_current_target() {
+        let service = service();
+        lock(&service.inner.targets).insert(
+            "42".to_string(),
+            TelegramTarget {
+                harness_id: "hm-1".to_string(),
+                lane: "Claude-1".to_string(),
+                session_id: Some("session-1".to_string()),
+                private_chat: true,
+            },
+        );
+        let picker = service
+            .build_lane_picker("42", &lanes(10), 0, None)
+            .expect("picker");
+        assert!(picker.text.contains("Choose a target lane · 1/2"));
+        assert!(picker.text.contains("Current: Claude-1"));
+        let rows = picker
+            .keyboard
+            .as_ref()
+            .and_then(|keyboard| keyboard.get("inline_keyboard"))
+            .and_then(Value::as_array)
+            .expect("keyboard rows");
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0][0].get("text"), Some(&json!("✓ Claude-1")));
+        assert_eq!(rows[0].as_array().map(Vec::len), Some(2));
+        assert_eq!(rows[4].as_array().map(Vec::len), Some(2));
+        assert_eq!(picker.tokens.len(), 10);
+    }
+
+    #[test]
+    fn picker_actions_are_short_chat_bound_single_use_capabilities() {
+        let service = service();
+        let token = service
+            .issue_action("42", TelegramActionKind::ShowLanePage { page: 1 })
+            .expect("action");
+        assert_eq!(token.len(), 27);
+        assert!(token.starts_with("lp:"));
+        assert!(token[3..].bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert!(service.claim_action(&token, "99", 7).is_none());
+        assert!(service.claim_action(&token, "42", 7).is_some());
+        assert!(service.claim_action(&token, "42", 7).is_some());
+        assert!(service.claim_action(&token, "42", 8).is_none());
+        service.finish_action(&token, 7);
+        assert!(service.claim_action(&token, "42", 7).is_none());
+
+        let expired = service
+            .issue_action("42", TelegramActionKind::ShowLanePage { page: 0 })
+            .expect("expired action");
+        lock(&service.inner.actions)
+            .get_mut(&expired)
+            .expect("stored action")
+            .expires_at = 0;
+        assert!(service.claim_action(&expired, "42", 9).is_none());
+    }
+
+    #[test]
+    fn picker_action_claim_is_atomic_across_updates() {
+        let service = service();
+        let token = service
+            .issue_action("42", TelegramActionKind::ShowLanePage { page: 0 })
+            .expect("action");
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let handles = [10_i64, 11_i64].map(|update_id| {
+            let service = service.clone();
+            let token = token.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                service.claim_action(&token, "42", update_id).is_some()
+            })
+        });
+        barrier.wait();
+        let claimed = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("claim thread"))
+            .filter(|claimed| *claimed)
+            .count();
+        assert_eq!(claimed, 1);
+    }
+
+    #[test]
+    fn picker_action_registry_prunes_to_its_cap() {
+        let service = service();
+        {
+            let mut actions = lock(&service.inner.actions);
+            for index in 0..TELEGRAM_ACTION_CAP {
+                actions.insert(
+                    format!("old-{index}"),
+                    TelegramAction {
+                        chat_id: "42".to_string(),
+                        expires_at: now_secs() + 1000 + index as u64,
+                        claimed_by_update: None,
+                        kind: TelegramActionKind::ShowLanePage { page: 0 },
+                    },
+                );
+            }
+        }
+        service
+            .issue_action("42", TelegramActionKind::ShowLanePage { page: 1 })
+            .expect("new action");
+        let actions = lock(&service.inner.actions);
+        assert!(actions.len() <= TELEGRAM_ACTION_CAP);
+        assert!(!actions.contains_key("old-0"));
+    }
+
+    #[test]
+    fn callback_authorization_checks_both_user_and_group() {
+        let mut settings = TelegramSettings::default();
+        settings.authorized_user_ids.insert("42".to_string());
+        settings
+            .authorized_group_chat_ids
+            .insert("-1001".to_string());
+        let private = TelegramChat {
+            id: 42,
+            kind: "private".to_string(),
+            title: None,
+        };
+        let group = TelegramChat {
+            id: -1001,
+            kind: "group".to_string(),
+            title: None,
+        };
+        let other_group = TelegramChat {
+            id: -1002,
+            kind: "supergroup".to_string(),
+            title: None,
+        };
+        assert!(callback_authorized(&settings, "42", &private));
+        assert!(callback_authorized(&settings, "42", &group));
+        assert!(!callback_authorized(&settings, "42", &other_group));
+        assert!(!callback_authorized(&settings, "7", &private));
+    }
+
+    #[test]
+    fn callback_update_deserializes_without_a_message_update() {
+        let update: TelegramUpdate = serde_json::from_value(json!({
+            "update_id": 91,
+            "callback_query": {
+                "id": "callback-1",
+                "from": {
+                    "id": 42,
+                    "is_bot": false,
+                    "first_name": "Niran"
+                },
+                "message": {
+                    "message_id": 7,
+                    "chat": {"id": 42, "type": "private"}
+                },
+                "data": "lp:0123456789abcdef01234567"
+            }
+        }))
+        .expect("callback update");
+        assert!(update.message.is_none());
+        let callback = update.callback_query.expect("callback");
+        assert_eq!(callback.message.expect("message").message_id, 7);
+    }
+
+    #[test]
+    fn lane_snapshot_requires_harness_name_and_session_match() {
+        let lane = json!({
+            "harnessId": "hm-1",
+            "displayName": "Claude-1",
+            "sessionId": "session-1",
+        });
+        assert!(lane_snapshot_matches(
+            &lane,
+            "hm-1",
+            "Claude-1",
+            Some("session-1")
+        ));
+        assert!(!lane_snapshot_matches(
+            &lane,
+            "hm-2",
+            "Claude-1",
+            Some("session-1")
+        ));
+        assert!(!lane_snapshot_matches(
+            &lane,
+            "hm-1",
+            "Claude-1",
+            Some("session-2")
+        ));
+        assert!(lane_snapshot_matches(
+            &json!({"harnessId": "hm-1", "displayName": "Claude-1", "sessionId": null}),
+            "hm-1",
+            "Claude-1",
+            None
+        ));
+    }
+
+    #[test]
+    fn keyboard_payloads_add_and_remove_inline_buttons() {
+        let keyboard = json!({
+            "inline_keyboard": [[{"text": "Claude-1", "callback_data": "lp:token"}]]
+        });
+        let sent = keyboard_message_body("42", "Choose", keyboard.clone());
+        let edited = keyboard_edit_body("42", 7, "Choose", Some(keyboard));
+        let removed = keyboard_edit_body("42", 7, "Selected", None);
+        assert!(sent.pointer("/reply_markup/inline_keyboard/0/0").is_some());
+        assert!(edited
+            .pointer("/reply_markup/inline_keyboard/0/0")
+            .is_some());
+        assert_eq!(
+            removed.pointer("/reply_markup/inline_keyboard"),
+            Some(&json!([]))
+        );
+        assert_eq!(
+            answer_callback_body("callback-1", None),
+            json!({"callback_query_id": "callback-1"})
+        );
+    }
+
+    #[tokio::test]
+    async fn bot_api_picker_methods_match_the_wire_contract() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("fake Telegram listener");
+        let address = listener.local_addr().expect("listener address");
+        let server = tokio::spawn(async move {
+            let responses = [
+                json!(true),
+                json!([]),
+                json!({"message_id": 7}),
+                json!({"message_id": 7}),
+                json!(true),
+            ];
+            let mut requests = Vec::new();
+            for result in responses {
+                let (mut stream, _) = listener.accept().await.expect("fake accept");
+                let mut request = Vec::new();
+                let header_end = loop {
+                    let mut chunk = [0_u8; 4096];
+                    let read = stream.read(&mut chunk).await.expect("fake read");
+                    assert!(read > 0);
+                    request.extend_from_slice(&chunk[..read]);
+                    if let Some(index) = request.windows(4).position(|window| window == b"\r\n\r\n")
+                    {
+                        break index + 4;
+                    }
+                };
+                let headers = String::from_utf8_lossy(&request[..header_end]).into_owned();
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                    .expect("content length");
+                while request.len() < header_end + content_length {
+                    let mut chunk = [0_u8; 4096];
+                    let read = stream.read(&mut chunk).await.expect("fake body read");
+                    assert!(read > 0);
+                    request.extend_from_slice(&chunk[..read]);
+                }
+                let path = headers
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .expect("request path")
+                    .to_string();
+                let body: Value =
+                    serde_json::from_slice(&request[header_end..header_end + content_length])
+                        .expect("request JSON");
+                requests.push((path, body));
+                let response_body = json!({"ok": true, "result": result}).to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    response_body.len(),
+                    response_body
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("fake response");
+            }
+            requests
+        });
+
+        let api = BotApi {
+            client: reqwest::Client::new(),
+            base: format!("http://{address}/botTEST"),
+        };
+        api.set_commands().await.expect("set commands");
+        api.get_updates(Some(3)).await.expect("get updates");
+        let keyboard =
+            json!({"inline_keyboard": [[{"text": "Claude-1", "callback_data": "lp:token"}]]});
+        api.send_keyboard("42", "Choose", keyboard.clone())
+            .await
+            .expect("send keyboard");
+        api.edit_keyboard("42", 7, "Choose", Some(keyboard))
+            .await
+            .expect("edit keyboard");
+        api.answer_callback("callback-1", None)
+            .await
+            .expect("answer callback");
+
+        let requests = server.await.expect("fake Telegram server");
+        assert!(requests[0].0.ends_with("/setMyCommands"));
+        assert_eq!(requests[0].1, command_menu_body());
+        assert!(requests[1].0.ends_with("/getUpdates"));
+        assert_eq!(
+            requests[1].1.get("allowed_updates"),
+            Some(&json!(["message", "callback_query"]))
+        );
+        assert!(requests[2].0.ends_with("/sendMessage"));
+        assert!(requests[2]
+            .1
+            .pointer("/reply_markup/inline_keyboard/0/0")
+            .is_some());
+        assert!(requests[3].0.ends_with("/editMessageText"));
+        assert!(requests[4].0.ends_with("/answerCallbackQuery"));
+        assert_eq!(requests[4].1, json!({"callback_query_id": "callback-1"}));
     }
 
     #[test]
@@ -2266,12 +3558,56 @@ mod tests {
 
     #[test]
     fn private_chat_digest_uses_ephemeral_draft_until_finalize() {
-        let private = DigestDraft::new(true);
-        let group = DigestDraft::new(false);
+        let private = DigestDraft::new(true, true);
+        let group = DigestDraft::new(false, false);
 
         assert!(private.ephemeral);
         assert!(private.draft_id > 0);
+        assert!(private.rich_requested);
+        assert!(private.rich_active);
         assert!(!group.ephemeral);
+        assert!(!group.rich_requested);
+        assert!(!group.rich_active);
+    }
+
+    #[test]
+    fn rich_fallback_resets_dedup_without_changing_requested_mode() {
+        let mut draft = DigestDraft::new(false, true);
+        draft.sent_text = "already sent".to_string();
+        draft.degrade_to_plain();
+
+        assert!(draft.rich_requested);
+        assert!(!draft.rich_active);
+        assert!(draft.sent_text.is_empty());
+    }
+
+    #[test]
+    fn old_telegram_settings_default_to_plain_messages() {
+        let settings: TelegramSettings = toml::from_str(
+            "schema_version = 1\nenabled = true\nauthorized_user_ids = []\nauthorized_group_chat_ids = []\n",
+        )
+        .expect("settings parse");
+
+        assert!(!settings.rich_messages);
+    }
+
+    #[test]
+    fn rich_payloads_never_mix_text_and_rich_message() {
+        let message = rich_message_body("42", "<h1>Ready</h1>");
+        let draft = rich_draft_body(42, 7, "<p>Working</p>");
+        let edit = rich_edit_body("42", 9, "<p>Done</p>");
+        for body in [&message, &draft, &edit] {
+            assert!(body.get("rich_message").is_some());
+            assert!(body.get("text").is_none());
+            assert_eq!(
+                body.pointer("/rich_message/skip_entity_detection"),
+                Some(&Value::Bool(true))
+            );
+        }
+
+        let plain = plain_message_body("42", "Ready");
+        assert_eq!(plain.get("text"), Some(&Value::String("Ready".to_string())));
+        assert!(plain.get("rich_message").is_none());
     }
 
     #[test]

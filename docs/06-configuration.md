@@ -661,9 +661,17 @@ writes the non-secret settings to:
 ```toml
 schema_version = 1
 enabled = false
+rich_messages = false
 authorized_user_ids = ["123456789"]
 authorized_group_chat_ids = ["-1001234567890"]
 ```
+
+`rich_messages` is an operator-controlled compatibility switch available in the
+Telegram Settings view (`m`). When enabled, new assistant responses use native
+Telegram Rich Messages for headings, tables, lists, code, links, and quotes,
+with sanitized rendering and automatic plain fallback. It defaults to `false`
+because Bot API acceptance cannot prove that every receiving Telegram client can
+render rich content. Changing it does not alter a response already in flight.
 
 IDs are canonical signed decimal strings: user IDs are positive and group chat
 IDs are negative. Private control requires an authorized user. Group control

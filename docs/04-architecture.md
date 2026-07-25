@@ -680,9 +680,23 @@ directly when `[acp_controller].cors_origins` lists its exact origin. See
 `src-tauri/src/telegram.rs` is a privileged remote adapter over that same
 control boundary. It owns Bot API long polling, OS-vault credential access,
 application-managed allowlists/pairing, the update watermark, per-chat targets,
-and compact outbound digests. It calls `ControlServer::dispatch` directly and
-subscribes to the server's typed event broadcast; it does not loop back through
-HTTP and does not know the control bearer token.
+compact outbound digests, and the spec-202 mobile lane picker. After `getMe`,
+the service best-effort registers common commands with `setMyCommands`; bare
+`/use` and `/lanes` render paged inline keyboards from a fresh `lane.list`.
+Button payloads are random five-minute nonces resolved through a bounded,
+process-local action registry. Callback handling acknowledges Telegram first,
+then repeats numeric user/chat authorization and verifies the exact harness,
+display-name, and session snapshot against another live `lane.list` before
+changing the chat target. Rust still retains no authoritative lane catalog.
+
+The optional spec-201 rich-answer path remains
+backend-owned: `telegram/rich.rs` parses assistant Markdown with Comrak and emits
+only a Telegram-safe HTML subset before `sendRichMessageDraft`,
+`sendRichMessage`, or rich `editMessageText`; raw model HTML and media never
+cross that boundary. Any render/API failure degrades only that response to the
+existing plain path. `TelegramService` calls `ControlServer::dispatch` directly
+and subscribes to the server's typed event broadcast; it does not loop back
+through HTTP and does not know the control bearer token.
 
 Rust attaches trusted numeric sender/chat provenance only after admission.
 `control-bridge.ts` forwards that metadata separately from operation params, and
@@ -692,7 +706,7 @@ bypass only for that exact turn. It never changes the lane's persistent
 permission mode. The dedicated DOM Settings view edits
 `~/.config/krypton/telegram.toml` through sanitized Tauri commands; the bot token
 never crosses into the frontend. See `docs/200-telegram-harness-controller.md`
-and ADR-0013 through ADR-0015.
+and `docs/201-telegram-rich-responses.md`, plus ADR-0013 through ADR-0015.
 
 A Chrome/Chromium **browser extension** (`extension/`) is a packaged client of
 this control API (doc 176): it sends the current page selection into a lane as a

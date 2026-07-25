@@ -1,6 +1,6 @@
 # Telegram Harness Controller — Implementation Spec
 
-> Status: Core implemented (inline callbacks and live Bot API validation remain)
+> Status: Core implemented (lane-picker callbacks implemented; remaining callback menus and live Bot API validation remain)
 > Date: 2026-07-24
 > Milestone: M-ACP — Harness convergence
 
@@ -89,8 +89,8 @@ lane,” but that framing misses the real safety and state problems:
   does not become a peer.
 - Forwarding thought/reasoning events.
 - Media, voice, file, location, contact, reaction, or poll input in v1.
-- Rich Markdown/HTML rendering, Telegram Mini Apps, or a general-purpose remote
-  shell outside the typed harness operations.
+- Telegram Mini Apps or a general-purpose remote shell outside the typed harness
+  operations. Native rich answer rendering is added by spec 201.
 - Multiple Telegram bots in one Krypton process.
 - Telegram forum-topic-specific target lanes in v1. A group has one shared
   target; direct replies remain in the triggering topic when Telegram supplies a
@@ -429,8 +429,8 @@ and redacted from logs.
 The target map is keyed by Telegram `chat.id`; all authorized members of one
 group share the same target.
 
-- `/use` prints the live lane list; `/use <lane-display-name>` selects directly.
-- `/use <lane-display-name>` selects directly.
+- `/use` and `/lanes` show the live lane list with inline selection buttons;
+  `/use <lane-display-name>` remains the exact-name fallback.
 - Selection stores harness ID, globally unique lane display name, and the
   current ACP session ID.
 - Selection immediately returns a compact lane snapshot.
@@ -518,22 +518,18 @@ agent-only MCP tools.
 
 ### Inline callbacks
 
-Telegram callback data contains only a short opaque nonce, not a lane name,
-operation, token, or JSON params. A process-local registry maps the nonce to:
+Telegram callback data contains only a 96-bit random `lp:<hex>` nonce, not a
+lane name, operation, token, or JSON params. The process-local registry maps it
+to a typed `SelectLane` or `ShowLanePage` action, its originating chat, five
+minute expiry, and optional claiming update ID.
 
-```rust
-struct TelegramAction {
-    chat_id: String,
-    operation: String,
-    params: Value,
-    expires_at: Instant,
-    single_use: bool,
-}
-```
-
-Actions expire after five minutes, are bound to the originating chat, and are
-re-authorized against the clicking user. Every callback is answered immediately;
-the control result follows as a normal bot message.
+Every callback is answered immediately, then re-authorized against the numeric
+user ID and (for groups) numeric chat ID. The first update atomically claims the
+action; only redelivery of that same update ID may retry it. Lane selection
+re-runs `lane.list` and requires the exact harness ID, display name, and session
+ID snapshot before changing the chat target. Successful selection edits the
+picker into a button-free confirmation. Stale buttons refresh the live picker
+instead of silently selecting a replacement lane.
 
 ## Prompt Provenance, Queueing, and Bypass
 
@@ -647,11 +643,12 @@ Maintain one output coordinator per `(chat_id, harness_id, lane)`:
    `editMessageText`.
 4. In groups, always use a placeholder plus `editMessageText`.
 5. On stop/error, finalize a persistent message.
-6. Split output at 4,000 characters, leaving headroom below Telegram's 4,096
-   limit. Prefer paragraph, newline, then whitespace boundaries; hard-split only
-   as a last resort.
-7. Use plain text with no parse mode in v1, avoiding Telegram entity-parse
-   failures from arbitrary model output.
+6. Plain output splits at 4,000 characters, leaving headroom below Telegram's
+   4,096 limit. Prefer paragraph, newline, then whitespace boundaries; hard-split
+   only as a last resort.
+7. The spec-201 opt-in rich path parses Markdown with Comrak, emits an explicit
+   safe Telegram HTML subset, budgets UTF-8 bytes plus nested blocks/depth, and
+   falls back to this plain path without dropping or duplicating content.
 8. If an edit fails because the message is gone or too old, send a new message
    and continue from there.
 9. Treat `message is not modified` as success.
@@ -939,7 +936,8 @@ feature.
 - deterministic operation ID on retry;
 - one-poller generation cancellation;
 - backoff, `429 retry_after`, `401`, `403`, `409`;
-- callback nonce length, expiry, chat binding, single use, re-authorization;
+- callback nonce length, expiry, chat binding, same-update retry,
+  cross-update rejection, and re-authorization;
 - message split boundary and hard-split fallback;
 - one-second coalescing and per-chat isolation;
 - thought/raw tool payload suppression;
@@ -1033,17 +1031,22 @@ Implemented on 2026-07-24 with:
 - ephemeral `sendMessageDraft` streaming in private chats, followed by a fresh
   persistent final message, plus one edited tool/status summary per chat that
   merges partial ACP updates by call ID and shows the latest six named tools;
+- opt-in native `sendRichMessageDraft`/`sendRichMessage` answer rendering with a
+  sanitized Markdown boundary and per-response plain fallback (spec 201);
 - a keyboard-first Telegram Settings content view, command-palette entry, and
   exact `#telegram` ACP harness command.
 
 The shipped core uses deterministic text commands plus `/ctl` for complete
-advertised-operation parity. Inline callback buttons/action nonces and their
-fake-server test matrix remain follow-up work; the poller therefore requests
-only `message` updates and cannot strand a Telegram callback spinner. Live Bot
-API validation likewise requires an operator-owned token.
+advertised-operation parity. Spec 202 adds the first fixed callback surface:
+best-effort `setMyCommands` registration plus paged `/use` and `/lanes` lane
+buttons backed by authorized, expiring opaque actions. The poller requests both
+`message` and `callback_query`; every callback is acknowledged before control
+dispatch. Generic agent-authored buttons and other controller submenus remain
+follow-up work. Live Bot API validation likewise requires an operator-owned
+token.
 
 Automated evidence: `npm run check`, production `npm run build`, 511 full
-Vitest tests (including 172 focused control/harness tests), 180 Rust library
+Vitest tests (including 172 focused control/harness tests), 201 Rust library
 tests plus 3 `kryptonctl` tests, `cargo fmt
 -- --check`, and `cargo clippy --all-targets -- -D warnings` all pass. The manual
 Telegram sandbox checklist remains intentionally unexecuted because no real bot
