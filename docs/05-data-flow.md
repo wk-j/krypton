@@ -326,6 +326,14 @@
        persists the bearer token; the packed .tldraw archive and appOwned files
        are never written — only app-declared editable script files are, and the
        app's watcher embeds them; tldraw Offline remains the sole document owner.
+    h. #ticket opens the working-ticket dialog. Filtering and ↑↓/⌃n⌃p update one
+       selected issue. Enter sets only the shared ActiveWorkTicket. The visible
+       Analyze / Post comment / Fix here buttons (or Cmd/Ctrl+1/2/3) first verify
+       that the active lane has a live client and is idle/awaiting_peer, then set
+       the selected issue as the working ticket, close the dialog, and call the
+       existing runGithubIssuePromptVerb path with the row URL. A busy or stopped
+       lane leaves the dialog and existing ticket unchanged. The lane's normal
+       prompt, permission, issue_progress, and auto-bind flow owns all work.
 
 ```
 PUSH (lane → harness), at end of an editing turn:

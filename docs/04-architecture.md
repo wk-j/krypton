@@ -170,6 +170,18 @@ The compositor is a TypeScript module running in the webview that manages worksp
 24. **ACP diff preview & gated writes** — `tool_call.content[].type === 'diff'` payloads (sent by Codex/Claude/Gemini with `oldText`+`newText`) now render in the harness as inline +/- hunks with line numbers via the shared `src/acp/diff-render.ts` module (extracted from `acp-view.ts`). For `fs/write_text_file`, the Rust handler holds the JSON-RPC reply on a `oneshot` channel (mirroring `session/request_permission`), reads the current disk content as `oldText`, emits a `fs_write_pending` event, and waits for the user's accept/reject decision through the new `acp_fs_write_response` Tauri command before writing or replying with a JSON-RPC error. Both `fs/read_text_file` and `fs/write_text_file` now go through `validate_fs_path`, which canonicalizes the requested path and rejects anything outside the lane's project root. Keys: `a` accept, `r` reject, `A` accept-all-this-turn, `R` reject-all-this-turn — reusing the `acceptAllForTurn`/`rejectAllForTurn` flags introduced for permissions. See `docs/89-acp-diff-preview.md`.
 
 25. **ACP Harness view** — `AcpHarnessView` (`src/acp/acp-harness-view.ts`) opens multiple `AcpClient` lanes in one content tab for the focused working directory. It renders a read-only lane dashboard plus an input-only command center, shows the project cwd and current Git branch in the composer status line, routes prompts only to the active lane, handles per-lane permission prompts, stages pasted/dropped/global-captured images in the active lane composer, sends staged images as ACP image blocks with base64 data and local file URIs, and creates an MCP memory store on the existing localhost hook server. Each lane receives a lane-scoped HTTP memory endpoint; agents create/update/delete/search/get memory through MCP tools while the human observes the current board. Harness hash commands provide lane lifecycle controls including `#cancel`, `#restart`, `#new`, `#new!`, `#mem clear`, and `#mcp`; fresh-session commands use client disposal and a lane spawn epoch to ignore late events from replaced subprocesses. Memory persists per project directory. Open via `Leader Y` or command palette. The active lane **right rail** can show a contextual **lane peek** for one inferred non-active lane plus optional **lane-pair activity heat** (active vs peeked; palette-controlled metric/window/detail). See `docs/72-acp-harness-view.md`, `docs/73-acp-harness-mcp-memory.md`, and `docs/109-acp-contextual-lane-peek.md`.
+
+    **Module layout (spec 204).** `acp-harness-view.ts` holds the `AcpHarnessView` class; everything
+    that is not the class lives in ten sibling modules with a strictly one-way dependency direction:
+    `harness-view-types.ts` (state shapes), `harness-format.ts` (formatting/parsing leaves),
+    `harness-icons.ts` (inline `<symbol>` defs), `harness-lane-identity.ts` (backend label/logo,
+    directive role, lane accent), `harness-markdown.ts` (shared `marked` instance + streaming-markdown
+    plumbing + URL allowlist), `harness-permission-scan.ts` (harness-bus auto-allow, args preview,
+    artifact path matching), `harness-tool-render.ts` (ToolCall inspection + tool row rendering),
+    `harness-lane-chrome.ts` (lane head/chips/metrics/stats/status vocabulary),
+    `harness-transcript-render.ts` (transcript row → DOM), and `lane-peek.ts` (heat, candidate ranking,
+    peek card). The view re-exports every previously-public symbol, so old import sites still resolve;
+    new code should import from the owning module. See `docs/204-harness-view-split.md`.
 26. **Cursor trail** — `CursorTrail` (`src/cursor-trail.ts`) renders a rainbow flame particle effect on both the mouse cursor and the terminal text cursor. Spawns burst particles on `mousemove` (document-level capture) and polls the focused terminal's `buffer.active.cursorX/Y` each frame. Particles drift upward with turbulence, cycle through rainbow hues, and fade with quadratic falloff. Appended to `document.body` at z-index 99999. Togglable at runtime via `toggle()`
 
 27. **ACP Harness plan tracking** — `session/update { sessionUpdate: 'plan' }` notifications are no longer rendered as transcript items. Each lane stores the latest `entries[]` on `HarnessLane.plan`, and a per-active-lane floating panel (`.acp-harness__plan`, top-right of `.acp-harness__body`, z-index below the memory/help overlays) renders a `// plan` header with a `done/total` progress count and one row per entry. Status drives color (pending = dim, in_progress = amber, completed = green strikethrough); priority drives a 2px left border accent (high/medium/low). The panel auto-hides when a lane has no plan and clears on `#new`/`#new!`/`#restart`. Toggle collapse with `p` in transcript focus. See `docs/90-acp-plan-tracking.md`.
@@ -743,3 +755,12 @@ injected card is refresh-safe and survives a Krypton restart (bindings persist t
 disk next to the per-harness memory file). The `issueKey`-addressed reads
 (`github.issue-status / list-issues / unlink-issue`) fan out across harnesses in
 `control-bridge`. Read-only overlay only — no write-back to GitHub.
+
+The harness working-ticket dialog (docs 194/203) keeps selection and work
+execution on the same keyboard-first surface. `Enter` only sets the shared
+`ActiveWorkTicket`; `Cmd/Ctrl+1/2/3` or the dialog buttons start Analyze, Post
+comment, or Fix here in the visible active lane. These actions call the existing
+spec-191 `runGithubIssuePromptVerb()` path with the selected row URL, so prompts,
+permissions, `issue_progress`, and single-owner auto-binding remain unchanged.
+The dialog never writes to GitHub itself and never spawns a lane; Fix here is
+deliberately distinct from `#dispatch-github-issue`.

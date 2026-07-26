@@ -2481,6 +2481,7 @@
   display: flex;
   flex-direction: column;
   width: clamp(480px, 58vw, 820px);
+  max-width: calc(100% - 24px);
   max-height: 72vh;
   background: rgba(8, 14, 18, 0.98);
   border: 1px solid rgba(255, 176, 0, 0.32);
@@ -2532,13 +2533,31 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
+  width: 100%;
   padding: 5px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: rgba(216, 232, 216, 0.78);
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.acp-ticket__row:hover {
+  background: rgba(255, 176, 0, 0.08);
 }
 
 .acp-ticket__row--selected {
   background: rgba(255, 176, 0, 0.16);
   color: rgba(255, 255, 255, 0.92);
+}
+
+.acp-ticket__row:focus-visible {
+  outline: 1px solid #ffd880;
+  outline-offset: -1px;
+  box-shadow: 0 0 7px rgba(255, 176, 0, 0.42);
 }
 
 .acp-ticket__num {
@@ -2573,12 +2592,86 @@
   color: rgba(216, 232, 216, 0.55);
 }
 
+.acp-ticket__actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border-top: 1px solid rgba(255, 176, 0, 0.18);
+  background: rgba(5, 9, 13, 0.92);
+}
+
+.acp-ticket__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 176, 0, 0.26);
+  border-radius: 0;
+  background: transparent;
+  color: rgba(216, 232, 216, 0.82);
+  font: inherit;
+  line-height: 1;
+  cursor: default;
+}
+
+.acp-ticket__action:hover:not(:disabled) {
+  border-color: rgba(255, 216, 128, 0.66);
+  background: rgba(255, 176, 0, 0.10);
+  color: #ffd880;
+}
+
+.acp-ticket__action:active:not(:disabled) {
+  background: rgba(255, 176, 0, 0.18);
+}
+
+.acp-ticket__action:focus-visible {
+  outline: 1px solid #ffd880;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 7px rgba(255, 176, 0, 0.42),
+    0 0 20px rgba(255, 176, 0, 0.12);
+}
+
+.acp-ticket__action:disabled {
+  border-color: rgba(255, 176, 0, 0.08);
+  color: rgba(216, 232, 216, 0.25);
+  cursor: not-allowed;
+}
+
+.acp-ticket__action-key {
+  color: #ffb000;
+  font-size: 0.82em;
+  letter-spacing: 0.02em;
+}
+
+.acp-ticket__action--fix {
+  margin-left: auto;
+  border-color: rgba(255, 176, 0, 0.46);
+  color: #ffd880;
+}
+
 .acp-ticket__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   padding: 6px 14px;
   border-top: 1px solid rgba(255, 176, 0, 0.14);
   color: rgba(216, 232, 216, 0.42);
   font-size: 0.86em;
   letter-spacing: 0.04em;
+}
+
+@media (max-width: 720px) {
+  .acp-ticket__actions {
+    flex-wrap: wrap;
+  }
+
+  .acp-ticket__action--fix {
+    margin-left: 0;
+  }
 }
 
 /* Telemetry-deck separators: a dim accent middot before each segment after

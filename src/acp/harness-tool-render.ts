@@ -1,0 +1,626 @@
+// Krypton — ACP Harness View: tool call inspection & rendering.
+//
+// Extracted verbatim from acp-harness-view.ts (spec 204). Two related concerns:
+// reading an ACP ToolCall / ToolCallUpdate (label, command line, exit code, raw
+// output sections) and painting the resulting ToolPayload into a transcript row,
+// including the rich `git diff` / `git status` renderings.
+
+import { renderDiffPreview } from './diff-render';
+import { extractModifiedPath } from './acp-harness-memory';
+import { stripAnsi } from './provider-error';
+import { classifyBashCommand } from '../agent/tools';
+import type { ContentBlock, ToolCall, ToolCallUpdate } from './types';
+import type { ArtifactCardPayload, ToolPayload } from './harness-view-types';
+import {
+  truncateInline,
+} from './harness-format';
+
+function statusGlyph(status: string): string {
+  if (status === 'completed') return '✓';
+  if (status === 'failed') return '✗';
+  if (status === 'in_progress') return '⟳';
+  return '·';
+}
+
+export function mergeToolCall(
+  previous: ToolCall | ToolCallUpdate | undefined,
+  next: ToolCall | ToolCallUpdate,
+): ToolCall | ToolCallUpdate {
+  return {
+    ...previous,
+    ...next,
+    title: next.title ?? previous?.title,
+    kind: next.kind ?? previous?.kind,
+    content: next.content ?? previous?.content,
+    locations: next.locations ?? previous?.locations,
+    rawInput: next.rawInput ?? previous?.rawInput,
+    rawOutput: next.rawOutput ?? previous?.rawOutput,
+  };
+}
+
+export function inferToolLabel(call: ToolCall | ToolCallUpdate): string {
+  const kind = call.kind;
+  if (kind && kind !== 'other') return kind;
+  if (extractCommandLine(call.rawInput)) return 'execute';
+  const rawName = extractRawToolName(call.rawInput);
+  if (rawName) return rawName;
+  const title = cleanToolTitle(call.title, 'tool').toLowerCase();
+  if (/^(bash|shell|terminal|run|exec|execute|command)\b/.test(title)) return 'execute';
+  if (/^(edit|write|create|modify|patch)\b/.test(title)) return 'edit';
+  if (/^(read|open|cat)\b/.test(title)) return 'read';
+  if (/^(search|grep|rg|find)\b/.test(title)) return 'search';
+  if (/^(fetch|web|http)\b/.test(title)) return 'fetch';
+  return title || 'tool';
+}
+
+export function extractRawToolName(rawInput: unknown): string {
+  if (typeof rawInput !== 'object' || !rawInput) return '';
+  const record = rawInput as Record<string, unknown>;
+  for (const key of ['toolName', 'tool_name', 'name', 'tool', 'type']) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return truncateInline(value, 40);
+  }
+  return '';
+}
+
+export function isMemoryTool(call: ToolCall | ToolCallUpdate): boolean {
+  const rawName = extractRawToolName(call.rawInput).toLowerCase();
+  const title = (call.title ?? '').toLowerCase();
+  return rawName.startsWith('memory_') || title.includes('memory_');
+}
+
+export function cleanToolTitle(title: string | undefined, fallback: string): string {
+  const value = title?.trim() ?? '';
+  if (!value || value.toLowerCase() === 'tool' || value.toLowerCase() === fallback) return '';
+  if (/^tool\s+exit\s+\d+$/i.test(value)) return '';
+  return value;
+}
+
+/** Full command string from a tool's rawInput, UNTRUNCATED. Used by policy
+ *  (spec 143 high-risk gating) — must never be the 96-char display form, or a
+ *  destructive tail past the cutoff (`echo …<96> && rm -rf x`) would be hidden. */
+export function extractCommandLineRaw(rawInput: unknown): string {
+  if (typeof rawInput === 'object' && rawInput) {
+    const record = rawInput as Record<string, unknown>;
+    for (const key of ['command', 'cmd']) {
+      if (typeof record[key] === 'string') return record[key];
+    }
+    if (Array.isArray(record.argv)) {
+      const argv = record.argv.filter((part): part is string => typeof part === 'string');
+      if (argv.length > 0) return argv.join(' ');
+    }
+  }
+  return '';
+}
+
+/** Display form — truncated for transcript/label rendering. */
+export function extractCommandLine(rawInput: unknown): string {
+  const raw = extractCommandLineRaw(rawInput);
+  return raw ? truncateInline(raw, 96) : '';
+}
+
+/** Is this tool call an execute/shell surface (even when its command string is
+ *  not extractable)? Conservative: kind, a present command, or a shell-ish raw
+ *  name / title all count. */
+/** A leading shell/exec verb. Shared by the rawName and title checks so the
+ *  policy gate can't drift between the two surfaces (Codex-1 nit, spec 143). */
+const SHELL_LIKE_PREFIX = /^(bash|shell|terminal|run|exec|execute|command|sh|zsh|fish|cmd|powershell|pwsh)\b/;
+
+export function isExecuteLikeToolCall(call: Pick<ToolCall, 'rawInput' | 'kind' | 'title'>): boolean {
+  if (call.kind === 'execute') return true;
+  if (extractCommandLineRaw(call.rawInput)) return true;
+  if (SHELL_LIKE_PREFIX.test(extractRawToolName(call.rawInput).toLowerCase())) return true;
+  return SHELL_LIKE_PREFIX.test((call.title ?? '').trim().toLowerCase());
+}
+
+/** spec 143 policy: should this permission still prompt the human under peer
+ *  auto-accept? A parseable command is classified via the spec 140 highRisk set;
+ *  an execute-like surface whose command cannot be read is treated as high-risk
+ *  (unknown ⇒ high-risk); any other surface (edit/read/write/fetch) is not gated
+ *  here (writes are diff-shown + VCS-recoverable). */
+export function permissionCommandIsHighRisk(
+  call: Pick<ToolCall, 'rawInput' | 'kind' | 'title'>,
+): boolean {
+  const command = extractCommandLineRaw(call.rawInput);
+  if (command) return classifyBashCommand(command).highRisk;
+  return isExecuteLikeToolCall(call);
+}
+
+export function extractToolExit(rawOutput: unknown): string {
+  if (typeof rawOutput !== 'object' || !rawOutput) return '';
+  const record = rawOutput as Record<string, unknown>;
+  for (const key of ['exitCode', 'exit_code', 'code']) {
+    const value = record[key];
+    if (typeof value === 'number') return value === 0 ? '' : `exit ${value}`;
+  }
+  return '';
+}
+
+export function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: string }> {
+  const decodedRoot = decodeByteArray(rawOutput);
+  if (decodedRoot !== null) return decodedRoot ? [{ label: 'output', text: decodedRoot }] : [];
+  if (typeof rawOutput === 'object' && rawOutput) {
+    const record = rawOutput as Record<string, unknown>;
+    const sections: Array<{ label: string; text: string }> = [];
+    for (const key of ['summary', 'stdout', 'stderr', 'output', 'content', 'text', 'message']) {
+      const text = stringifyToolValue(record[key]);
+      if (text) sections.push({ label: key, text });
+    }
+    return sections;
+  }
+  const text = stringifyToolValue(rawOutput);
+  return text ? [{ label: 'output', text }] : [];
+}
+
+export function contentOutputSections(content: ToolCall['content']): Array<{ label: string; text: string }> {
+  const sections: Array<{ label: string; text: string }> = [];
+  for (const item of content ?? []) {
+    // 'diff' items are rendered by extractToolDiffs/renderToolBody as HTML blocks.
+    if (item.type === 'terminal' && item.terminalId) sections.push({ label: 'terminal', text: item.terminalId });
+    if (item.type === 'content' && item.content) {
+      const text = contentBlockText(item.content);
+      if (text) sections.push({ label: 'content', text });
+    }
+  }
+  return sections;
+}
+
+export function contentBlockText(block: ContentBlock): string {
+  if (block.type === 'text') return block.text;
+  if (block.type === 'resource' && block.resource.text) return block.resource.text;
+  if (block.type === 'resource_link') return block.uri;
+  return '';
+}
+
+const byteArrayDecoder = new TextDecoder();
+
+/**
+ * Some ACP backends (Grok's `grok agent stdio`) serialize terminal/command output as a
+ * raw byte array (a JSON `number[]` of 0–255 values) instead of a decoded UTF-8 string.
+ * Detect that shape and decode it back to text; otherwise the generic array branch below
+ * would stringify each byte and join them, rendering "79 110 32 …" decimal dumps in the
+ * tool-output panel. Returns null when `value` is not a byte array (so callers fall back
+ * to their normal handling).
+ */
+export function decodeByteArray(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  for (const n of value) {
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > 255) return null;
+  }
+  const decoded = byteArrayDecoder.decode(Uint8Array.from(value as number[]));
+  // Validate it's actually text, not a semantic number array (RGB tuples, flag
+  // vectors, line counts) that happens to sit in 0–255. Real command output is
+  // near-printable; a semantic array decodes to mostly control / replacement
+  // chars. Reject when >30% of chars are non-text (tab/newline/CR stay allowed).
+  let bad = 0;
+  for (const ch of decoded) {
+    const code = ch.codePointAt(0) ?? 0;
+    const printable = code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127 && code !== 0xfffd);
+    if (!printable) bad += 1;
+  }
+  if (bad / decoded.length > 0.3) return null;
+  return decoded;
+}
+
+export function stringifyToolValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    const decoded = decodeByteArray(value);
+    if (decoded !== null) return decoded;
+    return value.map((item) => stringifyToolValue(item)).filter(Boolean).join(' ');
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['summary', 'stdout', 'stderr', 'output', 'content', 'text', 'message']) {
+      const nested = stringifyToolValue(record[key]);
+      if (nested) return nested;
+    }
+  }
+  return '';
+}
+
+export function boundedOutputLines(value: string, maxLines: number): string {
+  // Backends that captured their tool output under a PTY / forced color (e.g. `gh`
+  // colorizing JSON) hand us raw ANSI SGR codes. This panel renders via
+  // `pre.textContent`, so an unhandled ESC (0x1b) byte shows as a garbage glyph and
+  // the trailing `[1;37m` shows as literal text. Strip ANSI + leftover C0/C1 control
+  // chars here (keeping \t and \n) so every lane's output reads clean.
+  const kept = stripAnsi(value)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.replace(/\s+$/, ''))
+    .filter((line) => line.length > 0)
+    .slice(0, maxLines);
+  let minIndent = Infinity;
+  for (const line of kept) {
+    const match = line.match(/^[ \t]*/);
+    const indent = match ? match[0].length : 0;
+    if (indent < minIndent) minIndent = indent;
+    if (minIndent === 0) break;
+  }
+  if (!Number.isFinite(minIndent)) minIndent = 0;
+  return kept
+    .map((line) => line.slice(minIndent))
+    .map((line) => (line.length > 140 ? `${line.slice(0, 139).trimEnd()}…` : line))
+    .join('\n');
+}
+
+export function buildToolPayload(
+  call: ToolCall | ToolCallUpdate,
+  status: string,
+  startedAt?: number,
+  endedAt?: number,
+): ToolPayload {
+  const kind = inferToolLabel(call);
+  const path = extractModifiedPath(call);
+  const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
+  const subject = command || path || cleanToolTitle(call.title, kind) || '';
+  const exit = extractToolExit(call.rawOutput);
+  const result = exit || (status === 'failed' ? 'failed' : '');
+  const raw = rawOutputSections(call.rawOutput);
+  const sections = raw.length > 0 ? raw : contentOutputSections(call.content);
+  const sectionLineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
+  const trimmed = sections
+    .map((s) => ({ label: s.label, text: boundedOutputLines(s.text, sectionLineLimit) }))
+    .filter((s) => s.text)
+    .slice(0, 4);
+  const diffs = extractToolDiffs(call.content);
+  return { glyph: statusGlyph(status), status, kind, subject, command, result, sections: trimmed, diffs, startedAt, endedAt };
+}
+
+export function isTerminalToolStatus(status: string): boolean {
+  return status === 'completed' || status === 'failed' || status === 'canceled';
+}
+
+export function formatToolElapsed(ms: number): string {
+  if (ms < 0) return '';
+  if (ms < 1000) return `${Math.round(ms / 100) * 100}ms`;
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.floor((ms % 60_000) / 1000);
+  return `${m}m ${s}s`;
+}
+
+export function extractToolDiffs(content: ToolCall['content']): Array<{ path: string; oldText: string; newText: string }> {
+  const out: Array<{ path: string; oldText: string; newText: string }> = [];
+  for (const item of content ?? []) {
+    if (item.type === 'diff' && (item.newText !== undefined || item.oldText !== undefined)) {
+      out.push({
+        path: item.path ?? '',
+        oldText: item.oldText ?? '',
+        newText: item.newText ?? '',
+      });
+    }
+  }
+  return out;
+}
+
+export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
+  const head = document.createElement('div');
+  head.className = 'acp-harness__tool-head';
+  const glyph = document.createElement('span');
+  glyph.className = `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status}`;
+  glyph.textContent = tool.glyph;
+  head.appendChild(glyph);
+  const kind = document.createElement('span');
+  kind.className = 'acp-harness__tool-kind';
+  kind.textContent = tool.kind;
+  head.appendChild(kind);
+  if (tool.subject) {
+    const subject = document.createElement('span');
+    subject.className = 'acp-harness__tool-subject';
+    subject.textContent = tool.subject;
+    head.appendChild(subject);
+  }
+  if (tool.result) {
+    const result = document.createElement('span');
+    result.className = `acp-harness__tool-result acp-harness__tool-result--${tool.status}`;
+    result.textContent = tool.result;
+    head.appendChild(result);
+  }
+  if (tool.startedAt !== undefined) {
+    const timer = document.createElement('span');
+    timer.className = `acp-harness__tool-timer acp-harness__tool-timer--${tool.status}`;
+    timer.dataset.startedAt = String(tool.startedAt);
+    if (tool.endedAt !== undefined) {
+      timer.dataset.endedAt = String(tool.endedAt);
+      timer.textContent = formatToolElapsed(tool.endedAt - tool.startedAt);
+    } else {
+      timer.textContent = formatToolElapsed(performance.now() - tool.startedAt);
+    }
+    head.appendChild(timer);
+  }
+  body.appendChild(head);
+  if (tool.artifactRedaction) {
+    body.appendChild(renderArtifactRedaction(tool.artifactRedaction));
+    return;
+  }
+  if (tool.sections.length > 0) {
+    body.appendChild(renderToolOutput(tool));
+  }
+  if (tool.diffs.length > 0) {
+    const wrap = document.createElement('div');
+    wrap.className = 'acp-harness__tool-diffs';
+    for (const d of tool.diffs) {
+      const block = document.createElement('div');
+      block.className = 'acp-harness__tool-diff';
+      if (d.path) {
+        const path = document.createElement('div');
+        path.className = 'acp-harness__tool-diff-path';
+        path.textContent = d.path;
+        block.appendChild(path);
+      }
+      const inner = document.createElement('div');
+      inner.innerHTML = renderDiffPreview(d.oldText, d.newText, { cssPrefix: 'acp-harness' });
+      block.appendChild(inner);
+      wrap.appendChild(block);
+    }
+    body.appendChild(wrap);
+  }
+}
+
+export function formatArtifactBytes(size: number | null): string {
+  if (size === null) return '— bytes';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** spec 133 — redacted body for an artifact-path write/edit card: never the
+ * HTML, only path + bytes + hash. */
+export function renderArtifactRedaction(r: NonNullable<ToolPayload['artifactRedaction']>): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'acp-harness__artifact-redaction';
+  const note = document.createElement('div');
+  note.className = 'acp-harness__artifact-redaction-note';
+  note.textContent = r.pending ? 'html artifact · contents hidden' : 'html artifact edit · contents hidden';
+  wrap.appendChild(note);
+  const meta = document.createElement('div');
+  meta.className = 'acp-harness__artifact-redaction-meta';
+  const hash7 = r.hash ? r.hash.slice(0, 7) : '—';
+  meta.textContent = `${r.tail} · ${formatArtifactBytes(r.size)} · ${hash7}`;
+  wrap.appendChild(meta);
+  return wrap;
+}
+
+/** spec 133 — hintable artifact card body. */
+export function renderArtifactCardBody(body: HTMLElement, card: ArtifactCardPayload): void {
+  const head = document.createElement('div');
+  head.className = 'acp-harness__artifact-head';
+  if (card.hintLabel) {
+    const hint = document.createElement('span');
+    hint.className = 'acp-harness__artifact-hint';
+    hint.textContent = card.hintLabel;
+    head.appendChild(hint);
+  }
+  const glyph = document.createElement('span');
+  glyph.className = 'acp-harness__artifact-glyph';
+  glyph.textContent = '◫';
+  head.appendChild(glyph);
+  const title = document.createElement('span');
+  title.className = 'acp-harness__artifact-title';
+  title.textContent = card.title;
+  head.appendChild(title);
+  body.appendChild(head);
+
+  const meta = document.createElement('div');
+  meta.className = 'acp-harness__artifact-meta';
+  const hash7 = card.hash ? card.hash.slice(0, 7) : '—';
+  meta.textContent = card.available
+    ? `${formatArtifactBytes(card.size)} · ${hash7}`
+    : 'unavailable — file removed';
+  body.appendChild(meta);
+
+  const action = document.createElement('div');
+  action.className = 'acp-harness__artifact-action';
+  action.textContent = card.available
+    ? (card.hintLabel ? `press ${card.hintLabel} to open in browser` : 'f then label to open in browser')
+    : 'reopen unavailable';
+  body.appendChild(action);
+}
+
+export function renderToolOutput(tool: ToolPayload): HTMLElement {
+  const output = document.createElement('div');
+  output.className = 'acp-harness__tool-output';
+  for (const section of tool.sections) {
+    const rich = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
+    output.appendChild(rich ?? renderPlainToolSection(section));
+  }
+  return output;
+}
+
+export function renderPlainToolSection(section: { label: string; text: string }): HTMLElement {
+  const block = document.createElement('div');
+  const tone = toolSectionTone(section.label);
+  block.className = `acp-harness__tool-section acp-harness__tool-section--${tone}`;
+  const label = document.createElement('div');
+  label.className = 'acp-harness__tool-section-label';
+  label.textContent = section.label;
+  const pre = document.createElement('pre');
+  pre.className = 'acp-harness__tool-section-text';
+  pre.textContent = section.text;
+  block.appendChild(label);
+  block.appendChild(pre);
+  return block;
+}
+
+export function renderRichExecuteSection(tool: ToolPayload, section: { label: string; text: string }): HTMLElement | null {
+  const label = section.label.toLowerCase();
+  if (label !== 'stdout' && label !== 'output') return null;
+  if (/\bgit\s+diff\s+--stat\b/.test(tool.command)) {
+    const rows = parseGitDiffStat(section.text);
+    if (rows.length > 0) return renderGitDiffStat(rows, section.text);
+  }
+  if (isGitDiffCommand(tool.command) && section.text.includes('diff --git')) {
+    return renderUnifiedGitDiff(section.text);
+  }
+  if (/\bgit\s+status\s+--short\b/.test(tool.command)) {
+    const rows = parseGitStatusShort(section.text);
+    if (rows.length > 0) return renderGitStatusShort(rows);
+  }
+  return null;
+}
+
+export function isGitDiffCommand(command: string): boolean {
+  return /\bgit\s+diff\b/.test(command);
+}
+
+export function parseGitDiffStat(text: string): Array<{ path: string; changes: number; plus: number; minus: number }> {
+  const rows: Array<{ path: string; changes: number; plus: number; minus: number }> = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line || /\d+\s+files?\s+changed/.test(line)) continue;
+    const match = line.match(/^(.+?)\s+\|\s+(\d+)\s+([+\-]+)$/);
+    if (!match) continue;
+    const marks = match[3] ?? '';
+    rows.push({
+      path: match[1]?.trim() ?? '',
+      changes: Number(match[2] ?? 0),
+      plus: (marks.match(/\+/g) ?? []).length,
+      minus: (marks.match(/-/g) ?? []).length,
+    });
+  }
+  return rows.slice(0, 8);
+}
+
+export function renderGitDiffStat(rows: Array<{ path: string; changes: number; plus: number; minus: number }>, source: string): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--diffstat';
+  const total = Math.max(1, ...rows.map((row) => row.changes));
+  for (const row of rows) {
+    const item = document.createElement('div');
+    item.className = 'acp-harness__tool-stat-row';
+    const path = document.createElement('span');
+    path.className = 'acp-harness__tool-stat-path';
+    path.textContent = row.path;
+    const count = document.createElement('span');
+    count.className = 'acp-harness__tool-stat-count';
+    count.textContent = String(row.changes);
+    const bar = document.createElement('span');
+    bar.className = 'acp-harness__tool-stat-bar';
+    bar.style.setProperty('--stat-plus-width', `${(row.plus / total) * 100}%`);
+    bar.style.setProperty('--stat-minus-width', `${(row.minus / total) * 100}%`);
+    item.append(path, count, bar);
+    block.appendChild(item);
+  }
+  const omitted = source.split('\n').filter((line) => line.trim() && !/\d+\s+files?\s+changed/.test(line)).length - rows.length;
+  if (omitted > 0) {
+    const more = document.createElement('div');
+    more.className = 'acp-harness__tool-rich-more';
+    more.textContent = `${omitted} more file${omitted === 1 ? '' : 's'}`;
+    block.appendChild(more);
+  }
+  return block;
+}
+
+export function renderUnifiedGitDiff(text: string): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--unidiff';
+  const lines = text.split('\n').filter((line) => line.length > 0);
+  for (const line of lines) {
+    if (line.startsWith('diff --git ')) {
+      const file = document.createElement('div');
+      file.className = 'acp-harness__tool-diff-file';
+      file.textContent = gitDiffFileLabel(line);
+      block.appendChild(file);
+      continue;
+    }
+    const row = document.createElement('div');
+    row.className = `acp-harness__tool-diff-line acp-harness__tool-diff-line--${gitDiffLineTone(line)}`;
+    const mark = document.createElement('span');
+    mark.className = 'acp-harness__tool-diff-mark';
+    mark.textContent = gitDiffLineMark(line);
+    const body = document.createElement('span');
+    body.className = 'acp-harness__tool-diff-text';
+    body.textContent = gitDiffLineText(line);
+    row.append(mark, body);
+    block.appendChild(row);
+  }
+  return block;
+}
+
+export function gitDiffFileLabel(line: string): string {
+  const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+  if (!match) return line.replace(/^diff --git\s+/, '');
+  const oldPath = match[1] ?? '';
+  const newPath = match[2] ?? '';
+  return oldPath === newPath ? newPath : `${oldPath} -> ${newPath}`;
+}
+
+export function gitDiffLineTone(line: string): string {
+  if (line.startsWith('@@')) return 'hunk';
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return 'meta';
+  if (line.startsWith('+')) return 'add';
+  if (line.startsWith('-')) return 'del';
+  return 'context';
+}
+
+export function gitDiffLineMark(line: string): string {
+  if (line.startsWith('@@')) return '@@';
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return '·';
+  if (line.startsWith('+')) return '+';
+  if (line.startsWith('-')) return '-';
+  return '';
+}
+
+export function gitDiffLineText(line: string): string {
+  if (line.startsWith('@@')) return line;
+  if (line.startsWith('+++') || line.startsWith('---')) return line.slice(4);
+  if (line.startsWith('+') || line.startsWith('-')) return line.slice(1);
+  return line.startsWith(' ') ? line.slice(1) : line;
+}
+
+export function parseGitStatusShort(text: string): Array<{ index: string; worktree: string; path: string }> {
+  const rows: Array<{ index: string; worktree: string; path: string }> = [];
+  for (const raw of text.split('\n')) {
+    if (!raw.trim()) continue;
+    const match = raw.match(/^(.)(.)\s+(.+)$/);
+    if (!match) continue;
+    rows.push({
+      index: match[1] ?? ' ',
+      worktree: match[2] ?? ' ',
+      path: match[3] ?? '',
+    });
+  }
+  return rows.slice(0, 10);
+}
+
+export function renderGitStatusShort(rows: Array<{ index: string; worktree: string; path: string }>): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--gitstatus';
+  for (const row of rows) {
+    const item = document.createElement('div');
+    item.className = 'acp-harness__tool-status-row';
+    const badge = document.createElement('span');
+    badge.className = `acp-harness__tool-status-badge acp-harness__tool-status-badge--${gitStatusTone(row.index, row.worktree)}`;
+    badge.textContent = `${row.index}${row.worktree}`.trim() || 'M';
+    const path = document.createElement('span');
+    path.className = 'acp-harness__tool-status-path';
+    path.textContent = row.path;
+    item.append(badge, path);
+    block.appendChild(item);
+  }
+  return block;
+}
+
+export function gitStatusTone(index: string, worktree: string): string {
+  if (index === '?' || worktree === '?') return 'new';
+  if (index === 'D' || worktree === 'D') return 'deleted';
+  if (index === 'A' || worktree === 'A') return 'added';
+  return 'modified';
+}
+
+export function toolSectionTone(label: string): string {
+  const normalized = label.toLowerCase();
+  if (normalized === 'stderr' || normalized === 'error' || normalized === 'message') return 'error';
+  if (normalized === 'stdout' || normalized === 'output' || normalized === 'text') return 'output';
+  if (normalized === 'summary') return 'summary';
+  if (normalized === 'diff') return 'diff';
+  if (normalized === 'terminal') return 'terminal';
+  if (normalized === 'content') return 'content';
+  return 'default';
+}

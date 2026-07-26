@@ -46,6 +46,8 @@ import {
   consumeOptimisticUserEcho,
   armConsolePermissionFlags,
   seatPromptDisabledReason,
+  ticketPickerActionForKey,
+  ticketWorkActionDisabledReason,
   DISPATCH_PURPOSES,
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
@@ -139,6 +141,106 @@ describe('consumeOptimisticUserEcho', () => {
       matched: false,
       received: 'Hello world',
     });
+  });
+});
+
+describe('ticket picker direct actions', () => {
+  type TicketActionRunner = {
+    runTicketPickerAction(action: 'set-ticket' | 'analyze-github-issue' | 'post-github-comment' | 'fix-github-issue'): Promise<void>;
+  };
+  const runTicketPickerAction = (AcpHarnessView.prototype as unknown as TicketActionRunner).runTicketPickerAction;
+
+  it('maps Enter and modified number keys without stealing filter text', () => {
+    expect(ticketPickerActionForKey({ key: 'Enter', metaKey: false, ctrlKey: false })).toBe('set-ticket');
+    expect(ticketPickerActionForKey({ key: '1', metaKey: true, ctrlKey: false })).toBe('analyze-github-issue');
+    expect(ticketPickerActionForKey({ key: '2', metaKey: false, ctrlKey: true })).toBe('post-github-comment');
+    expect(ticketPickerActionForKey({ key: '3', metaKey: true, ctrlKey: false })).toBe('fix-github-issue');
+    expect(ticketPickerActionForKey({ key: '1', metaKey: false, ctrlKey: false })).toBeNull();
+    expect(ticketPickerActionForKey({ key: 'f', metaKey: false, ctrlKey: false })).toBeNull();
+    expect(ticketPickerActionForKey({ key: 'Enter', metaKey: true, ctrlKey: false })).toBeNull();
+  });
+
+  it('allows work only when the active lane can start a system turn', () => {
+    expect(ticketWorkActionDisabledReason(null)).toBe('no active lane');
+    expect(ticketWorkActionDisabledReason({
+      displayName: 'Codex-1',
+      status: 'idle',
+      hasClient: false,
+    })).toBe('Codex-1 is not live');
+    expect(ticketWorkActionDisabledReason({
+      displayName: 'Codex-1',
+      status: 'busy',
+      hasClient: true,
+    })).toBe('Codex-1 is busy');
+    expect(ticketWorkActionDisabledReason({
+      displayName: 'Codex-1',
+      status: 'idle',
+      hasClient: true,
+    })).toBeNull();
+    expect(ticketWorkActionDisabledReason({
+      displayName: 'Codex-1',
+      status: 'awaiting_peer',
+      hasClient: true,
+    })).toBeNull();
+  });
+
+  it('sets the selected ticket before routing a work verb into the active lane', async () => {
+    const row = {
+      number: 203,
+      title: 'Ticket actions',
+      labels: ['acp'],
+      state: 'open',
+      url: 'https://github.com/wk-j/krypton/issues/203',
+    };
+    const lane = { displayName: 'Codex-1', status: 'idle', client: {} };
+    const setRefs: unknown[] = [];
+    const routed: unknown[] = [];
+    const target = {
+      ticketPicker: { rows: [row], filter: '', index: 0 },
+      ticketPickerMatches: () => [row],
+      parseIssueRef: () => ({ repo: 'wk-j/krypton', number: 203, url: row.url }),
+      activeLane: () => lane,
+      renderTicketOverlayEl: () => {},
+      setActiveTicket: (ref: unknown) => setRefs.push(ref),
+      runGithubIssuePromptVerb: async (...args: unknown[]) => {
+        routed.push(args);
+      },
+      flashChip: () => {},
+    };
+
+    await runTicketPickerAction.call(target, 'fix-github-issue');
+
+    expect(target.ticketPicker).toBeNull();
+    expect(setRefs).toEqual([{ repo: 'wk-j/krypton', number: 203, url: row.url }]);
+    expect(routed).toEqual([[lane, 'fix-github-issue', [row.url]]]);
+  });
+
+  it('keeps the dialog and ticket unchanged when the active lane is busy', async () => {
+    const row = {
+      number: 203,
+      title: 'Ticket actions',
+      labels: ['acp'],
+      state: 'open',
+      url: 'https://github.com/wk-j/krypton/issues/203',
+    };
+    const flashes: string[] = [];
+    const setRefs: unknown[] = [];
+    const target = {
+      ticketPicker: { rows: [row], filter: '', index: 0 },
+      ticketPickerMatches: () => [row],
+      parseIssueRef: () => ({ repo: 'wk-j/krypton', number: 203, url: row.url }),
+      activeLane: () => ({ displayName: 'Codex-1', status: 'busy', client: {} }),
+      renderTicketOverlayEl: () => {},
+      setActiveTicket: (ref: unknown) => setRefs.push(ref),
+      runGithubIssuePromptVerb: async () => {},
+      flashChip: (message: string) => flashes.push(message),
+    };
+
+    await runTicketPickerAction.call(target, 'analyze-github-issue');
+
+    expect(target.ticketPicker).not.toBeNull();
+    expect(setRefs).toEqual([]);
+    expect(flashes).toEqual(['Codex-1 is busy']);
   });
 });
 

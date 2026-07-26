@@ -122,16 +122,17 @@ Issue fetching reuses `run_command` + `gh`:
 
 | Input | Action |
 |-------|--------|
-| `#ticket` | Open picker modal: fuzzy-filterable list `#N · title · labels · age`, ↑↓/⌃n⌃p + Enter select, Esc dismiss (keeps the palette keyboard grammar in its own centered dialog) |
+| `#ticket` | Open picker modal: fuzzy-filterable list `#N · title · labels · age`, ↑↓/⌃n⌃p select, Enter set, Cmd/Ctrl+1/2/3 Analyze / Post comment / Fix here, Esc dismiss |
 | `#ticket <url \| owner/repo#123>` | Set directly (any repo, explicit ref) — enrich via `gh` in background like `autoBindIssue` |
 | `#ticket refresh` | Re-fetch snapshot, bump `revision` |
 | `#ticket clear` | Clear ticket (pin disappears from next prompts) |
 
 The picker is its own **modal dialog** (same overlay-shell family as the triage/review
 overlays, not a popup inside the composer) — it owns typing/arrows/Enter/Esc while open
-regardless of composer/transcript focus, with no confirm step; its footer names the
-fan-out: `shared with all N lanes in this harness · read-only`. The picker is
-**read-only** toward GitHub — never comments, labels, assigns, or writes.
+regardless of composer/transcript focus, with no confirm step. Its footer names the
+fan-out and active work lane. The picker remains **read-only** toward GitHub: its
+action buttons start existing spec-191 prompt verbs in the active lane rather than
+commenting, labelling, or editing directly from dialog code (spec 203).
 
 ### Ticket pin (injection)
 
@@ -174,6 +175,8 @@ surrounding prompt's subject.
 ```
 1. User types #ticket → picker opens (gh issue list via run_command, cwd=projectDir)
 2. Enter on a row → normalize ActiveWorkTicket (revision 1 / +1) → persist → header chip
+   Or direct action → validate active lane → set ticket → close dialog → existing
+   runGithubIssuePromptVerb(active lane, selected row URL)
 3. Each lane's NEXT prompt: buildPromptBlocks → composeLeadingContext → pin included
 4. A lane needing detail pulls: gh issue view <n> -R <repo> (already in verb prompts)
 5. #fix-github-issue (no arg) → verb resolves ref from activeTicket → normal spec-191
@@ -183,8 +186,19 @@ surrounding prompt's subject.
 
 ### Keybindings
 
-None new — `#ticket` lives in the composer like all hash commands; picker uses the
-established palette keys. (Keyboard-first: fully operable without mouse.)
+`#ticket` lives in the composer like all hash commands. Inside the picker:
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓`, `Ctrl+P` / `Ctrl+N` | Select issue |
+| Printable text / `Backspace` | Filter issues |
+| `Enter` | Set the selected working ticket |
+| `Cmd/Ctrl+1` | Analyze in the active lane |
+| `Cmd/Ctrl+2` | Post a comment through the active lane |
+| `Cmd/Ctrl+3` | Fix in the active lane |
+| `Esc` | Dismiss |
+
+Rows and actions are also semantic buttons for the secondary mouse path.
 
 ## Edge Cases
 

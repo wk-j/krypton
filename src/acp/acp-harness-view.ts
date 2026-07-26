@@ -2,26 +2,17 @@
 // Coordinates several independent ACP subprocesses for one project directory.
 
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
-import { Marked } from 'marked';
-import { markedHighlight } from 'marked-highlight';
-import hljs from 'highlight.js';
-import 'highlight.js/styles/github-dark.css';
 import * as smd from 'streaming-markdown';
-import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openExternalUrl } from '../external-url';
 import { AcpClient } from './client';
-import { renderDiffPreview } from './diff-render';
 import type {
-  AcpAgentMode,
-  AcpAvailableCommand,
   AcpBackendDescriptor,
   AcpEvent,
   DiffReviewComment,
   AcpMcpCapabilities,
   AcpMcpServerDescriptor,
-  AcpSessionCapabilities,
-  AcpSessionInfo,
   AgentInfo,
   AgentInitInfo,
   AgentSessionInfo,
@@ -65,9 +56,7 @@ import {
   InterLaneCoordinator,
   PEER_SEND_DEFERRED_TOOL_HINT,
   type CoordinatorDrainContext,
-  type InterLaneRowChannel,
   type LaneHost,
-  type PendingPeerSummary,
 } from './inter-lane';
 import { HarnessTelemetryPublisher } from './harness-telemetry';
 import type { LaneResourceSample } from './harness-telemetry';
@@ -137,7 +126,6 @@ import {
   debbyHeadBackendsFor,
   debbyRequestPrompt,
   parseDebbyTask,
-  type DebbyBuiltinRole,
   type DebbyEnsureOutcome,
   type DebbyHeadBackend,
   type DebbyRoster,
@@ -152,7 +140,6 @@ import {
   type SaltyExecutorRole,
   type SaltyExecutorSpec,
   type SaltyModelApply,
-  type SaltyRole,
   type SaltyRoster,
 } from './salty';
 import {
@@ -167,7 +154,6 @@ import type {
 } from './types';
 import type {
   AcpLaneMetrics,
-  AcpLaneProcMetric,
   CapturedImage,
   ContentView,
   LeaderKeyBinding,
@@ -187,8 +173,7 @@ import {
   type HarnessDirective,
 } from '../config';
 import { extractModifiedPath } from './acp-harness-memory';
-import { classifyBashCommand } from '../agent/tools';
-import { classifyProviderError, shouldAppendProviderError, stripAnsi } from './provider-error';
+import { classifyProviderError, shouldAppendProviderError } from './provider-error';
 import {
   loadProjectMcpServers,
   filterByCapability,
@@ -203,326 +188,218 @@ import {
   cleanupCursorMcp,
   JUNIE_MCP_CAPABILITIES,
 } from './mcp-bridge';
+import { FILE_TOUCH_WINDOW_MS } from './harness-view-types';
+import type {
+  ActiveWorkTicket,
+  ArtifactCardPayload,
+  ArtifactEventPayload,
+  ComposerFocus,
+  FileTouchRecord,
+  HarnessArtifactRecord,
+  HarnessLane,
+  HarnessPermission,
+  HarnessTranscriptItem,
+  IssueBinding,
+  IssuePhase,
+  IssueStatusSnapshot,
+  LaneActivitySample,
+  LaneHeatSide,
+  LanePeekCandidate,
+  LanePeekHeatLaneInput,
+  LanePeekHeatMetric,
+  LanePeekHeatWindow,
+  LanePeekSnapshot,
+  LanePeekState,
+  PendingModelSwitch,
+  PermissionDecision,
+  PermissionPayload,
+  SessionPickerState,
+  StagedImage,
+  TicketPickerRow,
+  TranscriptScrollAnchor,
+} from './harness-view-types';
 
-type ComposerFocus = 'text' | 'transcript';
-type PendingExtraction = never;
+import {
+  BACKEND_LABELS,
+  backendLabel,
+  backendLogoId,
+  directiveRole,
+  directiveTagLabel,
+  harnessBackends,
+  laneAccent,
+  laneAccentForLabel,
+  trimBackendPrefix,
+} from './harness-lane-identity';
+import { BACKEND_LOGO_SVG_DEFS, HARNESS_ICON_SVG_DEFS } from './harness-icons';
+import {
+  agentLinkOpenAction,
+  hasMarkdownTable,
+  makeSafeRenderer,
+  md,
+  rerenderAssistantMarkdownWithMarked,
+  resolveLocalImageSrcs,
+  updateStreamingAssistantMarkdownBody,
+  updateStreamingTextBody,
+} from './harness-markdown';
+export { agentLinkOpenAction, hasMarkdownTable } from './harness-markdown';
+import {
+  abbreviatePath,
+  basename,
+  esc,
+  filterSessionsForProject,
+  formatAge,
+  formatCount,
+  formatCpu,
+  formatElapsed,
+  formatLaneActivity,
+  formatReviewRoundTime,
+  formatRss,
+  formatSessionUpdatedAt,
+  formatShortTime,
+  loadHomeDir,
+  makeId,
+  normalizePathForCompare,
+  parseReviewFindings,
+  pathToFileUri,
+  sessionCapabilitiesFromAgent,
+  shortId,
+  truncate,
+} from './harness-format';
+import {
+  buildToolPayload,
+  cleanToolTitle,
+  extractCommandLineRaw,
+  formatToolElapsed,
+  inferToolLabel,
+  isMemoryTool,
+  isTerminalToolStatus,
+  mergeToolCall,
+} from './harness-tool-render';
+export {
+  boundedOutputLines,
+  permissionCommandIsHighRisk,
+  rawOutputSections,
+  stringifyToolValue,
+} from './harness-tool-render';
+import { permissionCommandIsHighRisk } from './harness-tool-render';
+import {
+  SPINNER_FRAMES,
+  awaitingPeerText,
+  compactPermissionLabel,
+  compactPermissionMeta,
+  filteredSlashCommands,
+  inferLaneModelName,
+  renderLaneHead,
+  renderLaneStats,
+  renderPollyBypassChip,
+  renderProcessTree,
+  renderSaltyBypassChip,
+  renderSlashPalette,
+  slashPaletteVisible,
+  statusLabel,
+} from './harness-lane-chrome';
+import {
+  ARTIFACT_HINT_ALPHABET,
+  artifactWritePathMatches,
+  callTargetsArtifactScratch,
+  errorText,
+  extractHarnessServerName,
+  generateArtifactHintLabels,
+  harnessAutoAllowToolName,
+  harnessToolFamily,
+  isArtifactWriteGrantKind,
+  normalizeArtifactPath,
+  permissionArgsPreview,
+  permissionToolFamily,
+  pickPermissionOption,
+} from './harness-permission-scan';
+import {
+  buildComposerPeerStrip,
+  buildLanePeekCandidates,
+  deriveActiveToolForPeek,
+  deriveLanePairHeat,
+  derivePlanForPeek,
+  deriveRailPeerHint,
+  deriveRecentFilesForPeek,
+  formatHeatTokenSuffix,
+  isDirectPeerPeekReasonKey,
+  latestInterLaneForPeek,
+  latestMeaningfulForPeek,
+  latestPermissionForPeek,
+  renderLanePeek,
+  renderRailPeerSpans,
+  selectLanePeekCandidate,
+  shouldPreemptPeekDismissal,
+} from './lane-peek';
+export {
+  PEER_PREEMPT_MAX_PRIORITY,
+  buildComposerPeerStrip,
+  buildLanePeekCandidates,
+  deriveLanePairHeat,
+  deriveRailPeerHint,
+  isDirectPeerPeekReasonKey,
+  selectLanePeekCandidate,
+  shouldPreemptPeekDismissal,
+} from './lane-peek';
+export type { DeriveRailPeerHintInput, RailPeerHint } from './lane-peek';
+import {
+  applyCoordinatorProvenanceToItem,
+  renderTranscriptItem,
+  transcriptRenderSignature,
+} from './harness-transcript-render';
+export {
+  formatLaneMailMetaLine,
+  formatLaneMailProvenanceLine,
+  renderPermissionBody,
+} from './harness-transcript-render';
+export {
+  artifactWritePathMatches,
+  callTargetsArtifactScratch,
+  generateArtifactHintLabels,
+  harnessAutoAllowToolName,
+  isArtifactScratchPath,
+  isArtifactWriteGrantKind,
+  normalizeArtifactPath,
+  permissionArgsPreview,
+} from './harness-permission-scan';
 
-interface HarnessPermission {
-  requestId: number;
-  toolCall: ToolCall;
-  options: PermissionOption[];
-  resolvedLabel?: string;
-  auto?: boolean;
-  transcriptItem?: HarnessTranscriptItem;
-}
+// Spec 204 split the lane/transcript state shapes out to harness-view-types.ts,
+// and lane identity / SVG defs to harness-lane-identity.ts + harness-icons.ts.
+// Re-exported here so existing import sites — tests included — keep working.
+export {
+  BACKEND_LOGO_SVG_DEFS,
+  HARNESS_ICON_SVG_DEFS,
+} from './harness-icons';
+export {
+  backendLogoId,
+  directiveRole,
+  directiveTagLabel,
+  harnessBackends,
+  hashBucket,
+  laneAccent,
+  laneAccentForLabel,
+  trimBackendPrefix,
+} from './harness-lane-identity';
+export type { DirectiveRoleBucket } from './harness-lane-identity';
+export type {
+  LaneActivitySample,
+  LaneHeatSide,
+  LanePairHeatSummary,
+  LanePeekCandidate,
+  LanePeekHeatLaneInput,
+  LanePeekHeatMetric,
+  LanePeekHeatWindow,
+  LanePeekPayload,
+  LanePeekSnapshot,
+  LanePeekSummary,
+} from './harness-view-types';
 
-interface HarnessTranscriptItem {
-  id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact';
-  text: string;
-  createdAt?: number;
-  markdownSource?: string;
-  markdownHtml?: string;
-  // Spec 114 rev 4: append-only plain streaming. `streamPlainLength` is how
-  // many characters of `text` are already in the body's single TextNode;
-  // markdown is deferred until seal (no mid-stream plain↔HTML swap).
-  // Spec 117 supersedes this for `kind === 'assistant'` — see streamingMarkdownWritten.
-  streamPlainLength?: number;
-  // Spec 117: chars of `item.text` already fed into the lane's streaming-markdown
-  // parser. Transient; cleared by sealStreaming. Only used for assistant rows.
-  streamingMarkdownWritten?: number;
-  pretextSource?: string;
-  pretextWidth?: number;
-  pretextFont?: string;
-  pretextLineHeight?: number;
-  pretextLines?: string[];
-  imageCount?: number;
-  telegramProvenance?: TelegramControlCaller;
-  status?: string;
-  diff?: { title: string; unified: string };
-  tool?: ToolPayload;
-  toolStartedAt?: number;
-  toolEndedAt?: number;
-  permission?: PermissionPayload;
-  fsActivity?: FsActivityPayload;
-  fsReview?: FsWriteReviewPayload;
-  interLane?: InterLanePayload;
-  providerError?: ProviderErrorPayload;
-  /** spec 120: first assistant row after coordinator drain. */
-  replyingToLaneMail?: LaneMailProvenance;
-  /** spec 133: hintable HTML artifact card. */
-  artifact?: ArtifactCardPayload;
-}
-
-/** spec 133 — transcript card for a registered HTML artifact. */
-interface ArtifactCardPayload {
-  id: string;
-  title: string;
-  laneLabel: string;
-  /** Absolute file path opened via `open_url(file://…)`. */
-  path: string;
-  size: number | null;
-  hash: string | null;
-  /** false once the file is swept/cancelled — the card reports "unavailable". */
-  available: boolean;
-  /** Hint label assigned while artifact hint mode is active, else null. */
-  hintLabel: string | null;
-}
-
-interface InterLanePayload {
-  direction: 'in' | 'out';
-  peerId: string;
-  peerDisplayName: string;
-  peerBackendId?: string;
-  done: boolean;
-  envelopeId?: string;
-  channel?: InterLaneRowChannel;
-}
-
-interface LaneMailProvenance {
-  envelopeId: string;
-  peerDisplayName: string;
-  envelopeCount: number;
-}
-
-interface FsWriteReviewPayload {
-  requestId: number;
-  path: string;
-  oldText: string;
-  newText: string;
-  resolved?: 'accepted' | 'rejected';
-}
-
-interface FsActivityPayload {
-  method: 'read' | 'write';
-  path: string;
-  ok: boolean;
-  error?: string;
-}
-
-type HarnessToolFamily = 'memory' | 'peer' | 'attention' | 'review';
-type PermissionDecision = 'pending' | 'accepted' | 'rejected' | 'auto_allowed' | 'failed';
-
-interface PermissionPayload {
-  id: number;
-  toolName: string;
-  toolFamily: HarnessToolFamily | 'agent' | 'shell' | 'file' | 'other';
-  serverName: string | null;
-  kind: string;
-  subject: string;
-  suffix?: string;
-  argsPreview: string;
-  options: Array<{ optionId: string; name: string; action: 'accept' | 'reject' | 'other' }>;
-  decision: PermissionDecision;
-  decisionLabel?: string;
-  autoReason?: string;
-}
-
-interface ToolPayload {
-  glyph: string;
-  status: string;
-  kind: string;
-  subject: string;
-  command: string;
-  result: string;
-  sections: Array<{ label: string; text: string }>;
-  diffs: Array<{ path: string; oldText: string; newText: string }>;
-  startedAt?: number;
-  endedAt?: number;
-  /** spec 133: set when this tool wrote/edited a registered artifact path. The
-   * diff/content is redacted to path + bytes + hash so HTML never enters the
-   * transcript model under the write tool. */
-  artifactRedaction?: { tail: string; size: number | null; hash: string | null; pending: boolean };
-}
-
-interface StagedImage {
-  data: string;
-  mimeType: string;
-  path: string | null;
-}
-
-interface LanePeekState {
-  visible: boolean;
-  dismissedAt: number | null;
-  dismissedPriority: number | null;
-  lockedLaneId: string | null;
-  currentLaneId: string | null;
-  currentReasonKey: string | null;
-  selectedAt: number;
-}
-
-export type LanePeekPayload =
-  | { kind: 'permission'; toolName: string; subject: string; decision: string }
-  | { kind: 'peer'; direction: 'in' | 'out' | 'awaiting'; peerDisplayName: string; ageLabel: string }
-  | { kind: 'error'; message: string }
-  | { kind: 'activity'; label: string; ageLabel: string }
-  | null;
-
-export interface LanePeekSummary {
-  status: HarnessLaneStatus;
-  headline: string;
-  detail: string | null;
-  payload: LanePeekPayload;
-}
-
-export interface LanePeekCandidate {
-  laneId: string;
-  displayName: string;
-  priority: number;
-  direct: boolean;
-  reasonKey: string;
-  reasonLabel: string;
-  summary: LanePeekSummary;
-  at: number;
-  visualIndex: number;
-}
-
-export interface LanePeekSnapshot {
-  laneId: string;
-  displayName: string;
-  status: HarnessLaneStatus;
-  active: boolean;
-  stopped: boolean;
-  visualIndex: number;
-  inboxDepth: number;
-  pendingPeers: PendingPeerSummary[];
-  latestInterLane: { direction: 'in' | 'out'; peerId: string; peerDisplayName: string; at: number; message: string } | null;
-  latestPermission: { toolName: string; subject: string; decision: string; at: number } | null;
-  latestMeaningful: { kind: HarnessTranscriptItem['kind']; label: string; at: number } | null;
-  error: string | null;
-  // Derived fields used by render; all optional to keep buildLanePeekCandidates pure-testable.
-  modelName?: string | null;
-  usage?: UsageInfo | null;
-  metrics?: AcpLaneMetrics | null;
-  mcp?: HarnessMcpLaneStats | null;
-  plan?: { done: number; total: number; activeText: string | null } | null;
-  activeTool?: { name: string; subject: string | null; startedAt: number } | null;
-  activeTurnStartedAt?: number | null;
-  recentFiles?: string[];
-  pendingShell?: boolean;
-}
-
-/** Slice 109 — lane-pair activity heat (peek rail). */
-export type LanePeekHeatMetric = 'auto' | 'tools' | 'tokens' | 'peer' | 'process' | 'alerts';
-export type LanePeekHeatWindow = '30s' | '5m' | 'session';
-
-export interface LaneActivitySample {
-  at: number;
-  usageUsed: number | null;
-  cpuPercent: number | null;
-  rssMb: number | null;
-}
-
-export interface LaneHeatSide {
-  laneId: string;
-  displayName: string;
-  score: number;
-  toolDelta: number;
-  tokenDelta: number | null;
-  peerDelta: number;
-  permissionDelta: number;
-  errorDelta: number;
-  cpuPeak: number | null;
-  label: string;
-}
-
-export interface LanePairHeatSummary {
-  metric: Exclude<LanePeekHeatMetric, 'auto'>;
-  window: LanePeekHeatWindow;
-  active: LaneHeatSide;
-  peeked: LaneHeatSide;
-  pairScore: number;
-  dominantSide: 'active' | 'peeked' | 'balanced';
-  unavailableReason: string | null;
-  deltaLine: string;
-}
-
-/** Transcript + lane-local inputs for heat derivation (tests use minimal objects). */
-export interface LanePeekHeatLaneInput {
-  id: string;
-  displayName: string;
-  status: HarnessLaneStatus;
-  transcript: HarnessTranscriptItem[];
-  usage: UsageInfo | null;
-  pendingShell: boolean;
-  pendingPeerCount: number;
-  metricHistory: LaneActivitySample[];
-}
-
-const LANE_PEEK_HEAT_TAIL = 200;
-const LANE_PEEK_HEAT_SESSION_TAIL = 400;
 const LANE_PEEK_HEAT_RING_MAX = 240;
 const LANE_PEEK_HEAT_RING_MS = 10 * 60_000;
 const LANE_PEEK_HEAT_SAMPLE_MIN_MS = 900;
-const LANE_PEEK_HEAT_PENDING_PEER_WEIGHT = 2;
 
 const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const MEMORY_PERMISSION_SCAN_DEPTH = 8;
-const LANE_PEEK_DWELL_MS = 8_000;
-const LANE_PEEK_RECENT_MS = 5 * 60_000;
-/** spec 118 — peer peek tiers: awaiting 10, inbound 20, counterpart 30 */
-export const PEER_PREEMPT_MAX_PRIORITY = 30;
-/** spec 133 — alphabet for artifact hint labels (mirrors the `f` hint mode). */
-const ARTIFACT_HINT_ALPHABET = 'asdfghjklqweruiop';
-
-/** spec 133 — frontend mirror of a Rust artifact registry entry. */
-type HarnessArtifactState = 'pending' | 'registered_live';
-interface HarnessArtifactRecord {
-  id: string;
-  laneLabel: string;
-  path: string;
-  tail: string;
-  title: string;
-  state: HarnessArtifactState;
-  size: number | null;
-  hash: string | null;
-  /** spec 149: per-artifact feedback token, baked into the served URL. Set at
-   *  `artifact_new`; empty only for entries from a prior (pre-149) app run. */
-  feedbackToken: string;
-}
-
-interface ArtifactEventPayload {
-  harnessId: string;
-  laneLabel: string;
-  id: string;
-  path?: string;
-  tail?: string;
-  title?: string;
-  size?: number;
-  hash?: string;
-  state: 'pending' | 'registered' | 'cancelled';
-  registered?: boolean;
-  /** spec 149: present on the `pending` event from `artifact_new`. */
-  feedbackToken?: string;
-}
-
-const HARNESS_MEMORY_TOOL_NAMES = new Set(['handoff_set', 'handoff_get', 'handoff_list']);
-const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
-// spec 130: attention triage is default-on built-in harness-bus tooling, so its
-// calls must auto-allow like memory/peer — a permission prompt here also
-// breaks the non-blocking contract (the lane proceeds with `chosen`, never waits).
-const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resolve']);
-// spec 146: review_outcome is default-on built-in harness-bus tooling (the
-// authoring lane self-reports a #review summary), so it must auto-allow like
-// the others — a permission prompt mid-synthesis would derail the round.
-// spec 160: mark_review_priority is likewise default-on — the authoring lane
-// reports diff reading-order hints at end-of-turn; a permission prompt there
-// would interrupt the turn boundary for a purely-advisory signal.
-const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome', 'mark_review_priority']);
-// spec 178: issue_progress is default-on built-in harness-bus tooling — the lane
-// reports github issue-fixing progress to refresh the live status card. It must
-// auto-allow like the others; a permission prompt on every progress report would
-// defeat the live-overlay story (and the report is advisory, never destructive).
-const HARNESS_ISSUE_TOOL_NAMES = new Set(['issue_progress']);
-const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
-  ...HARNESS_MEMORY_TOOL_NAMES,
-  ...HARNESS_PEER_TOOL_NAMES,
-  ...HARNESS_ATTENTION_TOOL_NAMES,
-  ...HARNESS_REVIEW_TOOL_NAMES,
-  ...HARNESS_ISSUE_TOOL_NAMES,
-]);
-const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
 // spec 139/148: the #handoff / #resume / #goal one-shot prompts now live in
 // harness-prompts.ts (spec 185) alongside the other built-in command prompts.
@@ -551,302 +428,32 @@ function requiredNumber(params: Record<string, unknown>, key: string): number {
 // repo at <cwd>/docs/wiki/ (NOT the harness memory store — see docs/adr/0003).
 // The prompt builders moved to harness-prompts.ts (spec 185).
 
-interface FileTouchRecord {
-  path: string;
-  laneId: string;
-  laneDisplayName: string;
-  toolKind: 'edit' | 'write_like';
-  at: number;
+export type TicketPickerAction =
+  | 'set-ticket'
+  | 'analyze-github-issue'
+  | 'post-github-comment'
+  | 'fix-github-issue';
+
+export function ticketPickerActionForKey(
+  event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey'>,
+): TicketPickerAction | null {
+  if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) return 'set-ticket';
+  if (!event.metaKey && !event.ctrlKey) return null;
+  if (event.key === '1') return 'analyze-github-issue';
+  if (event.key === '2') return 'post-github-comment';
+  if (event.key === '3') return 'fix-github-issue';
+  return null;
 }
 
-/** spec 156: what the lane is doing right now, shown in the busy status chip.
- *  Written as plain field assignments on the hot streaming path (no render
- *  call); the existing 1 s composer tick paints it. */
-interface LaneActivity {
-  kind: 'tool' | 'thinking' | 'writing';
-  /** tool title (preferred) or kind; empty for thinking/writing */
-  label: string;
-}
-
-/** spec 127: in-flight live model switch, used to revert/attribute correctly. */
-interface PendingModelSwitch {
-  epoch: number;
-  prevModelName: string | null;
-  prevModelId: string | null;
-  prevModeId: string | null;
-  pickedName: string;
-}
-
-interface PendingUserEcho {
-  itemId: string;
-  text: string;
-  received: string;
-}
-
-interface HarnessLane {
-  id: string;
-  index: number;
-  backendId: string;
-  displayName: string;
-  accent: string;
-  client: AcpClient | null;
-  status: HarnessLaneStatus;
-  draft: string;
-  cursor: number;
-  pendingPermissions: HarnessPermission[];
-  transcript: HarnessTranscriptItem[];
-  spawnEpoch: number;
-  usage: UsageInfo | null;
-  sessionId: string | null;
-  modelName: string | null;
-  /** spec 126: true when the configured model failed to apply (session/set_model
-   *  errored/timed out). Drives the amber warning on the model chip; the chip
-   *  text still shows configured intent, now flagged unconfirmed. */
-  modelApplyFailed: boolean;
-  /** spec 127: agent-advertised models for the picker. Empty when the backend
-   *  advertises no model state — the leader-',' picker is then disabled. */
-  availableModels: ModelInfo[];
-  /** spec 127: confirmed current model id (marks `✓` in the picker), or null
-   *  when unverified (alias applied / pre-switch state). */
-  currentModelId: string | null;
-  /** spec 127: bumped on every live model-switch dispatch; a resolution only
-   *  mutates lane state when its captured epoch still equals this (Codex-1 #3). */
-  modelSwitchEpoch: number;
-  /** spec 127: set while a live switch is in flight; cleared on settle/deadline.
-   *  Gates re-entry and lets the mode_update handler attribute a downgrade. */
-  pendingModelSwitch: PendingModelSwitch | null;
-  supportsEmbeddedContext: boolean;
-  error: string | null;
-  acceptAllForTurn: boolean;
-  rejectAllForTurn: boolean;
-  permissionMode: 'normal' | 'acceptEdits' | 'bypass';
-  /** Trusted per-turn origin set only by Rust-admitted Telegram control calls. */
-  activeTelegramTurn: TelegramControlCaller | null;
-  /** spec 143: armed for one peer-injected turn (auto_accept). Auto-accepts every
-   *  permission EXCEPT high-risk commands, which still prompt. Reset at turn end. */
-  peerAutoAcceptForTurn: boolean;
-  pendingTurnExtractions: PendingExtraction[];
-  currentUserId: string | null;
-  pendingUserEcho: PendingUserEcho | null;
-  currentAssistantId: string | null;
-  currentThoughtId: string | null;
-  toolTranscriptIds: Map<string, string>;
-  toolCalls: Map<string, ToolCall | ToolCallUpdate>;
-  seenTranscriptIds: Set<string>;
-  stickToBottom: boolean;
-  savedScrollTop: number;
-  savedScrollAnchor: TranscriptScrollAnchor | null;
-  pendingShellId: string | null;
-  stagedImages: StagedImage[];
-  supportsImages: boolean;
-  activeTurnStartedAt: number | null;
-  /** Human label for a custom-command-driven turn (e.g. 'reviewing', 'ingesting
-   *  wiki') so the busy chip reads as that operation, not a generic 'running'.
-   *  Set in enqueueSystemPrompt, auto-cleared in setLaneStatus on leaving busy. */
-  activeSystemLabel: string | null;
-  /** spec 156: live activity segment for the busy chip (current tool /
-   *  thinking / writing). Cleared on stop/error. */
-  activity: LaneActivity | null;
-  availableCommands: AcpAvailableCommand[];
-  modesById: Map<string, AcpAgentMode>;
-  currentMode: AcpAgentMode | null;
-  slashPaletteIndex: number;
-  slashPaletteDismissed: boolean;
-  mentionPaletteIndex: number;
-  mentionPaletteDismissed: boolean;
-  hashPaletteIndex: number;
-  hashPaletteDismissed: boolean;
-  verbPaletteIndex: number;
-  verbPaletteDismissed: boolean;
-  plan: PlanEntry[] | null;
-  planCollapsed: boolean;
-  lastKilled: string;
-  transcriptWindow: number;
-  promptHistory: string[];
-  historyIndex: number | null;
-  historySavedDraft: string | null;
-  /**
-   * Spec 114: cached count of tool rows on this lane in
-   * `started but not yet ended` state. Replaces the O(rows) scan inside
-   * `updateToolTick()`. Mutated as a before/after delta in `renderTool()`
-   * and decremented in `appendTranscript()` whenever the 300-row cap shifts
-   * an active tool row out of the transcript.
-   */
-  activeToolCount: number;
-  // Spec 117: streaming-markdown parser bound to the active assistant row's
-  // body. Null between turns. Only one streaming assistant row per lane at a
-  // time (matches currentAssistantId).
-  streamingMarkdownParser: smd.Parser | null;
-  streamingMarkdownBody: HTMLElement | null;
-  streamingMarkdownItemId: string | null;
-  /** Junie native MCP overlay dir passed to `--mcp-location`. */
-  junieMcpOverlayDir: string | null;
-  /** Cline native MCP overlay file passed via `CLINE_MCP_SETTINGS_PATH`
-   *  (Cline drops `session/new` mcpServers). null when not a Cline lane. */
-  clineMcpOverlayDir: string | null;
-  /** spec 113 rev — krypton server names written into `<project>/.cursor/mcp.json`
-   *  for the Cursor lane (removed on close). null when not a Cursor lane. */
-  cursorMcpNames: string[] | null;
-  /** spec 120: set when drain calls enqueueSystemPrompt; cleared on turn end. */
-  pendingCoordinatorDrain: CoordinatorDrainContext | null;
-  coordinatorDrainProvenanceUsed: boolean;
-  /** spec 124: directive assigned to this lane (lane scope). */
-  activeDirectiveId: string | null;
-  /** spec 124: queued lane-scope change while busy; promoted before next prompt.
-   * Object presence = change pending; `directiveId: null` = clear on next send.
-   * Plain `null` on the field = no pending change. */
-  pendingDirectiveChange: { directiveId: string | null } | null;
-  /** spec 124: MCP scope = "next_turn"; used for one prompt then cleared.
-   * Object presence = override active; `directiveId: null` = clear active
-   * directive for one turn. Plain `null` on the field = no override. */
-  turnDirectiveOverride: { directiveId: string | null } | null;
-  /** spec 124: restored after a next-turn override completes. */
-  previousDirectiveId: string | null;
-  /** spec 164: built-in Polly role overlay (orchestrator / implementer). Overrides
-   *  user directives while set. */
-  pollyBuiltinRole: 'orchestrator' | 'implementer' | null;
-  /** spec 164: while a lane serves as a Polly implementer it auto-accepts
-   *  permissions (`permissionMode = 'bypass'`). This stashes the user's own mode
-   *  so `clearPollyBuiltinRole` can restore it; null when not enlisted. */
-  pollySavedPermissionMode: 'normal' | 'acceptEdits' | 'bypass' | null;
-  /** spec 167: built-in Debby role overlay (orchestrator / head). Heads are
-   *  plain responders; unlike Polly implementers this never changes permissions. */
-  debbyBuiltinRole: DebbyBuiltinRole | null;
-  /** spec 195: built-in Salty role overlay (orchestrator / model-tiered executor).
-   *  Mutually exclusive with the Polly/Debby overlays. */
-  saltyBuiltinRole: SaltyRole | null;
-  /** spec 195: stashes the user's own permission mode while a lane serves as a
-   *  bypassed Salty executor (mechanical/codex-peer), mirroring
-   *  `pollySavedPermissionMode`; null when not enlisted. */
-  saltySavedPermissionMode: 'normal' | 'acceptEdits' | 'bypass' | null;
-  /** spec 130: lane participates in attention-triage audit. Attention tools are
-   *  default-on for every harness-memory-capable lane; this flag now drives local
-   *  audit/UI behavior rather than MCP tool visibility. */
-  triageEquipped: boolean;
-  /** Legacy spec-129 override field retained for saved/runtime shape stability.
-   *  The user-facing manual toggle was removed in spec 130. */
-  triageOverride: boolean | null;
-  /** spec 128: set when this lane flagged ≥1 judgement item during the current
-   *  turn; read at busy→idle to classify the turn as flagged vs silent. */
-  flaggedThisTurn: boolean;
-  /** spec 136: prompts the user submitted while the lane was busy. FIFO — the
-   *  head drains first on the next idle transition. Capped at PROMPT_QUEUE_MAX. */
-  queuedPrompts: QueuedPrompt[];
-  /** spec 199: timestamp of the first unacknowledged session/cancel of the
-   *  current turn; null when no cancel is outstanding. Survives the
-   *  busy ↔ needs_permission flap (same turn); cleared when the turn ends. */
-  cancelRequestedAt: number | null;
-  /** spec 199: true once CANCEL_ESCALATION_MS elapsed with the cancel still
-   *  unacknowledged — the next Ctrl+C force-restarts (and resumes) the lane. */
-  cancelUnacked: boolean;
-  /** spec 199: pending escalation timer handle; null when disarmed. */
-  cancelEscalationTimer: number | null;
-  /** spec 148: active focus-scope goal, or undefined. Session-only harness-lane
-   *  runtime state confined to THIS lane: it rides this lane's own turns via
-   *  renderPromptMemoryPacket (never other lanes' / programmatic turns) and survives
-   *  `#new`; dropped only on `#goal clear`, a replacing `#goal`, or lane close. */
-  goal?: LaneGoal;
-}
-
-/** spec 148: a per-lane focus-scope goal — the current task the lane is anchored
- *  to. Not a completion condition (no evaluator, no auto-continue); just scope. */
-interface LaneGoal {
-  text: string;
-  setAt: number;
-}
-
-/** spec 178: GitHub issue-fixing. A binding between a GitHub issue and the lane
- *  fixing it. Lives in a harness-level map keyed by `issueKey`, persisted to disk
- *  so it survives a Krypton restart (the lane process does not). `phase/summary/
- *  prUrl` are lane self-reported via the `issue_progress` MCP tool. */
-type IssuePhase =
-  | 'investigating' | 'fixing' | 'testing'
-  | 'review' | 'pr_opened' | 'done' | 'blocked';
-
-interface IssueBinding {
-  issueKey: string; // canonical id: "owner/repo#123"
-  issueUrl: string;
-  repo: string; // "owner/repo"
-  number: number;
-  title: string;
-  harnessId: string;
-  laneId: string;
-  laneDisplayName: string;
-  dispatchedAt: number;
-  phase?: IssuePhase;
-  summary?: string;
-  prUrl?: string;
-  updatedAt: number;
-}
-
-/** spec 194: one shared working ticket per harness — reference context for every
- *  lane, NOT an assignment and NOT an `IssueBinding` (single-owner progress
- *  semantics stay with the binding). Persisted like issue bindings; the frontend
- *  is the state authority (ADR-0007). */
-interface ActiveWorkTicket {
-  issueKey: string; // canonical "owner/repo#123"
-  issueUrl: string;
-  repo: string; // "owner/repo"
-  number: number;
-  title: string; // issueKey until the background `gh` enrich resolves
-  state?: 'open' | 'closed';
-  labels?: string[];
-  fetchedAt: number;
-  sourceUpdatedAt?: string; // GitHub updatedAt — staleness signal
-  revision: number; // bumped on every set/refresh of the same issue
-}
-
-/** spec 194: one row in the `#ticket` picker (from `gh issue list`). */
-interface TicketPickerRow {
-  number: number;
-  title: string;
-  labels: string[];
-  state: 'open' | 'closed';
-  updatedAt?: string;
-  url: string;
-}
-
-/** spec 178: the snapshot any surface pulls for one issue — the persisted binding
- *  merged with the live lane status. Refresh-safe: a browser reload re-pulls this. */
-interface IssueStatusSnapshot {
-  bound: boolean;
-  binding?: IssueBinding;
-  laneStatus?: string;
-  lastMessage?: string;
-  pendingPermissions?: number;
-  attention?: number;
-}
-
-/** spec 136: one user prompt captured while the lane was busy, awaiting drain. */
-interface QueuedPrompt {
-  /** Trimmed prompt text as submitted. */
-  text: string;
-  /** Frozen snapshot of staged images at enqueue (isolated from later composer edits). */
-  images: StagedImage[];
-  /** Lane display names resolved via parseMentionFanOut AT ENQUEUE (empty if not a
-   *  mention); drives the →lane row tag without re-parsing at render. */
-  mentionTargets: string[];
-  /** Frozen trusted origin; a queued Telegram turn keeps its one-turn bypass. */
-  telegramCaller?: TelegramControlCaller;
-}
-
-interface TranscriptScrollAnchor {
-  msgId: string;
-  offsetTop: number;
-}
-
-interface SessionPickerState {
-  open: boolean;
-  phase: 'sessions' | 'backend' | 'loading' | 'error';
-  backendCursor: number;
-  sessionCursor: number;
-  backendId: string | null;
-  probeClient: AcpClient | null;
-  initInfo: AgentInitInfo | null;
-  capabilities: AcpSessionCapabilities | null;
-  sessions: AcpSessionInfo[];
-  nextCursor: string | null;
-  error: string | null;
+export function ticketWorkActionDisabledReason(
+  lane: { displayName: string; status: string; hasClient: boolean } | null,
+): string | null {
+  if (!lane) return 'no active lane';
+  if (!lane.hasClient || lane.status === 'stopped') return `${lane.displayName} is not live`;
+  if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+    return `${lane.displayName} is ${lane.status}`;
+  }
+  return null;
 }
 
 const STICK_THRESHOLD_PX = 32;
@@ -858,7 +465,6 @@ const METRICS_POLL_MS = 2000;
 // element on each tick, keeps the glyph continuous across DOM rebuilds — unlike
 // a CSS animation, which restarts whenever its host element is recreated (the 2s
 // metrics-poll head rebuild, the 1s composer tick), reading as a stutter / snap.
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const SPINNER_INTERVAL_MS = 80;
 
 export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
@@ -869,238 +475,6 @@ export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
   { key: '.', label: 'Directives', group: 'Harness' },
 ];
 
-const BACKEND_LABELS: Record<string, string> = {
-  codex: 'Codex',
-  claude: 'Claude',
-  opencode: 'OpenCode',
-  'pi-acp': 'Pi',
-  droid: 'Droid',
-  cursor: 'Cursor',
-  junie: 'Junie',
-  omp: 'OMP',
-  grok: 'Grok',
-  copilot: 'Copilot',
-  mimo: 'MiMo',
-  cline: 'Cline',
-};
-
-export function harnessBackends(backends: AcpBackendDescriptor[]): AcpBackendDescriptor[] {
-  return backends.filter((backend) => backend.id !== 'gemini');
-}
-
-function backendLabel(backendId: string): string {
-  return BACKEND_LABELS[backendId] ?? backendId.charAt(0).toUpperCase() + backendId.slice(1);
-}
-
-/** spec 141: normalize a cwd for cross-project comparison (cross_project_review,
- *  same-repo grouping). Strips a trailing slash so `/repo` and `/repo/` match.
- *  Symlink resolution would need Rust; the realistic cross-project case is
- *  clearly-distinct roots, which this already separates. null cwds never match a
- *  real path. */
-function normalizeCwd(cwd: string | null): string | null {
-  if (!cwd) return null;
-  const trimmed = cwd.replace(/\/+$/, '');
-  return trimmed.length > 0 ? trimmed : '/';
-}
-
-// spec 125 — lane-rail disambiguation helpers. Pure, side-effect-free
-// derivations from data the schema already carries (HarnessLane.backendId,
-// HarnessDirective.task / title). Exported so unit tests can exercise the
-// table-driven mapping without spinning up a view.
-export type DirectiveRoleBucket =
-  | 'analysis'
-  | 'review'
-  | 'impl'
-  | 'plan'
-  | 'explore'
-  | 'hash-1'
-  | 'hash-2'
-  | 'hash-3';
-
-// djb2-style hash → 3 buckets. Stable across renders so two lanes with the
-// same custom `task` always land in the same fallback color.
-export function hashBucket(s: string): 'hash-1' | 'hash-2' | 'hash-3' {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  const i = Math.abs(h) % 3;
-  return i === 0 ? 'hash-1' : i === 1 ? 'hash-2' : 'hash-3';
-}
-
-// Patterns are checked in declaration order. Overlap is intentional: a
-// directive titled "review-implementation" lands in `review`, not `impl`.
-export function directiveRole(task: string): DirectiveRoleBucket {
-  const t = task.trim().toLowerCase();
-  if (!t) return hashBucket('');
-  if (/\banaly|\bdiagnos/.test(t)) return 'analysis';
-  if (/\breview/.test(t)) return 'review';
-  if (/\bimplement|\bimpl|\bfix/.test(t)) return 'impl';
-  if (/\bplan|\bdesign|\bspec/.test(t)) return 'plan';
-  if (/\bexplor|\bsurvey|\bmap|\bresearch|\binvestigat/.test(t)) return 'explore';
-  return hashBucket(t);
-}
-
-// Decoupled from `directiveRole()` so a `task = "refactor"` can hash to a
-// stable color while the chip still reads "refactor", not the bucket id.
-export function directiveTagLabel(task: string): string {
-  const t = task.trim().toLowerCase();
-  if (!t) return 'custom';
-  if (/\banaly|\bdiagnos/.test(t)) return 'analysis';
-  if (/\breview/.test(t)) return 'review';
-  if (/\bimplement|\bimpl|\bfix/.test(t)) return 'impl';
-  if (/\bplan|\bdesign|\bspec/.test(t)) return 'plan';
-  if (/\bexplor|\bsurvey|\bmap|\bresearch|\binvestigat/.test(t)) return 'explore';
-  return t;
-}
-
-export function backendLogoId(backendId: string): string {
-  switch (backendId) {
-    case 'claude':
-      return 'krypton-logo-claude';
-    case 'codex':
-      return 'krypton-logo-codex';
-    case 'opencode':
-      return 'krypton-logo-opencode';
-    case 'pi-acp':
-      return 'krypton-logo-pi';
-    case 'droid':
-      return 'krypton-logo-droid';
-    case 'cursor':
-      return 'krypton-logo-cursor';
-    case 'junie':
-      return 'krypton-logo-junie';
-    case 'omp':
-      return 'krypton-logo-omp';
-    case 'grok':
-      return 'krypton-logo-grok';
-    case 'copilot':
-      return 'krypton-logo-copilot';
-    case 'mimo':
-      return 'krypton-logo-mimo';
-    case 'cline':
-      return 'krypton-logo-cline';
-    default:
-      return 'krypton-logo-omp';
-  }
-}
-
-// Presentation-only: strips a single leading "<BackendLabel> " token so the
-// rail does not echo the backend that the logo + lane name already say.
-// Never mutates storage; the picker and peer_list still see the full title.
-export function trimBackendPrefix(title: string, backendId: string): string {
-  const label = BACKEND_LABELS[backendId];
-  if (!label) return title;
-  const prefix = label + ' ';
-  return title.startsWith(prefix) ? title.slice(prefix.length) : title;
-}
-
-// Inline <symbol> defs for the thirteen built-in backends. Geometry is copied
-// from docs/prototypes/125-lane-rail-disambiguation.html — keep both sides
-// in sync if iterated. All strokes/fills use currentColor so the rail can
-// recolor via a single CSS class.
-export const BACKEND_LOGO_SVG_DEFS = [
-  // claude: 8-spoke asterisk
-  '<symbol id="krypton-logo-claude" viewBox="0 0 16 16">' +
-    '<g stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none">' +
-    '<line x1="8" y1="2" x2="8" y2="14"/>' +
-    '<line x1="2" y1="8" x2="14" y2="8"/>' +
-    '<line x1="3.8" y1="3.8" x2="12.2" y2="12.2"/>' +
-    '<line x1="3.8" y1="12.2" x2="12.2" y2="3.8"/>' +
-    '</g></symbol>',
-  // codex/openai: hex ring with dot
-  '<symbol id="krypton-logo-codex" viewBox="0 0 16 16">' +
-    '<polygon points="8,1.6 13.6,5 13.6,11 8,14.4 2.4,11 2.4,5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<circle cx="8" cy="8" r="1.6" fill="currentColor"/>' +
-    '</symbol>',
-  // opencode: curly braces
-  '<symbol id="krypton-logo-opencode" viewBox="0 0 16 16">' +
-    '<path d="M6 2 Q3.5 2 3.5 4.5 V7 Q3.5 8 2.2 8 Q3.5 8 3.5 9 V11.5 Q3.5 14 6 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-    '<path d="M10 2 Q12.5 2 12.5 4.5 V7 Q12.5 8 13.8 8 Q12.5 8 12.5 9 V11.5 Q12.5 14 10 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-    '</symbol>',
-  // pi-acp: pi glyph
-  '<symbol id="krypton-logo-pi" viewBox="0 0 16 16">' +
-    '<path d="M2.5 5 H13.5 M5 5 V12 Q5 13 6 13 M11 5 V12 Q11 13 12 13 M13 13 L13.5 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
-    '</symbol>',
-  // droid: robot face
-  '<symbol id="krypton-logo-droid" viewBox="0 0 16 16">' +
-    '<rect x="2.5" y="3.5" width="11" height="9" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<circle cx="6" cy="7.5" r="1" fill="currentColor"/>' +
-    '<circle cx="10" cy="7.5" r="1" fill="currentColor"/>' +
-    '<line x1="6.5" y1="10.5" x2="9.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-    '<line x1="8" y1="1.5" x2="8" y2="3.5" stroke="currentColor" stroke-width="1.3"/>' +
-    '</symbol>',
-  // cursor: isometric cube, filled top face (Anysphere mark)
-  '<symbol id="krypton-logo-cursor" viewBox="0 0 16 16">' +
-    '<polygon points="8,1.6 13.6,5 13.6,11 8,14.4 2.4,11 2.4,5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>' +
-    '<path d="M8 1.6 L13.6 5 L8 8.4 L2.4 5 Z" fill="currentColor"/>' +
-    '<line x1="8" y1="8.4" x2="8" y2="14.4" stroke="currentColor" stroke-width="1.3"/>' +
-    '</symbol>',
-  // junie: bracket frame (jetbrains-ish)
-  '<symbol id="krypton-logo-junie" viewBox="0 0 16 16">' +
-    '<rect x="2.5" y="2.5" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<path d="M5.5 5.5 H10.5 M10.5 5.5 V9.5 Q10.5 11 9 11 H7.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
-    '</symbol>',
-  // omp: concentric rings (also serves as neutral fallback)
-  '<symbol id="krypton-logo-omp" viewBox="0 0 16 16">' +
-    '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<circle cx="8" cy="8" r="0.6" fill="currentColor"/>' +
-    '</symbol>',
-  // grok/xai: angular bolt (hard-edged, x.ai identity)
-  '<symbol id="krypton-logo-grok" viewBox="0 0 16 16">' +
-    '<path d="M9.2 1.5 L3.8 8.8 H6.9 L5.8 14.5 L12.2 6.6 H8.8 Z" fill="currentColor"/>' +
-    '</symbol>',
-  // copilot: rounded goggle/visor head + antenna (GitHub Copilot mascot)
-  '<symbol id="krypton-logo-copilot" viewBox="0 0 16 16">' +
-    '<path d="M8 5 V3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
-    '<rect x="2.5" y="5" width="11" height="7.4" rx="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
-    '<ellipse cx="6.2" cy="8.7" rx="0.95" ry="1.5" fill="currentColor"/>' +
-    '<ellipse cx="9.8" cy="8.7" rx="0.95" ry="1.5" fill="currentColor"/>' +
-    '</symbol>',
-  // mimo: "mi" mark in a rounded tile (Xiaomi MiMo-Code)
-  '<symbol id="krypton-logo-mimo" viewBox="0 0 16 16">' +
-    '<rect x="2" y="2" width="12" height="12" rx="3.2" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<path d="M4.8 11 V6 H7.6 Q8.8 6 8.8 7.2 V11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<line x1="11.2" y1="6" x2="11.2" y2="11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-    '</symbol>',
-  // cline: terminal prompt bracket + caret (CLI coding agent)
-  '<symbol id="krypton-logo-cline" viewBox="0 0 16 16">' +
-    '<rect x="2" y="2.5" width="12" height="11" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<path d="M5 6.2 L7.4 8 L5 9.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<line x1="8.6" y1="10.2" x2="11" y2="10.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-    '</symbol>',
-].join('');
-
-// Lane-bar telemetry icons — same <symbol>/<use> + currentColor mechanism as the
-// backend logos above, sized to the text cell in CSS so they recolour per lane
-// accent / status with no glyph-font dependency. Geometry mirrors the approved
-// artifact (art-2 — ACP harness lane bar). Injected once in buildDOM().
-export const HARNESS_ICON_SVG_DEFS = [
-  // status set (row 1 leading glyph) — tinted by state via the symbol's color
-  '<symbol id="krypton-icon-status-starting" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2" fill="currentColor"/></symbol>',
-  '<symbol id="krypton-icon-status-idle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>',
-  '<symbol id="krypton-icon-status-busy" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4" fill="currentColor"/></symbol>',
-  '<symbol id="krypton-icon-status-perm" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><line x1="8" y1="4.6" x2="8" y2="9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.3" r="0.9" fill="currentColor"/></symbol>',
-  '<symbol id="krypton-icon-status-peer" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6 H12 M10 4 L12 6 L10 8"/><path d="M13 10 H4 M6 8 L4 10 L6 12"/></g></symbol>',
-  '<symbol id="krypton-icon-status-error" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 5.6 L10.4 10.4 M10.4 5.6 L5.6 10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>',
-  // chip + stat glyphs
-  '<symbol id="krypton-icon-check" viewBox="0 0 16 16"><path d="M3.5 8.4 L6.4 11.3 L12.5 4.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
-  '<symbol id="krypton-icon-warn" viewBox="0 0 16 16"><path d="M8 2.6 L14.6 13.4 H1.4 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><line x1="8" y1="6.6" x2="8" y2="9.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.6" r="0.8" fill="currentColor"/></symbol>',
-  '<symbol id="krypton-icon-inbox" viewBox="0 0 16 16"><rect x="2.4" y="4" width="11.2" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.8 5 L8 9 L13.2 5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
-  '<symbol id="krypton-icon-gauge" viewBox="0 0 16 16"><path d="M2.8 11.8 A5.6 5.6 0 1 1 13.2 11.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.4"/><path d="M2.8 11.8 A5.6 5.6 0 0 1 5.2 4.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>',
-  '<symbol id="krypton-icon-dl" viewBox="0 0 16 16"><path d="M8 3 V12 M4.6 8.5 L8 12 L11.4 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
-  '<symbol id="krypton-icon-ul" viewBox="0 0 16 16"><path d="M8 13 V4 M4.6 7.5 L8 4 L11.4 7.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
-  '<symbol id="krypton-icon-list" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="3.5" y1="5" x2="12.5" y2="5"/><line x1="3.5" y1="8" x2="12.5" y2="8"/><line x1="3.5" y1="11" x2="12.5" y2="11"/></g></symbol>',
-  '<symbol id="krypton-icon-tool" viewBox="0 0 16 16"><path d="M11.2 2.4 a2.8 2.8 0 0 0 -3.5 3.5 L2.8 10.8 a1.25 1.25 0 0 0 1.8 1.8 L9.5 7.5 a2.8 2.8 0 0 0 3.5 -3.5 L11 6 L9.4 6 L9.4 4.4 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>',
-].join('');
-
-/** Lane-bar telemetry icon — references a HARNESS_ICON_SVG_DEFS symbol. The svg
- * inherits currentColor so it recolours with its container (lane accent/status). */
-function harnessIcon(id: string, cls = ''): string {
-  return `<svg class="acp-harness__icon${cls ? ` ${cls}` : ''}" aria-hidden="true"><use href="#krypton-icon-${id}"/></svg>`;
-}
-
-const OPENCODE_DEFAULT_MODEL = 'zai-coding-plan/glm-5.1';
-const FILE_TOUCH_WINDOW_MS = 10 * 60 * 1000;
 
 // Tail-window rendering. Only the last N transcript rows render into the DOM
 // to keep `renderActiveTranscript()` cheap on long sessions. See Spec 103.
@@ -1199,18 +573,6 @@ const LANE_DEFAULTS = {
   cancelUnacked: false,
   cancelEscalationTimer: null,
 };
-
-const md = new Marked(
-  markedHighlight({
-    langPrefix: 'hljs language-',
-    highlight(code: string, lang: string): string {
-      if (lang && hljs.getLanguage(lang)) {
-        return hljs.highlight(code, { language: lang }).value;
-      }
-      return hljs.highlightAuto(code).value;
-    },
-  }),
-);
 
 /** spec 128: monotonic per-session counter so each harness instance publishes
  * attention counts under a distinct `sourceId`, letting the footer sum them. */
@@ -1514,6 +876,9 @@ export class AcpHarnessView implements ContentView {
   private reviewPriorityPanelEl!: HTMLElement;
   private ticketOverlayEl!: HTMLElement;
   private ticketPanelEl!: HTMLElement;
+  private readonly ticketPanelClickHandler = (event: MouseEvent): void => {
+    this.handleTicketPickerClick(event);
+  };
   private orchestratorConsoleEl!: HTMLElement;
   private orchestratorPanelEl!: HTMLElement;
   private pickerEl!: HTMLElement;
@@ -4101,6 +3466,18 @@ export class AcpHarnessView implements ContentView {
     if (!picker) return;
     const matches = this.ticketPickerMatches();
     const safeIndex = Math.max(0, Math.min(picker.index, matches.length - 1));
+    const selectedRow = matches[safeIndex];
+    const lane = this.activeLane();
+    const workDisabledReason = ticketWorkActionDisabledReason(lane
+      ? { displayName: lane.displayName, status: lane.status, hasClient: lane.client !== null }
+      : null);
+    const workDisabled = !selectedRow || workDisabledReason !== null;
+    const workDisabledAttr = workDisabled ? ' disabled' : '';
+    const setDisabledAttr = selectedRow ? '' : ' disabled';
+    const workTitleAttr = workDisabledReason ? ` title="${esc(workDisabledReason)}"` : '';
+    const target = lane
+      ? `target: ${esc(lane.displayName)} · ${esc(lane.status)}`
+      : 'target: no active lane';
     const filter = picker.filter
       ? esc(picker.filter)
       : `<span class="acp-ticket__filter-hint">type to filter</span>`;
@@ -4116,21 +3493,38 @@ export class AcpHarnessView implements ContentView {
             const age = Number.isNaN(updated) ? '' : formatAge(Date.now() - updated);
             const state = row.state === 'closed' ? ' · closed' : '';
             return (
-              `<div class="acp-ticket__row${sel}">` +
+              `<button class="acp-ticket__row${sel}" type="button" role="option" ` +
+              `aria-selected="${i === safeIndex}" data-ticket-index="${i}">` +
               `<span class="acp-ticket__num">#${row.number}</span>` +
               `<span class="acp-ticket__title">${esc(row.title)}</span>` +
               labels +
               `<span class="acp-ticket__age">${esc(age)}${state}</span>` +
-              `</div>`
+              `</button>`
             );
           })
           .join('');
     this.ticketPanelEl.innerHTML =
       `<header class="acp-ticket__head">working ticket` +
-      `<span class="acp-ticket__sub">↑↓ / ⌃n⌃p select · Enter set · Esc dismiss</span></header>` +
+      `<span class="acp-ticket__sub">${target}</span></header>` +
       `<div class="acp-ticket__filter">${filter}<span class="acp-harness__caret">█</span></div>` +
-      `<div class="acp-ticket__rows" data-count="${matches.length}">${rows}</div>` +
-      `<footer class="acp-ticket__foot">shared with all ${this.lanes.length} lanes in this harness · read-only</footer>`;
+      `<div class="acp-ticket__rows" role="listbox" data-count="${matches.length}">${rows}</div>` +
+      `<div class="acp-ticket__actions" aria-label="Selected ticket actions">` +
+      `<button class="acp-ticket__action" type="button" data-ticket-action="set-ticket"${setDisabledAttr}>` +
+      `<span class="acp-ticket__action-key">Enter</span> Set ticket</button>` +
+      `<button class="acp-ticket__action" type="button" data-ticket-action="analyze-github-issue"` +
+      `${workDisabledAttr}${workTitleAttr}>` +
+      `<span class="acp-ticket__action-key">⌘1</span> Analyze</button>` +
+      `<button class="acp-ticket__action" type="button" data-ticket-action="post-github-comment"` +
+      `${workDisabledAttr}${workTitleAttr}>` +
+      `<span class="acp-ticket__action-key">⌘2</span> Post comment</button>` +
+      `<button class="acp-ticket__action acp-ticket__action--fix" type="button" ` +
+      `data-ticket-action="fix-github-issue"${workDisabledAttr}${workTitleAttr}>` +
+      `<span class="acp-ticket__action-key">⌘3</span> Fix here</button>` +
+      `</div>` +
+      `<footer class="acp-ticket__foot">` +
+      `<span>↑↓ / ⌃n⌃p select · Esc dismiss</span>` +
+      `<span>shared with all ${this.lanes.length} lanes · work runs in ${esc(lane?.displayName ?? 'no lane')}</span>` +
+      `</footer>`;
     this.ticketPanelEl.querySelector('.acp-ticket__row--selected')?.scrollIntoView({ block: 'nearest' });
   }
 
@@ -4360,6 +3754,7 @@ export class AcpHarnessView implements ContentView {
     if (this.harnessMemoryId) {
       void invoke('dispose_harness_memory', { harnessId: this.harnessMemoryId });
     }
+    this.ticketPanelEl?.removeEventListener('click', this.ticketPanelClickHandler);
   }
 
   stageCapturedImage(image: CapturedImage): boolean {
@@ -5803,6 +5198,10 @@ export class AcpHarnessView implements ContentView {
     this.ticketOverlayEl.hidden = true;
     this.ticketPanelEl = document.createElement('div');
     this.ticketPanelEl.className = 'acp-ticket__panel';
+    this.ticketPanelEl.setAttribute('role', 'dialog');
+    this.ticketPanelEl.setAttribute('aria-modal', 'true');
+    this.ticketPanelEl.setAttribute('aria-label', 'Working ticket');
+    this.ticketPanelEl.addEventListener('click', this.ticketPanelClickHandler);
     this.ticketOverlayEl.appendChild(this.ticketPanelEl);
     body.appendChild(this.ticketOverlayEl);
 
@@ -6278,9 +5677,62 @@ export class AcpHarnessView implements ContentView {
     );
   }
 
+  private handleTicketPickerClick(event: MouseEvent): void {
+    if (!this.ticketPicker || !(event.target instanceof Element)) return;
+    const actionButton = event.target.closest<HTMLButtonElement>('[data-ticket-action]');
+    if (actionButton && this.ticketPanelEl.contains(actionButton)) {
+      const action = actionButton.dataset.ticketAction as TicketPickerAction | undefined;
+      if (action && !actionButton.disabled) void this.runTicketPickerAction(action);
+      return;
+    }
+    const row = event.target.closest<HTMLElement>('[data-ticket-index]');
+    if (!row || !this.ticketPanelEl.contains(row)) return;
+    const index = Number(row.dataset.ticketIndex);
+    if (!Number.isInteger(index)) return;
+    this.ticketPicker.index = index;
+    this.renderTicketOverlayEl();
+  }
+
+  private async runTicketPickerAction(action: TicketPickerAction): Promise<void> {
+    const picker = this.ticketPicker;
+    if (!picker) return;
+    const matches = this.ticketPickerMatches();
+    const row = matches[Math.max(0, Math.min(picker.index, matches.length - 1))];
+    if (!row) {
+      this.flashChip('select a ticket first');
+      return;
+    }
+    const ref = this.parseIssueRef(row.url);
+    if (!ref) {
+      this.flashChip(`could not parse issue url: ${row.url}`);
+      return;
+    }
+
+    let lane: HarnessLane | null = null;
+    if (action !== 'set-ticket') {
+      lane = this.activeLane();
+      const disabledReason = ticketWorkActionDisabledReason(lane
+        ? { displayName: lane.displayName, status: lane.status, hasClient: lane.client !== null }
+        : null);
+      if (disabledReason) {
+        this.flashChip(disabledReason);
+        this.renderTicketOverlayEl();
+        return;
+      }
+    }
+
+    // Close before starting work so click/key repeat cannot enqueue the same action twice.
+    this.ticketPicker = null;
+    this.renderTicketOverlayEl();
+    this.setActiveTicket(ref);
+    if (action === 'set-ticket') return;
+    if (lane) await this.runGithubIssuePromptVerb(lane, action, [row.url]);
+  }
+
   /** Modal-dialog key handling while the ticket picker is open: printable keys
-   *  build the filter, ↑↓/⌃n⌃p move, Enter selects, Esc dismisses. Unclaimed
-   *  combos fall through so app-level shortcuts keep working. */
+   *  build the filter, ↑↓/⌃n⌃p move, Enter selects, modified numbers run the
+   *  selected ticket, and Esc dismisses. Unclaimed combos fall through so
+   *  app-level shortcuts keep working. */
   private handleTicketPickerKey(e: KeyboardEvent): boolean {
     const picker = this.ticketPicker;
     if (!picker) return false;
@@ -6303,16 +5755,10 @@ export class AcpHarnessView implements ContentView {
       this.renderTicketOverlayEl();
       return true;
     }
-    if (e.key === 'Enter') {
+    const action = ticketPickerActionForKey(e);
+    if (action) {
       e.preventDefault();
-      const row = matches[Math.max(0, Math.min(picker.index, matches.length - 1))];
-      this.ticketPicker = null;
-      this.renderTicketOverlayEl();
-      if (row) {
-        const ref = this.parseIssueRef(row.url);
-        if (ref) this.setActiveTicket(ref);
-        else this.flashChip(`could not parse issue url: ${row.url}`);
-      }
+      void this.runTicketPickerAction(action);
       return true;
     }
     if (e.key === 'Backspace') {
@@ -12542,281 +11988,6 @@ function writeConciseModePreference(projectDir: string | null, value: boolean): 
   }
 }
 
-function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'reject'): PermissionOption | null {
-  if (action === 'accept') {
-    return options.find((option) => option.kind === 'allow_once') ?? options.find((option) => option.kind === 'allow_always') ?? null;
-  }
-  return options.find((option) => option.kind === 'reject_once') ?? options.find((option) => option.kind === 'reject_always') ?? null;
-}
-
-export function harnessAutoAllowToolName(permission: Pick<HarnessPermission, 'toolCall' | 'options'>): string | null {
-  const call = permission.toolCall;
-  const optionNames = (permission.options ?? [])
-    .map((option) => option.name)
-    .filter((name): name is string => typeof name === 'string');
-  const hasServerMarker = containsHarnessServerMarker(call)
-    || optionNames.some((name) => HARNESS_SERVER_MARKERS.some((marker) => name.includes(marker)));
-  if (!hasServerMarker) return null;
-  return structuredHarnessToolNameFromUnknown(call.rawInput)
-    ?? harnessToolNameFromUnknown(call.rawInput)
-    ?? harnessToolNameFromString(call.title)
-    ?? harnessToolNameFromUnknown(call.content)
-    ?? harnessToolNameFromOptionLabels(optionNames)
-    ?? null;
-}
-
-function harnessToolNameFromOptionLabels(names: string[]): string | null {
-  for (const name of names) {
-    const match = harnessToolNameFromString(name);
-    if (match) return match;
-  }
-  return null;
-}
-
-function structuredHarnessToolNameFromUnknown(value: unknown, depth = 0): string | null {
-  if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return null;
-  if (!value || typeof value !== 'object') return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const match = structuredHarnessToolNameFromUnknown(item, depth + 1);
-      if (match) return match;
-    }
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  for (const key of ['name', 'toolName', 'tool_name', 'tool']) {
-    const value = record[key];
-    if (typeof value === 'string') {
-      const match = harnessToolNameFromString(value);
-      if (match) return match;
-    }
-  }
-  for (const item of Object.values(record)) {
-    const match = structuredHarnessToolNameFromUnknown(item, depth + 1);
-    if (match) return match;
-  }
-  return null;
-}
-
-function harnessToolNameFromUnknown(value: unknown, depth = 0): string | null {
-  if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return null;
-  if (typeof value === 'string') return harnessToolNameFromString(value);
-  if (!value || typeof value !== 'object') return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const match = harnessToolNameFromUnknown(item, depth + 1);
-      if (match) return match;
-    }
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  for (const key of ['name', 'toolName', 'tool_name', 'tool', 'title', 'text']) {
-    const match = harnessToolNameFromUnknown(record[key], depth + 1);
-    if (match) return match;
-  }
-  const content = record.content;
-  if (typeof content === 'string') return harnessToolNameFromString(content);
-  if (content && typeof content === 'object') {
-    const match = harnessToolNameFromUnknown(content, depth + 1);
-    if (match) return match;
-  }
-  return null;
-}
-
-function harnessToolNameFromString(value: string | undefined): string | null {
-  if (!value) return null;
-  const normalized = value.toLowerCase();
-  for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
-    if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
-  }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome)(?:$|[^a-z0-9_])/);
-  return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
-}
-
-function harnessToolFamily(toolName: string): HarnessToolFamily | null {
-  if (HARNESS_MEMORY_TOOL_NAMES.has(toolName)) return 'memory';
-  if (HARNESS_PEER_TOOL_NAMES.has(toolName)) return 'peer';
-  if (HARNESS_ATTENTION_TOOL_NAMES.has(toolName)) return 'attention';
-  if (HARNESS_REVIEW_TOOL_NAMES.has(toolName)) return 'review';
-  return null;
-}
-
-function permissionToolFamily(kind: string): PermissionPayload['toolFamily'] {
-  if (kind === 'execute') return 'shell';
-  if (kind === 'edit' || kind === 'delete' || kind === 'move' || kind === 'write') return 'file';
-  if (kind === 'read' || kind === 'search') return 'file';
-  if (kind === 'think' || kind === 'fetch') return 'agent';
-  return 'other';
-}
-
-function extractHarnessServerName(call: ToolCall): string | null {
-  return stringValueForKeys(call.rawInput, ['server', 'serverName', 'server_name', 'serverUrl', 'server_url'])
-    ?? stringValueForKeys(call, ['server', 'serverName', 'server_name'])
-    ?? null;
-}
-
-function stringValueForKeys(value: unknown, keys: string[], depth = 0): string | null {
-  if (depth > 4 || !value || typeof value !== 'object') return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const match = stringValueForKeys(item, keys, depth + 1);
-      if (match) return match;
-    }
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  for (const key of keys) {
-    const candidate = record[key];
-    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
-  }
-  for (const item of Object.values(record)) {
-    const match = stringValueForKeys(item, keys, depth + 1);
-    if (match) return match;
-  }
-  return null;
-}
-
-// spec 167: tightened limits — the pending card shows this on one compact line,
-// so favour a short scannable head over an exhaustive arg dump.
-const PERMISSION_SAFETY_KEYS = new Set([
-  'command', 'cmd', 'path', 'file', 'file_path', 'filepath', 'cwd', 'url', 'target',
-]);
-export function permissionArgsPreview(value: unknown, subject?: string): string {
-  const args = extractToolArguments(value);
-  if (!args || typeof args !== 'object' || Array.isArray(args)) return boundedInlineValue(args ?? value, 90);
-  // Drop any arg that merely echoes the subject line — an execute permission's
-  // `command` is already shown in full as the subject, so repeating it in the
-  // preview just prints the command twice. Keeps signal-carrying args (e.g.
-  // `description`) so the preview still earns its line.
-  const subjectNorm = subject ? subject.replace(/\s+/g, ' ').trim() : '';
-  // The 3-part cap can drop a safety-critical arg (the command/path being run) if
-  // it sits late in the object, so surface those keys first before the cap bites.
-  const entries = Object.entries(args as Record<string, unknown>).filter(
-    ([, raw]) => !(subjectNorm && typeof raw === 'string' && raw.replace(/\s+/g, ' ').trim() === subjectNorm),
-  );
-  entries.sort(([a], [b]) => {
-    const aSafe = PERMISSION_SAFETY_KEYS.has(a.toLowerCase()) ? 0 : 1;
-    const bSafe = PERMISSION_SAFETY_KEYS.has(b.toLowerCase()) ? 0 : 1;
-    return aSafe - bSafe;
-  });
-  const parts: string[] = [];
-  for (const [key, raw] of entries) {
-    if (parts.length >= 3) break;
-    parts.push(`${key}: ${boundedInlineValue(raw, 30)}`);
-  }
-  return truncate(parts.join(' · '), 96);
-}
-
-function extractToolArguments(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const record = value as Record<string, unknown>;
-  return record.arguments ?? record.args ?? record.input ?? value;
-}
-
-function boundedInlineValue(value: unknown, max = 140): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return truncate(value.replace(/\s+/g, ' ').trim(), max);
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  try {
-    return truncate(JSON.stringify(value).replace(/\s+/g, ' '), max);
-  } catch {
-    return truncate(String(value), max);
-  }
-}
-
-function containsHarnessServerMarker(value: unknown, depth = 0): boolean {
-  if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return false;
-  if (typeof value === 'string') return HARNESS_SERVER_MARKERS.some((marker) => value.includes(marker));
-  if (!value || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.some((item) => containsHarnessServerMarker(item, depth + 1));
-  return Object.values(value as Record<string, unknown>).some((item) => containsHarnessServerMarker(item, depth + 1));
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** spec 133 — normalize a path for artifact registry matching (forward slashes). */
-export function normalizeArtifactPath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/, '');
-}
-
-/** spec 133 — does a file-write target match an issued artifact path? An
- * ABSOLUTE target must equal the issued path exactly — never a mere suffix
- * match, or an attacker-controlled parent (`/evil/<tail>`) sharing the tail
- * would be auto-approved. A RELATIVE target (adapter reports relative to the
- * lane cwd) matches when it is a suffix of the *trusted* issued path. Empty
- * tail never matches. */
-export function artifactWritePathMatches(target: string, recordPath: string, recordTail: string): boolean {
-  if (!recordTail) return false;
-  const t = normalizeArtifactPath(target);
-  const p = normalizeArtifactPath(recordPath);
-  if (t === p) return true;
-  if (t.startsWith('/')) return false; // absolute, non-equal → reject
-  const rel = t.replace(/^\.\//, '');
-  return rel.length > 0 && (p === rel || p.endsWith('/' + rel));
-}
-
-/** spec 133 — tool kinds eligible for artifact-write auto-approval. A path
- * match alone must NOT grant: only a file *write* is auto-approved, never a
- * read/search/execute/delete that merely names the artifact in `locations`. */
-export function isArtifactWriteGrantKind(kind: string): boolean {
-  return kind === 'edit' || kind === 'write' || kind === 'create';
-}
-
-/** spec 133 — does a path sit under any harness artifact scratch root? Used for
- * transcript REDACTION only (never for grant): redacting is always safe, so a
- * broad `.krypton/artifacts/` pattern closes the window where the registry
- * pending event has not yet arrived when a write card first renders. Grant
- * stays strictly registry-keyed (see `artifactWritePathMatches`). */
-export function isArtifactScratchPath(path: string | null | undefined): boolean {
-  if (!path) return false;
-  return normalizeArtifactPath(path).includes('/.krypton/artifacts/');
-}
-
-/** spec 133 — does a tool call target a scratch path anywhere (modified-path,
- * locations, or a path-bearing rawInput field)? Used for REDACTION only, so it
- * is deliberately broad: it closes the gap where an adapter reports the artifact
- * path only inside rawInput (not as a diff/location), which `extractModifiedPath`
- * would miss — leaking HTML during the registry-event race. Only path-ish keys
- * are inspected, never large content blobs. */
-export function callTargetsArtifactScratch(call: ToolCall | ToolCallUpdate): boolean {
-  if (isArtifactScratchPath(extractModifiedPath(call))) return true;
-  for (const loc of call.locations ?? []) {
-    if (isArtifactScratchPath(loc.path)) return true;
-  }
-  return rawInputPathMentionsScratch(call.rawInput, 0);
-}
-
-function rawInputPathMentionsScratch(value: unknown, depth: number): boolean {
-  if (depth > 4 || !value || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.some((v) => rawInputPathMentionsScratch(v, depth + 1));
-  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof val === 'string') {
-      if (/path|file|target|dest|location/i.test(key) && isArtifactScratchPath(val)) return true;
-    } else if (val && typeof val === 'object') {
-      if (rawInputPathMentionsScratch(val, depth + 1)) return true;
-    }
-  }
-  return false;
-}
-
-/** spec 133 — prefix-free hint labels from the same alphabet as the `f` mode. */
-export function generateArtifactHintLabels(count: number): string[] {
-  const chars = [...ARTIFACT_HINT_ALPHABET];
-  const labels: string[] = [];
-  if (count <= chars.length) {
-    for (let i = 0; i < count; i++) labels.push(chars[i]);
-    return labels;
-  }
-  for (let i = 0; i < chars.length && labels.length < count; i++) {
-    for (let j = 0; j < chars.length && labels.length < count; j++) {
-      labels.push(chars[i] + chars[j]);
-    }
-  }
-  return labels;
-}
-
 // Spec 114: dev-build assertion that the cached `lane.activeToolCount`
 // matches the actual count of active tool rows. Catches counter drift
 // from missed delta updates or cap-shift bugs. Stripped at build time
@@ -12835,1765 +12006,11 @@ function assertActiveToolCount(lane: HarnessLane): void {
   }
 }
 
-// Spec 117 sanitisation. streaming-markdown@0.2.15 has no HTML tag tokens
-// (raw HTML in markdown source is written via document.createTextNode in the
-// default renderer, which is XSS-safe), so the only attack surface is URL
-// schemes on LINK / RAW_URL / IMAGE attrs. We allowlist common schemes for
-// HREF/SRC; everything else falls back to '#' (href) or drops the attribute
-// (src). Normalisation strips leading/trailing whitespace and ASCII control
-// chars (0x00-0x1F, 0x7F) — these are the classic bypass vectors.
-const CTRL_RE = /[\x00-\x1F\x7F]/g;
-
-function normalizeUrl(value: string): string {
-  return value.replace(CTRL_RE, '').trim();
-}
-
-function isSafeRelative(value: string): boolean {
-  if (value === '') return true;
-  if (value.startsWith('#') || value.startsWith('/') || value.startsWith('./') || value.startsWith('../')) {
-    return true;
-  }
-  return false;
-}
-
-function sanitizeHref(value: string): string {
-  const v = normalizeUrl(value);
-  if (isSafeRelative(v)) return v;
-  const colon = v.indexOf(':');
-  if (colon === -1) return v; // bare token, treat as relative
-  const scheme = v.slice(0, colon).toLowerCase();
-  if (scheme === 'http' || scheme === 'https' || scheme === 'mailto') return v;
-  return '#';
-}
-
-function sanitizeSrc(value: string): string | null {
-  const v = normalizeUrl(value);
-  if (isSafeRelative(v)) return v;
-  const colon = v.indexOf(':');
-  if (colon === -1) return v;
-  const scheme = v.slice(0, colon).toLowerCase();
-  if (scheme === 'http' || scheme === 'https') return v;
-  return null;
-}
-
-/** Decide what a click on a transcript anchor does. The chrome never creates
- *  <a> elements, so every anchor in this view is agent-rendered markdown — and
- *  the single app webview must never navigate away, so every click is
- *  intercepted: http/https/mailto always open in the OS browser; anything else
- *  (sanitizeHref '#' fallbacks, fragments, relative paths) is suppressed. */
-export function agentLinkOpenAction(href: string): 'external' | 'suppress' {
-  return /^(https?|mailto):/i.test(normalizeUrl(href)) ? 'external' : 'suppress';
-}
-
-/** Resolve local <img src> in a rendered transcript body to Tauri asset URLs so
- *  agent-generated images load inside the webview. Agents (e.g. Grok's image_gen)
- *  emit markdown `![alt](/abs/path.jpg)` with a bare absolute filesystem path; the
- *  webview origin can't fetch raw FS paths, so they show as broken-image boxes.
- *  convertFileSrc() maps an on-disk path under the assetProtocol scope ($HOME/**)
- *  to a loadable asset URL. Idempotent: already-resolved / remote / data sources
- *  are skipped, so it is safe to re-run on cached HTML across re-renders.
- *  Unlike markdown-view's rewriter, a leading "/" is treated as a TRUE absolute
- *  path (agent output), not as a cwd-root-relative path. */
-function resolveLocalImageSrcs(root: HTMLElement, cwd: string | null): void {
-  const imgs = root.querySelectorAll('img[src]');
-  for (const img of Array.from(imgs) as HTMLImageElement[]) {
-    const src = img.getAttribute('src') ?? '';
-    // Leave remote / data / already-resolved sources untouched (also keeps the
-    // pass idempotent on cached HTML that was rewritten on a prior render).
-    if (/^(https?:|data:|asset:|blob:|file:)/i.test(src) || src.startsWith('//')) continue;
-
-    // Strip ?query / #fragment before FS resolution.
-    const raw = src.replace(/[?#].*$/, '');
-    if (!raw) continue;
-
-    let abs: string;
-    if (raw.startsWith('/')) {
-      abs = raw; // true absolute path from the agent
-    } else if (cwd) {
-      // Relative path — resolve against the lane's project dir.
-      const joined = `${cwd}/${raw}`;
-      const parts: string[] = [];
-      for (const seg of joined.split('/')) {
-        if (seg === '..') parts.pop();
-        else if (seg !== '.' && seg !== '') parts.push(seg);
-      }
-      abs = '/' + parts.join('/');
-    } else {
-      continue; // relative path with no base — cannot resolve
-    }
-
-    const original = src;
-    img.src = convertFileSrc(abs);
-    img.addEventListener(
-      'error',
-      () => {
-        const breach = document.createElement('span');
-        breach.className = 'acp-harness__img-breach';
-        breach.textContent = `IMG BREACH // ${original}`;
-        img.replaceWith(breach);
-      },
-      { once: true },
-    );
-  }
-}
-
-function makeSafeRenderer(root: HTMLElement): smd.Default_Renderer {
-  const base = smd.default_renderer(root);
-  return {
-    data: base.data,
-    add_token: base.add_token,
-    end_token: base.end_token,
-    add_text: base.add_text,
-    set_attr: (data, type, value) => {
-      if (type === smd.HREF) {
-        base.set_attr(data, type, sanitizeHref(value));
-      } else if (type === smd.SRC) {
-        const safe = sanitizeSrc(value);
-        if (safe !== null) base.set_attr(data, type, safe);
-      } else {
-        base.set_attr(data, type, value);
-      }
-    },
-  };
-}
-
-/** Spec 117 shared init: wipe body, set class, install fresh parser/renderer,
- *  reset lane fields. Called from renderTranscriptItem (first paint) and from
- *  updateStreamingAssistantMarkdownBody (body rebind / item swap / backtrack). */
-function initLaneStreamingMarkdown(
-  lane: HarnessLane,
-  item: HarnessTranscriptItem,
-  body: HTMLElement,
-): void {
-  body.replaceChildren();
-  body.classList.remove('acp-harness__msg-body--stream-plain');
-  // Apply both --markdown (for typography rules in acp-harness.css) and
-  // --stream-markdown (state indicator for tests / future styling). Avoids a
-  // runtime class swap at seal time.
-  body.classList.add('acp-harness__msg-body--markdown');
-  body.classList.add('acp-harness__msg-body--stream-markdown');
-  delete body.dataset.pretext;
-  delete body.dataset.rawText;
-  delete body.dataset.rowId;
-  const renderer = makeSafeRenderer(body);
-  lane.streamingMarkdownParser = smd.parser(renderer);
-  lane.streamingMarkdownBody = body;
-  lane.streamingMarkdownItemId = item.id;
-  item.streamingMarkdownWritten = 0;
-  item.streamPlainLength = undefined;
-}
-
-/** Spec 117 fast-path body update for the active assistant streaming row.
- *  Writes only the delta since the last parser_write; honours the
- *  RAF-only-write invariant (parser_write is called only from this helper
- *  and from sealAssistantStreamingMarkdown, never from appendStreaming). */
-function updateStreamingAssistantMarkdownBody(
-  body: HTMLElement,
-  item: HarnessTranscriptItem,
-  lane: HarnessLane,
-): void {
-  const written = item.streamingMarkdownWritten ?? 0;
-  // Body rebind, item swap, or first bind via the fast path.
-  if (
-    lane.streamingMarkdownParser === null ||
-    lane.streamingMarkdownBody !== body ||
-    lane.streamingMarkdownItemId !== item.id
-  ) {
-    initLaneStreamingMarkdown(lane, item, body);
-  } else if (item.text.length < written) {
-    // Backtrack — rare; rebuild parser.
-    console.warn('[spec117] streaming text backtracked; rebuilding parser');
-    initLaneStreamingMarkdown(lane, item, body);
-  }
-  const startedAt = item.streamingMarkdownWritten ?? 0;
-  if (item.text.length > startedAt) {
-    try {
-      smd.parser_write(lane.streamingMarkdownParser!, item.text.slice(startedAt));
-    } catch (e) {
-      console.warn('[spec117] parser_write failed', e);
-    }
-    item.streamingMarkdownWritten = item.text.length;
-  }
-}
-
-// Spec 117 table fix: streaming-markdown is a single-pass parser whose table
-// state machine desyncs if a stream chunk boundary lands mid-table — the rest of
-// the table then renders as literal `| … |` text and that broken DOM is frozen at
-// seal. marked is a full two-pass GFM parser that renders tables correctly, so at
-// seal we re-render with marked — but ONLY when the message actually contains a
-// table, so ordinary messages keep the cheaper smd output and pay no extra cost.
-// The guard matches a GFM delimiter row (the |---|---| line under the header)
-// with at least two columns.
-const MARKDOWN_TABLE_DELIMITER =
-  /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$/m;
-
-export function hasMarkdownTable(text: string): boolean {
-  return MARKDOWN_TABLE_DELIMITER.test(text);
-}
-
-// Re-render assistant markdown into `body` with marked (robust GFM tables),
-// preserving a leading lane-mail provenance node the streaming body may carry.
-// On parse failure the existing streaming-markdown body is left untouched.
-function rerenderAssistantMarkdownWithMarked(
-  body: HTMLElement,
-  text: string,
-  projectDir: string | null,
-): void {
-  const prov = body.querySelector<HTMLElement>(
-    ':scope > .acp-harness__lane-mail-provenance',
-  );
-  let html: string;
-  try {
-    html = md.parse(text, { async: false }) as string;
-  } catch (e) {
-    console.warn('[spec117] marked table re-render failed; keeping stream output', e);
-    return;
-  }
-  body.innerHTML = html;
-  if (prov) body.insertBefore(prov, body.firstChild);
-  resolveLocalImageSrcs(body, projectDir);
-}
-
-// Veiled thinking: providers that keep reasoning server-side (Claude Code on
-// current Opus models) stream thought deltas whose text is EMPTY — the model
-// is thinking, but the content never reaches the client. Instead of an empty
-// body, show a small text animation ("thinking" + pulsing dots). The row is
-// dropped at seal (dropVeiledThoughtRow) if no text ever arrived, so the veil
-// only ever exists on a streaming row.
-function installThoughtVeil(body: HTMLElement): void {
-  if (body.classList.contains('acp-harness__msg-body--thought-veil')) return;
-  body.classList.remove('acp-harness__msg-body--stream-plain');
-  body.classList.add('acp-harness__msg-body--thought-veil');
-  const veil = document.createElement('span');
-  veil.className = 'acp-harness__thought-veil';
-  const word = document.createElement('span');
-  word.className = 'acp-harness__thought-veil-word';
-  word.textContent = 'thinking';
-  veil.appendChild(word);
-  for (let i = 0; i < 3; i++) {
-    const dot = document.createElement('span');
-    dot.className = 'acp-harness__thought-veil-dot';
-    dot.textContent = '·';
-    veil.appendChild(dot);
-  }
-  body.replaceChildren(veil);
-}
-
-// Spec 114 rev 4: append-only update for streaming assistant / thought /
-// user rows. One TextNode grows via appendData; markdown waits for seal.
-// Spec 117: assistant rows now use updateStreamingAssistantMarkdownBody; this
-// helper still serves thought / user streaming rows.
-function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem): void {
-  if (item.kind === 'thought' && item.text.length === 0) {
-    installThoughtVeil(body);
-    return;
-  }
-  if (!body.classList.contains('acp-harness__msg-body--stream-plain')) {
-    body.classList.remove('acp-harness__msg-body--markdown');
-    body.classList.remove('acp-harness__msg-body--thought-veil');
-    delete body.dataset.pretext;
-    delete body.dataset.rawText;
-    delete body.dataset.rowId;
-    body.classList.add('acp-harness__msg-body--stream-plain');
-    const seed = document.createTextNode(item.text);
-    body.replaceChildren(seed);
-    item.streamPlainLength = item.text.length;
-    if (item.kind === 'thought') body.scrollTop = body.scrollHeight;
-    return;
-  }
-  let textNode = body.firstChild;
-  if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
-    body.replaceChildren(document.createTextNode(''));
-    textNode = body.firstChild;
-    item.streamPlainLength = 0;
-  }
-  const plain = textNode as Text;
-  const len = item.streamPlainLength ?? 0;
-  if (item.text.length > len) {
-    plain.appendData(item.text.slice(len));
-    item.streamPlainLength = item.text.length;
-  } else if (item.text.length < len) {
-    plain.data = item.text;
-    item.streamPlainLength = item.text.length;
-  }
-  // Thought rows render in a fixed-height clamped window; keep the latest
-  // reasoning line pinned to the bottom so live thinking stays visible.
-  if (item.kind === 'thought') body.scrollTop = body.scrollHeight;
-}
-
-function applyCoordinatorProvenanceToItem(lane: HarnessLane, item: HarnessTranscriptItem): void {
-  if (item.kind !== 'assistant' || lane.coordinatorDrainProvenanceUsed) return;
-  const drain = lane.pendingCoordinatorDrain;
-  if (!drain?.primaryPeerDisplayName) return;
-  item.replyingToLaneMail = {
-    envelopeId: drain.envelopeIds[0] ?? '',
-    peerDisplayName: drain.primaryPeerDisplayName,
-    envelopeCount: drain.envelopeCount,
-  };
-  lane.coordinatorDrainProvenanceUsed = true;
-}
-
-// Thought effort meter (length-derived). Thinking is dimmed and clamped to a
-// few lines, so a glyph meter on the label restores the lost signal: how much
-// reasoning is hidden below the fold. Length ≈ effort — log-scaled between a
-// floor (~one short line) and a ceiling (~a long deliberation), bucketed to 5.
-const THOUGHT_EFFORT_MIN_CHARS = 40;
-const THOUGHT_EFFORT_MAX_CHARS = 4000;
-
-function thoughtEffortLevel(len: number): { filled: number; tier: string } {
-  let ratio = 0;
-  if (len > THOUGHT_EFFORT_MIN_CHARS) {
-    ratio =
-      Math.log(len / THOUGHT_EFFORT_MIN_CHARS) /
-      Math.log(THOUGHT_EFFORT_MAX_CHARS / THOUGHT_EFFORT_MIN_CHARS);
-    ratio = Math.max(0, Math.min(1, ratio));
-  }
-  const filled = Math.max(1, Math.round(ratio * 5));
-  const tier =
-    ratio < 0.2
-      ? 'brief'
-      : ratio < 0.45
-        ? 'considered'
-        : ratio < 0.7
-          ? 'deep'
-          : ratio < 0.9
-            ? 'extended'
-            : 'exhaustive';
-  return { filled, tier };
-}
-
-function buildThoughtEffortMeter(len: number): HTMLElement {
-  const { filled, tier } = thoughtEffortLevel(len);
-  const meter = document.createElement('span');
-  meter.className = 'acp-harness__thought-effort';
-  const glyph = document.createElement('span');
-  glyph.className = 'acp-harness__thought-effort-glyph';
-  glyph.textContent = '▰'.repeat(filled) + '▱'.repeat(5 - filled);
-  const word = document.createElement('span');
-  word.className = 'acp-harness__thought-effort-tier';
-  word.textContent = tier;
-  meter.append(glyph, word);
-  return meter;
-}
-
-function renderTranscriptItem(
-  item: HarnessTranscriptItem,
-  isNew: boolean,
-  streaming: boolean,
-  lane: HarnessLane | null,
-  projectDir: string | null,
-): HTMLElement {
-  const el = document.createElement('div');
-  el.className =
-    `acp-harness__msg acp-harness__msg--${item.kind}` +
-    `${item.status ? ` acp-harness__msg--${item.status}` : ''}` +
-    `${isNew ? ' acp-harness__msg--enter' : ''}` +
-    `${streaming ? ' acp-harness__msg--streaming' : ''}`;
-  el.dataset.msgId = item.id;
-  el.dataset.renderSignature = transcriptRenderSignature(item, streaming);
-  const label = document.createElement('div');
-  label.className = 'acp-harness__msg-label';
-  label.textContent = transcriptLabel(item.kind);
-  if (item.kind === 'thought') {
-    label.classList.add('acp-harness__msg-label--thought');
-    // No meter while the row is veiled (zero text) — a "brief" reading on
-    // hidden reasoning would be a lie about how much thinking is happening.
-    if (item.text.length > 0) label.appendChild(buildThoughtEffortMeter(item.text.length));
-  }
-  const body = document.createElement('div');
-  body.className = 'acp-harness__msg-body';
-  if (item.kind === 'assistant') {
-    if (lane) applyCoordinatorProvenanceToItem(lane, item);
-    if (item.replyingToLaneMail) {
-      const prov = document.createElement('div');
-      prov.className = 'acp-harness__lane-mail-provenance';
-      prov.textContent = formatLaneMailProvenanceLine(item.replyingToLaneMail);
-      body.appendChild(prov);
-    }
-    if (streaming && lane) {
-      // Spec 117: initialise the lane's streaming-markdown parser bound to this
-      // body and seed it with the current item.text. The fast path in
-      // renderActiveTranscript() takes over from the second chunk onward.
-      initLaneStreamingMarkdown(lane, item, body);
-      if (item.text.length > 0) {
-        try {
-          smd.parser_write(lane.streamingMarkdownParser!, item.text);
-        } catch (e) {
-          console.warn('[spec117] parser_write during first render failed', e);
-        }
-        item.streamingMarkdownWritten = item.text.length;
-      }
-    } else {
-      body.classList.add('acp-harness__msg-body--markdown');
-      if (item.markdownSource !== item.text || item.markdownHtml === undefined) {
-        try {
-          item.markdownHtml = md.parse(item.text, { async: false }) as string;
-          item.markdownSource = item.text;
-        } catch {
-          item.markdownHtml = undefined;
-          item.markdownSource = undefined;
-        }
-      }
-      if (item.markdownHtml !== undefined) {
-        body.innerHTML = item.markdownHtml;
-        // Resolve agent-emitted local image paths (marked cold-load output, or a
-        // cached seal that has not yet been rewritten) to loadable asset URLs.
-        resolveLocalImageSrcs(body, projectDir);
-      } else {
-        body.textContent = item.text;
-      }
-    }
-  } else if (item.kind === 'tool' && item.tool) {
-    body.classList.add('acp-harness__tool');
-    renderToolBody(body, item.tool);
-  } else if (item.kind === 'permission' && item.permission) {
-    body.classList.add('acp-harness__perm');
-    renderPermissionBody(body, item.permission);
-  } else if (item.kind === 'fs_activity' && item.fsActivity) {
-    body.classList.add('acp-harness__fs-activity');
-    if (!item.fsActivity.ok) body.classList.add('acp-harness__fs-activity--err');
-    renderFsActivityBody(body, item.fsActivity);
-  } else if (item.kind === 'fs_write_review' && item.fsReview) {
-    body.classList.add('acp-harness__fs-review');
-    if (item.fsReview.resolved) body.classList.add('acp-harness__fs-review--resolved');
-    renderFsWriteReviewBody(body, item.fsReview);
-  } else if (item.kind === 'provider_error' && item.providerError) {
-    body.classList.add('acp-harness__provider-error');
-    body.classList.add(`acp-harness__provider-error--${item.providerError.category}`);
-    renderProviderErrorBody(body, item.providerError);
-  } else if (item.kind === 'inter_lane' && item.interLane) {
-    const { direction, done } = item.interLane;
-    label.textContent = 'mail';
-    el.classList.add('acp-harness__msg--inter_lane', `acp-harness__msg--mail-${direction}`);
-    if (done) el.classList.add('acp-harness__msg--mail-done');
-    renderLaneMailBody(body, item, item.interLane, item.text);
-  } else if (item.kind === 'system' && item.text.startsWith('[inter-lane]')) {
-    label.textContent = 'event';
-    el.classList.add('acp-harness__msg--harness-event');
-    body.classList.add('acp-harness__harness-event-body');
-    body.textContent = item.text.replace(/^\[inter-lane\]\s*/u, '');
-  } else if (item.kind === 'artifact' && item.artifact) {
-    label.textContent = 'html';
-    el.classList.add('acp-harness__msg--artifact');
-    if (!item.artifact.available) el.classList.add('acp-harness__msg--artifact-unavailable');
-    if (item.artifact.hintLabel) el.classList.add('acp-harness__msg--artifact-hinted');
-    renderArtifactCardBody(body, item.artifact);
-  } else if (item.kind === 'system' && item.diff) {
-    // spec 124: directive upsert approval card with a before/after diff.
-    const text = document.createElement('div');
-    text.className = 'acp-harness__msg-text';
-    text.textContent = item.text;
-    body.appendChild(text);
-    const pre = document.createElement('pre');
-    pre.className = 'acp-harness__directive-diff';
-    for (const line of item.diff.unified.split('\n')) {
-      const row = document.createElement('div');
-      const sign = line.charAt(0);
-      row.className =
-        sign === '+'
-          ? 'acp-harness__directive-diff-add'
-          : sign === '-'
-            ? 'acp-harness__directive-diff-del'
-            : 'acp-harness__directive-diff-ctx';
-      row.textContent = line;
-      pre.appendChild(row);
-    }
-    body.appendChild(pre);
-  } else if (item.kind === 'user' && item.imageCount && item.imageCount > 0) {
-    if (item.text) {
-      const textEl = document.createElement('div');
-      textEl.className = 'acp-harness__msg-text';
-      textEl.textContent = item.text;
-      body.appendChild(textEl);
-    }
-    body.appendChild(renderImageAttachmentChip(item.imageCount));
-  } else if (usesPretext(item.kind)) {
-    // While streaming, use the same append-only plain TextNode path as
-    // assistant (fast path in renderActiveTranscript). Pretext layout runs
-    // once after seal when streaming is false.
-    if (streaming) {
-      if (item.kind === 'thought' && item.text.length === 0) {
-        installThoughtVeil(body);
-      } else {
-        body.classList.add('acp-harness__msg-body--stream-plain');
-        body.appendChild(document.createTextNode(item.text));
-        item.streamPlainLength = item.text.length;
-      }
-    } else {
-      body.dataset.pretext = 'true';
-      body.dataset.rawText = item.text;
-      body.dataset.rowId = item.id;
-      body.textContent = item.text;
-    }
-  } else {
-    body.textContent = item.text;
-  }
-  el.appendChild(label);
-  el.appendChild(body);
-  return el;
-}
-
-function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boolean): string {
-  const tool = item.tool
-    ? [
-      item.tool.status,
-      item.tool.kind,
-      item.tool.subject,
-      item.tool.command,
-      item.tool.result,
-      item.tool.sections.map((section) => `${section.label}:${section.text}`).join('\u001f'),
-      item.tool.diffs.map((diff) => `${diff.path}:${diff.oldText}:${diff.newText}`).join('\u001f'),
-    ].join('\u001e')
-    : '';
-  const permission = item.permission
-    ? [
-      item.permission.id,
-      item.permission.toolName,
-      item.permission.toolFamily,
-      item.permission.serverName ?? '',
-      item.permission.kind,
-      item.permission.subject,
-      item.permission.suffix ?? '',
-      item.permission.argsPreview,
-      item.permission.options.map((option) => `${option.name}:${option.action}`).join('\u001f'),
-      item.permission.decision,
-      item.permission.decisionLabel ?? '',
-      item.permission.autoReason ?? '',
-    ].join('\u001e')
-    : '';
-  const fsActivity = item.fsActivity
-    ? `${item.fsActivity.method}\u001e${item.fsActivity.path}\u001e${item.fsActivity.ok}\u001e${item.fsActivity.error ?? ''}`
-    : '';
-  const fsReview = item.fsReview
-    ? `${item.fsReview.path}\u001e${item.fsReview.oldText}\u001e${item.fsReview.newText}\u001e${item.fsReview.resolved ?? ''}`
-    : '';
-  const providerError = item.providerError
-    ? `${item.providerError.category}\u001e${item.providerError.code ?? ''}\u001e${item.providerError.headline}\u001e${item.providerError.hint ?? ''}\u001e${item.providerError.retryable}\u001e${item.providerError.raw}`
-    : '';
-  const interLane = item.interLane
-    ? `${item.interLane.direction}\u001e${item.interLane.peerId}\u001e${item.interLane.peerDisplayName}\u001e${item.interLane.done ? '1' : '0'}\u001e${item.interLane.channel ?? ''}\u001e${item.interLane.peerBackendId ?? ''}`
-    : '';
-  const provenance = item.replyingToLaneMail
-    ? `${item.replyingToLaneMail.envelopeId}\u001e${item.replyingToLaneMail.peerDisplayName}\u001e${item.replyingToLaneMail.envelopeCount}`
-    : '';
-  const artifact = item.artifact
-    ? `${item.artifact.id}|${item.artifact.title}|${item.artifact.size ?? ''}|${item.artifact.hash ?? ''}|${item.artifact.available ? '1' : '0'}|${item.artifact.hintLabel ?? ''}`
-    : item.tool?.artifactRedaction
-      ? `red|${item.tool.artifactRedaction.tail}|${item.tool.artifactRedaction.size ?? ''}|${item.tool.artifactRedaction.hash ?? ''}|${item.tool.artifactRedaction.pending ? '1' : '0'}`
-      : '';
-  return [
-    item.kind,
-    item.status ?? '',
-    item.text,
-    item.imageCount ?? '',
-    streaming ? '1' : '0',
-    tool,
-    permission,
-    fsActivity,
-    fsReview,
-    providerError,
-    interLane,
-    provenance,
-    artifact,
-  ].join('\u001d');
-}
-
-/** spec 120 — flat lane-mail body (exported for tests). */
-export function formatLaneMailMetaLine(
-  direction: 'in' | 'out',
-  peerDisplayName: string,
-  done: boolean,
-  channel?: InterLaneRowChannel,
-): string {
-  const arrow = direction === 'in' ? '←' : '→';
-  const rel = direction === 'in' ? 'from' : 'to';
-  const peer = peerDisplayName.toLowerCase();
-  let line = `${arrow} ${rel} ${peer} · lane mail`;
-  if (channel === 'mention') line += ' · mention';
-  if (done) line += ' · closed';
-  return line;
-}
-
-export function formatLaneMailProvenanceLine(provenance: LaneMailProvenance): string {
-  const peer = provenance.peerDisplayName.toLowerCase();
-  if (provenance.envelopeCount > 1) {
-    return `↩ replying to lane mail (${provenance.envelopeCount} messages) from ${peer}`;
-  }
-  return `↩ replying to lane mail from ${peer}`;
-}
-
-function renderLaneMailBody(
-  body: HTMLElement,
-  item: HarnessTranscriptItem,
-  payload: InterLanePayload,
-  message: string,
-): void {
-  body.classList.add('acp-harness__msg-body--lane-mail');
-  const meta = document.createElement('span');
-  meta.className = 'acp-harness__lane-mail-meta';
-  if (payload.peerBackendId) {
-    const logo = document.createElement('span');
-    logo.className = `acp-harness__lane-mail-logo acp-harness__lane-mail-logo--${payload.peerBackendId}`;
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', `#${backendLogoId(payload.peerBackendId)}`);
-    svg.setAttribute('aria-hidden', 'true');
-    svg.appendChild(use);
-    logo.appendChild(svg);
-    meta.appendChild(logo);
-  }
-  meta.appendChild(document.createTextNode(formatLaneMailMetaLine(
-    payload.direction,
-    payload.peerDisplayName,
-    payload.done,
-    payload.channel,
-  )));
-  const text = document.createElement('div');
-  text.className = 'acp-harness__lane-mail-text';
-  // Render the mail body as markdown, mirroring normal agent messages (same
-  // `md` parser + `--markdown` styling), with the parse cached on the item.
-  if (item.markdownSource !== message || item.markdownHtml === undefined) {
-    try {
-      item.markdownHtml = md.parse(message, { async: false }) as string;
-      item.markdownSource = message;
-    } catch {
-      item.markdownHtml = undefined;
-      item.markdownSource = undefined;
-    }
-  }
-  if (item.markdownHtml !== undefined) {
-    text.classList.add('acp-harness__msg-body--markdown');
-    text.innerHTML = item.markdownHtml;
-  } else {
-    text.textContent = message;
-  }
-  body.appendChild(meta);
-  body.appendChild(text);
-}
-
-function renderFsActivityBody(body: HTMLElement, payload: FsActivityPayload): void {
-  const icon = document.createElement('span');
-  icon.className = 'acp-harness__fs-activity-icon';
-  icon.textContent = payload.ok ? (payload.method === 'read' ? '📖' : '✏️') : '✗';
-  body.appendChild(icon);
-
-  const verb = document.createElement('span');
-  verb.className = 'acp-harness__fs-activity-verb';
-  verb.textContent = payload.ok
-    ? (payload.method === 'read' ? 'read' : 'wrote')
-    : `${payload.method} failed`;
-  body.appendChild(verb);
-
-  const path = document.createElement('span');
-  path.className = 'acp-harness__fs-activity-path';
-  path.textContent = payload.path || '«empty»';
-  path.title = payload.path;
-  body.appendChild(path);
-
-  if (payload.error) {
-    const err = document.createElement('span');
-    err.className = 'acp-harness__fs-activity-error';
-    err.textContent = payload.error;
-    body.appendChild(err);
-  }
-}
-
-function renderProviderErrorBody(body: HTMLElement, payload: ProviderErrorPayload): void {
-  const kicker = document.createElement('div');
-  kicker.className = 'acp-harness__provider-error-kicker';
-  kicker.textContent = providerErrorKicker(payload.category);
-  body.appendChild(kicker);
-
-  const headline = document.createElement('div');
-  headline.className = 'acp-harness__provider-error-headline';
-  headline.textContent = payload.headline;
-  body.appendChild(headline);
-
-  if (payload.hint) {
-    const hint = document.createElement('div');
-    hint.className = 'acp-harness__provider-error-hint';
-    hint.textContent = payload.hint;
-    body.appendChild(hint);
-  }
-
-  const meta = document.createElement('div');
-  meta.className = 'acp-harness__provider-error-meta';
-  if (payload.code) {
-    const code = document.createElement('span');
-    code.className = 'acp-harness__provider-error-chip';
-    code.textContent = payload.code;
-    meta.appendChild(code);
-  }
-  const retry = document.createElement('span');
-  retry.className = `acp-harness__provider-error-chip${payload.retryable ? ' acp-harness__provider-error-chip--retry' : ''}`;
-  retry.textContent = payload.retryable ? 'retryable' : 'not retryable';
-  meta.appendChild(retry);
-  body.appendChild(meta);
-
-  const details = document.createElement('details');
-  details.className = 'acp-harness__provider-error-details';
-  const summary = document.createElement('summary');
-  summary.textContent = 'details';
-  details.appendChild(summary);
-  const raw = document.createElement('pre');
-  raw.textContent = payload.raw;
-  details.appendChild(raw);
-  body.appendChild(details);
-}
-
-function providerErrorKicker(category: ProviderErrorPayload['category']): string {
-  switch (category) {
-    case 'rate_limit': return 'agent limit hit';
-    case 'quota': return 'agent quota hit';
-    case 'auth': return 'agent auth failed';
-    case 'context': return 'agent context limit';
-    case 'network': return 'agent network failed';
-    case 'provider': return 'agent provider failed';
-    case 'unknown': return 'agent request failed';
-  }
-}
-
-function renderFsWriteReviewBody(body: HTMLElement, payload: FsWriteReviewPayload): void {
-  const head = document.createElement('div');
-  head.className = 'acp-harness__fs-review-head';
-  const verb = document.createElement('span');
-  verb.className = 'acp-harness__fs-review-verb';
-  verb.textContent = '✏️ write';
-  head.appendChild(verb);
-  const path = document.createElement('span');
-  path.className = 'acp-harness__fs-review-path';
-  path.textContent = payload.path || '«empty»';
-  path.title = payload.path;
-  head.appendChild(path);
-  body.appendChild(head);
-
-  const diff = document.createElement('div');
-  diff.className = 'acp-harness__tool-diff';
-  diff.innerHTML = renderDiffPreview(payload.oldText, payload.newText, { cssPrefix: 'acp-harness' });
-  body.appendChild(diff);
-
-  if (payload.resolved) {
-    const stamp = document.createElement('div');
-    stamp.className = `acp-harness__fs-review-resolved acp-harness__fs-review-resolved--${payload.resolved}`;
-    stamp.textContent = payload.resolved === 'accepted' ? '✓ accepted' : '✗ rejected';
-    body.appendChild(stamp);
-  } else {
-    const actions = document.createElement('div');
-    actions.className = 'acp-harness__fs-review-actions';
-    const accept = document.createElement('span');
-    accept.className = 'acp-harness__fs-review-action acp-harness__fs-review-action--accept';
-    accept.textContent = '[a] accept';
-    actions.appendChild(accept);
-    const reject = document.createElement('span');
-    reject.className = 'acp-harness__fs-review-action acp-harness__fs-review-action--reject';
-    reject.textContent = '[r] reject';
-    actions.appendChild(reject);
-    const acceptAll = document.createElement('span');
-    acceptAll.className = 'acp-harness__fs-review-action acp-harness__fs-review-action--accept-all';
-    acceptAll.textContent = '[A] accept all';
-    actions.appendChild(acceptAll);
-    body.appendChild(actions);
-  }
-}
-
-export function renderPermissionBody(body: HTMLElement, perm: PermissionPayload): void {
-  const pending = perm.decision === 'pending';
-  body.dataset.decision = perm.decision;
-  const head = document.createElement('div');
-  head.className = 'acp-harness__perm-row';
-  // spec 167: collapse permission rows. A resolved row leads with its decision
-  // (accepted/rejected/auto-allowed); a pending row drops the redundant
-  // family/"pending" noise — the actions line already signals it awaits input.
-  // The head mirrors the tool row's layout (glyph + tag + inline subject) so
-  // permission and tool rows align in the shared body column.
-  if (!pending) {
-    const glyph = document.createElement('span');
-    glyph.className = `acp-harness__perm-glyph acp-harness__perm-glyph--${perm.decision}`;
-    glyph.textContent = permissionDecisionGlyph(perm.decision);
-    head.appendChild(glyph);
-    const decision = document.createElement('span');
-    decision.className = 'acp-harness__perm-decision';
-    // The glyph now carries the ✓/✗, so strip it from the chip text.
-    decision.textContent = permissionDecisionLabel(perm).replace(/^[✓✗]\s*/u, '');
-    head.appendChild(decision);
-  }
-  // For execute permissions the toolName is the command — i.e. identical to the
-  // subject — so rendering both would print the command twice. Only show the
-  // tool tag when it carries signal the subject doesn't (e.g. Write src/app.ts).
-  if (perm.toolName && perm.toolName !== perm.subject) {
-    const tool = document.createElement('span');
-    tool.className = 'acp-harness__perm-tool';
-    tool.textContent = perm.toolName;
-    head.appendChild(tool);
-  }
-  const subject = document.createElement('span');
-  subject.className = 'acp-harness__perm-subject';
-  subject.textContent = perm.subject;
-  subject.title = perm.subject;
-  head.appendChild(subject);
-  body.appendChild(head);
-  // spec 167: a resolved row stays strictly one line (decision + tool + subject).
-  // The cross-touch suffix and auto-allow reason only carry decision-time signal,
-  // so — like argsPreview — they render on the pending row only.
-  if (pending && perm.suffix) {
-    const suffix = document.createElement('span');
-    suffix.className = 'acp-harness__perm-suffix';
-    suffix.textContent = perm.suffix;
-    body.appendChild(suffix);
-  }
-  if (pending && perm.autoReason) {
-    const reason = document.createElement('div');
-    reason.className = 'acp-harness__perm-reason';
-    reason.textContent = perm.autoReason;
-    body.appendChild(reason);
-  }
-  if (pending && perm.argsPreview) {
-    const preview = document.createElement('div');
-    preview.className = 'acp-harness__perm-preview';
-    preview.textContent = perm.argsPreview;
-    body.appendChild(preview);
-  }
-  if (pending) {
-    const actions = document.createElement('div');
-    actions.className = 'acp-harness__perm-actions';
-    const labels = perm.options
-      .filter((option) => option.action === 'accept' || option.action === 'reject')
-      .map((option) => option.action === 'accept' ? 'a accept' : 'r reject');
-    actions.textContent = Array.from(new Set(labels)).join(' · ');
-    body.appendChild(actions);
-  }
-}
-
-function permissionDecisionGlyph(decision: string): string {
-  return decision === 'rejected' || decision === 'failed' ? '✗' : '✓';
-}
-
-function permissionDecisionLabel(perm: PermissionPayload): string {
-  if (perm.decisionLabel) return perm.decisionLabel;
-  switch (perm.decision) {
-    case 'pending': return 'pending';
-    case 'accepted': return 'accepted';
-    case 'rejected': return 'rejected';
-    case 'auto_allowed': return 'auto-allowed';
-    case 'failed': return 'failed';
-  }
-}
-
-function renderImageAttachmentChip(count: number): HTMLElement {
-  const chip = document.createElement('div');
-  chip.className = 'acp-harness__msg-attachment';
-  chip.title = `${count} image${count === 1 ? '' : 's'} attached`;
-  chip.textContent = `▧ ${count} image${count === 1 ? '' : 's'}`;
-  return chip;
-}
-
-function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
-  return kind !== 'assistant' && kind !== 'tool' && kind !== 'fs_activity' && kind !== 'fs_write_review' && kind !== 'provider_error';
-}
-
-function buildToolPayload(
-  call: ToolCall | ToolCallUpdate,
-  status: string,
-  startedAt?: number,
-  endedAt?: number,
-): ToolPayload {
-  const kind = inferToolLabel(call);
-  const path = extractModifiedPath(call);
-  const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
-  const subject = command || path || cleanToolTitle(call.title, kind) || '';
-  const exit = extractToolExit(call.rawOutput);
-  const result = exit || (status === 'failed' ? 'failed' : '');
-  const raw = rawOutputSections(call.rawOutput);
-  const sections = raw.length > 0 ? raw : contentOutputSections(call.content);
-  const sectionLineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
-  const trimmed = sections
-    .map((s) => ({ label: s.label, text: boundedOutputLines(s.text, sectionLineLimit) }))
-    .filter((s) => s.text)
-    .slice(0, 4);
-  const diffs = extractToolDiffs(call.content);
-  return { glyph: statusGlyph(status), status, kind, subject, command, result, sections: trimmed, diffs, startedAt, endedAt };
-}
-
-function isTerminalToolStatus(status: string): boolean {
-  return status === 'completed' || status === 'failed' || status === 'canceled';
-}
-
-function formatToolElapsed(ms: number): string {
-  if (ms < 0) return '';
-  if (ms < 1000) return `${Math.round(ms / 100) * 100}ms`;
-  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`;
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s`;
-  const m = Math.floor(ms / 60_000);
-  const s = Math.floor((ms % 60_000) / 1000);
-  return `${m}m ${s}s`;
-}
-
-function extractToolDiffs(content: ToolCall['content']): Array<{ path: string; oldText: string; newText: string }> {
-  const out: Array<{ path: string; oldText: string; newText: string }> = [];
-  for (const item of content ?? []) {
-    if (item.type === 'diff' && (item.newText !== undefined || item.oldText !== undefined)) {
-      out.push({
-        path: item.path ?? '',
-        oldText: item.oldText ?? '',
-        newText: item.newText ?? '',
-      });
-    }
-  }
-  return out;
-}
-
-function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
-  const head = document.createElement('div');
-  head.className = 'acp-harness__tool-head';
-  const glyph = document.createElement('span');
-  glyph.className = `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status}`;
-  glyph.textContent = tool.glyph;
-  head.appendChild(glyph);
-  const kind = document.createElement('span');
-  kind.className = 'acp-harness__tool-kind';
-  kind.textContent = tool.kind;
-  head.appendChild(kind);
-  if (tool.subject) {
-    const subject = document.createElement('span');
-    subject.className = 'acp-harness__tool-subject';
-    subject.textContent = tool.subject;
-    head.appendChild(subject);
-  }
-  if (tool.result) {
-    const result = document.createElement('span');
-    result.className = `acp-harness__tool-result acp-harness__tool-result--${tool.status}`;
-    result.textContent = tool.result;
-    head.appendChild(result);
-  }
-  if (tool.startedAt !== undefined) {
-    const timer = document.createElement('span');
-    timer.className = `acp-harness__tool-timer acp-harness__tool-timer--${tool.status}`;
-    timer.dataset.startedAt = String(tool.startedAt);
-    if (tool.endedAt !== undefined) {
-      timer.dataset.endedAt = String(tool.endedAt);
-      timer.textContent = formatToolElapsed(tool.endedAt - tool.startedAt);
-    } else {
-      timer.textContent = formatToolElapsed(performance.now() - tool.startedAt);
-    }
-    head.appendChild(timer);
-  }
-  body.appendChild(head);
-  if (tool.artifactRedaction) {
-    body.appendChild(renderArtifactRedaction(tool.artifactRedaction));
-    return;
-  }
-  if (tool.sections.length > 0) {
-    body.appendChild(renderToolOutput(tool));
-  }
-  if (tool.diffs.length > 0) {
-    const wrap = document.createElement('div');
-    wrap.className = 'acp-harness__tool-diffs';
-    for (const d of tool.diffs) {
-      const block = document.createElement('div');
-      block.className = 'acp-harness__tool-diff';
-      if (d.path) {
-        const path = document.createElement('div');
-        path.className = 'acp-harness__tool-diff-path';
-        path.textContent = d.path;
-        block.appendChild(path);
-      }
-      const inner = document.createElement('div');
-      inner.innerHTML = renderDiffPreview(d.oldText, d.newText, { cssPrefix: 'acp-harness' });
-      block.appendChild(inner);
-      wrap.appendChild(block);
-    }
-    body.appendChild(wrap);
-  }
-}
-
-function formatArtifactBytes(size: number | null): string {
-  if (size === null) return '— bytes';
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** spec 133 — redacted body for an artifact-path write/edit card: never the
- * HTML, only path + bytes + hash. */
-function renderArtifactRedaction(r: NonNullable<ToolPayload['artifactRedaction']>): HTMLElement {
-  const wrap = document.createElement('div');
-  wrap.className = 'acp-harness__artifact-redaction';
-  const note = document.createElement('div');
-  note.className = 'acp-harness__artifact-redaction-note';
-  note.textContent = r.pending ? 'html artifact · contents hidden' : 'html artifact edit · contents hidden';
-  wrap.appendChild(note);
-  const meta = document.createElement('div');
-  meta.className = 'acp-harness__artifact-redaction-meta';
-  const hash7 = r.hash ? r.hash.slice(0, 7) : '—';
-  meta.textContent = `${r.tail} · ${formatArtifactBytes(r.size)} · ${hash7}`;
-  wrap.appendChild(meta);
-  return wrap;
-}
-
-/** spec 133 — hintable artifact card body. */
-function renderArtifactCardBody(body: HTMLElement, card: ArtifactCardPayload): void {
-  const head = document.createElement('div');
-  head.className = 'acp-harness__artifact-head';
-  if (card.hintLabel) {
-    const hint = document.createElement('span');
-    hint.className = 'acp-harness__artifact-hint';
-    hint.textContent = card.hintLabel;
-    head.appendChild(hint);
-  }
-  const glyph = document.createElement('span');
-  glyph.className = 'acp-harness__artifact-glyph';
-  glyph.textContent = '◫';
-  head.appendChild(glyph);
-  const title = document.createElement('span');
-  title.className = 'acp-harness__artifact-title';
-  title.textContent = card.title;
-  head.appendChild(title);
-  body.appendChild(head);
-
-  const meta = document.createElement('div');
-  meta.className = 'acp-harness__artifact-meta';
-  const hash7 = card.hash ? card.hash.slice(0, 7) : '—';
-  meta.textContent = card.available
-    ? `${formatArtifactBytes(card.size)} · ${hash7}`
-    : 'unavailable — file removed';
-  body.appendChild(meta);
-
-  const action = document.createElement('div');
-  action.className = 'acp-harness__artifact-action';
-  action.textContent = card.available
-    ? (card.hintLabel ? `press ${card.hintLabel} to open in browser` : 'f then label to open in browser')
-    : 'reopen unavailable';
-  body.appendChild(action);
-}
-
-function renderToolOutput(tool: ToolPayload): HTMLElement {
-  const output = document.createElement('div');
-  output.className = 'acp-harness__tool-output';
-  for (const section of tool.sections) {
-    const rich = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
-    output.appendChild(rich ?? renderPlainToolSection(section));
-  }
-  return output;
-}
-
-function renderPlainToolSection(section: { label: string; text: string }): HTMLElement {
-  const block = document.createElement('div');
-  const tone = toolSectionTone(section.label);
-  block.className = `acp-harness__tool-section acp-harness__tool-section--${tone}`;
-  const label = document.createElement('div');
-  label.className = 'acp-harness__tool-section-label';
-  label.textContent = section.label;
-  const pre = document.createElement('pre');
-  pre.className = 'acp-harness__tool-section-text';
-  pre.textContent = section.text;
-  block.appendChild(label);
-  block.appendChild(pre);
-  return block;
-}
-
-function renderRichExecuteSection(tool: ToolPayload, section: { label: string; text: string }): HTMLElement | null {
-  const label = section.label.toLowerCase();
-  if (label !== 'stdout' && label !== 'output') return null;
-  if (/\bgit\s+diff\s+--stat\b/.test(tool.command)) {
-    const rows = parseGitDiffStat(section.text);
-    if (rows.length > 0) return renderGitDiffStat(rows, section.text);
-  }
-  if (isGitDiffCommand(tool.command) && section.text.includes('diff --git')) {
-    return renderUnifiedGitDiff(section.text);
-  }
-  if (/\bgit\s+status\s+--short\b/.test(tool.command)) {
-    const rows = parseGitStatusShort(section.text);
-    if (rows.length > 0) return renderGitStatusShort(rows);
-  }
-  return null;
-}
-
-function isGitDiffCommand(command: string): boolean {
-  return /\bgit\s+diff\b/.test(command);
-}
-
-function parseGitDiffStat(text: string): Array<{ path: string; changes: number; plus: number; minus: number }> {
-  const rows: Array<{ path: string; changes: number; plus: number; minus: number }> = [];
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (!line || /\d+\s+files?\s+changed/.test(line)) continue;
-    const match = line.match(/^(.+?)\s+\|\s+(\d+)\s+([+\-]+)$/);
-    if (!match) continue;
-    const marks = match[3] ?? '';
-    rows.push({
-      path: match[1]?.trim() ?? '',
-      changes: Number(match[2] ?? 0),
-      plus: (marks.match(/\+/g) ?? []).length,
-      minus: (marks.match(/-/g) ?? []).length,
-    });
-  }
-  return rows.slice(0, 8);
-}
-
-function renderGitDiffStat(rows: Array<{ path: string; changes: number; plus: number; minus: number }>, source: string): HTMLElement {
-  const block = document.createElement('div');
-  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--diffstat';
-  const total = Math.max(1, ...rows.map((row) => row.changes));
-  for (const row of rows) {
-    const item = document.createElement('div');
-    item.className = 'acp-harness__tool-stat-row';
-    const path = document.createElement('span');
-    path.className = 'acp-harness__tool-stat-path';
-    path.textContent = row.path;
-    const count = document.createElement('span');
-    count.className = 'acp-harness__tool-stat-count';
-    count.textContent = String(row.changes);
-    const bar = document.createElement('span');
-    bar.className = 'acp-harness__tool-stat-bar';
-    bar.style.setProperty('--stat-plus-width', `${(row.plus / total) * 100}%`);
-    bar.style.setProperty('--stat-minus-width', `${(row.minus / total) * 100}%`);
-    item.append(path, count, bar);
-    block.appendChild(item);
-  }
-  const omitted = source.split('\n').filter((line) => line.trim() && !/\d+\s+files?\s+changed/.test(line)).length - rows.length;
-  if (omitted > 0) {
-    const more = document.createElement('div');
-    more.className = 'acp-harness__tool-rich-more';
-    more.textContent = `${omitted} more file${omitted === 1 ? '' : 's'}`;
-    block.appendChild(more);
-  }
-  return block;
-}
-
-function renderUnifiedGitDiff(text: string): HTMLElement {
-  const block = document.createElement('div');
-  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--unidiff';
-  const lines = text.split('\n').filter((line) => line.length > 0);
-  for (const line of lines) {
-    if (line.startsWith('diff --git ')) {
-      const file = document.createElement('div');
-      file.className = 'acp-harness__tool-diff-file';
-      file.textContent = gitDiffFileLabel(line);
-      block.appendChild(file);
-      continue;
-    }
-    const row = document.createElement('div');
-    row.className = `acp-harness__tool-diff-line acp-harness__tool-diff-line--${gitDiffLineTone(line)}`;
-    const mark = document.createElement('span');
-    mark.className = 'acp-harness__tool-diff-mark';
-    mark.textContent = gitDiffLineMark(line);
-    const body = document.createElement('span');
-    body.className = 'acp-harness__tool-diff-text';
-    body.textContent = gitDiffLineText(line);
-    row.append(mark, body);
-    block.appendChild(row);
-  }
-  return block;
-}
-
-function gitDiffFileLabel(line: string): string {
-  const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-  if (!match) return line.replace(/^diff --git\s+/, '');
-  const oldPath = match[1] ?? '';
-  const newPath = match[2] ?? '';
-  return oldPath === newPath ? newPath : `${oldPath} -> ${newPath}`;
-}
-
-function gitDiffLineTone(line: string): string {
-  if (line.startsWith('@@')) return 'hunk';
-  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return 'meta';
-  if (line.startsWith('+')) return 'add';
-  if (line.startsWith('-')) return 'del';
-  return 'context';
-}
-
-function gitDiffLineMark(line: string): string {
-  if (line.startsWith('@@')) return '@@';
-  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return '·';
-  if (line.startsWith('+')) return '+';
-  if (line.startsWith('-')) return '-';
-  return '';
-}
-
-function gitDiffLineText(line: string): string {
-  if (line.startsWith('@@')) return line;
-  if (line.startsWith('+++') || line.startsWith('---')) return line.slice(4);
-  if (line.startsWith('+') || line.startsWith('-')) return line.slice(1);
-  return line.startsWith(' ') ? line.slice(1) : line;
-}
-
-function parseGitStatusShort(text: string): Array<{ index: string; worktree: string; path: string }> {
-  const rows: Array<{ index: string; worktree: string; path: string }> = [];
-  for (const raw of text.split('\n')) {
-    if (!raw.trim()) continue;
-    const match = raw.match(/^(.)(.)\s+(.+)$/);
-    if (!match) continue;
-    rows.push({
-      index: match[1] ?? ' ',
-      worktree: match[2] ?? ' ',
-      path: match[3] ?? '',
-    });
-  }
-  return rows.slice(0, 10);
-}
-
-function renderGitStatusShort(rows: Array<{ index: string; worktree: string; path: string }>): HTMLElement {
-  const block = document.createElement('div');
-  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--gitstatus';
-  for (const row of rows) {
-    const item = document.createElement('div');
-    item.className = 'acp-harness__tool-status-row';
-    const badge = document.createElement('span');
-    badge.className = `acp-harness__tool-status-badge acp-harness__tool-status-badge--${gitStatusTone(row.index, row.worktree)}`;
-    badge.textContent = `${row.index}${row.worktree}`.trim() || 'M';
-    const path = document.createElement('span');
-    path.className = 'acp-harness__tool-status-path';
-    path.textContent = row.path;
-    item.append(badge, path);
-    block.appendChild(item);
-  }
-  return block;
-}
-
-function gitStatusTone(index: string, worktree: string): string {
-  if (index === '?' || worktree === '?') return 'new';
-  if (index === 'D' || worktree === 'D') return 'deleted';
-  if (index === 'A' || worktree === 'A') return 'added';
-  return 'modified';
-}
-
-function toolSectionTone(label: string): string {
-  const normalized = label.toLowerCase();
-  if (normalized === 'stderr' || normalized === 'error' || normalized === 'message') return 'error';
-  if (normalized === 'stdout' || normalized === 'output' || normalized === 'text') return 'output';
-  if (normalized === 'summary') return 'summary';
-  if (normalized === 'diff') return 'diff';
-  if (normalized === 'terminal') return 'terminal';
-  if (normalized === 'content') return 'content';
-  return 'default';
-}
-
-function inferLaneModelName(
-  backendId: string,
-  info: AgentInfo | AgentInitInfo,
-  laneModels: Record<string, LaneModelConfig>,
-): string | null {
-  const configured = laneModels[backendId]?.active;
-  if (configured && configured.length > 0) return configured;
-  const reported = findModelName(info.agent_capabilities);
-  if (reported) return reported;
-  if (backendId === 'opencode') return OPENCODE_DEFAULT_MODEL;
-  return null;
-}
-
-function findModelName(value: unknown, depth = 0): string | null {
-  if (depth > 8 || !value || typeof value !== 'object') return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const match = findModelName(item, depth + 1);
-      if (match) return match;
-    }
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  for (const key of ['model', 'modelId', 'model_id', 'selectedModel', 'selected_model', 'activeModel', 'active_model', 'defaultModel', 'default_model']) {
-    const candidate = record[key];
-    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
-  }
-  for (const item of Object.values(record)) {
-    const match = findModelName(item, depth + 1);
-    if (match) return match;
-  }
-  return null;
-}
-
-function renderLaneHead(
-  lane: HarnessLane,
-  active: boolean,
-  mcp: HarnessMcpLaneStats | null,
-  metrics: AcpLaneMetrics | null,
-  inboxDepth: number,
-  pendingPeers: PendingPeerSummary[],
-  isOrchestrator = false,
-): string {
-  const mcpChip = renderMcpChip(mcp);
-  const modelChip = renderModelChip(lane.modelName, lane.modelApplyFailed);
-  const modeChip = renderModeChip(lane);
-  const sandboxChip = renderSandboxChip(lane);
-  const pollyBypassChip = renderPollyBypassChip(lane);
-  const saltyBypassChip = renderSaltyBypassChip(lane);
-  const metricsChip = renderMetricsChip(metrics);
-  // spec 180: behavior-neutral orchestrator-seat badge (≤1 per harness).
-  const orchestratorChip = isOrchestrator
-    ? `<span class="acp-harness__lane-orchestrator" title="orchestrator seat (#orchestrator)">◆ orch</span>`
-    : '';
-  const chipGroup = orchestratorChip + modelChip + modeChip + mcpChip + sandboxChip + pollyBypassChip + saltyBypassChip + metricsChip;
-  const chips = chipGroup
-    ? `<span class="acp-harness__lane-chips">${chipGroup}</span>`
-    : '';
-  const inboxChip = inboxDepth > 0
-    ? `<span class="acp-harness__lane-inbox" title="${inboxDepth} pending peer message${inboxDepth === 1 ? '' : 's'}">${harnessIcon('inbox', 'acp-harness__icon--dot')}${inboxDepth}</span>`
-    : '';
-  if (!active) {
-    const statusText = lane.status === 'needs_permission' ? 'perm' : statusLabel(lane.status);
-    return (
-      renderLaneSymbol(lane.status) +
-      `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
-      `<span class="acp-harness__lane-status">${esc(statusText)}</span>` +
-      inboxChip +
-      chips +
-      `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>`
-    );
-  }
-  // spec 199 (issue #13): once a cancel goes unacknowledged the same key becomes
-  // the force-restart gesture — surface it here, since the transcript row that
-  // announced it scrolls away. A pending shell cancel still wins in the key
-  // handler, so it keeps the plain hint.
-  const cancelHint = lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer' || lane.pendingShellId
-    ? lane.cancelUnacked && !lane.pendingShellId
-      ? `<span class="acp-harness__lane-cancel-hint acp-harness__lane-cancel-hint--force" title="cancel unacknowledged - ⌃C force-restarts this lane and resumes the session">⌃C force restart</span>`
-      : `<span class="acp-harness__lane-cancel-hint">⌃C cancel</span>`
-    : '';
-  return (
-    renderLaneSymbol(lane.status) +
-    `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
-    `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
-    inboxChip +
-    chips +
-    `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>` +
-    cancelHint
-  );
-}
-
-function renderMetricsChip(metrics: AcpLaneMetrics | null): string {
-  if (!metrics || !metrics.root_alive || metrics.proc_count === 0) return '';
-  const cpu = formatCpu(metrics.total_cpu_percent);
-  const rss = formatRss(metrics.total_rss_mb);
-  const bucket = metricsBucket(metrics.total_cpu_percent);
-  const title = `pid ${metrics.root_pid} · adapter + ${metrics.proc_count - 1} children · ⌘P m for breakdown`;
-  return (
-    `<span class="acp-harness__lane-metrics acp-harness__lane-metrics--${bucket}" title="${esc(title)}">` +
-    `<span class="acp-harness__lane-metrics-cpu">${esc(cpu)}</span>` +
-    `<span class="acp-harness__lane-metrics-rss">${esc(rss)}</span>` +
-    `</span>`
-  );
-}
-
-function formatCpu(pct: number): string {
-  if (!Number.isFinite(pct)) return '--';
-  if (pct >= 100) return `${pct.toFixed(0)}%`;
-  if (pct >= 10) return `${pct.toFixed(0)}%`;
-  return `${pct.toFixed(1)}%`;
-}
-
-function formatRss(mb: number): string {
-  if (!Number.isFinite(mb) || mb <= 0) return '--';
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)}G`;
-  return `${mb.toFixed(0)}M`;
-}
-
-function renderProcessTree(m: AcpLaneMetrics): string {
-  // Build parent → children map and render BFS-tree from root.
-  const childrenByParent = new Map<number, number[]>();
-  for (const p of m.processes) {
-    if (p.parent_pid !== null && p.parent_pid !== undefined) {
-      const arr = childrenByParent.get(p.parent_pid) ?? [];
-      arr.push(p.pid);
-      childrenByParent.set(p.parent_pid, arr);
-    }
-  }
-  const byPid = new Map<number, AcpLaneMetrics['processes'][number]>();
-  for (const p of m.processes) byPid.set(p.pid, p);
-
-  const lines: string[] = [];
-  const walk = (pid: number, depth: number, isLast: boolean, prefix: string): void => {
-    const p = byPid.get(pid);
-    if (!p) return;
-    const branch = depth === 0 ? '' : isLast ? '└─ ' : '├─ ';
-    const role = depth === 0
-      ? `<span class="acp-harness__metrics-role">adapter</span>`
-      : '';
-    const { label, command } = describeProc(p);
-    const detail = label
-      ? `<span class="acp-harness__metrics-detail">${esc(label)}</span>`
-      : '';
-    const processName =
-      `<span class="acp-harness__metrics-tree">${esc(prefix + branch)}</span>` +
-      `<span class="acp-harness__metrics-name">${esc(p.name)}</span>` +
-      detail +
-      role;
-    lines.push(
-      `<div class="acp-harness__metrics-row${depth === 0 ? ' acp-harness__metrics-row--root' : ''}" title="${esc(command)}">` +
-        `<span class="acp-harness__metrics-process">${processName}</span>` +
-        `<span class="acp-harness__metrics-pid">${p.pid}</span>` +
-        renderMetricCell('cpu', formatCpu(p.cpu_percent), metricPercent(p.cpu_percent, 100)) +
-        renderMetricCell('rss', formatRss(p.rss_mb), metricPercent(p.rss_mb, m.total_rss_mb)) +
-      `</div>`,
-    );
-    const kids = [...(childrenByParent.get(pid) ?? [])].sort((a, b) => {
-      const procA = byPid.get(a);
-      const procB = byPid.get(b);
-      return (procB?.cpu_percent ?? 0) - (procA?.cpu_percent ?? 0);
-    });
-    const visibleKids = kids.filter((k) => byPid.has(k));
-    visibleKids.forEach((kid, i) => {
-      const last = i === visibleKids.length - 1;
-      const nextPrefix = depth === 0 ? '' : prefix + (isLast ? '   ' : '│  ');
-      walk(kid, depth + 1, last, nextPrefix);
-    });
-  };
-  walk(m.root_pid, 0, true, '');
-  return (
-    `<div class="acp-harness__metrics-tree-block">` +
-      `<div class="acp-harness__metrics-row acp-harness__metrics-row--header">` +
-        `<span>Process</span><span>PID</span><span>CPU</span><span>Mem</span>` +
-      `</div>` +
-      lines.join('') +
-    `</div>`
-  );
-}
-
-// Interpreters whose bare process name ("node", "python3") says nothing about
-// what they're actually running — the useful identity lives in the script /
-// module argument. Everything else is assumed to be its own meaningful name.
-const PROC_INTERPRETERS = new Set([
-  'node', 'node.exe', 'deno', 'bun', 'electron',
-  'python', 'python.exe', 'ruby', 'perl', 'php', 'java', 'dotnet',
-]);
-
-function isInterpreter(name: string): boolean {
-  const n = name.toLowerCase();
-  return PROC_INTERPRETERS.has(n) || n.startsWith('python');
-}
-
-// "@scope/pkg@1.2.3" → "@scope/pkg"; "pkg@1.2.3" → "pkg"; leaves a bare
-// "@scope/pkg" (no version) and a plain "pkg" untouched.
-function stripPkgVersion(spec: string): string {
-  const at = spec.lastIndexOf('@');
-  return at > 0 ? spec.slice(0, at) : spec;
-}
-
-function procBasename(path: string): string {
-  const trimmed = path.replace(/[/\\]+$/, '');
-  const i = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return i === -1 ? trimmed : trimmed.slice(i + 1);
-}
-
-// Turn a script path into the most recognizable name: the npm package when it
-// lives under node_modules (handles @scope/name and .bin shims), otherwise the
-// file's basename. e.g.
-//   .../node_modules/@modelcontextprotocol/server-filesystem/dist/index.js
-//     → "@modelcontextprotocol/server-filesystem"
-//   .../node_modules/.bin/claude-code-acp → "claude-code-acp"
-//   /Users/me/proj/server.js              → "server.js"
-function prettifyScriptPath(path: string): string {
-  const marker = path.lastIndexOf('node_modules/');
-  if (marker !== -1) {
-    const parts = path.slice(marker + 'node_modules/'.length).split('/').filter(Boolean);
-    if (parts.length) {
-      if (parts[0] === '.bin' && parts[1]) return parts[1];
-      if (parts[0].startsWith('@') && parts[1]) return `${parts[0]}/${parts[1]}`;
-      return parts[0];
-    }
-  }
-  return procBasename(path);
-}
-
-// Derive a short human label for a process row plus the full command for the
-// hover tooltip. The label answers "which node is this?" — the question the
-// bare process tree can't, since a busy lane is mostly indistinguishable
-// "node" rows (the adapter wrapper, each MCP server, tool subprocesses).
-function describeProc(p: AcpLaneProcMetric): { label: string; command: string } {
-  const argv = Array.isArray(p.cmd) ? p.cmd.filter((a) => a.length > 0) : [];
-  const command = argv.length ? argv.join(' ') : (p.exe ?? p.name);
-  // First argument that isn't a flag — for interpreters this is the script or,
-  // after `-m`/`-e` style flags, the module/code token.
-  const firstArg = argv.slice(1).find((a) => !a.startsWith('-'));
-
-  let label = '';
-  if (isInterpreter(p.name)) {
-    if (firstArg) {
-      label = prettifyScriptPath(firstArg);
-      // npx / npm-exec launchers: the script *is* the launcher ("npm"), so the
-      // useful identity is the package it's running, further along argv. The
-      // Claude lane (`npx -y @agentclientprotocol/claude-agent-acp`) lands here.
-      const launcher = procBasename(firstArg).toLowerCase();
-      if (launcher === 'npx-cli.js' || launcher === 'npx' || launcher === 'npm-cli.js' || launcher === 'npm') {
-        const after = argv.slice(argv.indexOf(firstArg) + 1).find((a) => !a.startsWith('-'));
-        if (after) label = stripPkgVersion(after);
-      }
-    }
-  } else if (firstArg) {
-    // Non-interpreter binary (claude, rg, git…): a path arg → its basename,
-    // a short bareword → the subcommand itself.
-    label = /[/\\]/.test(firstArg)
-      ? prettifyScriptPath(firstArg)
-      : (firstArg.length <= 24 ? firstArg : '');
-  } else if (argv.length === 0 && p.exe) {
-    // No argv at all (restricted process): fall back to the exe basename when
-    // it adds something the name doesn't already say.
-    const base = procBasename(p.exe);
-    if (base && base.toLowerCase() !== p.name.toLowerCase()) label = base;
-  }
-
-  // Never echo the process name back as its own label.
-  if (label.toLowerCase() === p.name.toLowerCase()) label = '';
-  return { label, command };
-}
-
-function renderMetricCell(kind: 'cpu' | 'rss', value: string, width: number): string {
-  return (
-    `<span class="acp-harness__metrics-meter acp-harness__metrics-meter--${kind}">` +
-      `<span class="acp-harness__metrics-meter-value">${esc(value)}</span>` +
-      `<span class="acp-harness__metrics-meter-track">` +
-        `<span class="acp-harness__metrics-meter-fill" style="width:${width.toFixed(0)}%"></span>` +
-      `</span>` +
-    `</span>`
-  );
-}
-
-function metricPercent(value: number, max: number): number {
-  if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) return 0;
-  return Math.max(0, Math.min(100, (value / max) * 100));
-}
-
-function metricsBucket(cpu: number): 'idle' | 'warm' | 'hot' | 'crit' {
-  if (cpu > 95) return 'crit';
-  if (cpu > 80) return 'hot';
-  if (cpu > 60) return 'warm';
-  return 'idle';
-}
-
-function renderModeChip(lane: HarnessLane): string {
-  if (!lane.currentMode) return '';
-  const title = lane.currentMode.description
-    ? `${lane.currentMode.name} — ${lane.currentMode.description}`
-    : `mode ${lane.currentMode.id}`;
-  return `<span class="acp-harness__lane-mode" title="${esc(title)}">${esc(lane.currentMode.name)}</span>`;
-}
-
-function isPollyImplementerBypass(lane: HarnessLane): boolean {
-  return lane.pollyBuiltinRole === 'implementer' && lane.permissionMode === 'bypass';
-}
-
-/** spec 164 — Polly implementers run with permissionMode bypass; surface in chrome. */
-function renderPollyBypassChip(lane: HarnessLane): string {
-  if (!isPollyImplementerBypass(lane)) return '';
-  const title =
-    'Polly worker — all tool permissions auto-accepted for this lane until the Polly role clears';
-  return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">polly-bypass</span>`;
-}
-
-function isSaltyExecutorBypass(lane: HarnessLane): boolean {
-  return (
-    (lane.saltyBuiltinRole === 'mechanical' || lane.saltyBuiltinRole === 'codexPeer') &&
-    lane.permissionMode === 'bypass'
-  );
-}
-
-/** spec 195 — Salty mechanical/codex-peer executors run bypassed; surface in chrome. */
-function renderSaltyBypassChip(lane: HarnessLane): string {
-  if (!isSaltyExecutorBypass(lane)) return '';
-  const title =
-    'Salty executor — all tool permissions auto-accepted for this lane until the Salty role clears (#salty clear)';
-  return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">salty-bypass</span>`;
-}
-
-function renderSandboxChip(lane: HarnessLane): string {
-  // Surface backend-specific safety caveats directly in the lane chrome:
-  // Pi is known to bypass the permission rail; Junie still needs manual
-  // verification of ACP write-permission semantics.
-  const warn = harnessIcon('warn', 'acp-harness__icon--dot');
-  if (lane.backendId === 'pi-acp') {
-    const title = 'No permission gate — Pi runs edits and shell commands immediately. Use a sandboxed cwd or container if untrusted.';
-    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">${warn} unsandboxed</span>`;
-  }
-  if (lane.backendId === 'junie') {
-    const title = 'Junie ACP write-permission behavior has not been verified yet. Krypton does not pass force/yolo/brave flags, but use a trusted cwd until verified.';
-    return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">${warn} permissions unverified</span>`;
-  }
-  return '';
-}
-
-function renderModelChip(modelName: string | null, applyFailed = false): string {
-  if (!modelName) return '';
-  if (applyFailed) {
-    const title = `requested model ${modelName} not applied — agent is using its default or prior model (session/set_model failed)`;
-    return `<span class="acp-harness__lane-model acp-harness__lane-model--warn" title="${esc(title)}">${harnessIcon('warn', 'acp-harness__icon--dot')} ${esc(modelName)}</span>`;
-  }
-  return `<span class="acp-harness__lane-model" title="model ${esc(modelName)}">${esc(modelName)}</span>`;
-}
-
-function renderMcpChip(mcp: HarnessMcpLaneStats | null): string {
-  if (!mcp || mcp.toolsListCount === 0) {
-    const title = mcp
-      ? `MCP descriptor sent; adapter has not called tools/list. init=${mcp.initializeCount}`
-      : 'MCP descriptor sent; adapter has not contacted the server.';
-    return `<span class="acp-harness__lane-mcp acp-harness__lane-mcp--off" title="${esc(title)}">mcp —</span>`;
-  }
-  const title = `tools/list ${mcp.toolsListCount} · tools/call ${mcp.toolsCallCount}` +
-    (mcp.lastMethod ? ` · last ${mcp.lastMethod}` : '');
-  return `<span class="acp-harness__lane-mcp acp-harness__lane-mcp--on" title="${esc(title)}">mcp ${harnessIcon('check', 'acp-harness__icon--dot')}${mcp.toolsCallCount > 0 ? ` ${mcp.toolsCallCount}` : ''}</span>`;
-}
-
-const SLASH_PALETTE_REGEX = /^\/[a-zA-Z0-9_-]*$/;
-
-function slashPaletteVisible(lane: HarnessLane): boolean {
-  if (lane.slashPaletteDismissed) return false;
-  if (lane.availableCommands.length === 0) return false;
-  return SLASH_PALETTE_REGEX.test(lane.draft);
-}
-
-function filteredSlashCommands(lane: HarnessLane): AcpAvailableCommand[] {
-  const match = lane.draft.match(SLASH_PALETTE_REGEX);
-  if (!match) return [];
-  const prefix = lane.draft.slice(1).toLowerCase();
-  return lane.availableCommands.filter((c) => c.name.toLowerCase().startsWith(prefix));
-}
-
-function renderSlashPalette(lane: HarnessLane): string {
-  if (!slashPaletteVisible(lane)) return '';
-  const matches = filteredSlashCommands(lane);
-  if (matches.length === 0) return '';
-  const safeIndex = Math.max(0, Math.min(lane.slashPaletteIndex, matches.length - 1));
-  const rows = matches
-    .map((cmd, i) => {
-      const sel = i === safeIndex ? ' acp-harness__slash-palette-row--selected' : '';
-      const desc = cmd.description ? `<span class="acp-harness__slash-palette-desc">${esc(cmd.description)}</span>` : '';
-      const hint = cmd.inputHint ? `<span class="acp-harness__slash-palette-hint">${esc(cmd.inputHint)}</span>` : '';
-      return (
-        `<div class="acp-harness__slash-palette-row${sel}">` +
-        `<span class="acp-harness__slash-palette-name">/${esc(cmd.name)}</span>` +
-        hint +
-        desc +
-        `</div>`
-      );
-    })
-    .join('');
-  return (
-    `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
-    `<div class="acp-harness__slash-palette-meta">↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss</div>` +
-    rows +
-    `</div>`
-  );
-}
-
-export function laneAccent(index: number): string {
-  const accents = [
-    'var(--krypton-window-accent, #0cf)',
-    '#8effb0',
-    '#ffd166',
-    '#c77dff',
-    '#ff6b8b',
-    '#5fb3b3',
-    '#ff9f1c',
-    '#b18cff',
-    '#4dd0ff',
-    '#5ce6a8',
-    '#7fa8ff',
-    '#ff8552',
-    '#56d6c0',
-  ];
-  return accents[(index - 1) % accents.length];
-}
-
-export function laneAccentForLabel(label: string): string {
-  if (/codex/i.test(label)) return laneAccent(1);
-  if (/claude/i.test(label)) return laneAccent(2);
-  if (/opencode/i.test(label)) return laneAccent(4);
-  if (/^pi(-|$)/i.test(label)) return laneAccent(5);
-  if (/droid/i.test(label)) return laneAccent(6);
-  if (/cursor/i.test(label)) return laneAccent(7);
-  if (/junie/i.test(label)) return laneAccent(8);
-  if (/^omp(-|$)/i.test(label)) return laneAccent(9);
-  if (/grok/i.test(label)) return laneAccent(10);
-  if (/copilot/i.test(label)) return laneAccent(11);
-  if (/mimo/i.test(label)) return laneAccent(12);
-  if (/cline/i.test(label)) return laneAccent(13);
-  const match = label.match(/-(\d+)$/);
-  return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
-}
-
-function renderLaneStats(lane: HarnessLane, projectDir: string | null): string {
-  // Each cell is a <span>; iconified cells carry a title so the dropped noun
-  // (ctx/tools/rows) and the ↓↑ arrows stay legible to tooltips + screen readers.
-  const spans: string[] = [];
-  const cell = (inner: string, title?: string): string =>
-    `<span${title ? ` title="${esc(title)}"` : ''}>${inner}</span>`;
-  const text = (s: string): string => cell(esc(s));
-
-  spans.push(cell(
-    `<svg class="acp-harness__icon acp-harness__icon--accent" aria-hidden="true"><use href="#${backendLogoId(lane.backendId)}"/></svg>${esc(lane.backendId)}`,
-    `backend ${lane.backendId}`,
-  ));
-  spans.push(text(lane.sessionId ? `sess ${shortId(lane.sessionId)}` : 'sess pending'));
-  if (projectDir) spans.push(text(basename(projectDir)));
-
-  const usage = lane.usage;
-  if (usage) {
-    if (typeof usage.used === 'number') {
-      const val = typeof usage.size === 'number' && usage.size > 0
-        ? `${formatCount(usage.used)}/${formatCount(usage.size)} (${Math.round((usage.used / usage.size) * 100)}%)`
-        : formatCount(usage.used);
-      spans.push(cell(`${harnessIcon('gauge')}${esc(val)}`, `context ${val}`));
-    }
-    if (typeof usage.cachedReadTokens === 'number' || typeof usage.cachedWriteTokens === 'number') {
-      const r = formatCount(usage.cachedReadTokens ?? 0);
-      const w = formatCount(usage.cachedWriteTokens ?? 0);
-      spans.push(cell(
-        `cache ${esc(r)}${harnessIcon('dl', 'acp-harness__icon--dot')}${esc(w)}${harnessIcon('ul', 'acp-harness__icon--dot')}`,
-        `cache read ${r}, write ${w}`,
-      ));
-    }
-    if (typeof usage.inputTokens === 'number' || typeof usage.outputTokens === 'number') {
-      spans.push(text(`in ${formatCount(usage.inputTokens ?? 0)} out ${formatCount(usage.outputTokens ?? 0)}`));
-    }
-    if (usage.cost) spans.push(text(`$${usage.cost.amount.toFixed(4)} ${usage.cost.currency}`));
-  }
-
-  if (lane.toolCalls.size > 0) {
-    spans.push(cell(`${harnessIcon('tool')}${esc(String(lane.toolCalls.size))}`, `${lane.toolCalls.size} tool calls`));
-  }
-  spans.push(cell(`${harnessIcon('list')}${esc(String(lane.transcript.length))}`, `${lane.transcript.length} transcript rows`));
-  if (lane.pendingPermissions.length > 0) spans.push(text(`${lane.pendingPermissions.length} perm`));
-  if (lane.acceptAllForTurn) spans.push(text('accept-all'));
-  if (lane.rejectAllForTurn) spans.push(text('reject-all'));
-  if (lane.peerAutoAcceptForTurn) spans.push(text('peer-auto'));
-  if (isPollyImplementerBypass(lane)) spans.push(text('polly-bypass'));
-  if (lane.error) spans.push(text(`err: ${truncate(lane.error, 48)}`));
-
-  return spans.join('');
-}
-
-function basename(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  const idx = trimmed.lastIndexOf('/');
-  return idx === -1 ? trimmed : trimmed.slice(idx + 1) || trimmed;
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
-}
-
 /** spec 136: strict positive base-10 index parse for #unqueue / #queue edit.
  *  Rejects 0, negatives, decimals, and trailing junk (1foo). null = invalid. */
 export function parseQueueIndex(arg: string | undefined): number | null {
   if (arg === undefined || !/^[1-9]\d*$/.test(arg)) return null;
   return Number(arg);
-}
-
-function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
-  switch (kind) {
-    case 'system': return 'sys';
-    case 'assistant': return 'agent';
-    case 'provider_error': return 'agent';
-    case 'permission': return 'perm';
-    case 'memory': return 'mem';
-    case 'shell': return 'sh';
-    case 'fs_activity': return 'fs';
-    case 'inter_lane': return 'mail';
-    case 'artifact': return 'html';
-    default: return kind;
-  }
-}
-
-export function isDirectPeerPeekReasonKey(reasonKey: string): boolean {
-  return reasonKey === 'awaiting-peer' || reasonKey === 'inbound-peer' || reasonKey === 'peer-counterpart';
 }
 
 /**
@@ -14609,1300 +12026,7 @@ export function parseReviewCommandArgs(rest: string[]): { nameTokens: string[]; 
   return { nameTokens, tail };
 }
 
-function heatWindowCutoffMs(window: LanePeekHeatWindow, now: number): number {
-  if (window === '30s') return now - 30_000;
-  if (window === '5m') return now - 5 * 60_000;
-  return 0;
-}
-
-function scanTranscriptHeat(
-  transcript: HarnessTranscriptItem[],
-  window: LanePeekHeatWindow,
-  now: number,
-): { tools: number; peerRows: number; permissions: number; errors: number } {
-  const cutoff = heatWindowCutoffMs(window, now);
-  const timed = window !== 'session';
-  const maxItems = window === 'session' ? LANE_PEEK_HEAT_SESSION_TAIL : LANE_PEEK_HEAT_TAIL;
-  let tools = 0;
-  let peerRows = 0;
-  let permissions = 0;
-  let errors = 0;
-  let scanned = 0;
-  for (let i = transcript.length - 1; i >= 0 && scanned < maxItems; i--) {
-    const item = transcript[i];
-    const t = item.createdAt ?? now;
-    if (timed && t < cutoff) break;
-    scanned++;
-    if (item.kind === 'tool') tools++;
-    else if (item.kind === 'inter_lane') peerRows++;
-    else if (item.kind === 'permission') permissions++;
-    else if (item.kind === 'provider_error') errors++;
-  }
-  return { tools, peerRows, permissions, errors };
-}
-
-function tokenDeltaFromHistory(history: LaneActivitySample[], window: LanePeekHeatWindow, now: number): number | null {
-  if (history.length === 0) return null;
-  const last = history[history.length - 1];
-  if (last.usageUsed === null || !Number.isFinite(last.usageUsed)) return null;
-  const cutoff = heatWindowCutoffMs(window, now);
-  let oldest: LaneActivitySample | null = null;
-  for (let i = history.length - 1; i >= 0; i--) {
-    const s = history[i];
-    if (window !== 'session' && s.at < cutoff) break;
-    oldest = s;
-  }
-  if (!oldest || oldest.usageUsed === null || !Number.isFinite(oldest.usageUsed)) return null;
-  const d = last.usageUsed - oldest.usageUsed;
-  return d > 0 ? d : null;
-}
-
-function cpuPeakFromHistory(history: LaneActivitySample[], window: LanePeekHeatWindow, now: number): number | null {
-  const cutoff = heatWindowCutoffMs(window, now);
-  let peak: number | null = null;
-  for (const s of history) {
-    if (window !== 'session' && s.at < cutoff) continue;
-    if (s.cpuPercent === null || !Number.isFinite(s.cpuPercent)) continue;
-    peak = peak === null ? s.cpuPercent : Math.max(peak, s.cpuPercent);
-  }
-  return peak;
-}
-
-function heatAlertBoost(lane: LanePeekHeatLaneInput): number {
-  if (lane.status === 'error') return 100;
-  if (lane.status === 'needs_permission') return 70;
-  if (lane.pendingShell) return 55;
-  if (lane.status === 'awaiting_peer') return 65;
-  return 0;
-}
-
-function heatToolScore100(toolDelta: number): number {
-  return Math.min(100, Math.max(0, (toolDelta / 8) * 100));
-}
-
-function heatTokenScore100(tokenDelta: number | null): number {
-  if (tokenDelta === null || tokenDelta <= 0) return 0;
-  const v = Math.log10(tokenDelta + 1) / 4;
-  return Math.min(100, Math.max(0, v * 100));
-}
-
-function heatPeerScore100(peerRows: number, pendingPeerCount: number): number {
-  const w = pendingPeerCount * LANE_PEEK_HEAT_PENDING_PEER_WEIGHT;
-  const frac = (peerRows + w) / 6;
-  return Math.min(100, Math.max(0, frac * 100));
-}
-
-function heatProcessScore100(cpuPeak: number | null): number {
-  if (cpuPeak === null || !Number.isFinite(cpuPeak)) return 0;
-  return Math.min(100, Math.max(0, cpuPeak));
-}
-
-type HeatConcreteMetric = Exclude<LanePeekHeatMetric, 'auto'>;
-
-function scoreForConcreteMetric(
-  m: HeatConcreteMetric,
-  toolS: number,
-  tokenS: number,
-  peerS: number,
-  procS: number,
-  alertS: number,
-): number {
-  switch (m) {
-    case 'tools':
-      return toolS;
-    case 'tokens':
-      return tokenS;
-    case 'peer':
-      return peerS;
-    case 'process':
-      return procS;
-    case 'alerts':
-      return alertS;
-  }
-}
-
-function heatSideLabel(lane: LanePeekHeatLaneInput): string {
-  return statusLabel(lane.status);
-}
-
-function buildHeatDeltaLine(
-  metric: HeatConcreteMetric,
-  a: LaneHeatSide,
-  b: LaneHeatSide,
-  tokensMissing: boolean,
-): string {
-  if (metric === 'tools') {
-    return `tools ${a.toolDelta} vs ${b.toolDelta}`;
-  }
-  if (metric === 'tokens') {
-    if (tokensMissing) return 'tokens --';
-    const fa = a.tokenDelta === null ? '--' : `+${formatHeatTokenSuffix(a.tokenDelta)}`;
-    const fb = b.tokenDelta === null ? '--' : `+${formatHeatTokenSuffix(b.tokenDelta)}`;
-    return `tokens ${fa} vs ${fb}`;
-  }
-  if (metric === 'peer') {
-    return `peer ${a.peerDelta} vs ${b.peerDelta}`;
-  }
-  if (metric === 'process') {
-    const ca = a.cpuPeak === null ? '--' : `${Math.round(a.cpuPeak)}%`;
-    const cb = b.cpuPeak === null ? '--' : `${Math.round(b.cpuPeak)}%`;
-    return `cpu ${ca} vs ${cb}`;
-  }
-  return `alerts ${a.label} vs ${b.label}`;
-}
-
-function formatHeatTokenSuffix(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '0';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(Math.round(n));
-}
-
-function buildLaneHeatSide(
-  lane: LanePeekHeatLaneInput,
-  window: LanePeekHeatWindow,
-  now: number,
-  metric: HeatConcreteMetric,
-): LaneHeatSide {
-  const scan = scanTranscriptHeat(lane.transcript, window, now);
-  const tokenDelta = tokenDeltaFromHistory(lane.metricHistory, window, now);
-  const cpuPeak = cpuPeakFromHistory(lane.metricHistory, window, now);
-  const alertS = heatAlertBoost(lane);
-  const toolS = heatToolScore100(scan.tools);
-  const tokenS = heatTokenScore100(tokenDelta);
-  const peerS = heatPeerScore100(scan.peerRows, lane.pendingPeerCount);
-  const procS = heatProcessScore100(cpuPeak);
-  const score = Math.round(scoreForConcreteMetric(metric, toolS, tokenS, peerS, procS, alertS));
-  return {
-    laneId: lane.id,
-    displayName: lane.displayName,
-    score,
-    toolDelta: scan.tools,
-    tokenDelta,
-    peerDelta: scan.peerRows,
-    permissionDelta: scan.permissions,
-    errorDelta: scan.errors,
-    cpuPeak,
-    label: heatSideLabel(lane),
-  };
-}
-
-/**
- * Derives lane-pair heat for the active lane + peeked lane (slice 109).
- * Pure: callers supply coordinator-derived counts on each `LanePeekHeatLaneInput`.
- */
-export function deriveLanePairHeat(
-  active: LanePeekHeatLaneInput,
-  peeked: LanePeekHeatLaneInput,
-  now: number,
-  window: LanePeekHeatWindow,
-  metric: LanePeekHeatMetric,
-): LanePairHeatSummary {
-  const scanA = scanTranscriptHeat(active.transcript, window, now);
-  const scanP = scanTranscriptHeat(peeked.transcript, window, now);
-  const tokA = tokenDeltaFromHistory(active.metricHistory, window, now);
-  const tokP = tokenDeltaFromHistory(peeked.metricHistory, window, now);
-  const cpuA = cpuPeakFromHistory(active.metricHistory, window, now);
-  const cpuP = cpuPeakFromHistory(peeked.metricHistory, window, now);
-  const alertA = heatAlertBoost(active);
-  const alertP = heatAlertBoost(peeked);
-  const subA = {
-    toolS: heatToolScore100(scanA.tools),
-    tokenS: heatTokenScore100(tokA),
-    peerS: heatPeerScore100(scanA.peerRows, active.pendingPeerCount),
-    procS: heatProcessScore100(cpuA),
-    alertS: alertA,
-  };
-  const subP = {
-    toolS: heatToolScore100(scanP.tools),
-    tokenS: heatTokenScore100(tokP),
-    peerS: heatPeerScore100(scanP.peerRows, peeked.pendingPeerCount),
-    procS: heatProcessScore100(cpuP),
-    alertS: alertP,
-  };
-
-  let resolved: HeatConcreteMetric;
-  if (metric !== 'auto') {
-    resolved = metric;
-  } else {
-    const cand: HeatConcreteMetric[] = ['tools', 'tokens', 'peer', 'process', 'alerts'];
-    resolved = 'alerts';
-    let best = -1;
-    for (const m of cand) {
-      const va = scoreForConcreteMetric(m, subA.toolS, subA.tokenS, subA.peerS, subA.procS, subA.alertS);
-      const vb = scoreForConcreteMetric(m, subP.toolS, subP.tokenS, subP.peerS, subP.procS, subP.alertS);
-      const vmax = Math.max(va, vb);
-      if (vmax > best) {
-        best = vmax;
-        resolved = m;
-      }
-    }
-  }
-
-  const sideA = buildLaneHeatSide(active, window, now, resolved);
-  const sideP = buildLaneHeatSide(peeked, window, now, resolved);
-  const pairScore = Math.max(sideA.score, sideP.score);
-  let dominant: 'active' | 'peeked' | 'balanced' = 'balanced';
-  if (sideA.score > sideP.score + 5) dominant = 'active';
-  else if (sideP.score > sideA.score + 5) dominant = 'peeked';
-
-  const tokensMissing =
-    resolved === 'tokens' && sideA.tokenDelta === null && sideP.tokenDelta === null;
-  const unavailableReason =
-    resolved === 'tokens' && tokA === null && tokP === null ? 'no usage counters on either lane' : null;
-
-  const deltaLine = buildHeatDeltaLine(resolved, sideA, sideP, tokensMissing);
-
-  return {
-    metric: resolved,
-    window,
-    active: sideA,
-    peeked: sideP,
-    pairScore,
-    dominantSide: dominant,
-    unavailableReason,
-    deltaLine,
-  };
-}
-
-function lanePeekPriorityClass(candidate: LanePeekCandidate): 'high' | 'warn' | 'info' {
-  const kind = candidate.summary.payload?.kind;
-  if (kind === 'permission' || kind === 'error') return 'high';
-  if (candidate.summary.status === 'busy' || candidate.summary.status === 'awaiting_peer') return 'warn';
-  if (candidate.reasonKey === 'lane-shell') return 'warn';
-  return 'info';
-}
-
-function renderLanePeekEventRow(candidate: LanePeekCandidate): string {
-  const payload = candidate.summary.payload;
-  let text = candidate.reasonLabel;
-  let meta = '';
-  if (payload?.kind === 'permission') {
-    text = `▸ approve <b>${esc(payload.toolName)}</b>`;
-    meta = esc(truncateInline(payload.subject, 36));
-  } else if (payload?.kind === 'peer') {
-    const verb = payload.direction === 'in' ? 'message from' : payload.direction === 'out' ? 'sent to' : 'awaiting';
-    text = `▸ ${esc(verb)} <b>${esc(payload.peerDisplayName)}</b>`;
-    meta = esc(payload.ageLabel);
-  } else if (payload?.kind === 'error') {
-    text = `▸ <b>${esc(truncateInline(payload.message, 32))}</b>`;
-  } else if (payload?.kind === 'activity') {
-    text = `▸ ${esc(truncateInline(payload.label, 36))}`;
-    meta = esc(payload.ageLabel);
-  } else {
-    text = `▸ ${esc(candidate.reasonLabel)}`;
-  }
-  return (
-    `<div class="acp-harness__lane-peek-event">` +
-      `<span class="acp-harness__lane-peek-event-text">${text}</span>` +
-      (meta ? `<span class="acp-harness__lane-peek-event-meta">${meta}</span>` : '') +
-    `</div>`
-  );
-}
-
-function renderLanePeekRow(prefix: string, value: string): string {
-  return (
-    `<div class="acp-harness__lane-peek-row">` +
-      `<span class="acp-harness__lane-peek-prefix">${esc(prefix)}</span>` +
-      `<span class="acp-harness__lane-peek-value">${value}</span>` +
-    `</div>`
-  );
-}
-
-function renderLanePeekPlanRow(plan: NonNullable<LanePeekSnapshot['plan']>): string {
-  const text = plan.activeText ? truncateInline(plan.activeText, 32) : 'all done';
-  return (
-    `<div class="acp-harness__lane-peek-row">` +
-      `<span class="acp-harness__lane-peek-prefix">plan</span>` +
-      `<span class="acp-harness__lane-peek-plan">` +
-        `<span class="acp-harness__lane-peek-plan-count">${plan.done}/${plan.total}</span>` +
-        `<span class="acp-harness__lane-peek-plan-text">${esc(text)}</span>` +
-      `</span>` +
-    `</div>`
-  );
-}
-
-function renderLanePeekStatChips(snapshot: LanePeekSnapshot): string {
-  const chips: string[] = [];
-  if (snapshot.modelName) chips.push(`<span class="acp-harness__lane-peek-chip">${esc(snapshot.modelName)}</span>`);
-  const usage = snapshot.usage;
-  if (usage && typeof usage.used === 'number') {
-    const used = formatCount(usage.used);
-    if (typeof usage.size === 'number' && usage.size > 0) {
-      chips.push(`<span class="acp-harness__lane-peek-chip"><b>${esc(used)}</b>/${esc(formatCount(usage.size))}</span>`);
-    } else {
-      chips.push(`<span class="acp-harness__lane-peek-chip"><b>${esc(used)}</b> ctx</span>`);
-    }
-  }
-  const m = snapshot.metrics;
-  if (m && m.proc_count > 0) {
-    const hot = m.total_cpu_percent >= 80 || m.total_rss_mb >= 1500;
-    const cls = hot ? 'acp-harness__lane-peek-chip acp-harness__lane-peek-chip--hot' : 'acp-harness__lane-peek-chip';
-    const cpu = Math.round(m.total_cpu_percent);
-    const mem = m.total_rss_mb >= 1024 ? `${(m.total_rss_mb / 1024).toFixed(1)}G` : `${Math.round(m.total_rss_mb)}M`;
-    chips.push(`<span class="${cls}"><b>${cpu}%</b> ${esc(mem)}</span>`);
-  }
-  const mcp = snapshot.mcp;
-  if (mcp && mcp.toolsCallCount > 0) {
-    chips.push(`<span class="acp-harness__lane-peek-chip">mcp <b>${mcp.toolsCallCount}</b></span>`);
-  }
-  if (chips.length === 0) return '';
-  return `<footer class="acp-harness__lane-peek-foot">${chips.join('')}</footer>`;
-}
-
-function lanePeekAgeLabel(snapshot: LanePeekSnapshot, candidate: LanePeekCandidate, now: number): string {
-  if (snapshot.status === 'busy' && snapshot.activeTurnStartedAt) {
-    return formatElapsed(now - snapshot.activeTurnStartedAt);
-  }
-  const at = candidate.at;
-  if (!at) return '';
-  return formatCoarseAge(now - at);
-}
-
-function renderLanePeek(
-  candidate: LanePeekCandidate,
-  snapshot: LanePeekSnapshot | null,
-  locked: boolean,
-): HTMLElement {
-  const el = document.createElement('aside');
-  el.className = 'acp-harness__lane-peek';
-  el.dataset.reason = candidate.reasonKey;
-  el.dataset.priority = lanePeekPriorityClass(candidate);
-  const now = Date.now();
-  const age = snapshot ? lanePeekAgeLabel(snapshot, candidate, now) : '';
-  const statusText = `${statusLabel(candidate.summary.status)}${locked ? ' · locked' : ''}`;
-  let html =
-    `<header class="acp-harness__lane-peek-head">` +
-      `<span class="acp-harness__lane-peek-name">${esc(candidate.displayName)}</span>` +
-      `<span class="acp-harness__lane-peek-status">${esc(statusText)}</span>` +
-      (age ? `<span class="acp-harness__lane-peek-age">${esc(age)}</span>` : '') +
-    `</header>` +
-    renderLanePeekEventRow(candidate);
-
-  if (snapshot?.plan) html += renderLanePeekPlanRow(snapshot.plan);
-
-  if (snapshot?.pendingShell && candidate.reasonKey !== 'lane-shell') {
-    html += renderLanePeekRow('shell', '<b>running</b>');
-  }
-
-  if (snapshot?.activeTool && snapshot.status === 'busy') {
-    const subject = snapshot.activeTool.subject ? ` · ${esc(snapshot.activeTool.subject)}` : '';
-    html += renderLanePeekRow('tool', `<b>${esc(snapshot.activeTool.name)}</b>${subject}`);
-  } else if (snapshot?.latestMeaningful && candidate.summary.payload?.kind !== 'activity') {
-    const label = truncateInline(snapshot.latestMeaningful.label, 40);
-    html += renderLanePeekRow('last', esc(label));
-  }
-
-  if (snapshot?.recentFiles && snapshot.recentFiles.length > 0) {
-    const files = snapshot.recentFiles.map((p) => basename(p)).join(', ');
-    html += renderLanePeekRow('files', esc(truncateInline(files, 40)));
-  }
-
-  if (snapshot && snapshot.inboxDepth > 0) {
-    html += renderLanePeekRow('inbox', `<b>${snapshot.inboxDepth}</b> pending`);
-  }
-
-  if (snapshot) {
-    html += '<div class="acp-harness__lane-peek-heat-root"></div>';
-    html += renderLanePeekStatChips(snapshot);
-  }
-
-  el.innerHTML = html;
-  return el;
-}
-
-export interface RailPeerHint {
-  awaitingSuffix: string;
-  inboxSuffix: string;
-  trafficSuffix: string;
-  title: string;
-  kind: 'none' | 'awaiting' | 'inbox' | 'traffic';
-}
-
-export interface DeriveRailPeerHintInput {
-  pendingPeers: PendingPeerSummary[];
-  inboxDepth: number;
-  latestInterLane: LanePeekSnapshot['latestInterLane'];
-}
-
-export function deriveRailPeerHint(
-  input: DeriveRailPeerHintInput,
-  getLaneStatus: (laneId: string) => HarnessLaneStatus | null,
-  now: number,
-): RailPeerHint {
-  const { pendingPeers, inboxDepth, latestInterLane } = input;
-  const titleParts: string[] = [];
-  let awaitingSuffix = '';
-  let inboxSuffix = '';
-  let trafficSuffix = '';
-  if (pendingPeers.length > 0) {
-    awaitingSuffix = '⇆';
-    const oldest = pendingPeers.reduce((min, peer) => (peer.sentAt < min.sentAt ? peer : min), pendingPeers[0]);
-    const age = formatAwaitingPeerAge(now - oldest.sentAt);
-    if (pendingPeers.length === 1) titleParts.push(`awaiting ${oldest.toDisplayName} · ${age}`);
-    else titleParts.push(`awaiting ${pendingPeers.length} peers · ${age}`);
-  }
-  if (inboxDepth > 0) {
-    inboxSuffix = `▼${inboxDepth}`;
-    titleParts.push(`${inboxDepth} peer message${inboxDepth === 1 ? '' : 's'} queued`);
-  }
-  let kind: RailPeerHint['kind'] = 'none';
-  if (pendingPeers.length > 0) kind = 'awaiting';
-  else if (inboxDepth > 0) kind = 'inbox';
-  const hasAwaitingOrInbox = pendingPeers.length > 0 || inboxDepth > 0;
-  if (!hasAwaitingOrInbox && latestInterLane && latestInterLane.peerId !== '__harness__') {
-    const ageMs = now - latestInterLane.at;
-    if (ageMs <= LANE_PEEK_RECENT_MS) {
-      if (latestInterLane.direction === 'in') {
-        trafficSuffix = '←';
-        titleParts.push(`message from ${latestInterLane.peerDisplayName}`);
-        kind = 'traffic';
-      } else {
-        const counterpart = getLaneStatus(latestInterLane.peerId);
-        if (counterpart === 'busy' || counterpart === 'awaiting_peer') {
-          trafficSuffix = '→';
-          titleParts.push(`sent to ${latestInterLane.peerDisplayName}`);
-          kind = 'traffic';
-        }
-      }
-    }
-  }
-  return { awaitingSuffix, inboxSuffix, trafficSuffix, title: titleParts.join(' · '), kind };
-}
-
-/**
- * spec 118 — emit a single wrapper span around peer glyphs so the rail entry
- * grid (dot | name | peers | tools | ctx) has stable column placement even
- * when only some glyphs are present. Returns '' when there are no glyphs;
- * the wrapper column is `auto` so an absent wrapper collapses to zero width.
- */
-function renderRailPeerSpans(hint: RailPeerHint): string {
-  let glyphs = '';
-  if (hint.awaitingSuffix) {
-    glyphs += `<span class="acp-harness__rail-peer acp-harness__rail-peer--awaiting">${esc(hint.awaitingSuffix)}</span>`;
-  }
-  if (hint.inboxSuffix) {
-    glyphs += `<span class="acp-harness__rail-peer acp-harness__rail-peer--inbox">${esc(hint.inboxSuffix)}</span>`;
-  }
-  if (hint.trafficSuffix) {
-    glyphs += `<span class="acp-harness__rail-peer acp-harness__rail-peer--traffic">${esc(hint.trafficSuffix)}</span>`;
-  }
-  if (!glyphs) return '';
-  return `<span class="acp-harness__rail-peers">${glyphs}</span>`;
-}
-
-/** spec 118 — composer status strip above input (informational; spec 116 soft awaiting). */
-export function buildComposerPeerStrip(
-  laneStatus: HarnessLaneStatus,
-  pendingPeers: PendingPeerSummary[],
-  inboxDepth: number,
-): string {
-  if (pendingPeers.length > 0) {
-    const body = awaitingPeerText(pendingPeers).replace(/ · #cancel$/, '');
-    return (
-      `<div class="acp-harness__composer-peer" role="status">` +
-      `⇆ ${esc(body)} · #cancel drops pending lane-mail wait` +
-      `</div>`
-    );
-  }
-  if (inboxDepth > 0) {
-    return (
-      `<div class="acp-harness__composer-peer" role="status">` +
-      `${esc(`▼${inboxDepth} lane mail${inboxDepth === 1 ? '' : 's'} queued`)}` +
-      `</div>`
-    );
-  }
-  if (laneStatus === 'awaiting_peer') {
-    return (
-      `<div class="acp-harness__composer-peer" role="status">` +
-      `${esc('awaiting lane mail · #cancel drops pending wait')}` +
-      `</div>`
-    );
-  }
-  return '';
-}
-
-/**
- * spec 118: a direct peer event (priority ≤30 = awaiting / inbound / counterpart)
- * preempts a prior `Esc` dismissal — but ONLY when that peer event happened
- * *after* the dismissal. Re-opening the same dismissed candidate on every render
- * would make Esc useless whenever a peer candidate is sitting in the snapshot.
- */
-export function shouldPreemptPeekDismissal(
-  candidates: LanePeekCandidate[],
-  dismissedAt: number | null,
-): boolean {
-  if (dismissedAt === null) return false;
-  const top = candidates[0];
-  return !!(
-    top &&
-    top.priority <= PEER_PREEMPT_MAX_PRIORITY &&
-    top.summary.payload?.kind === 'peer' &&
-    top.at > dismissedAt
-  );
-}
-
-export function buildLanePeekCandidates(snapshots: LanePeekSnapshot[], now: number): LanePeekCandidate[] {
-  const active = snapshots.find((lane) => lane.active);
-  if (!active) return [];
-  const byId = new Map(snapshots.map((lane) => [lane.laneId, lane]));
-  const candidates = new Map<string, LanePeekCandidate>();
-  const add = (candidate: LanePeekCandidate): void => {
-    const prev = candidates.get(candidate.laneId);
-    if (!prev || compareLanePeekCandidates(candidate, prev) < 0) candidates.set(candidate.laneId, candidate);
-  };
-  const oldestPendingPeer = active.pendingPeers.reduce<PendingPeerSummary | null>(
-    (oldest, peer) => !oldest || peer.sentAt < oldest.sentAt ? peer : oldest,
-    null,
-  );
-  if (oldestPendingPeer) {
-    const lane = byId.get(oldestPendingPeer.toLaneId);
-    if (lane && laneCanPeek(lane)) {
-      add(makePeerCandidate(lane, 10, true, 'awaiting-peer', 'awaiting reply', 'awaiting', active.displayName, oldestPendingPeer.sentAt, now));
-    }
-  }
-  if (active.latestInterLane?.direction === 'in') {
-    const lane = byId.get(active.latestInterLane.peerId);
-    if (lane && laneCanPeek(lane)) {
-      add(makePeerCandidate(lane, 20, true, 'inbound-peer', 'peer message', 'in', active.displayName, active.latestInterLane.at, now));
-    }
-  }
-  if (active.latestInterLane?.direction === 'out') {
-    const lane = byId.get(active.latestInterLane.peerId);
-    if (lane && laneCanPeek(lane) && (lane.status === 'busy' || lane.status === 'awaiting_peer' || now - active.latestInterLane.at <= LANE_PEEK_RECENT_MS)) {
-      add(makePeerCandidate(lane, 30, true, 'peer-counterpart', 'peer counterpart', 'out', active.displayName, active.latestInterLane.at, now));
-    }
-  }
-  const activeText = `${active.latestMeaningful?.label ?? ''} ${active.latestInterLane?.message ?? ''}`.toLowerCase();
-  for (const lane of snapshots) {
-    if (!laneCanPeek(lane)) continue;
-    if (lane.latestPermission && lane.status === 'needs_permission' && pathMatchesText(lane.latestPermission.subject, activeText)) {
-      add(makePermissionCandidate(lane, 40, true, 'related-permission', 'related permission', lane.latestPermission));
-    }
-    if (lane.status === 'error') add(makeErrorCandidate(lane, 50, false, 'lane-error', 'lane error', now));
-    if (lane.status === 'needs_permission' && lane.latestPermission) {
-      add(makePermissionCandidate(lane, 60, false, 'lane-permission', 'permission required', lane.latestPermission));
-    }
-    if (lane.pendingShell) {
-      add(makeActivityCandidate(lane, 65, false, 'lane-shell', 'shell running', 'shell command running', now, now));
-    }
-    if (lane.inboxDepth > 0) add(makeActivityCandidate(lane, 70, false, 'lane-inbox', 'inbox pending', `inbox ${lane.inboxDepth}`, now, now));
-    if (lane.latestMeaningful && now - lane.latestMeaningful.at <= LANE_PEEK_RECENT_MS) {
-      add(makeActivityCandidate(lane, 80, false, 'recent-activity', 'recent activity', lane.latestMeaningful.label, lane.latestMeaningful.at, now));
-    }
-  }
-  return Array.from(candidates.values()).sort(compareLanePeekCandidates);
-}
-
-export function selectLanePeekCandidate(
-  candidates: LanePeekCandidate[],
-  state: Pick<LanePeekState, 'currentLaneId' | 'lockedLaneId' | 'selectedAt' | 'dismissedAt' | 'dismissedPriority'>,
-  now: number,
-): LanePeekCandidate | null {
-  if (candidates.length === 0) return null;
-  if (state.lockedLaneId) {
-    const locked = candidates.find((candidate) => candidate.laneId === state.lockedLaneId);
-    if (locked) return locked;
-  }
-  const best = candidates[0];
-  const current = candidates.find((candidate) => candidate.laneId === state.currentLaneId) ?? null;
-  if (state.dismissedAt !== null && state.dismissedPriority !== null && best.priority >= state.dismissedPriority) return null;
-  if (!current || current.laneId === best.laneId) return best;
-  const dwellMet = now - state.selectedAt >= LANE_PEEK_DWELL_MS;
-  const strongPreempt = best.priority <= current.priority - 20;
-  return dwellMet || strongPreempt ? best : current;
-}
-
-function laneCanPeek(lane: LanePeekSnapshot): boolean {
-  return !lane.active && !lane.stopped;
-}
-
-function compareLanePeekCandidates(a: LanePeekCandidate, b: LanePeekCandidate): number {
-  if (a.priority !== b.priority) return a.priority - b.priority;
-  if (a.direct !== b.direct) return a.direct ? -1 : 1;
-  if (a.at !== b.at) return b.at - a.at;
-  if (a.visualIndex !== b.visualIndex) return a.visualIndex - b.visualIndex;
-  return a.laneId.localeCompare(b.laneId);
-}
-
-function makePeerCandidate(
-  lane: LanePeekSnapshot,
-  priority: number,
-  direct: boolean,
-  reasonKey: string,
-  reasonLabel: string,
-  direction: 'in' | 'out' | 'awaiting',
-  peerDisplayName: string,
-  at: number,
-  now: number,
-): LanePeekCandidate {
-  return {
-    laneId: lane.laneId,
-    displayName: lane.displayName,
-    priority,
-    direct,
-    reasonKey,
-    reasonLabel,
-    at,
-    visualIndex: lane.visualIndex,
-    summary: {
-      status: lane.status,
-      headline: statusLabel(lane.status),
-      detail: null,
-      payload: { kind: 'peer', direction, peerDisplayName, ageLabel: formatCoarseAge(now - at) },
-    },
-  };
-}
-
-function makePermissionCandidate(
-  lane: LanePeekSnapshot,
-  priority: number,
-  direct: boolean,
-  reasonKey: string,
-  reasonLabel: string,
-  permission: NonNullable<LanePeekSnapshot['latestPermission']>,
-): LanePeekCandidate {
-  return {
-    laneId: lane.laneId,
-    displayName: lane.displayName,
-    priority,
-    direct,
-    reasonKey,
-    reasonLabel,
-    at: permission.at,
-    visualIndex: lane.visualIndex,
-    summary: {
-      status: lane.status,
-      headline: 'permission required',
-      detail: permission.subject,
-      payload: { kind: 'permission', toolName: permission.toolName, subject: permission.subject, decision: permission.decision },
-    },
-  };
-}
-
-function makeErrorCandidate(lane: LanePeekSnapshot, priority: number, direct: boolean, reasonKey: string, reasonLabel: string, now: number): LanePeekCandidate {
-  return {
-    laneId: lane.laneId,
-    displayName: lane.displayName,
-    priority,
-    direct,
-    reasonKey,
-    reasonLabel,
-    at: now,
-    visualIndex: lane.visualIndex,
-    summary: {
-      status: lane.status,
-      headline: 'error',
-      detail: lane.error,
-      payload: { kind: 'error', message: lane.error ?? 'failed' },
-    },
-  };
-}
-
-function makeActivityCandidate(
-  lane: LanePeekSnapshot,
-  priority: number,
-  direct: boolean,
-  reasonKey: string,
-  reasonLabel: string,
-  label: string,
-  at: number,
-  now: number,
-): LanePeekCandidate {
-  return {
-    laneId: lane.laneId,
-    displayName: lane.displayName,
-    priority,
-    direct,
-    reasonKey,
-    reasonLabel,
-    at,
-    visualIndex: lane.visualIndex,
-    summary: {
-      status: lane.status,
-      headline: statusLabel(lane.status),
-      detail: label,
-      payload: { kind: 'activity', label, ageLabel: formatCoarseAge(now - at) },
-    },
-  };
-}
-
-function pathMatchesText(path: string, text: string): boolean {
-  if (!path || !text) return false;
-  const normalized = path.toLowerCase();
-  const base = basename(path).toLowerCase();
-  return text.includes(normalized) || (base.length > 2 && text.includes(base));
-}
-
-function latestInterLaneForPeek(lane: HarnessLane): LanePeekSnapshot['latestInterLane'] {
-  for (let i = lane.transcript.length - 1; i >= 0; i--) {
-    const item = lane.transcript[i];
-    if (item.kind !== 'inter_lane' || !item.interLane) continue;
-    return {
-      direction: item.interLane.direction,
-      peerId: item.interLane.peerId,
-      peerDisplayName: item.interLane.peerDisplayName,
-      at: item.createdAt ?? Date.now(),
-      message: item.text,
-    };
-  }
-  return null;
-}
-
-function latestPermissionForPeek(lane: HarnessLane): LanePeekSnapshot['latestPermission'] {
-  const permission = lane.pendingPermissions[0]?.transcriptItem?.permission;
-  if (permission) {
-    return {
-      toolName: permission.toolName,
-      subject: permission.subject,
-      decision: permission.decision,
-      at: Date.now(),
-    };
-  }
-  for (let i = lane.transcript.length - 1; i >= 0; i--) {
-    const item = lane.transcript[i];
-    if (item.kind === 'permission' && item.permission) {
-      return {
-        toolName: item.permission.toolName,
-        subject: item.permission.subject,
-        decision: item.permission.decision,
-        at: item.createdAt ?? Date.now(),
-      };
-    }
-  }
-  return null;
-}
-
-function latestMeaningfulForPeek(lane: HarnessLane): LanePeekSnapshot['latestMeaningful'] {
-  for (let i = lane.transcript.length - 1; i >= 0; i--) {
-    const item = lane.transcript[i];
-    if (!['tool', 'permission', 'inter_lane', 'shell', 'fs_activity', 'fs_write_review'].includes(item.kind)) continue;
-    return {
-      kind: item.kind,
-      label: item.text.replace(/\s+/g, ' ').trim(),
-      at: item.createdAt ?? Date.now(),
-    };
-  }
-  return null;
-}
-
-function derivePlanForPeek(lane: HarnessLane): LanePeekSnapshot['plan'] {
-  if (!lane.plan || lane.plan.length === 0) return null;
-  const total = lane.plan.length;
-  const done = lane.plan.filter((entry) => entry.status === 'completed').length;
-  const active = lane.plan.find((entry) => entry.status === 'in_progress');
-  const next = lane.plan.find((entry) => entry.status === 'pending');
-  const activeText = active?.content ?? next?.content ?? null;
-  return { done, total, activeText: activeText ? activeText.replace(/\s+/g, ' ').trim() : null };
-}
-
-function deriveActiveToolForPeek(lane: HarnessLane, now: number): LanePeekSnapshot['activeTool'] {
-  // Pick the oldest still-pending/in_progress tool — the likely blocking call. Map iteration
-  // is insertion order so the first match is also the oldest.
-  for (const call of lane.toolCalls.values()) {
-    if (call.status !== 'in_progress' && call.status !== 'pending') continue;
-    const name = call.title?.replace(/\s+/g, ' ').trim() || (call.kind ?? 'tool');
-    const loc = call.locations?.[0]?.path ?? null;
-    const subject = loc ? basename(loc) : null;
-    return { name, subject, startedAt: lane.activeTurnStartedAt ?? now };
-  }
-  return null;
-}
-
-function deriveRecentFilesForPeek(laneId: string, touchMap: Map<string, FileTouchRecord>, now: number): string[] {
-  const mine: FileTouchRecord[] = [];
-  for (const rec of touchMap.values()) {
-    if (rec.laneId !== laneId) continue;
-    if (now - rec.at > FILE_TOUCH_WINDOW_MS) continue;
-    mine.push(rec);
-  }
-  mine.sort((a, b) => b.at - a.at);
-  return mine.slice(0, 2).map((r) => r.path);
-}
-
-function formatCoarseAge(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 60_000) return '<1m';
-  if (ms < 5 * 60_000) return '1m+';
-  if (ms < 15 * 60_000) return '5m+';
-  return '15m+';
-}
-
 function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {
   return { ...(prev ?? {}), ...next };
 }
 
-function laneActivity(lane: HarnessLane, pendingPeers: PendingPeerSummary[] = []): string {
-  if (lane.status === 'error') return `error: ${lane.error ?? 'failed'}`;
-  if (lane.status === 'needs_permission') {
-    const permission = lane.pendingPermissions[0];
-    if (!permission) return 'perm required';
-    return `perm ${compactPermissionSubject(permission.toolCall) || compactPermissionTool(permission)}`;
-  }
-  if (lane.status === 'awaiting_peer') return awaitingPeerText(pendingPeers);
-  const latest = lane.transcript[lane.transcript.length - 1];
-  if (!latest) return lane.status;
-  return latest.text.replace(/\s+/g, ' ').slice(0, 60);
-}
-
-function compactPermissionLabel(permission: HarnessPermission): string {
-  const tool = compactPermissionTool(permission);
-  const subject = compactPermissionSubject(permission.toolCall);
-  return truncateInline(subject ? `${tool} ${subject}` : tool, 48);
-}
-
-function compactPermissionMeta(permission: HarnessPermission): string {
-  return `${compactPermissionLabel(permission)} · a/r/Esc`;
-}
-
-function compactPermissionTool(permission: HarnessPermission): string {
-  const call = permission.toolCall;
-  const kind = inferToolLabel(call);
-  return harnessAutoAllowToolName(permission) ?? (cleanToolTitle(call.title, kind) || kind);
-}
-
-function compactPermissionSubject(call: ToolCall | ToolCallUpdate): string {
-  const path = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? '';
-  if (path) return basename(path);
-  const command = extractCommandLine(call.rawInput);
-  if (command) return truncateInline(command, 28);
-  return '';
-}
-
-function awaitingPeerText(pendingPeers: PendingPeerSummary[]): string {
-  if (pendingPeers.length === 0) return 'awaiting lane mail reply · #cancel';
-  const oldest = pendingPeers.reduce((min, peer) => peer.sentAt < min.sentAt ? peer : min, pendingPeers[0]);
-  const age = formatAwaitingPeerAge(Date.now() - oldest.sentAt);
-  if (pendingPeers.length === 1) return `awaiting ${oldest.toDisplayName} · ${age} · #cancel`;
-  return `awaiting ${pendingPeers.length} peers · ${age} · #cancel`;
-}
-
-function formatAwaitingPeerAge(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 60_000) return '<1m';
-  if (ms < 5 * 60_000) return '1m+';
-  if (ms < 15 * 60_000) return '5m+';
-  return '15m+';
-}
-
-function statusIconId(status: HarnessLaneStatus): string {
-  switch (status) {
-    case 'starting': return 'status-starting';
-    case 'idle': return 'status-idle';
-    case 'busy': return 'status-busy';
-    case 'needs_permission': return 'status-perm';
-    case 'awaiting_peer': return 'status-peer';
-    case 'error': return 'status-error';
-    case 'stopped': return 'status-error';
-  }
-}
-
-// Row-1 leading status glyph as an SVG, in a state-tinted wrapper so CSS can
-// colour idle/busy/permission/peer/error distinctly (was Unicode · ○ ● ! ⇆ ×).
-function renderLaneSymbol(status: HarnessLaneStatus): string {
-  // busy → braille spinner glyph advanced by the JS ticker (tickSpinner); every
-  // other status → static SVG status icon.
-  const inner = status === 'busy'
-    ? `<span class="acp-harness__spinner">${SPINNER_FRAMES[0]}</span>`
-    : harnessIcon(statusIconId(status));
-  return (
-    `<span class="acp-harness__lane-symbol acp-harness__lane-symbol--${status}">` +
-    inner +
-    `</span>`
-  );
-}
-
-function statusLabel(status: HarnessLaneStatus): string {
-  switch (status) {
-    case 'starting': return 'starting';
-    case 'idle': return 'idle';
-    case 'busy': return 'busy';
-    case 'needs_permission': return 'action required';
-    case 'awaiting_peer': return 'awaiting peer';
-    case 'error': return 'error';
-    case 'stopped': return 'stopped';
-  }
-}
-
-function statusGlyph(status: string): string {
-  if (status === 'completed') return '✓';
-  if (status === 'failed') return '✗';
-  if (status === 'in_progress') return '⟳';
-  return '·';
-}
-
-function mergeToolCall(
-  previous: ToolCall | ToolCallUpdate | undefined,
-  next: ToolCall | ToolCallUpdate,
-): ToolCall | ToolCallUpdate {
-  return {
-    ...previous,
-    ...next,
-    title: next.title ?? previous?.title,
-    kind: next.kind ?? previous?.kind,
-    content: next.content ?? previous?.content,
-    locations: next.locations ?? previous?.locations,
-    rawInput: next.rawInput ?? previous?.rawInput,
-    rawOutput: next.rawOutput ?? previous?.rawOutput,
-  };
-}
-
-function inferToolLabel(call: ToolCall | ToolCallUpdate): string {
-  const kind = call.kind;
-  if (kind && kind !== 'other') return kind;
-  if (extractCommandLine(call.rawInput)) return 'execute';
-  const rawName = extractRawToolName(call.rawInput);
-  if (rawName) return rawName;
-  const title = cleanToolTitle(call.title, 'tool').toLowerCase();
-  if (/^(bash|shell|terminal|run|exec|execute|command)\b/.test(title)) return 'execute';
-  if (/^(edit|write|create|modify|patch)\b/.test(title)) return 'edit';
-  if (/^(read|open|cat)\b/.test(title)) return 'read';
-  if (/^(search|grep|rg|find)\b/.test(title)) return 'search';
-  if (/^(fetch|web|http)\b/.test(title)) return 'fetch';
-  return title || 'tool';
-}
-
-function extractRawToolName(rawInput: unknown): string {
-  if (typeof rawInput !== 'object' || !rawInput) return '';
-  const record = rawInput as Record<string, unknown>;
-  for (const key of ['toolName', 'tool_name', 'name', 'tool', 'type']) {
-    const value = record[key];
-    if (typeof value === 'string' && value.trim()) return truncateInline(value, 40);
-  }
-  return '';
-}
-
-function isMemoryTool(call: ToolCall | ToolCallUpdate): boolean {
-  const rawName = extractRawToolName(call.rawInput).toLowerCase();
-  const title = (call.title ?? '').toLowerCase();
-  return rawName.startsWith('memory_') || title.includes('memory_');
-}
-
-function cleanToolTitle(title: string | undefined, fallback: string): string {
-  const value = title?.trim() ?? '';
-  if (!value || value.toLowerCase() === 'tool' || value.toLowerCase() === fallback) return '';
-  if (/^tool\s+exit\s+\d+$/i.test(value)) return '';
-  return value;
-}
-
-/** Full command string from a tool's rawInput, UNTRUNCATED. Used by policy
- *  (spec 143 high-risk gating) — must never be the 96-char display form, or a
- *  destructive tail past the cutoff (`echo …<96> && rm -rf x`) would be hidden. */
-function extractCommandLineRaw(rawInput: unknown): string {
-  if (typeof rawInput === 'object' && rawInput) {
-    const record = rawInput as Record<string, unknown>;
-    for (const key of ['command', 'cmd']) {
-      if (typeof record[key] === 'string') return record[key];
-    }
-    if (Array.isArray(record.argv)) {
-      const argv = record.argv.filter((part): part is string => typeof part === 'string');
-      if (argv.length > 0) return argv.join(' ');
-    }
-  }
-  return '';
-}
-
-/** Display form — truncated for transcript/label rendering. */
-function extractCommandLine(rawInput: unknown): string {
-  const raw = extractCommandLineRaw(rawInput);
-  return raw ? truncateInline(raw, 96) : '';
-}
-
-/** Is this tool call an execute/shell surface (even when its command string is
- *  not extractable)? Conservative: kind, a present command, or a shell-ish raw
- *  name / title all count. */
-/** A leading shell/exec verb. Shared by the rawName and title checks so the
- *  policy gate can't drift between the two surfaces (Codex-1 nit, spec 143). */
-const SHELL_LIKE_PREFIX = /^(bash|shell|terminal|run|exec|execute|command|sh|zsh|fish|cmd|powershell|pwsh)\b/;
-
-function isExecuteLikeToolCall(call: Pick<ToolCall, 'rawInput' | 'kind' | 'title'>): boolean {
-  if (call.kind === 'execute') return true;
-  if (extractCommandLineRaw(call.rawInput)) return true;
-  if (SHELL_LIKE_PREFIX.test(extractRawToolName(call.rawInput).toLowerCase())) return true;
-  return SHELL_LIKE_PREFIX.test((call.title ?? '').trim().toLowerCase());
-}
-
-/** spec 143 policy: should this permission still prompt the human under peer
- *  auto-accept? A parseable command is classified via the spec 140 highRisk set;
- *  an execute-like surface whose command cannot be read is treated as high-risk
- *  (unknown ⇒ high-risk); any other surface (edit/read/write/fetch) is not gated
- *  here (writes are diff-shown + VCS-recoverable). */
-export function permissionCommandIsHighRisk(
-  call: Pick<ToolCall, 'rawInput' | 'kind' | 'title'>,
-): boolean {
-  const command = extractCommandLineRaw(call.rawInput);
-  if (command) return classifyBashCommand(command).highRisk;
-  return isExecuteLikeToolCall(call);
-}
-
-function extractToolExit(rawOutput: unknown): string {
-  if (typeof rawOutput !== 'object' || !rawOutput) return '';
-  const record = rawOutput as Record<string, unknown>;
-  for (const key of ['exitCode', 'exit_code', 'code']) {
-    const value = record[key];
-    if (typeof value === 'number') return value === 0 ? '' : `exit ${value}`;
-  }
-  return '';
-}
-
-export function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: string }> {
-  const decodedRoot = decodeByteArray(rawOutput);
-  if (decodedRoot !== null) return decodedRoot ? [{ label: 'output', text: decodedRoot }] : [];
-  if (typeof rawOutput === 'object' && rawOutput) {
-    const record = rawOutput as Record<string, unknown>;
-    const sections: Array<{ label: string; text: string }> = [];
-    for (const key of ['summary', 'stdout', 'stderr', 'output', 'content', 'text', 'message']) {
-      const text = stringifyToolValue(record[key]);
-      if (text) sections.push({ label: key, text });
-    }
-    return sections;
-  }
-  const text = stringifyToolValue(rawOutput);
-  return text ? [{ label: 'output', text }] : [];
-}
-
-function contentOutputSections(content: ToolCall['content']): Array<{ label: string; text: string }> {
-  const sections: Array<{ label: string; text: string }> = [];
-  for (const item of content ?? []) {
-    // 'diff' items are rendered by extractToolDiffs/renderToolBody as HTML blocks.
-    if (item.type === 'terminal' && item.terminalId) sections.push({ label: 'terminal', text: item.terminalId });
-    if (item.type === 'content' && item.content) {
-      const text = contentBlockText(item.content);
-      if (text) sections.push({ label: 'content', text });
-    }
-  }
-  return sections;
-}
-
-function contentBlockText(block: ContentBlock): string {
-  if (block.type === 'text') return block.text;
-  if (block.type === 'resource' && block.resource.text) return block.resource.text;
-  if (block.type === 'resource_link') return block.uri;
-  return '';
-}
-
-const byteArrayDecoder = new TextDecoder();
-
-/**
- * Some ACP backends (Grok's `grok agent stdio`) serialize terminal/command output as a
- * raw byte array (a JSON `number[]` of 0–255 values) instead of a decoded UTF-8 string.
- * Detect that shape and decode it back to text; otherwise the generic array branch below
- * would stringify each byte and join them, rendering "79 110 32 …" decimal dumps in the
- * tool-output panel. Returns null when `value` is not a byte array (so callers fall back
- * to their normal handling).
- */
-function decodeByteArray(value: unknown): string | null {
-  if (!Array.isArray(value) || value.length === 0) return null;
-  for (const n of value) {
-    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > 255) return null;
-  }
-  const decoded = byteArrayDecoder.decode(Uint8Array.from(value as number[]));
-  // Validate it's actually text, not a semantic number array (RGB tuples, flag
-  // vectors, line counts) that happens to sit in 0–255. Real command output is
-  // near-printable; a semantic array decodes to mostly control / replacement
-  // chars. Reject when >30% of chars are non-text (tab/newline/CR stay allowed).
-  let bad = 0;
-  for (const ch of decoded) {
-    const code = ch.codePointAt(0) ?? 0;
-    const printable = code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127 && code !== 0xfffd);
-    if (!printable) bad += 1;
-  }
-  if (bad / decoded.length > 0.3) return null;
-  return decoded;
-}
-
-export function stringifyToolValue(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) {
-    const decoded = decodeByteArray(value);
-    if (decoded !== null) return decoded;
-    return value.map((item) => stringifyToolValue(item)).filter(Boolean).join(' ');
-  }
-  if (typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    for (const key of ['summary', 'stdout', 'stderr', 'output', 'content', 'text', 'message']) {
-      const nested = stringifyToolValue(record[key]);
-      if (nested) return nested;
-    }
-  }
-  return '';
-}
-
-export function boundedOutputLines(value: string, maxLines: number): string {
-  // Backends that captured their tool output under a PTY / forced color (e.g. `gh`
-  // colorizing JSON) hand us raw ANSI SGR codes. This panel renders via
-  // `pre.textContent`, so an unhandled ESC (0x1b) byte shows as a garbage glyph and
-  // the trailing `[1;37m` shows as literal text. Strip ANSI + leftover C0/C1 control
-  // chars here (keeping \t and \n) so every lane's output reads clean.
-  const kept = stripAnsi(value)
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
-    .replace(/\r/g, '')
-    .split('\n')
-    .map((line) => line.replace(/\s+$/, ''))
-    .filter((line) => line.length > 0)
-    .slice(0, maxLines);
-  let minIndent = Infinity;
-  for (const line of kept) {
-    const match = line.match(/^[ \t]*/);
-    const indent = match ? match[0].length : 0;
-    if (indent < minIndent) minIndent = indent;
-    if (minIndent === 0) break;
-  }
-  if (!Number.isFinite(minIndent)) minIndent = 0;
-  return kept
-    .map((line) => line.slice(minIndent))
-    .map((line) => (line.length > 140 ? `${line.slice(0, 139).trimEnd()}…` : line))
-    .join('\n');
-}
-
-function truncateInline(value: string, max: number): string {
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  if (normalized.length <= max) return normalized;
-  return `${normalized.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
-}
-
-function abbreviatePath(path: string): string {
-  const home = getHomeLikePrefix();
-  const p = home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
-  const parts = p.split('/').filter(Boolean);
-  if (parts.length <= 3) return p;
-  return `${p.startsWith('~') ? '~/' : '/'}.../${parts.slice(-2).join('/')}`;
-}
-
-function pathToFileUri(path: string): string {
-  if (path.startsWith('file://')) return path;
-  return `file://${path.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
-}
-
-let cachedHomeDir: string | null = null;
-let homeDirLoad: Promise<string | null> | null = null;
-
-function loadHomeDir(): Promise<string | null> {
-  if (cachedHomeDir) return Promise.resolve(cachedHomeDir);
-  if (!homeDirLoad) {
-    homeDirLoad = invoke<string | null>('get_env_var', { name: 'HOME' })
-      .then((value) => {
-        const trimmed = value ? value.replace(/\/+$/, '') : null;
-        cachedHomeDir = trimmed || null;
-        return cachedHomeDir;
-      })
-      .catch(() => null);
-  }
-  return homeDirLoad;
-}
-
-function getHomeLikePrefix(): string | null {
-  if (cachedHomeDir) return cachedHomeDir;
-  const match = location.pathname.match(/^\/Users\/[^/]+/);
-  return match ? match[0] : null;
-}
-
-function formatAge(ms: number): string {
-  const minutes = Math.max(1, Math.round(ms / 60000));
-  return minutes < 60 ? `${minutes}m` : `${Math.round(minutes / 60)}h`;
-}
-
-function formatElapsed(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-/** spec 156: activity segment of the busy chip. Tool titles are hard-truncated
- *  so a full-path title cannot push the chip past one line. */
-function formatLaneActivity(activity: LaneActivity): string {
-  if (activity.kind === 'thinking') return 'thinking…';
-  if (activity.kind === 'writing') return 'writing…';
-  return `⚒ ${truncate(activity.label, 32)}`;
-}
-
-function formatShortTime(epochMs: number): string {
-  const age = Date.now() - epochMs;
-  if (age >= 0 && age < 24 * 60 * 60 * 1000) return `${formatAge(age)} ago`;
-  return new Date(epochMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-/** spec 146: review matrix round timestamp — clock time today, else "Mon D · HH:MM". */
-function formatReviewRoundTime(epochMs: number): string {
-  const d = new Date(epochMs);
-  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  const sameDay = new Date().toDateString() === d.toDateString();
-  if (sameDay) return time;
-  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time}`;
-}
-
-/** Parse optional review_outcome findings from the acp-review-outcome event payload.
- * Untrusted IPC input — all-or-nothing: one malformed item rejects the whole array. */
-function parseReviewFindings(raw: unknown): ReviewFinding[] | undefined {
-  if (!Array.isArray(raw) || raw.length === 0) return undefined;
-  const findings: ReviewFinding[] = [];
-  for (const item of raw) {
-    const finding = parseReviewFindingItem(item);
-    if (!finding) return undefined;
-    findings.push(finding);
-  }
-  return findings;
-}
-
-function parseReviewFindingItem(item: unknown): ReviewFinding | null {
-  if (!item || typeof item !== 'object') return null;
-  const obj = item as Record<string, unknown>;
-  const file = typeof obj.file === 'string' ? obj.file.trim() : '';
-  if (!file) return null;
-  const note = typeof obj.note === 'string' ? obj.note.trim() : '';
-  if (!note) return null;
-  const severity = obj.severity;
-  if (severity !== 'blocking' && severity !== 'non-blocking' && severity !== 'suggestion') return null;
-  const finding: ReviewFinding = { file, severity, note };
-  if (obj.line !== undefined) {
-    const line = obj.line;
-    if (typeof line !== 'number' || !Number.isInteger(line) || line < 1) return null;
-    finding.line = line;
-  }
-  return finding;
-}
-
-function formatSessionUpdatedAt(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const ms = Date.parse(value);
-  if (!Number.isFinite(ms)) return value;
-  return formatShortTime(ms);
-}
-
-function normalizePathForCompare(value: string): string {
-  return value.replace(/\/+$/, '');
-}
-
-function filterSessionsForProject(sessions: AcpSessionInfo[], projectDir: string | null): AcpSessionInfo[] {
-  if (!projectDir) return sessions;
-  const project = normalizePathForCompare(projectDir);
-  return sessions.filter((session) => !session.cwd || normalizePathForCompare(session.cwd) === project);
-}
-
-function sessionCapabilitiesFromAgent(caps: AgentInitInfo['agent_capabilities']): AcpSessionCapabilities {
-  const sessionCaps = caps.sessionCapabilities;
-  return {
-    canList: Boolean(sessionCaps?.list),
-    canResume: Boolean(sessionCaps?.resume),
-    canLoad: caps.loadSession === true,
-  };
-}
-
-function shortId(id: string): string {
-  return id.length <= 10 ? id : id.slice(0, 8);
-}
-
-function formatCount(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  return String(value);
-}
-
-function makeId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
