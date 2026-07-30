@@ -51,6 +51,8 @@ The app has two halves that communicate over Tauri IPC:
 - **Animation** (`animation.ts`) — WAAPI-based transitions (morph, slide, crossfade) with keyboard input buffering during animations.
 - **ACP Harness Peering** (`src/acp/`, served by `src-tauri/src/hook_server.rs`) — user-directed inter-lane messaging (a lane status bus, per-lane inboxes drained on the next `idle` turn, and `peer_send`/`peer_list` MCP tools) plus a family of read-only loopback observability surfaces (lane-monitor dashboard, artifact gallery, docs browser) the OS browser can open. Memory is handoff-only, peering can cross harness views, and `#review` rides `peer_send`. Each capability — the peering model, cross-harness directory, review tooling, diff-priority hints, and every loopback surface — is specified per-feature under `docs/` with decisions in `docs/adr/` (see `docs/PROGRESS.md` for the index). **Those specs/ADRs are authoritative; do not restate their implementation detail here** — keep this file to durable, cross-cutting guidance only.
 
+A third, standalone piece lives outside the app build: the **Raycast extension** (`raycast/`) — its own npm project driving the authenticated control API (`/control/v1`); React is required by Raycast, so the no-framework rule below applies only to the app frontend. Spec: `docs/205-raycast-extension.md`.
+
 ### IPC Pattern
 
 - **Commands** (request/response): `spawn_pty`, `write_to_pty`, `resize_pty`, `get_config`, `get_theme`, `list_themes`, `reload_config`, `open_url`, `get_pty_cwd`

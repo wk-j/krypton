@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-07-25
+> Last updated: 2026-07-31
 
 ## Overview
 
@@ -20,6 +20,22 @@
 ---
 
 ## Recent Landings
+
+- **Raycast extension (spec 205)** — new standalone client at `raycast/`
+  (own npm project, React as required by Raycast; not part of the Vite/Tauri
+  build) that drives the authenticated control API the way `kryptonctl`
+  does: descriptor discovery via `~/.config/krypton/runtime/controller.json`,
+  pid liveness + apiVersion-major gate, bearer auth. Four commands — Lanes
+  (browse/send/cancel/transcript/permission-mode/restart with per-state
+  action gating), Attention Queue (per-harness enumeration since
+  `control-bridge` fans out `lane.list` only), Pending Permissions
+  (head-request-only, success confirmed by revalidation because the API
+  replies `resolved:true` optimistically), and a menu-bar badge
+  (`2▸ ✋1 ⚑1`, 1-minute background refresh, error state takes precedence
+  over cached data). 401 → descriptor re-read + read-only retry; mutations
+  are never replayed (lane names reset on relaunch). Peer-reviewed by
+  Codex-4 pre-implementation (3 blockers folded into the spec). Verified
+  with `tsc --noEmit` and `ray build`. See `docs/205-raycast-extension.md`.
 
 - **Cancel escalation → force-restart (spec 199)** — A hung agent CLI (upstream
   `anthropics/claude-code#19195` family: turn finished, turn-end never signalled)
