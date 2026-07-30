@@ -8,6 +8,7 @@ import {
   List,
   Toast,
   confirmAlert,
+  open,
   showToast,
   useNavigation,
 } from '@raycast/api';
@@ -168,15 +169,17 @@ function LaneItem({ lane, revalidate }: { lane: LaneRow; revalidate: () => void 
             )}
           </ActionPanel.Section>
           <ActionPanel.Section title="Surfaces">
-            <Action.OpenInBrowser
+            <Action
               title="Open Dashboard"
-              url={surfaceUrl('dashboard')}
+              icon={Icon.Globe}
               shortcut={{ modifiers: ['cmd'], key: 'd' }}
+              onAction={() => apiToast('Open failed', async () => open(await surfaceUrl('dashboard')))}
             />
-            <Action.OpenInBrowser
+            <Action
               title="Open Artifact Gallery"
-              url={surfaceUrl('gallery')}
+              icon={Icon.Image}
               shortcut={{ modifiers: ['cmd'], key: 'g' }}
+              onAction={() => apiToast('Open failed', async () => open(await surfaceUrl('gallery')))}
             />
             {lane.sessionId && (
               <Action.CopyToClipboard

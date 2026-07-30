@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -292,10 +293,59 @@ export function hasAllowOption(request: PermissionRequest): boolean {
   return request.options.some((o) => (o.kind ?? '').startsWith('allow'));
 }
 
-export function surfaceUrl(page: 'dashboard' | 'gallery' | 'docs'): string {
+// The hook server has no runtime descriptor, so the configured port is the
+// best available truth: [hooks] port in krypton.toml (falls back to the 8765
+// default). Minimal section-aware scan — no TOML dependency for one key.
+function hookPortFromConfig(): number | null {
+  let raw: string;
+  try {
+    raw = readFileSync(join(homedir(), '.config', 'krypton', 'krypton.toml'), 'utf8');
+  } catch {
+    return null;
+  }
+  let inHooks = false;
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('[')) {
+      inHooks = trimmed === '[hooks]';
+      continue;
+    }
+    if (!inHooks) continue;
+    const match = /^port\s*=\s*(\d+)/.exec(trimmed);
+    if (match) {
+      const port = Number.parseInt(match[1], 10);
+      return port > 0 ? port : null;
+    }
+  }
+  return null;
+}
+
+// /telemetry is the cheapest unauthenticated hook-server JSON endpoint; a
+// Krypton hook server always answers it with a { harnesses: [...] } body.
+async function isKryptonHookServer(port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/telemetry`, { signal: AbortSignal.timeout(800) });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { harnesses?: unknown };
+    return Array.isArray(body.harnesses);
+  } catch {
+    return false;
+  }
+}
+
+export async function surfaceUrl(page: 'dashboard' | 'gallery' | 'docs'): Promise<string> {
   const { hookPort } = getPreferenceValues<{ hookPort?: string }>();
-  const port = Number.parseInt(hookPort ?? '', 10) || 8765;
-  return `http://127.0.0.1:${port}/${page}`;
+  const pref = Number.parseInt(hookPort ?? '', 10) || null;
+  // Candidates in trust order, but each is PROBED before use — a stale
+  // preference (e.g. a stored old default) must not win over reality.
+  const candidates = [...new Set([pref, hookPortFromConfig(), 8765].filter((p): p is number => p !== null && p > 0))];
+  for (const port of candidates) {
+    if (await isKryptonHookServer(port)) return `http://127.0.0.1:${port}/${page}`;
+  }
+  throw new KryptonError(
+    'network',
+    `hook server not reachable on port ${candidates.join(', ')} — check [hooks] in krypton.toml`,
+  );
 }
 
 export function launchKrypton(): void {

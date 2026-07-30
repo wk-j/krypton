@@ -115,8 +115,12 @@ export default function Command() {
         <MenuBarExtra.Item
           title="Open Dashboard"
           icon={Icon.Globe}
-          onAction={() => {
-            open(surfaceUrl('dashboard')).catch(() => undefined);
+          onAction={async () => {
+            try {
+              await open(await surfaceUrl('dashboard'));
+            } catch {
+              // menu-bar actions must stay silent
+            }
           }}
         />
       </MenuBarExtra.Section>

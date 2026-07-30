@@ -8,8 +8,8 @@
 /* eslint-disable @typescript-eslint/ban-types */
 
 type ExtensionPreferences = {
-  /** Hook Server Port - Port of Krypton's loopback hook server ([hooks] port in krypton.toml) — used only to build browser URLs for the dashboard/gallery/docs surfaces */
-  "hookPort": string
+  /** Hook Server Port Override - Leave blank to auto-detect from [hooks] port in krypton.toml (default 8765). Used only to build browser URLs for the dashboard/gallery/docs surfaces */
+  "hookPort"?: string
 }
 
 /** Preferences accessible in all the extension's commands */

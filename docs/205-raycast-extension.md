@@ -206,7 +206,18 @@ Accessories: model name, queue depth, goal (truncated).
 
 | Preference | Type | Default | Purpose |
 |------------|------|---------|---------|
-| `hookPort` | textfield | `8765` | Browser-surface URLs only (`[hooks] port` if user changed it) |
+| `hookPort` | textfield | blank | Override for browser-surface URLs; blank = auto-detect from `[hooks] port` in `~/.config/krypton/krypton.toml`, falling back to 8765 |
+
+The hook server has no runtime descriptor, so `surfaceUrl()` **probes before
+opening**: candidates in trust order (preference → `[hooks] port` read
+directly from `krypton.toml` via a single-key scan → 8765), each verified
+with `GET /telemetry` (Krypton always answers `{ harnesses: [...] }`, 800 ms
+timeout); the first port that proves to be a Krypton hook server wins, and
+none responding surfaces an error toast instead of opening a dead URL. The
+probe also defuses a stale stored preference (Raycast persists an old
+default). The known residual gap is the hook server's ephemeral-port fallback
+when its configured port is busy at launch; that port is not discoverable
+from outside the process.
 
 No new Krypton config keys.
 
