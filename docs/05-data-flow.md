@@ -286,6 +286,15 @@
        error headline, and preserve the raw provider text in collapsed details.
        Generic structured ACP errors still render as system rows unless they
        match the same provider-error classifier.
+    b. Assistant `agent_message_chunk` events preserve their original ACP
+       `ContentBlock` and optional `messageId`. Text keeps the append-only
+       streaming path; typed resources attach to the current assistant item but
+       remain hidden until that item seals. Seal scans the final Markdown DOM's
+       explicit anchors once, normalizes and deduplicates both sources, caps the
+       row at 32 references, and caches Markdown without the generated rail.
+       Clicking a rail URL opens the OS handler; clicking a file delegates to
+       `Compositor.openHelixTab(path, line, column)`. In transcript command mode,
+       `f` assigns one shared hint sequence across references and live artifacts.
 11. Permission requests pre-empt only the affected lane's composer. The user
     switches to that tab and resolves with a/A/r/R/Esc; responses call the
     existing acp_permission_response command.

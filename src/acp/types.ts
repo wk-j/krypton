@@ -7,7 +7,15 @@ export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string; uri?: string }
   | { type: 'audio'; data: string; mimeType: string }
-  | { type: 'resource_link'; uri: string; name?: string; mimeType?: string }
+  | {
+      type: 'resource_link';
+      uri: string;
+      name?: string;
+      title?: string;
+      description?: string;
+      mimeType?: string;
+      size?: number;
+    }
   | { type: 'resource'; resource: { uri: string; mimeType?: string; text?: string; blob?: string } };
 
 export type ToolKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'other';
@@ -603,7 +611,7 @@ export type LaneBusEvent =
 
 export type AcpEvent =
   | { type: 'user_message_chunk'; text: string }
-  | { type: 'message_chunk'; text: string }
+  | { type: 'message_chunk'; text: string; content: ContentBlock; messageId?: string }
   | { type: 'thought_chunk'; text: string }
   | { type: 'tool_call'; call: ToolCall }
   | { type: 'tool_call_update'; update: ToolCallUpdate }

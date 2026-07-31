@@ -17,6 +17,7 @@ import type {
   HarnessTranscriptItem,
   InterLanePayload,
   LaneMailProvenance,
+  MessageResource,
   PermissionPayload,
 } from './harness-view-types';
 import { backendLogoId } from './harness-lane-identity';
@@ -31,6 +32,11 @@ import {
   md,
   resolveLocalImageSrcs,
 } from './harness-markdown';
+import {
+  extractResourcesFromBody,
+  mergeMessageResources,
+  resourceDisplayTarget,
+} from './message-resources';
 
 export function applyCoordinatorProvenanceToItem(lane: HarnessLane, item: HarnessTranscriptItem): void {
   if (item.kind !== 'assistant' || lane.coordinatorDrainProvenanceUsed) return;
@@ -154,6 +160,10 @@ export function renderTranscriptItem(
         body.textContent = item.text;
       }
     }
+    if (!streaming) {
+      scanMessageResourceBody(body, item, projectDir);
+      appendMessageResourceRail(body, item, projectDir);
+    }
   } else if (item.kind === 'tool' && item.tool) {
     body.classList.add('acp-harness__tool');
     renderToolBody(body, item.tool);
@@ -241,6 +251,9 @@ export function renderTranscriptItem(
   }
   el.appendChild(label);
   el.appendChild(body);
+  // Rendering may populate provenance or sealed resource state, so capture the
+  // post-render signature rather than the pre-render snapshot assigned above.
+  el.dataset.renderSignature = transcriptRenderSignature(item, streaming);
   return el;
 }
 
@@ -292,6 +305,17 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
     : item.tool?.artifactRedaction
       ? `red|${item.tool.artifactRedaction.tail}|${item.tool.artifactRedaction.size ?? ''}|${item.tool.artifactRedaction.hash ?? ''}|${item.tool.artifactRedaction.pending ? '1' : '0'}`
       : '';
+  const resources = (item.resources ?? [])
+    .map((resource) => [
+      resource.key,
+      resource.label,
+      resource.source,
+      resource.mimeType ?? '',
+      resource.size ?? '',
+      resource.description ?? '',
+      resource.hintLabel ?? '',
+    ].join('\u001e'))
+    .join('\u001f');
   return [
     item.kind,
     item.status ?? '',
@@ -306,7 +330,86 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
     interLane,
     provenance,
     artifact,
+    resources,
+    item.resourceOverflow ?? 0,
   ].join('\u001d');
+}
+
+/** Render one flat, keyboard-hintable rail beneath sealed assistant Markdown. */
+export function appendMessageResourceRail(
+  body: HTMLElement,
+  item: HarnessTranscriptItem,
+  projectDir: string | null,
+): void {
+  const resources = item.resources ?? [];
+  if (resources.length === 0) return;
+  body.querySelector(':scope > .acp-harness__resources')?.remove();
+
+  const rail = document.createElement('section');
+  rail.className = 'acp-harness__resources';
+  rail.setAttribute('aria-label', 'Message references');
+  const head = document.createElement('div');
+  head.className = 'acp-harness__resources-head';
+  const title = document.createElement('span');
+  title.textContent = 'REFERENCES';
+  const count = document.createElement('span');
+  count.className = 'acp-harness__resource-count';
+  const overflow = item.resourceOverflow ?? 0;
+  count.textContent = overflow > 0 ? `${resources.length} · +${overflow} hidden` : String(resources.length);
+  head.append(title, count);
+  rail.appendChild(head);
+
+  for (const resource of resources) rail.appendChild(renderMessageResource(resource, projectDir));
+  body.appendChild(rail);
+}
+
+export function scanMessageResourceBody(
+  body: ParentNode,
+  item: HarnessTranscriptItem,
+  projectDir: string | null,
+): void {
+  if (item.resourcesScanned) return;
+  const merged = mergeMessageResources(
+    item.resources ?? [],
+    extractResourcesFromBody(body, projectDir),
+    item.resourceOverflow ?? 0,
+  );
+  item.resources = merged.resources;
+  item.resourceOverflow = merged.overflow;
+  item.resourcesScanned = true;
+}
+
+function renderMessageResource(resource: MessageResource, projectDir: string | null): HTMLButtonElement {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = `acp-harness__resource acp-harness__resource--${resource.kind}`;
+  if (resource.hintLabel) row.classList.add('acp-harness__resource--hinted');
+  row.dataset.responseResource = resource.key;
+  const displayTarget = resourceDisplayTarget(resource, projectDir);
+  row.title = displayTarget;
+  row.setAttribute('aria-label', `${resource.kind === 'file' ? 'Open file' : 'Open URL'} ${displayTarget}`);
+
+  const hint = document.createElement('span');
+  hint.className = 'acp-harness__resource-hint';
+  hint.textContent = resource.hintLabel ?? '';
+  hint.hidden = !resource.hintLabel;
+  const kind = document.createElement('span');
+  kind.className = 'acp-harness__resource-kind';
+  kind.textContent = resource.kind === 'file' ? 'FILE' : 'URL';
+  const content = document.createElement('span');
+  content.className = 'acp-harness__resource-content';
+  const label = document.createElement('span');
+  label.className = 'acp-harness__resource-label';
+  label.textContent = resource.label;
+  const target = document.createElement('span');
+  target.className = 'acp-harness__resource-target';
+  target.textContent = displayTarget;
+  content.append(label, target);
+  const action = document.createElement('span');
+  action.className = 'acp-harness__resource-action';
+  action.textContent = resource.kind === 'file' ? 'OPEN TAB ↗' : 'OPEN ↗';
+  row.append(hint, kind, content, action);
+  return row;
 }
 
 /** spec 120 — flat lane-mail body (exported for tests). */

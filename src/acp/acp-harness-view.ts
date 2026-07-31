@@ -210,6 +210,7 @@ import type {
   LanePeekHeatWindow,
   LanePeekSnapshot,
   LanePeekState,
+  MessageResource,
   PendingModelSwitch,
   PermissionDecision,
   PermissionPayload,
@@ -344,7 +345,9 @@ export {
 export type { DeriveRailPeerHintInput, RailPeerHint } from './lane-peek';
 import {
   applyCoordinatorProvenanceToItem,
+  appendMessageResourceRail,
   renderTranscriptItem,
+  scanMessageResourceBody,
   transcriptRenderSignature,
 } from './harness-transcript-render';
 export {
@@ -352,6 +355,10 @@ export {
   formatLaneMailProvenanceLine,
   renderPermissionBody,
 } from './harness-transcript-render';
+import {
+  mergeMessageResources,
+  resourceFromContentBlock,
+} from './message-resources';
 export {
   artifactWritePathMatches,
   callTargetsArtifactScratch,
@@ -524,6 +531,7 @@ const LANE_DEFAULTS = {
   currentUserId: null,
   pendingUserEcho: null,
   currentAssistantId: null,
+  currentAssistantMessageId: null,
   currentThoughtId: null,
   stickToBottom: true,
   savedScrollTop: 0,
@@ -791,9 +799,9 @@ export class AcpHarnessView implements ContentView {
   private feedbackUnlisten: UnlistenFn | null = null;
   private docsFeedbackUnlisten: UnlistenFn | null = null;
   private docsArtifactUnlisten: UnlistenFn | null = null;
-  /** spec 133: artifact hint mode (open-artifact labels), active only when on. */
-  private artifactHintMode = false;
-  private artifactHintBuffer = '';
+  /** spec 206: unified transcript hint mode for artifacts and references. */
+  private openHintMode = false;
+  private openHintBuffer = '';
   private fileTouchMap = new Map<string, FileTouchRecord>();
   private lanePeek: LanePeekState = {
     visible: true,
@@ -862,6 +870,7 @@ export class AcpHarnessView implements ContentView {
   private modelPickerLaneId: string | null = null;
   private closeCb: (() => void) | null = null;
   private readonly openTelegramSettingsCb: (() => Promise<void>) | null;
+  private readonly openFileReferenceCb: ((path: string, line?: number, column?: number) => Promise<boolean>) | null;
 
   private dashboardEl!: HTMLElement;
   private memoryOverlayEl!: HTMLElement;
@@ -910,10 +919,12 @@ export class AcpHarnessView implements ContentView {
     projectDir: string | null = null,
     bus: ViewBus | null = null,
     openTelegramSettings: (() => Promise<void>) | null = null,
+    openFileReference: ((path: string, line?: number, column?: number) => Promise<boolean>) | null = null,
   ) {
     this.projectDir = projectDir;
     this.viewBus = bus;
     this.openTelegramSettingsCb = openTelegramSettings;
+    this.openFileReferenceCb = openFileReference;
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
     this.element = document.createElement('div');
@@ -1605,6 +1616,7 @@ export class AcpHarnessView implements ContentView {
     lane.activeTurnStartedAt = Date.now();
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
+    lane.currentAssistantMessageId = null;
     lane.currentThoughtId = null;
     // spec 143: a delegated peer turn may run non-high-risk permissions
     // autonomously. Arm here (turn-start), reset at turn end like the manual
@@ -3100,9 +3112,9 @@ export class AcpHarnessView implements ContentView {
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
-    // spec 133: artifact hint mode swallows keys while active (read-only
+    // spec 206: unified open-hint mode swallows keys while active (read-only
     // transcript exception, active only in hint mode).
-    if (this.artifactHintMode) return this.handleArtifactHintKey(e);
+    if (this.openHintMode) return this.handleOpenHintKey(e);
     if (e.key === '.' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       this.toggleZenMode();
@@ -5124,6 +5136,15 @@ export class AcpHarnessView implements ContentView {
     this.element.addEventListener('click', (e: MouseEvent) => {
       const target = e.target;
       if (!(target instanceof Element)) return;
+      const resourceButton = target.closest<HTMLElement>('[data-response-resource]');
+      if (resourceButton?.dataset.responseResource) {
+        e.preventDefault();
+        const resource = this.activeLane()?.transcript
+          .flatMap((item) => item.resources ?? [])
+          .find((candidate) => candidate.key === resourceButton.dataset.responseResource);
+        if (resource) void this.openMessageResource(resource);
+        return;
+      }
       const anchor = target.closest<HTMLAnchorElement>('a[href]');
       if (!anchor) return;
       e.preventDefault();
@@ -6389,9 +6410,25 @@ export class AcpHarnessView implements ContentView {
         break;
       case 'message_chunk':
         lane.activity = { kind: 'writing', label: '' };
-        this.appendStreaming(lane, 'assistant', event.text);
-        this.scheduleStreamingBodyOnly(lane);
-        needsRender = false;
+        if (
+          event.messageId &&
+          lane.currentAssistantMessageId &&
+          event.messageId !== lane.currentAssistantMessageId
+        ) {
+          this.sealStreaming(lane);
+        }
+        if (event.messageId) lane.currentAssistantMessageId = event.messageId;
+        if (event.content.type === 'text') {
+          this.appendStreaming(lane, 'assistant', event.text);
+          this.scheduleStreamingBodyOnly(lane);
+          needsRender = false;
+        } else {
+          const resource = resourceFromContentBlock(event.content, this.projectDir);
+          if (resource) this.appendAssistantResource(lane, resource);
+          // References stay visually deferred until seal; unsupported non-text
+          // blocks retain today's no-op behavior.
+          needsRender = false;
+        }
         break;
       case 'thought_chunk':
         lane.activity = { kind: 'thinking', label: '' };
@@ -6623,6 +6660,7 @@ export class AcpHarnessView implements ContentView {
     lane.activeTurnStartedAt = Date.now();
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
+    lane.currentAssistantMessageId = null;
     lane.currentThoughtId = null;
     // spec 124: promote a deferred lane-scope assignment, then build blocks
     // (which read the effective directive), then consume any one-shot override.
@@ -6659,6 +6697,7 @@ export class AcpHarnessView implements ContentView {
       lane.activeTurnStartedAt = null;
       lane.activeTelegramTurn = null;
       lane.currentAssistantId = null;
+      lane.currentAssistantMessageId = null;
       this.dropVeiledThoughtRow(lane);
       lane.currentThoughtId = null;
       const providerError = classifyProviderError(message);
@@ -6917,6 +6956,7 @@ export class AcpHarnessView implements ContentView {
     lane.activeTurnStartedAt = null;
     lane.activity = null;
     lane.currentAssistantId = null;
+    lane.currentAssistantMessageId = null;
     lane.pendingUserEcho = null;
     this.dropVeiledThoughtRow(lane);
     lane.currentThoughtId = null;
@@ -7237,42 +7277,48 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  // ─── Artifact hint mode ─────────────────────────────────────────────────
+  // ─── Transcript open-hint mode ──────────────────────────────────────────
 
-  /** Live artifact cards in the active lane, in transcript order. */
-  private activeLaneArtifactCards(): HarnessTranscriptItem[] {
+  /** Live artifacts and message references in transcript order. */
+  private activeLaneOpenTargets(): Array<ArtifactCardPayload | MessageResource> {
     const lane = this.activeLane();
     if (!lane) return [];
-    return lane.transcript.filter((item) => item.artifact && item.artifact.available);
+    const targets: Array<ArtifactCardPayload | MessageResource> = [];
+    for (const item of lane.transcript) {
+      if (item.artifact?.available) targets.push(item.artifact);
+      targets.push(...(item.resources ?? []));
+    }
+    return targets;
   }
 
-  private enterArtifactHintMode(): boolean {
-    const cards = this.activeLaneArtifactCards();
-    if (cards.length === 0) return false;
-    const labels = generateArtifactHintLabels(cards.length);
-    cards.forEach((item, i) => {
-      if (item.artifact) item.artifact.hintLabel = labels[i] ?? null;
+  private enterOpenHintMode(): boolean {
+    const targets = this.activeLaneOpenTargets();
+    if (targets.length === 0) return false;
+    const labels = generateArtifactHintLabels(targets.length);
+    targets.forEach((target, i) => {
+      target.hintLabel = labels[i] ?? null;
     });
-    this.artifactHintMode = true;
-    this.artifactHintBuffer = '';
+    this.openHintMode = true;
+    this.openHintBuffer = '';
     this.render();
     return true;
   }
 
-  private exitArtifactHintMode(): void {
-    if (!this.artifactHintMode) return;
-    this.artifactHintMode = false;
-    this.artifactHintBuffer = '';
+  private exitOpenHintMode(): void {
+    if (!this.openHintMode) return;
+    this.openHintMode = false;
+    this.openHintBuffer = '';
     for (const item of this.activeLane()?.transcript ?? []) {
       if (item.artifact) item.artifact.hintLabel = null;
+      for (const resource of item.resources ?? []) resource.hintLabel = null;
     }
     this.render();
   }
 
-  private handleArtifactHintKey(e: KeyboardEvent): boolean {
+  private handleOpenHintKey(e: KeyboardEvent): boolean {
     if (e.key === 'Escape') {
       e.preventDefault();
-      this.exitArtifactHintMode();
+      this.exitOpenHintMode();
       return true;
     }
     if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) {
@@ -7283,24 +7329,43 @@ export class AcpHarnessView implements ContentView {
     e.preventDefault();
     const ch = e.key.toLowerCase();
     if (!ARTIFACT_HINT_ALPHABET.includes(ch)) {
-      this.exitArtifactHintMode();
+      this.exitOpenHintMode();
       return true;
     }
-    const candidate = this.artifactHintBuffer + ch;
-    const cards = this.activeLaneArtifactCards();
-    const exact = cards.find((item) => item.artifact?.hintLabel === candidate);
-    if (exact && exact.artifact) {
-      void this.openArtifact(exact.artifact);
-      this.exitArtifactHintMode();
+    const candidate = this.openHintBuffer + ch;
+    const targets = this.activeLaneOpenTargets();
+    const exact = targets.find((target) => target.hintLabel === candidate);
+    if (exact) {
+      if ('available' in exact) void this.openArtifact(exact);
+      else void this.openMessageResource(exact);
+      this.exitOpenHintMode();
       return true;
     }
-    const stillPossible = cards.some((item) => item.artifact?.hintLabel?.startsWith(candidate));
+    const stillPossible = targets.some((target) => target.hintLabel?.startsWith(candidate));
     if (stillPossible) {
-      this.artifactHintBuffer = candidate;
+      this.openHintBuffer = candidate;
       return true;
     }
-    this.exitArtifactHintMode();
+    this.exitOpenHintMode();
     return true;
+  }
+
+  private async openMessageResource(resource: MessageResource): Promise<void> {
+    if (resource.kind === 'url') {
+      openExternalUrl(resource.target, { external: true });
+      this.flashChip(`opening ${resource.label}`);
+      return;
+    }
+    if (!this.openFileReferenceCb) {
+      this.flashChip('file opener unavailable');
+      return;
+    }
+    try {
+      const opened = await this.openFileReferenceCb(resource.target, resource.line, resource.column);
+      this.flashChip(opened ? `opening ${resource.label}` : 'file unavailable');
+    } catch {
+      this.flashChip('file unavailable');
+    }
   }
 
   private async openArtifact(card: ArtifactCardPayload): Promise<void> {
@@ -8270,6 +8335,7 @@ export class AcpHarnessView implements ContentView {
     this.sealStreaming(lane);
     lane.activeTurnStartedAt = null;
     lane.currentAssistantId = null;
+    lane.currentAssistantMessageId = null;
     this.dropVeiledThoughtRow(lane);
     lane.currentThoughtId = null;
     lane.activity = null;
@@ -8386,6 +8452,7 @@ export class AcpHarnessView implements ContentView {
     lane.currentUserId = null;
     lane.pendingUserEcho = null;
     lane.currentAssistantId = null;
+    lane.currentAssistantMessageId = null;
     lane.currentThoughtId = null;
     lane.toolTranscriptIds = new Map();
     lane.toolCalls = new Map();
@@ -10322,8 +10389,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   private composerStatusChip(lane: HarnessLane): string {
-    if (this.artifactHintMode) return 'open artifact: press label · Esc cancel';
-    if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · f open artifact · ? help · i/Esc input';
+    if (this.openHintMode) return 'open reference: press label · Esc cancel';
+    if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · f open reference · ? help · i/Esc input';
     if (lane.status === 'busy') {
       const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
       // spec 156: live activity + output-token counter, re-read on each 1 s tick.
@@ -10867,6 +10934,7 @@ export class AcpHarnessView implements ContentView {
     // end and on lane reset.
     if (kind !== 'user') lane.currentUserId = null;
     if (kind !== 'assistant') lane.currentAssistantId = null;
+    if (kind !== 'assistant') lane.currentAssistantMessageId = null;
     if (kind !== 'thought') {
       this.dropVeiledThoughtRow(lane);
       lane.currentThoughtId = null;
@@ -10906,6 +10974,21 @@ export class AcpHarnessView implements ContentView {
     this.appendStreaming(lane, 'user', text);
   }
 
+  private appendAssistantResource(lane: HarnessLane, resource: MessageResource): void {
+    this.appendStreaming(lane, 'assistant', '');
+    const item = lane.currentAssistantId
+      ? lane.transcript.find((entry) => entry.id === lane.currentAssistantId)
+      : null;
+    if (!item) return;
+    const merged = mergeMessageResources(
+      item.resources ?? [],
+      [resource],
+      item.resourceOverflow ?? 0,
+    );
+    item.resources = merged.resources;
+    item.resourceOverflow = merged.overflow;
+  }
+
   /** Drop a thought row that never received any text. Providers that keep
    *  reasoning server-side (Claude Code on current Opus models) stream
    *  thought deltas with empty text; the row shows an animated veil while
@@ -10928,6 +11011,7 @@ export class AcpHarnessView implements ContentView {
     const assistantId = lane.currentAssistantId;
     lane.currentUserId = null;
     lane.currentAssistantId = null;
+    lane.currentAssistantMessageId = null;
     lane.currentThoughtId = null;
     if (assistantId) {
       const item = lane.transcript.find((entry) => entry.id === assistantId);
@@ -11006,6 +11090,8 @@ export class AcpHarnessView implements ContentView {
       }
       item.markdownHtml = body.innerHTML;
       item.markdownSource = item.text;
+      scanMessageResourceBody(body, item, this.projectDir);
+      appendMessageResourceRail(body, item, this.projectDir);
       // Stabilise signature so the next renderActiveTranscript() pass hits the
       // no-op branch instead of rebuilding via marked.parse. Only meaningful
       // when the wrapper is in the live transcript DOM (active lane); for
@@ -11030,6 +11116,7 @@ export class AcpHarnessView implements ContentView {
         resolveLocalImageSrcs(offscreen, this.projectDir);
         item.markdownHtml = offscreen.innerHTML;
         item.markdownSource = item.text;
+        scanMessageResourceBody(offscreen, item, this.projectDir);
       } catch (e) {
         console.warn('[spec117] offscreen seal capture failed', e);
         // Leave cache unset; cold-load path will use marked as a fallback.
@@ -11236,7 +11323,7 @@ export class AcpHarnessView implements ContentView {
     }
     if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      if (!this.enterArtifactHintMode()) this.flashChip('no artifacts to open');
+      if (!this.enterOpenHintMode()) this.flashChip('no references to open');
       return true;
     }
     if (e.key === 'j') { e.preventDefault(); body.scrollBy({ top: 24, behavior: 'instant' }); return true; }
@@ -12029,4 +12116,3 @@ export function parseReviewCommandArgs(rest: string[]): { nameTokens: string[]; 
 function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {
   return { ...(prev ?? {}), ...next };
 }
-

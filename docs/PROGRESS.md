@@ -21,6 +21,18 @@
 
 ## Recent Landings
 
+- **Assistant response resources (spec 206)** — ACP Harness now preserves typed
+  `resource_link` and embedded-resource assistant chunks plus optional ACP
+  message IDs. At message seal, it deterministically merges those blocks with
+  explicit anchors from the final Markdown DOM, normalizes file locations and
+  external URLs, deduplicates them in first-appearance order, and renders a
+  capped flat `REFERENCES` rail without polluting the Markdown cache. Files open
+  in a new Helix tab at line/column; URL/mail actions open externally. Transcript
+  `f` now assigns one hint sequence across response references and available
+  HTML artifacts. Prose and code are never inferred. Verified with TypeScript,
+  focused ACP tests, full Vitest, production build, and the ACP Harness
+  performance checklist. See `docs/206-assistant-response-resources.md`.
+
 - **Raycast extension (spec 205)** — new standalone client at `raycast/`
   (own npm project, React as required by Raycast; not part of the Vite/Tauri
   build) that drives the authenticated control API the way `kryptonctl`

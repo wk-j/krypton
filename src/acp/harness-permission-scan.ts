@@ -15,7 +15,7 @@ import { truncate } from './harness-format';
 import { extractModifiedPath } from './acp-harness-memory';
 
 const MEMORY_PERMISSION_SCAN_DEPTH = 8;
-/** spec 133 — alphabet for artifact hint labels (mirrors the `f` hint mode). */
+/** specs 133/206 — alphabet shared by artifact and response-reference hints. */
 export const ARTIFACT_HINT_ALPHABET = 'asdfghjklqweruiop';
 
 const HARNESS_MEMORY_TOOL_NAMES = new Set(['handoff_set', 'handoff_get', 'handoff_list']);
@@ -307,15 +307,22 @@ export function rawInputPathMentionsScratch(value: unknown, depth: number): bool
 /** spec 133 — prefix-free hint labels from the same alphabet as the `f` mode. */
 export function generateArtifactHintLabels(count: number): string[] {
   const chars = [...ARTIFACT_HINT_ALPHABET];
-  const labels: string[] = [];
-  if (count <= chars.length) {
-    for (let i = 0; i < count; i++) labels.push(chars[i]);
-    return labels;
+  if (count <= 0 || chars.length === 0) return [];
+  let width = 1;
+  let capacity = chars.length;
+  while (capacity < count) {
+    width += 1;
+    capacity *= chars.length;
   }
-  for (let i = 0; i < chars.length && labels.length < count; i++) {
-    for (let j = 0; j < chars.length && labels.length < count; j++) {
-      labels.push(chars[i] + chars[j]);
+  const labels: string[] = [];
+  for (let index = 0; index < count; index++) {
+    let value = index;
+    let label = '';
+    for (let digit = 0; digit < width; digit++) {
+      label = chars[value % chars.length] + label;
+      value = Math.floor(value / chars.length);
     }
+    labels.push(label);
   }
   return labels;
 }

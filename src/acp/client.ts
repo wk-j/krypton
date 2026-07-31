@@ -252,7 +252,7 @@ export class AcpClient {
             event = { type: 'user_message_chunk', text: extractText(update.content) };
             break;
           case 'agent_message_chunk':
-            event = { type: 'message_chunk', text: extractText(update.content) };
+            event = assistantMessageEvent(update.content, update.messageId);
             break;
           case 'agent_thought_chunk':
             event = { type: 'thought_chunk', text: extractText(update.content) };
@@ -361,4 +361,64 @@ function extractText(content: unknown): string {
   const c = content as { type?: string; text?: string };
   if (c.type === 'text' && typeof c.text === 'string') return c.text;
   return '';
+}
+
+/** Decode one assistant content block without discarding non-text ACP data. */
+export function assistantMessageEvent(content: unknown, messageId: unknown): AcpEvent {
+  const block = normalizeContentBlock(content);
+  return {
+    type: 'message_chunk',
+    text: block.type === 'text' ? block.text : '',
+    content: block,
+    messageId: typeof messageId === 'string' && messageId.length > 0 ? messageId : undefined,
+  };
+}
+
+function normalizeContentBlock(content: unknown): ContentBlock {
+  if (!content || typeof content !== 'object') return { type: 'text', text: '' };
+  const value = content as Record<string, unknown>;
+  if (value.type === 'text') {
+    return { type: 'text', text: typeof value.text === 'string' ? value.text : '' };
+  }
+  if (value.type === 'resource_link' && typeof value.uri === 'string') {
+    return {
+      type: 'resource_link',
+      uri: value.uri,
+      name: typeof value.name === 'string' ? value.name : undefined,
+      title: typeof value.title === 'string' ? value.title : undefined,
+      description: typeof value.description === 'string' ? value.description : undefined,
+      mimeType: typeof value.mimeType === 'string' ? value.mimeType : undefined,
+      size: typeof value.size === 'number' && Number.isFinite(value.size) && value.size >= 0
+        ? value.size
+        : undefined,
+    };
+  }
+  if (value.type === 'resource' && value.resource && typeof value.resource === 'object') {
+    const resource = value.resource as Record<string, unknown>;
+    if (typeof resource.uri === 'string') {
+      return {
+        type: 'resource',
+        resource: {
+          uri: resource.uri,
+          mimeType: typeof resource.mimeType === 'string' ? resource.mimeType : undefined,
+          text: typeof resource.text === 'string' ? resource.text : undefined,
+          blob: typeof resource.blob === 'string' ? resource.blob : undefined,
+        },
+      };
+    }
+  }
+  // Image/audio blocks are forwarded when complete; malformed or future blocks
+  // degrade to empty text so existing consumers remain safe.
+  if (value.type === 'image' && typeof value.data === 'string' && typeof value.mimeType === 'string') {
+    return {
+      type: 'image',
+      data: value.data,
+      mimeType: value.mimeType,
+      uri: typeof value.uri === 'string' ? value.uri : undefined,
+    };
+  }
+  if (value.type === 'audio' && typeof value.data === 'string' && typeof value.mimeType === 'string') {
+    return { type: 'audio', data: value.data, mimeType: value.mimeType };
+  }
+  return { type: 'text', text: '' };
 }

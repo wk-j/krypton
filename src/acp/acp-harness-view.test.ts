@@ -1198,6 +1198,13 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(new Set(labels).size).toBe(20);
       expect(labels[17]).toHaveLength(2);
     });
+
+    it('keeps every visible reference hintable past the two-character capacity', () => {
+      const labels = generateArtifactHintLabels(300);
+      expect(labels).toHaveLength(300);
+      expect(new Set(labels).size).toBe(300);
+      expect(labels.every((label) => label.length === 3)).toBe(true);
+    });
   });
 });
 

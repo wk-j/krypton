@@ -43,6 +43,24 @@ export interface HarnessPermission {
   transcriptItem?: HarnessTranscriptItem;
 }
 
+/** A deterministic, user-visible reference extracted from one assistant row. */
+export interface MessageResource {
+  /** Normalized identity used for dedupe and delegated click lookup. */
+  key: string;
+  kind: 'file' | 'url';
+  /** Absolute file path or normalized external URI. */
+  target: string;
+  label: string;
+  source: 'protocol' | 'markdown';
+  line?: number;
+  column?: number;
+  mimeType?: string;
+  size?: number;
+  description?: string;
+  /** Transient label assigned only while transcript open-hint mode is active. */
+  hintLabel: string | null;
+}
+
 export interface HarnessTranscriptItem {
   id: string;
   kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact';
@@ -79,6 +97,12 @@ export interface HarnessTranscriptItem {
   replyingToLaneMail?: LaneMailProvenance;
   /** spec 133: hintable HTML artifact card. */
   artifact?: ArtifactCardPayload;
+  /** spec 206: structured references belonging to this assistant message. */
+  resources?: MessageResource[];
+  /** Number of otherwise-valid unique references hidden by the per-row cap. */
+  resourceOverflow?: number;
+  /** True after the sealed Markdown DOM has been scanned exactly once. */
+  resourcesScanned?: boolean;
 }
 
 /** spec 133 — transcript card for a registered HTML artifact. */
@@ -92,7 +116,7 @@ export interface ArtifactCardPayload {
   hash: string | null;
   /** false once the file is swept/cancelled — the card reports "unavailable". */
   available: boolean;
-  /** Hint label assigned while artifact hint mode is active, else null. */
+  /** Hint label assigned while unified transcript open mode is active, else null. */
   hintLabel: string | null;
 }
 
@@ -395,6 +419,8 @@ export interface HarnessLane {
   currentUserId: string | null;
   pendingUserEcho: PendingUserEcho | null;
   currentAssistantId: string | null;
+  /** ACP message boundary associated with currentAssistantId, when advertised. */
+  currentAssistantMessageId: string | null;
   currentThoughtId: string | null;
   toolTranscriptIds: Map<string, string>;
   toolCalls: Map<string, ToolCall | ToolCallUpdate>;

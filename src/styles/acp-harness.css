@@ -1806,6 +1806,129 @@
   border-radius: 3px;
 }
 
+/* Deterministic references extracted from a sealed assistant message (spec 206). */
+.acp-harness__resources {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 6px;
+  background: rgba(7, 14, 18, 0.72);
+  border: 1px solid rgba(109, 208, 255, 0.22);
+  border-radius: 3px;
+}
+
+.acp-harness__resources-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 3px 3px;
+  font-size: 0.7em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(185, 245, 255, 0.68);
+}
+
+.acp-harness__resource-count {
+  color: rgba(216, 232, 240, 0.42);
+  letter-spacing: 0.05em;
+}
+
+.acp-harness__resource {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 7px;
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: rgba(109, 208, 255, 0.035);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.acp-harness__resource--hinted {
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+}
+
+.acp-harness__resource:hover,
+.acp-harness__resource:focus-visible,
+.acp-harness__resource--hinted {
+  background: rgba(109, 208, 255, 0.1);
+  border-color: rgba(109, 208, 255, 0.38);
+  outline: none;
+}
+
+.acp-harness__resource-hint {
+  min-width: 1.5em;
+  padding: 1px 4px;
+  text-align: center;
+  font-weight: 800;
+  color: #071013;
+  background: var(--agent-user, #6dd0ff);
+  border-radius: 2px;
+}
+
+.acp-harness__resource-kind {
+  min-width: 4ch;
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--agent-accent, #8effb0);
+}
+
+.acp-harness__resource--url .acp-harness__resource-kind {
+  color: var(--agent-user, #6dd0ff);
+}
+
+.acp-harness__resource-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.acp-harness__resource-label,
+.acp-harness__resource-target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-harness__resource-label {
+  color: rgba(234, 243, 234, 0.94);
+}
+
+.acp-harness__resource-target {
+  font-size: 0.78em;
+  color: rgba(216, 232, 240, 0.48);
+}
+
+.acp-harness__resource-action {
+  justify-self: end;
+  font-size: 0.7em;
+  letter-spacing: 0.06em;
+  color: rgba(109, 208, 255, 0.7);
+}
+
+@media (max-width: 680px) {
+  .acp-harness__resource {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .acp-harness__resource--hinted {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+
+  .acp-harness__resource-action {
+    display: none;
+  }
+}
+
 /* Shown in place of an <img> whose asset URL failed to load. */
 .acp-harness__img-breach {
   display: inline-block;

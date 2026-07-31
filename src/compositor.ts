@@ -3323,6 +3323,7 @@ export class Compositor {
       projectDir,
       this.bus,
       () => this.openTelegramSettings(),
+      (path, line, column) => this.openHelixTab(path, line, column),
     );
 
     // Replace the launching terminal tab: open the harness as a content tab in

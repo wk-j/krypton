@@ -53,7 +53,9 @@ export function sanitizeHref(value: string): string {
   const colon = v.indexOf(':');
   if (colon === -1) return v; // bare token, treat as relative
   const scheme = v.slice(0, colon).toLowerCase();
-  if (scheme === 'http' || scheme === 'https' || scheme === 'mailto') return v;
+  // `file:` remains inert on click (agentLinkOpenAction suppresses it), but is
+  // retained in the sealed DOM so spec 206 can classify it as a file resource.
+  if (scheme === 'http' || scheme === 'https' || scheme === 'mailto' || scheme === 'file') return v;
   return '#';
 }
 
