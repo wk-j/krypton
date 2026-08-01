@@ -235,7 +235,7 @@ fn frame_for_monitor(monitor: &Monitor, saved: Option<SavedFrame>) -> Frame {
     Frame {
         position: PhysicalPosition::new(
             work.position.x + (work.size.width.saturating_sub(size.width) / 2) as i32,
-            work.position.y + margin,
+            work.position.y + (work.size.height.saturating_sub(size.height) / 2) as i32,
         ),
         size,
     }
@@ -337,7 +337,7 @@ mod tests {
         Frame {
             position: PhysicalPosition::new(
                 work_position.x + (work_size.width - size.width) as i32 / 2,
-                work_position.y + margin,
+                work_position.y + (work_size.height - size.height) as i32 / 2,
             ),
             size,
         }
@@ -352,7 +352,7 @@ mod tests {
             None,
         );
         assert_eq!(result.size, PhysicalSize::new(840, 620));
-        assert_eq!(result.position, PhysicalPosition::new(-1380, 16));
+        assert_eq!(result.position, PhysicalPosition::new(-1380, 230));
     }
 
     #[test]

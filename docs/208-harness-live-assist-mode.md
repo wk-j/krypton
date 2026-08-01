@@ -156,7 +156,7 @@ Showing performs one serialized transaction:
 
 1. Resolve the pointer monitor, then current, primary, first available.
 2. Reuse the last frame if it intersects that monitor; otherwise center it
-   horizontally 16 px below the work-area top and cap it to the work area.
+   horizontally and vertically in the work area and cap it inside 16 px margins.
 3. Add `CanJoinAllSpaces | FullScreenAuxiliary`, set popup level, show,
    unminimize, and focus.
 4. Emit `live-assist-shown` to its webview after page readiness.
