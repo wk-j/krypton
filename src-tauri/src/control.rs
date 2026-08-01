@@ -125,6 +125,13 @@ impl ControlCaller {
             telegram: Some(caller),
         }
     }
+
+    pub fn live_assist() -> Self {
+        Self {
+            source: "live_assist".to_string(),
+            telegram: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,8 +224,9 @@ impl Default for ControlServer {
 impl ControlServer {
     /// Fan a frontend-published harness event out to all SSE subscribers. The
     /// caller's `seq` is overwritten with the authoritative per-server counter.
-    /// Best-effort: silently drops when there are no subscribers.
-    pub fn publish(&self, mut event: ControlStreamEvent) {
+    /// Best-effort: silently drops when there are no subscribers. Returns the
+    /// stamped event so trusted in-process adapters can mirror the exact order.
+    pub fn publish(&self, mut event: ControlStreamEvent) -> Option<ControlStreamEvent> {
         // Hold the seq lock across serialize + send so subscribers observe seq
         // strictly in send order under concurrent publishes (doc 175 review).
         let mut seq = self.seq.lock().unwrap_or_else(|e| e.into_inner());
@@ -228,11 +236,12 @@ impl ControlServer {
             Err(e) => {
                 // seq is not consumed on failure — no gap, the value is reused.
                 log::warn!("control publish: serialize failed: {e}");
-                return;
+                return None;
             }
         }
         *seq += 1;
-        let _ = self.events.send(event);
+        let _ = self.events.send(event.clone());
+        Some(event)
     }
 
     /// Subscribe to the same typed event stream used by SSE. Internal adapters

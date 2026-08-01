@@ -722,6 +722,13 @@ export class CommandPalette {
 
     // ── ACP Harness ──
     this.register({
+      id: 'acp.live-assist.toggle',
+      label: 'Toggle Harness Live Assist',
+      category: 'ACP',
+      keybinding: 'Ctrl+Shift+A',
+      execute: () => invoke('live_assist_toggle'),
+    });
+    this.register({
       id: 'acp.peek.show',
       label: 'ACP: Show Lane Peek',
       category: 'ACP',

@@ -1,5 +1,5 @@
 use crate::config::KryptonConfig;
-use crate::control::{ControlReply, ControlServer};
+use crate::control::{ControlCaller, ControlReply, ControlRequest, ControlServer};
 use crate::hook_server::HookServer;
 use crate::pty::PtyManager;
 use crate::ssh::SshManager;
@@ -291,11 +291,53 @@ pub fn acp_control_reply(
 /// listening. See `docs/175-harness-web-control-api.md`.
 #[tauri::command]
 pub fn acp_control_publish(
+    app_handle: AppHandle,
     event: crate::control::ControlStreamEvent,
     control_server: State<'_, Arc<ControlServer>>,
 ) -> Result<(), String> {
-    control_server.publish(event);
+    if let Some(event) = control_server.publish(event) {
+        crate::live_assist::forward_stream_event(&app_handle, &event);
+    }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn live_assist_dispatch(
+    app_handle: AppHandle,
+    control_server: State<'_, Arc<ControlServer>>,
+    operation_id: String,
+    operation: String,
+    params: serde_json::Value,
+) -> Result<ControlReply, String> {
+    if !crate::live_assist::operation_allowed(&operation) {
+        return Ok(ControlReply::error(
+            "unsupported_operation",
+            format!("Live Assist cannot call {operation}"),
+            false,
+        ));
+    }
+    let control_server = control_server.inner().clone();
+    Ok(control_server
+        .dispatch(
+            &app_handle,
+            ControlRequest {
+                operation_id,
+                operation,
+                params,
+            },
+            ControlCaller::live_assist(),
+        )
+        .await)
+}
+
+#[tauri::command]
+pub async fn live_assist_toggle(app_handle: AppHandle) -> Result<(), String> {
+    crate::live_assist::toggle(app_handle).await
+}
+
+#[tauri::command]
+pub async fn live_assist_hide(app_handle: AppHandle) -> Result<(), String> {
+    crate::live_assist::hide(app_handle).await
 }
 
 /// Load the ACP Harness directive config (`~/.config/krypton/acp-harness.toml`),
@@ -330,6 +372,17 @@ pub fn acp_collect_review_git_state(cwd: String) -> Result<serde_json::Value, St
 #[tauri::command]
 pub fn collect_working_diff(cwd: String, staged: bool) -> Result<crate::git::WorkingDiff, String> {
     crate::git::collect_working_diff(&cwd, staged)
+}
+
+/// spec 207: collect lightweight, deterministic Git status and line counts for
+/// assistant-response file references. No unified diff or assistant-provided
+/// count data enters this path.
+#[tauri::command]
+pub fn collect_reference_git_state(
+    cwd: String,
+    paths: Vec<String>,
+) -> Result<crate::git::ReferenceGitSnapshot, String> {
+    crate::git::collect_reference_git_state(&cwd, paths)
 }
 
 #[tauri::command]

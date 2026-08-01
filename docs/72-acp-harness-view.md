@@ -4,6 +4,28 @@
 > Date: 2026-05-01
 > Milestone: M8 — Polish
 
+## Live Assist projection (spec 208)
+
+On macOS, `Ctrl+Shift+A` opens a separate `live-assist` Tauri webview with a
+dedicated compact renderer. It is not a compact CSS mode of this view and never
+reparents `.acp-harness` DOM. `AcpHarnessView` stays mounted in the primary
+Krypton window and continues to own every ACP client, lane, transcript,
+permission queue, prompt queue, and session transition.
+
+The projection reuses the Harness control surface. Internal
+`live_assist.bootstrap` reads all live lane summaries and suggests the previous
+assistant selection, otherwise the active lane in the focused Harness, otherwise
+the first stable live lane. The auxiliary command allowlist is limited to
+status/transcript/permission reads plus send, cancel, and oldest-permission
+resolution. Its composer draft and lane selection are local to the auxiliary
+window; they do not overwrite the full Harness composer or active lane.
+
+The normal `publishControlEvent` path remains the only live event source. Rust
+mirrors its sequence-stamped envelope to `live-assist`; chunks append
+incrementally and authoritative boundaries re-pull the snapshot. If no Harness
+is registered, the assistant shows a read-only empty state without opening or
+focusing one in the primary window. See `docs/208-harness-live-assist-mode.md`.
+
 ## Problem
 
 Krypton can open multiple ACP agent tabs, but controlling several agents for the same project is manual: prompts, cancels, status checks, and permission prompts are spread across separate tabs. Users also need these agents to coordinate without directly chatting with each other: one ACP instance should be able to publish findings, decisions, and blockers into a shared project memory that later prompt turns for other instances can read.
@@ -381,6 +403,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   The card shows tool family, tool name, subject/path, decision state, a one-line argument preview, and any auto-allow reason. The `also touched by …` line is rendered only when `fileTouchMap[path]` exists from a different lane within the last 10 minutes. Otherwise the line is omitted. After the user resolves the request from the composer, the same row updates in place to `✓ accepted`, `✓ accepted (auto-turn)` (when triggered by `A`), `✗ rejected`, or `✗ rejected (auto-turn)` (when triggered by `R`), and stays in transcript history. The harness does not append a second string-only resolution row.
 
 - **Assistant response references (spec 206)** — a sealed assistant row gets a flat `REFERENCES` rail when it contains typed ACP `resource_link`/embedded-resource chunks or explicit Markdown anchors. Structured ACP metadata wins over Markdown labels; targets are normalized, deduplicated in first-appearance order, and capped at 32. No prose, inline code, commands, or code fences are guessed. File locations accept `path:line[:column]` and `path#Lline[:column]`; relative paths resolve lexically against the harness project directory. File actions open a new Helix tab, while HTTP(S)/mailto actions use the OS handler. Inline local/file anchors stay inert—the rail is their explicit action surface. See `docs/206-assistant-response-resources.md`.
+- **Programmatic reference Git state (spec 207)** — changed file references gain a compact `M/A/D/R/?/!` badge and `+added −removed` summary computed by Rust from the current local working tree against `HEAD`; the assistant supplies only the normalized file target and cannot supply or override the displayed counts. Binary files show `BIN`, unavailable bounded counts show `N/A`, and clean/out-of-repository files retain the normal reference row. Refresh is event-driven at message seal, successful writes, and lane idle transitions; bare `r` in transcript command mode refreshes immediately. See `docs/207-assistant-reference-git-state.md`.
 - **HTML artifact cards and unified open hints (specs 133/206)** — a `kind: 'artifact'` transcript row (label `html`) is raised when a lane registers an HTML artifact via `artifact_register`. The card shows the artifact title, byte size, and short content hash. In **command mode** (transcript focus), pressing `f` enters a unified open-hint mode: response references and live artifacts in the active lane receive single/double-character labels in transcript order; pressing a label dispatches the matching file, URL, or artifact action, while `Esc` cancels. Keys are intercepted only while hint mode is active. A swept/cancelled artifact's card reports `unavailable`. Both the artifact-path **write/edit tool-observation card and the permission card's argument preview are redacted to path + bytes + hash** (never the diff/content/args) for pending and registered-live paths, so the HTML never enters the transcript model under the file-write tool — the real spec-103 fix. Redaction matches the registry *or* the raw `.krypton/artifacts/` scratch-path pattern, so a card that renders before the registry's pending event arrives still never shows the HTML (the event/registry race). Auto-approval, by contrast, stays strictly registry-keyed and write-kind-gated (a read/exec that merely names the path is never granted; an absolute target must equal the issued path exactly, not just share its tail). Lanes must write artifacts with file-write APIs, not shell heredocs (a lane that insists on shell can still leak its own command text). See `docs/133-harness-html-artifacts.md`.
 - When a non-active lane reaches `needs_permission`, its collapsed row becomes a pulsing gold-tinted **action required** surface; Zen mode gives the matching rail entry the same tinted treatment. Reduced-motion users get the persistent high-contrast state without the pulse. Errors keep their distinct error indicator. The dashboard does not auto-scroll or auto-switch the active lane, so permission context and resolution remain local to the blocked lane.
 

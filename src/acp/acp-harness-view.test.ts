@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AcpHarnessView,
+  applyReferenceGitChanges,
+  referenceGitResponseIsCurrent,
   backendLogoId,
   buildComposerPeerStrip,
   buildLanePeekCandidates,
@@ -52,8 +54,13 @@ import {
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
 } from './acp-harness-view';
+import {
+  referenceGitAccessibleSummary,
+  transcriptRenderSignature,
+} from './harness-transcript-render';
 
 import type { PermissionOption, ToolCall } from './types';
+import type { HarnessLane, HarnessTranscriptItem, MessageResource } from './harness-view-types';
 
 function permissionFor(toolCall: Partial<ToolCall>, options: PermissionOption[] = []): { toolCall: ToolCall; options: PermissionOption[] } {
   return {
@@ -81,6 +88,88 @@ function laneSnapshot(partial: Partial<LanePeekSnapshot> & { laneId: string }): 
     error: partial.error ?? null,
   };
 }
+
+describe('assistant reference Git state', () => {
+  const resource = (): MessageResource => ({
+    key: 'file:/repo/src/app.ts::',
+    kind: 'file',
+    target: '/repo/src/app.ts',
+    label: 'app.ts',
+    source: 'markdown',
+    hintLabel: null,
+  });
+
+  it('applies, deduplicates, and clears authoritative Git snapshots', () => {
+    const lane = { id: 'lane-1' } as HarnessLane;
+    const file = resource();
+    const refs = [{ lane, resource: file }];
+    const change = {
+      target: file.target,
+      status: 'M' as const,
+      added: 12,
+      removed: 3,
+      countKind: 'lines' as const,
+    };
+
+    expect([...applyReferenceGitChanges(refs, [change])]).toEqual([lane]);
+    expect(file.git).toEqual({ status: 'M', added: 12, removed: 3, countKind: 'lines' });
+    expect(applyReferenceGitChanges(refs, [change]).size).toBe(0);
+    expect([...applyReferenceGitChanges(refs, [])]).toEqual([lane]);
+    expect(file.git).toBeUndefined();
+  });
+
+  it('invalidates the transcript signature when visible Git metadata changes', () => {
+    const file = resource();
+    const item: HarnessTranscriptItem = { id: 'm1', kind: 'assistant', text: 'done', resources: [file] };
+    const clean = transcriptRenderSignature(item, false);
+    file.git = { status: '?', added: 8, removed: 0, countKind: 'lines' };
+    expect(transcriptRenderSignature(item, false)).not.toBe(clean);
+  });
+
+  it('formats accessible line, binary, and unavailable summaries', () => {
+    expect(referenceGitAccessibleSummary({
+      status: 'M', added: 1, removed: 2, countKind: 'lines',
+    })).toBe('Modified, 1 line added, 2 lines removed');
+    expect(referenceGitAccessibleSummary({
+      status: '?', added: null, removed: null, countKind: 'binary',
+    })).toBe('Untracked, binary file');
+    expect(referenceGitAccessibleSummary({
+      status: '!', added: null, removed: null, countKind: 'unavailable',
+    })).toBe('Conflicted, line counts unavailable');
+  });
+
+  it('routes r in transcript command mode to an immediate Git refresh', () => {
+    type TranscriptKeyTarget = {
+      handleTranscriptKey(event: KeyboardEvent): boolean;
+    };
+    const handle = (AcpHarnessView.prototype as unknown as TranscriptKeyTarget).handleTranscriptKey;
+    const refresh = vi.fn();
+    const preventDefault = vi.fn();
+    const target = {
+      dashboardEl: { querySelector: () => ({}) },
+      refreshReferenceGitState: refresh,
+    };
+    const handled = handle.call(target, {
+      key: 'r',
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      preventDefault,
+    } as unknown as KeyboardEvent);
+
+    expect(handled).toBe(true);
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledWith(true);
+  });
+
+  it('rejects stale, cross-project, and post-dispose snapshots', () => {
+    expect(referenceGitResponseIsCurrent(4, 4, '/repo', '/repo', false)).toBe(true);
+    expect(referenceGitResponseIsCurrent(3, 4, '/repo', '/repo', false)).toBe(false);
+    expect(referenceGitResponseIsCurrent(4, 4, '/repo', '/other', false)).toBe(false);
+    expect(referenceGitResponseIsCurrent(4, 4, '/repo', '/repo', true)).toBe(false);
+  });
+});
 
 describe('consumeOptimisticUserEcho', () => {
   it('consumes a full echoed prompt without appending duplicate text', () => {

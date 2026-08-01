@@ -8,6 +8,6 @@ export interface TelegramControlCaller {
 
 /** Trusted origin metadata created by Rust after transport authentication. */
 export interface ControlCaller {
-  source: 'control_api' | 'telegram';
+  source: 'control_api' | 'telegram' | 'live_assist';
   telegram?: TelegramControlCaller;
 }

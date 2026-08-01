@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-07-31
+> Last updated: 2026-08-01
 
 ## Overview
 
@@ -20,6 +20,28 @@
 ---
 
 ## Recent Landings
+
+- **Programmatic reference Git state (spec 207)** — ACP Harness file references
+  now show live `M/A/D/R/?/!` state plus per-file `+added −removed` counts derived
+  only from Git and bounded local file reads. One NUL-safe Rust collector handles
+  staged plus unstaged state against `HEAD`, unborn repositories, renames,
+  conflicts, binary files, and untracked text without returning unified diff
+  content. Seals, successful writes, and idle transitions schedule a debounced
+  refresh; transcript-command `r` refreshes immediately. Request generations
+  reject stale responses, cleanup cancels timers, and render signatures rebuild
+  only rows whose visible metadata changed. See
+  `docs/207-assistant-reference-git-state.md`.
+
+- **Harness Live Assist window (spec 208)** — macOS `Ctrl+Shift+A` now summons a
+  dedicated `live-assist` Tauri webview on the pointer's active display/Space,
+  raised with popup level plus `CanJoinAllSpaces | FullScreenAuxiliary`. It has
+  its own amber-phosphor transcript tail, lane strip, permission dock, local
+  composer, keyboard send/cancel/lane switching, empty state, and resizable
+  compact frame. It reuses the existing typed Harness control dispatcher and
+  exact sequence-stamped event stream through a trusted, narrow in-process
+  allowlist. The primary Krypton window and full `AcpHarnessView` are never
+  resized, moved, focused, reparented, or duplicated. See
+  `docs/208-harness-live-assist-mode.md`.
 
 - **Assistant response resources (spec 206)** — ACP Harness now preserves typed
   `resource_link` and embedded-resource assistant chunks plus optional ACP

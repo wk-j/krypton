@@ -11,6 +11,31 @@
 +--------+    Tauri event    +-----------+    PTY read     +----------+
 ```
 
+## macOS Harness Live Assist Flow
+
+```
+1. Ctrl+Shift+A reaches the Rust global-shortcut handler while any app is active.
+2. live_assist.rs resolves or lazily creates the `live-assist` WebviewWindow.
+3. Rust places that auxiliary frame on the pointer monitor, applies topmost and
+   full-screen-auxiliary Space behavior, then shows and focuses it.
+4. The primary Krypton window is not resized, moved, focused, or sent a
+   compositor/workspace/tab/pane action.
+5. live-assist-main.ts invokes the allowlisted `live_assist.bootstrap` operation.
+6. ControlServer::dispatch emits the normal `acp-control-request`; the primary
+   webview's control-bridge selects the retained, focused-active, or first live lane.
+7. Live Assist pulls lane.status, lane.transcript, and permission.list, then its
+   purpose-built view renders a bounded transcript tail and local composer.
+8. Send, cancel, and permission actions dispatch onto the owning AcpHarnessView;
+   it remains the only ACP client and lane-state authority.
+9. AcpHarnessView publishes its normal ordered control event once. Rust broadcasts
+   it to existing subscribers and mirrors that same sequence-stamped envelope to
+   the auxiliary webview.
+10. Text chunks append incrementally; status/permission/stop/lifecycle boundaries
+    and sequence gaps trigger an authoritative snapshot refresh.
+11. Escape, Ctrl+Shift+A, or native close hides only `live-assist`; its local draft
+    stays mounted for the next summon.
+```
+
 ## Keyboard Input Routing (Step-by-step)
 
 1. **User presses a key** -> webview captures `keydown` event
@@ -295,6 +320,14 @@
        Clicking a rail URL opens the OS handler; clicking a file delegates to
        `Compositor.openHelixTab(path, line, column)`. In transcript command mode,
        `f` assigns one shared hint sequence across references and live artifacts.
+    c. When a sealed row contains file references, after successful ACP writes,
+       and when a lane returns to `idle`, the harness schedules one debounced
+       `collect_reference_git_state(cwd, uniqueTargets)` call. Rust parses
+       NUL-delimited porcelain status and `git diff -M --numstat -z HEAD`, counts
+       bounded untracked text files locally, and returns no diff content. A
+       generation token drops stale replies; the view applies exact-target
+       metadata and rerenders only when a visible status/count changed. Bare `r`
+       in transcript command mode performs the same refresh immediately.
 11. Permission requests pre-empt only the affected lane's composer. The user
     switches to that tab and resolves with a/A/r/R/Esc; responses call the
     existing acp_permission_response command.

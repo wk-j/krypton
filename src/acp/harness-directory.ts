@@ -53,6 +53,8 @@ export interface HarnessEntry {
   harnessId: string; // 'hm-42' — identity only, not part of any address
   cwd: string | null; // the view's working directory, exposed on registration
   alive: boolean; // flipped false at the start of dispose(), before teardown
+  /** True only when this Harness owns the main webview's retained DOM focus. */
+  isFocused?(): boolean;
   listLanes(): LaneSummary[]; // delegates to the view's coordinator
   resolveLocalDisplayName(name: string): { laneId: string; displayName: string } | null;
   acceptInbound(env: InterLaneEnvelope): AcceptInboundResult; // rejects if !alive

@@ -71,7 +71,7 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
 ## Architecture Constraints
 
 1. **Keyboard-first:** Every feature must have a keyboard shortcut. Mouse is secondary
-2. **Single native window:** All windows are DOM elements — never create additional OS/Tauri windows
+2. **One primary native workspace window:** Terminal/compositor windows are DOM elements. The only native-window exception is the macOS `live-assist` auxiliary webview from spec 208; it is a compact projection of a running ACP Harness and must never host terminals, tabs, panes, or its own ACP client.
 3. **Backend role:** PTY management, session pool, config/theme loading, raw byte forwarding. No VT parsing in Rust (xterm.js handles it)
 4. **Frontend role:** Compositor, window chrome, layout engine, input routing, animations, mode system
 5. **No CSS frameworks.** Vanilla CSS with BEM naming (`.krypton-window__titlebar`, `.krypton-window--focused`)

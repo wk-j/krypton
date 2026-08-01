@@ -6,6 +6,7 @@ pub mod control;
 pub mod git;
 pub mod hook_server;
 pub mod hurl;
+pub mod live_assist;
 pub mod music;
 pub mod native_host;
 pub mod pencil;
@@ -108,8 +109,15 @@ pub fn run() {
                         Code::KeyS => {
                             app.emit_or_log("capture-requested", ());
                         }
+                        #[cfg(target_os = "macos")]
+                        Code::KeyA => {
+                            if let Err(error) = live_assist::toggle_on_main(app) {
+                                log::warn!("Live Assist toggle failed: {error}");
+                            }
+                        }
                         Code::Digit0 => {
                             // Panic recenter: recover an invisible/offscreen window.
+                            let _ = live_assist::hide_on_main(app);
                             if let Some(w) = app.get_webview_window("main") {
                                 recover_window(&w);
                             }
@@ -128,6 +136,7 @@ pub fn run() {
         .manage(control_server.clone())
         .manage(telegram_service.clone())
         .manage(hurl_state)
+        .manage(live_assist::LiveAssistState::default())
         .manage(quick_search::QuickSearchState::new())
         .manage(Arc::new(acp::AcpRegistry::new()))
         .manage(Arc::new(webview::WebviewRegistry::new()))
@@ -164,10 +173,14 @@ pub fn run() {
             commands::acp_publish_telemetry,
             commands::acp_control_reply,
             commands::acp_control_publish,
+            commands::live_assist_dispatch,
+            commands::live_assist_toggle,
+            commands::live_assist_hide,
             commands::get_acp_harness_config,
             commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
             commands::collect_working_diff,
+            commands::collect_reference_git_state,
             commands::list_harness_mcp_stats,
             commands::acp_cancel_pending_artifacts,
             commands::acp_revoke_artifact_feedback,
@@ -336,6 +349,14 @@ pub fn run() {
                     Ok(()) => log::info!("registered panic recenter: Cmd+Ctrl+Shift+0"),
                     Err(e) => log::warn!("Failed to register Cmd+Ctrl+Shift+0: {e}"),
                 }
+                #[cfg(target_os = "macos")]
+                match app.handle().global_shortcut().register(Shortcut::new(
+                    Some(Modifiers::CONTROL | Modifiers::SHIFT),
+                    Code::KeyA,
+                )) {
+                    Ok(()) => log::info!("registered Live Assist: Ctrl+Shift+A"),
+                    Err(e) => log::warn!("Failed to register Ctrl+Shift+A: {e}"),
+                }
             }
 
             // Initialize sound engine with resource path and config
@@ -424,6 +445,13 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == live_assist::WINDOW_LABEL {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = live_assist::hide_on_main(window.app_handle());
+                }
+                return;
+            }
             if window.label() != "main" {
                 return;
             }

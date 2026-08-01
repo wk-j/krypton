@@ -17,6 +17,7 @@ import type {
   AgentInitInfo,
   HarnessLaneStatus,
   HarnessMcpLaneStats,
+  MessageResourceGitState,
   ModelInfo,
   PermissionOption,
   PlanEntry,
@@ -57,6 +58,8 @@ export interface MessageResource {
   mimeType?: string;
   size?: number;
   description?: string;
+  /** Volatile Git state derived locally from the current working tree. */
+  git?: MessageResourceGitState;
   /** Transient label assigned only while transcript open-hint mode is active. */
   hintLabel: string | null;
 }

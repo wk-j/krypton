@@ -7,7 +7,8 @@
 // drift apart on root resolution, git invocation, or binary detection.
 
 use serde::Serialize;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 /// Skip synthesizing an addition diff for untracked files larger than this —
@@ -33,6 +34,28 @@ pub struct SkippedFile {
     pub path: String,
     /// "binary" | "too_large" | "unreadable"
     pub reason: String,
+}
+
+/// Live Git metadata for the file references rendered beneath an assistant
+/// response (spec 207). This payload deliberately contains no diff content.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceGitSnapshot {
+    pub repo_root: String,
+    pub changes: Vec<ReferenceGitChange>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceGitChange {
+    /// Original absolute target supplied by the deterministic reference model.
+    pub target: String,
+    /// Compact UI status: M | A | D | R | ? | !.
+    pub status: String,
+    pub added: Option<u64>,
+    pub removed: Option<u64>,
+    /// "lines" | "binary" | "unavailable".
+    pub count_kind: String,
 }
 
 /// Run a git command in `cwd`, returning stdout on success and `None` on
@@ -137,6 +160,283 @@ pub fn collect_working_diff(cwd: &str, staged: bool) -> Result<WorkingDiff, Stri
     })
 }
 
+/// Collect current working-tree status and line counts only for assistant file
+/// references. All counts are derived from Git/local bytes; assistant output is
+/// used solely to identify normalized absolute targets (spec 207).
+pub fn collect_reference_git_state(
+    cwd: &str,
+    paths: Vec<String>,
+) -> Result<ReferenceGitSnapshot, String> {
+    if cwd.is_empty() {
+        return Err("no working directory".to_string());
+    }
+    let root = repo_root(Path::new(cwd)).ok_or_else(|| "not a git repository".to_string())?;
+    let root_path = normalize_lexical(Path::new(&root));
+    let input_cwd = normalize_lexical(Path::new(cwd));
+    let canonical_cwd = std::fs::canonicalize(cwd)
+        .map(|path| normalize_lexical(&path))
+        .unwrap_or_else(|_| input_cwd.clone());
+    let mut input_root = input_cwd.clone();
+    if let Ok(relative_cwd) = canonical_cwd.strip_prefix(&root_path) {
+        for component in relative_cwd.components() {
+            if matches!(component, Component::Normal(_)) {
+                input_root.pop();
+            }
+        }
+    } else {
+        input_root = root_path.clone();
+    }
+
+    let mut requested: Vec<(String, String)> = Vec::new();
+    let mut seen_targets = HashSet::new();
+    for target in paths {
+        if !seen_targets.insert(target.clone()) {
+            continue;
+        }
+        let absolute = Path::new(&target);
+        if !absolute.is_absolute() {
+            continue;
+        }
+        let normalized = normalize_lexical(absolute);
+        let relative = normalized
+            .strip_prefix(&root_path)
+            .or_else(|_| normalized.strip_prefix(&input_root));
+        let Ok(relative) = relative else {
+            continue;
+        };
+        if relative.as_os_str().is_empty()
+            || relative
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            continue;
+        }
+        requested.push((target, git_path(relative)));
+    }
+
+    if requested.is_empty() {
+        return Ok(ReferenceGitSnapshot {
+            repo_root: root,
+            changes: Vec::new(),
+        });
+    }
+
+    let status_bytes = run_git_bytes(
+        &root_path,
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--renames",
+        ],
+    )
+    .ok_or_else(|| "git status failed".to_string())?;
+    let statuses = parse_status_porcelain_z(&status_bytes);
+
+    let base = if run_git(&root_path, &["rev-parse", "--verify", "HEAD"]).is_some() {
+        "HEAD".to_string()
+    } else {
+        run_git(&root_path, &["hash-object", "-t", "tree", "--stdin"])
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "could not derive empty Git tree".to_string())?
+    };
+    let numstat_bytes = run_git_bytes(
+        &root_path,
+        &[
+            "--no-pager",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "-M",
+            "--numstat",
+            "-z",
+            &base,
+            "--",
+        ],
+    )
+    .ok_or_else(|| "git numstat failed".to_string())?;
+    let numstat = parse_numstat_z(&numstat_bytes);
+
+    let status_by_path: HashMap<String, String> = statuses.into_iter().collect();
+    let mut changes = Vec::new();
+    for (target, relative) in requested {
+        let Some(status) = status_by_path.get(&relative) else {
+            continue;
+        };
+        if status == "?" {
+            let (added, removed, count_kind) = count_untracked_lines(&root_path.join(&relative));
+            changes.push(ReferenceGitChange {
+                target,
+                status: status.clone(),
+                added,
+                removed,
+                count_kind,
+            });
+            continue;
+        }
+        let (added, removed, count_kind) = match numstat.get(&relative) {
+            Some((Some(added), Some(removed))) => {
+                (Some(*added), Some(*removed), "lines".to_string())
+            }
+            Some(_) => (None, None, "binary".to_string()),
+            None => (None, None, "unavailable".to_string()),
+        };
+        changes.push(ReferenceGitChange {
+            target,
+            status: status.clone(),
+            added,
+            removed,
+            count_kind,
+        });
+    }
+
+    Ok(ReferenceGitSnapshot {
+        repo_root: root,
+        changes,
+    })
+}
+
+fn run_git_bytes(cwd: &Path, args: &[&str]) -> Option<Vec<u8>> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+    output.status.success().then_some(output.stdout)
+}
+
+fn parse_status_porcelain_z(bytes: &[u8]) -> Vec<(String, String)> {
+    let fields: Vec<&[u8]> = bytes.split(|byte| *byte == 0).collect();
+    let mut entries = Vec::new();
+    let mut index = 0;
+    while index < fields.len() {
+        let record = fields[index];
+        index += 1;
+        if record.len() < 3 || record[2] != b' ' {
+            continue;
+        }
+        let x = record[0] as char;
+        let y = record[1] as char;
+        let path = String::from_utf8_lossy(&record[3..]).into_owned();
+        if x == 'R' || y == 'R' || x == 'C' || y == 'C' {
+            // Porcelain v1 -z emits destination first, then the original path.
+            index = index.saturating_add(1);
+        }
+        entries.push((path, compact_status(x, y).to_string()));
+    }
+    entries
+}
+
+fn compact_status(x: char, y: char) -> char {
+    if x == '?' && y == '?' {
+        return '?';
+    }
+    if matches!(
+        (x, y),
+        ('D', 'D') | ('A', 'U') | ('U', 'D') | ('U', 'A') | ('D', 'U') | ('A', 'A') | ('U', 'U')
+    ) {
+        return '!';
+    }
+    if x == 'R' || y == 'R' {
+        return 'R';
+    }
+    if x == 'D' || y == 'D' {
+        return 'D';
+    }
+    if x == 'A' || y == 'A' || x == 'C' || y == 'C' {
+        return 'A';
+    }
+    'M'
+}
+
+fn parse_numstat_z(bytes: &[u8]) -> HashMap<String, (Option<u64>, Option<u64>)> {
+    let fields: Vec<&[u8]> = bytes.split(|byte| *byte == 0).collect();
+    let mut entries = HashMap::new();
+    let mut index = 0;
+    while index < fields.len() {
+        let record = fields[index];
+        index += 1;
+        if record.is_empty() {
+            continue;
+        }
+        let mut parts = record.splitn(3, |byte| *byte == b'\t');
+        let Some(added_raw) = parts.next() else {
+            continue;
+        };
+        let Some(removed_raw) = parts.next() else {
+            continue;
+        };
+        let Some(path_raw) = parts.next() else {
+            continue;
+        };
+        let path = if path_raw.is_empty() {
+            // Rename/copy record: the header is followed by old and new path.
+            if index + 1 >= fields.len() {
+                break;
+            }
+            index += 1; // original path
+            let destination = fields[index];
+            index += 1;
+            destination
+        } else {
+            path_raw
+        };
+        entries.insert(
+            String::from_utf8_lossy(path).into_owned(),
+            (
+                parse_numstat_count(added_raw),
+                parse_numstat_count(removed_raw),
+            ),
+        );
+    }
+    entries
+}
+
+fn parse_numstat_count(value: &[u8]) -> Option<u64> {
+    if value == b"-" {
+        return None;
+    }
+    std::str::from_utf8(value).ok()?.parse().ok()
+}
+
+fn count_untracked_lines(path: &Path) -> (Option<u64>, Option<u64>, String) {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return (None, None, "unavailable".to_string());
+    };
+    if metadata.len() > UNTRACKED_MAX_BYTES {
+        return (None, None, "unavailable".to_string());
+    }
+    let Ok(bytes) = std::fs::read(path) else {
+        return (None, None, "unavailable".to_string());
+    };
+    if looks_binary(&bytes) {
+        return (None, None, "binary".to_string());
+    }
+    let newlines = bytes.iter().filter(|byte| **byte == b'\n').count() as u64;
+    let final_line = u64::from(!bytes.is_empty() && !bytes.ends_with(b"\n"));
+    (Some(newlines + final_line), Some(0), "lines".to_string())
+}
+
+fn normalize_lexical(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
+fn git_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// Synthesize the unified diff git would print for `path` as a brand-new
 /// file — equivalent to `git diff --no-index /dev/null <path>` without
 /// spawning a process per file.
@@ -172,6 +472,36 @@ fn untracked_addition_diff(path: &str, bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_repo(label: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "krypton-reference-git-{label}-{}-{suffix}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp repo");
+        git_ok(&dir, &["init", "-q"]);
+        git_ok(&dir, &["config", "user.email", "t@t"]);
+        git_ok(&dir, &["config", "user.name", "t"]);
+        dir
+    }
+
+    fn git_ok(dir: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     #[test]
     fn addition_diff_counts_lines_with_trailing_newline() {
@@ -246,6 +576,131 @@ mod tests {
             "staged view must not synthesize untracked files"
         );
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reference_git_state_counts_tracked_untracked_and_binary_files() {
+        let dir = test_repo("counts");
+        std::fs::write(dir.join("modified.txt"), "old\n").expect("write tracked");
+        std::fs::write(dir.join("deleted.txt"), "gone\n").expect("write deleted base");
+        git_ok(&dir, &["add", "."]);
+        git_ok(&dir, &["commit", "-qm", "base"]);
+
+        std::fs::write(dir.join("modified.txt"), "new\nsecond\n").expect("modify tracked");
+        std::fs::remove_file(dir.join("deleted.txt")).expect("delete tracked");
+        std::fs::write(dir.join("untracked.txt"), "one\ntwo").expect("write untracked");
+        std::fs::write(dir.join("blob.bin"), b"abc\0def").expect("write binary");
+
+        let targets = [
+            "modified.txt",
+            "deleted.txt",
+            "untracked.txt",
+            "blob.bin",
+            "clean.txt",
+        ]
+        .into_iter()
+        .map(|name| dir.join(name).to_string_lossy().to_string())
+        .collect();
+        let snapshot = collect_reference_git_state(dir.to_str().expect("utf8 dir"), targets)
+            .expect("collect reference state");
+        let by_name: HashMap<String, ReferenceGitChange> = snapshot
+            .changes
+            .into_iter()
+            .map(|change| {
+                let name = Path::new(&change.target)
+                    .file_name()
+                    .expect("file name")
+                    .to_string_lossy()
+                    .to_string();
+                (name, change)
+            })
+            .collect();
+
+        assert_eq!(by_name["modified.txt"].status, "M");
+        assert_eq!(by_name["modified.txt"].added, Some(2));
+        assert_eq!(by_name["modified.txt"].removed, Some(1));
+        assert_eq!(by_name["deleted.txt"].status, "D");
+        assert_eq!(by_name["deleted.txt"].removed, Some(1));
+        assert_eq!(by_name["untracked.txt"].status, "?");
+        assert_eq!(by_name["untracked.txt"].added, Some(2));
+        assert_eq!(by_name["untracked.txt"].removed, Some(0));
+        assert_eq!(by_name["blob.bin"].count_kind, "binary");
+        assert!(!by_name.contains_key("clean.txt"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reference_git_state_handles_unborn_rename_and_outside_paths() {
+        let unborn = test_repo("unborn");
+        std::fs::write(unborn.join("first.txt"), "first\n").expect("write first");
+        git_ok(&unborn, &["add", "first.txt"]);
+        let unborn_snapshot = collect_reference_git_state(
+            unborn.to_str().expect("utf8 dir"),
+            vec![unborn.join("first.txt").to_string_lossy().to_string()],
+        )
+        .expect("collect unborn state");
+        assert_eq!(unborn_snapshot.changes[0].status, "A");
+        assert_eq!(unborn_snapshot.changes[0].added, Some(1));
+        std::fs::remove_dir_all(&unborn).ok();
+
+        let dir = test_repo("rename");
+        std::fs::write(dir.join("old name.txt"), "same\n").expect("write old");
+        git_ok(&dir, &["add", "."]);
+        git_ok(&dir, &["commit", "-qm", "base"]);
+        git_ok(&dir, &["mv", "old name.txt", "new name.txt"]);
+        let snapshot = collect_reference_git_state(
+            dir.to_str().expect("utf8 dir"),
+            vec![
+                dir.join("new name.txt").to_string_lossy().to_string(),
+                dir.parent()
+                    .expect("temp parent")
+                    .join("outside.txt")
+                    .to_string_lossy()
+                    .to_string(),
+            ],
+        )
+        .expect("collect rename state");
+        assert_eq!(snapshot.changes.len(), 1);
+        assert_eq!(snapshot.changes[0].status, "R");
+        assert_eq!(snapshot.changes[0].count_kind, "lines");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn nul_parsers_preserve_unusual_paths_and_binary_counts() {
+        let status = b" M tab\tline\nname.txt\0R  renamed.txt\0old.txt\0UU conflict.txt\0";
+        assert_eq!(
+            parse_status_porcelain_z(status),
+            vec![
+                ("tab\tline\nname.txt".to_string(), "M".to_string()),
+                ("renamed.txt".to_string(), "R".to_string()),
+                ("conflict.txt".to_string(), "!".to_string()),
+            ]
+        );
+
+        let numstat = b"3\t2\ttab\tline\nname.txt\0-\t-\tblob.bin\00\t0\t\0old.txt\0renamed.txt\0";
+        let parsed = parse_numstat_z(numstat);
+        assert_eq!(parsed["tab\tline\nname.txt"], (Some(3), Some(2)));
+        assert_eq!(parsed["blob.bin"], (None, None));
+        assert_eq!(parsed["renamed.txt"], (Some(0), Some(0)));
+    }
+
+    #[test]
+    fn oversized_untracked_file_reports_unavailable() {
+        let dir = test_repo("oversized");
+        let path = dir.join("large.txt");
+        std::fs::write(&path, vec![b'x'; UNTRACKED_MAX_BYTES as usize + 1])
+            .expect("write oversized file");
+        let snapshot = collect_reference_git_state(
+            dir.to_str().expect("utf8 dir"),
+            vec![path.to_string_lossy().to_string()],
+        )
+        .expect("collect oversized state");
+        assert_eq!(snapshot.changes[0].status, "?");
+        assert_eq!(snapshot.changes[0].count_kind, "unavailable");
+        assert_eq!(snapshot.changes[0].added, None);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

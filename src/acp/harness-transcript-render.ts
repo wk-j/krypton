@@ -314,6 +314,10 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
       resource.size ?? '',
       resource.description ?? '',
       resource.hintLabel ?? '',
+      resource.git?.status ?? '',
+      resource.git?.added ?? '',
+      resource.git?.removed ?? '',
+      resource.git?.countKind ?? '',
     ].join('\u001e'))
     .join('\u001f');
   return [
@@ -386,8 +390,12 @@ function renderMessageResource(resource: MessageResource, projectDir: string | n
   if (resource.hintLabel) row.classList.add('acp-harness__resource--hinted');
   row.dataset.responseResource = resource.key;
   const displayTarget = resourceDisplayTarget(resource, projectDir);
-  row.title = displayTarget;
-  row.setAttribute('aria-label', `${resource.kind === 'file' ? 'Open file' : 'Open URL'} ${displayTarget}`);
+  const gitSummary = resource.git ? referenceGitAccessibleSummary(resource.git) : null;
+  row.title = gitSummary ? `${displayTarget} · ${gitSummary}` : displayTarget;
+  row.setAttribute(
+    'aria-label',
+    `${resource.kind === 'file' ? 'Open file' : 'Open URL'} ${displayTarget}${gitSummary ? `. ${gitSummary}` : ''}`,
+  );
 
   const hint = document.createElement('span');
   hint.className = 'acp-harness__resource-hint';
@@ -405,11 +413,51 @@ function renderMessageResource(resource: MessageResource, projectDir: string | n
   target.className = 'acp-harness__resource-target';
   target.textContent = displayTarget;
   content.append(label, target);
+  const git = document.createElement('span');
+  git.className = 'acp-harness__resource-git';
+  if (resource.git) {
+    const status = document.createElement('span');
+    status.className = 'acp-harness__resource-git-status';
+    status.dataset.status = resource.git.status;
+    status.textContent = resource.git.status;
+    const counts = document.createElement('span');
+    counts.className = 'acp-harness__resource-git-counts';
+    if (resource.git.countKind === 'lines') {
+      const added = document.createElement('span');
+      added.className = 'acp-harness__resource-git-add';
+      added.textContent = `+${resource.git.added ?? 0}`;
+      const removed = document.createElement('span');
+      removed.className = 'acp-harness__resource-git-remove';
+      removed.textContent = `−${resource.git.removed ?? 0}`;
+      counts.append(added, removed);
+    } else {
+      counts.textContent = resource.git.countKind === 'binary' ? 'BIN' : 'N/A';
+    }
+    git.append(status, counts);
+  } else {
+    git.setAttribute('aria-hidden', 'true');
+  }
   const action = document.createElement('span');
   action.className = 'acp-harness__resource-action';
   action.textContent = resource.kind === 'file' ? 'OPEN TAB ↗' : 'OPEN ↗';
-  row.append(hint, kind, content, action);
+  row.append(hint, kind, content, git, action);
   return row;
+}
+
+export function referenceGitAccessibleSummary(git: NonNullable<MessageResource['git']>): string {
+  const status = {
+    M: 'Modified',
+    A: 'Added',
+    D: 'Deleted',
+    R: 'Renamed',
+    '?': 'Untracked',
+    '!': 'Conflicted',
+  }[git.status];
+  if (git.countKind === 'binary') return `${status}, binary file`;
+  if (git.countKind === 'unavailable') return `${status}, line counts unavailable`;
+  const added = git.added ?? 0;
+  const removed = git.removed ?? 0;
+  return `${status}, ${added} ${added === 1 ? 'line' : 'lines'} added, ${removed} ${removed === 1 ? 'line' : 'lines'} removed`;
 }
 
 /** spec 120 — flat lane-mail body (exported for tests). */

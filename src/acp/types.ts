@@ -528,6 +528,28 @@ export interface ReviewGitState {
   untracked: ReviewUntrackedExcerpt[];
 }
 
+// Live, deterministic Git decoration for assistant file references (spec 207).
+// Rust derives these values from the working tree; ACP/LLM payloads never set
+// them directly.
+export type ReferenceGitStatus = 'M' | 'A' | 'D' | 'R' | '?' | '!';
+export type ReferenceGitCountKind = 'lines' | 'binary' | 'unavailable';
+
+export interface MessageResourceGitState {
+  status: ReferenceGitStatus;
+  added: number | null;
+  removed: number | null;
+  countKind: ReferenceGitCountKind;
+}
+
+export interface ReferenceGitChange extends MessageResourceGitState {
+  target: string;
+}
+
+export interface ReferenceGitSnapshot {
+  repoRoot: string;
+  changes: ReferenceGitChange[];
+}
+
 // Attention Triage (spec 128) — self-reported judgement items.
 export type Reversibility = 'reversible' | 'costly' | 'irreversible';
 

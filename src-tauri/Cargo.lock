@@ -138,6 +138,8 @@ dependencies = [
  "libc",
  "log",
  "netstat2",
+ "objc2",
+ "objc2-app-kit",
  "open",
  "portable-pty",
  "reqwest 0.12.28",

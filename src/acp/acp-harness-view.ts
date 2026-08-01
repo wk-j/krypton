@@ -33,6 +33,8 @@ import type {
   PlanEntry,
   ProviderErrorPayload,
   ReviewPriorityRange,
+  ReferenceGitChange,
+  ReferenceGitSnapshot,
   StopReason,
   ToolCall,
   ToolCallUpdate,
@@ -463,9 +465,52 @@ export function ticketWorkActionDisabledReason(
   return null;
 }
 
+/** Apply one authoritative Rust snapshot to volatile reference metadata.
+ * Missing entries are clean (or out of repo), so stale decorations are removed. */
+export function applyReferenceGitChanges(
+  references: readonly { lane: HarnessLane; resource: MessageResource }[],
+  changes: readonly ReferenceGitChange[],
+): Set<HarnessLane> {
+  const byTarget = new Map(changes.map((change) => [change.target, change]));
+  const changedLanes = new Set<HarnessLane>();
+  for (const { lane, resource } of references) {
+    const change = byTarget.get(resource.target);
+    const next = change
+      ? {
+          status: change.status,
+          added: change.added,
+          removed: change.removed,
+          countKind: change.countKind,
+        }
+      : undefined;
+    const current = resource.git;
+    if (
+      current?.status === next?.status &&
+      current?.added === next?.added &&
+      current?.removed === next?.removed &&
+      current?.countKind === next?.countKind
+    ) continue;
+    if (next) resource.git = next;
+    else delete resource.git;
+    changedLanes.add(lane);
+  }
+  return changedLanes;
+}
+
+export function referenceGitResponseIsCurrent(
+  generation: number,
+  currentGeneration: number,
+  requestCwd: string,
+  currentCwd: string | null,
+  disposed: boolean,
+): boolean {
+  return !disposed && generation === currentGeneration && requestCwd === currentCwd;
+}
+
 const STICK_THRESHOLD_PX = 32;
 
 const METRICS_POLL_MS = 2000;
+const REFERENCE_GIT_REFRESH_MS = 150;
 
 // Braille spinner frames driven by a single JS interval (mirrors the agent
 // view's SPINNER_FRAMES). A shared frame counter, re-applied to every spinner
@@ -828,6 +873,9 @@ export class AcpHarnessView implements ContentView {
   private focus: ComposerFocus = 'text';
   private chip: string | null = null;
   private chipTimer: number | null = null;
+  private referenceGitRefreshTimer: number | null = null;
+  private referenceGitRefreshGeneration = 0;
+  private referenceGitDisposed = false;
   private composerTickTimer: number | null = null;
   private toolTickTimer: number | null = null;
   private metricsBySession = new Map<number, AcpLaneMetrics>();
@@ -1040,6 +1088,7 @@ export class AcpHarnessView implements ContentView {
         source: SYSTEM_SOURCE,
         value: { cwd: this.projectDir },
       });
+      this.scheduleReferenceGitRefresh();
     }
     // Composer peer-strip age depends on lane status (busy / awaiting_peer)
     // and pending peers. Refresh the 1Hz tick whenever status changes so
@@ -1135,6 +1184,7 @@ export class AcpHarnessView implements ContentView {
       harnessId: this.harnessMemoryId,
       cwd: this.projectDir,
       alive: true,
+      isFocused: () => this.element.contains(document.activeElement),
       listLanes: () => this.coordinator.listLanes(),
       resolveLocalDisplayName: (name) => {
         const lane = this.lanes.find((l) => l.displayName === name && l.status !== 'stopped');
@@ -1497,6 +1547,7 @@ export class AcpHarnessView implements ContentView {
       pendingPermissions: lane.pendingPermissions.length,
       goal: lane.goal ?? null,
       permissionMode: lane.permissionMode,
+      active: lane.id === this.activeLaneId,
     }));
   }
 
@@ -3683,6 +3734,12 @@ export class AcpHarnessView implements ContentView {
     this.stopComposerTick();
     this.stopMetricsTick();
     this.stopSpinnerTicker();
+    this.referenceGitDisposed = true;
+    this.referenceGitRefreshGeneration += 1;
+    if (this.referenceGitRefreshTimer !== null) {
+      window.clearTimeout(this.referenceGitRefreshTimer);
+      this.referenceGitRefreshTimer = null;
+    }
     if (this.toolTickTimer !== null) {
       window.clearInterval(this.toolTickTimer);
       this.toolTickTimer = null;
@@ -6019,6 +6076,78 @@ export class AcpHarnessView implements ContentView {
     this.gitBranch = branch;
     this.gitBranchLoading = false;
     this.render();
+  }
+
+  private referencedFileResources(): Array<{ lane: HarnessLane; resource: MessageResource }> {
+    const references: Array<{ lane: HarnessLane; resource: MessageResource }> = [];
+    for (const lane of this.lanes) {
+      if (lane.status === 'stopped') continue;
+      for (const item of lane.transcript) {
+        for (const resource of item.resources ?? []) {
+          if (resource.kind === 'file') references.push({ lane, resource });
+        }
+      }
+    }
+    return references;
+  }
+
+  private scheduleReferenceGitRefresh(): void {
+    if (this.referenceGitDisposed || !this.projectDir) return;
+    this.referenceGitRefreshGeneration += 1;
+    if (this.referenceGitRefreshTimer !== null) {
+      window.clearTimeout(this.referenceGitRefreshTimer);
+    }
+    this.referenceGitRefreshTimer = window.setTimeout(() => {
+      this.referenceGitRefreshTimer = null;
+      void this.refreshReferenceGitState(false);
+    }, REFERENCE_GIT_REFRESH_MS);
+  }
+
+  private async refreshReferenceGitState(manual: boolean): Promise<void> {
+    if (this.referenceGitRefreshTimer !== null) {
+      window.clearTimeout(this.referenceGitRefreshTimer);
+      this.referenceGitRefreshTimer = null;
+    }
+    const cwd = this.projectDir;
+    const references = this.referencedFileResources();
+    if (!cwd || references.length === 0) {
+      if (manual) this.flashChip('no file references');
+      return;
+    }
+    const generation = ++this.referenceGitRefreshGeneration;
+    const paths = [...new Set(references.map(({ resource }) => resource.target))];
+    let changes: ReferenceGitChange[] = [];
+    try {
+      const snapshot = await invoke<ReferenceGitSnapshot>('collect_reference_git_state', {
+        cwd,
+        paths,
+      });
+      if (!referenceGitResponseIsCurrent(
+        generation,
+        this.referenceGitRefreshGeneration,
+        cwd,
+        this.projectDir,
+        this.referenceGitDisposed,
+      )) return;
+      changes = snapshot.changes;
+    } catch (error) {
+      if (!referenceGitResponseIsCurrent(
+        generation,
+        this.referenceGitRefreshGeneration,
+        cwd,
+        this.projectDir,
+        this.referenceGitDisposed,
+      )) return;
+      console.warn('[acp-harness] reference Git state unavailable:', error);
+      const changedLanes = applyReferenceGitChanges(references, []);
+      for (const lane of changedLanes) this.scheduleLaneRender(lane);
+      if (manual) this.flashChip('reference status unavailable');
+      return;
+    }
+
+    const changedLanes = applyReferenceGitChanges(references, changes);
+    for (const lane of changedLanes) this.scheduleLaneRender(lane);
+    if (manual) this.flashChip('reference status refreshed');
   }
 
   private async refreshMcpStats(): Promise<void> {
@@ -10390,7 +10519,7 @@ export class AcpHarnessView implements ContentView {
 
   private composerStatusChip(lane: HarnessLane): string {
     if (this.openHintMode) return 'open reference: press label · Esc cancel';
-    if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · f open reference · ? help · i/Esc input';
+    if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · f open reference · r refresh Git · ? help · i/Esc input';
     if (lane.status === 'busy') {
       const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
       // spec 156: live activity + output-token counter, re-read on each 1 s tick.
@@ -10649,6 +10778,7 @@ export class AcpHarnessView implements ContentView {
             <dt>Cmd+P then 0</dt><dd>Resume/load a project session for the active backend</dd>
             <dt>Ctrl+N / Ctrl+P</dt><dd>Next / previous lane</dd>
             <dt>Esc, then 1-9</dt><dd>Switch lane in transcript mode</dd>
+            <dt>Esc, then r</dt><dd>Refresh Git status and line counts for file references</dd>
             <dt>Esc, then ?</dt><dd>Open help</dd>
             <dt>Tab buttons</dt><dd>Click a lane directly</dd>
             <dt>Enter</dt><dd>Send prompt to active lane only</dd>
@@ -10786,6 +10916,7 @@ export class AcpHarnessView implements ContentView {
     this.sealStreaming(lane);
     const item = this.appendTranscript(lane, 'fs_activity', '');
     item.fsActivity = { method, path, ok, error };
+    if (method === 'write' && ok) this.scheduleReferenceGitRefresh();
   }
 
   private appendClassifiedError(lane: HarnessLane, raw: string, fallbackText: string): void {
@@ -11125,6 +11256,9 @@ export class AcpHarnessView implements ContentView {
     lane.streamingMarkdownParser = null;
     lane.streamingMarkdownBody = null;
     lane.streamingMarkdownItemId = null;
+    if (item.resources?.some((resource) => resource.kind === 'file')) {
+      this.scheduleReferenceGitRefresh();
+    }
   }
 
   private renderTool(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
@@ -11324,6 +11458,11 @@ export class AcpHarnessView implements ContentView {
     if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       if (!this.enterOpenHintMode()) this.flashChip('no references to open');
+      return true;
+    }
+    if (e.key === 'r' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      void this.refreshReferenceGitState(true);
       return true;
     }
     if (e.key === 'j') { e.preventDefault(); body.scrollBy({ top: 24, behavior: 'instant' }); return true; }

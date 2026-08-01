@@ -4,6 +4,24 @@
 > Date: 2026-06-26
 > Milestone: M-ACP — Harness convergence
 
+## Trusted Live Assist adapter (spec 208)
+
+The macOS `live-assist` auxiliary webview reuses this dispatcher and stream
+in-process, but does not call the loopback HTTP/SSE endpoints. The
+`live_assist_dispatch` Tauri command stamps caller source `live_assist`, enforces
+a narrow allowlist, and calls `ControlServer::dispatch()` so the primary
+webview's existing `control-bridge.ts` still routes every operation to the owning
+`AcpHarnessView`.
+
+`ControlServer::publish()` returns the same sequence-stamped event it broadcasts.
+`acp_control_publish` mirrors that envelope to the visible auxiliary window as
+`live-assist-stream`; hidden windows resnapshot on show, and no second Harness
+observer or Rust-derived lane state is introduced. `live_assist.bootstrap` is
+internal-only and is intentionally absent from `/control/v1/capabilities`.
+Public callers receive `unsupported_operation`.
+The external API, bearer token, CORS policy, and advertised operation list remain
+unchanged.
+
 ## Problem
 
 Krypton's ACP Harness can be controlled headlessly today only through the

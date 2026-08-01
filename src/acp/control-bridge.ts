@@ -60,6 +60,33 @@ export async function route(
   params: Record<string, unknown>,
   caller?: ControlCaller,
 ): Promise<unknown> {
+  if (operation === 'live_assist.bootstrap') {
+    if (caller?.source !== 'live_assist') {
+      throw controlError('unsupported_operation', 'live_assist.bootstrap is internal');
+    }
+    const lastLane = typeof params.lastLane === 'string' ? params.lastLane : null;
+    const rows: Array<Record<string, unknown>> = [];
+    let focusedLane: string | null = null;
+    for (const entry of listHarnessEntries()) {
+      if (!entry.control) continue;
+      const result = await entry.control('lane.list', {}, caller);
+      if (!Array.isArray(result)) continue;
+      const liveRows = result.filter((row): row is Record<string, unknown> => (
+        !!row && typeof row === 'object' && (row as Record<string, unknown>).status !== 'stopped'
+      ));
+      rows.push(...liveRows);
+      if (entry.isFocused?.()) {
+        const active = liveRows.find((row) => row.active === true);
+        if (typeof active?.displayName === 'string') focusedLane = active.displayName;
+      }
+    }
+    const retained = lastLane && rows.some((row) => row.displayName === lastLane) ? lastLane : null;
+    const first = rows.find((row) => typeof row.displayName === 'string')?.displayName;
+    return {
+      lanes: rows,
+      suggestedLane: retained ?? focusedLane ?? (typeof first === 'string' ? first : null),
+    };
+  }
   if (operation === 'harness.create') {
     if (!compositor) throw controlError('control_failed', 'compositor is unavailable');
     const cwd = typeof params.cwd === 'string' ? params.cwd : null;

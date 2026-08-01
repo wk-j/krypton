@@ -1,6 +1,6 @@
 # Assistant Reference Git State — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-08-01
 > Milestone: M-ACP — Harness convergence
 
@@ -20,6 +20,12 @@ unstaged working tree against `HEAD`; an unborn repository compares against the
 empty tree. A lightweight Tauri command collects only status and numstat data,
 plus bounded line counts for referenced untracked text files, without building
 or returning a unified diff.
+
+The trust boundary is strict: no status or line count is read from assistant
+text, Markdown, ACP metadata, or another model response. The existing
+deterministic reference extractor supplies only normalized file targets; Rust
+derives every displayed status and count directly from Git and the local
+working tree at refresh time.
 
 The harness refreshes metadata when references seal, after successful file
 writes, when a lane becomes idle, and when the user presses `r` in transcript
@@ -198,21 +204,23 @@ working-tree total against the base.
 
 1. A typed resource or explicit Markdown file anchor seals into a
    `MessageResource` as specified by spec 206.
-2. `AcpHarnessView` schedules a 150 ms debounced Git refresh when a sealed row
+2. Any status/count-like text or metadata accompanying that resource is ignored;
+   only its normalized absolute file target crosses into Git-state collection.
+3. `AcpHarnessView` schedules a 150 ms debounced Git refresh when a sealed row
    contains file resources. Successful `fs_activity` writes and lane transitions
    to `idle` schedule the same refresh.
-3. The refresh gathers unique file targets across live lane transcripts and
+4. The refresh gathers unique file targets across live lane transcripts and
    calls `collect_reference_git_state` once for the project.
-4. A monotonically increasing request token discards responses older than the
+5. A monotonically increasing request token discards responses older than the
    most recently started refresh. `dispose()` clears the timer and invalidates
    pending responses.
-5. The view clears old metadata for the requested targets, applies returned
+6. The view clears old metadata for the requested targets, applies returned
    changes by exact absolute target, and calls `render()` only if a resource's
    visible metadata changed.
-6. `transcriptRenderSignature()` includes status, counts, and count kind. The
+7. `transcriptRenderSignature()` includes status, counts, and count kind. The
    normal transcript renderer rebuilds the affected sealed row without touching
    cached Markdown.
-7. Pressing `r` in transcript command mode runs an immediate refresh. Success
+8. Pressing `r` in transcript command mode runs an immediate refresh. Success
    flashes `reference status refreshed`; no file references flashes
    `no file references`; failure flashes `reference status unavailable`.
 

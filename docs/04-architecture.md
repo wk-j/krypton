@@ -56,7 +56,15 @@
 
 ### Key Architectural Principle: Workspace as Desktop
 
-Krypton uses **one native Tauri shell** that is always **fullscreen, borderless, and fully transparent**. The webview background is `transparent` — the OS desktop wallpaper shows through. The active **workspace** fills this surface as a virtual desktop. Terminal **windows** are DOM elements floating on the workspace with their own opaque (or semi-transparent) backgrounds, chrome, and shadows.
+Krypton uses **one primary native Tauri shell** that is always **fullscreen, borderless, and fully transparent**. The webview background is `transparent` — the OS desktop wallpaper shows through. The active **workspace** fills this surface as a virtual desktop. Terminal **windows** are DOM elements floating on the workspace with their own opaque (or semi-transparent) backgrounds, chrome, and shadows.
+
+The sole exception is the macOS `live-assist` auxiliary webview (spec 208). It is
+a compact, topmost projection of an already-running ACP Harness, not a second
+workspace. It has no compositor, terminal, tab, pane, Harness view, or ACP client.
+Its trusted command/event adapter routes onto the `AcpHarnessView` in the primary
+webview, which remains the only lane-state authority. Showing or hiding the
+auxiliary window never changes the primary window's frame, Space, DOM, or
+compositor state, and never focuses or raises that primary window.
 
 Each window has:
 - Cyberpunk/sci-fi **chrome** — titlebar with session label, status dot, PTY status text; right sidebar with telemetry decoration; bottom bar with line indicators; glowing cyan border on focused window
@@ -67,9 +75,26 @@ This model enables:
 - **Workspace = desktop** — switching workspaces feels like switching macOS Spaces; each workspace is a full-screen arrangement of windows
 - **Fully custom chrome** — window borders, title bars, controls, and shadows are all theme-driven via custom theme TOML files
 - **Animated workspace transitions** — windows animate between positions using CSS/JS transitions on the transparent surface
-- **Zero overhead** — switching workspaces shows/hides/repositions DOM elements; no native OS windows created or destroyed
+- **Low workspace overhead** — switching workspaces shows/hides/repositions DOM elements; the optional Live Assist window is created lazily and hidden rather than recreated
 - **Unified focus management** — the compositor controls which window receives keyboard input
 - **Consistent behavior** — no platform-specific window manager quirks
+
+### macOS Live Assist Auxiliary Window
+
+`src-tauri/src/live_assist.rs` owns the only native auxiliary window. The
+decorationless transparent webview loads `live-assist.html`, is resizable from
+`840 × 620` down to `560 × 420` logical pixels, and is hidden on close. On show,
+Rust resolves the pointer monitor, caps/restores the frame inside its work area,
+adds `CanJoinAllSpaces | FullScreenAuxiliary`, raises the AppKit level, shows,
+and focuses only that window. `Cmd+Ctrl+Shift+0` hides it before running the
+unchanged primary-window recovery.
+
+The auxiliary frontend lives in `src/live-assist-main.ts` and
+`src/acp/live-assist-{client,view,types}.ts`. Its command allowlist is limited to
+bootstrap, status/transcript/permission reads, prompt send, cancel, and oldest
+permission resolution. Rust stamps and broadcasts each Harness stream event once,
+then mirrors the same envelope to the auxiliary webview. Sequence gaps and
+lifecycle boundaries cause a fresh authoritative snapshot.
 
 ### Tauri Native Shell Configuration
 
@@ -192,6 +217,18 @@ The compositor is a TypeScript module running in the webview that manages worksp
     compositor callback; HTTP(S)/mailto targets open externally. Transcript `f` hint mode covers
     both these references and available HTML artifacts. See
     `docs/206-assistant-response-resources.md`.
+
+    **Reference Git state (spec 207).** File references carry optional volatile
+    Git decoration populated by the Rust `collect_reference_git_state` command.
+    The command receives only normalized absolute targets, resolves them beneath
+    the repository root, and derives compact status plus combined working-tree
+    `--numstat` counts against `HEAD` (empty tree for an unborn repository).
+    Untracked text files are counted locally under a 1 MiB bound; binary and
+    unavailable counts remain explicit. One debounced collection covers every
+    referenced file, stale responses are token-rejected, and metadata changes
+    invalidate only transcript rows through the existing render signature. No
+    assistant-provided status/count value enters this path. See
+    `docs/207-assistant-reference-git-state.md`.
 26. **Cursor trail** — `CursorTrail` (`src/cursor-trail.ts`) renders a rainbow flame particle effect on both the mouse cursor and the terminal text cursor. Spawns burst particles on `mousemove` (document-level capture) and polls the focused terminal's `buffer.active.cursorX/Y` each frame. Particles drift upward with turbulence, cycle through rainbow hues, and fade with quadratic falloff. Appended to `document.body` at z-index 99999. Togglable at runtime via `toggle()`
 
 27. **ACP Harness plan tracking** — `session/update { sessionUpdate: 'plan' }` notifications are no longer rendered as transcript items. Each lane stores the latest `entries[]` on `HarnessLane.plan`, and a per-active-lane floating panel (`.acp-harness__plan`, top-right of `.acp-harness__body`, z-index below the memory/help overlays) renders a `// plan` header with a `done/total` progress count and one row per entry. Status drives color (pending = dim, in_progress = amber, completed = green strikethrough); priority drives a 2px left border accent (high/medium/low). The panel auto-hides when a lane has no plan and clears on `#new`/`#new!`/`#restart`. Toggle collapse with `p` in transcript focus. See `docs/90-acp-plan-tracking.md`.

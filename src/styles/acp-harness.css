@@ -1835,7 +1835,7 @@
 
 .acp-harness__resource {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -1852,7 +1852,7 @@
 }
 
 .acp-harness__resource--hinted {
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
 }
 
 .acp-harness__resource:hover,
@@ -1908,6 +1908,63 @@
   color: rgba(216, 232, 240, 0.48);
 }
 
+.acp-harness__resource-git {
+  width: 13ch;
+  min-width: 13ch;
+  display: inline-grid;
+  grid-template-columns: 2.5ch minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.acp-harness__resource-git-status {
+  width: 2.5ch;
+  box-sizing: border-box;
+  padding: 1px 3px;
+  text-align: center;
+  font-weight: 800;
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.acp-harness__resource-git-status[data-status='A'] {
+  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+}
+
+.acp-harness__resource-git-status[data-status='?'] {
+  color: var(--agent-user, #6dd0ff);
+}
+
+.acp-harness__resource-git-status[data-status='D'],
+.acp-harness__resource-git-status[data-status='!'] {
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+}
+
+.acp-harness__resource-git-status[data-status='R'] {
+  color: rgb(var(--krypton-special-rgb, 199, 125, 255));
+}
+
+.acp-harness__resource-git-counts {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  text-align: right;
+  color: rgba(216, 232, 240, 0.56);
+}
+
+.acp-harness__resource-git-add {
+  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+}
+
+.acp-harness__resource-git-remove {
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+}
+
 .acp-harness__resource-action {
   justify-self: end;
   font-size: 0.7em;
@@ -1917,11 +1974,11 @@
 
 @media (max-width: 680px) {
   .acp-harness__resource {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .acp-harness__resource--hinted {
-    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
   }
 
   .acp-harness__resource-action {

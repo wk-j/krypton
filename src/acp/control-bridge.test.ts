@@ -27,7 +27,7 @@ interface ControlCall {
 
 /** A minimal harness entry that records the control ops routed to it and owns a
  *  fixed set of lane displayNames. */
-function makeHarness(harnessId: string, displayNames: string[]): {
+function makeHarness(harnessId: string, displayNames: string[], focused = false): {
   entry: HarnessEntry;
   calls: ControlCall[];
 } {
@@ -45,6 +45,7 @@ function makeHarness(harnessId: string, displayNames: string[]): {
     harnessId,
     cwd: null,
     alive: true,
+    isFocused: () => focused,
     listLanes: () => lanes,
     resolveLocalDisplayName: (name) => {
       const hit = lanes.find((l) => l.displayName === name);
@@ -60,6 +61,17 @@ function makeHarness(harnessId: string, displayNames: string[]): {
     onForeignHarnessClosed: () => {},
     control: (operation, params, caller) => {
       calls.push({ operation, params, caller });
+      if (operation === 'lane.list') {
+        return Promise.resolve(lanes.map((lane, index) => ({
+          harnessId,
+          cwd: null,
+          ...lane,
+          active: index === 0,
+          queueDepth: 0,
+          pendingPermissions: 0,
+          permissionMode: 'normal',
+        })));
+      }
       return Promise.resolve({ harnessId, lane: (params.targetLane as string) ?? null });
     },
   };
@@ -138,5 +150,43 @@ describe('control-bridge route: github.dispatch-issue', () => {
 
     expect(a.calls[0].caller).toEqual(caller);
     expect(a.calls[0].params).toEqual({});
+  });
+});
+
+describe('control-bridge route: live_assist.bootstrap', () => {
+  beforeEach(() => __resetHarnessDirectoryForTests());
+  afterEach(() => __resetHarnessDirectoryForTests());
+
+  const caller: ControlCaller = { source: 'live_assist' };
+
+  it('keeps the prior assistant lane when it is still live', async () => {
+    registerHarness(makeHarness('hm-a', ['Claude-1'], true).entry);
+    registerHarness(makeHarness('hm-b', ['Codex-2']).entry);
+
+    const result = await route('live_assist.bootstrap', { lastLane: 'Codex-2' }, caller);
+
+    expect(result).toMatchObject({ suggestedLane: 'Codex-2' });
+  });
+
+  it('falls back to the active lane of the focused harness', async () => {
+    registerHarness(makeHarness('hm-a', ['Claude-1']).entry);
+    registerHarness(makeHarness('hm-b', ['Codex-2'], true).entry);
+
+    const result = await route('live_assist.bootstrap', {}, caller);
+
+    expect(result).toMatchObject({ suggestedLane: 'Codex-2' });
+  });
+
+  it('returns an empty state without creating a Harness', async () => {
+    await expect(route('live_assist.bootstrap', {}, caller)).resolves.toEqual({
+      lanes: [],
+      suggestedLane: null,
+    });
+  });
+
+  it('rejects public control callers', async () => {
+    await expect(route('live_assist.bootstrap', {}, { source: 'control_api' })).rejects.toMatchObject({
+      code: 'unsupported_operation',
+    });
   });
 });
