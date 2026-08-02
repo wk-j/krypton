@@ -95,6 +95,7 @@ pub fn hide_on_main(app: &AppHandle) -> Result<(), String> {
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
         return Ok(());
     };
+    let release_app_focus = window.is_focused().unwrap_or(false);
     if let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) {
         let state = app.state::<LiveAssistState>();
         let mut saved = state
@@ -105,7 +106,27 @@ pub fn hide_on_main(app: &AppHandle) -> Result<(), String> {
     }
     window
         .hide()
-        .map_err(|error| format!("hide Live Assist window: {error}"))
+        .map_err(|error| format!("hide Live Assist window: {error}"))?;
+    if release_app_focus {
+        release_macos_app_focus()?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn release_macos_app_focus() -> Result<(), String> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSApplication;
+
+    let marker = MainThreadMarker::new()
+        .ok_or_else(|| "release Live Assist focus outside the main thread".to_string())?;
+    NSApplication::sharedApplication(marker).deactivate();
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn release_macos_app_focus() -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]

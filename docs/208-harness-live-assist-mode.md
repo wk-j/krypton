@@ -100,7 +100,9 @@ small client of the running Harness, with a deliberately reduced interface.
   floating palettes. System UI, security prompts, the menu bar, and
   screen-saver-level windows may remain above it.
 - The assistant takes keyboard focus while visible. `Esc` or the global shortcut
-  hides it and macOS returns focus according to normal window ordering.
+  hides it and deactivates Krypton when Live Assist owned keyboard focus, allowing
+  macOS to activate another application. A background hide leaves the currently
+  focused application unchanged.
 - Opening, using, and hiding Live Assist never changes the main Krypton window's
   position, size, Space membership, selected workspace, tab, pane, or DOM.
 - The full Harness remains the sole owner of ACP state. Live Assist holds only a
@@ -231,6 +233,12 @@ selection, then pulls that lane's status, transcript, and permissions.
 | `Cmd+[` / `Cmd+]` | Select previous/next lane |
 | `A` / `R` | Accept/reject the oldest permission when its prompt has focus |
 
+A newly arrived permission takes keyboard focus when the composer draft is
+empty, so `A`, `R`, or `Enter` can resolve it immediately. Live Assist preserves
+composer focus when the user has already started drafting a message. Resolving
+the last permission returns focus to the composer; resolving one of several
+queued permissions keeps focus on the next request.
+
 The main command palette gains `Toggle Harness Live Assist` for use while
 Krypton is focused if global shortcut registration conflicts.
 
@@ -239,7 +247,9 @@ Krypton is focused if global shortcut registration conflicts.
 The assistant is a compact command surface, not a full Harness replica:
 
 - **Header (36 px):** `LIVE ASSIST`, project basename, selected lane/backend,
-  text status, queue count, and `⌃⇧A hide`.
+  text status, queue count, and `⌃⇧A hide`. While the selected lane is `busy`,
+  an amber pulse beside the text provides a processing signal; reduced-motion
+  mode keeps the dot visible without animation.
 - **Lane strip (optional):** compact text tabs only when more than one live lane
   exists; overflow is keyboard-scrollable and never becomes the Harness lane rail.
 - **Transcript:** a simple bounded tail projection that keeps user and assistant
@@ -258,7 +268,10 @@ The assistant is a compact command surface, not a full Harness replica:
 
 The shell uses a flat near-opaque `rgba(6, 10, 18, 0.96)` background, one full
 1 px themed border plus inset hairline, 4 px geometry, no blur/glass, and no
-left accent rails. Color never carries status alone. Entrance is 180 ms opacity
+left accent rails. Body and composer text use the configured
+`--krypton-font-size`; labels and controls use the same derived
+`--krypton-chrome-font-size` as the main UI.
+Color never carries status alone. Entrance is 180 ms opacity
 plus `translateY(-8px)` with a reduced-motion crossfade. Focus indicators are
 visible, text meets 4.5:1 contrast, and continuous ambient animation is absent.
 

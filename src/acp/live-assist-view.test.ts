@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { groupLiveAssistTranscript, liveAssistActivitySummary } from './live-assist-view';
+import {
+  groupLiveAssistTranscript,
+  liveAssistActivitySummary,
+  liveAssistPermissionFocusTarget,
+} from './live-assist-view';
 import type { LiveAssistTranscriptItem } from './live-assist-types';
 
 function item(id: string, kind: string): LiveAssistTranscriptItem {
@@ -64,5 +68,23 @@ describe('Live Assist compact activity', () => {
     });
     expect(liveAssistActivitySummary(1)).toBe('ACTIVITY · 1 step');
     expect(liveAssistActivitySummary(2)).toBe('ACTIVITY · 2 steps');
+  });
+});
+
+describe('Live Assist permission focus', () => {
+  it('moves an empty composer to a newly arrived permission', () => {
+    expect(liveAssistPermissionFocusTarget(null, 7, false, true, true)).toBe('permission');
+  });
+
+  it('preserves an in-progress draft when a permission arrives', () => {
+    expect(liveAssistPermissionFocusTarget(null, 7, false, true, false)).toBeNull();
+  });
+
+  it('keeps keyboard focus on the next queued permission', () => {
+    expect(liveAssistPermissionFocusTarget(7, 8, true, false, true)).toBe('permission');
+  });
+
+  it('returns focus to the composer after the permission queue clears', () => {
+    expect(liveAssistPermissionFocusTarget(7, null, true, false, true)).toBe('composer');
   });
 });

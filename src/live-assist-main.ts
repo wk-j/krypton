@@ -1,3 +1,4 @@
+import { loadConfig } from './config';
 import { FrontendThemeEngine } from './theme';
 import {
   LiveAssistClient,
@@ -20,6 +21,8 @@ async function main(): Promise<void> {
   } catch (error) {
     console.warn('[live-assist] theme unavailable, using defaults', error);
   }
+
+  await applyConfiguredTypography();
 
   const client = new LiveAssistClient();
   let lanes: LiveAssistLaneSummary[] = [];
@@ -59,7 +62,7 @@ async function main(): Promise<void> {
 
   async function selectLane(lane: string): Promise<void> {
     if (lane === selectedLane) {
-      view.focusComposer();
+      view.focusPrimaryControl();
       return;
     }
     selectedLane = lane;
@@ -67,6 +70,7 @@ async function main(): Promise<void> {
     view.setLanes(lanes, selectedLane);
     view.showLoading();
     await refreshSnapshot(generation);
+    if (!disposed && generation === refreshGeneration) view.focusPrimaryControl();
   }
 
   async function refreshSnapshot(generation = ++refreshGeneration): Promise<void> {
@@ -226,13 +230,28 @@ async function main(): Promise<void> {
 
   try {
     await client.start(onStream, () => {
+      void applyConfiguredTypography();
       view.playEntrance();
-      void bootstrap().then(() => view.focusComposer());
+      void bootstrap().then(() => view.focusPrimaryControl());
     });
     await bootstrap();
-    view.focusComposer();
+    view.focusPrimaryControl();
   } catch (error) {
     view.showError(errorMessage(error));
+  }
+}
+
+async function applyConfiguredTypography(): Promise<void> {
+  try {
+    const config = await loadConfig();
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty('--krypton-font-size', `${config.font.size}px`);
+    rootStyle.setProperty(
+      '--krypton-chrome-font-size',
+      `${Math.round(config.font.size * 0.786)}px`,
+    );
+  } catch (error) {
+    console.warn('[live-assist] font config unavailable, using defaults', error);
   }
 }
 

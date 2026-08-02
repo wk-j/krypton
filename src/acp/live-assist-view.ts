@@ -21,6 +21,19 @@ export interface LiveAssistViewHandlers {
   onHide(): void;
 }
 
+export function liveAssistPermissionFocusTarget(
+  previousRequestId: number | null,
+  nextRequestId: number | null,
+  permissionHasFocus: boolean,
+  composerHasFocus: boolean,
+  draftIsEmpty: boolean,
+): 'permission' | 'composer' | null {
+  if (nextRequestId === null) return permissionHasFocus ? 'composer' : null;
+  if (nextRequestId === previousRequestId) return null;
+  if (permissionHasFocus || (composerHasFocus && draftIsEmpty)) return 'permission';
+  return null;
+}
+
 export class LiveAssistView {
   private readonly abort = new AbortController();
   private readonly shell: HTMLElement;
@@ -31,6 +44,7 @@ export class LiveAssistView {
   private readonly transcriptEl: HTMLElement;
   private readonly permissionEl: HTMLElement;
   private readonly permissionToolEl: HTMLElement;
+  private readonly permissionAcceptButton: HTMLButtonElement;
   private readonly composer: HTMLFormElement;
   private readonly textarea: HTMLTextAreaElement;
   private readonly sendButton: HTMLButtonElement;
@@ -110,12 +124,12 @@ export class LiveAssistView {
     rejectButton.type = 'button';
     rejectButton.dataset.permissionAction = 'reject';
     rejectButton.textContent = 'R · Reject';
-    const acceptButton = document.createElement('button');
-    acceptButton.type = 'button';
-    acceptButton.dataset.permissionAction = 'accept';
-    acceptButton.className = 'live-assist__permission-accept';
-    acceptButton.textContent = 'A · Accept';
-    permissionActions.append(rejectButton, acceptButton);
+    this.permissionAcceptButton = document.createElement('button');
+    this.permissionAcceptButton.type = 'button';
+    this.permissionAcceptButton.dataset.permissionAction = 'accept';
+    this.permissionAcceptButton.className = 'live-assist__permission-accept';
+    this.permissionAcceptButton.textContent = 'A · Accept';
+    permissionActions.append(rejectButton, this.permissionAcceptButton);
     this.permissionEl.append(permissionCopy, permissionActions);
 
     this.composer = document.createElement('form');
@@ -315,6 +329,14 @@ export class LiveAssistView {
     this.textarea.focus({ preventScroll: true });
   }
 
+  focusPrimaryControl(): void {
+    if (this.pendingPermission) {
+      this.permissionAcceptButton.focus({ preventScroll: true });
+      return;
+    }
+    this.focusComposer();
+  }
+
   draft(): string {
     return this.textarea.value.trim();
   }
@@ -391,11 +413,24 @@ export class LiveAssistView {
   }
 
   private setPermission(permission: LiveAssistPermission | null): void {
+    const activeElement = document.activeElement;
+    const focusTarget = liveAssistPermissionFocusTarget(
+      this.pendingPermission?.requestId ?? null,
+      permission?.requestId ?? null,
+      this.permissionEl.contains(activeElement),
+      activeElement === this.textarea,
+      this.textarea.value.trim().length === 0,
+    );
     this.pendingPermission = permission;
     this.permissionEl.hidden = permission === null;
     this.permissionToolEl.textContent = permission
       ? `Allow ${permission.tool}? Only the oldest request can be resolved.`
       : '';
+    if (focusTarget === 'permission') {
+      this.permissionAcceptButton.focus({ preventScroll: true });
+    } else if (focusTarget === 'composer') {
+      this.focusComposer();
+    }
   }
 }
 

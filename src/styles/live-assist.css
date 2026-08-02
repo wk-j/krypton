@@ -50,6 +50,7 @@ textarea {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  font-size: var(--krypton-font-size, 14px);
   overflow: hidden;
   border: 1px solid rgba(255, 176, 0, 0.56);
   border-radius: 2px;
@@ -86,7 +87,7 @@ textarea {
   padding: 0 11px;
   border-bottom: 1px solid var(--live-assist-border);
   background: rgba(255, 176, 0, 0.035);
-  font-size: 10px;
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -137,9 +138,23 @@ textarea {
 }
 
 .live-assist__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--live-assist-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.live-assist__status[data-status='busy']::before {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--live-assist-amber);
+  box-shadow: 0 0 7px rgba(255, 176, 0, 0.6);
+  content: '';
+  animation: live-assist-processing 1.2s ease-in-out infinite;
 }
 
 .live-assist__status[data-status='busy'],
@@ -158,7 +173,6 @@ textarea {
   border-radius: 2px;
   background: transparent;
   color: var(--live-assist-amber);
-  font-size: 9px;
   letter-spacing: 0.08em;
   cursor: pointer;
 }
@@ -197,7 +211,7 @@ textarea {
   border-radius: 0;
   background: transparent;
   color: var(--live-assist-muted);
-  font-size: 10px;
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 650;
   cursor: pointer;
 }
@@ -215,7 +229,6 @@ textarea {
 
 .live-assist__lane-state {
   color: var(--live-assist-muted);
-  font-size: 9px;
   font-weight: 500;
 }
 
@@ -281,7 +294,7 @@ textarea {
   padding: 8px 0 8px 20px;
   color: var(--live-assist-muted);
   cursor: pointer;
-  font-size: 9px;
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 750;
   letter-spacing: 0.12em;
   list-style: none;
@@ -327,7 +340,7 @@ textarea {
 .live-assist__message-label {
   padding-top: 2px;
   color: var(--live-assist-amber);
-  font-size: 9px;
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 750;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -361,7 +374,6 @@ textarea {
   min-width: 0;
   max-width: 74ch;
   color: var(--live-assist-text);
-  font-size: 12px;
   line-height: 1.62;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -404,7 +416,7 @@ textarea {
   display: block;
   margin-bottom: 3px;
   color: #ffc2ad;
-  font-size: 10px;
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.1em;
 }
 
@@ -414,7 +426,6 @@ textarea {
   -webkit-line-clamp: 4;
   overflow: hidden;
   color: #d7b7a9;
-  font-size: 11px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -433,7 +444,7 @@ textarea {
   border-radius: 2px;
   background: transparent;
   color: var(--live-assist-text);
-  font-size: 10px;
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 750;
   cursor: pointer;
 }
@@ -478,7 +489,6 @@ textarea {
   background: rgba(6, 10, 18, 0.78);
   color: var(--live-assist-text);
   caret-color: var(--live-assist-amber);
-  font-size: 12px;
   line-height: 1.5;
   user-select: text;
 }
@@ -526,7 +536,7 @@ textarea {
 
 .live-assist__composer-hint {
   color: var(--live-assist-muted);
-  font-size: 8px;
+  font-size: var(--krypton-chrome-font-size, 11px);
   text-align: right;
   white-space: nowrap;
 }
@@ -563,7 +573,7 @@ textarea {
 .live-assist__empty h1 {
   margin: 0 0 8px;
   color: var(--live-assist-amber-bright);
-  font-size: 13px;
+  font-size: calc(var(--krypton-font-size, 14px) + 3px);
   letter-spacing: 0.15em;
 }
 
@@ -571,7 +581,6 @@ textarea {
   max-width: 48ch;
   margin: 0;
   color: var(--live-assist-muted);
-  font-size: 11px;
   line-height: 1.65;
 }
 
@@ -588,7 +597,6 @@ textarea {
   background: var(--live-assist-surface-raised);
   color: var(--live-assist-amber-bright);
   box-shadow: 0 7px 22px rgba(0, 0, 0, 0.52);
-  font-size: 10px;
   line-height: 1.45;
 }
 
@@ -630,6 +638,18 @@ textarea {
   53%,
   100% {
     opacity: 0.2;
+  }
+}
+
+@keyframes live-assist-processing {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
@@ -692,6 +712,10 @@ textarea {
   }
 
   .live-assist__stream-caret {
+    animation: none;
+  }
+
+  .live-assist__status[data-status='busy']::before {
     animation: none;
   }
 
