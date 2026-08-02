@@ -245,6 +245,11 @@ async function applyConfiguredTypography(): Promise<void> {
   try {
     const config = await loadConfig();
     const rootStyle = document.documentElement.style;
+    const families = Array.isArray(config.font.family)
+      ? config.font.family
+      : [config.font.family as unknown as string];
+    const userFamilies = families.map((f) => `'${f}'`).join(', ');
+    rootStyle.setProperty('--krypton-font-family', `${userFamilies}, ui-monospace, monospace`);
     rootStyle.setProperty('--krypton-font-size', `${config.font.size}px`);
     rootStyle.setProperty(
       '--krypton-chrome-font-size',

@@ -12,7 +12,13 @@
   --live-assist-danger: #ff6e40;
   --live-assist-magenta: #e091c0;
   --live-assist-border: rgba(255, 176, 0, 0.26);
-  --live-assist-font: 'Mononoki Nerd Font Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --live-assist-font: var(
+    --krypton-font-family,
+    'Mononoki Nerd Font Mono',
+    'JetBrains Mono',
+    ui-monospace,
+    monospace
+  );
 }
 
 html,
@@ -39,7 +45,7 @@ textarea {
 
 .live-assist-root {
   box-sizing: border-box;
-  padding: 8px;
+  padding: 0;
 }
 
 .live-assist {
@@ -62,10 +68,9 @@ textarea {
       rgba(255, 176, 0, 0.018) 4px
     ),
     var(--live-assist-surface);
+  /* Panel fills the window edge-to-edge (native window shadow provides
+     depth); outer shadows would clip at the window bounds as a hard band. */
   box-shadow:
-    0 22px 58px rgba(0, 0, 0, 0.74),
-    0 0 1px rgba(255, 176, 0, 0.82),
-    0 0 18px rgba(255, 176, 0, 0.1),
     inset 0 0 70px rgba(255, 176, 0, 0.025),
     inset 0 0 0 1px rgba(255, 216, 128, 0.025);
 }
@@ -586,8 +591,8 @@ textarea {
 
 .live-assist__notice {
   position: absolute;
+  top: 79px; /* below header (36px) + lane strip (35px); keeps clear of the composer/send button */
   right: 12px;
-  bottom: 83px;
   z-index: 5;
   max-width: min(380px, calc(100% - 24px));
   box-sizing: border-box;
@@ -671,10 +676,6 @@ textarea {
 }
 
 @media (max-width: 580px) {
-  .live-assist-root {
-    padding: 4px;
-  }
-
   .live-assist__header {
     padding: 0 8px;
   }

@@ -33,6 +33,7 @@ struct SavedFrame {
 #[derive(Default)]
 pub struct LiveAssistState {
     saved_frame: Mutex<Option<SavedFrame>>,
+    previous_frontmost_pid: Mutex<Option<i32>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,37 +97,73 @@ pub fn hide_on_main(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     };
     let release_app_focus = window.is_focused().unwrap_or(false);
+    let state = app.state::<LiveAssistState>();
     if let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) {
-        let state = app.state::<LiveAssistState>();
         let mut saved = state
             .saved_frame
             .lock()
             .map_err(|_| "Live Assist state lock poisoned".to_string())?;
         *saved = Some(SavedFrame { position, size });
     }
+    let previous_pid = state
+        .previous_frontmost_pid
+        .lock()
+        .map_err(|_| "Live Assist state lock poisoned".to_string())?
+        .take();
     window
         .hide()
         .map_err(|error| format!("hide Live Assist window: {error}"))?;
     if release_app_focus {
-        release_macos_app_focus()?;
+        release_macos_app_focus(previous_pid)?;
     }
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-fn release_macos_app_focus() -> Result<(), String> {
+fn release_macos_app_focus(previous_pid: Option<i32>) -> Result<(), String> {
     use objc2::MainThreadMarker;
-    use objc2_app_kit::NSApplication;
+    use objc2_app_kit::{NSApplication, NSApplicationActivationOptions, NSRunningApplication};
 
     let marker = MainThreadMarker::new()
         .ok_or_else(|| "release Live Assist focus outside the main thread".to_string())?;
+    if let Some(pid) = previous_pid {
+        if pid == std::process::id() as i32 {
+            // Krypton itself was frontmost before Live Assist opened; staying
+            // active hands key focus back to the main window.
+            return Ok(());
+        }
+        // Re-activate the previous app while Krypton is still the active app:
+        // under macOS 14 cooperative activation the system only honors the
+        // request from the yielding (active) app, and deactivate() alone does
+        // not restore the previous app while our main window stays visible.
+        if let Some(previous) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) {
+            if !previous.isTerminated() {
+                // No effect on macOS 14+, still needed on earlier releases.
+                #[allow(deprecated)]
+                let options = NSApplicationActivationOptions::ActivateIgnoringOtherApps;
+                if previous.activateWithOptions(options) {
+                    return Ok(());
+                }
+            }
+        }
+    }
     NSApplication::sharedApplication(marker).deactivate();
     Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
-fn release_macos_app_focus() -> Result<(), String> {
+fn release_macos_app_focus(_previous_pid: Option<i32>) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn frontmost_application_pid() -> Option<i32> {
+    use objc2_app_kit::NSWorkspace;
+
+    let frontmost = NSWorkspace::sharedWorkspace().frontmostApplication()?;
+    let pid = frontmost.processIdentifier();
+    // Applications without a pid report -1.
+    (pid >= 0).then_some(pid)
 }
 
 #[cfg(target_os = "macos")]
@@ -136,12 +173,18 @@ fn show_on_main(app: &AppHandle) -> Result<(), String> {
         Some(window) => window,
         None => create_window(app)?,
     };
-    let saved = app
-        .state::<LiveAssistState>()
+    let state = app.state::<LiveAssistState>();
+    let saved = state
         .saved_frame
         .lock()
         .map_err(|_| "Live Assist state lock poisoned".to_string())?
         .to_owned();
+    // Capture before set_focus() activates Krypton, so hide can hand focus
+    // back to whichever app the user was in.
+    *state
+        .previous_frontmost_pid
+        .lock()
+        .map_err(|_| "Live Assist state lock poisoned".to_string())? = frontmost_application_pid();
     let frame = frame_for_monitor(&monitor, saved);
     let result = (|| {
         window
