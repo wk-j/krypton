@@ -539,13 +539,6 @@ textarea {
   display: none;
 }
 
-.live-assist__composer-hint {
-  color: var(--live-assist-muted);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  text-align: right;
-  white-space: nowrap;
-}
-
 .live-assist__empty {
   position: absolute;
   inset: 36px 0 0;
@@ -700,10 +693,6 @@ textarea {
     min-width: 0;
     flex-direction: row;
     align-items: center;
-  }
-
-  .live-assist__composer-hint {
-    margin-left: auto;
   }
 }
 

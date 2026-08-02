@@ -150,10 +150,7 @@ export class LiveAssistView {
     this.sendButton.type = 'submit';
     this.sendButton.className = 'live-assist__send';
     this.sendButton.textContent = 'SEND ⌘↵';
-    const hint = document.createElement('span');
-    hint.className = 'live-assist__composer-hint';
-    hint.textContent = 'local draft · Esc hide';
-    composerActions.append(this.cancelButton, this.sendButton, hint);
+    composerActions.append(this.cancelButton, this.sendButton);
     this.composer.append(this.textarea, composerActions);
 
     this.emptyEl = document.createElement('section');
