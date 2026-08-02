@@ -1,7 +1,7 @@
 :root {
   --live-assist-bg: #060a12;
-  --live-assist-surface: rgba(8, 12, 18, 0.97);
-  --live-assist-surface-raised: rgba(17, 20, 27, 0.96);
+  --live-assist-surface: #080c12;
+  --live-assist-surface-raised: #11141b;
   --live-assist-amber: #ffb000;
   --live-assist-amber-bright: #ffd880;
   --live-assist-text: #e8cfa4;
@@ -48,8 +48,8 @@ textarea {
   height: 100%;
   contain: layout paint style;
   box-sizing: border-box;
-  display: grid;
-  grid-template-rows: 36px auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid rgba(255, 176, 0, 0.56);
   border-radius: 2px;
@@ -76,6 +76,9 @@ textarea {
 .live-assist__header {
   position: relative;
   z-index: 4;
+  box-sizing: border-box;
+  height: 36px;
+  flex: none;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -169,6 +172,7 @@ textarea {
 .live-assist__lanes {
   position: relative;
   z-index: 3;
+  flex: none;
   min-height: 35px;
   display: flex;
   align-items: stretch;
@@ -240,6 +244,7 @@ textarea {
 }
 
 .live-assist__transcript {
+  flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 18px 25px;
@@ -260,6 +265,62 @@ textarea {
 }
 
 .live-assist__message:last-child {
+  border-bottom-color: transparent;
+}
+
+.live-assist__activity {
+  border-bottom: 1px solid rgba(255, 176, 0, 0.09);
+}
+
+.live-assist__activity:last-child {
+  border-bottom-color: transparent;
+}
+
+.live-assist__activity-summary {
+  position: relative;
+  padding: 8px 0 8px 20px;
+  color: var(--live-assist-muted);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  list-style: none;
+}
+
+.live-assist__activity-summary::-webkit-details-marker {
+  display: none;
+}
+
+.live-assist__activity-summary::before {
+  position: absolute;
+  left: 2px;
+  color: var(--live-assist-blue);
+  content: '▸';
+  transform-origin: center;
+  transition: transform 120ms ease-out;
+}
+
+.live-assist__activity[open] > .live-assist__activity-summary::before {
+  transform: rotate(90deg);
+}
+
+.live-assist__activity-summary:hover {
+  color: var(--live-assist-text);
+}
+
+.live-assist__activity-items {
+  margin-bottom: 5px;
+  padding: 0 12px 3px;
+  background: rgba(100, 181, 246, 0.035);
+}
+
+.live-assist__activity-items .live-assist__message {
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 11px;
+  padding: 7px 0;
+}
+
+.live-assist__activity-items .live-assist__message:last-child {
   border-bottom-color: transparent;
 }
 
@@ -320,6 +381,7 @@ textarea {
 .live-assist__permission {
   position: relative;
   z-index: 3;
+  flex: none;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -347,12 +409,14 @@ textarea {
 }
 
 .live-assist__permission-copy span {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
   overflow: hidden;
   color: #d7b7a9;
   font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .live-assist__permission-actions {
@@ -389,6 +453,7 @@ textarea {
 .live-assist__composer {
   position: relative;
   z-index: 3;
+  flex: none;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
@@ -537,7 +602,8 @@ textarea {
 }
 
 .live-assist button:focus-visible,
-.live-assist textarea:focus-visible {
+.live-assist textarea:focus-visible,
+.live-assist summary:focus-visible {
   outline: 1px solid rgba(255, 216, 128, 0.86);
   outline-offset: 1px;
   box-shadow:
@@ -545,13 +611,13 @@ textarea {
     0 0 12px rgba(255, 176, 0, 0.18);
 }
 
+/* Transform-only: an opacity fade would composite the whole shell
+   semi-transparent over the terminal behind the native window. */
 @keyframes live-assist-enter {
   from {
-    opacity: 0;
     transform: translateY(-8px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
@@ -622,15 +688,14 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   .live-assist--enter {
-    animation: live-assist-fade 100ms linear;
+    animation: none;
   }
 
   .live-assist__stream-caret {
     animation: none;
   }
-}
 
-@keyframes live-assist-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  .live-assist__activity-summary::before {
+    transition: none;
+  }
 }

@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-08-01
+> Last updated: 2026-08-02
 
 ## Overview
 
@@ -20,6 +20,15 @@
 ---
 
 ## Recent Landings
+
+- **Live Assist compact activity (spec 209)** — the auxiliary transcript now
+  keeps conversation primary by grouping each consecutive run of thought, tool,
+  and file-activity rows into one collapsed `ACTIVITY · N steps` disclosure.
+  Native details preserve keyboard access and every original row, stable group
+  ids preserve open disclosures across snapshot refreshes, and all user,
+  assistant, error, system, permission, shell, artifact, and lane-mail rows stay
+  visible by default. The authoritative 120-item tail and control/stream paths
+  are unchanged. See `docs/209-live-assist-compact-activity.md`.
 
 - **Programmatic reference Git state (spec 207)** — ACP Harness file references
   now show live `M/A/D/R/?/!` state plus per-file `+added −removed` counts derived

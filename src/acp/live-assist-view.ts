@@ -7,6 +7,11 @@ import type {
 
 const TRANSCRIPT_TAIL = 120;
 const BUSY_STATUSES = new Set(['busy', 'needs_permission', 'awaiting_peer']);
+const COMPACT_ACTIVITY_KINDS = new Set(['thought', 'tool', 'fs_activity', 'fs_write_review']);
+
+export type LiveAssistTranscriptBlock =
+  | { kind: 'message'; item: LiveAssistTranscriptItem }
+  | { kind: 'activity'; id: string; items: LiveAssistTranscriptItem[] };
 
 export interface LiveAssistViewHandlers {
   onSelectLane(lane: string): void;
@@ -336,9 +341,18 @@ export class LiveAssistView {
     if (this.streamFrame !== null) window.cancelAnimationFrame(this.streamFrame);
     this.streamFrame = null;
     this.pendingStream = [];
+    const openActivityIds = new Set(
+      Array.from(this.transcriptEl.querySelectorAll<HTMLDetailsElement>('.live-assist__activity[open]'))
+        .map((element) => element.dataset.activityId)
+        .filter((id): id is string => Boolean(id)),
+    );
     const fragment = document.createDocumentFragment();
-    for (const item of items.slice(-TRANSCRIPT_TAIL)) {
-      fragment.appendChild(buildMessage(item, false).row);
+    for (const block of groupLiveAssistTranscript(items.slice(-TRANSCRIPT_TAIL))) {
+      if (block.kind === 'message') {
+        fragment.appendChild(buildMessage(block.item, false).row);
+      } else {
+        fragment.appendChild(buildActivity(block, openActivityIds.has(block.id)));
+      }
     }
     this.transcriptEl.replaceChildren(fragment);
     this.streamRow = null;
@@ -383,6 +397,53 @@ export class LiveAssistView {
       ? `Allow ${permission.tool}? Only the oldest request can be resolved.`
       : '';
   }
+}
+
+export function groupLiveAssistTranscript(
+  items: LiveAssistTranscriptItem[],
+): LiveAssistTranscriptBlock[] {
+  const blocks: LiveAssistTranscriptBlock[] = [];
+  let activity: Extract<LiveAssistTranscriptBlock, { kind: 'activity' }> | null = null;
+
+  for (const item of items) {
+    if (COMPACT_ACTIVITY_KINDS.has(item.kind)) {
+      if (!activity) {
+        activity = { kind: 'activity', id: item.id, items: [] };
+        blocks.push(activity);
+      }
+      activity.items.push(item);
+      continue;
+    }
+
+    activity = null;
+    blocks.push({ kind: 'message', item });
+  }
+
+  return blocks;
+}
+
+function buildActivity(
+  block: Extract<LiveAssistTranscriptBlock, { kind: 'activity' }>,
+  open: boolean,
+): HTMLDetailsElement {
+  const details = document.createElement('details');
+  details.className = 'live-assist__activity';
+  details.dataset.activityId = block.id;
+  details.open = open;
+
+  const summary = document.createElement('summary');
+  summary.className = 'live-assist__activity-summary';
+  summary.textContent = liveAssistActivitySummary(block.items.length);
+
+  const items = document.createElement('div');
+  items.className = 'live-assist__activity-items';
+  for (const item of block.items) items.appendChild(buildMessage(item, false).row);
+  details.append(summary, items);
+  return details;
+}
+
+export function liveAssistActivitySummary(stepCount: number): string {
+  return `ACTIVITY · ${stepCount} ${stepCount === 1 ? 'step' : 'steps'}`;
 }
 
 function buildMessage(

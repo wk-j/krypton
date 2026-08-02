@@ -242,9 +242,12 @@ The assistant is a compact command surface, not a full Harness replica:
   text status, queue count, and `⌃⇧A hide`.
 - **Lane strip (optional):** compact text tabs only when more than one live lane
   exists; overflow is keyboard-scrollable and never becomes the Harness lane rail.
-- **Transcript:** a simple virtualized tail projection of user, assistant,
-  thought-summary, tool status, system/error, and permission rows. It uses shared
-  Markdown/tool formatting helpers where safe, but owns its DOM and rendering.
+- **Transcript:** a simple bounded tail projection that keeps user and assistant
+  conversation visible while grouping consecutive thought, tool, and file
+  activity into collapsed `ACTIVITY · N steps` disclosures. The original rows
+  remain available through native keyboard-expandable details; system, error,
+  permission, shell, artifact, and lane-mail rows stay visible by default. It
+  owns its DOM and rendering.
 - **Permission dock:** oldest request, tool label, explicit Accept/Reject actions;
   no permission-mode or policy editing in v1.
 - **Composer:** independent multiline draft, busy/queued state, send and cancel.
