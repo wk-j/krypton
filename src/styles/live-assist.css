@@ -75,10 +75,6 @@ textarea {
     inset 0 0 0 1px rgba(255, 216, 128, 0.025);
 }
 
-.live-assist--enter {
-  animation: live-assist-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
 .live-assist__header {
   position: relative;
   z-index: 4;
@@ -617,17 +613,6 @@ textarea {
     0 0 12px rgba(255, 176, 0, 0.18);
 }
 
-/* Transform-only: an opacity fade would composite the whole shell
-   semi-transparent over the terminal behind the native window. */
-@keyframes live-assist-enter {
-  from {
-    transform: translateY(-8px);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
 @keyframes live-assist-caret {
   0%,
   52% {
@@ -697,10 +682,6 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .live-assist--enter {
-    animation: none;
-  }
-
   .live-assist__stream-caret {
     animation: none;
   }

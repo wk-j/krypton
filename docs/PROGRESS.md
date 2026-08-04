@@ -31,7 +31,9 @@
   under its own contiguous forward sequence so gap detection is unaffected. The
   summon that creates the webview now waits for the frontend's first painted frame
   (700 ms timeout) instead of showing an unpainted window, and repeated summons
-  skip the `syncing` flicker and the redundant typography write.
+  skip the `syncing` flicker and the redundant typography write. Summoning also
+  leaves the already-painted shell at its final position instead of starting a
+  delayed inner slide after the native window is visible.
 
 - **Live Assist compact activity (spec 209)** — the auxiliary transcript now
   keeps conversation primary by grouping each consecutive run of thought, tool,

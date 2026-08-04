@@ -326,9 +326,11 @@ The shell uses a flat near-opaque `rgba(6, 10, 18, 0.96)` background, one full
 left accent rails. Body and composer text use the configured
 `--krypton-font-size`; labels and controls use the same derived
 `--krypton-chrome-font-size` as the main UI.
-Color never carries status alone. Entrance is 180 ms opacity
-plus `translateY(-8px)` with a reduced-motion crossfade. Focus indicators are
-visible, text meets 4.5:1 contrast, and continuous ambient animation is absent.
+Color never carries status alone. The native window appears at its final painted
+position without a second inner-shell entrance animation; starting that motion
+after AppKit had already shown the window made the panel visibly jump. Focus
+indicators are visible, text meets 4.5:1 contrast, and continuous ambient
+animation is absent.
 
 ## Edge Cases
 

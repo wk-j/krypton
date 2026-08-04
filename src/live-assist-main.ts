@@ -237,7 +237,6 @@ async function main(): Promise<void> {
   try {
     await client.start(onStream, () => {
       void applyConfiguredTypography();
-      view.playEntrance();
       void bootstrap().then(() => view.focusPrimaryControl());
     });
     await bootstrap();

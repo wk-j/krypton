@@ -66,7 +66,6 @@ export class LiveAssistView {
   private streamText = '';
   private pendingStream: Array<{ kind: string; text: string }> = [];
   private streamFrame: number | null = null;
-  private entranceFrame: number | null = null;
   private currentStatus = 'idle';
   private renderedLane: string | null = null;
   private laneRoster: string[] = [];
@@ -217,19 +216,9 @@ export class LiveAssistView {
     this.abort.abort();
     if (this.noticeTimer !== null) window.clearTimeout(this.noticeTimer);
     if (this.streamFrame !== null) window.cancelAnimationFrame(this.streamFrame);
-    if (this.entranceFrame !== null) window.cancelAnimationFrame(this.entranceFrame);
     this.streamFrame = null;
     this.pendingStream = [];
     this.shell.remove();
-  }
-
-  playEntrance(): void {
-    this.shell.classList.remove('live-assist--enter');
-    if (this.entranceFrame !== null) window.cancelAnimationFrame(this.entranceFrame);
-    this.entranceFrame = window.requestAnimationFrame(() => {
-      this.entranceFrame = null;
-      this.shell.classList.add('live-assist--enter');
-    });
   }
 
   // Every snapshot refresh calls this, so only a roster change rebuilds the
