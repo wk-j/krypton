@@ -3,12 +3,20 @@ import { describe, expect, it } from 'vitest';
 import {
   groupLiveAssistTranscript,
   liveAssistActivitySummary,
+  liveAssistAdoptedText,
+  liveAssistBlockKey,
   liveAssistPermissionFocusTarget,
+  liveAssistStreamDisposition,
+  sameLaneRoster,
 } from './live-assist-view';
 import type { LiveAssistTranscriptItem } from './live-assist-types';
 
 function item(id: string, kind: string): LiveAssistTranscriptItem {
   return { id, kind, text: id, createdAt: null, status: null };
+}
+
+function said(id: string, kind: string, text: string): LiveAssistTranscriptItem {
+  return { id, kind, text, createdAt: null, status: null };
 }
 
 describe('Live Assist compact activity', () => {
@@ -86,5 +94,75 @@ describe('Live Assist permission focus', () => {
 
   it('returns focus to the composer after the permission queue clears', () => {
     expect(liveAssistPermissionFocusTarget(7, null, true, false, true)).toBe('composer');
+  });
+});
+
+describe('Live Assist transcript reconciliation', () => {
+  it('keys messages and activity groups in separate namespaces', () => {
+    const shared = item('x-1', 'assistant');
+    expect(liveAssistBlockKey({ kind: 'message', item: shared })).toBe('m:x-1');
+    expect(liveAssistBlockKey({ kind: 'activity', id: 'x-1', items: [shared] })).toBe('a:x-1');
+  });
+
+  it('rebuilds the lane strip only when the roster itself changes', () => {
+    expect(sameLaneRoster(['Claude-5'], ['Claude-5'])).toBe(true);
+    expect(sameLaneRoster(['Claude-5'], ['Claude-5', 'Codex-1'])).toBe(false);
+    expect(sameLaneRoster(['Claude-5', 'Codex-1'], ['Codex-1', 'Claude-5'])).toBe(false);
+  });
+});
+
+describe('Live Assist streaming row settlement', () => {
+  const streamed = 'partial answer';
+
+  it('adopts the snapshot row while the same speaker is still streaming', () => {
+    const blocks = groupLiveAssistTranscript([
+      said('user-1', 'user', 'go'),
+      said('assistant-1', 'assistant', 'partial'),
+    ]);
+    expect(liveAssistStreamDisposition(blocks, 'assistant', streamed, true)).toBe('adopt');
+  });
+
+  it('keeps the streamed row when the snapshot has not caught up at all', () => {
+    const blocks = groupLiveAssistTranscript([
+      said('user-1', 'user', 'go'),
+      item('tool-1', 'tool'),
+    ]);
+    expect(liveAssistStreamDisposition(blocks, 'assistant', streamed, true)).toBe('keep');
+  });
+
+  it('drops the streamed row once a sealed message already contains its text', () => {
+    const blocks = groupLiveAssistTranscript([
+      said('assistant-1', 'assistant', `prefix ${streamed} suffix`),
+      item('tool-1', 'tool'),
+    ]);
+    expect(liveAssistStreamDisposition(blocks, 'assistant', streamed, true)).toBe('drop');
+  });
+
+  it('drops the streamed row when the turn is over so no caret is left blinking', () => {
+    const blocks = groupLiveAssistTranscript([said('assistant-1', 'assistant', 'partial')]);
+    expect(liveAssistStreamDisposition(blocks, 'assistant', streamed, false)).toBe('drop');
+  });
+
+  it('does not search past the recent tail for coverage', () => {
+    const older = said('assistant-0', 'assistant', streamed);
+    const filler = Array.from({ length: 10 }, (_, index) => item(`tool-${index}`, 'shell'));
+    const blocks = groupLiveAssistTranscript([older, ...filler]);
+    expect(liveAssistStreamDisposition(blocks, 'assistant', streamed, true)).toBe('keep');
+  });
+
+  it('keeps text streamed ahead of a snapshot when leaving a synthetic row', () => {
+    expect(liveAssistAdoptedText(true, 'full answer so far', 'full answer')).toBe(
+      'full answer so far',
+    );
+  });
+
+  it('takes the snapshot when it is further along than the popup', () => {
+    expect(liveAssistAdoptedText(true, 'answer', 'the whole answer')).toBe('the whole answer');
+  });
+
+  it('trusts the snapshot across a message boundary the popup could not see', () => {
+    // The harness sealed "first" and began "second"; chunks for both landed in
+    // the one adopted row, so the accumulated text must not win here.
+    expect(liveAssistAdoptedText(false, 'firstsecond', 'second')).toBe('second');
   });
 });

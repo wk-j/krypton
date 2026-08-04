@@ -21,6 +21,18 @@
 
 ## Recent Landings
 
+- **Live Assist render smoothness (specs 208/209)** — the popup no longer rebuilds
+  its transcript on every snapshot. Rows reconcile by `data-block-key`, scroll only
+  re-pins when it was already at the bottom, the lane strip rebuilds only on roster
+  change, and the incremental streaming row now merges with the authoritative
+  snapshot (adopt / drop / keep) instead of being discarded, so streamed text never
+  truncates, duplicates, or flashes. Rust forwards only the event kinds the popup
+  reduces — whole `tool_call_update` diffs no longer cross IPC to be dropped —
+  under its own contiguous forward sequence so gap detection is unaffected. The
+  summon that creates the webview now waits for the frontend's first painted frame
+  (700 ms timeout) instead of showing an unpainted window, and repeated summons
+  skip the `syncing` flicker and the redundant typography write.
+
 - **Live Assist compact activity (spec 209)** — the auxiliary transcript now
   keeps conversation primary by grouping each consecutive run of thought, tool,
   and file-activity rows into one collapsed `ACTIVITY · N steps` disclosure.

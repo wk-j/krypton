@@ -105,6 +105,16 @@ export class LiveAssistClient {
     return invoke('live_assist_hide');
   }
 
+  /** Tell the backend the first frame is on screen so it can present the window
+   *  that was created hidden for this summon. */
+  async ready(): Promise<void> {
+    try {
+      await invoke('live_assist_ready');
+    } catch (error) {
+      console.warn('[live-assist] ready signal failed', error);
+    }
+  }
+
   private async dispatch<T>(operation: string, params: Record<string, unknown>): Promise<T> {
     this.operationSequence += 1;
     const reply = await invoke<LiveAssistControlReply<T>>('live_assist_dispatch', {

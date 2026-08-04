@@ -340,6 +340,13 @@ pub async fn live_assist_hide(app_handle: AppHandle) -> Result<(), String> {
     crate::live_assist::hide(app_handle).await
 }
 
+/// The Live Assist webview painted its first frame. Only the summon that created
+/// the webview is waiting on this; every later summon shows the window directly.
+#[tauri::command]
+pub async fn live_assist_ready(app_handle: AppHandle) -> Result<(), String> {
+    crate::live_assist::present_pending(app_handle).await
+}
+
 /// Load the ACP Harness directive config (`~/.config/krypton/acp-harness.toml`),
 /// creating an empty default file when missing so the user has something to
 /// hand-edit. See `docs/124-acp-harness-directive-management.md`.

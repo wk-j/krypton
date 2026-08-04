@@ -164,6 +164,17 @@ Showing performs one serialized transaction:
 4. Emit `live-assist-shown` to its webview after page readiness.
 5. On failure, hide the auxiliary window and leave the main window untouched.
 
+The summon that *creates* the webview defers step 3. Its resolved frame is parked
+in `LiveAssistState::pending_show` and the window stays hidden until the frontend
+reports its first painted frame via `live_assist_ready`, with a 700 ms timeout so
+a broken frontend still yields a visible window. Showing an unloaded webview
+otherwise put an unpainted transparent window on screen and popped the panel in
+several frames later. While a show is pending the popup counts as open: the
+shortcut cancels the summon, and `hide` clears it. Every later summon presents
+directly because the webview is already loaded.
+
+`live_assist_ready` is idempotent — it presents a parked frame or does nothing.
+
 Hiding records the assistant frame, hides it, and retains its DOM/draft. It does
 not clear always-on-top or Space flags while hidden because they affect no visible
 surface. Panic recovery hides Live Assist first, then runs the existing main
@@ -187,12 +198,24 @@ Only the allowlisted Live Assist operations are accepted by the Rust command:
 The public `/control/v1` capabilities and authorization do not change.
 
 `ControlServer::publish()` returns its sequence-stamped event after broadcasting
-it. While `live-assist` is visible, Rust also emits that exact envelope to the
-window as `live-assist-stream`; hidden windows receive no stream work and
-re-bootstrap when shown. There is no second Harness observer. The assistant
-tracks `seq`; a gap, window re-show, lane change, lifecycle event, stop, or error
-triggers snapshot refresh. High-frequency chunks update the projection
-immediately, while the next snapshot remains authoritative.
+it. While `live-assist` is visible, Rust also emits that envelope to the window as
+`live-assist-stream`; hidden windows receive no stream work and re-bootstrap when
+shown. There is no second Harness observer. The assistant tracks `seq`; a gap,
+window re-show, lane change, lifecycle event, stop, or error triggers snapshot
+refresh. High-frequency chunks update the projection immediately, while the next
+snapshot remains authoritative.
+
+Forwarding is filtered to the kinds the popup actually reduces
+(`live_assist::FORWARDED_KINDS`): the two message-chunk kinds plus `status`,
+`stop`, `error`, the two permission kinds, and the four lifecycle kinds. The
+Harness mirrors *every* agent event to the control server, so an unfiltered
+forward made the popup deserialize whole `tool_call_update` diffs — tens of KB per
+event, on the same main thread as the streaming render — only to drop them.
+Because filtering skips control-server sequence numbers, forwarded envelopes carry
+their own contiguous `LiveAssistState::forward_seq` instead; the popup's gap
+detection is unchanged and a genuinely dropped Tauri event still triggers a
+re-bootstrap. SSE subscribers keep receiving the unfiltered, publish-stamped
+stream.
 
 ### Bootstrap and Selection
 
@@ -217,9 +240,41 @@ selection, then pulls that lane's status, transcript, and permissions.
    bounded queue semantics. Cancel and permission actions use their existing
    authoritative operations.
 5. The owning `AcpHarnessView` updates as normal and publishes its normal stream.
-6. Rust forwards the same stamped events to the assistant; it reduces matching
-   lane events and re-snapshots at authoritative boundaries.
+6. Rust forwards the consumed kinds to the assistant; it reduces matching lane
+   events and re-snapshots at authoritative boundaries.
 7. `Esc`, a second shortcut, or a close request hides only `live-assist`.
+
+### Snapshot Rendering
+
+A snapshot arrives on every status, stop, and permission boundary, so the
+transcript and lane strip are reconciled rather than replaced:
+
+- Every transcript node carries a `data-block-key` (`m:<id>` for a message,
+  `a:<id>` for an activity group). A snapshot reuses the node whose key still
+  matches, inserts only genuinely new blocks, and removes only orphans. Replacing
+  the whole tail flickered, dropped the text selection, and relaid out up to 120
+  grid rows per event.
+- Scroll position is read before mutation and only re-pinned to the bottom when it
+  was already there (or the lane changed), so a reader who scrolled up stays put.
+- The lane strip rebuilds only when the roster changes; status churn updates the
+  existing buttons' dot, state text, title, and `aria-selected` in place.
+- The incremental streaming row merges with the snapshot instead of being
+  discarded (`liveAssistStreamDisposition`): `adopt` when the snapshot's trailing
+  row is the same speaker and the lane is still busy, so streaming continues into
+  that one node; `drop` when a sealed message in the recent tail already contains
+  the streamed text or the turn has ended; `keep` while the snapshot has not
+  caught up at all.
+- Which text an adopted row shows is `liveAssistAdoptedText`. Adopting *from a
+  synthetic row* keeps the longer side, since the popup may hold only the suffix
+  streamed since it opened or may be ahead of a mid-chunk snapshot. Adopting *from
+  an already-adopted row* always takes the snapshot: that transition is the
+  snapshot revealing a message boundary the popup could not see, so the
+  accumulated text spans two messages. For the same reason the never-rewind rule
+  on a streaming row applies only while it is still the tail — once a later
+  message appears the row has been sealed and the snapshot corrects it.
+- `syncing` is announced only when nothing is on screen yet, and configured
+  typography custom properties are written only when the value changed — an
+  unconditional write relaid the panel out right after it became visible.
 
 ### Keybindings
 

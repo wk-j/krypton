@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use tauri::{
@@ -13,6 +14,9 @@ const DEFAULT_HEIGHT: f64 = 620.0;
 const MIN_WIDTH: f64 = 560.0;
 const MIN_HEIGHT: f64 = 420.0;
 const MARGIN: f64 = 16.0;
+/// Upper bound on how long the very first summon waits for the webview's first
+/// paint before showing anyway. Only a broken frontend can hit this.
+const PENDING_SHOW_TIMEOUT_MS: u64 = 700;
 
 const ALLOWED_OPERATIONS: &[&str] = &[
     "live_assist.bootstrap",
@@ -22,6 +26,25 @@ const ALLOWED_OPERATIONS: &[&str] = &[
     "lane.cancel",
     "permission.list",
     "permission.resolve",
+];
+
+/// Event kinds the Live Assist webview actually reduces (see
+/// `src/acp/live-assist-client.ts`). The harness mirrors *every* agent event to
+/// the control server, including `tool_call_update` payloads that carry whole
+/// diffs; forwarding those made the popup deserialize tens of KB per event only
+/// to drop it, stealing main-thread time from the streaming render.
+const FORWARDED_KINDS: &[&str] = &[
+    "user_message_chunk",
+    "message_chunk",
+    "status",
+    "stop",
+    "error",
+    "permission_request",
+    "permission_resolved",
+    "lane_opened",
+    "lane_closed",
+    "lane_session_changed",
+    "harness_closed",
 ];
 
 #[derive(Clone, Copy, Debug)]
@@ -34,6 +57,14 @@ struct SavedFrame {
 pub struct LiveAssistState {
     saved_frame: Mutex<Option<SavedFrame>>,
     previous_frontmost_pid: Mutex<Option<i32>>,
+    /// Sequence stamped on forwarded events only. The control server's own seq
+    /// skips the kinds we filter out, which the webview would read as a dropped
+    /// frame and answer with a full re-bootstrap.
+    forward_seq: AtomicU64,
+    /// Frame for a summon that created the webview and is waiting on its first
+    /// paint. `Some` means "opening": the window exists but is deliberately
+    /// still hidden.
+    pending_show: Mutex<Option<Frame>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,15 +78,29 @@ pub fn operation_allowed(operation: &str) -> bool {
 }
 
 pub fn forward_stream_event(app: &AppHandle, event: &ControlStreamEvent) {
+    if !kind_is_forwarded(&event.kind) {
+        return;
+    }
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
         return;
     };
     if !window.is_visible().unwrap_or(false) {
         return;
     }
-    if let Err(error) = app.emit_to(WINDOW_LABEL, "live-assist-stream", event) {
+    let forwarded = ControlStreamEvent {
+        seq: app
+            .state::<LiveAssistState>()
+            .forward_seq
+            .fetch_add(1, Ordering::Relaxed),
+        ..event.clone()
+    };
+    if let Err(error) = app.emit_to(WINDOW_LABEL, "live-assist-stream", &forwarded) {
         log::warn!("Live Assist stream forward failed: {error}");
     }
+}
+
+pub fn kind_is_forwarded(kind: &str) -> bool {
+    FORWARDED_KINDS.contains(&kind)
 }
 
 pub async fn toggle(app: AppHandle) -> Result<(), String> {
@@ -64,6 +109,11 @@ pub async fn toggle(app: AppHandle) -> Result<(), String> {
 
 pub async fn hide(app: AppHandle) -> Result<(), String> {
     run_on_main_thread(app, |app| hide_on_main(&app)).await
+}
+
+/// The popup finished its first render; present the summon that created it.
+pub async fn present_pending(app: AppHandle) -> Result<(), String> {
+    run_on_main_thread(app, |app| present_pending_on_main(&app)).await
 }
 
 async fn run_on_main_thread<F>(app: AppHandle, action: F) -> Result<(), String>
@@ -81,6 +131,11 @@ where
 }
 
 pub fn toggle_on_main(app: &AppHandle) -> Result<(), String> {
+    // A summon still waiting on the first paint counts as open, so a second
+    // press cancels it instead of queueing a duplicate show.
+    if take_pending_show(app)?.is_some() {
+        return Ok(());
+    }
     let visible = app
         .get_webview_window(WINDOW_LABEL)
         .and_then(|window| window.is_visible().ok())
@@ -93,6 +148,7 @@ pub fn toggle_on_main(app: &AppHandle) -> Result<(), String> {
 }
 
 pub fn hide_on_main(app: &AppHandle) -> Result<(), String> {
+    take_pending_show(app)?;
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
         return Ok(());
     };
@@ -169,9 +225,9 @@ fn frontmost_application_pid() -> Option<i32> {
 #[cfg(target_os = "macos")]
 fn show_on_main(app: &AppHandle) -> Result<(), String> {
     let monitor = target_monitor(app)?;
-    let window = match app.get_webview_window(WINDOW_LABEL) {
-        Some(window) => window,
-        None => create_window(app)?,
+    let (window, created) = match app.get_webview_window(WINDOW_LABEL) {
+        Some(window) => (window, false),
+        None => (create_window(app)?, true),
     };
     let state = app.state::<LiveAssistState>();
     let saved = state
@@ -186,6 +242,59 @@ fn show_on_main(app: &AppHandle) -> Result<(), String> {
         .lock()
         .map_err(|_| "Live Assist state lock poisoned".to_string())? = frontmost_application_pid();
     let frame = frame_for_monitor(&monitor, saved);
+    if created {
+        // The webview has not loaded its document yet. Showing now would put an
+        // unpainted transparent window on screen and pop the panel in a few
+        // frames later, so park the frame until the frontend reports its first
+        // render (`live_assist_ready`) — with a timeout so a broken frontend
+        // still yields a visible window.
+        *state
+            .pending_show
+            .lock()
+            .map_err(|_| "Live Assist state lock poisoned".to_string())? = Some(frame);
+        schedule_pending_show_timeout(app.clone());
+        return Ok(());
+    }
+    present(app, &window, frame)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_on_main(_app: &AppHandle) -> Result<(), String> {
+    Err("Live Assist is available on macOS".to_string())
+}
+
+pub fn present_pending_on_main(app: &AppHandle) -> Result<(), String> {
+    let Some(frame) = take_pending_show(app)? else {
+        return Ok(());
+    };
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return Ok(());
+    };
+    present(app, &window, frame)
+}
+
+fn take_pending_show(app: &AppHandle) -> Result<Option<Frame>, String> {
+    Ok(app
+        .state::<LiveAssistState>()
+        .pending_show
+        .lock()
+        .map_err(|_| "Live Assist state lock poisoned".to_string())?
+        .take())
+}
+
+fn schedule_pending_show_timeout(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(PENDING_SHOW_TIMEOUT_MS)).await;
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Err(error) = present_pending_on_main(&handle) {
+                log::warn!("Live Assist deferred show failed: {error}");
+            }
+        });
+    });
+}
+
+fn present(app: &AppHandle, window: &WebviewWindow, frame: Frame) -> Result<(), String> {
     let result = (|| {
         window
             .set_size(frame.size)
@@ -199,7 +308,8 @@ fn show_on_main(app: &AppHandle) -> Result<(), String> {
         window
             .set_always_on_top(true)
             .map_err(|error| format!("raise Live Assist window: {error}"))?;
-        apply_macos_window_behavior(&window)?;
+        #[cfg(target_os = "macos")]
+        apply_macos_window_behavior(window)?;
         window
             .show()
             .map_err(|error| format!("show Live Assist window: {error}"))?;
@@ -216,11 +326,6 @@ fn show_on_main(app: &AppHandle) -> Result<(), String> {
         log::warn!("Live Assist shown event failed: {error}");
     }
     Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn show_on_main(_app: &AppHandle) -> Result<(), String> {
-    Err("Live Assist is available on macOS".to_string())
 }
 
 fn create_window(app: &AppHandle) -> Result<WebviewWindow, String> {
@@ -444,6 +549,30 @@ mod tests {
         );
         assert_eq!(result.position, PhysicalPosition::new(624, 284));
         assert_eq!(result.size, PhysicalSize::new(800, 600));
+    }
+
+    #[test]
+    fn forwards_only_kinds_the_popup_reduces() {
+        for kind in ["message_chunk", "status", "stop", "permission_request"] {
+            assert!(kind_is_forwarded(kind), "{kind} should reach Live Assist");
+        }
+        // High-volume kinds the popup drops; `tool_call_update` in particular
+        // carries whole diffs.
+        for kind in [
+            "tool_call",
+            "tool_call_update",
+            "thought_chunk",
+            "usage",
+            "plan",
+            "mode_update",
+            "fs_activity",
+            "issue_status",
+        ] {
+            assert!(
+                !kind_is_forwarded(kind),
+                "{kind} should stay out of the popup"
+            );
+        }
     }
 
     #[test]

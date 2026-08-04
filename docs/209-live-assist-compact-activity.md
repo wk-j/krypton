@@ -106,8 +106,12 @@ if later snapshots append more internal steps to the same run.
    `ACTIVITY · N steps` (singular `step` for one).
 5. Opening the disclosure renders the original rows in original order and with
    their current labels and text.
-6. Snapshot replacement restores the open state of groups whose stable id is
-   still present; obsolete ids are pruned.
+6. A snapshot reconciles by `data-block-key` (`a:<first item id>`), so a group
+   whose stable id is still present keeps its own `<details>` node and therefore
+   its open state; obsolete ids are pruned. Rows inside an expanded group are
+   reconciled the same way, so opened detail does not flicker as steps are
+   appended. When the bounded tail slides past a run's first item the id changes
+   and the new group starts collapsed, as before.
 7. Incremental user/assistant streaming remains unchanged.
 
 ### UI Changes

@@ -30,6 +30,7 @@ async function main(): Promise<void> {
   let refreshGeneration = 0;
   let refreshTimer: number | null = null;
   let disposed = false;
+  let hasRendered = false;
 
   const view = new LiveAssistView(root, {
     onSelectLane: (lane) => void selectLane(lane),
@@ -41,7 +42,10 @@ async function main(): Promise<void> {
 
   async function bootstrap(): Promise<void> {
     const generation = ++refreshGeneration;
-    view.showLoading();
+    // On a re-summon the panel still shows the last snapshot and the refresh
+    // lands in a few ms, so swapping the status to "syncing" and back is pure
+    // flicker. Only announce it when there is nothing on screen yet.
+    if (!hasRendered) view.showLoading();
     try {
       const result = await client.bootstrap(selectedLane);
       if (disposed || generation !== refreshGeneration) return;
@@ -51,6 +55,7 @@ async function main(): Promise<void> {
       if (!next) {
         selectedLane = null;
         view.showEmpty();
+        hasRendered = true;
         return;
       }
       selectedLane = next;
@@ -84,6 +89,7 @@ async function main(): Promise<void> {
       const snapshot = await client.snapshot(lane);
       if (disposed || generation !== refreshGeneration || selectedLane !== lane.displayName) return;
       view.renderSnapshot(snapshot);
+      hasRendered = true;
       lanes = lanes.map((candidate) => (
         candidate.displayName === lane.displayName
           ? { ...candidate, ...snapshot.status }
@@ -239,25 +245,42 @@ async function main(): Promise<void> {
   } catch (error) {
     view.showError(errorMessage(error));
   }
+  // The summon that created this webview left the window hidden; release it only
+  // once the first snapshot has actually been laid out and painted, so the
+  // window never appears empty. Harmless no-op on every later summon.
+  await nextPaint();
+  void client.ready();
 }
 
+/** Resolve after the browser has committed the pending render. */
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+// Re-read on every summon so a config edit lands, but only write a custom
+// property whose value actually changed: an unconditional write invalidated
+// style on <html> and relaid the whole panel out right after it became visible.
 async function applyConfiguredTypography(): Promise<void> {
   try {
     const config = await loadConfig();
-    const rootStyle = document.documentElement.style;
     const families = Array.isArray(config.font.family)
       ? config.font.family
       : [config.font.family as unknown as string];
     const userFamilies = families.map((f) => `'${f}'`).join(', ');
-    rootStyle.setProperty('--krypton-font-family', `${userFamilies}, ui-monospace, monospace`);
-    rootStyle.setProperty('--krypton-font-size', `${config.font.size}px`);
-    rootStyle.setProperty(
-      '--krypton-chrome-font-size',
-      `${Math.round(config.font.size * 0.786)}px`,
-    );
+    setCustomProperty('--krypton-font-family', `${userFamilies}, ui-monospace, monospace`);
+    setCustomProperty('--krypton-font-size', `${config.font.size}px`);
+    setCustomProperty('--krypton-chrome-font-size', `${Math.round(config.font.size * 0.786)}px`);
   } catch (error) {
     console.warn('[live-assist] font config unavailable, using defaults', error);
   }
+}
+
+function setCustomProperty(name: string, value: string): void {
+  const rootStyle = document.documentElement.style;
+  if (rootStyle.getPropertyValue(name) === value) return;
+  rootStyle.setProperty(name, value);
 }
 
 function objectString(value: unknown, key: string): string | null {

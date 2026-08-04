@@ -8,10 +8,16 @@ import type {
 const TRANSCRIPT_TAIL = 120;
 const BUSY_STATUSES = new Set(['busy', 'needs_permission', 'awaiting_peer']);
 const COMPACT_ACTIVITY_KINDS = new Set(['thought', 'tool', 'fs_activity', 'fs_write_review']);
+/** How far back a snapshot is searched for text the incremental stream already
+ *  rendered. Bounded so a full-tail snapshot never costs 120 substring scans. */
+const STREAM_COVERAGE_SCAN = 8;
 
 export type LiveAssistTranscriptBlock =
   | { kind: 'message'; item: LiveAssistTranscriptItem }
   | { kind: 'activity'; id: string; items: LiveAssistTranscriptItem[] };
+
+/** What a snapshot should do with the row the incremental stream is writing to. */
+export type LiveAssistStreamDisposition = 'adopt' | 'drop' | 'keep';
 
 export interface LiveAssistViewHandlers {
   onSelectLane(lane: string): void;
@@ -57,10 +63,13 @@ export class LiveAssistView {
   private streamRow: HTMLElement | null = null;
   private streamTextNode: Text | null = null;
   private streamKind: string | null = null;
+  private streamText = '';
   private pendingStream: Array<{ kind: string; text: string }> = [];
   private streamFrame: number | null = null;
   private entranceFrame: number | null = null;
   private currentStatus = 'idle';
+  private renderedLane: string | null = null;
+  private laneRoster: string[] = [];
 
   constructor(
     root: HTMLElement,
@@ -209,6 +218,8 @@ export class LiveAssistView {
     if (this.noticeTimer !== null) window.clearTimeout(this.noticeTimer);
     if (this.streamFrame !== null) window.cancelAnimationFrame(this.streamFrame);
     if (this.entranceFrame !== null) window.cancelAnimationFrame(this.entranceFrame);
+    this.streamFrame = null;
+    this.pendingStream = [];
     this.shell.remove();
   }
 
@@ -221,33 +232,29 @@ export class LiveAssistView {
     });
   }
 
+  // Every snapshot refresh calls this, so only a roster change rebuilds the
+  // strip; status churn updates the existing buttons in place. Replacing the
+  // buttons wholesale dropped hover/focus state and relaid out the strip on
+  // each of a busy turn's status events.
   setLanes(lanes: LiveAssistLaneSummary[], selectedLane: string | null): void {
     this.selectedLane = selectedLane;
-    const fragment = document.createDocumentFragment();
-    for (let index = 0; index < lanes.length; index += 1) {
-      const lane = lanes[index];
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'live-assist__lane';
-      button.dataset.lane = lane.displayName;
-      button.setAttribute('aria-selected', String(lane.displayName === selectedLane));
-      button.title = `⌘${index + 1} · ${lane.backendId} · ${lane.status}`;
-      const dot = document.createElement('span');
-      dot.className = `live-assist__lane-dot live-assist__lane-dot--${safeStatus(lane.status)}`;
-      const name = document.createElement('span');
-      name.textContent = lane.displayName;
-      const state = document.createElement('span');
-      state.className = 'live-assist__lane-state';
-      state.textContent = lane.status;
-      button.append(dot, name, state);
-      fragment.appendChild(button);
+    const roster = lanes.map((lane) => lane.displayName);
+    if (!sameLaneRoster(this.laneRoster, roster)) {
+      const fragment = document.createDocumentFragment();
+      for (const lane of lanes) fragment.appendChild(buildLaneButton(lane));
+      this.laneStrip.replaceChildren(fragment);
+      this.laneRoster = roster;
     }
-    this.laneStrip.replaceChildren(fragment);
+    for (let index = 0; index < lanes.length; index += 1) {
+      const button = this.laneStrip.children[index];
+      if (button instanceof HTMLElement) syncLaneButton(button, lanes[index], index, selectedLane);
+    }
     this.laneStrip.hidden = lanes.length < 2;
   }
 
   renderSnapshot(snapshot: LiveAssistSnapshot): void {
     this.showContent();
+    const laneChanged = this.renderedLane !== snapshot.lane.displayName;
     this.selectedLane = snapshot.lane.displayName;
     this.projectEl.textContent = projectLabel(snapshot.lane.cwd);
     this.laneEl.textContent = `${snapshot.lane.displayName} · ${snapshot.lane.backendId}`;
@@ -258,12 +265,15 @@ export class LiveAssistView {
     this.textarea.setAttribute('aria-label', `Message ${snapshot.lane.displayName}`);
     this.sendButton.textContent = BUSY_STATUSES.has(snapshot.status.status) ? 'QUEUE ⌘↵' : 'SEND ⌘↵';
     this.cancelButton.hidden = !BUSY_STATUSES.has(snapshot.status.status);
-    this.renderTranscript(snapshot.transcript);
+    this.renderTranscript(snapshot.transcript, laneChanged);
+    this.renderedLane = snapshot.lane.displayName;
     this.setPermission(snapshot.permissions[0] ?? null);
   }
 
   showEmpty(): void {
     this.selectedLane = null;
+    this.renderedLane = null;
+    this.resetStream();
     this.projectEl.textContent = 'no Harness';
     this.laneEl.textContent = 'no lane';
     this.statusEl.textContent = 'offline';
@@ -356,28 +366,171 @@ export class LiveAssistView {
     this.composer.hidden = false;
   }
 
-  private renderTranscript(items: LiveAssistTranscriptItem[]): void {
+  // A snapshot arrives on every status/stop/permission event, so this reconciles
+  // the existing rows by key instead of replacing them. The old `replaceChildren`
+  // tore down and relaid out the whole tail each time, which flickered, dropped
+  // the text selection, and yanked the scroll position to the bottom.
+  private renderTranscript(items: LiveAssistTranscriptItem[], laneChanged: boolean): void {
+    if (laneChanged) {
+      this.resetStream();
+      this.transcriptEl.replaceChildren();
+    }
+    // Read scroll state before mutating: a refresh must not pull a reader who
+    // scrolled up back down to the bottom.
+    const stick = laneChanged || isNearBottom(this.transcriptEl);
+    const blocks = groupLiveAssistTranscript(items.slice(-TRANSCRIPT_TAIL));
+    const nodes = this.reconcile(this.transcriptEl, blocks);
+    this.settleStream(blocks, nodes);
+    if (stick) this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+  }
+
+  /** Align `container`'s children with `blocks`, reusing nodes whose key still
+   *  matches and returning the node for each block in order. A *synthetic*
+   *  streaming row is exempt — it has no key and stays after the last block. An
+   *  adopted row does have a key and reconciles like any other. */
+  private reconcile(
+    container: HTMLElement,
+    blocks: LiveAssistTranscriptBlock[],
+  ): HTMLElement[] {
+    const streamRow = this.streamRow?.isConnected && this.streamRow.dataset.blockKey === undefined
+      ? this.streamRow
+      : null;
+    const reusable = new Map<string, HTMLElement>();
+    const stale = new Set<HTMLElement>();
+    for (const child of Array.from(container.children)) {
+      if (!(child instanceof HTMLElement) || child === streamRow) continue;
+      stale.add(child);
+      const key = child.dataset.blockKey;
+      if (key !== undefined) reusable.set(key, child);
+    }
+
+    const nodes: HTMLElement[] = [];
+    let cursor: Element | null = container.firstElementChild;
+    for (const block of blocks) {
+      const key = liveAssistBlockKey(block);
+      const reused = reusable.get(key);
+      let node: HTMLElement;
+      if (reused) {
+        reusable.delete(key);
+        stale.delete(reused);
+        this.syncBlock(reused, block, block === blocks[blocks.length - 1]);
+        node = reused;
+      } else {
+        node = this.buildBlock(block);
+      }
+      if (cursor === node) cursor = node.nextElementSibling;
+      else container.insertBefore(node, cursor);
+      nodes.push(node);
+    }
+    for (const orphan of stale) orphan.remove();
+    return nodes;
+  }
+
+  private buildBlock(block: LiveAssistTranscriptBlock): HTMLElement {
+    const node = block.kind === 'message'
+      ? buildMessage(block.item, false).row
+      : buildActivity(block);
+    node.dataset.blockKey = liveAssistBlockKey(block);
+    return node;
+  }
+
+  private syncBlock(
+    node: HTMLElement,
+    block: LiveAssistTranscriptBlock,
+    isTail: boolean,
+  ): void {
+    if (block.kind === 'message') {
+      this.syncMessage(node, block.item, isTail);
+      return;
+    }
+    const summary = node.querySelector('.live-assist__activity-summary');
+    const label = liveAssistActivitySummary(block.items.length);
+    if (summary && summary.textContent !== label) summary.textContent = label;
+    const items = node.querySelector<HTMLElement>('.live-assist__activity-items');
+    if (items) {
+      this.reconcile(items, block.items.map((item) => ({ kind: 'message', item }) as const));
+    }
+  }
+
+  private syncMessage(
+    node: HTMLElement,
+    item: LiveAssistTranscriptItem,
+    isTail: boolean,
+  ): void {
+    const textNode = messageTextNode(node);
+    if (!textNode) return;
+    const next = item.text || fallbackText(displayKind(item.kind), item.status);
+    // The adopted streaming row can run ahead of a snapshot taken mid-chunk, so
+    // never rewind its visible text — but only while it is still the tail. Once
+    // the snapshot shows a later message the row has been sealed, and any excess
+    // is text that belonged to that later message; let the snapshot correct it.
+    if (isTail && node === this.streamRow && next.length < textNode.data.length) return;
+    if (textNode.data !== next) textNode.data = next;
+  }
+
+  /** Merge the incremental streaming row with the authoritative snapshot so the
+   *  same text is never shown twice, and never disappears and reappears. */
+  private settleStream(blocks: LiveAssistTranscriptBlock[], nodes: HTMLElement[]): void {
+    if (!this.streamRow || !this.streamKind) return;
+    const disposition = liveAssistStreamDisposition(
+      blocks,
+      this.streamKind,
+      this.streamText,
+      BUSY_STATUSES.has(this.currentStatus),
+    );
+    if (disposition === 'keep') return;
+    if (disposition === 'drop') {
+      this.endStream();
+      return;
+    }
+    this.adoptStreamRow(nodes[nodes.length - 1]);
+  }
+
+  /** Hand streaming over to the snapshot's own trailing row. */
+  private adoptStreamRow(node: HTMLElement | undefined): void {
+    if (!node) return;
+    if (this.streamRow !== node) {
+      const target = messageTextNode(node);
+      if (!target) {
+        this.endStream();
+        return;
+      }
+      const merged = liveAssistAdoptedText(
+        this.streamRow?.dataset.blockKey === undefined,
+        this.streamText,
+        target.data,
+      );
+      if (target.data !== merged) target.data = merged;
+      this.streamText = merged;
+      this.releaseStreamRow();
+      this.streamRow = node;
+      this.streamTextNode = target;
+    }
+    ensureStreamCaret(node);
+  }
+
+  /** Stop writing to the current row. A synthetic row the snapshot has now
+   *  superseded is removed; an adopted snapshot row stays and loses its caret. */
+  private releaseStreamRow(): void {
+    const row = this.streamRow;
+    this.streamRow = null;
+    this.streamTextNode = null;
+    if (!row) return;
+    row.querySelector('.live-assist__stream-caret')?.remove();
+    if (row.dataset.blockKey === undefined) row.remove();
+  }
+
+  private endStream(): void {
+    this.releaseStreamRow();
+    this.streamKind = null;
+    this.streamText = '';
+  }
+
+  private resetStream(): void {
     if (this.streamFrame !== null) window.cancelAnimationFrame(this.streamFrame);
     this.streamFrame = null;
     this.pendingStream = [];
-    const openActivityIds = new Set(
-      Array.from(this.transcriptEl.querySelectorAll<HTMLDetailsElement>('.live-assist__activity[open]'))
-        .map((element) => element.dataset.activityId)
-        .filter((id): id is string => Boolean(id)),
-    );
-    const fragment = document.createDocumentFragment();
-    for (const block of groupLiveAssistTranscript(items.slice(-TRANSCRIPT_TAIL))) {
-      if (block.kind === 'message') {
-        fragment.appendChild(buildMessage(block.item, false).row);
-      } else {
-        fragment.appendChild(buildActivity(block, openActivityIds.has(block.id)));
-      }
-    }
-    this.transcriptEl.replaceChildren(fragment);
-    this.streamRow = null;
-    this.streamTextNode = null;
-    this.streamKind = null;
-    this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+    this.endStream();
   }
 
   private flushStream(): void {
@@ -391,6 +544,10 @@ export class LiveAssistView {
     for (const chunk of chunks) {
       const messageKind = chunk.kind === 'user_message_chunk' ? 'user' : 'assistant';
       if (!this.streamRow || this.streamKind !== messageKind || !this.streamRow.isConnected) {
+        // Leave a superseded synthetic row in place — it still holds text the
+        // next snapshot has not delivered yet; the stale sweep collects it once
+        // the snapshot does.
+        this.streamRow?.querySelector('.live-assist__stream-caret')?.remove();
         const built = buildMessage({
           id: `live-stream-${Date.now()}`,
           kind: messageKind,
@@ -401,10 +558,12 @@ export class LiveAssistView {
         this.streamRow = built.row;
         this.streamTextNode = built.textNode;
         this.streamKind = messageKind;
+        this.streamText = '';
         this.transcriptEl.appendChild(built.row);
         trimChildren(this.transcriptEl, TRANSCRIPT_TAIL);
       }
       this.streamTextNode?.appendData(chunk.text);
+      this.streamText += chunk.text;
     }
     if (nearBottom) this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
   }
@@ -454,24 +613,136 @@ export function groupLiveAssistTranscript(
   return blocks;
 }
 
+/** Stable identity for reconciliation. Message and activity ids share a
+ *  namespace (an activity is keyed by its first item), so they are prefixed. */
+export function liveAssistBlockKey(block: LiveAssistTranscriptBlock): string {
+  return block.kind === 'message' ? `m:${block.item.id}` : `a:${block.id}`;
+}
+
+/**
+ * Decide what a snapshot does with the row the incremental stream is writing to.
+ *
+ * - `adopt` — the snapshot's trailing row is the same speaker, so streaming
+ *   continues into that row (one node, no duplicate and no truncation).
+ * - `drop` — the streamed text already appears in the snapshot tail (the turn
+ *   sealed it, e.g. a tool call interrupted the message) or the turn is over.
+ * - `keep` — the snapshot has not caught up; leave the synthetic row trailing.
+ */
+export function liveAssistStreamDisposition(
+  blocks: LiveAssistTranscriptBlock[],
+  streamKind: string,
+  streamText: string,
+  busy: boolean,
+): LiveAssistStreamDisposition {
+  const tail = blocks[blocks.length - 1];
+  if (busy && tail?.kind === 'message' && displayKind(tail.item.kind) === streamKind) {
+    return 'adopt';
+  }
+  if (!streamText) return 'drop';
+  const scanFrom = Math.max(0, blocks.length - STREAM_COVERAGE_SCAN);
+  for (let index = blocks.length - 1; index >= scanFrom; index -= 1) {
+    const block = blocks[index];
+    if (block.kind !== 'message') continue;
+    if (displayKind(block.item.kind) !== streamKind) continue;
+    if (block.item.text.includes(streamText)) return 'drop';
+  }
+  return busy ? 'keep' : 'drop';
+}
+
+/**
+ * Text an adopted row should show.
+ *
+ * From a synthetic row the accumulated stream belongs to this very message, so
+ * the longer side wins: the popup may hold only the suffix streamed since it
+ * opened, or may be ahead of a snapshot taken mid-chunk.
+ *
+ * From an already-adopted row the snapshot has just revealed a message boundary
+ * the popup could not see (the harness sealed one message and started another),
+ * so the accumulated text spans two messages and only the snapshot is
+ * trustworthy — otherwise the sealed row would keep the next message's opening.
+ */
+export function liveAssistAdoptedText(
+  fromSynthetic: boolean,
+  streamedText: string,
+  snapshotText: string,
+): string {
+  return fromSynthetic && streamedText.length > snapshotText.length ? streamedText : snapshotText;
+}
+
+export function sameLaneRoster(previous: string[], next: string[]): boolean {
+  return previous.length === next.length && previous.every((name, index) => name === next[index]);
+}
+
+function buildLaneButton(lane: LiveAssistLaneSummary): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'live-assist__lane';
+  button.dataset.lane = lane.displayName;
+  const dot = document.createElement('span');
+  dot.className = 'live-assist__lane-dot';
+  const name = document.createElement('span');
+  name.textContent = lane.displayName;
+  const state = document.createElement('span');
+  state.className = 'live-assist__lane-state';
+  button.append(dot, name, state);
+  return button;
+}
+
+function syncLaneButton(
+  button: HTMLElement,
+  lane: LiveAssistLaneSummary,
+  index: number,
+  selectedLane: string | null,
+): void {
+  const selected = String(lane.displayName === selectedLane);
+  if (button.getAttribute('aria-selected') !== selected) {
+    button.setAttribute('aria-selected', selected);
+  }
+  const title = `⌘${index + 1} · ${lane.backendId} · ${lane.status}`;
+  if (button.title !== title) button.title = title;
+  const dot = button.querySelector<HTMLElement>('.live-assist__lane-dot');
+  const dotClass = `live-assist__lane-dot live-assist__lane-dot--${safeStatus(lane.status)}`;
+  if (dot && dot.className !== dotClass) dot.className = dotClass;
+  const state = button.querySelector<HTMLElement>('.live-assist__lane-state');
+  if (state && state.textContent !== lane.status) state.textContent = lane.status;
+}
+
 function buildActivity(
   block: Extract<LiveAssistTranscriptBlock, { kind: 'activity' }>,
-  open: boolean,
 ): HTMLDetailsElement {
   const details = document.createElement('details');
   details.className = 'live-assist__activity';
   details.dataset.activityId = block.id;
-  details.open = open;
 
   const summary = document.createElement('summary');
   summary.className = 'live-assist__activity-summary';
   summary.textContent = liveAssistActivitySummary(block.items.length);
 
+  // Reused across snapshots, so each row carries its own reconcile key; the
+  // disclosure's open state now survives on the node itself.
   const items = document.createElement('div');
   items.className = 'live-assist__activity-items';
-  for (const item of block.items) items.appendChild(buildMessage(item, false).row);
+  for (const item of block.items) {
+    const row = buildMessage(item, false).row;
+    row.dataset.blockKey = liveAssistBlockKey({ kind: 'message', item });
+    items.appendChild(row);
+  }
   details.append(summary, items);
   return details;
+}
+
+function messageTextNode(node: HTMLElement): Text | null {
+  const first = node.querySelector('.live-assist__message-body')?.firstChild ?? null;
+  return first instanceof Text ? first : null;
+}
+
+function ensureStreamCaret(node: HTMLElement): void {
+  const body = node.querySelector('.live-assist__message-body');
+  if (!body || body.querySelector('.live-assist__stream-caret')) return;
+  const caret = document.createElement('span');
+  caret.className = 'live-assist__stream-caret';
+  caret.setAttribute('aria-label', 'Streaming');
+  body.appendChild(caret);
 }
 
 export function liveAssistActivitySummary(stepCount: number): string {

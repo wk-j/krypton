@@ -176,6 +176,7 @@ pub fn run() {
             commands::live_assist_dispatch,
             commands::live_assist_toggle,
             commands::live_assist_hide,
+            commands::live_assist_ready,
             commands::get_acp_harness_config,
             commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
