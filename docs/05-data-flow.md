@@ -14,7 +14,7 @@
 ## macOS Harness Live Assist Flow
 
 ```
-1. Ctrl+Shift+A reaches the Rust global-shortcut handler while any app is active.
+1. Ctrl+Shift+I reaches the Rust global-shortcut handler while any app is active.
 2. live_assist.rs resolves or lazily creates the `live-assist` WebviewWindow.
 3. Rust places that auxiliary frame on the pointer monitor, applies topmost and
    full-screen-auxiliary Space behavior, then shows and focuses it.
@@ -32,7 +32,7 @@
    the auxiliary webview.
 10. Text chunks append incrementally; status/permission/stop/lifecycle boundaries
     and sequence gaps trigger an authoritative snapshot refresh.
-11. Escape, Ctrl+Shift+A, or native close hides only `live-assist`; its local draft
+11. Escape, Ctrl+Shift+I, or native close hides only `live-assist`; its local draft
     stays mounted for the next summon.
 ```
 

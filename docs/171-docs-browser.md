@@ -1,6 +1,6 @@
 # Docs Browser (Loopback Markdown Renderer) — Implementation Spec
 
-> Status: Implemented (rev 3)
+> Status: Implemented (rev 4)
 > Date: 2026-06-21
 
 ## Extended by spec 172 — inline feedback
@@ -24,6 +24,57 @@ The `/doc` reader also has a compact **Generate artifact** action: click the
 to its active live lane, which creates a normal lane-authored HTML artifact with
 `artifact_new`, edits the scaffold, and calls `artifact_register`. See
 `docs/174-docs-browser-artifact-export.md`.
+
+## As-built (rev 4) — flat index, no hierarchy
+
+The folder hierarchy was the navigation cost, not the aid: reaching one file in a
+repo with 230+ markdown files meant expanding the sidebar tree, then drilling the
+right pane folder by folder. At explicit user direction the index is now **one
+flat, filterable list of every `.md` path** under the selected harness's `<cwd>`:
+
+- **No sidebar at all.** `render_docs_page(title, content)` lost its `tree`
+  argument and `artifact-docs.html` lost `nav.tree-pane` (plus the `ul.tree` /
+  `li.tree-dir` styles and the sidebar scroll-restore script from rev 3). Both
+  docs surfaces — index and reader — are single-pane. The analyses surface keeps
+  its own tree in `artifact-analyses.html`; it is untouched.
+- **Flat file model, newest first.** `DocsTreeNode`/`DocFile` (nested `BTreeMap` +
+  leaf names) are replaced by a flat `Vec<DocEntry { rel, modified }>` from
+  `collect_doc_files`, ordered **most-recently-modified first** (`Reverse(mtime)`,
+  then case-insensitive path, then path — so the order is deterministic and files
+  with an unreadable mtime sort last, not oldest). Chosen at explicit user
+  direction over alphabetical: the index answers "what changed" while the filter
+  box answers "find this file". Discovery (`WalkBuilder`, `.gitignore`-respecting,
+  `*.md` only) is unchanged.
+- **Every row is a full path**, split for reading only: `<span
+  class="browser__dir">docs/adr/</span>0004-….md` (muted prefix + bright
+  filename), mtime on the right, `/doc` in a new tab as before. `article.doc:has(#docs-list)`
+  drops the 820px reading cap so long paths fit.
+- **Filter instead of drill-down.** An autofocused `input#docs-filter` narrows the
+  list client-side: whitespace-separated terms must ALL appear in the path
+  (`adr peer` → `docs/adr/0004-…peering….md`), the count shows `N / M files`, and
+  `p#docs-empty` covers no-match. The server never filters — it renders the whole
+  list once, so #5 (scan on request, no cache) and #9 (no polling) still hold.
+- **Keyboard-first navigation** (the reader never uses the mouse): `↑`/`↓` move an
+  `.is-selected` row (wrapping, `scrollIntoView({block:'nearest'})`), `Enter`
+  opens it — `link.click()` inside the keydown carries user activation, so
+  `target="_blank"` is not popup-blocked — `Escape` clears the filter, and any
+  printable key (or `/`) refocuses the box after a stray click.
+- **Harness switching moved into the content pane.** `nav.harness-bar` renders one
+  pill per harness (id + file count, active pill filled) and is emitted **only
+  when more than one harness has a working dir**; the active harness id, its
+  `<cwd>` and the file count now live in the header title. `DocsQuery.dir` is
+  gone — serde ignores unknown params, so rev-3 `&dir=` bookmarks still resolve to
+  the flat list.
+
+This supersedes rev-3's two-pane file browser and the parts of rev-1 #8 that
+called for a folder tree; the list-is-a-flat-single-surface rule (no nested
+panels, no left accent rail) is unchanged. Removed helpers: `render_folder_nav`,
+`render_folder_listing`, `node_at`, `insert_docs_tree_path`, `build_docs_tree`.
+New: `collect_doc_files`, `split_doc_rel`, `render_docs_harness_bar`,
+`render_docs_list`. Locked by `collect_doc_files_is_flat_and_newest_first`
+(flat + mtime-descending + no `&dir=` links); the filter/keyboard behaviour was verified in
+a real browser against the rendered page (231 files → `harness live` → 2 matches,
+arrow selection, `Enter` → the right `/doc` URL).
 
 ## As-built (rev 3)
 
@@ -147,8 +198,8 @@ for a repo's `docs/`, ADRs, README, and [[Code wiki]].
 
 | Route | Returns |
 |-------|---------|
-| `GET /docs` | Standalone HTML index: the file tree across all harnesses (harness-grouped roots), no file selected. Served with the same headers as `/dashboard` / `/gallery` (`text/html`, `nosniff`, `no-referrer`, `no-store`). |
-| `GET /doc?harness=<id>&path=<rel>` | Standalone HTML page: tree sidebar + the one file at `<rel>` under that harness's `<cwd>`, comrak-rendered, raw HTML escaped, relative `.md` links rewritten. 404 if not found / not `.md`; 400 if path validation fails. |
+| `GET /docs` | Standalone HTML index. **Rev 4:** a flat, filterable list of every `.md` path under one harness's `<cwd>` (`?harness=<id>`, default = first), plus a harness pill row when more than one has a working dir. Served with the same headers as `/dashboard` / `/gallery` (`text/html`, `nosniff`, `no-referrer`, `no-store`). |
+| `GET /doc?harness=<id>&path=<rel>` | Standalone HTML page: the one file at `<rel>` under that harness's `<cwd>`, comrak-rendered, relative `.md` links rewritten (no sidebar since rev 3; raw HTML renders live since rev 2). 404 if not found / not `.md`; 400 if path validation fails. |
 | `GET /doc-asset?harness=<id>&path=<rel>` | Raw image bytes for a whitelisted image extension under `<cwd>`, with the correct `Content-Type`. Same path validation as `/doc`. |
 
 `harness=<id>` disambiguates which harness's `<cwd>` a relative path resolves
@@ -174,9 +225,9 @@ traversal / symlink-escape / wrong-extension cases.
 Reuses the dashboard/gallery Binance-dark shell (`:root` vars, brand bar, mono
 fonts, light/auto toggle, `@media` responsive rules). Adds:
 
-- a **file-tree sidebar** (folders expandable, files as leaves; harness roots as
-  top-level groups when more than one harness is open) — flat surface, tinted,
-  no nested frame, no left accent rail;
+- ~~a **file-tree sidebar**~~ — removed in rev 4; the index is a flat filterable
+  list (`div.docs-filter` + `ul.browser#docs-list`) and both surfaces are
+  single-pane. Flat surface, no nested frame, no left accent rail;
 - a **content pane** holding the comrak output, styled for headings / code
   blocks / tables / task lists. The reading body (`article.doc`) sets its own
   `font-size: 15px; line-height: 1.65` rather than inheriting the 14px chrome

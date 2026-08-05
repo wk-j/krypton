@@ -110,7 +110,7 @@ pub fn run() {
                             app.emit_or_log("capture-requested", ());
                         }
                         #[cfg(target_os = "macos")]
-                        Code::KeyA => {
+                        Code::KeyI => {
                             if let Err(error) = live_assist::toggle_on_main(app) {
                                 log::warn!("Live Assist toggle failed: {error}");
                             }
@@ -353,10 +353,10 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 match app.handle().global_shortcut().register(Shortcut::new(
                     Some(Modifiers::CONTROL | Modifiers::SHIFT),
-                    Code::KeyA,
+                    Code::KeyI,
                 )) {
-                    Ok(()) => log::info!("registered Live Assist: Ctrl+Shift+A"),
-                    Err(e) => log::warn!("Failed to register Ctrl+Shift+A: {e}"),
+                    Ok(()) => log::info!("registered Live Assist: Ctrl+Shift+I"),
+                    Err(e) => log::warn!("Failed to register Ctrl+Shift+I: {e}"),
                 }
             }
 

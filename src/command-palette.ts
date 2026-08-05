@@ -725,7 +725,7 @@ export class CommandPalette {
       id: 'acp.live-assist.toggle',
       label: 'Toggle Harness Live Assist',
       category: 'ACP',
-      keybinding: 'Ctrl+Shift+A',
+      keybinding: 'Ctrl+Shift+I',
       execute: () => invoke('live_assist_toggle'),
     });
     this.register({

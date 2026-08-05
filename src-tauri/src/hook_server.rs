@@ -23,7 +23,8 @@ use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::{Path as StdPath, PathBuf};
@@ -929,53 +930,41 @@ impl HookServer {
             .and_then(|store| store.project_dir.clone())
     }
 
-    /// Render the docs browser index as a two-pane file browser: a folder-only
-    /// tree in the sidebar and the selected folder's contents (subfolders + `.md`
-    /// files) as items on the right. `sel_harness`/`sel_dir` come from the query
-    /// (`None`/empty = first harness, repo root).
-    fn docs_index_page(&self, sel_harness: Option<&str>, sel_dir: Option<&str>) -> Response {
+    /// Render the docs browser index as ONE flat, filterable list of every `.md`
+    /// file under the selected harness's working dir — no folder tree, no
+    /// drill-down (spec 171 rev 4: the hierarchy made navigation too slow).
+    /// `sel_harness` comes from the query (`None` = first harness).
+    fn docs_index_page(&self, sel_harness: Option<&str>) -> Response {
         let dirs = self.docs_project_dirs();
         if dirs.is_empty() {
             let content = "<p class=\"welcome\">No harness working directory is available.</p>";
-            return render_docs_page("Docs", Some(""), content);
+            return render_docs_page("Docs", content);
         }
 
-        let trees: Vec<(String, String, DocsTreeNode)> = dirs
+        let harnesses: Vec<(String, String, Vec<DocEntry>)> = dirs
             .into_iter()
             .map(|(id, path)| {
-                let node = build_docs_tree(StdPath::new(&path));
-                (id, path, node)
+                let entries = collect_doc_files(StdPath::new(&path));
+                (id, path, entries)
             })
             .collect();
 
-        // Resolve the active harness (fall back to the first) and folder.
-        let selected_harness = sel_harness
-            .filter(|h| trees.iter().any(|(id, _, _)| id == h))
+        // Resolve the active harness (fall back to the first).
+        let selected = sel_harness
+            .filter(|h| harnesses.iter().any(|(id, _, _)| id == h))
             .map(str::to_string)
-            .unwrap_or_else(|| trees[0].0.clone());
-        let selected_dir = sel_dir
-            .map(|d| {
-                d.split('/')
-                    .filter(|c| !c.is_empty() && *c != "." && *c != "..")
-                    .collect::<Vec<_>>()
-                    .join("/")
-            })
-            .unwrap_or_default();
+            .unwrap_or_else(|| harnesses[0].0.clone());
+        let active = harnesses
+            .iter()
+            .find(|(id, _, _)| id == &selected)
+            .unwrap_or(&harnesses[0]);
+        let (harness_id, project_dir, entries) = active;
 
-        let nav = render_folder_nav(&trees, &selected_harness, &selected_dir);
+        let mut content = render_docs_harness_bar(&harnesses, harness_id);
+        content.push_str(&render_docs_list(harness_id, entries));
 
-        let active = trees.iter().find(|(id, _, _)| id == &selected_harness);
-        let content = match active.and_then(|(_, _, root)| node_at(root, &selected_dir)) {
-            Some(node) => render_folder_listing(&selected_harness, &selected_dir, node),
-            None => "<p class=\"welcome\">Folder not found.</p>".to_string(),
-        };
-
-        let title = if selected_dir.is_empty() {
-            format!("Docs · {selected_harness}")
-        } else {
-            format!("Docs · {selected_harness} / {selected_dir}")
-        };
-        render_docs_page(&title, Some(&nav), &content)
+        let title = format!("{harness_id} · {project_dir} · {} files", entries.len());
+        render_docs_page(&title, &content)
     }
 
     fn render_doc_content(&self, harness_id: &str, rel: &str) -> Result<(String, String), String> {
@@ -1521,15 +1510,12 @@ struct HarnessArtifactStore {
     entries: HashMap<String, ArtifactEntry>,
 }
 
-#[derive(Debug, Default)]
-struct DocsTreeNode {
-    dirs: BTreeMap<String, DocsTreeNode>,
-    files: Vec<DocFile>,
-}
-
+/// One markdown file in a harness's working dir, addressed by its full
+/// `/`-joined path relative to the project root (spec 171 rev 4: the docs index
+/// is a flat list, so a file carries its whole path, not just a leaf name).
 #[derive(Debug)]
-struct DocFile {
-    name: String,
+struct DocEntry {
+    rel: String,
     modified: Option<SystemTime>,
 }
 
@@ -1539,10 +1525,12 @@ struct DocQuery {
     path: String,
 }
 
+/// Query for the docs index (`/docs`). `harness` selects which harness's files
+/// fill the list (defaults to the first). Unknown params are ignored by serde,
+/// so stale rev-3 `&dir=` bookmarks still resolve to the flat list.
 #[derive(Debug, Default, Deserialize)]
 struct DocsQuery {
     harness: Option<String>,
-    dir: Option<String>,
 }
 
 /// Query for the analyses index (`/analyses`). `harness` selects which harness's
@@ -1954,9 +1942,7 @@ async fn handle_docs(
     AxumState(state): AxumState<Arc<HookServerState>>,
     Query(query): Query<DocsQuery>,
 ) -> Response {
-    state
-        .hook_server
-        .docs_index_page(query.harness.as_deref(), query.dir.as_deref())
+    state.hook_server.docs_index_page(query.harness.as_deref())
 }
 
 /// GET /doc?harness=<id>&path=<rel> — render one repo markdown file.
@@ -1974,8 +1960,8 @@ async fn handle_doc(
         }
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
-    // Single-file view opens in its own tab as a clean reader — no tree sidebar.
-    render_docs_page(&rel, None, &content)
+    // Single-file view opens in its own tab as a clean reader.
+    render_docs_page(&rel, &content)
 }
 
 /// GET /doc-asset?harness=<id>&path=<rel> — serve a whitelisted repo image.
@@ -4183,10 +4169,14 @@ fn docs_options() -> Options<'static> {
     options
 }
 
-/// Walk `project_dir` (respecting `.gitignore`, skipping `.git/`) and build a
-/// nested tree of every `*.md` file found under it.
-fn build_docs_tree(project_dir: &StdPath) -> DocsTreeNode {
-    let mut root = DocsTreeNode::default();
+/// Walk `project_dir` (respecting `.gitignore`, skipping `.git/`) and collect
+/// every `*.md` file under it as a FLAT list of project-relative paths,
+/// **most-recently-modified first** — the flat index exists to surface what just
+/// changed, and the filter box (not the ordering) is how a known file is found.
+/// Files whose mtime is unreadable sort last; ties break by path so the order is
+/// still deterministic.
+fn collect_doc_files(project_dir: &StdPath) -> Vec<DocEntry> {
+    let mut entries: Vec<DocEntry> = Vec::new();
     for entry in WalkBuilder::new(project_dir)
         .standard_filters(true)
         .build()
@@ -4209,165 +4199,100 @@ fn build_docs_tree(project_dir: &StdPath) -> DocsTreeNode {
         let Ok(rel) = path.strip_prefix(project_dir) else {
             continue;
         };
-        let modified = entry.metadata().ok().and_then(|m| m.modified().ok());
-        insert_docs_tree_path(&mut root, rel, modified);
-    }
-    root
-}
-
-/// Descend the in-memory tree to the node addressed by a `/`-joined folder path
-/// (`""` = root). Returns `None` if any component is missing.
-fn node_at<'a>(root: &'a DocsTreeNode, dir: &str) -> Option<&'a DocsTreeNode> {
-    let mut node = root;
-    for component in dir.split('/').filter(|c| !c.is_empty()) {
-        node = node.dirs.get(component)?;
-    }
-    Some(node)
-}
-
-/// Sidebar: folders only, all harnesses grouped, each folder a link that selects
-/// it (`/docs?harness=&dir=`). The active folder gets `is-active`.
-fn render_folder_nav(
-    trees: &[(String, String, DocsTreeNode)],
-    selected_harness: &str,
-    selected_dir: &str,
-) -> String {
-    fn render_dirs(
-        out: &mut String,
-        harness_id: &str,
-        node: &DocsTreeNode,
-        prefix: &mut Vec<String>,
-        selected_harness: &str,
-        selected_dir: &str,
-    ) {
-        for (dir, child) in &node.dirs {
-            prefix.push(dir.clone());
-            let rel = prefix.join("/");
-            let active = harness_id == selected_harness && rel == selected_dir;
-            out.push_str("<li class=\"tree-dir\"><details open><summary><a");
-            if active {
-                out.push_str(" class=\"is-active\"");
-            }
-            out.push_str(" href=\"/docs?harness=");
-            out.push_str(&url_encode(harness_id));
-            out.push_str("&amp;dir=");
-            out.push_str(&url_encode(&rel));
-            out.push_str("\">");
-            out.push_str(&html_escape(dir));
-            out.push_str("</a></summary><ul class=\"tree\">");
-            render_dirs(
-                out,
-                harness_id,
-                child,
-                prefix,
-                selected_harness,
-                selected_dir,
-            );
-            out.push_str("</ul></details></li>");
-            prefix.pop();
+        let rel = rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        if rel.is_empty() {
+            continue;
         }
+        entries.push(DocEntry {
+            rel,
+            modified: entry.metadata().ok().and_then(|m| m.modified().ok()),
+        });
     }
+    entries.sort_by(|a, b| {
+        // Newest first; missing mtimes (Reverse(None) sorts after Reverse(Some))
+        // fall to the bottom rather than pretending to be the oldest file.
+        Reverse(a.modified)
+            .cmp(&Reverse(b.modified))
+            .then_with(|| a.rel.to_lowercase().cmp(&b.rel.to_lowercase()))
+            .then_with(|| a.rel.cmp(&b.rel))
+    });
+    entries
+}
 
-    let mut out = String::from("<ul class=\"tree\">");
-    for (harness_id, project_dir, root) in trees {
-        let root_active = harness_id == selected_harness && selected_dir.is_empty();
-        out.push_str("<li class=\"tree-group\"><a class=\"tree-group__label");
-        if root_active {
+/// Split a project-relative doc path into `(dir_prefix_with_trailing_slash,
+/// file_name)`. The prefix renders muted so the flat list still reads as
+/// "where + what" without any nesting. Root files get an empty prefix.
+fn split_doc_rel(rel: &str) -> (&str, &str) {
+    match rel.rfind('/') {
+        Some(idx) => (&rel[..=idx], &rel[idx + 1..]),
+        None => ("", rel),
+    }
+}
+
+/// Header of the index: one pill per harness whose working dir has docs, the
+/// active one highlighted. Rendered only when more than one harness is
+/// available — with a single lane the flat list needs no chrome above it.
+fn render_docs_harness_bar(
+    harnesses: &[(String, String, Vec<DocEntry>)],
+    selected_harness: &str,
+) -> String {
+    if harnesses.len() < 2 {
+        return String::new();
+    }
+    let mut out = String::from("<nav class=\"harness-bar\">");
+    for (harness_id, _project_dir, entries) in harnesses {
+        out.push_str("<a class=\"harness-bar__pill");
+        if harness_id == selected_harness {
             out.push_str(" is-active");
         }
         out.push_str("\" href=\"/docs?harness=");
         out.push_str(&url_encode(harness_id));
         out.push_str("\">");
-        out.push_str(&html_escape(&format!("{harness_id} · {project_dir}")));
-        out.push_str("</a><ul class=\"tree\">");
-        let mut prefix = Vec::new();
-        render_dirs(
-            &mut out,
-            harness_id,
-            root,
-            &mut prefix,
-            selected_harness,
-            selected_dir,
-        );
-        out.push_str("</ul></li>");
+        out.push_str(&html_escape(harness_id));
+        out.push_str("<span class=\"harness-bar__count\">");
+        out.push_str(&entries.len().to_string());
+        out.push_str("</span></a>");
     }
-    out.push_str("</ul>");
+    out.push_str("</nav>");
     out
 }
 
-/// Right pane: the selected folder's immediate contents — subfolders (navigate
-/// in-page) then `.md` files (open in a new reader tab) — with breadcrumbs.
-fn render_folder_listing(harness_id: &str, dir: &str, node: &DocsTreeNode) -> String {
-    let mut out = String::from("<nav class=\"crumbs\">");
-    let root_only = dir.is_empty();
-    out.push_str("<a href=\"/docs?harness=");
-    out.push_str(&url_encode(harness_id));
-    out.push_str("\">");
-    out.push_str(&html_escape(harness_id));
-    out.push_str("</a>");
-    let mut acc: Vec<String> = Vec::new();
-    for segment in dir.split('/').filter(|c| !c.is_empty()) {
-        acc.push(segment.to_string());
-        out.push_str("<span class=\"crumbs__sep\">/</span><a href=\"/docs?harness=");
-        out.push_str(&url_encode(harness_id));
-        out.push_str("&amp;dir=");
-        out.push_str(&url_encode(&acc.join("/")));
-        out.push_str("\">");
-        out.push_str(&html_escape(segment));
-        out.push_str("</a>");
-    }
-    out.push_str("</nav>");
-
-    if node.dirs.is_empty() && node.files.is_empty() {
-        out.push_str("<p class=\"welcome\">Empty folder — no markdown here.</p>");
-        return out;
+/// The index itself: a filter box plus EVERY `.md` file in the harness working
+/// dir as one flat list of full relative paths (each opens `/doc` in a new tab).
+/// `data-path` carries the lowercased path the page script filters on; the
+/// server does no filtering, so the list stays a single cacheless render.
+fn render_docs_list(harness_id: &str, entries: &[DocEntry]) -> String {
+    if entries.is_empty() {
+        return "<p class=\"welcome\">No markdown files under this working directory.</p>"
+            .to_string();
     }
 
-    out.push_str("<ul class=\"browser\">");
-    if !root_only {
-        let parent = {
-            let mut parts: Vec<&str> = dir.split('/').filter(|c| !c.is_empty()).collect();
-            parts.pop();
-            parts.join("/")
-        };
-        out.push_str("<li class=\"browser__item browser__item--up\"><a href=\"/docs?harness=");
-        out.push_str(&url_encode(harness_id));
-        if !parent.is_empty() {
-            out.push_str("&amp;dir=");
-            out.push_str(&url_encode(&parent));
-        }
-        out.push_str("\"><span class=\"browser__icon\">↑</span><span class=\"browser__name\">..</span></a></li>");
-    }
-    for dir_name in node.dirs.keys() {
-        let rel = if root_only {
-            dir_name.clone()
-        } else {
-            format!("{dir}/{dir_name}")
-        };
-        out.push_str("<li class=\"browser__item browser__item--dir\"><a href=\"/docs?harness=");
-        out.push_str(&url_encode(harness_id));
-        out.push_str("&amp;dir=");
-        out.push_str(&url_encode(&rel));
-        out.push_str("\"><span class=\"browser__icon\">▸</span><span class=\"browser__name\">");
-        out.push_str(&html_escape(dir_name));
-        out.push_str("</span></a></li>");
-    }
-    let mut files: Vec<&DocFile> = node.files.iter().collect();
-    files.sort_by(|a, b| a.name.cmp(&b.name));
-    for file in files {
-        let rel = if root_only {
-            file.name.clone()
-        } else {
-            format!("{dir}/{}", file.name)
-        };
-        out.push_str("<li class=\"browser__item browser__item--file\"><a target=\"_blank\" rel=\"noopener\" href=\"/doc?harness=");
+    let mut out = String::from("<div class=\"docs-filter\"><input class=\"docs-filter__input\" id=\"docs-filter\" type=\"search\" placeholder=\"filter paths — type to narrow, ↑↓ to move, enter to open\" autocomplete=\"off\" autocorrect=\"off\" spellcheck=\"false\" autofocus><span class=\"docs-filter__count\" id=\"docs-count\">");
+    out.push_str(&entries.len().to_string());
+    out.push_str(" files</span></div>");
+
+    out.push_str("<ul class=\"browser\" id=\"docs-list\">");
+    for entry in entries {
+        let (dir, name) = split_doc_rel(&entry.rel);
+        out.push_str("<li class=\"browser__item browser__item--file\" data-path=\"");
+        out.push_str(&html_escape(&entry.rel.to_lowercase()));
+        out.push_str("\"><a target=\"_blank\" rel=\"noopener\" href=\"/doc?harness=");
         out.push_str(&url_encode(harness_id));
         out.push_str("&amp;path=");
-        out.push_str(&url_encode(&rel));
+        out.push_str(&url_encode(&entry.rel));
         out.push_str("\"><span class=\"browser__icon\">◆</span><span class=\"browser__name\">");
-        out.push_str(&html_escape(&file.name));
+        if !dir.is_empty() {
+            out.push_str("<span class=\"browser__dir\">");
+            out.push_str(&html_escape(dir));
+            out.push_str("</span>");
+        }
+        out.push_str(&html_escape(name));
         out.push_str("</span>");
-        if let Some((ms, label)) = file.modified.and_then(format_doc_mtime) {
+        if let Some((ms, label)) = entry.modified.and_then(format_doc_mtime) {
             out.push_str("<time class=\"browser__date\" data-ts=\"");
             out.push_str(&ms.to_string());
             out.push_str("\">");
@@ -4377,23 +4302,10 @@ fn render_folder_listing(harness_id: &str, dir: &str, node: &DocsTreeNode) -> St
         out.push_str("</a></li>");
     }
     out.push_str("</ul>");
+    out.push_str(
+        "<p class=\"browser__empty\" id=\"docs-empty\" hidden>No path matches that filter.</p>",
+    );
     out
-}
-
-fn insert_docs_tree_path(root: &mut DocsTreeNode, rel: &StdPath, modified: Option<SystemTime>) {
-    let mut node = root;
-    let mut components = rel.components().peekable();
-    while let Some(component) = components.next() {
-        let label = component.as_os_str().to_string_lossy().to_string();
-        if components.peek().is_none() {
-            node.files.push(DocFile {
-                name: label,
-                modified,
-            });
-        } else {
-            node = node.dirs.entry(label).or_default();
-        }
-    }
 }
 
 /// Format a file mtime for the docs browser. Returns `(epoch_ms, utc_label)`:
@@ -4808,16 +4720,12 @@ fn render_analysis_bundle(
     content
 }
 
-fn render_docs_page(title: &str, tree: Option<&str>, content: &str) -> Response {
+/// Render the docs shell. Both surfaces are single-pane: the index is a flat
+/// list (spec 171 rev 4) and `/doc` is a clean reader, so there is no sidebar.
+fn render_docs_page(title: &str, content: &str) -> Response {
     let escaped_title = html_escape(title);
-    // `None` = single-file reader: drop the sidebar entirely so content is full width.
-    let nav = match tree {
-        Some(tree) => format!("<nav class=\"tree-pane\">{tree}</nav>"),
-        None => String::new(),
-    };
     let html = DOCS_HTML
         .replace("<!--DOCS_TITLE-->", &escaped_title)
-        .replace("<nav class=\"tree-pane\"><!--DOCS_TREE--></nav>", &nav)
         .replace(
             "<article class=\"doc\"><!--DOCS_CONTENT--></article>",
             &format!("<article class=\"doc\">{content}</article>"),
@@ -5865,6 +5773,60 @@ mod tests {
                 "category leaked into the MCP tools/list descriptors"
             );
         }
+    }
+
+    /// Spec 171 rev 4: the index is flat and **newest first**. Every `.md` under
+    /// the cwd — however deep — comes back as one list ordered by mtime
+    /// descending, and the rendered rows address files by their full relative
+    /// path with no folder-drilldown links.
+    #[test]
+    fn collect_doc_files_is_flat_and_newest_first() {
+        let tmp_raw = std::env::temp_dir().join(format!("krypton-docs-flat-{}", rand_suffix()));
+        std::fs::create_dir_all(tmp_raw.join("docs").join("adr")).unwrap();
+        let tmp = tmp_raw.canonicalize().unwrap();
+        // Written oldest → newest, but deliberately in an order that alphabetical
+        // sorting would NOT produce, so the assertion can only pass on mtime.
+        let plan = [
+            ("docs/02-req.md", 1_000u64),
+            ("README.md", 3_000),
+            ("docs/adr/0001-peer.md", 2_000),
+        ];
+        for (rel, offset) in plan {
+            let path = tmp.join(rel);
+            std::fs::write(&path, "# doc").unwrap();
+            let file = std::fs::File::options().write(true).open(&path).unwrap();
+            file.set_modified(UNIX_EPOCH + Duration::from_secs(1_700_000_000 + offset))
+                .unwrap();
+        }
+        std::fs::write(tmp.join("docs").join("notes.txt"), "skip me").unwrap();
+
+        let entries = collect_doc_files(&tmp);
+        let rels: Vec<&str> = entries.iter().map(|e| e.rel.as_str()).collect();
+        assert_eq!(
+            rels,
+            vec!["README.md", "docs/adr/0001-peer.md", "docs/02-req.md"],
+            "flat list must be ordered most-recently-modified first"
+        );
+
+        let html = render_docs_list("hm-1", &entries);
+        assert!(html.contains("id=\"docs-filter\""), "filter box missing");
+        assert!(
+            html.contains("data-path=\"docs/adr/0001-peer.md\""),
+            "{html}"
+        );
+        assert!(
+            html.contains("path=docs%2Fadr%2F0001-peer.md"),
+            "deep file must link by full path: {html}"
+        );
+        assert!(
+            html.contains("<span class=\"browser__dir\">docs/adr/</span>0001-peer.md"),
+            "path prefix must render muted: {html}"
+        );
+        assert!(
+            !html.contains("&amp;dir="),
+            "no folder drilldown links: {html}"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

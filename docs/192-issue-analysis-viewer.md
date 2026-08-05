@@ -11,7 +11,8 @@
 **gitignored** per-issue bundle at `.krypton/analyses/<owner>/<repo>/<number>/`
 (spec 191). That bundle is meant to be read by a human before approving a fix — but
 today there is **no way to read it in place**. The Docs browser deliberately walks
-the repo through `.gitignore` (`build_docs_tree`, `hook_server.rs:3805`), so it hides
+the repo through `.gitignore` (`collect_doc_files`, named `build_docs_tree` when this
+spec was written), so it hides
 `.krypton/analyses` entirely. The only way to view an analysis is to open the raw
 `.md` files in an external editor, which loses the rendered Thai prose, the footer,
 and the attached images.
@@ -48,7 +49,8 @@ excludes, and (b) analyses want issue grouping + attachments, not a raw tree.
   `validate_doc_path(cwd, rel, exts)` (`:1757` call site) guards traversal/symlink/
   extension. `html_response()` (`:4066`) sets the standard `text/html` + `nosniff` +
   `no-store` headers. All reusable as-is.
-- **Why not reuse `build_docs_tree`.** It walks with `WalkBuilder.standard_filters
+- **Why not reuse the docs walker** (`collect_doc_files`, then named
+  `build_docs_tree`)**.** It walks with `WalkBuilder.standard_filters
   (true)` which honors `.gitignore`, so it would return nothing under
   `.krypton/analyses`. The viewer needs a fresh, unfiltered directory walk rooted at
   the sibling of `artifacts_root` (`hook_server.rs:3610`).

@@ -7,18 +7,22 @@
 <!--
   Docs browser shell (spec 171). Server-rendered full page per file.
   The Rust backend (hook_server.rs) reads this file via include_str! and
-  replaces three placeholder comments by global string substitution. The
+  replaces two placeholder comments by global string substitution. The
   placeholder tokens are intentionally NOT written literally in this comment
   (a literal would terminate this block early and also be replaced) — they are
-  the DOCS_TITLE comment (in <title> and the header subtitle), the DOCS_TREE
-  comment (inside nav.tree-pane), and the DOCS_CONTENT comment (inside
-  article.doc). CONTENT is injected last; it is raw comrak GFM output.
+  the DOCS_TITLE comment (in <title> and the header subtitle) and the
+  DOCS_CONTENT comment (inside article.doc). CONTENT is injected last; it is
+  either the flat index list or raw comrak GFM output.
 
-  TREE HTML class contract emitted by the backend (style these, do not rename):
-    ul.tree
-    li.tree-group        > .tree-group__label  (one per harness root: "hm-1 · /abs/cwd")
-    li.tree-dir          > details[open] > summary   (collapsible folder)
-    li.tree-file         > a (href to /doc; a.is-active = current file)
+  Single pane, no sidebar (rev 4): the index is a FLAT list of every .md path
+  under the harness cwd, narrowed by a client-side filter — no folder tree.
+  INDEX HTML class contract emitted by the backend (style these, do not rename):
+    nav.harness-bar      > a.harness-bar__pill (only when >1 harness)
+    div.docs-filter      > input#docs-filter + span#docs-count
+    ul.browser#docs-list > li.browser__item--file[data-path] > a
+                             > .browser__icon, .browser__name (> .browser__dir),
+                               time.browser__date[data-ts]
+    p.browser__empty#docs-empty (hidden until the filter matches nothing)
 -->
 <style>
   :root {
@@ -26,7 +30,6 @@
     --accent: #fcd535; --code-fg: #f0b90b; --card: #21242a; --code-bg: #1d1f24; color-scheme: dark;
     --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
-    --tree-w: min(280px, 36vw);
     --header-h: 48px;
   }
   @media (prefers-color-scheme: light) {
@@ -63,92 +66,82 @@
     flex: 1; display: flex; min-height: 0; overflow: hidden;
     width: 100%; max-width: 1180px; margin: 0 auto;
   }
-  .tree-pane {
-    flex-shrink: 0; width: var(--tree-w); overflow: auto;
-    background: rgba(30, 35, 41, .45); border-right: 1px solid var(--border);
-    padding: 12px 0 24px;
-  }
-  @media (prefers-color-scheme: light) {
-    .tree-pane { background: rgba(234, 236, 239, .35); }
-  }
   .content-pane {
     flex: 1; overflow: auto; padding: 24px 32px 48px; min-width: 0;
   }
   @media (max-width: 720px) {
-    .layout { flex-direction: column; }
-    .tree-pane {
-      width: 100%; max-height: 40vh; border-right: none;
-      border-bottom: 1px solid var(--border);
-    }
     .content-pane { padding: 16px 16px 32px; }
   }
 
-  /* file tree */
-  ul.tree { list-style: none; margin: 0; padding: 0 8px 0 12px; }
-  ul.tree ul { list-style: none; margin: 0; padding: 0 0 0 14px; }
-  li.tree-group { margin: 0 0 10px; }
-  li.tree-group:last-child { margin-bottom: 0; }
-  a.tree-group__label {
-    display: block; font-family: var(--mono); font-size: 12px; color: var(--muted);
-    padding: 6px 8px 4px; letter-spacing: .01em;
-    text-decoration: none; border-radius: 4px;
+  /* harness switcher (index, only when more than one harness) */
+  nav.harness-bar {
+    display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px;
   }
-  a.tree-group__label:hover { background: rgba(252, 213, 53, .06); color: var(--accent); }
-  a.tree-group__label.is-active { color: var(--accent); }
-  li.tree-dir { margin: 1px 0; }
-  li.tree-dir > details > summary {
-    cursor: pointer; font-size: 14px; padding: 4px 8px; border-radius: 4px;
-    list-style: none; user-select: none; display: flex; align-items: center;
+  nav.harness-bar .harness-bar__pill {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    padding: 4px 10px; border-radius: 999px; text-decoration: none;
+    border: 1px solid var(--border); background: var(--card);
   }
-  li.tree-dir > details > summary::-webkit-details-marker { display: none; }
-  li.tree-dir > details > summary::before {
-    content: "▸"; flex-shrink: 0; width: 16px; font-size: 12px;
-    color: var(--muted); transition: transform .12s ease;
+  nav.harness-bar .harness-bar__pill:hover { color: var(--accent); }
+  nav.harness-bar .harness-bar__pill.is-active {
+    color: var(--bg); background: var(--accent); border-color: var(--accent);
   }
-  li.tree-dir > details[open] > summary::before { transform: rotate(90deg); }
-  li.tree-dir > details > summary:hover { background: rgba(252, 213, 53, .06); }
-  li.tree-dir > details > summary > a {
-    flex: 1; color: var(--fg); text-decoration: none; min-width: 0;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  li.tree-dir > details > summary > a:hover { color: var(--accent); }
-  li.tree-dir > details > summary > a.is-active { color: var(--accent); font-weight: 600; }
+  nav.harness-bar .harness-bar__count { font-size: 11px; opacity: .7; }
 
-  /* file-browser listing (right pane) */
-  nav.crumbs {
-    font-family: var(--mono); font-size: 13px; color: var(--muted);
-    margin: 0 0 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  /* flat index: filter box + every markdown path */
+  .docs-filter {
+    display: flex; align-items: center; gap: 12px;
+    margin: 0 0 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
   }
-  nav.crumbs a { color: var(--muted); text-decoration: none; }
-  nav.crumbs a:hover { color: var(--accent); }
-  nav.crumbs a:last-child { color: var(--fg); }
-  nav.crumbs .crumbs__sep { color: var(--border); }
+  .docs-filter__input {
+    flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px;
+    color: var(--fg); background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; outline: none;
+  }
+  .docs-filter__input::placeholder { color: var(--muted); }
+  .docs-filter__input:focus { border-color: var(--accent); }
+  .docs-filter__input::-webkit-search-cancel-button { display: none; }
+  .docs-filter__count {
+    flex-shrink: 0; font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
   ul.browser { list-style: none; margin: 0; padding: 0; }
   ul.browser li.browser__item { margin: 0; }
   ul.browser li.browser__item > a {
     display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px; border-radius: 6px; text-decoration: none;
-    color: var(--fg); font-size: 15px; border: 1px solid transparent;
+    padding: 7px 12px; border-radius: 6px; text-decoration: none;
+    color: var(--fg); font-size: 14px; border: 1px solid transparent;
   }
-  ul.browser li.browser__item > a:hover {
+  ul.browser li.browser__item > a:hover,
+  ul.browser li.browser__item.is-selected > a {
     background: rgba(252, 213, 53, .06); border-color: var(--border);
   }
+  ul.browser li.browser__item.is-selected > a { border-color: var(--accent); }
   ul.browser .browser__icon {
-    flex-shrink: 0; width: 18px; text-align: center; color: var(--muted); font-size: 15px;
+    flex-shrink: 0; width: 18px; text-align: center; color: var(--muted); font-size: 13px;
   }
-  ul.browser .browser__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ul.browser .browser__name {
+    font-family: var(--mono); min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  ul.browser .browser__dir { color: var(--muted); }
   ul.browser .browser__date {
     margin-left: auto; flex-shrink: 0; padding-left: 16px;
     font-family: var(--mono); font-size: 12px; color: var(--muted);
   }
   @media (max-width: 480px) { ul.browser .browser__date { display: none; } }
-  ul.browser li.browser__item--dir .browser__icon,
-  ul.browser li.browser__item--up .browser__icon { color: var(--accent); }
-  ul.browser li.browser__item--dir > a:hover .browser__name,
-  ul.browser li.browser__item--file > a:hover .browser__name { color: var(--accent); }
+  ul.browser li.browser__item > a:hover .browser__name,
+  ul.browser li.browser__item.is-selected > a .browser__name { color: var(--accent); }
+  ul.browser li.browser__item > a:hover .browser__dir,
+  ul.browser li.browser__item.is-selected > a .browser__dir { color: var(--muted); }
+  p.browser__empty {
+    font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 24px 12px;
+  }
 
   /* comrak GFM content */
   article.doc { max-width: 820px; margin-inline: auto; font-size: 15px; line-height: 1.65; }
+  /* …except the flat index, which wants the full pane for long paths. */
+  article.doc:has(#docs-list) { max-width: none; }
   article.doc > :first-child { margin-top: 0; }
   article.doc > :last-child { margin-bottom: 0; }
   article.doc h1, article.doc h2, article.doc h3,
@@ -221,7 +214,6 @@
   <span class="header__title"><!--DOCS_TITLE--></span>
 </header>
 <div class="layout">
-  <nav class="tree-pane"><!--DOCS_TREE--></nav>
   <div class="content-pane">
     <article class="doc"><!--DOCS_CONTENT--></article>
   </div>
@@ -242,30 +234,99 @@
   }
 </script>
 <script>
-  // Preserve the folder-nav (sidebar) scroll position across the full-page
-  // reloads that index navigation triggers (spec 171 decision #9 = a fresh
-  // full page per folder click). Each click is a new URL, so the browser does
-  // NOT restore scroll (it only does that on back/forward) and the sidebar
-  // snaps back to the top — forcing the reader to re-scroll to where they were
-  // in a deep tree. We stash the sidebar scrollTop per harness and restore it
-  // on load. Index-only; the single-file reader has no sidebar.
+  // Flat index navigation (spec 171 rev 4). The server ships every markdown
+  // path in one list; this narrows it in place — no folder tree, no reload per
+  // keystroke. Keyboard-first: the filter box autofocuses, ↑/↓ move a selection
+  // among the visible rows, Enter opens it (new tab, same as a click), Escape
+  // clears the filter. Space-separated terms must ALL appear in the path, so
+  // "adr peer" finds docs/adr/0004-peering.md without knowing the folder.
   (function () {
     if (location.pathname !== '/docs') return;
-    var pane = document.querySelector('nav.tree-pane');
-    if (!pane) return;
-    var KEY = 'kds:' + (new URLSearchParams(location.search).get('harness') || '');
-    try {
-      var y = sessionStorage.getItem(KEY);
-      if (y != null) pane.scrollTop = +y;
-    } catch (e) {}
-    var raf = 0;
-    pane.addEventListener('scroll', function () {
-      if (raf) return;
-      raf = requestAnimationFrame(function () {
-        raf = 0;
-        try { sessionStorage.setItem(KEY, String(pane.scrollTop)); } catch (e) {}
-      });
-    }, { passive: true });
+    var input = document.getElementById('docs-filter');
+    var list = document.getElementById('docs-list');
+    var count = document.getElementById('docs-count');
+    var empty = document.getElementById('docs-empty');
+    if (!input || !list) return;
+
+    var items = Array.prototype.slice.call(list.children);
+    var paths = items.map(function (li) { return li.getAttribute('data-path') || ''; });
+    var visible = items.slice();
+    var selected = -1;
+
+    function select(index) {
+      if (selected >= 0 && visible[selected]) visible[selected].classList.remove('is-selected');
+      selected = index;
+      var li = visible[selected];
+      if (!li) return;
+      li.classList.add('is-selected');
+      li.scrollIntoView({ block: 'nearest' });
+    }
+
+    function apply() {
+      var terms = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+      visible = [];
+      for (var i = 0; i < items.length; i++) {
+        var match = true;
+        for (var t = 0; t < terms.length; t++) {
+          if (paths[i].indexOf(terms[t]) === -1) { match = false; break; }
+        }
+        items[i].hidden = !match;
+        items[i].classList.remove('is-selected');
+        if (match) visible.push(items[i]);
+      }
+      selected = -1;
+      if (count) {
+        count.textContent = terms.length
+          ? visible.length + ' / ' + items.length + ' files'
+          : items.length + ' files';
+      }
+      if (empty) empty.hidden = visible.length > 0;
+      if (terms.length && visible.length) select(0);
+    }
+
+    input.addEventListener('input', apply);
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (!visible.length) return;
+        event.preventDefault();
+        var next = event.key === 'ArrowDown' ? selected + 1 : selected - 1;
+        if (next < 0) next = visible.length - 1;
+        if (next >= visible.length) next = 0;
+        select(next);
+        return;
+      }
+      if (event.key === 'Enter') {
+        var li = visible[selected] || visible[0];
+        var link = li && li.querySelector('a');
+        if (!link) return;
+        event.preventDefault();
+        // Inside a keydown the click carries user activation, so target=_blank
+        // is not popup-blocked — Enter behaves exactly like clicking the row.
+        link.click();
+        return;
+      }
+      if (event.key === 'Escape' && input.value) {
+        event.preventDefault();
+        input.value = '';
+        apply();
+      }
+    });
+    // Typing anywhere on the page goes to the filter (the list itself has no
+    // other keyboard affordance), and `/` refocuses it after a stray click.
+    document.addEventListener('keydown', function (event) {
+      if (event.target === input || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === '/') {
+        // Pure focus key — swallow it so it never lands in the field.
+        event.preventDefault();
+        input.focus();
+      } else if (event.key.length === 1) {
+        input.focus();
+      }
+    });
+    input.focus();
+    // The browser may restore a typed filter on reload/back — re-apply it so the
+    // list matches what the field says.
+    if (input.value) apply();
   })();
 </script>
 <script>

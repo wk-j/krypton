@@ -19,7 +19,7 @@ as the only owner of ACP clients, lanes, transcripts, permissions, and drafts.
 ## Solution
 
 Add a macOS-only auxiliary Tauri window named `live-assist`, toggled globally
-with `Ctrl+Shift+A`. It has its own HTML entry point, TypeScript controller,
+with `Ctrl+Shift+I`. It has its own HTML entry point, TypeScript controller,
 transcript projection, composer, keyboard handling, and CSS. It is created
 lazily, hidden rather than destroyed, placed near the top of the pointer's
 current display, and raised to AppKit's popup window level on the active
@@ -77,7 +77,7 @@ or a full Harness view.
   still intercepts input across the display.
 - **Create a harness automatically when none is open:** would mutate the main
   Krypton workspace, contrary to the non-interference requirement.
-- **Use `Option+Space`:** likely to collide with ChatGPT; `Ctrl+Shift+A` follows
+- **Use `Option+Space`:** likely to collide with ChatGPT; `Ctrl+Shift+I` follows
   Krypton's existing global shortcut family.
 
 ## Prior Art
@@ -120,7 +120,7 @@ small client of the running Harness, with a deliberately reduced interface.
 | `src-tauri/src/live_assist.rs` | Create/show/hide/place the auxiliary window, apply AppKit flags, internal dispatch, event forwarding, and tests |
 | `src-tauri/src/control.rs` | Add trusted `live_assist` caller and return the stamped event used by the internal mirror |
 | `src-tauri/src/commands.rs` | Register the internal Live Assist dispatch command |
-| `src-tauri/src/lib.rs` | Manage window state, register `Ctrl+Shift+A`, route panic recovery, and prevent auxiliary close from exiting the app |
+| `src-tauri/src/lib.rs` | Manage window state, register `Ctrl+Shift+I`, route panic recovery, and prevent auxiliary close from exiting the app |
 | `src-tauri/Cargo.toml` | Add macOS-targeted direct `objc2` / `objc2-app-kit` dependencies already present transitively |
 | `live-assist.html` | Minimal standalone DOM entry for the auxiliary webview |
 | `src/live-assist-main.ts` | Initialize theme, controller, listeners, and keyboard handling only for `live-assist` |
@@ -232,7 +232,7 @@ selection, then pulls that lane's status, transcript, and permissions.
 
 ### Data Flow
 
-1. macOS receives `Ctrl+Shift+A` while any application is focused.
+1. macOS receives `Ctrl+Shift+I` while any application is focused.
 2. Rust lazily creates or retrieves `live-assist`, positions and shows it.
 3. The assistant invokes `live_assist.bootstrap`, selects a lane, and pulls its
    status, transcript, and permission queue.
@@ -280,7 +280,7 @@ transcript and lane strip are reconciled rather than replaced:
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+Shift+A` | Globally toggle Live Assist |
+| `Ctrl+Shift+I` | Globally toggle Live Assist |
 | `Esc` | Close child surface first; otherwise hide Live Assist |
 | `Cmd+Enter` | Send the local draft; queue when the lane is busy |
 | `Cmd+.` | Cancel the selected lane's current turn |

@@ -6,7 +6,7 @@
 
 ## Live Assist projection (spec 208)
 
-On macOS, `Ctrl+Shift+A` opens a separate `live-assist` Tauri webview with a
+On macOS, `Ctrl+Shift+I` opens a separate `live-assist` Tauri webview with a
 dedicated compact renderer. It is not a compact CSS mode of this view and never
 reparents `.acp-harness` DOM. `AcpHarnessView` stays mounted in the primary
 Krypton window and continues to own every ACP client, lane, transcript,
