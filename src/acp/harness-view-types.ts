@@ -66,7 +66,7 @@ export interface MessageResource {
 
 export interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact' | 'review';
   text: string;
   createdAt?: number;
   markdownSource?: string;
@@ -100,6 +100,8 @@ export interface HarnessTranscriptItem {
   replyingToLaneMail?: LaneMailProvenance;
   /** spec 133: hintable HTML artifact card. */
   artifact?: ArtifactCardPayload;
+  /** spec 211: hintable Review Board card. */
+  review?: ReviewCardPayload;
   /** spec 206: structured references belonging to this assistant message. */
   resources?: MessageResource[];
   /** Number of otherwise-valid unique references hidden by the per-row cap. */
@@ -119,6 +121,25 @@ export interface ArtifactCardPayload {
   hash: string | null;
   /** false once the file is swept/cancelled — the card reports "unavailable". */
   available: boolean;
+  /** Hint label assigned while unified transcript open mode is active, else null. */
+  hintLabel: string | null;
+}
+
+/** spec 211 — transcript card for a registered Review Board. Unlike the artifact
+ *  card there is no `available` flag: the bundle is a durable record, never
+ *  swept, so the card stays openable even after the lane dies. */
+export interface ReviewCardPayload {
+  id: string;
+  /** Bundle directory name — the durable id used to reopen the Board. */
+  slug: string;
+  /** Absolute bundle directory. */
+  dir: string;
+  title: string;
+  laneLabel: string;
+  blocks: number;
+  steps: number;
+  findings: number;
+  decisions: number;
   /** Hint label assigned while unified transcript open mode is active, else null. */
   hintLabel: string | null;
 }
@@ -333,6 +354,47 @@ export interface ArtifactEventPayload {
   registered?: boolean;
   /** spec 149: present on the `pending` event from `artifact_new`. */
   feedbackToken?: string;
+}
+
+/** spec 211 — frontend mirror of a Rust review registry entry. `registered_live`
+ *  only means "the card is up"; the bundle on disk outlives the entry. */
+export type HarnessReviewState = 'pending' | 'registered_live';
+
+export interface HarnessReviewRecord {
+  id: string;
+  laneLabel: string;
+  /** Bundle directory name — the durable id (`<date>-<slug>`). */
+  slug: string;
+  /** Absolute bundle directory. */
+  dir: string;
+  /** Absolute path to `review.md` inside the bundle. */
+  path: string;
+  /** Project-relative tail `.krypton/reviews/<slug>/` — the prefix the frontend
+   *  matches write targets against to auto-approve the lane's own writes. */
+  tail: string;
+  title: string;
+  state: HarnessReviewState;
+  blocks: number;
+  steps: number;
+  findings: number;
+  decisions: number;
+}
+
+export interface ReviewEventPayload {
+  harnessId: string;
+  laneLabel: string;
+  id: string;
+  slug?: string;
+  dir?: string;
+  path?: string;
+  tail?: string;
+  title?: string;
+  blocks?: number;
+  steps?: number;
+  findings?: number;
+  decisions?: number;
+  state: 'pending' | 'registered' | 'cancelled';
+  registered?: boolean;
 }
 
 export interface FileTouchRecord {

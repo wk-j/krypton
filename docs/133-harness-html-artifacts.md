@@ -3,6 +3,16 @@
 > Status: Implemented
 > Date: 2026-05-30
 > Milestone: M8 — Polish
+>
+> **See also spec 211 (Review Board)**, which reuses this spec's path-handoff protocol
+> (`*_new` issues a path → the lane writes it with its normal edit tool → `*_register` raises a
+> hintable card) and its issued-path write auto-approval, widened from one file to a whole bundle
+> directory. The two surfaces **coexist and trade differently**: an artifact is arbitrary,
+> possibly-interactive HTML in the OS browser, mouse-first and opaque to the harness; a Review Board
+> is keyboard-native and in-app, with semantically typed blocks the harness can count and route. A
+> review block may link to an artifact when the content is genuinely interactive. Note the storage
+> asymmetry: artifacts are session-keyed and swept, review bundles are date/title-keyed and
+> **never** swept, because a review is a record rather than a throwaway view.
 
 ## Problem
 

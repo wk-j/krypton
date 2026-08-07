@@ -10,7 +10,7 @@ import { extractModifiedPath } from './acp-harness-memory';
 import { stripAnsi } from './provider-error';
 import { classifyBashCommand } from '../agent/tools';
 import type { ContentBlock, ToolCall, ToolCallUpdate } from './types';
-import type { ArtifactCardPayload, ToolPayload } from './harness-view-types';
+import type { ArtifactCardPayload, ReviewCardPayload, ToolPayload } from './harness-view-types';
 import {
   truncateInline,
 } from './harness-format';
@@ -420,6 +420,52 @@ export function renderArtifactCardBody(body: HTMLElement, card: ArtifactCardPayl
   action.textContent = card.available
     ? (card.hintLabel ? `press ${card.hintLabel} to open in browser` : 'f then label to open in browser')
     : 'reopen unavailable';
+  body.appendChild(action);
+}
+
+/** spec 211 — hintable Review Board card body. Deliberately no `available`
+ *  branch: the bundle is a durable record on disk, so the card stays openable
+ *  even after the authoring lane dies. */
+export function renderReviewCardBody(body: HTMLElement, card: ReviewCardPayload): void {
+  const head = document.createElement('div');
+  head.className = 'acp-harness__artifact-head';
+  if (card.hintLabel) {
+    const hint = document.createElement('span');
+    hint.className = 'acp-harness__artifact-hint';
+    hint.textContent = card.hintLabel;
+    head.appendChild(hint);
+  }
+  const glyph = document.createElement('span');
+  glyph.className = 'acp-harness__artifact-glyph';
+  glyph.textContent = '\u25a4';
+  head.appendChild(glyph);
+  const title = document.createElement('span');
+  title.className = 'acp-harness__artifact-title';
+  title.textContent = card.title;
+  head.appendChild(title);
+  body.appendChild(head);
+
+  // Step count sits next to the block count: on a comprehension Board it is the
+  // better measure of "how much is here to read". A Board with no findings and no
+  // decisions reads as `reference` — an explanation, not a task.
+  const parts = [`${card.blocks} block${card.blocks === 1 ? '' : 's'}`];
+  if (card.steps > 0) parts.push(`${card.steps} step${card.steps === 1 ? '' : 's'}`);
+  if (card.findings > 0) parts.push(`${card.findings} finding${card.findings === 1 ? '' : 's'}`);
+  if (card.decisions > 0) {
+    parts.push(`${card.decisions} decision${card.decisions === 1 ? '' : 's'}`);
+  }
+  if (card.findings === 0 && card.decisions === 0) parts.push('reference');
+
+  const meta = document.createElement('div');
+  meta.className = 'acp-harness__artifact-meta';
+  meta.textContent = parts.join(' \u00b7 ');
+  body.appendChild(meta);
+
+  const action = document.createElement('div');
+  action.className = 'acp-harness__artifact-action';
+  action.textContent = card.hintLabel
+    ? `press ${card.hintLabel} to open the review`
+    : 'f then label to open \u00b7 Leader Shift+R to reopen later';
   body.appendChild(action);
 }
 

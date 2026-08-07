@@ -7,6 +7,14 @@
 > (the shared git-diffstat collector is retained — see Affected Files).
 > Reviewed by lanes Codex-2 (architecture/correctness) and Cursor-1
 > (requirements-fit/simplicity); their findings are folded in below.
+>
+> **Amended by spec 211 (Review Board), 2026-08-07.** Step 3 of `reviewRequestPrompt` no longer
+> ends in turn text: the convening lane now composes a **Review Board** for the synthesis
+> (`review_new` → write the document → `review_register`), because turn text scrolls away, carries
+> no reading order, and gives the human no structured way to answer. A clean all-LGTM round still
+> produces a Board — prose, a walkthrough, metrics, zero findings — so the `/reviews` archive stays
+> complete. `review_outcome` is still called with the same counts, and the review-quality matrix
+> (spec 146) is unchanged.
 
 ## Problem
 

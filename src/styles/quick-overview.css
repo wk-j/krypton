@@ -1,0 +1,249 @@
+/* ─── Quick Overview Dialog (spec 210) ───
+   One global read-only modal that renders a pluggable OverviewSource.
+   The panel is the only frame: no card nested inside it, and no left-only
+   accent borders anywhere. Chrome (head/footer) uses the chrome font size;
+   the body is a reading surface and uses the user's configured font. */
+
+.krypton-overview {
+  position: fixed;
+  inset: 0;
+  z-index: 10003;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6vh 4vw;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.krypton-overview--visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.krypton-overview__panel {
+  display: flex;
+  flex-direction: column;
+  width: clamp(720px, 78vw, 1100px);
+  max-width: 100%;
+  max-height: 78vh;
+  background: var(--krypton-palette-bg, rgba(6, 10, 18, 0.96));
+  border: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.4));
+  border-radius: 2px;
+  box-shadow:
+    0 0 30px rgba(0, 200, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+/* ─── Head ─── */
+
+.krypton-overview__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.22));
+}
+
+/* Paths keep their real casing — no text-transform here. */
+.krypton-overview__title {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: var(--krypton-fg, #d8e8e0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.krypton-overview__meta {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.45));
+  white-space: nowrap;
+}
+
+/* ─── Body ─── */
+
+/* flex:1 + min-height:0 let the body claim the panel's remaining height and own
+   the scroll, instead of being clipped by the panel's overflow:hidden. */
+.krypton-overview__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  color: var(--krypton-fg, #c0c5ce);
+}
+
+.krypton-overview__body[data-kind='notice'] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+}
+
+.krypton-overview__notice {
+  padding: 24px 16px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.04em;
+  color: rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.55);
+}
+
+/* ─── Code body ─── */
+
+.krypton-overview__code-wrap {
+  display: flex;
+  align-items: flex-start;
+  min-width: max-content;
+  line-height: max(var(--krypton-content-line-height, 1.5), 1.4);
+}
+
+/* Sticky so the gutter survives horizontal scrolling of long lines. */
+.krypton-overview__gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 8px 8px 8px 12px;
+  text-align: right;
+  font: inherit;
+  line-height: inherit;
+  color: rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.25);
+  background: var(--krypton-palette-bg, rgba(6, 10, 18, 0.96));
+  user-select: none;
+  white-space: pre;
+}
+
+.krypton-overview__code {
+  margin: 0;
+  padding: 8px 14px 8px 6px;
+  font: inherit;
+  line-height: inherit;
+  background: transparent;
+  white-space: pre;
+}
+
+/* ─── Markdown body ─── */
+
+.krypton-overview__markdown {
+  padding: 10px 16px 16px;
+  line-height: max(var(--krypton-prose-line-height, 1.7), 1.4);
+}
+
+.krypton-overview__markdown h1,
+.krypton-overview__markdown h2,
+.krypton-overview__markdown h3,
+.krypton-overview__markdown h4,
+.krypton-overview__markdown h5,
+.krypton-overview__markdown h6 {
+  color: var(--krypton-focused-accent, #0cf);
+  margin: 1em 0 0.5em;
+  line-height: var(--krypton-content-line-height, 1.5);
+}
+
+.krypton-overview__markdown h1 { font-size: 1.5em; }
+.krypton-overview__markdown h2 { font-size: 1.25em; }
+.krypton-overview__markdown h3 { font-size: 1.1em; }
+
+.krypton-overview__markdown p,
+.krypton-overview__markdown li {
+  margin: 0.5em 0;
+}
+
+.krypton-overview__markdown ul,
+.krypton-overview__markdown ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.krypton-overview__markdown a {
+  color: var(--krypton-ansi-14, #6cf);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.krypton-overview__markdown strong { color: var(--krypton-ansi-15, #fff); font-weight: 600; }
+.krypton-overview__markdown em { color: var(--krypton-ansi-5, #c9a); font-style: italic; }
+
+.krypton-overview__markdown code {
+  font-size: 0.9em;
+  color: var(--krypton-focused-accent, #0cf);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.08);
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  padding: 0 2px;
+}
+
+.krypton-overview__markdown pre {
+  background: rgba(var(--krypton-bg-rgb, 6, 10, 18), 0.6);
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  padding: 10px 12px;
+  margin: 0.7em 0;
+  overflow-x: auto;
+}
+
+.krypton-overview__markdown pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--krypton-fg, #c0c5ce);
+}
+
+/* Background tint instead of a left rail (house rule). */
+.krypton-overview__markdown blockquote {
+  margin: 0.8em 0;
+  padding: 0.5em 0.9em;
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.2);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.05);
+  color: rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.75);
+}
+
+.krypton-overview__markdown table {
+  border-collapse: collapse;
+  margin: 0.7em 0;
+}
+
+.krypton-overview__markdown th,
+.krypton-overview__markdown td {
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.22);
+  padding: 3px 8px;
+  text-align: left;
+}
+
+.krypton-overview__markdown th { color: var(--krypton-focused-accent, #0cf); }
+
+.krypton-overview__markdown img { max-width: 100%; }
+
+/* ─── Footer ─── */
+
+.krypton-overview__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 5px 14px 7px;
+  border-top: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.18));
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  letter-spacing: 0.04em;
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.4));
+}
+
+.krypton-overview__footer b {
+  color: var(--krypton-palette-highlight, #0cf);
+  font-weight: 600;
+}
+
+.krypton-overview__key--primary b {
+  color: var(--krypton-ansi-11, #f4bf75);
+}
+
+.krypton-overview__truncated {
+  margin-left: auto;
+  color: var(--krypton-ansi-11, #f4bf75);
+  text-transform: uppercase;
+}

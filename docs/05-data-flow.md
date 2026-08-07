@@ -557,7 +557,10 @@ PULL (window ← harness), on open and on every auto-refresh:
        cached markdown HTML and pretext rows reuse cached line layouts until
        their source text or layout metrics change.
 ```
-## Resize Mode Flow (e.g., Leader then R)
+## Resize Mode Flow (e.g., Leader then r)
+
+> Lowercase `r` only. `Leader Shift+R` opens the Review Board picker (spec 211) —
+> see "Review Board Flow" below.
 
 ```
 1. Input Router enters Resize mode
@@ -571,6 +574,64 @@ PULL (window ← harness), on open and on every auto-refresh:
 4. Window resizes in real-time, xterm.js addon-fit recalculates
 5. Each resize step sends invoke("resize_pty", { window_id, rows, cols })
 6. Enter or Escape exits Resize mode -> return to Normal mode
+```
+
+## Review Board Flow (spec 211)
+
+The load-bearing property: **the file write and the lane delivery are separate.**
+Answers are on disk continuously; `s` only hands them to the lane. A review whose
+lane has died is still fully recorded.
+
+```
+Composing (lane → disk → card)
+1. Lane calls review_new { title, subject? }
+   → hook_server allocates `.krypton/reviews/<today>-<slug>/` (create_dir on the
+     leaf, so a same-day title collision is caught by the filesystem itself and
+     retried as `-2`, `-3`…), writes the `.gitignore`, seeds review.md with a
+     frontmatter stamp, records a `pending` entry
+   → emits `acp-harness-review` { state: 'pending', dir, tail }
+   → frontend mirrors it; the tail opens write auto-approval for the WHOLE bundle
+     (reviewWritePathMatches), so `assets/` works too
+2. Lane writes review.md with its normal edit tool (iterating across turns is
+   expected). Each observed write → acp_refresh_review → the card's counts update
+   with no lane round-trip
+3. Lane calls review_register { id }
+   → validate_review_file (basename, bundle depth, symlink/hardlink, size cap)
+   → count_review_blocks (fence-aware line scan) → `registered_live`
+   → emits { state: 'registered' } → raiseReviewCard → a hintable REVIEW card
+
+Reading and answering (card/picker → Board → disk)
+4. Human opens it: the card's hint label (`f` then label), or `Leader Shift+R` →
+   picker (list_review_bundles = a DIRECTORY WALK, so previous app runs appear) →
+   Enter. Compositor.openReviewBoard is idempotent on the slug — an open review is
+   focused, never opened twice
+5. read_review_bundle → parse.ts → ReviewBlock[]; response.md (if any) is parsed
+   and its answers re-attached BY BLOCK ID; render.ts builds the DOM; the block
+   cursor starts at the first unanswered finding/decision, else block 1
+6. Human walks it: n/N blocks, }/{ unanswered, Tab steps (each → Diff Window
+   revealLocation, falling back to a reader when the path is not in the diff),
+   c comments, a/x triages, 1-9 answers decisions
+7. EVERY answer → debounced (400ms) write_review_response → response.md.
+   Closing the window now loses nothing
+
+Sending (Board → lane)
+8. `s` → flush the pending save → send preview → Cmd+Enter
+   → compositor.sendReviewResponse → resolveDisplayName finds the ONE owning
+     harness → `review.response` control op → ReviewResponseQueue.accept()
+   → stamp sentAt, re-save response.md
+9. Queue drains on the lane's next idle (it re-checks status, and is constructed
+   LAST so it defers when the coordinator or a sibling queue claimed the idle)
+   → composeResponsePrompt: one trusted framing line, then ONE JSON value, no
+     markdown fence → enqueueSystemPrompt as a system turn
+10. `harness:lane-idle` (same-repo) → the Board re-reads review.md, re-parses,
+    and restores the cursor + answers by block id (ADR-0008; manual `r` too)
+
+Later
+11. Days later: the picker's directory walk finds the bundle — no session state
+    involved — and the Board reopens it with every answer intact. Lane close /
+    `#new` drops the registry entry and the queue, but NOT the bundle: an open
+    Board keeps working and keeps autosaving; only `s` reports `no-live-lane`
+12. `#reviews` → GET /reviews (read-only archive; no browser→app write path)
 ```
 
 ## Workspace Lifecycle Flow

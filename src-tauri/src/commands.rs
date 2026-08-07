@@ -452,6 +452,75 @@ pub fn acp_refresh_artifact(
     hook_server.refresh_artifact(&harness_id, &lane_label, &id)
 }
 
+/// spec 211: cancel all still-pending Review Boards for a lane at turn-end /
+/// lane teardown. A pending review carries a write grant over its bundle
+/// directory, so it must not outlive the turn. Registered reviews are untouched —
+/// the bundle is a durable record. Returns the cancelled review ids.
+#[tauri::command]
+pub fn acp_cancel_pending_reviews(
+    harness_id: String,
+    lane_label: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Vec<String> {
+    hook_server.cancel_pending_reviews(&harness_id, &lane_label)
+}
+
+/// spec 211: re-read `review.md` after the harness observes a write to it,
+/// refreshing the card's block/finding/decision counts without a lane round-trip.
+#[tauri::command]
+pub fn acp_refresh_review(
+    harness_id: String,
+    lane_label: String,
+    id: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<serde_json::Value, String> {
+    hook_server.refresh_review(&harness_id, &lane_label, &id)
+}
+
+/// spec 211: every review bundle under a harness's project dir, newest first.
+/// A DIRECTORY WALK of `.krypton/reviews/`, not a registry read — which is why a
+/// bundle from a previous session or a previous app run is still findable.
+#[tauri::command]
+pub fn list_review_bundles(
+    harness_id: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Vec<serde_json::Value> {
+    hook_server.list_review_bundles(&harness_id)
+}
+
+/// spec 211: read one bundle's raw `review.md` + `response.md`. The frontend
+/// parses them; the backend only guards the path. `dir` must be an existing
+/// bundle directory under some harness's `.krypton/reviews/`.
+#[tauri::command]
+pub fn read_review_bundle(
+    dir: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<serde_json::Value, String> {
+    hook_server.read_review_bundle(&dir)
+}
+
+/// spec 211: move a bundle's `response.md` aside to `response.md.bak` when the
+/// Board finds a frontmatter it cannot read. A missing file is a no-op.
+#[tauri::command]
+pub fn backup_review_response(
+    dir: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<serde_json::Value, String> {
+    hook_server.backup_review_response(&dir)
+}
+
+/// spec 211: atomically write a bundle's `response.md`. The frontend never gets
+/// raw filesystem access, so the Board's debounced autosave routes through here.
+/// `contents` is the fully-serialized file (frontmatter + generated body).
+#[tauri::command]
+pub fn write_review_response(
+    dir: String,
+    contents: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<serde_json::Value, String> {
+    hook_server.write_review_response(&dir, &contents)
+}
+
 /// Legacy spec-128/129 triage mirror. Since spec 130, attention tools are
 /// default-on for every harness-memory-capable lane; this command remains for
 /// backward compatibility and diagnostics.

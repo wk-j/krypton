@@ -7,6 +7,14 @@
 > **Revised after Codex-1 review** (architecture & correctness). Four blockers
 > reshaped the design before implementation — see "Review revisions" below. The
 > Design section reflects what was built, not the original draft.
+>
+> **See also spec 211 (Review Board).** Its response queue is a third instance of this spec's
+> drain-on-idle pattern, and `composeResponsePrompt` copies `composeReviewPrompt`'s framing verbatim
+> (one trusted line, then a single JSON value, no markdown fence — a ``` in a quote would close it).
+> The Board **links into** the Diff Window rather than absorbing it: a walkthrough step or an
+> anchored finding calls `DiffContentView.revealLocation(path, line)`, added by 211, which returns
+> false when the path is not in the current diff so the caller can fall back to a reader — expected
+> on a comprehension Board over existing code. Unifying the three queues is a deliberate follow-up.
 
 ## Problem
 

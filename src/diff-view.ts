@@ -1940,6 +1940,40 @@ export class DiffContentView implements ContentView {
     return this.files.length;
   }
 
+  /**
+   * spec 211: scroll to `path[:line]`, switching files if needed. Returns false
+   * when the path is not in this diff — an expected outcome, not an error: a
+   * Review Board may walk existing code that has no working-diff entry, and the
+   * caller falls back to a reader rather than doing nothing.
+   */
+  revealLocation(path: string, line?: number): boolean {
+    const normalized = path.replace(/^\.\//, '');
+    const index = this.files.findIndex((file) => {
+      const newName = file.newName && file.newName !== '/dev/null' ? file.newName : null;
+      const oldName = file.oldName && file.oldName !== '/dev/null' ? file.oldName : null;
+      // Match on either side (a deletion only has an old name), and accept a
+      // suffix match so a repo-relative anchor resolves against a diff path.
+      return [newName, oldName].some(
+        (candidate) =>
+          candidate !== null &&
+          (candidate === normalized ||
+            candidate.endsWith(`/${normalized}`) ||
+            normalized.endsWith(`/${candidate}`)),
+      );
+    });
+    if (index === -1) return false;
+    if (index !== this.currentFileIndex) {
+      this.currentFileIndex = index;
+      this.renderCurrentFile();
+    }
+    if (line !== undefined) {
+      this.scrollToLine('new', line);
+    } else {
+      this.fileContainer.scrollTo({ top: 0, behavior: 'auto' });
+    }
+    return true;
+  }
+
   /** Invoked after every applied refresh with the new file count. */
   onRefreshed(cb: (fileCount: number) => void): void {
     this.refreshedCallback = cb;

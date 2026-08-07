@@ -40,7 +40,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'l', label: 'Focus Right' },
     { key: '1-9', label: 'Focus By Index' },
     { key: 'f', label: 'Focus Layout' },
-    { key: 'r', label: 'Resize Mode', effect: 'important' },
+    { key: 'r', label: 'Resize Mode', effect: 'important' },  // Shift+R = Review Board (AI group)
     { key: 'm', label: 'Move Mode', effect: 'important' },
     { key: 's', label: 'Swap Mode', effect: 'important' },
     { key: 'z', label: 'Maximize', effect: 'important' },
@@ -76,6 +76,8 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'E', label: 'Gemini ACP', effect: 'important' },
     { key: 'I', label: 'Codex ACP', effect: 'important' },
     { key: 'Y', label: 'ACP Harness', effect: 'important' },
+    // spec 211. Shift-only: bare `r` is Resize Mode, listed under Windows.
+    { key: 'R', label: 'Review Board', effect: 'important' },
   ]),
 
   ...groupEntries('Terminal', [

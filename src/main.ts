@@ -11,6 +11,7 @@ import { WhichKey } from './which-key';
 import { CommandPalette } from './command-palette';
 import { PromptDialog } from './prompt-dialog';
 import { QuickFileSearch } from './quick-file-search';
+import { QuickOverview } from './quick-overview';
 import { loadConfig } from './config';
 import { FrontendThemeEngine } from './theme';
 import { createGitDashboard } from './dashboards/git';
@@ -126,6 +127,11 @@ async function main(): Promise<void> {
   // Initialize quick file search (Cmd+O → fff-search-backed picker, copies to clipboard)
   const quickFileSearch = new QuickFileSearch(compositor, () => inputRouter.exitQuickFileSearch());
   inputRouter.setQuickFileSearch(quickFileSearch);
+
+  // Initialize the quick overview dialog (read-only peek modal; first consumer
+  // is hint mode's filepath action — see docs/210-quick-overview-dialog.md)
+  const quickOverview = new QuickOverview(compositor, () => inputRouter.exitQuickOverview());
+  inputRouter.setQuickOverview(quickOverview);
 
   // Global shortcut events emitted from Rust (Ctrl+Shift+K / Ctrl+Shift+S).
   // These fire even when Krypton is not focused.

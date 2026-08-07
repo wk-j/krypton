@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-08-02
+> Last updated: 2026-08-07
 
 ## Overview
 
@@ -20,6 +20,58 @@
 ---
 
 ## Recent Landings
+
+- **Review Board (spec 211)** — Krypton gained the surface where a lane can
+  **explain code to a developer** and that developer can work through it.
+  `PaneContentType` gained `'review'`; `ReviewBoardView`
+  (`src/review-board/view.ts`) renders a lane-authored Markdown document plus
+  seven typed fenced blocks (`walkthrough`, `diff`, `finding`, `decision`,
+  `chart`, `metrics`, `svg`) and owns the block cursor, the guided read
+  (`Tab`/`Shift+Tab` through walkthrough steps, each jumping the Diff Window to
+  its `file:line`), triage (`a`/`x`), decisions (`1`…`9`), comments (`c`), the
+  outline (`o`), in-doc search (`/`), and the send preview (`s`). The comprehension
+  spine is the point: prose plus a `walkthrough` is required, findings and
+  decisions are optional, and a Board with zero findings reads as `reference`
+  rather than "0 unanswered" — never a score or grade (ADR-0004).
+  **The result is a file, not session state.** `review_new` /
+  `review_register` / `review_cancel` (`hook_server.rs`) clone spec 133's
+  path-handoff into a durable, gitignored bundle at
+  `.krypton/reviews/<date>-<slug>/` (`review.md` + `response.md` + `assets/`),
+  keyed by date and title slug with a numeric collision suffix, with
+  issued-path write auto-approval widened from one file to the whole directory
+  (`reviewWritePathMatches`). Answers **autosave** to `response.md` (debounced
+  400 ms, frontmatter is the source of truth, body is a generated rendering), so
+  closing the window loses nothing and `s` is a separate explicit act; sending
+  rides a third drain-on-idle queue (`ReviewResponseQueue`) beside spec 149's and
+  spec 158's. Bundles are **never swept** and are rediscovered by a directory
+  walk, so `Leader Shift+R` reopens a review from a previous app run with every
+  answer intact. `#reviews` opens a read-only Binance-dark archive at `/reviews`
+  (index + per-bundle page, typed blocks re-rendered by a fence-aware post-pass
+  over comrak, charts as proportional CSS bars rather than the frontend's SVG
+  geometry). `#review`'s step 3 changed from "report the synthesis in your turn
+  text" to "compose a Review Board", including the clean-LGTM case — an archive
+  with holes cannot answer "did anyone ever review X?". **Deviation from the
+  spec:** the spec claimed `Leader r` was free; it has been Resize mode since the
+  original leader map, so the picker took `Leader Shift+R` (mirroring the
+  `d`/`Shift+D` Diff Window pairing). `tsc`, `cargo clippy`/`fmt`, `vite build`,
+  228 Rust tests and 668 frontend tests are green.
+  See `docs/211-review-board.md`.
+
+- **Quick Overview dialog (spec 210)** — Krypton gained its first modal for
+  *showing* content instead of picking or composing. `QuickOverview`
+  (`src/quick-overview.ts`) renders a pluggable `OverviewSource` (`code` /
+  `markdown` / `notice` / `element` body) and owns the shell, the single scroll
+  container, per-open `AbortController` cancellation, and the keyboard
+  (`j`/`k`, `Ctrl+D`/`Ctrl+U`, `g`/`G`, `y`, `Esc`, plus source actions that are
+  dispatched first). Hint mode's `filepath` rule is the first consumer: selecting
+  a path now peeks the file over the current workspace instead of spawning a
+  Helix tab, with the old openers (Helix / markdown viewer / OS browser) demoted
+  to `Enter` inside the dialog and `[hints] file_action = "editor"` restoring the
+  previous behaviour. Preview classification (`extToLang`, `isBinaryExtension`,
+  `isMarkdownFile`, `formatSize`, the shared `marked` instance, the 64 kb cap)
+  moved out of `file-manager.ts` into `src/file-preview.ts` so both surfaces share
+  one implementation. `tsc`, `cargo clippy`/`fmt`, `vite build`, and 571 frontend
+  tests are green. See `docs/210-quick-overview-dialog.md`.
 
 - **Docs browser flat index (spec 171 rev 4)** — the `/docs` index dropped the
   folder hierarchy that made navigation slow (a tree sidebar plus folder-by-folder

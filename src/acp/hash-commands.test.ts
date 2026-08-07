@@ -42,8 +42,13 @@ describe('filteredHashCommands', () => {
   });
 
   it('filters by case-insensitive prefix', () => {
+    // Roster order, not alphabetical: `reviews` (spec 211's read-only browser
+    // archive) is grouped with the other `surface` commands, well ahead of
+    // `review` (the multi-reviewer workflow). Deliberately similar names for two
+    // distinct commands, so the palette must list both.
     expect(filteredHashCommands('#RE').map((c) => c.name)).toEqual([
       'restart',
+      'reviews',
       'resume',
       'recall',
       'review',

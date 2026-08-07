@@ -3,24 +3,17 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import hljs from 'highlight.js';
-import { Marked } from 'marked';
-import { markedHighlight } from 'marked-highlight';
 
 import type { ContentView, PaneContentType } from './types';
 import type { FileManagerAI, FileManagerContext, FileContextEntry } from './file-manager-ai';
-
-/** Marked instance for rendering markdown previews */
-const md = new Marked(
-  markedHighlight({
-    langPrefix: 'hljs language-',
-    highlight(code: string, lang: string): string {
-      if (lang && hljs.getLanguage(lang)) {
-        return hljs.highlight(code, { language: lang }).value;
-      }
-      return hljs.highlightAuto(code).value;
-    },
-  }),
-);
+import {
+  PREVIEW_MAX_BYTES,
+  extToLang,
+  formatSize,
+  isBinaryExtension,
+  isMarkdownFile,
+  previewMarked,
+} from './file-preview';
 
 /** A file/directory entry returned by the backend list_directory command */
 interface FileEntry {
@@ -44,7 +37,6 @@ interface PromptState {
   onSubmit: (value: string) => void;
 }
 
-const PREVIEW_MAX_BYTES = 65536;
 
 /** Resolve the user's home directory from env or heuristic */
 let cachedHome: string | null = null;
@@ -943,11 +935,11 @@ export class FileManagerView implements ContentView {
 
     let html = '';
     if (isSkill && frontmatter) {
-      html = renderSkillSpec(frontmatter) + (md.parse(body, { gfm: true, breaks: true }) as string);
+      html = renderSkillSpec(frontmatter) + (previewMarked.parse(body, { gfm: true, breaks: true }) as string);
     } else if (frontmatter && Object.keys(frontmatter).length > 0) {
-      html = renderFrontmatterCard(frontmatter) + (md.parse(body, { gfm: true, breaks: true }) as string);
+      html = renderFrontmatterCard(frontmatter) + (previewMarked.parse(body, { gfm: true, breaks: true }) as string);
     } else {
-      html = md.parse(content, { gfm: true, breaks: true }) as string;
+      html = previewMarked.parse(content, { gfm: true, breaks: true }) as string;
     }
 
     this.previewContentEl.style.display = 'none';
@@ -1003,12 +995,12 @@ export class FileManagerView implements ContentView {
     }
 
     if (entry.size > PREVIEW_MAX_BYTES) {
-      this.showPreText(`File too large for preview\n${this.formatSize(entry.size)}`);
+      this.showPreText(`File too large for preview\n${formatSize(entry.size)}`);
       return;
     }
 
-    if (this.isBinaryExtension(entry.name)) {
-      this.showPreText(`Binary file\n${this.formatSize(entry.size)}`);
+    if (isBinaryExtension(entry.name)) {
+      this.showPreText(`Binary file\n${formatSize(entry.size)}`);
       return;
     }
 
@@ -1018,7 +1010,7 @@ export class FileManagerView implements ContentView {
       if (gen !== this.previewGeneration) return;
 
       // Render markdown files
-      if (this.isMarkdownFile(entry.name)) {
+      if (isMarkdownFile(entry.name)) {
         this.renderMarkdownPreview(content, entry.path);
         return;
       }
@@ -1026,7 +1018,7 @@ export class FileManagerView implements ContentView {
       // Syntax highlight using file extension
       this.previewContentEl.style.display = '';
       this.previewMarkdownEl.style.display = 'none';
-      const lang = this.extToLang(entry.name);
+      const lang = extToLang(entry.name);
       if (lang && hljs.getLanguage(lang)) {
         const result = hljs.highlight(content, { language: lang });
         this.previewContentEl.innerHTML = result.value;
@@ -1038,7 +1030,7 @@ export class FileManagerView implements ContentView {
       if (gen !== this.previewGeneration) return;
       this.previewContentEl.style.display = '';
       this.previewMarkdownEl.style.display = 'none';
-      this.previewContentEl.textContent = `Cannot read file\n${this.formatSize(entry.size)}`;
+      this.previewContentEl.textContent = `Cannot read file\n${formatSize(entry.size)}`;
     }
   }
 
@@ -1360,7 +1352,7 @@ export class FileManagerView implements ContentView {
         } else if (entry.size >= 100 * 1024) {
           sizeSpan.classList.add('krypton-file-manager__size--large');
         }
-        sizeSpan.textContent = this.formatSize(entry.size);
+        sizeSpan.textContent = formatSize(entry.size);
       }
       row.appendChild(sizeSpan);
 
@@ -1496,7 +1488,7 @@ export class FileManagerView implements ContentView {
     if (entry) {
       parts.push(entry.permissions);
       if (!entry.is_dir) {
-        parts.push(this.formatSize(entry.size));
+        parts.push(formatSize(entry.size));
       }
     }
 
@@ -1795,7 +1787,7 @@ export class FileManagerView implements ContentView {
       this.previewDebounceTimer = null;
       const gen = ++this.previewGeneration;
 
-      if (this.isBinaryExtension(displayName)) {
+      if (isBinaryExtension(displayName)) {
         if (gen !== this.previewGeneration) return;
         this.showPreText(`[binary file]`);
         return;
@@ -1805,10 +1797,10 @@ export class FileManagerView implements ContentView {
         const content = await invoke<string>('read_file', { path: absPath });
         if (gen !== this.previewGeneration) return;
 
-        if (this.isMarkdownFile(displayName)) {
+        if (isMarkdownFile(displayName)) {
           this.renderMarkdownPreview(content, absPath);
         } else {
-          const lang = this.extToLang(displayName);
+          const lang = extToLang(displayName);
           const lines = content.split('\n');
           const truncated = lines.length > 200
             ? lines.slice(0, 200).join('\n') + '\n\n... (truncated)'
@@ -1907,39 +1899,6 @@ export class FileManagerView implements ContentView {
     this.statusEl.className = 'krypton-file-manager__status krypton-file-manager__status--confirm';
   }
 
-  private formatSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}K`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}G`;
-  }
-
-  /** Map file extension to highlight.js language name */
-  private extToLang(name: string): string | null {
-    const ext = name.split('.').pop()?.toLowerCase() ?? '';
-    const map: Record<string, string> = {
-      ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
-      rs: 'rust', py: 'python', rb: 'ruby', go: 'go', java: 'java',
-      c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', cc: 'cpp',
-      cs: 'csharp', swift: 'swift', kt: 'kotlin', scala: 'scala',
-      sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash',
-      html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
-      json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'ini',
-      xml: 'xml', sql: 'sql', graphql: 'graphql',
-      dockerfile: 'dockerfile', makefile: 'makefile',
-      lua: 'lua', r: 'r', dart: 'dart', zig: 'zig',
-      ex: 'elixir', exs: 'elixir', erl: 'erlang',
-      hs: 'haskell', ml: 'ocaml', clj: 'clojure',
-      vim: 'vim', el: 'lisp', lisp: 'lisp',
-      php: 'php', pl: 'perl', pm: 'perl',
-    };
-    // Handle dotfiles like Makefile, Dockerfile
-    const basename = name.toLowerCase();
-    if (basename === 'makefile' || basename === 'gnumakefile') return 'makefile';
-    if (basename === 'dockerfile') return 'dockerfile';
-    return map[ext] ?? null;
-  }
-
   /** Return a CSS modifier class for file type colouring, or '' for unknown types. */
   private fileTypeClass(entry: FileEntry): string {
     if (entry.is_dir || entry.is_symlink) return '';
@@ -1961,24 +1920,5 @@ export class FileManagerView implements ContentView {
     if (['zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'zst'].includes(ext)) return 'krypton-file-manager__item--ft-archive';
     if (['csv', 'sql', 'db', 'sqlite', 'sqlite3', 'parquet'].includes(ext)) return 'krypton-file-manager__item--ft-data';
     return '';
-  }
-
-  private isMarkdownFile(name: string): boolean {
-    const ext = name.split('.').pop()?.toLowerCase() ?? '';
-    return ext === 'md' || ext === 'markdown';
-  }
-
-  private isBinaryExtension(name: string): boolean {
-    const ext = name.split('.').pop()?.toLowerCase() ?? '';
-    const binary = new Set([
-      'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico', 'svg',
-      'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a',
-      'mp4', 'avi', 'mkv', 'mov', 'webm',
-      'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar',
-      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-      'exe', 'dll', 'so', 'dylib', 'o', 'a', 'class',
-      'wasm', 'ttf', 'otf', 'woff', 'woff2', 'eot',
-    ]);
-    return binary.has(ext);
   }
 }

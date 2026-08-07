@@ -13,6 +13,7 @@ import {
   directiveTagLabel,
   harnessAutoAllowToolName,
   artifactWritePathMatches,
+  reviewWritePathMatches,
   isArtifactWriteGrantKind,
   isArtifactScratchPath,
   callTargetsArtifactScratch,
@@ -1229,6 +1230,69 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(artifactWritePathMatches(path, path, '')).toBe(false);
     });
 
+    // spec 211 — the review grant covers a DIRECTORY, not one file, because a
+    // lane legitimately writes both `review.md` and `assets/diagram.png` into the
+    // same bundle. Same absolute/relative asymmetry as the artifact matcher, for
+    // the same reason: an attacker-controlled parent must never be auto-approved.
+    describe('reviewWritePathMatches (spec 211)', () => {
+      const dir = '/Users/me/proj/.krypton/reviews/2026-08-07-guard-rewrite';
+      const rtail = '.krypton/reviews/2026-08-07-guard-rewrite/';
+
+      it('matches every file inside the issued bundle', () => {
+        expect(reviewWritePathMatches(`${dir}/review.md`, dir, rtail)).toBe(true);
+        expect(reviewWritePathMatches(`${dir}/response.md`, dir, rtail)).toBe(true);
+        expect(reviewWritePathMatches(`${dir}/assets/diagram.png`, dir, rtail)).toBe(true);
+      });
+
+      it('matches a project-relative target carrying the bundle prefix', () => {
+        expect(reviewWritePathMatches(`${rtail}review.md`, dir, rtail)).toBe(true);
+        expect(reviewWritePathMatches(`./${rtail}assets/x.png`, dir, rtail)).toBe(true);
+      });
+
+      it('rejects a sibling bundle sharing a name prefix', () => {
+        // Without the trailing-slash boundary, `guard-rewrite-2` would match a
+        // grant issued for `guard-rewrite`.
+        const sibling = '/Users/me/proj/.krypton/reviews/2026-08-07-guard-rewrite-2';
+        expect(reviewWritePathMatches(`${sibling}/review.md`, dir, rtail)).toBe(false);
+        expect(
+          reviewWritePathMatches('.krypton/reviews/2026-08-07-guard-rewrite-2/review.md', dir, rtail),
+        ).toBe(false);
+      });
+
+      it('rejects the bundle directory itself and anything above it', () => {
+        expect(reviewWritePathMatches(dir, dir, rtail)).toBe(false);
+        expect(reviewWritePathMatches('/Users/me/proj/.krypton/reviews/x.md', dir, rtail)).toBe(false);
+        expect(reviewWritePathMatches('/Users/me/proj/src/main.ts', dir, rtail)).toBe(false);
+      });
+
+      it('rejects an absolute attacker path that merely shares the tail suffix', () => {
+        expect(reviewWritePathMatches(`/evil/${rtail}review.md`, dir, rtail)).toBe(false);
+        expect(reviewWritePathMatches(`/tmp${dir}/review.md`, dir, rtail)).toBe(false);
+      });
+
+      it('rejects a bare relative filename with no bundle prefix', () => {
+        // Fails closed into a normal permission prompt rather than guessing that
+        // an unqualified `review.md` means the issued one.
+        expect(reviewWritePathMatches('review.md', dir, rtail)).toBe(false);
+        expect(reviewWritePathMatches('src/review.md', dir, rtail)).toBe(false);
+      });
+
+      it('never matches an empty tail, dir, or target', () => {
+        expect(reviewWritePathMatches(`${dir}/review.md`, dir, '')).toBe(false);
+        expect(reviewWritePathMatches(`${dir}/review.md`, '', rtail)).toBe(false);
+        expect(reviewWritePathMatches('', dir, rtail)).toBe(false);
+      });
+
+      it('only grants on a write-shaped tool kind, never a read that names it', () => {
+        // The kind gate is shared with artifacts — a path match alone must not
+        // auto-approve a read/search/execute over the bundle.
+        expect(isArtifactWriteGrantKind('write')).toBe(true);
+        expect(isArtifactWriteGrantKind('edit')).toBe(true);
+        expect(isArtifactWriteGrantKind('read')).toBe(false);
+        expect(isArtifactWriteGrantKind('execute')).toBe(false);
+      });
+    });
+
     it('flags any scratch path for redaction (broad, race-proof)', () => {
       expect(isArtifactScratchPath(path)).toBe(true);
       expect(isArtifactScratchPath('/x/.krypton/artifacts/hm-9/L/z.html')).toBe(true);
@@ -2242,6 +2306,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       sealStreaming: () => {},
       dropVeiledThoughtRow: () => {},
       cancelPendingArtifactsForLane: () => {},
+      cancelPendingReviewsForLane: () => {},
       clearCancelEscalation: clear,
       spawnLane: async (_l: EscLane, resumeSessionId?: string | null) => {
         resumed.push(resumeSessionId);
@@ -2268,6 +2333,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       sealStreaming: () => {},
       dropVeiledThoughtRow: () => {},
       cancelPendingArtifactsForLane: () => {},
+      cancelPendingReviewsForLane: () => {},
       clearCancelEscalation: clear,
       spawnLane: async () => { spawns.push(1); },
     };

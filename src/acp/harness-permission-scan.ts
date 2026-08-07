@@ -267,6 +267,33 @@ export function isArtifactWriteGrantKind(kind: string): boolean {
   return kind === 'edit' || kind === 'write' || kind === 'create';
 }
 
+/** spec 211 — does a file-write target sit INSIDE an issued review bundle? Same
+ * absolute/relative asymmetry as `artifactWritePathMatches` and for the same
+ * reason (an attacker-controlled `/evil/<tail>` sharing the tail must not be
+ * auto-approved), but the grant covers a DIRECTORY rather than one file, because
+ * a lane legitimately writes `review.md` and `assets/diagram.png` into the same
+ * bundle. `recordDir` is the trusted absolute bundle path; `recordTail` is its
+ * project-relative form and must end in `/` so a sibling directory sharing a name
+ * prefix (`…/reviews/guard-2/` vs `…/reviews/guard/`) can never match. */
+export function reviewWritePathMatches(
+  target: string,
+  recordDir: string,
+  recordTail: string,
+): boolean {
+  if (!recordTail || !recordDir) return false;
+  const t = normalizeArtifactPath(target);
+  if (t.length === 0) return false;
+  // `normalizeArtifactPath` strips trailing slashes, so re-add the boundary that
+  // stops `…/guard-2/x` matching a grant issued for `…/guard/`.
+  const dir = `${normalizeArtifactPath(recordDir)}/`;
+  if (t.startsWith('/')) return t.startsWith(dir);
+  // Relative targets are reported against the lane cwd, which is the project
+  // root — so they must carry the project-relative bundle prefix. Anything else
+  // fails closed into a normal permission prompt rather than being guessed at.
+  const tail = `${normalizeArtifactPath(recordTail)}/`;
+  return t.replace(/^\.\//, '').startsWith(tail);
+}
+
 /** spec 133 — does a path sit under any harness artifact scratch root? Used for
  * transcript REDACTION only (never for grant): redacting is always safe, so a
  * broad `.krypton/artifacts/` pattern closes the window where the registry

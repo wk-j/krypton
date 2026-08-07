@@ -66,6 +66,7 @@ pub const ADVERTISED_OPERATIONS: &[&str] = &[
     "diff.review-targets",
     "diff.review-priority",
     "diff.review-send",
+    "review.response",
     "github.dispatch-issue",
     "github.issue-status",
     "github.list-issues",

@@ -707,12 +707,13 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
 | `[hints]` | `alphabet` | string | `"asdfghjklqweruiop"` | Characters used for hint label generation (should be easy to type) |
+| `[hints]` | `file_action` | string | `"peek"` | What selecting a `filepath` hint does: `"peek"` opens the Quick Overview dialog (Enter escalates to Helix / markdown viewer / browser), `"editor"` opens the target directly as before. See `docs/210-quick-overview-dialog.md` |
 | `[[hints.rules]]` | `name` | string | — | Unique identifier for the rule |
 | `[[hints.rules]]` | `regex` | string | — | Regular expression pattern to match in terminal content |
-| `[[hints.rules]]` | `action` | string | `"Copy"` | Action on selection: `"Copy"`, `"Open"`, or `"Paste"`; the built-in `filepath` rule opens Helix in a new tab instead of copying |
+| `[[hints.rules]]` | `action` | string | `"Copy"` | Action on selection: `"Copy"`, `"Open"`, or `"Paste"`; the built-in `filepath` rule ignores this and follows `[hints] file_action` instead |
 | `[[hints.rules]]` | `enabled` | bool | `true` | Whether this rule is active |
 
-Built-in rules (active by default): `url` (Open), `filepath` (open in Helix tab), `email` (Copy).
+Built-in rules (active by default): `url` (Open), `filepath` (peek in the Quick Overview dialog), `email` (Copy).
 
 ### Sound Configuration
 

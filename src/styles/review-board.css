@@ -1,0 +1,877 @@
+/* Krypton — Review Board (spec 211)
+ *
+ * A single reading column in Krypton Dark chrome. No persistent sidebar: it would
+ * steal width from the content, and the outline is one keystroke away (`o`).
+ *
+ * House rules honoured here:
+ *   • No left accent rails. The block cursor is a full-width background tint;
+ *     severity and state are carried by heading colour, a full border, and chips.
+ *   • No nested containers. A block is ONE surface — a card does not sit inside a
+ *     panel inside a frame.
+ *   • The reading surface uses the user's configured terminal font, not the chrome
+ *     font: this is a reading surface, and chrome typography is for chrome labels.
+ */
+
+.krypton-review {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  outline: none;
+  background: rgba(var(--krypton-bg-rgb), 0.72);
+  color: rgb(var(--krypton-fg-rgb));
+  font-family: var(--krypton-font-family);
+  font-size: var(--krypton-font-size);
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+
+.krypton-review__header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.22);
+  background: rgba(var(--krypton-accent-rgb), 0.05);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.krypton-review__seg {
+  color: rgba(var(--krypton-fg-rgb), 0.5);
+  text-transform: uppercase;
+}
+
+.krypton-review__seg--title {
+  color: rgb(var(--krypton-accent-rgb));
+  font-weight: 600;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* A review title is authored text, not a chrome label — don't shout it. */
+  text-transform: none;
+}
+
+.krypton-review__seg--lane {
+  color: rgba(var(--krypton-fg-rgb), 0.75);
+  text-transform: none;
+}
+
+.krypton-review__seg--slug {
+  color: rgba(var(--krypton-fg-rgb), 0.35);
+  /* An on-disk directory name — never uppercased. */
+  text-transform: none;
+}
+
+.krypton-review__seg--open {
+  color: rgb(var(--krypton-warning-rgb));
+}
+
+.krypton-review__seg--done,
+.krypton-review__seg--reference {
+  color: rgba(var(--krypton-accent-rgb), 0.8);
+}
+
+.krypton-review__seg--save,
+.krypton-review__seg--sync {
+  margin-left: auto;
+  color: rgba(var(--krypton-fg-rgb), 0.4);
+}
+
+.krypton-review__seg--sync {
+  margin-left: 0;
+}
+
+.krypton-review__seg--flash {
+  margin-left: 0;
+  color: rgb(var(--krypton-accent-rgb));
+  text-transform: none;
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────── */
+
+.krypton-review__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 18px 0 60px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--krypton-accent-rgb), 0.3) transparent;
+}
+
+.krypton-review__banner {
+  margin: 0 auto 18px;
+  max-width: 860px;
+  padding: 8px 14px;
+  border: 1px solid rgba(var(--krypton-warning-rgb), 0.4);
+  background: rgba(var(--krypton-warning-rgb), 0.08);
+  color: rgb(var(--krypton-warning-rgb));
+  font-size: 12px;
+}
+
+.krypton-review__empty {
+  padding: 60px 24px;
+  text-align: center;
+  color: rgba(var(--krypton-fg-rgb), 0.4);
+  font-size: 13px;
+}
+
+/* One block = one row of the reading column. Blocks below the fold render lazily
+ * so a long review stays inside the 16ms keypress budget. */
+.krypton-review__block {
+  position: relative;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 6px 20px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+
+.krypton-review__block--cursor {
+  /* Full-width background tint, never a left rail. */
+  background: rgba(var(--krypton-accent-rgb), 0.1);
+}
+
+/* The walkthrough is what the human reads first: full width, never folded. */
+.krypton-review__block--walkthrough {
+  content-visibility: visible;
+}
+
+.krypton-review__diagnostic {
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgb(var(--krypton-warning-rgb));
+}
+
+.krypton-review__comment-mark {
+  position: absolute;
+  top: 6px;
+  right: 20px;
+  font-size: 11px;
+  color: rgba(var(--krypton-accent-rgb), 0.75);
+}
+
+/* ── Markdown passthrough ─────────────────────────────────────────────── */
+
+.krypton-review__md {
+  line-height: 1.6;
+}
+
+.krypton-review__md > :first-child {
+  margin-top: 0;
+}
+
+.krypton-review__md > :last-child {
+  margin-bottom: 0;
+}
+
+.krypton-review__md h1,
+.krypton-review__md h2,
+.krypton-review__md h3,
+.krypton-review__md h4 {
+  margin: 0.8em 0 0.4em;
+  line-height: 1.3;
+  color: rgb(var(--krypton-accent-rgb));
+  font-weight: 600;
+}
+
+.krypton-review__md h1 {
+  font-size: 1.4em;
+}
+
+.krypton-review__md h2 {
+  font-size: 1.18em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.18);
+}
+
+.krypton-review__md h3 {
+  font-size: 1.06em;
+}
+
+.krypton-review__md h4 {
+  font-size: 1em;
+  color: rgba(var(--krypton-fg-rgb), 0.85);
+}
+
+.krypton-review__md p,
+.krypton-review__md ul,
+.krypton-review__md ol {
+  margin: 0.5em 0;
+}
+
+.krypton-review__md ul,
+.krypton-review__md ol {
+  padding-left: 1.4em;
+}
+
+.krypton-review__md a {
+  color: rgb(var(--krypton-accent-rgb));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.krypton-review__md code {
+  padding: 0.1em 0.3em;
+  background: rgba(var(--krypton-fg-rgb), 0.08);
+  color: rgb(var(--krypton-accent-rgb));
+  font-size: 0.9em;
+}
+
+.krypton-review__md pre {
+  margin: 0.7em 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: rgba(var(--krypton-bg-rgb), 0.6);
+  border: 1px solid rgba(var(--krypton-fg-rgb), 0.12);
+  font-size: 0.88em;
+  line-height: 1.45;
+}
+
+.krypton-review__md pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+}
+
+.krypton-review__md blockquote {
+  margin: 0.7em 0;
+  padding: 8px 12px;
+  /* A full border, not a left rail. */
+  border: 1px solid rgba(var(--krypton-fg-rgb), 0.14);
+  color: rgba(var(--krypton-fg-rgb), 0.7);
+}
+
+.krypton-review__md table {
+  width: 100%;
+  margin: 0.7em 0;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.krypton-review__md th,
+.krypton-review__md td {
+  padding: 5px 9px;
+  border: 1px solid rgba(var(--krypton-fg-rgb), 0.14);
+  text-align: left;
+}
+
+.krypton-review__md th {
+  background: rgba(var(--krypton-accent-rgb), 0.07);
+  font-weight: 600;
+}
+
+.krypton-review__md img {
+  max-width: 100%;
+  height: auto;
+}
+
+.krypton-review__md hr {
+  margin: 1em 0;
+  border: none;
+  border-top: 1px solid rgba(var(--krypton-fg-rgb), 0.14);
+}
+
+/* ── Walkthrough ──────────────────────────────────────────────────────── */
+
+.krypton-review__walkthrough {
+  padding: 10px 14px;
+  border: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
+}
+
+.krypton-review__walkthrough-title {
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-fg-rgb), 0.45);
+}
+
+.krypton-review__steps {
+  margin: 0;
+  padding-left: 1.6em;
+  list-style: decimal;
+}
+
+.krypton-review__step {
+  margin: 0 0 8px;
+  padding: 2px 6px;
+}
+
+.krypton-review__step:last-child {
+  margin-bottom: 0;
+}
+
+.krypton-review__step--current {
+  /* Background tint marks the guided read's position — no rail. */
+  background: rgba(var(--krypton-accent-rgb), 0.14);
+}
+
+.krypton-review__step-at {
+  display: block;
+  color: rgba(var(--krypton-accent-rgb), 0.85);
+  font-size: 0.88em;
+  /* A file path — never uppercased. */
+  text-transform: none;
+  word-break: break-all;
+}
+
+.krypton-review__step-at--missing {
+  color: rgba(var(--krypton-fg-rgb), 0.35);
+}
+
+.krypton-review__step-say {
+  display: block;
+  margin-top: 1px;
+  color: rgba(var(--krypton-fg-rgb), 0.85);
+  line-height: 1.5;
+}
+
+/* ── Finding ──────────────────────────────────────────────────────────── */
+
+.krypton-review__finding {
+  padding: 9px 12px;
+  border: 1px solid rgba(var(--krypton-fg-rgb), 0.16);
+}
+
+.krypton-review__finding--blocking {
+  border-color: rgba(var(--krypton-danger-rgb), 0.45);
+}
+
+.krypton-review__finding--warn {
+  border-color: rgba(var(--krypton-warning-rgb), 0.4);
+}
+
+.krypton-review__finding--accepted,
+.krypton-review__finding--dismissed {
+  /* An answered finding recedes: it is no longer asking for attention. */
+  opacity: 0.62;
+}
+
+.krypton-review__finding-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.krypton-review__severity {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.krypton-review__finding--blocking .krypton-review__severity,
+.krypton-review__finding--blocking .krypton-review__finding-title {
+  color: rgb(var(--krypton-danger-rgb));
+}
+
+.krypton-review__finding--warn .krypton-review__severity,
+.krypton-review__finding--warn .krypton-review__finding-title {
+  color: rgb(var(--krypton-warning-rgb));
+}
+
+.krypton-review__finding--sugg .krypton-review__severity {
+  color: rgba(var(--krypton-fg-rgb), 0.45);
+}
+
+.krypton-review__finding-title {
+  font-weight: 600;
+  color: rgb(var(--krypton-fg-rgb));
+}
+
+.krypton-review__finding-anchor {
+  margin-left: auto;
+  font-size: 0.85em;
+  color: rgba(var(--krypton-fg-rgb), 0.4);
+  text-transform: none;
+  word-break: break-all;
+}
+
+.krypton-review__finding-state {
+  flex-shrink: 0;
+  font-size: 1.05em;
+  color: rgb(var(--krypton-accent-rgb));
+}
+
+/* ── Decision ─────────────────────────────────────────────────────────── */
+
+.krypton-review__decision {
+  padding: 9px 12px;
+  border: 1px solid rgba(var(--krypton-fg-rgb), 0.16);
+}
+
+.krypton-review__decision-question {
+  font-weight: 600;
+  color: rgb(var(--krypton-fg-rgb));
+  line-height: 1.5;
+}
+
+.krypton-review__options {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.krypton-review__option {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 3px 6px;
+}
+
+.krypton-review__option--chosen {
+  background: rgba(var(--krypton-accent-rgb), 0.14);
+}
+
+.krypton-review__option-key {
+  flex-shrink: 0;
+  min-width: 1.2em;
+  color: rgba(var(--krypton-accent-rgb), 0.8);
+  font-size: 0.9em;
+}
+
+.krypton-review__option-text {
+  color: rgba(var(--krypton-fg-rgb), 0.88);
+  line-height: 1.5;
+}
+
+.krypton-review__option-rec {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-fg-rgb), 0.4);
+}
+
+/* ── Chart / metrics ──────────────────────────────────────────────────── */
+
+.krypton-review__chart {
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--krypton-fg-rgb), 0.14);
+}
+
+.krypton-review__chart-title {
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-fg-rgb), 0.45);
+}
+
+.krypton-review__chart-svg {
+  display: block;
+  overflow: visible;
+}
+
+/* Single series: one accent hue. Text wears text tokens, never the series
+ * colour — the mark beside them carries the identity. */
+.krypton-review__chart-bar {
+  fill: rgb(var(--krypton-accent-rgb));
+}
+
+.krypton-review__chart-line {
+  stroke: rgb(var(--krypton-accent-rgb));
+}
+
+.krypton-review__chart-dot {
+  fill: rgb(var(--krypton-accent-rgb));
+}
+
+.krypton-review__chart-label {
+  fill: rgba(var(--krypton-fg-rgb), 0.7);
+  font-family: var(--krypton-font-family);
+  font-size: 11px;
+}
+
+.krypton-review__chart-value {
+  fill: rgba(var(--krypton-fg-rgb), 0.5);
+  font-family: var(--krypton-font-family);
+  font-size: 11px;
+}
+
+.krypton-review__metrics {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 16px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(var(--krypton-fg-rgb), 0.14);
+  font-size: 0.92em;
+}
+
+.krypton-review__metric-label {
+  color: rgba(var(--krypton-fg-rgb), 0.45);
+  white-space: nowrap;
+  text-transform: none;
+}
+
+.krypton-review__metric-value {
+  margin: 0;
+  color: rgb(var(--krypton-fg-rgb));
+  word-break: break-word;
+}
+
+/* ── Diff / svg ───────────────────────────────────────────────────────── */
+
+.krypton-review__diff {
+  font-size: 0.86em;
+}
+
+.krypton-review__diff .d2h-file-header {
+  display: none;
+}
+
+.krypton-review__diff-summary {
+  padding: 12px 14px;
+  border: 1px dashed rgba(var(--krypton-accent-rgb), 0.35);
+  color: rgba(var(--krypton-fg-rgb), 0.55);
+  font-size: 12px;
+  text-align: center;
+}
+
+.krypton-review__diff-raw {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: rgba(var(--krypton-bg-rgb), 0.6);
+  border: 1px solid rgba(var(--krypton-fg-rgb), 0.12);
+  font-size: 0.88em;
+}
+
+.krypton-review__svg {
+  text-align: center;
+}
+
+.krypton-review__svg svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Search HUD (spec 137 behaviour) ──────────────────────────────────── */
+
+.krypton-review__search {
+  position: absolute;
+  bottom: 10px;
+  right: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  background: rgba(var(--krypton-bg-rgb), 0.95);
+  border: 1px solid rgba(var(--krypton-accent-rgb), 0.4);
+  font-size: 12px;
+}
+
+.krypton-review__search-prompt {
+  color: rgb(var(--krypton-accent-rgb));
+}
+
+.krypton-review__search-input {
+  width: 200px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: rgb(var(--krypton-fg-rgb));
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.krypton-review__search-count {
+  color: rgba(var(--krypton-fg-rgb), 0.45);
+  font-size: 11px;
+}
+
+.krypton-review__match {
+  background: rgba(var(--krypton-accent-rgb), 0.28);
+  color: inherit;
+}
+
+.krypton-review__match--current {
+  background: rgb(var(--krypton-accent-rgb));
+  color: rgb(var(--krypton-bg-rgb));
+}
+
+/* ── Overlays (outline · comment · send) ──────────────────────────────── */
+
+.krypton-review__overlay {
+  position: absolute;
+  inset: 8% 10%;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgba(var(--krypton-bg-rgb), 0.97);
+  border: 1px solid rgba(var(--krypton-accent-rgb), 0.45);
+}
+
+.krypton-review__overlay--comment,
+.krypton-review__overlay--send {
+  inset: auto 10% 8%;
+  max-height: 70%;
+}
+
+.krypton-review__overlay-head {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.22);
+  background: rgba(var(--krypton-accent-rgb), 0.07);
+  color: rgba(var(--krypton-fg-rgb), 0.6);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.krypton-review__overlay-notice {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  color: rgb(var(--krypton-warning-rgb));
+  font-size: 11px;
+}
+
+.krypton-review__outline {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.krypton-review__outline-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 12px;
+  font-size: 12px;
+}
+
+.krypton-review__outline-row--selected {
+  background: rgba(var(--krypton-accent-rgb), 0.14);
+}
+
+.krypton-review__outline-num {
+  flex-shrink: 0;
+  min-width: 2.2em;
+  text-align: right;
+  color: rgba(var(--krypton-fg-rgb), 0.35);
+}
+
+.krypton-review__outline-kind {
+  flex-shrink: 0;
+  min-width: 6.5em;
+  color: rgba(var(--krypton-accent-rgb), 0.7);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.krypton-review__outline-mark {
+  flex-shrink: 0;
+  min-width: 1em;
+  color: rgb(var(--krypton-accent-rgb));
+}
+
+.krypton-review__outline-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(var(--krypton-fg-rgb), 0.8);
+}
+
+.krypton-review__outline-comments {
+  flex-shrink: 0;
+  color: rgba(var(--krypton-accent-rgb), 0.7);
+  font-size: 11px;
+}
+
+.krypton-review__comment-quote {
+  flex-shrink: 0;
+  max-height: 5.5em;
+  overflow-y: auto;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb), 0.12);
+  color: rgba(var(--krypton-fg-rgb), 0.55);
+  font-size: 0.88em;
+  white-space: pre-wrap;
+}
+
+.krypton-review__comment-input,
+.krypton-review__note-input {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 9px 12px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: rgb(var(--krypton-fg-rgb));
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.5;
+}
+
+.krypton-review__send-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.krypton-review__send-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 12px;
+  font-size: 12px;
+}
+
+.krypton-review__send-mark {
+  flex-shrink: 0;
+  min-width: 7em;
+  color: rgb(var(--krypton-accent-rgb));
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.krypton-review__send-label {
+  flex: 1;
+  min-width: 0;
+  color: rgba(var(--krypton-fg-rgb), 0.8);
+  line-height: 1.45;
+}
+
+/* ── Picker (summon overlay) ──────────────────────────────────────────── */
+
+.krypton-review-picker {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 88vw);
+  max-height: 66vh;
+  overflow: hidden;
+  outline: none;
+  background: rgba(var(--krypton-bg-rgb), 0.97);
+  border: 1px solid rgba(var(--krypton-accent-rgb), 0.5);
+  color: rgb(var(--krypton-fg-rgb));
+  font-family: var(--krypton-font-family);
+  font-size: var(--krypton-font-size);
+}
+
+.krypton-review-picker__head {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.22);
+  background: rgba(var(--krypton-accent-rgb), 0.07);
+  color: rgba(var(--krypton-fg-rgb), 0.6);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.krypton-review-picker__filter {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb), 0.12);
+}
+
+.krypton-review-picker__filter-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: rgb(var(--krypton-fg-rgb));
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.krypton-review-picker__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.krypton-review-picker__empty {
+  padding: 28px 14px;
+  text-align: center;
+  color: rgba(var(--krypton-fg-rgb), 0.4);
+  font-size: 12px;
+}
+
+.krypton-review-picker__row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: default;
+}
+
+.krypton-review-picker__row--selected {
+  background: rgba(var(--krypton-accent-rgb), 0.14);
+}
+
+.krypton-review-picker__date {
+  flex-shrink: 0;
+  min-width: 6.5em;
+  color: rgba(var(--krypton-fg-rgb), 0.4);
+}
+
+.krypton-review-picker__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgb(var(--krypton-fg-rgb));
+}
+
+.krypton-review-picker__lane {
+  flex-shrink: 0;
+  min-width: 7em;
+  color: rgba(var(--krypton-accent-rgb), 0.75);
+}
+
+.krypton-review-picker__counts {
+  flex-shrink: 0;
+  min-width: 11em;
+  color: rgba(var(--krypton-fg-rgb), 0.4);
+}
+
+.krypton-review-picker__status--sent {
+  flex-shrink: 0;
+  min-width: 9em;
+  color: rgba(var(--krypton-success-rgb), 0.9);
+}
+
+.krypton-review-picker__status--answered {
+  flex-shrink: 0;
+  min-width: 9em;
+  color: rgb(var(--krypton-warning-rgb));
+}
+
+.krypton-review-picker__status--unopened {
+  flex-shrink: 0;
+  min-width: 9em;
+  color: rgba(var(--krypton-fg-rgb), 0.4);
+}
+
+.krypton-review-picker__status--reference {
+  flex-shrink: 0;
+  min-width: 9em;
+  color: rgba(var(--krypton-accent-rgb), 0.7);
+}

@@ -182,6 +182,17 @@ impl Default for SoundConfig {
 pub struct HintsConfig {
     pub alphabet: String,
     pub rules: Vec<HintRule>,
+    /// What selecting a `filepath` hint does: peek in the Quick Overview
+    /// dialog (default) or open the file in an editor tab directly.
+    pub file_action: HintFileAction,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HintFileAction {
+    #[default]
+    Peek,
+    Editor,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,6 +239,7 @@ impl Default for HintsConfig {
                     enabled: true,
                 },
             ],
+            file_action: HintFileAction::Peek,
         }
     }
 }

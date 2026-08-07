@@ -126,7 +126,7 @@ class HintController {
 | Copy        | `navigator.clipboard.writeText(text)` | identical |
 | Paste       | `terminal.paste(text)` | fallback to Copy + console warning (no terminal target) |
 
-Special case: the built-in `filepath` rule ignores the configured `Copy` action and calls `openInHelixTab()`, which creates a new tab in the focused window with `hx` as the tab's PTY process. This matches Quick File Search's primary open behavior, keeps path hints from mutating the clipboard, and lets the tab close automatically when Helix exits.
+Special case: the built-in `filepath` rule ignores the configured `Copy` action and follows `[hints] file_action` instead. Since spec 210 the default is `"peek"` — the rule builds a file peek source and hands it to the Quick Overview dialog, which renders the file read-only over the current pane and keeps `openInHelixTab()` one keystroke away on `Enter`. Setting `file_action = "editor"` restores the direct open, which creates a new tab in the focused window with `hx` as the tab's PTY process. Either way path hints never mutate the clipboard unless the user presses `y`.
 
 ### Input Router Changes
 
@@ -164,7 +164,7 @@ The global `Cmd+Shift+H` handler (`input-router.ts:515`) stays as-is — it's al
       → regex per rule; build Ranges; filter visible
       → assign labels; render overlay (position: fixed)
 5. Mode = Hint; subsequent keys go to handleHintKey → HintController.handleKey
-6. On selection: `filepath` opens in Helix; otherwise the action fires (Open/Copy/Paste→Copy), exit
+6. On selection: `filepath` peeks in the Quick Overview dialog (mode becomes QuickOverview, not Normal); otherwise the action fires (Open/Copy/Paste→Copy), exit
 ```
 
 ### Keybindings

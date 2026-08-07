@@ -24,6 +24,7 @@ import { backendLogoId } from './harness-lane-identity';
 import { transcriptLabel } from './harness-lane-chrome';
 import {
   renderArtifactCardBody,
+  renderReviewCardBody,
   renderToolBody,
 } from './harness-tool-render';
 import {
@@ -199,6 +200,11 @@ export function renderTranscriptItem(
     if (!item.artifact.available) el.classList.add('acp-harness__msg--artifact-unavailable');
     if (item.artifact.hintLabel) el.classList.add('acp-harness__msg--artifact-hinted');
     renderArtifactCardBody(body, item.artifact);
+  } else if (item.kind === 'review' && item.review) {
+    label.textContent = 'review';
+    el.classList.add('acp-harness__msg--artifact');
+    if (item.review.hintLabel) el.classList.add('acp-harness__msg--artifact-hinted');
+    renderReviewCardBody(body, item.review);
   } else if (item.kind === 'system' && item.diff) {
     // spec 124: directive upsert approval card with a before/after diff.
     const text = document.createElement('div');

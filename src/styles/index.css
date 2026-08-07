@@ -16,6 +16,7 @@
 @import './attention-triage.css';
 @import './review-quality.css';
 @import './review-priority.css';
+@import './review-board.css';
 @import './orchestrator-console.css';
 @import './profiler.css';
 @import './inline-ai.css';
@@ -26,6 +27,7 @@
 @import './hurl-view.css';
 @import './pencil-view.css';
 @import './quick-file-search.css';
+@import './quick-overview.css';
 @import './webview-view.css';
 @import './usage-view.css';
 @import './telegram-settings.css';

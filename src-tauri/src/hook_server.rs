@@ -188,6 +188,12 @@ pub struct HookServer {
     /// Monotonic artifact id sequence (resets per app run — artifact paths are
     /// swept on close and the random suffix keeps them unguessable).
     next_artifact_seq: AtomicU64,
+    /// Spec 211: Review Board registry, keyed by harness id. Only the CARD lives
+    /// here; the bundle on disk outlives the entry, the lane, and the app, and is
+    /// rediscovered by walking `.krypton/reviews/` (no session state).
+    reviews: std::sync::Mutex<HashMap<String, HarnessReviewStore>>,
+    /// Monotonic review id sequence (per app run — the durable id is the slug).
+    next_review_seq: AtomicU64,
     /// Spec 149: per-artifact feedback tokens, keyed by the unguessable token
     /// baked into the served artifact URL. The token is the sole capability for
     /// `GET /artifact/<token>` + `POST /artifact/feedback/<token>`. `revoked`
@@ -254,6 +260,8 @@ impl Default for HookServer {
             triage_equipped: std::sync::Mutex::new(HashMap::new()),
             artifacts: std::sync::Mutex::new(HashMap::new()),
             next_artifact_seq: AtomicU64::new(1),
+            reviews: std::sync::Mutex::new(HashMap::new()),
+            next_review_seq: AtomicU64::new(1),
             feedback_tokens: std::sync::Mutex::new(HashMap::new()),
             telemetry: std::sync::Mutex::new(HashMap::new()),
             command_manifest: std::sync::Mutex::new(None),
@@ -275,6 +283,8 @@ impl HookServer {
             triage_equipped: std::sync::Mutex::new(HashMap::new()),
             artifacts: std::sync::Mutex::new(HashMap::new()),
             next_artifact_seq: AtomicU64::new(1),
+            reviews: std::sync::Mutex::new(HashMap::new()),
+            next_review_seq: AtomicU64::new(1),
             feedback_tokens: std::sync::Mutex::new(HashMap::new()),
             telemetry: std::sync::Mutex::new(HashMap::new()),
             command_manifest: std::sync::Mutex::new(None),
@@ -402,6 +412,7 @@ impl HookServer {
         }
 
         let artifact_project_dir = project_dir.clone();
+        let review_project_dir = project_dir.clone();
         let store = HarnessMemoryStore {
             lanes,
             persistence_path,
@@ -417,6 +428,9 @@ impl HookServer {
         // Spec 133: register the in-memory artifact store. On-disk files persist
         // as append-only history across harness close and app restarts.
         self.init_harness_artifacts(&harness_id, artifact_project_dir);
+        // Spec 211: register the review card store. Bundles on disk are durable
+        // records rediscovered by a directory walk, so nothing is rehydrated here.
+        self.init_harness_reviews(&harness_id, review_project_dir);
         harness_id
     }
 
@@ -684,6 +698,12 @@ impl HookServer {
         // Spec 133: drop this harness from the in-memory artifact registry on
         // normal close. On-disk artifact files are preserved (append-only history).
         self.dispose_harness_artifacts(harness_id);
+        // Spec 211: same for reviews — the card registry is session state, the
+        // bundle on disk is the record and is never swept.
+        self.reviews
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(harness_id);
         let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
         memories.remove(harness_id);
         let mut stats = self.mcp_stats.lock().unwrap_or_else(|e| e.into_inner());
@@ -783,6 +803,374 @@ impl HookServer {
                 })
             })
             .collect()
+    }
+
+    // ─── Review store (spec 211) ────────────────────────────────────────────
+
+    /// Register an in-memory review store for a harness. Deliberately does NOT
+    /// rehydrate cards from disk the way artifacts do (spec 173): a review is
+    /// reopened through the picker, which walks `.krypton/reviews/` directly, so
+    /// replaying every past bundle as a transcript card would be noise.
+    fn init_harness_reviews(&self, harness_id: &str, project_dir: Option<String>) {
+        let mut reviews = self.reviews.lock().unwrap_or_else(|e| e.into_inner());
+        reviews.insert(
+            harness_id.to_string(),
+            HarnessReviewStore {
+                project_dir,
+                entries: HashMap::new(),
+            },
+        );
+    }
+
+    /// `review_new` — allocate an id, create a durable bundle directory keyed by
+    /// date + title slug, seed an empty `review.md`, and record a `pending` entry.
+    /// Returns `{ id, slug, dir, path, tail }`. Fails closed if the directory or
+    /// its `.gitignore` cannot be created — a path we cannot keep out of the
+    /// user's git status must never be handed out.
+    fn review_new(
+        &self,
+        harness_id: &str,
+        lane_label: &str,
+        title: &str,
+        subject: Option<&str>,
+    ) -> Result<Value, String> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err("title must be non-empty".to_string());
+        }
+        if title.chars().count() > REVIEW_TITLE_MAX {
+            return Err(format!(
+                "title is {} chars but must be \u{2264}{REVIEW_TITLE_MAX}",
+                title.chars().count()
+            ));
+        }
+        let subject = subject.map(str::trim).filter(|s| !s.is_empty());
+        if let Some(s) = subject {
+            if s.chars().count() > REVIEW_SUBJECT_MAX {
+                return Err(format!(
+                    "subject is {} chars but must be \u{2264}{REVIEW_SUBJECT_MAX}",
+                    s.chars().count()
+                ));
+            }
+        }
+
+        let seq = self.next_review_seq.fetch_add(1, Ordering::Relaxed);
+        let review_id = format!("rev-{seq}-{}", rand_suffix());
+
+        let mut reviews = self.reviews.lock().unwrap_or_else(|e| e.into_inner());
+        let store = reviews
+            .get_mut(harness_id)
+            .ok_or_else(|| format!("Unknown harness: {harness_id}"))?;
+        let project_dir = store
+            .project_dir
+            .clone()
+            .ok_or_else(|| "no project directory for reviews in this harness".to_string())?;
+
+        let pending_for_lane = store
+            .entries
+            .values()
+            .filter(|e| e.lane_label == lane_label && e.state == ReviewState::Pending)
+            .count();
+        if pending_for_lane >= REVIEW_PENDING_PER_LANE_MAX {
+            return Err(format!(
+                "pending_cap: at most {REVIEW_PENDING_PER_LANE_MAX} outstanding pending reviews per lane — register or cancel one first"
+            ));
+        }
+        if store.entries.len() >= REVIEW_PER_SESSION_MAX {
+            return Err(format!(
+                "session_cap: at most {REVIEW_PER_SESSION_MAX} reviews per harness tab"
+            ));
+        }
+
+        let root = reviews_root(&project_dir)
+            .ok_or_else(|| "could not resolve review root".to_string())?;
+        ensure_reviews_gitignore(&root)
+            .map_err(|e| format!("could not prepare review root: {e}"))?;
+
+        let (slug, dir) = allocate_review_dir(&root, title)
+            .map_err(|e| format!("could not create review bundle dir: {e}"))?;
+        let path = dir.join("review.md");
+        let tail = format!(".krypton/reviews/{slug}/");
+
+        // Seed the frontmatter stamp so the bundle is self-describing on disk
+        // from the moment it exists — a lane that dies before writing anything
+        // still leaves a readable, attributable directory.
+        let stamp = format!(
+            "---\ntitle: {}\nlane: {}\nsubject: {}\ncreated: {}\n---\n\n",
+            yaml_scalar(title),
+            yaml_scalar(lane_label),
+            yaml_scalar(subject.unwrap_or("")),
+            yaml_scalar(&now_rfc3339()),
+        );
+        write_file_atomic(&path, &stamp).map_err(|e| format!("could not seed review.md: {e}"))?;
+
+        store.entries.insert(
+            review_id.clone(),
+            ReviewEntry {
+                id: review_id.clone(),
+                lane_label: lane_label.to_string(),
+                title: title.to_string(),
+                slug: slug.clone(),
+                dir: dir.clone(),
+                path: path.clone(),
+                tail: tail.clone(),
+                state: ReviewState::Pending,
+                blocks: 0,
+                steps: 0,
+                findings: 0,
+                decisions: 0,
+            },
+        );
+        drop(reviews);
+
+        Ok(json!({
+            "id": review_id,
+            "slug": slug,
+            "dir": dir.to_string_lossy(),
+            "path": path.to_string_lossy(),
+            "tail": tail,
+            "title": title,
+            "state": "pending",
+        }))
+    }
+
+    /// `review_register` — validate `review.md`, count its blocks, and transition
+    /// `pending → registered_live`. A repeat call on a live id is an idempotent
+    /// refresh (re-reads and re-counts), so a lane that keeps iterating can keep
+    /// the card's counts honest.
+    fn review_register(
+        &self,
+        harness_id: &str,
+        lane_label: &str,
+        id: &str,
+    ) -> Result<Value, String> {
+        let mut reviews = self.reviews.lock().unwrap_or_else(|e| e.into_inner());
+        let store = reviews
+            .get_mut(harness_id)
+            .ok_or_else(|| format!("Unknown harness: {harness_id}"))?;
+        let project_dir = store.project_dir.clone();
+        let entry = store
+            .entries
+            .get_mut(id)
+            // No path detail leaked for an id that is not the caller's.
+            .filter(|e| e.lane_label == lane_label)
+            .ok_or_else(|| "not_found: no such review id for this lane".to_string())?;
+
+        let root = project_dir
+            .as_deref()
+            .and_then(reviews_root)
+            .ok_or_else(|| "could not resolve review root".to_string())?;
+        let source = validate_review_file(&root, &entry.path, &entry.slug, REVIEW_FILE_BYTES_MAX)?;
+        let counts = count_review_blocks(&source);
+        if counts.blocks == 0 {
+            return Err(
+                "empty: review.md has no content yet — write the document before registering"
+                    .to_string(),
+            );
+        }
+
+        let was_pending = entry.state == ReviewState::Pending;
+        entry.state = ReviewState::RegisteredLive;
+        entry.blocks = counts.blocks;
+        entry.steps = counts.steps;
+        entry.findings = counts.findings;
+        entry.decisions = counts.decisions;
+        let snapshot = entry.clone();
+        drop(reviews);
+
+        Ok(json!({
+            "ok": true,
+            "id": snapshot.id,
+            "slug": snapshot.slug,
+            "dir": snapshot.dir.to_string_lossy(),
+            "path": snapshot.path.to_string_lossy(),
+            "tail": snapshot.tail,
+            "title": snapshot.title,
+            "blocks": counts.blocks,
+            "steps": counts.steps,
+            "findings": counts.findings,
+            "decisions": counts.decisions,
+            // First register raises the card; a repeat is just a refresh.
+            "registered": was_pending,
+        }))
+    }
+
+    /// `review_cancel` — `pending` only: drop the registry entry, and remove the
+    /// bundle directory when it holds nothing but the seeded stamp. A bundle the
+    /// lane actually wrote into is left on disk; abandoning a draft must not
+    /// delete work, and the `/reviews` index labels it `never composed`.
+    fn review_cancel(&self, harness_id: &str, lane_label: &str, id: &str) -> Result<Value, String> {
+        let mut reviews = self.reviews.lock().unwrap_or_else(|e| e.into_inner());
+        let store = reviews
+            .get_mut(harness_id)
+            .ok_or_else(|| format!("Unknown harness: {harness_id}"))?;
+        let entry = store
+            .entries
+            .get(id)
+            .filter(|e| e.lane_label == lane_label)
+            .ok_or_else(|| "not_found: no such review id for this lane".to_string())?;
+        if entry.state == ReviewState::RegisteredLive {
+            return Err(
+                "already_registered: cannot cancel a registered review (the bundle is a record)"
+                    .to_string(),
+            );
+        }
+        let dir = entry.dir.clone();
+        let path = entry.path.clone();
+        store.entries.remove(id);
+        drop(reviews);
+
+        // Only reclaim a bundle that is still just the seeded stamp.
+        let untouched = std::fs::read_to_string(&path)
+            .map(|s| count_review_blocks(&s).blocks == 0)
+            .unwrap_or(false);
+        if untouched && bundle_has_only(&dir, "review.md") {
+            let _ = std::fs::remove_file(&path);
+            let _ = std::fs::remove_dir(&dir);
+        }
+        Ok(json!({ "ok": true, "id": id }))
+    }
+
+    /// Cancel every outstanding `pending` review for a lane (turn-end / lane
+    /// teardown). Registered reviews are untouched — the card and the bundle both
+    /// survive, because a review result is not a throwaway view.
+    pub fn cancel_pending_reviews(&self, harness_id: &str, lane_label: &str) -> Vec<String> {
+        let pending: Vec<String> = {
+            let reviews = self.reviews.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(store) = reviews.get(harness_id) else {
+                return Vec::new();
+            };
+            store
+                .entries
+                .values()
+                .filter(|e| e.lane_label == lane_label && e.state == ReviewState::Pending)
+                .map(|e| e.id.clone())
+                .collect()
+        };
+        // Reuse the single-cancel path so the reclaim rule lives in one place.
+        for id in &pending {
+            let _ = self.review_cancel(harness_id, lane_label, id);
+        }
+        pending
+    }
+
+    /// Re-read `review.md` after an observed write and refresh the card's counts.
+    pub fn refresh_review(
+        &self,
+        harness_id: &str,
+        lane_label: &str,
+        id: &str,
+    ) -> Result<Value, String> {
+        // Same validation as register's idempotent refresh path.
+        self.review_register(harness_id, lane_label, id)
+    }
+
+    /// Every review bundle under a harness's project dir, newest first — a
+    /// DIRECTORY WALK, not a registry read, which is exactly why a bundle from a
+    /// previous session (or a previous app run) is still findable.
+    pub fn list_review_bundles(&self, harness_id: &str) -> Vec<Value> {
+        let project_dir = {
+            let reviews = self.reviews.lock().unwrap_or_else(|e| e.into_inner());
+            reviews.get(harness_id).and_then(|s| s.project_dir.clone())
+        };
+        let Some(project_dir) = project_dir else {
+            return Vec::new();
+        };
+        discover_review_bundles(&project_dir)
+            .into_iter()
+            .map(|b| b.to_json())
+            .collect()
+    }
+
+    /// Resolve a caller-supplied bundle directory to a canonical path that is
+    /// genuinely a bundle under SOME live harness's `.krypton/reviews/`. This is
+    /// the only gate on the two bundle-file commands, so it is deliberately strict:
+    /// canonicalize (which also resolves symlinks), then require the parent to be
+    /// a canonical review root. A path that merely looks right is rejected.
+    fn resolve_review_dir(&self, dir: &str) -> Result<PathBuf, String> {
+        if dir.is_empty() {
+            return Err("path_invalid: empty bundle directory".to_string());
+        }
+        let canonical = StdPath::new(dir)
+            .canonicalize()
+            .map_err(|e| format!("not_found: bundle directory unavailable ({e})"))?;
+        if !canonical.is_dir() {
+            return Err("path_invalid: not a directory".to_string());
+        }
+        let roots: Vec<PathBuf> = {
+            let reviews = self.reviews.lock().unwrap_or_else(|e| e.into_inner());
+            reviews
+                .values()
+                .filter_map(|store| store.project_dir.as_deref())
+                .filter_map(reviews_root)
+                .filter_map(|root| root.canonicalize().ok())
+                .collect()
+        };
+        // The bundle is exactly one level below a review root — never deeper, so
+        // `assets/` (or anything else nested) can't be targeted as a bundle.
+        let parent = canonical
+            .parent()
+            .ok_or_else(|| "path_invalid: bundle has no parent".to_string())?;
+        if !roots.iter().any(|root| root == parent) {
+            return Err("path_invalid: not a review bundle directory".to_string());
+        }
+        Ok(canonical)
+    }
+
+    /// spec 211: read one bundle's raw `review.md` + `response.md`. A missing
+    /// `review.md` is NOT an error — a lane may have died before writing it, and
+    /// the Board shows an empty state rather than failing to open.
+    pub fn read_review_bundle(&self, dir: &str) -> Result<Value, String> {
+        let canonical = self.resolve_review_dir(dir)?;
+        let slug = canonical
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let review = std::fs::read_to_string(canonical.join("review.md")).unwrap_or_default();
+        if review.len() as u64 > REVIEW_FILE_BYTES_MAX {
+            return Err(format!(
+                "size_cap: review.md is {} bytes but the limit is {REVIEW_FILE_BYTES_MAX}",
+                review.len()
+            ));
+        }
+        let response = std::fs::read_to_string(canonical.join("response.md")).ok();
+        Ok(json!({
+            "slug": slug,
+            "dir": canonical.to_string_lossy(),
+            "review": review,
+            "response": response,
+        }))
+    }
+
+    /// spec 211: move a bundle's `response.md` aside to `response.md.bak`. Called
+    /// when the Board finds a frontmatter it cannot read at all: a bad hand-edit
+    /// must never block the review, and must never be silently lost either. A
+    /// missing file is a no-op, not an error.
+    pub fn backup_review_response(&self, dir: &str) -> Result<Value, String> {
+        let canonical = self.resolve_review_dir(dir)?;
+        let path = canonical.join("response.md");
+        if !path.exists() {
+            return Ok(json!({ "ok": true, "backed_up": false }));
+        }
+        let backup = canonical.join("response.md.bak");
+        std::fs::rename(&path, &backup).map_err(|e| format!("backup failed: {e}"))?;
+        Ok(json!({ "ok": true, "backed_up": true, "path": backup.to_string_lossy() }))
+    }
+
+    /// spec 211: atomically write a bundle's `response.md`. Returns the resolved
+    /// path so the caller can report it; the write is temp-file + rename, so an
+    /// interrupted save never leaves a half-written response.
+    pub fn write_review_response(&self, dir: &str, contents: &str) -> Result<Value, String> {
+        let canonical = self.resolve_review_dir(dir)?;
+        if contents.len() as u64 > REVIEW_FILE_BYTES_MAX {
+            return Err(format!(
+                "size_cap: response is {} bytes but the limit is {REVIEW_FILE_BYTES_MAX}",
+                contents.len()
+            ));
+        }
+        let path = canonical.join("response.md");
+        write_file_atomic(&path, contents).map_err(|e| format!("write failed: {e}"))?;
+        Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
     }
 
     /// Drop a harness from the in-memory artifact registry. On-disk files are
@@ -1033,6 +1421,58 @@ impl HookServer {
             None => "Issue analyses".to_string(),
         };
         render_analyses_page(&title, Some(&nav), &content)
+    }
+
+    /// Discover review bundles for every harness: `(harness_id, project_dir,
+    /// bundles)`. One filesystem walk per harness; callers reuse this for both the
+    /// index/bundle content AND the sidebar so `/review` walks the tree once.
+    fn discover_reviews_per_harness(&self) -> Vec<(String, String, Vec<ReviewBundleInfo>)> {
+        self.docs_project_dirs()
+            .into_iter()
+            .map(|(id, path)| {
+                let bundles = discover_review_bundles(&path);
+                (id, path, bundles)
+            })
+            .collect()
+    }
+
+    /// Render the `/reviews` index: every harness's bundles in the sidebar, the
+    /// selected harness's bundles as rows on the right. `sel_harness` defaults to
+    /// the first harness that actually has bundles.
+    fn reviews_index_page(&self, sel_harness: Option<&str>) -> Response {
+        let per = self.discover_reviews_per_harness();
+        if per.is_empty() {
+            return render_reviews_page(
+                "Review Boards",
+                Some(""),
+                "<p class=\"welcome\">No harness working directory is available.</p>",
+            );
+        }
+        let selected = sel_harness
+            .filter(|h| per.iter().any(|(id, _, b)| id == h && !b.is_empty()))
+            .map(str::to_string)
+            .or_else(|| {
+                per.iter()
+                    .find(|(_, _, b)| !b.is_empty())
+                    .map(|(id, _, _)| id.clone())
+            });
+        let nav = render_reviews_nav(&per, selected.as_deref().unwrap_or(""), "");
+        let content = match &selected {
+            Some(harness_id) => {
+                let bundles = per
+                    .iter()
+                    .find(|(id, _, _)| id == harness_id)
+                    .map(|(_, _, b)| b.as_slice())
+                    .unwrap_or(&[]);
+                render_reviews_index(harness_id, bundles)
+            }
+            None => "<p class=\"welcome\">ยังไม่มี Review Board — ขอให้เลนอธิบายโค้ดหรือรัน #review เพื่อให้เลนเขียนขึ้นมา</p>".to_string(),
+        };
+        let title = match &selected {
+            Some(harness_id) => format!("Review Boards · {harness_id}"),
+            None => "Review Boards".to_string(),
+        };
+        render_reviews_page(&title, Some(&nav), &content)
     }
 
     /// `artifact_new` — allocate an id, issue a destination path inside the
@@ -1510,6 +1950,68 @@ struct HarnessArtifactStore {
     entries: HashMap<String, ArtifactEntry>,
 }
 
+// ─── Review Board (spec 211) ────────────────────────────────────────────────
+// Path-handoff exactly like an artifact (spec 133), but the destination is a
+// DURABLE bundle directory keyed by date + title slug rather than a swept,
+// session-keyed file: `hm-1/Claude-1` is meaningless a week later, and a review
+// result is a record. Bundles are never swept; the registry entry is the only
+// thing torn down when a lane closes.
+
+/// Max characters for a review title (card label + slug source).
+const REVIEW_TITLE_MAX: usize = 200;
+/// Max characters for the `subject` stamp (what is under review).
+const REVIEW_SUBJECT_MAX: usize = 500;
+/// Max bytes for `review.md`, enforced at register and on every refresh.
+const REVIEW_FILE_BYTES_MAX: u64 = 4 * 1024 * 1024;
+/// Max live + pending reviews per harness tab.
+const REVIEW_PER_SESSION_MAX: usize = 64;
+/// Max outstanding `pending` reviews per lane. A pending entry authorizes writes
+/// into a bundle directory, so they stay bounded and short-lived.
+const REVIEW_PENDING_PER_LANE_MAX: usize = 2;
+/// Max slug length, so a long title cannot produce an unwieldy directory name.
+const REVIEW_SLUG_MAX: usize = 60;
+/// Max same-day collision suffixes tried before giving up (`-2` … `-50`).
+const REVIEW_SLUG_COLLISION_MAX: u32 = 50;
+/// Max bytes `/review-asset` will stream for one attached image (25 MiB).
+const REVIEW_ASSET_MAX_BYTES: u64 = 25 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReviewState {
+    Pending,
+    RegisteredLive,
+}
+
+#[derive(Debug, Clone)]
+struct ReviewEntry {
+    id: String,
+    lane_label: String,
+    title: String,
+    /// Bundle directory name — the durable id, e.g. `2026-08-07-peering-guard`.
+    slug: String,
+    /// Absolute bundle directory.
+    dir: PathBuf,
+    /// Absolute issued path to `<dir>/review.md`.
+    path: PathBuf,
+    /// Project-relative tail `.krypton/reviews/<slug>/` — the PREFIX the frontend
+    /// matches write targets against. Unlike an artifact (one file), write
+    /// auto-approval covers the whole bundle so the lane may add `assets/`.
+    tail: String,
+    state: ReviewState,
+    /// Block/step/finding/decision counts from the last register, for the card.
+    blocks: usize,
+    steps: usize,
+    findings: usize,
+    decisions: usize,
+}
+
+#[derive(Debug, Default)]
+struct HarnessReviewStore {
+    /// Lane working dir. None ⇒ reviews unavailable here.
+    project_dir: Option<String>,
+    /// Key: review id.
+    entries: HashMap<String, ReviewEntry>,
+}
+
 /// One markdown file in a harness's working dir, addressed by its full
 /// `/`-joined path relative to the project root (spec 171 rev 4: the docs index
 /// is a flat list, so a file carries its whole path, not just a leaf name).
@@ -1551,6 +2053,25 @@ struct AnalysesQuery {
 struct AnalysisQuery {
     harness: Option<String>,
     issue: String,
+    file: Option<String>,
+}
+
+/// Query for the Review Board archive index (`/reviews`). `harness` selects which
+/// harness's bundles fill the right pane (defaults to the first with bundles).
+#[derive(Debug, Default, Deserialize)]
+struct ReviewsQuery {
+    harness: Option<String>,
+}
+
+/// Query for one review bundle (`/review`). `slug` is the bundle directory name —
+/// the durable id. `harness` is optional (like `/docs`): when omitted, the handler
+/// picks the harness that owns the slug, else the first harness with bundles, so a
+/// bare `/review?slug=…` bookmark still resolves. `file` is `review` (default) or
+/// `response`; anything else falls back to `review`.
+#[derive(Debug, Deserialize)]
+struct ReviewQuery {
+    harness: Option<String>,
+    slug: String,
     file: Option<String>,
 }
 
@@ -1754,6 +2275,9 @@ const DASHBOARD_HTML: &str = include_str!("../../src/acp/artifact-dashboard.html
 const GALLERY_HTML: &str = include_str!("../../src/acp/artifact-gallery.html");
 const DOCS_HTML: &str = include_str!("../../src/acp/artifact-docs.html");
 const ANALYSES_HTML: &str = include_str!("../../src/acp/artifact-analyses.html");
+/// spec 211: the read-only Review Board archive shell (Binance-dark, cloned from
+/// the analyses shell). The Board itself is in-app; this page only browses.
+const REVIEWS_HTML: &str = include_str!("../../src/acp/artifact-reviews.html");
 const COMMANDS_HTML: &str = include_str!("../../src/acp/artifact-commands.html");
 const TOOLS_HTML: &str = include_str!("../../src/acp/artifact-tools.html");
 const TERMCTRL_HTML: &str = include_str!("../../src/acp/artifact-termctrl.html");
@@ -1890,6 +2414,10 @@ fn tool_category(name: &str) -> &'static str {
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
         "review_outcome" | "mark_review_priority" => "review",
+        // spec 211: the Review Board is an authored surface, grouped with the
+        // other path-handoff surfaces rather than with the `review_outcome`
+        // bookkeeping tools it shares a name prefix with.
+        "review_new" | "review_register" | "review_cancel" => "artifacts",
         "issue_progress" => "issues",
         _ => "other", // forward-compat: an unmapped tool still renders
     }
@@ -2120,6 +2648,110 @@ async fn handle_analysis_asset(
 
 /// Max bytes `/analysis-asset` will stream for one downloaded resource (25 MiB).
 const ANALYSIS_ASSET_MAX_BYTES: u64 = 25 * 1024 * 1024;
+
+/// GET /reviews?harness=<id> — the Review Board archive index (spec 211).
+/// READ-ONLY by design: it shows you what exists and what you left hanging, and
+/// you open it in the app with `Leader Shift+R`. There is deliberately no
+/// browser→app channel and no answering here.
+async fn handle_reviews(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<ReviewsQuery>,
+) -> Response {
+    state
+        .hook_server
+        .reviews_index_page(query.harness.as_deref())
+}
+
+/// GET /review?harness=<id>&slug=<slug>[&file=review|response] — one bundle.
+/// `harness` is optional: without it we pick the harness that owns the slug, else
+/// the first harness with bundles. One filesystem walk feeds both the bundle page
+/// and the sidebar.
+async fn handle_review(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<ReviewQuery>,
+) -> Response {
+    let per = state.hook_server.discover_reviews_per_harness();
+    let harness_id = query
+        .harness
+        .as_deref()
+        .filter(|h| per.iter().any(|(id, _, _)| id == h))
+        .map(str::to_string)
+        .or_else(|| {
+            per.iter()
+                .find(|(_, _, b)| b.iter().any(|x| x.slug == query.slug))
+                .map(|(id, _, _)| id.clone())
+        })
+        .or_else(|| {
+            per.iter()
+                .find(|(_, _, b)| !b.is_empty())
+                .map(|(id, _, _)| id.clone())
+        });
+    let Some(harness_id) = harness_id else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some((_, _, bundles)) = per.iter().find(|(id, _, _)| id == &harness_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some(bundle) = bundles.iter().find(|b| b.slug == query.slug) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    // `file` is matched against a two-entry whitelist, never joined into a path.
+    let sel_file = match query.file.as_deref() {
+        Some("response") if bundle.responded_at.is_some() => "response",
+        _ => "review",
+    };
+    let content = render_review_bundle(&harness_id, bundle, sel_file);
+    let nav = render_reviews_nav(&per, &harness_id, &bundle.slug);
+    render_reviews_page(&bundle.title, Some(&nav), &content)
+}
+
+/// GET /review-asset?harness=<id>&path=<rel> — serve a whitelisted image from a
+/// review bundle. Same traversal/symlink/extension guard + headers as
+/// `/analysis-asset`, additionally scoped to `.krypton/reviews/` and byte-capped.
+async fn handle_review_asset(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocQuery>,
+) -> Response {
+    let project_dir = match state.hook_server.docs_project_dir(&query.harness) {
+        Some(dir) => dir,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let path = match validate_doc_path(
+        StdPath::new(&project_dir),
+        &query.path,
+        &["png", "jpg", "jpeg", "gif", "svg", "webp"],
+    ) {
+        Ok(path) => path,
+        Err(error) if error.starts_with("not_found:") => {
+            return StatusCode::NOT_FOUND.into_response()
+        }
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    // Scope this route to the review root — it must never serve an arbitrary
+    // project image the way `/doc-asset` may. `path` is already canonical.
+    let Some(root) = reviews_root(&project_dir).and_then(|r| r.canonicalize().ok()) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !path.starts_with(&root) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > REVIEW_ASSET_MAX_BYTES {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
+    let mime = doc_asset_mime(&path);
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(bytes))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
 
 /// GET /doc-state?harness=<id>&path=<rel> — current sha256 of a repo `.md`, so
 /// the docs-browser feedback overlay can live-reload the page when a lane edits
@@ -2481,6 +3113,9 @@ async fn handle_bus_tool_call(
         "artifact_new" => artifact_tool_new(state, harness_id, lane_label, arguments),
         "artifact_register" => artifact_tool_register(state, harness_id, lane_label, arguments),
         "artifact_cancel" => artifact_tool_cancel(state, harness_id, lane_label, arguments),
+        "review_new" => review_tool_new(state, harness_id, lane_label, arguments),
+        "review_register" => review_tool_register(state, harness_id, lane_label, arguments),
+        "review_cancel" => review_tool_cancel(state, harness_id, lane_label, arguments),
         "issue_progress" => issue_progress(state, harness_id, lane_label, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
@@ -3654,6 +4289,97 @@ fn artifact_tool_cancel(
     Ok(value)
 }
 
+/// spec 211 — `review_new`: allocate the durable bundle, emit a `pending` event
+/// so the frontend opens issued-path write auto-approval over the whole bundle.
+fn review_tool_new(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let title = required_string(&arguments, "title")?;
+    let subject = arguments
+        .get("subject")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let value = state
+        .hook_server
+        .review_new(harness_id, lane_label, &title, subject.as_deref())?;
+    state.app_handle.emit_or_log(
+        "acp-harness-review",
+        json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "id": value.get("id"),
+            "slug": value.get("slug"),
+            "dir": value.get("dir"),
+            "path": value.get("path"),
+            "tail": value.get("tail"),
+            "title": value.get("title"),
+            "state": "pending",
+        }),
+    );
+    Ok(value)
+}
+
+/// spec 211 — `review_register`: validate + count blocks, emit a `registered`
+/// event (first call raises the card; a repeat refreshes its counts).
+fn review_tool_register(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let id = required_string(&arguments, "id")?;
+    let value = state
+        .hook_server
+        .review_register(harness_id, lane_label, &id)?;
+    state.app_handle.emit_or_log(
+        "acp-harness-review",
+        json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "id": value.get("id"),
+            "slug": value.get("slug"),
+            "dir": value.get("dir"),
+            "path": value.get("path"),
+            "tail": value.get("tail"),
+            "title": value.get("title"),
+            "blocks": value.get("blocks"),
+            "steps": value.get("steps"),
+            "findings": value.get("findings"),
+            "decisions": value.get("decisions"),
+            "state": "registered",
+            "registered": value.get("registered"),
+        }),
+    );
+    Ok(value)
+}
+
+/// spec 211 — `review_cancel`: drop a pending entry, emit a `cancelled` event so
+/// the frontend closes the write grant.
+fn review_tool_cancel(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let id = required_string(&arguments, "id")?;
+    let value = state
+        .hook_server
+        .review_cancel(harness_id, lane_label, &id)?;
+    state.app_handle.emit_or_log(
+        "acp-harness-review",
+        json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "id": id,
+            "state": "cancelled",
+        }),
+    );
+    Ok(value)
+}
+
 fn bus_tool_descriptors() -> Value {
     let mut tools = json!([
         {
@@ -3737,6 +4463,40 @@ fn bus_tool_descriptors() -> Value {
                 "type": "object",
                 "properties": {
                     "id": { "type": "string", "description": "The artifact id returned by artifact_new." }
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "review_new",
+            "description": "Compose a Review Board — a keyboard-navigable review DOCUMENT the user reads in the app, for EXPLAINING CODE to them: what a change does, how the pieces fit, what to read first. Returns `{ id, slug, dir, path }`; `path` is a `review.md` that ALREADY EXISTS (seeded with a frontmatter stamp) inside a durable bundle directory — EDIT it with your normal edit tool, then call review_register { id }. The document is ordinary Markdown plus typed fenced blocks: ```review:walkthrough (title + a `steps:` list of `- at: path:line` / `say: why it matters` — the reading order, and the spine of a good Board), ```review:finding (severity blocking|non-blocking|suggestion, title, optional file/line; prose after the fence explains it), ```review:decision (question + an `options:` list, optional 1-based `recommended:`), ```review:metrics (flat `label: value` rows), ```review:chart (kind bar|line|sparkline, optional title, `data:` map of label → number), ```review:svg (a static diagram), and a plain ```diff fence. EVERY Board must have an explanation spine: prose on what this is and how it works, plus a walkthrough when the subject spans more than one file. A Board that is only a findings list is a regression to plain turn text. Findings and decisions are OPTIONAL additions — zero findings is a perfectly good review ('here is what this code does, and it is sound'). Use it when the user asks you to explain, walk through, or review something, or to synthesize a #review. Do NOT compose one unsolicited, at every turn end, or after every edit — unwanted Boards are reviewer fatigue and clutter on disk. Write assets into `<dir>/assets/` if you need images.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "maxLength": REVIEW_TITLE_MAX, "description": "Short title shown on the card; also slugified into the bundle directory name." },
+                    "subject": { "type": "string", "maxLength": REVIEW_SUBJECT_MAX, "description": "What is under review — a diff summary, a doc path, or the code you are explaining. Recorded in the bundle so it is self-describing later." }
+                },
+                "required": ["title"]
+            }
+        },
+        {
+            "name": "review_register",
+            "description": "Register the Review Board you wrote at the path returned by review_new, raising its card in the transcript so the user can open it. Call this AFTER your file-write tool has finished. Returns `{ ok, id, slug, blocks, steps, findings, decisions }`. Idempotent on an already-registered id (re-reads and re-counts to refresh the card after you iterate on the document) — but you normally do not need to call it again, since the harness re-reads on every edit it observes. Errors if review.md is still empty.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "The review id returned by review_new." }
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "review_cancel",
+            "description": "Abandon a still-pending Review Board you created with review_new but decided not to register, and close its write grant. The bundle directory is removed only when you never wrote anything into it — a bundle holding real content is kept, because a review result is a record. Errors if the review was already registered.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "The review id returned by review_new." }
                 },
                 "required": ["id"]
             }
@@ -4720,6 +5480,1261 @@ fn render_analysis_bundle(
     content
 }
 
+// ─── Review Board bundles (spec 211) ────────────────────────────────────────
+// Durable, subject-keyed bundles under `.krypton/reviews/<date>-<slug>/`, the
+// same convention as spec 191's analysis bundles and for the same reason: a
+// directory walk finds them after a restart, where a session registry cannot.
+
+/// The review-bundle root for a project: `<project>/.krypton/reviews`. Sibling of
+/// `artifacts_root` / `analyses_root`. Gitignored working knowledge — the docs
+/// walker skips it, so the `/reviews` surface reads it directly.
+fn reviews_root(project_dir: &str) -> Option<PathBuf> {
+    let base = StdPath::new(project_dir);
+    if base.as_os_str().is_empty() {
+        return None;
+    }
+    Some(base.join(".krypton").join("reviews"))
+}
+
+/// `*`-ignore the review root the same way the artifact root is handled, so a
+/// bundle never shows up in the user's `git status`.
+fn ensure_reviews_gitignore(root: &StdPath) -> std::io::Result<()> {
+    std::fs::create_dir_all(root)?;
+    let gitignore = root.join(".gitignore");
+    if !gitignore.exists() {
+        std::fs::write(&gitignore, "*\n!.gitignore\n")?;
+    }
+    Ok(())
+}
+
+/// Write a file atomically (temp + rename) so an interrupted write never leaves a
+/// truncated document. Shared by the seeded `review.md` and `response.md`.
+fn write_file_atomic(path: &StdPath, contents: &str) -> std::io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    if let Err(e) = std::fs::write(&tmp, contents) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Quote a value for the seeded YAML frontmatter. JSON string escaping, for the
+/// same reason the frontend uses it: a title containing `:` or a newline must not
+/// be able to break the block it lives in.
+fn yaml_scalar(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
+}
+
+/// Current UTC time as `YYYY-MM-DDTHH:MM:SSZ`. Pure (no chrono dependency),
+/// built on the same `civil_from_days` the docs mtime formatter uses.
+fn now_rfc3339() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let (year, month, day) = civil_from_days(secs.div_euclid(86_400));
+    let tod = secs.rem_euclid(86_400);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        tod / 3600,
+        (tod % 3600) / 60,
+        tod % 60
+    )
+}
+
+/// Today's UTC date as `YYYY-MM-DD` — the sortable prefix of a bundle slug.
+fn today_ymd() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let (year, month, day) = civil_from_days(secs.div_euclid(86_400));
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// Slugify a review title into a directory-safe, human-meaningful component:
+/// lowercase, ASCII alphanumerics kept, everything else collapsed to a single
+/// `-`. Non-ASCII titles legitimately reduce to nothing, so the caller falls
+/// back to `review` rather than producing an empty path component.
+fn review_slug(title: &str) -> String {
+    let mut out = String::new();
+    let mut pending_dash = false;
+    for ch in title.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_dash && !out.is_empty() {
+                out.push('-');
+            }
+            pending_dash = false;
+            out.push(ch.to_ascii_lowercase());
+            if out.len() >= REVIEW_SLUG_MAX {
+                break;
+            }
+        } else {
+            pending_dash = true;
+        }
+    }
+    if out.is_empty() {
+        "review".to_string()
+    } else {
+        out
+    }
+}
+
+/// Create `<root>/<today>-<slug>/`, appending `-2`, `-3`… on a same-day title
+/// collision. Uses `create_dir` (not `create_dir_all`) on the leaf so the
+/// collision check is the filesystem's own atomic create, not a racy `exists()`.
+fn allocate_review_dir(root: &StdPath, title: &str) -> std::io::Result<(String, PathBuf)> {
+    let base = format!("{}-{}", today_ymd(), review_slug(title));
+    for attempt in 0..=REVIEW_SLUG_COLLISION_MAX {
+        let slug = if attempt == 0 {
+            base.clone()
+        } else {
+            format!("{base}-{}", attempt + 1)
+        };
+        let dir = root.join(&slug);
+        match std::fs::create_dir(&dir) {
+            Ok(()) => return Ok((slug, dir)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        format!("more than {REVIEW_SLUG_COLLISION_MAX} bundles share this title today"),
+    ))
+}
+
+/// Does this bundle directory contain only the one named file? Used to decide
+/// whether a cancelled draft can be reclaimed without deleting real work.
+fn bundle_has_only(dir: &StdPath, name: &str) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        if entry.file_name().to_string_lossy() != name {
+            return false;
+        }
+    }
+    true
+}
+
+/// Validate the issued `review.md` at register/refresh time and return its text.
+/// Rejects symlinks in any path component, hardlinks, non-regular files, a wrong
+/// basename, a path outside the review root, and files over the byte cap. A
+/// policy filter (not kernel-enforced confinement), mirroring
+/// `validate_artifact_file` — it closes the lane-swaps-the-file surface.
+fn validate_review_file(
+    root: &StdPath,
+    path: &StdPath,
+    slug: &str,
+    cap: u64,
+) -> Result<String, String> {
+    if path.file_name().and_then(|f| f.to_str()) != Some("review.md") {
+        return Err("path_mismatch: basename is not review.md".to_string());
+    }
+    // Component (not string-prefix) containment: the issued path is
+    // `<root>/<slug>/review.md`, exactly two components below the root.
+    let rel = path
+        .strip_prefix(root)
+        .map_err(|_| "path_mismatch: outside the review root".to_string())?;
+    let comps: Vec<_> = rel.components().collect();
+    if comps.len() != 2 || comps[0].as_os_str() != slug {
+        return Err("path_mismatch: unexpected bundle depth".to_string());
+    }
+
+    // Reject a symlink in ANY component: .krypton, reviews, the slug, the file.
+    let mut chain: Vec<PathBuf> = Vec::new();
+    if let Some(krypton_dir) = root.parent() {
+        chain.push(krypton_dir.to_path_buf());
+    }
+    chain.push(root.to_path_buf());
+    let mut cur = root.to_path_buf();
+    for comp in &comps {
+        cur = cur.join(comp.as_os_str());
+        chain.push(cur.clone());
+    }
+    for component in &chain {
+        if let Ok(meta) = std::fs::symlink_metadata(component) {
+            if meta.file_type().is_symlink() {
+                return Err("symlink_rejected: review path contains a symlink".to_string());
+            }
+        }
+    }
+
+    let meta = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("not_found: review.md is not present ({e})"))?;
+    let file_type = meta.file_type();
+    if file_type.is_symlink() {
+        return Err("symlink_rejected: review.md is a symlink".to_string());
+    }
+    if !file_type.is_file() {
+        return Err("not_regular_file: review.md is not a regular file".to_string());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.nlink() > 1 {
+            return Err("hardlink_rejected: review.md has multiple hard links".to_string());
+        }
+    }
+    let size = meta.len();
+    if size > cap {
+        return Err(format!(
+            "size_cap: review.md is {size} bytes but the limit is {cap}"
+        ));
+    }
+    std::fs::read_to_string(path).map_err(|e| format!("read failed: {e}"))
+}
+
+/// Block counts the card and the `/reviews` index report.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct ReviewCounts {
+    blocks: usize,
+    steps: usize,
+    findings: usize,
+    decisions: usize,
+}
+
+/// Count a review document's blocks without a Markdown parser. Deliberately
+/// approximate and cheap: this feeds a card label and an index row, and the
+/// authoritative parse happens in the frontend. Fence-aware so a `review:finding`
+/// mentioned inside a prose paragraph is not counted, and so a nested fence
+/// inside a typed block cannot open a phantom one.
+fn count_review_blocks(source: &str) -> ReviewCounts {
+    let mut counts = ReviewCounts::default();
+    // Skip the leading frontmatter stamp: it is metadata, not a block.
+    let body = strip_front_matter(source);
+    let mut open_fence: Option<String> = None;
+    let mut in_walkthrough = false;
+    let mut prose_run = false;
+
+    for line in body.lines() {
+        let trimmed = line.trim_start();
+        if let Some(fence) = open_fence.clone() {
+            // Inside a fence: only the matching closer ends it.
+            if trimmed.starts_with(&fence) && trimmed.trim_end().chars().all(|c| c == '`') {
+                open_fence = None;
+                in_walkthrough = false;
+            } else if in_walkthrough && trimmed.starts_with("- at:") {
+                counts.steps += 1;
+            }
+            continue;
+        }
+        if trimmed.starts_with("```") {
+            let ticks: String = trimmed.chars().take_while(|c| *c == '`').collect();
+            let info = trimmed[ticks.len()..].trim().to_ascii_lowercase();
+            let kind = info.split_whitespace().next().unwrap_or("");
+            open_fence = Some(ticks);
+            prose_run = false;
+            counts.blocks += 1;
+            match kind {
+                "review:walkthrough" => in_walkthrough = true,
+                "review:finding" => counts.findings += 1,
+                "review:decision" => counts.decisions += 1,
+                _ => {}
+            }
+            continue;
+        }
+        // A run of non-blank lines outside a fence is one prose block.
+        if trimmed.is_empty() {
+            prose_run = false;
+        } else if !prose_run {
+            prose_run = true;
+            counts.blocks += 1;
+        }
+    }
+    counts
+}
+
+/// Drop a leading `---`-delimited frontmatter block, if present.
+fn strip_front_matter(source: &str) -> &str {
+    let rest = match source.strip_prefix("---\n") {
+        Some(rest) => rest,
+        None => return source,
+    };
+    match rest.find("\n---") {
+        Some(idx) => {
+            let after = &rest[idx + 4..];
+            after.strip_prefix('\n').unwrap_or(after)
+        }
+        None => source,
+    }
+}
+
+/// A non-markdown file attached to a review bundle (an image the lane added).
+#[derive(Debug)]
+struct ReviewAsset {
+    rel: String, // project-relative path
+    size: u64,   // bytes, for the attachment strip label
+}
+
+/// One review bundle discovered on disk under `.krypton/reviews/<slug>/`.
+#[derive(Debug)]
+struct ReviewBundleInfo {
+    slug: String,
+    dir: PathBuf,
+    title: String,
+    lane_name: String,
+    created_at: i64,
+    /// Present when `response.md` exists — the human has answered something.
+    responded_at: Option<i64>,
+    /// Present when `response.md` records a `sent_at` — delivered to the lane.
+    sent_at: Option<i64>,
+    counts: ReviewCounts,
+    /// False when the lane called `review_new` and died before writing anything.
+    composed: bool,
+    assets: Vec<ReviewAsset>,
+    modified: Option<SystemTime>,
+}
+
+impl ReviewBundleInfo {
+    /// What the human triages across reviews: findings and decisions with nothing
+    /// recorded against them. Answers live in `response.md`, so a bundle with no
+    /// response has everything unanswered. Advisory only — never a score.
+    fn unanswered(&self) -> usize {
+        let answerable = self.counts.findings + self.counts.decisions;
+        let answered = self
+            .responded_at
+            .map(|_| count_response_answers(&self.dir))
+            .unwrap_or(0);
+        answerable.saturating_sub(answered)
+    }
+
+    /// The `ReviewBundle` shape the frontend picker consumes.
+    fn to_json(&self) -> Value {
+        let unanswered = self.unanswered();
+        json!({
+            "slug": self.slug,
+            "dir": self.dir.to_string_lossy(),
+            "title": self.title,
+            "laneName": self.lane_name,
+            "createdAt": self.created_at,
+            "respondedAt": self.responded_at,
+            "sentAt": self.sent_at,
+            "composed": self.composed,
+            "counts": {
+                "blocks": self.counts.blocks,
+                "steps": self.counts.steps,
+                "findings": self.counts.findings,
+                "decisions": self.counts.decisions,
+                "unanswered": unanswered,
+            },
+        })
+    }
+
+    /// Index-row status, derived from `response.md` (spec 211 Browser surface).
+    /// A bundle with nothing to answer is `reference` — an explanation to come
+    /// back to, not a task — rather than being given a completion status.
+    fn status_label(&self) -> &'static str {
+        if !self.composed {
+            return "never composed";
+        }
+        if self.counts.findings + self.counts.decisions == 0 {
+            return "reference";
+        }
+        match (self.responded_at, self.sent_at) {
+            (_, Some(_)) => "sent",
+            (Some(_), None) => "answered, not sent",
+            (None, _) => "never opened",
+        }
+    }
+}
+
+/// Count the answers recorded in a bundle's `response.md`. A line count over the
+/// frontmatter's `- block:` entries — cheap, and only ever used for an advisory
+/// "N unanswered" readout, never for correctness.
+fn count_response_answers(dir: &StdPath) -> usize {
+    let Ok(source) = std::fs::read_to_string(dir.join("response.md")) else {
+        return 0;
+    };
+    let front = strip_front_matter_block(&source);
+    let mut section = "";
+    let mut answers = 0;
+    for line in front.lines() {
+        let trimmed = line.trim();
+        if !line.starts_with(' ') && !line.starts_with('\t') && trimmed.ends_with(':') {
+            section = match trimmed.trim_end_matches(':') {
+                "findings" => "findings",
+                "decisions" => "decisions",
+                _ => "",
+            };
+            continue;
+        }
+        if !section.is_empty() && trimmed.starts_with("- block:") {
+            answers += 1;
+        }
+    }
+    answers
+}
+
+/// The TEXT of a leading frontmatter block (without its `---` fences), or "".
+fn strip_front_matter_block(source: &str) -> &str {
+    let Some(rest) = source.strip_prefix("---\n") else {
+        return "";
+    };
+    match rest.find("\n---") {
+        Some(idx) => &rest[..idx],
+        None => "",
+    }
+}
+
+/// Read one flat `key: value` out of a frontmatter block, JSON-unquoting it.
+fn front_matter_value(source: &str, key: &str) -> Option<String> {
+    let front = strip_front_matter_block(source);
+    for line in front.lines() {
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        let Some((k, v)) = line.split_once(':') else {
+            continue;
+        };
+        if !k.trim().eq_ignore_ascii_case(key) {
+            continue;
+        }
+        let raw = v.trim();
+        let decoded = if raw.starts_with('"') {
+            serde_json::from_str::<String>(raw)
+                .unwrap_or_else(|_| raw.trim_matches('"').to_string())
+        } else {
+            raw.to_string()
+        };
+        return if decoded.is_empty() {
+            None
+        } else {
+            Some(decoded)
+        };
+    }
+    None
+}
+
+/// Walk `<project>/.krypton/reviews/<slug>/` (unfiltered — the dir is gitignored,
+/// so `build_docs_tree` never sees it) and return one bundle per directory,
+/// NEWEST FIRST. The slug's `YYYY-MM-DD` prefix makes a reverse lexical sort
+/// chronological, with the directory name as a deterministic tiebreak.
+fn discover_review_bundles(project_dir: &str) -> Vec<ReviewBundleInfo> {
+    let Some(root) = reviews_root(project_dir) else {
+        return Vec::new();
+    };
+    let mut bundles: Vec<ReviewBundleInfo> = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return bundles;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+            continue;
+        }
+        let slug = entry.file_name().to_string_lossy().to_string();
+        if slug.starts_with('.') {
+            continue;
+        }
+        let dir = entry.path();
+        let Ok(files) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+
+        let mut assets: Vec<ReviewAsset> = Vec::new();
+        let mut modified: Option<SystemTime> = None;
+        let mut has_review = false;
+        let mut has_response = false;
+        for file in files.filter_map(Result::ok) {
+            let name = file.file_name().to_string_lossy().to_string();
+            let meta = file.metadata().ok();
+            if let Some(mt) = meta.as_ref().and_then(|m| m.modified().ok()) {
+                modified = Some(modified.map_or(mt, |cur| cur.max(mt)));
+            }
+            if meta.as_ref().is_some_and(|m| m.is_dir()) {
+                // `assets/` — one level deep, images only.
+                if name == "assets" {
+                    collect_review_assets(&file.path(), &slug, &mut assets);
+                }
+                continue;
+            }
+            match name.as_str() {
+                "review.md" => has_review = true,
+                "response.md" => has_response = true,
+                _ => {}
+            }
+        }
+
+        let source = if has_review {
+            std::fs::read_to_string(dir.join("review.md")).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let counts = count_review_blocks(&source);
+        let response_source = if has_response {
+            std::fs::read_to_string(dir.join("response.md")).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        assets.sort_by(|a, b| a.rel.cmp(&b.rel));
+        bundles.push(ReviewBundleInfo {
+            title: front_matter_value(&source, "title").unwrap_or_else(|| slug.clone()),
+            lane_name: front_matter_value(&source, "lane").unwrap_or_else(|| "—".to_string()),
+            created_at: front_matter_value(&source, "created")
+                .and_then(|s| parse_rfc3339_ms(&s))
+                .or_else(|| slug_date_ms(&slug))
+                .unwrap_or(0),
+            responded_at: front_matter_value(&response_source, "responded_at")
+                .and_then(|s| parse_rfc3339_ms(&s)),
+            sent_at: front_matter_value(&response_source, "sent_at")
+                .and_then(|s| parse_rfc3339_ms(&s)),
+            composed: counts.blocks > 0,
+            slug,
+            dir,
+            counts,
+            assets,
+            modified,
+        });
+    }
+    // Newest first; the date prefix makes reverse-lexical chronological.
+    bundles.sort_by(|a, b| b.slug.cmp(&a.slug));
+    bundles
+}
+
+/// Collect image files from a bundle's `assets/` directory (one level, no
+/// recursion — a review attaches diagrams, not a tree).
+fn collect_review_assets(dir: &StdPath, slug: &str, out: &mut Vec<ReviewAsset>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        if !entry.file_type().is_ok_and(|t| t.is_file()) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_img = StdPath::new(&name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .is_some_and(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp"));
+        if !is_img {
+            continue;
+        }
+        out.push(ReviewAsset {
+            rel: format!(".krypton/reviews/{slug}/assets/{name}"),
+            size: entry.metadata().map(|m| m.len()).unwrap_or(0),
+        });
+    }
+}
+
+/// Parse `YYYY-MM-DDTHH:MM:SSZ` (and the `+07:00` offset form the frontend
+/// writes) to epoch millis. Tolerant: a date-only value is midnight UTC, and an
+/// unparseable value is `None` so the caller can fall back to the slug's date.
+fn parse_rfc3339_ms(value: &str) -> Option<i64> {
+    let bytes = value.as_bytes();
+    if bytes.len() < 10 {
+        return None;
+    }
+    let year: i64 = value.get(0..4)?.parse().ok()?;
+    let month: i64 = value.get(5..7)?.parse().ok()?;
+    let day: i64 = value.get(8..10)?.parse().ok()?;
+    let mut secs = days_from_civil(year, month, day) * 86_400;
+    if bytes.len() >= 19 {
+        let hour: i64 = value.get(11..13)?.parse().ok()?;
+        let minute: i64 = value.get(14..16)?.parse().ok()?;
+        let second: i64 = value.get(17..19)?.parse().ok()?;
+        secs += hour * 3600 + minute * 60 + second;
+        // Trailing `+HH:MM` / `-HH:MM` offset — subtract to reach UTC.
+        if bytes.len() >= 25 {
+            let sign = match bytes[19] {
+                b'+' => -1,
+                b'-' => 1,
+                _ => 0,
+            };
+            if sign != 0 {
+                let oh: i64 = value.get(20..22).and_then(|s| s.parse().ok()).unwrap_or(0);
+                let om: i64 = value.get(23..25).and_then(|s| s.parse().ok()).unwrap_or(0);
+                secs += sign * (oh * 3600 + om * 60);
+            }
+        }
+    }
+    Some(secs * 1000)
+}
+
+/// The `YYYY-MM-DD` prefix of a bundle slug, as epoch millis. The fallback when a
+/// bundle has no `created:` stamp (a hand-made or hand-edited directory).
+fn slug_date_ms(slug: &str) -> Option<i64> {
+    parse_rfc3339_ms(slug.get(0..10)?)
+}
+
+/// `(year, month, day)` → days since the Unix epoch, proleptic Gregorian, UTC
+/// (Howard Hinnant's `days_from_civil` — the inverse of `civil_from_days`).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400; // [0, 399]
+    let mp = (m + 9) % 12; // [0, 11], March-based
+    let doy = (153 * mp + 2) / 5 + d - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    era * 146_097 + doe - 719_468
+}
+
+/// Render the `/reviews` shell: title, sidebar, content. Same `<!--SLOT-->`
+/// substitution as the analyses shell — the wrapping element is replaced along
+/// with its comment, so the wrapper is re-emitted with the content inside.
+fn render_reviews_page(title: &str, tree: Option<&str>, content: &str) -> Response {
+    html_response(reviews_page_html(title, tree, content))
+}
+
+/// The slot substitution, split out from the `Response` wrapper so a test can pin
+/// all three markers without reading an async body. This pattern fails SILENTLY
+/// when a marker drifts between the HTML file and the string here — the page still
+/// renders 200, just with an empty body — so it is worth a test.
+fn reviews_page_html(title: &str, tree: Option<&str>, content: &str) -> String {
+    let escaped_title = html_escape(title);
+    let nav = match tree {
+        Some(tree) => format!("<nav class=\"tree-pane\">{tree}</nav>"),
+        None => String::new(),
+    };
+    REVIEWS_HTML
+        .replace("<!--REVIEWS_TITLE-->", &escaped_title)
+        .replace("<nav class=\"tree-pane\"><!--REVIEWS_TREE--></nav>", &nav)
+        .replace(
+            "<article class=\"doc\"><!--REVIEWS_CONTENT--></article>",
+            &format!("<article class=\"doc\">{content}</article>"),
+        )
+}
+
+/// Sidebar: every harness with bundles, newest first, each a link to `/review`.
+/// The current bundle gets `is-active`.
+fn render_reviews_nav(
+    per: &[(String, String, Vec<ReviewBundleInfo>)],
+    sel_harness: &str,
+    sel_slug: &str,
+) -> String {
+    let multi = per.iter().filter(|(_, _, b)| !b.is_empty()).count() > 1;
+    let mut out = String::from("<ul class=\"tree\">");
+    for (harness_id, _project_dir, bundles) in per {
+        if bundles.is_empty() {
+            continue;
+        }
+        out.push_str("<li class=\"tree-group\"><div class=\"tree-group__label\">");
+        out.push_str(&html_escape(&if multi {
+            format!("{harness_id} · {} reviews", bundles.len())
+        } else {
+            format!("{} reviews", bundles.len())
+        }));
+        out.push_str("</div><ul class=\"tree\">");
+        for bundle in bundles {
+            let active = harness_id == sel_harness && bundle.slug == sel_slug;
+            out.push_str("<li class=\"tree-file\"><a");
+            if active {
+                out.push_str(" class=\"is-active\"");
+            }
+            out.push_str(" href=\"/review?harness=");
+            out.push_str(&url_encode(harness_id));
+            out.push_str("&amp;slug=");
+            out.push_str(&url_encode(&bundle.slug));
+            out.push_str("\">");
+            out.push_str(&html_escape(&bundle.title));
+            out.push_str("<span class=\"tree-file__count\">");
+            out.push_str(&html_escape(&review_meta_label(bundle)));
+            out.push_str("</span></a></li>");
+        }
+        out.push_str("</ul></li>");
+    }
+    out.push_str("</ul>");
+    out
+}
+
+/// The one-line meta a bundle carries in the sidebar and index. Walkthrough step
+/// count sits next to the block count because on a comprehension Board it is the
+/// better measure of "how much is here to read".
+fn review_meta_label(bundle: &ReviewBundleInfo) -> String {
+    let c = &bundle.counts;
+    let mut parts = vec![format!("{} blocks", c.blocks)];
+    if c.steps > 0 {
+        parts.push(format!("{} steps", c.steps));
+    }
+    if c.findings > 0 {
+        parts.push(format!("{} findings", c.findings));
+    }
+    if c.decisions > 0 {
+        parts.push(format!("{} decisions", c.decisions));
+    }
+    parts.join(" · ")
+}
+
+/// CSS modifier for a bundle's status chip.
+fn review_status_class(label: &str) -> &'static str {
+    match label {
+        "sent" => "rv-status--sent",
+        "answered, not sent" => "rv-status--answered",
+        "reference" => "rv-status--reference",
+        "never composed" => "rv-status--uncomposed",
+        _ => "rv-status--unopened",
+    }
+}
+
+/// Right pane of `/reviews`: one row per bundle, newest first. Answers the two
+/// questions the in-app Board cannot, because it only ever shows one review:
+/// "which reviews did I leave hanging" and "has anyone explained this before?".
+fn render_reviews_index(harness_id: &str, bundles: &[ReviewBundleInfo]) -> String {
+    if bundles.is_empty() {
+        return "<p class=\"welcome\">ยังไม่มี Review Board สำหรับเลนนี้ — ขอให้เลนอธิบายโค้ดหรือรัน #review</p>"
+            .to_string();
+    }
+    let mut out = String::from("<ul class=\"reviews-index\">");
+    for bundle in bundles {
+        out.push_str("<li class=\"rv-row\"><a class=\"rv-row__main\" href=\"/review?harness=");
+        out.push_str(&url_encode(harness_id));
+        out.push_str("&amp;slug=");
+        out.push_str(&url_encode(&bundle.slug));
+        out.push_str("\"><span class=\"rv-row__title\">");
+        out.push_str(&html_escape(&bundle.title));
+        out.push_str("</span><span class=\"rv-row__meta\">");
+        out.push_str(&html_escape(&bundle.lane_name));
+        out.push_str(" · ");
+        out.push_str(&html_escape(&review_meta_label(bundle)));
+        if !bundle.assets.is_empty() {
+            out.push_str(&format!(" · {} ไฟล์แนบ", bundle.assets.len()));
+        }
+        if let Some((ms, label)) = bundle.modified.and_then(format_doc_mtime) {
+            out.push_str(" · <time class=\"rv-date\" data-ts=\"");
+            out.push_str(&ms.to_string());
+            out.push_str("\">");
+            out.push_str(&html_escape(&label));
+            out.push_str("</time>");
+        }
+        out.push_str("</span></a><span class=\"rv-row__side\"><span class=\"rv-status ");
+        let status = bundle.status_label();
+        out.push_str(review_status_class(status));
+        out.push_str("\">");
+        out.push_str(&html_escape(status));
+        out.push_str("</span>");
+        // Never a score or a grade (ADR-0004) — just how much is left to answer.
+        let unanswered = bundle.unanswered();
+        if unanswered > 0 {
+            out.push_str("<span class=\"rv-row__unanswered\">");
+            out.push_str(&format!("{unanswered} to answer"));
+            out.push_str("</span>");
+        }
+        out.push_str("</span></li>");
+    }
+    out.push_str("</ul>");
+    out
+}
+
+/// Build one bundle's page: a two-entry file strip (`review` · `response`), the
+/// selected document, then the asset strip. `sel_file` is `"review"` or
+/// `"response"`.
+fn render_review_bundle(harness_id: &str, bundle: &ReviewBundleInfo, sel_file: &str) -> String {
+    let mut content = String::new();
+
+    content.push_str("<nav class=\"file-strip\">");
+    let has_response = bundle.responded_at.is_some();
+    for (name, present) in [("review", true), ("response", has_response)] {
+        if !present {
+            continue;
+        }
+        content.push_str("<a");
+        if name == sel_file {
+            content.push_str(" class=\"is-active\"");
+        }
+        content.push_str(" href=\"/review?harness=");
+        content.push_str(&url_encode(harness_id));
+        content.push_str("&amp;slug=");
+        content.push_str(&url_encode(&bundle.slug));
+        content.push_str("&amp;file=");
+        content.push_str(name);
+        content.push_str("\">");
+        content.push_str(name);
+        content.push_str(".md</a>");
+    }
+    content.push_str("</nav>");
+
+    let file_name = if sel_file == "response" {
+        "response.md"
+    } else {
+        "review.md"
+    };
+    let source = std::fs::read_to_string(bundle.dir.join(file_name)).unwrap_or_default();
+    if source.trim().is_empty() {
+        content.push_str(
+            "<p class=\"welcome\">เลนสร้างโฟลเดอร์ไว้แต่ยังไม่ได้เขียนเอกสาร — ยังไม่มีอะไรให้อ่าน</p>",
+        );
+    } else {
+        content.push_str("<section class=\"review-file\"><div class=\"review-file__name\">");
+        content.push_str(&html_escape(&format!(
+            ".krypton/reviews/{}/{file_name}",
+            bundle.slug
+        )));
+        content.push_str("</div>");
+        let rel = format!(".krypton/reviews/{}/{file_name}", bundle.slug);
+        let rendered = render_markdown_doc(&source, harness_id, &rel, "/review-asset");
+        content.push_str(&render_review_blocks(&rendered));
+        content.push_str("</section>");
+    }
+
+    if !bundle.assets.is_empty() {
+        content.push_str(
+            "<section class=\"attachments\"><h3>ไฟล์แนบในรีวิว</h3><div class=\"attachments__grid\">",
+        );
+        for asset in &bundle.assets {
+            let name = asset.rel.rsplit('/').next().unwrap_or(&asset.rel);
+            content.push_str(
+                "<figure class=\"att\"><img loading=\"lazy\" src=\"/review-asset?harness=",
+            );
+            content.push_str(&url_encode(harness_id));
+            content.push_str("&amp;path=");
+            content.push_str(&url_encode(&asset.rel));
+            content.push_str("\" alt=\"");
+            content.push_str(&html_escape(name));
+            content.push_str("\"><figcaption>");
+            content.push_str(&html_escape(name));
+            content.push_str(" · ");
+            content.push_str(&html_escape(&human_size(asset.size)));
+            content.push_str("</figcaption></figure>");
+        }
+        content.push_str("</div></section>");
+    }
+    content
+}
+
+// ─── Typed-block post-pass over comrak output ───────────────────────────────
+// comrak emits a `review:finding` fence as `<pre><code class="language-review:
+// finding">…</code></pre>`, so this walks the rendered HTML and rewrites the
+// known fences into simple semantic markup. An unknown fence is left as a plain
+// code block, exactly as in the Board.
+
+/// Rewrite every recognized `<pre><code class="language-review:…">` block (and
+/// plain `language-diff`) in comrak output into semantic HTML. String-level
+/// because comrak's output for a code block is a fixed, predictable shape; the
+/// body is HTML-escaped text, which is un-escaped once here and re-escaped by the
+/// per-kind renderers.
+fn render_review_blocks(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    // comrak always emits the info string as a `language-` class on <code>.
+    const OPEN: &str = "<pre><code class=\"language-";
+    while let Some(start) = rest.find(OPEN) {
+        let (before, from_open) = rest.split_at(start);
+        out.push_str(before);
+        let after_open = &from_open[OPEN.len()..];
+        let Some(quote) = after_open.find('"') else {
+            out.push_str(from_open);
+            return out;
+        };
+        let lang = after_open[..quote].to_ascii_lowercase();
+        let Some(body_start) = after_open[quote..].find('>').map(|i| quote + i + 1) else {
+            out.push_str(from_open);
+            return out;
+        };
+        let Some(body_end) = after_open[body_start..]
+            .find("</code></pre>")
+            .map(|i| body_start + i)
+        else {
+            out.push_str(from_open);
+            return out;
+        };
+        let body = html_unescape(&after_open[body_start..body_end]);
+        let kind = lang.split_whitespace().next().unwrap_or("");
+        match render_review_block(kind, &body) {
+            Some(rendered) => out.push_str(&rendered),
+            // Unknown fence: keep comrak's plain code block verbatim.
+            None => out.push_str(&from_open[..OPEN.len() + body_end + "</code></pre>".len()]),
+        }
+        rest = &after_open[body_end + "</code></pre>".len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Dispatch one fence body to its renderer. `None` ⇒ not a review block.
+fn render_review_block(kind: &str, body: &str) -> Option<String> {
+    match kind {
+        "review:walkthrough" => Some(render_rv_walkthrough(body)),
+        "review:finding" => Some(render_rv_finding(body)),
+        "review:decision" => Some(render_rv_decision(body)),
+        "review:metrics" => Some(render_rv_metrics(body)),
+        "review:chart" => Some(render_rv_chart(body)),
+        "review:svg" => Some(render_rv_svg(body)),
+        "diff" => Some(render_rv_diff(body)),
+        // Forward-compatible: a newer lane's block renders as a labelled code
+        // block rather than disappearing.
+        other if other.starts_with("review:") => Some(format!(
+            "<p class=\"rv-unknown\">{}</p><pre><code>{}</code></pre>",
+            html_escape(other),
+            html_escape(body)
+        )),
+        _ => None,
+    }
+}
+
+/// Read a typed block body as flat `key: value` plus `key:`-headed indented
+/// groups. Deliberately the same shape (and the same limits) as the frontend
+/// parser: this page is an archive, so it reads what the lane most reliably
+/// writes and shows the rest as-is rather than failing.
+fn rv_scalar(body: &str, key: &str) -> Option<String> {
+    for line in body.lines() {
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        let Some((k, v)) = line.split_once(':') else {
+            continue;
+        };
+        if !k.trim().eq_ignore_ascii_case(key) {
+            continue;
+        }
+        let value = v.trim().trim_matches('"').trim_matches('\'').to_string();
+        return if value.is_empty() { None } else { Some(value) };
+    }
+    None
+}
+
+/// The indented lines under a bare `key:`, trimmed. Empty when the key is absent
+/// or carries an inline value.
+fn rv_group(body: &str, key: &str) -> Vec<String> {
+    let mut collecting = false;
+    let mut out: Vec<String> = Vec::new();
+    for line in body.lines() {
+        let indented = line.starts_with(' ') || line.starts_with('\t');
+        if !indented {
+            if collecting {
+                break;
+            }
+            if let Some((k, v)) = line.split_once(':') {
+                if k.trim().eq_ignore_ascii_case(key) && v.trim().is_empty() {
+                    collecting = true;
+                }
+            }
+            continue;
+        }
+        if collecting && !line.trim().is_empty() {
+            out.push(line.trim().to_string());
+        }
+    }
+    out
+}
+
+/// Strip one layer of surrounding quotes from a scalar an agent wrote.
+fn rv_unquote(value: &str) -> String {
+    let v = value.trim();
+    if v.len() >= 2
+        && ((v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\'')))
+    {
+        return v[1..v.len() - 1].to_string();
+    }
+    v.to_string()
+}
+
+/// Walkthrough → an ordered list with a monospace anchor per step. Anchors are
+/// PLAIN TEXT here: no jump target exists outside the app.
+fn render_rv_walkthrough(body: &str) -> String {
+    let mut out = String::new();
+    if let Some(title) = rv_scalar(body, "title") {
+        out.push_str("<div class=\"rv-steps__title\">");
+        out.push_str(&html_escape(&rv_unquote(&title)));
+        out.push_str("</div>");
+    }
+    out.push_str("<ol class=\"rv-steps\">");
+    let mut open = false;
+    for line in rv_group(body, "steps") {
+        if let Some(at) = line
+            .strip_prefix("- at:")
+            .or_else(|| line.strip_prefix("-at:"))
+        {
+            if open {
+                out.push_str("</li>");
+            }
+            out.push_str("<li><span class=\"rv-step__at\">");
+            out.push_str(&html_escape(&rv_unquote(at)));
+            out.push_str("</span>");
+            open = true;
+        } else if let Some(say) = line.strip_prefix("say:") {
+            if !open {
+                out.push_str("<li>");
+                open = true;
+            }
+            out.push_str("<span class=\"rv-step__say\">");
+            out.push_str(&html_escape(&rv_unquote(say)));
+            out.push_str("</span>");
+        } else if let Some(bare) = line.strip_prefix("- ") {
+            // A bare scalar step (no `at:`/`say:` split) still renders.
+            if open {
+                out.push_str("</li>");
+            }
+            out.push_str("<li><span class=\"rv-step__say\">");
+            out.push_str(&html_escape(&rv_unquote(bare)));
+            out.push_str("</span>");
+            open = true;
+        }
+    }
+    if open {
+        out.push_str("</li>");
+    }
+    out.push_str("</ol>");
+    out
+}
+
+/// Finding → a bordered card with the severity in the heading colour. Never a
+/// left accent rail, and never a pass/fail badge.
+fn render_rv_finding(body: &str) -> String {
+    let severity = rv_scalar(body, "severity")
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_else(|| "non-blocking".to_string());
+    let (tone, chip) = match severity.as_str() {
+        "blocking" => ("blocking", "BLOCK"),
+        "suggestion" => ("sugg", "SUGG"),
+        _ => ("warn", "WARN"),
+    };
+    let title = rv_scalar(body, "title").unwrap_or_else(|| "(untitled finding)".to_string());
+    let anchor = match (rv_scalar(body, "file"), rv_scalar(body, "line")) {
+        (Some(file), Some(line)) => Some(format!("{file}:{line}")),
+        (Some(file), None) => Some(file),
+        _ => None,
+    };
+    let mut out = format!(
+        "<div class=\"rv-finding rv-finding--{tone}\"><div class=\"rv-finding__head\"><span class=\"rv-finding__sev\">{chip}</span><span class=\"rv-finding__title\">{}</span>",
+        html_escape(&rv_unquote(&title))
+    );
+    if let Some(anchor) = anchor {
+        out.push_str("<span class=\"rv-finding__at\">");
+        out.push_str(&html_escape(&rv_unquote(&anchor)));
+        out.push_str("</span>");
+    }
+    out.push_str("</div></div>");
+    out
+}
+
+/// Decision → the question plus an ordered options list, the recommendation
+/// marked. The archive shows the LANE's recommendation; the human's choice lives
+/// in `response.md`.
+fn render_rv_decision(body: &str) -> String {
+    let question = rv_scalar(body, "question").unwrap_or_else(|| "(no question)".to_string());
+    let recommended: usize = rv_scalar(body, "recommended")
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+    let mut out = format!(
+        "<p class=\"rv-decision__question\">{}</p><ol class=\"rv-options\">",
+        html_escape(&rv_unquote(&question))
+    );
+    let mut n = 0usize;
+    for line in rv_group(body, "options") {
+        let Some(text) = line.strip_prefix("- ") else {
+            continue;
+        };
+        n += 1;
+        out.push_str(if n == recommended {
+            "<li class=\"is-chosen\">"
+        } else {
+            "<li>"
+        });
+        out.push_str(&html_escape(&rv_unquote(text)));
+        if n == recommended {
+            out.push_str("<span class=\"rv-option__rec\">rec</span>");
+        }
+        out.push_str("</li>");
+    }
+    out.push_str("</ol>");
+    out
+}
+
+/// Metrics → a definition row strip.
+fn render_rv_metrics(body: &str) -> String {
+    let mut out = String::from("<dl class=\"rv-metrics\">");
+    for line in body.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (label, value) = match line.split_once(':') {
+            Some((k, v)) => (k.trim(), rv_unquote(v)),
+            None => (line.trim(), String::new()),
+        };
+        out.push_str("<dt>");
+        out.push_str(&html_escape(label));
+        out.push_str("</dt><dd>");
+        out.push_str(&html_escape(&value));
+        out.push_str("</dd>");
+    }
+    out.push_str("</dl>");
+    out
+}
+
+/// Chart → label/value rows with proportional CSS bar widths. Deliberately does
+/// NOT reuse the frontend's SVG geometry: two presentations of the same data, no
+/// shared geometry code to drift. `line`/`sparkline` render the same way (the
+/// archive shows the values, not the shape).
+fn render_rv_chart(body: &str) -> String {
+    let mut rows: Vec<(String, f64)> = Vec::new();
+    let mut pending_label: Option<String> = None;
+    for line in rv_group(body, "data") {
+        // Either `label: 152` (map form) or `- label: acp/` + `value: 152`.
+        if let Some(rest) = line.strip_prefix("- ") {
+            if let Some((k, v)) = rest.split_once(':') {
+                if k.trim().eq_ignore_ascii_case("label") {
+                    pending_label = Some(rv_unquote(v));
+                    continue;
+                }
+                if let Ok(n) = rv_unquote(v).parse::<f64>() {
+                    rows.push((rv_unquote(k), n));
+                }
+            }
+            continue;
+        }
+        let Some((k, v)) = line.split_once(':') else {
+            continue;
+        };
+        if k.trim().eq_ignore_ascii_case("value") {
+            if let (Some(label), Ok(n)) = (pending_label.take(), rv_unquote(v).parse::<f64>()) {
+                rows.push((label, n));
+            }
+            continue;
+        }
+        if let Ok(n) = rv_unquote(v).parse::<f64>() {
+            rows.push((rv_unquote(k), n));
+        }
+    }
+
+    let mut out = String::from("<div class=\"rv-chart\">");
+    if let Some(title) = rv_scalar(body, "title") {
+        out.push_str("<div class=\"rv-chart__title\">");
+        out.push_str(&html_escape(&rv_unquote(&title)));
+        out.push_str("</div>");
+    }
+    // Scale against a zero-anchored max, so a bar's width is proportional to its
+    // value rather than to its distance from the smallest (the truncated-axis
+    // anti-pattern). Magnitudes only — a negative value reads by its label.
+    let max = rows.iter().fold(0f64, |m, (_, v)| m.max(v.abs()));
+    for (label, value) in &rows {
+        let pct = if max > 0.0 {
+            (value.abs() / max * 100.0).clamp(1.0, 100.0)
+        } else {
+            1.0
+        };
+        out.push_str("<div class=\"rv-chart__row\"><span class=\"rv-chart__label\">");
+        out.push_str(&html_escape(label));
+        out.push_str(
+            "</span><span class=\"rv-chart__track\"><span class=\"rv-chart__bar\" style=\"width:",
+        );
+        out.push_str(&format!("{pct:.1}"));
+        out.push_str("%\"></span></span><span class=\"rv-chart__value\">");
+        out.push_str(&html_escape(&format_rv_number(*value)));
+        out.push_str("</span></div>");
+    }
+    if rows.is_empty() {
+        out.push_str("<pre><code>");
+        out.push_str(&html_escape(body));
+        out.push_str("</code></pre>");
+    }
+    out.push_str("</div>");
+    out
+}
+
+/// Integers stay integral; fractions keep one decimal.
+fn format_rv_number(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{}", value as i64)
+    } else {
+        format!("{value:.1}")
+    }
+}
+
+/// SVG → sanitized passthrough. Allowlist-only, and structurally simpler than the
+/// frontend's DOM-based sanitizer because there is no DOM here: anything holding
+/// a `<script`, a `<foreignObject`, an `on*=` handler, or an external `url(` is
+/// refused WHOLE rather than partially cleaned. A refused diagram degrades to its
+/// source text, which is still informative in an archive.
+fn render_rv_svg(body: &str) -> String {
+    let lower = body.to_ascii_lowercase();
+    let compact: String = lower.chars().filter(|c| !c.is_whitespace()).collect();
+    let unsafe_svg = !lower.trim_start().starts_with("<svg")
+        || compact.contains("<script")
+        || compact.contains("<foreignobject")
+        || compact.contains("<iframe")
+        || compact.contains("javascript:")
+        || compact.contains("data:text/html")
+        || compact.contains("xlink:href")
+        // NB: the handler scan runs on the UN-compacted text. Stripping
+        // whitespace would glue `onload` onto the preceding tag name and defeat
+        // the attribute-boundary check, while the substring checks above WANT
+        // the compaction (it closes `java\tscript:`-style splits).
+        || has_event_handler_attribute(&lower)
+        || compact.contains("url(http")
+        || compact.contains("url(//");
+    if unsafe_svg {
+        return format!(
+            "<p class=\"rv-unknown\">svg not rendered (failed the archive's safety check)</p><pre><code>{}</code></pre>",
+            html_escape(body)
+        );
+    }
+    format!("<div class=\"rv-svg\">{body}</div>")
+}
+
+/// Does this LOWERCASED (not compacted) markup contain an `on…=` event-handler
+/// attribute? Hand-rolled rather than pulling in a regex crate for one check.
+/// Whitespace must be intact: an attribute name always begins at a whitespace or
+/// `<`/`/`/quote boundary, and HTML forbids whitespace inside the name itself, so
+/// a run like `on load=` is two attributes rather than a handler. Errs toward
+/// refusing — a false positive degrades the diagram to its escaped source.
+fn has_event_handler_attribute(lower: &str) -> bool {
+    let bytes = lower.as_bytes();
+    let mut i = 0;
+    while let Some(found) = lower[i..].find("on") {
+        let at = i + found;
+        let boundary_ok = at == 0
+            || matches!(
+                bytes[at - 1],
+                b' ' | b'\t' | b'\n' | b'\r' | b'\x0c' | b'<' | b'/' | b'"' | b'\'' | b'-'
+            );
+        if boundary_ok {
+            // `on` + one or more name chars, optional whitespace, then `=`.
+            let mut j = at + 2;
+            while j < bytes.len() && (bytes[j].is_ascii_alphabetic() || bytes[j] == b'-') {
+                j += 1;
+            }
+            if j > at + 2 {
+                let mut k = j;
+                while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+                    k += 1;
+                }
+                if k < bytes.len() && bytes[k] == b'=' {
+                    return true;
+                }
+            }
+        }
+        i = at + 2;
+    }
+    false
+}
+
+/// Diff → prefix-coloured lines. A plain `<pre>` rather than diff2html: the
+/// archive shows the change, the app shows it navigably.
+fn render_rv_diff(body: &str) -> String {
+    let mut out = String::from("<pre class=\"rv-diff\">");
+    for line in body.lines() {
+        let class = if line.starts_with("@@") {
+            "rv-diff__hunk"
+        } else if line.starts_with('+') {
+            "rv-diff__add"
+        } else if line.starts_with('-') {
+            "rv-diff__del"
+        } else {
+            ""
+        };
+        if class.is_empty() {
+            out.push_str("<span>");
+        } else {
+            out.push_str(&format!("<span class=\"{class}\">"));
+        }
+        // A blank line still needs to occupy a row.
+        if line.is_empty() {
+            out.push_str("&nbsp;");
+        } else {
+            out.push_str(&html_escape(line));
+        }
+        out.push_str("</span>");
+    }
+    out.push_str("</pre>");
+    out
+}
+
 /// Render the docs shell. Both surfaces are single-pane: the index is a flat
 /// list (spec 171 rev 4) and `/doc` is a clean reader, so there is no sidebar.
 fn render_docs_page(title: &str, content: &str) -> Response {
@@ -5164,6 +7179,12 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 .route("/analyses", get(handle_analyses))
                 .route("/analysis", get(handle_analysis))
                 .route("/analysis-asset", get(handle_analysis_asset))
+                // spec 211 — the Review Board archive. Read-only: it browses the
+                // durable `.krypton/reviews/` bundles, while answering a review
+                // stays in the keyboard-driven in-app Board.
+                .route("/reviews", get(handle_reviews))
+                .route("/review", get(handle_review))
+                .route("/review-asset", get(handle_review_asset))
                 // spec 172 — docs-browser inline feedback. Tokenless (keyed by
                 // harness+path, the same addressing the read uses); the POST
                 // injects a turn into the harness's active lane, and `/doc-state`
@@ -5669,6 +7690,9 @@ mod tests {
             .route("/analyses", get(ok))
             .route("/analysis", get(ok))
             .route("/analysis-asset", get(ok))
+            .route("/reviews", get(ok))
+            .route("/review", get(ok))
+            .route("/review-asset", get(ok))
             .route("/doc-state", get(ok))
             .route("/doc-feedback", post(ok))
             .route("/doc-artifact", post(ok))
@@ -6951,5 +8975,614 @@ mod git_state_tests {
         assert_eq!(human_size(512), "512 B");
         assert_eq!(human_size(2048), "2 KB");
         assert_eq!(human_size(3 * 1024 * 1024), "3.0 MB");
+    }
+
+    // ─── Review Board (spec 211) ────────────────────────────────────────────
+
+    /// A temp project dir with a review store registered. `rand_suffix()` is
+    /// sub-second nanos only, so each test needs its own infix to avoid
+    /// collisions under parallel runs.
+    fn review_server(infix: &str) -> (HookServer, PathBuf, String) {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-rev-{infix}-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let project = tmp.to_string_lossy().to_string();
+        server.init_harness_reviews("hm-1", Some(project.clone()));
+        (server, tmp, project)
+    }
+
+    /// A minimal but realistic review document: prose spine + one of each block.
+    const SAMPLE_REVIEW_BODY: &str = "\
+The change moves the per-target guard after the await.
+
+```review:metrics
+files: 6 changed, +214 / -38
+new deps: none
+```
+
+```review:walkthrough
+title: read it in this order
+steps:
+  - at: src/acp/inter-lane.ts:812
+    say: the guard map
+  - at: src/acp/lane-inbox.ts:96
+    say: where the envelope lands
+```
+
+```review:finding
+severity: blocking
+file: src/acp/inter-lane.ts
+line: 835
+title: guard is set after the await
+```
+A second peer_send can enter between the check and the set.
+
+```review:decision
+question: per-target or global guard?
+options:
+  - per-target (today)
+  - global
+recommended: 2
+```
+";
+
+    #[test]
+    fn review_slug_is_directory_safe_and_readable() {
+        assert_eq!(
+            review_slug("Peering guard rewrite"),
+            "peering-guard-rewrite"
+        );
+        // Punctuation collapses to a single dash; no leading/trailing dash.
+        assert_eq!(review_slug("  ../etc/passwd  "), "etc-passwd");
+        assert_eq!(review_slug("a//b::c"), "a-b-c");
+        assert_eq!(
+            review_slug("Spec 211 — Review Board!"),
+            "spec-211-review-board"
+        );
+        // A title that reduces to nothing must not yield an empty path component.
+        assert_eq!(review_slug("——"), "review");
+        assert_eq!(review_slug("รีวิว"), "review");
+        assert!(review_slug(&"x".repeat(200)).len() <= REVIEW_SLUG_MAX);
+        // No path separators can survive, whatever the title.
+        for title in ["../..", "a/b", "a\\b", "a\0b"] {
+            let slug = review_slug(title);
+            assert!(!slug.contains('/') && !slug.contains('\\') && !slug.contains('.'));
+        }
+    }
+
+    #[test]
+    fn review_lifecycle_new_write_register() {
+        let (server, tmp, _project) = review_server("life");
+
+        let issued = server
+            .review_new(
+                "hm-1",
+                "Claude-1",
+                "Peering guard rewrite",
+                Some("the working diff"),
+            )
+            .unwrap();
+        let id = issued["id"].as_str().unwrap().to_string();
+        let slug = issued["slug"].as_str().unwrap().to_string();
+        let dir = PathBuf::from(issued["dir"].as_str().unwrap());
+        let path = PathBuf::from(issued["path"].as_str().unwrap());
+
+        assert!(slug.ends_with("-peering-guard-rewrite"), "slug: {slug}");
+        assert!(path.ends_with("review.md"));
+        assert!(tmp.join(".krypton/reviews/.gitignore").exists());
+        assert_eq!(issued["tail"], json!(format!(".krypton/reviews/{slug}/")));
+
+        // The seeded stamp makes the bundle self-describing from the moment it
+        // exists — a lane that dies now still leaves an attributable directory.
+        let seeded = std::fs::read_to_string(&path).unwrap();
+        assert!(seeded.starts_with("---\n"), "no frontmatter: {seeded}");
+        assert!(seeded.contains("Peering guard rewrite"));
+        assert!(seeded.contains("Claude-1"));
+        assert!(seeded.contains("the working diff"));
+
+        // Registering an unwritten review is refused: there is nothing to read.
+        assert!(server
+            .review_register("hm-1", "Claude-1", &id)
+            .unwrap_err()
+            .starts_with("empty:"));
+
+        std::fs::write(&path, format!("{seeded}{SAMPLE_REVIEW_BODY}")).unwrap();
+        let reg = server.review_register("hm-1", "Claude-1", &id).unwrap();
+        assert_eq!(reg["ok"], json!(true));
+        assert_eq!(
+            reg["registered"],
+            json!(true),
+            "first register raises the card"
+        );
+        assert_eq!(reg["steps"], json!(2));
+        assert_eq!(reg["findings"], json!(1));
+        assert_eq!(reg["decisions"], json!(1));
+        assert!(reg["blocks"].as_u64().unwrap() >= 6);
+
+        // A repeat is an idempotent refresh that re-counts.
+        std::fs::write(
+            &path,
+            format!("{seeded}{SAMPLE_REVIEW_BODY}\n```review:finding\ntitle: second\n```\n"),
+        )
+        .unwrap();
+        let refreshed = server.refresh_review("hm-1", "Claude-1", &id).unwrap();
+        assert_eq!(refreshed["registered"], json!(false));
+        assert_eq!(refreshed["findings"], json!(2));
+
+        // A registered review can never be cancelled — the bundle is a record.
+        assert!(server
+            .review_cancel("hm-1", "Claude-1", &id)
+            .unwrap_err()
+            .starts_with("already_registered:"));
+        assert!(dir.exists());
+    }
+
+    #[test]
+    fn review_new_suffixes_a_same_day_title_collision() {
+        let (server, _tmp, _project) = review_server("collide");
+        let a = server
+            .review_new("hm-1", "Claude-1", "same title", None)
+            .unwrap();
+        let b = server
+            .review_new("hm-1", "Claude-1", "same title", None)
+            .unwrap();
+        let c = server
+            .review_new("hm-1", "Claude-2", "same title", None)
+            .unwrap();
+        let slugs: Vec<&str> = [&a, &b, &c]
+            .iter()
+            .map(|v| v["slug"].as_str().unwrap())
+            .collect();
+        assert_eq!(slugs[1], format!("{}-2", slugs[0]));
+        assert_eq!(slugs[2], format!("{}-3", slugs[0]));
+        // Two lanes composing concurrently get separate bundles by construction.
+        for slug in &slugs {
+            assert!(PathBuf::from(a["dir"].as_str().unwrap())
+                .parent()
+                .unwrap()
+                .join(slug)
+                .is_dir());
+        }
+    }
+
+    #[test]
+    fn review_cancel_reclaims_only_an_untouched_bundle() {
+        let (server, _tmp, _project) = review_server("cancel");
+
+        // An untouched draft is reclaimed.
+        let empty = server
+            .review_new("hm-1", "Claude-1", "abandoned", None)
+            .unwrap();
+        let empty_dir = PathBuf::from(empty["dir"].as_str().unwrap());
+        server
+            .review_cancel("hm-1", "Claude-1", empty["id"].as_str().unwrap())
+            .unwrap();
+        assert!(!empty_dir.exists(), "untouched bundle should be reclaimed");
+
+        // A bundle the lane actually wrote into is KEPT: abandoning a draft must
+        // never delete work.
+        let written = server
+            .review_new("hm-1", "Claude-1", "half written", None)
+            .unwrap();
+        let written_dir = PathBuf::from(written["dir"].as_str().unwrap());
+        let written_path = PathBuf::from(written["path"].as_str().unwrap());
+        let stamp = std::fs::read_to_string(&written_path).unwrap();
+        std::fs::write(&written_path, format!("{stamp}Some real analysis.\n")).unwrap();
+        server
+            .review_cancel("hm-1", "Claude-1", written["id"].as_str().unwrap())
+            .unwrap();
+        assert!(written_dir.exists(), "written bundle must survive cancel");
+        assert!(std::fs::read_to_string(&written_path)
+            .unwrap()
+            .contains("Some real analysis"));
+    }
+
+    #[test]
+    fn review_new_enforces_pending_cap_per_lane() {
+        let (server, _tmp, _project) = review_server("cap");
+        for i in 0..REVIEW_PENDING_PER_LANE_MAX {
+            server
+                .review_new("hm-1", "Claude-1", &format!("draft {i}"), None)
+                .unwrap();
+        }
+        assert!(server
+            .review_new("hm-1", "Claude-1", "one too many", None)
+            .unwrap_err()
+            .starts_with("pending_cap:"));
+        // The cap is per lane, not per harness.
+        assert!(server
+            .review_new("hm-1", "Claude-2", "other lane", None)
+            .is_ok());
+    }
+
+    #[test]
+    fn review_register_rejects_another_lanes_id_without_leaking_the_path() {
+        let (server, _tmp, _project) = review_server("owner");
+        let issued = server.review_new("hm-1", "Claude-1", "mine", None).unwrap();
+        let id = issued["id"].as_str().unwrap();
+        let err = server.review_register("hm-1", "Codex-2", id).unwrap_err();
+        assert!(err.starts_with("not_found:"), "{err}");
+        assert!(!err.contains(".krypton"), "path leaked: {err}");
+    }
+
+    #[test]
+    fn review_validate_rejects_a_symlinked_bundle() {
+        let (server, tmp, _project) = review_server("symlink");
+        let issued = server
+            .review_new("hm-1", "Claude-1", "linked", None)
+            .unwrap();
+        let id = issued["id"].as_str().unwrap();
+        let path = PathBuf::from(issued["path"].as_str().unwrap());
+        let slug = issued["slug"].as_str().unwrap();
+
+        // Swap review.md for a symlink pointing outside the bundle.
+        let outside = tmp.join("outside.md");
+        std::fs::write(&outside, "# not mine\n\nreal content here\n").unwrap();
+        std::fs::remove_file(&path).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+
+        let err = server.review_register("hm-1", "Claude-1", id).unwrap_err();
+        assert!(err.starts_with("symlink_rejected:"), "{err}");
+
+        // And a symlinked BUNDLE DIRECTORY is refused too.
+        let root = reviews_root(&tmp.to_string_lossy()).unwrap();
+        assert!(validate_review_file(
+            &root,
+            &root.join(slug).join("review.md"),
+            slug,
+            REVIEW_FILE_BYTES_MAX
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn review_validate_enforces_the_size_cap() {
+        let (server, _tmp, _project) = review_server("size");
+        let issued = server.review_new("hm-1", "Claude-1", "big", None).unwrap();
+        let path = PathBuf::from(issued["path"].as_str().unwrap());
+        std::fs::write(&path, "x".repeat(64)).unwrap();
+        let root = reviews_root(
+            &PathBuf::from(issued["dir"].as_str().unwrap())
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .to_string_lossy(),
+        )
+        .unwrap();
+        let err =
+            validate_review_file(&root, &path, issued["slug"].as_str().unwrap(), 10).unwrap_err();
+        assert!(err.starts_with("size_cap:"), "{err}");
+    }
+
+    #[test]
+    fn count_review_blocks_is_fence_aware() {
+        let counts = count_review_blocks(SAMPLE_REVIEW_BODY);
+        assert_eq!(counts.steps, 2);
+        assert_eq!(counts.findings, 1);
+        assert_eq!(counts.decisions, 1);
+
+        // A fence NAME mentioned in prose must not be counted as a block.
+        let prose = "Call it with a ```review:finding fence.\n";
+        assert_eq!(count_review_blocks(prose).findings, 0);
+
+        // The frontmatter stamp is metadata, not a block.
+        assert_eq!(count_review_blocks("---\ntitle: x\n---\n").blocks, 0);
+
+        // A nested fence inside a typed block cannot open a phantom one, and a
+        // `- at:` outside a walkthrough is not a step.
+        let nested = "````review:finding\ntitle: outer\n```review:decision\nquestion: no\n```\n````\n- at: a.ts:1\n";
+        let c = count_review_blocks(nested);
+        assert_eq!(c.findings, 1);
+        assert_eq!(c.decisions, 0);
+        assert_eq!(c.steps, 0);
+    }
+
+    #[test]
+    fn discover_review_bundles_orders_newest_first_and_reads_status() {
+        let (_server, tmp, project) = review_server("discover");
+        let root = tmp.join(".krypton/reviews");
+
+        let seed = |slug: &str, body: &str, response: Option<&str>| {
+            let dir = root.join(slug);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("review.md"), body).unwrap();
+            if let Some(response) = response {
+                std::fs::write(dir.join("response.md"), response).unwrap();
+            }
+            dir
+        };
+
+        let stamp = |title: &str, lane: &str| {
+            format!("---\ntitle: {title}\nlane: {lane}\ncreated: 2026-08-05T10:00:00Z\n---\n\n")
+        };
+
+        seed(
+            "2026-07-30-older",
+            &format!("{}{SAMPLE_REVIEW_BODY}", stamp("older review", "Codex-1")),
+            None,
+        );
+        seed(
+            "2026-08-07-newest",
+            &format!("{}{SAMPLE_REVIEW_BODY}", stamp("newest review", "Claude-1")),
+            Some("---\nreview: x\nresponded_at: \"2026-08-07T14:00:00Z\"\nsent_at: \"2026-08-07T15:00:00Z\"\nfindings:\n  - block: b1\n    state: accepted\ndecisions:\n  - block: b2\n    chosen: 1\n---\n"),
+        );
+        seed(
+            "2026-08-05-reference",
+            // No findings, no decisions — the comprehension case.
+            &format!(
+                "{}Just an explanation.\n",
+                stamp("reference review", "Claude-2")
+            ),
+            None,
+        );
+        // A bundle the lane created and never wrote into.
+        seed(
+            "2026-08-06-uncomposed",
+            "---\ntitle: never written\n---\n",
+            None,
+        );
+
+        let bundles = discover_review_bundles(&project);
+        assert_eq!(
+            bundles.iter().map(|b| b.slug.as_str()).collect::<Vec<_>>(),
+            vec![
+                "2026-08-07-newest",
+                "2026-08-06-uncomposed",
+                "2026-08-05-reference",
+                "2026-07-30-older",
+            ],
+            "newest first"
+        );
+
+        let newest = &bundles[0];
+        assert_eq!(newest.title, "newest review");
+        assert_eq!(newest.lane_name, "Claude-1");
+        assert_eq!(newest.status_label(), "sent");
+        // Both answerable blocks were answered.
+        assert_eq!(newest.unanswered(), 0);
+
+        assert_eq!(bundles[1].status_label(), "never composed");
+        assert!(!bundles[1].composed);
+
+        // Nothing to answer ⇒ `reference`, not a completion status.
+        assert_eq!(bundles[2].status_label(), "reference");
+        assert_eq!(bundles[2].unanswered(), 0);
+
+        // Composed, answerable, never opened.
+        assert_eq!(bundles[3].status_label(), "never opened");
+        assert_eq!(bundles[3].unanswered(), 2);
+    }
+
+    #[test]
+    fn review_bundle_page_renders_typed_blocks_semantically() {
+        let (_server, tmp, project) = review_server("render");
+        let dir = tmp.join(".krypton/reviews/2026-08-07-guard");
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        std::fs::write(
+            dir.join("review.md"),
+            format!(
+                "---\ntitle: guard rewrite\nlane: Claude-1\n---\n\n{SAMPLE_REVIEW_BODY}\n```review:chart\nkind: bar\ntitle: lines changed\ndata:\n  acp/: 152\n  diff-view: 41\n```\n\n```diff\n@@ -1 +1 @@\n-old\n+new\n```\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(dir.join("assets").join("diagram.png"), b"fake").unwrap();
+
+        let bundles = discover_review_bundles(&project);
+        let bundle = bundles
+            .iter()
+            .find(|b| b.slug == "2026-08-07-guard")
+            .unwrap();
+        let html = render_review_bundle("hm-1", bundle, "review");
+
+        // Walkthrough → an ordered list with monospace anchors (plain text: no
+        // jump target exists outside the app).
+        assert!(html.contains("<ol class=\"rv-steps\">"), "{html}");
+        assert!(html.contains("src/acp/inter-lane.ts:812"));
+        // Finding → a bordered card with the severity in the heading colour.
+        assert!(html.contains("rv-finding--blocking"));
+        assert!(html.contains(">BLOCK<"));
+        assert!(html.contains("src/acp/inter-lane.ts:835"));
+        // Decision → an ordered list with the recommendation marked.
+        assert!(html.contains("<ol class=\"rv-options\">"));
+        assert!(html.contains("class=\"is-chosen\""));
+        // Metrics → a definition strip.
+        assert!(html.contains("<dl class=\"rv-metrics\">"));
+        // Chart → proportional CSS bars, not the frontend's SVG geometry.
+        assert!(html.contains("rv-chart__bar"));
+        assert!(
+            html.contains("width:100.0%"),
+            "largest bar is full width: {html}"
+        );
+        assert!(!html.contains("<svg"), "no SVG geometry in the archive");
+        // Diff → prefix-coloured lines.
+        assert!(html.contains("rv-diff__add"));
+        assert!(html.contains("rv-diff__del"));
+        // The frontmatter renders as the shared metadata card.
+        assert!(html.contains("dl class=\"frontmatter\""));
+        // Asset strip uses this surface's own route.
+        assert!(html.contains("/review-asset?"));
+        assert!(!html.contains("/doc-asset?"));
+        // No left accent rails anywhere (house rule).
+        assert!(!html.contains("border-left"), "left rail leaked: {html}");
+    }
+
+    #[test]
+    fn review_blocks_leave_unknown_fences_as_code() {
+        // An ordinary code fence is untouched.
+        let ts = render_review_blocks("<pre><code class=\"language-ts\">const a = 1;</code></pre>");
+        assert_eq!(
+            ts,
+            "<pre><code class=\"language-ts\">const a = 1;</code></pre>"
+        );
+
+        // A future `review:*` kind renders as a labelled code block rather than
+        // disappearing.
+        let unknown =
+            render_review_blocks("<pre><code class=\"language-review:hologram\">x</code></pre>");
+        assert!(unknown.contains("rv-unknown"));
+        assert!(unknown.contains("review:hologram"));
+        assert!(unknown.contains("<pre><code>x</code></pre>"));
+
+        // Surrounding prose survives, and a fence with no class is left alone.
+        let mixed = render_review_blocks(
+            "<p>before</p><pre><code class=\"language-review:metrics\">a: 1</code></pre><p>after</p>",
+        );
+        assert!(mixed.starts_with("<p>before</p>"));
+        assert!(mixed.ends_with("<p>after</p>"));
+        assert!(mixed.contains("rv-metrics"));
+    }
+
+    #[test]
+    fn review_svg_block_refuses_active_content() {
+        for hostile in [
+            "<svg><script>alert(1)</script></svg>",
+            "<svg><foreignObject><body onload=\"x\"></body></foreignObject></svg>",
+            "<svg onload=\"alert(1)\"><rect/></svg>",
+            "<svg onload = \"alert(1)\"><rect/></svg>",
+            "<svg\n  onload=\"alert(1)\"><rect/></svg>",
+            "<svg><rect onclick='x'/></svg>",
+            "<svg><animate onbegin=\"alert(1)\"/></svg>",
+            "<svg><image xlink:href=\"https://evil.test/x.png\"/></svg>",
+            "<svg><rect fill=\"url(https://evil.test/g)\"/></svg>",
+            "<svg><a href=\"javascript:alert(1)\">x</a></svg>",
+            "<div>not an svg at all</div>",
+        ] {
+            let html = render_rv_svg(hostile);
+            assert!(
+                html.contains("not rendered"),
+                "should have been refused: {hostile}"
+            );
+            // Refused markup is shown as ESCAPED source, never live.
+            assert!(!html.contains("<script"), "live script leaked: {html}");
+            assert!(html.contains("&lt;") || !hostile.contains('<'));
+        }
+
+        // A plain static diagram passes through.
+        let ok =
+            render_rv_svg("<svg viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"10\"/></svg>");
+        assert!(ok.starts_with("<div class=\"rv-svg\">"), "{ok}");
+        assert!(ok.contains("<rect"));
+    }
+
+    #[test]
+    fn review_bundle_file_commands_guard_the_path() {
+        let (server, tmp, _project) = review_server("guard");
+        let issued = server
+            .review_new("hm-1", "Claude-1", "guarded", None)
+            .unwrap();
+        let dir = issued["dir"].as_str().unwrap().to_string();
+
+        // A real bundle round-trips.
+        let written = server
+            .write_review_response(&dir, "---\nreview: x\n---\n\nbody\n")
+            .unwrap();
+        assert_eq!(written["ok"], json!(true));
+        let read = server.read_review_bundle(&dir).unwrap();
+        assert_eq!(read["slug"], json!(issued["slug"].as_str().unwrap()));
+        assert!(read["review"].as_str().unwrap().contains("guarded"));
+        assert!(read["response"].as_str().unwrap().contains("body"));
+
+        // Anything that is not a bundle directory one level under a review root
+        // is refused — the project root, the review root itself, `assets/`, and
+        // an unrelated directory.
+        std::fs::create_dir_all(PathBuf::from(&dir).join("assets")).unwrap();
+        for bad in [
+            tmp.to_string_lossy().to_string(),
+            tmp.join(".krypton/reviews").to_string_lossy().to_string(),
+            PathBuf::from(&dir)
+                .join("assets")
+                .to_string_lossy()
+                .to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
+            String::new(),
+        ] {
+            assert!(
+                server.read_review_bundle(&bad).is_err(),
+                "should have refused {bad}"
+            );
+            assert!(server.write_review_response(&bad, "x").is_err());
+        }
+    }
+
+    #[test]
+    fn parse_rfc3339_ms_round_trips_and_tolerates_offsets() {
+        assert_eq!(parse_rfc3339_ms("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(parse_rfc3339_ms("1970-01-02"), Some(86_400_000));
+        // The `created:` stamp the backend writes must read back as itself.
+        let stamped = now_rfc3339();
+        assert!(parse_rfc3339_ms(&stamped).is_some(), "{stamped}");
+        // `+07:00` (what the frontend may write) resolves to the same instant.
+        assert_eq!(
+            parse_rfc3339_ms("2026-08-07T21:22:10+07:00"),
+            parse_rfc3339_ms("2026-08-07T14:22:10Z")
+        );
+        assert_eq!(parse_rfc3339_ms("not a date"), None);
+        assert_eq!(parse_rfc3339_ms(""), None);
+    }
+
+    #[test]
+    fn days_from_civil_inverts_civil_from_days() {
+        for days in [-25_000i64, -1, 0, 1, 19_000, 20_674, 50_000] {
+            let (y, m, d) = civil_from_days(days);
+            assert_eq!(days_from_civil(y, m as i64, d as i64), days, "days={days}");
+        }
+    }
+
+    /// The `include_str!` + `str::replace` shell pattern fails SILENTLY when a
+    /// marker drifts between the HTML file and the Rust replace string: the page
+    /// still renders 200, just with an empty body. Pin all three markers.
+    #[test]
+    fn reviews_shell_slots_are_substituted() {
+        let body = reviews_page_html("My Title", Some("<ul class=\"tree\">NAV</ul>"), "BODY");
+
+        // No marker may survive into the served page.
+        for marker in [
+            "<!--REVIEWS_TITLE-->",
+            "<!--REVIEWS_TREE-->",
+            "<!--REVIEWS_CONTENT-->",
+        ] {
+            assert!(!body.contains(marker), "unsubstituted {marker}");
+        }
+        // Title lands in BOTH slots (`str::replace` is global): <title> + header.
+        assert_eq!(body.matches("My Title").count(), 2, "title slots: {body}");
+        // The wrappers survive with the content inside them.
+        assert!(body.contains("<nav class=\"tree-pane\"><ul class=\"tree\">NAV</ul></nav>"));
+        assert!(body.contains("<article class=\"doc\">BODY</article>"));
+        // And the shell itself is intact.
+        assert!(body.contains("Review Boards"));
+        assert!(
+            body.contains("krv:"),
+            "sidebar scroll key must be review-scoped"
+        );
+    }
+
+    #[test]
+    fn bus_tools_include_the_review_board_trio() {
+        let tools = bus_tool_descriptors();
+        let names: Vec<&str> = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| t["name"].as_str())
+            .collect();
+        for name in ["review_new", "review_register", "review_cancel"] {
+            assert!(names.contains(&name), "missing {name}");
+        }
+        // The tool description is the whole discoverability mechanism, so it must
+        // carry the never-unsolicited guard and the explanation-spine requirement.
+        let new_tool = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "review_new")
+            .unwrap();
+        let description = new_tool["description"].as_str().unwrap();
+        assert!(description.contains("Do NOT compose one unsolicited"));
+        assert!(description.contains("explanation spine"));
+        assert!(description.contains("review:walkthrough"));
     }
 }

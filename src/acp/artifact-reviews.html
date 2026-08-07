@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!--REVIEWS_TITLE--></title>
+<!--
+  Review Board archive shell (spec 211). Server-rendered full page, cloned from
+  the Issue Analysis Viewer (spec 192). The Rust backend (hook_server.rs) reads
+  this file via include_str! and replaces three placeholder comments by global
+  string substitution. The placeholder tokens are intentionally NOT written
+  literally in this comment (a literal would terminate this block early and also
+  be replaced) — they are the REVIEWS_TITLE comment (in <title> and the header
+  subtitle), the REVIEWS_TREE comment (inside nav.tree-pane), and the
+  REVIEWS_CONTENT comment (inside article.doc). CONTENT is injected last.
+
+  This is a READ-ONLY archive of the gitignored `.krypton/reviews/<date>-<slug>/`
+  bundles written by review_new — the Docs browser filters those out through
+  .gitignore, so this surface reads them directly. Answering a review happens in
+  the keyboard-driven in-app Board (Leader Shift+R), never here: two writers to
+  one response.md is a merge problem with no keyboard-first payoff.
+
+  The typed review blocks are rendered by a fence-aware post-pass over comrak
+  output (render_review_blocks), NOT by the frontend's SVG geometry — this page is
+  an archive, not a pixel-faithful mirror of the Board.
+
+  Class contract emitted by the backend (style these, do not rename):
+    ul.tree
+    li.tree-group        > .tree-group__label  (one per harness)
+    li.tree-file         > a (href to /review; a.is-active = current bundle)
+    ul.reviews-index     > li.rv-row (index page rows)
+    nav.file-strip       > a (review · response; a.is-active = shown file)
+    section.review-file  (bundle page)
+    ol.rv-steps          > li > .rv-step__at + .rv-step__say  (walkthrough)
+    .rv-finding          > .rv-finding__head > .rv-finding__sev + __title + __at
+    ol.rv-options        > li (li.is-chosen = the lane's recommendation)
+    dl.rv-metrics        > dt + dd
+    .rv-chart            > .rv-chart__row > __label + __track > __bar + __value
+    pre.rv-diff          > span.rv-diff__add | __del | __hunk
+    .rv-svg, .rv-unknown
+    .rv-status--sent | --answered | --unopened | --reference | --uncomposed
+-->
+<style>
+  :root {
+    --bg: #17191d; --fg: #e8eaed; --text: #b7bdc6; --muted: #707a8a; --border: #2f353d;
+    --accent: #fcd535; --code-fg: #f0b90b; --card: #21242a; --code-bg: #1d1f24; color-scheme: dark;
+    --add: #0ecb81; --del: #f6465d; --warn: #f0b90b;
+    --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+    --tree-w: min(300px, 38vw);
+    --header-h: 48px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafafa; --fg: #0d1117; --text: #474d57; --muted: #707a8a; --border: #eaecef;
+      --accent: #c99400; --code-fg: #9a6a00; --card: #ffffff; --code-bg: #f5f5f5; color-scheme: light;
+      --add: #018f6c; --del: #cf304a; --warn: #9a6a00;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  ::-webkit-scrollbar-corner { background: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; min-height: 100vh;
+  }
+  .header {
+    flex-shrink: 0; display: flex; align-items: center; gap: 12px;
+    height: var(--header-h); padding: 0 16px;
+    background: var(--card); border-bottom: 1px solid var(--border);
+  }
+  .header__brand { font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+  .header__title {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .layout {
+    flex: 1; display: flex; min-height: 0; overflow: hidden;
+    width: 100%; max-width: 1220px; margin: 0 auto;
+  }
+  .tree-pane {
+    flex-shrink: 0; width: var(--tree-w); overflow: auto;
+    background: rgba(30, 35, 41, .45); border-right: 1px solid var(--border);
+    padding: 12px 0 24px;
+  }
+  @media (prefers-color-scheme: light) {
+    .tree-pane { background: rgba(234, 236, 239, .35); }
+  }
+  .content-pane { flex: 1; overflow: auto; padding: 24px 32px 48px; min-width: 0; }
+  @media (max-width: 720px) {
+    .layout { flex-direction: column; }
+    .tree-pane {
+      width: 100%; max-height: 40vh; border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+    .content-pane { padding: 16px 16px 32px; }
+  }
+
+  /* sidebar tree: harness groups + review links, newest first */
+  ul.tree { list-style: none; margin: 0; padding: 0 8px 0 12px; }
+  ul.tree ul { list-style: none; margin: 0; padding: 0 0 0 8px; }
+  li.tree-group { margin: 0 0 12px; }
+  li.tree-group:last-child { margin-bottom: 0; }
+  .tree-group__label {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    padding: 6px 8px 4px; letter-spacing: .01em;
+  }
+  li.tree-file { margin: 1px 0; }
+  li.tree-file > a {
+    display: block; padding: 5px 8px; border-radius: 4px; text-decoration: none;
+    color: var(--fg); font-size: 13px;
+  }
+  li.tree-file > a:hover { background: rgba(252, 213, 53, .06); color: var(--accent); }
+  li.tree-file > a.is-active { background: rgba(252, 213, 53, .10); color: var(--accent); font-weight: 600; }
+  li.tree-file .tree-file__count { display: block; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+  /* index (right pane): one row per bundle, newest first */
+  ul.reviews-index { list-style: none; margin: 0; padding: 0; }
+  li.rv-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px; margin: 0 0 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+  }
+  a.rv-row__main { flex: 1; min-width: 0; text-decoration: none; color: var(--fg); }
+  a.rv-row__main:hover .rv-row__title { color: var(--accent); }
+  .rv-row__title { display: block; font-weight: 600; font-size: 15px; }
+  .rv-row__meta { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; font-family: var(--mono); }
+  .rv-row__side { flex-shrink: 0; text-align: right; font-family: var(--mono); font-size: 12px; }
+  .rv-row__unanswered { display: block; color: var(--warn); margin-top: 3px; }
+  .rv-status { display: block; }
+  .rv-status--sent { color: var(--add); }
+  .rv-status--answered { color: var(--warn); }
+  .rv-status--unopened { color: var(--muted); }
+  .rv-status--reference { color: var(--accent); }
+  .rv-status--uncomposed { color: var(--del); }
+  /* Index rows render inside article.doc; opt them out of the prose-link
+     underline (`article.doc a`, below) which otherwise wins on specificity. */
+  article.doc .reviews-index a,
+  article.doc .reviews-index a:hover { text-decoration: none; }
+
+  /* bundle (right pane): file strip (review · response), then the document */
+  nav.file-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 20px; }
+  nav.file-strip a {
+    font-family: var(--mono); font-size: 12px; color: var(--text);
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--card); text-decoration: none;
+  }
+  nav.file-strip a:hover { color: var(--accent); border-color: var(--accent); }
+  nav.file-strip a.is-active {
+    color: var(--accent); border-color: var(--accent);
+    background: rgba(252, 213, 53, .08); font-weight: 600;
+  }
+  article.doc .file-strip a,
+  article.doc .file-strip a:hover { text-decoration: none; }
+  section.review-file { margin: 0 0 28px; }
+  .review-file__name {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    padding-bottom: 6px; margin-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  section.attachments { margin-top: 32px; }
+  section.attachments h3 {
+    font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+    margin: 0 0 12px;
+  }
+  .attachments__grid { display: flex; flex-wrap: wrap; gap: 12px; }
+  figure.att, .att--file {
+    width: 168px; margin: 0; border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; background: var(--card);
+  }
+  figure.att img { display: block; width: 100%; height: 108px; object-fit: cover; background: var(--code-bg); }
+  .att figcaption, .att__name {
+    display: block; padding: 7px 9px; font-family: var(--mono); font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .att--file { display: flex; align-items: center; min-height: 44px; }
+
+  /* ── typed review blocks (render_review_blocks post-pass) ──
+     Severity and state are carried by the HEADING COLOUR and a full border —
+     never a left accent rail (house rule; the artifact scaffold strips those at
+     runtime for the same reason). */
+  ol.rv-steps {
+    list-style: decimal; margin: 1em 0; padding-left: 1.7em;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); padding: 14px 14px 14px 2.4em;
+  }
+  ol.rv-steps > li { margin: 0 0 10px; }
+  ol.rv-steps > li:last-child { margin-bottom: 0; }
+  .rv-step__at {
+    display: block; font-family: var(--mono); font-size: 12px; color: var(--accent);
+    word-break: break-all;
+  }
+  .rv-step__say { display: block; color: var(--text); margin-top: 2px; }
+  .rv-steps__title {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em; margin: 1.4em 0 .4em;
+  }
+
+  .rv-finding {
+    margin: 1em 0; padding: 12px 14px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+  }
+  .rv-finding__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .rv-finding__sev {
+    font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  }
+  .rv-finding--blocking .rv-finding__sev, .rv-finding--blocking .rv-finding__title { color: var(--del); }
+  .rv-finding--warn .rv-finding__sev, .rv-finding--warn .rv-finding__title { color: var(--warn); }
+  .rv-finding--sugg .rv-finding__sev { color: var(--muted); }
+  .rv-finding--sugg .rv-finding__title { color: var(--fg); }
+  .rv-finding__title { font-weight: 600; }
+  .rv-finding__at {
+    margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted);
+    word-break: break-all;
+  }
+
+  ol.rv-options {
+    list-style: decimal; margin: .6em 0 1em; padding-left: 1.7em;
+  }
+  ol.rv-options > li { margin: .3em 0; }
+  ol.rv-options > li.is-chosen { color: var(--accent); font-weight: 600; }
+  .rv-decision__question { font-weight: 600; color: var(--fg); margin: 1em 0 0; }
+  .rv-option__rec {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+    color: var(--muted); margin-left: 8px;
+  }
+
+  dl.rv-metrics {
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 16px;
+    margin: 1em 0; padding: 12px 14px; font-size: 13px;
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+  }
+  dl.rv-metrics dt { font-family: var(--mono); color: var(--muted); font-weight: 600; white-space: nowrap; }
+  dl.rv-metrics dd { margin: 0; color: var(--fg); word-break: break-word; }
+
+  /* Chart: label/value rows with proportional CSS bar widths. Deliberately NOT
+     the app's SVG geometry — two presentations of the same data, no shared
+     geometry code to drift. */
+  .rv-chart { margin: 1em 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+  .rv-chart__title { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .rv-chart__row { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+  .rv-chart__label {
+    flex: 0 0 34%; font-family: var(--mono); font-size: 12px; color: var(--text);
+    text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .rv-chart__track { flex: 1; min-width: 0; height: 10px; background: var(--code-bg); border-radius: 2px; }
+  .rv-chart__bar { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+  .rv-chart__value { flex: 0 0 auto; font-family: var(--mono); font-size: 12px; color: var(--muted); min-width: 3.5em; }
+
+  pre.rv-diff {
+    font-family: var(--mono); font-size: 12px; line-height: 1.45;
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px 14px; overflow-x: auto; margin: 1em 0;
+  }
+  pre.rv-diff span { display: block; }
+  .rv-diff__add { color: var(--add); }
+  .rv-diff__del { color: var(--del); }
+  .rv-diff__hunk { color: var(--muted); }
+
+  .rv-svg { margin: 1em 0; text-align: center; }
+  .rv-svg svg { max-width: 100%; height: auto; }
+  .rv-unknown {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    margin: 1em 0 -.6em;
+  }
+
+  /* comrak GFM content (shared with docs browser) */
+  article.doc { max-width: 860px; margin-inline: auto; font-size: 15px; line-height: 1.65; }
+  article.doc > :first-child { margin-top: 0; }
+  article.doc > :last-child { margin-bottom: 0; }
+  article.doc h1, article.doc h2, article.doc h3,
+  article.doc h4, article.doc h5, article.doc h6 {
+    line-height: 1.3; font-weight: 700; margin: 1.4em 0 .6em; color: var(--fg);
+  }
+  article.doc h1 { font-size: 1.6em; margin-top: 0; color: var(--accent); }
+  article.doc h2 { font-size: 1.3em; padding-bottom: .3em; border-bottom: 1px solid var(--border); }
+  article.doc h3 { font-size: 1.12em; color: var(--accent); }
+  article.doc h4 { font-size: 1em; }
+  article.doc h5, article.doc h6 { font-size: .9em; color: var(--muted); }
+  article.doc p { margin: .75em 0; }
+  article.doc strong, article.doc b { color: var(--fg); font-weight: 700; }
+  article.doc a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  article.doc a:hover { opacity: .85; }
+  article.doc ul, article.doc ol { margin: .75em 0; padding-left: 1.5em; }
+  article.doc li { margin: .25em 0; }
+  article.doc li > input[type="checkbox"] { margin-right: .4em; accent-color: var(--accent); vertical-align: middle; }
+  article.doc li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.5em; }
+  article.doc code {
+    font-family: var(--mono); font-size: .88em; color: var(--code-fg);
+    background: var(--code-bg); padding: .15em .35em; border-radius: 3px;
+  }
+  article.doc pre {
+    font-family: var(--mono); font-size: 12px; line-height: 1.45;
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px 14px; overflow-x: auto; margin: 1em 0;
+  }
+  article.doc pre code { background: none; padding: 0; font-size: inherit; color: var(--fg); }
+  article.doc blockquote {
+    margin: 1em 0; padding: 10px 14px;
+    background: rgba(112, 122, 138, .08); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--muted);
+  }
+  article.doc blockquote p { margin: .4em 0; }
+  article.doc table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 13px; border: 1px solid var(--border); }
+  article.doc th, article.doc td { padding: 8px 12px; border: 1px solid var(--border); text-align: left; }
+  article.doc th { background: var(--code-bg); font-weight: 600; }
+  article.doc tr:nth-child(even) td { background: rgba(112, 122, 138, .04); }
+  article.doc dl.frontmatter {
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 16px;
+    margin: 0 0 1.5em; padding: 14px 16px; font-size: 13px;
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+  }
+  article.doc dl.frontmatter dt { font-family: var(--mono); color: var(--muted); font-weight: 600; white-space: nowrap; }
+  article.doc dl.frontmatter dd { margin: 0; color: var(--fg); word-break: break-word; }
+  article.doc img { max-width: 100%; height: auto; border-radius: 4px; }
+  article.doc hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+  article.doc .welcome { font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 32px 0; line-height: 1.6; }
+</style>
+</head>
+<body>
+<header class="header">
+  <span class="header__brand">Review Boards</span>
+  <span class="header__title"><!--REVIEWS_TITLE--></span>
+</header>
+<div class="layout">
+  <nav class="tree-pane"><!--REVIEWS_TREE--></nav>
+  <div class="content-pane">
+    <article class="doc"><!--REVIEWS_CONTENT--></article>
+  </div>
+</div>
+<script>
+  // Localise the index rows' dates. The server renders a UTC `YYYY-MM-DD HH:MM`
+  // fallback (shown if JS is off) plus a data-ts epoch-ms; here we replace the
+  // text with the viewer's locale date.
+  for (const el of document.querySelectorAll('time.rv-date[data-ts]')) {
+    const ms = Number(el.getAttribute('data-ts'));
+    if (!Number.isFinite(ms)) continue;
+    const d = new Date(ms);
+    el.dateTime = d.toISOString();
+    el.textContent = d.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    el.title = d.toLocaleString();
+  }
+</script>
+<script>
+  // Preserve the sidebar scroll position across the full-page reloads that
+  // navigation triggers (a fresh full page per click). Each click is a new URL,
+  // so the browser does not restore scroll and the sidebar snaps to the top; we
+  // stash scrollTop per harness and restore it on load.
+  (function () {
+    var pane = document.querySelector('nav.tree-pane');
+    if (!pane) return;
+    var KEY = 'krv:' + (new URLSearchParams(location.search).get('harness') || '');
+    try {
+      var y = sessionStorage.getItem(KEY);
+      if (y != null) pane.scrollTop = +y;
+    } catch (e) {}
+    var raf = 0;
+    pane.addEventListener('scroll', function () {
+      if (raf) return;
+      raf = requestAnimationFrame(function () {
+        raf = 0;
+        try { sessionStorage.setItem(KEY, String(pane.scrollTop)); } catch (e) {}
+      });
+    }, { passive: true });
+  })();
+</script>
+</body>
+</html>

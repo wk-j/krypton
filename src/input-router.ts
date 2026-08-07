@@ -12,6 +12,7 @@ import { CommandPalette } from './command-palette';
 import { DashboardManager } from './dashboard';
 import { PromptDialog } from './prompt-dialog';
 import { QuickFileSearch } from './quick-file-search';
+import { QuickOverview } from './quick-overview';
 import { GLOBAL_LEADER_RESERVED_KEYS, normalizeLeaderKeyEvent } from './leader-keys';
 
 import type { MusicPlayer } from './music';
@@ -37,12 +38,18 @@ export class InputRouter {
   private workspaceFooter: WorkspaceFooter | null = null;
   private promptDialog: PromptDialog | null = null;
   private quickFileSearch: QuickFileSearch | null = null;
+  private quickOverview: QuickOverview | null = null;
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
     this.hints = new HintController(compositor);
     this.hints.onExit(() => {
       this.toNormal();
+    });
+    // Hint mode hands a source to the Quick Overview dialog instead of opening
+    // a tab; mode transition is finished in handleHintKey (spec 210).
+    this.hints.setOverviewOpener((source) => {
+      this.quickOverview?.open(source);
     });
     this.setupKeyHandler();
   }
@@ -253,6 +260,18 @@ export class InputRouter {
     }
   }
 
+  /** Set the quick overview dialog instance (called after construction) */
+  setQuickOverview(overview: QuickOverview): void {
+    this.quickOverview = overview;
+  }
+
+  /** Called by QuickOverview when it self-closes (Esc, action, click-outside). */
+  exitQuickOverview(): void {
+    if (this.mode === Mode.QuickOverview) {
+      this.toNormal();
+    }
+  }
+
   /** Check if a key event is the Smart Prompt Dialog shortcut (Cmd+Shift+K) */
   static isPromptDialogKey(e: KeyboardEvent): boolean {
     return (
@@ -283,6 +302,7 @@ export class InputRouter {
     else if (this.mode === Mode.Hint) this.hints.exit();
     else if (this.mode === Mode.CommandPalette) this.commandPalette?.close();
     else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
+    else if (this.mode === Mode.QuickOverview) this.quickOverview?.close();
     void this.promptDialog.open();
     this.setMode(Mode.PromptDialog);
   }
@@ -360,6 +380,8 @@ export class InputRouter {
               this.exitSelectionMode();
             } else if (this.mode === Mode.Hint) {
               this.hints.exit();
+            } else if (this.mode === Mode.QuickOverview) {
+              this.quickOverview?.close();
             }
             this.commandPalette.open();
             this.setMode(Mode.CommandPalette);
@@ -396,6 +418,9 @@ export class InputRouter {
         if (this.mode === Mode.Normal) {
           this.setMode(Mode.Compositor);
         } else {
+          // The overview is a full-screen scrim: leaving its mode without
+          // closing it would strand a visible dialog that no longer routes keys.
+          if (this.mode === Mode.QuickOverview) this.quickOverview?.close();
           this.toNormal();
         }
         return;
@@ -420,6 +445,8 @@ export class InputRouter {
         } else if (this.mode === Mode.QuickFileSearch) {
           this.quickFileSearch?.close();
           this.toNormal();
+        } else if (this.mode === Mode.QuickOverview) {
+          this.quickOverview?.close();
         } else if (this.mode === Mode.PromptDialog) {
           // Dialog owns Escape semantics (close popup → close picker → close dialog).
           // Delegate, but if it returns false (unexpected), force-close.
@@ -511,6 +538,7 @@ export class InputRouter {
           else if (this.mode === Mode.CommandPalette) this.commandPalette?.close();
           else if (this.mode === Mode.PromptDialog) this.promptDialog?.close();
           else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
+          else if (this.mode === Mode.QuickOverview) this.quickOverview?.close();
           void this.quickFileSearch.open();
           this.setMode(Mode.QuickFileSearch);
         }
@@ -530,6 +558,7 @@ export class InputRouter {
           else if (this.mode === Mode.Hint) this.hints.exit();
           else if (this.mode === Mode.CommandPalette) this.commandPalette?.close();
           else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
+          else if (this.mode === Mode.QuickOverview) this.quickOverview?.close();
           void this.promptDialog.open();
           this.setMode(Mode.PromptDialog);
         }
@@ -601,6 +630,16 @@ export class InputRouter {
           if (!this.quickFileSearch.isVisible) {
             this.toNormal();
           }
+        }
+        return;
+      }
+
+      // Quick Overview mode: the dialog is read-only, so it consumes every key
+      // it recognises and swallows bare printable keys to keep them off the PTY.
+      if (this.mode === Mode.QuickOverview) {
+        if (this.quickOverview?.handleKey(e)) {
+          e.preventDefault();
+          e.stopPropagation();
         }
         return;
       }
@@ -762,9 +801,17 @@ export class InputRouter {
         this.compositor.toggleMaximize().then(() => this.toNormal());
         break;
 
-      // Enter Resize mode
+      // r — enter Resize mode / R — open the Review Board picker (spec 211).
+      // NB: the Board deliberately does NOT take bare `Leader r`, which Resize has
+      // owned since the original leader map. `Leader Shift+R` keeps the mnemonic
+      // and mirrors the `d`/`Shift+D` pairing the Diff Window already uses.
       case 'r':
-        this.setMode(Mode.Resize);
+        if (e.shiftKey) {
+          this.toNormal();
+          void this.compositor.openReviewPicker();
+        } else {
+          this.setMode(Mode.Resize);
+        }
         break;
 
       // Enter Swap mode
@@ -1222,7 +1269,13 @@ export class InputRouter {
     switch (result) {
       case 'selected':
         this.compositor.soundEngine.play('hint.select');
-        this.toNormal();
+        // A filepath hint hands off to the Quick Overview dialog, which is
+        // already visible by now — stay modal instead of returning to Normal.
+        if (this.quickOverview?.isVisible) {
+          this.setMode(Mode.QuickOverview);
+        } else {
+          this.toNormal();
+        }
         break;
       case 'exit':
         this.compositor.soundEngine.play('hint.cancel');

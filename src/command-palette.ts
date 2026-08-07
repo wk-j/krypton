@@ -840,6 +840,21 @@ export class CommandPalette {
       category: 'Window',
       execute: () => c.openAnalyses(),
     });
+    // spec 211: `review.open` WORKS a review (the in-app keyboard Board);
+    // `reviews.open` BROWSES them (the read-only archive in the OS browser).
+    this.register({
+      id: 'review.open',
+      label: 'Open Review Board',
+      category: 'Window',
+      keybinding: 'Leader Shift+R',
+      execute: () => c.openReviewPicker(),
+    });
+    this.register({
+      id: 'reviews.open',
+      label: 'Open Review Board Archive',
+      category: 'Window',
+      execute: () => c.openReviews(),
+    });
     this.register({
       id: 'termctrl.open',
       label: 'Open Terminal Control Monitor',

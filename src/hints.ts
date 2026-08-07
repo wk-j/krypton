@@ -7,8 +7,10 @@ import type { Terminal } from '@xterm/xterm';
 
 import { openInHelixTab } from './editor-open';
 import { openExternalUrl } from './external-url';
+import { createFilePeekSource } from './file-peek-source';
 import type { Compositor } from './compositor';
 import type { HintsConfig, HintRule } from './config';
+import type { OverviewSource } from './quick-overview';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -67,6 +69,7 @@ const DEFAULT_HINTS_CONFIG: HintsConfig = {
       enabled: true,
     },
   ],
+  file_action: 'peek',
 };
 
 // ─── Label Generator ──────────────────────────────────────────────
@@ -118,6 +121,9 @@ export class HintController {
   /** Callbacks for when hint mode should exit */
   private exitCallbacks: Array<() => void> = [];
 
+  /** Opens a source in the Quick Overview dialog; injected by InputRouter. */
+  private overviewOpener: ((source: OverviewSource) => void) | null = null;
+
   constructor(compositor: Compositor) {
     this.compositor = compositor;
   }
@@ -125,6 +131,14 @@ export class HintController {
   /** Register callback for hint mode exit (so InputRouter returns to Normal) */
   onExit(cb: () => void): void {
     this.exitCallbacks.push(cb);
+  }
+
+  /**
+   * Provide the opener used by the `filepath` action to peek a file instead of
+   * opening an editor tab. See docs/210-quick-overview-dialog.md.
+   */
+  setOverviewOpener(open: (source: OverviewSource) => void): void {
+    this.overviewOpener = open;
   }
 
   /** Update config (called when config loads or hot-reloads) */
@@ -638,6 +652,13 @@ export class HintController {
 
   private executeActionForText(text: string, rule: HintRule): void {
     if (rule.name === 'filepath') {
+      // Default: peek the file in the Quick Overview dialog, which keeps the
+      // openers below one keystroke away (Enter) instead of forcing a tab.
+      // `[hints] file_action = "editor"` restores the direct-open behaviour.
+      if (this.config.file_action !== 'editor' && this.overviewOpener) {
+        this.overviewOpener(createFilePeekSource(this.compositor, text));
+        return;
+      }
       // Markdown files open in the in-app viewer instead of Helix.
       if (/\.md$/i.test(text)) {
         this.compositor.openMarkdownView(text).catch((err) => {

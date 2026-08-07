@@ -3,6 +3,16 @@
 > Status: Implemented
 > Date: 2026-07-08
 > Milestone: M — ACP Harness / GitHub issue-fixing (extends spec 191)
+>
+> **Sibling surface: `/reviews` (spec 211).** The Review Board archive is built from this template —
+> the same unfiltered `read_dir` walk of a gitignored `.krypton/` subtree (a `WalkBuilder` would
+> filter it out), the same `<!--SLOT-->` substitution into an `include_str!`'d Binance-dark shell,
+> the same `validate_doc_path` guard and `html_response` headers, and route registration in **both**
+> the live router and the conflict-test router. It differs in two ways worth knowing if you touch
+> either: bundles are one level deep (`<date>-<slug>/`) rather than three (`<owner>/<repo>/<num>/`)
+> and sort newest-first off the slug's date prefix, and the bundle page runs a **fence-aware
+> post-pass** (`render_review_blocks`) over comrak output to render the typed review blocks that
+> comrak would otherwise emit as plain code blocks.
 
 ## Problem
 

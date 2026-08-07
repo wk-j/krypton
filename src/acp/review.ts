@@ -138,20 +138,43 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
     `3. As replies arrive, track how many of the ${reviewers.length} reviewers have answered. Once all ` +
       'have replied (or the user runs #cancel, which aborts the whole review), synthesize: cluster ' +
       'concerns raised by ≥2 reviewers (high signal), list any conflicts between reviewers, and note ' +
-      'unique catches. Report the synthesis in your turn text. After synthesizing (not on #cancel), ' +
-      'call `review_outcome` once with the totals you reported — `blockers` and `warnings` are the ' +
-      `combined counts across all reviewers, \`reviewer_count\` is ${reviewers.length}, and ` +
-      '`subject_label` is a short tag for what was reviewed (the diff summary or doc path). Also pass ' +
-      'a structured `findings` array extracted from reviewer replies when there are findings: map ' +
-      '`Blockers` to severity `blocking`, `Warnings` / `Non-blocking` to `non-blocking`, and ' +
+      'unique catches.',
+  );
+  // spec 211: the synthesis lands in a Review Board rather than in turn text.
+  // Turn text scrolls away, carries no reading order, and gives the human no
+  // structured way to answer — which is the whole reason the Board exists.
+  lines.push(
+    '4. Compose a **Review Board** for the synthesis instead of reporting it in your turn text: call ' +
+      '`review_new { title, subject }`, write the document at the returned path with your edit tool, then ' +
+      'call `review_register { id }`. The Board must lead with an EXPLANATION, not a findings list: prose ' +
+      'on what this change is and how it works, plus a ```review:walkthrough (an ordered `- at: path:line` / ' +
+      '`say: …` tour) whenever the subject spans more than one file. Then add a ```review:finding per ' +
+      'clustered concern (severity blocking|non-blocking|suggestion, file/line where you have one, prose ' +
+      'after the fence for the detail), a ```review:decision for any genuine fork between reviewers, and ' +
+      '```review:metrics / ```review:chart where a number or a shape helps. A Board that is only a findings ' +
+      'list is a regression to what this command already did in turn text.',
+  );
+  lines.push(
+    '5. **A clean review still gets a Board, and it is not an empty one.** If every reviewer said LGTM, ' +
+      'compose prose on what the change does, a walkthrough of it, metrics, and zero findings. That is the ' +
+      'NORMAL shape of a review under this design, not a degenerate case — the human learns what now exists ' +
+      'even when nothing is wrong, and the archive stays complete (a missing entry would mean both "never ' +
+      'reviewed" and "reviewed and clean").',
+  );
+  lines.push(
+    '6. After registering the Board (not on #cancel), call `review_outcome` once with the totals — ' +
+      '`blockers` and `warnings` are the combined counts across all reviewers, `reviewer_count` is ' +
+      `${reviewers.length}, and \`subject_label\` is a short tag for what was reviewed (the diff summary or ` +
+      'doc path). Also pass a structured `findings` array extracted from reviewer replies when there are ' +
+      'findings: map `Blockers` to severity `blocking`, `Warnings` / `Non-blocking` to `non-blocking`, and ' +
       '`Suggestions` to `suggestion`; each item is `{ file, line?, severity, note }` with repo-relative ' +
       'file, optional integer line, and one-line note. This records a review quality matrix row; it stores ' +
       'no scores and no grades.',
   );
   lines.push(
-    '4. Do NOT auto-commit or auto-apply fixes. If the reviews surface a genuine unresolved fork (a real ' +
-      'decision the user could reasonably make either way), route exactly that one decision to the human ' +
-      'via `attention_flag` and keep going.',
+    '7. Do NOT auto-commit or auto-apply fixes. If the reviews surface a genuine unresolved fork (a real ' +
+      'decision the user could reasonably make either way), put it in the Board as a `review:decision` — ' +
+      'that is what the block is for. Reserve `attention_flag` for a fork the Board itself does not cover.',
   );
   return lines.join('\n');
 }

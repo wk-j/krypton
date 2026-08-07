@@ -11,6 +11,7 @@ import type {
   AcpBackendDescriptor,
   AcpEvent,
   DiffReviewComment,
+  ReviewResponse,
   AcpMcpCapabilities,
   AcpMcpServerDescriptor,
   AgentInfo,
@@ -54,6 +55,7 @@ import {
 } from './review-priority-overlay';
 import { ArtifactFeedbackQueue, DocArtifactRequestQueue, DocFeedbackQueue } from './artifact-feedback';
 import { DiffReviewQueue } from './diff-review';
+import { ReviewResponseQueue } from './review-response-queue';
 import {
   InterLaneCoordinator,
   PEER_SEND_DEFERRED_TOOL_HINT,
@@ -198,6 +200,9 @@ import type {
   ComposerFocus,
   FileTouchRecord,
   HarnessArtifactRecord,
+  HarnessReviewRecord,
+  ReviewCardPayload,
+  ReviewEventPayload,
   HarnessLane,
   HarnessPermission,
   HarnessTranscriptItem,
@@ -304,6 +309,7 @@ import {
 import {
   ARTIFACT_HINT_ALPHABET,
   artifactWritePathMatches,
+  reviewWritePathMatches,
   callTargetsArtifactScratch,
   errorText,
   extractHarnessServerName,
@@ -363,6 +369,7 @@ import {
 } from './message-resources';
 export {
   artifactWritePathMatches,
+  reviewWritePathMatches,
   callTargetsArtifactScratch,
   generateArtifactHintLabels,
   harnessAutoAllowToolName,
@@ -834,6 +841,14 @@ export class AcpHarnessView implements ContentView {
   /** spec 133: HTML artifact registry mirror, keyed by artifact id. */
   private artifacts = new Map<string, HarnessArtifactRecord>();
   private artifactUnlisten: UnlistenFn | null = null;
+  /** spec 211: Review Board registry mirror, keyed by review id. Only the CARD
+   *  lives here — the bundle on disk outlives the entry, the lane, and the app,
+   *  and is rediscovered by the picker's directory walk. */
+  private reviews = new Map<string, HarnessReviewRecord>();
+  private reviewUnlisten: UnlistenFn | null = null;
+  /** spec 211: per-lane review-response queue, drained on the lane's next idle.
+   *  Third sibling of the artifact-feedback and diff-review queues. */
+  private reviewResponseQueue: ReviewResponseQueue;
   /** spec 149: per-lane artifact feedback queue, drained on the lane's next idle
    *  (a dedicated queue, NOT the peer LaneInbox). Constructed in the ctor. */
   private feedbackQueue: ArtifactFeedbackQueue;
@@ -919,6 +934,11 @@ export class AcpHarnessView implements ContentView {
   private closeCb: (() => void) | null = null;
   private readonly openTelegramSettingsCb: (() => Promise<void>) | null;
   private readonly openFileReferenceCb: ((path: string, line?: number, column?: number) => Promise<boolean>) | null;
+  /** spec 211: open a Review Board content window over a durable bundle. Injected
+   *  by the compositor, which owns tab creation; null when unavailable. */
+  private readonly openReviewBoardCb:
+    | ((options: { dir: string; slug: string; laneName?: string; cwd?: string }) => void)
+    | null;
 
   private dashboardEl!: HTMLElement;
   private memoryOverlayEl!: HTMLElement;
@@ -968,11 +988,15 @@ export class AcpHarnessView implements ContentView {
     bus: ViewBus | null = null,
     openTelegramSettings: (() => Promise<void>) | null = null,
     openFileReference: ((path: string, line?: number, column?: number) => Promise<boolean>) | null = null,
+    openReviewBoard:
+      | ((options: { dir: string; slug: string; laneName?: string; cwd?: string }) => void)
+      | null = null,
   ) {
     this.projectDir = projectDir;
     this.viewBus = bus;
     this.openTelegramSettingsCb = openTelegramSettings;
     this.openFileReferenceCb = openFileReference;
+    this.openReviewBoardCb = openReviewBoard;
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
     this.element = document.createElement('div');
@@ -1026,6 +1050,16 @@ export class AcpHarnessView implements ContentView {
       injectReviewTurn: (laneId, text) => {
         const lane = this.lanes.find((l) => l.id === laneId);
         if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'diff review');
+      },
+    });
+    // spec 211: review responses drain on the lane's next idle too. Constructed
+    // LAST for the same insertion-order reason: it re-checks status in its own
+    // drain, so it must see a contested idle as already claimed.
+    this.reviewResponseQueue = new ReviewResponseQueue(this.laneBus, {
+      getLaneStatus: (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
+      injectResponseTurn: (laneId, text) => {
+        const lane = this.lanes.find((l) => l.id === laneId);
+        if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'review response');
       },
     });
     // spec 128: refresh the backpressure gauge (and the overlay, if open) on
@@ -1271,6 +1305,36 @@ export class AcpHarnessView implements ContentView {
     // have since closed are dropped (their reports were removed on close).
     if (operation === 'diff.review-priority') {
       return { ranges: this.reviewPriorityStore.allRanges() };
+    }
+    // spec 211: deliver a Review Board response to the authoring lane. Note the
+    // split of duties: the FILE WRITE is the Board's own job and already happened
+    // (debounced autosave), so a review whose lane has died is still fully
+    // recorded on disk — this op only routes the delivery.
+    if (operation === 'review.response') {
+      const target = requiredString(params, 'target');
+      const batchId = requiredString(params, 'batchId');
+      const reviewId = requiredString(params, 'reviewId');
+      const dir = requiredString(params, 'dir');
+      const title = typeof params.title === 'string' ? params.title : reviewId;
+      const response = params.response as ReviewResponse | undefined;
+      if (!response) return { status: 'no-live-lane' };
+      const blockLabels =
+        params.blockLabels && typeof params.blockLabels === 'object'
+          ? (params.blockLabels as Record<string, string>)
+          : {};
+      const lane = this.lanes.find((l) => l.displayName === target && l.status !== 'stopped');
+      if (!lane) return { status: 'no-live-lane' };
+      const outcome = this.reviewResponseQueue.accept(lane.id, {
+        kind: 'review_response',
+        batchId,
+        reviewId,
+        dir,
+        title,
+        response,
+        blockLabels,
+        sentAt: Date.now(),
+      });
+      return { status: outcome === 'duplicate' ? 'duplicate' : 'accepted' };
     }
     if (operation === 'diff.review-send') {
       const target = requiredString(params, 'target');
@@ -3797,6 +3861,10 @@ export class AcpHarnessView implements ContentView {
       this.artifactUnlisten();
       this.artifactUnlisten = null;
     }
+    if (this.reviewUnlisten) {
+      this.reviewUnlisten();
+      this.reviewUnlisten = null;
+    }
     if (this.feedbackUnlisten) {
       this.feedbackUnlisten();
       this.feedbackUnlisten = null;
@@ -3813,6 +3881,7 @@ export class AcpHarnessView implements ContentView {
     this.docsFeedbackQueue.dispose();
     this.docsArtifactQueue.dispose();
     this.diffReviewQueue.dispose();
+    this.reviewResponseQueue.dispose();
     this.usageProviderListeners.clear();
     if (this.transcriptResizeObserver) {
       this.transcriptResizeObserver.disconnect();
@@ -5517,6 +5586,9 @@ export class AcpHarnessView implements ContentView {
     this.artifactUnlisten = await listen<ArtifactEventPayload>('acp-harness-artifact', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) this.handleArtifactEvent(event.payload);
     });
+    this.reviewUnlisten = await listen<ReviewEventPayload>('acp-harness-review', (event) => {
+      if (event.payload.harnessId === this.harnessMemoryId) this.handleReviewEvent(event.payload);
+    });
     await this.refreshMemory();
     await this.refreshMcpStats();
     await this.refreshArtifacts();
@@ -7111,6 +7183,7 @@ export class AcpHarnessView implements ContentView {
     // spec 133: a pending artifact carries a write grant and must not outlive
     // the turn — cancel any the lane created but never registered.
     this.cancelPendingArtifactsForLane(lane);
+    this.cancelPendingReviewsForLane(lane);
     this.updateComposerTick();
     if (stopReason !== 'end_turn' && stopReason !== 'cancelled') {
       this.appendTranscript(lane, 'system', `turn ended: ${stopReason}`);
@@ -7155,6 +7228,14 @@ export class AcpHarnessView implements ContentView {
     const artifactWrite = this.matchArtifactWriteForGrant(lane, toolCall);
     if (artifactWrite && pickPermissionOption(permission.options, 'accept')) {
       void this.resolveArtifactWritePermission(lane, permission, artifactWrite);
+      return;
+    }
+    // spec 211: the same issued-path mechanism for a Review Board bundle. The
+    // grant covers the whole directory (not one file), so the lane can add
+    // `assets/` alongside `review.md`.
+    const reviewWrite = this.matchReviewWriteForGrant(lane, toolCall);
+    if (reviewWrite && pickPermissionOption(permission.options, 'accept')) {
+      void this.resolveReviewWritePermission(lane, permission, reviewWrite);
       return;
     }
     lane.pendingPermissions.push(permission);
@@ -7406,15 +7487,221 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  // ─── Review Boards (spec 211) ───────────────────────────────────────────
+
+  /** Apply a Rust review registry event: update the mirror + the card. */
+  private handleReviewEvent(payload: ReviewEventPayload): void {
+    const { id, laneLabel, state } = payload;
+    if (state === 'cancelled') {
+      this.reviews.delete(id);
+      // No "unavailable" state: a cancelled review was never registered, so it
+      // never had a card. A REGISTERED review's card stays valid forever, because
+      // the bundle on disk outlives the registry entry.
+      return;
+    }
+    const existing = this.reviews.get(id);
+    const record: HarnessReviewRecord = {
+      id,
+      laneLabel,
+      slug: payload.slug ?? existing?.slug ?? '',
+      dir: payload.dir ?? existing?.dir ?? '',
+      path: payload.path ?? existing?.path ?? '',
+      tail: payload.tail ?? existing?.tail ?? '',
+      title: payload.title ?? existing?.title ?? id,
+      state: state === 'registered' ? 'registered_live' : 'pending',
+      blocks: payload.blocks ?? existing?.blocks ?? 0,
+      steps: payload.steps ?? existing?.steps ?? 0,
+      findings: payload.findings ?? existing?.findings ?? 0,
+      decisions: payload.decisions ?? existing?.decisions ?? 0,
+    };
+    this.reviews.set(id, record);
+    if (state === 'pending') return;
+    if (payload.registered === false) {
+      this.updateReviewCard(record);
+      return;
+    }
+    this.raiseReviewCard(record);
+  }
+
+  /** Append a hintable Review Board card to the owning lane's transcript. */
+  private raiseReviewCard(record: HarnessReviewRecord): void {
+    const lane = this.lanes.find((l) => l.displayName === record.laneLabel);
+    if (!lane) return;
+    const prior = lane.transcript.find((item) => item.review?.id === record.id);
+    if (prior) {
+      this.updateReviewCard(record);
+      return;
+    }
+    const item = this.appendTranscript(lane, 'review', record.title);
+    item.review = {
+      id: record.id,
+      slug: record.slug,
+      dir: record.dir,
+      title: record.title,
+      laneLabel: record.laneLabel,
+      blocks: record.blocks,
+      steps: record.steps,
+      findings: record.findings,
+      decisions: record.decisions,
+      hintLabel: null,
+    };
+    this.scheduleLaneRender(lane);
+  }
+
+  /** Refresh an existing card's counts after the lane iterated on the document. */
+  private updateReviewCard(record: HarnessReviewRecord): void {
+    const lane = this.lanes.find((l) => l.displayName === record.laneLabel);
+    if (!lane) return;
+    const item = lane.transcript.find((i) => i.review?.id === record.id);
+    if (!item?.review) return;
+    item.review.title = record.title;
+    item.review.blocks = record.blocks;
+    item.review.steps = record.steps;
+    item.review.findings = record.findings;
+    item.review.decisions = record.decisions;
+    item.text = record.title;
+    this.scheduleLaneRender(lane);
+  }
+
+  /** Find a registered/pending review whose BUNDLE contains a write target. The
+   *  grant covers the whole directory, not one file, so the lane may add
+   *  `assets/diagram.png` and reference it from `review.md`. */
+  private findReviewForWrite(laneLabel: string, target: string | null): HarnessReviewRecord | null {
+    if (!target) return null;
+    for (const record of this.reviews.values()) {
+      if (record.laneLabel !== laneLabel) continue;
+      if (reviewWritePathMatches(target, record.dir, record.tail)) return record;
+    }
+    return null;
+  }
+
+  /** Auto-approval gate: a path match is not enough — only a file *write* is
+   *  auto-approved, never a read/search/execute that merely names the bundle. */
+  private matchReviewWriteForGrant(
+    lane: HarnessLane,
+    call: ToolCall | ToolCallUpdate,
+  ): HarnessReviewRecord | null {
+    if (!isArtifactWriteGrantKind(inferToolLabel(call))) return null;
+    const target = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? null;
+    return this.findReviewForWrite(lane.displayName, target);
+  }
+
+  private async resolveReviewWritePermission(
+    lane: HarnessLane,
+    permission: HarnessPermission,
+    record: HarnessReviewRecord,
+  ): Promise<void> {
+    if (!lane.client) return;
+    const option = pickPermissionOption(permission.options, 'accept');
+    if (!option) return;
+    try {
+      await lane.client.respondPermission(permission.requestId, option.optionId);
+      this.updatePermissionDecision(
+        permission,
+        'auto_allowed',
+        '✓ review write (auto-allow)',
+        `matched issued review bundle ${record.tail}`,
+      );
+    } catch (e) {
+      this.updatePermissionDecision(permission, 'failed', 'permission reply failed');
+      this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+    }
+    this.render();
+  }
+
+  /** Re-read `review.md` after observing an edit; refresh the card's counts. */
+  private async refreshReview(record: HarnessReviewRecord): Promise<void> {
+    if (!this.harnessMemoryId) return;
+    try {
+      const result = await invoke<{
+        blocks: number;
+        steps: number;
+        findings: number;
+        decisions: number;
+      }>('acp_refresh_review', {
+        harnessId: this.harnessMemoryId,
+        laneLabel: record.laneLabel,
+        id: record.id,
+      });
+      record.blocks = result.blocks;
+      record.steps = result.steps;
+      record.findings = result.findings;
+      record.decisions = result.decisions;
+      this.updateReviewCard(record);
+    } catch {
+      // A failed re-read (the lane broke the file, or grew it past the cap) leaves
+      // the card's last good counts. The bundle is still openable — half a review
+      // beats none — so there is deliberately no "unavailable" state here.
+    }
+  }
+
+  /** Open a Review Board card in a Krypton content window. */
+  private async openReviewBoard(card: ReviewCardPayload): Promise<void> {
+    if (!card.dir || !card.slug) {
+      this.flashChip('review bundle unavailable');
+      return;
+    }
+    if (!this.openReviewBoardCb) {
+      this.flashChip('review board unavailable');
+      return;
+    }
+    // Re-read before opening so the card's counts (and the Board's first render)
+    // reflect any edit made since the last register.
+    const record = this.reviews.get(card.id);
+    if (record) await this.refreshReview(record);
+    this.openReviewBoardCb({
+      dir: card.dir,
+      slug: card.slug,
+      laneName: card.laneLabel,
+      cwd: this.projectDir ?? undefined,
+    });
+    this.flashChip(`opening ${card.title}`);
+  }
+
+  /** Turn-end: cancel a lane's still-pending reviews (drops the frontend write
+   *  grant). Registered reviews survive across turns — the bundle is the
+   *  deliverable, and the human may not have read it yet. */
+  private cancelPendingReviewsForLane(lane: HarnessLane): void {
+    let hadPending = false;
+    for (const [id, record] of this.reviews) {
+      if (record.laneLabel === lane.displayName && record.state === 'pending') {
+        this.reviews.delete(id);
+        hadPending = true;
+      }
+    }
+    if (!hadPending || !this.harnessMemoryId) return;
+    void invoke('acp_cancel_pending_reviews', {
+      harnessId: this.harnessMemoryId,
+      laneLabel: lane.displayName,
+    }).catch(() => undefined);
+  }
+
+  /** Session reset / lane removal (#new, close): drop ALL of the lane's review
+   *  records, so a later same-display-name lane cannot inherit a write grant.
+   *  THE BUNDLES ON DISK ARE UNTOUCHED — `review.md` and every answer stay, an
+   *  open Board keeps working and keeps autosaving, and only `s` reports
+   *  `no-live-lane`. That asymmetry with artifacts is the point: a review is a
+   *  record, not a throwaway view. */
+  private dropAllReviewsForLane(lane: HarnessLane): void {
+    this.cancelPendingReviewsForLane(lane);
+    for (const [id, record] of this.reviews) {
+      if (record.laneLabel === lane.displayName) this.reviews.delete(id);
+    }
+    this.reviewResponseQueue.dropLane(lane.id);
+  }
+
   // ─── Transcript open-hint mode ──────────────────────────────────────────
 
-  /** Live artifacts and message references in transcript order. */
-  private activeLaneOpenTargets(): Array<ArtifactCardPayload | MessageResource> {
+  /** Live artifacts, Review Boards, and message references in transcript order. */
+  private activeLaneOpenTargets(): Array<ArtifactCardPayload | ReviewCardPayload | MessageResource> {
     const lane = this.activeLane();
     if (!lane) return [];
-    const targets: Array<ArtifactCardPayload | MessageResource> = [];
+    const targets: Array<ArtifactCardPayload | ReviewCardPayload | MessageResource> = [];
     for (const item of lane.transcript) {
       if (item.artifact?.available) targets.push(item.artifact);
+      // spec 211: a review card has no `available` flag — the bundle is a durable
+      // record, so the card stays openable even after the lane dies.
+      if (item.review) targets.push(item.review);
       targets.push(...(item.resources ?? []));
     }
     return targets;
@@ -7439,6 +7726,7 @@ export class AcpHarnessView implements ContentView {
     this.openHintBuffer = '';
     for (const item of this.activeLane()?.transcript ?? []) {
       if (item.artifact) item.artifact.hintLabel = null;
+      if (item.review) item.review.hintLabel = null;
       for (const resource of item.resources ?? []) resource.hintLabel = null;
     }
     this.render();
@@ -7466,6 +7754,7 @@ export class AcpHarnessView implements ContentView {
     const exact = targets.find((target) => target.hintLabel === candidate);
     if (exact) {
       if ('available' in exact) void this.openArtifact(exact);
+      else if ('slug' in exact) void this.openReviewBoard(exact);
       else void this.openMessageResource(exact);
       this.exitOpenHintMode();
       return true;
@@ -8295,6 +8584,7 @@ export class AcpHarnessView implements ContentView {
     // (pending grants + registered entries) so a later same-name lane can't
     // inherit them.
     this.dropAllArtifactsForLane(lane);
+    this.dropAllReviewsForLane(lane);
     if (lane.client) {
       try {
         await lane.client.dispose();
@@ -8484,6 +8774,7 @@ export class AcpHarnessView implements ContentView {
     // write grant so the restarted lane can't inherit it. (Registered artifacts
     // stay: the transcript survives, unlike #new.)
     this.cancelPendingArtifactsForLane(lane);
+    this.cancelPendingReviewsForLane(lane);
     const client = lane.client;
     lane.client = null;
     await client.dispose();
@@ -8517,6 +8808,7 @@ export class AcpHarnessView implements ContentView {
     // spec 133: a restart reuses the display name — drop any pending artifact
     // write grant so the restarted lane can't inherit it.
     this.cancelPendingArtifactsForLane(lane);
+    this.cancelPendingReviewsForLane(lane);
     this.appendTranscript(lane, 'restart', '--- session restarted ---');
     await this.spawnLane(lane);
   }
@@ -8555,6 +8847,7 @@ export class AcpHarnessView implements ContentView {
     // so drop ALL of this lane's artifact records — pending grants AND now-stale
     // registered entries that a same-name lane would otherwise inherit.
     this.dropAllArtifactsForLane(lane);
+    this.dropAllReviewsForLane(lane);
     if (lane.client) {
       await lane.client.dispose();
       lane.client = null;
@@ -8785,6 +9078,24 @@ export class AcpHarnessView implements ContentView {
         this.flashChip(url);
       } catch (e) {
         this.flashChip(`docs open failed: ${errorText(e)}`);
+      }
+      return;
+    }
+    // spec 211: Review Board archive (.krypton/reviews bundles). READ-ONLY — you
+    // browse here and WORK a review in the app with `Leader Shift+R`.
+    if (parts[0] === '#reviews') {
+      this.setDraft(lane, '', 0);
+      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
+      if (!port) {
+        this.flashChip('reviews unavailable - hook server not ready');
+        return;
+      }
+      const url = `http://127.0.0.1:${port}/reviews`;
+      try {
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`reviews open failed: ${errorText(e)}`);
       }
       return;
     }

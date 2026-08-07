@@ -465,6 +465,189 @@ export interface ReviewPrioritySnapshot {
   ranges: ReviewPriorityRange[];
 }
 
+// ─── Review Board (spec 211) ───
+// A lane-authored review DOCUMENT — Markdown plus a small set of typed fenced
+// blocks — that a human reads in a guided order and answers once. The spine is
+// explanation (prose + `walkthrough`); findings and decisions are additions, so
+// a Board with zero of either is the normal comprehension case, not an error.
+// The result is a file on disk (`.krypton/reviews/<date>-<slug>/`), never
+// session state — see docs/211-review-board.md.
+
+export type ReviewBlockKind =
+  | 'markdown'
+  | 'walkthrough'
+  | 'diff'
+  | 'finding'
+  | 'decision'
+  | 'chart'
+  | 'metrics'
+  | 'svg';
+
+/** One step of the comprehension spine: a code location plus why it matters. */
+export interface ReviewWalkthroughStep {
+  /** `path` or `path:line` (or `path:lineStart-lineEnd`), repo-relative. */
+  at: string;
+  /** What this location does / why it matters — one or two sentences. */
+  say: string;
+}
+
+/** The comprehension spine: an ordered tour of the code, each step anchored. */
+export interface ReviewWalkthroughBlock {
+  title?: string;
+  steps: ReviewWalkthroughStep[];
+}
+
+export type ReviewBlockSeverity = 'blocking' | 'non-blocking' | 'suggestion';
+
+export interface ReviewFindingBlock {
+  severity: ReviewBlockSeverity;
+  title: string;
+  file?: string;
+  line?: number;
+  /** Prose that followed the fence, if the lane wrote any (the explanation). */
+  detail?: string;
+}
+
+export interface ReviewDecisionBlock {
+  question: string;
+  options: string[];
+  /** 1-based index of the lane's recommendation, if it made one. */
+  recommended?: number;
+}
+
+export interface ReviewChartBlock {
+  kind: 'bar' | 'line' | 'sparkline';
+  title?: string;
+  data: { label: string; value: number }[];
+}
+
+/** A stat row — ordered label/value pairs, rendered as a definition strip. */
+export interface ReviewMetricsBlock {
+  rows: { label: string; value: string }[];
+}
+
+export interface ReviewDiffBlock {
+  /** Unified-diff text handed to diff2html verbatim. */
+  unified: string;
+}
+
+export interface ReviewSvgBlock {
+  /** Raw `<svg>` source; sanitized at render time, never inserted as-is. */
+  svg: string;
+}
+
+/** Fields every block carries, whatever its kind. */
+export interface ReviewBlockMeta {
+  /** Stable within a document: `b${ordinal}-${fnv1a(raw)}`. Re-attaches the
+   *  human's comments/triage after the lane iterates on the file. */
+  id: string;
+  /** Original fenced/markdown source — the escape hatch and diagnostic view. */
+  raw: string;
+  /** Non-fatal parse complaint shown as a chip on the block. A typed block that
+   *  fails to decode degrades to `markdown` carrying this; it is never dropped. */
+  diagnostic?: string;
+}
+
+/** Discriminated on `kind`, so `data` narrows without a cast. */
+export type ReviewBlock =
+  | (ReviewBlockMeta & { kind: 'markdown' })
+  | (ReviewBlockMeta & { kind: 'walkthrough'; data: ReviewWalkthroughBlock })
+  | (ReviewBlockMeta & { kind: 'diff'; data: ReviewDiffBlock })
+  | (ReviewBlockMeta & { kind: 'finding'; data: ReviewFindingBlock })
+  | (ReviewBlockMeta & { kind: 'decision'; data: ReviewDecisionBlock })
+  | (ReviewBlockMeta & { kind: 'chart'; data: ReviewChartBlock })
+  | (ReviewBlockMeta & { kind: 'metrics'; data: ReviewMetricsBlock })
+  | (ReviewBlockMeta & { kind: 'svg'; data: ReviewSvgBlock });
+
+/** A parsed review document: its blocks plus the frontmatter stamp `review.md`
+ *  carries so a bundle is self-describing on disk. */
+export interface ReviewDocument {
+  title: string | null;
+  laneName: string | null;
+  subject: string | null;
+  blocks: ReviewBlock[];
+}
+
+export interface ReviewComment {
+  blockId: string;
+  quote: string;
+  body: string;
+}
+
+export type ReviewFindingState = 'accepted' | 'dismissed';
+
+/** What the human sends back — and, verbatim, what `response.md`'s frontmatter
+ *  holds. One shape serves both the wire and the file, so a reopened bundle
+ *  restores exactly what was sent (or what was answered but not yet sent). */
+export interface ReviewResponse {
+  /** The bundle slug — the durable id, e.g. `2026-08-07-peering-guard-rewrite`. */
+  reviewId: string;
+  /** Free-text note typed in the send preview, optional. */
+  note?: string;
+  comments: ReviewComment[];
+  findings: { blockId: string; state: ReviewFindingState }[];
+  decisions: { blockId: string; chosen: number }[];
+  /** Set when the response was last handed to the lane; absent while it is only
+   *  autosaved. Lets a reopened Board distinguish "answered" from "delivered". */
+  sentAt?: number;
+}
+
+/** One review response delivered to a lane through the drain-on-idle queue. */
+export interface ReviewResponseEnvelope {
+  kind: 'review_response';
+  /** idempotency key — a retried send carrying a seen id is dropped. */
+  batchId: string;
+  /** Bundle slug, so the lane can re-read `review.md` / `response.md`. */
+  reviewId: string;
+  /** Absolute bundle directory, so the lane can edit the files it authored. */
+  dir: string;
+  title: string;
+  response: ReviewResponse;
+  /** Human-readable label per answered block id (a finding's title, a decision's
+   *  question). Without these the lane would receive opaque ids like `b7-9f2a1c`
+   *  and have to re-read `review.md` to know what was accepted. */
+  blockLabels?: Record<string, string>;
+  sentAt: number;
+}
+
+export type ReviewResponseSendResult = {
+  /** 'accepted' = queued for the lane; 'no-live-lane' = the authoring lane is
+   *  gone (the answers are still on disk); 'duplicate' = idempotent retry. */
+  status: 'accepted' | 'no-live-lane' | 'duplicate';
+};
+
+/** One bundle discovered by walking `.krypton/reviews/` (no session registry). */
+export interface ReviewBundle {
+  /** Directory name — the durable id, e.g. `2026-08-07-peering-guard-rewrite`. */
+  slug: string;
+  /** Absolute path to the bundle directory. */
+  dir: string;
+  title: string;
+  laneName: string;
+  createdAt: number;
+  /** Present once the human has answered anything. */
+  respondedAt?: number;
+  /** Present once the response was handed to a lane. */
+  sentAt?: number;
+  counts: {
+    blocks: number;
+    steps: number;
+    findings: number;
+    decisions: number;
+    unanswered: number;
+  };
+}
+
+/** `read_review_bundle` payload — the raw files, parsed in the frontend. */
+export interface ReviewBundleFiles {
+  slug: string;
+  dir: string;
+  /** `review.md` source; empty when the lane died before writing it. */
+  review: string;
+  /** `response.md` source, absent when the human has not answered yet. */
+  response?: string;
+}
+
 export interface LaneSummary {
   laneId: string;
   displayName: string;

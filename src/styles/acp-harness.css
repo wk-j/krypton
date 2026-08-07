@@ -1812,16 +1812,12 @@
   flex-direction: column;
   gap: 3px;
   margin-top: 10px;
-  padding: 6px;
-  background: rgba(7, 14, 18, 0.72);
-  border: 1px solid rgba(109, 208, 255, 0.22);
-  border-radius: 3px;
 }
 
 .acp-harness__resources-head {
   display: flex;
   justify-content: space-between;
-  padding: 0 3px 3px;
+  padding: 0 7px 1px;
   font-size: 0.7em;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -1846,7 +1842,7 @@
   text-align: left;
   color: inherit;
   background: rgba(109, 208, 255, 0.035);
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 2px;
   cursor: pointer;
 }
@@ -1858,8 +1854,7 @@
 .acp-harness__resource:hover,
 .acp-harness__resource:focus-visible,
 .acp-harness__resource--hinted {
-  background: rgba(109, 208, 255, 0.1);
-  border-color: rgba(109, 208, 255, 0.38);
+  background: rgba(109, 208, 255, 0.16);
   outline: none;
 }
 

@@ -65,8 +65,11 @@ import type {
   DiffReviewBatch,
   DiffReviewSendResult,
   DiffReviewTargets,
+  ReviewBundle,
   ReviewPriorityRange,
   ReviewPrioritySnapshot,
+  ReviewResponse,
+  ReviewResponseSendResult,
 } from './acp/types';
 
 interface AcpLanePeekCommands {
@@ -2144,6 +2147,221 @@ export class Compositor {
     return { ranges };
   }
 
+  /**
+   * spec 211: route a Review Board response to the lane that authored it. Same
+   * broker pattern as `sendDiffReview` — `resolveDisplayName` finds the owning
+   * live harness (globally-unique names), so the send lands on exactly one.
+   * A dead lane returns 'no-live-lane' and the Board keeps the response; it is
+   * already fully recorded in the bundle either way.
+   */
+  private async sendReviewResponse(payload: {
+    reviewId: string;
+    dir: string;
+    title: string;
+    target: string;
+    batchId: string;
+    response: ReviewResponse;
+    blockLabels: Record<string, string>;
+  }): Promise<ReviewResponseSendResult> {
+    const resolved = resolveDisplayName(payload.target);
+    if (!resolved) return { status: 'no-live-lane' };
+    const entry = harnessEntry(resolved.harnessId);
+    if (!entry || !entry.control) return { status: 'no-live-lane' };
+    const res = (await entry.control('review.response', {
+      target: payload.target,
+      batchId: payload.batchId,
+      reviewId: payload.reviewId,
+      dir: payload.dir,
+      title: payload.title,
+      response: payload.response,
+      blockLabels: payload.blockLabels,
+    })) as ReviewResponseSendResult | undefined;
+    return res ?? { status: 'no-live-lane' };
+  }
+
+  /**
+   * spec 211: open a Review Board over a durable bundle directory. Idempotent on
+   * the slug: a review already open is focused rather than opened twice, because
+   * two Boards over one bundle means last-writer-wins on `response.md`.
+   */
+  async openReviewBoard(options: {
+    dir: string;
+    slug: string;
+    laneName?: string;
+    cwd?: string;
+  }): Promise<void> {
+    const existing = this.findReviewBoardTab(options.slug);
+    if (existing) {
+      await this.focusReviewBoardTab(existing);
+      return;
+    }
+
+    const { ReviewBoardView } = await import('./review-board/view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const cwd = options.cwd ?? (await this.getFocusedCwd()) ?? undefined;
+    const view = new ReviewBoardView(container, {
+      dir: options.dir,
+      slug: options.slug,
+      laneName: options.laneName,
+      cwd,
+      // A walkthrough step or an anchored finding opens the real code. The Diff
+      // Window when one is open on this repo (the change under review), else the
+      // Markdown/editor path — a comprehension Board over existing code may have
+      // no diff at all.
+      jump: (target) => void this.jumpToReviewAnchor(target, cwd),
+      review: { send: (payload) => this.sendReviewResponse(payload) },
+    });
+
+    const title = options.slug.length > 28 ? `${options.slug.slice(0, 27)}…` : options.slug;
+    await this.createContentTab(`REVIEW // ${title}`, view);
+
+    // Refresh at lane quiet points, exactly like the Diff Window (ADR-0008):
+    // deliberately not a filesystem watcher, plus a manual `r` in the view.
+    if (this.bus && cwd) {
+      const unsub = this.bus.onSignal({ kind: 'harness:lane-idle' }, (sig) => {
+        void this.resolveRepoRoot(sig.value.cwd).then(async (root) => {
+          const own = await this.resolveRepoRoot(cwd);
+          if (root !== null && own !== null && root === own) view.requestRefresh();
+        });
+      });
+      view.addDisposeListener(unsub);
+    }
+
+    view.onClose(() => {
+      void this.closeTab();
+    });
+  }
+
+  /** The tab hosting an already-open Board for `slug`, if there is one. */
+  private findReviewBoardTab(slug: string): { windowId: WindowId; tabIndex: number } | null {
+    for (const [windowId, win] of this.windows) {
+      for (let tabIndex = 0; tabIndex < win.tabs.length; tabIndex++) {
+        for (const pane of this.collectPanes(win.tabs[tabIndex].paneTree)) {
+          const view = pane.contentView;
+          if (view?.type !== 'review') continue;
+          const board = view as { bundleSlug?: () => string };
+          if (board.bundleSlug?.() === slug) return { windowId, tabIndex };
+        }
+      }
+    }
+    return null;
+  }
+
+  private async focusReviewBoardTab(at: { windowId: WindowId; tabIndex: number }): Promise<void> {
+    const win = this.windows.get(at.windowId);
+    if (!win) return;
+    await this.focusWindow(at.windowId);
+    if (win.activeTabIndex !== at.tabIndex) {
+      win.activeTabIndex = at.tabIndex;
+      this.showActiveTab(win);
+      this.updateTabBar(win);
+    }
+    this.showNotification('review already open');
+  }
+
+  /**
+   * spec 211: open a review anchor. Prefers a Diff Window already open on this
+   * repo (the change under review); otherwise falls back to the Markdown viewer
+   * for a `.md` and the editor for code, since a comprehension Board over
+   * existing code may have no working diff to jump into.
+   */
+  private async jumpToReviewAnchor(
+    target: { path: string; line?: number },
+    cwd: string | undefined,
+  ): Promise<void> {
+    const diff = this.findContentViewByType('diff');
+    if (diff) {
+      const view = diff.pane.contentView as { revealLocation?: (p: string, l?: number) => boolean };
+      await this.focusWindow(diff.windowId);
+      if (view.revealLocation?.(target.path, target.line)) return;
+      // The path is not in the current diff (expected on a comprehension Board
+      // over existing code) — fall through to a reader rather than doing nothing.
+    }
+    if (target.path.endsWith('.md')) {
+      await this.openMarkdownView(target.path);
+      return;
+    }
+    const base = cwd ?? (await this.getFocusedCwd());
+    const absolute = target.path.startsWith('/') ? target.path : `${base ?? '.'}/${target.path}`;
+    const { openInHelixTab } = await import('./editor-open');
+    const result = await openInHelixTab(this, { path: absolute, line: target.line ?? null });
+    if (result !== 'opened') this.showNotification(`could not open ${target.path}`);
+  }
+
+  /** The first pane hosting a content view of `type`, if any. */
+  private findContentViewByType(
+    type: PaneContentType,
+  ): { windowId: WindowId; pane: Pane } | null {
+    for (const [windowId, win] of this.windows) {
+      for (const tab of win.tabs) {
+        for (const pane of this.collectPanes(tab.paneTree)) {
+          if (pane.contentView?.type === type) return { windowId, pane };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * spec 211: `Leader Shift+R` — the review picker. Lists every durable bundle
+   * (a directory walk, so previous sessions are included), newest first.
+   */
+  async openReviewPicker(): Promise<void> {
+    const entries = listHarnessEntries().filter((e) => e.cwd);
+    if (entries.length === 0) {
+      this.showNotification('no harness open — reviews are composed by a lane');
+      return;
+    }
+
+    const { listReviewBundles, pickReview } = await import('./review-board/picker');
+    // Bundles from every open harness, newest first across all of them.
+    const collected: { bundle: ReviewBundle; cwd: string | null }[] = [];
+    for (const entry of entries) {
+      for (const bundle of await listReviewBundles(entry.harnessId)) {
+        collected.push({ bundle, cwd: entry.cwd ?? null });
+      }
+    }
+    collected.sort((a, b) => b.bundle.slug.localeCompare(a.bundle.slug));
+
+    const picked = await pickReview(collected.map((c) => c.bundle));
+    if (!picked) return;
+    const owner = collected.find((c) => c.bundle.dir === picked.dir);
+    await this.openReviewBoard({
+      dir: picked.dir,
+      slug: picked.slug,
+      laneName: picked.laneName,
+      cwd: owner?.cwd ?? undefined,
+    });
+  }
+
+  /**
+   * spec 211: open the Review Board archive in the system browser. Read-only by
+   * design — it shows what exists and what was left hanging; you WORK a review in
+   * the app with `Leader Shift+R`.
+   */
+  async openReviews(): Promise<void> {
+    let port = 0;
+    try {
+      port = await invoke<number>('get_hook_server_port');
+    } catch (e) {
+      console.error('[Reviews] failed to read hook server port:', e);
+    }
+    if (!port) {
+      this.showNotification('reviews unavailable — hook server not ready');
+      return;
+    }
+    const url = `http://127.0.0.1:${port}/reviews`;
+    try {
+      await invoke('open_url', { url });
+      this.showNotification(url);
+    } catch (e) {
+      console.error('[Reviews] failed to open reviews:', e);
+      this.showNotification('reviews open failed');
+    }
+  }
+
   private async resolveRepoRoot(cwd: string): Promise<string | null> {
     const cached = this.repoRootCache.get(cwd);
     if (cached !== undefined) return cached;
@@ -3324,6 +3542,9 @@ export class Compositor {
       this.bus,
       () => this.openTelegramSettings(),
       (path, line, column) => this.openHelixTab(path, line, column),
+      // spec 211: the compositor owns tab creation, so the harness hands a review
+      // card's bundle back here rather than opening a window itself.
+      (options) => void this.openReviewBoard(options),
     );
 
     // Replace the launching terminal tab: open the harness as a content tab in
