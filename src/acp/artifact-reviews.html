@@ -305,7 +305,11 @@
     background: rgba(112, 122, 138, .08); border: 1px solid var(--border);
     border-radius: 6px; color: var(--muted);
   }
-  article.doc blockquote p { margin: .4em 0; }
+  /* Tight stack so a multi-field metadata blockquote (one <p> per Key: value)
+     reads as a card of rows, not a sparse quote. */
+  article.doc blockquote p { margin: .25em 0; }
+  article.doc blockquote p:first-child { margin-top: 0; }
+  article.doc blockquote p:last-child { margin-bottom: 0; }
   article.doc table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 13px; border: 1px solid var(--border); }
   article.doc th, article.doc td { padding: 8px 12px; border: 1px solid var(--border); text-align: left; }
   article.doc th { background: var(--code-bg); font-weight: 600; }

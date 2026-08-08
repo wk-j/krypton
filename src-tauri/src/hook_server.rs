@@ -6765,9 +6765,15 @@ fn html_response(html: impl Into<Body>) -> Response {
 /// policy. Relative `.md` links always resolve to `/doc` (a validated reader for
 /// any repo `.md`, gitignore-agnostic).
 fn render_markdown_doc(source: &str, harness_id: &str, rel: &str, asset_route: &str) -> String {
+    // Analysis docs (and similar) often put a "front matter" key/value block in a
+    // leading blockquote after the H1. Comrak joins soft-broken blockquote lines
+    // into one paragraph, so the fields mash into a single run-on line. Separate
+    // those lines first so each field stays on its own row (and still renders as
+    // markdown — links, code, bold). YAML `---` front matter is unchanged below.
+    let source = separate_metadata_blockquote_lines(source);
     let arena = Arena::new();
     let options = docs_options();
-    let root = parse_document(&arena, source, &options);
+    let root = parse_document(&arena, &source, &options);
     rewrite_doc_links(root, harness_id, rel, asset_route);
     let mut html = String::new();
     // Front matter renders first, as a readable key/value metadata card, ahead of
@@ -6779,6 +6785,121 @@ fn render_markdown_doc(source: &str, harness_id: &str, rel: &str, asset_route: &
         return String::new();
     }
     html
+}
+
+/// A blockquote line is `>` or `> rest` (CommonMark allows 0–3 leading spaces).
+fn is_blockquote_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed == ">" || trimmed.starts_with("> ") || trimmed.starts_with(">\t")
+}
+
+/// Strip the leading `>` marker (and the optional following space) from a
+/// blockquote line, returning the inner text.
+fn blockquote_inner(line: &str) -> &str {
+    let trimmed = line.trim_start();
+    if let Some(rest) = trimmed.strip_prefix('>') {
+        if let Some(rest) = rest.strip_prefix(' ') {
+            rest
+        } else if let Some(rest) = rest.strip_prefix('\t') {
+            rest
+        } else {
+            rest
+        }
+    } else {
+        line
+    }
+}
+
+/// True when a blockquote-inner line looks like a metadata field
+/// (`Key: value` or `**Key:** value`), not free-form prose.
+fn is_metadata_field_line(inner: &str) -> bool {
+    let t = inner.trim();
+    if t.is_empty() {
+        return false;
+    }
+    // `**Key:** value` — bold key, common in analysis docs.
+    if t.starts_with("**") {
+        if let Some(end) = t.find(":**") {
+            // key body between ** and :**
+            return end > 2;
+        }
+    }
+    // Bare `Key: value` — key is a single token (no spaces), not a URL scheme.
+    if let Some((key, value)) = t.split_once(':') {
+        let key = key.trim();
+        let value = value.trim();
+        if key.is_empty() || value.is_empty() {
+            return false;
+        }
+        // Reject URL schemes (`https:`) and multi-word prose labels.
+        if key.chars().any(|c| c.is_whitespace()) {
+            return false;
+        }
+        if key.eq_ignore_ascii_case("http")
+            || key.eq_ignore_ascii_case("https")
+            || key.eq_ignore_ascii_case("mailto")
+            || key.eq_ignore_ascii_case("ftp")
+        {
+            return false;
+        }
+        // Keep keys short — a 80-char "key" is almost certainly prose.
+        return key.chars().count() <= 40;
+    }
+    false
+}
+
+/// Within each run of consecutive blockquote lines, if every non-empty line is a
+/// `Key: value` metadata field, insert a blank `>` between them so comrak emits
+/// one `<p>` per field instead of a single mashed paragraph.
+fn separate_metadata_blockquote_lines(source: &str) -> String {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len().saturating_mul(2));
+    let mut i = 0;
+    while i < lines.len() {
+        if !is_blockquote_line(lines[i]) {
+            out.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
+        // Collect a maximal run of blockquote lines (blank lines end a CommonMark
+        // blockquote, so they are not included in the run).
+        let start = i;
+        while i < lines.len() && is_blockquote_line(lines[i]) {
+            i += 1;
+        }
+        let run = &lines[start..i];
+        let fields: Vec<&str> = run
+            .iter()
+            .map(|l| blockquote_inner(l))
+            .filter(|inner| !inner.trim().is_empty())
+            .collect();
+        let all_meta = fields.len() >= 2 && fields.iter().all(|f| is_metadata_field_line(f));
+        if all_meta {
+            for (idx, line) in run.iter().enumerate() {
+                let inner = blockquote_inner(line);
+                if inner.trim().is_empty() {
+                    // Preserve an author-supplied blank `>` as a separator.
+                    out.push((*line).to_string());
+                    continue;
+                }
+                if idx > 0 {
+                    // Separate from the previous field so each becomes its own <p>.
+                    out.push(">".to_string());
+                }
+                out.push((*line).to_string());
+            }
+        } else {
+            for line in run {
+                out.push((*line).to_string());
+            }
+        }
+    }
+    // Preserve a trailing newline when the source had one, so re-parse is stable.
+    let mut joined = out.join("\n");
+    if source.ends_with('\n') && !joined.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
 }
 
 /// Pull the raw text of the leading FrontMatter node (delimiters included), if
@@ -8039,6 +8160,66 @@ mod tests {
         assert!(
             html.contains("<h1>Title</h1>"),
             "body should follow: {html}"
+        );
+    }
+
+    #[test]
+    fn render_markdown_doc_keeps_metadata_blockquote_fields_on_separate_lines() {
+        // Analysis docs put informal "front matter" in a leading blockquote —
+        // one `Key: value` per `>` line. Without a pre-pass, comrak joins those
+        // soft-broken lines into a single paragraph and the fields mash together.
+        let source = "\
+# tli-dim-custom-ui#525 — title with `/`
+
+> GitHub: https://github.com/bcircle/tli-dim-custom-ui/issues/525
+> **ประเภท:** Bug (`area: Manage Document Type`) — หน้า SC0500
+> **โมดูล:** `tli-api` (`POST /anysite-ui/new/createDocType`)
+> **ตัวอย่างที่ทดสอบ:** Custom Type `สำเนาใบมรณบัตรบิดา /มารดา (07007)`
+
+---
+
+## Body
+";
+        let html = render_markdown_doc(source, "hm-1", "docs/cr/525.md", "/doc-asset");
+        assert!(
+            html.contains("<blockquote>"),
+            "metadata block should stay a blockquote: {html}"
+        );
+        // Each field is its own <p>, not one run-on paragraph.
+        let bq_start = html.find("<blockquote>").expect("blockquote");
+        let bq_end = html.find("</blockquote>").expect("blockquote end");
+        let bq = &html[bq_start..bq_end];
+        let p_count = bq.matches("<p>").count();
+        assert!(
+            p_count >= 4,
+            "expected one <p> per metadata field (≥4), got {p_count}: {bq}"
+        );
+        // Soft-join regression: GitHub URL and ประเภท must not share a <p>.
+        assert!(
+            !bq.contains("issues/525</a> <strong>ประเภท:</strong>")
+                && !bq.contains("issues/525</a> **ประเภท:**"),
+            "fields must not be soft-joined into one paragraph: {bq}"
+        );
+        assert!(
+            bq.contains("<strong>ประเภท:</strong>"),
+            "bold keys still render: {bq}"
+        );
+        assert!(
+            bq.contains("<code>tli-api</code>"),
+            "inline code in values still renders: {bq}"
+        );
+    }
+
+    #[test]
+    fn separate_metadata_blockquote_leaves_prose_quotes_alone() {
+        // A multi-line prose blockquote must NOT gain blank separators — that
+        // would turn one paragraph into many.
+        let source = "> This is a long quotation that the author\n> wrapped across two soft-broken lines on purpose.\n";
+        let out = separate_metadata_blockquote_lines(source);
+        assert_eq!(
+            out.lines().filter(|l| *l == ">").count(),
+            0,
+            "prose quotes must not gain separator lines: {out:?}"
         );
     }
 
