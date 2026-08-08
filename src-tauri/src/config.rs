@@ -452,9 +452,13 @@ pub struct XenonConfig {
     /// remote, falling back to a path-derived name. Must be a single path
     /// segment — the server addresses projects with one.
     pub project: String,
-    /// Kinds pushed automatically when `#push` is run with no arguments.
-    /// Empty means all kinds. Pushing is never ambient — this only selects
-    /// what a bare `#push` covers.
+    /// Which kinds a bare `#push` covers; empty means all of them.
+    ///
+    /// Listing `attention` additionally makes that ONE kind publish by itself,
+    /// the moment a lane raises a flag. It is the exception because an attention
+    /// flag has no on-disk form: it lives only in the running frontend, so a
+    /// flag nobody remembers to `#push` is simply lost when the app closes.
+    /// Every other kind is already durable on disk and stays manual.
     pub auto_push: Vec<String>,
 }
 

@@ -978,6 +978,19 @@ mod tests {
         assert_eq!(
             slug_from_remote("git@github.com:wk-j/krypton.git").unwrap(),
             "wk-j.krypton"
+        // `meta` is the whole payload for a fileless kind — an attention flag
+        // carries its question, rationale, and trade-offs there and has no files
+        // at all, so the loop above scans nothing. Without this, the one kind
+        // that is pushed automatically would be the one kind never checked.
+        if !self.force && !resource.manifest.meta.is_null() {
+            let meta_text = resource.manifest.meta.to_string();
+            if let Some(hit) = scan_for_secrets(&meta_text) {
+                return Ok(PushOutcome::Blocked {
+                    reason: format!("meta {hit} — review it, then re-run with --force"),
+                });
+            }
+        }
+
         );
         assert_eq!(
             slug_from_remote("https://github.com/wk-j/krypton/").unwrap(),
@@ -1182,3 +1195,53 @@ mod tests {
         assert!(collect(&dir, "nonsense", None).is_err());
     }
 }
+    /// An attention flag has no files, so the per-file scan sees nothing. Its
+    /// whole payload is `meta`, and it is the one kind that publishes without
+    /// the human asking — so it is the last place a credential should slip out.
+    #[tokio::test]
+    async fn an_attention_flag_with_a_credential_in_its_text_is_blocked() {
+        let publisher = Publisher::with_token("http://127.0.0.1:1", "t", "p", false).unwrap();
+        let resources = attention_resources(
+            Path::new("/tmp"),
+            vec![serde_json::json!({
+                "id": "jdg-1",
+                "question": "ควรเก็บ token ไว้ที่ไหน",
+                "rationale": "ใช้ค่านี้ ghp_abcdefghijklmnopqrstuvwxyz0123456789 ไปก่อน",
+            })],
+        )
+        .unwrap();
+        let item = publisher
+            .push_resource(resources.into_iter().next().unwrap())
+            .await;
+        match item.outcome {
+            PushOutcome::Blocked { reason } => assert!(reason.contains("meta"), "{reason}"),
+            other => panic!("a credential in meta must block the push, got {other:?}"),
+        }
+    }
+
+    /// The scan must not fire on ordinary decision text, or the auto-push would
+    /// block constantly and be turned off.
+    #[tokio::test]
+    async fn an_ordinary_attention_flag_is_not_blocked() {
+        let publisher = Publisher::with_token("http://127.0.0.1:1", "t", "p", false).unwrap();
+        let resources = attention_resources(
+            Path::new("/tmp"),
+            vec![serde_json::json!({
+                "id": "jdg-2",
+                "question": "ควรใช้ framework ฝั่งหน้าเว็บไหม",
+                "chosen": "ไม่ใช้ เขียน JavaScript ธรรมดา",
+                "reversibility": "reversible",
+            })],
+        )
+        .unwrap();
+        let item = publisher
+            .push_resource(resources.into_iter().next().unwrap())
+            .await;
+        // No server is listening, so it must reach the network and fail there —
+        // proving the scan let it through rather than blocking it.
+        match item.outcome {
+            PushOutcome::Failed { .. } => {}
+            other => panic!("ordinary text must not be blocked, got {other:?}"),
+        }
+    }
+

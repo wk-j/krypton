@@ -2403,9 +2403,52 @@ export class AcpHarnessView implements ContentView {
     this.scheduleLaneRender(lane);
     return { inserted: true };
   }
+    // spec 212: an attention flag is the one resource with no on-disk form, so
+    // it exists only in this process until something sends it. Publish it now
+    // when the project opted in, rather than waiting for a `#push` the human
+    // has no reason to remember. Fire-and-forget for the same reason the git
+    // probe below is: the MCP reply must not wait on the network.
+    void this.autoPushAttention();
 
   /**
    * spec 128: fill in a flagged item's git blast-radius after it was inserted.
+  /**
+   * spec 212: push open attention items when `[xenon].auto_push` lists
+   * `attention`. Deliberately silent — no chip, no transcript line — because
+   * this runs without the human asking and its only interesting outcome is
+   * failure, which `#xenon status` reports through the queue depth.
+   */
+  private async autoPushAttention(): Promise<void> {
+    const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
+    if (!cwd) return;
+    try {
+      const status = await invoke<XenonStatus>('xenon_status', { cwd });
+      if (!status.configured || !status.autoPush.includes('attention')) return;
+      await invoke<PushReport>('xenon_push', {
+        cwd,
+        kind: 'attention',
+        slug: null,
+        force: false,
+        attention: this.triageStore.openItems().map((i) => ({
+          id: i.id,
+          laneId: i.laneId,
+          laneName: this.lanes.find((l) => l.id === i.laneId)?.displayName ?? i.laneId,
+          createdAt: i.createdAt,
+          question: i.question,
+          chosen: i.chosen,
+          rationale: i.rationale,
+          tradedOff: i.tradedOff,
+          uncertainty: i.uncertainty,
+          reversibility: i.reversibility,
+        })),
+      });
+    } catch (err) {
+      // Never surface this: the human did not ask for it, and a dead server
+      // must not turn every flag into an error message.
+      console.warn('xenon auto-push of attention failed', err);
+    }
+  }
+
    * Runs after the bus reply, so a slow git probe never trips the bus timeout.
    */
   private async enrichJudgementDiffstat(itemId: string): Promise<void> {

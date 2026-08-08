@@ -246,9 +246,10 @@ native_host_browsers = ["chrome"]
 
 # --- Xenon resource server (spec 212) ---
 # Where `#push` publishes harness-generated resources (reviews, analyses,
-# artifacts, docs, attention flags). Publishing is always explicit — nothing
-# uploads on its own. The bearer token is NOT configured here: it lives in the
-# operating-system credential vault, written by pasting it into Krypton once.
+# artifacts, docs, attention flags). Publishing is explicit — nothing uploads on
+# its own, with one opt-in exception documented under `auto_push` below. The
+# bearer token is NOT configured here: it lives in the operating-system
+# credential vault, written by pasting it into Krypton once.
 
 [xenon]
 enabled = false
@@ -258,8 +259,11 @@ base_url = ""
 # falling back to a path-derived name. Must be a single path segment — the
 # server addresses projects with one, so a "/" is replaced with "-".
 project = ""
-# Which kinds a bare `#push` covers. Empty = all of them. This only selects
-# scope; it never makes pushing automatic.
+# Which kinds a bare `#push` covers. Empty = all of them.
+#
+# Listing "attention" ALSO makes that one kind publish by itself, as soon as a
+# lane raises a flag — it is the only kind with no on-disk form, so an unpushed
+# flag dies with the app. Everything else is on disk already and stays manual.
 auto_push = []
 
 # Telegram Harness Controller is intentionally NOT configured here. Krypton's
@@ -722,7 +726,7 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | `[xenon]` | `enabled` | bool | `false` | Master switch for publishing to a Xenon resource server. While false, `#push` is inert. See doc 212 |
 | `[xenon]` | `base_url` | string | `""` | Xenon server root, e.g. `https://xenon.example.com`. Empty = unconfigured |
 | `[xenon]` | `project` | string | `""` | Project slug override. Empty derives `<owner>.<repo>` from the git remote, else a path-derived name. Single path segment only |
-| `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`). Empty = all. Never makes pushing automatic |
+| `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`). Empty = all. Listing `attention` additionally publishes that kind automatically when a lane raises a flag — the one exception, because attention has no on-disk form |
 
 **The Xenon bearer token is never stored in TOML.** It lives in the OS
 credential vault under service `com.krypton.xenon`, keyed by `base_url` — the

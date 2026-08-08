@@ -22,11 +22,25 @@ cannot spawn a lane, send a prompt, resolve a permission, or read a transcript.
 Remote control of a live harness remains the exclusive job of `/control/v1`
 (ADR-0005, ADR-0007), whose authority model is unchanged.
 
-**Publishing is explicit, not ambient.** `#push` is a user action. Bare `#push`
-covers the kinds named in `[xenon].auto_push` (all kinds when unset), but nothing
-uploads on its own — there is no watcher and no background sync. A secret
-pre-scan blocks a resource rather than leaking it, overridable only by an
-explicit `#push --force` after the human has looked at the hit.
+**Publishing is explicit, not ambient — with one opt-in exception.** `#push` is a
+user action. Bare `#push` covers the kinds named in `[xenon].auto_push` (all kinds
+when unset); there is no watcher and no background sync. A secret pre-scan blocks
+a resource rather than leaking it, overridable only by an explicit `#push --force`
+after the human has looked at the hit.
+
+**Amended 2026-08-08:** listing `attention` in `auto_push` also publishes that one
+kind the moment a lane raises a flag. It is the exception because it is the only
+kind with **no on-disk form** — an attention flag lives in the running frontend's
+triage store and nowhere else, so a flag nobody remembers to `#push` is lost when
+the app closes, which defeats the point of a queue the human triages later. Every
+other kind is already durable in `.krypton/` and stays manual, so the rule holds
+where it was actually protecting something.
+
+The exception is opt-in (absent from `auto_push` by default), silent (no chip, no
+transcript line — the human did not ask, and a dead server must not turn every
+flag into an error), and still scanned: the pre-scan now covers `meta`, which is
+where a fileless resource keeps its entire payload and where the per-file loop
+previously saw nothing.
 
 ## Considered Options
 
