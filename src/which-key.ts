@@ -68,6 +68,8 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'M', label: 'Music Dashboard', effect: 'important' },
     { key: 'P', label: 'Profiler HUD', effect: 'important' },
     { key: 'H', label: 'Hint Mode', effect: 'important' },
+    // spec 213. Shift-only: bare `x` is Close Window, listed under Windows.
+    { key: 'X', label: 'Probe Backend Link', effect: 'important' },
   ]),
 
   ...groupEntries('AI', [

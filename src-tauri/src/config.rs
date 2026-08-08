@@ -441,7 +441,7 @@ impl Default for AcpControllerConfig {
 /// Publishing target for harness-generated resources (spec 212). The bearer
 /// token is deliberately absent: it lives in the OS credential vault under
 /// service `com.krypton.xenon`, keyed by `base_url` (ADR-0015's pattern).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct XenonConfig {
     /// Master switch. While false, `#push` is inert.
@@ -460,6 +460,24 @@ pub struct XenonConfig {
     /// flag nobody remembers to `#push` is simply lost when the app closes.
     /// Every other kind is already durable on disk and stays manual.
     pub auto_push: Vec<String>,
+    /// spec 213: how often the workspace footer's backend-link segment probes
+    /// the server, in seconds. `0` disables the interval, leaving the segment
+    /// to update only on `⌘P X` and after a `#push`.
+    pub probe_interval_secs: u64,
+}
+
+impl Default for XenonConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            base_url: String::new(),
+            project: String::new(),
+            auto_push: Vec::new(),
+            // Frequent enough that a link fault is noticed within a minute,
+            // rare enough that an idle workspace is not a chatty client.
+            probe_interval_secs: 60,
+        }
+    }
 }
 
 // ─── Music ─────────────────────────────────────────────────────────

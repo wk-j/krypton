@@ -69,6 +69,28 @@ export interface SignalValueMap {
   // hint (ADR-0009), not an action queue; it means "N spots marked to read
   // first — press to inspect", not "act on me".
   'review:priority': { sourceId: string; highCount: number };
+  // spec 213: liveness of an off-machine backend Krypton talks to, published by
+  // the probe scheduler and after every `#push`. `backendId` keys the footer's
+  // map so a second backend needs no footer change; `xenon` is the only one
+  // today. `state: 'off'` removes the entry (a switched-off backend is not a
+  // fault and must not advertise itself). Unlike the review/priority gauges
+  // this one IS coloured (ADR-0017): a broken link is demand, not depth —
+  // every publish silently fails until the human acts.
+  'system:backend-link': {
+    backendId: string;
+    /** Short segment text, e.g. `xenon`. */
+    label: string;
+    /** Server root and project slug — tooltip detail, so a fault names the
+     *  thing that is broken instead of just the state. */
+    baseUrl: string;
+    project: string;
+    state: BackendLinkState;
+    /** Cause for a non-linked state; null when linked. */
+    detail: string | null;
+    latencyMs: number | null;
+    /** Unix seconds. */
+    checkedAt: number;
+  };
   // spec 155: published by an ACP harness whenever one of its lanes
   // transitions to `idle` — a lane quiet point (ADR-0008). `cwd` is the
   // harness's projectDir; consumers (the Diff Window) resolve it to a repo
@@ -80,6 +102,11 @@ export interface SignalValueMap {
 /** spec 138: reversibility tier of the heaviest open attention item, ordered
  * lightest → heaviest. String values match acp `Reversibility`. */
 export type AttentionTier = 'reversible' | 'costly' | 'irreversible';
+
+/** spec 213: link state of an off-machine backend. Mirrors the Rust
+ * `xenon::LinkState` values. `off` means switched off or unconfigured — not a
+ * fault, and the footer drops the segment rather than showing it greyed. */
+export type BackendLinkState = 'linked' | 'offline' | 'unauthorized' | 'off';
 
 export type SignalKind = keyof SignalValueMap;
 

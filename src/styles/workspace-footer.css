@@ -273,6 +273,50 @@
   font-size: 0.96em;
 }
 
+/* spec 213: backend link indicator — whether the off-machine Xenon server is
+   reachable with our credential. Hidden entirely when Xenon is off, so this
+   only ever appears for a workspace that actually has a backend. Dim and
+   unobtrusive while healthy; coloured when faulted (ADR-0017) because a broken
+   link silently fails every publish. Static — no pulse, no animation. Like the
+   other global chips it never shrinks or clips. */
+.krypton-workspace-footer__segment--link {
+  flex: 0 0 auto;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  overflow: visible;
+  text-overflow: clip;
+  letter-spacing: 0.04em;
+  color: rgba(216, 232, 216, 0.5);
+  transition: color 160ms;
+}
+
+.krypton-workspace-footer__link-glyph {
+  color: rgba(216, 232, 216, 0.42);
+  font-size: 0.96em;
+}
+
+/* A healthy link stays at the base muted colour — it is ambient information and
+   must not compete with the attention gauge for the eye. */
+.krypton-workspace-footer__segment--link-unauthorized {
+  color: var(--krypton-amber, #ffb040);
+}
+
+.krypton-workspace-footer__segment--link-unauthorized
+  .krypton-workspace-footer__link-glyph {
+  color: rgba(255, 176, 64, 0.75);
+}
+
+.krypton-workspace-footer__segment--link-offline {
+  color: var(--krypton-danger, #ff5d6c);
+}
+
+.krypton-workspace-footer__segment--link-offline .krypton-workspace-footer__link-glyph {
+  color: rgba(255, 93, 108, 0.75);
+}
+
 /* Tier colours — same palette as the triage-overlay cards so the footer chip
    and the overlay agree on what each colour means (cyan < amber < red). */
 .krypton-workspace-footer__segment--rev-reversible {

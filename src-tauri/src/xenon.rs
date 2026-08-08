@@ -21,6 +21,9 @@ use crate::git;
 
 const KEYRING_SERVICE: &str = "com.krypton.xenon";
 const REQUEST_TIMEOUT_SECS: u64 = 60;
+/// spec 213: the link probe runs on a timer behind a status segment, so it must
+/// fail fast. A push may legitimately take a minute; "is the link up?" may not.
+const PROBE_TIMEOUT_SECS: u64 = 5;
 /// Matches the server's default; a larger file is reported as failed rather
 /// than attempted.
 const MAX_BLOB_BYTES: u64 = 64 * 1024 * 1024;
@@ -126,6 +129,35 @@ pub struct XenonStatus {
     pub token: &'static str,
     pub queued: usize,
     pub auto_push: Vec<String>,
+}
+
+/// spec 213: what one authenticated probe learned about the link. Deliberately
+/// a closed four-state set rather than free text — the footer segment has room
+/// for a colour and a word, and a fixed set is what a human can learn to read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkState {
+    /// The server answered an authenticated request.
+    Linked,
+    /// The server could not be reached, or could not answer (5xx).
+    Offline,
+    /// The server is up and rejected our credential — or we have none.
+    Unauthorized,
+    /// Xenon is switched off or unconfigured. Not a fault; the segment hides.
+    Off,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkReport {
+    pub state: LinkState,
+    pub base_url: String,
+    pub project: String,
+    /// Human-readable cause for a non-linked state; `None` when linked.
+    pub detail: Option<String>,
+    pub latency_ms: Option<u64>,
+    /// Unix seconds; when the probe ran.
+    pub checked_at: i64,
 }
 
 // ------------------------------------------------------------------ secrets
@@ -255,7 +287,40 @@ pub fn load_token(base_url: &str) -> Result<Option<String>, String> {
     }
 }
 
+/// spec 213: process-lifetime token cache for the *probe* path only, keyed by
+/// `base_url`. `load_token` opens an OS credential-vault entry on every call; a
+/// 60-second probe would do that ~60×/hour to learn a value that changes about
+/// once a year. The push path deliberately keeps using the uncached
+/// `load_token`, so a publish never acts on a stale credential.
+static TOKEN_CACHE: std::sync::RwLock<Option<(String, String)>> = std::sync::RwLock::new(None);
+
+fn load_token_cached(base_url: &str) -> Result<Option<String>, String> {
+    if let Ok(cache) = TOKEN_CACHE.read() {
+        if let Some((url, token)) = cache.as_ref() {
+            if url == base_url {
+                return Ok(Some(token.clone()));
+            }
+        }
+    }
+    let token = load_token(base_url)?;
+    if let Some(token) = &token {
+        if let Ok(mut cache) = TOKEN_CACHE.write() {
+            *cache = Some((base_url.to_string(), token.clone()));
+        }
+    }
+    Ok(token)
+}
+
+/// Drop the cached probe token. Called after the vault is written, so a freshly
+/// stored token is used by the very next probe instead of a minute later.
+pub fn clear_token_cache() {
+    if let Ok(mut cache) = TOKEN_CACHE.write() {
+        *cache = None;
+    }
+}
+
 pub fn store_token(base_url: &str, token: &str) -> Result<(), String> {
+    clear_token_cache();
     let entry = keyring_entry(base_url)?;
     if token.trim().is_empty() {
         return match entry.delete_credential() {
@@ -659,6 +724,139 @@ fn origin_value(cwd: &Path) -> serde_json::Value {
     })
 }
 
+// ------------------------------------------------------------------- probe
+
+/// Cache for `derive_project`, keyed by `(cwd, configured override)`. Deriving
+/// the slug shells out to `git remote get-url`; on a 60-second timer that is a
+/// subprocess a minute to learn a value that only changes when the remote does.
+/// Same reasoning as [`TOKEN_CACHE`].
+static PROJECT_CACHE: std::sync::RwLock<Option<(PathBuf, String, String)>> =
+    std::sync::RwLock::new(None);
+
+fn derive_project_cached(cwd: &Path, configured: &str) -> String {
+    if let Ok(cache) = PROJECT_CACHE.read() {
+        if let Some((cached_cwd, cached_cfg, project)) = cache.as_ref() {
+            if cached_cwd == cwd && cached_cfg == configured {
+                return project.clone();
+            }
+        }
+    }
+    let project = derive_project(cwd, configured);
+    if let Ok(mut cache) = PROJECT_CACHE.write() {
+        *cache = Some((cwd.to_path_buf(), configured.to_string(), project.clone()));
+    }
+    project
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// spec 213: one authenticated `GET /v1/projects`, mapped to a link state.
+///
+/// The server's `/healthz` cannot see the bearer token, so a probe against it
+/// would report green while a revoked credential silently blocked every push.
+/// The authenticated route answers both questions with one request: the server
+/// returns 401 for a credential that is present and bad rather than degrading
+/// to an anonymous request, while a server that is down fails at the transport
+/// layer before any status exists.
+///
+/// Never returns an error: an unconfigured backend is [`LinkState::Off`], not a
+/// failure, and a probe that cannot run is itself the answer.
+pub async fn probe(config: &XenonConfig, cwd: &Path) -> LinkReport {
+    let base_url = normalize_base_url(&config.base_url);
+    let project = derive_project_cached(cwd, config.project.trim());
+    let report = |state: LinkState, detail: Option<String>, latency_ms: Option<u64>| LinkReport {
+        state,
+        base_url: base_url.clone(),
+        project: project.clone(),
+        detail,
+        latency_ms,
+        checked_at: unix_now(),
+    };
+
+    if !config.enabled || base_url.is_empty() {
+        return report(LinkState::Off, None, None);
+    }
+
+    // No stored credential is reported without issuing a request: "never set
+    // up" and "rejected" both block every push, but they have different fixes.
+    let token = match load_token_cached(&base_url) {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return report(
+                LinkState::Unauthorized,
+                Some("no token stored".to_string()),
+                None,
+            )
+        }
+        Err(e) => return report(LinkState::Unauthorized, Some(e), None),
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(PROBE_TIMEOUT_SECS))
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            return report(
+                LinkState::Offline,
+                Some(format!("build http client: {e}")),
+                None,
+            )
+        }
+    };
+
+    let started = std::time::Instant::now();
+    let response = client
+        .get(format!("{base_url}/v1/projects"))
+        .bearer_auth(&token)
+        .send()
+        .await;
+    let latency_ms = started.elapsed().as_millis() as u64;
+
+    match response {
+        Err(e) => {
+            let detail = if e.is_timeout() {
+                format!("no answer within {PROBE_TIMEOUT_SECS}s")
+            } else {
+                format!("unreachable: {e}")
+            };
+            report(LinkState::Offline, Some(detail), Some(latency_ms))
+        }
+        Ok(response) if response.status().is_success() => {
+            report(LinkState::Linked, None, Some(latency_ms))
+        }
+        Ok(response) => {
+            let status = response.status();
+            let detail = response
+                .json::<ServerError>()
+                .await
+                .ok()
+                .map(|e| {
+                    if e.message.is_empty() {
+                        e.error
+                    } else {
+                        e.message
+                    }
+                })
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| status.to_string());
+            // A server that answers 5xx is up but cannot be published over,
+            // which is the same practical state as unreachable.
+            let state = if status.as_u16() == 401 || status.as_u16() == 403 {
+                LinkState::Unauthorized
+            } else {
+                LinkState::Offline
+            };
+            report(state, Some(detail), Some(latency_ms))
+        }
+    }
+}
+
 // -------------------------------------------------------------------- push
 
 pub struct Publisher {
@@ -779,6 +977,19 @@ impl Publisher {
             });
         }
         resource.manifest.files = files;
+
+        // `meta` is the whole payload for a fileless kind — an attention flag
+        // carries its question, rationale, and trade-offs there and has no files
+        // at all, so the loop above scans nothing. Without this, the one kind
+        // that is pushed automatically would be the one kind never checked.
+        if !self.force && !resource.manifest.meta.is_null() {
+            let meta_text = resource.manifest.meta.to_string();
+            if let Some(hit) = scan_for_secrets(&meta_text) {
+                return Ok(PushOutcome::Blocked {
+                    reason: format!("meta {hit} — review it, then re-run with --force"),
+                });
+            }
+        }
 
         // 2. Manifest — the server replies with only the digests it lacks.
         let ack: ManifestAck = self
@@ -978,19 +1189,6 @@ mod tests {
         assert_eq!(
             slug_from_remote("git@github.com:wk-j/krypton.git").unwrap(),
             "wk-j.krypton"
-        // `meta` is the whole payload for a fileless kind — an attention flag
-        // carries its question, rationale, and trade-offs there and has no files
-        // at all, so the loop above scans nothing. Without this, the one kind
-        // that is pushed automatically would be the one kind never checked.
-        if !self.force && !resource.manifest.meta.is_null() {
-            let meta_text = resource.manifest.meta.to_string();
-            if let Some(hit) = scan_for_secrets(&meta_text) {
-                return Ok(PushOutcome::Blocked {
-                    reason: format!("meta {hit} — review it, then re-run with --force"),
-                });
-            }
-        }
-
         );
         assert_eq!(
             slug_from_remote("https://github.com/wk-j/krypton/").unwrap(),
@@ -1029,6 +1227,104 @@ mod tests {
             scan_for_secrets("api_key = a1b2c3d4e5f6g7h8i9j0k1l2m3n4").is_some(),
             "a long opaque assignment to a credential-shaped name should trip"
         );
+    }
+
+    /// An attention flag has no files, so the per-file scan sees nothing. Its
+    /// whole payload is `meta`, and it is the one kind that publishes without
+    /// the human asking — so it is the last place a credential should slip out.
+    #[tokio::test]
+    async fn an_attention_flag_with_a_credential_in_its_text_is_blocked() {
+        let publisher = Publisher::with_token("http://127.0.0.1:1", "t", "p", false).unwrap();
+        let resources = attention_resources(
+            Path::new("/tmp"),
+            vec![serde_json::json!({
+                "id": "jdg-1",
+                "question": "ควรเก็บ token ไว้ที่ไหน",
+                "rationale": "ใช้ค่านี้ ghp_abcdefghijklmnopqrstuvwxyz0123456789 ไปก่อน",
+            })],
+        )
+        .unwrap();
+        let item = publisher
+            .push_resource(resources.into_iter().next().unwrap())
+            .await;
+        match item.outcome {
+            PushOutcome::Blocked { reason } => assert!(reason.contains("meta"), "{reason}"),
+            other => panic!("a credential in meta must block the push, got {other:?}"),
+        }
+    }
+
+    /// The scan must not fire on ordinary decision text, or the auto-push would
+    /// block constantly and be turned off.
+    #[tokio::test]
+    async fn an_ordinary_attention_flag_is_not_blocked() {
+        let publisher = Publisher::with_token("http://127.0.0.1:1", "t", "p", false).unwrap();
+        let resources = attention_resources(
+            Path::new("/tmp"),
+            vec![serde_json::json!({
+                "id": "jdg-2",
+                "question": "ควรใช้ framework ฝั่งหน้าเว็บไหม",
+                "chosen": "ไม่ใช้ เขียน JavaScript ธรรมดา",
+                "reversibility": "reversible",
+            })],
+        )
+        .unwrap();
+        let item = publisher
+            .push_resource(resources.into_iter().next().unwrap())
+            .await;
+        // No server is listening, so it must reach the network and fail there —
+        // proving the scan let it through rather than blocking it.
+        match item.outcome {
+            PushOutcome::Failed { .. } => {}
+            other => panic!("ordinary text must not be blocked, got {other:?}"),
+        }
+    }
+
+    /// spec 213: a switched-off backend is not a fault. The probe must say so
+    /// without a request and without a credential-vault read, because the
+    /// footer hides the segment entirely in this state.
+    #[tokio::test]
+    async fn a_disabled_or_unconfigured_backend_probes_as_off() {
+        let disabled = XenonConfig {
+            enabled: false,
+            base_url: "http://127.0.0.1:1".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            probe(&disabled, Path::new("/tmp")).await.state,
+            LinkState::Off
+        );
+
+        let no_url = XenonConfig {
+            enabled: true,
+            base_url: String::new(),
+            ..Default::default()
+        };
+        assert_eq!(
+            probe(&no_url, Path::new("/tmp")).await.state,
+            LinkState::Off
+        );
+    }
+
+    /// A server that cannot be reached is `Offline`, and the probe reads its
+    /// token from the process cache — seeding it here is what keeps this test
+    /// from prompting for keychain access.
+    #[tokio::test]
+    async fn an_unreachable_server_probes_as_offline() {
+        let base_url = "http://127.0.0.1:1";
+        *TOKEN_CACHE.write().unwrap() = Some((base_url.to_string(), "t".to_string()));
+        let config = XenonConfig {
+            enabled: true,
+            base_url: base_url.to_string(),
+            project: "probe-test".to_string(),
+            ..Default::default()
+        };
+
+        let report = probe(&config, Path::new("/tmp")).await;
+
+        assert_eq!(report.state, LinkState::Offline);
+        assert_eq!(report.project, "probe-test");
+        assert!(report.detail.is_some(), "a fault state must carry a cause");
+        clear_token_cache();
     }
 
     #[test]
@@ -1195,53 +1491,3 @@ mod tests {
         assert!(collect(&dir, "nonsense", None).is_err());
     }
 }
-    /// An attention flag has no files, so the per-file scan sees nothing. Its
-    /// whole payload is `meta`, and it is the one kind that publishes without
-    /// the human asking — so it is the last place a credential should slip out.
-    #[tokio::test]
-    async fn an_attention_flag_with_a_credential_in_its_text_is_blocked() {
-        let publisher = Publisher::with_token("http://127.0.0.1:1", "t", "p", false).unwrap();
-        let resources = attention_resources(
-            Path::new("/tmp"),
-            vec![serde_json::json!({
-                "id": "jdg-1",
-                "question": "ควรเก็บ token ไว้ที่ไหน",
-                "rationale": "ใช้ค่านี้ ghp_abcdefghijklmnopqrstuvwxyz0123456789 ไปก่อน",
-            })],
-        )
-        .unwrap();
-        let item = publisher
-            .push_resource(resources.into_iter().next().unwrap())
-            .await;
-        match item.outcome {
-            PushOutcome::Blocked { reason } => assert!(reason.contains("meta"), "{reason}"),
-            other => panic!("a credential in meta must block the push, got {other:?}"),
-        }
-    }
-
-    /// The scan must not fire on ordinary decision text, or the auto-push would
-    /// block constantly and be turned off.
-    #[tokio::test]
-    async fn an_ordinary_attention_flag_is_not_blocked() {
-        let publisher = Publisher::with_token("http://127.0.0.1:1", "t", "p", false).unwrap();
-        let resources = attention_resources(
-            Path::new("/tmp"),
-            vec![serde_json::json!({
-                "id": "jdg-2",
-                "question": "ควรใช้ framework ฝั่งหน้าเว็บไหม",
-                "chosen": "ไม่ใช้ เขียน JavaScript ธรรมดา",
-                "reversibility": "reversible",
-            })],
-        )
-        .unwrap();
-        let item = publisher
-            .push_resource(resources.into_iter().next().unwrap())
-            .await;
-        // No server is listening, so it must reach the network and fail there —
-        // proving the scan let it through rather than blocking it.
-        match item.outcome {
-            PushOutcome::Failed { .. } => {}
-            other => panic!("ordinary text must not be blocked, got {other:?}"),
-        }
-    }
-

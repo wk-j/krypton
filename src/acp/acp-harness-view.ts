@@ -292,11 +292,13 @@ export {
 import { permissionCommandIsHighRisk } from './harness-tool-render';
 import {
   describePush,
+  linkEvidenceFromPush,
   parsePushCommand,
   summarizePush,
   type PushReport,
   type XenonStatus,
 } from './xenon-push';
+import { publishLinkFromPush } from '../backend-link';
 import {
   SPINNER_FRAMES,
   awaitingPeerText,
@@ -2401,17 +2403,15 @@ export class AcpHarnessView implements ContentView {
     lane.flaggedThisTurn = true;
     this.appendTranscript(lane, 'system', `[triage] flagged for review: ${item.question}`);
     this.scheduleLaneRender(lane);
-    return { inserted: true };
-  }
     // spec 212: an attention flag is the one resource with no on-disk form, so
     // it exists only in this process until something sends it. Publish it now
     // when the project opted in, rather than waiting for a `#push` the human
     // has no reason to remember. Fire-and-forget for the same reason the git
     // probe below is: the MCP reply must not wait on the network.
     void this.autoPushAttention();
+    return { inserted: true };
+  }
 
-  /**
-   * spec 128: fill in a flagged item's git blast-radius after it was inserted.
   /**
    * spec 212: push open attention items when `[xenon].auto_push` lists
    * `attention`. Deliberately silent — no chip, no transcript line — because
@@ -2449,6 +2449,8 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  /**
+   * spec 128: fill in a flagged item's git blast-radius after it was inserted.
    * Runs after the bus reply, so a slow git probe never trips the bus timeout.
    */
   private async enrichJudgementDiffstat(itemId: string): Promise<void> {
@@ -5890,12 +5892,23 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(summarizePush(report));
       this.appendTranscript(lane, 'system', `[xenon] ${describePush(report)}`);
       this.scheduleLaneRender(lane);
+      // spec 213: a completed push is better evidence about the link than a
+      // probe, so the footer's backend-link segment is updated from it.
+      this.publishLinkFromPushReport(report);
     } catch (e) {
       const message = errorText(e);
       this.flashChip(`push failed: ${message}`);
       this.appendTranscript(lane, 'system', `[xenon] push failed: ${message}`);
       this.scheduleLaneRender(lane);
     }
+  }
+
+  /** spec 213: forward a push outcome to the footer's backend-link segment,
+   *  when the push actually proved something about the link. */
+  private publishLinkFromPushReport(report: PushReport): void {
+    const evidence = linkEvidenceFromPush(report);
+    if (!evidence || !this.viewBus) return;
+    publishLinkFromPush(this.viewBus, evidence);
   }
 
   /**

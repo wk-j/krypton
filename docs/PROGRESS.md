@@ -21,6 +21,31 @@
 
 ## Recent Landings
 
+- **Backend link indicator (spec 213)** — the workspace footer now says whether
+  the off-machine Xenon server (spec 212) is actually reachable. Before this,
+  `#xenon status` was the only answer available and it reports *configuration*,
+  not connectivity: it reads the TOML and asks the credential vault whether a
+  token exists, so a dead server, a revoked token, and a healthy link all looked
+  identical until a `#push` failed. A new `xenon_probe` command issues one
+  authenticated `GET /v1/projects` — enough to separate *unreachable* (transport
+  error) from *unauthorized* (401/403) from *linked* (2xx) in a single request;
+  `/healthz` was rejected because it cannot see the bearer token and would
+  report green while a revoked credential blocked every push. `src/backend-link.ts`
+  schedules it on `[xenon].probe_interval_secs` (default 60, `0` disables),
+  skipping ticks while the document is hidden and firing once on re-show, and
+  publishes `system:backend-link` to the ViewBus; `WorkspaceFooter.renderLink()`
+  draws it as a fourth global segment. `⌘P X` re-probes on demand, and a
+  completed `#push` publishes the same signal (a real interaction is stronger
+  evidence than a probe, at no extra request). The probe path caches the token
+  and the derived project slug for the process lifetime — a 60-second timer
+  otherwise opens a keychain entry and shells out to `git remote` once a minute
+  — while the push path keeps the uncached read so a publish never acts on a
+  stale credential. Coloured only when faulted and hidden entirely when Xenon is
+  off (ADR-0017, which also records why the two review depth gauges stay
+  neutral). 2 new publisher tests + 4 frontend tests. See
+  `docs/213-backend-link-indicator.md` and
+  `docs/adr/0017-backend-link-is-coloured-by-fault.md`.
+
 - **Xenon central resource server (spec 212)** — a **new standalone repo**
   (`~/Source/xenon`, `github.com/wk-j/xenon`) plus a publisher inside Krypton.
   Everything the harness produces previously lived only in one machine's

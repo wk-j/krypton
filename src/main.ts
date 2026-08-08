@@ -21,6 +21,7 @@ import { ClaudeHookManager } from './claude-hooks';
 import { NotificationController } from './notification';
 import { MusicPlayer } from './music';
 import { WorkspaceFooter } from './workspace-footer';
+import { BackendLinkProbe } from './backend-link';
 import { installGlobalCopyOnSelect } from './copy-on-select';
 import { getViewBus } from './view-bus';
 import { startPtyBridge } from './pty-bridge';
@@ -181,11 +182,24 @@ async function main(): Promise<void> {
     musicPlayer.applyConfig(config.music);
   }
 
+  // spec 213: backend link indicator — a periodic authenticated probe of the
+  // Xenon server, published to the ViewBus for the workspace footer. Without
+  // it a dead server, a revoked token, and a healthy link are indistinguishable
+  // until a `#push` fails.
+  const backendLink = new BackendLinkProbe(bus);
+  backendLink.setIntervalSecs(config?.xenon?.probe_interval_secs ?? 60);
+  inputRouter.setBackendLinkProbe(backendLink);
+  void backendLink.start();
+
   // Re-apply music config on hot-reload
   compositor.onConfigReload((newConfig) => {
     if (newConfig.music) {
       musicPlayer.applyConfig(newConfig.music);
     }
+    backendLink.setIntervalSecs(newConfig.xenon?.probe_interval_secs ?? 60);
+    // `[xenon].enabled` / `base_url` are read per-probe in Rust, so one probe
+    // now is all a hot-reload needs to reflect a config change in the footer.
+    void backendLink.probeNow();
   });
 
   // Initialize which-key popup (shows available keys per mode)

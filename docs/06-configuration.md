@@ -265,6 +265,12 @@ project = ""
 # lane raises a flag — it is the only kind with no on-disk form, so an unpushed
 # flag dies with the app. Everything else is on disk already and stays manual.
 auto_push = []
+# How often the workspace footer's backend-link segment probes the server
+# (spec 213). The segment is the only place that tells you whether the link is
+# actually alive — `#xenon status` reports configuration, never connectivity.
+# 0 disables the timer, leaving the segment to update on `⌘P X` and after a
+# `#push`.
+probe_interval_secs = 60
 
 # Telegram Harness Controller is intentionally NOT configured here. Krypton's
 # Settings view owns ~/.config/krypton/telegram.toml, while the Bot API token
@@ -727,6 +733,7 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | `[xenon]` | `base_url` | string | `""` | Xenon server root, e.g. `https://xenon.example.com`. Empty = unconfigured |
 | `[xenon]` | `project` | string | `""` | Project slug override. Empty derives `<owner>.<repo>` from the git remote, else a path-derived name. Single path segment only |
 | `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`). Empty = all. Listing `attention` additionally publishes that kind automatically when a lane raises a flag — the one exception, because attention has no on-disk form |
+| `[xenon]` | `probe_interval_secs` | integer | `60` | Cadence of the workspace footer's backend-link probe (spec 213). `0` disables the interval; the segment then updates only on `⌘P X` and after a `#push`. Hot-reloaded with the rest of `[xenon]` |
 
 **The Xenon bearer token is never stored in TOML.** It lives in the OS
 credential vault under service `com.krypton.xenon`, keyed by `base_url` — the

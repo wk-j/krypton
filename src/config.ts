@@ -171,6 +171,18 @@ export interface AcpHarnessConfig {
   lane_models: Record<string, LaneModelConfig>;
 }
 
+/** spec 212/213: Xenon resource server. The bearer token is deliberately absent
+ *  — it lives in the OS credential vault, never in TOML. */
+export interface XenonConfig {
+  enabled: boolean;
+  base_url: string;
+  project: string;
+  auto_push: string[];
+  /** Backend link-probe cadence in seconds. `0` disables the interval, leaving
+   *  the footer segment to update only on `⌘P X` and after a `#push`. */
+  probe_interval_secs: number;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -188,6 +200,7 @@ export interface KryptonConfig {
   acp_controller: AcpControllerConfig;
   music: MusicConfig;
   acp_harness: AcpHarnessConfig;
+  xenon: XenonConfig;
 }
 
 /** Load configuration from the Rust backend */

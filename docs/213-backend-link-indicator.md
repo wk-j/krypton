@@ -1,6 +1,6 @@
 # Backend Link Indicator — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-08-08
 > Milestone: M-ACP — Harness convergence
 > Builds on: 212 + ADR-0016 (Xenon publisher) · 128/138 (attention gauge) · 146 (review depth) ·
@@ -70,19 +70,39 @@ quiet about subsystems that are switched off rather than advertise them.
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/xenon.rs` | New `probe()` + `LinkState`/`LinkReport`; process-lifetime token cache |
-| `src-tauri/src/commands.rs` | New `xenon_probe` command; `xenon_set_token` invalidates the cache |
-| `src-tauri/src/config.rs` | New `[xenon].probe_interval_secs` (default 60) |
+| `src-tauri/src/xenon.rs` | New `probe()` + `LinkState`/`LinkReport`; process-lifetime `TOKEN_CACHE` and `PROJECT_CACHE` |
+| `src-tauri/src/commands.rs` | New `xenon_probe` command |
+| `src-tauri/src/config.rs` | New `[xenon].probe_interval_secs` (default 60); manual `Default` so the default is 60, not 0 |
 | `src-tauri/src/lib.rs` | Register `xenon_probe` |
-| `src/backend-link.ts` | **New** — probe scheduler; publishes `system:backend-link` to the ViewBus |
-| `src/view-bus-types.ts` | New `system:backend-link` signal |
+| `src/backend-link.ts` | **New** — probe scheduler; publishes `system:backend-link` to the ViewBus. Also exports `publishLinkFromPush()` |
+| `src/view-bus-types.ts` | New `system:backend-link` signal + `BackendLinkState` |
 | `src/workspace-footer.ts` | New `linkEl` segment + `renderLink()`, `linkByBackend` map |
 | `src/styles/workspace-footer.css` | `--link` segment + `--link-offline` / `--link-unauthorized` states |
-| `src/main.ts` | Construct + start the probe scheduler |
-| `src/input-router.ts` | `⌘P X` — probe now |
+| `src/config.ts` | New `XenonConfig` on `KryptonConfig` — the scheduler reads `probe_interval_secs` |
+| `src/main.ts` | Construct + start the probe scheduler; re-apply interval on config hot-reload |
+| `src/input-router.ts` | `⌘P X` — probe now, toasting the resulting state |
 | `src/which-key.ts` | Help entry for `X` |
+| `src/acp/xenon-push.ts` | New `linkEvidenceFromPush()` — what a completed `#push` proves about the link |
+| `src/acp/acp-harness-view.ts` | `runXenonPush` publishes the link signal from the `PushReport` |
 | `docs/adr/0017-backend-link-is-coloured-by-fault.md` | **New** ADR |
 | `docs/212-xenon-resource-server.md`, `04-architecture.md`, `06-configuration.md`, `PROGRESS.md` | Cross-references + config table row |
+
+**Implementation notes (deltas from the design above):**
+
+- `xenon_set_token` invalidates the cache indirectly: `xenon::store_token()` calls
+  `clear_token_cache()` itself, so every writer of the vault — not just that one command —
+  is covered.
+- `derive_project` shells out to `git remote get-url`, which on a 60-second timer is a
+  subprocess a minute for a value that changes when the remote does. It is cached the same
+  way and for the same reason as the token (`PROJECT_CACHE`, keyed by cwd + configured
+  override).
+- The signal carries `baseUrl` and `project` in addition to the fields sketched below; the
+  tooltip names the server that is broken, which it cannot do from `state` and `detail`
+  alone.
+- The push-derived update lives in `linkEvidenceFromPush()`, which returns `null` when the
+  push proves nothing — an empty push never touched the network, and a `blocked` item was
+  stopped by the local secret scan before any request. Reporting those as `linked` would
+  paint a dead server green.
 
 ## Design
 

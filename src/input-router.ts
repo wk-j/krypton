@@ -17,6 +17,7 @@ import { GLOBAL_LEADER_RESERVED_KEYS, normalizeLeaderKeyEvent } from './leader-k
 
 import type { MusicPlayer } from './music';
 import type { WorkspaceFooter } from './workspace-footer';
+import type { BackendLinkProbe } from './backend-link';
 import type { LeaderKeyBinding, PaneContentType } from './types';
 
 /** Callback for mode changes */
@@ -36,6 +37,7 @@ export class InputRouter {
   private dashboardManager: DashboardManager | null = null;
   private musicPlayer: MusicPlayer | null = null;
   private workspaceFooter: WorkspaceFooter | null = null;
+  private backendLinkProbe: BackendLinkProbe | null = null;
   private promptDialog: PromptDialog | null = null;
   private quickFileSearch: QuickFileSearch | null = null;
   private quickOverview: QuickOverview | null = null;
@@ -191,6 +193,12 @@ export class InputRouter {
   /** Set the workspace footer controller for footer-specific leader actions. */
   setWorkspaceFooter(footer: WorkspaceFooter): void {
     this.workspaceFooter = footer;
+  }
+
+  /** spec 213: lets `⌘P X` re-probe the backend link on demand, instead of
+   *  waiting out the interval when you have just fixed the server or token. */
+  setBackendLinkProbe(probe: BackendLinkProbe): void {
+    this.backendLinkProbe = probe;
   }
 
   /** Check if a key event is the Music shortcut (Cmd+Shift+M) */
@@ -762,8 +770,13 @@ export class InputRouter {
         this.compositor.createWindow().then(() => this.toNormal());
         break;
 
-      // Close window
+      // x — close window / X — spec 213: re-probe the backend link now
       case 'x': {
+        if (e.shiftKey) {
+          void this.probeBackendLink();
+          this.toNormal();
+          break;
+        }
         const focused = this.compositor.focusedId;
         if (focused) {
           this.compositor.closeWindow(focused).then(() => {
@@ -989,6 +1002,36 @@ export class InputRouter {
           }
         }
         this.toNormal();
+        break;
+    }
+  }
+
+  /**
+   * spec 213: re-probe the backend link on demand and report what it found.
+   *
+   * The footer segment updates itself from the published signal; the toast is
+   * here because a key that produces no visible change when the state has not
+   * changed reads as a key that did nothing.
+   */
+  private async probeBackendLink(): Promise<void> {
+    const notify = this.compositor.notifications;
+    if (!this.backendLinkProbe) {
+      notify?.warn('backend link probe unavailable', { label: 'XENON' });
+      return;
+    }
+    const state = await this.backendLinkProbe.probeNow();
+    switch (state) {
+      case 'linked':
+        notify?.success('xenon linked', { label: 'XENON' });
+        break;
+      case 'unauthorized':
+        notify?.warn('xenon rejected the token', { label: 'XENON' });
+        break;
+      case 'offline':
+        notify?.error('xenon unreachable', { label: 'XENON' });
+        break;
+      case 'off':
+        notify?.info('xenon is off', { label: 'XENON' });
         break;
     }
   }

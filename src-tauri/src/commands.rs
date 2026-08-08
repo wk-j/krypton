@@ -1514,6 +1514,25 @@ pub fn xenon_status(
     })
 }
 
+/// spec 213: probe the Xenon link for the workspace footer's backend-link
+/// segment. Distinct from `xenon_status`, which reports *configuration* and
+/// never touches the network — a server that is down and a healthy one are
+/// indistinguishable through that command.
+///
+/// Returns `state: "off"` rather than `Err` when Xenon is disabled or
+/// unconfigured; `Err` is reserved for a poisoned config lock.
+#[tauri::command]
+pub async fn xenon_probe(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+) -> Result<crate::xenon::LinkReport, String> {
+    let xenon_config = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.xenon.clone()
+    };
+    Ok(crate::xenon::probe(&xenon_config, std::path::Path::new(&cwd)).await)
+}
+
 /// Store (or, with an empty string, clear) the Xenon bearer token in the OS
 /// credential vault. The token is never written to the TOML config.
 #[tauri::command]

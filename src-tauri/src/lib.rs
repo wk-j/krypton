@@ -164,6 +164,7 @@ pub fn run() {
             commands::stat_files,
             commands::xenon_push,
             commands::xenon_status,
+            commands::xenon_probe,
             commands::xenon_set_token,
             commands::read_vault_files,
             commands::read_file,

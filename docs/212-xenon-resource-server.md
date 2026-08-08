@@ -274,6 +274,13 @@ No new global leader key — `#push` is a composer hash-command, consistent with
 echoed to the chip, the transcript, or the lane, and the composer draft is
 cleared before the async write begins.
 
+`#xenon status` reports **configuration, not connectivity** — it reads the TOML
+and asks the credential vault whether a token exists, and never issues a
+request, so `token: configured` says nothing about whether the server is up.
+Live link state is the workspace footer's backend-link segment (spec 213 /
+ADR-0017), driven by a separate `xenon_probe` command; `⌘P X` re-probes on
+demand, and every `#push` updates it from its own outcome.
+
 ### Configuration
 
 ```toml

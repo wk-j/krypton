@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { describePush, parsePushCommand, summarizePush, type PushReport } from './xenon-push';
+import {
+  describePush,
+  linkEvidenceFromPush,
+  parsePushCommand,
+  summarizePush,
+  type PushReport,
+} from './xenon-push';
 
 function report(overrides: Partial<PushReport> = {}): PushReport {
   return {
@@ -166,5 +172,81 @@ describe('describePush', () => {
       }),
     );
     expect(detail).toContain('everything already up to date');
+  });
+});
+
+describe('linkEvidenceFromPush', () => {
+  it('proves the link is up when anything reached the server', () => {
+    expect(
+      linkEvidenceFromPush(
+        report({
+          pushed: 1,
+          items: [{ kind: 'review', slug: 'a', title: 'A', state: 'pushed', url: 'u' }],
+        }),
+      ),
+    ).toEqual({
+      baseUrl: 'https://xenon.example.com',
+      project: 'wk-j.krypton',
+      reachedServer: true,
+      unauthorized: false,
+      detail: null,
+    });
+  });
+
+  it('reads a non-retryable token failure as unauthorized, not offline', () => {
+    const evidence = linkEvidenceFromPush(
+      report({
+        failed: 1,
+        items: [
+          {
+            kind: 'review',
+            slug: 'a',
+            title: 'A',
+            state: 'failed',
+            reason: 'invalid_token - check your token at .../settings/tokens',
+            retryable: false,
+          },
+        ],
+      }),
+    );
+    expect(evidence?.unauthorized).toBe(true);
+    expect(evidence?.reachedServer).toBe(false);
+  });
+
+  it('reads a transport failure as offline', () => {
+    const evidence = linkEvidenceFromPush(
+      report({
+        failed: 1,
+        items: [
+          {
+            kind: 'review',
+            slug: 'a',
+            title: 'A',
+            state: 'failed',
+            reason: 'connect: connection refused',
+            retryable: true,
+          },
+        ],
+      }),
+    );
+    expect(evidence?.unauthorized).toBe(false);
+    expect(evidence?.reachedServer).toBe(false);
+    expect(evidence?.detail).toContain('connection refused');
+  });
+
+  // A push that never left the machine says nothing about the server, and
+  // painting the segment green off it would hide a dead link.
+  it('proves nothing when the push was empty or blocked locally', () => {
+    expect(linkEvidenceFromPush(report())).toBeNull();
+    expect(
+      linkEvidenceFromPush(
+        report({
+          blocked: 1,
+          items: [
+            { kind: 'review', slug: 'a', title: 'A', state: 'blocked', reason: 'looks like a token' },
+          ],
+        }),
+      ),
+    ).toBeNull();
   });
 });

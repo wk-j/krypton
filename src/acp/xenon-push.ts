@@ -84,6 +84,37 @@ export interface XenonStatus {
   autoPush: string[];
 }
 
+/**
+ * spec 213: what a completed push proves about the link, for the workspace
+ * footer's backend-link segment. A real interaction is stronger evidence than a
+ * probe and costs no extra request.
+ *
+ * Returns `null` when the push proves nothing — an empty push never touched the
+ * network, and a `blocked` item was stopped by the local secret scan before any
+ * request was made. Reporting those as "linked" would paint a dead server green.
+ */
+export function linkEvidenceFromPush(
+  report: PushReport,
+): { baseUrl: string; project: string; reachedServer: boolean; unauthorized: boolean; detail: string | null } | null {
+  const reached = report.items.find((i) => i.state === 'pushed' || i.state === 'unchanged');
+  const failed = report.items.filter((i) => i.state === 'failed');
+  if (!reached && failed.length === 0) return null;
+
+  const base = { baseUrl: report.baseUrl, project: report.project };
+  if (reached) {
+    return { ...base, reachedServer: true, unauthorized: false, detail: null };
+  }
+  // The backend marks an auth failure as non-retryable precisely because it
+  // needs a human, not a retry — which is exactly the segment's warning state.
+  const authFailure = failed.find((i) => i.retryable === false && /token|unauthor|forbidden/i.test(i.reason ?? ''));
+  return {
+    ...base,
+    reachedServer: false,
+    unauthorized: authFailure !== undefined,
+    detail: (authFailure ?? failed[0]).reason ?? null,
+  };
+}
+
 /** One-line chip summary. Reports nothing found as such rather than "0 pushed". */
 export function summarizePush(report: PushReport): string {
   if (report.items.length === 0) {
