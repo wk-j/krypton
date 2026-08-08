@@ -244,6 +244,24 @@ install_native_host = true
 # chrome | chromium | edge | brave | opera | opera-gx  (Opera GX users: ["opera-gx"])
 native_host_browsers = ["chrome"]
 
+# --- Xenon resource server (spec 212) ---
+# Where `#push` publishes harness-generated resources (reviews, analyses,
+# artifacts, docs, attention flags). Publishing is always explicit — nothing
+# uploads on its own. The bearer token is NOT configured here: it lives in the
+# operating-system credential vault, written by pasting it into Krypton once.
+
+[xenon]
+enabled = false
+# Server root, e.g. "https://xenon.example.com". Empty = unconfigured.
+base_url = ""
+# Project slug override. Empty derives "<owner>.<repo>" from the git remote,
+# falling back to a path-derived name. Must be a single path segment — the
+# server addresses projects with one, so a "/" is replaced with "-".
+project = ""
+# Which kinds a bare `#push` covers. Empty = all of them. This only selects
+# scope; it never makes pushing automatic.
+auto_push = []
+
 # Telegram Harness Controller is intentionally NOT configured here. Krypton's
 # Settings view owns ~/.config/krypton/telegram.toml, while the Bot API token
 # lives in the operating-system credential vault. See the section below.
@@ -701,6 +719,22 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | `[acp_controller]` | `cors_origins` | string[] | `[]` | Exact browser origins allowed to call the control API directly (CORS). Empty = proxy-only (secure default); never `"*"`. Load-time only. See doc 175 |
 | `[acp_controller]` | `install_native_host` | bool | `true` | Write the Chrome Native Messaging host manifest on launch (zero-config browser extension). Load-time only. See doc 176 |
 | `[acp_controller]` | `native_host_browsers` | string[] | `["chrome"]` | Browsers whose `NativeMessagingHosts` dir gets the manifest: `chrome`/`chromium`/`edge`/`brave`/`opera`/`opera-gx`. Load-time only. See doc 176 |
+| `[xenon]` | `enabled` | bool | `false` | Master switch for publishing to a Xenon resource server. While false, `#push` is inert. See doc 212 |
+| `[xenon]` | `base_url` | string | `""` | Xenon server root, e.g. `https://xenon.example.com`. Empty = unconfigured |
+| `[xenon]` | `project` | string | `""` | Project slug override. Empty derives `<owner>.<repo>` from the git remote, else a path-derived name. Single path segment only |
+| `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`). Empty = all. Never makes pushing automatic |
+
+**The Xenon bearer token is never stored in TOML.** It lives in the OS
+credential vault under service `com.krypton.xenon`, keyed by `base_url` — the
+same pattern as the Telegram bot token (ADR-0015). Mint one at
+`<base_url>/settings/tokens`, then store it from the harness composer with
+`#xenon token <token>` (the value is never echoed anywhere). `#xenon status`
+reports whether the token is `configured`, `missing`, or `unavailable`, and
+`#xenon token clear` deletes it.
+
+Note that `[xenon]` is read from the shared config on every `#push`, so editing
+it takes effect after a **Reload Config** from the command palette — no restart
+needed.
 
 ### Hints Configuration
 

@@ -1391,3 +1391,142 @@ pub fn stat_files(paths: Vec<String>) -> Vec<u64> {
         })
         .collect()
 }
+
+// ─── Xenon publisher (spec 212) ────────────────────────────────────
+
+/// Push harness-generated resources to the configured Xenon server.
+///
+/// `kind` narrows to one resource family; omitting it covers the kinds listed
+/// in `[xenon].auto_push` (all kinds when that is empty). `slug` narrows to a
+/// single resource. `force` overrides the secret pre-scan — only ever set from
+/// an explicit `#push --force`, never automatically.
+#[tauri::command]
+pub async fn xenon_push(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    kind: Option<String>,
+    slug: Option<String>,
+    force: Option<bool>,
+    attention: Option<Vec<serde_json::Value>>,
+) -> Result<crate::xenon::PushReport, String> {
+    let xenon_config = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.xenon.clone()
+    };
+
+    let cwd_path = std::path::PathBuf::from(&cwd);
+    let publisher = crate::xenon::Publisher::new(&xenon_config, &cwd_path, force.unwrap_or(false))?;
+
+    let kinds: Vec<String> = match &kind {
+        Some(one) => {
+            if !crate::xenon::KINDS.contains(&one.as_str()) {
+                return Err(format!(
+                    "unknown kind {one}; expected one of {}",
+                    crate::xenon::KINDS.join(", ")
+                ));
+            }
+            vec![one.clone()]
+        }
+        None if !xenon_config.auto_push.is_empty() => xenon_config.auto_push.clone(),
+        None => crate::xenon::KINDS.iter().map(|k| k.to_string()).collect(),
+    };
+
+    let mut resources = Vec::new();
+    for kind in &kinds {
+        if kind == "attention" {
+            // Attention flags never touch disk — the frontend hands them over.
+            resources.extend(crate::xenon::attention_resources(
+                &cwd_path,
+                attention.clone().unwrap_or_default(),
+            )?);
+            continue;
+        }
+        resources.extend(crate::xenon::collect(&cwd_path, kind, slug.as_deref())?);
+    }
+
+    let mut report = crate::xenon::PushReport {
+        base_url: publisher.base_url().to_string(),
+        project: publisher.project().to_string(),
+        ..Default::default()
+    };
+    let mut queue = Vec::new();
+    for resource in resources {
+        let item = publisher.push_resource(resource).await;
+        match &item.outcome {
+            crate::xenon::PushOutcome::Pushed { .. } => report.pushed += 1,
+            crate::xenon::PushOutcome::Unchanged { .. } => report.unchanged += 1,
+            crate::xenon::PushOutcome::Blocked { .. } => report.blocked += 1,
+            crate::xenon::PushOutcome::Failed { reason, retryable } => {
+                report.failed += 1;
+                if *retryable {
+                    queue.push(crate::xenon::QueueEntry {
+                        kind: item.kind.clone(),
+                        slug: item.slug.clone(),
+                        reason: reason.clone(),
+                        queued_at: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0),
+                    });
+                }
+            }
+        }
+        report.items.push(item);
+    }
+
+    report.queued = queue.len();
+    if let Err(e) = crate::xenon::write_queue(&cwd_path, &queue) {
+        log::warn!("could not persist the Xenon retry queue: {e}");
+    }
+    Ok(report)
+}
+
+#[tauri::command]
+pub fn xenon_status(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+) -> Result<crate::xenon::XenonStatus, String> {
+    let xenon_config = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.xenon.clone()
+    };
+    let cwd_path = std::path::PathBuf::from(&cwd);
+    let base_url = crate::xenon::normalize_base_url(&xenon_config.base_url);
+
+    let token = if base_url.is_empty() {
+        "unconfigured"
+    } else {
+        match crate::xenon::load_token(&base_url) {
+            Ok(Some(_)) => "configured",
+            Ok(None) => "missing",
+            Err(_) => "unavailable",
+        }
+    };
+
+    Ok(crate::xenon::XenonStatus {
+        enabled: xenon_config.enabled,
+        configured: xenon_config.enabled && !base_url.is_empty() && token == "configured",
+        project: crate::xenon::derive_project(&cwd_path, &xenon_config.project),
+        base_url,
+        token,
+        queued: crate::xenon::read_queue(&cwd_path).len(),
+        auto_push: xenon_config.auto_push,
+    })
+}
+
+/// Store (or, with an empty string, clear) the Xenon bearer token in the OS
+/// credential vault. The token is never written to the TOML config.
+#[tauri::command]
+pub fn xenon_set_token(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    token: String,
+) -> Result<(), String> {
+    let base_url = {
+        let cfg = lock_read(&config, "Config")?;
+        crate::xenon::normalize_base_url(&cfg.xenon.base_url)
+    };
+    if base_url.is_empty() {
+        return Err("set [xenon].base_url before storing a token".to_string());
+    }
+    crate::xenon::store_token(&base_url, &token)
+}

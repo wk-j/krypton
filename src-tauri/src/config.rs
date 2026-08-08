@@ -50,6 +50,7 @@ pub struct KryptonConfig {
     pub hurl: HurlConfig,
     pub pencil: PencilConfig,
     pub acp_harness: AcpHarnessConfig,
+    pub xenon: XenonConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -433,6 +434,28 @@ impl Default for AcpControllerConfig {
             native_host_browsers: vec!["chrome".to_string()],
         }
     }
+}
+
+// ─── Xenon resource server ─────────────────────────────────────────
+
+/// Publishing target for harness-generated resources (spec 212). The bearer
+/// token is deliberately absent: it lives in the OS credential vault under
+/// service `com.krypton.xenon`, keyed by `base_url` (ADR-0015's pattern).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct XenonConfig {
+    /// Master switch. While false, `#push` is inert.
+    pub enabled: bool,
+    /// Server root, e.g. `https://xenon.example.com`. Empty = unconfigured.
+    pub base_url: String,
+    /// Project slug override. Empty derives `<owner>.<repo>` from the git
+    /// remote, falling back to a path-derived name. Must be a single path
+    /// segment — the server addresses projects with one.
+    pub project: String,
+    /// Kinds pushed automatically when `#push` is run with no arguments.
+    /// Empty means all kinds. Pushing is never ambient — this only selects
+    /// what a bare `#push` covers.
+    pub auto_push: Vec<String>,
 }
 
 // ─── Music ─────────────────────────────────────────────────────────

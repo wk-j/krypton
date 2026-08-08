@@ -21,6 +21,40 @@
 
 ## Recent Landings
 
+- **Xenon central resource server (spec 212)** — a **new standalone repo**
+  (`~/Source/xenon`, `github.com/wk-j/xenon`) plus a publisher inside Krypton.
+  Everything the harness produces previously lived only in one machine's
+  gitignored `.krypton/` tree, readable only through loopback endpoints of a
+  *running* Krypton; Xenon is where that work becomes durable and shareable.
+  **Server** (Rust + axum 0.8 + SQLite + a content-addressed blob dir, one
+  static binary, `Dockerfile`): user registration where the **first account
+  becomes admin** — no seeded credential and no `XENON_ADMIN_TOKEN` anywhere —
+  with invite-only signup by default (`XENON_ALLOW_SIGNUP=0`), argon2id
+  passwords, server-side sessions, rate-limited login, and user-minted scoped
+  API tokens (`xen_<id>_<secret>`, shown once, stored as sha256) for external
+  integrations. **A token can never mint another token** — minting requires a
+  session, so a leaked integration token cannot escalate. **Protocol:** a
+  three-step content-addressed push (manifest → only the `missing` blobs →
+  commit) modelled on the OCI registry but inverted to cost one round trip;
+  blobs are immutable, resources are mutable through **append-only revisions**
+  with per-revision permalinks, and a revision is invisible until sealed so an
+  interrupted push never exposes half a resource. A single-shot
+  `resources:inline` route serves `attention` records, which have no files at
+  all. **Krypton side:** `src-tauri/src/xenon.rs` collects reviews, analyses,
+  artifacts, docs, and attention flags, and `#push [--force] [<kind> [<slug>]]`
+  / `#xenon` drive it (also on `/control/v1` as `xenon.push`/`xenon.status`).
+  Publishing is **explicit, never ambient** (ADR-0016): a secret pre-scan blocks
+  a resource rather than leaking it, artifacts have their spec-149 loopback
+  feedback capability stripped before upload, auth failures are never queued for
+  retry, and the token lives in the OS keychain (`com.krypton.xenon`), never in
+  TOML. Verified end to end against a live server, including that editing one
+  file of a two-file bundle transfers exactly one blob and leaves 3 blobs on
+  disk across 2 revisions: 31 + 22 Xenon tests, 15 publisher + 13 frontend
+  tests, plus 3 `--ignored` live wire-compatibility tests
+  (`src-tauri/tests/xenon_live.rs`). See `docs/212-xenon-resource-server.md`,
+  `docs/adr/0016-generated-resources-publish-to-xenon.md`, and the Xenon repo's
+  `docs/01-protocol.md`.
+
 - **Review Board (spec 211)** — Krypton gained the surface where a lane can
   **explain code to a developer** and that developer can work through it.
   `PaneContentType` gained `'review'`; `ReviewBoardView`

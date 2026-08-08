@@ -22,6 +22,7 @@ pub mod theme;
 pub mod usage;
 pub mod util;
 pub mod webview;
+pub mod xenon;
 
 use std::sync::{Arc, Mutex, RwLock};
 use tauri::Manager;
@@ -161,6 +162,9 @@ pub fn run() {
             commands::list_directory,
             commands::search_files,
             commands::stat_files,
+            commands::xenon_push,
+            commands::xenon_status,
+            commands::xenon_set_token,
             commands::read_vault_files,
             commands::read_file,
             commands::write_file,

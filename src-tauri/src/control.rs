@@ -67,6 +67,8 @@ pub const ADVERTISED_OPERATIONS: &[&str] = &[
     "diff.review-priority",
     "diff.review-send",
     "review.response",
+    "xenon.push",
+    "xenon.status",
     "github.dispatch-issue",
     "github.issue-status",
     "github.list-issues",

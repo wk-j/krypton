@@ -291,6 +291,13 @@ export {
 } from './harness-tool-render';
 import { permissionCommandIsHighRisk } from './harness-tool-render';
 import {
+  describePush,
+  parsePushCommand,
+  summarizePush,
+  type PushReport,
+  type XenonStatus,
+} from './xenon-push';
+import {
   SPINNER_FRAMES,
   awaitingPeerText,
   compactPermissionLabel,
@@ -430,6 +437,12 @@ function requiredString(params: Record<string, unknown>, key: string): string {
     throw controlError('invalid_request', `${key} must be a non-empty string`);
   }
   return value;
+}
+
+/** Absent and empty both mean "not supplied", so callers can send `""` freely. */
+function optionalString(params: Record<string, unknown>, key: string): string | null {
+  const value = params[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 function requiredNumber(params: Record<string, unknown>, key: string): number {
@@ -1403,6 +1416,41 @@ export class AcpHarnessView implements ContentView {
         createdAt: item.createdAt,
         status: item.status,
       }));
+    }
+    // spec 212: publish to the Xenon resource server. Exposed on the control
+    // API so kryptonctl / Telegram / Raycast can trigger a push, using exactly
+    // the same path as the `#push` composer command.
+    if (operation === 'xenon.push') {
+      const kind = optionalString(params, 'kind');
+      const slug = optionalString(params, 'slug');
+      const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
+      if (!cwd) throw controlError('xenon_unavailable', 'no project directory');
+      const wantsAttention = !kind || kind === 'attention';
+      return await invoke<PushReport>('xenon_push', {
+        cwd,
+        kind: kind ?? null,
+        slug: slug ?? null,
+        force: params?.force === true,
+        attention: wantsAttention
+          ? this.triageStore.openItems().map((item) => ({
+              id: item.id,
+              laneId: item.laneId,
+              laneName: this.lanes.find((l) => l.id === item.laneId)?.displayName ?? item.laneId,
+              createdAt: item.createdAt,
+              question: item.question,
+              chosen: item.chosen,
+              rationale: item.rationale,
+              tradedOff: item.tradedOff,
+              uncertainty: item.uncertainty,
+              reversibility: item.reversibility,
+            }))
+          : [],
+      });
+    }
+    if (operation === 'xenon.status') {
+      const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
+      if (!cwd) throw controlError('xenon_unavailable', 'no project directory');
+      return await invoke<XenonStatus>('xenon_status', { cwd });
     }
     if (operation === 'attention.resolve') {
       const itemId = requiredString(params, 'itemId');
@@ -5748,6 +5796,141 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
+  /**
+   * spec 212: `#push [--force] [<kind> [<slug>]]` — publish harness-generated
+   * resources to the configured Xenon server.
+   *
+   * Attention flags are the one kind with no on-disk form, so they are read out
+   * of the in-memory triage store here and handed to the backend rather than
+   * collected from `.krypton/`.
+   */
+  private async runXenonPush(lane: HarnessLane, text: string): Promise<void> {
+    const parsed = parsePushCommand(text);
+    if (!parsed.ok) {
+      this.flashChip(parsed.error);
+      return;
+    }
+    const { kind, slug, force } = parsed.args;
+
+    const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
+    if (!cwd) {
+      this.flashChip('push unavailable - no project directory');
+      return;
+    }
+
+    // Only serialise the triage store when attention is actually in scope.
+    const wantsAttention = kind === null || kind === 'attention';
+    const attention = wantsAttention
+      ? this.triageStore.openItems().map((item) => ({
+          id: item.id,
+          laneId: item.laneId,
+          laneName: this.lanes.find((l) => l.id === item.laneId)?.displayName ?? item.laneId,
+          createdAt: item.createdAt,
+          question: item.question,
+          chosen: item.chosen,
+          rationale: item.rationale,
+          tradedOff: item.tradedOff,
+          uncertainty: item.uncertainty,
+          reversibility: item.reversibility,
+        }))
+      : [];
+
+    this.flashChip(force ? 'pushing to xenon (forced)...' : 'pushing to xenon...');
+    try {
+      const report = await invoke<PushReport>('xenon_push', {
+        cwd,
+        kind,
+        slug,
+        force,
+        attention,
+      });
+      this.flashChip(summarizePush(report));
+      this.appendTranscript(lane, 'system', `[xenon] ${describePush(report)}`);
+      this.scheduleLaneRender(lane);
+    } catch (e) {
+      const message = errorText(e);
+      this.flashChip(`push failed: ${message}`);
+      this.appendTranscript(lane, 'system', `[xenon] push failed: ${message}`);
+      this.scheduleLaneRender(lane);
+    }
+  }
+
+  /**
+   * spec 212: `#xenon [status | token <token> | token clear]`.
+   *
+   * Bare `#xenon` opens the project page. `token` is the one way to get a
+   * bearer token into the OS credential vault — the token is never echoed to
+   * the chip or the transcript, and never reaches the lane.
+   */
+  private async runXenonCommand(lane: HarnessLane, args: string[]): Promise<void> {
+    const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
+    if (!cwd) {
+      this.flashChip('xenon unavailable - no project directory');
+      return;
+    }
+
+    if (args[0] === 'token') {
+      const value = args[1] ?? '';
+      if (!value) {
+        this.flashChip('usage: #xenon token <token> | #xenon token clear');
+        return;
+      }
+      try {
+        // "clear" is a sentinel, not a token: an empty string deletes the entry.
+        await invoke('xenon_set_token', { token: value === 'clear' ? '' : value });
+        this.flashChip(value === 'clear' ? 'xenon token cleared' : 'xenon token stored');
+        this.appendTranscript(
+          lane,
+          'system',
+          value === 'clear'
+            ? '[xenon] token cleared from the credential vault'
+            : '[xenon] token stored in the credential vault',
+        );
+        this.scheduleLaneRender(lane);
+      } catch (e) {
+        this.flashChip(`xenon token failed: ${errorText(e)}`);
+      }
+      return;
+    }
+
+    let status: XenonStatus;
+    try {
+      status = await invoke<XenonStatus>('xenon_status', { cwd });
+    } catch (e) {
+      this.flashChip(`xenon status failed: ${errorText(e)}`);
+      return;
+    }
+
+    if (args[0] === 'status') {
+      const lines = [
+        `enabled: ${status.enabled}`,
+        `base_url: ${status.baseUrl || '(unset)'}`,
+        `project: ${status.project}`,
+        `token: ${status.token}`,
+        `auto_push: ${status.autoPush.length ? status.autoPush.join(', ') : '(all kinds)'}`,
+        `queued: ${status.queued}`,
+      ];
+      this.flashChip(
+        status.configured ? `xenon ready - ${status.project}` : 'xenon not ready - see transcript',
+      );
+      this.appendTranscript(lane, 'system', `[xenon]\n  ${lines.join('\n  ')}`);
+      this.scheduleLaneRender(lane);
+      return;
+    }
+
+    if (!status.enabled || !status.baseUrl) {
+      this.flashChip('xenon is not configured - set [xenon] in krypton.toml');
+      return;
+    }
+    try {
+      const url = `${status.baseUrl}/p/${encodeURIComponent(status.project)}`;
+      await invoke('open_url', { url });
+      this.flashChip(url);
+    } catch (e) {
+      this.flashChip(`xenon open failed: ${errorText(e)}`);
+    }
+  }
+
   /** spec 194: `#ticket [<ref> | refresh | clear]` — manage the shared ticket. */
   private async runTicketCommand(args: string[]): Promise<void> {
     const sub = args[0];
@@ -9097,6 +9280,22 @@ export class AcpHarnessView implements ContentView {
       } catch (e) {
         this.flashChip(`reviews open failed: ${errorText(e)}`);
       }
+      return;
+    }
+    // spec 212: publish harness-generated resources to the Xenon server.
+    // Deliberately explicit — `.krypton/` is gitignored working knowledge, so
+    // sending it off-box is publishing, never an ambient background sync.
+    if (parts[0] === '#push') {
+      this.setDraft(lane, '', 0);
+      await this.runXenonPush(lane, text);
+      return;
+    }
+    // spec 212: Xenon server — open the project page, inspect status, or store
+    // the API token. The draft is cleared FIRST so a pasted token never lingers
+    // in the composer while the async work runs.
+    if (parts[0] === '#xenon') {
+      this.setDraft(lane, '', 0);
+      await this.runXenonCommand(lane, parts.slice(1));
       return;
     }
     // spec 192: GitHub issue analysis viewer (.krypton/analyses bundles).

@@ -59,6 +59,18 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'docs', args: '', description: 'open the repo docs browser in a browser' },
   { name: 'analyses', args: '', description: 'open the GitHub issue analysis viewer in a browser' },
   { name: 'reviews', args: '', description: 'browse every Review Board ever composed, in a browser (read-only)' },
+  {
+    name: 'push',
+    args: '[--force] [<kind> [<slug>]]',
+    description:
+      'publish resources (review, analysis, artifact, doc, attention) to the Xenon server',
+  },
+  {
+    name: 'xenon',
+    args: '[status | token <token> | token clear]',
+    description:
+      "open this project's page on the Xenon server, show push status, or store the API token",
+  },
   { name: 'termctrl', args: '', description: 'open the read-only Terminal Control monitor in a browser' },
   { name: 'commands', args: '', description: 'open the built-in # command reference in a browser' },
   { name: 'tools', args: '', description: 'open the built-in MCP tool reference in a browser' },
@@ -191,6 +203,8 @@ export function commandMeta(): Record<string, CommandMeta> {
     docs: { category: 'surface', badges: [] },
     analyses: { category: 'surface', badges: [] },
     reviews: { category: 'surface', badges: [] },
+    push: { category: 'surface', badges: [] },
+    xenon: { category: 'surface', badges: [] },
     termctrl: { category: 'surface', badges: [] },
     commands: { category: 'surface', badges: [] },
     tools: { category: 'surface', badges: [] },
