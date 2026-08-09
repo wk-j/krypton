@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-08-07
+> Last updated: 2026-08-09
 
 ## Overview
 
@@ -20,6 +20,41 @@
 ---
 
 ## Recent Landings
+
+- **LLM usage statistics (spec 214)** — the project can finally answer "how many
+  tokens did this burn last week, on which model, in which lane, and what did it
+  cost", across all twelve agent backends at once. The numbers were already on
+  the wire and being thrown away: ACP's `Usage` is documented as *"token usage
+  for a prompt turn"* and arrives on the `session/prompt` response
+  (`client.ts:196`), but the harness folded it into `lane.usage` with a
+  last-wins merge for the chip — a display aggregate that destroyed each turn's
+  own figures. Now `finishTurn` emits one **numeric** row per turn (tokens
+  in/out/cached, model with an agent-confirmed flag, lane, backend, stop reason,
+  duration, context level, adapter-reported cost) and `usage_log.rs` appends it
+  to `.krypton/usage/<date>.jsonl` **before** any network call, then wakes a
+  sender that POSTs it to Xenon — normally within a second. The two shapes that
+  arrive on the same event are told apart by the presence of a token field: a
+  `usage_update` notification carries the context *level*, not a turn's spend,
+  and mistaking one for the other would invent turns that never ended. Durability
+  is an ack cursor that advances only on a 2xx, so a crash or a closed laptop
+  costs nothing; correctness under retry is a client-generated row id and
+  `ON CONFLICT DO NOTHING`, so a POST that timed out ambiguously can be re-sent
+  without double-billing. **Xenon** gained a `usage_turn` table (schema v4), an
+  ingest route, an aggregation route grouped by day/model/lane/backend, and a
+  Binance-dark `/p/<project>/usage` page. Cost is priced **at read time** from
+  `prices.json`, so correcting a rate corrects history (ADR-0018); reported and
+  estimated cost never merge, and an unmatched model — including the all-zero
+  entries the shipped example table carries — renders blank and is *named*
+  rather than billed at zero. Unlike everything else that leaves the machine,
+  usage needs no `#push`: the row carries no prompt or response text, which is
+  exactly what earns it an exemption from ADR-0016 (ADR-0019). A turn whose
+  adapter reports nothing still produces a row with `tokens: null`, because an
+  unmeasured lane must not look like an idle one. `#usage` reads the local log
+  and answers offline; `#usage open` opens the ledger; `#usage flush` skips the
+  backoff. 7 Rust + 14 frontend + 8 Xenon unit + 6 Xenon integration tests. See
+  `docs/214-llm-usage-statistics.md`,
+  `docs/adr/0018-llm-usage-is-priced-by-xenon-not-krypton.md`, and
+  `docs/adr/0019-usage-is-telemetry-not-a-published-resource.md`.
 
 - **Backend link indicator (spec 213)** — the workspace footer now says whether
   the off-machine Xenon server (spec 212) is actually reachable. Before this,

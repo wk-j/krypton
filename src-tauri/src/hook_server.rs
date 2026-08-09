@@ -5088,7 +5088,10 @@ fn format_doc_mtime(modified: SystemTime) -> Option<(i64, String)> {
 
 /// Days since the Unix epoch → `(year, month, day)`, proleptic Gregorian, UTC
 /// (Howard Hinnant's `civil_from_days`).
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
+///
+/// `pub(crate)` so the usage log (spec 214) can name its day files with the
+/// same calendar this module already uses, rather than carrying a second copy.
+pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097; // [0, 146096]

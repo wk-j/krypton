@@ -66,6 +66,12 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
       'publish resources (review, analysis, artifact, doc, attention) to the Xenon server',
   },
   {
+    name: 'usage',
+    args: '[<YYYY-MM-DD> | flush | open]',
+    description:
+      "today's LLM turn statistics (tokens, models, reported cost); rows stream to Xenon on their own",
+  },
+  {
     name: 'xenon',
     args: '[status | token <token> | token clear]',
     description:
@@ -204,6 +210,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     analyses: { category: 'surface', badges: [] },
     reviews: { category: 'surface', badges: [] },
     push: { category: 'surface', badges: [] },
+    usage: { category: 'surface', badges: [] },
     xenon: { category: 'surface', badges: [] },
     termctrl: { category: 'surface', badges: [] },
     commands: { category: 'surface', badges: [] },

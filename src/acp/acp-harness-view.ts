@@ -298,6 +298,13 @@ import {
   type PushReport,
   type XenonStatus,
 } from './xenon-push';
+import {
+  buildTurnRecord,
+  describeUsage,
+  formatTokenCount,
+  isTurnUsage,
+  type UsageRollup,
+} from './usage-log';
 import { publishLinkFromPush } from '../backend-link';
 import {
   SPINNER_FRAMES,
@@ -581,6 +588,8 @@ const LANE_DEFAULTS = {
   cursor: 0,
   spawnEpoch: 0,
   usage: null,
+  lastTurnUsage: null,
+  turnSeq: 0,
   sessionId: null,
   modelName: null,
   modelApplyFailed: false,
@@ -5652,6 +5661,15 @@ export class AcpHarnessView implements ContentView {
     this.harnessMemoryId = session.harnessId;
     this.harnessMemoryPort = session.hookPort;
     this.harnessMemoryWarning = null;
+    // spec 214: tell the usage sender which project it is recording for, and
+    // let it drain anything a previous session recorded but never delivered.
+    // Without this, a backlog would sit until the first turn of this session —
+    // and a session with no turns would never upload the last one's.
+    if (projectDir) {
+      void invoke('usage_flush', { cwd: projectDir }).catch(() => {
+        /* recording is unaffected; the sender retries on its own */
+      });
+    }
     // spec 185: publish the built-in command manifest for GET /commands.json.
     // Compile-time data, identical for every harness — a one-shot push into the
     // hook server's single global slot; failure only degrades the /commands page.
@@ -5900,6 +5918,74 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(`push failed: ${message}`);
       this.appendTranscript(lane, 'system', `[xenon] push failed: ${message}`);
       this.scheduleLaneRender(lane);
+    }
+  }
+
+  /**
+   * spec 214: `#usage [<YYYY-MM-DD> | flush | open]`.
+   *
+   * Every form reads the LOCAL log, so it answers with Xenon unreachable —
+   * which is exactly when someone asks. `flush` is the only form that touches
+   * the network, and only to skip the sender's backoff.
+   */
+  private async runUsageCommand(lane: HarnessLane, args: string[]): Promise<void> {
+    const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
+    if (!cwd) {
+      this.flashChip('usage unavailable - no project directory');
+      return;
+    }
+    const sub = args[0] ?? '';
+
+    if (sub === 'flush') {
+      try {
+        const pending = await invoke<number>('usage_flush', { cwd });
+        this.flashChip(pending > 0 ? `flushing ${pending} usage rows...` : 'usage: nothing pending');
+      } catch (e) {
+        this.flashChip(`usage flush failed: ${errorText(e)}`);
+      }
+      return;
+    }
+
+    if (sub === 'open') {
+      let status: XenonStatus;
+      try {
+        status = await invoke<XenonStatus>('xenon_status', { cwd });
+      } catch (e) {
+        this.flashChip(`usage open failed: ${errorText(e)}`);
+        return;
+      }
+      if (!status.baseUrl) {
+        this.flashChip('usage: set [xenon].base_url first');
+        return;
+      }
+      const url = `${status.baseUrl}/p/${status.project}/usage`;
+      try {
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`usage open failed: ${errorText(e)}`);
+      }
+      return;
+    }
+
+    // A bare `#usage` is today; anything else is read as a date and handed to
+    // the backend, which answers "no turns" for a day that does not exist.
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(sub) ? sub : undefined;
+    if (sub && !date) {
+      this.flashChip('usage: #usage [<YYYY-MM-DD> | flush | open]');
+      return;
+    }
+    try {
+      const rollup = await invoke<UsageRollup>('usage_today', { cwd, date });
+      this.appendTranscript(lane, 'system', `[usage] ${describeUsage(rollup)}`);
+      this.flashChip(
+        rollup.recording
+          ? `${rollup.turns} turns · ↑${formatTokenCount(rollup.inputTokens)} ↓${formatTokenCount(rollup.outputTokens)}`
+          : 'usage recording is off',
+      );
+      this.scheduleLaneRender(lane);
+    } catch (e) {
+      this.flashChip(`usage failed: ${errorText(e)}`);
     }
   }
 
@@ -6897,6 +6983,10 @@ export class AcpHarnessView implements ContentView {
         break;
       case 'usage':
         lane.usage = mergeUsage(lane.usage, event.usage);
+        // spec 214: only the prompt-response variant carries token counters;
+        // a `usage_update` notification carries the context level and would
+        // otherwise be mistaken for a completed turn's spend.
+        if (isTurnUsage(event.usage)) lane.lastTurnUsage = event.usage;
         break;
       case 'available_commands':
         lane.availableCommands = event.commands;
@@ -6947,6 +7037,9 @@ export class AcpHarnessView implements ContentView {
         // error arrived keeps currentThoughtId/AssistantId/UserId set and
         // stays in native-wrap (no pretext layout) until the next prompt.
         this.sealStreaming(lane);
+        // spec 214: an errored turn still spent whatever the adapter had
+        // already billed. Recorded before activeTurnStartedAt is cleared.
+        this.recordTurnUsage(lane, 'error');
         this.setLaneStatus(lane, 'error');
         lane.error = event.message;
         lane.activeTurnStartedAt = null;
@@ -7374,6 +7467,11 @@ export class AcpHarnessView implements ContentView {
 
   private finishTurn(lane: HarnessLane, stopReason: StopReason, reason?: string): void {
     this.sealStreaming(lane);
+    // spec 214: emit the usage row BEFORE the per-turn pointers below are
+    // cleared — activeTurnStartedAt is the only source of the duration, and a
+    // synchronous peer-mail drain in setLaneStatus can stamp the next turn's
+    // value before this method resumes.
+    this.recordTurnUsage(lane, stopReason);
     if (stopReason === 'cancelled') {
       // `reason` is set only for harness-synthesized stops (e.g. the subprocess
       // exited mid-turn) — distinguish that from a user-initiated cancel so a
@@ -7435,6 +7533,50 @@ export class AcpHarnessView implements ContentView {
     if (lane.queuedPrompts.length > 0) {
       queueMicrotask(() => this.maybeDrainPromptQueue(lane));
     }
+  }
+
+  /**
+   * spec 214: write one numeric row for the turn that just ended.
+   *
+   * Fire-and-forget: a ledger must never delay a turn, and a failure to record
+   * is not something the human can act on mid-conversation. Rust appends the
+   * row to the local log before any network call, so "not awaited" costs
+   * nothing beyond the row being visible a few milliseconds later.
+   *
+   * A turn whose adapter reported no counters still produces a row (with
+   * `tokens: null`). Dropping it would make the busiest unreported lane look
+   * idle instead of unmeasured.
+   */
+  private recordTurnUsage(lane: HarnessLane, stopReason: StopReason | 'error'): void {
+    // Nothing ran — a spawn error or a stray stop, not a turn.
+    if (lane.activeTurnStartedAt === null && !lane.lastTurnUsage) return;
+
+    const cwd = this.projectDir;
+    if (!cwd) return;
+
+    lane.turnSeq += 1;
+    const record = buildTurnRecord({
+      at: Date.now(),
+      startedAt: lane.activeTurnStartedAt,
+      harnessId: this.harnessMemoryId ?? 'hm',
+      lane: lane.displayName,
+      backend: lane.backendId,
+      // The agent-confirmed id when there is one; otherwise the configured
+      // intent, flagged as unconfirmed so a report can tell them apart.
+      model: lane.currentModelId ?? lane.modelName,
+      modelConfirmed: lane.currentModelId !== null,
+      sessionId: lane.sessionId,
+      turn: lane.turnSeq,
+      stopReason,
+      origin: lane.activeTelegramTurn ? 'telegram' : lane.activeSystemLabel ? 'system' : 'user',
+      usage: lane.lastTurnUsage,
+      context: lane.usage,
+    });
+    lane.lastTurnUsage = null;
+
+    void invoke('usage_record', { cwd, record }).catch((e) => {
+      console.warn('usage: failed to record turn', e);
+    });
   }
 
   private observeFileTouch(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
@@ -9352,6 +9494,13 @@ export class AcpHarnessView implements ContentView {
     if (parts[0] === '#xenon') {
       this.setDraft(lane, '', 0);
       await this.runXenonCommand(lane, parts.slice(1));
+      return;
+    }
+    // spec 214: read out the local per-turn usage log. Purely a read — the rows
+    // stream to Xenon on their own, so there is nothing here to trigger.
+    if (parts[0] === '#usage') {
+      this.setDraft(lane, '', 0);
+      await this.runUsageCommand(lane, parts.slice(1));
       return;
     }
     // spec 192: GitHub issue analysis viewer (.krypton/analyses bundles).

@@ -452,6 +452,14 @@ export interface HarnessLane {
   transcript: HarnessTranscriptItem[];
   spawnEpoch: number;
   usage: UsageInfo | null;
+  /** spec 214: the raw token-bearing usage for the turn in flight, kept apart
+   *  from `usage` because that one is a last-wins DISPLAY aggregate — merging
+   *  would destroy exactly the per-turn numbers the log exists to record.
+   *  Cleared by `finishTurn` once the row is emitted. */
+  lastTurnUsage: UsageInfo | null;
+  /** spec 214: 1-based turn counter within the current session. Reset on
+   *  respawn, which is why a row also carries `sessionId`. */
+  turnSeq: number;
   sessionId: string | null;
   modelName: string | null;
   /** spec 126: true when the configured model failed to apply (session/set_model

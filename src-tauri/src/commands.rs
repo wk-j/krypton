@@ -1533,6 +1533,69 @@ pub async fn xenon_probe(
     Ok(crate::xenon::probe(&xenon_config, std::path::Path::new(&cwd)).await)
 }
 
+// ─── LLM usage log (spec 214) ──────────────────────────────────────
+
+/// Record one completed prompt turn.
+///
+/// Appends to the local log first and only then wakes the sender, so a crash
+/// between the two costs nothing: the row is on disk and the cursor has not
+/// moved. Called without `await` from `finishTurn`, so it must stay cheap —
+/// one `create_dir_all`, one append, one notify.
+#[tauri::command]
+pub fn usage_record(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    outbox: State<'_, Arc<crate::usage_log::UsageOutbox>>,
+    cwd: String,
+    record: crate::usage_log::TurnRecord,
+) -> Result<(), String> {
+    let enabled = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.usage_log.enabled
+    };
+    if !enabled {
+        return Ok(());
+    }
+    crate::usage_log::record(&outbox, std::path::Path::new(&cwd), record)
+}
+
+/// Roll up one day of recorded turns for `#usage`. Reads the local log only, so
+/// it answers with the server unreachable — which is exactly when someone asks.
+#[tauri::command]
+pub fn usage_today(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    date: Option<String>,
+) -> Result<crate::usage_log::UsageRollup, String> {
+    let enabled = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.usage_log.enabled
+    };
+    let cwd_path = std::path::PathBuf::from(&cwd);
+    let date = date.unwrap_or_else(|| {
+        crate::usage_log::day_stamp(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0),
+        )
+    });
+    Ok(crate::usage_log::rollup(&cwd_path, &date, enabled))
+}
+
+/// Drain the outbox now instead of waiting out the sender's backoff — for use
+/// straight after fixing a token or a base URL.
+#[tauri::command]
+pub fn usage_flush(
+    outbox: State<'_, Arc<crate::usage_log::UsageOutbox>>,
+    cwd: String,
+) -> Result<usize, String> {
+    let cwd_path = std::path::PathBuf::from(&cwd);
+    let pending = crate::usage_log::unsent_count(&cwd_path);
+    outbox.note_project(&cwd_path);
+    outbox.wake();
+    Ok(pending)
+}
+
 /// Store (or, with an empty string, clear) the Xenon bearer token in the OS
 /// credential vault. The token is never written to the TOML config.
 #[tauri::command]

@@ -51,6 +51,7 @@ pub struct KryptonConfig {
     pub pencil: PencilConfig,
     pub acp_harness: AcpHarnessConfig,
     pub xenon: XenonConfig,
+    pub usage_log: UsageLogConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -476,6 +477,40 @@ impl Default for XenonConfig {
             // Frequent enough that a link fault is noticed within a minute,
             // rare enough that an idle workspace is not a chatty client.
             probe_interval_secs: 60,
+        }
+    }
+}
+
+// ─── LLM usage log (spec 214) ──────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UsageLogConfig {
+    /// Master switch for recording per-turn token statistics at all.
+    pub enabled: bool,
+    /// Stream recorded turns to Xenon as they happen. Needs `[xenon].enabled`
+    /// and a stored token; without either, rows still accumulate locally and
+    /// upload once Xenon is configured.
+    ///
+    /// This is deliberately NOT an `[xenon].auto_push` entry. That list is for
+    /// resource kinds whose default is manual and whose automation is a
+    /// per-user opt-in; usage inverts it — streaming is the definition of the
+    /// feature and this is the opt-*out* (ADR-0019).
+    pub publish: bool,
+    /// Local `.krypton/usage/<date>.jsonl` files older than this are deleted at
+    /// startup. `0` disables pruning.
+    pub retain_days: u64,
+}
+
+impl Default for UsageLogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            publish: true,
+            // Long enough to answer "what did last quarter cost" from the local
+            // log alone; short enough that the directory never becomes a thing
+            // anyone has to manage.
+            retain_days: 90,
         }
     }
 }

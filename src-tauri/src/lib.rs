@@ -20,6 +20,7 @@ pub mod telegram;
 pub mod termctrl_monitor;
 pub mod theme;
 pub mod usage;
+pub mod usage_log;
 pub mod util;
 pub mod webview;
 pub mod xenon;
@@ -142,6 +143,7 @@ pub fn run() {
         .manage(Arc::new(acp::AcpRegistry::new()))
         .manage(Arc::new(webview::WebviewRegistry::new()))
         .manage(Arc::new(process_metrics::MetricsSampler::new()))
+        .manage(Arc::new(usage_log::UsageOutbox::new()))
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
@@ -162,6 +164,9 @@ pub fn run() {
             commands::list_directory,
             commands::search_files,
             commands::stat_files,
+            commands::usage_record,
+            commands::usage_today,
+            commands::usage_flush,
             commands::xenon_push,
             commands::xenon_status,
             commands::xenon_probe,
@@ -386,6 +391,15 @@ pub fn run() {
                 if let Some(cfg) = sound_config {
                     engine.apply_config(cfg);
                 }
+            }
+
+            // spec 214: the per-turn usage sender. One long-lived task woken by
+            // every recorded turn; it idles on a heartbeat when there is
+            // nothing to send, so an app with Xenon unconfigured costs nothing.
+            {
+                let outbox = app.state::<Arc<usage_log::UsageOutbox>>().inner().clone();
+                let config = krypton_config.clone();
+                tauri::async_runtime::spawn(usage_log::run_sender(outbox, config));
             }
 
             // Initialize music engine

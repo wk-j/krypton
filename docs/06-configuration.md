@@ -272,6 +272,24 @@ auto_push = []
 # `#push`.
 probe_interval_secs = 60
 
+# --- LLM usage log (spec 214) ---
+# One numeric row per completed prompt turn: tokens in/out, cached tokens,
+# model, lane, backend, stop reason, and the cost the adapter reported (when it
+# reports one). NO prompt or response text is ever recorded — that is what lets
+# the rows stream to Xenon unattended.
+
+[usage_log]
+# Master switch for recording at all.
+enabled = true
+# Stream each turn to Xenon as it ends. Needs [xenon].enabled and a stored
+# token; without either, rows still accumulate locally and upload once Xenon is
+# configured. This is deliberately NOT an [xenon].auto_push kind: usage is not a
+# resource, streaming IS the feature, and this is the opt-OUT (ADR-0019).
+publish = true
+# Local .krypton/usage/<date>.jsonl files older than this are deleted at
+# startup. Rows already accepted by Xenon live on there. 0 disables pruning.
+retain_days = 90
+
 # Telegram Harness Controller is intentionally NOT configured here. Krypton's
 # Settings view owns ~/.config/krypton/telegram.toml, while the Bot API token
 # lives in the operating-system credential vault. See the section below.
@@ -734,6 +752,19 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | `[xenon]` | `project` | string | `""` | Project slug override. Empty derives `<owner>.<repo>` from the git remote, else a path-derived name. Single path segment only |
 | `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`). Empty = all. Listing `attention` additionally publishes that kind automatically when a lane raises a flag — the one exception, because attention has no on-disk form |
 | `[xenon]` | `probe_interval_secs` | integer | `60` | Cadence of the workspace footer's backend-link probe (spec 213). `0` disables the interval; the segment then updates only on `⌘P X` and after a `#push`. Hot-reloaded with the rest of `[xenon]` |
+
+| `[usage_log]` | `enabled` | bool | `true` | Record one row per completed prompt turn to `.krypton/usage/<date>.jsonl`. See doc 214 |
+| `[usage_log]` | `publish` | bool | `true` | Stream recorded turns to Xenon as they end. Requires `[xenon].enabled` plus a stored token; rows accumulate locally either way |
+| `[usage_log]` | `retain_days` | integer | `90` | Local day files older than this are deleted on the sender's first cycle. `0` disables pruning |
+
+**Usage rows never contain text.** A row carries counts and identifiers only —
+no prompt, no response, no file paths, no tool arguments. That is the property
+that makes unattended streaming safe, and it is asserted in
+`src/acp/usage-log.test.ts` so widening the row is a deliberate act. Read
+today's numbers in the composer with `#usage`; open the server's ledger with
+`#usage open`; drain a stuck queue with `#usage flush`. Cost estimates are
+computed by Xenon from its own rate table (ADR-0018), so `#usage` in the app
+shows only what an adapter actually reported.
 
 **The Xenon bearer token is never stored in TOML.** It lives in the OS
 credential vault under service `com.krypton.xenon`, keyed by `base_url` — the
