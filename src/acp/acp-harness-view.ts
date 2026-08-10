@@ -10886,7 +10886,10 @@ export class AcpHarnessView implements ContentView {
       const laneEl = document.createElement(active ? 'section' : 'div');
       laneEl.className = `acp-harness__lane ${active ? 'acp-harness__lane--active' : 'acp-harness__lane--collapsed'} acp-harness__lane--${lane.status}`;
       laneEl.dataset.laneId = lane.id;
-      laneEl.style.setProperty('--acp-lane-accent', active ? lane.accent : 'rgba(216, 232, 216, 0.42)');
+      // spec 215: collapsed lanes keep their accent — CSS dims it toward the
+      // base text color without dropping the hue, so lane identity survives
+      // de-focus (the iTerm2/WezTerm inactive-pane convention).
+      laneEl.style.setProperty('--acp-lane-accent', lane.accent);
       const head = document.createElement('header');
       head.className = 'acp-harness__lane-head';
       const laneSession = lane.client?.sessionId ?? null;

@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-08-09
+> Last updated: 2026-08-10
 
 ## Overview
 
@@ -21,6 +21,26 @@
 
 ## Recent Landings
 
+- **Stacked lane visual hierarchy (spec 215)** — the default stacked dashboard
+  finally answers "which lane is active, and what lanes exist" at a glance.
+  Collapsed lanes keep their accent color, dimmed by mixing toward the base text
+  color instead of being replaced with gray (the hue-preserving dim iTerm2 /
+  WezTerm use for inactive panes), and render as full-width identity bands (6%
+  accent tint, no separator hairline) with the backend logo inline in the name —
+  visually distinct from transcript rows. The active lane's signal moved from an
+  invisible 3.5% body gradient to its head: a 13% accent band covering the head
+  and its stats row as one two-line header block (no closing hairline — the
+  tint alone parts ways with the transcript, matching the borderless collapsed
+  bands; the stats row's duplicate backend logo/id cell dropped) with a
+  full-accent glowing name. Permission-gold still outranks lane
+  identity on collapsed rows (band and name go gold; pulse +
+  reduced-motion fallback untouched). Presentation-only: one line in
+  `renderDashboard` (the gray accent override removed), the logo in
+  `renderLaneHead` (both branches, so every head-refresh path inherits it), and
+  CSS in `acp-harness.css`; zen/concise modes and all keybindings unchanged.
+  Design chosen from a 4-option artifact comparison (identity band / name tab /
+  typographic / ordinal seat). See `docs/215-stacked-lane-hierarchy.md` +
+  prototype `docs/prototypes/215-stacked-lane-hierarchy.html`.
 - **LLM usage statistics (spec 214)** — the project can finally answer "how many
   tokens did this burn last week, on which model, in which lane, and what did it
   cost", across all twelve agent backends at once. The numbers were already on

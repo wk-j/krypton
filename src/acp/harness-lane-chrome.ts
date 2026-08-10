@@ -113,11 +113,16 @@ export function renderLaneHead(
   const inboxChip = inboxDepth > 0
     ? `<span class="acp-harness__lane-inbox" title="${inboxDepth} pending peer message${inboxDepth === 1 ? '' : 's'}">${harnessIcon('inbox', 'acp-harness__icon--dot')}${inboxDepth}</span>`
     : '';
+  // spec 215: the backend logo rides inside the name span (no head-grid column
+  // change) and inherits the name's color, so it dims with the collapsed name.
+  const logo =
+    `<svg class="acp-harness__icon" aria-hidden="true">` +
+    `<use href="#${backendLogoId(lane.backendId)}"/></svg>`;
   if (!active) {
     const statusText = lane.status === 'needs_permission' ? 'perm' : statusLabel(lane.status);
     return (
       renderLaneSymbol(lane.status) +
-      `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
+      `<span class="acp-harness__lane-name">${logo}${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__lane-status">${esc(statusText)}</span>` +
       inboxChip +
       chips +
@@ -135,7 +140,7 @@ export function renderLaneHead(
     : '';
   return (
     renderLaneSymbol(lane.status) +
-    `<span class="acp-harness__lane-name">${esc(lane.displayName)}</span>` +
+    `<span class="acp-harness__lane-name">${logo}${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
     inboxChip +
     chips +
@@ -452,10 +457,9 @@ export function renderLaneStats(lane: HarnessLane, projectDir: string | null): s
     `<span${title ? ` title="${esc(title)}"` : ''}>${inner}</span>`;
   const text = (s: string): string => cell(esc(s));
 
-  spans.push(cell(
-    `<svg class="acp-harness__icon acp-harness__icon--accent" aria-hidden="true"><use href="#${backendLogoId(lane.backendId)}"/></svg>${esc(lane.backendId)}`,
-    `backend ${lane.backendId}`,
-  ));
+  // spec 215 follow-up: no backend logo/id cell here — the head's name span
+  // one line up already carries the logo, and repeating it made the stats row
+  // read as a second head instead of head metadata.
   spans.push(text(lane.sessionId ? `sess ${shortId(lane.sessionId)}` : 'sess pending'));
   if (projectDir) spans.push(text(basename(projectDir)));
 

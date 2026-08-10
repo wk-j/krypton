@@ -74,28 +74,32 @@
   position: relative;
 }
 
+/* spec 215: a collapsed lane is an identity band, not a log line — the lane's
+   own accent carries a 6% full-width tint, so the roster of switchable lanes
+   stays legible without reading the names. No separator line: adjacent bands
+   part ways by their own tints. */
 .acp-harness__lane--collapsed {
   flex: 0 0 28px;
-  background: rgba(6, 10, 18, 0.28);
-  border-bottom: 1px solid rgba(216, 232, 216, 0.055);
+  background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 6%, rgba(6, 10, 18, 0.55));
 }
 
+/* spec 215: the active lane announces itself at its head band (below), not
+   with a body wash — the old 3.5% fading gradient sat under the perceptual
+   threshold on the transparent backdrop. */
 .acp-harness__lane--active {
   flex: 1 1 0;
   min-height: 120px;
   display: flex;
   flex-direction: column;
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--acp-lane-accent, var(--krypton-window-accent, #0cf)) 3.5%, transparent) 0,
-      transparent 64px
-    ),
-    rgba(6, 10, 18, 0.48);
-  box-shadow:
-    inset 6px 0 12px -10px color-mix(in srgb, var(--acp-lane-accent, var(--krypton-window-accent, #0cf)) 14%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.025),
-    inset 0 -1px 0 rgba(0, 204, 255, 0.045);
+  background: rgba(6, 10, 18, 0.48);
+}
+
+/* spec 215: the band covers the head AND its stats row — one two-line header
+   block. No closing hairline: the band's own tint parts ways with the
+   transcript below, matching the borderless collapsed rows. */
+.acp-harness__lane--active > .acp-harness__lane-head,
+.acp-harness__lane--active > .acp-harness__lane-stats {
+  background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 13%, rgba(6, 10, 18, 0.6));
 }
 
 .acp-harness__lane-head {
@@ -151,7 +155,7 @@
 
 .acp-harness__lane-name {
   grid-column: 2;
-  max-width: 18ch;
+  max-width: 20ch; /* spec 215: +2ch for the inline backend logo */
   color: var(--acp-lane-accent, rgba(216, 232, 216, 0.86));
   font-weight: normal;
   font-size: 0.92em;
@@ -160,6 +164,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   text-shadow: none;
+}
+
+/* spec 215: the backend logo inherits the name's color (currentColor), so it
+   dims in lockstep with the collapsed-name rule below. */
+.acp-harness__lane-name .acp-harness__icon {
+  margin-right: 5px;
+}
+
+/* spec 215: hue-preserving dim — collapsed names keep the lane hue mixed
+   toward the base text color instead of being replaced by gray. */
+.acp-harness__lane--collapsed .acp-harness__lane-name {
+  color: color-mix(in srgb, var(--acp-lane-accent, #0cf) 70%, rgba(216, 232, 216, 0.55));
+}
+
+.acp-harness__lane--active .acp-harness__lane-name {
+  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, #0cf) 24%, transparent);
 }
 
 .acp-harness__lane-status {
@@ -565,6 +585,12 @@
   box-shadow:
     inset 0 0 10px rgba(255, 209, 102, 0.08),
     0 0 8px rgba(255, 209, 102, 0.12);
+}
+
+/* spec 215: on a permission row the whole band goes gold, name included —
+   the alert outranks lane identity (matches the approved prototype). */
+.acp-harness__lane--needs_permission.acp-harness__lane--collapsed .acp-harness__lane-name {
+  color: #ffd166;
 }
 
 .acp-harness__lane--needs_permission .acp-harness__lane-status {
