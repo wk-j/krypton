@@ -684,7 +684,8 @@
   height: var(--krypton-footer-height, 28px);
   padding: 0 10px;
   flex-shrink: 0;
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  /* Flat rail — no border-top; the subtle accent wash is enough separation
+     from the pane content (matches workspace footer / harness chrome). */
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
   -webkit-user-select: none;
   user-select: none;
