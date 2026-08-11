@@ -574,6 +574,13 @@ export class Compositor {
       // Glow intensity — controls the top-line brightness overlay
       const glow = Math.max(0, Math.min(3, config.visual.glow_intensity ?? 0.8));
       root.setProperty('--krypton-glow-intensity', String(glow));
+
+      // Window border — class toggle so it survives theme re-application
+      // (theme.ts rewrites the border CSS vars on every theme change).
+      document.documentElement.classList.toggle(
+        'krypton-no-window-border',
+        config.visual.window_border === false,
+      );
     }
   }
 

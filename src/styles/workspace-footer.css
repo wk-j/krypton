@@ -15,7 +15,6 @@
   min-width: 0;
   padding: 0 12px;
   overflow: hidden;
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
   background: rgba(6, 10, 18, 0.9);
   color: var(--krypton-foreground, #c0c8d4);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
@@ -25,8 +24,6 @@
   font-variant-numeric: tabular-nums;
   user-select: none;
   pointer-events: none;
-  /* Upward accent glow dropped — flat rail. The 1px border-top stays as a flat
-     separator (a hard line, not a gradient). */
 }
 
 .krypton-workspace-footer__left,

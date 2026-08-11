@@ -214,6 +214,9 @@ opacity = 0.5                  # Window backdrop opacity (0.0 = fully transparen
 glow_intensity = 0.8           # Top-line glow brightness boost (0.0 = off, 3.0 = max).
                                # Controls the brightness of the glow overlay on the
                                # first few terminal rows. Default: 0.8
+window_border = true           # Show the accent-colored outline around terminal
+                               # windows. false hides the border AND the accent
+                               # glow shadow (geometry unchanged). Default: true
 
 # --- Claude Code Hooks ---
 # HTTP server for receiving Claude Code hook events (toast notifications, status).
@@ -824,6 +827,7 @@ Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled glo
 | `[visual]` | `perspective_tilt` | float | `2.0` | Tilt angle in degrees for 3D layer separation. 0 = no tilt. Recommended: 1–6 |
 | `[visual]` | `opacity` | float | `0.5` | Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque). Overrides the theme's backdrop alpha. |
 | `[visual]` | `glow_intensity` | float | `0.8` | Top-line glow brightness boost. 0.0 disables the glow, higher = stronger. Clamped to 0.0–3.0. |
+| `[visual]` | `window_border` | bool | `true` | Show the accent-colored outline around terminal windows. `false` hides the border and the accent glow shadow (border stays transparent, so window geometry is unchanged). The Quick Terminal overlay keeps its own chrome. |
 
 ### SSH Configuration
 

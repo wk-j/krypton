@@ -37,6 +37,19 @@
     0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.22);
 }
 
+/* [visual] window_border = false — hide the window outline. Transparent color
+   (not width 0) keeps the border box, so window geometry and xterm fit are
+   unchanged when toggled via config hot-reload. The accent glow shadows go with
+   it: at the window edge they read as a blurred border, so "no border" must
+   drop them too. Quick Terminal keeps its own chrome (its --visible/--focused
+   rules load later and win the cascade); agent/vault !important borders are
+   their own aesthetic and also untouched. */
+.krypton-no-window-border .krypton-window,
+.krypton-no-window-border .krypton-window--focused {
+  border-color: transparent;
+  box-shadow: none;
+}
+
 /* ─── Signal-state chrome — drives corner accent + border tint via the focused
    pane's view:state signal. See docs/104-chrome-signal-upgrades.md and
    docs/105-view-protocol.md. The override re-targets --krypton-window-accent-rgb

@@ -314,6 +314,8 @@ pub struct VisualConfig {
     /// Top-line glow brightness boost. 0.0 = off, 0.8 = default, higher = stronger.
     /// Controls the brightness() filter on the glow overlay (added to 1.0).
     pub glow_intensity: f64,
+    /// Show the accent-colored outline around terminal windows. false = hidden.
+    pub window_border: bool,
 }
 
 impl Default for VisualConfig {
@@ -325,6 +327,7 @@ impl Default for VisualConfig {
             opacity: 0.5,
             blur: 12,
             glow_intensity: 0.8,
+            window_border: true,
         }
     }
 }

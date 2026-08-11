@@ -127,6 +127,7 @@ export interface VisualConfig {
   opacity: number;           // 0.0–1.0, window backdrop opacity
   blur: number;              // px, window backdrop blur radius
   glow_intensity: number;    // 0.0–3.0, top-line glow brightness boost
+  window_border: boolean;    // false = hide the accent outline around windows
 }
 
 export interface ExtensionsConfig {
