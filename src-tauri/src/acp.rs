@@ -657,12 +657,15 @@ fn resolve_fs_path(cwd: &str, raw_path: &str) -> std::path::PathBuf {
     }
 }
 
-/// Read vs write for Spec 89 path scoping. Grok reads are unrestricted:
-/// Grok routes every `read_file` through ACP while its own list/grep/bash
-/// already escape the project, so scoping ACP reads only broke sibling specs
-/// and `~/.agents` skills. Other lanes keep Spec 89 read scoping — their
-/// shell tools are permission-gated, so ACP fs was the last unprompted
-/// read path. Writes stay scoped for every backend.
+/// Read vs write for Spec 89 path scoping. Grok fs/* is unrestricted:
+/// Grok routes every `read_file` / write through ACP while its own
+/// list/grep/bash already escape the project, so scoping ACP I/O only
+/// broke sibling repos (and hid the write-review card the user would
+/// use to grant them). Other lanes keep Spec 89 scoping — their shell
+/// tools are permission-gated, so ACP fs was the last unprompted path.
+/// Grok writes still go through the Spec 89 review card (or session-
+/// scratch auto-apply); this enum only decides whether the request is
+/// rejected before that gate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FsAccess {
     Read,
@@ -671,28 +674,30 @@ enum FsAccess {
 
 /// Whether `resolved` may be served for this access + backend.
 /// Project root and the current project's Grok session tree always pass
-/// (reads and writes). Out-of-root reads pass only for the Grok lane.
+/// (reads and writes). Out-of-root Grok fs/* also passes — writes still
+/// wait on the review card. Other lanes stay Spec 89 scoped.
 fn fs_path_in_scope(
     root: &std::path::Path,
     cwd: &str,
     resolved: &std::path::Path,
-    access: FsAccess,
+    _access: FsAccess,
     backend_id: &str,
 ) -> bool {
     // In-project and Grok session-scratch paths: both reads and writes.
     if resolved.starts_with(root) || is_under_grok_session_dir(cwd, resolved) {
         return true;
     }
-    // Out-of-root: Grok reads only. Not a second scope check — there is
-    // no remaining path filter once this matches.
-    matches!(access, FsAccess::Read) && backend_id == "grok"
+    // Out-of-root: Grok only. Not a second scope check — there is
+    // no remaining path filter once this matches. Writes still hit
+    // the review card in handle_inbound_request.
+    backend_id == "grok"
 }
 
 /// Reject fs/* requests that escape the lane's project root — except Grok's
 /// session scratch under `~/.grok/sessions/<encoded-cwd>/` (every file there,
-/// not just plan.md). Grok `fs/read_text_file` is additionally unscoped
-/// (see `FsAccess`). When `cwd` is unset (rare — fallback session), we pass
-/// through without enforcement.
+/// not just plan.md). Grok `fs/*` is additionally unscoped (see `FsAccess`);
+/// out-of-root Grok writes still wait on the review card. When `cwd` is
+/// unset (rare — fallback session), we pass through without enforcement.
 async fn validate_fs_path(
     client: &Arc<AcpClient>,
     raw_path: &str,
@@ -835,7 +840,9 @@ async fn handle_inbound_request(
             // Path scoping (Spec 89 Phase C): reject *writes* outside the lane's
             // project root (Grok session scratch under ~/.grok/sessions/<encoded-cwd>/
             // is allowed — every file in that tree, not just plan.md).
-            // Grok reads are unrestricted; other lanes stay Spec-89 scoped.
+            // Grok fs/* is unrestricted so sibling-repo writes reach the
+            // review card instead of dying as "Path outside project root";
+            // other lanes stay Spec-89 scoped.
             if let Err(err) = validate_fs_path(&client, &path, FsAccess::Write).await {
                 let msg = err
                     .get("message")
@@ -2513,7 +2520,7 @@ mod tests {
     }
 
     #[test]
-    fn fs_path_in_scope_grok_reads_escape_but_other_lanes_do_not() {
+    fn fs_path_in_scope_grok_escapes_but_other_lanes_do_not() {
         let cwd = "/Users/wk/Source/xenon";
         let root = Path::new(cwd);
         let in_project = PathBuf::from("/Users/wk/Source/xenon/src/main.rs");
@@ -2552,7 +2559,8 @@ mod tests {
             "grok"
         ));
 
-        // Live failure: xenon-rooted Grok reading the krypton spec / skills.
+        // Live failure: xenon-rooted Grok reading/writing the krypton spec / skills.
+        // Writes must pass the scope check so the review card can fire.
         assert!(fs_path_in_scope(
             root,
             cwd,
@@ -2561,27 +2569,28 @@ mod tests {
             "grok"
         ));
         assert!(fs_path_in_scope(root, cwd, &skill, FsAccess::Read, "grok"));
-        assert!(!fs_path_in_scope(
+        assert!(fs_path_in_scope(
             root,
             cwd,
             &sibling,
             FsAccess::Write,
             "grok"
         ));
-        assert!(!fs_path_in_scope(
-            root,
-            cwd,
-            &skill,
-            FsAccess::Write,
-            "grok"
-        ));
+        assert!(fs_path_in_scope(root, cwd, &skill, FsAccess::Write, "grok"));
 
-        // Other lanes keep Spec 89 read scoping (Claude-1 review).
+        // Other lanes keep Spec 89 scoping (Claude-1 review).
         assert!(!fs_path_in_scope(
             root,
             cwd,
             &sibling,
             FsAccess::Read,
+            "claude"
+        ));
+        assert!(!fs_path_in_scope(
+            root,
+            cwd,
+            &sibling,
+            FsAccess::Write,
             "claude"
         ));
         assert!(!fs_path_in_scope(

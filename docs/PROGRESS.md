@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-08-12
+> Last updated: 2026-08-13
 
 ## Overview
 
@@ -21,6 +21,18 @@
 
 ## Recent Landings
 
+- **Grok ACP writes reach the review card (Grok-only)** — unscoped reads
+  were not enough: a krypton-rooted Grok lane asked to ship xenon called
+  `fs/write_text_file` on `/Users/wk/Source/xenon/README.md` (and
+  Cargo.toml, …) and got `Path outside project root` *before*
+  `fs_write_pending` fired, so the user never saw a permission confirm.
+  Grok routes every write through ACP when the client advertises
+  `fs.writeTextFile`, unlike Claude/Codex whose Write tool goes through
+  `session/request_permission`. `validate_fs_path` now lets **Grok**
+  writes of any path through; they still wait on the existing
+  `fs_write_review` card (`a`/`r`/`A`/`R`, plus acceptEdits/bypass
+  auto-accept). Session-scratch auto-apply is unchanged. Other ACP lanes
+  keep Spec 89 write scoping. See `docs/135-acp-grok-lane.md`.
 - **Grok ACP reads no longer project-scoped (Grok-only)** — the plan-mode
   session-dir allowlist did not fix the live failure: a xenon-rooted Grok
   lane could `list_dir` / `grep` `/Users/wk/Source/krypton` (native tools)
@@ -29,9 +41,9 @@
   `validate_fs_path` now takes a read/write access kind; **Grok** reads of
   any path are served; other ACP lanes keep Spec 89 read scoping (their
   shell tools are permission-gated, so ACP fs was the last unprompted
-  read path — Claude-1 review). Writes stay scoped to the project root
-  plus the per-project Grok session tree (every file there, not just
-  plan.md). See `docs/135-acp-grok-lane.md`.
+  read path — Claude-1 review). Writes for other lanes stay scoped to
+  the project root plus the per-project Grok session tree. See
+  `docs/135-acp-grok-lane.md`.
 - **Grok plan-mode unstick (session FS + exit approval)** — Grok plan mode
   stored `plan.md` under `~/.grok/sessions/<percent-encoded-cwd>/<id>/`, which
   Spec 89's `validate_fs_path` rejected as outside the project root; then

@@ -508,15 +508,18 @@ PULL (window ← harness), on open and on every auto-refresh:
        (returning empty content matches existing wire semantics).
 18. fs/write_text_file gated review (Spec 89):
     a. validate_fs_path(client, path, access) still canonicalizes. Writes
-       must sit in the lane's project root or Grok session scratch under
-       `~/.grok/sessions/<percent-encoded-cwd>/` (or `$GROK_HOME/sessions/...`
-       — every file in that tree, not just plan.md); anything else is
-       rejected with an fs_activity error chip. Grok reads are not scoped
-       (native list/grep/bash already escape); other lanes keep Spec 89
-       read scoping so ACP fs is not an unprompted exfil path (see docs/135).
+       for scoped backends must sit in the lane's project root or Grok
+       session scratch under `~/.grok/sessions/<percent-encoded-cwd>/`
+       (or `$GROK_HOME/sessions/...` — every file in that tree, not just
+       plan.md); anything else is rejected with an fs_activity error chip.
+       Grok fs/* is not scoped (native list/grep/bash already escape), so
+       a sibling-repo write reaches the review card instead of dying as
+       "Path outside project root"; other lanes keep Spec 89 scoping so
+       ACP fs is not an unprompted path (see docs/135).
     b. Paths under that Grok session tree auto-apply immediately (mkdir +
        write, no review card), matching Grok TUI plan-file auto-approve.
-    c. For other in-project paths, the handler reads the current disk content
+    c. For other allowed paths (in-project, or any Grok path), the handler
+       reads the current disk content
        as oldText, parks a oneshot::Sender<Result<Value, Value>> in
        fs_write_pending keyed by the JSON-RPC id, and emits an `fs_write_pending`
        event { requestId, path, oldText, newText }.
