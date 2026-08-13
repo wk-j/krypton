@@ -37,7 +37,7 @@ Before writing the spec, research the feature thoroughly. Research informs the d
 
 **Codebase research (always):**
 - Read all relevant existing code — don't just skim, understand how it works
-- Read `docs/PROGRESS.md` for milestone context
+- Read `docs/README.md` for the spec index
 - Read `docs/04-architecture.md` and `docs/05-data-flow.md` for system design
 - Grep for related symbols, patterns, and TODOs that touch this area
 - Identify all files and modules that will be affected
