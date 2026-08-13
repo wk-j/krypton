@@ -156,7 +156,7 @@ fn validate_fs_path(client: &Arc<AcpClient>, raw_path: &str) -> Result<PathBuf, 
 }
 ```
 
-Both `fs/read_text_file` and `fs/write_text_file` arms call this first; on error, emit `fs_activity` with `ok=false, error="…"` and reply the JSON-RPC error.
+`fs/write_text_file` still calls this first (plus a Grok session-dir exception for every file under that tree — see `docs/135-acp-grok-lane.md`). Grok's `fs/read_text_file` is **not** project-scoped: Grok routes every `read_file` through ACP, while list/grep/bash already escape the project, so a xenon-rooted Grok lane could list `krypton/` but not read `docs/212-xenon-resource-server.md`. Other ACP lanes keep this helper's read scoping — their shell tools are permission-gated, so ACP fs is the last unprompted read path. Writes remain the Spec 89 safety property for every backend. On a write-scope error, emit `fs_activity` with `ok=false, error="…"` and reply the JSON-RPC error.
 
 ### Keybindings (when an `fs_write_review` item is the focused-pending review for the focused lane)
 

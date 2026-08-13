@@ -4,7 +4,7 @@
 // `gemini --experimental-acp`) and speaks newline-delimited JSON-RPC 2.0 over its
 // stdio. One AcpClient per Krypton-side session. The Rust side acts as the JSON-RPC
 // client *and* must handle inbound requests (fs/read_text_file, fs/write_text_file,
-// session/request_permission) initiated by the agent.
+// session/request_permission, and Grok's `_x.ai/exit_plan_mode`) initiated by the agent.
 //
 // See docs/69-acp-agent-support.md for the design.
 
@@ -581,9 +581,123 @@ async fn dispatch_message(client: &Arc<AcpClient>, app: &AppHandle, value: Value
     );
 }
 
-/// Reject fs/* requests that escape the lane's project root. When `cwd` is unset
-/// (rare — fallback session), we pass through without enforcement.
-async fn validate_fs_path(client: &Arc<AcpClient>, raw_path: &str) -> Result<(), Value> {
+/// Percent-encode a path the way Grok names session directories under
+/// `~/.grok/sessions/`: every byte outside unreserved (`A–Z a–z 0–9 - . _ ~`)
+/// becomes `%XX` (so `/` → `%2F`). Matches Python `urllib.parse.quote(s, safe='')`.
+fn percent_encode_path(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for &b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// Grok home directory (`$GROK_HOME` or `~/.grok`).
+fn grok_home_dir() -> Option<std::path::PathBuf> {
+    if let Ok(h) = std::env::var("GROK_HOME") {
+        let p = std::path::PathBuf::from(h);
+        if !p.as_os_str().is_empty() {
+            return Some(p);
+        }
+    }
+    dirs::home_dir().map(|h| h.join(".grok"))
+}
+
+/// Session tree Grok uses for a project cwd:
+/// `~/.grok/sessions/<percent-encoded-cwd>/` (plan.md, images/, etc.).
+fn grok_session_dir_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+    let trimmed = cwd.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(
+        grok_home_dir()?
+            .join("sessions")
+            .join(percent_encode_path(trimmed)),
+    )
+}
+
+/// True when `resolved` lies under Grok's session directory for this project.
+/// Used so plan.md / session scratch (outside the project root) stay readable
+/// and writable over ACP fs/* without opening the whole home directory.
+fn is_under_grok_session_dir(cwd: &str, resolved: &std::path::Path) -> bool {
+    let Some(session_root) = grok_session_dir_for_cwd(cwd) else {
+        return false;
+    };
+    let session_root = std::fs::canonicalize(&session_root).unwrap_or(session_root);
+    resolved.starts_with(&session_root)
+}
+
+/// Resolve `raw_path` against the lane cwd the same way `validate_fs_path` does.
+fn resolve_fs_path(cwd: &str, raw_path: &str) -> std::path::PathBuf {
+    let root = std::fs::canonicalize(cwd).unwrap_or_else(|_| std::path::PathBuf::from(cwd));
+    let candidate = std::path::PathBuf::from(raw_path);
+    let abs = if candidate.is_absolute() {
+        candidate
+    } else {
+        root.join(&candidate)
+    };
+    let mut probe = abs.clone();
+    loop {
+        match std::fs::canonicalize(&probe) {
+            Ok(p) => {
+                let suffix = abs.strip_prefix(&probe).unwrap_or(std::path::Path::new(""));
+                return p.join(suffix);
+            }
+            Err(_) => match probe.parent() {
+                Some(parent) => probe = parent.to_path_buf(),
+                None => return abs,
+            },
+        }
+    }
+}
+
+/// Read vs write for Spec 89 path scoping. Grok reads are unrestricted:
+/// Grok routes every `read_file` through ACP while its own list/grep/bash
+/// already escape the project, so scoping ACP reads only broke sibling specs
+/// and `~/.agents` skills. Other lanes keep Spec 89 read scoping — their
+/// shell tools are permission-gated, so ACP fs was the last unprompted
+/// read path. Writes stay scoped for every backend.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FsAccess {
+    Read,
+    Write,
+}
+
+/// Whether `resolved` may be served for this access + backend.
+/// Project root and the current project's Grok session tree always pass
+/// (reads and writes). Out-of-root reads pass only for the Grok lane.
+fn fs_path_in_scope(
+    root: &std::path::Path,
+    cwd: &str,
+    resolved: &std::path::Path,
+    access: FsAccess,
+    backend_id: &str,
+) -> bool {
+    // In-project and Grok session-scratch paths: both reads and writes.
+    if resolved.starts_with(root) || is_under_grok_session_dir(cwd, resolved) {
+        return true;
+    }
+    // Out-of-root: Grok reads only. Not a second scope check — there is
+    // no remaining path filter once this matches.
+    matches!(access, FsAccess::Read) && backend_id == "grok"
+}
+
+/// Reject fs/* requests that escape the lane's project root — except Grok's
+/// session scratch under `~/.grok/sessions/<encoded-cwd>/` (every file there,
+/// not just plan.md). Grok `fs/read_text_file` is additionally unscoped
+/// (see `FsAccess`). When `cwd` is unset (rare — fallback session), we pass
+/// through without enforcement.
+async fn validate_fs_path(
+    client: &Arc<AcpClient>,
+    raw_path: &str,
+    access: FsAccess,
+) -> Result<(), Value> {
     if raw_path.is_empty() {
         return Err(json!({ "code": -32602, "message": "Empty path" }));
     }
@@ -598,33 +712,40 @@ async fn validate_fs_path(client: &Arc<AcpClient>, raw_path: &str) -> Result<(),
         Ok(p) => p,
         Err(_) => return Ok(()),
     };
-    let candidate = std::path::PathBuf::from(raw_path);
-    let abs = if candidate.is_absolute() {
-        candidate
-    } else {
-        root.join(&candidate)
-    };
-    // Canonicalize the deepest existing ancestor to resolve symlinks / normalize.
-    let mut probe = abs.clone();
-    let resolved = loop {
-        match std::fs::canonicalize(&probe) {
-            Ok(p) => {
-                let suffix = abs.strip_prefix(&probe).unwrap_or(std::path::Path::new(""));
-                break p.join(suffix);
-            }
-            Err(_) => match probe.parent() {
-                Some(parent) => probe = parent.to_path_buf(),
-                None => break abs.clone(),
-            },
-        }
-    };
-    if !resolved.starts_with(&root) {
-        return Err(json!({
-            "code": -32602,
-            "message": format!("Path outside project root: {}", raw_path),
-        }));
+    let resolved = resolve_fs_path(&cwd, raw_path);
+    if fs_path_in_scope(&root, &cwd, &resolved, access, &client.backend_id) {
+        return Ok(());
     }
-    Ok(())
+    Err(json!({
+        "code": -32602,
+        "message": format!("Path outside project root: {}", raw_path),
+    }))
+}
+
+/// Whether this path is Grok session scratch (auto-write, no review card).
+async fn is_grok_session_scratch_path(client: &Arc<AcpClient>, raw_path: &str) -> bool {
+    let cwd_opt = match client.cwd.read() {
+        Ok(g) => g.clone(),
+        Err(_) => return false,
+    };
+    let Some(cwd) = cwd_opt else {
+        return false;
+    };
+    is_under_grok_session_dir(&cwd, &resolve_fs_path(&cwd, raw_path))
+}
+
+/// Apply an fs write immediately (mkdir + write), used for session-scratch
+/// auto-approval and shared with the permission-gated path.
+fn apply_fs_write(path: &str, content: &str) -> Result<Value, Value> {
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            return Err(json!({ "code": -32000, "message": format!("mkdir: {e}") }));
+        }
+    }
+    match std::fs::write(path, content) {
+        Ok(_) => Ok(json!({})),
+        Err(e) => Err(json!({ "code": -32000, "message": format!("write: {e}") })),
+    }
 }
 
 /// Context held while a fs/write_text_file request waits for the user's decision.
@@ -670,7 +791,7 @@ async fn handle_inbound_request(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            if let Err(err) = validate_fs_path(&client, &path).await {
+            if let Err(err) = validate_fs_path(&client, &path, FsAccess::Read).await {
                 let msg = err
                     .get("message")
                     .and_then(|v| v.as_str())
@@ -711,8 +832,11 @@ async fn handle_inbound_request(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            // Path scoping (Spec 89 Phase C): reject paths outside the lane's project root.
-            if let Err(err) = validate_fs_path(&client, &path).await {
+            // Path scoping (Spec 89 Phase C): reject *writes* outside the lane's
+            // project root (Grok session scratch under ~/.grok/sessions/<encoded-cwd>/
+            // is allowed — every file in that tree, not just plan.md).
+            // Grok reads are unrestricted; other lanes stay Spec-89 scoped.
+            if let Err(err) = validate_fs_path(&client, &path, FsAccess::Write).await {
                 let msg = err
                     .get("message")
                     .and_then(|v| v.as_str())
@@ -720,6 +844,24 @@ async fn handle_inbound_request(
                     .to_string();
                 emit_fs_activity(&client, &app, "write", &path, false, Some(&msg));
                 let _ = client.reply(id, Err(err)).await;
+                return;
+            }
+            // Grok plan.md / session files: auto-apply (matches Grok TUI plan-mode
+            // auto-approve for the plan file; no review card spam).
+            if is_grok_session_scratch_path(&client, &path).await {
+                let result = apply_fs_write(&path, &content);
+                match &result {
+                    Ok(_) => emit_fs_activity(&client, &app, "write", &path, true, None),
+                    Err(err) => {
+                        let msg = err
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("write failed")
+                            .to_string();
+                        emit_fs_activity(&client, &app, "write", &path, false, Some(&msg));
+                    }
+                }
+                let _ = client.reply(id, result).await;
                 return;
             }
             // Compute oldText against current disk content for the diff preview.
@@ -767,6 +909,63 @@ async fn handle_inbound_request(
                 }
             }
             let _ = client.reply(id, result).await;
+        }
+        // Grok plan-mode approval (wire method uses a leading underscore).
+        // Without this, exit_plan_mode fails with "client disconnected" and the
+        // lane sticks in plan mode forever. Auto-approve so the agent can leave
+        // plan mode under ACP (no Grok TUI). Verified against grok 1.0.3:
+        // params { sessionId, toolCallId, planContent }, result { outcome, feedback }.
+        "x.ai/exit_plan_mode" | "_x.ai/exit_plan_mode" => {
+            let plan_content = params
+                .get("planContent")
+                .or_else(|| params.get("plan_content"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let tool_call_id = params
+                .get("toolCallId")
+                .or_else(|| params.get("tool_call_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            log::info!(
+                "[acp:{}] Grok exit_plan_mode: auto-approving (toolCallId={tool_call_id}, plan_len={})",
+                client.krypton_session,
+                plan_content.len()
+            );
+            client.emit_event(
+                &app,
+                json!({
+                    "type": "session_update",
+                    "kind": "tool_call_update",
+                    "update": {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": tool_call_id,
+                        "status": "completed",
+                        "title": "Plan approved (harness)",
+                        "content": [{
+                            "type": "content",
+                            "content": {
+                                "type": "text",
+                                "text": if plan_content.is_empty() {
+                                    "Plan mode exit approved (empty plan).".to_string()
+                                } else {
+                                    format!("Plan approved:\n{plan_content}")
+                                }
+                            }
+                        }],
+                    },
+                }),
+            );
+            let _ = client
+                .reply(
+                    id,
+                    Ok(json!({
+                        "outcome": "approved",
+                        "feedback": Value::Null,
+                    })),
+                )
+                .await;
         }
         "session/request_permission" => {
             // Bridge to the frontend.
@@ -1637,18 +1836,7 @@ pub async fn acp_fs_write_response(
         return Ok(());
     };
     let outcome: Result<Value, Value> = if accept {
-        if let Some(parent) = std::path::Path::new(&ctx.path).parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                let _ = ctx.reply.send(Err(
-                    json!({ "code": -32000, "message": format!("mkdir: {e}") }),
-                ));
-                return Ok(());
-            }
-        }
-        match std::fs::write(&ctx.path, &ctx.new_content) {
-            Ok(_) => Ok(json!({})),
-            Err(e) => Err(json!({ "code": -32000, "message": format!("write: {e}") })),
-        }
+        apply_fs_write(&ctx.path, &ctx.new_content)
     } else {
         Err(json!({ "code": -32000, "message": "User rejected the write" }))
     };
@@ -2277,7 +2465,140 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{disconnect_detail, effective_spawn_model, startup_hint};
+    use super::{
+        disconnect_detail, effective_spawn_model, fs_path_in_scope, grok_session_dir_for_cwd,
+        is_under_grok_session_dir, percent_encode_path, startup_hint, FsAccess,
+    };
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn percent_encode_path_matches_grok_session_dir_encoding() {
+        assert_eq!(
+            percent_encode_path("/Users/wk/Source/xenon"),
+            "%2FUsers%2Fwk%2FSource%2Fxenon"
+        );
+        assert_eq!(
+            percent_encode_path("/Users/wk/Source/krypton"),
+            "%2FUsers%2Fwk%2FSource%2Fkrypton"
+        );
+        // Unreserved characters stay literal.
+        assert_eq!(percent_encode_path("abc-._~XYZ"), "abc-._~XYZ");
+    }
+
+    #[test]
+    fn grok_session_dir_for_cwd_strips_trailing_slash() {
+        let a = grok_session_dir_for_cwd("/Users/wk/Source/xenon").expect("dir");
+        let b = grok_session_dir_for_cwd("/Users/wk/Source/xenon/").expect("dir");
+        assert_eq!(a, b);
+        assert!(a.ends_with("%2FUsers%2Fwk%2FSource%2Fxenon"));
+        assert!(a.to_string_lossy().contains(".grok/sessions/"));
+    }
+
+    #[test]
+    fn is_under_grok_session_dir_allows_plan_md() {
+        let cwd = "/Users/wk/Source/xenon";
+        let session = grok_session_dir_for_cwd(cwd).expect("session");
+        let plan = session.join("019ff626-1b21-70f2-8483-94797a859cee/plan.md");
+        assert!(is_under_grok_session_dir(cwd, &plan));
+        // Sibling project sessions must not match.
+        let other = grok_session_dir_for_cwd("/Users/wk/Source/krypton")
+            .expect("other")
+            .join("x/plan.md");
+        assert!(!is_under_grok_session_dir(cwd, &other));
+        // Project root files are not session scratch (they pass via project-root rule).
+        assert!(!is_under_grok_session_dir(
+            cwd,
+            &PathBuf::from("/Users/wk/Source/xenon/src/main.rs")
+        ));
+    }
+
+    #[test]
+    fn fs_path_in_scope_grok_reads_escape_but_other_lanes_do_not() {
+        let cwd = "/Users/wk/Source/xenon";
+        let root = Path::new(cwd);
+        let in_project = PathBuf::from("/Users/wk/Source/xenon/src/main.rs");
+        let sibling = PathBuf::from("/Users/wk/Source/krypton/docs/212-xenon-resource-server.md");
+        let skill = PathBuf::from("/Users/wk/.agents/skills/karpathy-guidelines/SKILL.md");
+        let session = grok_session_dir_for_cwd(cwd)
+            .expect("session")
+            .join("019ff626-1b21-70f2-8483-94797a859cee/plan.md");
+
+        assert!(fs_path_in_scope(
+            root,
+            cwd,
+            &in_project,
+            FsAccess::Read,
+            "grok"
+        ));
+        assert!(fs_path_in_scope(
+            root,
+            cwd,
+            &in_project,
+            FsAccess::Write,
+            "grok"
+        ));
+        assert!(fs_path_in_scope(
+            root,
+            cwd,
+            &session,
+            FsAccess::Read,
+            "grok"
+        ));
+        assert!(fs_path_in_scope(
+            root,
+            cwd,
+            &session,
+            FsAccess::Write,
+            "grok"
+        ));
+
+        // Live failure: xenon-rooted Grok reading the krypton spec / skills.
+        assert!(fs_path_in_scope(
+            root,
+            cwd,
+            &sibling,
+            FsAccess::Read,
+            "grok"
+        ));
+        assert!(fs_path_in_scope(root, cwd, &skill, FsAccess::Read, "grok"));
+        assert!(!fs_path_in_scope(
+            root,
+            cwd,
+            &sibling,
+            FsAccess::Write,
+            "grok"
+        ));
+        assert!(!fs_path_in_scope(
+            root,
+            cwd,
+            &skill,
+            FsAccess::Write,
+            "grok"
+        ));
+
+        // Other lanes keep Spec 89 read scoping (Claude-1 review).
+        assert!(!fs_path_in_scope(
+            root,
+            cwd,
+            &sibling,
+            FsAccess::Read,
+            "claude"
+        ));
+        assert!(!fs_path_in_scope(
+            root,
+            cwd,
+            &skill,
+            FsAccess::Read,
+            "codex"
+        ));
+        assert!(fs_path_in_scope(
+            root,
+            cwd,
+            &in_project,
+            FsAccess::Read,
+            "claude"
+        ));
+    }
 
     #[test]
     fn mimo_defaults_to_anonymous_free_model() {

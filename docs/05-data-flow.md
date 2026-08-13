@@ -507,22 +507,32 @@ PULL (window ← harness), on open and on every auto-refresh:
        `✗ failed` chip showing the path. NotFound reads still render as ok=true
        (returning empty content matches existing wire semantics).
 18. fs/write_text_file gated review (Spec 89):
-    a. validate_fs_path(client, path) canonicalizes the requested path against
-       the lane's project root and rejects anything that escapes; the rejection
-       still emits an fs_activity error chip.
-    b. If the path passes scoping, the handler reads the current disk content
+    a. validate_fs_path(client, path, access) still canonicalizes. Writes
+       must sit in the lane's project root or Grok session scratch under
+       `~/.grok/sessions/<percent-encoded-cwd>/` (or `$GROK_HOME/sessions/...`
+       — every file in that tree, not just plan.md); anything else is
+       rejected with an fs_activity error chip. Grok reads are not scoped
+       (native list/grep/bash already escape); other lanes keep Spec 89
+       read scoping so ACP fs is not an unprompted exfil path (see docs/135).
+    b. Paths under that Grok session tree auto-apply immediately (mkdir +
+       write, no review card), matching Grok TUI plan-file auto-approve.
+    c. For other in-project paths, the handler reads the current disk content
        as oldText, parks a oneshot::Sender<Result<Value, Value>> in
        fs_write_pending keyed by the JSON-RPC id, and emits an `fs_write_pending`
        event { requestId, path, oldText, newText }.
-    c. The frontend appends a transcript item with kind 'fs_write_review';
+    d. The frontend appends a transcript item with kind 'fs_write_review';
        renderFsWriteReviewBody renders the unified diff via the shared
        renderDiffPreview helper plus an inline accept/reject action row.
-    d. User presses 'a' (accept), 'r' (reject), 'A' (accept-all-this-turn), or
+    e. User presses 'a' (accept), 'r' (reject), 'A' (accept-all-this-turn), or
        'R' (reject-all-this-turn). The harness invokes acp_fs_write_response,
        which pops the parked sender; accept performs std::fs::write and replies
        Ok({}), reject replies an error with code -32000.
-    e. The Rust handler then emits fs_activity (success or rejection) so the
+    f. The Rust handler then emits fs_activity (success or rejection) so the
        visibility log records the outcome.
+    g. Grok plan exit: when the agent calls `_x.ai/exit_plan_mode` (or
+       `x.ai/exit_plan_mode`) with { sessionId, toolCallId, planContent },
+       Krypton auto-replies { outcome: "approved", feedback: null } so plan
+       mode can complete without a Grok TUI client (see docs/135).
 19. tool_call.content[].diff rendering (Spec 89):
     Whenever a tool_call or tool_call_update arrives with a content entry of
     type 'diff' (oldText + newText), buildToolPayload extracts it into

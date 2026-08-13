@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> Last updated: 2026-08-10
+> Last updated: 2026-08-12
 
 ## Overview
 
@@ -21,6 +21,29 @@
 
 ## Recent Landings
 
+- **Grok ACP reads no longer project-scoped (Grok-only)** — the plan-mode
+  session-dir allowlist did not fix the live failure: a xenon-rooted Grok
+  lane could `list_dir` / `grep` `/Users/wk/Source/krypton` (native tools)
+  but `fs/read_text_file` of `docs/212-xenon-resource-server.md` and
+  `~/.agents/skills/**` still returned `Path outside project root`.
+  `validate_fs_path` now takes a read/write access kind; **Grok** reads of
+  any path are served; other ACP lanes keep Spec 89 read scoping (their
+  shell tools are permission-gated, so ACP fs was the last unprompted
+  read path — Claude-1 review). Writes stay scoped to the project root
+  plus the per-project Grok session tree (every file there, not just
+  plan.md). See `docs/135-acp-grok-lane.md`.
+- **Grok plan-mode unstick (session FS + exit approval)** — Grok plan mode
+  stored `plan.md` under `~/.grok/sessions/<percent-encoded-cwd>/<id>/`, which
+  Spec 89's `validate_fs_path` rejected as outside the project root; then
+  `exit_plan_mode` failed with "client disconnected" because Grok's TUI plan
+  approval is not available over ACP, leaving the lane stuck in plan mode.
+  `validate_fs_path` now allowlists the per-project Grok session tree
+  (`$GROK_HOME` or `~/.grok/sessions/<encoded-cwd>/`); writes there auto-apply
+  without a review card; and inbound `_x.ai/exit_plan_mode` /
+  `x.ai/exit_plan_mode` is auto-approved with
+  `{ outcome: "approved", feedback: null }` (wire shape verified against
+  grok 1.0.3). Unit tests cover encoding and session-path scoping. See
+  `docs/135-acp-grok-lane.md`.
 - **Stacked lane visual hierarchy (spec 215)** — the default stacked dashboard
   finally answers "which lane is active, and what lanes exist" at a glance.
   Collapsed lanes keep their accent color, dimmed by mixing toward the base text
