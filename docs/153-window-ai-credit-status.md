@@ -165,7 +165,20 @@ The existing footer becomes:
 </div>
 ```
 
-- Status occupies the left side; notification retains `margin-left: auto`.
+- Status occupies the left side; notification retains `margin-left: auto` — and
+  since 2026-08-14 it decays back to empty (`display: none`) about nine seconds
+  after its last message, so most of the time the quotas share the rail with the
+  lane strip alone. See `docs/40-notification-overlay.md`.
+- Since spec 219 the rail has a third occupant, the project badge
+  (`.krypton-window__project`, `order: 1`). It sits at the **right** end between
+  the notification and the lane strip, so the quotas keep the rail's left edge
+  and are the compressible half — the badge and the strip are both `flex: none`.
+- Since spec 218 the footer has a third occupant, the harness lane strip
+  (`.krypton-window__lane-strip`), pinned to the rail's far right past the
+  notification. All of them are driven from one
+  `syncWindowFooter(win)` in the compositor over the same focused-pane
+  `ContentView` contract. The quotas are the compressible half — the lane strip is
+  `flex: none`, so a narrow window loses quota detail before lane identity.
 - Normal width shows every primary quota for every declared provider.
 - When the footer cannot fit, CSS hides secondary quotas and leaves one
   `mostConstrained` quota per provider.

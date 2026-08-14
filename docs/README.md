@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (205)
+## Specs (207)
 
 | # | Spec |
 |---|------|
@@ -221,6 +221,8 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 215 | [Stacked Lane Visual Hierarchy](./215-stacked-lane-hierarchy.md) |
 | 216 | [Lane Thought Slot](./216-workspace-thought-field.md) |
 | 217 | [`#reviews` — a self-contained review page](./217-review-archive-self-contained.md) |
+| 218 | [Window Status Bar Lane Strip](./218-window-lane-strip.md) |
+| 219 | [Window Project Badge](./219-window-project-badge.md) |
 
 ## ADRs (19)
 

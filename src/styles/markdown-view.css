@@ -713,6 +713,14 @@
   opacity: 0.4;
 }
 
+/* Decayed, or never fired: the rail carries a *current* message or nothing at
+   all. Out of layout rather than faded, so the width goes back to the quotas
+   and the lane strip — and so `:has()` right-alignment in window.css can tell
+   an empty control from a live one. */
+.krypton-notif--empty {
+  display: none;
+}
+
 /* Scan-line wipe on new message */
 .krypton-notif::after {
   content: '';

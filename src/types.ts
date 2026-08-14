@@ -4,6 +4,7 @@ import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { ShaderInstance } from './shaders';
 import type { UsageProvider } from './usage-store';
+import type { HarnessLaneMark } from './window-footer-lanes';
 
 /** Unique identifier for a terminal window */
 export type WindowId = string;
@@ -171,6 +172,12 @@ export interface ContentView {
   getUsageProviders?(): readonly UsageProvider[];
   /** Subscribe to provider-membership changes. Returns an unsubscribe function. */
   onUsageProvidersChange?(cb: () => void): () => void;
+  /** spec 218: lanes this view is driving, for its window's status-bar strip.
+   *  Identity only — status belongs to the view's own chrome, not the rail. */
+  getLaneMarks?(): readonly HarnessLaneMark[];
+  /** Subscribe to lane-roster changes (lane added/removed/renamed, active lane
+   *  moved). Returns an unsubscribe function. */
+  onLaneMarksChange?(cb: () => void): () => void;
   /** Optional staging hook for global screen-capture images. */
   stageCapturedImage?(image: CapturedImage): boolean;
   /** Optional focused-view leader key bindings. Keys must not conflict with global leader keys. */

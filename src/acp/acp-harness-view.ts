@@ -169,6 +169,7 @@ import type { ViewBus } from '../view-bus';
 import type { AttentionTier } from '../view-bus-types';
 import { SYSTEM_SOURCE } from '../view-bus-types';
 import { providerForBackend, type UsageProvider } from '../usage-store';
+import type { HarnessLaneMark } from '../window-footer-lanes';
 import {
   loadConfig,
   getAcpHarnessConfig,
@@ -238,7 +239,7 @@ import {
   laneAccentForLabel,
   trimBackendPrefix,
 } from './harness-lane-identity';
-import { BACKEND_LOGO_SVG_DEFS, HARNESS_ICON_SVG_DEFS } from './harness-icons';
+import { ensureHarnessSymbolDefs } from './harness-icons';
 import {
   agentLinkOpenAction,
   hasMarkdownTable,
@@ -799,6 +800,10 @@ export class AcpHarnessView implements ContentView {
   private lastPublishedReviews = -1;
   /** spec 162: last review-priority high-count published to the footer; dedupes. */
   private lastPublishedPriority = -1;
+  /** spec 218: serialized lane roster last reported to the window status bar;
+   * dedupes the per-render notify. `null` = nothing reported yet. */
+  private lastLaneMarksKey: string | null = null;
+  private laneMarksListeners = new Set<() => void>();
   private lanes: HarnessLane[] = [];
   private usageProviderListeners = new Set<() => void>();
   private activeLaneId = '';
@@ -3871,6 +3876,37 @@ export class AcpHarnessView implements ContentView {
     for (const listener of [...this.usageProviderListeners]) listener();
   }
 
+  /** spec 218: presentation-only projection of the lane list for this window's
+   * status bar. Identity only — busy/permission/error stay in the harness's own
+   * chrome (the rail and lane heads), where they already have colour language. */
+  getLaneMarks(): readonly HarnessLaneMark[] {
+    return this.lanes.map((lane) => ({
+      id: lane.id,
+      displayName: lane.displayName,
+      backendId: lane.backendId,
+      accent: lane.accent,
+      active: lane.id === this.activeLaneId,
+    }));
+  }
+
+  onLaneMarksChange(cb: () => void): () => void {
+    this.laneMarksListeners.add(cb);
+    return () => this.laneMarksListeners.delete(cb);
+  }
+
+  /** Called from every render(); deduped on a serialized key so the strip is
+   * only rebuilt when a lane is added/removed/renamed or the active lane moves.
+   * Status is deliberately absent from the key: a busy→idle churn must never
+   * repaint the window rail. */
+  private notifyLaneMarksChanged(): void {
+    const key = this.getLaneMarks()
+      .map((l) => [l.id, l.backendId, l.displayName, l.accent, l.active ? '1' : '0'].join(':'))
+      .join('|');
+    if (key === this.lastLaneMarksKey) return;
+    this.lastLaneMarksKey = key;
+    for (const listener of [...this.laneMarksListeners]) listener();
+  }
+
   dispose(): void {
     // spec 141: leave the cross-harness directory FIRST — flip `alive` false (so
     // any delivery already past resolveDisplayName is rejected deterministically)
@@ -5351,15 +5387,12 @@ export class AcpHarnessView implements ContentView {
   }
 
   private buildDOM(): void {
-    // spec 125 — inject reusable backend logo <symbol> defs once. Hidden
-    // off-screen so <use href="#krypton-logo-*"/> resolves from the rail.
-    const logoDefs = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    logoDefs.setAttribute('width', '0');
-    logoDefs.setAttribute('height', '0');
-    logoDefs.setAttribute('aria-hidden', 'true');
-    logoDefs.style.position = 'absolute';
-    logoDefs.innerHTML = `<defs>${BACKEND_LOGO_SVG_DEFS}${HARNESS_ICON_SVG_DEFS}</defs>`;
-    this.element.appendChild(logoDefs);
+    // spec 125 — reusable backend logo <symbol> defs. Injected once per document
+    // (spec 218), not per view, so <use href="#krypton-logo-*"/> resolves from
+    // the rail AND from the window status bar's lane strip (which lives in the
+    // window chrome, outside this element), and two harness panes cannot
+    // register the same ids twice.
+    ensureHarnessSymbolDefs();
 
     const body = document.createElement('div');
     body.className = 'acp-harness__body';
@@ -10036,6 +10069,9 @@ export class AcpHarnessView implements ContentView {
     this.renderSessionPicker();
     this.renderTriageGaugeEl();
     this.renderTriageOverlayEl();
+    // spec 218: the window's own status bar mirrors this harness's lane roster.
+    // Deduped on a serialized key, so the per-frame call is a string compare.
+    this.notifyLaneMarksChanged();
     this.renderActiveLaneQueue();
     this.renderPinSlot();
     this.renderComposer();

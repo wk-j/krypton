@@ -434,6 +434,50 @@ PULL (window ← harness), on open and on every auto-refresh:
 8. UsageContentView subscribes to the same store for full gauges, reset times,
    spend, and freshness; it no longer owns separate polling loops.
 ```
+
+## Window Status Bar Lane Strip Flow (spec 218)
+
+```
+1. A harness lane roster changes (lane added/removed/renamed, or ⌃1..9 / ⌘P moves
+   the active lane); the harness's RAF render() calls notifyLaneMarksChanged().
+2. That serializes id/backend/name/accent/active into a key and returns early when
+   unchanged — status is NOT in the key, so a busy→idle churn never repaints.
+3. On change it invokes the compositor's per-window onLaneMarksChange listener.
+4. renderWindowLaneStrip() reads getLaneMarks(), caps at 8 (LANE_STRIP_MAX) with a
+   +N tail, compares laneStripKey against the window's rendered key, and rebuilds
+   the nodes only when it differs.
+5. Each mark is a <use href="#krypton-logo-*"> resolved from the document-level
+   symbol defs (ensureHarnessSymbolDefs, injected once per document because the
+   window footer sits outside the harness view's subtree), coloured by an inline
+   --krypton-lane-accent; only the active mark renders a name.
+6. Tab visibility changes, window creation, and pane focus changes all call
+   syncWindowFooter(win), which re-runs the AI credit sync (spec 153) and
+   syncWindowLaneStrip() together — the strip resubscribes to the newly focused
+   view, and a focused terminal reports no lanes, so the strip is removed.
+7. closeWindow() fires the lane unsubscribe and drops the cached strip key.
+```
+
+## Window Project Badge Flow (spec 219)
+
+```
+1. A tab becomes visible / a window is created / pane focus moves — the same four
+   entry points as above, all funnelling into syncWindowFooter(win).
+2. syncWindowProjectBadge() resolves the active tab's focused pane's ContentView
+   and reads getWorkingDirectory?.(). No subscription: a view's project directory
+   is fixed for its lifetime, so these four moments are the only ones that matter.
+3. projectBadge(dir, getHomeLikePrefix()) turns the path into
+   { label, initials, rest, title } — last segment, ~-abbreviated title, head split
+   off by code point — or null for a pane with no project (a terminal).
+4. renderWindowProjectBadge() compares label+title against the window's cached key
+   and returns early when unchanged; null removes the element and the cache entry.
+5. The badge renders at the rail's right end, immediately left of the lane strip
+   (order: 1, strip at 2): the first two characters at
+   --krypton-window-project-zoom × the chrome font, the rest at chrome size on
+   the same baseline, both anchored to the rail's floor so the magnified head
+   overflows upward over the pane. The badge carries the right-pinning
+   margin-left: auto; the strip trails it with a fixed gap.
+6. closeWindow() drops the cached badge key.
+```
     e. #mem clear clears the active lane memory document for future prompts only.
     f. #cancel also clears the lane's prompt queue. #unqueue [N] removes the
        last (or 1-indexed) queued prompt; #queue clear empties the queue without

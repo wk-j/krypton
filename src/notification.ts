@@ -15,6 +15,9 @@ export interface NotificationOptions {
   label?: string;
   /** Whether to use the decode (glitch) text reveal. Default: true */
   decode?: boolean;
+  /** How long the message holds the rail, in ms. `0` = sticky (holds until
+   *  replaced or cleared). Default: `DEFAULT_TTL_MS` */
+  duration?: number;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -26,6 +29,25 @@ const DECODE_POSITION_BIAS = 0.04;
 
 const MAX_MESSAGE_LEN = 256;
 const KITTY_TITLE_TIMEOUT_MS = 500;
+
+/** How long a message holds the window's status rail before the control decays
+ *  back to empty. The rail is 28px of permanent chrome, so what sits there has
+ *  to be *current*: without a TTL the last message ever fired stays up for the
+ *  rest of the session and stops meaning "this just happened". Measured from
+ *  the end of the decode reveal, so a long message is not eaten by its own
+ *  animation. */
+const DEFAULT_TTL_MS = 9000;
+
+/**
+ * Resolve how long a message holds the rail.
+ *
+ * `undefined` takes the default TTL; `0` (or anything non-positive) is sticky —
+ * it holds until the next message replaces it or `clear()` runs.
+ */
+export function resolveDismissDelay(duration?: number): number {
+  if (duration === undefined) return DEFAULT_TTL_MS;
+  return duration > 0 ? duration : 0;
+}
 const LEVEL_LABELS: Record<NotificationLevel, string> = {
   info: 'INFO',
   success: 'OK',
@@ -42,12 +64,14 @@ export class NotificationController {
   private labelEl: HTMLElement;
   private msgEl: HTMLElement;
   private decodeInterval: ReturnType<typeof setInterval> | null = null;
+  private dismissTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingKitty = new Map<string, { title: string; timer: number }>();
   private currentLevel: NotificationLevel = 'info';
 
   constructor() {
     this.el = document.createElement('div');
-    this.el.className = 'krypton-notif krypton-notif--idle';
+    // Starts empty — the rail says nothing until something actually happens.
+    this.el.className = 'krypton-notif krypton-notif--idle krypton-notif--empty';
 
     this.barEl = document.createElement('div');
     this.barEl.className = 'krypton-notif__bar';
@@ -55,12 +79,10 @@ export class NotificationController {
 
     this.labelEl = document.createElement('span');
     this.labelEl.className = 'krypton-notif__label';
-    this.labelEl.textContent = 'SYS';
     this.el.appendChild(this.labelEl);
 
     this.msgEl = document.createElement('span');
     this.msgEl.className = 'krypton-notif__msg';
-    this.msgEl.textContent = 'Ready';
     this.el.appendChild(this.msgEl);
   }
 
@@ -87,28 +109,32 @@ export class NotificationController {
 
     if (!message && !label) return;
 
-    // Stop any running decode animation
+    // Stop any running decode animation and the previous message's TTL
     if (this.decodeInterval !== null) {
       clearInterval(this.decodeInterval);
       this.decodeInterval = null;
     }
+    this.cancelDismiss();
 
     // Update level styling
     if (level !== this.currentLevel) {
       this.el.classList.remove(`krypton-notif--${this.currentLevel}`);
     }
     this.currentLevel = level;
-    this.el.classList.remove('krypton-notif--idle');
+    this.el.classList.remove('krypton-notif--idle', 'krypton-notif--empty');
     this.el.classList.add(`krypton-notif--${level}`);
 
     // Update label
     this.labelEl.textContent = label;
 
-    // Update message
+    // Update message. The TTL starts when the text is actually readable, so a
+    // long message does not spend its dwell time decoding.
+    const delay = resolveDismissDelay(opts.duration);
     if (useDecode && message) {
-      this.decodeReveal(this.msgEl, message);
+      this.decodeReveal(this.msgEl, message, () => this.armDismiss(delay));
     } else {
       this.msgEl.textContent = message;
+      this.armDismiss(delay);
     }
 
     // Trigger scanline flash
@@ -137,16 +163,19 @@ export class NotificationController {
     this.show({ message, level: 'system', ...opts });
   }
 
-  /** Reset to idle */
+  /** Reset to empty — the control leaves the rail entirely (see
+   *  `.krypton-notif--empty`), giving the width back to the quotas and the
+   *  lane strip rather than holding a stale message. */
   clear(): void {
     if (this.decodeInterval !== null) {
       clearInterval(this.decodeInterval);
       this.decodeInterval = null;
     }
+    this.cancelDismiss();
     this.el.classList.remove(`krypton-notif--${this.currentLevel}`, 'krypton-notif--flash');
-    this.el.classList.add('krypton-notif--idle');
-    this.labelEl.textContent = 'SYS';
-    this.msgEl.textContent = 'Ready';
+    this.el.classList.add('krypton-notif--idle', 'krypton-notif--empty');
+    this.labelEl.textContent = '';
+    this.msgEl.textContent = '';
   }
 
   /** Destroy the controller and remove from DOM */
@@ -184,6 +213,22 @@ export class NotificationController {
   }
 
   // ── Private ────────────────────────────────────────────────────────
+
+  /** Schedule the decay back to empty. A non-positive delay means sticky. */
+  private armDismiss(delay: number): void {
+    if (delay <= 0) return;
+    this.dismissTimer = setTimeout(() => {
+      this.dismissTimer = null;
+      this.clear();
+    }, delay);
+  }
+
+  private cancelDismiss(): void {
+    if (this.dismissTimer !== null) {
+      clearTimeout(this.dismissTimer);
+      this.dismissTimer = null;
+    }
+  }
 
   private handleKittyNotification(data: string): void {
     const semiIdx = data.indexOf(';');
@@ -225,7 +270,7 @@ export class NotificationController {
     }
   }
 
-  private decodeReveal(el: HTMLElement, finalText: string): void {
+  private decodeReveal(el: HTMLElement, finalText: string, onComplete?: () => void): void {
     const len = finalText.length;
     const locked = new Uint8Array(len);
     const heat = new Float32Array(len);
@@ -278,6 +323,7 @@ export class NotificationController {
         clearInterval(this.decodeInterval!);
         this.decodeInterval = null;
         el.textContent = finalText;
+        onComplete?.();
       }
     }, 1000 / DECODE_FPS);
   }

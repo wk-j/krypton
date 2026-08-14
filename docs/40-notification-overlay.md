@@ -2,6 +2,7 @@
 
 > Status: Implemented
 > Date: 2026-03-26
+> Updated: 2026-08-14 — messages decay back to empty (`duration`, `.krypton-notif--empty`)
 > Milestone: M8 — Polish
 
 ## Problem
@@ -36,10 +37,33 @@ interface NotificationOptions {
   message: string;
   level?: NotificationLevel;       // default: 'info'
   label?: string;                  // override auto-label (e.g. 'RELOAD')
-  duration?: number;               // ms, 0 = sticky, default: 4000
+  duration?: number;               // ms, 0 = sticky, default: DEFAULT_TTL_MS (9000)
   decode?: boolean;                // glitch text reveal, default: true
 }
+
+/** undefined → default TTL; 0 or negative → sticky. */
+export function resolveDismissDelay(duration?: number): number;
 ```
+
+### Decay to Empty
+
+The control lives in `.krypton-window__footer` — 28px of *permanent* chrome shared with
+the spec-153 AI quotas and the spec-218 lane strip — so what sits there has to be current.
+Without a TTL the last message ever fired held the rail for the rest of the session and
+stopped meaning "this just happened"; the boot-time `claudeHooks.toast('Krypton
+initialized')` in particular sat there indefinitely (it has been removed from `main.ts`).
+
+- `DEFAULT_TTL_MS = 9000`. Timed from the **end** of the decode reveal, so a long message
+  does not spend its dwell time animating. A new message cancels the pending timer.
+- On expiry `clear()` runs: level/flash classes off, label and message text emptied,
+  `krypton-notif--idle krypton-notif--empty` on. `--empty` is `display: none`, so the
+  control leaves the rail entirely rather than fading in place — the quotas and the lane
+  strip get the width back.
+- There is no "SYS / Ready" idle text any more, and no idle text at boot: the control
+  starts `--empty` and appears only when something actually fires.
+- **No exit animation.** The footer's standing no-motion rule (spec 218); the message has
+  been readable for nine seconds, and a fade would leave an invisible gap holding layout.
+- `duration: 0` keeps a message sticky for callers that need it. Nothing uses it today.
 
 ### API / Commands
 
@@ -192,6 +216,9 @@ private handleKittyNotification(data: string): void {
 - 24px height, flex row, faint accent-colored top border and tinted background
 - Notification is inline (`margin-left: auto` for right-alignment), not absolutely positioned
 - `attachTo(windowEl)` finds `.krypton-window__footer` inside the target window and appends the notification element there. Called on focus change to move the single notification control between windows
+- A decayed control is `display: none`, so it pushes nothing. The spec-218 lane strip keys its
+  own right-alignment off `.krypton-window__footer:has(.krypton-notif:not(.krypton-notif--empty))`
+  and takes `margin-left: auto` back when the rail is quiet
 
 **Visual style per level:**
 
@@ -216,11 +243,13 @@ private handleKittyNotification(data: string): void {
 - **Scan-line flash:** 2px gradient line sweeps top-to-bottom on new message, 400ms
 - **Idle/active:** opacity transition (0.4 idle → 1.0 active), 300ms ease
 
-**Single persistent control:** One notification at a time; new messages replace the current one in-place (no stacking).
+**Single transient control:** One notification at a time; new messages replace the current one in-place (no stacking), and the control decays back to empty when the TTL expires.
 
 ## Edge Cases
 
-- **Rapid fire:** New messages replace the current one in-place (single persistent control, no stacking).
+- **Rapid fire:** New messages replace the current one in-place (single control, no stacking); each replacement cancels the previous message's TTL and re-arms after its own decode.
+- **Decode interrupted by a new message:** The old decode interval and its pending TTL are both cleared before the new message renders, so an abandoned reveal can never dismiss the message that replaced it.
+- **Nothing has fired yet:** The control starts `--empty` and is absent from the rail — a fresh window's footer shows only quotas and the lane strip.
 - **Empty message:** Render the label only; skip decode animation.
 - **Long messages:** `max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`
 - **OSC with empty payload:** Ignore silently (return true to consume the sequence).

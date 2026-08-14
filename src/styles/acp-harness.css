@@ -1502,7 +1502,14 @@
   color: #ff6b8b;
 }
 
+/* `flex: none` + `nowrap` are load-bearing, not decoration: the head sits inside
+   `.acp-harness__msg-body`, whose `overflow-wrap: anywhere` is inherited, and
+   `anywhere` (unlike `break-word`) shrinks a flex item's min-content size to a
+   single character. Without them a narrow window shrinks the timer along with
+   the subject and breaks "100ms" into "100m" / "s". */
 .acp-harness__tool-timer {
+  flex: none;
+  white-space: nowrap;
   font-size: 0.78em;
   letter-spacing: 0.04em;
   color: rgba(216, 232, 216, 0.45);

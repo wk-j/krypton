@@ -54,6 +54,13 @@ import { parseOsc7Sequences } from './osc7';
 import { probeRemoteCwd, type SshConnectionInfo } from './ssh-session';
 import { WebviewContentView } from './webview-view';
 import { usageStore, type ProviderUsageSummary, type UsageProvider } from './usage-store';
+import {
+  capLaneMarks,
+  laneStripKey,
+  laneStripLabel,
+  type HarnessLaneMark,
+} from './window-footer-lanes';
+import { projectBadge, type ProjectBadge } from './window-footer-project';
 import type { ViewBus } from './view-bus';
 import { SYSTEM_SOURCE, type ViewAddress } from './view-bus-types';
 import {
@@ -61,6 +68,9 @@ import {
   resolveDisplayName,
   harnessEntry,
 } from './acp/harness-directory';
+import { backendLogoId } from './acp/harness-lane-identity';
+import { ensureHarnessSymbolDefs } from './acp/harness-icons';
+import { getHomeLikePrefix } from './acp/harness-format';
 import type {
   DiffReviewBatch,
   DiffReviewSendResult,
@@ -363,6 +373,12 @@ export class Compositor {
   private processBySession: Map<SessionId, ProcessInfo> = new Map();
   private usageUnsubscribeByWindow = new Map<WindowId, () => void>();
   private usageProvidersUnsubscribeByWindow = new Map<WindowId, () => void>();
+  /** spec 218: per-window subscription to the focused view's lane roster. */
+  private laneMarksUnsubscribeByWindow = new Map<WindowId, () => void>();
+  /** spec 218: `laneStripKey` of each window's rendered strip; skips no-op rebuilds. */
+  private laneStripKeyByWindow = new Map<WindowId, string>();
+  /** spec 219: each window's rendered project badge; skips no-op repaints. */
+  private projectBadgeKeyByWindow = new Map<WindowId, string>();
 
   /** Callbacks invoked after config reload with the fresh config */
   private onConfigReloadCallbacks: Array<(config: KryptonConfig) => void> = [];
@@ -1260,7 +1276,20 @@ export class Compositor {
     for (const pane of this.collectPanes(activeTab.paneTree)) {
       pane.contentView?.onShow?.();
     }
+    this.syncWindowFooter(win);
+  }
+
+  /** Re-derive everything this window's own status bar shows from its active
+   *  tab's focused pane: the project badge (spec 219), the AI credit quotas
+   *  (spec 153) and the harness lane strip (spec 218). All three follow focus
+   *  *within* the window, so two windows — or a window and a background one —
+   *  each report their own state. */
+  private syncWindowFooter(win: KryptonWindow): void {
     this.syncWindowUsageStatus(win);
+    this.syncWindowLaneStrip(win);
+    // Last, so its `prepend` lands ahead of the quotas': DOM order is what a
+    // screen reader follows, and CSS `order` puts the badge first visually.
+    this.syncWindowProjectBadge(win);
   }
 
   /** Follow the active tab's focused content view and render its provider quotas. */
@@ -1295,6 +1324,8 @@ export class Compositor {
     if (!root) {
       root = document.createElement('div');
       root.className = 'krypton-window__usage-status';
+      // Quotas lead the rail; the lane strip (spec 218) is pinned to the far
+      // right by CSS `order`, so DOM position here is unaffected by it.
       footer.prepend(root);
     }
     root.replaceChildren();
@@ -1339,6 +1370,162 @@ export class Compositor {
     segment.title = `${summary.provider} usage${detail ? `: ${detail}` : ''}${stale}`;
     segment.setAttribute('aria-label', segment.title);
     return segment;
+  }
+
+  /** spec 218: follow the active tab's focused content view and render its lane
+   *  roster into this window's own status bar, resubscribing to that view. */
+  private syncWindowLaneStrip(win: KryptonWindow): void {
+    this.laneMarksUnsubscribeByWindow.get(win.id)?.();
+    this.laneMarksUnsubscribeByWindow.delete(win.id);
+
+    const tab = win.tabs[win.activeTabIndex];
+    const pane = tab ? this.findPaneInTree(tab.paneTree, tab.focusedPaneId) : null;
+    const view = pane?.contentView;
+    this.renderWindowLaneStrip(win, view?.getLaneMarks?.() ?? []);
+    if (view?.onLaneMarksChange) {
+      this.laneMarksUnsubscribeByWindow.set(
+        win.id,
+        view.onLaneMarksChange(() => this.renderWindowLaneStrip(win, view.getLaneMarks?.() ?? [])),
+      );
+    }
+  }
+
+  /**
+   * spec 218: the lane strip — one backend mark per lane of the harness in this
+   * window's focused pane, with the active lane highlighted.
+   *
+   * Per *window*, not per workspace: a window is what hosts a harness, so its
+   * own 28px rail is where "which lane am I driving here" belongs, and two
+   * harness windows each answer for themselves instead of competing for one
+   * global highlight. Only the active mark renders a name, which makes the state
+   * readable in grayscale — lane accents repeat past 13 lanes, so hue cannot be
+   * load-bearing. Flat like the rest of the rail: no border box, no underline.
+   * The active mark's logo also carries a macOS-Dock-style zoom (CSS only), and
+   * because the repaint key below includes `active`, a lane switch rebuilds
+   * these nodes and the fresh one replays the pop keyframe — status churn does
+   * not. Hidden entirely when the focused pane has no lanes.
+   */
+  private renderWindowLaneStrip(win: KryptonWindow, lanes: readonly HarnessLaneMark[]): void {
+    const footer = win.element.querySelector<HTMLElement>('.krypton-window__footer');
+    if (!footer) return;
+    let root = footer.querySelector<HTMLElement>('.krypton-window__lane-strip');
+    const { marks, overflow } = capLaneMarks(lanes);
+    const key = laneStripKey(marks, overflow);
+
+    if (marks.length === 0) {
+      root?.remove();
+      this.laneStripKeyByWindow.delete(win.id);
+      return;
+    }
+    if (root && this.laneStripKeyByWindow.get(win.id) === key) return;
+    this.laneStripKeyByWindow.set(win.id, key);
+    if (!root) {
+      root = document.createElement('div');
+      root.className = 'krypton-window__lane-strip';
+      // Trails the rail, pinned to its right edge past the notification
+      // control. CSS `order` does the placing — the notification control
+      // re-appends itself on every focus change, so DOM position cannot.
+      footer.appendChild(root);
+    }
+    // The <symbol> defs live at document level; the footer is outside the
+    // harness view's subtree, so it cannot rely on that view having injected them.
+    ensureHarnessSymbolDefs();
+    root.replaceChildren(...marks.map((mark) => this.buildWindowLaneMark(mark)));
+    if (overflow > 0) {
+      const more = document.createElement('span');
+      more.className = 'krypton-window__lane-more';
+      more.textContent = `+${overflow}`;
+      root.appendChild(more);
+    }
+    root.setAttribute('aria-label', laneStripLabel(marks, overflow));
+  }
+
+  /** One lane mark: the backend logo, plus the display name for the active lane
+   *  only. The accent rides in as an inline custom property so a single CSS rule
+   *  colours logo and name together through `currentColor`. */
+  private buildWindowLaneMark(mark: HarnessLaneMark): HTMLElement {
+    const el = document.createElement('span');
+    el.className =
+      'krypton-window__lane' + (mark.active ? ' krypton-window__lane--active' : '');
+    el.style.setProperty('--krypton-lane-accent', mark.accent);
+    const logo = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    logo.setAttribute('class', 'krypton-window__lane-logo');
+    logo.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#${backendLogoId(mark.backendId)}`);
+    logo.appendChild(use);
+    el.appendChild(logo);
+    if (mark.active) {
+      const name = document.createElement('span');
+      name.className = 'krypton-window__lane-name';
+      name.textContent = mark.displayName;
+      el.appendChild(name);
+    }
+    el.title = `${mark.displayName} · ${mark.backendId}${mark.active ? ' · active lane' : ''}`;
+    return el;
+  }
+
+  /** spec 219: follow the active tab's focused content view and name its project
+   *  on this window's own rail. Unlike the quotas and the lane strip there is
+   *  nothing to subscribe to — a view's working directory is fixed for its
+   *  lifetime, so the four existing sync points are exactly the moments the
+   *  answer can change. */
+  private syncWindowProjectBadge(win: KryptonWindow): void {
+    const tab = win.tabs[win.activeTabIndex];
+    const pane = tab ? this.findPaneInTree(tab.paneTree, tab.focusedPaneId) : null;
+    const dir = pane?.contentView?.getWorkingDirectory?.() ?? null;
+    this.renderWindowProjectBadge(win, projectBadge(dir, getHomeLikePrefix()));
+  }
+
+  /**
+   * spec 219: the project badge — the focused view's project name, magnified out
+   * of the 28px rail so several tiled windows can be told apart at scanning
+   * distance without focusing one to read it.
+   *
+   * It trails the rail, immediately left of the lane strip's dock-zoomed logo, so
+   * "which project" and "which lane" read as one glance target at the right end
+   * instead of two at opposite corners. Only the name's first two characters
+   * magnify — a drop cap — so the glance target stays a fixed size no matter how
+   * long the project is called,
+   * while the rest of the name stays readable at the rail's own size. The
+   * magnification is `font-size`, not the lane logo's `transform`: a transform is
+   * invisible to layout, which is fine for a 1em square but would lay the head
+   * straight over the quotas. Removed entirely when the focused pane has no
+   * project (a terminal), so a terminal-only window's rail is unchanged.
+   */
+  private renderWindowProjectBadge(win: KryptonWindow, badge: ProjectBadge | null): void {
+    const footer = win.element.querySelector<HTMLElement>('.krypton-window__footer');
+    if (!footer) return;
+    let el = footer.querySelector<HTMLElement>('.krypton-window__project');
+
+    if (!badge) {
+      el?.remove();
+      this.projectBadgeKeyByWindow.delete(win.id);
+      return;
+    }
+    const key = `${badge.label}\u0000${badge.title}`;
+    if (el && this.projectBadgeKeyByWindow.get(win.id) === key) return;
+    this.projectBadgeKeyByWindow.set(win.id, key);
+
+    if (!el) {
+      el = document.createElement('span');
+      el.className = 'krypton-window__project';
+      // Visual placement is CSS `order`, so the insertion point only decides
+      // reading order: first, because the project is what identifies the window.
+      footer.prepend(el);
+    }
+    const initials = document.createElement('span');
+    initials.className = 'krypton-window__project-initials';
+    initials.textContent = badge.initials;
+    const rest = document.createElement('span');
+    rest.className = 'krypton-window__project-rest';
+    rest.textContent = badge.rest;
+    el.replaceChildren(initials, rest);
+    // The label is truncated; the full path is never lost, it moves here. The
+    // a11y label rejoins the two halves, which a screen reader would otherwise
+    // announce as two unrelated runs of text.
+    el.title = badge.title;
+    el.setAttribute('aria-label', `project ${badge.label} — ${badge.title}`);
   }
 
   private focusContentView(contentView: ContentView): void {
@@ -1847,7 +2034,7 @@ export class Compositor {
     };
     this.windows.set(id, win);
     this.updateTabBar(win);
-    this.syncWindowUsageStatus(win);
+    this.syncWindowFooter(win);
 
     // Focus the new window BEFORE relayout so that Focus layout
     // places it on the left (main) column immediately.
@@ -2035,7 +2222,7 @@ export class Compositor {
     };
     this.windows.set(id, win);
     this.updateTabBar(win);
-    this.syncWindowUsageStatus(win);
+    this.syncWindowFooter(win);
 
     this.focusWindowQuiet(id);
     const snapshots = this.snapshotBounds();
@@ -3687,6 +3874,10 @@ export class Compositor {
     this.usageUnsubscribeByWindow.delete(id);
     this.usageProvidersUnsubscribeByWindow.get(id)?.();
     this.usageProvidersUnsubscribeByWindow.delete(id);
+    this.laneMarksUnsubscribeByWindow.get(id)?.();
+    this.laneMarksUnsubscribeByWindow.delete(id);
+    this.laneStripKeyByWindow.delete(id);
+    this.projectBadgeKeyByWindow.delete(id);
 
     // Exit maximize mode if the maximized window is being closed
     if (this.maximizedWindowId === id) {
@@ -4840,7 +5031,7 @@ export class Compositor {
       p.element.classList.toggle('krypton-pane--focused', p.id === tab.focusedPaneId);
     }
     const win = [...this.windows.values()].find((candidate) => candidate.tabs[candidate.activeTabIndex] === tab);
-    if (win) this.syncWindowUsageStatus(win);
+    if (win) this.syncWindowFooter(win);
   }
 
   // ─── Quick Terminal ───────────────────────────────────────────────

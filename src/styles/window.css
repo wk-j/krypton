@@ -203,6 +203,231 @@
 
 .krypton-window__footer {
   container-type: inline-size;
+  /* spec 219: magnification of the project badge's drop cap. Declared here so
+     the factor is tunable in one place — the right value depends on the rail
+     height, which is themeable via `--krypton-footer-height`. Same default as
+     `--krypton-lane-zoom`; note that a glyph's ink fills less of its em box
+     than the lane logo's artwork fills its viewBox, so equal numbers do not
+     mean equal ink height. */
+  --krypton-window-project-zoom: 2.9;
+  /* spec 218: the lane chip's height, and with it the inset of the strip's own
+     text line from the rail floor. Declared on the footer because spec 219's
+     badge sits on that same line (see `margin-bottom` below) — the two have to
+     agree, so the number lives in one place. */
+  --krypton-lane-chip-height: 18px;
+}
+
+/* ─── Window footer project badge (spec 219) ───
+   Which project is this window working on, legible while scanning a workspace
+   of tiled windows rather than after focusing one. Only the name's first two
+   characters are magnified — a drop cap — so the glance target is a fixed size
+   however long the project is called, and the tail stays readable at the rail's
+   own size. It trails the rail, immediately left of the lane strip: "which
+   project" and "which lane" are one question asked twice, so the two magnified
+   marks sit together as a single glance target at the rail's right end rather
+   than at opposite corners. They cannot collide — the drop cap is scaled type,
+   so its box is its painted width, and the lane logo's transform overgrowth is
+   already reserved by its own inline margins.
+
+   The zoom is `font-size`, not the lane logo's `transform`. A transform is
+   invisible to layout — fine for a fixed 1em square whose overgrowth can be
+   reserved with a hand-computed margin, but there is no CSS expression for
+   "reserve 1.9 × my text width", so a transformed head would sit on top of the
+   quotas. Scaling type instead gives the element its true painted width, and the
+   quotas beside it are already the compressible half of the rail (spec 153).
+   Flat: no border box, no underline, no left rail, no glow. */
+
+.krypton-window__project {
+  /* Trails the rail, just inside the lane strip (`order: 2`). `order` rather
+     than DOM position, for the same reason the strip uses it: the shared
+     notification control re-appends itself into whichever footer has focus. */
+  order: 1;
+  /* Pins the badge-plus-lanes pair right. The strip gave up its own auto margin
+     for this (see below) — two auto margins would split the free space and
+     leave the badge floating mid-rail. */
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  /* One baseline through both halves, so the tail reads as the same word as the
+     drop cap rather than as a separate label. */
+  align-items: baseline;
+  /* Pinning the box's floor sends every overflowing pixel upward, over the pane
+     — never down through the window's bottom edge. Same escape route the lane
+     logo uses.
+     The floor is the *lane chip's*, not the rail's. A floor-pinned box is
+     positioned by its bottom edge, and the drop cap's box carries its own
+     descent below the baseline, so pinning to the rail floor left the word's
+     baseline 6px up while the rail's other type sits at 11–14px: the whole word,
+     descenders included, hung below the chip beside it. Lifting the box by the
+     chip's own inset lands the shared baseline exactly on the strip's text line,
+     so badge and strip read as one line of rail type — and the lift is derived
+     from the two heights rather than tuned, so a themed rail keeps it. */
+  align-self: flex-end;
+  margin-bottom: calc(
+    (var(--krypton-footer-height, 28px) - var(--krypton-lane-chip-height, 18px)) / 2
+  );
+  /* The escape upward only works if the escaped pixels also *paint* above the
+     pane. `.krypton-pane` is `position: relative`, so it paints in the
+     positioned phase — after the footer's ordinary inline text — and its
+     opaque view background sliced the drop cap flat at the rail's top edge.
+     Positioning the badge moves it into that same phase, where tree order
+     (footer after pane) puts it on top. The lane logo never showed this
+     because its `transform` already promotes it the same way. */
+  position: relative;
+  line-height: 1;
+  max-width: 45%;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+}
+
+.krypton-window__project-initials {
+  flex: none;
+  font-size: calc(
+    var(--krypton-chrome-font-size, 11px) * var(--krypton-window-project-zoom, 2.9)
+  );
+  letter-spacing: -0.02em;
+}
+
+.krypton-window__project-rest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── Window footer harness lane strip (spec 218) ───
+   One backend mark per lane of the harness in this window's focused pane, so
+   "what is running here, and which lane am I driving" is legible from the
+   window's own rail — with the harness scrolled, zen-collapsed, or unfocused.
+   Pinned to the rail's right edge, past the notification control.
+   The active lane is the only one that renders a name: every lane has a hue and
+   the palette repeats past 13 lanes, so colour alone cannot carry the state.
+   Flat — no border box, no underline, no left rail. The one piece of motion is
+   the active mark's dock-style zoom below. */
+
+.krypton-window__lane-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  /* macOS Dock magnification factor for the active lane's logo. Tunable in one
+     place because the right value depends on the rail height: at the default
+     28px footer and 11px chrome font this lands a glyph about as tall as the
+     rail itself, whose ink clears the rail's top edge by ~5px. */
+  --krypton-lane-zoom: 2.9;
+  /* Ends the rail: `order` rather than DOM position, because the shared
+     notification control re-appends itself into whichever footer has focus and
+     would otherwise land after the strip. */
+  order: 2;
+  /* Pins right on its own when nothing else in the rail claims the free space. */
+  margin-left: auto;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+}
+
+/* Only one item on the rail may claim the free space with `margin-left: auto`;
+   a second would split it and leave the first floating mid-rail. Whichever of
+   these is leftmost does the pushing, and the ones to its right just trail it,
+   so the group still ends against the footer's right edge.
+
+   The project badge (spec 219, `order: 1`) is left of the strip, so when it is
+   present it pushes and the strip takes a plain gap instead. The badge is absent
+   whenever the focused pane has no project, hence `:has()` rather than a
+   blanket rule. */
+.krypton-window__footer:has(.krypton-window__project) .krypton-window__lane-strip {
+  margin-left: 10px;
+}
+
+/* `.krypton-notif` already carries `margin-left: auto` and is left of both, so
+   when it is present it does the pushing for the whole group. A decayed
+   notification (`--empty`, spec 40) is `display: none`, so it pushes nothing —
+   the items to its right have to take their own auto margin back, hence the
+   `:not()`. */
+.krypton-window__footer:has(.krypton-notif:not(.krypton-notif--empty))
+  :is(.krypton-window__project, .krypton-window__lane-strip) {
+  margin-left: 10px;
+}
+
+.krypton-window__lane {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: var(--krypton-lane-chip-height, 18px);
+  padding: 0 2px;
+  /* Dimmed but still hued — the spec-215 rule: de-emphasis must not drop lane
+     identity, so the accent survives at low opacity. */
+  color: var(--krypton-lane-accent, var(--krypton-window-accent, #00c8ff));
+  opacity: 0.45;
+}
+
+.krypton-window__lane--active {
+  opacity: 1;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--krypton-lane-accent, #00c8ff) 12%, transparent);
+  letter-spacing: 0.02em;
+}
+
+.krypton-window__lane-logo {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+
+/* ── Active lane: dock-style zoom ──
+   The active mark's logo magnifies out of the 28px rail the way a Dock icon
+   rises off the dock, so "which lane is this window driving" is readable from
+   across the screen without reading the name. Two deliberate departures from
+   the Dock: the zoom is anchored on the *active* lane, not on a pointer (the
+   compositor is keyboard-driven — ⌃1..9 / ⌘P move the bump), and neighbours do
+   NOT get a falloff curve. The Dock has no hierarchy so magnification is a pure
+   cursor affordance; this strip does, and growing a deliberately dimmed lane
+   (spec 215) would contradict the de-emphasis it is carrying.
+
+   `transform` does the growing so the rail's layout never reflows; the inline
+   margins are what reserve room, since a transform is invisible to layout and
+   the glyph would otherwise overlap its neighbour. `bottom` origin plus
+   `align-self: flex-end` puts the glyph on the chip's floor and sends all the
+   growth upward, over the pane — never down through the window's bottom edge. */
+.krypton-window__lane--active .krypton-window__lane-logo {
+  align-self: flex-end;
+  transform-origin: bottom center;
+  transform: scale(var(--krypton-lane-zoom, 2.9));
+  /* ≈ half the horizontal overgrowth at the default zoom. */
+  margin-inline: 10px;
+  animation: krypton-lane-dock-pop 220ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+/* Replays on every lane switch: the strip's repaint key includes which lane is
+   active, so switching rebuilds the marks and a fresh node runs this once.
+   Status churn does not change the key, so the pop never fires on its own. */
+@keyframes krypton-lane-dock-pop {
+  from {
+    transform: scale(1);
+  }
+  65% {
+    /* Slight overshoot — the Dock's magnification settles rather than snaps. */
+    transform: scale(calc(var(--krypton-lane-zoom, 2.9) * 1.08));
+  }
+  to {
+    transform: scale(var(--krypton-lane-zoom, 2.9));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .krypton-window__lane--active .krypton-window__lane-logo {
+    animation: none;
+  }
+}
+
+.krypton-window__lane-name {
+  font-size: 0.95em;
+}
+
+.krypton-window__lane-more {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .krypton-window__usage-status {

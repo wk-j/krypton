@@ -104,6 +104,27 @@ export const HARNESS_ICON_SVG_DEFS = [
   '<symbol id="krypton-icon-tool" viewBox="0 0 16 16"><path d="M11.2 2.4 a2.8 2.8 0 0 0 -3.5 3.5 L2.8 10.8 a1.25 1.25 0 0 0 1.8 1.8 L9.5 7.5 a2.8 2.8 0 0 0 3.5 -3.5 L11 6 L9.4 6 L9.4 4.4 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>',
 ].join('');
 
+const SYMBOL_DEFS_ID = 'krypton-harness-symbol-defs';
+
+/** Inject the backend-logo + lane-bar icon `<symbol>` defs into the document,
+ *  once. Document-level rather than per view (spec 218) for two reasons: a
+ *  window's status-bar lane strip is rendered into `.krypton-window__footer`,
+ *  which sits outside the harness view's subtree and still needs
+ *  `<use href="#krypton-logo-*"/>` to resolve, and two harness panes used to
+ *  inject the same ids twice — where a duplicate id silently resolves to
+ *  whichever copy came first. Safe to call from any surface at any time. */
+export function ensureHarnessSymbolDefs(): void {
+  if (document.getElementById(SYMBOL_DEFS_ID)) return;
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  defs.id = SYMBOL_DEFS_ID;
+  defs.setAttribute('width', '0');
+  defs.setAttribute('height', '0');
+  defs.setAttribute('aria-hidden', 'true');
+  defs.style.position = 'absolute';
+  defs.innerHTML = `<defs>${BACKEND_LOGO_SVG_DEFS}${HARNESS_ICON_SVG_DEFS}</defs>`;
+  document.body.appendChild(defs);
+}
+
 /** Lane-bar telemetry icon — references a HARNESS_ICON_SVG_DEFS symbol. The svg
  * inherits currentColor so it recolours with its container (lane accent/status). */
 export function harnessIcon(id: string, cls = ''): string {
