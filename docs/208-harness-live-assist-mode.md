@@ -126,6 +126,7 @@ small client of the running Harness, with a deliberately reduced interface.
 | `src/live-assist-main.ts` | Initialize theme, controller, listeners, and keyboard handling only for `live-assist` |
 | `src/acp/live-assist-client.ts` | Typed internal operations, snapshot refresh, ordered stream reduction, reconnect/resync |
 | `src/acp/live-assist-view.ts` | Purpose-built header, lane switcher, transcript, permission prompt, composer, and empty/error states |
+| `src/acp/live-assist-markdown.ts` | Assistant-row markdown (shared marked / streaming-markdown pipeline) |
 | `src/acp/live-assist-types.ts` | Narrow snapshot, transcript, permission, stream, and error contracts |
 | `src/styles/live-assist.css` | Independent assistant layout, responsive states, focus, motion, and reduced motion |
 | `vite.config.ts` | Build `index.html` and `live-assist.html` as explicit inputs |
@@ -309,10 +310,15 @@ The assistant is a compact command surface, not a full Harness replica:
   exists; overflow is keyboard-scrollable and never becomes the Harness lane rail.
 - **Transcript:** a simple bounded tail projection that keeps user and assistant
   conversation visible while grouping consecutive thought, tool, and file
-  activity into collapsed `ACTIVITY · N steps` disclosures. The original rows
+  activity into collapsed `ACTIVITY · N steps` disclosures. Assistant bodies
+  render markdown (headings, lists, emphasis, fenced code, tables, links,
+  images) with the same sanitised marked / streaming-markdown pipeline as the
+  Harness; formatting appears as chunks arrive, not only after the turn seals.
+  User, thought, and activity rows stay plain text. The original activity rows
   remain available through native keyboard-expandable details; system, error,
   permission, shell, artifact, and lane-mail rows stay visible by default. It
-  owns its DOM and rendering.
+  owns its DOM and rendering. Markdown anchors open in the OS browser and never
+  navigate the auxiliary webview.
 - **Permission dock:** oldest request, tool label, explicit Accept/Reject actions;
   no permission-mode or policy editing in v1.
 - **Composer:** independent multiline draft, busy/queued state, send and cancel.

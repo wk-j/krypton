@@ -22,7 +22,8 @@ window; they do not overwrite the full Harness composer or active lane.
 
 The normal `publishControlEvent` path remains the only live event source. Rust
 mirrors its sequence-stamped envelope to `live-assist`; chunks append
-incrementally and authoritative boundaries re-pull the snapshot. If no Harness
+incrementally (assistant markdown is tokenised as they arrive) and
+authoritative boundaries re-pull the snapshot. If no Harness
 is registered, the assistant shows a read-only empty state without opening or
 focusing one in the primary window. See `docs/208-harness-live-assist-mode.md`.
 

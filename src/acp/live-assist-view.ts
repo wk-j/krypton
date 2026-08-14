@@ -1,3 +1,15 @@
+import type { Parser as MarkdownParser } from 'streaming-markdown';
+
+import { openExternalUrl } from '../external-url';
+
+import {
+  agentLinkOpenAction,
+  beginLiveAssistMarkdown,
+  liveAssistUsesMarkdown,
+  renderLiveAssistMarkdown,
+  sealLiveAssistMarkdown,
+  writeLiveAssistMarkdown,
+} from './live-assist-markdown';
 import type {
   LiveAssistLaneSummary,
   LiveAssistPermission,
@@ -62,6 +74,7 @@ export class LiveAssistView {
   private pendingPermission: LiveAssistPermission | null = null;
   private streamRow: HTMLElement | null = null;
   private streamTextNode: Text | null = null;
+  private streamParser: MarkdownParser | null = null;
   private streamKind: string | null = null;
   private streamText = '';
   private pendingStream: Array<{ kind: string; text: string }> = [];
@@ -69,6 +82,7 @@ export class LiveAssistView {
   private currentStatus = 'idle';
   private renderedLane: string | null = null;
   private laneRoster: string[] = [];
+  private projectDir: string | null = null;
 
   constructor(
     root: HTMLElement,
@@ -210,6 +224,17 @@ export class LiveAssistView {
       const action = target?.dataset.permissionAction;
       if (action === 'accept' || action === 'reject') this.handlers.onResolvePermission(action);
     }, { signal });
+    this.transcriptEl.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest<HTMLAnchorElement>('a[href]');
+      if (!anchor || !this.transcriptEl.contains(anchor)) return;
+      event.preventDefault();
+      const href = anchor.getAttribute('href') ?? '';
+      if (agentLinkOpenAction(href) === 'external') {
+        openExternalUrl(href, { external: true });
+      }
+    }, { signal });
   }
 
   dispose(): void {
@@ -245,6 +270,7 @@ export class LiveAssistView {
     this.showContent();
     const laneChanged = this.renderedLane !== snapshot.lane.displayName;
     this.selectedLane = snapshot.lane.displayName;
+    this.projectDir = snapshot.lane.cwd;
     this.projectEl.textContent = projectLabel(snapshot.lane.cwd);
     this.laneEl.textContent = `${snapshot.lane.displayName} · ${snapshot.lane.backendId}`;
     this.statusEl.textContent = statusLabel(snapshot.status);
@@ -262,6 +288,7 @@ export class LiveAssistView {
   showEmpty(): void {
     this.selectedLane = null;
     this.renderedLane = null;
+    this.projectDir = null;
     this.resetStream();
     this.projectEl.textContent = 'no Harness';
     this.laneEl.textContent = 'no lane';
@@ -417,8 +444,8 @@ export class LiveAssistView {
 
   private buildBlock(block: LiveAssistTranscriptBlock): HTMLElement {
     const node = block.kind === 'message'
-      ? buildMessage(block.item, false).row
-      : buildActivity(block);
+      ? this.buildMessage(block.item, false).row
+      : this.buildActivity(block);
     node.dataset.blockKey = liveAssistBlockKey(block);
     return node;
   }
@@ -446,14 +473,23 @@ export class LiveAssistView {
     item: LiveAssistTranscriptItem,
     isTail: boolean,
   ): void {
+    const next = item.text || fallbackText(displayKind(item.kind), item.status);
+    if (node === this.streamRow) {
+      // The stream row owns its DOM. Write only a forward delta while it is
+      // still the tail; settleStream seals or drops it once the snapshot moves on.
+      if (isTail && next.length > this.streamText.length) {
+        this.writeStreamDelta(next.slice(this.streamText.length));
+        this.streamText = next;
+      }
+      return;
+    }
+    if (liveAssistUsesMarkdown(item.kind) && item.text) {
+      const body = messageBody(node);
+      if (body) renderLiveAssistMarkdown(body, item.text, this.projectDir);
+      return;
+    }
     const textNode = messageTextNode(node);
     if (!textNode) return;
-    const next = item.text || fallbackText(displayKind(item.kind), item.status);
-    // The adopted streaming row can run ahead of a snapshot taken mid-chunk, so
-    // never rewind its visible text — but only while it is still the tail. Once
-    // the snapshot shows a later message the row has been sealed, and any excess
-    // is text that belonged to that later message; let the snapshot correct it.
-    if (isTail && node === this.streamRow && next.length < textNode.data.length) return;
     if (textNode.data !== next) textNode.data = next;
   }
 
@@ -469,7 +505,12 @@ export class LiveAssistView {
     );
     if (disposition === 'keep') return;
     if (disposition === 'drop') {
-      this.endStream();
+      const key = this.streamRow?.dataset.blockKey;
+      const block = key
+        ? blocks.find((candidate) => liveAssistBlockKey(candidate) === key)
+        : null;
+      const snapshotText = block?.kind === 'message' ? block.item.text : '';
+      this.endStream(snapshotText);
       return;
     }
     this.adoptStreamRow(nodes[nodes.length - 1]);
@@ -477,25 +518,130 @@ export class LiveAssistView {
 
   /** Hand streaming over to the snapshot's own trailing row. */
   private adoptStreamRow(node: HTMLElement | undefined): void {
-    if (!node) return;
-    if (this.streamRow !== node) {
-      const target = messageTextNode(node);
-      if (!target) {
-        this.endStream();
-        return;
+    if (!node || !this.streamRow) return;
+    if (this.streamRow === node) {
+      ensureStreamCaret(node);
+      return;
+    }
+    const fromSynthetic = this.streamRow.dataset.blockKey === undefined;
+    const merged = liveAssistAdoptedText(fromSynthetic, this.streamText, messageSource(node));
+    if (fromSynthetic) {
+      if (merged.length > this.streamText.length) {
+        this.writeStreamDelta(merged.slice(this.streamText.length));
       }
-      const merged = liveAssistAdoptedText(
-        this.streamRow?.dataset.blockKey === undefined,
-        this.streamText,
-        target.data,
-      );
-      if (target.data !== merged) target.data = merged;
       this.streamText = merged;
-      this.releaseStreamRow();
-      this.streamRow = node;
-      this.streamTextNode = target;
+      if (node.dataset.blockKey) this.streamRow.dataset.blockKey = node.dataset.blockKey;
+      if (node.dataset.messageId) this.streamRow.dataset.messageId = node.dataset.messageId;
+      node.replaceWith(this.streamRow);
+      ensureStreamCaret(this.streamRow);
+      return;
+    }
+    this.attachStreamToExisting(node, this.streamKind ?? 'assistant', merged);
+  }
+
+  private ensureStreamRow(messageKind: string): void {
+    this.streamRow?.querySelector('.live-assist__stream-caret')?.remove();
+    const last = this.transcriptEl.lastElementChild;
+    if (
+      last instanceof HTMLElement
+      && last.classList.contains(`live-assist__message--${messageKind}`)
+    ) {
+      this.attachStreamToExisting(last, messageKind, messageSource(last));
+      return;
+    }
+    const built = this.buildMessage({
+      id: `live-stream-${Date.now()}`,
+      kind: messageKind,
+      text: '',
+      createdAt: null,
+      status: null,
+    }, true);
+    this.streamRow = built.row;
+    this.streamTextNode = built.textNode;
+    this.streamParser = built.parser;
+    this.streamKind = messageKind;
+    this.streamText = '';
+    this.transcriptEl.appendChild(built.row);
+    trimChildren(this.transcriptEl, TRANSCRIPT_TAIL);
+  }
+
+  private attachStreamToExisting(node: HTMLElement, kind: string, text: string): void {
+    if (this.streamRow && this.streamRow !== node) {
+      this.streamRow.querySelector('.live-assist__stream-caret')?.remove();
+    }
+    this.streamParser = null;
+    this.streamTextNode = null;
+    this.streamRow = node;
+    this.streamKind = kind;
+    this.streamText = text;
+    const body = messageBody(node);
+    if (liveAssistUsesMarkdown(kind) && body) {
+      this.streamParser = beginLiveAssistMarkdown(body, text);
+    } else {
+      const textNode = messageTextNode(node);
+      if (textNode && textNode.data !== text) textNode.data = text;
+      this.streamTextNode = textNode;
     }
     ensureStreamCaret(node);
+  }
+
+  private writeStreamDelta(chunk: string): void {
+    if (!chunk || !this.streamRow) return;
+    const body = messageBody(this.streamRow);
+    if (this.streamParser && body && liveAssistUsesMarkdown(this.streamKind ?? '')) {
+      writeLiveAssistMarkdown(this.streamParser, body, chunk, this.streamText + chunk);
+      return;
+    }
+    this.streamTextNode?.appendData(chunk);
+  }
+
+  private buildActivity(
+    block: Extract<LiveAssistTranscriptBlock, { kind: 'activity' }>,
+  ): HTMLDetailsElement {
+    const details = document.createElement('details');
+    details.className = 'live-assist__activity';
+    details.dataset.activityId = block.id;
+
+    const summary = document.createElement('summary');
+    summary.className = 'live-assist__activity-summary';
+    summary.textContent = liveAssistActivitySummary(block.items.length);
+
+    const items = document.createElement('div');
+    items.className = 'live-assist__activity-items';
+    for (const item of block.items) {
+      const row = this.buildMessage(item, false).row;
+      row.dataset.blockKey = liveAssistBlockKey({ kind: 'message', item });
+      items.appendChild(row);
+    }
+    details.append(summary, items);
+    return details;
+  }
+
+  private buildMessage(
+    item: LiveAssistTranscriptItem,
+    streaming: boolean,
+  ): { row: HTMLElement; textNode: Text | null; parser: MarkdownParser | null } {
+    const row = document.createElement('article');
+    const kind = displayKind(item.kind);
+    row.className = `live-assist__message live-assist__message--${safeStatus(kind)}`;
+    row.dataset.messageId = item.id;
+    const label = document.createElement('span');
+    label.className = 'live-assist__message-label';
+    label.textContent = kindLabel(kind);
+    const body = document.createElement('div');
+    body.className = 'live-assist__message-body';
+    let textNode: Text | null = null;
+    let parser: MarkdownParser | null = null;
+    if (liveAssistUsesMarkdown(kind) && (item.text || streaming)) {
+      if (streaming) parser = beginLiveAssistMarkdown(body, item.text);
+      else renderLiveAssistMarkdown(body, item.text, this.projectDir);
+    } else {
+      textNode = document.createTextNode(item.text || fallbackText(kind, item.status));
+      body.appendChild(textNode);
+    }
+    row.append(label, body);
+    if (streaming) ensureStreamCaret(row);
+    return { row, textNode, parser };
   }
 
   /** Stop writing to the current row. A synthetic row the snapshot has now
@@ -509,7 +655,19 @@ export class LiveAssistView {
     if (row.dataset.blockKey === undefined) row.remove();
   }
 
-  private endStream(): void {
+  private endStream(snapshotText = ''): void {
+    const row = this.streamRow;
+    const adopted = row?.dataset.blockKey !== undefined;
+    if (adopted && this.streamParser && row) {
+      const body = messageBody(row);
+      const text = snapshotText.length > this.streamText.length ? snapshotText : this.streamText;
+      if (body) sealLiveAssistMarkdown(this.streamParser, body, text, this.projectDir);
+    }
+    this.clearStream();
+  }
+
+  private clearStream(): void {
+    this.streamParser = null;
     this.releaseStreamRow();
     this.streamKind = null;
     this.streamText = '';
@@ -519,7 +677,7 @@ export class LiveAssistView {
     if (this.streamFrame !== null) window.cancelAnimationFrame(this.streamFrame);
     this.streamFrame = null;
     this.pendingStream = [];
-    this.endStream();
+    this.clearStream();
   }
 
   private flushStream(): void {
@@ -533,25 +691,9 @@ export class LiveAssistView {
     for (const chunk of chunks) {
       const messageKind = chunk.kind === 'user_message_chunk' ? 'user' : 'assistant';
       if (!this.streamRow || this.streamKind !== messageKind || !this.streamRow.isConnected) {
-        // Leave a superseded synthetic row in place — it still holds text the
-        // next snapshot has not delivered yet; the stale sweep collects it once
-        // the snapshot does.
-        this.streamRow?.querySelector('.live-assist__stream-caret')?.remove();
-        const built = buildMessage({
-          id: `live-stream-${Date.now()}`,
-          kind: messageKind,
-          text: '',
-          createdAt: null,
-          status: null,
-        }, true);
-        this.streamRow = built.row;
-        this.streamTextNode = built.textNode;
-        this.streamKind = messageKind;
-        this.streamText = '';
-        this.transcriptEl.appendChild(built.row);
-        trimChildren(this.transcriptEl, TRANSCRIPT_TAIL);
+        this.ensureStreamRow(messageKind);
       }
-      this.streamTextNode?.appendData(chunk.text);
+      this.writeStreamDelta(chunk.text);
       this.streamText += chunk.text;
     }
     if (nearBottom) this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
@@ -696,28 +838,16 @@ function syncLaneButton(
   if (state && state.textContent !== lane.status) state.textContent = lane.status;
 }
 
-function buildActivity(
-  block: Extract<LiveAssistTranscriptBlock, { kind: 'activity' }>,
-): HTMLDetailsElement {
-  const details = document.createElement('details');
-  details.className = 'live-assist__activity';
-  details.dataset.activityId = block.id;
+function messageBody(node: HTMLElement): HTMLElement | null {
+  return node.querySelector('.live-assist__message-body');
+}
 
-  const summary = document.createElement('summary');
-  summary.className = 'live-assist__activity-summary';
-  summary.textContent = liveAssistActivitySummary(block.items.length);
-
-  // Reused across snapshots, so each row carries its own reconcile key; the
-  // disclosure's open state now survives on the node itself.
-  const items = document.createElement('div');
-  items.className = 'live-assist__activity-items';
-  for (const item of block.items) {
-    const row = buildMessage(item, false).row;
-    row.dataset.blockKey = liveAssistBlockKey({ kind: 'message', item });
-    items.appendChild(row);
-  }
-  details.append(summary, items);
-  return details;
+function messageSource(node: HTMLElement): string {
+  const body = messageBody(node);
+  if (!body) return '';
+  if (body.dataset.mdSource !== undefined) return body.dataset.mdSource;
+  const text = messageTextNode(node);
+  return text?.data ?? '';
 }
 
 function messageTextNode(node: HTMLElement): Text | null {
@@ -736,31 +866,6 @@ function ensureStreamCaret(node: HTMLElement): void {
 
 export function liveAssistActivitySummary(stepCount: number): string {
   return `ACTIVITY · ${stepCount} ${stepCount === 1 ? 'step' : 'steps'}`;
-}
-
-function buildMessage(
-  item: LiveAssistTranscriptItem,
-  streaming: boolean,
-): { row: HTMLElement; textNode: Text } {
-  const row = document.createElement('article');
-  const kind = displayKind(item.kind);
-  row.className = `live-assist__message live-assist__message--${safeStatus(kind)}`;
-  row.dataset.messageId = item.id;
-  const label = document.createElement('span');
-  label.className = 'live-assist__message-label';
-  label.textContent = kindLabel(kind);
-  const body = document.createElement('div');
-  body.className = 'live-assist__message-body';
-  const textNode = document.createTextNode(item.text || fallbackText(kind, item.status));
-  body.appendChild(textNode);
-  if (streaming) {
-    const caret = document.createElement('span');
-    caret.className = 'live-assist__stream-caret';
-    caret.setAttribute('aria-label', 'Streaming');
-    body.appendChild(caret);
-  }
-  row.append(label, body);
-  return { row, textNode };
 }
 
 function displayKind(kind: string): string {

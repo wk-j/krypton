@@ -30,8 +30,10 @@
 9. AcpHarnessView publishes its normal ordered control event once. Rust broadcasts
    it to existing subscribers and mirrors that same sequence-stamped envelope to
    the auxiliary webview.
-10. Text chunks append incrementally; status/permission/stop/lifecycle boundaries
-    and sequence gaps trigger an authoritative snapshot refresh.
+10. Text chunks append incrementally; assistant chunks are written through the
+    streaming-markdown parser so conversation formatting appears live.
+    Status/permission/stop/lifecycle boundaries and sequence gaps trigger an
+    authoritative snapshot refresh that seals or re-parses those rows.
 11. Escape, Ctrl+Shift+I, or native close hides only `live-assist`; its local draft
     stays mounted for the next summon.
 ```

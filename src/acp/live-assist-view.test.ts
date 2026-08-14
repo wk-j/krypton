@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { liveAssistUsesMarkdown } from './live-assist-markdown';
 import {
   groupLiveAssistTranscript,
   liveAssistActivitySummary,
@@ -18,6 +19,15 @@ function item(id: string, kind: string): LiveAssistTranscriptItem {
 function said(id: string, kind: string, text: string): LiveAssistTranscriptItem {
   return { id, kind, text, createdAt: null, status: null };
 }
+
+describe('Live Assist conversation markdown', () => {
+  it('formats assistant replies and leaves user/activity rows as plain text', () => {
+    expect(liveAssistUsesMarkdown('assistant')).toBe(true);
+    expect(liveAssistUsesMarkdown('user')).toBe(false);
+    expect(liveAssistUsesMarkdown('thought')).toBe(false);
+    expect(liveAssistUsesMarkdown('tool')).toBe(false);
+  });
+});
 
 describe('Live Assist compact activity', () => {
   it('groups consecutive internal activity and preserves message boundaries', () => {

@@ -380,6 +380,195 @@ textarea {
   white-space: pre-wrap;
 }
 
+.live-assist__message-body--markdown {
+  white-space: normal;
+  contain: layout style;
+}
+
+.live-assist__message-body--markdown > :first-child {
+  margin-top: 0;
+}
+
+.live-assist__message-body--markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.live-assist__message-body--markdown p {
+  margin: 0 0 0.35em;
+}
+
+.live-assist__message-body--markdown h1,
+.live-assist__message-body--markdown h2,
+.live-assist__message-body--markdown h3,
+.live-assist__message-body--markdown h4,
+.live-assist__message-body--markdown h5,
+.live-assist__message-body--markdown h6 {
+  margin: 0.65em 0 0.3em;
+  color: var(--live-assist-amber-bright);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+}
+
+.live-assist__message-body--markdown h1 {
+  padding-bottom: 0.12em;
+  border-bottom: 1px solid rgba(255, 176, 0, 0.28);
+  font-size: 1.22em;
+}
+
+.live-assist__message-body--markdown h2 {
+  font-size: 1.1em;
+  color: var(--live-assist-amber);
+}
+
+.live-assist__message-body--markdown h3 {
+  font-size: 1.02em;
+}
+
+.live-assist__message-body--markdown h4,
+.live-assist__message-body--markdown h5,
+.live-assist__message-body--markdown h6 {
+  font-size: 1em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.live-assist__message-body--markdown ul,
+.live-assist__message-body--markdown ol {
+  margin: 0.15em 0 0.35em;
+  padding-left: 0;
+  list-style: none;
+}
+
+.live-assist__message-body--markdown ol {
+  counter-reset: live-assist-ol;
+}
+
+.live-assist__message-body--markdown li {
+  position: relative;
+  margin: 0.12em 0;
+  padding-left: 2.6ch;
+}
+
+.live-assist__message-body--markdown ul > li::before {
+  position: absolute;
+  left: 0;
+  color: var(--live-assist-amber);
+  content: '•';
+}
+
+.live-assist__message-body--markdown ol > li {
+  counter-increment: live-assist-ol;
+}
+
+.live-assist__message-body--markdown ol > li::before {
+  position: absolute;
+  left: 0;
+  color: var(--live-assist-cyan);
+  font-weight: 700;
+  content: counter(live-assist-ol) '.';
+}
+
+.live-assist__message-body--markdown strong {
+  color: var(--live-assist-amber-bright);
+  font-weight: 700;
+}
+
+.live-assist__message-body--markdown em {
+  color: var(--live-assist-magenta);
+  font-style: italic;
+}
+
+.live-assist__message-body--markdown code {
+  padding: 0.05em 0.4ch;
+  border-radius: 2px;
+  background: rgba(139, 195, 74, 0.12);
+  color: var(--live-assist-green);
+  font-family: var(--live-assist-font);
+}
+
+.live-assist__message-body--markdown pre {
+  margin: 0.3em 0;
+  padding: 6px 9px;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 176, 0, 0.16);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.38);
+  line-height: 1.4;
+  white-space: pre;
+}
+
+.live-assist__message-body--markdown pre code,
+.live-assist__message-body--markdown pre code.hljs {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.live-assist__message-body--markdown a {
+  color: var(--live-assist-cyan);
+  text-decoration: underline;
+  text-decoration-color: rgba(77, 208, 225, 0.5);
+  text-underline-offset: 3px;
+}
+
+.live-assist__message-body--markdown a:hover {
+  color: var(--live-assist-amber-bright);
+  text-decoration-color: var(--live-assist-amber-bright);
+}
+
+.live-assist__message-body--markdown blockquote {
+  margin: 0.2em 0;
+  padding: 4px 8px;
+  border-radius: 2px;
+  background: rgba(224, 145, 192, 0.1);
+  color: #f0d0e4;
+  font-style: italic;
+}
+
+.live-assist__message-body--markdown blockquote > :first-child {
+  margin-top: 0;
+}
+
+.live-assist__message-body--markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.live-assist__message-body--markdown hr {
+  margin: 0.7em 0;
+  border: 0;
+  border-top: 1px dashed rgba(255, 176, 0, 0.32);
+}
+
+.live-assist__message-body--markdown table {
+  margin: 0.45em 0;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.live-assist__message-body--markdown th,
+.live-assist__message-body--markdown td {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 176, 0, 0.22);
+  text-align: left;
+}
+
+.live-assist__message-body--markdown th {
+  background: rgba(255, 176, 0, 0.1);
+  color: var(--live-assist-amber-bright);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.live-assist__message-body--markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.45em 0;
+  border: 1px solid rgba(255, 176, 0, 0.22);
+  border-radius: 2px;
+}
+
 .live-assist__stream-caret {
   display: inline-block;
   width: 6px;
