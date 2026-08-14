@@ -275,6 +275,8 @@ export interface LanePeekSnapshot {
   activeTurnStartedAt?: number | null;
   recentFiles?: string[];
   pendingShell?: boolean;
+  /** spec 216 — live or last thought for the dedicated thought slot. */
+  thought?: { phase: 'delta' | 'veil' | 'seal'; text: string } | null;
 }
 
 /** Slice 109 — lane-pair activity heat (peek rail). */

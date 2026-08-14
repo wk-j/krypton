@@ -346,6 +346,11 @@ import {
   derivePlanForPeek,
   deriveRailPeerHint,
   deriveRecentFilesForPeek,
+  deriveThoughtForPeek,
+  patchLaneThoughtCard,
+  renderLaneThought,
+  resolveLaneThoughtSnapshot,
+  schedulePeekThoughtPin,
   formatHeatTokenSuffix,
   isDirectPeerPeekReasonKey,
   latestInterLaneForPeek,
@@ -360,6 +365,11 @@ export {
   PEER_PREEMPT_MAX_PRIORITY,
   buildComposerPeerStrip,
   buildLanePeekCandidates,
+  deriveThoughtForPeek,
+  laneThoughtHasContent,
+  pinPeekThoughtToLatest,
+  resolveLaneThoughtSnapshot,
+  schedulePeekThoughtPin,
   deriveLanePairHeat,
   deriveRailPeerHint,
   isDirectPeerPeekReasonKey,
@@ -989,6 +999,7 @@ export class AcpHarnessView implements ContentView {
   private laneRailEl!: HTMLElement;
   private planSlotEl!: HTMLElement;
   private peekSlotEl!: HTMLElement;
+  private thoughtSlotEl!: HTMLElement;
   private pinSlotEl!: HTMLElement;
   private queueSlotEl!: HTMLElement;
   private composerEl!: HTMLElement;
@@ -3462,7 +3473,7 @@ export class AcpHarnessView implements ContentView {
       } else if (this.helpOpen) this.toggleHelp(false);
       else if (this.memoryDrawerOpen) this.toggleMemoryDrawer(false);
       else if (lane.stagedImages.length > 0) this.clearStagedImages(lane);
-      else if (this.lanePeek.visible && this.lanePeek.currentLaneId) this.hideLanePeek();
+      else if (this.isContextualPeekShowing()) this.hideLanePeek();
       else this.enterTranscriptFocus();
       return true;
     }
@@ -4013,6 +4024,12 @@ export class AcpHarnessView implements ContentView {
     return true;
   }
 
+  private isContextualPeekShowing(): boolean {
+    return this.lanePeek.visible
+      && this.lanePeek.currentLaneId !== null
+      && this.lanePeek.currentReasonKey !== 'self-thought';
+  }
+
   showLanePeek(): void {
     const candidate = this.bestLanePeekCandidate({ force: true });
     if (!candidate) {
@@ -4028,6 +4045,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   hideLanePeek(): void {
+    if (!this.isContextualPeekShowing()) return;
     const current = this.lanePeekCandidates().find((candidate) => candidate.laneId === this.lanePeek.currentLaneId) ?? null;
     this.lanePeek.visible = false;
     this.lanePeek.dismissedAt = Date.now();
@@ -5487,6 +5505,12 @@ export class AcpHarnessView implements ContentView {
     this.peekSlotEl.dataset.slot = 'peek';
     this.peekSlotEl.hidden = true;
     this.laneRailEl.appendChild(this.peekSlotEl);
+    // spec 216: thought is its own rail slot so peek/pins stay 320px.
+    this.thoughtSlotEl = document.createElement('div');
+    this.thoughtSlotEl.className = 'acp-harness__lane-rail__slot';
+    this.thoughtSlotEl.dataset.slot = 'thought';
+    this.thoughtSlotEl.hidden = true;
+    this.laneRailEl.appendChild(this.thoughtSlotEl);
     // spec 136: bottom-anchored slot for the ACTIVE lane's prompt queue. Shown
     // independently of the peek; CSS `margin-top: auto` pins it to the rail bottom.
     this.queueSlotEl = document.createElement('div');
@@ -10046,6 +10070,7 @@ export class AcpHarnessView implements ContentView {
   private scheduleStreamingBodyOnly(lane: HarnessLane): void {
     if (lane.id !== this.activeLaneId) {
       this.refreshMetricsRender();
+      this.patchPeekThoughtIfLane(lane);
       return;
     }
     if (this.streamingBodyRaf) return;
@@ -10054,12 +10079,23 @@ export class AcpHarnessView implements ContentView {
       this.streamingBodyRaf = false;
       if (lane.id !== this.activeLaneId) return;
       this.renderActiveTranscript(lane);
+      this.patchPeekThoughtIfLane(lane);
       if (this.isLaneStreaming(lane)) {
         this.applyStickyScroll();
       } else {
         this.scheduleStickyScroll();
       }
     });
+  }
+
+  private patchPeekThoughtIfLane(lane: HarnessLane): void {
+    const slot = this.thoughtSlotEl;
+    const card = slot?.querySelector<HTMLElement>('.acp-harness__lane-thought');
+    const showing = card?.dataset.laneId ?? null;
+    const target = this.resolveThoughtTarget();
+    if (showing === lane.id || target?.laneId === lane.id || (!target && showing)) {
+      this.renderLaneThought();
+    }
   }
 
   private renderActiveLane(lane: HarnessLane): void {
@@ -10074,6 +10110,7 @@ export class AcpHarnessView implements ContentView {
     this.renderActiveLaneChrome(lane);
     this.renderActiveTranscript(lane);
     this.renderLanePeek();
+    this.renderLaneThought();
     this.renderPlanPanel(lane);
     this.renderActiveLaneQueue();
     this.renderPinSlot();
@@ -10315,22 +10352,65 @@ export class AcpHarnessView implements ContentView {
     const slot = this.peekSlotEl;
     const snapshots = this.lanePeekSnapshots();
     const candidate = this.bestLanePeekCandidate({ snapshots });
-    if (!candidate || !this.lanePeek.visible) {
+    const snapshot = candidate
+      ? snapshots.find((entry) => entry.laneId === candidate.laneId) ?? null
+      : null;
+    if (!candidate || !snapshot) {
       slot.replaceChildren();
       slot.hidden = true;
       return;
     }
     this.applyLanePeekCandidate(candidate, false);
-    const snapshot = snapshots.find((s) => s.laneId === candidate.laneId) ?? null;
-    const next = renderLanePeek(candidate, snapshot, this.lanePeek.lockedLaneId === candidate.laneId);
-    const heatRoot = next.querySelector<HTMLElement>('.acp-harness__lane-peek-heat-root');
+    const existing = slot.querySelector<HTMLElement>('.acp-harness__lane-peek');
+    const sameCard =
+      existing
+      && existing.dataset.laneId === candidate.laneId
+      && existing.dataset.reason === candidate.reasonKey;
+    const card = sameCard
+      ? existing
+      : renderLanePeek(
+          candidate,
+          snapshot,
+          this.lanePeek.lockedLaneId === candidate.laneId,
+        );
+    const heatRoot = card.querySelector<HTMLElement>('.acp-harness__lane-peek-heat-root');
     const activeLane = this.lanes.find((lane) => lane.id === this.activeLaneId) ?? null;
     const peekLane = this.lanes.find((lane) => lane.id === candidate.laneId) ?? null;
     if (heatRoot && activeLane && peekLane) {
       this.mountLanePeekHeat(heatRoot, candidate, activeLane, peekLane, now);
     }
+    if (!sameCard) slot.replaceChildren(card);
+    slot.hidden = false;
+  }
+
+  private showingPeekLaneId(): string | null {
+    if (this.peekSlotEl.hidden) return null;
+    return this.peekSlotEl.querySelector<HTMLElement>('.acp-harness__lane-peek')?.dataset.laneId ?? null;
+  }
+
+  private resolveThoughtTarget(): LanePeekSnapshot | null {
+    return resolveLaneThoughtSnapshot(this.lanePeekSnapshots(), this.showingPeekLaneId());
+  }
+
+  private renderLaneThought(): void {
+    const slot = this.thoughtSlotEl;
+    const snapshot = this.resolveThoughtTarget();
+    if (!snapshot) {
+      slot.replaceChildren();
+      slot.hidden = true;
+      return;
+    }
+    const existing = slot.querySelector<HTMLElement>('.acp-harness__lane-thought');
+    if (existing && existing.dataset.laneId === snapshot.laneId) {
+      patchLaneThoughtCard(existing, snapshot, this.projectDir);
+      slot.hidden = false;
+      return;
+    }
+    const next = renderLaneThought(snapshot, this.projectDir);
     slot.replaceChildren(next);
     slot.hidden = false;
+    const body = next.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
+    if (body) schedulePeekThoughtPin(body);
   }
 
   private isLanePeekHeatUiAvailable(): boolean {
@@ -10598,6 +10678,7 @@ export class AcpHarnessView implements ContentView {
         activeTurnStartedAt: lane.activeTurnStartedAt,
         recentFiles: deriveRecentFilesForPeek(lane.id, this.fileTouchMap, now),
         pendingShell: lane.pendingShellId !== null,
+        thought: deriveThoughtForPeek(lane, now),
       };
     });
   }
@@ -10927,6 +11008,7 @@ export class AcpHarnessView implements ContentView {
     if (activeLane) {
       this.renderActiveTranscript(activeLane);
       this.renderLanePeek();
+      this.renderLaneThought();
     }
     this.observeActiveTranscriptBody();
     if (activeLane && activeLane.stickToBottom) {
@@ -11887,6 +11969,7 @@ export class AcpHarnessView implements ContentView {
     // Guarantee a final render even on terminal paths that don't append
     // a follow-up item (no-ops on non-active lanes — pre-existing).
     this.scheduleLaneRender(lane);
+    this.patchPeekThoughtIfLane(lane);
   }
 
   /**

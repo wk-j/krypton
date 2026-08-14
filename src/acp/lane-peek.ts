@@ -31,6 +31,7 @@ import {
   truncateInline,
 } from './harness-format';
 import { awaitingPeerText, formatAwaitingPeerAge, statusLabel } from './harness-lane-chrome';
+import { installThoughtVeil, renderPeekThoughtMarkdown } from './harness-markdown';
 
 /** spec 118 — peer peek tiers: awaiting 10, inbound 20, counterpart 30 */
 export const PEER_PREEMPT_MAX_PRIORITY = 30;
@@ -402,6 +403,7 @@ export function renderLanePeek(
   const el = document.createElement('aside');
   el.className = 'acp-harness__lane-peek';
   el.dataset.reason = candidate.reasonKey;
+  el.dataset.laneId = candidate.laneId;
   el.dataset.priority = lanePeekPriorityClass(candidate);
   const now = Date.now();
   const age = snapshot ? lanePeekAgeLabel(snapshot, candidate, now) : '';
@@ -444,6 +446,49 @@ export function renderLanePeek(
 
   el.innerHTML = html;
   return el;
+}
+
+/** spec 216 — own rail card; never mounted inside the 109 peek. */
+export function renderLaneThought(
+  snapshot: LanePeekSnapshot,
+  projectDir: string | null = null,
+): HTMLElement {
+  const el = document.createElement('aside');
+  el.className = 'acp-harness__lane-thought';
+  el.dataset.laneId = snapshot.laneId;
+  const thought = snapshot.thought ?? null;
+  el.dataset.phase = thought?.phase ?? 'empty';
+  const live = isLivePeekThought(thought);
+  el.innerHTML =
+    `<header class="acp-harness__lane-thought-head">` +
+      `<span class="acp-harness__lane-thought-name">${esc(snapshot.displayName)}</span>` +
+      `<span class="acp-harness__lane-thought-label">${live ? 'thinking' : 'thought'}</span>` +
+    `</header>` +
+    `<div class="acp-harness__lane-thought-body"></div>`;
+  const body = el.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
+  if (body) syncPeekThoughtBody(body, thought, projectDir);
+  return el;
+}
+
+export function patchLaneThoughtCard(
+  root: HTMLElement,
+  snapshot: LanePeekSnapshot,
+  projectDir: string | null = null,
+): void {
+  root.dataset.laneId = snapshot.laneId;
+  const thought = snapshot.thought ?? null;
+  root.dataset.phase = thought?.phase ?? 'empty';
+  const name = root.querySelector('.acp-harness__lane-thought-name');
+  if (name) name.textContent = snapshot.displayName;
+  const label = root.querySelector('.acp-harness__lane-thought-label');
+  if (label) label.textContent = isLivePeekThought(thought) ? 'thinking' : 'thought';
+  let body = root.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
+  if (!body) {
+    body = document.createElement('div');
+    body.className = 'acp-harness__lane-thought-body';
+    root.appendChild(body);
+  }
+  syncPeekThoughtBody(body, thought, projectDir);
 }
 
 export interface RailPeerHint {
@@ -829,6 +874,90 @@ export function derivePlanForPeek(lane: HarnessLane): LanePeekSnapshot['plan'] {
   const next = lane.plan.find((entry) => entry.status === 'pending');
   const activeText = active?.content ?? next?.content ?? null;
   return { done, total, activeText: activeText ? activeText.replace(/\s+/g, ' ').trim() : null };
+}
+
+export type LanePeekThought = NonNullable<LanePeekSnapshot['thought']>;
+
+export function deriveThoughtForPeek(lane: HarnessLane, _now?: number): LanePeekThought | null {
+  if (lane.currentThoughtId) {
+    const live = lane.transcript.find((entry) => entry.id === lane.currentThoughtId);
+    if (live && live.kind === 'thought') {
+      return {
+        phase: live.text.length === 0 ? 'veil' : 'delta',
+        text: live.text,
+      };
+    }
+  }
+  for (let i = lane.transcript.length - 1; i >= 0; i--) {
+    const item = lane.transcript[i];
+    if (item.kind !== 'thought' || item.text.length === 0) continue;
+    return { phase: 'seal', text: item.text };
+  }
+  return null;
+}
+
+export function isLivePeekThought(thought: LanePeekThought | null | undefined): boolean {
+  return thought != null && (thought.phase === 'delta' || thought.phase === 'veil');
+}
+
+export function laneThoughtHasContent(thought: LanePeekThought | null | undefined): boolean {
+  if (!thought) return false;
+  if (thought.phase === 'veil') return true;
+  return thought.text.length > 0;
+}
+
+/** Peeked lane if that snapshot has thought; otherwise the active lane. */
+export function resolveLaneThoughtSnapshot(
+  snapshots: LanePeekSnapshot[],
+  peekedLaneId: string | null,
+): LanePeekSnapshot | null {
+  if (peekedLaneId) {
+    const peeked = snapshots.find((lane) => lane.laneId === peekedLaneId) ?? null;
+    if (peeked && laneThoughtHasContent(peeked.thought)) return peeked;
+  }
+  const active = snapshots.find((lane) => lane.active) ?? null;
+  if (active && laneThoughtHasContent(active.thought)) return active;
+  return null;
+}
+
+/** Pin the peek thought window to the latest line (spec 216). */
+export function pinPeekThoughtToLatest(body: HTMLElement): void {
+  body.scrollTop = body.scrollHeight;
+}
+
+/** Pin now and again after layout — scrollHeight is 0 while detached / pre-layout. */
+export function schedulePeekThoughtPin(body: HTMLElement): void {
+  pinPeekThoughtToLatest(body);
+  requestAnimationFrame(() => pinPeekThoughtToLatest(body));
+}
+
+export function syncPeekThoughtBody(
+  body: HTMLElement,
+  thought: LanePeekThought | null,
+  projectDir: string | null = null,
+): void {
+  if (!thought || (thought.phase === 'seal' && thought.text.length === 0)) {
+    body.replaceChildren();
+    body.hidden = false;
+    body.classList.remove(
+      'acp-harness__msg-body--thought-veil',
+      'acp-harness__msg-body--stream-plain',
+      'acp-harness__msg-body--markdown',
+    );
+    delete body.dataset.peekLen;
+    delete body.dataset.peekSrc;
+    return;
+  }
+  body.hidden = false;
+  if (thought.phase === 'veil' || thought.text.length === 0) {
+    body.classList.remove('acp-harness__msg-body--markdown', 'acp-harness__msg-body--stream-plain');
+    installThoughtVeil(body);
+    delete body.dataset.peekLen;
+    delete body.dataset.peekSrc;
+    return;
+  }
+  renderPeekThoughtMarkdown(body, thought.text, projectDir);
+  schedulePeekThoughtPin(body);
 }
 
 export function deriveActiveToolForPeek(lane: HarnessLane, now: number): LanePeekSnapshot['activeTool'] {

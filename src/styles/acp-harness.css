@@ -747,10 +747,9 @@
   position: absolute;
   top: 36px;
   right: 12px;
-  /* Fixed width — must not track lane/window resize. The max-width guard
-     only engages on lanes too narrow to fit the rail at all. */
   width: 320px;
   max-width: calc(100% - 24px);
+  align-items: flex-end;
   max-height: calc(100% - 36px - 56px);
   z-index: 4;
   display: flex;
@@ -763,6 +762,7 @@
 .acp-harness__lane-rail__slot {
   pointer-events: auto;
   flex: 0 1 auto;
+  width: 320px;
   min-height: 0;
   max-height: 50%;
   overflow: hidden;
@@ -776,6 +776,11 @@
 
 .acp-harness__lane-rail__slot--primary { max-height: 70%; }
 .acp-harness__lane-rail__slot--compact { max-height: 96px; }
+
+/* spec 216 — own slot, same 320px column as peek/pins. Extra height for the body. */
+.acp-harness__lane-rail__slot[data-slot="thought"] {
+  max-height: 70%;
+}
 
 /* spec 136: prompt-queue slot — bottom-anchored, never crushed. flex-shrink:0 +
    capped height so the plan/peek slots above absorb the squeeze when all three
@@ -975,6 +980,132 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.acp-harness__lane-thought {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px 12px 7px;
+  background:
+    linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
+  border: 1px solid rgba(0, 204, 255, 0.22);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-family: var(--agent-font, var(--krypton-font-family, monospace));
+  font-size: 0.95em;
+  color: rgba(216, 232, 216, 0.92);
+  pointer-events: auto;
+}
+
+.acp-harness__lane-thought-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.12);
+  margin-bottom: 3px;
+  flex: 0 0 auto;
+}
+
+.acp-harness__lane-thought-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--acp-lane-accent, #00ccff);
+  flex: 1 1 auto;
+}
+
+.acp-harness__lane-thought-label {
+  color: rgba(216, 232, 216, 0.42);
+  font-size: 0.78em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.acp-harness__lane-thought-body {
+  margin-top: 2px;
+  max-height: calc(1.55em * 10);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-anchor: none; /* appending text must not pin the first line */
+  overscroll-behavior: contain;
+  min-height: 0;
+  font-size: 0.86em;
+  line-height: 1.55;
+  color: rgba(216, 232, 216, 0.42);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--thought-veil {
+  color: rgba(216, 232, 216, 0.38);
+}
+
+/* spec 216 — same GFM as sealed assistant, kept ghost so thought stays secondary. */
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown {
+  white-space: normal;
+  color: rgba(216, 232, 216, 0.42);
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown h1,
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown h2,
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown h3,
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown h4,
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown h5,
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown h6 {
+  color: rgba(216, 232, 216, 0.58);
+  font-size: 1em;
+  border: none;
+  padding: 0;
+  margin: 0.35em 0 0.15em;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown p {
+  margin: 0 0 0.25em;
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown strong {
+  color: rgba(216, 232, 216, 0.62);
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown em {
+  color: rgba(216, 232, 216, 0.5);
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown code {
+  color: rgba(216, 232, 216, 0.55);
+  background: rgba(216, 232, 216, 0.06);
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown pre {
+  background: rgba(0, 0, 0, 0.28);
+  margin: 0.2em 0;
+  padding: 2px 6px;
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown a {
+  color: rgba(216, 232, 216, 0.55);
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown ul > li::before,
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown ol > li::before {
+  color: rgba(216, 232, 216, 0.38);
+}
+
+.acp-harness__lane-thought-body.acp-harness__msg-body--markdown img {
+  max-height: 4.5em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness__lane-thought-body .acp-harness__thought-veil-dot {
+    animation: none;
+    opacity: 0.55;
+  }
 }
 
 .acp-harness__lane-peek-foot {

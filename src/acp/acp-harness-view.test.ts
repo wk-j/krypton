@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -7,6 +10,11 @@ import {
   backendLogoId,
   buildComposerPeerStrip,
   buildLanePeekCandidates,
+  deriveThoughtForPeek,
+  laneThoughtHasContent,
+  pinPeekThoughtToLatest,
+  resolveLaneThoughtSnapshot,
+  schedulePeekThoughtPin,
   deriveLanePairHeat,
   deriveRailPeerHint,
   directiveRole,
@@ -59,6 +67,7 @@ import {
   referenceGitAccessibleSummary,
   transcriptRenderSignature,
 } from './harness-transcript-render';
+import { peekThoughtMarkdownHtml } from './harness-markdown';
 
 import type { PermissionOption, ToolCall } from './types';
 import type { HarnessLane, HarnessTranscriptItem, MessageResource } from './harness-view-types';
@@ -87,6 +96,7 @@ function laneSnapshot(partial: Partial<LanePeekSnapshot> & { laneId: string }): 
     latestPermission: partial.latestPermission ?? null,
     latestMeaningful: partial.latestMeaningful ?? null,
     error: partial.error ?? null,
+    thought: partial.thought ?? null,
   };
 }
 
@@ -864,6 +874,152 @@ describe('ACP peer activity UI (spec 118)', () => {
       dismissedAt: null,
       dismissedPriority: null,
     }, now)?.laneId).toBe('claude');
+  });
+
+  it('deriveThoughtForPeek prefers the live thought row', () => {
+    const now = 10_000;
+    const lane = {
+      currentThoughtId: 't-live',
+      transcript: [
+        { id: 't-old', kind: 'thought', text: 'sealed earlier', createdAt: now - 1_000 },
+        { id: 't-live', kind: 'thought', text: 'streaming now', createdAt: now },
+      ],
+    } as HarnessLane;
+    expect(deriveThoughtForPeek(lane, now)).toEqual({ phase: 'delta', text: 'streaming now' });
+  });
+
+  it('deriveThoughtForPeek uses a veil for empty live thought', () => {
+    const now = 10_000;
+    const lane = {
+      currentThoughtId: 't-live',
+      transcript: [{ id: 't-live', kind: 'thought', text: '', createdAt: now }],
+    } as HarnessLane;
+    expect(deriveThoughtForPeek(lane, now)).toEqual({ phase: 'veil', text: '' });
+  });
+
+  it('deriveThoughtForPeek returns the last sealed thought', () => {
+    const now = 120_000;
+    const lane = {
+      currentThoughtId: null,
+      transcript: [
+        { id: 't1', kind: 'thought', text: 'old enough', createdAt: now - 119_000 },
+      ],
+    } as HarnessLane;
+    expect(deriveThoughtForPeek(lane, now)).toEqual({ phase: 'seal', text: 'old enough' });
+  });
+
+  it('deriveThoughtForPeek keeps sealed thought after two minutes', () => {
+    const now = 200_000;
+    const lane = {
+      currentThoughtId: null,
+      transcript: [
+        { id: 't1', kind: 'thought', text: 'stale', createdAt: now - 121_000 },
+      ],
+    } as HarnessLane;
+    expect(deriveThoughtForPeek(lane, now)).toEqual({ phase: 'seal', text: 'stale' });
+  });
+
+  it('laneThoughtHasContent treats veil and non-empty text as present', () => {
+    expect(laneThoughtHasContent(null)).toBe(false);
+    expect(laneThoughtHasContent({ phase: 'veil', text: '' })).toBe(true);
+    expect(laneThoughtHasContent({ phase: 'delta', text: 'hi' })).toBe(true);
+    expect(laneThoughtHasContent({ phase: 'seal', text: 'done' })).toBe(true);
+    expect(laneThoughtHasContent({ phase: 'seal', text: '' })).toBe(false);
+    expect(laneThoughtHasContent({ phase: 'delta', text: '' })).toBe(false);
+  });
+
+  it('resolveLaneThoughtSnapshot prefers peeked thought then active', () => {
+    const active = laneSnapshot({
+      laneId: 'grok',
+      active: true,
+      thought: { phase: 'delta', text: 'me' },
+    });
+    const peeked = laneSnapshot({
+      laneId: 'claude',
+      visualIndex: 1,
+      thought: { phase: 'delta', text: 'other' },
+    });
+    const emptyPeek = laneSnapshot({
+      laneId: 'codex',
+      visualIndex: 2,
+      thought: null,
+    });
+    expect(resolveLaneThoughtSnapshot([active, peeked], 'claude')?.laneId).toBe('claude');
+    expect(resolveLaneThoughtSnapshot([active, emptyPeek], 'codex')?.laneId).toBe('grok');
+    expect(resolveLaneThoughtSnapshot([active, peeked], null)?.laneId).toBe('grok');
+    expect(resolveLaneThoughtSnapshot([
+      laneSnapshot({ laneId: 'grok', active: true, thought: null }),
+    ], null)).toBeNull();
+  });
+
+  it('peekThoughtMarkdownHtml renders GFM instead of raw markers', () => {
+    const html = peekThoughtMarkdownHtml('**bold** and `code`\n\n- item\n\n# Head');
+    expect(html).toContain('<strong>bold</strong>');
+    expect(html).toMatch(/<code[^>]*>code<\/code>/);
+    expect(html).toMatch(/<li>/);
+    expect(html).toMatch(/<h1[^>]*>Head<\/h1>/);
+    expect(html).not.toContain('**bold**');
+    expect(html).not.toContain('# Head');
+  });
+
+  it('pinPeekThoughtToLatest follows scrollHeight', () => {
+    const body = { scrollTop: 12, scrollHeight: 320 };
+    pinPeekThoughtToLatest(body as unknown as HTMLElement);
+    expect(body.scrollTop).toBe(320);
+  });
+
+  it('schedulePeekThoughtPin pins now and again after layout', () => {
+    const frames: FrameRequestCallback[] = [];
+    const host = globalThis as { requestAnimationFrame?: typeof requestAnimationFrame };
+    const previous = host.requestAnimationFrame;
+    host.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    try {
+      const body = { scrollTop: 0, scrollHeight: 240 };
+      schedulePeekThoughtPin(body as unknown as HTMLElement);
+      expect(body.scrollTop).toBe(240);
+      body.scrollTop = 0;
+      body.scrollHeight = 360;
+      expect(frames).toHaveLength(1);
+      frames[0](0);
+      expect(body.scrollTop).toBe(360);
+    } finally {
+      if (previous) host.requestAnimationFrame = previous;
+      else delete host.requestAnimationFrame;
+    }
+  });
+
+  it('ranked peek candidates ignore thought and stay independent', () => {
+    const now = 5_000;
+    const candidates = buildLanePeekCandidates([
+      laneSnapshot({ laneId: 'grok', active: true, thought: { phase: 'delta', text: 'me' } }),
+      laneSnapshot({
+        laneId: 'claude',
+        visualIndex: 1,
+        status: 'error',
+        error: 'failed',
+        thought: { phase: 'delta', text: 'other' },
+      }),
+    ], now);
+    expect(candidates[0]?.laneId).toBe('claude');
+    expect(candidates[0]?.reasonKey).toBe('lane-error');
+    expect(resolveLaneThoughtSnapshot([
+      laneSnapshot({ laneId: 'grok', active: true, thought: { phase: 'delta', text: 'me' } }),
+      laneSnapshot({ laneId: 'claude', visualIndex: 1, thought: { phase: 'delta', text: 'other' } }),
+    ], 'claude')?.laneId).toBe('claude');
+  });
+
+  it('thought lives in its own rail slot, not inside peek', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const peekSrc = readFileSync(join(here, 'lane-peek.ts'), 'utf8');
+    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
+    expect(peekSrc).not.toMatch(/lane-peek-thought/);
+    expect(peekSrc).toMatch(/export function renderLaneThought/);
+    expect(css).toMatch(/\.acp-harness__lane-rail\s*\{[\s\S]{0,200}width:\s*320px/);
+    expect(css).not.toMatch(/\[data-slot="thought"\][\s\S]{0,120}width:\s*640px/);
+    expect(css).not.toMatch(/\[data-slot="peek"\][\s\S]{0,120}width:\s*640px/);
   });
 
   it('buildComposerPeerStrip emits strip for pending peer with cancel hint', () => {

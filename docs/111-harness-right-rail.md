@@ -27,6 +27,7 @@ Introduce a single **rail overlay container** that owns the top-right area of ea
 └─ .acp-harness__lane-rail                    (NEW — position: absolute, top-right, flex column)
     ├─ [data-slot="plan"]    → this.planEl reparented in
     ├─ [data-slot="peek"]    → peek element reparented in
+    ├─ [data-slot="thought"] → spec 216 thought card (same 320px column)
     └─ [data-slot="..."]     → future feature slots
 ```
 
@@ -69,8 +70,9 @@ Terminology: **rail** (a single contextual overlay column), not a sidebar, not a
   position: absolute;
   top: 36px;                 /* clears head (28px) + small gap */
   right: 12px;
-  width: 320px;              /* fixed — must not track lane/window resize */
+  width: 320px;
   max-width: calc(100% - 24px);  /* guard for lanes too narrow to fit the rail */
+  align-items: flex-end;
   max-height: calc(100% - 36px - 56px);   /* leaves room for composer below */
   z-index: 4;                /* above transcript, below modals (memory/help at 2–3 use `inset:0` and z-context resolves correctly) */
   display: flex;

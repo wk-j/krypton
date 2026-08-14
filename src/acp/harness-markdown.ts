@@ -247,6 +247,37 @@ export function rerenderAssistantMarkdownWithMarked(
   resolveLocalImageSrcs(body, projectDir);
 }
 
+/** Spec 216: peek thought uses the same marked GFM as sealed assistant rows. */
+export function peekThoughtMarkdownHtml(text: string): string {
+  return md.parse(text, { async: false }) as string;
+}
+
+export function renderPeekThoughtMarkdown(
+  body: HTMLElement,
+  text: string,
+  projectDir: string | null = null,
+): void {
+  body.classList.remove(
+    'acp-harness__msg-body--thought-veil',
+    'acp-harness__msg-body--stream-plain',
+  );
+  body.classList.add('acp-harness__msg-body--markdown');
+  delete body.dataset.pretext;
+  delete body.dataset.rawText;
+  delete body.dataset.rowId;
+  if (body.dataset.peekSrc === text && body.childNodes.length > 0) return;
+  try {
+    body.innerHTML = peekThoughtMarkdownHtml(text);
+  } catch (e) {
+    console.warn('[spec216] peek thought markdown parse failed', e);
+    body.textContent = text;
+    body.dataset.peekSrc = text;
+    return;
+  }
+  resolveLocalImageSrcs(body, projectDir);
+  body.dataset.peekSrc = text;
+}
+
 // Veiled thinking: providers that keep reasoning server-side (Claude Code on
 // current Opus models) stream thought deltas whose text is EMPTY — the model
 // is thinking, but the content never reaches the client. Instead of an empty

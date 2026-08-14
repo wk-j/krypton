@@ -169,6 +169,10 @@ Default behavior:
 - Hide on narrow layouts where it would obscure transcript text; collapsed row status remains.
 - User dismissal is session-local. It suppresses same-or-lower-priority candidates until active lane changes or a higher-priority candidate appears.
 
+### Thought slot (spec 216)
+
+Thought is a **sibling rail slot** (`thoughtSlotEl`, same 320px column), not a body inside this peek card. Hide / `Esc` dismiss this peek only; they never hide the thought card. Concise mode hides transcript thought rows; the thought slot stays visible when it has content. See `docs/216-workspace-thought-field.md`.
+
 ### UI
 
 Placement:

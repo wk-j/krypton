@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (203)
+## Specs (204)
 
 | # | Spec |
 |---|------|
@@ -219,6 +219,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 213 | [Backend Link Indicator](./213-backend-link-indicator.md) |
 | 214 | [LLM Usage Statistics](./214-llm-usage-statistics.md) |
 | 215 | [Stacked Lane Visual Hierarchy](./215-stacked-lane-hierarchy.md) |
+| 216 | [Lane Thought Slot](./216-workspace-thought-field.md) |
 
 ## ADRs (19)
 
