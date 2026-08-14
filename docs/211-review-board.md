@@ -98,8 +98,13 @@ next week restores every triage decision, answer, and comment. See **Storage lay
 they get the same read-only loopback surface the analysis bundles have: `#reviews` opens
 `/reviews` in the OS browser — an index of every review ever run (newest first, with lane, date,
 and how many items were left unanswered) and a per-review page that renders `review.md` and
-`response.md` side by side in the Binance-dark loopback aesthetic. This is the *archive* view;
+`response.md` in the Binance-dark loopback aesthetic. This is the *archive* view;
 answering still happens in the keyboard-driven Board.
+
+> **Superseded in part by spec 217 (2026-08-14):** the bundle page now renders both files as two
+> sections of **one** page (the file strip scrolls rather than navigating), and every anchored
+> walkthrough step and finding carries the **source lines it points at**, read at page-render time
+> behind `validate_doc_path` + the project's `.gitignore`. See `docs/217-review-archive-self-contained.md`.
 
 **Composability is the point.** Anything the agent can express in Markdown is already in — prose,
 tables, lists, links, images, code. Seven typed blocks add what Markdown lacks and the harness needs
@@ -137,6 +142,17 @@ it, metrics, zero findings. That is the *normal* shape of a review under this de
 degenerate case — the human learns what now exists even when nothing is wrong. It also keeps
 `/reviews` a **complete** archive: an archive with holes cannot answer "did anyone ever review X?",
 because a missing entry would mean both "never reviewed" and "reviewed and clean".
+
+**Language (2026-08-14).** Both prompts also fix the language of a Board, in three parts: everything
+the human reads (prose, `say:`, finding titles and their detail, decision questions and options,
+metric/chart labels) is **natural Thai** — written the way a Thai engineer writes, not a word-for-word
+rendering of an English sentence; **technical terms are never translated** (API/type names, tool
+names, flags, paths, identifiers, and established jargon stay English inside the Thai sentence); and
+the **machine-parsed grammar stays English** — fence names, field keys, and the `blocking` /
+`non-blocking` / `suggestion` values, because `src/review-board/parse.ts` matches them literally and a
+translated key silently degrades the block. The `review_new { title }` argument is the one carve-out:
+short and latin, because `review_slug` derives the bundle directory from it and a fully Thai title
+collapses to `<date>-review`.
 
 **What every Board must contain.** The `#review` prompt and the `review_new` tool description both
 require an explanation spine — at minimum, prose on *what this is and how it works*, plus a
@@ -573,7 +589,9 @@ so `render_review_blocks()` post-processes the known fences into simple semantic
 list with monospace anchors for `walkthrough`, a bordered card for `finding` (severity in the
 heading colour, never a left rail), an ordered list for `decision` with the chosen option marked,
 a definition row for `metrics`, prefix-coloured lines for `diff`, and sanitized passthrough for
-`svg`. Walkthrough anchors are plain text in the browser (no jump target exists outside the app). **`chart` deliberately does not reuse the
+`svg`. Walkthrough anchors were plain text in the browser (no jump target exists outside the app);
+**since spec 217 they carry the source lines inline instead** — there is still no jump target, so the
+code comes to the anchor rather than the reader going to the code. **`chart` deliberately does not reuse the
 frontend's SVG geometry**: the browser renders it as label/value rows with proportional CSS bar
 widths (and `line`/`sparkline` fall back to a plain table). Two presentations of the same data,
 no shared geometry code to drift — the browser is an archive, not a pixel-faithful mirror.

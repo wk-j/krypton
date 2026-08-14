@@ -19,6 +19,7 @@ use comrak::{
     parse_document, Arena, Options,
 };
 use futures_util::{stream, StreamExt};
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -2700,7 +2701,12 @@ async fn handle_review(
         Some("response") if bundle.responded_at.is_some() => "response",
         _ => "review",
     };
-    let content = render_review_bundle(&harness_id, bundle, sel_file);
+    let project_dir = per
+        .iter()
+        .find(|(id, _, _)| id == &harness_id)
+        .map(|(_, dir, _)| dir.clone())
+        .unwrap_or_default();
+    let content = render_review_bundle(&harness_id, &project_dir, bundle, sel_file);
     let nav = render_reviews_nav(&per, &harness_id, &bundle.slug);
     render_reviews_page(&bundle.title, Some(&nav), &content)
 }
@@ -4469,7 +4475,7 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "review_new",
-            "description": "Compose a Review Board — a keyboard-navigable review DOCUMENT the user reads in the app, for EXPLAINING CODE to them: what a change does, how the pieces fit, what to read first. Returns `{ id, slug, dir, path }`; `path` is a `review.md` that ALREADY EXISTS (seeded with a frontmatter stamp) inside a durable bundle directory — EDIT it with your normal edit tool, then call review_register { id }. The document is ordinary Markdown plus typed fenced blocks: ```review:walkthrough (title + a `steps:` list of `- at: path:line` / `say: why it matters` — the reading order, and the spine of a good Board), ```review:finding (severity blocking|non-blocking|suggestion, title, optional file/line; prose after the fence explains it), ```review:decision (question + an `options:` list, optional 1-based `recommended:`), ```review:metrics (flat `label: value` rows), ```review:chart (kind bar|line|sparkline, optional title, `data:` map of label → number), ```review:svg (a static diagram), and a plain ```diff fence. EVERY Board must have an explanation spine: prose on what this is and how it works, plus a walkthrough when the subject spans more than one file. A Board that is only a findings list is a regression to plain turn text. Findings and decisions are OPTIONAL additions — zero findings is a perfectly good review ('here is what this code does, and it is sound'). Use it when the user asks you to explain, walk through, or review something, or to synthesize a #review. Do NOT compose one unsolicited, at every turn end, or after every edit — unwanted Boards are reviewer fatigue and clutter on disk. Write assets into `<dir>/assets/` if you need images.",
+            "description": "Compose a Review Board — a keyboard-navigable review DOCUMENT the user reads in the app, for EXPLAINING CODE to them: what a change does, how the pieces fit, what to read first. Returns `{ id, slug, dir, path }`; `path` is a `review.md` that ALREADY EXISTS (seeded with a frontmatter stamp) inside a durable bundle directory — EDIT it with your normal edit tool, then call review_register { id }. The document is ordinary Markdown plus typed fenced blocks: ```review:walkthrough (title + a `steps:` list of `- at: path:line` / `say: why it matters` — the reading order, and the spine of a good Board), ```review:finding (severity blocking|non-blocking|suggestion, title, optional file/line; prose after the fence explains it), ```review:decision (question + an `options:` list, optional 1-based `recommended:`), ```review:metrics (flat `label: value` rows), ```review:chart (kind bar|line|sparkline, optional title, `data:` map of label → number), ```review:svg (a static diagram), and a plain ```diff fence. EVERY Board must have an explanation spine: prose on what this is and how it works, plus a walkthrough when the subject spans more than one file. A Board that is only a findings list is a regression to plain turn text. Findings and decisions are OPTIONAL additions — zero findings is a perfectly good review ('here is what this code does, and it is sound'). Use it when the user asks you to explain, walk through, or review something, or to synthesize a #review. Do NOT compose one unsolicited, at every turn end, or after every edit — unwanted Boards are reviewer fatigue and clutter on disk. Write assets into `<dir>/assets/` if you need images. LANGUAGE: write everything the human reads — prose, `say:` text, finding titles and the prose under them, decision questions and options, metric and chart labels — in NATURAL THAI, the way a Thai engineer actually writes, NOT a word-for-word rendering of an English sentence (if a Thai phrase only makes sense next to the English it came from, it is the wrong phrase). Do NOT translate technical terms: API and type names, tool names, flags, file paths, identifiers, and established jargon (race, guard, fan-out, diff, permission, …) stay in English inside the Thai sentence. The machine-parsed parts stay English too, or the document mis-parses: the fence names (`review:walkthrough`, `review:finding`, …), the field keys (`title:`, `severity:`, `steps:`, `at:`, `say:`, `question:`, `options:`, `recommended:`, `kind:`, `data:`), and the severity values `blocking` / `non-blocking` / `suggestion`. The `title` argument is the ONE exception: keep it short and in English, because it becomes the bundle's directory name on disk.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -6227,12 +6233,23 @@ fn render_reviews_index(harness_id: &str, bundles: &[ReviewBundleInfo]) -> Strin
 /// Build one bundle's page: a two-entry file strip (`review` · `response`), the
 /// selected document, then the asset strip. `sel_file` is `"review"` or
 /// `"response"`.
-fn render_review_bundle(harness_id: &str, bundle: &ReviewBundleInfo, sel_file: &str) -> String {
+fn render_review_bundle(
+    harness_id: &str,
+    project_dir: &str,
+    bundle: &ReviewBundleInfo,
+    sel_file: &str,
+) -> String {
     let mut content = String::new();
-
-    content.push_str("<nav class=\"file-strip\">");
     let has_response = bundle.responded_at.is_some();
-    for (name, present) in [("review", true), ("response", has_response)] {
+
+    // spec 217 — both files live on ONE page, so the strip scrolls rather than
+    // navigating. `file=` still selects which entry is marked, so existing links
+    // (and the index rows) keep meaning what they meant.
+    content.push_str("<nav class=\"file-strip\">");
+    for (name, anchor, present) in [
+        ("review", "rv-review", true),
+        ("response", "rv-answers", has_response),
+    ] {
         if !present {
             continue;
         }
@@ -6240,39 +6257,59 @@ fn render_review_bundle(harness_id: &str, bundle: &ReviewBundleInfo, sel_file: &
         if name == sel_file {
             content.push_str(" class=\"is-active\"");
         }
-        content.push_str(" href=\"/review?harness=");
-        content.push_str(&url_encode(harness_id));
-        content.push_str("&amp;slug=");
-        content.push_str(&url_encode(&bundle.slug));
-        content.push_str("&amp;file=");
-        content.push_str(name);
+        content.push_str(" href=\"#");
+        content.push_str(anchor);
         content.push_str("\">");
         content.push_str(name);
         content.push_str(".md</a>");
     }
     content.push_str("</nav>");
 
-    let file_name = if sel_file == "response" {
-        "response.md"
-    } else {
-        "review.md"
-    };
-    let source = std::fs::read_to_string(bundle.dir.join(file_name)).unwrap_or_default();
+    let source = std::fs::read_to_string(bundle.dir.join("review.md")).unwrap_or_default();
     if source.trim().is_empty() {
         content.push_str(
             "<p class=\"welcome\">เลนสร้างโฟลเดอร์ไว้แต่ยังไม่ได้เขียนเอกสาร — ยังไม่มีอะไรให้อ่าน</p>",
         );
     } else {
-        content.push_str("<section class=\"review-file\"><div class=\"review-file__name\">");
+        content.push_str(
+            "<section class=\"review-file\" id=\"rv-review\"><div class=\"review-file__name\">",
+        );
         content.push_str(&html_escape(&format!(
-            ".krypton/reviews/{}/{file_name}",
+            ".krypton/reviews/{}/review.md",
             bundle.slug
         )));
         content.push_str("</div>");
-        let rel = format!(".krypton/reviews/{}/{file_name}", bundle.slug);
+        let rel = format!(".krypton/reviews/{}/review.md", bundle.slug);
         let rendered = render_markdown_doc(&source, harness_id, &rel, "/review-asset");
-        content.push_str(&render_review_blocks(&rendered));
+        let mut ctx = Some(RvSrcCtx::new(project_dir, bundle.created_at));
+        let blocks = render_review_blocks(&rendered, &mut ctx);
+        content.push_str(&blocks);
+        if ctx.as_ref().is_some_and(|c| c.overflowed) {
+            content.push_str(
+                "<p class=\"rv-notice\">มีจุดอ้างอิงเกินจำนวนที่ดึงโค้ดมาแสดงได้ต่อหน้า จุดที่เหลือแสดงเป็นข้อความอย่างเดียว</p>",
+            );
+        }
         content.push_str("</section>");
+    }
+
+    if has_response {
+        let response = std::fs::read_to_string(bundle.dir.join("response.md")).unwrap_or_default();
+        if !response.trim().is_empty() {
+            content.push_str(
+                "<section class=\"review-file\" id=\"rv-answers\"><div class=\"review-file__name\">",
+            );
+            content.push_str(&html_escape(&format!(
+                ".krypton/reviews/{}/response.md",
+                bundle.slug
+            )));
+            content.push_str("</div>");
+            let rel = format!(".krypton/reviews/{}/response.md", bundle.slug);
+            // No excerpt context: the answers reference blocks, not code, and one
+            // page's excerpt budget belongs to the review itself.
+            let rendered = render_markdown_doc(&response, harness_id, &rel, "/review-asset");
+            content.push_str(&render_review_blocks(&rendered, &mut None));
+            content.push_str("</section>");
+        }
     }
 
     if !bundle.assets.is_empty() {
@@ -6311,7 +6348,7 @@ fn render_review_bundle(harness_id: &str, bundle: &ReviewBundleInfo, sel_file: &
 /// because comrak's output for a code block is a fixed, predictable shape; the
 /// body is HTML-escaped text, which is un-escaped once here and re-escaped by the
 /// per-kind renderers.
-fn render_review_blocks(html: &str) -> String {
+fn render_review_blocks(html: &str, ctx: &mut Option<RvSrcCtx>) -> String {
     let mut out = String::with_capacity(html.len());
     let mut rest = html;
     // comrak always emits the info string as a `language-` class on <code>.
@@ -6338,7 +6375,7 @@ fn render_review_blocks(html: &str) -> String {
         };
         let body = html_unescape(&after_open[body_start..body_end]);
         let kind = lang.split_whitespace().next().unwrap_or("");
-        match render_review_block(kind, &body) {
+        match render_review_block(kind, &body, ctx) {
             Some(rendered) => out.push_str(&rendered),
             // Unknown fence: keep comrak's plain code block verbatim.
             None => out.push_str(&from_open[..OPEN.len() + body_end + "</code></pre>".len()]),
@@ -6350,10 +6387,10 @@ fn render_review_blocks(html: &str) -> String {
 }
 
 /// Dispatch one fence body to its renderer. `None` ⇒ not a review block.
-fn render_review_block(kind: &str, body: &str) -> Option<String> {
+fn render_review_block(kind: &str, body: &str, ctx: &mut Option<RvSrcCtx>) -> Option<String> {
     match kind {
-        "review:walkthrough" => Some(render_rv_walkthrough(body)),
-        "review:finding" => Some(render_rv_finding(body)),
+        "review:walkthrough" => Some(render_rv_walkthrough(body, ctx)),
+        "review:finding" => Some(render_rv_finding(body, ctx)),
         "review:decision" => Some(render_rv_decision(body)),
         "review:metrics" => Some(render_rv_metrics(body)),
         "review:chart" => Some(render_rv_chart(body)),
@@ -6391,26 +6428,36 @@ fn rv_scalar(body: &str, key: &str) -> Option<String> {
     None
 }
 
-/// The indented lines under a bare `key:`, trimmed. Empty when the key is absent
-/// or carries an inline value.
+/// The lines under a bare `key:`, trimmed. Empty when the key is absent or
+/// carries an inline value.
+///
+/// A member line is either indented or a `- ` list item at column zero — both are
+/// valid YAML and lanes write both, commonly mixing them (`- at:` flush left with
+/// an indented `say:` under it). Anything else at column zero starts the next key
+/// and ends the group.
 fn rv_group(body: &str, key: &str) -> Vec<String> {
     let mut collecting = false;
     let mut out: Vec<String> = Vec::new();
     for line in body.lines() {
         let indented = line.starts_with(' ') || line.starts_with('\t');
-        if !indented {
-            if collecting {
+        let trimmed = line.trim();
+        if collecting {
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !indented && !trimmed.starts_with('-') {
                 break;
             }
-            if let Some((k, v)) = line.split_once(':') {
-                if k.trim().eq_ignore_ascii_case(key) && v.trim().is_empty() {
-                    collecting = true;
-                }
-            }
+            out.push(trimmed.to_string());
             continue;
         }
-        if collecting && !line.trim().is_empty() {
-            out.push(line.trim().to_string());
+        if indented {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once(':') {
+            if k.trim().eq_ignore_ascii_case(key) && v.trim().is_empty() {
+                collecting = true;
+            }
         }
     }
     out
@@ -6427,49 +6474,399 @@ fn rv_unquote(value: &str) -> String {
     v.to_string()
 }
 
-/// Walkthrough → an ordered list with a monospace anchor per step. Anchors are
-/// PLAIN TEXT here: no jump target exists outside the app.
-fn render_rv_walkthrough(body: &str) -> String {
+// ─── Source excerpts under review anchors (spec 217) ───────────────────────
+//
+// A finding or walkthrough step that names `path:line` renders the real lines
+// underneath it, so the archive can be read without opening an editor.
+//
+// The read surface is deliberately narrow: there is NO route that serves source
+// files. The only paths ever read are the ones this document anchors, they are
+// resolved while the page is being built, and every one of them passes
+// `validate_doc_path` (relative, canonicalized, inside the project, no symlink
+// escape, allowlisted extension) plus the project's own `.gitignore` — so a file
+// the repo refuses to track (`.env`, `.krypton/`, build output) can never reach
+// the page. Any failure means no excerpt; the anchor stays plain text.
+
+/// Extensions an excerpt may be read from. Text and source only — the point is
+/// reading code, and an unknown extension is never opened.
+const EXCERPT_EXTS: &[&str] = &[
+    "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "css", "scss", "html", "md", "toml", "json",
+    "yaml", "yml", "py", "sh", "bash", "fish", "zsh", "go", "java", "kt", "swift", "rb", "php",
+    "c", "h", "cpp", "hpp", "sql", "txt", "lua", "conf", "ini", "xml", "svelte", "vue",
+];
+/// Lines shown either side of a single-line anchor.
+const EXCERPT_CONTEXT: usize = 6;
+/// Rows rendered for a `path:start-end` anchor before the rest is summarized.
+const EXCERPT_RANGE_MAX: usize = 40;
+/// Per-line character clamp, so a minified or generated line cannot blow up the page.
+const EXCERPT_COL_MAX: usize = 400;
+/// Files larger than this are never read for an excerpt.
+const EXCERPT_FILE_BYTES: u64 = 2 * 1024 * 1024;
+/// Excerpts per page; past this, anchors fall back to text and the section says so.
+const EXCERPT_PER_PAGE: usize = 60;
+
+/// A `path`, `path:line`, or `path:start-end` anchor written by a lane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RvAnchor {
+    rel: String,
+    start: Option<usize>,
+    end: Option<usize>,
+}
+
+/// Why an anchor produced no excerpt. `Rejected` renders nothing (the anchor may
+/// simply not be a file in this project); the others are worth telling the reader.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RvSkip {
+    /// Failed a guard — outside the project, gitignored, wrong extension, too big.
+    Rejected,
+    /// Resolved to nothing on disk.
+    Missing,
+    /// The file exists but the anchored line is past its end.
+    Drifted { lines: usize },
+    /// The page's excerpt budget is spent.
+    Budget,
+}
+
+/// The window of source an anchor points at, ready to render.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RvExcerpt {
+    /// `src/acp/inter-lane.ts:830-841` — what the head row shows.
+    label: String,
+    first_line: usize,
+    lines: Vec<String>,
+    /// The row to tint, when the anchor named a single line.
+    anchor_line: Option<usize>,
+    /// Rows dropped by `EXCERPT_RANGE_MAX`.
+    omitted: usize,
+    /// The file was modified after this review was created.
+    stale: bool,
+}
+
+/// One file's contents, read at most once per page.
+struct RvFile {
+    lines: Vec<String>,
+    mtime_ms: i64,
+}
+
+/// Everything the excerpt pass needs, threaded through the block renderers.
+/// Absent (`None`) when the caller has no project context — the block renderers
+/// then behave exactly as they did before excerpts existed.
+struct RvSrcCtx {
+    project_dir: PathBuf,
+    /// Canonical root, for gitignore matching. Falls back to `project_dir`.
+    root: PathBuf,
+    /// `created` from `review.md`'s frontmatter, epoch ms.
+    created_ms: i64,
+    ignore: Option<Gitignore>,
+    used: usize,
+    /// Set once an anchor was skipped for budget, so the page can say so.
+    overflowed: bool,
+    cache: HashMap<PathBuf, Option<RvFile>>,
+}
+
+impl RvSrcCtx {
+    fn new(project_dir: &str, created_ms: i64) -> Self {
+        let project_dir = PathBuf::from(project_dir);
+        let root = project_dir
+            .canonicalize()
+            .unwrap_or_else(|_| project_dir.clone());
+        // Best-effort: no `.gitignore` means no ignore filtering, but every other
+        // guard still applies.
+        let ignore = {
+            let mut builder = GitignoreBuilder::new(&root);
+            let _ = builder.add(root.join(".gitignore"));
+            let _ = builder.add(root.join(".git/info/exclude"));
+            builder.build().ok()
+        };
+        Self {
+            project_dir,
+            root,
+            created_ms,
+            ignore,
+            used: 0,
+            overflowed: false,
+            cache: HashMap::new(),
+        }
+    }
+
+    fn ignored(&self, path: &StdPath) -> bool {
+        let rel = path.strip_prefix(&self.root).unwrap_or(path);
+        // The harness's own scratch tree is never excerpt material, and it must be
+        // refused independently of `.gitignore` — a project that has not ignored
+        // `.krypton/` yet would otherwise let a review quote another review.
+        if rel.components().any(|c| c.as_os_str() == ".krypton") {
+            return true;
+        }
+        let Some(ignore) = &self.ignore else {
+            return false;
+        };
+        ignore.matched_path_or_any_parents(rel, false).is_ignore()
+    }
+
+    /// Resolve one anchor to a rendered window, or the reason there is none.
+    fn excerpt(&mut self, anchor: &RvAnchor) -> Result<RvExcerpt, RvSkip> {
+        if self.used >= EXCERPT_PER_PAGE {
+            self.overflowed = true;
+            return Err(RvSkip::Budget);
+        }
+        let path =
+            validate_doc_path(&self.project_dir, &anchor.rel, EXCERPT_EXTS).map_err(|e| {
+                if e.starts_with("not_found") {
+                    RvSkip::Missing
+                } else {
+                    RvSkip::Rejected
+                }
+            })?;
+        if self.ignored(&path) {
+            return Err(RvSkip::Rejected);
+        }
+
+        let created_ms = self.created_ms;
+        let entry = self.cache.entry(path.clone()).or_insert_with(|| {
+            let meta = std::fs::metadata(&path).ok()?;
+            if meta.len() > EXCERPT_FILE_BYTES {
+                return None;
+            }
+            let text = std::fs::read_to_string(&path).ok()?;
+            let mtime_ms = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            Some(RvFile {
+                lines: text.lines().map(str::to_string).collect(),
+                mtime_ms,
+            })
+        });
+        let file = entry.as_ref().ok_or(RvSkip::Rejected)?;
+        let total = file.lines.len();
+
+        // No line named: the anchor points at a file, so show its head.
+        let (first, last, anchor_line) = match (anchor.start, anchor.end) {
+            (None, _) => (1, total.min(EXCERPT_CONTEXT * 2 + 1), None),
+            (Some(start), None) => {
+                if start > total {
+                    return Err(RvSkip::Drifted { lines: total });
+                }
+                (
+                    start.saturating_sub(EXCERPT_CONTEXT).max(1),
+                    (start + EXCERPT_CONTEXT).min(total),
+                    Some(start),
+                )
+            }
+            (Some(start), Some(end)) => {
+                if start > total {
+                    return Err(RvSkip::Drifted { lines: total });
+                }
+                (start.max(1), end.min(total).max(start), None)
+            }
+        };
+        if total == 0 {
+            return Err(RvSkip::Drifted { lines: 0 });
+        }
+
+        let shown_last = last.min(first + EXCERPT_RANGE_MAX - 1);
+        let lines: Vec<String> = file.lines[first - 1..shown_last]
+            .iter()
+            .map(|line| clamp_chars(line, EXCERPT_COL_MAX))
+            .collect();
+        let stale = created_ms > 0 && file.mtime_ms > created_ms;
+
+        self.used += 1;
+        Ok(RvExcerpt {
+            label: format!("{}:{first}-{shown_last}", anchor.rel),
+            first_line: first,
+            lines,
+            anchor_line,
+            omitted: last.saturating_sub(shown_last),
+            stale,
+        })
+    }
+}
+
+/// Truncate on a char boundary, marking the cut.
+fn clamp_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max).collect();
+    out.push('…');
+    out
+}
+
+/// `src/x.ts` · `src/x.ts:835` · `src/x.ts:812-840`. Returns `None` for anything
+/// that is not path-shaped, so a prose `at:` is never treated as a file.
+fn rv_anchor(at: &str) -> Option<RvAnchor> {
+    let raw = at.trim().trim_matches('`').trim_matches('"').trim();
+    if raw.is_empty() || raw.contains(char::is_whitespace) {
+        return None;
+    }
+    let (path, span) = match raw.rsplit_once(':') {
+        Some((path, span)) if !path.is_empty() && rv_is_span(span) => (path, Some(span)),
+        // A colon that is not a line span means this is not an anchor shape we
+        // understand (a URL, a `note: …`, a Windows drive) — never a file to read.
+        Some(_) => return None,
+        None => (raw, None),
+    };
+    let rel = path.trim_start_matches("./").to_string();
+    if rel.is_empty() {
+        return None;
+    }
+    let (start, end) = match span {
+        None => (None, None),
+        Some(span) => match span.split_once('-') {
+            Some((a, b)) => (a.parse().ok(), b.parse().ok()),
+            None => (span.parse().ok(), None),
+        },
+    };
+    if span.is_some() && start.is_none() {
+        return None;
+    }
+    Some(RvAnchor { rel, start, end })
+}
+
+/// `835` or `812-840` — the only two span shapes an anchor may carry.
+fn rv_is_span(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    match s.split_once('-') {
+        Some((a, b)) => {
+            !a.is_empty()
+                && !b.is_empty()
+                && a.chars().all(|c| c.is_ascii_digit())
+                && b.chars().all(|c| c.is_ascii_digit())
+        }
+        None => s.chars().all(|c| c.is_ascii_digit()),
+    }
+}
+
+/// Resolve an anchor through the context and render it, or render nothing.
+fn render_rv_source(at: &str, ctx: &mut Option<RvSrcCtx>) -> String {
+    let Some(ctx) = ctx.as_mut() else {
+        return String::new();
+    };
+    let Some(anchor) = rv_anchor(at) else {
+        return String::new();
+    };
+    match ctx.excerpt(&anchor) {
+        Ok(excerpt) => render_rv_excerpt(&excerpt),
+        // Silent: the anchor may name a file in another repo, a generated path, or
+        // something the repo does not track. A reason row on every such step would
+        // be noise, and the explanation text is still worth reading.
+        Err(RvSkip::Rejected) | Err(RvSkip::Budget) => String::new(),
+        Err(RvSkip::Missing) => rv_src_notice(at.trim(), "ไฟล์นี้ไม่มีแล้ว"),
+        Err(RvSkip::Drifted { lines }) => rv_src_notice(
+            at.trim(),
+            &format!("บรรทัดนี้เลยท้ายไฟล์ — ตอนนี้ไฟล์มี {lines} บรรทัด"),
+        ),
+    }
+}
+
+/// A head row on its own: the anchor plus why there are no lines under it.
+fn rv_src_notice(label: &str, reason: &str) -> String {
+    format!(
+        "<div class=\"rv-src rv-src--drifted\"><div class=\"rv-src__head\"><span>{}</span><span class=\"rv-src__chip\">{}</span></div></div>",
+        html_escape(label),
+        html_escape(reason)
+    )
+}
+
+/// The excerpt itself: a head row, then line-numbered source with the anchored
+/// row tinted (a background tint, never a left rail).
+fn render_rv_excerpt(excerpt: &RvExcerpt) -> String {
+    let mut out = String::from("<div class=\"rv-src");
+    if excerpt.stale {
+        out.push_str(" rv-src--stale");
+    }
+    out.push_str("\"><div class=\"rv-src__head\"><span>");
+    out.push_str(&html_escape(&excerpt.label));
+    out.push_str("</span>");
+    if excerpt.stale {
+        out.push_str("<span class=\"rv-src__chip\">ไฟล์เปลี่ยนหลังรีวิวนี้</span>");
+    }
+    out.push_str("</div><div class=\"rv-src__body\">");
+    for (i, line) in excerpt.lines.iter().enumerate() {
+        let number = excerpt.first_line + i;
+        out.push_str(if excerpt.anchor_line == Some(number) {
+            "<div class=\"rv-src__line rv-src__line--anchor\"><span class=\"rv-src__ln\">"
+        } else {
+            "<div class=\"rv-src__line\"><span class=\"rv-src__ln\">"
+        });
+        out.push_str(&number.to_string());
+        out.push_str("</span><span>");
+        out.push_str(&html_escape(line));
+        out.push_str("</span></div>");
+    }
+    out.push_str("</div>");
+    if excerpt.omitted > 0 {
+        out.push_str("<div class=\"rv-src__more\">อีก ");
+        out.push_str(&excerpt.omitted.to_string());
+        out.push_str(" บรรทัด</div>");
+    }
+    out.push_str("</div>");
+    out
+}
+
+/// Walkthrough → an ordered list with a monospace anchor per step, and the code
+/// that anchor points at underneath it (spec 217).
+fn render_rv_walkthrough(body: &str, ctx: &mut Option<RvSrcCtx>) -> String {
     let mut out = String::new();
     if let Some(title) = rv_scalar(body, "title") {
         out.push_str("<div class=\"rv-steps__title\">");
         out.push_str(&html_escape(&rv_unquote(&title)));
         out.push_str("</div>");
     }
-    out.push_str("<ol class=\"rv-steps\">");
-    let mut open = false;
+    // Collected first, because a step's excerpt renders AFTER its `say:` while the
+    // anchor is read from the line before it.
+    struct Step {
+        at: Option<String>,
+        says: Vec<String>,
+    }
+    let mut steps: Vec<Step> = Vec::new();
     for line in rv_group(body, "steps") {
         if let Some(at) = line
             .strip_prefix("- at:")
             .or_else(|| line.strip_prefix("-at:"))
         {
-            if open {
-                out.push_str("</li>");
-            }
-            out.push_str("<li><span class=\"rv-step__at\">");
-            out.push_str(&html_escape(&rv_unquote(at)));
-            out.push_str("</span>");
-            open = true;
+            steps.push(Step {
+                at: Some(rv_unquote(at)),
+                says: Vec::new(),
+            });
         } else if let Some(say) = line.strip_prefix("say:") {
-            if !open {
-                out.push_str("<li>");
-                open = true;
+            match steps.last_mut() {
+                Some(step) => step.says.push(rv_unquote(say)),
+                None => steps.push(Step {
+                    at: None,
+                    says: vec![rv_unquote(say)],
+                }),
             }
-            out.push_str("<span class=\"rv-step__say\">");
-            out.push_str(&html_escape(&rv_unquote(say)));
-            out.push_str("</span>");
         } else if let Some(bare) = line.strip_prefix("- ") {
             // A bare scalar step (no `at:`/`say:` split) still renders.
-            if open {
-                out.push_str("</li>");
-            }
-            out.push_str("<li><span class=\"rv-step__say\">");
-            out.push_str(&html_escape(&rv_unquote(bare)));
-            out.push_str("</span>");
-            open = true;
+            steps.push(Step {
+                at: None,
+                says: vec![rv_unquote(bare)],
+            });
         }
     }
-    if open {
+
+    out.push_str("<ol class=\"rv-steps\">");
+    for step in &steps {
+        out.push_str("<li>");
+        if let Some(at) = &step.at {
+            out.push_str("<span class=\"rv-step__at\">");
+            out.push_str(&html_escape(at));
+            out.push_str("</span>");
+        }
+        for say in &step.says {
+            out.push_str("<span class=\"rv-step__say\">");
+            out.push_str(&html_escape(say));
+            out.push_str("</span>");
+        }
+        if let Some(at) = &step.at {
+            out.push_str(&render_rv_source(at, ctx));
+        }
         out.push_str("</li>");
     }
     out.push_str("</ol>");
@@ -6478,7 +6875,7 @@ fn render_rv_walkthrough(body: &str) -> String {
 
 /// Finding → a bordered card with the severity in the heading colour. Never a
 /// left accent rail, and never a pass/fail badge.
-fn render_rv_finding(body: &str) -> String {
+fn render_rv_finding(body: &str, ctx: &mut Option<RvSrcCtx>) -> String {
     let severity = rv_scalar(body, "severity")
         .map(|s| s.to_ascii_lowercase())
         .unwrap_or_else(|| "non-blocking".to_string());
@@ -6497,12 +6894,19 @@ fn render_rv_finding(body: &str) -> String {
         "<div class=\"rv-finding rv-finding--{tone}\"><div class=\"rv-finding__head\"><span class=\"rv-finding__sev\">{chip}</span><span class=\"rv-finding__title\">{}</span>",
         html_escape(&rv_unquote(&title))
     );
+    let mut source = String::new();
     if let Some(anchor) = anchor {
+        let anchor = rv_unquote(&anchor);
         out.push_str("<span class=\"rv-finding__at\">");
-        out.push_str(&html_escape(&rv_unquote(&anchor)));
+        out.push_str(&html_escape(&anchor));
         out.push_str("</span>");
+        // spec 217 — the code the finding is about, so the reader never has to
+        // open an editor to know what `:835` says.
+        source = render_rv_source(&anchor, ctx);
     }
-    out.push_str("</div></div>");
+    out.push_str("</div>");
+    out.push_str(&source);
+    out.push_str("</div>");
     out
 }
 
@@ -9560,7 +9964,7 @@ recommended: 2
             .iter()
             .find(|b| b.slug == "2026-08-07-guard")
             .unwrap();
-        let html = render_review_bundle("hm-1", bundle, "review");
+        let html = render_review_bundle("hm-1", &project, bundle, "review");
 
         // Walkthrough → an ordered list with monospace anchors (plain text: no
         // jump target exists outside the app).
@@ -9595,9 +9999,204 @@ recommended: 2
     }
 
     #[test]
+    fn rv_anchor_reads_path_line_and_range() {
+        assert_eq!(
+            rv_anchor("src/acp/inter-lane.ts"),
+            Some(RvAnchor {
+                rel: "src/acp/inter-lane.ts".into(),
+                start: None,
+                end: None
+            })
+        );
+        assert_eq!(
+            rv_anchor("`./src/x.rs:835`"),
+            Some(RvAnchor {
+                rel: "src/x.rs".into(),
+                start: Some(835),
+                end: None
+            })
+        );
+        assert_eq!(
+            rv_anchor("src/x.rs:812-840"),
+            Some(RvAnchor {
+                rel: "src/x.rs".into(),
+                start: Some(812),
+                end: Some(840)
+            })
+        );
+        // Prose is never treated as a path, and a trailing colon that is not a
+        // line span leaves the whole string as the path (which then fails the
+        // extension guard rather than reading something unexpected).
+        assert_eq!(rv_anchor("the guard map, roughly"), None);
+        assert_eq!(rv_anchor(""), None);
+        assert_eq!(rv_anchor("src/x.rs:head"), None);
+    }
+
+    /// Seed a project with one source file and a review that anchors into it.
+    fn excerpt_fixture(infix: &str, review_body: &str) -> (HookServer, PathBuf, String, String) {
+        let (server, tmp, project) = review_server(infix);
+        let src = tmp.join("src/acp");
+        std::fs::create_dir_all(&src).unwrap();
+        let lines: Vec<String> = (1..=100).map(|n| format!("const line{n} = {n};")).collect();
+        std::fs::write(src.join("inter-lane.ts"), lines.join("\n")).unwrap();
+
+        let dir = tmp.join(".krypton/reviews/2026-08-07-excerpt");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("review.md"),
+            format!("---\ntitle: excerpt\nlane: Claude-1\ncreated: 2020-01-01T00:00:00Z\n---\n\n{review_body}\n"),
+        )
+        .unwrap();
+        let bundles = discover_review_bundles(&project);
+        let bundle = bundles
+            .iter()
+            .find(|b| b.slug == "2026-08-07-excerpt")
+            .unwrap();
+        let html = render_review_bundle("hm-1", &project, bundle, "review");
+        (server, tmp, project, html)
+    }
+
+    #[test]
+    fn review_excerpt_renders_source_under_an_anchor() {
+        let (_s, tmp, _p, html) = excerpt_fixture(
+            "src",
+            "```review:walkthrough\nsteps:\n  - at: src/acp/inter-lane.ts:12\n    say: the guard map\n```\n\n```review:finding\nseverity: blocking\nfile: src/acp/inter-lane.ts\nline: 40\ntitle: guard is set after the await\n```\n",
+        );
+
+        // Both the step and the finding carry their code.
+        assert_eq!(html.matches("rv-src__head").count(), 2, "{html}");
+        // ±6 lines of context around line 12, with the anchored row tinted.
+        assert!(html.contains("src/acp/inter-lane.ts:6-18"), "{html}");
+        assert!(html.contains("rv-src__line--anchor"));
+        assert!(html.contains("const line12 = 12;"));
+        assert!(html.contains("const line6 = 6;"));
+        assert!(!html.contains("const line5 = 5;"));
+        // The gutter carries real line numbers.
+        assert!(html.contains("<span class=\"rv-src__ln\">12</span>"));
+        // The file was written after the review's `created` stamp.
+        assert!(html.contains("rv-src--stale"));
+        // House rule: no left accent rails anywhere on this page.
+        assert!(!html.contains("border-left"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn review_walkthrough_reads_flush_left_list_items() {
+        // The shape lanes actually write: `- at:` at column zero with an indented
+        // `say:` under it. Both are valid YAML, and requiring the indent used to
+        // drop every anchor on this page.
+        let (_s, tmp, _p, html) = excerpt_fixture(
+            "flush",
+            "```review:walkthrough\ntitle: read it in this order\nsteps:\n- at: src/acp/inter-lane.ts:12\n  say: the guard map\n- at: src/acp/inter-lane.ts:40\n  say: the send path\n```\n",
+        );
+        assert!(html.contains("src/acp/inter-lane.ts:12"), "{html}");
+        assert!(html.contains("src/acp/inter-lane.ts:40"), "{html}");
+        assert!(html.contains("the guard map"));
+        assert_eq!(html.matches("rv-src__head").count(), 2, "{html}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn review_excerpt_clamps_a_long_range() {
+        let (_s, tmp, _p, html) = excerpt_fixture(
+            "range",
+            "```review:walkthrough\nsteps:\n  - at: src/acp/inter-lane.ts:1-100\n    say: the whole file\n```\n",
+        );
+        assert!(html.contains("src/acp/inter-lane.ts:1-40"), "{html}");
+        assert!(html.contains("อีก 60 บรรทัด"), "{html}");
+        assert!(!html.contains("const line41 = 41;"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn review_excerpt_reports_a_drifted_anchor() {
+        let (_s, tmp, _p, html) = excerpt_fixture(
+            "drift",
+            "```review:finding\nseverity: suggestion\nfile: src/acp/inter-lane.ts\nline: 4200\ntitle: gone\n```\n",
+        );
+        assert!(html.contains("rv-src--drifted"), "{html}");
+        assert!(html.contains("100 บรรทัด"), "{html}");
+        assert!(!html.contains("rv-src__line"), "no lines are guessed at");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn review_excerpt_refuses_paths_the_repo_does_not_track() {
+        let (_server, tmp, project) = review_server("guard");
+        std::fs::write(tmp.join(".gitignore"), "secret/\n*.env\n").unwrap();
+        std::fs::create_dir_all(tmp.join("secret")).unwrap();
+        std::fs::write(tmp.join("secret/keys.ts"), "export const KEY = 'sk-live';").unwrap();
+        std::fs::write(tmp.join("prod.env"), "TOKEN=hunter2").unwrap();
+        std::fs::write(tmp.join("notes.bin"), "binary-ish").unwrap();
+        // A real file one level above the project root.
+        std::fs::write(tmp.join("../outside-krypton-test.ts"), "const x = 1;").ok();
+
+        let dir = tmp.join(".krypton/reviews/2026-08-07-guard");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("review.md"),
+            "---\ntitle: guard\nlane: Claude-1\n---\n\n```review:walkthrough\nsteps:\n  - at: secret/keys.ts:1\n    say: gitignored\n  - at: prod.env:1\n    say: gitignored by pattern\n  - at: notes.bin:1\n    say: extension not allowed\n  - at: ../outside-krypton-test.ts:1\n    say: outside the project\n  - at: .krypton/reviews/2026-08-07-guard/review.md:1\n    say: the review bundle itself\n```\n",
+        )
+        .unwrap();
+
+        let bundles = discover_review_bundles(&project);
+        let bundle = bundles.iter().find(|b| b.slug.ends_with("guard")).unwrap();
+        let html = render_review_bundle("hm-1", &project, bundle, "review");
+
+        assert!(
+            !html.contains("rv-src__head"),
+            "no excerpt was rendered: {html}"
+        );
+        assert!(!html.contains("sk-live"));
+        assert!(!html.contains("hunter2"));
+        // The steps themselves still read normally.
+        assert!(html.contains("gitignored"));
+        assert!(html.contains("outside the project"));
+        let _ = std::fs::remove_file(tmp.join("../outside-krypton-test.ts"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn review_bundle_page_carries_review_and_response_together() {
+        let (_server, tmp, project) = review_server("onepage");
+        let dir = tmp.join(".krypton/reviews/2026-08-07-both");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("review.md"),
+            "---\ntitle: both\nlane: Claude-1\n---\n\nthe explanation.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("response.md"),
+            "---\nresponded_at: 2026-08-08T14:22:10Z\nnote: ship it\n---\n\n## Answers\n- accepted\n",
+        )
+        .unwrap();
+
+        let bundles = discover_review_bundles(&project);
+        let bundle = bundles.iter().find(|b| b.slug.ends_with("both")).unwrap();
+        let html = render_review_bundle("hm-1", &project, bundle, "review");
+
+        // One page, two sections — the strip scrolls instead of navigating.
+        assert!(html.contains("id=\"rv-review\""), "{html}");
+        assert!(html.contains("id=\"rv-answers\""), "{html}");
+        assert!(html.contains("href=\"#rv-answers\""));
+        assert!(
+            !html.contains("&amp;file="),
+            "no cross-page file links left"
+        );
+        assert!(html.contains("the explanation."));
+        assert!(html.contains("Answers"));
+        assert!(html.contains("ship it"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn review_blocks_leave_unknown_fences_as_code() {
         // An ordinary code fence is untouched.
-        let ts = render_review_blocks("<pre><code class=\"language-ts\">const a = 1;</code></pre>");
+        let ts = render_review_blocks(
+            "<pre><code class=\"language-ts\">const a = 1;</code></pre>",
+            &mut None,
+        );
         assert_eq!(
             ts,
             "<pre><code class=\"language-ts\">const a = 1;</code></pre>"
@@ -9605,8 +10204,10 @@ recommended: 2
 
         // A future `review:*` kind renders as a labelled code block rather than
         // disappearing.
-        let unknown =
-            render_review_blocks("<pre><code class=\"language-review:hologram\">x</code></pre>");
+        let unknown = render_review_blocks(
+            "<pre><code class=\"language-review:hologram\">x</code></pre>",
+            &mut None,
+        );
         assert!(unknown.contains("rv-unknown"));
         assert!(unknown.contains("review:hologram"));
         assert!(unknown.contains("<pre><code>x</code></pre>"));
@@ -9614,6 +10215,7 @@ recommended: 2
         // Surrounding prose survives, and a fence with no class is left alone.
         let mixed = render_review_blocks(
             "<p>before</p><pre><code class=\"language-review:metrics\">a: 1</code></pre><p>after</p>",
+            &mut None,
         );
         assert!(mixed.starts_with("<p>before</p>"));
         assert!(mixed.ends_with("<p>after</p>"));
@@ -9768,5 +10370,11 @@ recommended: 2
         assert!(description.contains("Do NOT compose one unsolicited"));
         assert!(description.contains("explanation spine"));
         assert!(description.contains("review:walkthrough"));
+        // The Board is read by a Thai human, parsed by an English grammar, and
+        // filed under a directory named from the title — all three must be stated.
+        assert!(description.contains("NATURAL THAI"));
+        assert!(description.contains("Do NOT translate technical terms"));
+        assert!(description.contains("`blocking` / `non-blocking` / `suggestion`"));
+        assert!(description.contains("becomes the bundle's directory name"));
     }
 }

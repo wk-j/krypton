@@ -24,15 +24,27 @@
   output (render_review_blocks), NOT by the frontend's SVG geometry — this page is
   an archive, not a pixel-faithful mirror of the Board.
 
+  spec 217: a bundle page carries review.md AND response.md as two sections of ONE
+  page (the strip scrolls, it does not navigate), and every anchored step/finding
+  renders the source lines it points at. Those excerpts are read while the page is
+  built — there is no route that serves source files, and every path passes
+  validate_doc_path plus the project's .gitignore.
+
   Class contract emitted by the backend (style these, do not rename):
     ul.tree
     li.tree-group        > .tree-group__label  (one per harness)
     li.tree-file         > a (href to /review; a.is-active = current bundle)
     ul.reviews-index     > li.rv-row (index page rows)
-    nav.file-strip       > a (review · response; a.is-active = shown file)
-    section.review-file  (bundle page)
-    ol.rv-steps          > li > .rv-step__at + .rv-step__say  (walkthrough)
+    nav.file-strip       > a (href to #rv-review | #rv-answers; a.is-active = the
+                              section the URL selected)
+    section.review-file  (#rv-review = review.md, #rv-answers = response.md)
+    ol.rv-steps          > li > .rv-step__at + .rv-step__say [+ .rv-src]
     .rv-finding          > .rv-finding__head > .rv-finding__sev + __title + __at
+                           [+ .rv-src]
+    .rv-src[--stale|--drifted] > .rv-src__head > span + .rv-src__chip
+                           > .rv-src__body > .rv-src__line[--anchor] > .rv-src__ln
+                           [> .rv-src__more]
+    p.rv-notice          (excerpt budget spent)
     ol.rv-options        > li (li.is-chosen = the lane's recommendation)
     dl.rv-metrics        > dt + dd
     .rv-chart            > .rv-chart__row > __label + __track > __bar + __value
@@ -218,6 +230,39 @@
     margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted);
     word-break: break-all;
   }
+
+  /* ── source excerpts under an anchor (spec 217) ──
+     The code a step or finding points at, read at page-render time. Deliberately
+     FLAT inside the step/finding card: a code surface with no second border and
+     no rail, so the card stays one surface rather than a card inside a card. */
+  .rv-src {
+    margin: 8px 0 0; font-family: var(--mono); font-size: 12px; line-height: 1.6;
+  }
+  .rv-src__head {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    font-size: 11px; color: var(--muted); margin: 0 0 3px; word-break: break-all;
+  }
+  .rv-src__chip { color: var(--warn); }
+  .rv-src__body {
+    background: var(--code-bg); border-radius: 6px; padding: 6px 0; overflow-x: auto;
+  }
+  /* Long lines WRAP rather than scroll sideways: this page is read, not edited,
+     and a horizontal scrollbar inside a card is the one thing a keyboard reader
+     cannot reach. The gutter is a fixed flex column, so a wrapped continuation
+     lines up under the code instead of under the line number. */
+  .rv-src__line {
+    display: flex; gap: 12px; padding: 0 10px;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .rv-src__ln {
+    flex: 0 0 auto; min-width: 5ch; text-align: right; color: var(--muted);
+    user-select: none;
+  }
+  .rv-src__line > span:last-child { flex: 1 1 auto; min-width: 0; }
+  .rv-src__line--anchor { background: rgba(240, 185, 11, .14); }
+  .rv-src__line--anchor .rv-src__ln { color: var(--warn); }
+  .rv-src__more { font-size: 11px; color: var(--muted); margin: 3px 0 0; }
+  .rv-notice { color: var(--muted); font-size: 13px; margin: 1em 0 0; }
 
   ol.rv-options {
     list-style: decimal; margin: .6em 0 1em; padding-left: 1.7em;

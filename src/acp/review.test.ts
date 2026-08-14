@@ -95,6 +95,19 @@ describe('reviewRequestPrompt', () => {
     expect(prompt).toContain('auto-commit');
   });
 
+  it('asks for natural Thai prose while keeping the parsed grammar English', () => {
+    const prompt = reviewRequestPrompt({ reviewers: ['A'], subject: diffSubject, intent: '' });
+    expect(prompt).toContain('NATURAL THAI');
+    expect(prompt).toContain('NOT a word-for-word rendering');
+    expect(prompt).toContain('Do NOT translate technical terms');
+    // The machine-parsed vocabulary must be named, or a lane translates a field
+    // key and `src/review-board/parse.ts` silently drops the block.
+    expect(prompt).toContain('`severity:`');
+    expect(prompt).toContain('`blocking` / `non-blocking` / `suggestion`');
+    // The title becomes a directory name, so it stays latin.
+    expect(prompt).toContain('short and in English');
+  });
+
   it('instructs a review_outcome summary call after synthesis (spec 146)', () => {
     const prompt = reviewRequestPrompt({
       reviewers: ['A', 'B', 'C'],

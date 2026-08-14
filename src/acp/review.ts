@@ -154,6 +154,21 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
       '```review:metrics / ```review:chart where a number or a shape helps. A Board that is only a findings ' +
       'list is a regression to what this command already did in turn text.',
   );
+  // The Board is read by a Thai human; the parser is not. Free text goes to the
+  // human, the fence grammar goes to `src/review-board/parse.ts`, and the title
+  // becomes a directory name — hence the three-way split spelled out here.
+  lines.push(
+    '4b. LANGUAGE — write everything the human reads in NATURAL THAI: the prose, every `say:`, finding ' +
+      'titles and the prose under them, decision questions and options, metric and chart labels. Write the ' +
+      'way a Thai engineer actually writes, NOT a word-for-word rendering of an English sentence — if a Thai ' +
+      'phrase only makes sense next to the English it came from, it is the wrong phrase. Do NOT translate ' +
+      'technical terms: API and type names, tool names, flags, file paths, identifiers, and established ' +
+      'jargon (race, guard, fan-out, diff, permission, …) stay in English inside the Thai sentence. Keep the ' +
+      'machine-parsed parts in English or the document mis-parses: fence names, field keys (`title:`, ' +
+      '`severity:`, `steps:`, `at:`, `say:`, `question:`, `options:`, `recommended:`, `kind:`, `data:`), and ' +
+      'the severity values `blocking` / `non-blocking` / `suggestion`. The `review_new { title }` argument is ' +
+      'the one exception: short and in English, because it becomes the bundle directory name on disk.',
+  );
   lines.push(
     '5. **A clean review still gets a Board, and it is not an empty one.** If every reviewer said LGTM, ' +
       'compose prose on what the change does, a walkthrough of it, metrics, and zero findings. That is the ' +
