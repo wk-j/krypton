@@ -61,6 +61,8 @@ import {
   type HarnessLaneMark,
 } from './window-footer-lanes';
 import { projectBadge, type ProjectBadge } from './window-footer-project';
+import { diffStatBadge, type DiffStatBadge } from './window-footer-diff-stat';
+import { diffStatStore } from './diff-stat-store';
 import type { ViewBus } from './view-bus';
 import { SYSTEM_SOURCE, type ViewAddress } from './view-bus-types';
 import {
@@ -379,6 +381,14 @@ export class Compositor {
   private laneStripKeyByWindow = new Map<WindowId, string>();
   /** spec 219: each window's rendered project badge; skips no-op repaints. */
   private projectBadgeKeyByWindow = new Map<WindowId, string>();
+  /** spec 220: per-window subscription to the diff-stat poll of its repo. */
+  private diffStatUnsubscribeByWindow = new Map<WindowId, () => void>();
+  /** spec 220: the repo root each window's rail is currently reporting on.
+   *  Also the staleness guard for the async root resolution below. */
+  private diffStatRootByWindow = new Map<WindowId, string | null>();
+  /** spec 220: each window's rendered counts; skips no-op repaints, which is
+   *  what keeps a poll that finds no change from touching the DOM at all. */
+  private diffStatKeyByWindow = new Map<WindowId, string>();
 
   /** Callbacks invoked after config reload with the fresh config */
   private onConfigReloadCallbacks: Array<(config: KryptonConfig) => void> = [];
@@ -1000,6 +1010,17 @@ export class Compositor {
       });
     });
 
+    // spec 220: a lane finishing a turn is the moment the diff stat is knowably
+    // stale, so push the poll rather than waiting out its interval. One
+    // subscription for the whole compositor: the store is keyed by repo root and
+    // ignores a root no window is watching, so this costs nothing when the rail
+    // is not showing counts for that repo.
+    bus.onSignal({ kind: 'harness:lane-idle' }, (sig) => {
+      void this.resolveRepoRoot(sig.value.cwd).then((root) => {
+        if (root) diffStatStore.refresh(root);
+      });
+    });
+
     bus.onIntent({ kind: 'pane:focus' }, (intent) => {
       const info = this.findPaneInfoByViewId(intent.payload.viewId);
       if (!info) return { consumed: false };
@@ -1287,6 +1308,7 @@ export class Compositor {
   private syncWindowFooter(win: KryptonWindow): void {
     this.syncWindowUsageStatus(win);
     this.syncWindowLaneStrip(win);
+    void this.syncWindowDiffStat(win);
     // Last, so its `prepend` lands ahead of the quotas': DOM order is what a
     // screen reader follows, and CSS `order` puts the badge first visually.
     this.syncWindowProjectBadge(win);
@@ -1465,15 +1487,117 @@ export class Compositor {
     return el;
   }
 
+  /**
+   * spec 220: follow the active tab's focused content view and report its repo's
+   * uncommitted line volume on this window's own rail.
+   *
+   * Unlike the project name beside it, the answer changes *under* a fixed
+   * working directory, so this one subscribes: `diffStatStore` polls per repo
+   * root — shared across every window on the same project — and the lane-idle
+   * bridge in `attachToBus` pushes it a beat early at turn boundaries.
+   *
+   * Async because the cwd → repo root resolution is a git call (cached per cwd),
+   * so the focused directory is re-read after the await: a focus change that
+   * lands mid-resolution must not leave the rail subscribed to the pane the user
+   * just left.
+   */
+  private async syncWindowDiffStat(win: KryptonWindow): Promise<void> {
+    const dir = this.focusedProjectDir(win);
+    const root = dir ? await this.resolveRepoRoot(dir) : null;
+
+    // The window may have closed or moved on while git answered.
+    if (!this.windows.has(win.id)) return;
+    // Focus may also have moved on. Two syncs in flight can finish out of order
+    // — a cached root resolves instantly while an uncached one costs a git call
+    // — so without this the slower, older answer would win and leave the rail
+    // reporting the pane the user just left.
+    if (this.focusedProjectDir(win) !== dir) return;
+    if (this.diffStatRootByWindow.has(win.id) && this.diffStatRootByWindow.get(win.id) === root) {
+      // Same repo: keep the subscription and just re-render. Cheap — the
+      // key compare below drops it before it touches the DOM.
+      this.renderWindowDiffStat(win, root ? diffStatBadge(diffStatStore.snapshot(root)) : null);
+      return;
+    }
+
+    this.diffStatUnsubscribeByWindow.get(win.id)?.();
+    this.diffStatUnsubscribeByWindow.delete(win.id);
+    this.diffStatRootByWindow.set(win.id, root);
+
+    if (!root) {
+      this.renderWindowDiffStat(win, null);
+      return;
+    }
+    const render = (): void =>
+      this.renderWindowDiffStat(win, diffStatBadge(diffStatStore.snapshot(root)));
+    this.diffStatUnsubscribeByWindow.set(win.id, diffStatStore.subscribe(root, render));
+    // A repo already being polled for another window has counts to show now.
+    render();
+  }
+
+  /**
+   * spec 220: the diff stat — `+added -removed` for the focused view's repo,
+   * magnified to the same size as the project's drop cap and the lane logo so
+   * the rail's right end reads as one phrase: *project, volume, lane*.
+   *
+   * Absent when the focused pane has no repo, and absent on a clean tree — a
+   * readout with nothing to report says nothing rather than holding rail space
+   * for a zero.
+   */
+  private renderWindowDiffStat(win: KryptonWindow, badge: DiffStatBadge | null): void {
+    const footer = win.element.querySelector<HTMLElement>('.krypton-window__footer');
+    if (!footer) return;
+    let el = footer.querySelector<HTMLElement>('.krypton-window__diff-stat');
+
+    if (!badge) {
+      el?.remove();
+      this.diffStatKeyByWindow.delete(win.id);
+      return;
+    }
+    const key = `${badge.added} ${badge.removed} ${badge.title}`;
+    if (el && this.diffStatKeyByWindow.get(win.id) === key) return;
+    this.diffStatKeyByWindow.set(win.id, key);
+
+    if (!el) {
+      el = document.createElement('span');
+      el.className = 'krypton-window__diff-stat';
+      // Visual placement is CSS `order`; the insertion point only decides
+      // reading order, and the counts must follow the project they belong to.
+      // Anchored on the badge rather than prepended, because this readout is
+      // created after an await while the badge is not — whichever lands first,
+      // a screen reader still hears "krypton" before its counts.
+      const projectEl = footer.querySelector('.krypton-window__project');
+      if (projectEl) projectEl.after(el);
+      else footer.prepend(el);
+    }
+    const added = document.createElement('span');
+    added.className = 'krypton-window__diff-add';
+    added.textContent = badge.added;
+    const removed = document.createElement('span');
+    removed.className = 'krypton-window__diff-del';
+    removed.textContent = badge.removed;
+    el.replaceChildren(added, removed);
+    // The tokens are abbreviated past a thousand; the exact counts, the file
+    // count and any lower-bound caveat live here, where there is room.
+    el.title = badge.title;
+    el.setAttribute('aria-label', badge.title);
+  }
+
+  /** The working directory the window's rail currently answers for: the active
+   *  tab's focused pane's content view. Shared by the project badge and the diff
+   *  stat, which must never disagree about whose project they are describing. */
+  private focusedProjectDir(win: KryptonWindow): string | null {
+    const tab = win.tabs[win.activeTabIndex];
+    const pane = tab ? this.findPaneInTree(tab.paneTree, tab.focusedPaneId) : null;
+    return pane?.contentView?.getWorkingDirectory?.() ?? null;
+  }
+
   /** spec 219: follow the active tab's focused content view and name its project
    *  on this window's own rail. Unlike the quotas and the lane strip there is
    *  nothing to subscribe to — a view's working directory is fixed for its
    *  lifetime, so the four existing sync points are exactly the moments the
    *  answer can change. */
   private syncWindowProjectBadge(win: KryptonWindow): void {
-    const tab = win.tabs[win.activeTabIndex];
-    const pane = tab ? this.findPaneInTree(tab.paneTree, tab.focusedPaneId) : null;
-    const dir = pane?.contentView?.getWorkingDirectory?.() ?? null;
+    const dir = this.focusedProjectDir(win);
     this.renderWindowProjectBadge(win, projectBadge(dir, getHomeLikePrefix()));
   }
 
@@ -3878,6 +4002,12 @@ export class Compositor {
     this.laneMarksUnsubscribeByWindow.delete(id);
     this.laneStripKeyByWindow.delete(id);
     this.projectBadgeKeyByWindow.delete(id);
+    // spec 220: the last window on a repo stops its poll (the store is
+    // ref-counted), so a closed workspace costs nothing.
+    this.diffStatUnsubscribeByWindow.get(id)?.();
+    this.diffStatUnsubscribeByWindow.delete(id);
+    this.diffStatRootByWindow.delete(id);
+    this.diffStatKeyByWindow.delete(id);
 
     // Exit maximize mode if the maximized window is being closed
     if (this.maximizedWindowId === id) {

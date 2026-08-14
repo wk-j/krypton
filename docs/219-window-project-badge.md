@@ -171,7 +171,7 @@ None. The badge is a readout.
 
 ```html
 <!-- DOM order; painted order is by CSS `order`:
-     usage-status → notif → project (1) → lane-strip (2) -->
+     usage-status → notif → project (1) → diff-stat (2, spec 220) → lane-strip (3) -->
 <div class="krypton-window__footer">
   <span class="krypton-window__project" title="~/Source/krypton"
         aria-label="project krypton — ~/Source/krypton">
@@ -184,7 +184,8 @@ None. The badge is a readout.
 </div>
 ```
 
-Painted left to right: `quotas … notification | krypton ⟨lane logo⟩ CLAUDE-1`.
+Painted left to right: `quotas … notification | krypton ⟨lane logo⟩ CLAUDE-1` — and since spec 220,
+with the repo's `+added -removed` between the name and the logo, magnified to match.
 
 | Concern | Rule | Why |
 |---------|------|-----|

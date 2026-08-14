@@ -170,9 +170,14 @@ The existing footer becomes:
   after its last message, so most of the time the quotas share the rail with the
   lane strip alone. See `docs/40-notification-overlay.md`.
 - Since spec 219 the rail has a third occupant, the project badge
-  (`.krypton-window__project`, `order: 1`). It sits at the **right** end between
-  the notification and the lane strip, so the quotas keep the rail's left edge
-  and are the compressible half — the badge and the strip are both `flex: none`.
+  (`.krypton-window__project`, `order: 1`), and since spec 220 a fourth, the diff
+  stat (`.krypton-window__diff-stat`, `order: 2`) immediately right of it. Both
+  sit at the **right** end between the notification and the lane strip, so the
+  quotas keep the rail's left edge and remain the compressible half — badge, stat
+  and strip are all `flex: none`. The stat is magnified like its neighbours, so
+  the existing `@container (max-width: 620px)` block that drops secondary quotas
+  also un-zooms it: on a narrow rail the quotas and the counts are competing for
+  the same pixels.
 - Since spec 218 the footer has a third occupant, the harness lane strip
   (`.krypton-window__lane-strip`), pinned to the rail's far right past the
   notification. All of them are driven from one

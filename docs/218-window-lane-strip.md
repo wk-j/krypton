@@ -194,14 +194,17 @@ whose drop cap is magnified the same way — the two magnified marks sit togethe
 "which project" and "which lane" are read in one glance. They cannot collide: the badge scales
 `font-size`, so its box is its painted width, and the logo's transform overgrowth is reserved by
 its own `margin-inline`. The badge also takes over the right-pinning `margin-left: auto`, leaving
-the strip a plain 10px gap whenever a badge is present.)
+the strip a plain 10px gap whenever a badge is present. Since spec 220 the diff stat sits between
+the two at `order: 2`, magnified by the same factor — so the rail's right end is one oversized
+phrase, *project · volume · lane*. It never claims the free space: it cannot appear without the
+badge, so the pushing arrangement below is unchanged.)
 
 ```html
 <div class="krypton-window__footer">
   <div class="krypton-window__usage-status">…</div>
-  <!-- appended last; `order: 2` also keeps it right of the notification
-       control (which re-appends itself into the focused window's footer) and of
-       the spec-219 project badge at `order: 1` -->
+  <!-- appended last; `order: 3` also keeps it right of the notification
+       control (which re-appends itself into the focused window's footer), of
+       the spec-219 project badge at `order: 1` and the spec-220 diff stat at 2 -->
   <div class="krypton-notif">…</div>
   <div class="krypton-window__lane-strip"
        aria-label="harness lanes: Claude-1 (active), Grok-1">

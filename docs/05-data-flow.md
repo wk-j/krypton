@@ -470,13 +470,47 @@ PULL (window ← harness), on open and on every auto-refresh:
    off by code point — or null for a pane with no project (a terminal).
 4. renderWindowProjectBadge() compares label+title against the window's cached key
    and returns early when unchanged; null removes the element and the cache entry.
-5. The badge renders at the rail's right end, immediately left of the lane strip
-   (order: 1, strip at 2): the first two characters at
+5. The badge renders at the rail's right end, immediately left of the diff stat
+   (order: 1, stat at 2, strip at 3): the first two characters at
    --krypton-window-project-zoom × the chrome font, the rest at chrome size on
    the same baseline, both anchored to the rail's floor so the magnified head
    overflows upward over the pane. The badge carries the right-pinning
-   margin-left: auto; the strip trails it with a fixed gap.
+   margin-left: auto; the stat and the strip trail it with fixed gaps.
 6. closeWindow() drops the cached badge key.
+```
+
+## Window Diff Stat Flow (spec 220)
+
+```
+1. Same four entry points as above: syncWindowFooter(win) calls
+   syncWindowDiffStat(win) just before the project badge, so the badge's prepend
+   lands ahead of it and reading order is "project, then its counts".
+2. It reads the focused pane's getWorkingDirectory?.() and resolves it through
+   resolveRepoRoot(cwd) — the compositor's existing cwd → toplevel cache, so the
+   git call happens once per directory, not once per sync.
+3. Unchanged root: re-render only (the key compare below drops it before the DOM).
+   New root: the previous subscription is dropped and the window subscribes to
+   diffStatStore for the new one. No root (a terminal, a non-repo directory):
+   the element is removed and nothing is subscribed.
+4. diffStatStore is keyed by REPO ROOT, not by window: the first subscriber for a
+   root fires invoke('working_diff_stat', { cwd }) and arms a 4 s interval; every
+   further window on that project rides the same timer; the last unsubscribe
+   clears it. Fetches are single-flight per root with one trailing re-fetch, and
+   the timer stops while document.visibilityState is 'hidden' (with an immediate
+   re-fetch on return).
+5. Rust: git.rs::working_diff_stat() runs `diff --numstat -z -M HEAD` (empty-tree
+   base on an unborn branch) plus a bounded untracked walk counted as additions,
+   and returns totals only — { repoRoot, files, added, removed, truncated }.
+6. Every store tick re-renders every subscribed window: diffStatBadge() turns the
+   totals into { added, removed, title } — abbreviated past 1000, null on a clean
+   tree — and renderWindowDiffStat() compares against the window's cached key, so
+   a poll that finds no change writes no DOM at all.
+7. In parallel, attachToBus subscribes ONCE to ViewBus `harness:lane-idle`,
+   resolves the signal's cwd to a root and calls diffStatStore.refresh(root):
+   the counts land at the turn boundary instead of up to 4 s later. The store
+   ignores a root no window is watching, so this costs nothing off-screen.
+8. closeWindow() unsubscribes (stopping the poll if it was the last window on
+   that repo) and drops the cached root and counts.
 ```
     e. #mem clear clears the active lane memory document for future prompts only.
     f. #cancel also clears the lane's prompt queue. #unqueue [N] removes the

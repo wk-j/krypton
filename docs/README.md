@@ -223,8 +223,9 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 217 | [`#reviews` — a self-contained review page](./217-review-archive-self-contained.md) |
 | 218 | [Window Status Bar Lane Strip](./218-window-lane-strip.md) |
 | 219 | [Window Project Badge](./219-window-project-badge.md) |
+| 220 | [Window Diff Stat](./220-window-diff-stat.md) |
 
-## ADRs (19)
+## ADRs (20)
 
 | # | Decision |
 |---|----------|
@@ -247,6 +248,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 17 | [The backend link indicator is coloured by fault, unlike the review depth gauges](./adr/0017-backend-link-is-coloured-by-fault.md) |
 | 18 | [LLM usage is priced by Xenon at read time, not by Krypton](./adr/0018-llm-usage-is-priced-by-xenon-not-krypton.md) |
 | 19 | [Per-turn usage is streamed telemetry, not a published resource](./adr/0019-usage-is-telemetry-not-a-published-resource.md) |
+| 20 | [The status-bar diff stat polls; the Diff Window still does not](./adr/0020-diff-stat-polls-diff-window-does-not.md) |
 
 ## Also
 

@@ -381,6 +381,15 @@ pub fn collect_working_diff(cwd: String, staged: bool) -> Result<crate::git::Wor
     crate::git::collect_working_diff(&cwd, staged)
 }
 
+/// spec 220: total uncommitted line volume for the window status bar's diff
+/// readout — `+added -removed` vs `HEAD` for the repo containing `cwd`. Polled
+/// a few seconds apart per repo, so it deliberately returns totals rather than
+/// the diff `collect_working_diff` above builds.
+#[tauri::command]
+pub fn working_diff_stat(cwd: String) -> Result<crate::git::WorkingDiffStat, String> {
+    crate::git::working_diff_stat(&cwd)
+}
+
 /// spec 207: collect lightweight, deterministic Git status and line counts for
 /// assistant-response file references. No unified diff or assistant-provided
 /// count data enters this path.

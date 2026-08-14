@@ -15,6 +15,12 @@ use std::process::Command;
 /// the Diff Window lists them by name instead of rendering megabytes.
 const UNTRACKED_MAX_BYTES: u64 = 1_048_576;
 
+/// Stop reading untracked files after this many in `working_diff_stat` — the
+/// window rail polls it every few seconds, so its cost has to be bounded even
+/// on a tree carrying a large unignored scratch directory. Hitting the cap sets
+/// `truncated`, which is how the readout admits its counts are a lower bound.
+const UNTRACKED_SCAN_MAX: usize = 500;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkingDiff {
@@ -26,6 +32,28 @@ pub struct WorkingDiff {
     pub diff: String,
     /// Untracked files whose content was deliberately not rendered.
     pub skipped: Vec<SkippedFile>,
+}
+
+/// Uncommitted line volume for one repo — the window status bar's readout
+/// (spec 220). Deliberately carries no diff text: it is polled, and the whole
+/// point is that answering "how much changed" costs two integers, not megabytes.
+///
+/// Counts run against `HEAD` (staged *and* unstaged) plus untracked additions,
+/// unlike `collect_working_diff`, whose unstaged mode excludes the index because
+/// the Diff Window offers staged as a separate view. A rail has no second view
+/// to switch to, so staging work must not make it vanish from the total.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingDiffStat {
+    pub repo_root: String,
+    /// Files with any change vs `HEAD`, including untracked and binary ones.
+    pub files: u64,
+    pub added: u64,
+    pub removed: u64,
+    /// A file's lines could not be counted (binary, over `UNTRACKED_MAX_BYTES`,
+    /// unreadable) or the untracked walk hit `UNTRACKED_SCAN_MAX`, so `added`
+    /// and `removed` are a lower bound.
+    pub truncated: bool,
 }
 
 #[derive(Serialize)]
@@ -160,6 +188,90 @@ pub fn collect_working_diff(cwd: &str, staged: bool) -> Result<WorkingDiff, Stri
     })
 }
 
+/// Total uncommitted line volume for the repo containing `cwd` (spec 220).
+///
+/// One `--numstat` over everything tracked that differs from `HEAD`, plus a
+/// bounded walk of untracked files counted as pure additions — the same
+/// [[Working diff]] membership `collect_working_diff` renders, reduced to totals
+/// and without ever materializing a diff.
+pub fn working_diff_stat(cwd: &str) -> Result<WorkingDiffStat, String> {
+    if cwd.is_empty() {
+        return Err("no working directory".to_string());
+    }
+    let root = repo_root(Path::new(cwd)).ok_or_else(|| "not a git repository".to_string())?;
+    let root_path = Path::new(&root).to_path_buf();
+    let base = diff_base(&root_path)?;
+
+    let numstat_bytes = run_git_bytes(
+        &root_path,
+        &[
+            "--no-pager",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "-M",
+            "--numstat",
+            "-z",
+            &base,
+            "--",
+        ],
+    )
+    .ok_or_else(|| "git numstat failed".to_string())?;
+
+    let mut stat = WorkingDiffStat {
+        repo_root: root,
+        files: 0,
+        added: 0,
+        removed: 0,
+        truncated: false,
+    };
+    for (added, removed) in parse_numstat_z(&numstat_bytes).values() {
+        stat.files += 1;
+        match (added, removed) {
+            (Some(added), Some(removed)) => {
+                stat.added += added;
+                stat.removed += removed;
+            }
+            // A binary change reports `-`/`-`: the file changed, but it has no
+            // line count to contribute, so the totals understate it.
+            _ => stat.truncated = true,
+        }
+    }
+
+    let untracked = run_git(
+        &root_path,
+        &["ls-files", "--others", "--exclude-standard", "-z"],
+    )
+    .unwrap_or_default();
+    for (index, path) in untracked.split('\0').filter(|p| !p.is_empty()).enumerate() {
+        if index >= UNTRACKED_SCAN_MAX {
+            stat.truncated = true;
+            break;
+        }
+        stat.files += 1;
+        match count_untracked_lines(&root_path.join(path)).0 {
+            Some(added) => stat.added += added,
+            None => stat.truncated = true,
+        }
+    }
+
+    Ok(stat)
+}
+
+/// The left side of a working-tree diff: `HEAD`, or git's empty tree when the
+/// branch is unborn (a fresh `git init`, where `HEAD` does not resolve and
+/// `git diff HEAD` therefore fails). Against the empty tree every tracked file
+/// reads as a pure addition, which is what a repo with no commits should show.
+fn diff_base(root: &Path) -> Result<String, String> {
+    if run_git(root, &["rev-parse", "--verify", "HEAD"]).is_some() {
+        return Ok("HEAD".to_string());
+    }
+    run_git(root, &["hash-object", "-t", "tree", "--stdin"])
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "could not derive empty Git tree".to_string())
+}
+
 /// Collect current working-tree status and line counts only for assistant file
 /// references. All counts are derived from Git/local bytes; assistant output is
 /// used solely to identify normalized absolute targets (spec 207).
@@ -234,14 +346,7 @@ pub fn collect_reference_git_state(
     .ok_or_else(|| "git status failed".to_string())?;
     let statuses = parse_status_porcelain_z(&status_bytes);
 
-    let base = if run_git(&root_path, &["rev-parse", "--verify", "HEAD"]).is_some() {
-        "HEAD".to_string()
-    } else {
-        run_git(&root_path, &["hash-object", "-t", "tree", "--stdin"])
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| "could not derive empty Git tree".to_string())?
-    };
+    let base = diff_base(&root_path)?;
     let numstat_bytes = run_git_bytes(
         &root_path,
         &[
@@ -701,6 +806,66 @@ mod tests {
         assert_eq!(snapshot.changes[0].status, "?");
         assert_eq!(snapshot.changes[0].count_kind, "unavailable");
         assert_eq!(snapshot.changes[0].added, None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn diff_stat_counts_staged_unstaged_and_untracked() {
+        let dir = test_repo("stat");
+        std::fs::write(dir.join("tracked.txt"), "a\nb\nc\n").expect("write tracked");
+        git_ok(&dir, &["add", "."]);
+        git_ok(&dir, &["commit", "-qm", "init"]);
+
+        // Staged: one line replaced. Unstaged: two lines appended to a second
+        // file. Untracked: one new text file and one binary blob.
+        std::fs::write(dir.join("tracked.txt"), "a\nB\nc\n").expect("modify tracked");
+        git_ok(&dir, &["add", "tracked.txt"]);
+        std::fs::write(dir.join("tracked.txt"), "a\nB\nc\nd\n").expect("append tracked");
+        std::fs::write(dir.join("fresh.txt"), "one\ntwo\n").expect("write untracked");
+        std::fs::write(dir.join("blob.bin"), b"\x00\x01\x02").expect("write binary");
+
+        let stat = working_diff_stat(dir.to_str().expect("utf8 dir")).expect("collect stat");
+        assert_eq!(stat.files, 3, "tracked + untracked text + binary");
+        // Staged and unstaged both count: 2 changed/added lines in tracked.txt
+        // plus 2 from the untracked file.
+        assert_eq!(stat.added, 4);
+        assert_eq!(stat.removed, 1);
+        assert!(stat.truncated, "binary untracked file has no line count");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn diff_stat_is_zero_on_a_clean_tree() {
+        let dir = test_repo("stat-clean");
+        std::fs::write(dir.join("tracked.txt"), "a\n").expect("write tracked");
+        git_ok(&dir, &["add", "."]);
+        git_ok(&dir, &["commit", "-qm", "init"]);
+
+        let stat = working_diff_stat(dir.to_str().expect("utf8 dir")).expect("collect stat");
+        assert_eq!((stat.files, stat.added, stat.removed), (0, 0, 0));
+        assert!(!stat.truncated);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn diff_stat_counts_index_on_an_unborn_branch() {
+        // A fresh `git init` has no HEAD to diff against; the empty-tree base
+        // makes everything staged read as a pure addition.
+        let dir = test_repo("stat-unborn");
+        std::fs::write(dir.join("first.txt"), "a\nb\n").expect("write file");
+        git_ok(&dir, &["add", "."]);
+
+        let stat = working_diff_stat(dir.to_str().expect("utf8 dir")).expect("collect stat");
+        assert_eq!((stat.files, stat.added, stat.removed), (1, 2, 0));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn diff_stat_rejects_a_path_outside_a_repo() {
+        let dir = std::env::temp_dir().join(format!("krypton-git-nonrepo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        assert!(working_diff_stat(dir.to_str().expect("utf8 dir")).is_err());
+        assert!(working_diff_stat("").is_err());
         std::fs::remove_dir_all(&dir).ok();
     }
 }

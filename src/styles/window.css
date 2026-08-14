@@ -210,6 +210,12 @@
      than the lane logo's artwork fills its viewBox, so equal numbers do not
      mean equal ink height. */
   --krypton-window-project-zoom: 2.9;
+  /* spec 220: magnification of the diff stat's counts. Its own variable rather
+     than a reuse of the project zoom above, because the three magnified marks
+     on this rail scale from different ink (a glyph pair, digits, an SVG) and a
+     theme retuning the rail will want them independent — the shared 2.9 default
+     is what makes them agree today. */
+  --krypton-window-diff-zoom: 2.9;
   /* spec 218: the lane chip's height, and with it the inset of the strip's own
      text line from the rail floor. Declared on the footer because spec 219's
      badge sits on that same line (see `margin-bottom` below) — the two have to
@@ -297,6 +303,55 @@
   text-overflow: ellipsis;
 }
 
+/* ─── Window footer diff stat (spec 220) ───
+   How much has changed in this window's project, uncommitted: `+added -removed`
+   against HEAD, staged and unstaged and untracked alike. Sits immediately right
+   of the project name and is magnified to the same level as that name's drop cap
+   and the lane logo, so the rail's right end reads as one oversized phrase —
+   project, volume, lane — rather than a magnified name with a footnote beside it.
+
+   Same geometry as the badge for the same reasons: scaled `font-size` (not a
+   transform) so the box carries its true painted width and cannot lay itself
+   over the quotas; floor-pinned to the lane chip's line so the overgrowth
+   escapes upward onto one shared baseline; positioned so those escaped pixels
+   paint above `.krypton-pane` instead of being sliced at the rail's top edge.
+   Colour is the repo's, not the window's: these are absolute facts about the
+   tree, so they take the ansi green/red pair the rest of Krypton counts lines
+   in — never `--krypton-window-accent`, which means window identity.
+   Flat, and static: no border, no chip, no pulse when the number moves. */
+
+.krypton-window__diff-stat {
+  order: 2;
+  flex: none;
+  /* Never claims the free space with `margin-left: auto`: it cannot appear
+     without the project badge (both come from the focused pane's cwd), so the
+     badge is always the one pushing the group right. */
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  align-self: flex-end;
+  margin-bottom: calc(
+    (var(--krypton-footer-height, 28px) - var(--krypton-lane-chip-height, 18px)) / 2
+  );
+  position: relative;
+  line-height: 1;
+  white-space: nowrap;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: calc(
+    var(--krypton-chrome-font-size, 11px) * var(--krypton-window-diff-zoom, 2.9)
+  );
+  letter-spacing: -0.02em;
+}
+
+.krypton-window__diff-add {
+  color: var(--krypton-ansi-green, #39ff7f);
+}
+
+.krypton-window__diff-del {
+  color: var(--krypton-ansi-red, #ff3a5c);
+}
+
 /* ─── Window footer harness lane strip (spec 218) ───
    One backend mark per lane of the harness in this window's focused pane, so
    "what is running here, and which lane am I driving" is legible from the
@@ -319,8 +374,9 @@
   --krypton-lane-zoom: 2.9;
   /* Ends the rail: `order` rather than DOM position, because the shared
      notification control re-appends itself into whichever footer has focus and
-     would otherwise land after the strip. */
-  order: 2;
+     would otherwise land after the strip. (Past the project badge at 1 and the
+     diff stat at 2.) */
+  order: 3;
   /* Pins right on its own when nothing else in the rail claims the free space. */
   margin-left: auto;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
@@ -492,6 +548,18 @@
 @container (max-width: 620px) {
   .krypton-window__usage-quota--secondary {
     display: none;
+  }
+
+  /* spec 220: the magnified pair costs ~150px of rail, which on a narrow window
+     is the difference between the quotas rendering and not. Give up the size,
+     keep the information — the same trade the secondary-quota rule above makes.
+     The override lands on the element rather than on `.krypton-window__footer`,
+     which declares the variable: the footer *is* the query container, and a
+     container query only ever matches its descendants. */
+  .krypton-window__diff-stat {
+    --krypton-window-diff-zoom: 1;
+    gap: 4px;
+    margin-left: 6px;
   }
 
   .krypton-window__usage-quota--secondary + .krypton-window__usage-quota::before {

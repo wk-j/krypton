@@ -191,6 +191,7 @@ pub fn run() {
             commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
             commands::collect_working_diff,
+            commands::working_diff_stat,
             commands::collect_reference_git_state,
             commands::list_harness_mcp_stats,
             commands::acp_cancel_pending_artifacts,
