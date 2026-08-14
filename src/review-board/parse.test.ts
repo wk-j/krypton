@@ -48,6 +48,19 @@ describe('parseBlockBody', () => {
     ]);
   });
 
+  it('reads a flush-left list of maps under a bare key', () => {
+    const { values, stray } = parseBlockBody(
+      'title: tour\nsteps:\n- at: a.ts:1\n  say: first\n- at: b.ts:2\n  say: second\nrecommended: 1\n',
+    );
+    expect(values.get('title')).toBe('tour');
+    expect(values.get('steps')).toEqual([
+      { at: 'a.ts:1', say: 'first' },
+      { at: 'b.ts:2', say: 'second' },
+    ]);
+    expect(values.get('recommended')).toBe('1');
+    expect(stray).toEqual([]);
+  });
+
   it('reads an indented map', () => {
     const { values } = parseBlockBody('data:\n  acp/: 152\n  diff-view: 41\n');
     expect(values.get('data')).toEqual({ 'acp/': '152', 'diff-view': '41' });

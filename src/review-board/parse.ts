@@ -162,11 +162,20 @@ export function parseBlockBody(body: string): { values: Map<string, BlockValue>;
       continue;
     }
 
-    // `key:` with nothing after it — collect the indented block that follows.
+    // `key:` with nothing after it — collect the block that follows. A member
+    // is either indented or a `- ` list item at column zero (valid YAML; lanes
+    // write both). A blank line is skipped. Anything else at column zero is
+    // the next key and ends the group.
     const nested: string[] = [];
     i++;
-    while (i < lines.length && (lines[i].trim().length === 0 || indentOf(lines[i]) > 0)) {
-      if (lines[i].trim().length > 0) nested.push(lines[i]);
+    while (i < lines.length) {
+      const next = lines[i];
+      if (next.trim().length === 0) {
+        i++;
+        continue;
+      }
+      if (indentOf(next) === 0 && !next.trim().startsWith('-')) break;
+      nested.push(next);
       i++;
     }
     values.set(head.key, decodeNested(nested, stray));
