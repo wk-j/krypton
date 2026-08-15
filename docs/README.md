@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (208)
+## Specs (209)
 
 | # | Spec |
 |---|------|
@@ -225,6 +225,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 219 | [Window Project Badge](./219-window-project-badge.md) |
 | 220 | [Window Diff Stat](./220-window-diff-stat.md) |
 | 221 | [Harness Status Line Redundancy Removal](./221-harness-status-line-density.md) |
+| 222 | [Harness Engineering Coach](./222-harness-engineering-coach.md) |
 
 ## ADRs (20)
 
