@@ -252,7 +252,6 @@ import {
 } from './harness-markdown';
 export { agentLinkOpenAction, hasMarkdownTable } from './harness-markdown';
 import {
-  abbreviatePath,
   basename,
   esc,
   filterSessionsForProject,
@@ -308,6 +307,12 @@ import {
 } from './usage-log';
 import { publishLinkFromPush } from '../backend-link';
 import {
+  buildBusySegments,
+  renderStatusSegments,
+  textSegments,
+  type MetaSegment,
+} from './harness-composer-meta';
+import {
   SPINNER_FRAMES,
   awaitingPeerText,
   compactPermissionLabel,
@@ -316,7 +321,6 @@ import {
   inferLaneModelName,
   renderLaneHead,
   renderLaneStats,
-  renderPollyBypassChip,
   renderProcessTree,
   renderSaltyBypassChip,
   renderSlashPalette,
@@ -11227,7 +11231,7 @@ export class AcpHarnessView implements ContentView {
     this.composerEl.className =
       `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}` +
       `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}`;
-    const chip = this.chip ?? this.composerStatusChip(lane);
+    const chip = this.chip !== null ? textSegments(this.chip) : this.composerStatusChip(lane);
     const chipClass = `acp-harness__memory-chip${!this.chip && lane.status === 'busy' ? ' acp-harness__memory-chip--running' : ''}`;
     const projectStatus = this.renderComposerProjectStatus();
     const before = lane.draft.slice(0, lane.cursor);
@@ -11261,11 +11265,13 @@ export class AcpHarnessView implements ContentView {
     );
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-meta">` +
-      `<span class="${chipClass}">${esc(chip)}</span>` +
+      `<span class="${chipClass}">${renderStatusSegments(chip)}</span>` +
       // spec 157: persistent token explaining why tool detail is absent — the
       // flag survives reopen, so the cue must too.
       (this.conciseMode ? `<span class="acp-harness__concise-tag">concise</span>` : '') +
-      renderPollyBypassChip(lane) +
+      // spec 221: no Polly chip here — `renderLaneStats` already prints
+      // `polly-bypass` for the active lane. Salty has no lane-stats cell, so
+      // dropping it too would lose the readout rather than deduplicate it.
       renderSaltyBypassChip(lane) +
       this.renderDirectiveChip(lane) +
       projectStatus +
@@ -11340,46 +11346,57 @@ export class AcpHarnessView implements ContentView {
     const pending = pendingChange !== null && pendingChange.directiveId !== lane.activeDirectiveId;
     const id = pendingChange ? pendingChange.directiveId : lane.activeDirectiveId;
     const directive = this.directiveById(id);
+    // spec 221: an unset directive said `directive none` — a chip whose only
+    // content is that it has no content. It returns the moment one is set; the
+    // picker itself lives on `Cmd+P` `.` and in the help overlay. A *pending*
+    // change still renders even when it resolves to none, because "clearing on
+    // the next send" is a state the user needs to see.
+    if (!directive && !pending) return '';
     const label = directive ? directive.id : 'none';
     const cls = `acp-harness__directive-chip${directive ? ' acp-harness__directive-chip--set' : ''}${pending ? ' acp-harness__directive-chip--pending' : ''}`;
     const suffix = pending ? ' (next send)' : '';
-    // spec 130: all harness-memory lanes may flag by default. Keep showing
-    // legacy directive metadata when present so older directive files stay
-    // legible.
+    // spec 130: all harness-memory lanes may flag by default, so `◆ default`
+    // distinguishes nothing and is omitted (spec 221). Legacy directive metadata
+    // still shows, so older directive files stay legible.
     const source = this.triageSource(lane);
-    const triageTag = lane.triageEquipped
+    const triageTag = lane.triageEquipped && source !== 'default'
       ? ` <span class="acp-harness__directive-chip__triage" title="attention triage ${source}; tools are available when this lane has harness memory MCP">◆ ${source}</span>`
       : '';
     return `<span class="${cls}" data-open-directive-picker="1" title="Cmd+P then . to change">directive ${esc(label)}${suffix}${triageTag}</span>`;
   }
 
-  private composerStatusChip(lane: HarnessLane): string {
-    if (this.openHintMode) return 'open reference: press label · Esc cancel';
-    if (this.focus === 'transcript') return 'command mode: 1-9 lanes · ^M memory · f open reference · r refresh Git · ? help · i/Esc input';
+  /** spec 221: the busy state is the only one with internal structure worth
+   *  splitting; every other state is one message and stays whole. The busy run
+   *  no longer carries the lane name, the output-token count, or the
+   *  `Ctrl+C cancel` hint — the lane head prints the name and the cancel hint
+   *  for the active lane in every layout, the input line one row below repeats
+   *  the name, and the lane stats row already shows `in N out N`. */
+  private composerStatusChip(lane: HarnessLane): MetaSegment[] {
+    if (this.openHintMode) return textSegments('open reference: press label · Esc cancel');
+    if (this.focus === 'transcript') return textSegments('command mode: 1-9 lanes · ^M memory · f open reference · r refresh Git · ? help · i/Esc input');
     if (lane.status === 'busy') {
-      const elapsed = lane.activeTurnStartedAt ? ` · ${formatElapsed(Date.now() - lane.activeTurnStartedAt)}` : '';
-      // spec 156: live activity + output-token counter, re-read on each 1 s tick.
-      const activity = lane.activity ? ` · ${formatLaneActivity(lane.activity)}` : '';
-      const outputTokens = lane.usage?.outputTokens;
-      const tokens = typeof outputTokens === 'number' && outputTokens > 0 ? ` · ${formatCount(outputTokens)} tok` : '';
-      const queued = lane.queuedPrompts.length > 0 ? ` · ${lane.queuedPrompts.length} queued` : '';
-      // Custom commands name the operation (reviewing / saving to wiki / …) so the
-      // user can tell a #review in flight from an ordinary turn; else plain 'running'.
-      const verb = lane.activeSystemLabel ?? 'running';
-      return `${lane.displayName} ${verb}${elapsed}${activity}${tokens}${queued} · Ctrl+C cancel`;
+      return buildBusySegments({
+        // Custom commands name the operation (reviewing / saving to wiki / …) so
+        // the user can tell a #review in flight from an ordinary turn.
+        verb: lane.activeSystemLabel ?? 'running',
+        elapsed: lane.activeTurnStartedAt ? formatElapsed(Date.now() - lane.activeTurnStartedAt) : null,
+        // spec 156: live activity, re-read on each 1 s tick.
+        activity: lane.activity ? formatLaneActivity(lane.activity) : null,
+        queued: lane.queuedPrompts.length,
+      });
     }
     if (lane.status === 'starting') {
       // Session is (re)initializing — the slowest sub-window of #goal/#new/#new!.
       // Cue it rather than falling through to the generic memory readout (Claude-2).
-      return `${lane.displayName} starting…`;
+      return textSegments(`${lane.displayName} starting…`);
     }
     const pending = this.coordinator.pendingPeersFor(lane.id);
     if (pending.length > 0 && (lane.status === 'awaiting_peer' || lane.status === 'idle')) {
-      return `${lane.displayName} · ${awaitingPeerText(pending)}`;
+      return textSegments(`${lane.displayName} · ${awaitingPeerText(pending)}`);
     }
-    if (lane.status === 'awaiting_peer') return `${lane.displayName} ${awaitingPeerText(pending)}`;
-    if (this.harnessMemoryWarning) return `memory off: ${truncate(this.harnessMemoryWarning, 64)}`;
-    return `memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`;
+    if (lane.status === 'awaiting_peer') return textSegments(`${lane.displayName} ${awaitingPeerText(pending)}`);
+    if (this.harnessMemoryWarning) return textSegments(`memory off: ${truncate(this.harnessMemoryWarning, 64)}`);
+    return textSegments(`memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`);
   }
 
   private updateComposerTick(): void {
@@ -11581,17 +11598,18 @@ export class AcpHarnessView implements ContentView {
     return `<section class="acp-harness__metrics-lane">${head}${tree}</section>`;
   }
 
+  /** spec 221: the branch only. The working directory used to lead this readout,
+   *  but it is printed three more times on the same screen — `renderLaneStats`
+   *  names the project, the window footer's project badge magnifies it, and the
+   *  workspace footer carries the full path for the focused pane. The branch is
+   *  the one part with no other home once this window loses focus. */
   private renderComposerProjectStatus(): string {
-    const cwd = this.projectDir ? abbreviatePath(this.projectDir) : 'no cwd';
     const branch = this.gitBranchLoading ? '...' : this.gitBranch;
+    if (!branch) return '';
     const title = this.projectDir ? `${this.projectDir}${this.gitBranch ? ` on ${this.gitBranch}` : ''}` : '';
-    const branchChip = branch
-      ? `<span class="acp-harness__project-branch">⎇ ${esc(branch)}</span>`
-      : '';
     return (
       `<span class="acp-harness__project-status" title="${esc(title)}">` +
-      `<span class="acp-harness__project-cwd">${esc(cwd)}</span>` +
-      branchChip +
+      `<span class="acp-harness__project-branch">⎇ ${esc(branch)}</span>` +
       `</span>`
     );
   }

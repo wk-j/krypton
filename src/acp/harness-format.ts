@@ -78,12 +78,16 @@ export function formatElapsed(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-/** spec 156: activity segment of the busy chip. Tool titles are hard-truncated
- *  so a full-path title cannot push the chip past one line. */
+/** spec 156: activity segment of the busy chip. Tool titles are truncated so a
+ *  pathological title cannot blow up the chip.
+ *
+ *  spec 221: the cap is only that guard now — the segment is the status line's
+ *  one shrinkable element and CSS ellipsizes it to the width actually available,
+ *  so a wide window can afford to show more than the old 32-char cut. */
 export function formatLaneActivity(activity: LaneActivity): string {
   if (activity.kind === 'thinking') return 'thinking…';
   if (activity.kind === 'writing') return 'writing…';
-  return `⚒ ${truncate(activity.label, 32)}`;
+  return `⚒ ${truncate(activity.label, 64)}`;
 }
 
 export function formatShortTime(epochMs: number): string {

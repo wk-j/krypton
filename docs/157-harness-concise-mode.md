@@ -112,7 +112,7 @@ CSS:
 }
 ```
 
-Discoverability: `composerStatusChip()` (`7251`) appends a muted `concise` token (`.acp-harness__concise-tag`, chrome-label typography, no left border per house rules) so the user always knows why machinery rows are absent — important because the flag persists across reopen.
+Discoverability: `renderComposer()` appends a muted `concise` token (`.acp-harness__concise-tag`, chrome-label typography, no left border per house rules) so the user always knows why machinery rows are absent — important because the flag persists across reopen. Spec 221 deleted several readouts from that row as duplicates of the lane head / lane stats / window footer; the `concise` tag is **not** among them and is never width-gated, because it has no other rendering site and explains an otherwise-invisible mode.
 
 ### Data Flow
 

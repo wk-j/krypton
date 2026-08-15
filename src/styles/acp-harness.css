@@ -2721,11 +2721,18 @@
   outline-offset: -4px;
 }
 
+/* spec 221: the row is its own query container, and it clips. The clip is the
+   structural guarantee the row never had — before it, a long run of rigid
+   segments painted straight past the composer's right edge and outside the
+   window. Everything inside is either fixed-width or the one shrinkable
+   segment, so clipping is a backstop, not the fitting mechanism. */
 .acp-harness__composer-meta {
+  container-type: inline-size;
   display: flex;
   align-items: center;
   gap: 0;
   min-height: 16px;
+  overflow: hidden;
   color: rgba(216, 232, 216, 0.46);
   font-size: 0.72em;
   letter-spacing: 0.08em;
@@ -3027,9 +3034,16 @@
   text-shadow: none;
 }
 
-/* Memory readout: the lane's heartbeat — tinted + softly lit, not flat gray. */
+/* Memory readout: the lane's heartbeat — tinted + softly lit, not flat gray.
+   spec 221: shrinkable, so the row's spring (the activity segment inside it) can
+   actually give. It used to be `flex: 0 0 auto`, which is why the chips to its
+   right were the ones pushed off the edge. */
 .acp-harness__memory-chip {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
   color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 42%, #d8e8d8);
   text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 26%, transparent);
 }
@@ -3038,28 +3052,57 @@
   color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 78%, rgba(216, 232, 216, 0.86));
 }
 
-.acp-harness__project-status {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  overflow: hidden;
-  text-transform: none;
+/* spec 221 — status-line segments. */
+.acp-harness__meta-seg {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
-.acp-harness__project-cwd {
+/* The live activity is the row's only spring: it gives up width before anything
+   is clipped, and it is the one readout with no second home (the lane head's
+   activity cell shows the latest transcript row, which lags behind this). The
+   whole-chip `text` form gets the same treatment for long idle messages. */
+.acp-harness__meta-seg[data-seg='activity'],
+.acp-harness__meta-seg[data-seg='text'] {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  color: rgba(109, 208, 255, 0.58);
+}
+
+/* Divider as a pseudo-element rather than a character, so a segment that is not
+   rendered takes its separator with it — no orphan or doubled middots. Same
+   voice as the chip separators further down this file. */
+.acp-harness__meta-seg + .acp-harness__meta-seg::before {
+  content: '·';
+  margin: 0 8px;
+  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 38%, transparent);
+  text-shadow: none;
+}
+
+/* spec 221: the branch is all that is left here — the cwd moved out entirely
+   (three other surfaces already name the project), so this no longer needs to
+   grow or clip. */
+.acp-harness__project-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: baseline;
+  text-transform: none;
 }
 
 .acp-harness__project-branch {
   flex: 0 0 auto;
   color: rgba(109, 208, 255, 0.92);
   text-shadow: 0 0 6px rgba(109, 208, 255, 0.22);
+}
+
+/* The last width-gated readout. On a third-width window the branch yields to the
+   activity text: it is the only segment left with an off-screen fallback — the
+   workspace footer prints it as soon as this window is focused. */
+@container (max-width: 480px) {
+  .acp-harness__project-branch {
+    display: none;
+  }
 }
 
 .acp-harness__input-line {
