@@ -112,7 +112,7 @@ CSS:
 }
 ```
 
-Discoverability: `renderComposer()` appends a muted `concise` token (`.acp-harness__concise-tag`, chrome-label typography, no left border per house rules) so the user always knows why machinery rows are absent — important because the flag persists across reopen. Spec 221 deleted several readouts from that row as duplicates of the lane head / lane stats / window footer; the `concise` tag is **not** among them and is never width-gated, because it has no other rendering site and explains an otherwise-invisible mode.
+Discoverability: no composer token. The mode used to append a muted `concise` tag to the composer status row so the persisted flag would explain the missing machinery rows; spec 221 removed it along with the row's other non-unique readouts. The collapsed tool cards are themselves the cue that the mode is on, and `Cmd+Shift+.` stays listed in the `?` help overlay — a permanent chip on every composer paint bought nothing the screen wasn't already showing.
 
 ### Data Flow
 
@@ -122,7 +122,7 @@ Discoverability: `renderComposer()` appends a muted `concise` token (`.acp-harne
 3. Flag flips, writeConciseModePreference persists it, this.render() runs
 4. Render sites toggle .acp-harness--concise on the root element
 5. CSS collapses tool cards to their head line and hides side-channel rows; streaming/dedupe logic untouched (all rows and detail nodes stay in DOM)
-6. Composer chip shows/clears the `concise` token
+6. No composer readout changes — the collapsed cards are the only cue
 ```
 
 ## Edge Cases

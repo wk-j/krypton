@@ -3292,18 +3292,6 @@
   display: none;
 }
 
-/* composer token cueing that the mode is on (the flag persists across reopen) */
-.acp-harness__concise-tag {
-  flex: 0 0 auto;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 0 6px;
-  border: 1px solid rgba(216, 232, 216, 0.28);
-  border-radius: 3px;
-  color: rgba(216, 232, 216, 0.62);
-}
-
 /* ═══════════════════════════════════════════════════════════════
    ZEN MODE — toggleable focused layout (spec 80)
    ═══════════════════════════════════════════════════════════════ */

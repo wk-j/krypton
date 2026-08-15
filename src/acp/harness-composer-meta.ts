@@ -23,8 +23,10 @@ export interface MetaSegment {
 }
 
 export interface BusyStatusInput {
-  /** `running`, or a custom command's own verb (`reviewing`, `saving to wiki`). */
-  verb: string;
+  /** A custom command's own verb (`reviewing`, `saving to wiki`), or null for an
+   *  ordinary turn — "running" is not a readout, it is the busy state itself,
+   *  which the spinner, the accented chip and the ticking clock all already show. */
+  verb: string | null;
   /** Pre-formatted `m:ss`; null before the turn's start stamp is known. */
   elapsed: string | null;
   /** Pre-formatted live activity (`thinking…`, `⚒ <tool>`); null when idle-ish.
@@ -41,13 +43,18 @@ export interface BusyStatusInput {
  * spec 221: the lane name and the `Ctrl+C cancel` hint that used to bracket this
  * run are deliberately absent — the lane head prints both for the active lane in
  * every layout (including Zen Mode), the input line one row below repeats the
- * name again, and the window footer's lane strip a third time.
+ * name again, and the window footer's lane strip a third time. The generic
+ * `running` verb is gone for the same reason: only a *named* operation is a
+ * readout. The fallback below exists so a turn whose clock and activity are both
+ * still unknown does not paint an empty chip.
  */
 export function buildBusySegments(input: BusyStatusInput): MetaSegment[] {
-  const segments: MetaSegment[] = [{ id: 'verb', text: input.verb }];
+  const segments: MetaSegment[] = [];
+  if (input.verb) segments.push({ id: 'verb', text: input.verb });
   if (input.elapsed) segments.push({ id: 'elapsed', text: input.elapsed });
   if (input.activity) segments.push({ id: 'activity', text: input.activity });
   if (input.queued > 0) segments.push({ id: 'queued', text: `${input.queued} queued` });
+  if (segments.length === 0) segments.push({ id: 'verb', text: 'running' });
   return segments;
 }
 

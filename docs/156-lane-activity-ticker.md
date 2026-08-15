@@ -24,6 +24,11 @@ Claude-1 running · 8:23 · ⚒ Edit src/acp/types.ts · 12.4k tok · Ctrl+C can
 Claude-1 running · 8:24 · thinking… · 12.6k tok · Ctrl+C cancel
 ```
 
+Superseded shape — spec 221 kept the activity segment (it is the row's only leading
+indicator) and deleted everything around it that another surface already prints: the
+lane name, the token count, the cancel hint and the generic `running` verb. The chip
+now reads `8:24 · thinking…`. See `docs/221-harness-status-line-density.md`.
+
 ## Research
 
 - `composerStatusChip()` (`src/acp/acp-harness-view.ts:7221`) builds the busy line;

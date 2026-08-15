@@ -8,7 +8,7 @@ import {
 } from './harness-composer-meta';
 
 const busy = (over: Partial<BusyStatusInput> = {}): BusyStatusInput => ({
-  verb: 'running',
+  verb: null,
   elapsed: '5:12',
   activity: '⚒ write wiki/index.md',
   queued: 0,
@@ -17,27 +17,31 @@ const busy = (over: Partial<BusyStatusInput> = {}): BusyStatusInput => ({
 
 describe('buildBusySegments', () => {
   it('orders verb, elapsed, activity, queued', () => {
-    expect(buildBusySegments(busy({ queued: 2 })).map((s) => s.id)).toEqual([
-      'verb',
-      'elapsed',
-      'activity',
-      'queued',
-    ]);
+    const ids = buildBusySegments(busy({ verb: 'reviewing', queued: 2 })).map((s) => s.id);
+    expect(ids).toEqual(['verb', 'elapsed', 'activity', 'queued']);
   });
 
-  it('always emits the verb, even with nothing else known', () => {
+  // spec 221: an ordinary turn has no verb — the spinner, the accented chip and
+  // the ticking clock beside it already say "busy".
+  it('emits no verb segment for an ordinary turn', () => {
+    expect(buildBusySegments(busy()).some((s) => s.id === 'verb')).toBe(false);
+  });
+
+  it('carries a custom command verb, which names the operation', () => {
+    const [first] = buildBusySegments(busy({ verb: 'saving to wiki' }));
+    expect(first).toEqual({ id: 'verb', text: 'saving to wiki' });
+  });
+
+  it('falls back to "running" rather than painting an empty chip', () => {
     expect(buildBusySegments(busy({ elapsed: null, activity: null }))).toEqual([
       { id: 'verb', text: 'running' },
     ]);
   });
 
-  it('carries a custom command verb instead of "running"', () => {
-    const [first] = buildBusySegments(busy({ verb: 'saving to wiki' }));
-    expect(first).toEqual({ id: 'verb', text: 'saving to wiki' });
-  });
-
   it('omits absent segments entirely rather than rendering them empty', () => {
-    const ids = buildBusySegments(busy({ elapsed: null, queued: 0 })).map((s) => s.id);
+    const ids = buildBusySegments(busy({ verb: 'reviewing', elapsed: null, queued: 0 })).map(
+      (s) => s.id,
+    );
     expect(ids).toEqual(['verb', 'activity']);
   });
 
@@ -49,7 +53,7 @@ describe('buildBusySegments', () => {
   // spec 221: these lived in the chip until the lane head, the input line and the
   // window footer were found to print them already.
   it('never emits the lane name or a cancel hint', () => {
-    const text = buildBusySegments(busy({ verb: 'running' }))
+    const text = buildBusySegments(busy({ queued: 2 }))
       .map((s) => s.text)
       .join(' ');
     expect(text).not.toMatch(/cancel/i);
@@ -65,8 +69,10 @@ describe('textSegments', () => {
 
 describe('renderStatusSegments', () => {
   it('tags each segment so CSS can size it', () => {
-    expect(renderStatusSegments(buildBusySegments(busy({ activity: null })))).toBe(
-      '<span class="acp-harness__meta-seg" data-seg="verb">running</span>' +
+    expect(
+      renderStatusSegments(buildBusySegments(busy({ verb: 'reviewing', activity: null }))),
+    ).toBe(
+      '<span class="acp-harness__meta-seg" data-seg="verb">reviewing</span>' +
         '<span class="acp-harness__meta-seg" data-seg="elapsed">5:12</span>',
     );
   });

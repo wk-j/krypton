@@ -11266,9 +11266,8 @@ export class AcpHarnessView implements ContentView {
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-meta">` +
       `<span class="${chipClass}">${renderStatusSegments(chip)}</span>` +
-      // spec 157: persistent token explaining why tool detail is absent — the
-      // flag survives reopen, so the cue must too.
-      (this.conciseMode ? `<span class="acp-harness__concise-tag">concise</span>` : '') +
+      // spec 221: no concise tag here either — the collapsed tool cards are the
+      // mode's own cue, and `? help` carries the binding.
       // spec 221: no Polly chip here — `renderLaneStats` already prints
       // `polly-bypass` for the active lane. Salty has no lane-stats cell, so
       // dropping it too would lose the readout rather than deduplicate it.
@@ -11377,8 +11376,9 @@ export class AcpHarnessView implements ContentView {
     if (lane.status === 'busy') {
       return buildBusySegments({
         // Custom commands name the operation (reviewing / saving to wiki / …) so
-        // the user can tell a #review in flight from an ordinary turn.
-        verb: lane.activeSystemLabel ?? 'running',
+        // the user can tell a #review in flight from an ordinary turn. An ordinary
+        // turn sends null — spec 221: "running" restates the spinner beside it.
+        verb: lane.activeSystemLabel ?? null,
         elapsed: lane.activeTurnStartedAt ? formatElapsed(Date.now() - lane.activeTurnStartedAt) : null,
         // spec 156: live activity, re-read on each 1 s tick.
         activity: lane.activity ? formatLaneActivity(lane.activity) : null,

@@ -49,9 +49,11 @@ stats row prints for the active lane is visible whenever the composer is.
 | project cwd (`~/Source/llm-wiki`) | lane stats `basename(projectDir)` `harness-lane-chrome.ts:464`; window footer project badge (spec 219); workspace footer `workspace-footer.ts:812` | **3× duplicate → delete** |
 | `◆ default` triage tag | — | **zero-information → delete when source is `default`.** Spec 130 made *all* harness-memory lanes triage-equipped, so `default` distinguishes nothing. A non-default source still renders. |
 | `directive none` | — | **zero-information → delete when unset.** A *set* directive still renders; the picker stays reachable via `Cmd+P` `.` and the chip returns the moment one is set. |
+| `concise` tag (spec 157) | — | **zero-information → delete.** The collapsed tool cards on the same screen are the mode's own cue and `?` help carries `Cmd+Shift+.`; a permanent chip said only what the transcript already showed. |
+| generic `running` verb | spinner on the input line `acp-harness-view.ts:11286`; `--running` chip accent; the ticking `m:ss` beside it; lane head status | **4× duplicate → delete.** Only a *named* operation (`reviewing`, `saving to wiki`) is a readout; it still renders. Kept as a fallback for the one frame where neither clock nor activity is known yet, so the chip is never empty. |
 | live activity (`⚒ write …`) | — | **KEEP** — see below |
 | `⎇ branch` | workspace footer (focused window only) | **keep** — the only project readout that survives de-focus |
-| elapsed `m:ss`, `N queued`, `concise`, `salty-bypass`, directive **when set** | — | **keep** — unique |
+| elapsed `m:ss`, `N queued`, `salty-bypass`, custom command verb, directive **when set** | — | **keep** — unique |
 
 **Correction worth recording: live activity is *not* redundant.** The lane head's activity cell uses
 `laneActivity()` (`harness-lane-chrome.ts:517-528`), which returns the **latest transcript row's text**
@@ -98,11 +100,11 @@ iTerm2-style spring, with no measurement pass.
 |------|--------|
 | `src/acp/harness-composer-meta.ts` | **New.** Pure builder: busy lane → `MetaSegment[]`; `renderStatusSegments()` |
 | `src/acp/harness-composer-meta.test.ts` | **New.** Segment construction + rendering, incl. omitted-segment cases |
-| `src/acp/acp-harness-view.ts` | `composerStatusChip()` returns segments minus lane name / tokens / cancel; drop `renderPollyBypassChip` from the meta row; `renderDirectiveChip()` returns `''` when unset and omits a `default` triage tag; `renderComposerProjectStatus()` drops the cwd span |
+| `src/acp/acp-harness-view.ts` | `composerStatusChip()` returns segments minus lane name / tokens / cancel; drop `renderPollyBypassChip` and the spec-157 `concise` tag from the meta row; `renderDirectiveChip()` returns `''` when unset and omits a `default` triage tag; `renderComposerProjectStatus()` drops the cwd span |
 | `src/acp/harness-format.ts` | `formatLaneActivity` truncate cap 32 → 64 (CSS now does the fitting) |
-| `src/styles/acp-harness.css` | `overflow: hidden` + `container-type` on the meta row; `.acp-harness__meta-seg` rules and CSS dividers; delete the now-unused `.acp-harness__project-cwd` block; one `@container` rule for the branch |
+| `src/styles/acp-harness.css` | `overflow: hidden` + `container-type` on the meta row; `.acp-harness__meta-seg` rules and CSS dividers; delete the now-unused `.acp-harness__project-cwd` and `.acp-harness__concise-tag` blocks; one `@container` rule for the branch |
 | `docs/72-acp-harness-view.md` | Update the composer chip text at lines 279 / 420 / 430 and the DOM sketch at 339 |
-| `docs/157-harness-concise-mode.md` | Note the `concise` tag is never dropped |
+| `docs/157-harness-concise-mode.md` | The `concise` tag is dropped; collapsed cards + `?` help are the cue |
 | `docs/README.md` | Index entry |
 
 ## Design
@@ -114,9 +116,10 @@ before  Claude-2 running · 5:12 · ⚒ write wiki/concepts/shaping-the… · 1.
         Ctrl+C cancel   CONCISE   · directive none ◆ default   · ~/Source/llm-wiki ⎇ main
                                                                                     (~830 px)
 
-after   running · 5:12 · ⚒ write wiki/concepts/shaping-the-agent-loop.md · 2 queued
-        CONCISE   ⎇ main
-                                                                                    (~250 px)
+after   5:12 · ⚒ write wiki/concepts/shaping-the-agent-loop.md · 2 queued   ⎇ main
+                                                                                    (~200 px)
+
+        (a custom command keeps its named verb: `reviewing · 0:41 · ⚒ read src/…`)
 ```
 
 Idle is unchanged (`memory: 3/3`), as are the command-mode, open-hint, peer-wait, starting, and
@@ -144,7 +147,8 @@ export function renderStatusSegments(segs: MetaSegment[]): string;
 
 ```html
 <span class="acp-harness__memory-chip acp-harness__memory-chip--running">
-  <span class="acp-harness__meta-seg" data-seg="verb">running</span>
+  <!-- data-seg="verb" only for a named operation (reviewing / saving to wiki), or as
+       the empty-chip fallback before the clock and the activity are known -->
   <span class="acp-harness__meta-seg" data-seg="elapsed">5:12</span>
   <span class="acp-harness__meta-seg" data-seg="activity">⚒ write wiki/concepts/shaping-…</span>
   <span class="acp-harness__meta-seg" data-seg="queued">2 queued</span>
