@@ -792,6 +792,15 @@ export class CommandPalette {
       execute: () => c.openMarkdownView(),
     });
 
+    // ── Daily Note (spec 223) ──
+    this.register({
+      id: 'daily.open',
+      label: 'Open Daily Note',
+      category: 'Window',
+      keybinding: 'Leader J',
+      execute: () => c.openDailyNote(),
+    });
+
     // ── Pencil (Excalidraw) ──
     this.register({
       id: 'pencil.open',

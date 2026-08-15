@@ -900,6 +900,11 @@ export class InputRouter {
         this.compositor.openMarkdownView().then(() => this.toNormal());
         break;
 
+      // J — open today's daily note (spec 223); j is Focus Down
+      case 'J':
+        this.compositor.openDailyNote().then(() => this.toNormal());
+        break;
+
       // d — open diff view / D — open diff view (staged)
       case 'd':
         this.compositor.openDiffView({ staged: e.shiftKey }).then(() => this.toNormal());

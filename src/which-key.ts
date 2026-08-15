@@ -88,6 +88,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'd', label: 'Git Diff', effect: 'important', contentTypes: [null] },
     { key: 'D', label: 'Git Diff Staged', effect: 'important', contentTypes: [null] },
     { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: [null] },
+    { key: 'J', label: 'Daily Note', effect: 'important', contentTypes: [null] },
     { key: 'c', label: 'Clone SSH Tab', contentTypes: [null] },
     { key: 'C', label: 'Clone SSH Window', contentTypes: [null] },
     { key: 'g', label: 'Cycle Shader' },

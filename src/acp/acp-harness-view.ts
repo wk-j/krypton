@@ -91,11 +91,14 @@ import {
   filteredHashCommands,
   hashPaletteVisible,
 } from './hash-commands';
+import type { DayDigest } from './daily-note';
+import { journalAppend, type JournalKind } from './journal';
 import {
   HANDOFF_WRITE_PROMPT,
   type GithubIssueVerbInput,
   analyzeGithubIssuePrompt,
   createGithubIssuePrompt,
+  dailyBriefPrompt,
   directivePrompt,
   fixGithubIssuePrompt,
   goalSeedPrompt,
@@ -982,6 +985,9 @@ export class AcpHarnessView implements ContentView {
   private readonly openReviewBoardCb:
     | ((options: { dir: string; slug: string; laneName?: string; cwd?: string }) => void)
     | null;
+  /** spec 223: open the daily note as a Markdown tab. Injected for the same
+   *  reason as the Review Board — window creation belongs to the compositor. */
+  private readonly openDailyNoteCb: ((date?: string) => void) | null;
 
   private dashboardEl!: HTMLElement;
   private memoryOverlayEl!: HTMLElement;
@@ -1035,12 +1041,14 @@ export class AcpHarnessView implements ContentView {
     openReviewBoard:
       | ((options: { dir: string; slug: string; laneName?: string; cwd?: string }) => void)
       | null = null,
+    openDailyNote: ((date?: string) => void) | null = null,
   ) {
     this.projectDir = projectDir;
     this.viewBus = bus;
     this.openTelegramSettingsCb = openTelegramSettings;
     this.openFileReferenceCb = openFileReference;
     this.openReviewBoardCb = openReviewBoard;
+    this.openDailyNoteCb = openDailyNote;
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
     this.element = document.createElement('div');
@@ -2179,7 +2187,17 @@ export class AcpHarnessView implements ContentView {
       // creating a duplicate). Git blast-radius is enriched asynchronously.
       const result = this.handleAttentionFlag(env);
       reply(result);
-      if (result.inserted) void this.enrichJudgementDiffstat(env.itemId);
+      if (result.inserted) {
+        void this.enrichJudgementDiffstat(env.itemId);
+        // spec 223: an unresolved flag is the single most useful line in a daily
+        // note — it is the decision the day left open.
+        this.recordJournal(env.fromLaneId, 'attention', env.question, {
+          action: 'flag',
+          itemId: env.itemId,
+          chosen: env.chosen,
+          reversibility: env.reversibility,
+        });
+      }
     });
 
     // spec 128: a lane self-resolves a previously-flagged item.
@@ -2212,6 +2230,12 @@ export class AcpHarnessView implements ContentView {
         }
         const result = this.triageStore.selfResolve(env.itemId, lane.id);
         sendReply(result.ok ? { ok: true } : { ok: false, reason: result.reason });
+        if (result.ok) {
+          this.recordJournal(env.fromLaneId, 'attention', env.note ?? 'resolved', {
+            action: 'resolve',
+            itemId: env.itemId,
+          });
+        }
         if (this.triageOverlayOpen) this.renderTriageOverlayEl();
       },
     );
@@ -2283,6 +2307,14 @@ export class AcpHarnessView implements ContentView {
       this.persistIssueBindings();
       this.publishIssueStatus(binding);
       sendReply({ ok: true });
+      // spec 223: phase changes are how an issue's day reads back — "analysed"
+      // in the morning and "pr_opened" by evening is the story of that issue.
+      this.recordJournal(
+        env.fromLaneId,
+        'ticket',
+        `${issueKey}${binding.phase ? ` [${binding.phase}]` : ''}${binding.summary ? ` — ${binding.summary}` : ''}`,
+        { issueKey, phase: binding.phase, prUrl: binding.prUrl },
+      );
     });
 
     // spec 146: the authoring lane self-reports a #review summary at synthesis
@@ -2308,7 +2340,21 @@ export class AcpHarnessView implements ContentView {
           console.warn('acp_bus_reply (review_outcome) failed', err);
         });
       };
-      reply(this.handleReviewOutcome(env));
+      const outcome = this.handleReviewOutcome(env);
+      reply(outcome);
+      if (outcome.recorded) {
+        this.recordJournal(
+          env.fromLaneId,
+          'review',
+          `${env.subjectLabel} — ${env.blockers} blockers, ${env.warnings} warnings, ${env.reviewerCount} reviewers`,
+          {
+            blockers: env.blockers,
+            warnings: env.warnings,
+            reviewerCount: env.reviewerCount,
+            subjectLabel: env.subjectLabel,
+          },
+        );
+      }
     });
 
     // spec 160: the authoring lane self-reports diff review-priority ranges at
@@ -5989,6 +6035,123 @@ export class AcpHarnessView implements ContentView {
    * which is exactly when someone asks. `flush` is the only form that touches
    * the network, and only to skip the sender's backoff.
    */
+  // ─── spec 223: daily-note capture ─────────────────────────────────────────
+
+  /**
+   * Tee one harness event into `.krypton/journal/<date>.jsonl`.
+   *
+   * Fire-and-forget on purpose: the callers are bus round-trips that must reply
+   * inside a 2.5s timeout, so journalling can never be awaited on their path.
+   * `journalAppend` already swallows its own failures — a missing row costs one
+   * line of a note, a thrown one would cost the agent's tool call.
+   */
+  private recordJournal(
+    laneLabel: string,
+    kind: JournalKind,
+    summary: string,
+    meta: Record<string, unknown> = {},
+  ): void {
+    if (!this.projectDir) return;
+    const lane = this.lanes.find((l) => l.displayName === laneLabel);
+    void journalAppend(
+      this.projectDir,
+      {
+        harnessId: this.harnessMemoryId ?? '',
+        lane: laneLabel,
+        backend: lane?.backendId ?? '',
+        model: lane?.modelName ?? null,
+      },
+      kind,
+      summary,
+      meta,
+    );
+  }
+
+  /**
+   * `#daily [<YYYY-MM-DD> | note <text> | brief]`.
+   *
+   * Building and opening the note is the compositor's job (it owns windows);
+   * this only routes the sub-commands and owns the two that are harness-local:
+   * appending the human's own line, and asking the lane to narrate.
+   */
+  private async runDailyCommand(lane: HarnessLane, args: string[]): Promise<void> {
+    const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
+    if (!cwd) {
+      this.flashChip('daily note unavailable - no project directory');
+      return;
+    }
+    const sub = args[0] ?? '';
+
+    if (sub === 'note') {
+      const text = args.slice(1).join(' ').trim();
+      if (!text) {
+        this.flashChip('daily: #daily note <text>');
+        return;
+      }
+      this.recordJournal(lane.displayName, 'note', text);
+      this.flashChip(`daily: noted "${truncate(text, 48)}"`);
+      return;
+    }
+
+    // spec 223: `#daily open` goes to the browser index of every rendered note.
+    // The rows link into the existing /doc reader, so a note opened this way
+    // gets its markdown rendering, live reload, inline feedback, and artifact
+    // export for free — none of which is reimplemented for notes.
+    if (sub === 'open') {
+      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
+      if (!port) {
+        this.flashChip('daily open unavailable - hook server not ready');
+        return;
+      }
+      const url = `http://127.0.0.1:${port}/journal${this.harnessMemoryId ? `?harness=${encodeURIComponent(this.harnessMemoryId)}` : ''}`;
+      try {
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`daily open failed: ${errorText(e)}`);
+      }
+      return;
+    }
+
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(sub) ? sub : undefined;
+    if (sub && sub !== 'brief' && !date) {
+      this.flashChip('daily: #daily [<YYYY-MM-DD> | note <text> | open | brief]');
+      return;
+    }
+
+    if (sub === 'brief') {
+      if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+        this.flashChip('lane busy - #cancel first');
+        return;
+      }
+      try {
+        const { renderDailyNote } = await import('./daily-note');
+        const { tzOffsetMinutes } = await import('./journal');
+        const digest = await invoke<DayDigest>('daily_note_build', {
+          cwd,
+          date: null,
+          tzOffsetMinutes: tzOffsetMinutes(),
+        });
+        await this.enqueueSystemPrompt(
+          lane,
+          dailyBriefPrompt(digest.date, renderDailyNote(digest)),
+          undefined,
+          'reading the day',
+        );
+      } catch (e) {
+        this.flashChip(`daily brief failed: ${errorText(e)}`);
+      }
+      return;
+    }
+
+    if (!this.openDailyNoteCb) {
+      this.flashChip('daily note unavailable in this window');
+      return;
+    }
+    this.openDailyNoteCb(date);
+    this.flashChip(`daily note: ${date ?? 'today'}`);
+  }
+
   private async runUsageCommand(lane: HarnessLane, args: string[]): Promise<void> {
     const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
     if (!cwd) {
@@ -7806,6 +7969,10 @@ export class AcpHarnessView implements ContentView {
     };
     this.artifacts.set(id, record);
     if (state === 'pending') return;
+    // spec 223: only the register event — a pending scaffold is not yet work.
+    if (payload.registered !== false) {
+      this.recordJournal(laneLabel, 'artifact', record.title, { artifactId: id, tail: record.tail });
+    }
     // state === 'registered': first register raises the card; a refresh updates it.
     if (payload.registered === false) {
       this.updateArtifactCard(record);
@@ -9361,6 +9528,7 @@ export class AcpHarnessView implements ContentView {
       }
       lane.goal = undefined;
       this.flashChip('goal cleared');
+      this.recordJournal(lane.displayName, 'goal', 'goal cleared', { action: 'clear' });
       this.render();
       return;
     }
@@ -9380,6 +9548,9 @@ export class AcpHarnessView implements ContentView {
     // deferred below.
     lane.goal = { text: arg, setAt: Date.now() };
     this.flashChip(`goal set · ${truncate(arg, 56)}`);
+    // spec 223: a goal is the closest thing the harness has to "what I sat down
+    // to do", so it anchors the note's timeline.
+    this.recordJournal(lane.displayName, 'goal', arg, { action: 'set' });
     this.render();
     // newLaneSession does NOT guarantee an idle lane on return (Codex-1 B3):
     // spawnLane's idle transition synchronously drains any queued peer mail, which
@@ -9562,6 +9733,12 @@ export class AcpHarnessView implements ContentView {
     if (parts[0] === '#usage') {
       this.setDraft(lane, '', 0);
       await this.runUsageCommand(lane, parts.slice(1));
+      return;
+    }
+    // spec 223: the developer daily note, built from recorded data only.
+    if (parts[0] === '#daily') {
+      this.setDraft(lane, '', 0);
+      await this.runDailyCommand(lane, parts.slice(1));
       return;
     }
     // spec 192: GitHub issue analysis viewer (.krypton/analyses bundles).

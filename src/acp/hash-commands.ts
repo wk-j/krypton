@@ -16,6 +16,7 @@ import {
   HANDOFF_WRITE_PROMPT,
   analyzeGithubIssuePrompt,
   createGithubIssuePrompt,
+  dailyBriefPrompt,
   directivePrompt,
   fixGithubIssuePrompt,
   goalSeedPrompt,
@@ -70,6 +71,12 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     args: '[<YYYY-MM-DD> | flush | open]',
     description:
       "today's LLM turn statistics (tokens, models, reported cost); rows stream to Xenon on their own",
+  },
+  {
+    name: 'daily',
+    args: '[<YYYY-MM-DD> | note <text> | open | brief]',
+    description:
+      "open the developer daily note (deterministic — built from usage, git, reviews, artifacts); `open` browses every day in a browser",
   },
   {
     name: 'xenon',
@@ -211,6 +218,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     reviews: { category: 'surface', badges: [] },
     push: { category: 'surface', badges: [] },
     usage: { category: 'surface', badges: [] },
+    daily: { category: 'surface', badges: [], prompt: dailyBriefPrompt('<YYYY-MM-DD>', '<rendered note>') },
     xenon: { category: 'surface', badges: [] },
     termctrl: { category: 'surface', badges: [] },
     commands: { category: 'surface', badges: [] },

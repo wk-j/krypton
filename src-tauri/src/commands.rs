@@ -1605,6 +1605,69 @@ pub fn usage_flush(
     Ok(pending)
 }
 
+// ─── Developer daily note (spec 223) ───────────────────────────────
+
+/// Append one journal event.
+///
+/// Called without `await` from harness capture points, so it must stay cheap:
+/// one `create_dir_all`, one append. It returns `Ok(())` when capture is
+/// disabled rather than an error — a config switch is not a failure, and the
+/// caller has no useful way to react to one.
+#[tauri::command]
+pub fn journal_append(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    event: crate::journal::JournalEvent,
+    tz_offset_minutes: i32,
+) -> Result<(), String> {
+    let (enabled, retain_days) = {
+        let cfg = lock_read(&config, "Config")?;
+        (cfg.daily_note.enabled, cfg.daily_note.retain_days)
+    };
+    if !enabled {
+        return Ok(());
+    }
+    let path = std::path::Path::new(&cwd);
+    crate::journal::prune_once(path, retain_days, tz_offset_minutes);
+    crate::journal::append(path, &event, tz_offset_minutes)
+}
+
+/// Join every source for one local day into a digest the frontend renders.
+///
+/// Read-only, so it answers with the network down and the harness idle. `date`
+/// defaults to today in the caller's zone — the frontend owns the offset
+/// because only it knows which zone the human is actually in.
+#[tauri::command]
+pub fn daily_note_build(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    date: Option<String>,
+    tz_offset_minutes: i32,
+) -> Result<crate::journal::DayDigest, String> {
+    let extra = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.daily_note.extra_projects.clone()
+    };
+    let date = date.unwrap_or_else(|| crate::journal::today_local(tz_offset_minutes));
+    crate::journal::build_digest(std::path::Path::new(&cwd), &date, tz_offset_minutes, &extra)
+}
+
+/// Write a rendered note and return the path written, which may differ from the
+/// requested one when a hand-written note already occupies it.
+#[tauri::command]
+pub fn daily_note_write(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    date: String,
+    markdown: String,
+) -> Result<String, String> {
+    let output_dir = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.daily_note.output_dir.clone()
+    };
+    crate::journal::write_note(std::path::Path::new(&cwd), &output_dir, &date, &markdown)
+}
+
 /// Store (or, with an empty string, clear) the Xenon bearer token in the OS
 /// credential vault. The token is never written to the TOML config.
 #[tauri::command]

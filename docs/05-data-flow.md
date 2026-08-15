@@ -512,6 +512,60 @@ PULL (window ← harness), on open and on every auto-refresh:
 8. closeWindow() unsubscribes (stopping the poll if it was the last window on
    that repo) and drops the cached root and counts.
 ```
+
+## Developer Daily Note Flow (spec 223)
+
+Capture and compose are separate paths that never call each other. Capture runs
+all day at existing round-trips; compose runs only when a note is asked for.
+
+```
+CAPTURE
+1. A lane calls attention_flag / attention_resolve / review_outcome /
+   issue_progress / artifact_register, or the user runs #goal or #daily note.
+2. The existing handler in AcpHarnessView replies on the bus FIRST (the 2.5 s
+   timeout is unchanged), then calls recordJournal(laneLabel, kind, summary).
+3. recordJournal resolves the lane for backend/model and hands off to
+   journalAppend(), which never awaits and never throws — a capture failure
+   costs one line of a note, never a turn.
+4. Rust journal::append() writes one O_APPEND line to
+   .krypton/journal/<local date>.jsonl. The first append of a run also runs
+   prune_once() — the project directory is not known at startup, so retention
+   piggybacks on capture rather than on the usage log's startup pass.
+
+COMPOSE
+5. Leader J, the `daily.open` palette entry, or `#daily [<date>]`.
+6. compositor.openDailyNote(date) invokes daily_note_build with the browser's
+   UTC offset. Rust turns <date> into a local [start, end) window and filters
+   EVERY source by instant — usage rows (reading both UTC-named day files the
+   local day straddles), the journal, git log --since/--until (author-filtered
+   by user.email), .krypton/reviews/ and .krypton/artifacts/ by mtime.
+7. Uncommitted work is collected only when the requested day is still running:
+   working_diff_stat is a property of now, not of a past day.
+8. renderDailyNote(digest) produces the markdown in TypeScript — pure, tested
+   without a filesystem, and deterministic, so regenerating is always safe.
+9. daily_note_write puts it at <output_dir>/<date>.md, EXCEPT when a file is
+   already there whose frontmatter lacks `generated:` — a hand-written note is
+   never overwritten; the generated copy goes to <date>.generated.md instead.
+10. The written path is handed to openMarkdownView(), which renders it in the
+    existing Markdown Viewer. No new content-view type exists for this.
+
+BROWSE (loopback)
+11. #daily open resolves the hook-server port and opens /journal?harness=<id>.
+12. journal_index_page walks .krypton/journal/*.md for the selected harness's
+    project with a plain read_dir — NOT collect_doc_files, whose standard
+    filters drop .krypton/ for being both dot-prefixed and gitignored (which is
+    right for /docs: lifting them would admit node_modules too).
+13. Rows link to /doc?harness=<id>&path=.krypton/journal/<date>.md. /doc has no
+    allowlist — validate_doc_path only checks "under cwd, .md, is a file" — so
+    notes reuse that reader, and with it live reload (/doc-state), inline
+    feedback (spec 172), and artifact export (spec 174). No journal reader
+    exists.
+
+NARRATION (opt-in, never written back)
+14. #daily brief rebuilds the same digest, renders the same markdown, and sends
+    it to the lane as a system prompt. The lane's answer is ordinary turn text;
+    nothing it says re-enters the file.
+```
     e. #mem clear clears the active lane memory document for future prompts only.
     f. #cancel also clears the lane's prompt queue. #unqueue [N] removes the
        last (or 1-indexed) queued prompt; #queue clear empties the queue without

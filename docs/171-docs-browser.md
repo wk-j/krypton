@@ -25,6 +25,18 @@ to its active live lane, which creates a normal lane-authored HTML artifact with
 `artifact_new`, edits the scaffold, and calls `artifact_register`. See
 `docs/174-docs-browser-artifact-export.md`.
 
+## Reused by spec 223 — the daily-note index
+
+`/journal` (spec 223) is an index of rendered daily notes that links **into this
+surface's reader**: `/doc` has no allowlist — `validate_doc_path` checks only
+"under the harness cwd, `.md`, regular file" — so a note under `.krypton/journal/`
+renders there unchanged, live reload and feedback overlay included. Only the
+`/docs` *index* excludes it, because `collect_doc_files` runs
+`WalkBuilder::standard_filters(true)` and `.krypton/` is both dot-prefixed and
+gitignored. That exclusion stays: relaxing it to reach the notes would also admit
+`node_modules` and every other ignored markdown file. See
+`docs/223-developer-daily-note.md`.
+
 ## As-built (rev 4) — flat index, no hierarchy
 
 The folder hierarchy was the navigation cost, not the aid: reaching one file in a

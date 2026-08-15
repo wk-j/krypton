@@ -6,6 +6,7 @@ pub mod control;
 pub mod git;
 pub mod hook_server;
 pub mod hurl;
+pub mod journal;
 pub mod live_assist;
 pub mod music;
 pub mod native_host;
@@ -167,6 +168,9 @@ pub fn run() {
             commands::usage_record,
             commands::usage_today,
             commands::usage_flush,
+            commands::journal_append,
+            commands::daily_note_build,
+            commands::daily_note_write,
             commands::xenon_push,
             commands::xenon_status,
             commands::xenon_probe,

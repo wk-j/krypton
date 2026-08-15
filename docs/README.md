@@ -226,6 +226,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 220 | [Window Diff Stat](./220-window-diff-stat.md) |
 | 221 | [Harness Status Line Redundancy Removal](./221-harness-status-line-density.md) |
 | 222 | [Harness Engineering Coach](./222-harness-engineering-coach.md) |
+| 223 | [Developer Daily Note](./223-developer-daily-note.md) |
 
 ## ADRs (20)
 

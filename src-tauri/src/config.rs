@@ -52,6 +52,7 @@ pub struct KryptonConfig {
     pub acp_harness: AcpHarnessConfig,
     pub xenon: XenonConfig,
     pub usage_log: UsageLogConfig,
+    pub daily_note: DailyNoteConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -514,6 +515,40 @@ impl Default for UsageLogConfig {
             // log alone; short enough that the directory never becomes a thing
             // anyone has to manage.
             retain_days: 90,
+        }
+    }
+}
+
+// ─── Developer daily note (spec 223) ───────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DailyNoteConfig {
+    /// Master switch for journal capture. Off means no rows are appended; a
+    /// note can still be composed from usage, git, reviews, and artifacts.
+    pub enabled: bool,
+    /// `.krypton/journal/<date>.jsonl` files older than this are deleted at
+    /// startup. `0` disables pruning. Rendered `.md` notes are never pruned —
+    /// they are the record, the jsonl is only its input.
+    pub retain_days: u64,
+    /// Where rendered notes go. Relative to the project root unless absolute,
+    /// which is how notes land directly in an Obsidian vault.
+    pub output_dir: String,
+    /// Absolute paths to other projects also summarised in the note. Explicit
+    /// rather than a machine-wide scan: a daily note should not depend on what
+    /// else happens to be on disk.
+    pub extra_projects: Vec<String>,
+}
+
+impl Default for DailyNoteConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            // Longer than the usage log's 90: the journal is the only prose
+            // record of a day, and prose is what you want a year later.
+            retain_days: 400,
+            output_dir: ".krypton/journal".to_string(),
+            extra_projects: Vec::new(),
         }
     }
 }

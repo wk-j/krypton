@@ -1349,10 +1349,56 @@ impl HookServer {
             .unwrap_or(&harnesses[0]);
         let (harness_id, project_dir, entries) = active;
 
-        let mut content = render_docs_harness_bar(&harnesses, harness_id);
+        let counts: Vec<(String, usize)> = harnesses
+            .iter()
+            .map(|(id, _, entries)| (id.clone(), entries.len()))
+            .collect();
+        let mut content = render_docs_harness_bar(&counts, harness_id, "/docs");
         content.push_str(&render_docs_list(harness_id, entries));
 
         let title = format!("{harness_id} · {project_dir} · {} files", entries.len());
+        render_docs_page(&title, &content)
+    }
+
+    /// The `/journal` index (spec 223): every rendered daily note for the
+    /// selected harness's project, newest day first.
+    ///
+    /// Deliberately thin — it is an index only. Rows link into `/doc`, so notes
+    /// inherit that reader's markdown rendering, live reload, inline feedback,
+    /// and artifact export without this surface reimplementing any of it.
+    fn journal_index_page(&self, sel_harness: Option<&str>) -> Response {
+        let dirs = self.docs_project_dirs();
+        if dirs.is_empty() {
+            let content = "<p class=\"welcome\">No harness working directory is available.</p>";
+            return render_docs_page("Daily notes", content);
+        }
+
+        let harnesses: Vec<(String, String, Vec<JournalNote>)> = dirs
+            .into_iter()
+            .map(|(id, path)| {
+                let notes = collect_journal_notes(StdPath::new(&path));
+                (id, path, notes)
+            })
+            .collect();
+
+        let selected = sel_harness
+            .filter(|h| harnesses.iter().any(|(id, _, _)| id == h))
+            .map(str::to_string)
+            .unwrap_or_else(|| harnesses[0].0.clone());
+        let active = harnesses
+            .iter()
+            .find(|(id, _, _)| id == &selected)
+            .unwrap_or(&harnesses[0]);
+        let (harness_id, project_dir, notes) = active;
+
+        let counts: Vec<(String, usize)> = harnesses
+            .iter()
+            .map(|(id, _, notes)| (id.clone(), notes.len()))
+            .collect();
+        let mut content = render_docs_harness_bar(&counts, harness_id, "/journal");
+        content.push_str(&render_journal_list(harness_id, notes));
+
+        let title = format!("{harness_id} · {project_dir} · {} days", notes.len());
         render_docs_page(&title, &content)
     }
 
@@ -2472,6 +2518,16 @@ async fn handle_docs(
     Query(query): Query<DocsQuery>,
 ) -> Response {
     state.hook_server.docs_index_page(query.harness.as_deref())
+}
+
+/// GET /journal[?harness=<id>] — index of rendered daily notes (spec 223).
+async fn handle_journal(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<DocsQuery>,
+) -> Response {
+    state
+        .hook_server
+        .journal_index_page(query.harness.as_deref())
 }
 
 /// GET /doc?harness=<id>&path=<rel> — render one repo markdown file.
@@ -5003,27 +5059,135 @@ fn split_doc_rel(rel: &str) -> (&str, &str) {
 /// active one highlighted. Rendered only when more than one harness is
 /// available — with a single lane the flat list needs no chrome above it.
 fn render_docs_harness_bar(
-    harnesses: &[(String, String, Vec<DocEntry>)],
+    harnesses: &[(String, usize)],
     selected_harness: &str,
+    route: &str,
 ) -> String {
     if harnesses.len() < 2 {
         return String::new();
     }
     let mut out = String::from("<nav class=\"harness-bar\">");
-    for (harness_id, _project_dir, entries) in harnesses {
+    for (harness_id, count) in harnesses {
         out.push_str("<a class=\"harness-bar__pill");
         if harness_id == selected_harness {
             out.push_str(" is-active");
         }
-        out.push_str("\" href=\"/docs?harness=");
+        out.push_str("\" href=\"");
+        out.push_str(route);
+        out.push_str("?harness=");
         out.push_str(&url_encode(harness_id));
         out.push_str("\">");
         out.push_str(&html_escape(harness_id));
         out.push_str("<span class=\"harness-bar__count\">");
-        out.push_str(&entries.len().to_string());
+        out.push_str(&count.to_string());
         out.push_str("</span></a>");
     }
     out.push_str("</nav>");
+    out
+}
+
+/// One rendered daily note on disk (spec 223).
+///
+/// `date` is the file stem, which IS the note's day — the generator names the
+/// file after the local day it summarises, so nothing has to be parsed out of
+/// the contents to sort or label the index.
+struct JournalNote {
+    date: String,
+    /// Project-relative path, always under `.krypton/journal/`.
+    rel: String,
+    /// True for a `<date>.generated.md` sibling — the copy written when a
+    /// hand-edited note already held the canonical name.
+    generated_copy: bool,
+    modified: Option<std::time::SystemTime>,
+}
+
+/// Collect rendered daily notes for one project, newest day first.
+///
+/// A plain `read_dir` rather than the `WalkBuilder` `collect_doc_files` uses:
+/// `.krypton/` is both dot-prefixed and gitignored, so the standard filters
+/// would drop every note — the same two filters that (correctly) keep the whole
+/// directory out of the `/docs` index. This walk is scoped to one flat
+/// directory we own, so opting out of them costs nothing.
+fn collect_journal_notes(project_dir: &StdPath) -> Vec<JournalNote> {
+    let dir = project_dir.join(".krypton").join("journal");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut notes: Vec<JournalNote> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Some(stem) = name.strip_suffix(".md") else {
+            continue;
+        };
+        let (date, generated_copy) = match stem.strip_suffix(".generated") {
+            Some(base) => (base.to_string(), true),
+            None => (stem.to_string(), false),
+        };
+        notes.push(JournalNote {
+            rel: format!(".krypton/journal/{name}"),
+            date,
+            generated_copy,
+            modified: entry.metadata().ok().and_then(|m| m.modified().ok()),
+        });
+    }
+    // Newest day first. The stem is `YYYY-MM-DD`, so a string sort IS a date
+    // sort — no parsing, and a stray non-dated `.md` simply sorts to the end
+    // instead of poisoning the order.
+    notes.sort_by(|a, b| {
+        b.date
+            .cmp(&a.date)
+            .then_with(|| a.generated_copy.cmp(&b.generated_copy))
+    });
+    notes
+}
+
+/// The `/journal` index: one row per rendered daily note, newest first, each
+/// opening the EXISTING `/doc` reader. No new reader exists for notes — they are
+/// ordinary markdown under the project, and `/doc` already validates and renders
+/// any `.md` under a harness working directory.
+fn render_journal_list(harness_id: &str, notes: &[JournalNote]) -> String {
+    if notes.is_empty() {
+        return "<p class=\"welcome\">No daily notes yet. Run <code>#daily</code> in a lane, or press <code>Leader J</code>, to render one for today.</p>"
+            .to_string();
+    }
+
+    let mut out = String::from("<div class=\"docs-filter\"><input class=\"docs-filter__input\" id=\"docs-filter\" type=\"search\" placeholder=\"filter days — type to narrow, ↑↓ to move, enter to open\" autocomplete=\"off\" autocorrect=\"off\" spellcheck=\"false\" autofocus><span class=\"docs-filter__count\" id=\"docs-count\">");
+    out.push_str(&notes.len().to_string());
+    out.push_str(" days</span></div>");
+
+    out.push_str("<ul class=\"browser\" id=\"docs-list\">");
+    for note in notes {
+        out.push_str("<li class=\"browser__item browser__item--file\" data-path=\"");
+        out.push_str(&html_escape(&note.date.to_lowercase()));
+        out.push_str("\"><a target=\"_blank\" rel=\"noopener\" href=\"/doc?harness=");
+        out.push_str(&url_encode(harness_id));
+        out.push_str("&amp;path=");
+        out.push_str(&url_encode(&note.rel));
+        out.push_str("\"><span class=\"browser__icon\">◆</span><span class=\"browser__name\">");
+        out.push_str(&html_escape(&note.date));
+        if note.generated_copy {
+            // The canonical name is a note the human edited; say which file this
+            // row actually opens rather than showing two identical-looking days.
+            out.push_str("<span class=\"browser__dir\"> · generated copy</span>");
+        }
+        out.push_str("</span>");
+        if let Some((ms, label)) = note.modified.and_then(format_doc_mtime) {
+            out.push_str("<time class=\"browser__date\" data-ts=\"");
+            out.push_str(&ms.to_string());
+            out.push_str("\">");
+            out.push_str(&html_escape(&label));
+            out.push_str("</time>");
+        }
+        out.push_str("</a></li>");
+    }
+    out.push_str("</ul>");
+    out.push_str(
+        "<p class=\"browser__empty\" id=\"docs-empty\" hidden>No day matches that filter.</p>",
+    );
     out
 }
 
@@ -6074,7 +6238,7 @@ fn slug_date_ms(slug: &str) -> Option<i64> {
 
 /// `(year, month, day)` → days since the Unix epoch, proleptic Gregorian, UTC
 /// (Howard Hinnant's `days_from_civil` — the inverse of `civil_from_days`).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
     let yoe = y - era * 400; // [0, 399]
@@ -7702,6 +7866,7 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                     get(handle_termctrl_screen),
                 )
                 .route("/docs", get(handle_docs))
+                .route("/journal", get(handle_journal))
                 .route("/doc", get(handle_doc))
                 .route("/doc-asset", get(handle_doc_asset))
                 .route("/analyses", get(handle_analyses))
@@ -8213,6 +8378,7 @@ mod tests {
             .route("/termctrl/api/{token}/sessions", get(ok))
             .route("/termctrl/api/{token}/screen/{name}", get(ok))
             .route("/docs", get(ok))
+            .route("/journal", get(ok))
             .route("/doc", get(ok))
             .route("/doc-asset", get(ok))
             .route("/analyses", get(ok))
@@ -8378,6 +8544,79 @@ mod tests {
             !html.contains("&amp;dir="),
             "no folder drilldown links: {html}"
         );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// spec 223: the journal index must see files the `/docs` index cannot.
+    /// `.krypton/` is both dot-prefixed and gitignored, so `collect_doc_files`
+    /// correctly drops every note — this walk deliberately does not.
+    #[test]
+    fn collect_journal_notes_lists_days_the_docs_index_hides() {
+        let tmp_raw = std::env::temp_dir().join(format!("krypton-journal-{}", rand_suffix()));
+        let journal = tmp_raw.join(".krypton").join("journal");
+        std::fs::create_dir_all(&journal).unwrap();
+        let tmp = tmp_raw.canonicalize().unwrap();
+        std::fs::write(tmp_raw.join(".gitignore"), ".krypton/\n").unwrap();
+
+        for name in [
+            "2026-08-13.md",
+            "2026-08-15.md",
+            "2026-08-15.generated.md",
+            "2026-08-14.md",
+        ] {
+            std::fs::write(journal.join(name), "---\ngenerated: krypton-journal\n---\n").unwrap();
+        }
+        // Neither the raw capture log nor a stray non-note file is a "day".
+        std::fs::write(journal.join("2026-08-15.jsonl"), "{}").unwrap();
+
+        assert!(
+            collect_doc_files(&tmp).is_empty(),
+            "the docs index must keep ignoring .krypton/"
+        );
+
+        let notes = collect_journal_notes(&tmp);
+        let rows: Vec<(&str, bool)> = notes
+            .iter()
+            .map(|n| (n.date.as_str(), n.generated_copy))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("2026-08-15", false),
+                ("2026-08-15", true),
+                ("2026-08-14", false),
+                ("2026-08-13", false),
+            ],
+            "newest day first, canonical note before its generated copy"
+        );
+
+        let html = render_journal_list("hm-1", &notes);
+        assert!(html.contains("id=\"docs-filter\""), "filter box missing");
+        assert!(
+            html.contains("path=.krypton%2Fjournal%2F2026-08-15.generated.md"),
+            "the generated copy must link to its own file: {html}"
+        );
+        assert!(
+            html.contains("generated copy"),
+            "a generated copy must be labelled, not shown as a duplicate day: {html}"
+        );
+        assert!(
+            html.contains("/doc?harness=hm-1"),
+            "rows open the existing reader, not a new one: {html}"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn collect_journal_notes_on_a_project_without_a_journal_is_empty() {
+        let tmp_raw = std::env::temp_dir().join(format!("krypton-journal-none-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp_raw).unwrap();
+        let tmp = tmp_raw.canonicalize().unwrap();
+        assert!(collect_journal_notes(&tmp).is_empty());
+        // The empty state has to say how to make one, not just report nothing.
+        let html = render_journal_list("hm-1", &[]);
+        assert!(html.contains("#daily"), "{html}");
+        assert!(html.contains("Leader J"), "{html}");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

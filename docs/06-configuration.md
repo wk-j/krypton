@@ -293,6 +293,29 @@ publish = true
 # startup. Rows already accepted by Xenon live on there. 0 disables pruning.
 retain_days = 90
 
+# --- Developer daily note (spec 223) ---
+# One dated markdown file per day, joined from data already on disk: the usage
+# log above, git, review bundles, artifacts, and the harness journal. The note
+# is rendered deterministically — nothing in it is written or summarised by a
+# model. `#daily brief` narrates it on request and never edits the file.
+
+[daily_note]
+# Master switch for journal capture (goal, attention, review, artifact, ticket,
+# and your own `#daily note` lines). Off still lets a note be composed from
+# usage, git, reviews, and artifacts — it just has no prose timeline.
+enabled = true
+# .krypton/journal/<date>.jsonl files older than this are deleted on the first
+# capture of a run. 0 disables pruning. Rendered .md notes are NEVER pruned —
+# they are the record; the jsonl is only its input.
+retain_days = 400
+# Where rendered notes go. Relative to the project root unless absolute, which
+# is how notes land straight in an Obsidian vault.
+output_dir = ".krypton/journal"
+# Absolute paths to other projects also summarised in the note. Explicit rather
+# than a machine-wide scan: a daily note should not depend on what else happens
+# to be on disk.
+extra_projects = []
+
 # Telegram Harness Controller is intentionally NOT configured here. Krypton's
 # Settings view owns ~/.config/krypton/telegram.toml, while the Bot API token
 # lives in the operating-system credential vault. See the section below.
@@ -759,6 +782,11 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | `[usage_log]` | `enabled` | bool | `true` | Record one row per completed prompt turn to `.krypton/usage/<date>.jsonl`. See doc 214 |
 | `[usage_log]` | `publish` | bool | `true` | Stream recorded turns to Xenon as they end. Requires `[xenon].enabled` plus a stored token; rows accumulate locally either way |
 | `[usage_log]` | `retain_days` | integer | `90` | Local day files older than this are deleted on the sender's first cycle. `0` disables pruning |
+
+| `[daily_note]` | `enabled` | bool | `true` | Capture harness events to `.krypton/journal/<date>.jsonl`. See doc 223 |
+| `[daily_note]` | `retain_days` | integer | `400` | Journal `.jsonl` files older than this are deleted on the first capture of a run. `0` disables pruning; rendered `.md` notes are never pruned |
+| `[daily_note]` | `output_dir` | string | `".krypton/journal"` | Where rendered notes are written. Project-relative unless absolute — point it at a vault to write notes there directly |
+| `[daily_note]` | `extra_projects` | string[] | `[]` | Absolute paths to other projects also summarised in the note. No machine-wide scan |
 
 **Usage rows never contain text.** A row carries counts and identifiers only —
 no prompt, no response, no file paths, no tool arguments. That is the property
