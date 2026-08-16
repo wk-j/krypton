@@ -24,10 +24,26 @@ describe('dailyBriefPrompt', () => {
     expect(prompt).toContain(digest);
   });
 
-  it('fixes the section order so every day reads the same way', () => {
+  it('locks the shape: one paragraph plus one flat list, no headings or checkboxes', () => {
     const prompt = dailyBriefPrompt('2026-08-15', digest, target);
-    expect(prompt.indexOf('## ที่ยังค้าง')).toBeLessThan(prompt.indexOf('## จุดที่ควรดูอีกที'));
-    expect(prompt).toContain('never write a section that says "nothing"');
+    expect(prompt).toContain('no section headings, no checkboxes');
+    expect(prompt).toContain('bold word prefix, never an emoji');
+    expect(prompt).not.toContain('## ');
+  });
+
+  it('fixes the status order so every day reads the same way', () => {
+    const prompt = dailyBriefPrompt('2026-08-15', digest, target);
+    const order = ['**DONE**', '**DOING**', '**BLOCKED**', '**DROPPED**', '**NEXT 1', '**NOTE**'];
+    const positions = order.map((marker) => prompt.indexOf(marker));
+    expect(Math.min(...positions)).toBeGreaterThan(-1);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it('carries yesterday forward so no task silently disappears', () => {
+    const prompt = dailyBriefPrompt('2026-08-15', digest, target);
+    expect(prompt).toContain('most recent earlier');
+    expect(prompt).toContain('DROPPED with a reason');
+    expect(prompt).toContain('never let a task silently disappear');
   });
 
   // Two claims the note format can no longer make for itself, so the prompt
@@ -36,6 +52,13 @@ describe('dailyBriefPrompt', () => {
     const prompt = dailyBriefPrompt('2026-08-15', digest, target);
     expect(prompt).toContain('never call it time worked');
     expect(prompt).toContain('Cite no links');
+  });
+
+  it('requires a model-name footer so a published day names who wrote it', () => {
+    const prompt = dailyBriefPrompt('2026-08-15', digest, target);
+    expect(prompt).toContain('เขียนโดย AI · <MODEL>');
+    expect(prompt).toContain('actual model name');
+    expect(prompt).toContain('not the lane name');
   });
 
   it('stays reply-only when no path could be resolved', () => {

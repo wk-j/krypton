@@ -113,33 +113,49 @@ commits: 5
 tags: [daily, harness]
 ---
 
-# เสาร์ 15 สิงหาคม 2026
+# 2026-08-15 (เสาร์)
 
-`06:30 → 23:25` · 59 turns · 5 commits · +5215 / -143 · ค้าง 15 ไฟล์
+สรุปวัน 1–2 ประโยค: ได้อะไรเป็นชิ้นเป็นอัน ติดอะไรอยู่ — อ้างตัวเลขหลัก
+(`06:30 → 23:25` · 59 turns · 5 commits · +5215/-143) ในย่อหน้านี้เลย
 
-<prose: what the day went into, citing the figures>
+- **DONE** — <task> — ผลคือ: …
+- **DOING** — <task> — ถึงไหน: … — ทำต่อ: …
+- **BLOCKED** — <task> — รอ: <ใคร/อะไร> — ตามอีกที: <วันไหน>
+- **DROPPED** — <task> — เพราะ: … (only on a day something was cut)
+- **NEXT 1** — <small, concrete next action> (max 3)
+- **NOTE** — idea / decision / open attention flag / figure that does not add up
 
-## ที่ยังค้าง
+---
 
-<unfinished work and every open attention flag, in prose>
-
-## จุดที่ควรดูอีกที
-
-<numbered: figures that do not add up, cited>
+เขียนโดย AI · <MODEL>
 ```
 
 Fixed by the prompt, not by a renderer:
 
 - **Frontmatter** — `date`, `type: daily`, `generated: lane-narration`, `lane`, plus
   the counts the digest already knows. `generated:` is what marks the file replaceable.
-- **Title + one stat line.** The single line of raw data that survives, because it is
-  the frame every sentence below refers back to.
-- **Three sections, in this order.** The day, then what is unfinished, then what looks
-  wrong in the numbers. A day with nothing unfinished omits that section rather than
-  writing "nothing".
+- **One paragraph + one flat list, nothing else.** No section headings below the H1,
+  no checkboxes (the note is read-only output — nothing is ever ticked), no separate
+  stat line: the key figures ride inside the opening paragraph.
+- **Bold word prefixes, fixed order.** Every bullet is `- **STATUS** — …` with the
+  status as a bold word, never an emoji, in the order DONE → DOING → BLOCKED →
+  DROPPED → NEXT → NOTE. One task = one line = one status, task text starts with a
+  verb, and the status appears nowhere else on the line. Every DOING carries
+  ถึงไหน/ทำต่อ; every BLOCKED carries รอ/ตามอีกที; NEXT is capped at 3 and never
+  duplicates a DOING/BLOCKED line.
+- **No silent disappearance.** The writer reads the most recent earlier day in the
+  same directory; every DOING/BLOCKED from it reappears — as DONE, as an updated
+  DOING/BLOCKED, or as DROPPED with a reason. The newest note alone is the complete
+  state; the reader never digs through older days.
+- **Model footer.** The last body line is `เขียนโดย AI · <MODEL>` with the writer's
+  actual product name (Grok 4.6, Claude Opus 4.6), not the lane. Lane stays in
+  frontmatter; the published page does not show frontmatter, so the model has to
+  live in the body.
 
-The prose is Thai (the lane-context default); identifiers, paths, spec stems, commit
-subjects and figures stay verbatim.
+The prose is spoken-register Thai (the lane-context default); identifiers, paths,
+spec stems, commit subjects and figures stay verbatim in English. Long detail stays
+out of the note — specs, reviews and artifacts are named as plain text instead of
+being expanded inline.
 
 ### Self-Containment
 
@@ -235,6 +251,9 @@ Deviations from the design above, and why.
 | `payloadHeader` replaced `frontmatter` in the renderer | The payload is not a file, so a frontmatter block would only be a block for the writer to copy verbatim. It states the same counts as one plain line, which the prompt tells the writer to copy into the real frontmatter |
 | The wall-clock caveat and the self-containment rule moved from the rendered text into the prompt | As rendered text they were strings the writer could ignore or restate. As prompt instructions they bind what gets written. Both are asserted in `harness-prompts.test.ts` |
 | Xenon `meta` gained `author`, read from the file's own `generated:` marker | The old `noteAuthor` / `briefAuthor` pair hard-coded who wrote what. With one file that could be a lane's or a human's, the file has to be asked rather than assumed |
+| Body ends with `เขียนโดย AI · <MODEL>` | First live day (2026-08-16) published without naming the model. Frontmatter `lane` is not enough: Xenon does not render frontmatter, and a lane name is not a model. The prompt now requires the product name in a footer |
+| Three `##` sections replaced by one paragraph + one flat status list (2026-08-16) | The user rejected the sectioned style after reading it live and locked three constraints: no section headings, no checkboxes (the note is read-only — nothing is ever ticked), and bold word prefixes (`**DONE**`, `**DOING**`, …) instead of emoji. `## ที่ยังค้าง` became DOING/BLOCKED lines; `## จุดที่ควรดูอีกที` and open attention flags became NOTE lines. The locked design also adds day-to-day continuity: the writer reads the previous day's note and carries every DOING/BLOCKED forward |
+| The locked design's "link out instead" rule became "name as plain text" | The upstream design says long detail should link out of the note, but this spec's self-containment rule exists because no link resolves on every surface a day is read from. Both intents survive: detail stays out of the note, and the reference is a plain-text name with paths as code |
 
 ## Resources
 

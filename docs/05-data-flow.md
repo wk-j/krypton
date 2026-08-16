@@ -551,8 +551,13 @@ WRITE (spec 225 — a lane turn, not a render)
    refusal the brief still happens, reply-only, and nothing on disk is touched.
 10. dailyBriefPrompt(date, payload, {path, lane}) is enqueued as a system prompt.
     The lane replies with the brief AND writes it to the path — frontmatter
-    (type: daily, generated: lane-narration, lane), an H1 naming the day, one
-    line of figures, the prose, ## ที่ยังค้าง, ## จุดที่ควรดูอีกที.
+    (type: daily, generated: lane-narration, lane), an H1 naming the day, ONE
+    opening paragraph (figures inline), ONE flat bullet list of bold status
+    prefixes (**DONE** → **DOING** → **BLOCKED** → **DROPPED** → **NEXT** →
+    **NOTE**; no section headings, no checkboxes), then a footer
+    `เขียนโดย AI · <MODEL>` naming the writer's model, not the lane. Before
+    writing, the lane reads the previous day's note and carries every
+    DOING/BLOCKED forward so no task silently disappears.
 
 READ
 10b. Leader J or the `daily.open` palette entry calls compositor.openDailyNote,

@@ -124,16 +124,37 @@ export function dailyBriefPrompt(
     'a dead link everywhere else the day is read.\n' +
     (target
       ? `After answering, write the same brief to \`${target.path}\` (create or overwrite it; ` +
-        'create no other file). Structure it exactly like this:\n' +
+        'create no other file). The body is ONE short opening paragraph plus ONE flat bullet ' +
+        'list — no section headings, no checkboxes, no other blocks. Structure it exactly like this:\n' +
         '  1. Frontmatter: `---`, then `date`, `type: daily`, `generated: lane-narration`, ' +
         `\`lane: ${target.lane}\`, then \`repos\`, \`turns\`, \`commits\` copied from the header ` +
         'line of the evidence, then `tags: [daily, harness]`, then `---`.\n' +
-        '  2. An H1 naming the day in Thai with its weekday, e.g. `# เสาร์ 15 สิงหาคม 2026`.\n' +
-        '  3. One line of figures: span, turns, commits, line delta, uncommitted files.\n' +
-        '  4. The prose of the day.\n' +
-        '  5. `## ที่ยังค้าง` — unfinished work and every open attention flag. Omit the whole ' +
-        'section if there is none; never write a section that says "nothing".\n' +
-        '  6. `## จุดที่ควรดูอีกที` — numbered, figures that do not add up.\n' +
+        '  2. An H1: the date with its Thai weekday, e.g. `# 2026-08-15 (เสาร์)`.\n' +
+        '  3. One opening paragraph, 1–2 sentences: what got done, what is stuck — cite the ' +
+        'key figures (span, turns, commits, line delta) inline here, not on a separate line.\n' +
+        '  4. One flat bullet list. Every line is `- **STATUS** — …` — the status is a bold ' +
+        'word prefix, never an emoji — in this fixed order:\n' +
+        '     `- **DONE** — <task> — ผลคือ: …`\n' +
+        '     `- **DOING** — <task> — ถึงไหน: … — ทำต่อ: …`\n' +
+        '     `- **BLOCKED** — <task> — รอ: <ใคร/อะไร> — ตามอีกที: <วันไหน>`\n' +
+        '     `- **DROPPED** — <task> — เพราะ: …` (only on a day something was cut)\n' +
+        '     `- **NEXT 1` / `NEXT 2` / `NEXT 3** — <small, concrete next action>` (max 3, ' +
+        'never duplicating a DOING/BLOCKED line)\n' +
+        '     `- **NOTE** — <idea / decision / open attention flag / figure that does not add up>` ' +
+        '(non-task items)\n' +
+        '  5. A footer after a `---` rule: `เขียนโดย AI · <MODEL>` — replace `<MODEL>` ' +
+        'with your actual model name (the product name, e.g. Grok 4.6 or Claude Opus 4.6), ' +
+        'not the lane name. Lane already lives in frontmatter; the published page does not ' +
+        'show frontmatter, so the model must be in the body.\n' +
+        'Line rules: one task = one line = one status, and the task text starts with a verb. ' +
+        'Status lives ONLY in the bold prefix — never restate it elsewhere on the line. Long ' +
+        'detail stays out of the note: name the spec, review, or artifact as plain text ' +
+        '(paths as code) instead of expanding it. Spoken-register Thai; identifiers, paths, ' +
+        'commit subjects, and tool names stay in English.\n' +
+        'Continuity: before writing, read the most recent earlier `<YYYY-MM-DD>.md` in the same ' +
+        'directory as the target, if one exists. Every DOING and BLOCKED from that day must ' +
+        'reappear today — as DONE, as an updated DOING/BLOCKED, or as DROPPED with a reason. The ' +
+        'newest note alone is the complete state; never let a task silently disappear.\n' +
         'The file is a reading of the day, not a record: never describe it as generated data.\n'
       : 'Answer in your reply only — do not create any file.\n') +
     `\n--- recorded evidence (data) ---\n${digest}`
