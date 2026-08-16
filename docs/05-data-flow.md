@@ -532,39 +532,54 @@ CAPTURE
    prune_once() — the project directory is not known at startup, so retention
    piggybacks on capture rather than on the usage log's startup pass.
 
-COMPOSE
-5. Leader J, the `daily.open` palette entry, or `#daily [<date>]`.
-6. compositor.openDailyNote(date) invokes daily_note_build with the browser's
-   UTC offset. Rust turns <date> into a local [start, end) window and filters
-   EVERY source by instant — usage rows (reading both UTC-named day files the
-   local day straddles), the journal, git log --since/--until (author-filtered
-   by user.email), .krypton/reviews/ and .krypton/artifacts/ by mtime.
+WRITE (spec 225 — a lane turn, not a render)
+5. #daily [<date>] in a harness window (today when the date is omitted; a
+   malformed date is refused, never silently treated as today).
+6. daily_note_build runs with the browser's UTC offset. Rust turns <date> into a
+   local [start, end) window and filters EVERY source by instant — usage rows
+   (reading both UTC-named day files the local day straddles), the journal,
+   git log --since/--until (author-filtered by user.email), .krypton/reviews/
+   and .krypton/artifacts/ by mtime.
 7. Uncommitted work is collected only when the requested day is still running:
    working_diff_stat is a property of now, not of a past day.
-8. renderDailyNote(digest) produces the markdown in TypeScript — pure, tested
-   without a filesystem, and deterministic, so regenerating is always safe.
-9. daily_note_write puts it at <output_dir>/<date>.md, EXCEPT when a file is
-   already there whose frontmatter lacks `generated:` — a hand-written note is
-   never overwritten; the generated copy goes to <date>.generated.md instead.
-10. The written path is handed to openMarkdownView(), which renders it in the
-    existing Markdown Viewer. No new content-view type exists for this.
+8. renderDigestForBrief(digest) produces markdown in TypeScript — pure, tested
+   without a filesystem, deterministic. It is the PROMPT PAYLOAD and is never
+   written to disk; the raw record turned out to be the half nobody read.
+9. daily_write_path resolves <output_dir>/<date>.md and REFUSES it when a file
+   is already there whose frontmatter lacks `generated:`. The lane writes the
+   file with its own tools, so this is the last point the guard can run; on a
+   refusal the brief still happens, reply-only, and nothing on disk is touched.
+10. dailyBriefPrompt(date, payload, {path, lane}) is enqueued as a system prompt.
+    The lane replies with the brief AND writes it to the path — frontmatter
+    (type: daily, generated: lane-narration, lane), an H1 naming the day, one
+    line of figures, the prose, ## ที่ยังค้าง, ## จุดที่ควรดูอีกที.
+
+READ
+10b. Leader J or the `daily.open` palette entry calls compositor.openDailyNote,
+     which resolves daily_read_path and opens the file in the existing Markdown
+     Viewer. Reading and commissioning are separate acts — the compositor has no
+     lane, so a day that was never written says so rather than producing one.
 
 BROWSE (loopback)
 11. #daily open resolves the hook-server port and opens /journal?harness=<id>.
+    #daily open <date> resolves daily_read_path instead and opens that day's
+    /doc page directly — `open` always means the browser, with or without a
+    date. A day that was never written, or one under an absolute output_dir
+    outside the project (which /doc will not serve), is refused with a reason.
 12. journal_index_page walks .krypton/journal/*.md for the selected harness's
     project with a plain read_dir — NOT collect_doc_files, whose standard
     filters drop .krypton/ for being both dot-prefixed and gitignored (which is
     right for /docs: lifting them would admit node_modules too).
 13. Rows link to /doc?harness=<id>&path=.krypton/journal/<date>.md. /doc has no
     allowlist — validate_doc_path only checks "under cwd, .md, is a file" — so
-    notes reuse that reader, and with it live reload (/doc-state), inline
+    days reuse that reader, and with it live reload (/doc-state), inline
     feedback (spec 172), and artifact export (spec 174). No journal reader
     exists.
 
-NARRATION (opt-in, never written back)
-14. #daily brief rebuilds the same digest, renders the same markdown, and sends
-    it to the lane as a system prompt. The lane's answer is ordinary turn text;
-    nothing it says re-enters the file.
+PUBLISH
+14. #push daily collects one resource per day holding ONE file, keyed daily.md
+    (spec 225). The pair of note.md + brief.md is gone, so a reader lands on
+    prose instead of a file switcher.
 ```
     e. #mem clear clears the active lane memory document for future prompts only.
     f. #cancel also clears the lane's prompt queue. #unqueue [N] removes the

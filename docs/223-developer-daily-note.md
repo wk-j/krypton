@@ -1,8 +1,16 @@
 # Developer Daily Note — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented — composition half superseded by [225](./225-daily-brief.md)
 > Date: 2026-08-15
 > Milestone: M-ACP — Harness convergence
+
+**Amendment (2026-08-16).** The capture half of this spec — the append-only
+`.krypton/journal/<date>.jsonl`, `daily_note_build`, and the `DayDigest` it
+returns — is unchanged and remains authoritative. The composition half is not:
+the deterministic note described under *Note Structure* is no longer written to
+disk. Spec 225 makes the rendered digest a prompt payload and the written day a
+lane's brief. Read *Note Structure* below as the shape of that payload, and
+*Self-Containment* as a rule both halves still obey.
 
 ## Problem
 
@@ -37,7 +45,7 @@ Two halves, deliberately separated.
 | [GitDailies](https://gitmore.io/blog/github-activity-digest-notification-tools) / [Gitrecap](https://www.gitrecap.com/features/git-reports) | Server-side digest of commits/PRs/issues pushed to Slack or email | Team-facing standup, not a personal record; only sees what reached the remote |
 | [Obsidian Periodic Notes](https://github.com/liamcain/obsidian-periodic-notes) + Templater | Creates `YYYY-MM-DD.md` from a template on a schedule; Dataview queries across notes | Defines the file convention users already expect: one dated markdown file, wikilinked |
 
-**Krypton delta** — Match the Obsidian convention exactly (one `YYYY-MM-DD.md`, `[[wikilinks]]`, frontmatter) so the output is at home in the existing Vault Viewer (spec 59) or a real vault. Diverge from every tool above on the input: none of them see *agent* activity — which lane, which model, how many turns were cancelled, what was flagged for human judgement, what a review round returned. That is Krypton's unique substrate and the reason this is built in rather than shelled out to `dev-journal`. Also diverge from `devlog` by refusing to let an LLM write the record: generation is deterministic, narrative is opt-in.
+**Krypton delta** — Match the Obsidian file convention (one `YYYY-MM-DD.md` with frontmatter) so the output is at home in the existing Vault Viewer (spec 59), but not its linking convention — the note links to nothing (see *Self-Containment*). Diverge from every tool above on the input: none of them see *agent* activity — which lane, which model, how many turns were cancelled, what was flagged for human judgement, what a review round returned. That is Krypton's unique substrate and the reason this is built in rather than shelled out to `dev-journal`. Also diverge from `devlog` by refusing to let an LLM write the record: generation is deterministic, narrative is opt-in.
 
 ## Affected Files
 
@@ -159,17 +167,49 @@ Narrative (opt-in)
 
 ### Note Structure
 
+*Spec 225: this is now the shape of the prompt payload, not of a file. The
+frontmatter block became a plain header line stating the same counts, and the
+`<details>` source table (7) was dropped — the prompt states provenance.*
+
 Frontmatter (`date`, `type: daily-note`, `repos`, `turns`, `commits`, `tags`) then, in order:
 
 1. **Header line** — activity span, repo count, turns, commits, uncommitted file count
-2. **ที่ทำวันนี้** — one section per commit, keyed to the spec number parsed out of the subject (`spec NNN` / `(NNN)` / `docs/NNN-`), rendered as a `[[NNN-slug]]` wikilink; journal events falling inside that commit's window listed under it
+2. **ที่ทำวันนี้** — one section per commit, naming the `NNN-slug` stems of the spec files it touched as plain text (never a link — see *Self-Containment*); journal events falling inside that commit's window listed under it
 3. **ค้างอยู่** — `working_diff_stat` files, plus any `Attention` event with no matching `attention_resolve`
 4. **Lane ที่ลงแรง** — table from `usage.by_lane`, column labelled *lane wall-clock*
-5. **Review & artifacts** — links to `review.md` bundles and artifact HTML
+5. **Review & artifacts** — review bundle slugs and artifact titles, each with its path as plain text
 6. **งานนอก repo** — one line per `extra` project
 7. `<details>` **ที่มาของข้อมูล** — source table, every row `derived`
 
 The note is written in Thai (matching the harness's lane-context default); identifiers, paths, spec numbers, and commit subjects stay verbatim.
+
+### Self-Containment
+
+**The note contains no links.** Specs, review bundles and artifacts are named,
+and their paths printed as code, but nothing in the body is a hyperlink or a
+`[[wikilink]]`.
+
+Two independent reasons, either sufficient:
+
+- **No single relative path is correct everywhere.** The note is read from at
+  least three places, and each resolves a relative link against a different
+  base. Spec 224 publishes a day at `/r/<project>/daily/<date>`, where the note's
+  own directory is not the base at all; the loopback `/doc` reader resolves
+  against `.krypton/journal/`. A link that resolves on one is a dead link on the
+  other, and the renderer cannot know which surface it is writing for.
+- **Nothing guarantees the target was published.** `#push daily` and `#push doc`
+  are separate commands with no ordering between them. A note that links to
+  `docs/NNN-*.md` is asserting that someone pushed that spec — an assertion this
+  format is not allowed to make, and one that fails silently: the page renders
+  normally and only 404s when clicked.
+
+Verified against the live service on 2026-08-16: the artifact line's
+project-relative `.html` link resolved to
+`/r/<project>/daily/.krypton/artifacts/...` and returned **404**, while the
+spec references beside it rendered as inert `[[...]]` text. Both are gone.
+
+A named stem (`221-harness-status-line-density`) survives every surface — it is
+searchable in the docs browser, in a published copy, and in a plain editor.
 
 ### Keybindings
 
@@ -185,7 +225,7 @@ The note is written in Thai (matching the harness's lane-context default); ident
 | `#daily <YYYY-MM-DD>` | Build + open that day's note |
 | `#daily note <text>` | Append a `Note` event — the human's own line for today |
 | `#daily open` | Open `/journal` — every rendered note, in the browser |
-| `#daily brief` | Build today's note, then ask this lane to narrate it |
+| `#daily brief [<YYYY-MM-DD>]` | Build that day's note (today when omitted), then ask this lane to narrate it. Since spec 224 the lane also writes the narration to `<date>.brief.md` — a **sibling** of the note, never the note itself |
 
 ### Browser Surface — `GET /journal`
 
@@ -236,11 +276,16 @@ extra_projects = []         # absolute paths also summarised in the note
 - **Mining `~/.claude/projects/*.jsonl` or any vendor's private transcript store.** Covers one backend of six and couples Krypton to a format it does not own
 - LLM-written note content. `#daily brief` narrates on request; it never edits the file
 - Weekly/monthly/yearly rollups (the Obsidian *Periodic Notes* superset)
-- Pushing the note to Xenon, Telegram, or Slack
+- ~~Pushing the note to Xenon~~ — **retired by spec 224**, which publishes a day as
+  the `daily` resource kind (`note.md` + optional `brief.md`). Telegram and Slack
+  remain out of scope
 - Backfilling notes for dates before this feature ships
 - A dedicated content view — the note is markdown, and the Markdown Viewer already renders it
 - A dedicated browser *reader* for notes — `/journal` is an index; `/doc` reads
-- `[[wikilink]]` resolution in the browser reader. The in-app Vault Viewer resolves them; `/doc` renders them as literal text, and teaching it Obsidian syntax is a docs-browser change, not a daily-note one
+- Navigation out of the note to the specs, reviews or artifacts it names. The
+  note is self-contained by design (see *Self-Containment*); making any of those
+  clickable means resolving a target per surface, which belongs to whichever
+  reader is doing the rendering, not to the note format
 
 ## Implementation Notes
 
@@ -249,7 +294,8 @@ Deviations from the design above, and why.
 | Change | Reason |
 |---|---|
 | The local day is an explicit `tz_offset_minutes` parameter threaded from the frontend, not something Rust derives | The process has no reliable zone. `local_day_range` turns a date into an epoch-ms window and **every** source is filtered by instant; only usage *file selection* stays UTC, because that is how `usage_log` names them. A local day straddles at most two, so both are read and filtered |
-| `CommitEntry.specs` was added, and wikilinks come from the diff | The design said the spec number would be parsed out of the commit subject. That is a guess, and this note is supposed to contain none. Reading `docs/<NNN>-<slug>.md` out of `--numstat` yields a link that points at a file that exists |
+| `CommitEntry.specs` was added, and spec names come from the diff | The design said the spec number would be parsed out of the commit subject. That is a guess, and this note is supposed to contain none. Reading `docs/<NNN>-<slug>.md` out of `--numstat` names a file that was really edited |
+| Specs, reviews and artifacts are named but never linked | Shipped as `[[wikilinks]]` plus project-relative markdown links. Both were wrong once the note was published: the wikilinks rendered as inert text and the artifact link 404'd. See *Self-Containment* |
 | `journal::prune_once` runs on the first capture of a run, not in the startup prune pass | There is no project directory at startup — the journal lives under one. Retention piggybacks on the first thing that knows where to write |
 | `#daily brief` rebuilds the digest instead of reading the note file back | The render is deterministic, so rebuilding yields the identical string, and it sidesteps having to guess whether the file landed at `<date>.md` or `<date>.generated.md` |
 | `uncommitted` is collected only when the requested day is still running | Uncommitted work is a property of *now*. Attaching today's working tree to last Tuesday's note would be a plain falsehood |

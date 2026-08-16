@@ -29,7 +29,14 @@ const PROBE_TIMEOUT_SECS: u64 = 5;
 const MAX_BLOB_BYTES: u64 = 64 * 1024 * 1024;
 const QUEUE_FILE: &str = "xenon-queue.json";
 
-pub const KINDS: [&str; 5] = ["artifact", "review", "analysis", "doc", "attention"];
+pub const KINDS: [&str; 6] = [
+    "artifact",
+    "review",
+    "analysis",
+    "doc",
+    "attention",
+    "daily",
+];
 
 // ------------------------------------------------------------------- types
 
@@ -432,21 +439,33 @@ pub fn content_type_for(path: &str) -> String {
 
 /// Walks `.krypton/` (and, for `doc`, the repo's markdown) and builds one
 /// `LocalResource` per publishable thing.
+/// `daily_dir` is resolved by the caller because it comes from
+/// `[daily_note].output_dir`, which may point outside the project entirely (a
+/// real Obsidian vault) — config access lives with the command, not here.
 pub fn collect(
     cwd: &Path,
     kind: &str,
     slug_filter: Option<&str>,
+    daily_dir: &Path,
 ) -> Result<Vec<LocalResource>, String> {
     let mut found = match kind {
         "review" => collect_bundles(cwd, "reviews", "review", 1)?,
         "analysis" => collect_bundles(cwd, "analyses", "analysis", 3)?,
         "artifact" => collect_artifacts(cwd)?,
         "doc" => collect_docs(cwd)?,
+        "daily" => collect_daily(cwd, daily_dir)?,
         "attention" => Vec::new(), // supplied by the frontend, never read from disk
         other => return Err(format!("unknown resource kind: {other}")),
     };
     if let Some(want) = slug_filter {
         found.retain(|r| r.manifest.slug == want);
+        // Naming a day that has no note is a typo or an un-rendered day, not an
+        // empty push. Say so instead of reporting a successful no-op.
+        if kind == "daily" && found.is_empty() {
+            return Err(format!(
+                "no daily note for {want}; render it first with `#daily {want}`"
+            ));
+        }
     }
     Ok(found)
 }
@@ -679,6 +698,74 @@ fn collect_docs(cwd: &Path) -> Result<Vec<LocalResource>, String> {
         });
     }
     Ok(out)
+}
+
+/// spec 225: one day, one resource, one file.
+///
+/// A day used to publish as a pair — `note.md` derived from records and an
+/// optional `brief.md` reading of it — which put a file switcher in front of
+/// every reader before any content. There is now a single document per day, so
+/// the source is keyed `daily.md` and the reader lands on prose.
+fn collect_daily(cwd: &Path, daily_dir: &Path) -> Result<Vec<LocalResource>, String> {
+    if !daily_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for date in crate::journal::note_dates_in(daily_dir) {
+        // Legacy shape only: spec 223 stepped a generated copy aside when the
+        // human owned `<date>.md`. Nothing writes it now, but days already on
+        // disk still carry it, and the machine's copy stays the published one.
+        let generated = daily_dir.join(format!("{date}.generated.md"));
+        let plain = daily_dir.join(format!("{date}.md"));
+        let hand_edited = generated.is_file() && plain.is_file();
+        let daily = if generated.is_file() {
+            generated
+        } else {
+            plain
+        };
+        if !daily.is_file() {
+            continue;
+        }
+
+        let text = std::fs::read_to_string(&daily).unwrap_or_default();
+        let title = title_from_markdown(&text).unwrap_or_else(|| date.clone());
+        // Who wrote it is stated by the file itself; a day with no marker was
+        // written by hand and must not be labelled as ours.
+        let author = generated_marker(&text).unwrap_or("human");
+
+        let mut sources = BTreeMap::new();
+        sources.insert("daily.md".to_string(), daily);
+
+        out.push(LocalResource {
+            manifest: ResourceManifest {
+                kind: "daily".to_string(),
+                slug: date.clone(),
+                title,
+                origin: origin_value(cwd),
+                meta: serde_json::json!({
+                    "source": daily_dir.to_string_lossy(),
+                    "date": date,
+                    "handEdited": hand_edited,
+                    "author": author,
+                }),
+                files: Vec::new(),
+            },
+            sources,
+            inline: BTreeMap::new(),
+        });
+    }
+    Ok(out)
+}
+
+/// The value of `generated:` in a leading frontmatter block, if there is one.
+fn generated_marker(text: &str) -> Option<&str> {
+    let rest = text.strip_prefix("---\n")?;
+    let end = rest.find("\n---")?;
+    rest[..end]
+        .lines()
+        .find_map(|l| l.strip_prefix("generated:"))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
 }
 
 /// Attention flags live only in the frontend's `AttentionTriageStore`, so the
@@ -1427,6 +1514,98 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// spec 225: a day is one resource holding one file, so a reader lands on
+    /// prose instead of a file switcher.
+    #[test]
+    fn daily_collection_publishes_one_file_per_day() {
+        let dir = std::env::temp_dir().join(format!("krypton-xenon-daily-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let journal = dir.join(".krypton/journal");
+        std::fs::create_dir_all(&journal).unwrap();
+
+        std::fs::write(
+            journal.join("2026-08-15.md"),
+            "---\ngenerated: lane-narration\n---\n\n# เสาร์ 15 สิงหาคม 2026\n\nbody\n",
+        )
+        .unwrap();
+        // A leftover brief from spec 224 is not a day of its own any more.
+        std::fs::write(journal.join("2026-08-15.brief.md"), "narration\n").unwrap();
+        // A day someone wrote by hand still publishes, but is not credited to us.
+        std::fs::write(journal.join("2026-08-14.md"), "# 2026-08-14\n").unwrap();
+        // Neither the capture log nor a stray file is a day.
+        std::fs::write(journal.join("2026-08-15.jsonl"), "{}").unwrap();
+        std::fs::write(journal.join("notes.md"), "not a date\n").unwrap();
+
+        let found = collect(&dir, "daily", None, &journal).unwrap();
+        assert_eq!(found.len(), 2, "two days, newest first");
+        assert_eq!(found[0].manifest.slug, "2026-08-15");
+        assert_eq!(found[0].manifest.title, "เสาร์ 15 สิงหาคม 2026");
+        assert_eq!(found[0].sources.len(), 1, "one file per day");
+        assert!(found[0].sources.contains_key("daily.md"));
+        assert!(!found[0].sources.contains_key("brief.md"));
+        assert_eq!(found[0].manifest.meta["author"], "lane-narration");
+
+        assert_eq!(found[1].manifest.slug, "2026-08-14");
+        assert_eq!(found[1].manifest.meta["author"], "human");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Legacy shape: spec 223 stepped a generated copy aside from a hand-edited
+    /// day. Nothing writes it now, but days already on disk still carry it.
+    #[test]
+    fn daily_collection_prefers_a_legacy_generated_copy_and_says_so() {
+        let dir = std::env::temp_dir().join(format!("krypton-xenon-daily2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let journal = dir.join("journal");
+        std::fs::create_dir_all(&journal).unwrap();
+        std::fs::write(journal.join("2026-08-15.md"), "# hand written\n").unwrap();
+        std::fs::write(
+            journal.join("2026-08-15.generated.md"),
+            "---\ngenerated: krypton-journal\n---\n\n# regenerated\n",
+        )
+        .unwrap();
+
+        let found = collect(&dir, "daily", None, &journal).unwrap();
+        assert_eq!(found.len(), 1, "both files are the same day");
+        assert_eq!(found[0].manifest.title, "regenerated");
+        assert_eq!(found[0].manifest.meta["handEdited"], true);
+        assert!(found[0].sources["daily.md"].ends_with("2026-08-15.generated.md"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A leftover `<date>.brief.md` from spec 224 names no day on its own — it
+    /// must not resurrect a day that has no document.
+    #[test]
+    fn daily_collection_ignores_an_orphan_legacy_brief() {
+        let dir = std::env::temp_dir().join(format!("krypton-xenon-daily3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let journal = dir.join("journal");
+        std::fs::create_dir_all(&journal).unwrap();
+        std::fs::write(journal.join("2026-08-15.brief.md"), "narration only\n").unwrap();
+
+        assert!(collect(&dir, "daily", None, &journal).unwrap().is_empty());
+
+        // Naming a day that was never rendered is an error, not a silent no-op.
+        let err = collect(&dir, "daily", Some("2026-08-15"), &journal).unwrap_err();
+        assert!(err.contains("no daily note for 2026-08-15"), "{err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An unconfigured or absent journal directory is not an error.
+    #[test]
+    fn daily_collection_on_a_project_without_notes_is_empty() {
+        let dir = std::env::temp_dir().join(format!("krypton-xenon-daily4-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(collect(&dir, "daily", None, &dir.join("nope"))
+            .unwrap()
+            .is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn bundle_collection_finds_reviews_at_depth_one() {
         let dir =
@@ -1442,7 +1621,7 @@ mod tests {
         std::fs::write(bundle.join("response.md"), "answers\n").unwrap();
         std::fs::write(bundle.join("assets/x.png"), [0u8, 1, 2]).unwrap();
 
-        let found = collect(&dir, "review", None).unwrap();
+        let found = collect(&dir, "review", None, &dir).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].manifest.slug, "2026-08-07-peering-guard");
         assert_eq!(found[0].manifest.title, "Peering guard");
@@ -1451,12 +1630,14 @@ mod tests {
 
         // A slug filter narrows to one bundle, and a miss yields nothing.
         assert_eq!(
-            collect(&dir, "review", Some("2026-08-07-peering-guard"))
+            collect(&dir, "review", Some("2026-08-07-peering-guard"), &dir)
                 .unwrap()
                 .len(),
             1
         );
-        assert!(collect(&dir, "review", Some("nope")).unwrap().is_empty());
+        assert!(collect(&dir, "review", Some("nope"), &dir)
+            .unwrap()
+            .is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1470,7 +1651,7 @@ mod tests {
         std::fs::create_dir_all(&bundle).unwrap();
         std::fs::write(bundle.join("root-cause.md"), "# root cause\n").unwrap();
 
-        let found = collect(&dir, "analysis", None).unwrap();
+        let found = collect(&dir, "analysis", None, &dir).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].manifest.slug, "wk-j/krypton/12");
         assert_eq!(found[0].manifest.title, "root cause");
@@ -1484,10 +1665,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         for kind in KINDS {
             assert!(
-                collect(&dir, kind, None).unwrap().is_empty(),
+                collect(&dir, kind, None, &dir).unwrap().is_empty(),
                 "{kind} should be empty"
             );
         }
-        assert!(collect(&dir, "nonsense", None).is_err());
+        assert!(collect(&dir, "nonsense", None, &dir).is_err());
     }
 }

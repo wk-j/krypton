@@ -1360,11 +1360,11 @@ impl HookServer {
         render_docs_page(&title, &content)
     }
 
-    /// The `/journal` index (spec 223): every rendered daily note for the
+    /// The `/journal` index (specs 223, 225): every written day for the
     /// selected harness's project, newest day first.
     ///
-    /// Deliberately thin — it is an index only. Rows link into `/doc`, so notes
-    /// inherit that reader's markdown rendering, live reload, inline feedback,
+    /// Deliberately thin — it is an index only. Rows link into `/doc`, so a day
+    /// inherits that reader's markdown rendering, live reload, inline feedback,
     /// and artifact export without this surface reimplementing any of it.
     fn journal_index_page(&self, sel_harness: Option<&str>) -> Response {
         let dirs = self.docs_project_dirs();
@@ -5086,17 +5086,18 @@ fn render_docs_harness_bar(
     out
 }
 
-/// One rendered daily note on disk (spec 223).
+/// One written day on disk (specs 223, 225).
 ///
-/// `date` is the file stem, which IS the note's day — the generator names the
-/// file after the local day it summarises, so nothing has to be parsed out of
-/// the contents to sort or label the index.
+/// `date` is the file stem, which IS the day — the file is named after the local
+/// day it covers, so nothing has to be parsed out of the contents to sort or
+/// label the index.
 struct JournalNote {
     date: String,
     /// Project-relative path, always under `.krypton/journal/`.
     rel: String,
-    /// True for a `<date>.generated.md` sibling — the copy written when a
-    /// hand-edited note already held the canonical name.
+    /// True for a legacy `<date>.generated.md` sibling — the copy spec 223
+    /// wrote when a hand-edited day already held the canonical name. Nothing
+    /// produces one now, but days already on disk still carry it.
     generated_copy: bool,
     modified: Option<std::time::SystemTime>,
 }
@@ -5145,10 +5146,10 @@ fn collect_journal_notes(project_dir: &StdPath) -> Vec<JournalNote> {
     notes
 }
 
-/// The `/journal` index: one row per rendered daily note, newest first, each
-/// opening the EXISTING `/doc` reader. No new reader exists for notes — they are
-/// ordinary markdown under the project, and `/doc` already validates and renders
-/// any `.md` under a harness working directory.
+/// The `/journal` index: one row per written day, newest first, each opening the
+/// EXISTING `/doc` reader. No new reader exists for days — they are ordinary
+/// markdown under the project, and `/doc` already validates and renders any
+/// `.md` under a harness working directory.
 fn render_journal_list(harness_id: &str, notes: &[JournalNote]) -> String {
     if notes.is_empty() {
         return "<p class=\"welcome\">No daily notes yet. Run <code>#daily</code> in a lane, or press <code>Leader J</code>, to render one for today.</p>"

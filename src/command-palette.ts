@@ -792,10 +792,10 @@ export class CommandPalette {
       execute: () => c.openMarkdownView(),
     });
 
-    // ── Daily Note (spec 223) ──
+    // ── Daily (specs 223, 225) — opens an existing day; `#daily` writes one ──
     this.register({
       id: 'daily.open',
-      label: 'Open Daily Note',
+      label: 'Open Today',
       category: 'Window',
       keybinding: 'Leader J',
       execute: () => c.openDailyNote(),

@@ -985,9 +985,6 @@ export class AcpHarnessView implements ContentView {
   private readonly openReviewBoardCb:
     | ((options: { dir: string; slug: string; laneName?: string; cwd?: string }) => void)
     | null;
-  /** spec 223: open the daily note as a Markdown tab. Injected for the same
-   *  reason as the Review Board — window creation belongs to the compositor. */
-  private readonly openDailyNoteCb: ((date?: string) => void) | null;
 
   private dashboardEl!: HTMLElement;
   private memoryOverlayEl!: HTMLElement;
@@ -1041,14 +1038,12 @@ export class AcpHarnessView implements ContentView {
     openReviewBoard:
       | ((options: { dir: string; slug: string; laneName?: string; cwd?: string }) => void)
       | null = null,
-    openDailyNote: ((date?: string) => void) | null = null,
   ) {
     this.projectDir = projectDir;
     this.viewBus = bus;
     this.openTelegramSettingsCb = openTelegramSettings;
     this.openFileReferenceCb = openFileReference;
     this.openReviewBoardCb = openReviewBoard;
-    this.openDailyNoteCb = openDailyNote;
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
     this.element = document.createElement('div');
@@ -6068,11 +6063,11 @@ export class AcpHarnessView implements ContentView {
   }
 
   /**
-   * `#daily [<YYYY-MM-DD> | note <text> | brief]`.
+   * `#daily [<YYYY-MM-DD> | note <text> | open [<YYYY-MM-DD>]]`.
    *
-   * Building and opening the note is the compositor's job (it owns windows);
-   * this only routes the sub-commands and owns the two that are harness-local:
-   * appending the human's own line, and asking the lane to narrate.
+   * spec 225: writing a day IS a lane turn, so the bare form lives here rather
+   * than in the compositor. The compositor only opens a day that already exists
+   * — it owns windows, and it has no lane to commission one with.
    */
   private async runDailyCommand(lane: HarnessLane, args: string[]): Promise<void> {
     const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
@@ -6081,6 +6076,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     const sub = args[0] ?? '';
+    const isDate = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s);
 
     if (sub === 'note') {
       const text = args.slice(1).join(' ').trim();
@@ -6093,17 +6089,44 @@ export class AcpHarnessView implements ContentView {
       return;
     }
 
-    // spec 223: `#daily open` goes to the browser index of every rendered note.
-    // The rows link into the existing /doc reader, so a note opened this way
+    // spec 223: `#daily open` goes to the browser index of every written day.
+    // The rows link into the existing /doc reader, so a day opened this way
     // gets its markdown rendering, live reload, inline feedback, and artifact
-    // export for free — none of which is reimplemented for notes.
+    // export for free — none of which is reimplemented for days.
+    //
+    // `open` means the browser, with or without a date: naming a day jumps
+    // straight to its /doc page instead of making the reader scan the index.
+    // One word, one meaning — the in-app viewer is Leader J's job.
     if (sub === 'open') {
       const port = await invoke<number>('get_hook_server_port').catch(() => 0);
       if (!port) {
         this.flashChip('daily open unavailable - hook server not ready');
         return;
       }
-      const url = `http://127.0.0.1:${port}/journal${this.harnessMemoryId ? `?harness=${encodeURIComponent(this.harnessMemoryId)}` : ''}`;
+      const date = args[1] ?? '';
+      if (date && !isDate(date)) {
+        this.flashChip('daily: #daily open [<YYYY-MM-DD>]');
+        return;
+      }
+      const harness = this.harnessMemoryId ? `harness=${encodeURIComponent(this.harnessMemoryId)}` : '';
+      let url = `http://127.0.0.1:${port}/journal${harness ? `?${harness}` : ''}`;
+      if (date) {
+        // Resolving through Rust keeps one answer for "where does a day live",
+        // and refuses a day nobody has written rather than opening a 404.
+        const abs = await invoke<string>('daily_read_path', { cwd, date }).catch((e) => {
+          this.flashChip(errorText(e));
+          return null;
+        });
+        if (!abs) return;
+        // /doc serves paths under the project only (validate_doc_path), so an
+        // absolute `output_dir` pointing outside it has no browser page at all.
+        const prefix = cwd.endsWith('/') ? cwd : `${cwd}/`;
+        if (!abs.startsWith(prefix)) {
+          this.flashChip(`daily ${date} is outside the project - no browser page`);
+          return;
+        }
+        url = `http://127.0.0.1:${port}/doc?${harness ? `${harness}&` : ''}path=${encodeURIComponent(abs.slice(prefix.length))}`;
+      }
       try {
         await invoke('open_url', { url });
         this.flashChip(url);
@@ -6113,43 +6136,57 @@ export class AcpHarnessView implements ContentView {
       return;
     }
 
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(sub) ? sub : undefined;
-    if (sub && sub !== 'brief' && !date) {
-      this.flashChip('daily: #daily [<YYYY-MM-DD> | note <text> | open | brief]');
+    // A malformed date is refused rather than falling back to today — silently
+    // writing the wrong day reads as a correct answer and there is nothing in
+    // the reply to catch it.
+    if (sub && !isDate(sub)) {
+      this.flashChip('daily: #daily [<YYYY-MM-DD> | note <text> | open [<YYYY-MM-DD>]]');
       return;
     }
 
-    if (sub === 'brief') {
-      if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
-        this.flashChip('lane busy - #cancel first');
-        return;
-      }
+    if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+      this.flashChip('lane busy - #cancel first');
+      return;
+    }
+    try {
+      const { renderDigestForBrief } = await import('./daily-note');
+      const { tzOffsetMinutes } = await import('./journal');
+      const digest = await invoke<DayDigest>('daily_note_build', {
+        cwd,
+        date: sub || null,
+        tzOffsetMinutes: tzOffsetMinutes(),
+      });
+      // The path is resolved in Rust (an absolute vault `output_dir` is legal,
+      // and a hand-written day is refused there) and handed over — the lane is
+      // told the filename, never asked to derive it. The command name is
+      // daily_write_path; swallowing an unknown-command error here used to
+      // silently drop the path and leave #daily reply-only.
+      let path: string | undefined;
       try {
-        const { renderDailyNote } = await import('./daily-note');
-        const { tzOffsetMinutes } = await import('./journal');
-        const digest = await invoke<DayDigest>('daily_note_build', {
+        path = await invoke<string>('daily_write_path', {
           cwd,
-          date: null,
-          tzOffsetMinutes: tzOffsetMinutes(),
+          date: digest.date,
         });
-        await this.enqueueSystemPrompt(
-          lane,
-          dailyBriefPrompt(digest.date, renderDailyNote(digest)),
-          undefined,
-          'reading the day',
-        );
       } catch (e) {
-        this.flashChip(`daily brief failed: ${errorText(e)}`);
+        const msg = errorText(e);
+        if (!msg.includes('written by hand')) {
+          this.flashChip(`daily failed: ${msg}`);
+          return;
+        }
       }
-      return;
+      await this.enqueueSystemPrompt(
+        lane,
+        dailyBriefPrompt(
+          digest.date,
+          renderDigestForBrief(digest),
+          path ? { path, lane: lane.displayName } : undefined,
+        ),
+        undefined,
+        'writing the day',
+      );
+    } catch (e) {
+      this.flashChip(`daily failed: ${errorText(e)}`);
     }
-
-    if (!this.openDailyNoteCb) {
-      this.flashChip('daily note unavailable in this window');
-      return;
-    }
-    this.openDailyNoteCb(date);
-    this.flashChip(`daily note: ${date ?? 'today'}`);
   }
 
   private async runUsageCommand(lane: HarnessLane, args: string[]): Promise<void> {

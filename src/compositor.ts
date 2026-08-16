@@ -2827,38 +2827,29 @@ export class Compositor {
   }
 
   /**
-   * Build and open the developer daily note for `date` (default: today in the
-   * local zone) — spec 223.
+   * Open the day for `date` (default: today in the local zone) — spec 225.
    *
-   * The digest is joined in Rust, rendered here, written back, and handed to
-   * the Markdown Viewer. Rendering on this side keeps the note deterministic
-   * and testable without a filesystem; writing it back keeps the file, not the
-   * view, as the durable record.
+   * Reads only. Writing a day is a lane turn (`#daily` in a harness window),
+   * and the compositor has no lane to commission one with — so a day that was
+   * never written says so instead of quietly producing an empty one.
    */
   async openDailyNote(date?: string): Promise<void> {
     const cwd = await this.getFocusedCwd();
     if (!cwd) {
-      this.showNotification('No working directory — daily note unavailable');
+      this.showNotification('No working directory — daily unavailable');
       return;
     }
 
     try {
-      const { renderDailyNote } = await import('./acp/daily-note');
-      const { tzOffsetMinutes } = await import('./acp/journal');
-      const digest = await invoke<import('./acp/daily-note').DayDigest>('daily_note_build', {
+      const { localDayStamp } = await import('./acp/journal');
+      const path = await invoke<string>('daily_read_path', {
         cwd,
-        date: date ?? null,
-        tzOffsetMinutes: tzOffsetMinutes(),
-      });
-      const path = await invoke<string>('daily_note_write', {
-        cwd,
-        date: digest.date,
-        markdown: renderDailyNote(digest),
+        date: date ?? localDayStamp(),
       });
       await this.openMarkdownView(path);
     } catch (err) {
-      console.error('[daily-note] build failed', err);
-      this.showNotification(`Daily note failed: ${String(err)}`);
+      console.error('[daily] open failed', err);
+      this.showNotification(String(err));
     }
   }
 
@@ -3899,8 +3890,6 @@ export class Compositor {
       // spec 211: the compositor owns tab creation, so the harness hands a review
       // card's bundle back here rather than opening a window itself.
       (options) => void this.openReviewBoard(options),
-      // spec 223: same reason — `#daily` asks for a window, and windows are ours.
-      (date) => void this.openDailyNote(date),
     );
 
     // Replace the launching terminal tab: open the harness as a content tab in

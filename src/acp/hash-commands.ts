@@ -64,7 +64,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     name: 'push',
     args: '[--force] [<kind> [<slug>]]',
     description:
-      'publish resources (review, analysis, artifact, doc, attention) to the Xenon server',
+      'publish resources (review, analysis, artifact, doc, attention, daily) to the Xenon server',
   },
   {
     name: 'usage',
@@ -74,9 +74,9 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   },
   {
     name: 'daily',
-    args: '[<YYYY-MM-DD> | note <text> | open | brief]',
+    args: '[<YYYY-MM-DD> | note <text> | open [<YYYY-MM-DD>]]',
     description:
-      "open the developer daily note (deterministic — built from usage, git, reviews, artifacts); `open` browses every day in a browser",
+      'write the day as a brief, from the recorded evidence (usage, git, journal, reviews, artifacts); `open` browses days in a browser, or jumps to one',
   },
   {
     name: 'xenon',
@@ -218,7 +218,16 @@ export function commandMeta(): Record<string, CommandMeta> {
     reviews: { category: 'surface', badges: [] },
     push: { category: 'surface', badges: [] },
     usage: { category: 'surface', badges: [] },
-    daily: { category: 'surface', badges: [], prompt: dailyBriefPrompt('<YYYY-MM-DD>', '<rendered note>') },
+    daily: {
+      category: 'surface',
+      badges: [],
+      // The reference page must show what `#daily` actually sends, which since
+      // spec 225 includes the write-the-day instruction.
+      prompt: dailyBriefPrompt('<YYYY-MM-DD>', '<rendered evidence>', {
+        path: '<output_dir>/<YYYY-MM-DD>.md',
+        lane: '<lane>',
+      }),
+    },
     xenon: { category: 'surface', badges: [] },
     termctrl: { category: 'surface', badges: [] },
     commands: { category: 'surface', badges: [] },

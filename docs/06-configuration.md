@@ -263,10 +263,12 @@ base_url = ""
 # server addresses projects with one, so a "/" is replaced with "-".
 project = ""
 # Which kinds a bare `#push` covers. Empty = all of them.
+# One of: review, analysis, artifact, doc, attention, daily.
 #
 # Listing "attention" ALSO makes that one kind publish by itself, as soon as a
 # lane raises a flag — it is the only kind with no on-disk form, so an unpushed
-# flag dies with the app. Everything else is on disk already and stays manual.
+# flag dies with the app. Everything else is on disk already and stays manual,
+# "daily" (spec 224) included.
 auto_push = []
 # How often the workspace footer's backend-link segment probes the server
 # (spec 213). The segment is the only place that tells you whether the link is
@@ -293,27 +295,28 @@ publish = true
 # startup. Rows already accepted by Xenon live on there. 0 disables pruning.
 retain_days = 90
 
-# --- Developer daily note (spec 223) ---
-# One dated markdown file per day, joined from data already on disk: the usage
-# log above, git, review bundles, artifacts, and the harness journal. The note
-# is rendered deterministically — nothing in it is written or summarised by a
-# model. `#daily brief` narrates it on request and never edits the file.
+# --- Developer daily brief (specs 223, 225) ---
+# One dated markdown file per day, WRITTEN BY A LANE from data already on disk:
+# the usage log above, git, review bundles, artifacts, and the harness journal.
+# The evidence is joined deterministically and handed to the lane as a prompt;
+# what lands on disk is the brief, and it says so (`generated: lane-narration`).
+# The section keeps the name `daily_note` so an existing config still loads.
 
 [daily_note]
 # Master switch for journal capture (goal, attention, review, artifact, ticket,
-# and your own `#daily note` lines). Off still lets a note be composed from
-# usage, git, reviews, and artifacts — it just has no prose timeline.
+# and your own `#daily note` lines). Off still lets a day be written from usage,
+# git, reviews, and artifacts — it just has no prose timeline behind it.
 enabled = true
 # .krypton/journal/<date>.jsonl files older than this are deleted on the first
-# capture of a run. 0 disables pruning. Rendered .md notes are NEVER pruned —
+# capture of a run. 0 disables pruning. Written .md days are NEVER pruned —
 # they are the record; the jsonl is only its input.
 retain_days = 400
-# Where rendered notes go. Relative to the project root unless absolute, which
-# is how notes land straight in an Obsidian vault.
+# Where written days go. Relative to the project root unless absolute, which is
+# how a day lands straight in an Obsidian vault.
 output_dir = ".krypton/journal"
-# Absolute paths to other projects also summarised in the note. Explicit rather
-# than a machine-wide scan: a daily note should not depend on what else happens
-# to be on disk.
+# Absolute paths to other projects also covered by the day. Explicit rather than
+# a machine-wide scan: a day should not depend on what else happens to be on
+# disk.
 extra_projects = []
 
 # Telegram Harness Controller is intentionally NOT configured here. Krypton's
@@ -776,17 +779,17 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | `[xenon]` | `enabled` | bool | `false` | Master switch for publishing to a Xenon resource server. While false, `#push` is inert. See doc 212 |
 | `[xenon]` | `base_url` | string | `""` | Xenon server root, e.g. `https://xenon.example.com`. Empty = unconfigured |
 | `[xenon]` | `project` | string | `""` | Project slug override. Empty derives `<owner>.<repo>` from the git remote, else a path-derived name. Single path segment only |
-| `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`). Empty = all. Listing `attention` additionally publishes that kind automatically when a lane raises a flag — the one exception, because attention has no on-disk form |
+| `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`). Empty = all. Listing `attention` additionally publishes that kind automatically when a lane raises a flag — the one exception, because attention has no on-disk form |
 | `[xenon]` | `probe_interval_secs` | integer | `60` | Cadence of the workspace footer's backend-link probe (spec 213). `0` disables the interval; the segment then updates only on `⌘P X` and after a `#push`. Hot-reloaded with the rest of `[xenon]` |
 
 | `[usage_log]` | `enabled` | bool | `true` | Record one row per completed prompt turn to `.krypton/usage/<date>.jsonl`. See doc 214 |
 | `[usage_log]` | `publish` | bool | `true` | Stream recorded turns to Xenon as they end. Requires `[xenon].enabled` plus a stored token; rows accumulate locally either way |
 | `[usage_log]` | `retain_days` | integer | `90` | Local day files older than this are deleted on the sender's first cycle. `0` disables pruning |
 
-| `[daily_note]` | `enabled` | bool | `true` | Capture harness events to `.krypton/journal/<date>.jsonl`. See doc 223 |
-| `[daily_note]` | `retain_days` | integer | `400` | Journal `.jsonl` files older than this are deleted on the first capture of a run. `0` disables pruning; rendered `.md` notes are never pruned |
-| `[daily_note]` | `output_dir` | string | `".krypton/journal"` | Where rendered notes are written. Project-relative unless absolute — point it at a vault to write notes there directly |
-| `[daily_note]` | `extra_projects` | string[] | `[]` | Absolute paths to other projects also summarised in the note. No machine-wide scan |
+| `[daily_note]` | `enabled` | bool | `true` | Capture harness events to `.krypton/journal/<date>.jsonl`. See docs 223 and 225 |
+| `[daily_note]` | `retain_days` | integer | `400` | Journal `.jsonl` files older than this are deleted on the first capture of a run. `0` disables pruning; written `.md` days are never pruned |
+| `[daily_note]` | `output_dir` | string | `".krypton/journal"` | Where written days go. Project-relative unless absolute — point it at a vault to write days there directly |
+| `[daily_note]` | `extra_projects` | string[] | `[]` | Absolute paths to other projects also covered by the day. No machine-wide scan |
 
 **Usage rows never contain text.** A row carries counts and identifiers only —
 no prompt, no response, no file paths, no tool arguments. That is the property

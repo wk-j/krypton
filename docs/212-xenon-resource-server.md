@@ -69,6 +69,7 @@ surface, no browse UI, credentials on every client).
 | `analysis` | `.krypton/analyses/<owner>/<repo>/<num>/` | N Thai `.md` files (`root-cause.md`, `fix-plan.md`, …) + downloaded issue resources |
 | `doc` | repo markdown (`docs/**.md`) — **tracked in git, not under `.krypton/`** | source `.md`; the loopback `/doc` reader renders it with comrak |
 | `attention` | **nothing** — in-memory `AttentionTriageStore` only | `TelemetryAttentionItem` (`harness-telemetry.ts:52`): id, lane, createdAt, question, chosen, rationale, tradedOff[], uncertainty, reversibility |
+| `daily` | `<[daily_note].output_dir>/<date>.md` (+ `.brief.md`) — **may sit outside the project**, in a real Obsidian vault | one day per resource, files fixed at `note.md` (derived from records) and optional `brief.md` (a lane's narration). Added by spec 224; see `docs/224-daily-note-publish.md` |
 
 Consequences: (1) `attention` has no file, so the envelope must allow zero files and carry structured
 `meta`; (2) `review` and `artifact` are **mutable in place** (`response.md` autosaves every ~400 ms;
@@ -262,7 +263,7 @@ No new global leader key — `#push` is a composer hash-command, consistent with
 | Command | Action |
 |---|---|
 | `#push` | push every kind listed in `[xenon].auto_push`, or all kinds if unset |
-| `#push <kind>` | push one kind (`review`, `analysis`, `artifact`, `doc`, `attention`) |
+| `#push <kind>` | push one kind (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`) |
 | `#push <kind> <slug>` | push one resource |
 | `#push --force …` | override the secret pre-scan after the human has read the hit |
 | `#xenon` | open the configured Xenon project page in the OS browser |

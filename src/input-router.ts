@@ -900,7 +900,7 @@ export class InputRouter {
         this.compositor.openMarkdownView().then(() => this.toNormal());
         break;
 
-      // J — open today's daily note (spec 223); j is Focus Down
+      // J — open today's day if it was written (spec 225); j is Focus Down
       case 'J':
         this.compositor.openDailyNote().then(() => this.toNormal());
         break;

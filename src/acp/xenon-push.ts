@@ -3,7 +3,10 @@
 // Kept free of Tauri and DOM so the command grammar and the summary line are
 // testable without a running harness.
 
-export const XENON_KINDS = ['artifact', 'review', 'analysis', 'doc', 'attention'] as const;
+// Mirrors `xenon::KINDS` (Rust). Both lists validate, so both must be extended
+// together — the frontend rejects an unknown kind before the command is ever
+// invoked. `daily` is spec 224.
+export const XENON_KINDS = ['artifact', 'review', 'analysis', 'doc', 'attention', 'daily'] as const;
 
 export type XenonKind = (typeof XENON_KINDS)[number];
 

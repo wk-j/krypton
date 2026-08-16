@@ -98,8 +98,8 @@ pub struct CommitEntry {
     pub removed: u64,
     /// Stems of `docs/<NNN>-<slug>.md` files this commit touched, e.g.
     /// `221-harness-status-line-density`. Collected from the diff rather than
-    /// guessed from the subject line, so the note's `[[wikilinks]]` point at
-    /// files that exist.
+    /// guessed from the subject line, so a stem the note names is a file that
+    /// was really edited. The note prints these as text, never as links.
     pub specs: Vec<String>,
 }
 
@@ -333,10 +333,10 @@ pub fn prune_once(cwd: &Path, retain_days: u64, tz_offset_minutes: i32) -> usize
     removed
 }
 
-/// Where a rendered note goes. `output_dir` is a project-relative path unless it
+/// Where rendered notes live. `output_dir` is a project-relative path unless it
 /// is already absolute, which is how a note lands in a real Obsidian vault.
-pub fn note_path(cwd: &Path, output_dir: &str, date: &str) -> PathBuf {
-    let dir = if output_dir.is_empty() {
+pub fn notes_dir(cwd: &Path, output_dir: &str) -> PathBuf {
+    if output_dir.is_empty() {
         journal_dir(cwd)
     } else {
         let raw = Path::new(output_dir);
@@ -345,35 +345,95 @@ pub fn note_path(cwd: &Path, output_dir: &str, date: &str) -> PathBuf {
         } else {
             cwd.join(raw)
         }
-    };
-    dir.join(format!("{date}.md"))
+    }
 }
 
-/// Write the rendered note, returning the path written.
+/// Where a rendered note goes.
+pub fn note_path(cwd: &Path, output_dir: &str, date: &str) -> PathBuf {
+    notes_dir(cwd, output_dir).join(format!("{date}.md"))
+}
+
+/// spec 225: where a lane should write its brief of `date`, refusing a path the
+/// human owns.
 ///
-/// A file whose frontmatter lacks our `generated:` marker was written by a
-/// human. Overwriting it would destroy work that cannot be regenerated, so the
-/// generated copy steps aside instead.
-pub fn write_note(
-    cwd: &Path,
-    output_dir: &str,
-    date: &str,
-    markdown: &str,
-) -> Result<String, String> {
-    let mut path = note_path(cwd, output_dir, date);
+/// The lane writes the file with its own edit tool, so `write_note`'s
+/// step-aside guard never runs. This is the last point Krypton still controls
+/// the decision: a file whose frontmatter carries no `generated:` marker was
+/// written by hand, and the answer is to refuse the path rather than hand a
+/// lane something it will overwrite.
+pub fn daily_write_path(cwd: &Path, output_dir: &str, date: &str) -> Result<String, String> {
+    let path = note_path(cwd, output_dir, date);
     if let Ok(existing) = std::fs::read_to_string(&path) {
         if !is_generated(&existing) {
-            path.set_file_name(format!("{date}.generated.md"));
+            return Err(format!("{date}.md was written by hand — leaving it alone"));
         }
     }
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("create note directory: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("create daily directory: {e}"))?;
     }
-    std::fs::write(&path, markdown).map_err(|e| format!("write daily note: {e}"))?;
     Ok(path.to_string_lossy().to_string())
 }
 
-/// A note we wrote carries `generated:` in its frontmatter block.
+/// Every day that has a written file, newest first.
+///
+/// A day is named by its `<date>.md`. Both suffixed forms are legacy shapes
+/// spec 225 stopped producing but did not delete: `<date>.brief.md` was the
+/// separate narration, and `<date>.generated.md` the step-aside copy. Neither
+/// is a day of its own, so both stay folded into `<date>.md` rather than
+/// inventing a phantom entry. Takes the resolved directory rather than
+/// `(cwd, output_dir)` because its only caller (the Xenon collector) holds one.
+pub fn note_dates_in(dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut dates: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let stem = name.strip_suffix(".md")?;
+            let date = stem.strip_suffix(".generated").unwrap_or(stem);
+            is_date(date).then(|| date.to_string())
+        })
+        .collect();
+    dates.sort();
+    dates.dedup();
+    dates.reverse();
+    dates
+}
+
+/// `YYYY-MM-DD` and nothing else — the shape every dated path here uses.
+fn is_date(s: &str) -> bool {
+    s.len() == 10
+        && s.as_bytes()[4] == b'-'
+        && s.as_bytes()[7] == b'-'
+        && s.bytes().enumerate().all(|(i, b)| {
+            if i == 4 || i == 7 {
+                b == b'-'
+            } else {
+                b.is_ascii_digit()
+            }
+        })
+}
+
+/// spec 225: the day's file as it exists, for reading.
+///
+/// Deliberately unguarded where [`daily_write_path`] is strict: opening a day
+/// someone wrote by hand is exactly right, and only overwriting it is not. The
+/// legacy `<date>.generated.md` is the fallback so days written before spec 225
+/// still open.
+pub fn daily_read_path(cwd: &Path, output_dir: &str, date: &str) -> Result<String, String> {
+    let dir = notes_dir(cwd, output_dir);
+    for name in [format!("{date}.md"), format!("{date}.generated.md")] {
+        let path = dir.join(name);
+        if path.is_file() {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+    Err(format!("no daily for {date} yet — run #daily to write one"))
+}
+
+/// A file we commissioned carries `generated:` in its frontmatter block.
 fn is_generated(text: &str) -> bool {
     let Some(rest) = text.strip_prefix("---\n") else {
         return false;
@@ -939,25 +999,61 @@ mod tests {
         assert_eq!(prune(scratch.path(), 0, 0), 0);
     }
 
+    /// spec 225: the lane writes the file itself, so this is the only place a
+    /// hand-written day can still be defended.
     #[test]
-    fn write_note_steps_aside_for_a_hand_written_file() {
+    fn daily_write_path_refuses_a_hand_written_file() {
         let scratch = Scratch::new("write");
-        let generated = "---\ndate: 2026-08-15\ngenerated: krypton-journal\n---\n\n# day\n";
 
-        let first = write_note(scratch.path(), "", "2026-08-15", generated).expect("first write");
+        // Nothing there yet: the path is handed over and the directory made.
+        let first = daily_write_path(scratch.path(), "", "2026-08-15").expect("fresh path");
         assert!(first.ends_with("2026-08-15.md"));
 
-        // Regenerating over our own output is fine.
-        let second = write_note(scratch.path(), "", "2026-08-15", generated).expect("second write");
-        assert_eq!(first, second);
+        // Our own output is replaceable — that is what `generated:` means.
+        std::fs::write(
+            &first,
+            "---\ndate: 2026-08-15\ngenerated: lane-narration\n---\n\n# day\n",
+        )
+        .expect("write generated");
+        assert_eq!(
+            daily_write_path(scratch.path(), "", "2026-08-15").expect("regenerate"),
+            first
+        );
 
-        // A human's note is not ours to overwrite.
+        // A file written by hand carries no marker, so the path is refused and
+        // the caller falls back to reply-only.
         std::fs::write(&first, "# my own notes\n").expect("hand edit");
-        let third = write_note(scratch.path(), "", "2026-08-15", generated).expect("third write");
-        assert!(third.ends_with("2026-08-15.generated.md"));
+        assert!(daily_write_path(scratch.path(), "", "2026-08-15").is_err());
         assert_eq!(
             std::fs::read_to_string(&first).expect("hand-written file survives"),
             "# my own notes\n"
+        );
+
+        // Reading is the opposite rule: the hand-written day is the day, and
+        // opening it is exactly right.
+        assert_eq!(
+            daily_read_path(scratch.path(), "", "2026-08-15").expect("read path"),
+            first
+        );
+    }
+
+    /// A day nobody wrote is an error, not an empty file — only a lane can
+    /// commission one, and the caller has to be told to ask for it.
+    #[test]
+    fn daily_read_path_reports_a_day_that_was_never_written() {
+        let scratch = Scratch::new("read");
+        let err = daily_read_path(scratch.path(), "", "2026-08-15").unwrap_err();
+        assert!(err.contains("#daily"), "{err}");
+
+        // Days written before spec 225 stepped aside under a different name and
+        // must still open.
+        let dir = notes_dir(scratch.path(), "");
+        std::fs::create_dir_all(&dir).unwrap();
+        let legacy = dir.join("2026-08-15.generated.md");
+        std::fs::write(&legacy, "# legacy\n").unwrap();
+        assert_eq!(
+            daily_read_path(scratch.path(), "", "2026-08-15").expect("legacy path"),
+            legacy.to_string_lossy()
         );
     }
 
@@ -970,6 +1066,31 @@ mod tests {
             "2026-08-15",
         );
         assert_eq!(path, vault.join("2026-08-15.md"));
+    }
+
+    #[test]
+    fn note_dates_names_days_not_files() {
+        let scratch = Scratch::new("dates");
+        let dir = scratch.path().join(".krypton").join("journal");
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in [
+            "2026-08-13.md",
+            "2026-08-15.md",
+            "2026-08-15.generated.md",
+            "2026-08-15.brief.md",
+            "2026-08-14.md",
+            "2026-08-15.jsonl",
+            "README.md",
+        ] {
+            std::fs::write(dir.join(name), "x").unwrap();
+        }
+        // Newest first; the generated copy and the brief are the same day, and
+        // neither the capture log nor an undated file is one at all.
+        assert_eq!(
+            note_dates_in(&dir),
+            vec!["2026-08-15", "2026-08-14", "2026-08-13"]
+        );
+        assert!(note_dates_in(&dir.join("missing")).is_empty());
     }
 
     #[test]

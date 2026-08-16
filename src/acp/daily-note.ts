@@ -1,13 +1,20 @@
-// Krypton — daily-note rendering (spec 223).
+// Krypton — digest rendering for the daily brief (specs 223, 225).
 //
 // Pure and deterministic: same digest in, same markdown out. Every line traces
 // to a record in the digest. There is no summarising, no ranking, no "looks
-// like you were working on X" — that is what `#daily brief` is for, and its
-// answer deliberately never reaches this file.
+// like you were working on X".
 //
-// Output conforms to the Obsidian daily-note convention (one `YYYY-MM-DD.md`,
-// frontmatter, `[[wikilinks]]`) so it reads correctly in the Vault Viewer
-// (spec 59) or in a real vault.
+// Spec 225: this output is a prompt payload, not a file. The day that lands on
+// disk is a lane's brief; this is the evidence it is written from, so the job
+// here is to be complete and dense rather than pleasant to read.
+//
+// The note is self-contained: it names specs, reviews and artifacts but never
+// links to them. A link would have to resolve on every surface the note is read
+// on — the docs browser, a published copy, a plain editor — and each resolves a
+// relative path against a different base, so a link that works on one is a dead
+// link on the others. Nothing outside the note is guaranteed to exist beside it,
+// so the note claims nothing about what is reachable; a name a reader can search
+// for keeps its meaning everywhere.
 
 import type { UsageGroup } from './usage-log';
 import { formatTokenCount } from './usage-log';
@@ -23,7 +30,7 @@ export interface CommitEntry {
   files: number;
   added: number;
   removed: number;
-  /** Stems of `docs/<NNN>-<slug>.md` touched, for `[[wikilinks]]`. */
+  /** Stems of `docs/<NNN>-<slug>.md` touched, named in the note but not linked. */
   specs: string[];
 }
 
@@ -127,19 +134,18 @@ function lineDelta(added: number, removed: number): string {
 
 // -------------------------------------------------------------------- sections
 
-function frontmatter(digest: DayDigest, repos: string[]): string[] {
+/**
+ * The counts the writer has to put in the file's frontmatter, stated plainly so
+ * they are never recounted from the prose below.
+ */
+function payloadHeader(digest: DayDigest, repos: string[]): string[] {
   const commits = digest.project.commits.length;
   const turns = digest.project.turns + digest.extra.reduce((n, p) => n + p.turns, 0);
+  const day = weekday(digest.date);
   return [
-    '---',
-    `date: ${digest.date}`,
-    'type: daily-note',
-    'generated: krypton-journal',
-    `repos: [${repos.join(', ')}]`,
-    `turns: ${turns}`,
-    `commits: ${commits}`,
-    'tags: [daily, harness]',
-    '---',
+    `# ${digest.date}${day ? ` (${day})` : ''}`,
+    '',
+    `date: ${digest.date} · repos: [${repos.join(', ')}] · turns: ${turns} · commits: ${commits}`,
     '',
   ];
 }
@@ -199,7 +205,7 @@ function commitSections(digest: DayDigest): string[] {
   for (const commit of commits) {
     out.push(`### \`${clock(commit.at)}\` ${commit.subject}`);
     const meta = [`\`${commit.hash}\``, `${commit.files} ไฟล์`, lineDelta(commit.added, commit.removed)];
-    if (commit.specs.length) meta.push(commit.specs.map((s) => `[[${s}]]`).join(' · '));
+    if (commit.specs.length) meta.push(commit.specs.map((s) => `\`${s}\``).join(' · '));
     out.push(meta.join(' · '), '');
     const events = perCommit.get(commit.hash) ?? [];
     if (events.length) {
@@ -275,23 +281,23 @@ function laneTable(project: ProjectDigest): string[] {
   if (project.byModel.length) {
     facts.push(`โมเดล: ${project.byModel.map((m) => `${m.key} (${m.turns})`).join(', ')}`);
   }
+  // The caveat that wall-clock is not time worked lives in the prompt, where it
+  // binds the writer, rather than here where it would only be text to copy.
   if (facts.length) out.push(...facts.map((f) => `- ${f}`), '');
-  out.push(
-    '> *Lane wall-clock* นับตั้งแต่ส่ง prompt จนจบ turn จึงรวมเวลาที่ lane รอคนตอบด้วย — ไม่ใช่เวลาที่ทำงานจริง',
-    '',
-  );
   return out;
 }
 
 function outputsSection(project: ProjectDigest): string[] {
   if (!project.reviews.length && !project.artifacts.length) return [];
   const out = ['## Review & artifacts', ''];
+  // Paths are printed as text, not links — see the note at the top of this file.
+  // A reader can copy one; a link would be dead on at least one surface.
   for (const review of project.reviews) {
-    out.push(`- \`${clock(review.at)}\` review — [${review.slug}](${review.path}/review.md)`);
+    out.push(`- \`${clock(review.at)}\` review — **${review.slug}** · \`${review.path}/review.md\``);
   }
   for (const artifact of project.artifacts) {
     out.push(
-      `- \`${clock(artifact.at)}\` artifact — [${artifact.title}](${artifact.path}) · ${artifact.lane}`,
+      `- \`${clock(artifact.at)}\` artifact — **${artifact.title}** · ${artifact.lane} · \`${artifact.path}\``,
     );
   }
   out.push('');
@@ -325,56 +331,21 @@ function extraSection(extra: ProjectDigest[]): string[] {
   return out;
 }
 
-function sourceSection(digest: DayDigest): string[] {
-  const rows: [string, string][] = [
-    ['ช่วงเวลา, turns, lane, model, token, context, cancel', '`.krypton/usage/<date>.jsonl` (spec 214)'],
-    ['commit, diffstat, spec wikilink', '`git log --since/--until --numstat` (กรองด้วย `user.email`)'],
-    ['ไฟล์ที่ค้าง', '`git diff --numstat` vs `HEAD` (spec 220)'],
-    ['บรรทัดใต้แต่ละ commit, attention ที่ยังไม่ปิด', '`.krypton/journal/<date>.jsonl` (spec 223)'],
-    ['review bundle', '`.krypton/reviews/<slug>/` (spec 217)'],
-    ['artifact', '`.krypton/artifacts/<harness>/<lane>/*.html`'],
-  ];
-  const out = [
-    '---',
-    '',
-    '<details>',
-    '<summary>ที่มาของข้อมูล</summary>',
-    '',
-    '| ส่วนของ note | มาจาก |',
-    '|---|---|',
-    ...rows.map(([what, from]) => `| ${what} | ${from} |`),
-    '',
-    'ทุกบรรทัดในไฟล์นี้ดึงมาจากข้อมูลที่บันทึกไว้ ไม่มีส่วนไหนถูกเดาหรือสรุปโดย LLM —',
-    'ถ้าต้องการให้ช่วยเล่าเรื่องหรือชี้จุดที่ควรดู ใช้ `#daily brief` ซึ่งจะไม่เขียนกลับลงไฟล์นี้',
-  ];
-  if (digest.truncated) {
-    out.push('', `บางหมวดถูกตัดที่ 50 รายการ — ไฟล์ jsonl ต้นทางยังครบ`);
-  }
-  out.push('', `สร้างเมื่อ ${clock(digest.generatedAt)}`, '', '</details>', '');
-  return out;
-}
-
 // --------------------------------------------------------------------- render
 
 /**
- * Render one day's digest as an Obsidian-compatible daily note.
+ * Render one day's digest as the evidence a lane reads before writing the day.
  *
- * Deterministic: identical input yields byte-identical output, which is what
- * makes regenerating a note safe and makes the file diffable across a day.
+ * Deterministic: identical input yields byte-identical output. The result is
+ * never written to disk — spec 225 made the written day the lane's brief, and
+ * this is what the brief has to be true to.
  */
-export function renderDailyNote(digest: DayDigest): string {
+export function renderDigestForBrief(digest: DayDigest): string {
   const repos = [digest.project, ...digest.extra]
     .filter((p) => !p.unavailable)
     .map((p) => p.name);
 
-  const day = weekday(digest.date);
-  const lines: string[] = [
-    ...frontmatter(digest, repos),
-    `# ${digest.date}${day ? ` (${day})` : ''}`,
-    '',
-    headline(digest),
-    '',
-  ];
+  const lines: string[] = [...payloadHeader(digest, repos), headline(digest), ''];
 
   const body = [
     ...commitSections(digest),
@@ -393,6 +364,8 @@ export function renderDailyNote(digest: DayDigest): string {
     lines.push(...body);
   }
 
-  lines.push(...sourceSection(digest));
+  if (digest.truncated) {
+    lines.push('', 'บางหมวดถูกตัดที่ 50 รายการ — ไฟล์ jsonl ต้นทางยังครบ', '');
+  }
   return `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
 }

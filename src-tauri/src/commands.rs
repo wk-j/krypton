@@ -1440,6 +1440,14 @@ pub async fn xenon_push(
         None => crate::xenon::KINDS.iter().map(|k| k.to_string()).collect(),
     };
 
+    // spec 224: rendered daily notes may live outside the project (an Obsidian
+    // vault), so the directory is resolved from config here rather than guessed
+    // by the collector.
+    let daily_dir = {
+        let cfg = lock_read(&config, "Config")?;
+        crate::journal::notes_dir(&cwd_path, &cfg.daily_note.output_dir)
+    };
+
     let mut resources = Vec::new();
     for kind in &kinds {
         if kind == "attention" {
@@ -1450,7 +1458,12 @@ pub async fn xenon_push(
             )?);
             continue;
         }
-        resources.extend(crate::xenon::collect(&cwd_path, kind, slug.as_deref())?);
+        resources.extend(crate::xenon::collect(
+            &cwd_path,
+            kind,
+            slug.as_deref(),
+            &daily_dir,
+        )?);
     }
 
     let mut report = crate::xenon::PushReport {
@@ -1652,20 +1665,40 @@ pub fn daily_note_build(
     crate::journal::build_digest(std::path::Path::new(&cwd), &date, tz_offset_minutes, &extra)
 }
 
-/// Write a rendered note and return the path written, which may differ from the
-/// requested one when a hand-written note already occupies it.
+/// spec 225: where a lane should write its brief of `date`.
+///
+/// Resolved here rather than in the frontend because `[daily_note].output_dir`
+/// may be an absolute vault path outside the project. Errors when the file
+/// there was written by hand — the caller then briefs reply-only rather than
+/// handing a lane a path it would overwrite.
 #[tauri::command]
-pub fn daily_note_write(
+pub fn daily_write_path(
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
     cwd: String,
     date: String,
-    markdown: String,
 ) -> Result<String, String> {
     let output_dir = {
         let cfg = lock_read(&config, "Config")?;
         cfg.daily_note.output_dir.clone()
     };
-    crate::journal::write_note(std::path::Path::new(&cwd), &output_dir, &date, &markdown)
+    crate::journal::daily_write_path(std::path::Path::new(&cwd), &output_dir, &date)
+}
+
+/// spec 225: the day's file as it exists, for opening in the Markdown Viewer.
+///
+/// Errors when the day was never written — reading and commissioning are
+/// separate acts, and only a harness lane can do the second.
+#[tauri::command]
+pub fn daily_read_path(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    date: String,
+) -> Result<String, String> {
+    let output_dir = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.daily_note.output_dir.clone()
+    };
+    crate::journal::daily_read_path(std::path::Path::new(&cwd), &output_dir, &date)
 }
 
 /// Store (or, with an empty string, clear) the Xenon bearer token in the OS

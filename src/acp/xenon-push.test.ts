@@ -54,6 +54,19 @@ describe('parsePushCommand', () => {
     });
   });
 
+  // spec 224: the kind list is duplicated in Rust, and this side validates
+  // first — a missing entry here rejects the command before it is ever invoked.
+  it('accepts the daily kind with a date as its slug', () => {
+    expect(parsePushCommand('#push daily')).toEqual({
+      ok: true,
+      args: { kind: 'daily', slug: null, force: false },
+    });
+    expect(parsePushCommand('#push daily 2026-08-15')).toEqual({
+      ok: true,
+      args: { kind: 'daily', slug: '2026-08-15', force: false },
+    });
+  });
+
   it('rejects an unknown kind rather than silently pushing everything', () => {
     const result = parsePushCommand('#push reviews');
     expect(result.ok).toBe(false);

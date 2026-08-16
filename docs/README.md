@@ -227,6 +227,8 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 221 | [Harness Status Line Redundancy Removal](./221-harness-status-line-density.md) |
 | 222 | [Harness Engineering Coach](./222-harness-engineering-coach.md) |
 | 223 | [Developer Daily Note](./223-developer-daily-note.md) |
+| 224 | [Publish the Daily Note to Xenon](./224-daily-note-publish.md) |
+| 225 | [Daily Brief — One Written Day per File](./225-daily-brief.md) |
 
 ## ADRs (20)
 
