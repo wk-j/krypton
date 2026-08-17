@@ -115,9 +115,9 @@ Krypton therefore:
 1. **Allowlists** paths under `~/.grok/sessions/<encoded-cwd>/` (and `$GROK_HOME/sessions/...` when set) in `validate_fs_path` **for writes**, scoped to the lane's project cwd only — not the whole home directory. Auto-apply covers **every file** under that session tree (plan.md, images, assets, …), not only `plan.md`.
 2. **Auto-applies** `fs/write_text_file` for that session tree (no review card), matching Grok TUI's plan-file auto-approve.
 3. **Handles** `_x.ai/exit_plan_mode` / `x.ai/exit_plan_mode` inbound requests by auto-replying `{ "outcome": "approved", "feedback": null }` so the agent can leave plan mode. Wire shape (verified against grok 1.0.3): params `{ sessionId, toolCallId, planContent }`.
-4. **Unscopes Grok `fs/*` (reads and writes).** Grok routes every `read_file` / write through ACP when the client advertises those capabilities, while its own `list_dir` / `grep` / bash already escape the project. A xenon-rooted Grok lane therefore failed on sibling specs (`krypton/docs/212-xenon-resource-server.md`) and `~/.agents/skills/**` with `Path outside project root`, even after (1) — and a krypton-rooted lane asked to ship xenon died the same way on `fs/write_text_file` *before* the Spec 89 review card could appear. Other ACP lanes keep Spec 89 scoping — their shell tools are permission-gated, so ACP fs was the last unprompted path. Grok writes still wait on the review card (`a`/`r`/`A`/`R`, plus acceptEdits/bypass auto-accept); only session-scratch writes auto-apply.
+4. **Unscopes Grok `fs/*` writes (and leftover reads).** Spec 228 stops advertising `readTextFile` for Grok so native `read_file` can embed png/jpeg/webp. Writes still go through ACP. Grok's `list_dir` / `grep` / bash already escape the project; scoping ACP writes hid the Spec 89 review card for sibling-repo edits (`krypton/docs/212-xenon-resource-server.md`, `~/.agents/skills/**`). Other ACP lanes keep Spec 89 scoping — their shell tools are permission-gated, so ACP fs was the last unprompted path. Grok writes still wait on the review card (`a`/`r`/`A`/`R`, plus acceptEdits/bypass auto-accept); only session-scratch writes auto-apply.
 
-Without (1)–(3), a Grok lane that enters plan mode becomes stuck: plan file I/O fails with `Path outside project root`, then every `exit_plan_mode` returns "client disconnected" and plan mode stays active. Without (4), Grok can list a sibling repo but cannot read the file the user asked it to open.
+Without (1)–(3), a Grok lane that enters plan mode becomes stuck: plan file I/O fails with `Path outside project root`, then every `exit_plan_mode` returns "client disconnected" and plan mode stays active. Without (4), a Grok write to a sibling repo dies as `Path outside project root` instead of raising the review card. Sibling **reads** no longer depend on ACP (spec 228).
 
 ### Configuration
 
@@ -147,8 +147,9 @@ export XAI_API_KEY="xai-..."
 - **Configured model not honored** → v1 has no spawn flag, so a bad model id surfaces non-fatally via `apply_session_model` (logged `session/set_model failed`), not a spawn crash; the lane still starts on Grok's default.
 - **Grok ignores `session/new mcpServers`** (Cursor-style) → memory MCP silently absent; detected during verification → native-config fast-follow.
 - **Image paste** → only if Grok advertises `promptCapabilities.image`. Existing gating handles it.
+- **Agent image file reads** → Spec 228: Grok does not get `readTextFile`, so `read_file` on png/jpeg/webp uses Grok's native embed path. A leftover `fs/read_text_file` on a binary file returns `binary file (<kind>, N bytes); fs/read_text_file is text-only` instead of Rust's UTF-8 IO string.
 - **Plan mode** → session-dir write allowlist + auto-approve `_x.ai/exit_plan_mode` (see above). Interactive plan review UI is not implemented; exit is auto-approved so the lane can continue.
-- **Sibling-repo / skill fs** → Grok's `fs/*` is not project-scoped. A xenon-rooted Grok lane can read `krypton/docs/212-…` and `~/.agents/skills/**`; a krypton-rooted lane writing `/Users/wk/Source/xenon/README.md` raises the existing write-review card instead of `Path outside project root`. Claude/Codex/etc. keep Spec 89 scoping.
+- **Sibling-repo / skill fs** → Grok text reads are native (unscoped like the TUI). Grok ACP writes are not project-scoped. A krypton-rooted lane writing `/Users/wk/Source/xenon/README.md` raises the existing write-review card instead of `Path outside project root`. Claude/Codex/etc. keep Spec 89 scoping.
 
 ## Open Questions
 

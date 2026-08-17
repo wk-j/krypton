@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (210)
+## Specs (211)
 
 | # | Spec |
 |---|------|
@@ -230,6 +230,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 224 | [Publish the Daily Note to Xenon](./224-daily-note-publish.md) |
 | 225 | [Daily Brief — One Written Day per File](./225-daily-brief.md) |
 | 226 | [Titlebar Session Mark](./226-titlebar-tail-zoom.md) |
+| 228 | [ACP fs Image / Binary Reads](./228-acp-fs-image-reads.md) |
 
 ## ADRs (20)
 

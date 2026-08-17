@@ -657,11 +657,12 @@ fn resolve_fs_path(cwd: &str, raw_path: &str) -> std::path::PathBuf {
     }
 }
 
-/// Read vs write for Spec 89 path scoping. Grok fs/* is unrestricted:
-/// Grok routes every `read_file` / write through ACP while its own
-/// list/grep/bash already escape the project, so scoping ACP I/O only
-/// broke sibling repos (and hid the write-review card the user would
-/// use to grant them). Other lanes keep Spec 89 scoping — their shell
+/// Read vs write for Spec 89 path scoping. Grok no longer advertises
+/// `readTextFile` (spec 228 — native `read_file` embeds images), but
+/// leftover ACP reads and all Grok writes still hit this gate. Grok
+/// `fs/*` is unrestricted: its list/grep/bash already escape the
+/// project, so scoping ACP I/O only broke sibling repos (and hid the
+/// write-review card). Other lanes keep Spec 89 scoping — their shell
 /// tools are permission-gated, so ACP fs was the last unprompted path.
 /// Grok writes still go through the Spec 89 review card (or session-
 /// scratch auto-apply); this enum only decides whether the request is
@@ -760,6 +761,66 @@ struct FsWriteCtx {
     new_content: String,
 }
 
+/// Grok remaps every `read_file` through ACP when this is true, which
+/// makes screenshots fail UTF-8. Other lanes keep the capability so
+/// reads stay auditable. Writes stay advertised for every backend.
+fn advertise_read_text_file(backend_id: &str) -> bool {
+    backend_id != "grok"
+}
+
+/// Sniff for the error chip only — not a general mime detector.
+fn sniff_binary_kind(path: &str, head: &[u8]) -> &'static str {
+    if head.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return "image/png";
+    }
+    if head.len() >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF {
+        return "image/jpeg";
+    }
+    if head.starts_with(b"GIF8") {
+        return "image/gif";
+    }
+    if head.len() >= 12 && head.starts_with(b"RIFF") && &head[8..12] == b"WEBP" {
+        return "image/webp";
+    }
+    if head.starts_with(b"%PDF") {
+        return "application/pdf";
+    }
+    if head.starts_with(b"PK") {
+        return "application/zip";
+    }
+    if head.starts_with(b"\0asm") {
+        return "application/wasm";
+    }
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        "wasm" => "application/wasm",
+        _ => "binary",
+    }
+}
+
+fn binary_read_error(path: &str) -> String {
+    use std::io::Read;
+    let mut kind = "binary";
+    let mut head = [0u8; 16];
+    if let Ok(mut file) = std::fs::File::open(path) {
+        if let Ok(n) = file.read(&mut head) {
+            kind = sniff_binary_kind(path, &head[..n]);
+        }
+    }
+    let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    format!("binary file ({kind}, {bytes} bytes); fs/read_text_file is text-only")
+}
+
 fn emit_fs_activity(
     client: &Arc<AcpClient>,
     app: &AppHandle,
@@ -817,6 +878,11 @@ async fn handle_inbound_request(
                     // it as a successful read so users still see the access attempt.
                     emit_fs_activity(&client, &app, "read", &path, true, None);
                     Ok(json!({ "content": "" }))
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+                    let msg = binary_read_error(&path);
+                    emit_fs_activity(&client, &app, "read", &path, false, Some(&msg));
+                    Err(json!({ "code": -32000, "message": format!("fs/read_text_file: {msg}") }))
                 }
                 Err(e) => {
                     let msg = format!("{e}");
@@ -1359,7 +1425,10 @@ pub async fn acp_initialize(
     let init_params = json!({
         "protocolVersion": 1,
         "clientCapabilities": {
-            "fs": { "readTextFile": true, "writeTextFile": true },
+            "fs": {
+                "readTextFile": advertise_read_text_file(&client.backend_id),
+                "writeTextFile": true,
+            },
             "terminal": false,
         },
         "clientInfo": { "name": "krypton", "version": env!("CARGO_PKG_VERSION") },
@@ -2473,8 +2542,9 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        disconnect_detail, effective_spawn_model, fs_path_in_scope, grok_session_dir_for_cwd,
-        is_under_grok_session_dir, percent_encode_path, startup_hint, FsAccess,
+        advertise_read_text_file, binary_read_error, disconnect_detail, effective_spawn_model,
+        fs_path_in_scope, grok_session_dir_for_cwd, is_under_grok_session_dir, percent_encode_path,
+        sniff_binary_kind, startup_hint, FsAccess,
     };
     use std::path::{Path, PathBuf};
 
@@ -2628,6 +2698,54 @@ mod tests {
             Some("mimo/mimo-v2.5")
         );
         assert_eq!(effective_spawn_model("claude", None), None);
+    }
+
+    #[test]
+    fn advertise_read_text_file_is_off_only_for_grok() {
+        assert!(!advertise_read_text_file("grok"));
+        for id in ["claude", "codex", "copilot", "droid", "gemini", "opencode"] {
+            assert!(advertise_read_text_file(id), "{id}");
+        }
+    }
+
+    #[test]
+    fn sniff_binary_kind_prefers_magic_then_extension() {
+        assert_eq!(
+            sniff_binary_kind("x.bin", b"\x89PNG\r\n\x1a\n"),
+            "image/png"
+        );
+        assert_eq!(
+            sniff_binary_kind("x.bin", b"\xFF\xD8\xFF\xE0"),
+            "image/jpeg"
+        );
+        assert_eq!(sniff_binary_kind("x.bin", b"GIF89a...."), "image/gif");
+        let mut webp = [0u8; 12];
+        webp[..4].copy_from_slice(b"RIFF");
+        webp[8..].copy_from_slice(b"WEBP");
+        assert_eq!(sniff_binary_kind("x.bin", &webp), "image/webp");
+        assert_eq!(sniff_binary_kind("x.bin", b"%PDF-1.4"), "application/pdf");
+        assert_eq!(sniff_binary_kind("x.bin", b"PK\x03\x04"), "application/zip");
+        assert_eq!(
+            sniff_binary_kind("x.bin", b"\0asm\x01\x00\x00\x00"),
+            "application/wasm"
+        );
+        assert_eq!(sniff_binary_kind("shot.png", &[0, 1, 2, 3]), "image/png");
+        assert_eq!(sniff_binary_kind("x.bin", &[0, 1, 2, 3]), "binary");
+    }
+
+    #[test]
+    fn binary_read_error_names_kind_and_size() {
+        let dir = std::env::temp_dir().join(format!("krypton-acp-bin-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("shot.png");
+        let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        bytes.extend_from_slice(&[0u8; 24]);
+        std::fs::write(&path, &bytes).unwrap();
+        let msg = binary_read_error(path.to_str().unwrap());
+        assert!(msg.contains("image/png"), "{msg}");
+        assert!(msg.contains(&format!("{} bytes", bytes.len())), "{msg}");
+        assert!(msg.contains("text-only"), "{msg}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

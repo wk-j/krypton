@@ -653,13 +653,18 @@ PUBLISH
 17. fs/* activity surfacing:
     a. When the agent calls fs/read_text_file or fs/write_text_file as an inbound
        JSON-RPC request, src-tauri/src/acp.rs handles the I/O locally, then
-       calls emit_fs_activity() before replying.
+       calls emit_fs_activity() before replying. Grok initialize sets
+       `readTextFile: false` (spec 228) so Grok file reads stay on native
+       `read_file` (image embed) and appear as tool_call chips, not FS chips.
+       Grok writes still use fs/write_text_file.
     b. emit_fs_activity emits an `fs_activity` payload on acp-event-<session>
        with method/path/ok/error fields.
     c. The TS dispatcher converts it into an `fs_activity` AcpEvent; the harness
        appends a transcript item rendered as a `📖 read` / `✏️ wrote` /
        `✗ failed` chip showing the path. NotFound reads still render as ok=true
-       (returning empty content matches existing wire semantics).
+       (returning empty content matches existing wire semantics). Invalid UTF-8
+       (PNG, zip, …) is ok=false with
+       `binary file (<kind>, N bytes); fs/read_text_file is text-only`.
 18. fs/write_text_file gated review (Spec 89):
     a. validate_fs_path(client, path, access) still canonicalizes. Writes
        for scoped backends must sit in the lane's project root or Grok
