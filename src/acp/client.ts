@@ -26,7 +26,7 @@ import type {
 } from './types';
 
 interface RawAcpEvent {
-  type: 'session_update' | 'permission_request' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending' | 'provider_error';
+  type: 'session_update' | 'permission_request' | 'ask_user_question' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending' | 'provider_error';
   // session_update:
   kind?: string;
   update?: {
@@ -34,8 +34,10 @@ interface RawAcpEvent {
     content?: ContentBlock | { type: 'text'; text: string };
     [k: string]: unknown;
   };
-  // permission_request:
+  // permission_request / ask_user_question:
   requestId?: number;
+  questions?: unknown;
+  toolCallId?: string;
   params?: {
     toolCall?: ToolCall;
     options?: PermissionOption[];
@@ -214,6 +216,14 @@ export class AcpClient {
     });
   }
 
+  async respondAskUser(requestId: number, decision: unknown): Promise<void> {
+    await invoke('acp_ask_user_response', {
+      session: this.session,
+      requestId,
+      decision,
+    });
+  }
+
   async respondFsWrite(requestId: number, accept: boolean): Promise<void> {
     await invoke('acp_fs_write_response', {
       session: this.session,
@@ -336,6 +346,15 @@ export class AcpClient {
           requestId: raw.requestId ?? 0,
           toolCall: params.toolCall ?? ({} as ToolCall),
           options: params.options ?? [],
+        };
+        break;
+      }
+      case 'ask_user_question': {
+        event = {
+          type: 'ask_user_question',
+          requestId: raw.requestId ?? 0,
+          questions: raw.questions,
+          toolCallId: typeof raw.toolCallId === 'string' ? raw.toolCallId : undefined,
         };
         break;
       }

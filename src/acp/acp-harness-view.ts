@@ -7,6 +7,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openExternalUrl } from '../external-url';
 import { AcpClient } from './client';
+import {
+  applyAskUserKey,
+  createAskUserCardState,
+  parseAskUserQuestions,
+  payloadFromCard,
+  skipInterviewDecision,
+  type AskUserDecision,
+} from './ask-user-question';
 import type {
   AcpBackendDescriptor,
   AcpEvent,
@@ -207,6 +215,7 @@ import type {
   HarnessReviewRecord,
   ReviewCardPayload,
   ReviewEventPayload,
+  HarnessAskUser,
   HarnessLane,
   HarnessPermission,
   HarnessTranscriptItem,
@@ -3498,6 +3507,15 @@ export class AcpHarnessView implements ContentView {
         return true;
       }
     }
+    const laneForAsk = this.activeLane();
+    if (
+      laneForAsk
+      && laneForAsk.pendingQuestions.length > 0
+      && laneForAsk.pendingPermissions.length === 0
+    ) {
+      return this.handleQuestionKey(e, laneForAsk);
+    }
+
     if (this.focus === 'transcript' && this.handleTranscriptKey(e)) return true;
 
     const lane = this.activeLane();
@@ -4098,6 +4116,10 @@ export class AcpHarnessView implements ContentView {
     }
     if (lane.pendingPermissions.length > 0) {
       this.flashChip('resolve permission before staging capture');
+      return true;
+    }
+    if (lane.pendingQuestions.length > 0) {
+      this.flashChip('answer question before staging capture');
       return true;
     }
     const staged = this.stageImageData(lane, image.data, image.mimeType, image.path);
@@ -4962,6 +4984,7 @@ export class AcpHarnessView implements ContentView {
         if (triageOpen > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--attn">⚑ ${triageOpen}</span>`);
         if (high > 0) tags.push(`<span class="acp-orchestrator__tag">diff ${high}</span>`);
         if (l.pendingPermissions.length > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--perm">⚠ perm</span>`);
+        if (l.pendingQuestions.length > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--perm">? ask</span>`);
         const goal = l.goal ? `<div class="acp-orchestrator__goal">${esc(truncate(l.goal.text, 72))}</div>` : '';
         const model = l.modelName ? ` · ${esc(l.modelName)}` : '';
         return (
@@ -5659,7 +5682,7 @@ export class AcpHarnessView implements ContentView {
     this.element.addEventListener('paste', (e: ClipboardEvent) => {
       if (this.helpOpen || this.memoryDrawerOpen) return;
       const lane = this.activeLane();
-      if (!lane || lane.pendingPermissions.length > 0) return;
+      if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
       const items = e.clipboardData?.items;
       if (items) {
         for (const item of Array.from(items)) {
@@ -5691,7 +5714,7 @@ export class AcpHarnessView implements ContentView {
       e.preventDefault();
       this.element.classList.remove('acp-harness--drag-over');
       const lane = this.activeLane();
-      if (!lane || lane.pendingPermissions.length > 0) return;
+      if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
       const files = e.dataTransfer?.files;
       if (!files) return;
       for (const file of Array.from(files)) {
@@ -6898,6 +6921,7 @@ export class AcpHarnessView implements ContentView {
       accent: laneAccent(index),
       // Per-lane mutable containers — each lane needs fresh instances:
       pendingPermissions: [],
+      pendingQuestions: [],
       pendingTurnExtractions: [],
       stagedImages: [],
       transcript: [{ id: makeId(), kind: 'system', text: `starting ${displayName}...` }],
@@ -7242,6 +7266,10 @@ export class AcpHarnessView implements ContentView {
         this.sealStreaming(lane);
         this.addPermission(lane, event.requestId, event.toolCall, event.options);
         break;
+      case 'ask_user_question':
+        this.sealStreaming(lane);
+        this.addAskUser(lane, event.requestId, event.questions, event.toolCallId);
+        break;
       case 'usage':
         lane.usage = mergeUsage(lane.usage, event.usage);
         // spec 214: only the prompt-response variant carries token counters;
@@ -7307,6 +7335,7 @@ export class AcpHarnessView implements ContentView {
         lane.activity = null;
         lane.pendingTurnExtractions = [];
         lane.pendingPermissions = [];
+        this.abandonPendingQuestions(lane);
         lane.acceptAllForTurn = false;
         lane.rejectAllForTurn = false;
         lane.peerAutoAcceptForTurn = false;
@@ -7742,6 +7771,7 @@ export class AcpHarnessView implements ContentView {
     }
     lane.pendingTurnExtractions = [];
     lane.pendingPermissions = [];
+    this.abandonPendingQuestions(lane);
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
     lane.peerAutoAcceptForTurn = false;
@@ -7850,6 +7880,98 @@ export class AcpHarnessView implements ContentView {
         toolKind: call.kind === 'edit' ? 'edit' : 'write_like',
         at: Date.now(),
       });
+    }
+  }
+
+  private addAskUser(
+    lane: HarnessLane,
+    requestId: number,
+    raw: unknown,
+    toolCallId?: string,
+  ): void {
+    const questions = Array.isArray(raw)
+      ? parseAskUserQuestions({ questions: raw })
+      : parseAskUserQuestions(raw);
+    if (questions.length === 0) {
+      if (lane.client) void lane.client.respondAskUser(requestId, skipInterviewDecision());
+      this.appendTranscript(lane, 'system', 'ask_user_question: no questions provided');
+      return;
+    }
+    this.abandonPendingQuestions(lane, false);
+    const card = createAskUserCardState(questions);
+    const pending: HarnessAskUser = { requestId, questions, toolCallId, card };
+    const item = this.appendTranscript(lane, 'question', questions[0]?.question || 'question');
+    item.question = payloadFromCard(requestId, questions, card);
+    pending.transcriptItem = item;
+    lane.pendingQuestions.push(pending);
+    this.setLaneStatus(lane, 'needs_permission');
+    this.refreshOrchestratorConsole();
+    this.updateComposerTick();
+  }
+
+  private syncAskUserCard(ask: HarnessAskUser): void {
+    if (!ask.transcriptItem) return;
+    ask.transcriptItem.question = payloadFromCard(
+      ask.requestId,
+      ask.questions,
+      ask.card,
+      ask.transcriptItem.question?.decision ?? 'pending',
+      ask.transcriptItem.question?.decisionLabel,
+    );
+  }
+
+  private abandonPendingQuestions(lane: HarnessLane, respond = true): void {
+    const pending = lane.pendingQuestions.splice(0);
+    for (const ask of pending) {
+      if (ask.transcriptItem?.question) {
+        ask.transcriptItem.question.decision = 'skipped';
+        ask.transcriptItem.question.decisionLabel = 'skipped';
+      }
+      if (respond && lane.client) {
+        void lane.client.respondAskUser(ask.requestId, skipInterviewDecision());
+      }
+    }
+  }
+
+  private async resolveAskUser(
+    lane: HarnessLane,
+    decision: AskUserDecision,
+    kind: 'accepted' | 'skipped',
+  ): Promise<void> {
+    const ask = lane.pendingQuestions.shift();
+    if (!ask || !lane.client) return;
+    const labels = decision.type === 'accepted'
+      ? decision.answers.flatMap((answer) => answer.selected_labels)
+      : [];
+    if (ask.transcriptItem?.question) {
+      ask.transcriptItem.question.decision = kind;
+      ask.transcriptItem.question.decisionLabel = kind === 'accepted'
+        ? (labels.join(', ') || 'answered')
+        : 'skipped';
+    }
+    if (
+      lane.pendingQuestions.length === 0
+      && lane.pendingPermissions.length === 0
+      && lane.status === 'needs_permission'
+    ) {
+      this.setLaneStatus(lane, 'busy');
+    }
+    this.updateComposerTick();
+    this.render();
+    this.refreshOrchestratorConsole();
+    try {
+      await lane.client.respondAskUser(ask.requestId, decision);
+    } catch (e) {
+      lane.pendingQuestions.unshift(ask);
+      this.setLaneStatus(lane, 'needs_permission');
+      if (ask.transcriptItem?.question) {
+        ask.transcriptItem.question.decision = 'failed';
+        ask.transcriptItem.question.decisionLabel = 'failed';
+      }
+      this.appendTranscript(lane, 'system', `ask reply failed: ${String(e)}`);
+      this.updateComposerTick();
+      this.render();
+      this.refreshOrchestratorConsole();
     }
   }
 
@@ -9406,6 +9528,7 @@ export class AcpHarnessView implements ContentView {
     lane.activity = null;
     lane.pendingUserEcho = null;
     lane.pendingPermissions = [];
+    lane.pendingQuestions = [];
     lane.pendingTurnExtractions = [];
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
@@ -9438,6 +9561,7 @@ export class AcpHarnessView implements ContentView {
       lane.client = null;
     }
     lane.pendingPermissions = [];
+    lane.pendingQuestions = [];
     lane.pendingTurnExtractions = [];
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
@@ -9502,6 +9626,7 @@ export class AcpHarnessView implements ContentView {
     lane.draft = '';
     lane.cursor = 0;
     lane.pendingPermissions = [];
+    lane.pendingQuestions = [];
     lane.pendingTurnExtractions = [];
     lane.stagedImages = [];
     lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
@@ -11373,7 +11498,9 @@ export class AcpHarnessView implements ContentView {
     } else {
       const permissionMeta = lane.status === 'needs_permission' && lane.pendingPermissions.length > 0
         ? compactPermissionMeta(lane.pendingPermissions[0])
-        : statusLabel(lane.status);
+        : lane.status === 'needs_permission' && lane.pendingQuestions.length > 0
+          ? 'ask · 1–9/Enter · x skip'
+          : statusLabel(lane.status);
       metaHtml =
         `<span class="acp-harness__rail-meta">` +
         `<span class="acp-harness__rail-meta__hint">${esc(permissionMeta)}</span>` +
@@ -11453,6 +11580,14 @@ export class AcpHarnessView implements ContentView {
       this.composerEl.innerHTML =
         `<div class="acp-harness__composer-meta">perm</div>` +
         `<div class="acp-harness__permission-options">a accept · A all · r reject · R all · Esc</div>`;
+      return;
+    }
+    if (lane.pendingQuestions.length > 0) {
+      this.composerEl.className = 'acp-harness__composer acp-harness__composer--permission';
+      this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
+      this.composerEl.innerHTML =
+        `<div class="acp-harness__composer-meta">ask</div>` +
+        `<div class="acp-harness__permission-options">1–9 pick · Enter · x skip · z other</div>`;
       return;
     }
     this.composerEl.className =
@@ -12050,6 +12185,7 @@ export class AcpHarnessView implements ContentView {
     lane.activeTurnStartedAt = null;
     lane.pendingTurnExtractions = [];
     lane.pendingPermissions = [];
+    this.abandonPendingQuestions(lane);
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
     lane.peerAutoAcceptForTurn = false;
@@ -12470,6 +12606,25 @@ export class AcpHarnessView implements ContentView {
       if (e.key === 'R') lane.rejectAllForTurn = true;
       void this.resolveFsWriteReview(lane, item.id, reject ? 'rejected' : 'accepted', e.key === 'A' || e.key === 'R');
       return true;
+    }
+    return true;
+  }
+
+  private handleQuestionKey(e: KeyboardEvent, lane: HarnessLane): boolean {
+    const ask = lane.pendingQuestions[0];
+    if (!ask) return false;
+    if (e.ctrlKey || e.metaKey || e.altKey) return true;
+    e.preventDefault();
+    const result = applyAskUserKey(ask.questions, ask.card, e.key);
+    ask.card = result.state;
+    this.syncAskUserCard(ask);
+    if (result.action.type === 'skip') {
+      void this.resolveAskUser(lane, skipInterviewDecision(), 'skipped');
+    } else if (result.action.type === 'submit') {
+      void this.resolveAskUser(lane, result.action.decision, 'accepted');
+    } else {
+      this.scheduleLaneRender(lane);
+      this.updateComposerTick();
     }
     return true;
   }

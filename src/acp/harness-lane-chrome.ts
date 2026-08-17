@@ -490,6 +490,7 @@ export function renderLaneStats(lane: HarnessLane, projectDir: string | null): s
   }
   spans.push(cell(`${harnessIcon('list')}${esc(String(lane.transcript.length))}`, `${lane.transcript.length} transcript rows`));
   if (lane.pendingPermissions.length > 0) spans.push(text(`${lane.pendingPermissions.length} perm`));
+  if (lane.pendingQuestions.length > 0) spans.push(text(`${lane.pendingQuestions.length} ask`));
   if (lane.acceptAllForTurn) spans.push(text('accept-all'));
   if (lane.rejectAllForTurn) spans.push(text('reject-all'));
   if (lane.peerAutoAcceptForTurn) spans.push(text('peer-auto'));
@@ -505,6 +506,7 @@ export function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'assistant': return 'agent';
     case 'provider_error': return 'agent';
     case 'permission': return 'perm';
+    case 'question': return 'ask';
     case 'memory': return 'mem';
     case 'shell': return 'sh';
     case 'fs_activity': return 'fs';
@@ -518,8 +520,15 @@ export function laneActivity(lane: HarnessLane, pendingPeers: PendingPeerSummary
   if (lane.status === 'error') return `error: ${lane.error ?? 'failed'}`;
   if (lane.status === 'needs_permission') {
     const permission = lane.pendingPermissions[0];
-    if (!permission) return 'perm required';
-    return `perm ${compactPermissionSubject(permission.toolCall) || compactPermissionTool(permission)}`;
+    if (permission) {
+      return `perm ${compactPermissionSubject(permission.toolCall) || compactPermissionTool(permission)}`;
+    }
+    const ask = lane.pendingQuestions[0];
+    if (ask) {
+      const q = ask.questions[ask.card.questionIndex] ?? ask.questions[0];
+      return q ? `ask ${q.question}` : 'ask required';
+    }
+    return 'perm required';
   }
   if (lane.status === 'awaiting_peer') return awaitingPeerText(pendingPeers);
   const latest = lane.transcript[lane.transcript.length - 1];

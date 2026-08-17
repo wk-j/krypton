@@ -10,6 +10,15 @@ import 'highlight.js/styles/github-dark.css';
 import { createPatch } from 'diff';
 import { invoke } from '../profiler/ipc';
 import { AcpClient } from './client';
+import {
+  applyAskUserKey,
+  createAskUserCardState,
+  optionHotkey,
+  parseAskUserQuestions,
+  skipInterviewDecision,
+  type AskUserCardState,
+  type AskUserQuestion,
+} from './ask-user-question';
 import { renderDiffPreview as sharedRenderDiffPreview, countDiff as sharedCountDiff } from './diff-render';
 import type {
   AcpEvent,
@@ -125,6 +134,13 @@ interface PermissionBlock {
   options: PermissionOption[];
 }
 
+interface AskUserBlock {
+  el: HTMLElement;
+  requestId: number;
+  questions: AskUserQuestion[];
+  card: AskUserCardState;
+}
+
 interface StagedImage {
   data: string;
   mimeType: string;
@@ -172,6 +188,7 @@ export class AcpView implements ContentView {
   private currentThought: StreamBlock | null = null;
   private toolBlocks = new Map<string, ToolBlock>();
   private permissionBlocks = new Map<number, PermissionBlock>();
+  private askUserBlock: AskUserBlock | null = null;
   private focusedPermissionId: number | null = null;
   private focusedToolId: string | null = null;
 
@@ -802,6 +819,77 @@ export class AcpView implements ContentView {
     this.scrollToBottom();
   }
 
+  // ─── Grok ask_user_question (spec 229) ──────────────────────────
+
+  private renderAskUser(requestId: number, raw: unknown): void {
+    if (this.askUserBlock) {
+      this.askUserBlock.el.classList.add('acp-view__ask--resolved');
+      this.askUserBlock.el.innerHTML = `<div class="acp-view__ask-title">⏵ skipped</div>`;
+    }
+    const questions = Array.isArray(raw)
+      ? parseAskUserQuestions({ questions: raw })
+      : parseAskUserQuestions(raw);
+    if (questions.length === 0) {
+      if (this.client) void this.client.respondAskUser(requestId, skipInterviewDecision());
+      return;
+    }
+    const el = document.createElement('div');
+    el.className = 'acp-view__ask';
+    this.messagesEl.appendChild(el);
+    this.askUserBlock = {
+      el,
+      requestId,
+      questions,
+      card: createAskUserCardState(questions),
+    };
+    this.paintAskUser(this.askUserBlock);
+    this.scrollToBottom();
+  }
+
+  private paintAskUser(block: AskUserBlock): void {
+    const q = block.questions[block.card.questionIndex];
+    if (!q) return;
+    const opts = block.questions[block.card.questionIndex].options.map((option, index) => {
+      const focus = !block.card.otherFocused && index === block.card.optionIndex ? ' acp-view__ask-opt--focus' : '';
+      const on = (block.card.selected[block.card.questionIndex] ?? []).includes(option.label)
+        ? ' acp-view__ask-opt--on'
+        : '';
+      return `<div class="acp-view__ask-opt${focus}${on}"><kbd>${esc(optionHotkey(index))}</kbd> ${esc(option.label)}</div>`;
+    }).join('');
+    const otherFocus = block.card.otherFocused || block.card.optionIndex >= q.options.length
+      ? ' acp-view__ask-opt--focus'
+      : '';
+    const other = `<div class="acp-view__ask-opt${otherFocus}"><kbd>z</kbd> ${esc(block.card.otherFocused ? (block.card.otherDraft || '…') : 'Other')}</div>`;
+    const pos = block.questions.length > 1
+      ? ` ${block.card.questionIndex + 1}/${block.questions.length}`
+      : '';
+    block.el.innerHTML =
+      `<div class="acp-view__ask-title">⏵ ask${esc(pos)}: ${esc(q.question)}</div>` +
+      `<div class="acp-view__ask-opts">${opts}${other}</div>`;
+  }
+
+  private async resolveAskUser(
+    decision: { type: string },
+    label: string,
+  ): Promise<void> {
+    const block = this.askUserBlock;
+    if (!block) return;
+    this.askUserBlock = null;
+    block.el.classList.add('acp-view__ask--resolved');
+    const detail = decision.type === 'accepted' && 'answers' in decision
+      ? (decision as { answers: Array<{ selected_labels: string[] }> })
+        .answers.flatMap((a) => a.selected_labels).join(', ')
+      : label;
+    block.el.innerHTML = `<div class="acp-view__ask-title">⏵ ${esc(detail || label)}</div>`;
+    if (this.client) {
+      try {
+        await this.client.respondAskUser(block.requestId, decision);
+      } catch (e) {
+        this.appendSystemMessage(`ask reply failed: ${e}`);
+      }
+    }
+  }
+
   // ─── Permission prompt ──────────────────────────────────────────
 
   private renderPermissionRequest(requestId: number, toolCall: ToolCall, options: PermissionOption[]): void {
@@ -903,11 +991,16 @@ export class AcpView implements ContentView {
         this.sealStreamingBlocks();
         this.renderPermissionRequest(e.requestId, e.toolCall, e.options);
         break;
+      case 'ask_user_question':
+        this.sealStreamingBlocks();
+        this.renderAskUser(e.requestId, e.questions);
+        break;
       case 'usage':
         this.usage = mergeUsage(this.usage, e.usage);
         this.updateStatus();
         break;
       case 'stop':
+        if (this.askUserBlock) void this.resolveAskUser(skipInterviewDecision(), 'skipped');
         this.sealStreamingBlocks();
         this.turnActive = false;
         this.updateStatus();
@@ -916,6 +1009,7 @@ export class AcpView implements ContentView {
         }
         break;
       case 'error':
+        if (this.askUserBlock) void this.resolveAskUser(skipInterviewDecision(), 'skipped');
         this.appendSystemMessage(`error: ${e.message}`);
         this.turnActive = false;
         this.updateStatus();
@@ -969,6 +1063,21 @@ export class AcpView implements ContentView {
     if (e.key === 'w' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       this.closeCb?.();
+      return true;
+    }
+
+    if (this.askUserBlock && this.focusedPermissionId === null) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return false;
+      e.preventDefault();
+      const block = this.askUserBlock;
+      const result = applyAskUserKey(block.questions, block.card, e.key);
+      block.card = result.state;
+      this.paintAskUser(block);
+      if (result.action.type === 'skip') {
+        void this.resolveAskUser(skipInterviewDecision(), 'skipped');
+      } else if (result.action.type === 'submit') {
+        void this.resolveAskUser(result.action.decision, 'accepted');
+      }
       return true;
     }
 

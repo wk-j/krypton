@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (212)
+## Specs (213)
 
 | # | Spec |
 |---|------|
@@ -232,6 +232,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 226 | [Titlebar Session Mark](./226-titlebar-tail-zoom.md) |
 | 227 | [Hurl Web Client](./227-hurl-web-client.md) |
 | 228 | [ACP fs Image / Binary Reads](./228-acp-fs-image-reads.md) |
+| 229 | [Grok `ask_user_question` ACP Client Method](./229-grok-ask-user-question.md) |
 
 ## ADRs (20)
 

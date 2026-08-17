@@ -8,6 +8,11 @@
 
 import type * as smd from 'streaming-markdown';
 
+import type {
+  AskUserCardState,
+  AskUserQuestion,
+  QuestionPayload,
+} from './ask-user-question';
 import type { AcpClient } from './client';
 import type {
   AcpAgentMode,
@@ -44,6 +49,14 @@ export interface HarnessPermission {
   transcriptItem?: HarnessTranscriptItem;
 }
 
+export interface HarnessAskUser {
+  requestId: number;
+  questions: AskUserQuestion[];
+  toolCallId?: string;
+  card: AskUserCardState;
+  transcriptItem?: HarnessTranscriptItem;
+}
+
 /** A deterministic, user-visible reference extracted from one assistant row. */
 export interface MessageResource {
   /** Normalized identity used for dedupe and delegated click lookup. */
@@ -66,7 +79,7 @@ export interface MessageResource {
 
 export interface HarnessTranscriptItem {
   id: string;
-  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact' | 'review';
+  kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'question' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact' | 'review';
   text: string;
   createdAt?: number;
   markdownSource?: string;
@@ -92,6 +105,7 @@ export interface HarnessTranscriptItem {
   toolStartedAt?: number;
   toolEndedAt?: number;
   permission?: PermissionPayload;
+  question?: QuestionPayload;
   fsActivity?: FsActivityPayload;
   fsReview?: FsWriteReviewPayload;
   interLane?: InterLanePayload;
@@ -451,6 +465,7 @@ export interface HarnessLane {
   draft: string;
   cursor: number;
   pendingPermissions: HarnessPermission[];
+  pendingQuestions: HarnessAskUser[];
   transcript: HarnessTranscriptItem[];
   spawnEpoch: number;
   usage: UsageInfo | null;

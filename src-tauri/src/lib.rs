@@ -293,6 +293,7 @@ pub fn run() {
             acp::acp_prompt,
             acp::acp_cancel,
             acp::acp_permission_response,
+            acp::acp_ask_user_response,
             acp::acp_fs_write_response,
             acp::acp_dispose,
             acp::acp_get_lane_metrics,

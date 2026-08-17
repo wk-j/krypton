@@ -822,6 +822,7 @@ export type AcpEvent =
   | { type: 'tool_call_update'; update: ToolCallUpdate }
   | { type: 'plan'; entries: PlanEntry[] }
   | { type: 'permission_request'; requestId: number; toolCall: ToolCall; options: PermissionOption[] }
+  | { type: 'ask_user_question'; requestId: number; questions: unknown; toolCallId?: string }
   | { type: 'usage'; usage: UsageInfo }
   | { type: 'available_commands'; commands: AcpAvailableCommand[] }
   | { type: 'mode_update'; modeId: string }

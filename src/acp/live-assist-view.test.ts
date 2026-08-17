@@ -62,7 +62,7 @@ describe('Live Assist compact activity', () => {
   });
 
   it('keeps shell, artifact, permission, and lane mail rows visible', () => {
-    const kinds = ['shell', 'artifact', 'permission', 'inter_lane'];
+    const kinds = ['shell', 'artifact', 'permission', 'question', 'inter_lane'];
     const blocks = groupLiveAssistTranscript(kinds.map((kind) => item(kind, kind)));
 
     expect(blocks).toEqual(kinds.map((kind) => ({

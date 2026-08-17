@@ -506,6 +506,44 @@
   color: var(--krypton-warn, #ffd76d);
 }
 
+.acp-view__ask {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 215, 109, 0.28);
+  background: rgba(255, 215, 109, 0.06);
+}
+.acp-view__ask--resolved {
+  opacity: 0.45;
+  font-style: italic;
+}
+.acp-view__ask-title {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 215, 109, 0.9);
+}
+.acp-view__ask-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--acp-indent);
+}
+.acp-view__ask-opt kbd {
+  display: inline-block;
+  margin-right: 6px;
+  font-family: var(--agent-font, monospace);
+  font-weight: 700;
+  color: var(--krypton-warn, #ffd76d);
+}
+.acp-view__ask-opt--focus {
+  outline: 1px solid rgba(255, 215, 109, 0.45);
+}
+.acp-view__ask-opt--on {
+  color: var(--krypton-warn, #ffd76d);
+}
+
 /* ─── @ mention popup — fuzzy file search ──────────────────────── */
 
 .acp-view__mention-popup {

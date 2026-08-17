@@ -14,6 +14,7 @@ function makeLane(overrides: Partial<HarnessLane> = {}): HarnessLane {
     status: 'idle',
     transcript: [],
     pendingPermissions: [],
+    pendingQuestions: [],
     modelName: null,
     modelApplyFailed: false,
     permissionMode: 'normal',

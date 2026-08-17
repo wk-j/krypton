@@ -695,6 +695,13 @@ PUBLISH
        `x.ai/exit_plan_mode`) with { sessionId, toolCallId, planContent },
        Krypton auto-replies { outcome: "approved", feedback: null } so plan
        mode can complete without a Grok TUI client (see docs/135).
+    h. Grok question card (spec 229): `_x.ai/ask_user_question` /
+       `x.ai/ask_user_question` parks a oneshot in `ask_pending` (empty
+       `questions` → `-32602`). The frontend renders an inline transcript
+       card; `1–9`/`Enter` replies `{ type: "accepted", answers, partial_answers: null }`,
+       `x` replies `{ type: "skip_interview" }`. Permission modes do not
+       auto-answer. A second request skip-interviews the previous oneshot.
+       Disconnect / cancel / dispose also skip so Grok does not hang.
 19. tool_call.content[].diff rendering (Spec 89):
     Whenever a tool_call or tool_call_update arrives with a content entry of
     type 'diff' (oldText + newText), buildToolPayload extracts it into

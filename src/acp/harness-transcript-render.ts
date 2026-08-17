@@ -20,6 +20,7 @@ import type {
   MessageResource,
   PermissionPayload,
 } from './harness-view-types';
+import { optionHotkey, type QuestionPayload } from './ask-user-question';
 import { backendLogoId } from './harness-lane-identity';
 import { transcriptLabel } from './harness-lane-chrome';
 import {
@@ -171,6 +172,9 @@ export function renderTranscriptItem(
   } else if (item.kind === 'permission' && item.permission) {
     body.classList.add('acp-harness__perm');
     renderPermissionBody(body, item.permission);
+  } else if (item.kind === 'question' && item.question) {
+    body.classList.add('acp-harness__question');
+    renderQuestionBody(body, item.question);
   } else if (item.kind === 'fs_activity' && item.fsActivity) {
     body.classList.add('acp-harness__fs-activity');
     if (!item.fsActivity.ok) body.classList.add('acp-harness__fs-activity--err');
@@ -291,6 +295,18 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
       item.permission.autoReason ?? '',
     ].join('\u001e')
     : '';
+  const question = item.question
+    ? [
+      item.question.requestId,
+      item.question.questionIndex,
+      item.question.optionIndex,
+      item.question.otherFocused ? '1' : '0',
+      item.question.otherDraft,
+      item.question.decision,
+      item.question.decisionLabel ?? '',
+      item.question.selected.map((row) => row.join(',')).join('|'),
+    ].join('\u001e')
+    : '';
   const fsActivity = item.fsActivity
     ? `${item.fsActivity.method}\u001e${item.fsActivity.path}\u001e${item.fsActivity.ok}\u001e${item.fsActivity.error ?? ''}`
     : '';
@@ -334,6 +350,7 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
     streaming ? '1' : '0',
     tool,
     permission,
+    question,
     fsActivity,
     fsReview,
     providerError,
@@ -732,6 +749,87 @@ export function renderPermissionBody(body: HTMLElement, perm: PermissionPayload)
   }
 }
 
+export function renderQuestionBody(body: HTMLElement, payload: QuestionPayload): void {
+  const pending = payload.decision === 'pending';
+  body.dataset.decision = payload.decision;
+  const head = document.createElement('div');
+  head.className = 'acp-harness__question-row';
+  if (!pending) {
+    const glyph = document.createElement('span');
+    glyph.className = `acp-harness__question-glyph acp-harness__question-glyph--${payload.decision}`;
+    glyph.textContent = payload.decision === 'accepted' ? '✓' : '✗';
+    head.appendChild(glyph);
+    const decision = document.createElement('span');
+    decision.className = 'acp-harness__question-decision';
+    decision.textContent = payload.decisionLabel ?? payload.decision;
+    head.appendChild(decision);
+  }
+  const subject = document.createElement('span');
+  subject.className = 'acp-harness__question-subject';
+  const current = payload.questions[payload.questionIndex];
+  const title = pending
+    ? (current?.question || payload.questions[0]?.question || 'question')
+    : (payload.questions[0]?.question || 'question');
+  subject.textContent = title;
+  subject.title = title;
+  head.appendChild(subject);
+  if (pending && payload.questions.length > 1) {
+    const pos = document.createElement('span');
+    pos.className = 'acp-harness__question-pos';
+    pos.textContent = `${payload.questionIndex + 1}/${payload.questions.length}`;
+    head.appendChild(pos);
+  }
+  body.appendChild(head);
+  if (!pending || !current) return;
+
+  const list = document.createElement('div');
+  list.className = 'acp-harness__question-options';
+  current.options.forEach((option, index) => {
+    const row = document.createElement('div');
+    const selected = (payload.selected[payload.questionIndex] ?? []).includes(option.label);
+    row.className = 'acp-harness__question-option'
+      + (index === payload.optionIndex && !payload.otherFocused ? ' acp-harness__question-option--focus' : '')
+      + (selected ? ' acp-harness__question-option--on' : '');
+    const key = document.createElement('span');
+    key.className = 'acp-harness__question-key';
+    key.textContent = optionHotkey(index);
+    const label = document.createElement('span');
+    label.className = 'acp-harness__question-label';
+    label.textContent = option.label;
+    row.append(key, label);
+    if (option.description) {
+      const desc = document.createElement('span');
+      desc.className = 'acp-harness__question-desc';
+      desc.textContent = option.description;
+      row.appendChild(desc);
+    }
+    list.appendChild(row);
+  });
+  const other = document.createElement('div');
+  other.className = 'acp-harness__question-option'
+    + (payload.otherFocused || payload.optionIndex >= current.options.length
+      ? ' acp-harness__question-option--focus'
+      : '');
+  const otherKey = document.createElement('span');
+  otherKey.className = 'acp-harness__question-key';
+  otherKey.textContent = 'z';
+  const otherLabel = document.createElement('span');
+  otherLabel.className = 'acp-harness__question-label';
+  otherLabel.textContent = payload.otherFocused
+    ? (payload.otherDraft || '…')
+    : 'Other';
+  other.append(otherKey, otherLabel);
+  list.appendChild(other);
+  body.appendChild(list);
+
+  const actions = document.createElement('div');
+  actions.className = 'acp-harness__question-actions';
+  actions.textContent = payload.otherFocused
+    ? 'type · Enter submit · Esc back'
+    : '1–9 pick · Enter · x skip · z other';
+  body.appendChild(actions);
+}
+
 export function permissionDecisionGlyph(decision: string): string {
   return decision === 'rejected' || decision === 'failed' ? '✗' : '✓';
 }
@@ -756,5 +854,5 @@ export function renderImageAttachmentChip(count: number): HTMLElement {
 }
 
 export function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
-  return kind !== 'assistant' && kind !== 'tool' && kind !== 'fs_activity' && kind !== 'fs_write_review' && kind !== 'provider_error';
+  return kind !== 'assistant' && kind !== 'tool' && kind !== 'fs_activity' && kind !== 'fs_write_review' && kind !== 'provider_error' && kind !== 'question' && kind !== 'permission';
 }

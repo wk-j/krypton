@@ -258,7 +258,10 @@ export class LiveAssistView {
     this.cancelHint.hidden = !BUSY_STATUSES.has(snapshot.status.status);
     this.renderTranscript(snapshot.transcript, laneChanged);
     this.renderedLane = snapshot.lane.displayName;
-    this.setPermission(snapshot.permissions[0] ?? null);
+    this.setPermission(
+      snapshot.permissions[0] ?? null,
+      snapshot.status.status === 'needs_permission' && snapshot.permissions.length === 0,
+    );
   }
 
   showEmpty(): void {
@@ -672,7 +675,7 @@ export class LiveAssistView {
     if (nearBottom) this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
   }
 
-  private setPermission(permission: LiveAssistPermission | null): void {
+  private setPermission(permission: LiveAssistPermission | null, questionPending = false): void {
     const activeElement = document.activeElement;
     const focusTarget = liveAssistPermissionFocusTarget(
       this.pendingPermission?.requestId ?? null,
@@ -682,11 +685,24 @@ export class LiveAssistView {
       this.textarea.value.trim().length === 0,
     );
     this.pendingPermission = permission;
-    this.permissionEl.hidden = permission === null;
-    this.permissionEl.tabIndex = permission === null ? -1 : 0;
-    this.permissionToolEl.textContent = permission
-      ? `Allow ${permission.tool}? Only the oldest request can be resolved.`
-      : '';
+    const visible = permission !== null || questionPending;
+    this.permissionEl.hidden = !visible;
+    this.permissionEl.tabIndex = visible ? 0 : -1;
+    const title = this.permissionEl.querySelector('strong');
+    const keys = this.permissionEl.querySelector('.live-assist__permission-keys');
+    if (questionPending && !permission) {
+      if (title) title.textContent = 'QUESTION PENDING';
+      this.permissionToolEl.textContent = 'Question pending — answer in the harness';
+      if (keys) keys.textContent = 'Answer in the harness';
+      this.permissionEl.setAttribute('aria-label', 'Question pending. Answer in the harness.');
+    } else {
+      if (title) title.textContent = 'PERMISSION REQUIRED';
+      this.permissionToolEl.textContent = permission
+        ? `Allow ${permission.tool}? Only the oldest request can be resolved.`
+        : '';
+      if (keys) keys.textContent = 'A accept · R reject';
+      this.permissionEl.setAttribute('aria-label', 'Permission required. A accept, R reject.');
+    }
     if (focusTarget === 'permission') {
       this.permissionEl.focus({ preventScroll: true });
     } else if (focusTarget === 'composer') {

@@ -4,7 +4,8 @@
 // `gemini --experimental-acp`) and speaks newline-delimited JSON-RPC 2.0 over its
 // stdio. One AcpClient per Krypton-side session. The Rust side acts as the JSON-RPC
 // client *and* must handle inbound requests (fs/read_text_file, fs/write_text_file,
-// session/request_permission, and Grok's `_x.ai/exit_plan_mode`) initiated by the agent.
+// session/request_permission, Grok's `_x.ai/exit_plan_mode`, and
+// `_x.ai/ask_user_question`) initiated by the agent.
 //
 // See docs/69-acp-agent-support.md for the design.
 
@@ -330,6 +331,8 @@ struct AcpClient {
     stdin: Mutex<Option<ChildStdin>>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
     perm_pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
+    /// `_x.ai/ask_user_question` parked while the human answers the card.
+    ask_pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
     /// fs/write_text_file requests parked while waiting for user accept/reject.
     fs_write_pending: Mutex<HashMap<u64, FsWriteCtx>>,
     next_id: AtomicU64,
@@ -372,6 +375,7 @@ impl AcpClient {
             stdin: Mutex::new(None),
             pending: Mutex::new(HashMap::new()),
             perm_pending: Mutex::new(HashMap::new()),
+            ask_pending: Mutex::new(HashMap::new()),
             fs_write_pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             agent_capabilities: RwLock::new(None),
@@ -843,6 +847,57 @@ fn emit_fs_activity(
     client.emit_event(app, payload);
 }
 
+/// Normalize Grok's ask_user_question params into `{ question, options, multiSelect }`.
+fn extract_ask_questions(params: &Value) -> Vec<Value> {
+    let raw = params
+        .get("questions")
+        .or_else(|| params.get("params").and_then(|inner| inner.get("questions")));
+    let Some(arr) = raw.and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for item in arr {
+        let question = item
+            .get("question")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let options = item
+            .get("options")
+            .and_then(|v| v.as_array())
+            .map(|opts| {
+                opts.iter()
+                    .filter_map(|opt| {
+                        let label = opt.get("label").and_then(|v| v.as_str())?;
+                        if label.is_empty() {
+                            return None;
+                        }
+                        Some(json!({
+                            "label": label,
+                            "description": opt.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                            "preview": opt.get("preview").and_then(|v| v.as_str()),
+                        }))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if question.trim().is_empty() && options.is_empty() {
+            continue;
+        }
+        let multi = item
+            .get("multiSelect")
+            .or_else(|| item.get("multi_select"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        out.push(json!({
+            "question": question,
+            "options": options,
+            "multiSelect": multi,
+        }));
+    }
+    out
+}
+
 async fn handle_inbound_request(
     client: Arc<AcpClient>,
     app: AppHandle,
@@ -1040,6 +1095,62 @@ async fn handle_inbound_request(
                 )
                 .await;
         }
+        // Grok TUI question card (spec 229). Dual prefix matches exit_plan_mode.
+        // Do not auto-answer — park until the frontend replies.
+        "x.ai/ask_user_question" | "_x.ai/ask_user_question" => {
+            let questions = extract_ask_questions(&params);
+            if questions.is_empty() {
+                log::info!(
+                    "[acp:{}] Grok ask_user_question: rejecting empty questions",
+                    client.krypton_session
+                );
+                let _ = client
+                    .reply(
+                        id,
+                        Err(json!({
+                            "code": -32602,
+                            "message": "Invalid params: no questions provided",
+                        })),
+                    )
+                    .await;
+                return;
+            }
+            let tool_call_id = params
+                .get("toolCallId")
+                .or_else(|| params.get("tool_call_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let request_id = id.as_u64().unwrap_or(0);
+            let (tx, rx) = oneshot::channel();
+            {
+                let mut pending = client.ask_pending.lock().await;
+                // Grok TUI replaces the active question by cancelling the previous.
+                for (_, old) in pending.drain() {
+                    let _ = old.send(json!({ "type": "skip_interview" }));
+                }
+                pending.insert(request_id, tx);
+            }
+            log::info!(
+                "[acp:{}] Grok ask_user_question: parking {} question(s) (toolCallId={tool_call_id})",
+                client.krypton_session,
+                questions.len()
+            );
+            client.emit_event(
+                &app,
+                json!({
+                    "type": "ask_user_question",
+                    "requestId": request_id,
+                    "questions": questions,
+                    "toolCallId": tool_call_id,
+                }),
+            );
+            let decision = match rx.await {
+                Ok(value) => value,
+                Err(_) => json!({ "type": "skip_interview" }),
+            };
+            let _ = client.reply(id, Ok(decision)).await;
+        }
         "session/request_permission" => {
             // Bridge to the frontend.
             let request_id = id.as_u64().unwrap_or(0);
@@ -1148,6 +1259,10 @@ async fn finalize_disconnect(client: &Arc<AcpClient>, app: &AppHandle) {
     {
         let mut perm = client.perm_pending.lock().await;
         perm.clear();
+    }
+    {
+        let mut asks = client.ask_pending.lock().await;
+        asks.clear();
     }
     {
         let mut writes = client.fs_write_pending.lock().await;
@@ -1864,6 +1979,12 @@ pub async fn acp_cancel(session: u64, registry: State<'_, Arc<AcpRegistry>>) -> 
     let client = registry
         .get(session)
         .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    {
+        let mut asks = client.ask_pending.lock().await;
+        for (_, tx) in asks.drain() {
+            let _ = tx.send(json!({ "type": "skip_interview" }));
+        }
+    }
     let acp_session_id = match client.acp_session_id.read().ok().and_then(|g| g.clone()) {
         Some(s) => s,
         None => return Ok(()),
@@ -1890,6 +2011,23 @@ pub async fn acp_permission_response(
             None => json!({ "outcome": "cancelled" }),
         };
         let _ = tx.send(outcome);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn acp_ask_user_response(
+    session: u64,
+    request_id: u64,
+    decision: Value,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<(), String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    let mut pending = client.ask_pending.lock().await;
+    if let Some(tx) = pending.remove(&request_id) {
+        let _ = tx.send(decision);
     }
     Ok(())
 }

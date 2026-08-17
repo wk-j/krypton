@@ -105,6 +105,7 @@ One reader task per process (`tokio::spawn`) does `BufReader::lines().next_line(
 - **Request** (`id` + `method`):
   - `fs/read_text_file` / `fs/write_text_file` → call existing Krypton fs helpers, reply. `fs/read_text_file` returns `{content: ""}` for `NotFound` instead of erroring — Gemini's edit tool pre-reads the target file to compute a diff even when creating new files, and treats a read error as a tool-call failure. Permission/IO errors still propagate.
   - `session/request_permission` → store oneshot in `perm_pending[id]`, emit `acp-event` with the JSON-RPC `id`; await frontend response via `acp_permission_response` Tauri command, then send JSON-RPC reply.
+  - `_x.ai/ask_user_question` / `x.ai/ask_user_question` (Grok) → store oneshot in `ask_pending[id]`, emit `ask_user_question`; frontend card replies via `acp_ask_user_response` (spec 229). Empty `questions` is `-32602`.
 - **Notification** (no `id`): emit `acp-event-<krypton_session>` to frontend with raw `params`.
 
 Stderr is captured into a 64KB rolling per-client buffer **and** mirrored to `log::debug!`. Process death cancels all `pending` / `perm_pending` oneshots with errors.
