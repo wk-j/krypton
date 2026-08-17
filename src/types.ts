@@ -153,6 +153,9 @@ export interface ContentView {
   element: HTMLElement;
   /** Handle keyboard input when this pane is focused. Return true if handled. */
   onKeyDown(e: KeyboardEvent): boolean;
+  /** Apply a native paste. InputRouter retargets Cmd+V to the compositor-focused view
+   *  when DOM focus still sits on a background window. */
+  handlePaste?(e: ClipboardEvent): void;
   /** Optional focus hook for content views with focus outside the host DOM. */
   focusView?(): void;
   /** Clean up resources */

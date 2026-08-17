@@ -175,6 +175,7 @@ import type {
   LeaderKeySpec,
   PaneContentType,
 } from '../types';
+import { contentRootIsInFocusedWindow } from '../content-focus';
 import type { PaletteAction, PaletteContext } from '../palette-types';
 import type { ViewBus } from '../view-bus';
 import type { AttentionTier } from '../view-bus-types';
@@ -3587,6 +3588,27 @@ export class AcpHarnessView implements ContentView {
     return false;
   }
 
+  handlePaste(e: ClipboardEvent): void {
+    if (this.helpOpen || this.memoryDrawerOpen) return;
+    const lane = this.activeLane();
+    if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) this.stageImageFile(lane, file);
+          return;
+        }
+      }
+    }
+    const text = e.clipboardData?.getData('text');
+    if (!text) return;
+    e.preventDefault();
+    this.insertDraft(lane, text);
+  }
+
   private mentionRosterNames(): string[] {
     return this.lanes.map((l) => l.displayName);
   }
@@ -5680,24 +5702,8 @@ export class AcpHarnessView implements ContentView {
     this.element.appendChild(commandCenter);
 
     this.element.addEventListener('paste', (e: ClipboardEvent) => {
-      if (this.helpOpen || this.memoryDrawerOpen) return;
-      const lane = this.activeLane();
-      if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
-      const items = e.clipboardData?.items;
-      if (items) {
-        for (const item of Array.from(items)) {
-          if (item.type.startsWith('image/')) {
-            e.preventDefault();
-            const file = item.getAsFile();
-            if (file) this.stageImageFile(lane, file);
-            return;
-          }
-        }
-      }
-      const text = e.clipboardData?.getData('text');
-      if (!text) return;
-      e.preventDefault();
-      this.insertDraft(lane, text);
+      if (!contentRootIsInFocusedWindow(this.element)) return;
+      this.handlePaste(e);
     });
 
     this.element.addEventListener('dragover', (e: DragEvent) => {

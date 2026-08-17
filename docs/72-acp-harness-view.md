@@ -591,6 +591,7 @@ No TOML keys are wired for the harness. The default roster is code-defined, and 
 - **Same project write conflicts:** v1 does not lock or prevent them. The topbar `shared cwd` segment and per-permission `also touched by …` warnings are the only signals. Users should drive write-heavy work through one lane.
 - **Drawer cursor row is on a row that gets removed (cap overflow):** snap the cursor to the nearest surviving row.
 - **Image paste/drop/screen capture:** images stage only for the active lane. If the lane has a pending permission prompt, the user must resolve it before staging another image. If the active backend does not advertise image support, the harness shows a warning chip but still sends the image because some ACP adapters under-report capabilities. The visible placeholder chip is transient, individually removable before submit, and clears after submit; the ACP image block still carries a local `file://` URI for adapters that need a filesystem path.
+- **Cmd+V text/image paste with multiple Harness windows:** paste applies only to the compositor-focused Harness. Window/pane focus moves DOM focus onto that view (native paste follows `document.activeElement`). A paste that still lands on a background Harness is ignored there and retargeted to the focused view's composer. Overlay text fields (pickers, dialogs) keep native paste.
 
 ## Open Questions
 

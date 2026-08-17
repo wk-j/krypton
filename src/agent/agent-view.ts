@@ -16,6 +16,7 @@ import {
   permissionModeDescription,
 } from './permission-mode';
 import type { ContentView, PaneContentType } from '../types';
+import { contentRootIsInFocusedWindow } from '../content-focus';
 import { invoke } from '../profiler/ipc';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -291,24 +292,8 @@ export class AgentView implements ContentView {
 
     // Handle paste from native macOS Edit menu (Cmd+V triggers menu before JS keydown)
     this.element.addEventListener('paste', (e: ClipboardEvent) => {
-      e.preventDefault();
-      if (this.state !== 'input') return;
-
-      // Check for image items first
-      const items = e.clipboardData?.items;
-      if (items) {
-        for (const item of Array.from(items)) {
-          if (item.type.startsWith('image/')) {
-            const file = item.getAsFile();
-            if (file) this.stageImageFile(file);
-            return;
-          }
-        }
-      }
-
-      // Fall through to text paste
-      const text = e.clipboardData?.getData('text');
-      if (text) this.insert(text);
+      if (!contentRootIsInFocusedWindow(this.element)) return;
+      this.handlePaste(e);
     });
 
     // Drag-drop image support
@@ -1892,6 +1877,25 @@ export class AgentView implements ContentView {
   }
 
   // ─── Keyboard ────────────────────────────────────────────────────
+
+  handlePaste(e: ClipboardEvent): void {
+    e.preventDefault();
+    if (this.state !== 'input') return;
+
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) this.stageImageFile(file);
+          return;
+        }
+      }
+    }
+
+    const text = e.clipboardData?.getData('text');
+    if (text) this.insert(text);
+  }
 
   onKeyDown(e: KeyboardEvent): boolean {
     // Esc disarms any armed turn-wide auto-approval first — works in every

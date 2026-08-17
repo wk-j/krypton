@@ -31,6 +31,7 @@ import type {
   UsageInfo,
 } from './types';
 import type { ContentView, PaneContentType, QuickSearchHit, QuickSearchResponse } from '../types';
+import { contentRootIsInFocusedWindow } from '../content-focus';
 import { providerForBackend, type UsageProvider } from '../usage-store';
 
 // ─── Fuzzy file search (@ mention) ─────────────────────────────────
@@ -277,21 +278,8 @@ export class AcpView implements ContentView {
     this.element.appendChild(this.stagingAreaEl);
 
     this.element.addEventListener('paste', (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of Array.from(items)) {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault();
-          const file = item.getAsFile();
-          if (file) this.stageImageFile(file);
-          return;
-        }
-      }
-      const text = e.clipboardData?.getData('text');
-      if (text) {
-        e.preventDefault();
-        this.insertAtCursor(text);
-      }
+      if (!contentRootIsInFocusedWindow(this.element)) return;
+      this.handlePaste(e);
     });
 
     this.element.addEventListener('dragover', (e: DragEvent) => {
@@ -1018,6 +1006,25 @@ export class AcpView implements ContentView {
   }
 
   // ─── Input handling ──────────────────────────────────────────────
+
+  handlePaste(e: ClipboardEvent): void {
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) this.stageImageFile(file);
+          return;
+        }
+      }
+    }
+    const text = e.clipboardData?.getData('text');
+    if (text) {
+      e.preventDefault();
+      this.insertAtCursor(text);
+    }
+  }
 
   onKeyDown(e: KeyboardEvent): boolean {
     // Scroll mode — j/k, g/G, PageUp/PageDown, Ctrl+u/Ctrl+d. Esc / i exits.

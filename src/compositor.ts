@@ -9,6 +9,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 
 import { setCssVars } from './util/css-vars';
+import { paneContentHoldsFocus } from './content-focus';
 
 import {
   WindowId,
@@ -1032,8 +1033,7 @@ export class Compositor {
       this.updateTabBar(info.win);
       this.showActiveTab(info.win);
       this.updatePaneFocusIndicator(info.tab);
-      info.pane.terminal?.focus();
-      info.pane.contentView?.focusView?.();
+      this.focusPaneSurface(info.pane);
       return { consumed: true };
     });
 
@@ -1658,7 +1658,21 @@ export class Compositor {
       contentView.focusView();
       return;
     }
-    contentView.element.focus();
+    contentView.element.focus({ preventScroll: true });
+  }
+
+  /** Move OS/DOM focus onto a pane's input surface.
+   *  Native paste (Cmd+V) is delivered to document.activeElement, so compositor
+   *  window focus must move DOM focus or paste lands in the previous content view. */
+  private focusPaneSurface(pane: Pane): void {
+    if (pane.contentView) {
+      if (paneContentHoldsFocus(pane.contentView.element, document.activeElement)) {
+        return;
+      }
+      this.focusContentView(pane.contentView);
+      return;
+    }
+    pane.terminal?.focus();
   }
 
   /** Remove pane-tree elements from a content area, keeping HUD overlays */
@@ -4137,12 +4151,12 @@ export class Compositor {
     const win = this.windows.get(id);
     if (win) {
       win.element.classList.add('krypton-window--focused');
-      // Focus the active tab's focused pane terminal
+      // Move DOM focus onto the active pane (terminal or content view).
       if (win.tabs.length > 0) {
         const tab = win.tabs[win.activeTabIndex];
         const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
         if (pane) {
-          pane.terminal?.focus();
+          this.focusPaneSurface(pane);
         }
       }
     }
@@ -4510,13 +4524,7 @@ export class Compositor {
   /** Refocus the terminal of the currently focused pane */
   refocusTerminal(): void {
     const pane = this.getFocusedPane();
-    if (pane) {
-      if (pane.contentView) {
-        this.focusContentView(pane.contentView);
-      } else {
-        pane.terminal?.focus();
-      }
-    }
+    if (pane) this.focusPaneSurface(pane);
   }
 
   /** Scroll the focused terminal by the given number of pages (negative = up) */
@@ -4878,11 +4886,7 @@ export class Compositor {
     if (win.tabs.length > 0) {
       const newTab = win.tabs[win.activeTabIndex];
       const pane = this.findPaneInTree(newTab.paneTree, newTab.focusedPaneId);
-      if (pane?.contentView) {
-        this.focusContentView(pane.contentView);
-      } else if (pane?.terminal) {
-        pane.terminal.focus();
-      }
+      if (pane) this.focusPaneSurface(pane);
     }
   }
 
@@ -4898,11 +4902,7 @@ export class Compositor {
 
     const tab = win.tabs[win.activeTabIndex];
     const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
-    if (pane?.contentView) {
-      this.focusContentView(pane.contentView);
-    } else if (pane?.terminal) {
-      pane.terminal.focus();
-    }
+    if (pane) this.focusPaneSurface(pane);
 
     // Tab wrappers stay mounted (CSS visibility toggle, no DOM detach/reattach),
     // so fit can run immediately without waiting for reflow.
@@ -5127,7 +5127,7 @@ export class Compositor {
     const remainingPanes = this.collectPanes(tab.paneTree);
     if (remainingPanes.length > 0) {
       tab.focusedPaneId = remainingPanes[0].id;
-      remainingPanes[0].terminal?.focus();
+      this.focusPaneSurface(remainingPanes[0]);
       this.updatePaneFocusIndicator(tab);
     }
 
@@ -5178,7 +5178,7 @@ export class Compositor {
 
     if (bestPane) {
       tab.focusedPaneId = bestPane.id;
-      bestPane.terminal?.focus();
+      this.focusPaneSurface(bestPane);
       this.updatePaneFocusIndicator(tab);
       this.sound.play('pane.focus');
     }
@@ -5201,7 +5201,7 @@ export class Compositor {
     const nextPane = panes[nextIndex];
 
     tab.focusedPaneId = nextPane.id;
-    nextPane.terminal?.focus();
+    this.focusPaneSurface(nextPane);
     this.updatePaneFocusIndicator(tab);
     this.sound.play('pane.focus');
   }
@@ -5348,11 +5348,7 @@ export class Compositor {
         const tab = win.tabs[win.activeTabIndex];
         const pane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
         if (pane) {
-          if (pane.contentView) {
-            this.focusContentView(pane.contentView);
-          } else {
-            pane.terminal?.focus();
-          }
+          this.focusPaneSurface(pane);
         }
       }
       this.notifyFocusChange();

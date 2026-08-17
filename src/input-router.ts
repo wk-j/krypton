@@ -14,6 +14,7 @@ import { PromptDialog } from './prompt-dialog';
 import { QuickFileSearch } from './quick-file-search';
 import { QuickOverview } from './quick-overview';
 import { GLOBAL_LEADER_RESERVED_KEYS, normalizeLeaderKeyEvent } from './leader-keys';
+import { shouldRetargetContentPaste } from './content-focus';
 
 import type { MusicPlayer } from './music';
 import type { WorkspaceFooter } from './workspace-footer';
@@ -54,6 +55,7 @@ export class InputRouter {
       this.quickOverview?.open(source);
     });
     this.setupKeyHandler();
+    this.setupPasteHandler();
   }
 
   /** Get the hint controller (for config updates) */
@@ -346,6 +348,25 @@ export class InputRouter {
   private toNormal(): void {
     this.setMode(Mode.Normal);
     this.compositor.refocusTerminal();
+  }
+
+  private setupPasteHandler(): void {
+    document.addEventListener('paste', (e: ClipboardEvent) => {
+      const pane = this.compositor.getFocusedPanePublic();
+      const view = pane?.contentView;
+      if (!view?.handlePaste) return;
+      if (!shouldRetargetContentPaste({
+        modeIsNormal: this.mode === Mode.Normal,
+        quickTerminalVisible: this.compositor.isQuickTerminalVisible,
+        focusedViewRoot: view.element,
+        eventTarget: e.target,
+      })) {
+        return;
+      }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      view.handlePaste(e);
+    }, true);
   }
 
   private setupKeyHandler(): void {

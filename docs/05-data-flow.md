@@ -43,7 +43,7 @@
 1. **User presses a key** -> webview captures `keydown` event
 2. **Input Router checks mode**:
    - **Global hotkey?** (e.g., `Cmd+I`, `Cmd+Shift+H`) -> execute immediately (toggle Quick Terminal, enter hint mode, etc.)
-   - **Normal mode?** -> forward to focused window's xterm.js -> xterm.js encodes and emits `onData`
+   - **Normal mode?** -> forward to focused window's xterm.js -> xterm.js encodes and emits `onData`. Content views receive `onKeyDown`. Native `Cmd+V` is a `paste` event on `document.activeElement`; the compositor moves DOM focus with window/pane focus, and InputRouter retargets a paste that still lands on a background content view to the compositor-focused `handlePaste`.
    - **Compositor mode?** -> dispatch a focused content-view local leader action if the focused view owns the normalized key; otherwise execute the existing global compositor command (focus, resize, move, etc.)
    - **Resize/Move/Swap mode?** -> execute mode command (resize, move, swap, etc.)
    - **Selection mode?** -> navigate virtual cursor, expand/toggle selection, yank

@@ -267,6 +267,7 @@ Null-guards needed in existing methods:
 - `setupPtyListeners()` — `sessionMap` only has terminal panes, already safe
 - `fitAll()` — call `contentView.onResize()` instead of `fitAddon.fit()` when `pane.terminal === null`
 - `showActiveTab()` — skip `terminal.focus()` for content panes, focus the content element instead
+- `focusWindow()` / `focusWindowQuiet()` — same: content panes receive DOM focus via `focusPaneSurface()`, not only `terminal.focus()`. Native `Cmd+V` follows `document.activeElement`.
 - `closeWindow()` / `closeTab()` — call `contentView.dispose()` if present
 - `wireCopyOnSelect()` — skip for content panes (no terminal)
 

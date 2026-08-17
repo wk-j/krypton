@@ -76,7 +76,7 @@ This model enables:
 - **Fully custom chrome** — window borders, title bars, controls, and shadows are all theme-driven via custom theme TOML files
 - **Animated workspace transitions** — windows animate between positions using CSS/JS transitions on the transparent surface
 - **Low workspace overhead** — switching workspaces shows/hides/repositions DOM elements; the optional Live Assist window is created lazily and hidden rather than recreated
-- **Unified focus management** — the compositor controls which window receives keyboard input
+- **Unified focus management** — the compositor controls which window receives keyboard input. Window/pane focus also moves DOM focus onto that pane's surface (`terminal.focus()` or the content view host). Native paste (`Cmd+V`) is delivered to `document.activeElement`, so compositor focus and DOM focus must stay aligned; InputRouter retargets a paste that still lands on a background content view.
 - **Consistent behavior** — no platform-specific window manager quirks
 
 ### macOS Live Assist Auxiliary Window
@@ -514,7 +514,7 @@ Keypress
   v
 [Current mode?]
   |
-  +-- Normal --------> Forward to focused window's xterm.js -> PTY
+  +-- Normal --------> Forward to focused window's xterm.js -> PTY (content views: onKeyDown)
   +-- Compositor ----> Dispatch focused-view local leader key if owned, otherwise interpret as global compositor command
   +-- Resize --------> Adjust focused window size
   +-- Move ----------> Adjust focused window position
@@ -525,6 +525,8 @@ Keypress
   +-- Dashboard -----> Delegate to active dashboard's onKeyDown handler
   +-- Search --------> Update search query
 ```
+
+Native `Cmd+V` is a `paste` event on `document.activeElement`, not a key routed through `onKeyDown`. Switching windows moves DOM focus onto the newly focused pane so that event lands on the compositor-focused surface. If it still lands on a background content view, InputRouter retargets it to `ContentView.handlePaste`.
 
 ### Command Palette
 
