@@ -251,7 +251,7 @@ Windows carry no corner ornament. The chrome is the 1px accent-tinted border plu
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ ▌ TITLEBAR · 28px · uppercase label · status dot 6px    │  ← header accent strip 6px
+│ ▌ TITLE · 28px · status dot 6px              tail 2.9× │  ← session NN, focused only
 ├──────────────────────────────────────────────────────────┤
 │ ░░░ edge glow ░░░ (5em tall, fades into pane)            │
 │                                                          │

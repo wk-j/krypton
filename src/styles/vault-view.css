@@ -68,6 +68,14 @@
   text-shadow: 0 0 10px rgba(var(--vault-primary-rgb), 0.25) !important;
 }
 
+.krypton-window[data-content-type="vault"] .krypton-window__label-tail {
+  color: var(--vault-primary) !important;
+}
+
+.krypton-window[data-content-type="vault"].krypton-window--focused .krypton-window__label-tail {
+  text-shadow: 0 0 10px rgba(var(--vault-primary-rgb), 0.25) !important;
+}
+
 .krypton-window[data-content-type="vault"] .krypton-window__status-dot {
   background: var(--vault-primary) !important;
   box-shadow: none !important;

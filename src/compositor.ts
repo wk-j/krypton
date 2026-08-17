@@ -61,6 +61,7 @@ import {
   type HarnessLaneMark,
 } from './window-footer-lanes';
 import { projectBadge, type ProjectBadge } from './window-footer-project';
+import { nextTitleLabel } from './window-title-label';
 import { diffStatBadge, type DiffStatBadge } from './window-footer-diff-stat';
 import { diffStatStore } from './diff-stat-store';
 import type { ViewBus } from './view-bus';
@@ -1810,8 +1811,8 @@ export class Compositor {
     const result: Array<{ id: WindowId; label: string }> = [];
     for (const [id, win] of this.windows) {
       if (win.pinned) {
-        const labelEl = win.element.querySelector('.krypton-window__label');
-        const label = labelEl?.textContent ?? id;
+        const labelEl = win.element.querySelector<HTMLElement>('.krypton-window__label');
+        const label = labelEl?.dataset.title ?? labelEl?.textContent ?? id;
         result.push({ id, label });
       }
     }
@@ -2067,7 +2068,8 @@ export class Compositor {
 
     const label = document.createElement('span');
     label.className = 'krypton-window__label';
-    label.textContent = `session_${sessionNum}`;
+    const tail = this.createLabelTail();
+    this.paintWindowLabel(label, tail, `session_${sessionNum}`);
 
     labelGroup.appendChild(statusDot);
     // Claude Code badge (sparkle indicator)
@@ -2076,17 +2078,16 @@ export class Compositor {
     }
     labelGroup.appendChild(label);
 
-    // Right side: Claude tool indicator + PTY status
-    const claudeTool = this.claudeHookManager
-      ? this.claudeHookManager.createToolIndicator()
-      : document.createElement('span');
+    // Right side: Claude tool indicator + PTY status + session mark
     const ptyStatus = document.createElement('span');
     ptyStatus.className = 'krypton-window__pty-status';
     ptyStatus.textContent = 'starting...';
+    const titleEndChildren: HTMLElement[] = [];
+    if (this.claudeHookManager) titleEndChildren.push(this.claudeHookManager.createToolIndicator());
+    titleEndChildren.push(ptyStatus, tail);
 
     titlebar.appendChild(labelGroup);
-    titlebar.appendChild(claudeTool);
-    titlebar.appendChild(ptyStatus);
+    titlebar.appendChild(this.createTitlebarEnd(...titleEndChildren));
     chrome.appendChild(titlebar);
 
     // Header accent bar below titlebar — live oscilloscope (fed by PTY
@@ -2181,7 +2182,7 @@ export class Compositor {
     this.wireTitleSync(
       pane.terminal!,
       (styled) => {
-        label.textContent = styled;
+        this.paintWindowLabel(label, tail, styled);
         tab.title = styled;
         const titleEl = tab.element.querySelector('.krypton-tab__title');
         if (titleEl) titleEl.textContent = styled;
@@ -2199,7 +2200,7 @@ export class Compositor {
     await this.spawnPaneSession(pane, id, tabId, cwd);
 
     if (pane.sessionId !== null) {
-      label.textContent = `session_${String(pane.sessionId).padStart(2, '0')}`;
+      this.paintWindowLabel(label, tail, `session_${String(pane.sessionId).padStart(2, '0')}`);
       ptyStatus.textContent = 'pty // active';
       this.updateWindowCwd(pane.sessionId, ptyStatus);
     } else {
@@ -2248,7 +2249,8 @@ export class Compositor {
 
     const label = document.createElement('span');
     label.className = 'krypton-window__label';
-    label.textContent = title;
+    const tail = this.createLabelTail();
+    this.paintWindowLabel(label, tail, title);
 
     labelGroup.appendChild(statusDot);
     labelGroup.appendChild(label);
@@ -2258,7 +2260,7 @@ export class Compositor {
     ptyStatus.textContent = contentView.type.toUpperCase();
 
     titlebar.appendChild(labelGroup);
-    titlebar.appendChild(ptyStatus);
+    titlebar.appendChild(this.createTitlebarEnd(ptyStatus, tail));
     chrome.appendChild(titlebar);
 
     // Header accent bar below titlebar — live oscilloscope (fed by the content
@@ -5391,7 +5393,8 @@ export class Compositor {
 
     const label = document.createElement('span');
     label.className = 'krypton-window__label';
-    label.textContent = 'QUICK_TERMINAL';
+    const tail = this.createLabelTail();
+    this.paintWindowLabel(label, tail, 'QUICK_TERMINAL');
 
     labelGroup.appendChild(statusDot);
     labelGroup.appendChild(label);
@@ -5401,7 +5404,7 @@ export class Compositor {
     qtPtyStatus.textContent = 'starting...';
 
     titlebar.appendChild(labelGroup);
-    titlebar.appendChild(qtPtyStatus);
+    titlebar.appendChild(this.createTitlebarEnd(qtPtyStatus, tail));
     chrome.appendChild(titlebar);
 
     this.qtHeaderScope = this.buildHeaderAccent(chrome);
@@ -5467,7 +5470,7 @@ export class Compositor {
 
     // Listen for shell title changes (OSC 0/2 sequences)
     this.wireTitleSync(terminal, (styled) => {
-      label.textContent = styled;
+      this.paintWindowLabel(label, tail, styled);
     });
 
     this.qtTerminal = { terminal, fitAddon };
@@ -6497,10 +6500,7 @@ export class Compositor {
       if (ptyStatus) {
         ptyStatus.textContent = `SSH: ${info.user}@${info.host}`;
       }
-      const label = this.findLabel(win.element);
-      if (label) {
-        label.textContent = `ssh_${info.host}`;
-      }
+      this.paintWindowLabelFromEl(win.element, `ssh_${info.host}`);
 
       // Update tab title
       activeTab.title = `SSH ${info.user}@${info.host}`;
@@ -6573,6 +6573,37 @@ export class Compositor {
    */
   private findLabel(windowEl: HTMLElement): HTMLElement | null {
     return windowEl.querySelector('.krypton-window__label');
+  }
+
+  /** Session identity mark, dock-zoomed on the focused titlebar's right edge (spec 226). */
+  private createLabelTail(): HTMLSpanElement {
+    const tail = document.createElement('span');
+    tail.className = 'krypton-window__label-tail';
+    tail.setAttribute('aria-hidden', 'true');
+    return tail;
+  }
+
+  /** Right-side titlebar cluster: tool HUD, PTY status, then the session mark. */
+  private createTitlebarEnd(...children: HTMLElement[]): HTMLDivElement {
+    const end = document.createElement('div');
+    end.className = 'krypton-window__titlebar-end';
+    for (const child of children) end.appendChild(child);
+    return end;
+  }
+
+  private paintWindowLabel(label: HTMLElement, tail: HTMLElement, text: string): void {
+    const parts = nextTitleLabel(text, tail.textContent ?? '');
+    label.dataset.title = text;
+    label.setAttribute('aria-label', text);
+    label.textContent = parts.rest;
+    tail.textContent = parts.tail;
+    tail.hidden = parts.tail.length === 0;
+  }
+
+  private paintWindowLabelFromEl(windowEl: HTMLElement, text: string): void {
+    const label = this.findLabel(windowEl);
+    const tail = windowEl.querySelector<HTMLElement>('.krypton-window__label-tail');
+    if (label && tail) this.paintWindowLabel(label, tail, text);
   }
 
 

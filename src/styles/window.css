@@ -123,19 +123,26 @@
 /* ─── Chrome — title bar ─── */
 .krypton-window__chrome {
   flex-shrink: 0;
+  overflow: visible;
 }
 
 .krypton-window__titlebar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   height: var(--krypton-titlebar-height, 28px);
   padding: 0 12px;
   background: var(--krypton-titlebar-bg, transparent);
   -webkit-user-select: none;
   user-select: none;
   position: relative;
-  overflow: hidden;
+  z-index: 2;
+  /* Visible so the magnified tail can sit on the rail; the ack wipe is
+     clipped by its own 100% box, not by this overflow. */
+  overflow: visible;
+  /* Same default as `--krypton-lane-zoom` on the footer strip (spec 218). */
+  --krypton-title-tail-zoom: 2.9;
 }
 
 /* One-shot scan-wipe ack — flashed by compositor.flashAck(viewId) after
@@ -173,6 +180,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .krypton-window__status-dot {
@@ -188,6 +197,50 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* spec 226: session identity (`01`) on the titlebar's right edge.
+   Quiet 11px on every tile; 2.9× only on the focused window — same
+   factor as the footer lane logo. `font-size` (not a transform) so the
+   box carries its painted width. Focused tail is top-aligned so the
+   extra ~4px hangs into the header accent, not out of the window. */
+.krypton-window__titlebar-end {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  min-width: 0;
+}
+
+.krypton-window__label-tail {
+  flex: none;
+  align-self: center;
+  margin-left: 2px;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
+  opacity: 0.45;
+}
+
+.krypton-window--focused .krypton-window__label-tail {
+  align-self: flex-start;
+  font-size: calc(
+    var(--krypton-chrome-font-size, 11px) * var(--krypton-title-tail-zoom, 2.9)
+  );
+  letter-spacing: -0.02em;
+  opacity: 1;
+}
+
+.krypton-window__label-tail[hidden] {
+  display: none;
 }
 
 .krypton-window__pty-status {

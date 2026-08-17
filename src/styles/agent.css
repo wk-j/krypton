@@ -87,6 +87,15 @@
   text-shadow: 0 0 10px rgba(var(--agent-primary-rgb), 0.5) !important;
 }
 
+.krypton-window[data-content-type="agent"] .krypton-window__label-tail {
+  color: var(--agent-text-dim) !important;
+}
+
+.krypton-window[data-content-type="agent"].krypton-window--focused .krypton-window__label-tail {
+  color: var(--agent-primary) !important;
+  text-shadow: 0 0 10px rgba(var(--agent-primary-rgb), 0.5) !important;
+}
+
 .krypton-window[data-content-type="agent"] .krypton-window__status-dot {
   background: var(--agent-primary) !important;
   box-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.6) !important;

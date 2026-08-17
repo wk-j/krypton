@@ -67,7 +67,7 @@ auxiliary window never changes the primary window's frame, Space, DOM, or
 compositor state, and never focuses or raises that primary window.
 
 Each window has:
-- Cyberpunk/sci-fi **chrome** — titlebar with session label, status dot, PTY status text; right sidebar with telemetry decoration; bottom bar with line indicators; glowing cyan border on focused window
+- Cyberpunk/sci-fi **chrome** — titlebar with session label, status dot, PTY status, and a session-identity mark on the right that zooms to 2.9× only on the focused window (spec 226); right sidebar with telemetry decoration; bottom bar with line indicators; glowing cyan border on focused window
 - Its own **xterm.js instance** for terminal rendering
 - **Keyboard-driven move and resize** as the primary interaction, with optional mouse as secondary
 
@@ -270,9 +270,12 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
         <div class="krypton-window__titlebar">
           <div class="krypton-window__label-group">
             <div class="krypton-window__status-dot"></div>
-            <span class="krypton-window__label">SESSION_01</span>
+            <span class="krypton-window__label" data-title="session_01">session_</span>
           </div>
-          <span class="krypton-window__pty-status">~/projects</span>
+          <div class="krypton-window__titlebar-end">
+            <span class="krypton-window__pty-status">~/projects</span>
+            <span class="krypton-window__label-tail">01</span>
+          </div>
         </div>
         <!-- header-accent: a <canvas> oscilloscope (HeaderScope) by default, or a
              static striped <div> when chrome.header_accent.style = "ticks". Fed by
@@ -338,9 +341,11 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
         <div class="krypton-window__titlebar">
           <div class="krypton-window__label-group">
             <div class="krypton-window__status-dot"></div>
-            <span class="krypton-window__label">QUICK_TERMINAL</span>
+            <span class="krypton-window__label" data-title="QUICK_TERMINAL">QUICK_TERMINAL</span>
           </div>
-          <span class="krypton-window__pty-status">PTY_STREAMS // ACTIVE</span>
+          <div class="krypton-window__titlebar-end">
+            <span class="krypton-window__pty-status">PTY_STREAMS // ACTIVE</span>
+          </div>
         </div>
       </div>
       <div class="krypton-window__content">
