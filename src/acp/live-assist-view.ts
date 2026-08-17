@@ -34,9 +34,6 @@ export type LiveAssistStreamDisposition = 'adopt' | 'drop' | 'keep';
 export interface LiveAssistViewHandlers {
   onSelectLane(lane: string): void;
   onSubmit(text: string): void;
-  onCancel(): void;
-  onResolvePermission(action: 'accept' | 'reject'): void;
-  onHide(): void;
 }
 
 export function liveAssistPermissionFocusTarget(
@@ -62,11 +59,9 @@ export class LiveAssistView {
   private readonly transcriptEl: HTMLElement;
   private readonly permissionEl: HTMLElement;
   private readonly permissionToolEl: HTMLElement;
-  private readonly permissionAcceptButton: HTMLButtonElement;
   private readonly composer: HTMLFormElement;
   private readonly textarea: HTMLTextAreaElement;
-  private readonly sendButton: HTMLButtonElement;
-  private readonly cancelButton: HTMLButtonElement;
+  private readonly cancelHint: HTMLElement;
   private readonly emptyEl: HTMLElement;
   private readonly noticeEl: HTMLElement;
   private noticeTimer: number | null = null;
@@ -115,16 +110,16 @@ export class LiveAssistView {
     this.statusEl = document.createElement('span');
     this.statusEl.className = 'live-assist__status';
     this.statusEl.textContent = 'connecting';
-    const hideButton = document.createElement('button');
-    hideButton.className = 'live-assist__hide';
-    hideButton.type = 'button';
-    hideButton.textContent = '⌃⇧A HIDE';
-    hideButton.setAttribute('aria-label', 'Hide Live Assist');
-    header.append(brand, this.projectEl, this.laneEl, headerSpacer, topmost, this.statusEl, hideButton);
+    const hideHint = document.createElement('span');
+    hideHint.className = 'live-assist__hide';
+    hideHint.textContent = 'esc';
+    hideHint.title = 'Hide Live Assist';
+    header.append(brand, this.projectEl, this.laneEl, headerSpacer, topmost, this.statusEl, hideHint);
 
     this.laneStrip = document.createElement('nav');
     this.laneStrip.className = 'live-assist__lanes';
     this.laneStrip.setAttribute('aria-label', 'Harness lanes');
+    this.laneStrip.setAttribute('role', 'tablist');
 
     this.transcriptEl = document.createElement('div');
     this.transcriptEl.className = 'live-assist__transcript';
@@ -134,46 +129,37 @@ export class LiveAssistView {
     this.permissionEl = document.createElement('section');
     this.permissionEl.className = 'live-assist__permission';
     this.permissionEl.hidden = true;
+    this.permissionEl.tabIndex = -1;
+    this.permissionEl.setAttribute('role', 'group');
+    this.permissionEl.setAttribute('aria-label', 'Permission required. A accept, R reject.');
     const permissionCopy = document.createElement('div');
     permissionCopy.className = 'live-assist__permission-copy';
     const permissionTitle = document.createElement('strong');
     permissionTitle.textContent = 'PERMISSION REQUIRED';
     this.permissionToolEl = document.createElement('span');
     permissionCopy.append(permissionTitle, this.permissionToolEl);
-    const permissionActions = document.createElement('div');
-    permissionActions.className = 'live-assist__permission-actions';
-    const rejectButton = document.createElement('button');
-    rejectButton.type = 'button';
-    rejectButton.dataset.permissionAction = 'reject';
-    rejectButton.textContent = 'R · Reject';
-    this.permissionAcceptButton = document.createElement('button');
-    this.permissionAcceptButton.type = 'button';
-    this.permissionAcceptButton.dataset.permissionAction = 'accept';
-    this.permissionAcceptButton.className = 'live-assist__permission-accept';
-    this.permissionAcceptButton.textContent = 'A · Accept';
-    permissionActions.append(rejectButton, this.permissionAcceptButton);
-    this.permissionEl.append(permissionCopy, permissionActions);
+    const permissionKeys = document.createElement('p');
+    permissionKeys.className = 'live-assist__permission-keys';
+    permissionKeys.textContent = 'A accept · R reject';
+    this.permissionEl.append(permissionCopy, permissionKeys);
 
     this.composer = document.createElement('form');
     this.composer.className = 'live-assist__composer';
+    const prompt = document.createElement('span');
+    prompt.className = 'live-assist__prompt';
+    prompt.setAttribute('aria-hidden', 'true');
+    prompt.textContent = '›';
     this.textarea = document.createElement('textarea');
     this.textarea.className = 'live-assist__input';
     this.textarea.rows = 2;
     this.textarea.placeholder = 'Message a Harness lane…';
     this.textarea.setAttribute('aria-label', 'Message Harness lane');
-    const composerActions = document.createElement('div');
-    composerActions.className = 'live-assist__composer-actions';
-    this.cancelButton = document.createElement('button');
-    this.cancelButton.type = 'button';
-    this.cancelButton.className = 'live-assist__cancel';
-    this.cancelButton.textContent = '⌘. CANCEL';
-    this.cancelButton.hidden = true;
-    this.sendButton = document.createElement('button');
-    this.sendButton.type = 'submit';
-    this.sendButton.className = 'live-assist__send';
-    this.sendButton.textContent = 'SEND ⌘↵';
-    composerActions.append(this.cancelButton, this.sendButton);
-    this.composer.append(this.textarea, composerActions);
+    this.cancelHint = document.createElement('span');
+    this.cancelHint.className = 'live-assist__cancel';
+    this.cancelHint.textContent = '⌘.';
+    this.cancelHint.title = 'Cancel turn';
+    this.cancelHint.hidden = true;
+    this.composer.append(prompt, this.textarea, this.cancelHint);
 
     this.emptyEl = document.createElement('section');
     this.emptyEl.className = 'live-assist__empty';
@@ -204,8 +190,6 @@ export class LiveAssistView {
     root.replaceChildren(this.shell);
 
     const signal = this.abort.signal;
-    hideButton.addEventListener('click', () => this.handlers.onHide(), { signal });
-    this.cancelButton.addEventListener('click', () => this.handlers.onCancel(), { signal });
     this.composer.addEventListener('submit', (event) => {
       event.preventDefault();
       const text = this.textarea.value.trim();
@@ -213,16 +197,9 @@ export class LiveAssistView {
     }, { signal });
     this.laneStrip.addEventListener('click', (event) => {
       const target = event.target instanceof Element
-        ? event.target.closest<HTMLButtonElement>('[data-lane]')
+        ? event.target.closest<HTMLElement>('[data-lane]')
         : null;
       if (target?.dataset.lane) this.handlers.onSelectLane(target.dataset.lane);
-    }, { signal });
-    this.permissionEl.addEventListener('click', (event) => {
-      const target = event.target instanceof Element
-        ? event.target.closest<HTMLButtonElement>('[data-permission-action]')
-        : null;
-      const action = target?.dataset.permissionAction;
-      if (action === 'accept' || action === 'reject') this.handlers.onResolvePermission(action);
     }, { signal });
     this.transcriptEl.addEventListener('click', (event) => {
       const target = event.target;
@@ -278,8 +255,7 @@ export class LiveAssistView {
     this.currentStatus = snapshot.status.status;
     this.textarea.placeholder = `Message ${snapshot.lane.displayName}…`;
     this.textarea.setAttribute('aria-label', `Message ${snapshot.lane.displayName}`);
-    this.sendButton.textContent = BUSY_STATUSES.has(snapshot.status.status) ? 'QUEUE ⌘↵' : 'SEND ⌘↵';
-    this.cancelButton.hidden = !BUSY_STATUSES.has(snapshot.status.status);
+    this.cancelHint.hidden = !BUSY_STATUSES.has(snapshot.status.status);
     this.renderTranscript(snapshot.transcript, laneChanged);
     this.renderedLane = snapshot.lane.displayName;
     this.setPermission(snapshot.permissions[0] ?? null);
@@ -333,8 +309,7 @@ export class LiveAssistView {
     this.currentStatus = status;
     this.statusEl.textContent = status;
     this.statusEl.dataset.status = safeStatus(status);
-    this.cancelButton.hidden = !BUSY_STATUSES.has(status);
-    this.sendButton.textContent = BUSY_STATUSES.has(status) ? 'QUEUE ⌘↵' : 'SEND ⌘↵';
+    this.cancelHint.hidden = !BUSY_STATUSES.has(status);
   }
 
   clearDraft(): void {
@@ -342,10 +317,8 @@ export class LiveAssistView {
   }
 
   setSending(sending: boolean): void {
-    this.sendButton.disabled = sending;
-    this.sendButton.textContent = sending
-      ? 'SENDING…'
-      : BUSY_STATUSES.has(this.currentStatus) ? 'QUEUE ⌘↵' : 'SEND ⌘↵';
+    this.composer.classList.toggle('live-assist__composer--sending', sending);
+    this.composer.setAttribute('aria-busy', sending ? 'true' : 'false');
   }
 
   focusComposer(): void {
@@ -354,7 +327,7 @@ export class LiveAssistView {
 
   focusPrimaryControl(): void {
     if (this.pendingPermission) {
-      this.permissionAcceptButton.focus({ preventScroll: true });
+      this.permissionEl.focus({ preventScroll: true });
       return;
     }
     this.focusComposer();
@@ -710,11 +683,12 @@ export class LiveAssistView {
     );
     this.pendingPermission = permission;
     this.permissionEl.hidden = permission === null;
+    this.permissionEl.tabIndex = permission === null ? -1 : 0;
     this.permissionToolEl.textContent = permission
       ? `Allow ${permission.tool}? Only the oldest request can be resolved.`
       : '';
     if (focusTarget === 'permission') {
-      this.permissionAcceptButton.focus({ preventScroll: true });
+      this.permissionEl.focus({ preventScroll: true });
     } else if (focusTarget === 'composer') {
       this.focusComposer();
     }
@@ -804,19 +778,19 @@ export function sameLaneRoster(previous: string[], next: string[]): boolean {
   return previous.length === next.length && previous.every((name, index) => name === next[index]);
 }
 
-function buildLaneButton(lane: LiveAssistLaneSummary): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'live-assist__lane';
-  button.dataset.lane = lane.displayName;
+function buildLaneButton(lane: LiveAssistLaneSummary): HTMLElement {
+  const tab = document.createElement('span');
+  tab.className = 'live-assist__lane';
+  tab.dataset.lane = lane.displayName;
+  tab.setAttribute('role', 'tab');
   const dot = document.createElement('span');
   dot.className = 'live-assist__lane-dot';
   const name = document.createElement('span');
   name.textContent = lane.displayName;
   const state = document.createElement('span');
   state.className = 'live-assist__lane-state';
-  button.append(dot, name, state);
-  return button;
+  tab.append(dot, name, state);
+  return tab;
 }
 
 function syncLaneButton(

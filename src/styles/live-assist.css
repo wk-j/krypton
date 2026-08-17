@@ -1,17 +1,16 @@
 :root {
-  --live-assist-bg: #060a12;
-  --live-assist-surface: #080c12;
+  --live-assist-bg: rgba(6, 10, 18, 0.72);
   --live-assist-surface-raised: #11141b;
   --live-assist-amber: #ffb000;
   --live-assist-amber-bright: #ffd880;
   --live-assist-text: #e8cfa4;
-  --live-assist-muted: #b49a74;
+  --live-assist-muted: #a68d68;
   --live-assist-cyan: #4dd0e1;
   --live-assist-blue: #64b5f6;
   --live-assist-green: #8bc34a;
   --live-assist-danger: #ff6e40;
   --live-assist-magenta: #e091c0;
-  --live-assist-border: rgba(255, 176, 0, 0.26);
+  --live-assist-rule: rgba(255, 176, 0, 0.1);
   --live-assist-font: var(
     --krypton-font-family,
     'Mononoki Nerd Font Mono',
@@ -58,48 +57,44 @@ textarea {
   flex-direction: column;
   font-size: var(--krypton-font-size, 14px);
   overflow: hidden;
-  border: 1px solid rgba(255, 176, 0, 0.56);
-  border-radius: 2px;
+  /* No drawn frame. The native window is transparent; this wash lets the
+     desktop show through, and AppKit's window shadow is the only edge. */
+  border: 0;
+  border-radius: 0;
   background:
     repeating-linear-gradient(
       to bottom,
       transparent 0,
       transparent 3px,
-      rgba(255, 176, 0, 0.018) 4px
+      rgba(255, 176, 0, 0.012) 4px
     ),
-    var(--live-assist-surface);
-  /* Panel fills the window edge-to-edge (native window shadow provides
-     depth); outer shadows would clip at the window bounds as a hard band. */
-  box-shadow:
-    inset 0 0 70px rgba(255, 176, 0, 0.025),
-    inset 0 0 0 1px rgba(255, 216, 128, 0.025);
+    var(--live-assist-bg);
+  box-shadow: none;
 }
 
 .live-assist__header {
   position: relative;
   z-index: 4;
   box-sizing: border-box;
-  height: 36px;
+  height: 32px;
   flex: none;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 11px;
-  border-bottom: 1px solid var(--live-assist-border);
-  background: rgba(255, 176, 0, 0.035);
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--live-assist-rule);
+  background: transparent;
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .live-assist__brand {
-  color: var(--live-assist-amber-bright);
-  font-weight: 800;
-  letter-spacing: 0.2em;
-  text-shadow:
-    0 0 8px rgba(255, 176, 0, 0.45),
-    0 0 22px rgba(255, 176, 0, 0.12);
+  color: var(--live-assist-amber);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-shadow: 0 0 8px rgba(255, 176, 0, 0.35);
 }
 
 .live-assist__project {
@@ -168,33 +163,21 @@ textarea {
 }
 
 .live-assist__hide {
-  min-height: 24px;
-  padding: 0 7px;
-  border: 1px solid transparent;
-  border-radius: 2px;
-  background: transparent;
-  color: var(--live-assist-amber);
+  color: var(--live-assist-muted);
   letter-spacing: 0.08em;
-  cursor: pointer;
-}
-
-.live-assist__hide:hover {
-  border-color: rgba(255, 176, 0, 0.32);
-  background: rgba(255, 176, 0, 0.06);
-  color: var(--live-assist-amber-bright);
 }
 
 .live-assist__lanes {
   position: relative;
   z-index: 3;
   flex: none;
-  min-height: 35px;
+  min-height: 30px;
   display: flex;
   align-items: stretch;
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom: 1px solid rgba(255, 176, 0, 0.14);
-  background: rgba(4, 6, 10, 0.62);
+  border-bottom: 1px solid var(--live-assist-rule);
+  background: transparent;
 }
 
 .live-assist__lanes[hidden] {
@@ -206,26 +189,16 @@ textarea {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 0 13px;
-  border: 0;
-  border-right: 1px solid rgba(255, 176, 0, 0.12);
-  border-radius: 0;
-  background: transparent;
+  padding: 0 14px;
   color: var(--live-assist-muted);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 650;
-  cursor: pointer;
-}
-
-.live-assist__lane:hover {
-  color: var(--live-assist-text);
-  background: rgba(255, 176, 0, 0.04);
 }
 
 .live-assist__lane[aria-selected='true'] {
   color: var(--live-assist-amber-bright);
-  background: rgba(255, 176, 0, 0.08);
-  box-shadow: inset 0 -2px 0 var(--live-assist-amber);
+  background: transparent;
+  box-shadow: inset 0 -1px 0 var(--live-assist-amber);
 }
 
 .live-assist__lane-state {
@@ -261,7 +234,7 @@ textarea {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 18px 25px;
+  padding: 18px 22px 12px;
   user-select: text;
   overscroll-behavior: contain;
 }
@@ -274,20 +247,11 @@ textarea {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
   gap: 14px;
-  padding: 11px 0;
-  border-bottom: 1px solid rgba(255, 176, 0, 0.09);
-}
-
-.live-assist__message:last-child {
-  border-bottom-color: transparent;
+  padding: 10px 0;
 }
 
 .live-assist__activity {
-  border-bottom: 1px solid rgba(255, 176, 0, 0.09);
-}
-
-.live-assist__activity:last-child {
-  border-bottom-color: transparent;
+  padding: 2px 0;
 }
 
 .live-assist__activity-summary {
@@ -324,18 +288,14 @@ textarea {
 
 .live-assist__activity-items {
   margin-bottom: 5px;
-  padding: 0 12px 3px;
-  background: rgba(100, 181, 246, 0.035);
+  padding: 0 0 3px 8px;
+  background: transparent;
 }
 
 .live-assist__activity-items .live-assist__message {
   grid-template-columns: 72px minmax(0, 1fr);
   gap: 11px;
   padding: 7px 0;
-}
-
-.live-assist__activity-items .live-assist__message:last-child {
-  border-bottom-color: transparent;
 }
 
 .live-assist__message-label {
@@ -412,7 +372,6 @@ textarea {
 
 .live-assist__message-body--markdown h1 {
   padding-bottom: 0.12em;
-  border-bottom: 1px solid rgba(255, 176, 0, 0.28);
   font-size: 1.22em;
 }
 
@@ -489,11 +448,11 @@ textarea {
 
 .live-assist__message-body--markdown pre {
   margin: 0.3em 0;
-  padding: 6px 9px;
+  padding: 8px 10px;
   overflow-x: auto;
-  border: 1px solid rgba(255, 176, 0, 0.16);
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.38);
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.28);
   line-height: 1.4;
   white-space: pre;
 }
@@ -548,8 +507,9 @@ textarea {
 
 .live-assist__message-body--markdown th,
 .live-assist__message-body--markdown td {
-  padding: 4px 8px;
-  border: 1px solid rgba(255, 176, 0, 0.22);
+  padding: 4px 8px 4px 0;
+  border: 0;
+  border-bottom: 1px solid var(--live-assist-rule);
   text-align: left;
 }
 
@@ -565,8 +525,7 @@ textarea {
   max-width: 100%;
   height: auto;
   margin: 0.45em 0;
-  border: 1px solid rgba(255, 176, 0, 0.22);
-  border-radius: 2px;
+  border: 0;
 }
 
 .live-assist__stream-caret {
@@ -588,10 +547,10 @@ textarea {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
-  padding: 10px 13px;
-  border-top: 1px solid rgba(255, 110, 64, 0.5);
-  border-bottom: 1px solid rgba(255, 110, 64, 0.22);
-  background: rgba(255, 110, 64, 0.075);
+  padding: 10px 22px;
+  border: 0;
+  border-top: 1px solid rgba(255, 110, 64, 0.28);
+  background: rgba(255, 110, 64, 0.06);
 }
 
 .live-assist__permission[hidden] {
@@ -620,35 +579,18 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-.live-assist__permission-actions {
-  display: flex;
-  gap: 7px;
-}
-
-.live-assist__permission-actions button,
-.live-assist__send,
-.live-assist__cancel {
-  min-height: 27px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 176, 0, 0.38);
-  border-radius: 2px;
-  background: transparent;
-  color: var(--live-assist-text);
+.live-assist__permission-keys {
+  margin: 0;
+  color: #ffc2ad;
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 750;
-  cursor: pointer;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
 }
 
-.live-assist__permission-actions button:hover,
-.live-assist__cancel:hover {
-  border-color: var(--live-assist-amber-bright);
-  color: var(--live-assist-amber-bright);
-}
-
-.live-assist__permission-actions .live-assist__permission-accept {
-  border-color: rgba(139, 195, 74, 0.56);
-  background: rgba(139, 195, 74, 0.1);
-  color: #d5f3b6;
+.live-assist__permission:focus-visible {
+  outline: 1px solid rgba(255, 194, 173, 0.7);
+  outline-offset: -2px;
 }
 
 .live-assist__composer {
@@ -656,11 +598,23 @@ textarea {
   z-index: 3;
   flex: none;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
   gap: 10px;
-  padding: 11px 13px 10px;
-  border-top: 1px solid var(--live-assist-border);
-  background: rgba(3, 5, 9, 0.82);
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--live-assist-rule);
+  background: transparent;
+}
+
+.live-assist__prompt {
+  padding-top: 8px;
+  color: var(--live-assist-amber);
+  text-shadow: 0 0 8px rgba(255, 176, 0, 0.4);
+  user-select: none;
+}
+
+.live-assist__composer:focus-within .live-assist__prompt {
+  color: var(--live-assist-amber-bright);
 }
 
 .live-assist__composer[hidden] {
@@ -669,14 +623,15 @@ textarea {
 
 .live-assist__input {
   width: 100%;
-  min-height: 50px;
+  min-height: 44px;
   max-height: 96px;
   box-sizing: border-box;
-  resize: vertical;
-  padding: 9px 10px;
-  border: 1px solid rgba(255, 176, 0, 0.24);
-  border-radius: 2px;
-  background: rgba(6, 10, 18, 0.78);
+  resize: none;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
   color: var(--live-assist-text);
   caret-color: var(--live-assist-amber);
   line-height: 1.5;
@@ -684,40 +639,27 @@ textarea {
 }
 
 .live-assist__input::placeholder {
-  color: #aa926e;
+  color: var(--live-assist-muted);
   opacity: 1;
 }
 
-.live-assist__composer-actions {
-  min-width: 104px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: 5px;
+.live-assist__input:focus-visible {
+  outline: none;
+  border-bottom-color: rgba(255, 176, 0, 0.42);
+  box-shadow: none;
 }
 
-.live-assist__send {
-  border-color: rgba(255, 176, 0, 0.7);
-  background: rgba(255, 176, 0, 0.15);
-  color: var(--live-assist-amber-bright);
-}
-
-.live-assist__send:hover:not(:disabled) {
-  background: var(--live-assist-amber);
-  color: #171005;
-}
-
-.live-assist__send:disabled {
-  border-color: rgba(255, 176, 0, 0.18);
-  background: rgba(255, 176, 0, 0.04);
+.live-assist__composer--sending .live-assist__prompt {
   color: var(--live-assist-muted);
-  cursor: wait;
+  text-shadow: none;
 }
 
 .live-assist__cancel {
-  border-color: rgba(255, 110, 64, 0.38);
-  color: #ffc2ad;
+  padding-top: 8px;
+  color: var(--live-assist-muted);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
 .live-assist__cancel[hidden] {
@@ -726,12 +668,12 @@ textarea {
 
 .live-assist__empty {
   position: absolute;
-  inset: 36px 0 0;
+  inset: 32px 0 0;
   z-index: 2;
   display: grid;
   place-items: center;
   padding: 32px;
-  background: var(--live-assist-surface);
+  background: var(--live-assist-bg);
   text-align: center;
 }
 
@@ -740,17 +682,12 @@ textarea {
 }
 
 .live-assist__empty-mark {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  margin: 0 auto 17px;
-  border: 1px solid rgba(255, 176, 0, 0.42);
+  display: block;
+  margin: 0 auto 14px;
+  border: 0;
   color: var(--live-assist-amber);
-  box-shadow:
-    inset 0 0 22px rgba(255, 176, 0, 0.05),
-    0 0 14px rgba(255, 176, 0, 0.08);
-  font-size: 18px;
+  text-shadow: 0 0 10px rgba(255, 176, 0, 0.35);
+  font-size: 20px;
 }
 
 .live-assist__empty h1 {
@@ -769,17 +706,17 @@ textarea {
 
 .live-assist__notice {
   position: absolute;
-  top: 79px; /* below header (36px) + lane strip (35px); keeps clear of the composer/send button */
-  right: 12px;
+  top: 44px;
+  right: 16px;
   z-index: 5;
   max-width: min(380px, calc(100% - 24px));
   box-sizing: border-box;
   padding: 8px 10px;
-  border: 1px solid rgba(255, 176, 0, 0.54);
-  border-radius: 2px;
+  border: 0;
+  border-radius: 0;
   background: var(--live-assist-surface-raised);
   color: var(--live-assist-amber-bright);
-  box-shadow: 0 7px 22px rgba(0, 0, 0, 0.52);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   line-height: 1.45;
 }
 
@@ -788,18 +725,14 @@ textarea {
 }
 
 .live-assist__notice--error {
-  border-color: rgba(255, 110, 64, 0.62);
   color: #ffc2ad;
 }
 
 .live-assist button:focus-visible,
-.live-assist textarea:focus-visible,
 .live-assist summary:focus-visible {
-  outline: 1px solid rgba(255, 216, 128, 0.86);
-  outline-offset: 1px;
-  box-shadow:
-    0 0 6px rgba(255, 176, 0, 0.5),
-    0 0 12px rgba(255, 176, 0, 0.18);
+  outline: 1px solid rgba(255, 216, 128, 0.7);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 @keyframes live-assist-caret {
@@ -844,7 +777,7 @@ textarea {
 
 @media (max-width: 580px) {
   .live-assist__header {
-    padding: 0 8px;
+    padding: 0 12px;
   }
 
   .live-assist__status {
@@ -853,20 +786,11 @@ textarea {
 
   .live-assist__permission {
     grid-template-columns: 1fr;
-  }
-
-  .live-assist__permission-actions {
-    justify-content: flex-end;
+    padding: 10px 16px;
   }
 
   .live-assist__composer {
-    grid-template-columns: 1fr;
-  }
-
-  .live-assist__composer-actions {
-    min-width: 0;
-    flex-direction: row;
-    align-items: center;
+    padding: 10px 12px 12px;
   }
 }
 

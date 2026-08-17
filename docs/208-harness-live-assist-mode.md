@@ -287,7 +287,7 @@ transcript and lane strip are reconciled rather than replaced:
 | `Cmd+.` | Cancel the selected lane's current turn |
 | `Cmd+1…9` | Select a visible lane |
 | `Cmd+[` / `Cmd+]` | Select previous/next lane |
-| `A` / `R` | Accept/reject the oldest permission when its prompt has focus |
+| `A` / `R` / `Enter` | Accept/reject the oldest permission when its prompt has focus (`Enter` accepts) |
 
 A newly arrived permission takes keyboard focus when the composer draft is
 empty, so `A`, `R`, or `Enter` can resolve it immediately. Live Assist preserves
@@ -302,12 +302,13 @@ Krypton is focused if global shortcut registration conflicts.
 
 The assistant is a compact command surface, not a full Harness replica:
 
-- **Header (36 px):** `LIVE ASSIST`, project basename, selected lane/backend,
-  text status, queue count, and `⌃⇧A hide`. While the selected lane is `busy`,
-  an amber pulse beside the text provides a processing signal; reduced-motion
-  mode keeps the dot visible without animation.
+- **Header (32 px):** `LIVE ASSIST`, project basename, selected lane/backend,
+  text status, and a quiet `esc` caption. No buttons. While the selected lane is
+  `busy`, an amber pulse beside the text provides a processing signal;
+  reduced-motion mode keeps the dot visible without animation.
 - **Lane strip (optional):** compact text tabs only when more than one live lane
-  exists; overflow is keyboard-scrollable and never becomes the Harness lane rail.
+  exists; `Cmd+1…9` / `Cmd+[` `]` switch them. Overflow is keyboard-scrollable
+  and never becomes the Harness lane rail.
 - **Transcript:** a simple bounded tail projection that keeps user and assistant
   conversation visible while grouping consecutive thought, tool, and file
   activity into collapsed `ACTIVITY · N steps` disclosures. Assistant bodies
@@ -319,19 +320,26 @@ The assistant is a compact command surface, not a full Harness replica:
   permission, shell, artifact, and lane-mail rows stay visible by default. It
   owns its DOM and rendering. Markdown anchors open in the OS browser and never
   navigate the auxiliary webview.
-- **Permission dock:** oldest request, tool label, explicit Accept/Reject actions;
-  no permission-mode or policy editing in v1.
-- **Composer:** independent multiline draft, busy/queued state, send and cancel.
-  No images, mentions, command palette, memory, orchestration, review, artifact
-  gallery, plan rail, lane creation, model selection, or settings.
+- **Permission dock:** oldest request, tool label, and the key caption
+  `A accept · R reject`. Focus lands on the dock, not a button. No
+  permission-mode or policy editing in v1.
+- **Composer:** independent multiline draft. `Cmd+Enter` sends or queues;
+  `⌘.` appears as a caption only while the lane is busy. No send/cancel
+  buttons, images, mentions, command palette, memory, orchestration, review,
+  artifact gallery, plan rail, lane creation, model selection, or settings.
 - **Empty state:** `NO LIVE HARNESS` and concise guidance to open one in Krypton;
   no action that focuses or mutates the main window.
 
-The shell uses a flat near-opaque `rgba(6, 10, 18, 0.96)` background, one full
-1 px themed border plus inset hairline, 4 px geometry, no blur/glass, and no
-left accent rails. Body and composer text use the configured
-`--krypton-font-size`; labels and controls use the same derived
-`--krypton-chrome-font-size` as the main UI.
+The shell is one unframed wash: `rgba(6, 10, 18, 0.72)` over the desktop, no
+drawn window border, no nested frames. AppKit's native window shadow is the
+only edge.
+Header, transcript, and composer are separated by faint rules and spacing —
+never boxed. The composer is a borderless command line (prompt glyph +
+textarea). Actions are keys, never buttons: `esc` hide, `Cmd+Enter` send,
+`Cmd+.` cancel, `A`/`R` permission. Empty mark, code, tables, and images do
+not grow their own gold rectangles. No blur/glass, no left accent rails. Body
+and composer text use the configured `--krypton-font-size`; labels and
+captions use the same derived `--krypton-chrome-font-size` as the main UI.
 Color never carries status alone. The native window appears at its final painted
 position without a second inner-shell entrance animation; starting that motion
 after AppKit had already shown the window made the panel visibly jump. Focus

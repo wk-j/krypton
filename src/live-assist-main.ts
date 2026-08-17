@@ -35,9 +35,6 @@ async function main(): Promise<void> {
   const view = new LiveAssistView(root, {
     onSelectLane: (lane) => void selectLane(lane),
     onSubmit: (text) => void submit(text),
-    onCancel: () => void cancel(),
-    onResolvePermission: (action) => void resolvePermission(action),
-    onHide: () => void client.hide(),
   });
 
   async function bootstrap(): Promise<void> {
@@ -211,9 +208,10 @@ async function main(): Promise<void> {
       }
     }
     if (view.permissionHasFocus() && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      if (event.key.toLowerCase() === 'a' || event.key.toLowerCase() === 'r') {
+      const key = event.key.toLowerCase();
+      if (key === 'a' || key === 'r' || event.key === 'Enter') {
         event.preventDefault();
-        void resolvePermission(event.key.toLowerCase() === 'a' ? 'accept' : 'reject');
+        void resolvePermission(key === 'r' ? 'reject' : 'accept');
       }
     }
   }
