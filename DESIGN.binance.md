@@ -1,17 +1,18 @@
 ---
 name: Krypton Loopback (Binance Dark)
-description: Binance-dark exchange aesthetic for the read-only loopback surfaces opened in the OS browser — near-black canvas, single yellow accent, trading green/red semantics, mono for all data
+description: Binance-dark exchange aesthetic for the loopback surfaces opened in the OS browser — near-black canvas, single yellow accent, trading green/red semantics, mono for all data
 appliesTo: >
   Loopback HTTP surfaces served by src-tauri/src/hook_server.rs and opened in the
   OS browser — the artifact scaffold (src-tauri/resources/artifact-scaffold.html),
   lane-monitor dashboard (src/acp/artifact-dashboard.html), artifact gallery
   (src/acp/artifact-gallery.html), docs browser (src/acp/artifact-docs.html),
-  command reference (src/acp/artifact-commands.html), and MCP tool reference
-  (src/acp/artifact-tools.html), and Terminal Control monitor
-  (src/acp/artifact-termctrl.html).
+  command reference (src/acp/artifact-commands.html), MCP tool reference
+  (src/acp/artifact-tools.html), Terminal Control monitor
+  (src/acp/artifact-termctrl.html), and Hurl web client
+  (src/acp/artifact-hurl.html).
 colors:
   primary: "#fcd535"     # the single yellow accent (== accent below)
-  bg: "#17191d"          # soft near-black canvas (shared by all seven surfaces)
+  bg: "#17191d"          # soft near-black canvas (shared by all loopback surfaces)
   fg: "#eaecef"          # primary text / headings
   text: "#b7bdc6"        # docs-reader body text (softer than fg; docs only)
   muted: "#707a8a"       # secondary labels, metadata, idle dots
@@ -70,7 +71,7 @@ a lane's generated artifact, the lane-monitor dashboard, the artifact gallery,
 and the docs browser all read as one product when the user flips between browser
 tabs.
 
-The seven surfaces:
+The loopback surfaces:
 
 | Surface | File | Role | Theming |
 | --- | --- | --- | --- |
@@ -81,6 +82,7 @@ The seven surfaces:
 | Command reference | `src/acp/artifact-commands.html` | Built-in `#` command + system-prompt reference (`/commands`, fetches `/commands.json` once) | Fixed dark |
 | MCP tool reference | `src/acp/artifact-tools.html` | Built-in MCP tool contract reference (`/tools`, fetches `/tools.json` once) | Fixed dark |
 | Terminal Control monitor | `src/acp/artifact-termctrl.html` | Read-only named-session roster and visible-screen preview (capability routes under `/termctrl`) | Fixed dark |
+| Hurl web client | `src/acp/artifact-hurl.html` | Token-gated `.hurl` runner (capability routes under `/hurl`) | Fixed dark |
 
 Per-surface behaviour and endpoints are specified in `docs/134`, `docs/168`,
 `docs/170`, `docs/171`, `docs/185`, `docs/186` and `docs/adr/0002`/`0010`. **This file is the
@@ -117,7 +119,7 @@ so the two surfaces agree:
 
 ### One canvas, two docs-only refinements
 
-All seven surfaces share the same soft canvas family — `--bg #17191d`, `--card
+All loopback surfaces share the same soft canvas family — `--bg #17191d`, `--card`
 #21242a`, `--border #2f353d`, `--code-bg #1d1f24`. (This soft canvas, originally
 the docs reader's, is now the single standard; the harder `#0b0e11` it replaced
 is retired.) The docs reader keeps just two prose-only refinements, recorded in

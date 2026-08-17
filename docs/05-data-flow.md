@@ -1096,3 +1096,23 @@ the local Telegram Settings view accepts it.
    screen request may be in flight; slow cycles are skipped, never queued.
 7. No route accepts terminal input or session lifecycle operations. The browser
    is an observer only. See `docs/198-termctrl-session-monitor.md`.
+
+## Hurl Web Client Flow
+
+1. The user runs `#hurl`, or selects **Open Hurl Web Client** from the command
+   palette. `Leader q` still opens the in-app Hurl window.
+2. The frontend invokes `get_hurl_web_url` with the focused terminal cwd (or
+   the harness project dir). Rust issues or reuses a 128-bit token bound to
+   that canonical cwd and returns `http://127.0.0.1:<port>/hurl/<token>`.
+3. `open_url` launches the OS browser. A bad token is a non-reflective 404.
+4. The page loads `/listing`, `/state`, then `/source` and `/cache` for the
+   selected file. `j`/`k` change selection; `/` filters.
+5. Enter / `r` POSTs `/run`. The hook server cancels any in-flight run for
+   that session, spawns `hurl --color --pretty --include` via `hurl.rs`, and
+   returns `{ runId }`. The page opens `EventSource` on `/events/{runId}`.
+6. `stream_reader` fans chunks to a broadcast channel (SSE) and the existing
+   Tauri `hurl-output` events (in-app view). On exit, Rust persists the same
+   on-disk cache the in-app client uses and emits `finished` with stdout/stderr.
+7. Pretty / Raw / Headers re-render from that snapshot. Path confinement
+   rejects any `path` or `variablesFile` outside the session cwd.
+8. See `docs/227-hurl-web-client.md`.

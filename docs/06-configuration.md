@@ -978,7 +978,7 @@ Configure the built-in Hurl client window.
 binary_path = "/opt/homebrew/bin/hurl"
 ```
 
-The Hurl client is opened via `Cmd+P` then `H`, or via the command palette ("Open Hurl Client"). It indexes every `.hurl` file under the focused terminal cwd (gitignore-aware) and runs the selected file with `--color --pretty --include`. See `docs/65-hurl-client-window.md` for the full keybinding reference.
+The in-app Hurl client is opened via `Leader q` or the command palette ("Open Hurl Client"). The OS-browser client is opened via **Open Hurl Web Client** or harness `#hurl`. Both index every `.hurl` file under the focused terminal cwd (gitignore-aware) and run the selected file with `--color --pretty --include`. `[hurl].binary_path` feeds both surfaces. Extra CLI args from config are honored only in-app. See `docs/65-hurl-client-window.md` and `docs/227-hurl-web-client.md`.
 
 ## [pencil]
 

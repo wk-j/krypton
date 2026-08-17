@@ -1048,6 +1048,15 @@ pub fn get_termctrl_monitor_url(hook_server: State<'_, Arc<HookServer>>) -> Resu
     hook_server.termctrl_monitor_url()
 }
 
+/// Return the capability URL for the Hurl web client, bound to `cwd`.
+#[tauri::command]
+pub fn get_hurl_web_url(
+    hook_server: State<'_, Arc<HookServer>>,
+    cwd: String,
+) -> Result<String, String> {
+    hook_server.hurl_web_url(&cwd)
+}
+
 /// Update the active agent model preset for the running session.
 /// In-memory only — the user's `krypton.toml` is never rewritten. To make
 /// the change permanent, edit `[agent] active` in the config file.

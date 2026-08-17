@@ -1,0 +1,841 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Hurl</title>
+  <style>
+    :root {
+      --bg: #17191d;
+      --fg: #eaecef;
+      --muted: #707a8a;
+      --border: #2f353d;
+      --accent: #fcd535;
+      --card: #21242a;
+      --code-bg: #1d1f24;
+      --add: #0ecb81;
+      --del: #f6465d;
+      --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      display: flex; flex-direction: column; margin: 0; overflow: hidden;
+      background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      flex: 0 0 auto; flex-wrap: wrap; padding: 11px clamp(14px, 2.5vw, 34px);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .brand-mark {
+      display: grid; width: 24px; height: 24px; place-items: center; flex: 0 0 auto;
+      border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); font: 600 11px var(--mono);
+    }
+    .brand strong { display: block; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .brand span {
+      display: block; overflow: hidden; color: var(--muted); font: 10px var(--mono);
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .env {
+      border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+      background: var(--code-bg); font: 12px var(--mono);
+    }
+    .env:focus, .chip:focus-visible, .run:focus-visible, .tab:focus-visible, .row:focus-visible, .filter:focus {
+      outline: 2px solid var(--accent); outline-offset: 1px;
+    }
+    .chip {
+      border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px;
+      background: transparent; color: var(--muted); font: 600 11px var(--mono);
+    }
+    .chip[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: rgba(252, 213, 53, .08); }
+    .run {
+      border: 0; border-radius: 6px; padding: 6px 14px;
+      background: var(--accent); color: var(--bg); font: 600 12px var(--mono);
+    }
+    .run[data-state="running"] { background: var(--code-bg); color: var(--accent); border: 1px solid var(--accent); }
+    .run:disabled { opacity: .55; cursor: default; }
+    main {
+      display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0;
+      width: 100%; max-width: 1440px; margin: 0 auto;
+      padding: 16px clamp(14px, 2.5vw, 34px) 16px;
+    }
+    .stats {
+      display: grid; flex: 0 0 auto; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 1px;
+      margin-bottom: 10px; overflow: hidden; border: 1px solid var(--border);
+      border-radius: 10px; background: var(--border);
+    }
+    .stat { min-width: 0; padding: 10px 12px; background: var(--card); }
+    .stat-label { display: block; margin-bottom: 3px; color: var(--muted); font: 10px var(--mono); }
+    .stat-value {
+      display: flex; align-items: center; gap: 8px; min-width: 0;
+      font: 600 12px/1.3 var(--mono); font-variant-numeric: tabular-nums;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--muted); }
+    .dot.ok { background: var(--add); }
+    .dot.bad { background: var(--del); }
+    .dot.run { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+    /* Definite height is required: `fr` rows and the file tree only scroll
+       when the workspace is bounded. min-height alone lets 800+ files grow the page. */
+    .workspace {
+      display: grid; flex: 1 1 auto; grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 0; overflow: hidden; border: 1px solid var(--border);
+      border-radius: 10px; background: var(--card);
+    }
+    .roster { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-right: 1px solid var(--border); }
+    .roster-head { flex: 0 0 auto; padding: 12px; border-bottom: 1px solid var(--border); }
+    .roster-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .roster-title h1 { margin: 0; font-size: 13px; }
+    .count { color: var(--muted); font: 10px var(--mono); font-variant-numeric: tabular-nums; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+    .tab {
+      border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px;
+      background: transparent; color: var(--muted); font: 600 10px var(--mono);
+    }
+    .tab[aria-selected="true"] { color: var(--fg); border-color: var(--accent); background: rgba(252, 213, 53, .08); }
+    .filter {
+      width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px;
+      outline: none; background: var(--code-bg); color: var(--fg); font: 12px var(--mono);
+    }
+    .filter::placeholder { color: #8b95a5; }
+    .tree { display: flex; flex: 1; flex-direction: column; gap: 2px; min-height: 0; padding: 8px; overflow: auto; }
+    .row {
+      display: flex; align-items: center; gap: 8px; width: 100%;
+      border: 1px solid transparent; border-radius: 7px; padding: 6px 8px;
+      background: transparent; text-align: left;
+    }
+    .row:hover { background: rgba(234, 236, 239, .04); }
+    .row[aria-selected="true"] { border-color: var(--accent); background: rgba(252, 213, 53, .08); }
+    .row-name { min-width: 0; overflow: hidden; font: 12px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .row-dir { color: var(--fg); font-weight: 600; }
+    .chev { width: 10px; color: var(--muted); font: 10px var(--mono); }
+    .row-meta { margin-left: auto; color: var(--muted); font: 10px var(--mono); font-variant-numeric: tabular-nums; }
+    .main { display: grid; min-width: 0; min-height: 0; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); }
+    .pane { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+    .pane + .pane { border-top: 1px solid var(--border); }
+    .pane-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      min-height: 42px; padding: 8px 12px; border-bottom: 1px solid var(--border);
+    }
+    .pane-head > div { min-width: 0; }
+    .pane-head strong { font: 600 12px var(--mono); }
+    .crumb { overflow: hidden; color: var(--muted); font: 10px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .source, .viewport {
+      flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 14px 16px;
+      background: var(--code-bg); color: var(--fg); font: 12px/1.55 var(--mono);
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .tok-method { color: var(--accent); font-weight: 700; }
+    .tok-status { color: var(--add); font-weight: 700; }
+    .tok-comment { color: var(--muted); }
+    .tok-var { color: var(--accent); }
+    .tok-resolved { color: var(--add); }
+    .tok-unresolved { color: var(--del); }
+    .tok-json { color: #b7bdc6; }
+    .exchange { margin-bottom: 14px; padding: 10px 12px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+    .exchange:last-child { margin-bottom: 0; }
+    .status-line { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; font: 600 13px var(--mono); }
+    .status-line.ok { color: var(--add); }
+    .status-line.bad { color: var(--del); }
+    .kv { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+    .kv th, .kv td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+    .kv th { color: var(--muted); font-weight: 600; width: 28%; }
+    .body-json { margin: 10px 0 0; padding: 10px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; white-space: pre-wrap; }
+    .empty { display: grid; flex: 1; place-items: center; padding: 28px; color: var(--muted); font: 12px var(--mono); text-align: center; }
+    .keys { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: var(--muted); font: 10px var(--mono); }
+    kbd { border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; background: var(--card); color: var(--fg); font: 9px var(--mono); }
+    .banner { margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(246, 70, 93, .08); color: var(--del); font: 12px var(--mono); }
+    .banner.ok { background: rgba(252, 213, 53, .06); color: var(--accent); }
+    .hidden { display: none !important; }
+    @keyframes pulse { 50% { opacity: .45; transform: scale(.85); } }
+    @media (prefers-reduced-motion: reduce) { .dot.run { animation: none; } }
+    @media (max-width: 860px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+      .workspace { grid-template-columns: 1fr; grid-template-rows: minmax(140px, 34%) minmax(0, 1fr); }
+      .roster { border-right: 0; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">H</span>
+      <div>
+        <strong>Hurl</strong>
+        <span id="cwd">connecting</span>
+      </div>
+    </div>
+    <div class="actions">
+      <select class="env" id="env" aria-label="Variables file">
+        <option value="">env: (none)</option>
+      </select>
+      <button class="chip" id="verbose" type="button" aria-pressed="false" title="Toggle --verbose">v</button>
+      <button class="chip" id="very" type="button" aria-pressed="false" title="Toggle --very-verbose">VV</button>
+      <button class="run" id="run" type="button">Run</button>
+    </div>
+  </header>
+  <main>
+    <p class="banner hidden" id="banner"></p>
+    <section class="stats" aria-label="Last run">
+      <div class="stat"><span class="stat-label">Status</span><span class="stat-value"><i class="dot" id="st-dot"></i><span id="st-exit">—</span></span></div>
+      <div class="stat"><span class="stat-label">Duration</span><span class="stat-value" id="st-ms">—</span></div>
+      <div class="stat"><span class="stat-label">Body</span><span class="stat-value" id="st-bytes">—</span></div>
+      <div class="stat"><span class="stat-label">Variables</span><span class="stat-value" id="st-env">(none)</span></div>
+    </section>
+    <section class="workspace">
+      <aside class="roster" aria-label="Hurl files">
+        <div class="roster-head">
+          <div class="roster-title"><h1 id="roster-title">Files</h1><span class="count" id="file-count">0</span></div>
+          <div class="tabs" role="tablist">
+            <button class="tab" id="tab-files" type="button" role="tab" aria-selected="true">Files</button>
+            <button class="tab" id="tab-hist" type="button" role="tab" aria-selected="false">History</button>
+          </div>
+          <input class="filter" id="filter" type="search" placeholder="/  filter .hurl" aria-label="Filter files" autocomplete="off">
+        </div>
+        <div class="tree" id="tree" role="tree"></div>
+      </aside>
+      <div class="main">
+        <section class="pane" id="source-pane">
+          <div class="pane-head">
+            <div>
+              <strong>Source</strong>
+              <div class="crumb" id="crumb">select a .hurl file</div>
+            </div>
+            <span class="crumb">read only · e opens $EDITOR in Krypton</span>
+          </div>
+          <pre class="source" id="source"></pre>
+        </section>
+        <section class="pane" id="response-pane">
+          <div class="pane-head">
+            <strong>Response</strong>
+            <div class="tabs" role="tablist">
+              <button class="tab" data-view="pretty" type="button" aria-selected="true">Pretty</button>
+              <button class="tab" data-view="raw" type="button" aria-selected="false">Raw</button>
+              <button class="tab" data-view="headers" type="button" aria-selected="false">Headers</button>
+            </div>
+          </div>
+          <div class="viewport" id="viewport"></div>
+        </section>
+      </div>
+    </section>
+    <p class="keys">
+      <span><kbd>j</kbd><kbd>k</kbd> move</span>
+      <span><kbd>Enter</kbd><kbd>r</kbd> run</span>
+      <span><kbd>x</kbd> cancel</span>
+      <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> pretty / raw / headers</span>
+      <span><kbd>v</kbd> verbose</span>
+      <span><kbd>E</kbd> env</span>
+      <span><kbd>/</kbd> filter</span>
+      <span><kbd>.</kbd> refresh</span>
+      <span><kbd>y</kbd> copy body</span>
+    </p>
+  </main>
+  <script>
+  (function () {
+    var NL = String.fromCharCode(10);
+    var parts = location.pathname.split("/").filter(Boolean);
+    var token = parts[1] || "";
+    var api = "/hurl/api/" + token;
+    var files = [];
+    var envFiles = [];
+    var envVars = {};
+    var expanded = {};
+    var selected = null;
+    var sourceText = "";
+    var stdout = "";
+    var stderr = "";
+    var lastExit = null;
+    var lastMs = null;
+    var mode = "files";
+    var view = "pretty";
+    var running = false;
+    var runId = null;
+    var source = null;
+    var history = [];
+    var available = true;
+    var persistTimer = null;
+    var focusPane = "source";
+    var cwdPath = "";
+
+    var treeEl = document.getElementById("tree");
+    var sourceEl = document.getElementById("source");
+    var viewportEl = document.getElementById("viewport");
+    var filterEl = document.getElementById("filter");
+    var envEl = document.getElementById("env");
+    var runEl = document.getElementById("run");
+    var bannerEl = document.getElementById("banner");
+
+    function esc(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function showBanner(text, ok) {
+      if (!text) { bannerEl.className = "banner hidden"; bannerEl.textContent = ""; return; }
+      bannerEl.className = ok ? "banner ok" : "banner";
+      bannerEl.textContent = text;
+    }
+
+    function highlight(src) {
+      var vars = Object.keys(envVars).length ? envVars : null;
+      return esc(src).split(NL).map(function (line) {
+        var trimmed = line.replace(/^\s+/, "");
+        if (trimmed.charAt(0) === "#") return '<span class="tok-comment">' + line + "</span>";
+        line = line.replace(/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CONNECT|TRACE)(?=[ \t]|$)/, '<span class="tok-method">$1</span>');
+        line = line.replace(/^(HTTP(?:\/[0-9.]+)? [0-9]{3})/, '<span class="tok-status">$1</span>');
+        var out = "";
+        var i = 0;
+        while (i < line.length) {
+          var a = line.indexOf("{{", i);
+          if (a < 0) { out += line.slice(i); break; }
+          var b = line.indexOf("}}", a + 2);
+          if (b < 0) { out += line.slice(i); break; }
+          out += line.slice(i, a);
+          var key = line.slice(a + 2, b).replace(/^\s+|\s+$/g, "");
+          if (vars && vars[key] != null) {
+            out += '<span class="tok-resolved" title="' + esc(key + " = " + vars[key]) + '">{{' + esc(key) + "}}</span>";
+          } else if (vars) {
+            out += '<span class="tok-unresolved" title="' + esc(key) + ' (unresolved)">{{' + esc(key) + "}}</span>";
+          } else {
+            out += '<span class="tok-var">{{' + esc(key) + "}}</span>";
+          }
+          i = b + 2;
+        }
+        return out;
+      }).join(NL);
+    }
+
+    function stripAnsi(s) {
+      var escChar = String.fromCharCode(27);
+      return String(s).replace(new RegExp(escChar + "\\[[0-9;?]*[ -/]*[@-~]", "g"), "");
+    }
+
+    function ansiToHtml(text) {
+      var escChar = String.fromCharCode(27);
+      var re = new RegExp(escChar + "\\[([0-9;?]*)([A-Za-z])", "g");
+      var out = [];
+      var last = 0;
+      var m;
+      while ((m = re.exec(text)) !== null) {
+        if (m.index > last) out.push(esc(text.slice(last, m.index)));
+        last = re.lastIndex;
+      }
+      if (last < text.length) out.push(esc(text.slice(last)));
+      return out.join("");
+    }
+
+    function parseExchanges(text) {
+      var lines = stripAnsi(text).split(NL);
+      var list = [];
+      var cur = null;
+      var modeH = "seek";
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var sm = line.match(/^HTTP(?:\/[0-9.]+)? [0-9]{3}/);
+        if (sm) {
+          if (cur) list.push(cur);
+          cur = { status: sm[0], headers: [], body: "" };
+          modeH = "headers";
+          continue;
+        }
+        if (!cur) continue;
+        if (modeH === "headers") {
+          if (line.replace(/^\s+|\s+$/g, "") === "") { modeH = "body"; continue; }
+          var c = line.indexOf(":");
+          if (c > 0) cur.headers.push([line.slice(0, c).replace(/^\s+|\s+$/g, ""), line.slice(c + 1).replace(/^\s+|\s+$/g, "")]);
+          continue;
+        }
+        cur.body += (cur.body ? NL : "") + line;
+      }
+      if (cur) list.push(cur);
+      return list;
+    }
+
+    function prettyBody(raw) {
+      var t = raw.replace(/^\s+|\s+$/g, "");
+      try { return JSON.stringify(JSON.parse(t), null, 2); } catch (e) { return raw; }
+    }
+
+    function bytesLabel(n) {
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      return (n / (1024 * 1024)).toFixed(1) + " MB";
+    }
+
+    function visibleFiles() {
+      var q = filterEl.value.replace(/^\s+|\s+$/g, "").toLowerCase();
+      return files.filter(function (f) {
+        return !q || (f.rel_path || "").toLowerCase().indexOf(q) !== -1;
+      });
+    }
+
+    function buildTree(list) {
+      var root = { name: "", children: {}, files: [] };
+      list.forEach(function (f) {
+        var segs = (f.rel_path || f.name).split("/");
+        var node = root;
+        for (var i = 0; i < segs.length - 1; i++) {
+          node.children[segs[i]] = node.children[segs[i]] || { name: segs[i], children: {}, files: [] };
+          node = node.children[segs[i]];
+        }
+        node.files.push(f);
+      });
+      return root;
+    }
+
+    function renderTree() {
+      treeEl.innerHTML = "";
+      if (mode === "hist") {
+        if (!history.length) {
+          treeEl.innerHTML = '<div class="empty">No runs this session.</div>';
+        } else {
+          history.forEach(function (h) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "row";
+            b.setAttribute("aria-selected", h.path === selected ? "true" : "false");
+            b.dataset.path = h.path;
+            b.innerHTML = '<i class="dot ' + (h.exit === 0 ? "ok" : "bad") + '"></i><span class="row-name">' +
+              esc(h.path) + '</span><span class="row-meta">' + h.ms + "ms</span>";
+            treeEl.appendChild(b);
+          });
+        }
+        document.getElementById("file-count").textContent = history.length + " runs";
+        document.getElementById("roster-title").textContent = "History";
+        return;
+      }
+      var vis = visibleFiles();
+      if (!vis.length) {
+        treeEl.innerHTML = files.length
+          ? '<div class="empty">No .hurl files match.</div>'
+          : '<div class="empty">No .hurl files under this directory. Add one and press .</div>';
+        document.getElementById("file-count").textContent = "0";
+        document.getElementById("roster-title").textContent = "Files";
+        return;
+      }
+      var q = filterEl.value.replace(/^\s+|\s+$/g, "");
+      if (q) {
+        vis.forEach(function (f) { treeEl.appendChild(fileRow(f, 0)); });
+      } else {
+        renderNode(buildTree(vis), "", 0);
+      }
+      document.getElementById("file-count").textContent = vis.length + " files";
+      document.getElementById("roster-title").textContent = "Files";
+    }
+
+    function renderNode(node, rel, depth) {
+      var names = Object.keys(node.children).sort();
+      names.forEach(function (name) {
+        var childRel = rel ? rel + "/" + name : name;
+        var open = expanded[childRel] !== false;
+        if (expanded[childRel] == null) expanded[childRel] = true;
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "row";
+        b.dataset.dir = childRel;
+        b.style.paddingLeft = (8 + depth * 14) + "px";
+        b.innerHTML = '<span class="chev">' + (open ? "▾" : "▸") + '</span><span class="row-name row-dir">' + esc(name) + "</span>";
+        treeEl.appendChild(b);
+        if (open) renderNode(node.children[name], childRel, depth + 1);
+      });
+      node.files.sort(function (a, b) { return (a.name || "").localeCompare(b.name || ""); })
+        .forEach(function (f) { treeEl.appendChild(fileRow(f, depth)); });
+    }
+
+    function fileRow(f, depth) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "row";
+      b.setAttribute("aria-selected", f.path === selected ? "true" : "false");
+      b.dataset.path = f.path;
+      b.style.paddingLeft = (8 + depth * 14) + "px";
+      var last = history.find(function (h) { return h.path === f.path; });
+      var dot = last ? '<i class="dot ' + (last.exit === 0 ? "ok" : "bad") + '"></i>' : '<i class="dot"></i>';
+      b.innerHTML = dot + '<span class="row-name">' + esc(f.name) + "</span>";
+      return b;
+    }
+
+    function renderSource() {
+      sourceEl.innerHTML = sourceText ? highlight(sourceText) : "";
+    }
+
+    function combined() { return stdout + (stderr ? NL + stderr : ""); }
+
+    function renderResponse() {
+      if (running && !stdout && !stderr) {
+        viewportEl.innerHTML = '<div class="empty">Running hurl --color --pretty --include…</div>';
+        return;
+      }
+      if (!stdout && !stderr) {
+        viewportEl.innerHTML = '<div class="empty">No cached response. Press Enter to run.</div>';
+        return;
+      }
+      if (view === "raw") {
+        viewportEl.innerHTML = ansiToHtml(combined());
+        return;
+      }
+      var exchanges = parseExchanges(stdout || combined());
+      if (view === "headers") {
+        if (!exchanges.length) {
+          viewportEl.innerHTML = '<div class="empty">No HTTP headers in this output.</div>';
+          return;
+        }
+        viewportEl.innerHTML = exchanges.map(function (ex) {
+          var rows = ex.headers.map(function (h) {
+            return "<tr><th>" + esc(h[0]) + "</th><td>" + esc(h[1]) + "</td></tr>";
+          }).join("");
+          return '<article class="exchange"><div class="status-line">' + esc(ex.status) +
+            "</div><table class=\"kv\"><tbody>" + rows + "</tbody></table></article>";
+        }).join("");
+        return;
+      }
+      if (!exchanges.length) {
+        viewportEl.innerHTML = '<pre class="body-json">' + esc(stripAnsi(combined())) + "</pre>";
+        return;
+      }
+      viewportEl.innerHTML = exchanges.map(function (ex) {
+        var code = parseInt(ex.status.replace(/^.* /, ""), 10);
+        var ok = code >= 200 && code < 300;
+        var rows = ex.headers.map(function (h) {
+          return "<tr><th>" + esc(h[0]) + "</th><td>" + esc(h[1]) + "</td></tr>";
+        }).join("");
+        return '<article class="exchange"><div class="status-line ' + (ok ? "ok" : "bad") + '">' +
+          esc(ex.status) + '</div><table class="kv"><tbody>' + rows +
+          '</tbody></table><pre class="body-json">' + esc(prettyBody(ex.body)) + "</pre></article>";
+      }).join("");
+    }
+
+    function renderStats() {
+      var dot = document.getElementById("st-dot");
+      var exit = document.getElementById("st-exit");
+      if (running) {
+        dot.className = "dot run";
+        exit.textContent = "RUNNING";
+        document.getElementById("st-ms").textContent = "—";
+        return;
+      }
+      if (lastExit == null) {
+        dot.className = "dot";
+        exit.textContent = "—";
+        document.getElementById("st-ms").textContent = "—";
+      } else {
+        dot.className = "dot " + (lastExit === 0 ? "ok" : "bad");
+        exit.textContent = "EXIT " + lastExit;
+        document.getElementById("st-ms").textContent = lastMs != null ? lastMs + " ms" : "—";
+      }
+      var n = (stdout || "").length + (stderr || "").length;
+      document.getElementById("st-bytes").textContent = n ? bytesLabel(n) : "—";
+      var opt = envEl.options[envEl.selectedIndex];
+      document.getElementById("st-env").textContent = opt && opt.value ? opt.text.replace(/^env: /, "") : "(none)";
+    }
+
+    function setRunEnabled() {
+      runEl.disabled = !available || !selected;
+    }
+
+    async function loadListing() {
+      var res = await fetch(api + "/listing");
+      if (res.status === 404) { showBanner("Unknown or expired Hurl session. Re-open from Krypton."); return; }
+      var data = await res.json();
+      available = !!data.available;
+      cwdPath = data.cwd || "";
+      var cwdEl = document.getElementById("cwd");
+      var slash = Math.max(cwdPath.lastIndexOf("/"), cwdPath.lastIndexOf("\\"));
+      cwdEl.textContent = slash >= 0 ? cwdPath.slice(slash + 1) : cwdPath;
+      cwdEl.title = cwdPath;
+      files = data.hurl_files || [];
+      envFiles = data.env_files || [];
+      var keep = envEl.value;
+      envEl.innerHTML = '<option value="">env: (none)</option>';
+      envFiles.forEach(function (f) {
+        var o = document.createElement("option");
+        o.value = f.path;
+        o.textContent = "env: " + f.name;
+        envEl.appendChild(o);
+      });
+      if (keep) envEl.value = keep;
+      if (data.error && !available) showBanner(data.error);
+      else showBanner("");
+      renderTree();
+      setRunEnabled();
+    }
+
+    async function loadEnv() {
+      envVars = {};
+      if (!envEl.value) { renderSource(); renderStats(); return; }
+      var res = await fetch(api + "/env?path=" + encodeURIComponent(envEl.value));
+      if (res.ok) envVars = await res.json();
+      renderSource();
+      renderStats();
+      schedulePersist();
+    }
+
+    async function selectFile(path) {
+      selected = path;
+      document.getElementById("crumb").textContent = (files.find(function (f) { return f.path === path; }) || { rel_path: path }).rel_path || path;
+      renderTree();
+      sourceText = "";
+      stdout = "";
+      stderr = "";
+      lastExit = null;
+      lastMs = null;
+      var srcRes = await fetch(api + "/source?path=" + encodeURIComponent(path));
+      if (srcRes.status === 415) {
+        sourceEl.textContent = "binary or invalid UTF-8";
+      } else if (srcRes.ok) {
+        var src = await srcRes.json();
+        sourceText = src.source || "";
+        renderSource();
+      }
+      var cacheRes = await fetch(api + "/cache?path=" + encodeURIComponent(path));
+      if (cacheRes.ok) {
+        var cache = await cacheRes.json();
+        if (cache) {
+          stdout = cache.stdout || "";
+          stderr = cache.stderr || "";
+          lastExit = cache.exit_code;
+          lastMs = cache.duration_ms;
+        }
+      }
+      renderResponse();
+      renderStats();
+      setRunEnabled();
+      schedulePersist();
+    }
+
+    function closeStream() {
+      if (source) { source.close(); source = null; }
+    }
+
+    async function runSelected() {
+      if (!selected || !available) return;
+      if (running) { await cancelRun(); return; }
+      running = true;
+      runEl.textContent = "Cancel";
+      runEl.dataset.state = "running";
+      stdout = "";
+      stderr = "";
+      renderResponse();
+      renderStats();
+      var body = {
+        path: selected,
+        verbose: document.getElementById("verbose").getAttribute("aria-pressed") === "true",
+        veryVerbose: document.getElementById("very").getAttribute("aria-pressed") === "true",
+        variablesFile: envEl.value || null
+      };
+      var res = await fetch(api + "/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        running = false;
+        runEl.textContent = "Run";
+        runEl.dataset.state = "";
+        var err = await res.json().catch(function () { return { error: res.statusText }; });
+        showBanner(err.error || "run failed");
+        renderStats();
+        return;
+      }
+      var payload = await res.json();
+      runId = payload.runId;
+      closeStream();
+      source = new EventSource(api + "/events/" + runId);
+      source.addEventListener("output", function (ev) {
+        var data = JSON.parse(ev.data);
+        if (data.stream === "stderr") stderr += data.chunk || "";
+        else stdout += data.chunk || "";
+        if (view === "raw") renderResponse();
+      });
+      source.addEventListener("finished", function (ev) {
+        var data = JSON.parse(ev.data);
+        stdout = data.stdout != null ? data.stdout : stdout;
+        stderr = data.stderr != null ? data.stderr : stderr;
+        lastExit = data.exitCode;
+        lastMs = data.durationMs;
+        if (data.truncated) showBanner("Output truncated at 1 MB.");
+        finishRun();
+      });
+      source.onerror = function () {
+        if (running) finishRun();
+      };
+    }
+
+    function finishRun() {
+      running = false;
+      runEl.textContent = "Run";
+      runEl.dataset.state = "";
+      closeStream();
+      if (selected && lastExit != null) {
+        history.unshift({ path: selected, exit: lastExit, ms: lastMs || 0 });
+        if (history.length > 20) history.pop();
+      }
+      renderResponse();
+      renderStats();
+      if (mode === "hist") renderTree();
+    }
+
+    async function cancelRun() {
+      if (runId == null) return;
+      await fetch(api + "/cancel", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId: runId })
+      });
+    }
+
+    function schedulePersist() {
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = setTimeout(persist, 300);
+    }
+
+    function persist() {
+      var file = files.find(function (f) { return f.path === selected; });
+      fetch(api + "/state", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          version: 1,
+          cwd: cwdPath,
+          expanded: Object.keys(expanded).filter(function (k) { return expanded[k]; }),
+          selected_rel_path: file ? file.rel_path : null,
+          view_mode: view,
+          verbose: document.getElementById("verbose").getAttribute("aria-pressed") === "true",
+          very_verbose: document.getElementById("very").getAttribute("aria-pressed") === "true",
+          active_env_file: envEl.value || null,
+          updated_at: Date.now()
+        })
+      }).catch(function () {});
+    }
+
+    async function restoreState() {
+      var res = await fetch(api + "/state");
+      if (!res.ok) return;
+      var st = await res.json();
+      if (!st) return;
+      (st.expanded || []).forEach(function (k) { expanded[k] = true; });
+      if (st.verbose) document.getElementById("verbose").setAttribute("aria-pressed", "true");
+      if (st.very_verbose) document.getElementById("very").setAttribute("aria-pressed", "true");
+      if (st.view_mode === "raw" || st.view_mode === "headers" || st.view_mode === "pretty") {
+        view = st.view_mode === "source" ? "pretty" : st.view_mode;
+        document.querySelectorAll("#response-pane .tab").forEach(function (b) {
+          b.setAttribute("aria-selected", b.getAttribute("data-view") === view ? "true" : "false");
+        });
+      }
+      if (st.active_env_file) envEl.value = st.active_env_file;
+      await loadEnv();
+      if (st.selected_rel_path) {
+        var match = files.find(function (f) { return f.rel_path === st.selected_rel_path; });
+        if (match) await selectFile(match.path);
+      }
+    }
+
+    treeEl.addEventListener("click", function (e) {
+      var row = e.target.closest(".row");
+      if (!row) return;
+      if (row.dataset.dir) {
+        expanded[row.dataset.dir] = !expanded[row.dataset.dir];
+        renderTree();
+        schedulePersist();
+        return;
+      }
+      if (row.dataset.path) selectFile(row.dataset.path);
+    });
+
+    document.getElementById("tab-files").addEventListener("click", function () {
+      mode = "files";
+      document.getElementById("tab-files").setAttribute("aria-selected", "true");
+      document.getElementById("tab-hist").setAttribute("aria-selected", "false");
+      renderTree();
+    });
+    document.getElementById("tab-hist").addEventListener("click", function () {
+      mode = "hist";
+      document.getElementById("tab-files").setAttribute("aria-selected", "false");
+      document.getElementById("tab-hist").setAttribute("aria-selected", "true");
+      renderTree();
+    });
+    document.querySelectorAll("#response-pane .tab").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        view = btn.getAttribute("data-view");
+        document.querySelectorAll("#response-pane .tab").forEach(function (b) {
+          b.setAttribute("aria-selected", b === btn ? "true" : "false");
+        });
+        renderResponse();
+        schedulePersist();
+      });
+    });
+    filterEl.addEventListener("input", renderTree);
+    envEl.addEventListener("change", loadEnv);
+    runEl.addEventListener("click", function () { runSelected(); });
+    document.getElementById("verbose").addEventListener("click", function () {
+      var on = this.getAttribute("aria-pressed") !== "true";
+      this.setAttribute("aria-pressed", on ? "true" : "false");
+      if (on) document.getElementById("very").setAttribute("aria-pressed", "false");
+      schedulePersist();
+    });
+    document.getElementById("very").addEventListener("click", function () {
+      var on = this.getAttribute("aria-pressed") !== "true";
+      this.setAttribute("aria-pressed", on ? "true" : "false");
+      if (on) document.getElementById("verbose").setAttribute("aria-pressed", "false");
+      schedulePersist();
+    });
+
+    document.addEventListener("keydown", function (e) {
+      var typing = e.target === filterEl || e.target === envEl;
+      if (e.key === "/" && !typing) { e.preventDefault(); filterEl.focus(); return; }
+      if (e.key === "Escape" && typing) { filterEl.value = ""; filterEl.blur(); renderTree(); return; }
+      if (e.key === "." && !typing) { e.preventDefault(); loadListing(); return; }
+      if (typing) return;
+      var list = mode === "hist" ? history.map(function (h) { return h.path; }) : visibleFiles().map(function (f) { return f.path; });
+      var i = list.indexOf(selected);
+      if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); if (i < list.length - 1) selectFile(list[i + 1]); }
+      else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); if (i > 0) selectFile(list[i - 1] || list[0]); }
+      else if (e.key === "h") {
+        var file = files.find(function (f) { return f.path === selected; });
+        if (file && file.rel_path && file.rel_path.indexOf("/") >= 0) {
+          var dir = file.rel_path.split("/").slice(0, -1).join("/");
+          expanded[dir] = false;
+          renderTree();
+        }
+      } else if (e.key === "l") {
+        var firstDir = treeEl.querySelector("[data-dir]");
+        if (firstDir && expanded[firstDir.dataset.dir] === false) {
+          expanded[firstDir.dataset.dir] = true;
+          renderTree();
+        }
+      } else if (e.key === "Enter" || e.key === "r") { e.preventDefault(); runSelected(); }
+      else if (e.key === "x") { e.preventDefault(); cancelRun(); }
+      else if (e.key === "1") { view = "pretty"; document.querySelectorAll("#response-pane .tab").forEach(function (b) { b.setAttribute("aria-selected", b.getAttribute("data-view") === "pretty" ? "true" : "false"); }); renderResponse(); }
+      else if (e.key === "2") { view = "raw"; document.querySelectorAll("#response-pane .tab").forEach(function (b) { b.setAttribute("aria-selected", b.getAttribute("data-view") === "raw" ? "true" : "false"); }); renderResponse(); }
+      else if (e.key === "3") { view = "headers"; document.querySelectorAll("#response-pane .tab").forEach(function (b) { b.setAttribute("aria-selected", b.getAttribute("data-view") === "headers" ? "true" : "false"); }); renderResponse(); }
+      else if (e.key === "o") {
+        focusPane = focusPane === "source" ? "response" : "source";
+        (focusPane === "source" ? sourceEl : viewportEl).focus();
+      } else if (e.key === "v" && !e.shiftKey) { document.getElementById("verbose").click(); }
+      else if (e.key === "V") { document.getElementById("very").click(); }
+      else if (e.key === "E") {
+        envEl.selectedIndex = (envEl.selectedIndex + 1) % envEl.options.length;
+        envEl.dispatchEvent(new Event("change"));
+      } else if (e.key === "y") {
+        var text = view === "raw" ? stripAnsi(combined()) : prettyBody(parseExchanges(stdout)[0] ? parseExchanges(stdout)[0].body : combined());
+        if (navigator.clipboard) navigator.clipboard.writeText(text);
+      }
+    });
+
+    loadListing().then(restoreState).then(function () {
+      if (!selected && files[0]) selectFile(files[0].path);
+    }).catch(function (e) {
+      showBanner(String(e));
+    });
+  })();
+  </script>
+</body>
+</html>

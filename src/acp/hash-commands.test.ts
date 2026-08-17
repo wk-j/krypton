@@ -86,6 +86,7 @@ describe('buildCommandManifest', () => {
     const names = HASH_COMMANDS.map((c) => c.name);
     expect(names).toContain('docs');
     expect(names).toContain('termctrl');
+    expect(names).toContain('hurl');
     expect(names).toContain('dispatch-github-issue');
     expect(names).not.toContain('fix-issue');
     expect(byName.get('docs')?.badges).not.toContain('hidden');

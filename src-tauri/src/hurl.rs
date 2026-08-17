@@ -16,7 +16,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::util::emit::EmitExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 
 const CACHE_VERSION: u32 = 1;
 const OUTPUT_CAP_BYTES: usize = 1_000_000;
@@ -93,13 +93,190 @@ struct HurlFinishedEvent {
     duration_ms: u64,
 }
 
+#[derive(Clone, Debug)]
+pub enum HurlEvent {
+    Output {
+        run_id: u64,
+        stream: &'static str,
+        chunk: String,
+    },
+    Finished {
+        run_id: u64,
+        exit_code: i32,
+        duration_ms: u64,
+        truncated: bool,
+        stdout: String,
+        stderr: String,
+    },
+}
+
+struct HurlRunBuffer {
+    stdout: String,
+    stderr: String,
+    truncated: bool,
+}
+
 // ─── State ──────────────────────────────────────────────────────────
 
-#[derive(Default)]
 pub struct HurlState {
     next_run_id: AtomicU64,
     children: Mutex<HashMap<u64, Child>>,
     binary_path: OnceLock<Option<PathBuf>>,
+    events: broadcast::Sender<HurlEvent>,
+    buffers: Mutex<HashMap<u64, HurlRunBuffer>>,
+}
+
+impl Default for HurlState {
+    fn default() -> Self {
+        let (events, _) = broadcast::channel(64);
+        Self {
+            next_run_id: AtomicU64::new(1),
+            children: Mutex::new(HashMap::new()),
+            binary_path: OnceLock::new(),
+            events,
+            buffers: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl HurlState {
+    pub fn subscribe(&self) -> broadcast::Receiver<HurlEvent> {
+        self.events.subscribe()
+    }
+
+    fn publish(&self, event: HurlEvent) {
+        let _ = self.events.send(event);
+    }
+
+    pub fn binary_available(
+        &self,
+        config: &Arc<std::sync::RwLock<crate::config::KryptonConfig>>,
+    ) -> bool {
+        get_binary(self, config).is_ok()
+    }
+}
+
+// ─── Web sessions (spec 227) ────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct HurlWebSession {
+    pub token: String,
+    pub cwd: String,
+    pub created_at: u64,
+}
+
+pub struct HurlWebSessions {
+    by_cwd: std::sync::Mutex<HashMap<String, HurlWebSession>>,
+    by_token: std::sync::Mutex<HashMap<String, HurlWebSession>>,
+    active_run: std::sync::Mutex<HashMap<String, u64>>,
+}
+
+impl Default for HurlWebSessions {
+    fn default() -> Self {
+        Self {
+            by_cwd: std::sync::Mutex::new(HashMap::new()),
+            by_token: std::sync::Mutex::new(HashMap::new()),
+            active_run: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl HurlWebSessions {
+    pub fn issue(&self, cwd: &str) -> Result<HurlWebSession, String> {
+        let canonical = std::fs::canonicalize(cwd).map_err(|e| format!("cwd {cwd}: {e}"))?;
+        if !canonical.is_dir() {
+            return Err(format!("Not a directory: {cwd}"));
+        }
+        let key = canonical.to_string_lossy().to_string();
+        {
+            let map = self.by_cwd.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(existing) = map.get(&key) {
+                return Ok(existing.clone());
+            }
+        }
+        let session = HurlWebSession {
+            token: capability_token(),
+            cwd: key.clone(),
+            created_at: now_ms(),
+        };
+        self.by_cwd
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, session.clone());
+        self.by_token
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(session.token.clone(), session.clone());
+        Ok(session)
+    }
+
+    pub fn get(&self, token: &str) -> Option<HurlWebSession> {
+        self.by_token
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(token)
+            .cloned()
+    }
+
+    pub fn take_active(&self, token: &str) -> Option<u64> {
+        self.active_run
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(token)
+    }
+
+    pub fn set_active(&self, token: &str, run_id: u64) {
+        self.active_run
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(token.to_string(), run_id);
+    }
+}
+
+fn capability_token() -> String {
+    let mut bytes = [0u8; 16];
+    if getrandom::getrandom(&mut bytes).is_err() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let mut hasher = Sha256::new();
+        hasher.update(nanos.to_le_bytes());
+        hasher.update(now_ms().to_le_bytes());
+        bytes.copy_from_slice(&hasher.finalize()[..16]);
+    }
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Canonicalize `path` and require it to be a regular file under `cwd`
+/// with the given extension and no leading-dot basename.
+pub fn confine_under_cwd(cwd: &str, path: &str, ext: &str) -> Result<PathBuf, String> {
+    let cwd_c = std::fs::canonicalize(cwd).map_err(|e| format!("cwd: {e}"))?;
+    let raw = Path::new(path);
+    let candidate = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        cwd_c.join(raw)
+    };
+    let canon = std::fs::canonicalize(&candidate).map_err(|_| "not found".to_string())?;
+    if !canon.starts_with(&cwd_c) {
+        return Err("path escapes cwd".to_string());
+    }
+    let name = canon
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "invalid name".to_string())?;
+    if name.starts_with('.') {
+        return Err("dotfile".to_string());
+    }
+    let actual = canon.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if !actual.eq_ignore_ascii_case(ext) {
+        return Err("bad extension".to_string());
+    }
+    if !canon.is_file() {
+        return Err("not a file".to_string());
+    }
+    Ok(canon)
 }
 
 // ─── Binary resolution ─────────────────────────────────────────────
@@ -376,6 +553,15 @@ pub async fn hurl_run(
     config: State<'_, Arc<std::sync::RwLock<crate::config::KryptonConfig>>>,
     args: HurlRunArgs,
 ) -> Result<u64, String> {
+    start_run(app, Arc::clone(state.inner()), config.inner().clone(), args).await
+}
+
+pub async fn start_run(
+    app: AppHandle,
+    state: Arc<HurlState>,
+    config: Arc<std::sync::RwLock<crate::config::KryptonConfig>>,
+    args: HurlRunArgs,
+) -> Result<u64, String> {
     let binary = get_binary(&state, &config)?;
 
     let mut cmd = Command::new(&binary);
@@ -416,18 +602,20 @@ pub async fn hurl_run(
     }
 
     // Spawn reader tasks
+    let state_arc: Arc<HurlState> = state.clone();
     if let Some(out) = stdout {
         let app_c = app.clone();
-        tokio::spawn(stream_reader(app_c, run_id, "stdout", out));
+        let st = state_arc.clone();
+        tokio::spawn(stream_reader(app_c, st, run_id, "stdout", out));
     }
     if let Some(err) = stderr {
         let app_c = app.clone();
-        tokio::spawn(stream_reader(app_c, run_id, "stderr", err));
+        let st = state_arc.clone();
+        tokio::spawn(stream_reader(app_c, st, run_id, "stderr", err));
     }
 
     // Wait for exit
     let app_for_wait = app.clone();
-    let state_arc: Arc<HurlState> = Arc::clone(state.inner());
     let args_for_wait = args.clone();
     tokio::spawn(async move {
         let exit_code = {
@@ -442,10 +630,37 @@ pub async fn hurl_run(
         };
         let duration_ms = start_instant.elapsed().as_millis() as u64;
 
-        // Note: frontend owns the accumulated output; Rust writes a cache
-        // snapshot using a fresh read of process streams? We don't have
-        // them here. Instead, the frontend calls hurl_save_cache below
-        // with its captured output. We only emit the finished event.
+        let (stdout_acc, stderr_acc, truncated) = {
+            let mut map = state_arc.buffers.lock().await;
+            match map.remove(&run_id) {
+                Some(buf) => (buf.stdout, buf.stderr, buf.truncated),
+                None => (String::new(), String::new(), false),
+            }
+        };
+        let (stdout_acc, stderr_acc) = truncate_output(stdout_acc, stderr_acc);
+        let _ = persist_cached_run(
+            &app_for_wait,
+            HurlSaveCacheArgs {
+                file_path: args_for_wait.file.clone(),
+                started_at,
+                finished_at: now_ms(),
+                exit_code,
+                duration_ms,
+                stdout: stdout_acc.clone(),
+                stderr: stderr_acc.clone(),
+                verbose: args_for_wait.verbose,
+                very_verbose: args_for_wait.very_verbose,
+            },
+        );
+
+        state_arc.publish(HurlEvent::Finished {
+            run_id,
+            exit_code,
+            duration_ms,
+            truncated,
+            stdout: stdout_acc,
+            stderr: stderr_acc,
+        });
         app_for_wait.emit_or_log(
             "hurl-finished",
             HurlFinishedEvent {
@@ -454,16 +669,18 @@ pub async fn hurl_run(
                 duration_ms,
             },
         );
-
-        let _ = started_at;
-        let _ = args_for_wait;
     });
 
     Ok(run_id)
 }
 
-async fn stream_reader<R>(app: AppHandle, run_id: u64, stream: &'static str, reader: R)
-where
+async fn stream_reader<R>(
+    app: AppHandle,
+    state: Arc<HurlState>,
+    run_id: u64,
+    stream: &'static str,
+    reader: R,
+) where
     R: tokio::io::AsyncRead + Unpin,
 {
     let mut buf = BufReader::new(reader).lines();
@@ -484,9 +701,7 @@ where
                     }
                     Ok(None) => {
                         if !pending.is_empty() {
-                            app.emit_or_log("hurl-output", HurlOutputEvent {
-                                run_id, stream, chunk: std::mem::take(&mut pending),
-                            });
+                            flush_chunk(&app, &state, run_id, stream, std::mem::take(&mut pending)).await;
                         }
                         break;
                     }
@@ -495,9 +710,7 @@ where
             }
             _ = &mut sleep => {
                 if !pending.is_empty() {
-                    app.emit_or_log("hurl-output", HurlOutputEvent {
-                        run_id, stream, chunk: std::mem::take(&mut pending),
-                    });
+                    flush_chunk(&app, &state, run_id, stream, std::mem::take(&mut pending)).await;
                 }
                 last_flush = Instant::now();
             }
@@ -505,13 +718,61 @@ where
     }
 }
 
+async fn flush_chunk(
+    app: &AppHandle,
+    state: &HurlState,
+    run_id: u64,
+    stream: &'static str,
+    chunk: String,
+) {
+    {
+        let mut map = state.buffers.lock().await;
+        let buf = map.entry(run_id).or_insert_with(|| HurlRunBuffer {
+            stdout: String::new(),
+            stderr: String::new(),
+            truncated: false,
+        });
+        let dest = if stream == "stderr" {
+            &mut buf.stderr
+        } else {
+            &mut buf.stdout
+        };
+        if dest.len() + chunk.len() > OUTPUT_CAP_BYTES {
+            buf.truncated = true;
+            let keep = OUTPUT_CAP_BYTES.saturating_sub(dest.len());
+            if keep > 0 {
+                dest.push_str(&chunk[..safe_char_boundary(&chunk, keep)]);
+            }
+        } else {
+            dest.push_str(&chunk);
+        }
+    }
+    state.publish(HurlEvent::Output {
+        run_id,
+        stream,
+        chunk: chunk.clone(),
+    });
+    app.emit_or_log(
+        "hurl-output",
+        HurlOutputEvent {
+            run_id,
+            stream,
+            chunk,
+        },
+    );
+}
+
 #[tauri::command]
 pub async fn hurl_cancel(state: State<'_, Arc<HurlState>>, run_id: u64) -> Result<(), String> {
+    cancel_run(&state, run_id).await;
+    Ok(())
+}
+
+pub async fn cancel_run(state: &HurlState, run_id: u64) {
     let mut map = state.children.lock().await;
     if let Some(child) = map.get_mut(&run_id) {
         let _ = child.start_kill();
     }
-    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -529,6 +790,10 @@ pub struct HurlSaveCacheArgs {
 
 #[tauri::command]
 pub fn hurl_save_cache(app: AppHandle, args: HurlSaveCacheArgs) -> Result<(), String> {
+    persist_cached_run(&app, args)
+}
+
+pub fn persist_cached_run(app: &AppHandle, args: HurlSaveCacheArgs) -> Result<(), String> {
     let (stdout, stderr) = truncate_output(args.stdout, args.stderr);
     let mtime = file_mtime_ms(Path::new(&args.file_path));
     let entry = HurlCachedRun {
@@ -544,17 +809,13 @@ pub fn hurl_save_cache(app: AppHandle, args: HurlSaveCacheArgs) -> Result<(), St
         verbose: args.verbose,
         very_verbose: args.very_verbose,
     };
-    let path = cache_file_for(&app, &args.file_path)?;
+    let path = cache_file_for(app, &args.file_path)?;
     let json = serde_json::to_string(&entry).map_err(|e| format!("serialize cache: {e}"))?;
     atomic_write(&path, &json)
 }
 
-#[tauri::command]
-pub fn hurl_load_cached(
-    app: AppHandle,
-    file_path: String,
-) -> Result<Option<HurlCachedRun>, String> {
-    let path = cache_file_for(&app, &file_path)?;
+pub fn load_cached_run(app: &AppHandle, file_path: &str) -> Result<Option<HurlCachedRun>, String> {
+    let path = cache_file_for(app, file_path)?;
     if !path.exists() {
         return Ok(None);
     }
@@ -569,6 +830,14 @@ pub fn hurl_load_cached(
             Ok(None)
         }
     }
+}
+
+#[tauri::command]
+pub fn hurl_load_cached(
+    app: AppHandle,
+    file_path: String,
+) -> Result<Option<HurlCachedRun>, String> {
+    load_cached_run(&app, &file_path)
 }
 
 #[tauri::command]
@@ -596,7 +865,11 @@ pub fn hurl_load_sidebar_state(
     app: AppHandle,
     cwd: String,
 ) -> Result<Option<HurlSidebarState>, String> {
-    let path = sidebar_state_file_for(&app, &cwd)?;
+    load_sidebar_state(&app, &cwd)
+}
+
+pub fn load_sidebar_state(app: &AppHandle, cwd: &str) -> Result<Option<HurlSidebarState>, String> {
+    let path = sidebar_state_file_for(app, cwd)?;
     if !path.exists() {
         return Ok(None);
     }
@@ -615,7 +888,65 @@ pub fn hurl_load_sidebar_state(
 
 #[tauri::command]
 pub fn hurl_save_sidebar_state(app: AppHandle, state: HurlSidebarState) -> Result<(), String> {
-    let path = sidebar_state_file_for(&app, &state.cwd)?;
+    save_sidebar_state(&app, state)
+}
+
+pub fn save_sidebar_state(app: &AppHandle, state: HurlSidebarState) -> Result<(), String> {
+    let path = sidebar_state_file_for(app, &state.cwd)?;
     let json = serde_json::to_string(&state).map_err(|e| format!("serialize state: {e}"))?;
     atomic_write(&path, &json)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_tree() -> (PathBuf, PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!("krypton-hurl-{}", now_ms()));
+        let api = root.join("api");
+        std::fs::create_dir_all(&api).unwrap();
+        let hurl = api.join("health.hurl");
+        let env = root.join("dev.env");
+        std::fs::write(&hurl, "GET http://127.0.0.1/\n").unwrap();
+        std::fs::write(&env, "HOST=localhost\n").unwrap();
+        (root, hurl, env)
+    }
+
+    #[test]
+    fn confine_accepts_files_under_cwd() {
+        let (root, hurl, env) = temp_tree();
+        let got =
+            confine_under_cwd(root.to_str().unwrap(), hurl.to_str().unwrap(), "hurl").unwrap();
+        assert_eq!(got, std::fs::canonicalize(&hurl).unwrap());
+        let got_env = confine_under_cwd(root.to_str().unwrap(), "dev.env", "env").unwrap();
+        assert_eq!(got_env, std::fs::canonicalize(&env).unwrap());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn confine_rejects_escape_and_wrong_ext() {
+        let (root, _hurl, _env) = temp_tree();
+        let outside = std::env::temp_dir().join(format!("krypton-hurl-out-{}.hurl", now_ms()));
+        std::fs::write(&outside, "GET /\n").unwrap();
+        assert!(
+            confine_under_cwd(root.to_str().unwrap(), outside.to_str().unwrap(), "hurl").is_err()
+        );
+        assert!(confine_under_cwd(root.to_str().unwrap(), "dev.env", "hurl").is_err());
+        let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn web_session_reuses_token_per_cwd() {
+        let (root, _, _) = temp_tree();
+        let sessions = HurlWebSessions::default();
+        let a = sessions.issue(root.to_str().unwrap()).unwrap();
+        let b = sessions.issue(root.to_str().unwrap()).unwrap();
+        assert_eq!(a.token, b.token);
+        assert_eq!(a.token.len(), 32);
+        assert!(a.token.bytes().all(|c| c.is_ascii_hexdigit()));
+        assert!(sessions.get(&a.token).is_some());
+        assert!(sessions.get("deadbeefdeadbeefdeadbeefdeadbeef").is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

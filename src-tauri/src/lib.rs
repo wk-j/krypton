@@ -138,7 +138,7 @@ pub fn run() {
         .manage(hook_server.clone())
         .manage(control_server.clone())
         .manage(telegram_service.clone())
-        .manage(hurl_state)
+        .manage(hurl_state.clone())
         .manage(live_assist::LiveAssistState::default())
         .manage(quick_search::QuickSearchState::new())
         .manage(Arc::new(acp::AcpRegistry::new()))
@@ -247,6 +247,7 @@ pub fn run() {
             commands::set_agent_active,
             commands::get_hook_server_port,
             commands::get_termctrl_monitor_url,
+            commands::get_hurl_web_url,
             commands::get_hook_server_config_snippet,
             telegram::telegram_get_status,
             telegram::telegram_set_enabled,
@@ -427,7 +428,13 @@ pub fn run() {
                     .unwrap_or(true);
                 let hooks_port = krypton_config.read().map(|cfg| cfg.hooks.port).unwrap_or(0);
                 if hooks_enabled {
-                    hook_server::start(app.handle().clone(), hook_server.clone(), hooks_port);
+                    hook_server::start(
+                        app.handle().clone(),
+                        hook_server.clone(),
+                        hooks_port,
+                        hurl_state.clone(),
+                        krypton_config.clone(),
+                    );
                 }
             }
 

@@ -728,6 +728,18 @@ through `textContent`. Running screens poll every second; an exited screen is
 read once and cached because its contents are final. See
 `docs/198-termctrl-session-monitor.md`.
 
+### Hurl Web Client
+
+`src-tauri/src/hurl.rs` already owns the short-lived `hurl` child process (not
+a PTY). Spec 227 adds a token-gated loopback page at `/hurl/{token}` served by
+the hook server. `get_hurl_web_url(cwd)` issues a 128-bit capability bound to
+the focused terminal cwd (reused for that cwd until Krypton exits). The page
+lists `*.hurl` / `*.env` files, streams run output over SSE, and reuses the
+same on-disk cache as the in-app `HurlContentView`. Path confinement keeps
+every `path` / `variablesFile` under the session cwd. `#hurl` and the command
+palette open the OS-browser page; `Leader q` still opens the in-app window.
+See `docs/227-hurl-web-client.md`.
+
 `kryptonctl` is an external Harness Controller, not an ACP lane. The Rust
 control server (`src-tauri/src/control.rs`) publishes an authenticated
 loopback HTTP endpoint and a user-private runtime descriptor. Requests cross

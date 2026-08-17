@@ -880,6 +880,12 @@ export class CommandPalette {
       execute: () => c.openHurlClient(),
     });
     this.register({
+      id: 'hurl.open-web',
+      label: 'Open Hurl Web Client',
+      category: 'Window',
+      execute: () => c.openHurlWebClient(),
+    });
+    this.register({
       id: 'hurl.clear-cache',
       label: 'Hurl: Clear Cache',
       category: 'Window',

@@ -35,6 +35,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::sync::oneshot;
 
+use crate::hurl::{
+    cancel_run, confine_under_cwd, list_hurl_files, load_cached_run, load_sidebar_state,
+    save_sidebar_state, start_run, HurlEvent, HurlRunArgs, HurlSidebarState, HurlState,
+    HurlWebSession, HurlWebSessions,
+};
 use crate::termctrl_monitor::{TermctrlMonitor, TermctrlSessionList};
 use crate::util::emit::EmitExt;
 
@@ -166,6 +171,8 @@ pub struct ClaudeHookEvent {
 struct HookServerState {
     app_handle: AppHandle,
     hook_server: Arc<HookServer>,
+    hurl: Arc<HurlState>,
+    config: Arc<std::sync::RwLock<crate::config::KryptonConfig>>,
 }
 
 /// Handle for the running hook server (managed by Tauri).
@@ -211,6 +218,8 @@ pub struct HookServer {
     command_manifest: std::sync::Mutex<Option<Value>>,
     /// Spec 198: read-only Terminal Control adapter and process-lifetime page token.
     termctrl_monitor: TermctrlMonitor,
+    /// Spec 227: capability tokens bound to a cwd for the Hurl web client.
+    hurl_sessions: Arc<HurlWebSessions>,
 }
 
 /// Spec 149: registry record for an artifact feedback token. Maps the
@@ -267,6 +276,7 @@ impl Default for HookServer {
             telemetry: std::sync::Mutex::new(HashMap::new()),
             command_manifest: std::sync::Mutex::new(None),
             termctrl_monitor: TermctrlMonitor::new(),
+            hurl_sessions: Arc::new(HurlWebSessions::default()),
         }
     }
 }
@@ -290,6 +300,7 @@ impl HookServer {
             telemetry: std::sync::Mutex::new(HashMap::new()),
             command_manifest: std::sync::Mutex::new(None),
             termctrl_monitor: TermctrlMonitor::new(),
+            hurl_sessions: Arc::new(HurlWebSessions::default()),
         }
     }
 
@@ -349,6 +360,15 @@ impl HookServer {
 
     pub fn termctrl_monitor_url(&self) -> Result<String, String> {
         self.termctrl_monitor.url(self.get_port())
+    }
+
+    pub fn hurl_web_url(&self, cwd: &str) -> Result<String, String> {
+        let port = self.get_port();
+        if port == 0 {
+            return Err("Krypton hook server is not running".to_string());
+        }
+        let session = self.hurl_sessions.issue(cwd)?;
+        Ok(format!("http://127.0.0.1:{port}/hurl/{}", session.token))
     }
 
     pub fn unavailable_reason(&self) -> String {
@@ -2328,6 +2348,7 @@ const REVIEWS_HTML: &str = include_str!("../../src/acp/artifact-reviews.html");
 const COMMANDS_HTML: &str = include_str!("../../src/acp/artifact-commands.html");
 const TOOLS_HTML: &str = include_str!("../../src/acp/artifact-tools.html");
 const TERMCTRL_HTML: &str = include_str!("../../src/acp/artifact-termctrl.html");
+const HURL_HTML: &str = include_str!("../../src/acp/artifact-hurl.html");
 
 fn secured_json_response<T: Serialize>(status: StatusCode, payload: T) -> Response {
     let mut response = (status, Json(payload)).into_response();
@@ -2400,6 +2421,307 @@ async fn handle_termctrl_screen(
             StatusCode::SERVICE_UNAVAILABLE,
             json!({ "error": "session screen unavailable" }),
         ),
+    }
+}
+
+fn hurl_session(state: &HookServerState, token: &str) -> Option<HurlWebSession> {
+    state.hook_server.hurl_sessions.get(token)
+}
+
+#[derive(Deserialize)]
+struct HurlPathQuery {
+    path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HurlWebRunBody {
+    path: String,
+    #[serde(default)]
+    verbose: bool,
+    #[serde(default)]
+    very_verbose: bool,
+    variables_file: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HurlWebCancelBody {
+    run_id: u64,
+}
+
+/// GET /hurl/{token} — Hurl web client page (spec 227).
+async fn handle_hurl_page(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    if hurl_session(&state, &token).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    html_response(HURL_HTML)
+}
+
+/// GET /hurl/api/{token}/listing
+async fn handle_hurl_listing(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    let Some(session) = hurl_session(&state, &token) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !std::path::Path::new(&session.cwd).is_dir() {
+        return secured_json_response(
+            StatusCode::BAD_REQUEST,
+            json!({
+                "available": false,
+                "error": "cwd no longer exists",
+                "cwd": session.cwd,
+                "hurl_files": [],
+                "env_files": [],
+            }),
+        );
+    }
+    let listing = match list_hurl_files(session.cwd.clone()) {
+        Ok(l) => l,
+        Err(error) => {
+            return secured_json_response(
+                StatusCode::BAD_REQUEST,
+                json!({
+                    "available": false,
+                    "error": error,
+                    "cwd": session.cwd,
+                    "hurl_files": [],
+                    "env_files": [],
+                }),
+            );
+        }
+    };
+    let available = state.hurl.binary_available(&state.config);
+    secured_json_response(
+        StatusCode::OK,
+        json!({
+            "available": available,
+            "error": if available {
+                Value::Null
+            } else {
+                Value::String("hurl binary not found — install from https://hurl.dev".into())
+            },
+            "cwd": session.cwd,
+            "hurl_files": listing.hurl_files,
+            "env_files": listing.env_files,
+        }),
+    )
+}
+
+/// GET /hurl/api/{token}/source?path=
+async fn handle_hurl_source(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+    Query(query): Query<HurlPathQuery>,
+) -> Response {
+    let Some(session) = hurl_session(&state, &token) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let path = match confine_under_cwd(&session.cwd, &query.path, "hurl") {
+        Ok(p) => p,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    match String::from_utf8(bytes) {
+        Ok(source) => secured_json_response(StatusCode::OK, json!({ "source": source })),
+        Err(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response(),
+    }
+}
+
+/// GET /hurl/api/{token}/env?path=
+async fn handle_hurl_env(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+    Query(query): Query<HurlPathQuery>,
+) -> Response {
+    let Some(session) = hurl_session(&state, &token) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let path = match confine_under_cwd(&session.cwd, &query.path, "env") {
+        Ok(p) => p,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    match crate::hurl::hurl_read_env_file(path.to_string_lossy().to_string()) {
+        Ok(map) => secured_json_response(StatusCode::OK, map),
+        Err(error) => secured_json_response(StatusCode::BAD_REQUEST, json!({ "error": error })),
+    }
+}
+
+/// GET /hurl/api/{token}/cache?path=
+async fn handle_hurl_cache(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+    Query(query): Query<HurlPathQuery>,
+) -> Response {
+    let Some(session) = hurl_session(&state, &token) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let path = match confine_under_cwd(&session.cwd, &query.path, "hurl") {
+        Ok(p) => p,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    match load_cached_run(&state.app_handle, &path.to_string_lossy()) {
+        Ok(entry) => secured_json_response(StatusCode::OK, entry),
+        Err(error) => secured_json_response(StatusCode::BAD_REQUEST, json!({ "error": error })),
+    }
+}
+
+/// POST /hurl/api/{token}/run
+async fn handle_hurl_run(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+    Json(body): Json<HurlWebRunBody>,
+) -> Response {
+    let Some(session) = hurl_session(&state, &token) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let file = match confine_under_cwd(&session.cwd, &body.path, "hurl") {
+        Ok(p) => p,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let variables_file = match body.variables_file.as_deref() {
+        None | Some("") => None,
+        Some(vf) => match confine_under_cwd(&session.cwd, vf, "env") {
+            Ok(p) => Some(p.to_string_lossy().to_string()),
+            Err(_) => return StatusCode::NOT_FOUND.into_response(),
+        },
+    };
+    if let Some(old) = state.hook_server.hurl_sessions.take_active(&token) {
+        cancel_run(&state.hurl, old).await;
+    }
+    let args = HurlRunArgs {
+        file: file.to_string_lossy().to_string(),
+        cwd: session.cwd,
+        verbose: body.verbose,
+        very_verbose: body.very_verbose,
+        variables_file,
+        extra_args: Vec::new(),
+    };
+    match start_run(
+        state.app_handle.clone(),
+        state.hurl.clone(),
+        state.config.clone(),
+        args,
+    )
+    .await
+    {
+        Ok(run_id) => {
+            state.hook_server.hurl_sessions.set_active(&token, run_id);
+            secured_json_response(StatusCode::OK, json!({ "runId": run_id }))
+        }
+        Err(error) => secured_json_response(StatusCode::BAD_REQUEST, json!({ "error": error })),
+    }
+}
+
+/// GET /hurl/api/{token}/events/{runId}
+async fn handle_hurl_events(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path((token, run_id)): Path<(String, u64)>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    if hurl_session(&state, &token).is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let rx = state.hurl.subscribe();
+    let stream = async_stream_from_hurl(rx, run_id);
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(5))))
+}
+
+fn async_stream_from_hurl(
+    rx: tokio::sync::broadcast::Receiver<HurlEvent>,
+    run_id: u64,
+) -> impl futures_util::Stream<Item = Result<Event, Infallible>> {
+    futures_util::stream::unfold(Some(rx), move |state| async move {
+        let mut rx = state?;
+        loop {
+            match rx.recv().await {
+                Ok(HurlEvent::Output {
+                    run_id: id,
+                    stream,
+                    chunk,
+                }) if id == run_id => {
+                    let data = serde_json::to_string(&json!({
+                        "stream": stream,
+                        "chunk": chunk,
+                    }))
+                    .unwrap_or_else(|_| "{}".into());
+                    let ev = Event::default().event("output").data(data);
+                    return Some((Ok(ev), Some(rx)));
+                }
+                Ok(HurlEvent::Finished {
+                    run_id: id,
+                    exit_code,
+                    duration_ms,
+                    truncated,
+                    stdout,
+                    stderr,
+                }) if id == run_id => {
+                    let data = serde_json::to_string(&json!({
+                        "exitCode": exit_code,
+                        "durationMs": duration_ms,
+                        "truncated": truncated,
+                        "stdout": stdout,
+                        "stderr": stderr,
+                    }))
+                    .unwrap_or_else(|_| "{}".into());
+                    let ev = Event::default().event("finished").data(data);
+                    return Some((Ok(ev), None));
+                }
+                Ok(_) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    })
+}
+
+/// POST /hurl/api/{token}/cancel
+async fn handle_hurl_cancel(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+    Json(body): Json<HurlWebCancelBody>,
+) -> Response {
+    if hurl_session(&state, &token).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    cancel_run(&state.hurl, body.run_id).await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// GET /hurl/api/{token}/state
+async fn handle_hurl_state_get(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    let Some(session) = hurl_session(&state, &token) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match load_sidebar_state(&state.app_handle, &session.cwd) {
+        Ok(entry) => secured_json_response(StatusCode::OK, entry),
+        Err(error) => secured_json_response(StatusCode::BAD_REQUEST, json!({ "error": error })),
+    }
+}
+
+/// PUT /hurl/api/{token}/state
+async fn handle_hurl_state_put(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+    Json(mut body): Json<HurlSidebarState>,
+) -> Response {
+    let Some(session) = hurl_session(&state, &token) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    body.cwd = session.cwd;
+    match save_sidebar_state(&state.app_handle, body) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => secured_json_response(StatusCode::BAD_REQUEST, json!({ "error": error })),
     }
 }
 
@@ -7821,7 +8143,13 @@ fn validate_artifact_file(
 /// Start the HTTP hook server on a dedicated tokio runtime.
 /// Binds to 127.0.0.1 on the configured port (0 = auto-assign).
 /// Returns the actual port the server bound to.
-pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_port: u16) {
+pub fn start(
+    app_handle: AppHandle,
+    hook_server: Arc<HookServer>,
+    configured_port: u16,
+    hurl: Arc<HurlState>,
+    config: Arc<std::sync::RwLock<crate::config::KryptonConfig>>,
+) {
     std::thread::spawn(move || {
         let rt = match tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
@@ -7841,6 +8169,8 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
             let shared = Arc::new(HookServerState {
                 app_handle: app_handle.clone(),
                 hook_server: hook_server.clone(),
+                hurl: hurl.clone(),
+                config: config.clone(),
             });
 
             let app = Router::new()
@@ -7865,6 +8195,18 @@ pub fn start(app_handle: AppHandle, hook_server: Arc<HookServer>, configured_por
                 .route(
                     "/termctrl/api/{token}/screen/{name}",
                     get(handle_termctrl_screen),
+                )
+                .route("/hurl/{token}", get(handle_hurl_page))
+                .route("/hurl/api/{token}/listing", get(handle_hurl_listing))
+                .route("/hurl/api/{token}/source", get(handle_hurl_source))
+                .route("/hurl/api/{token}/env", get(handle_hurl_env))
+                .route("/hurl/api/{token}/cache", get(handle_hurl_cache))
+                .route("/hurl/api/{token}/run", post(handle_hurl_run))
+                .route("/hurl/api/{token}/events/{run_id}", get(handle_hurl_events))
+                .route("/hurl/api/{token}/cancel", post(handle_hurl_cancel))
+                .route(
+                    "/hurl/api/{token}/state",
+                    get(handle_hurl_state_get).put(handle_hurl_state_put),
                 )
                 .route("/docs", get(handle_docs))
                 .route("/journal", get(handle_journal))
@@ -8378,6 +8720,15 @@ mod tests {
             .route("/termctrl/{token}", get(ok))
             .route("/termctrl/api/{token}/sessions", get(ok))
             .route("/termctrl/api/{token}/screen/{name}", get(ok))
+            .route("/hurl/{token}", get(ok))
+            .route("/hurl/api/{token}/listing", get(ok))
+            .route("/hurl/api/{token}/source", get(ok))
+            .route("/hurl/api/{token}/env", get(ok))
+            .route("/hurl/api/{token}/cache", get(ok))
+            .route("/hurl/api/{token}/run", post(ok))
+            .route("/hurl/api/{token}/events/{run_id}", get(ok))
+            .route("/hurl/api/{token}/cancel", post(ok))
+            .route("/hurl/api/{token}/state", get(ok).put(ok))
             .route("/docs", get(ok))
             .route("/journal", get(ok))
             .route("/doc", get(ok))
@@ -8406,6 +8757,30 @@ mod tests {
         assert_eq!(token.len(), 32);
         assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
         assert_eq!(token, server.termctrl_monitor.token());
+    }
+
+    #[test]
+    fn hurl_web_url_is_capability_gated() {
+        let server = HookServer::new();
+        *server.port.lock().unwrap() = 64732;
+        let tmp = std::env::temp_dir().join(format!(
+            "krypton-hurl-web-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let url = server
+            .hurl_web_url(tmp.to_str().unwrap())
+            .expect("hurl URL");
+        assert!(url.starts_with("http://127.0.0.1:64732/hurl/"));
+        let token = url.rsplit('/').next().unwrap();
+        assert_eq!(token.len(), 32);
+        assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        let again = server.hurl_web_url(tmp.to_str().unwrap()).unwrap();
+        assert_eq!(url, again);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

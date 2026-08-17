@@ -9795,6 +9795,19 @@ export class AcpHarnessView implements ContentView {
       }
       return;
     }
+    // spec 227: capability-gated Hurl web client.
+    if (parts[0] === '#hurl') {
+      this.setDraft(lane, '', 0);
+      try {
+        const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => '/'));
+        const url = await invoke<string>('get_hurl_web_url', { cwd });
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`hurl open failed: ${errorText(e)}`);
+      }
+      return;
+    }
     // spec 198: capability-gated, read-only Terminal Control monitor.
     if (parts[0] === '#termctrl') {
       this.setDraft(lane, '', 0);

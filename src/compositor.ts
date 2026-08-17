@@ -3589,6 +3589,29 @@ export class Compositor {
   }
 
   /**
+   * Open the capability-gated Hurl web client in the OS browser (spec 227).
+   */
+  async openHurlWebClient(): Promise<void> {
+    const cwd = (await this.getFocusedCwd())
+      ?? (await invoke<string>('get_app_cwd').catch(() => '/'));
+    let url: string;
+    try {
+      url = await invoke<string>('get_hurl_web_url', { cwd });
+    } catch (e) {
+      console.error('[Hurl] failed to get web client URL:', e);
+      this.showNotification('hurl web client unavailable');
+      return;
+    }
+    try {
+      await invoke('open_url', { url });
+      this.showNotification(url);
+    } catch (e) {
+      console.error('[Hurl] failed to open web client:', e);
+      this.showNotification('hurl web client open failed');
+    }
+  }
+
+  /**
    * Spawn a new tab running `<editor> <filePath>` in `fileDir`. Used by the
    * Hurl view's `e` key.
    */
