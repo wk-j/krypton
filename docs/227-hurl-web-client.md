@@ -113,11 +113,23 @@ GET  /hurl/api/{token}/events/{runId}      SSE: event=output | event=finished
 POST /hurl/api/{token}/cancel              { runId }
 GET  /hurl/api/{token}/state               persisted sidebar state for cwd
 PUT  /hurl/api/{token}/state               same shape as HurlSidebarState
+                                       (spec 65 file:
+                                       <app_cache_dir>/hurl/state/<sha256(cwd)>.json)
 ```
 
 **Path confinement.** Every `path` / `variablesFile` is `canonicalize`d and must be a prefix of `session.cwd` (cwd + `MAIN_SEPARATOR`). Source must end in `.hurl`; env in `.env`; no dotfiles. One run at a time per session; `POST /run` while running cancels and restarts (spec 65 Q8).
 
 The page never sees a filesystem root. `listing` is the only enumeration.
+
+**Sidebar state.** The web client reads and writes the same
+`HurlSidebarState` file as `HurlContentView` (spec 65):
+`<app_cache_dir>/hurl/state/<sha256(cwd)>.json`. `expanded` is the set of
+open folder relPaths — a folder not in the list is collapsed. The page
+loads `/listing` first (no paint), then `/state`, then renders. No state
+file uses the in-app first-run default (each file's parent dir open).
+Click, `h`, and `l` persist on the same 300ms debounce. A first paint
+must not default missing folders to open — that was clobbering collapses
+saved by either surface.
 
 ### Data flow
 
@@ -125,7 +137,8 @@ The page never sees a filesystem root. `listing` is the only enumeration.
 1. Palette / #hurl → compositor.openHurlWebClient()
 2. invoke get_hurl_web_url({ cwd }) → capability URL
 3. open_url(url) — user-triggered, never auto-open
-4. Browser GET /hurl/{token} → page; GET /listing + /state
+4. Browser GET /hurl/{token} → page; GET /listing then GET /state
+   (apply `expanded` before the first tree paint; missing folder = collapsed)
 5. j/k select a file → GET /source + GET /cache (show last run if any)
 6. Enter/r → POST /run; EventSource /events/{runId} appends chunks
 7. finished → render Pretty/Raw/Headers; PUT cache via existing hurl_save_cache

@@ -735,7 +735,8 @@ a PTY). Spec 227 adds a token-gated loopback page at `/hurl/{token}` served by
 the hook server. `get_hurl_web_url(cwd)` issues a 128-bit capability bound to
 the focused terminal cwd (reused for that cwd until Krypton exits). The page
 lists `*.hurl` / `*.env` files, streams run output over SSE, and reuses the
-same on-disk cache as the in-app `HurlContentView`. Path confinement keeps
+same on-disk cache and per-cwd sidebar state (`expanded` folder set,
+selection, env, verbose) as the in-app `HurlContentView`. Path confinement keeps
 every `path` / `variablesFile` under the session cwd. `#hurl` and the command
 palette open the OS-browser page; `Leader q` still opens the in-app window.
 See `docs/227-hurl-web-client.md`.

@@ -1105,8 +1105,11 @@ the local Telegram Settings view accepts it.
    the harness project dir). Rust issues or reuses a 128-bit token bound to
    that canonical cwd and returns `http://127.0.0.1:<port>/hurl/<token>`.
 3. `open_url` launches the OS browser. A bad token is a non-reflective 404.
-4. The page loads `/listing`, `/state`, then `/source` and `/cache` for the
-   selected file. `j`/`k` change selection; `/` filters.
+4. The page loads `/listing`, then `/state` from the same
+   `<app_cache_dir>/hurl/state/<sha256(cwd)>.json` file as the in-app
+   client, applies the open-folder set (missing = collapsed), then
+   `/source` and `/cache` for the selected file. `j`/`k` change selection;
+   `/` filters. Folder click / `h` / `l` PUT that file on a 300ms debounce.
 5. Enter / `r` POSTs `/run`. The hook server cancels any in-flight run for
    that session, spawns `hurl --color --pretty --include` via `hurl.rs`, and
    returns `{ runId }`. The page opens `EventSource` on `/events/{runId}`.

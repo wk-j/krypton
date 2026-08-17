@@ -978,7 +978,7 @@ Configure the built-in Hurl client window.
 binary_path = "/opt/homebrew/bin/hurl"
 ```
 
-The in-app Hurl client is opened via `Leader q` or the command palette ("Open Hurl Client"). The OS-browser client is opened via **Open Hurl Web Client** or harness `#hurl`. Both index every `.hurl` file under the focused terminal cwd (gitignore-aware) and run the selected file with `--color --pretty --include`. `[hurl].binary_path` feeds both surfaces. Extra CLI args from config are honored only in-app. See `docs/65-hurl-client-window.md` and `docs/227-hurl-web-client.md`.
+The in-app Hurl client is opened via `Leader q` or the command palette ("Open Hurl Client"). The OS-browser client is opened via **Open Hurl Web Client** or harness `#hurl`. Both index every `.hurl` file under the focused terminal cwd (gitignore-aware) and run the selected file with `--color --pretty --include`. `[hurl].binary_path` feeds both surfaces. Extra CLI args from config are honored only in-app. Folder expand/collapse, last file, env, and verbose flags are shared in `<app_cache_dir>/hurl/state/<sha256(cwd)>.json`, not in this TOML. See `docs/65-hurl-client-window.md` and `docs/227-hurl-web-client.md`.
 
 ## [pencil]
 

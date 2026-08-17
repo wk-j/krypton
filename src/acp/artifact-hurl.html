@@ -431,12 +431,30 @@
       document.getElementById("roster-title").textContent = "Files";
     }
 
+    function folderOpen(rel) {
+      return !!expanded[rel];
+    }
+
+    function setFolderOpen(rel, open) {
+      if (open) expanded[rel] = true;
+      else delete expanded[rel];
+    }
+
+    /** Same first-run default as HurlContentView: open each file's parent dir. */
+    function applyDefaultExpanded() {
+      expanded = {};
+      files.forEach(function (f) {
+        var segs = (f.rel_path || "").split("/");
+        segs.pop();
+        if (segs.length > 0) expanded[segs.join("/")] = true;
+      });
+    }
+
     function renderNode(node, rel, depth) {
       var names = Object.keys(node.children).sort();
       names.forEach(function (name) {
         var childRel = rel ? rel + "/" + name : name;
-        var open = expanded[childRel] !== false;
-        if (expanded[childRel] == null) expanded[childRel] = true;
+        var open = folderOpen(childRel);
         var b = document.createElement("button");
         b.type = "button";
         b.className = "row";
@@ -541,7 +559,7 @@
       runEl.disabled = !available || !selected;
     }
 
-    async function loadListing() {
+    async function loadListing(skipRender) {
       var res = await fetch(api + "/listing");
       if (res.status === 404) { showBanner("Unknown or expired Hurl session. Re-open from Krypton."); return; }
       var data = await res.json();
@@ -564,7 +582,7 @@
       if (keep) envEl.value = keep;
       if (data.error && !available) showBanner(data.error);
       else showBanner("");
-      renderTree();
+      if (!skipRender) renderTree();
       setRunEnabled();
     }
 
@@ -718,14 +736,17 @@
 
     async function restoreState() {
       var res = await fetch(api + "/state");
-      if (!res.ok) return;
-      var st = await res.json();
-      if (!st) return;
+      var st = res.ok ? await res.json() : null;
+      if (!st) {
+        applyDefaultExpanded();
+        return;
+      }
+      expanded = {};
       (st.expanded || []).forEach(function (k) { expanded[k] = true; });
       if (st.verbose) document.getElementById("verbose").setAttribute("aria-pressed", "true");
       if (st.very_verbose) document.getElementById("very").setAttribute("aria-pressed", "true");
       if (st.view_mode === "raw" || st.view_mode === "headers" || st.view_mode === "pretty") {
-        view = st.view_mode === "source" ? "pretty" : st.view_mode;
+        view = st.view_mode;
         document.querySelectorAll("#response-pane .tab").forEach(function (b) {
           b.setAttribute("aria-selected", b.getAttribute("data-view") === view ? "true" : "false");
         });
@@ -742,7 +763,7 @@
       var row = e.target.closest(".row");
       if (!row) return;
       if (row.dataset.dir) {
-        expanded[row.dataset.dir] = !expanded[row.dataset.dir];
+        setFolderOpen(row.dataset.dir, !folderOpen(row.dataset.dir));
         renderTree();
         schedulePersist();
         return;
@@ -802,14 +823,16 @@
         var file = files.find(function (f) { return f.path === selected; });
         if (file && file.rel_path && file.rel_path.indexOf("/") >= 0) {
           var dir = file.rel_path.split("/").slice(0, -1).join("/");
-          expanded[dir] = false;
+          setFolderOpen(dir, false);
           renderTree();
+          schedulePersist();
         }
       } else if (e.key === "l") {
         var firstDir = treeEl.querySelector("[data-dir]");
-        if (firstDir && expanded[firstDir.dataset.dir] === false) {
-          expanded[firstDir.dataset.dir] = true;
+        if (firstDir && !folderOpen(firstDir.dataset.dir)) {
+          setFolderOpen(firstDir.dataset.dir, true);
           renderTree();
+          schedulePersist();
         }
       } else if (e.key === "Enter" || e.key === "r") { e.preventDefault(); runSelected(); }
       else if (e.key === "x") { e.preventDefault(); cancelRun(); }
@@ -830,7 +853,8 @@
       }
     });
 
-    loadListing().then(restoreState).then(function () {
+    loadListing(true).then(restoreState).then(function () {
+      renderTree();
       if (!selected && files[0]) selectFile(files[0].path);
     }).catch(function (e) {
       showBanner(String(e));

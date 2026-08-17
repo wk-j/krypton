@@ -213,7 +213,7 @@ The tree's expand/collapse state and last-selected file are persisted so that cl
     updatedAt: number;
   }
   ```
-- **Location**: `<app_cache_dir>/hurl/state/<sha256(cwd)>.json`. Same parent directory as the output cache — co-located, same atomic write pattern. Chosen over `localStorage` so that (a) state survives webview profile resets and (b) it can be cleared with `hurl_clear_cache`.
+- **Location**: `<app_cache_dir>/hurl/state/<sha256(cwd)>.json`. Same parent directory as the output cache — co-located, same atomic write pattern. Chosen over `localStorage` so that (a) state survives webview profile resets and (b) it can be cleared with `hurl_clear_cache`. The spec 227 web client reads and writes this same file.
 - **Tauri commands**:
   ```rust
   #[tauri::command]
