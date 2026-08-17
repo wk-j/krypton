@@ -849,9 +849,11 @@ fn emit_fs_activity(
 
 /// Normalize Grok's ask_user_question params into `{ question, options, multiSelect }`.
 fn extract_ask_questions(params: &Value) -> Vec<Value> {
-    let raw = params
-        .get("questions")
-        .or_else(|| params.get("params").and_then(|inner| inner.get("questions")));
+    let raw = params.get("questions").or_else(|| {
+        params
+            .get("params")
+            .and_then(|inner| inner.get("questions"))
+    });
     let Some(arr) = raw.and_then(|v| v.as_array()) else {
         return Vec::new();
     };

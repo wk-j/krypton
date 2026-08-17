@@ -217,7 +217,8 @@ None. The archive stays a zero-config read-only surface.
   editor is one keystroke away for anyone who wants more.
 - **Syntax highlighting** — would mean a new dependency (`syntect`/`tree-sitter`) for an archive page.
 - **Showing the code *as it was* at review time** — needs git object lookup per anchor; the
-  provenance chip is the honest cheap answer.
+  provenance chip is the honest cheap answer. Xenon (spec 230) instead ships a **publish-time
+  snapshot** in `excerpts.json`; this loopback page still reads the live tree.
 - **Attaching each answer to its finding inline** — blocked on block ids the Rust pass does not have.
 - **Changing the in-app Board or the transcript card.**
 - **Index page changes** (`/reviews` rows stay as they are).

@@ -233,6 +233,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 227 | [Hurl Web Client](./227-hurl-web-client.md) |
 | 228 | [ACP fs Image / Binary Reads](./228-acp-fs-image-reads.md) |
 | 229 | [Grok `ask_user_question` ACP Client Method](./229-grok-ask-user-question.md) |
+| 230 | [Xenon Review Source Excerpts](./230-xenon-review-excerpts.md) |
 
 ## ADRs (20)
 

@@ -19,7 +19,6 @@ use comrak::{
     parse_document, Arena, Options,
 };
 use futures_util::{stream, StreamExt};
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -40,6 +39,7 @@ use crate::hurl::{
     save_sidebar_state, start_run, HurlEvent, HurlRunArgs, HurlSidebarState, HurlState,
     HurlWebSession, HurlWebSessions,
 };
+use crate::review_excerpt::{rv_anchor, validate_doc_path, RvExcerpt, RvSkip, RvSrcCtx};
 use crate::termctrl_monitor::{TermctrlMonitor, TermctrlSessionList};
 use crate::util::emit::EmitExt;
 
@@ -6961,273 +6961,8 @@ fn rv_unquote(value: &str) -> String {
     v.to_string()
 }
 
-// ─── Source excerpts under review anchors (spec 217) ───────────────────────
-//
-// A finding or walkthrough step that names `path:line` renders the real lines
-// underneath it, so the archive can be read without opening an editor.
-//
-// The read surface is deliberately narrow: there is NO route that serves source
-// files. The only paths ever read are the ones this document anchors, they are
-// resolved while the page is being built, and every one of them passes
-// `validate_doc_path` (relative, canonicalized, inside the project, no symlink
-// escape, allowlisted extension) plus the project's own `.gitignore` — so a file
-// the repo refuses to track (`.env`, `.krypton/`, build output) can never reach
-// the page. Any failure means no excerpt; the anchor stays plain text.
-
-/// Extensions an excerpt may be read from. Text and source only — the point is
-/// reading code, and an unknown extension is never opened.
-const EXCERPT_EXTS: &[&str] = &[
-    "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "css", "scss", "html", "md", "toml", "json",
-    "yaml", "yml", "py", "sh", "bash", "fish", "zsh", "go", "java", "kt", "swift", "rb", "php",
-    "c", "h", "cpp", "hpp", "sql", "txt", "lua", "conf", "ini", "xml", "svelte", "vue",
-];
-/// Lines shown either side of a single-line anchor.
-const EXCERPT_CONTEXT: usize = 6;
-/// Rows rendered for a `path:start-end` anchor before the rest is summarized.
-const EXCERPT_RANGE_MAX: usize = 40;
-/// Per-line character clamp, so a minified or generated line cannot blow up the page.
-const EXCERPT_COL_MAX: usize = 400;
-/// Files larger than this are never read for an excerpt.
-const EXCERPT_FILE_BYTES: u64 = 2 * 1024 * 1024;
-/// Excerpts per page; past this, anchors fall back to text and the section says so.
-const EXCERPT_PER_PAGE: usize = 60;
-
-/// A `path`, `path:line`, or `path:start-end` anchor written by a lane.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct RvAnchor {
-    rel: String,
-    start: Option<usize>,
-    end: Option<usize>,
-}
-
-/// Why an anchor produced no excerpt. `Rejected` renders nothing (the anchor may
-/// simply not be a file in this project); the others are worth telling the reader.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum RvSkip {
-    /// Failed a guard — outside the project, gitignored, wrong extension, too big.
-    Rejected,
-    /// Resolved to nothing on disk.
-    Missing,
-    /// The file exists but the anchored line is past its end.
-    Drifted { lines: usize },
-    /// The page's excerpt budget is spent.
-    Budget,
-}
-
-/// The window of source an anchor points at, ready to render.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct RvExcerpt {
-    /// `src/acp/inter-lane.ts:830-841` — what the head row shows.
-    label: String,
-    first_line: usize,
-    lines: Vec<String>,
-    /// The row to tint, when the anchor named a single line.
-    anchor_line: Option<usize>,
-    /// Rows dropped by `EXCERPT_RANGE_MAX`.
-    omitted: usize,
-    /// The file was modified after this review was created.
-    stale: bool,
-}
-
-/// One file's contents, read at most once per page.
-struct RvFile {
-    lines: Vec<String>,
-    mtime_ms: i64,
-}
-
-/// Everything the excerpt pass needs, threaded through the block renderers.
-/// Absent (`None`) when the caller has no project context — the block renderers
-/// then behave exactly as they did before excerpts existed.
-struct RvSrcCtx {
-    project_dir: PathBuf,
-    /// Canonical root, for gitignore matching. Falls back to `project_dir`.
-    root: PathBuf,
-    /// `created` from `review.md`'s frontmatter, epoch ms.
-    created_ms: i64,
-    ignore: Option<Gitignore>,
-    used: usize,
-    /// Set once an anchor was skipped for budget, so the page can say so.
-    overflowed: bool,
-    cache: HashMap<PathBuf, Option<RvFile>>,
-}
-
-impl RvSrcCtx {
-    fn new(project_dir: &str, created_ms: i64) -> Self {
-        let project_dir = PathBuf::from(project_dir);
-        let root = project_dir
-            .canonicalize()
-            .unwrap_or_else(|_| project_dir.clone());
-        // Best-effort: no `.gitignore` means no ignore filtering, but every other
-        // guard still applies.
-        let ignore = {
-            let mut builder = GitignoreBuilder::new(&root);
-            let _ = builder.add(root.join(".gitignore"));
-            let _ = builder.add(root.join(".git/info/exclude"));
-            builder.build().ok()
-        };
-        Self {
-            project_dir,
-            root,
-            created_ms,
-            ignore,
-            used: 0,
-            overflowed: false,
-            cache: HashMap::new(),
-        }
-    }
-
-    fn ignored(&self, path: &StdPath) -> bool {
-        let rel = path.strip_prefix(&self.root).unwrap_or(path);
-        // The harness's own scratch tree is never excerpt material, and it must be
-        // refused independently of `.gitignore` — a project that has not ignored
-        // `.krypton/` yet would otherwise let a review quote another review.
-        if rel.components().any(|c| c.as_os_str() == ".krypton") {
-            return true;
-        }
-        let Some(ignore) = &self.ignore else {
-            return false;
-        };
-        ignore.matched_path_or_any_parents(rel, false).is_ignore()
-    }
-
-    /// Resolve one anchor to a rendered window, or the reason there is none.
-    fn excerpt(&mut self, anchor: &RvAnchor) -> Result<RvExcerpt, RvSkip> {
-        if self.used >= EXCERPT_PER_PAGE {
-            self.overflowed = true;
-            return Err(RvSkip::Budget);
-        }
-        let path =
-            validate_doc_path(&self.project_dir, &anchor.rel, EXCERPT_EXTS).map_err(|e| {
-                if e.starts_with("not_found") {
-                    RvSkip::Missing
-                } else {
-                    RvSkip::Rejected
-                }
-            })?;
-        if self.ignored(&path) {
-            return Err(RvSkip::Rejected);
-        }
-
-        let created_ms = self.created_ms;
-        let entry = self.cache.entry(path.clone()).or_insert_with(|| {
-            let meta = std::fs::metadata(&path).ok()?;
-            if meta.len() > EXCERPT_FILE_BYTES {
-                return None;
-            }
-            let text = std::fs::read_to_string(&path).ok()?;
-            let mtime_ms = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
-            Some(RvFile {
-                lines: text.lines().map(str::to_string).collect(),
-                mtime_ms,
-            })
-        });
-        let file = entry.as_ref().ok_or(RvSkip::Rejected)?;
-        let total = file.lines.len();
-
-        // No line named: the anchor points at a file, so show its head.
-        let (first, last, anchor_line) = match (anchor.start, anchor.end) {
-            (None, _) => (1, total.min(EXCERPT_CONTEXT * 2 + 1), None),
-            (Some(start), None) => {
-                if start > total {
-                    return Err(RvSkip::Drifted { lines: total });
-                }
-                (
-                    start.saturating_sub(EXCERPT_CONTEXT).max(1),
-                    (start + EXCERPT_CONTEXT).min(total),
-                    Some(start),
-                )
-            }
-            (Some(start), Some(end)) => {
-                if start > total {
-                    return Err(RvSkip::Drifted { lines: total });
-                }
-                (start.max(1), end.min(total).max(start), None)
-            }
-        };
-        if total == 0 {
-            return Err(RvSkip::Drifted { lines: 0 });
-        }
-
-        let shown_last = last.min(first + EXCERPT_RANGE_MAX - 1);
-        let lines: Vec<String> = file.lines[first - 1..shown_last]
-            .iter()
-            .map(|line| clamp_chars(line, EXCERPT_COL_MAX))
-            .collect();
-        let stale = created_ms > 0 && file.mtime_ms > created_ms;
-
-        self.used += 1;
-        Ok(RvExcerpt {
-            label: format!("{}:{first}-{shown_last}", anchor.rel),
-            first_line: first,
-            lines,
-            anchor_line,
-            omitted: last.saturating_sub(shown_last),
-            stale,
-        })
-    }
-}
-
-/// Truncate on a char boundary, marking the cut.
-fn clamp_chars(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let mut out: String = s.chars().take(max).collect();
-    out.push('…');
-    out
-}
-
-/// `src/x.ts` · `src/x.ts:835` · `src/x.ts:812-840`. Returns `None` for anything
-/// that is not path-shaped, so a prose `at:` is never treated as a file.
-fn rv_anchor(at: &str) -> Option<RvAnchor> {
-    let raw = at.trim().trim_matches('`').trim_matches('"').trim();
-    if raw.is_empty() || raw.contains(char::is_whitespace) {
-        return None;
-    }
-    let (path, span) = match raw.rsplit_once(':') {
-        Some((path, span)) if !path.is_empty() && rv_is_span(span) => (path, Some(span)),
-        // A colon that is not a line span means this is not an anchor shape we
-        // understand (a URL, a `note: …`, a Windows drive) — never a file to read.
-        Some(_) => return None,
-        None => (raw, None),
-    };
-    let rel = path.trim_start_matches("./").to_string();
-    if rel.is_empty() {
-        return None;
-    }
-    let (start, end) = match span {
-        None => (None, None),
-        Some(span) => match span.split_once('-') {
-            Some((a, b)) => (a.parse().ok(), b.parse().ok()),
-            None => (span.parse().ok(), None),
-        },
-    };
-    if span.is_some() && start.is_none() {
-        return None;
-    }
-    Some(RvAnchor { rel, start, end })
-}
-
-/// `835` or `812-840` — the only two span shapes an anchor may carry.
-fn rv_is_span(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    match s.split_once('-') {
-        Some((a, b)) => {
-            !a.is_empty()
-                && !b.is_empty()
-                && a.chars().all(|c| c.is_ascii_digit())
-                && b.chars().all(|c| c.is_ascii_digit())
-        }
-        None => s.chars().all(|c| c.is_ascii_digit()),
-    }
-}
+// Source excerpts (spec 217) — extraction lives in `review_excerpt`. This
+// file only turns a resolved window into archive HTML.
 
 /// Resolve an anchor through the context and render it, or render nothing.
 fn render_rv_source(at: &str, ctx: &mut Option<RvSrcCtx>) -> String {
@@ -7972,40 +7707,6 @@ fn doc_asset_mime(path: &StdPath) -> &'static str {
         Some("webp") => "image/webp",
         _ => "application/octet-stream",
     }
-}
-
-fn validate_doc_path(cwd: &StdPath, rel: &str, exts: &[&str]) -> Result<PathBuf, String> {
-    if rel.is_empty() {
-        return Err("path_invalid: empty path".to_string());
-    }
-    let rel_path = StdPath::new(rel);
-    if rel_path.is_absolute() {
-        return Err("path_invalid: absolute path rejected".to_string());
-    }
-    let cwd_canon = cwd
-        .canonicalize()
-        .map_err(|e| format!("not_found: cwd unavailable ({e})"))?;
-    let candidate = cwd.join(rel_path);
-    let candidate_canon = candidate
-        .canonicalize()
-        .map_err(|e| format!("not_found: file unavailable ({e})"))?;
-    candidate_canon
-        .strip_prefix(&cwd_canon)
-        .map_err(|_| "path_invalid: outside cwd".to_string())?;
-    let ext = candidate_canon
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_ascii_lowercase())
-        .ok_or_else(|| "path_invalid: missing extension".to_string())?;
-    if !exts.iter().any(|allowed| *allowed == ext) {
-        return Err("path_invalid: extension rejected".to_string());
-    }
-    let meta = std::fs::metadata(&candidate_canon)
-        .map_err(|e| format!("not_found: metadata failed ({e})"))?;
-    if !meta.is_file() {
-        return Err("path_invalid: not a regular file".to_string());
-    }
-    Ok(candidate_canon)
 }
 
 /// sha256-hex of a doc file's bytes, for the spec-172 live-reload poll. `None` if
@@ -9807,6 +9508,7 @@ mod tests {
 #[cfg(test)]
 mod git_state_tests {
     use super::*;
+    use crate::review_excerpt::RvAnchor;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 

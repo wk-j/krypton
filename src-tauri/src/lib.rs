@@ -14,6 +14,7 @@ pub mod pencil;
 mod process_metrics;
 mod pty;
 mod quick_search;
+mod review_excerpt;
 mod session;
 pub mod sound;
 pub mod ssh;

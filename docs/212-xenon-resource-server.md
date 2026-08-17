@@ -65,7 +65,7 @@ surface, no browse UI, credentials on every client).
 | Kind | On-disk today | Shape |
 |---|---|---|
 | `artifact` | `.krypton/artifacts/<harnessId>/<lane>/<id>.html` — 32 files here | one self-contained HTML file; carries a baked loopback feedback token + base URL |
-| `review` | `.krypton/reviews/<date>-<slug>/` | `review.md` (frontmatter: title/lane/subject/created) + `response.md` (frontmatter is source of truth) + `assets/` |
+| `review` | `.krypton/reviews/<date>-<slug>/` | `review.md` (frontmatter: title/lane/subject/created) + `response.md` (frontmatter is source of truth) + `assets/` + generated `excerpts.json` at `#push` (spec 230; not stored under `.krypton/`) |
 | `analysis` | `.krypton/analyses/<owner>/<repo>/<num>/` | N Thai `.md` files (`root-cause.md`, `fix-plan.md`, …) + downloaded issue resources |
 | `doc` | repo markdown (`docs/**.md`) — **tracked in git, not under `.krypton/`** | source `.md`; the loopback `/doc` reader renders it with comrak |
 | `attention` | **nothing** — in-memory `AttentionTriageStore` only | `TelemetryAttentionItem` (`harness-telemetry.ts:52`): id, lane, createdAt, question, chosen, rationale, tradedOff[], uncertainty, reversibility |
