@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>231 — Lane Peek Action HUD</title>
+<style>
+  :root {
+    --bg: #060a12;
+    --ink: #b0c4d8;
+    --ink-dim: rgba(176, 196, 216, 0.62);
+    --ink-faint: rgba(176, 196, 216, 0.38);
+    --cyan: #00ccff;
+    --green: #39ff7f;
+    --amber: #e8c547;
+    --red: #ff3a5c;
+    --magenta: #c77dff;
+    --info: #4a9eff;
+    --mono: "Mononoki", "JetBrains Mono", ui-monospace, monospace;
+    --motion-stream: 1.8s linear infinite;
+    --motion-ping: 2.5s ease-in-out infinite;
+    --motion-ambient: 1.2s ease-in-out infinite;
+    --motion-breathe: 3s ease-in-out infinite;
+    --ease-in: cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background:
+      radial-gradient(circle at 18% 0%, rgba(0, 204, 255, 0.06), transparent 42%),
+      var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  body { padding: 28px 32px 48px; box-sizing: border-box; }
+  h1 {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .lede { color: var(--ink-dim); max-width: 72ch; margin: 0 0 28px; line-height: 1.45; }
+
+  .compare {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) 320px;
+    gap: 28px;
+    align-items: start;
+    margin-bottom: 36px;
+  }
+  .stage-label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 8px;
+  }
+
+  /* ── composer (before) ── */
+  .composer {
+    border: 1px solid rgba(0, 204, 255, 0.22);
+    background: rgba(6, 10, 18, 0.72);
+    padding: 8px 10px 10px;
+  }
+  .meta {
+    display: flex;
+    gap: 0;
+    overflow: hidden;
+    color: var(--cyan);
+    font-size: 12px;
+    margin-bottom: 6px;
+    white-space: nowrap;
+  }
+  .seg + .seg::before { content: "·"; margin: 0 7px; color: rgba(0, 204, 255, 0.4); }
+  .seg[data-seg="activity"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #ffd27a;
+  }
+  .input { color: var(--ink); }
+  .prompt { color: var(--cyan); }
+
+  /* ── rail ── */
+  .rail {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .hud {
+    --hud-accent: var(--cyan);
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 8px 10px;
+    background: linear-gradient(180deg, rgba(8, 14, 22, 0.94), rgba(4, 8, 13, 0.94));
+    border: 1px solid color-mix(in srgb, var(--hud-accent) 42%, transparent);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4) inset,
+      0 0 18px color-mix(in srgb, var(--hud-accent) 10%, transparent);
+    animation: deploy 180ms var(--ease-in) both;
+  }
+  .hud[data-kind="edit"]     { --hud-accent: var(--amber); }
+  .hud[data-kind="read"]     { --hud-accent: var(--cyan); }
+  .hud[data-kind="search"]   { --hud-accent: var(--green); }
+  .hud[data-kind="execute"]  { --hud-accent: var(--cyan); }
+  .hud[data-kind="delete"]   { --hud-accent: var(--red); }
+  .hud[data-kind="move"]     { --hud-accent: var(--magenta); }
+  .hud[data-kind="fetch"]    { --hud-accent: var(--info); }
+  .hud[data-kind="thinking"] { --hud-accent: var(--magenta); }
+  .hud[data-kind="writing"]  { --hud-accent: var(--cyan); }
+  .hud[data-kind="other"]    { --hud-accent: var(--cyan); }
+
+  .copy { min-width: 0; }
+  .kind {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--hud-accent);
+  }
+  .subject {
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+  }
+  .hud[data-kind="delete"] .subject {
+    position: relative;
+  }
+  .hud[data-kind="delete"] .subject::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 1px;
+    background: var(--red);
+    transform-origin: left center;
+    animation: strike var(--motion-ambient);
+  }
+
+  .well {
+    position: relative;
+    width: 28px;
+    height: 28px;
+    border: 1px solid color-mix(in srgb, var(--hud-accent) 50%, transparent);
+    background: color-mix(in srgb, var(--hud-accent) 6%, transparent);
+    overflow: hidden;
+    contain: strict;
+    color: var(--hud-accent);
+  }
+  .well svg { width: 16px; height: 16px; position: absolute; inset: 6px; }
+
+  /* edit — laser write-head */
+  .hud[data-kind="edit"] .head {
+    position: absolute; top: 4px; bottom: 4px; width: 2px;
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+    animation: writehead var(--motion-stream);
+  }
+  .hud[data-kind="edit"] .trail {
+    position: absolute; top: 13px; height: 2px; left: 0; width: 100%;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--amber) 55%, transparent));
+    transform-origin: left;
+    animation: trail var(--motion-stream);
+  }
+
+  /* read — scanlines */
+  .hud[data-kind="read"] .scan {
+    position: absolute; left: 3px; right: 3px; height: 1px;
+    background: var(--cyan);
+    box-shadow: 0 0 6px var(--cyan);
+    animation: scan var(--motion-stream);
+  }
+
+  /* search — radar ping */
+  .hud[data-kind="search"] .ping {
+    position: absolute; inset: 4px;
+    border: 1px solid var(--green);
+    border-radius: 50%;
+    animation: ping var(--motion-ping);
+  }
+
+  /* execute — hex flicker */
+  .hud[data-kind="execute"] .hex {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    font-size: 8px; letter-spacing: 0.08em;
+    color: color-mix(in srgb, var(--cyan) 70%, white);
+    animation: hex var(--motion-ambient);
+  }
+
+  /* move — chevrons */
+  .hud[data-kind="move"] .chev {
+    position: absolute; inset: 0;
+    background:
+      repeating-linear-gradient(90deg,
+        transparent 0 6px,
+        color-mix(in srgb, var(--magenta) 80%, white) 6px 8px);
+    animation: chev var(--motion-stream);
+    opacity: 0.85;
+    mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent);
+  }
+
+  /* fetch — incoming dashes */
+  .hud[data-kind="fetch"] .pkt {
+    position: absolute; top: 8px; width: 8px; height: 2px;
+    background: var(--info);
+    box-shadow: 0 10px 0 var(--info);
+    animation: pkt var(--motion-stream);
+  }
+
+  /* thinking — veil bars */
+  .hud[data-kind="thinking"] .bar {
+    position: absolute; bottom: 4px; width: 4px;
+    background: var(--magenta);
+    transform-origin: bottom;
+  }
+  .hud[data-kind="thinking"] .bar:nth-child(1) { left: 5px;  animation: veil var(--motion-breathe); }
+  .hud[data-kind="thinking"] .bar:nth-child(2) { left: 12px; animation: veil var(--motion-breathe) 0.4s; }
+  .hud[data-kind="thinking"] .bar:nth-child(3) { left: 19px; animation: veil var(--motion-breathe) 0.8s; }
+
+  /* writing — caret */
+  .hud[data-kind="writing"] .us {
+    position: absolute; left: 4px; right: 4px; bottom: 6px; height: 1px;
+    background: color-mix(in srgb, var(--cyan) 45%, transparent);
+  }
+  .hud[data-kind="writing"] .caret {
+    position: absolute; right: 5px; bottom: 5px; width: 5px; height: 8px;
+    background: var(--cyan);
+    animation: caret 1.05s steps(2) infinite;
+  }
+
+  /* other — pulse */
+  .hud[data-kind="other"] .well {
+    animation: pulse var(--motion-breathe);
+  }
+
+  @keyframes deploy {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes writehead {
+    0%   { transform: translateX(2px); }
+    100% { transform: translateX(24px); }
+  }
+  @keyframes trail {
+    0%   { transform: scaleX(0.1); opacity: 0.2; }
+    70%  { opacity: 0.7; }
+    100% { transform: scaleX(1); opacity: 0.15; }
+  }
+  @keyframes scan {
+    0%   { top: 3px; opacity: 0; }
+    15%  { opacity: 1; }
+    85%  { opacity: 1; }
+    100% { top: 24px; opacity: 0; }
+  }
+  @keyframes ping {
+    0%   { transform: scale(0.35); opacity: 0.85; }
+    100% { transform: scale(1.15); opacity: 0; }
+  }
+  @keyframes hex {
+    0%, 100% { opacity: 0.45; }
+    50%      { opacity: 1; }
+  }
+  @keyframes chev {
+    0%   { transform: translateX(-12px); }
+    100% { transform: translateX(12px); }
+  }
+  @keyframes pkt {
+    0%   { transform: translateX(26px); opacity: 0; }
+    20%  { opacity: 1; }
+    100% { transform: translateX(-10px); opacity: 0; }
+  }
+  @keyframes veil {
+    0%, 100% { height: 6px; opacity: 0.35; }
+    50%      { height: 18px; opacity: 1; }
+  }
+  @keyframes caret { 50% { opacity: 0; } }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--hud-accent) 0%, transparent); }
+    50%      { box-shadow: 0 0 10px color-mix(in srgb, var(--hud-accent) 45%, transparent); }
+  }
+  @keyframes strike {
+    0%, 100% { transform: scaleX(0.15); opacity: 0.35; }
+    50%      { transform: scaleX(1); opacity: 1; }
+  }
+
+  .peek {
+    padding: 8px 12px 7px;
+    background: linear-gradient(180deg, rgba(8, 14, 22, 0.94), rgba(4, 8, 13, 0.94));
+    border: 1px solid rgba(0, 204, 255, 0.28);
+  }
+  .peek-head {
+    display: flex; gap: 8px; align-items: baseline;
+    border-bottom: 1px solid rgba(0, 204, 255, 0.12);
+    padding-bottom: 4px; margin-bottom: 6px;
+  }
+  .peek-name { color: var(--cyan); flex: 1; }
+  .peek-status { color: #8effb0; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .peek-event { color: #8effb0; font-size: 12px; }
+
+  .composer--after .meta { color: var(--cyan); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px;
+  }
+  h2 {
+    margin: 0 0 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hud, .well, .head, .trail, .scan, .ping, .hex, .chev, .pkt, .bar, .caret, .subject::after {
+      animation: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+  <h1>Spec 231 · Lane Peek Action HUD</h1>
+  <p class="lede">
+    The circled composer activity moves into a 320px rail card stacked above the lane peek.
+    Each kind is a different instrument. Composer keeps the named verb and the clock.
+  </p>
+
+  <div class="compare">
+    <div>
+      <div class="stage-label">Before — composer still owns the action</div>
+      <div class="composer">
+        <div class="meta">
+          <span class="seg">HANDLING PEER</span>
+          <span class="seg">3:52</span>
+          <span class="seg" data-seg="activity">EDIT TLI-API/SRC/MAIN/JAVA/COM/BC/DIM/API/SERVICE/ONLINE/ONLINE…</span>
+        </div>
+        <div class="input"><span class="prompt">Claude-2 :</span> ▍</div>
+      </div>
+    </div>
+    <div>
+      <div class="stage-label">After — rail owns the action</div>
+      <div class="rail">
+        <div class="hud" data-kind="edit">
+          <div class="well" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+              <path d="M3 13 L3 10 L11 2 L14 5 L6 13 Z"/>
+              <path d="M9.5 3.5 L12.5 6.5"/>
+            </svg>
+            <i class="trail"></i>
+            <i class="head"></i>
+          </div>
+          <div class="copy">
+            <div class="kind">edit</div>
+            <div class="subject">tli-api/…/OnlineService.java</div>
+          </div>
+        </div>
+        <aside class="peek">
+          <div class="peek-head">
+            <span class="peek-name">Codex-1</span>
+            <span class="peek-status">idle</span>
+          </div>
+          <div class="peek-event">▸ awaiting <b>Claude-2</b></div>
+        </aside>
+      </div>
+      <div class="composer composer--after" style="margin-top:12px">
+        <div class="meta">
+          <span class="seg">HANDLING PEER</span>
+          <span class="seg">3:52</span>
+        </div>
+        <div class="input"><span class="prompt">Claude-2 :</span> ▍</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Every instrument</h2>
+  <div class="grid" id="kinds"></div>
+
+<script>
+const kinds = [
+  ['edit', 'edit', 'tli-api/…/OnlineService.java',
+    '<path d="M3 13 L3 10 L11 2 L14 5 L6 13 Z"/><path d="M9.5 3.5 L12.5 6.5"/>',
+    '<i class="trail"></i><i class="head"></i>'],
+  ['read', 'read', 'docs/231-lane-peek-action-hud.md',
+    '<rect x="3" y="2.5" width="10" height="11" /><path d="M5 6h6M5 8.5h6M5 11h4"/>',
+    '<i class="scan"></i>'],
+  ['search', 'search', 'deriveLiveAction',
+    '<circle cx="7" cy="7" r="3.4"/><path d="M9.6 9.6 L13 13"/>',
+    '<i class="ping"></i>'],
+  ['execute', 'execute', 'cargo test harness-action-hud',
+    '<path d="M4 5 L7 8 L4 11"/><path d="M8.5 11 H12"/>',
+    '<i class="hex">A7</i>'],
+  ['delete', 'delete', 'tmp/scratch.rs',
+    '<path d="M4 4 L12 12 M12 4 L4 12"/>',
+    ''],
+  ['move', 'move', 'src/acp/lane-peek.ts → harness-action-hud.ts',
+    '<path d="M3 8 H12 M9 5 L12 8 L9 11"/>',
+    '<i class="chev"></i>'],
+  ['fetch', 'fetch', 'https://docs.rs/portable-pty',
+    '<path d="M8 3 V12 M5 9 L8 12 L11 9"/>',
+    '<i class="pkt"></i>'],
+  ['thinking', 'thinking', '',
+    '<circle cx="5" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="11" cy="9" r="1" fill="currentColor" stroke="none"/>',
+    '<i class="bar"></i><i class="bar"></i><i class="bar"></i>'],
+  ['writing', 'writing', '',
+    '<path d="M3 12 H13 M3 4 h7 l3 3 v5 H3 Z"/>',
+    '<i class="us"></i><i class="caret"></i>'],
+  ['other', 'mcp', 'krypton-harness-memory.recall',
+    '<rect x="3" y="3" width="10" height="10"/><path d="M6 8 h4"/>',
+    ''],
+];
+
+const root = document.getElementById('kinds');
+const hex = ['A7', '3C', 'F1', '09', 'BE', '64'];
+let hexI = 0;
+for (const [kind, title, subject, icon, extra] of kinds) {
+  const el = document.createElement('div');
+  el.className = 'hud';
+  el.dataset.kind = kind;
+  el.innerHTML =
+    `<div class="well" aria-hidden="true">` +
+      `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">${icon}</svg>` +
+      extra +
+    `</div>` +
+    `<div class="copy"><div class="kind">${title}</div>` +
+    (subject ? `<div class="subject">${subject}</div>` : '') +
+    `</div>`;
+  root.appendChild(el);
+}
+setInterval(() => {
+  hexI = (hexI + 1) % hex.length;
+  for (const n of document.querySelectorAll('.hex')) n.textContent = hex[hexI];
+}, 450);
+</script>
+</body>
+</html>

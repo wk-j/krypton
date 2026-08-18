@@ -272,7 +272,6 @@ import {
   formatCount,
   formatCpu,
   formatElapsed,
-  formatLaneActivity,
   formatReviewRoundTime,
   formatRss,
   formatSessionUpdatedAt,
@@ -374,11 +373,19 @@ import {
   latestInterLaneForPeek,
   latestMeaningfulForPeek,
   latestPermissionForPeek,
+  isLivePeekThought,
   renderLanePeek,
   renderRailPeerSpans,
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
 } from './lane-peek';
+import {
+  deriveLiveAction,
+  liveActionFromPeekTool,
+  patchActionHud,
+  renderActionHud,
+  shouldOmitActionHud,
+} from './harness-action-hud';
 export {
   PEER_PREEMPT_MAX_PRIORITY,
   buildComposerPeerStrip,
@@ -1021,6 +1028,7 @@ export class AcpHarnessView implements ContentView {
   private laneRailEl!: HTMLElement;
   private planSlotEl!: HTMLElement;
   private peekSlotEl!: HTMLElement;
+  private actionSlotEl!: HTMLElement;
   private thoughtSlotEl!: HTMLElement;
   private pinSlotEl!: HTMLElement;
   private queueSlotEl!: HTMLElement;
@@ -5623,6 +5631,11 @@ export class AcpHarnessView implements ContentView {
     this.planSlotEl.hidden = true;
     this.planSlotEl.appendChild(this.planEl);
     this.laneRailEl.appendChild(this.planSlotEl);
+    this.actionSlotEl = document.createElement('div');
+    this.actionSlotEl.className = 'acp-harness__lane-rail__slot acp-harness__lane-rail__slot--compact';
+    this.actionSlotEl.dataset.slot = 'action';
+    this.actionSlotEl.hidden = true;
+    this.laneRailEl.appendChild(this.actionSlotEl);
     this.peekSlotEl = document.createElement('div');
     this.peekSlotEl.className = 'acp-harness__lane-rail__slot';
     this.peekSlotEl.dataset.slot = 'peek';
@@ -7353,10 +7366,10 @@ export class AcpHarnessView implements ContentView {
     if (needsRender) this.scheduleLaneRender(lane);
   }
 
-  /** spec 156: stamp the busy-chip activity from the merged tool record (after
-   *  renderTool has cached it). Terminal updates are skipped, so a finished
-   *  tool's label simply lingers until the next chunk or tool call replaces
-   *  it — no completion bookkeeping. */
+  /** spec 156/231: stamp live activity from the merged tool record (after
+   *  renderTool has cached it). The rail HUD reads this on the 1 s tick / next
+   *  render. Terminal updates are skipped, so a finished tool's label lingers
+   *  until the next chunk or tool call replaces it — no completion bookkeeping. */
   private noteToolActivity(lane: HarnessLane, toolCallId: string | undefined): void {
     if (!toolCallId) return;
     const merged = lane.toolCalls.get(toolCallId);
@@ -10493,6 +10506,7 @@ export class AcpHarnessView implements ContentView {
     const target = this.resolveThoughtTarget();
     if (showing === lane.id || target?.laneId === lane.id || (!target && showing)) {
       this.renderLaneThought();
+      this.renderLaneAction();
     }
   }
 
@@ -10509,6 +10523,7 @@ export class AcpHarnessView implements ContentView {
     this.renderActiveTranscript(lane);
     this.renderLanePeek();
     this.renderLaneThought();
+    this.renderLaneAction();
     this.renderPlanPanel(lane);
     this.renderActiveLaneQueue();
     this.renderPinSlot();
@@ -10778,6 +10793,60 @@ export class AcpHarnessView implements ContentView {
       this.mountLanePeekHeat(heatRoot, candidate, activeLane, peekLane, now);
     }
     if (!sameCard) slot.replaceChildren(card);
+    this.syncPeekActionHud(card, snapshot);
+    slot.hidden = false;
+  }
+
+  /** spec 231 — keep the peeked lane's HUD current without remounting the card. */
+  private syncPeekActionHud(card: HTMLElement, snapshot: LanePeekSnapshot): void {
+    const existing = card.querySelector<HTMLElement>('.acp-harness__action-hud');
+    const action = snapshot.activeTool && snapshot.status === 'busy'
+      ? liveActionFromPeekTool(snapshot.activeTool)
+      : null;
+    if (!action) {
+      existing?.remove();
+      return;
+    }
+    if (existing && existing.dataset.sig === action.sig) {
+      patchActionHud(existing, action);
+      return;
+    }
+    const next = renderActionHud(action, 'peek');
+    if (existing) existing.replaceWith(next);
+    else {
+      const event = card.querySelector('.acp-harness__lane-peek-event');
+      if (event) event.after(next);
+      else card.insertBefore(next, card.firstChild);
+    }
+  }
+
+  private renderLaneAction(): void {
+    const slot = this.actionSlotEl;
+    const lane = this.activeLane();
+    if (!lane) {
+      slot.replaceChildren();
+      slot.hidden = true;
+      return;
+    }
+    const action = deriveLiveAction(lane);
+    const thought = resolveLaneThoughtSnapshot(this.lanePeekSnapshots(), this.showingPeekLaneId());
+    const omit = shouldOmitActionHud(action, {
+      activeLaneId: lane.id,
+      thoughtLaneId: thought?.laneId ?? null,
+      thoughtLive: isLivePeekThought(thought?.thought),
+    });
+    if (!action || omit) {
+      slot.replaceChildren();
+      slot.hidden = true;
+      return;
+    }
+    const existing = slot.querySelector<HTMLElement>('.acp-harness__action-hud');
+    if (existing && existing.dataset.sig === action.sig) {
+      patchActionHud(existing, action);
+      slot.hidden = false;
+      return;
+    }
+    slot.replaceChildren(renderActionHud(action, 'rail'));
     slot.hidden = false;
   }
 
@@ -11407,6 +11476,7 @@ export class AcpHarnessView implements ContentView {
       this.renderActiveTranscript(activeLane);
       this.renderLanePeek();
       this.renderLaneThought();
+      this.renderLaneAction();
     }
     this.observeActiveTranscriptBody();
     if (activeLane && activeLane.stickToBottom) {
@@ -11748,8 +11818,6 @@ export class AcpHarnessView implements ContentView {
         // turn sends null — spec 221: "running" restates the spinner beside it.
         verb: lane.activeSystemLabel ?? null,
         elapsed: lane.activeTurnStartedAt ? formatElapsed(Date.now() - lane.activeTurnStartedAt) : null,
-        // spec 156: live activity, re-read on each 1 s tick.
-        activity: lane.activity ? formatLaneActivity(lane.activity) : null,
         queued: lane.queuedPrompts.length,
       });
     }
@@ -11774,7 +11842,10 @@ export class AcpHarnessView implements ContentView {
       return lane.status === 'awaiting_peer';
     });
     if (shouldTick && this.composerTickTimer === null) {
-      this.composerTickTimer = window.setInterval(() => this.renderComposer(), 1000);
+      this.composerTickTimer = window.setInterval(() => {
+        this.renderComposer();
+        this.renderLaneAction();
+      }, 1000);
     } else if (!shouldTick) {
       this.stopComposerTick();
     }

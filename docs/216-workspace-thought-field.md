@@ -69,6 +69,7 @@ thought: {
 .acp-harness__lane-rail          320px
   [data-slot="pins"]             320px
   [data-slot="plan"]             320px
+  [data-slot="action"]           320px   — spec 231 live-action HUD
   [data-slot="peek"]             320px   — spec 109 card only
   [data-slot="thought"]          320px   — spec 216 card only
   [data-slot="queue"]            320px

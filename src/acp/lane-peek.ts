@@ -32,6 +32,7 @@ import {
 } from './harness-format';
 import { awaitingPeerText, formatAwaitingPeerAge, statusLabel } from './harness-lane-chrome';
 import { installThoughtVeil, renderPeekThoughtMarkdown } from './harness-markdown';
+import { actionHudMarkup, liveActionFromPeekTool, liveActionFromToolCall } from './harness-action-hud';
 
 /** spec 118 — peer peek tiers: awaiting 10, inbound 20, counterpart 30 */
 export const PEER_PREEMPT_MAX_PRIORITY = 30;
@@ -423,8 +424,7 @@ export function renderLanePeek(
   }
 
   if (snapshot?.activeTool && snapshot.status === 'busy') {
-    const subject = snapshot.activeTool.subject ? ` · ${esc(snapshot.activeTool.subject)}` : '';
-    html += renderLanePeekRow('tool', `<b>${esc(snapshot.activeTool.name)}</b>${subject}`);
+    html += actionHudMarkup(liveActionFromPeekTool(snapshot.activeTool), 'peek');
   } else if (snapshot?.latestMeaningful && candidate.summary.payload?.kind !== 'activity') {
     const label = truncateInline(snapshot.latestMeaningful.label, 40);
     html += renderLanePeekRow('last', esc(label));
@@ -965,10 +965,12 @@ export function deriveActiveToolForPeek(lane: HarnessLane, now: number): LanePee
   // is insertion order so the first match is also the oldest.
   for (const call of lane.toolCalls.values()) {
     if (call.status !== 'in_progress' && call.status !== 'pending') continue;
-    const name = call.title?.replace(/\s+/g, ' ').trim() || (call.kind ?? 'tool');
-    const loc = call.locations?.[0]?.path ?? null;
-    const subject = loc ? basename(loc) : null;
-    return { name, subject, startedAt: lane.activeTurnStartedAt ?? now };
+    const action = liveActionFromToolCall(call);
+    return {
+      name: action.title,
+      subject: action.subject,
+      startedAt: lane.activeTurnStartedAt ?? now,
+    };
   }
   return null;
 }

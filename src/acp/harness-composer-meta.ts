@@ -15,7 +15,7 @@ import { esc } from './harness-format';
 /** `text` is the whole-chip form: every non-busy state (idle memory readout,
  *  command mode, peer waits, flash overrides) is a single message with no
  *  internal structure worth splitting. */
-export type MetaSegId = 'verb' | 'elapsed' | 'activity' | 'queued' | 'text';
+export type MetaSegId = 'verb' | 'elapsed' | 'queued' | 'text';
 
 export interface MetaSegment {
   id: MetaSegId;
@@ -29,10 +29,6 @@ export interface BusyStatusInput {
   verb: string | null;
   /** Pre-formatted `m:ss`; null before the turn's start stamp is known. */
   elapsed: string | null;
-  /** Pre-formatted live activity (`thinking…`, `⚒ <tool>`); null when idle-ish.
-   *  This is the *leading* indicator — the lane head's activity cell shows the
-   *  latest transcript row, which lags behind it. */
-  activity: string | null;
   /** Queued prompt count; 0 renders no segment. */
   queued: number;
 }
@@ -45,14 +41,14 @@ export interface BusyStatusInput {
  * every layout (including Zen Mode), the input line one row below repeats the
  * name again, and the window footer's lane strip a third time. The generic
  * `running` verb is gone for the same reason: only a *named* operation is a
- * readout. The fallback below exists so a turn whose clock and activity are both
- * still unknown does not paint an empty chip.
+ * readout. The live action moved to the rail HUD (spec 231). The fallback
+ * below exists so a turn whose clock is still unknown does not paint an empty
+ * chip.
  */
 export function buildBusySegments(input: BusyStatusInput): MetaSegment[] {
   const segments: MetaSegment[] = [];
   if (input.verb) segments.push({ id: 'verb', text: input.verb });
   if (input.elapsed) segments.push({ id: 'elapsed', text: input.elapsed });
-  if (input.activity) segments.push({ id: 'activity', text: input.activity });
   if (input.queued > 0) segments.push({ id: 'queued', text: `${input.queued} queued` });
   if (segments.length === 0) segments.push({ id: 'verb', text: 'running' });
   return segments;

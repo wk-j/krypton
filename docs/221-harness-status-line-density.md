@@ -57,11 +57,14 @@ stats row prints for the active lane is visible whenever the composer is.
 
 **Correction worth recording: live activity is *not* redundant.** The lane head's activity cell uses
 `laneActivity()` (`harness-lane-chrome.ts:517-528`), which returns the **latest transcript row's text**
-— a lagging record of what already happened. The composer uses `formatLaneActivity(lane.activity)`
+— a lagging record of what already happened. The composer used `formatLaneActivity(lane.activity)`
 (`harness-format.ts:83`), the **live** activity (`thinking…` / `writing…` / `⚒ <tool title>`). They
 look alike in a screenshot because the last transcript row is usually the running tool, but they are
-different data and the composer's is the only leading indicator. It stays, and becomes the row's
-shrinkable segment.
+different data and the composer's was the only leading indicator.
+
+**Amendment (spec 231):** that leading indicator moved to the rail action HUD. The composer no longer
+carries an `activity` segment. The uniqueness argument above still holds — the HUD is now the unique
+home, not the chip.
 
 **Why the branch stays in the composer for now.** It is the one project readout unique to an
 *unfocused* harness window (the workspace footer shows only the focused pane; the window footer's

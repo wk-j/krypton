@@ -10,15 +10,14 @@ import {
 const busy = (over: Partial<BusyStatusInput> = {}): BusyStatusInput => ({
   verb: null,
   elapsed: '5:12',
-  activity: '⚒ write wiki/index.md',
   queued: 0,
   ...over,
 });
 
 describe('buildBusySegments', () => {
-  it('orders verb, elapsed, activity, queued', () => {
+  it('orders verb, elapsed, queued', () => {
     const ids = buildBusySegments(busy({ verb: 'reviewing', queued: 2 })).map((s) => s.id);
-    expect(ids).toEqual(['verb', 'elapsed', 'activity', 'queued']);
+    expect(ids).toEqual(['verb', 'elapsed', 'queued']);
   });
 
   // spec 221: an ordinary turn has no verb — the spinner, the accented chip and
@@ -33,7 +32,7 @@ describe('buildBusySegments', () => {
   });
 
   it('falls back to "running" rather than painting an empty chip', () => {
-    expect(buildBusySegments(busy({ elapsed: null, activity: null }))).toEqual([
+    expect(buildBusySegments(busy({ elapsed: null }))).toEqual([
       { id: 'verb', text: 'running' },
     ]);
   });
@@ -42,12 +41,17 @@ describe('buildBusySegments', () => {
     const ids = buildBusySegments(busy({ verb: 'reviewing', elapsed: null, queued: 0 })).map(
       (s) => s.id,
     );
-    expect(ids).toEqual(['verb', 'activity']);
+    expect(ids).toEqual(['verb']);
   });
 
   it('renders no queued segment at zero and a counted one above it', () => {
     expect(buildBusySegments(busy({ queued: 0 })).some((s) => s.id === 'queued')).toBe(false);
     expect(buildBusySegments(busy({ queued: 1 }))).toContainEqual({ id: 'queued', text: '1 queued' });
+  });
+
+  it('never emits an activity segment — that readout lives on the rail HUD', () => {
+    const ids = buildBusySegments(busy({ verb: 'reviewing', queued: 2 })).map((s) => s.id);
+    expect(ids).not.toContain('activity');
   });
 
   // spec 221: these lived in the chip until the lane head, the input line and the
@@ -70,7 +74,7 @@ describe('textSegments', () => {
 describe('renderStatusSegments', () => {
   it('tags each segment so CSS can size it', () => {
     expect(
-      renderStatusSegments(buildBusySegments(busy({ verb: 'reviewing', activity: null }))),
+      renderStatusSegments(buildBusySegments(busy({ verb: 'reviewing' }))),
     ).toBe(
       '<span class="acp-harness__meta-seg" data-seg="verb">reviewing</span>' +
         '<span class="acp-harness__meta-seg" data-seg="elapsed">5:12</span>',

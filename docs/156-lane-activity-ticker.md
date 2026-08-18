@@ -26,8 +26,11 @@ Claude-1 running · 8:24 · thinking… · 12.6k tok · Ctrl+C cancel
 
 Superseded shape — spec 221 kept the activity segment (it is the row's only leading
 indicator) and deleted everything around it that another surface already prints: the
-lane name, the token count, the cancel hint and the generic `running` verb. The chip
-now reads `8:24 · thinking…`. See `docs/221-harness-status-line-density.md`.
+lane name, the token count, the cancel hint and the generic `running` verb. Spec 231
+then moved the activity itself off the composer and into the rail action HUD, so the
+chip is now `HANDLING PEER · 8:24` (verb + elapsed) and the live tool/think/write
+signal lives in `[data-slot="action"]`. See `docs/221-harness-status-line-density.md`
+and `docs/231-lane-peek-action-hud.md`.
 
 ## Research
 
