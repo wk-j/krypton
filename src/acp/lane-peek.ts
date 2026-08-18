@@ -33,6 +33,10 @@ import {
 import { awaitingPeerText, formatAwaitingPeerAge, statusLabel } from './harness-lane-chrome';
 import { installThoughtVeil, renderPeekThoughtMarkdown } from './harness-markdown';
 import { actionHudMarkup, liveActionFromPeekTool, liveActionFromToolCall } from './harness-action-hud';
+import {
+  applyThoughtTeletype,
+  clearThoughtTeletype,
+} from './harness-thought-teletype';
 
 /** spec 118 — peer peek tiers: awaiting 10, inbound 20, counterpart 30 */
 export const PEER_PREEMPT_MAX_PRIORITY = 30;
@@ -931,12 +935,23 @@ export function schedulePeekThoughtPin(body: HTMLElement): void {
   requestAnimationFrame(() => pinPeekThoughtToLatest(body));
 }
 
+export function thoughtBodyRenderKind(
+  thought: LanePeekThought | null,
+): 'empty' | 'veil' | 'teletype' | 'markdown' {
+  if (!thought || (thought.phase === 'seal' && thought.text.length === 0)) return 'empty';
+  if (thought.phase === 'veil' || thought.text.length === 0) return 'veil';
+  if (thought.phase === 'delta') return 'teletype';
+  return 'markdown';
+}
+
 export function syncPeekThoughtBody(
   body: HTMLElement,
   thought: LanePeekThought | null,
   projectDir: string | null = null,
-): void {
-  if (!thought || (thought.phase === 'seal' && thought.text.length === 0)) {
+): boolean {
+  const kind = thoughtBodyRenderKind(thought);
+  if (kind === 'empty') {
+    clearThoughtTeletype(body);
     body.replaceChildren();
     body.hidden = false;
     body.classList.remove(
@@ -946,18 +961,26 @@ export function syncPeekThoughtBody(
     );
     delete body.dataset.peekLen;
     delete body.dataset.peekSrc;
-    return;
+    return false;
   }
   body.hidden = false;
-  if (thought.phase === 'veil' || thought.text.length === 0) {
+  if (kind === 'veil') {
+    clearThoughtTeletype(body);
     body.classList.remove('acp-harness__msg-body--markdown', 'acp-harness__msg-body--stream-plain');
     installThoughtVeil(body);
     delete body.dataset.peekLen;
     delete body.dataset.peekSrc;
-    return;
+    return false;
   }
-  renderPeekThoughtMarkdown(body, thought.text, projectDir);
+  if (kind === 'teletype' && thought) {
+    const pending = applyThoughtTeletype(body, thought.text);
+    schedulePeekThoughtPin(body);
+    return pending;
+  }
+  clearThoughtTeletype(body);
+  renderPeekThoughtMarkdown(body, thought?.text ?? '', projectDir);
   schedulePeekThoughtPin(body);
+  return false;
 }
 
 export function deriveActiveToolForPeek(lane: HarnessLane, now: number): LanePeekSnapshot['activeTool'] {

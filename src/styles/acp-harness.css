@@ -782,10 +782,14 @@
   max-height: 70%;
 }
 
-/* spec 231 — live action HUD. Compact, never crushed by plan/peek above. */
+/* spec 231 — live action HUD. One card per busy lane; scroll if the stack
+   outgrows ~4 compact rows so plan/peek/thought still fit. */
 .acp-harness__lane-rail__slot[data-slot="action"] {
   flex-shrink: 0;
-  max-height: 72px;
+  max-height: min(240px, 42%);
+  gap: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* spec 136: prompt-queue slot — bottom-anchored, never crushed. flex-shrink:0 +
@@ -1036,12 +1040,51 @@
   box-shadow: none;
 }
 
+.acp-harness__action-copy {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.acp-harness__action-kind-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
 .acp-harness__action-kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--acp-action-accent);
+}
+
+.acp-harness__action-lane {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 42%;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--acp-lane-accent, var(--acp-action-accent));
+  opacity: 0.72;
+}
+
+.acp-harness__action-hud--foreign {
+  cursor: pointer;
+}
+
+.acp-harness__action-hud--foreign:hover {
+  border-color: color-mix(in srgb, var(--acp-action-accent) 70%, transparent);
 }
 
 .acp-harness__action-subject {
@@ -1073,8 +1116,8 @@
   position: relative;
   width: 28px;
   height: 28px;
-  border: 1px solid color-mix(in srgb, var(--acp-action-accent) 50%, transparent);
-  background: color-mix(in srgb, var(--acp-action-accent) 6%, transparent);
+  border: 0;
+  background: transparent;
   overflow: hidden;
   contain: strict;
   color: var(--acp-action-accent);
@@ -1344,6 +1387,29 @@
   color: rgba(216, 232, 216, 0.38);
 }
 
+.acp-harness__lane-thought-body.acp-harness__msg-body--thought-teletype {
+  white-space: pre-wrap;
+}
+
+.acp-harness__thought-fresh {
+  color: color-mix(in srgb, var(--krypton-accent, #00ccff) 85%, transparent);
+}
+
+.acp-harness__thought-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 1px;
+  background: var(--krypton-accent, #00ccff);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--krypton-accent, #00ccff) 55%, transparent);
+  vertical-align: -2px;
+  animation: acp-thought-caret 1.05s steps(2) infinite;
+}
+
+@keyframes acp-thought-caret {
+  50% { opacity: 0; }
+}
+
 /* spec 216 — same GFM as sealed assistant, kept ghost so thought stays secondary. */
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown {
   white-space: normal;
@@ -1405,6 +1471,11 @@
   .acp-harness__lane-thought-body .acp-harness__thought-veil-dot {
     animation: none;
     opacity: 0.55;
+  }
+
+  .acp-harness__thought-caret {
+    display: none;
+    animation: none;
   }
 }
 

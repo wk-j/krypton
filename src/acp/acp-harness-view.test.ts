@@ -11,6 +11,7 @@ import {
   buildComposerPeerStrip,
   buildLanePeekCandidates,
   deriveThoughtForPeek,
+  thoughtBodyRenderKind,
   laneThoughtHasContent,
   pinPeekThoughtToLatest,
   resolveLaneThoughtSnapshot,
@@ -886,6 +887,15 @@ describe('ACP peer activity UI (spec 118)', () => {
       ],
     } as HarnessLane;
     expect(deriveThoughtForPeek(lane, now)).toEqual({ phase: 'delta', text: 'streaming now' });
+  });
+
+  it('thoughtBodyRenderKind splits veil / teletype / markdown', () => {
+    expect(thoughtBodyRenderKind(null)).toBe('empty');
+    expect(thoughtBodyRenderKind({ phase: 'seal', text: '' })).toBe('empty');
+    expect(thoughtBodyRenderKind({ phase: 'veil', text: '' })).toBe('veil');
+    expect(thoughtBodyRenderKind({ phase: 'delta', text: '' })).toBe('veil');
+    expect(thoughtBodyRenderKind({ phase: 'delta', text: 'streaming' })).toBe('teletype');
+    expect(thoughtBodyRenderKind({ phase: 'seal', text: 'done' })).toBe('markdown');
   });
 
   it('deriveThoughtForPeek uses a veil for empty live thought', () => {

@@ -116,14 +116,30 @@
   .hud[data-kind="writing"]  { --hud-accent: var(--cyan); }
   .hud[data-kind="other"]    { --hud-accent: var(--cyan); }
 
-  .copy { min-width: 0; }
+  .copy { min-width: 0; overflow: hidden; }
+  .kind-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
   .kind {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--hud-accent);
   }
+  .lane-name {
+    margin-left: auto;
+    max-width: 42%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.72;
+  }
+  .stack { display: flex; flex-direction: column; gap: 6px; width: 320px; }
   .subject {
     color: var(--ink);
     white-space: nowrap;
@@ -148,8 +164,8 @@
     position: relative;
     width: 28px;
     height: 28px;
-    border: 1px solid color-mix(in srgb, var(--hud-accent) 50%, transparent);
-    background: color-mix(in srgb, var(--hud-accent) 6%, transparent);
+    border: 0;
+    background: transparent;
     overflow: hidden;
     contain: strict;
     color: var(--hud-accent);
@@ -378,6 +394,35 @@
           <span class="seg">3:52</span>
         </div>
         <div class="input"><span class="prompt">Claude-2 :</span> ▍</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Several lanes in one tab</h2>
+  <p class="lede">One labeled card per busy lane. The peeked peer keeps its HUD on the peek card and is omitted from this stack.</p>
+  <div class="stack" style="margin-bottom:36px">
+    <div class="hud" data-kind="execute">
+      <div class="well" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M4 5 L7 8 L4 11"/><path d="M8.5 11 H12"/>
+        </svg>
+        <i class="hex">A7</i>
+      </div>
+      <div class="copy">
+        <div class="kind-row"><div class="kind">execute</div><div class="lane-name">Grok-1</div></div>
+        <div class="subject">cd …/tli-anysite-migration; actionlint .github/workflows/docker-publish.yml</div>
+      </div>
+    </div>
+    <div class="hud" data-kind="edit">
+      <div class="well" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M3 13 L3 10 L11 2 L14 5 L6 13 Z"/><path d="M9.5 3.5 L12.5 6.5"/>
+        </svg>
+        <i class="trail"></i><i class="head"></i>
+      </div>
+      <div class="copy">
+        <div class="kind-row"><div class="kind">edit</div><div class="lane-name">Claude-2</div></div>
+        <div class="subject">tli-api/…/OnlineService.java</div>
       </div>
     </div>
   </div>

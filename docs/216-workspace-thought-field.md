@@ -87,10 +87,10 @@ Peek hide / `Esc` / no 109 candidate never empty this slot by themselves. Rankin
 
 - `.acp-harness__lane-thought` with a name header and `.acp-harness__lane-thought-body`.
 - Body max-height ≈ 10 line-heights, `overflow: auto`, pin to latest line after layout.
-- Live and sealed: GFM via `marked` (same parser as sealed assistant rows). Veil: `installThoughtVeil`. Empty seal: hide the slot (no content).
+- Live (`delta`): catch-up teletype, plain `pre-wrap` text, block caret, last ~10 glyphs brighter (spec 232). Sealed: GFM via `marked` (same parser as sealed assistant rows). Veil: `installThoughtVeil`. Empty seal: hide the slot (no content).
 - Same-lane refresh patches the body — do not `replaceChildren` the card on every chunk.
-- Ghost type. Lane accent only on the name. No caret, grid, or wallpaper motion.
-- `prefers-reduced-motion`: veil is the static word `thinking`.
+- Ghost type. Lane accent only on the name. Caret only while `delta`. No scan wipe, no corner brackets, no grid, no wallpaper motion.
+- `prefers-reduced-motion`: veil is the static word `thinking`; live text snaps with no caret.
 
 ### Keybindings
 

@@ -43,14 +43,34 @@ export function inferToolLabel(call: ToolCall | ToolCallUpdate): string {
   if (kind && kind !== 'other') return kind;
   if (extractCommandLine(call.rawInput)) return 'execute';
   const rawName = extractRawToolName(call.rawInput);
-  if (rawName) return rawName;
+  if (rawName) return looksLikeShellCommand(rawName) ? 'execute' : rawName;
   const title = cleanToolTitle(call.title, 'tool').toLowerCase();
   if (/^(bash|shell|terminal|run|exec|execute|command)\b/.test(title)) return 'execute';
   if (/^(edit|write|create|modify|patch)\b/.test(title)) return 'edit';
   if (/^(read|open|cat)\b/.test(title)) return 'read';
   if (/^(search|grep|rg|find)\b/.test(title)) return 'search';
   if (/^(fetch|web|http)\b/.test(title)) return 'fetch';
+  if (looksLikeShellCommand(title)) return 'execute';
   return title || 'tool';
+}
+
+/** A leading shell/exec verb. Shared by the rawName and title checks so the
+ *  policy gate can't drift between the two surfaces (Codex-1 nit, spec 143). */
+const SHELL_LIKE_PREFIX = /^(bash|shell|terminal|run|exec|execute|command|sh|zsh|fish|cmd|powershell|pwsh)\b/;
+
+/** Title or raw name is a shell line, not an ACP kind / MCP tool id.
+ *  `cd …; actionlint …` is the common Grok title shape — no `kind: execute`
+ *  and no `rawInput.command` until a later update. */
+const SHELL_HEAD =
+  /^(cd|ls|pwd|git|npm|npx|pnpm|yarn|bun|cargo|python3?|node|make|docker|curl|wget|cat|echo|mkdir|rm|cp|mv|chmod|chown|ssh|scp|rsync|go|uv|pip|brew|just|kubectl|actionlint|run_command|shell_command|execute_command)\b/;
+
+export function looksLikeShellCommand(text: string): boolean {
+  const trimmed = text.replace(/\s+/g, ' ').trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+  if (SHELL_LIKE_PREFIX.test(lower)) return true;
+  if (/;|&&|\|\||\|/.test(trimmed)) return true;
+  return SHELL_HEAD.test(lower);
 }
 
 export function extractRawToolName(rawInput: unknown): string {
@@ -102,10 +122,6 @@ export function extractCommandLine(rawInput: unknown): string {
 /** Is this tool call an execute/shell surface (even when its command string is
  *  not extractable)? Conservative: kind, a present command, or a shell-ish raw
  *  name / title all count. */
-/** A leading shell/exec verb. Shared by the rawName and title checks so the
- *  policy gate can't drift between the two surfaces (Codex-1 nit, spec 143). */
-const SHELL_LIKE_PREFIX = /^(bash|shell|terminal|run|exec|execute|command|sh|zsh|fish|cmd|powershell|pwsh)\b/;
-
 export function isExecuteLikeToolCall(call: Pick<ToolCall, 'rawInput' | 'kind' | 'title'>): boolean {
   if (call.kind === 'execute') return true;
   if (extractCommandLineRaw(call.rawInput)) return true;

@@ -13,7 +13,7 @@ The peeked lane already has a flat `tool` text row. It has no kind-specific moti
 
 ## Solution
 
-Move the **active lane's** live action off the composer and into a compact **action HUD** in the peek rail (`[data-slot="action"]`, stacked immediately above the 109 peek card). Each action kind plays a distinct CSS instrument animation — liveness, not decoration. Reuse the same HUD inside the peek card when the peeked lane is itself busy, so both lanes speak one visual language.
+Move live action off the composer and into a compact **action HUD** stack in the peek rail (`[data-slot="action"]`, stacked immediately above the 109 peek card). One card per busy lane in the same harness tab — not only the active lane. Each action kind plays a distinct CSS instrument animation — liveness, not decoration. Reuse the same HUD inside the peek card when the peeked lane is itself busy; that lane is then omitted from the rail stack so it is not painted twice.
 
 Composer keeps verb / elapsed / queued. The activity segment is deleted.
 
@@ -29,7 +29,7 @@ Composer keeps verb / elapsed / queued. The activity segment is deleted.
 **Alternatives ruled out**
 
 - *Inside the 109 peek card only* — vanishes when peek is hidden or showing an idle peer.
-- *Always show peeked-if-busy else active* (thought-slot rule) — would steal the active lane's action the moment a busy peer is peeked. This HUD is a **move of the composer ticker**, so it stays bound to the active lane.
+- *Always show peeked-if-busy else active* (thought-slot rule) — would steal the active lane's action the moment a busy peer is peeked. The stack shows every busy lane; a peeked busy peer stays on the peek card and is skipped in the stack.
 - *Canvas / OffscreenCanvas well* — idle-CPU budget; CSS wells are enough at 28px.
 - *Keep a duplicate activity segment on the composer* — the user asked to move it.
 
@@ -49,7 +49,7 @@ Composer keeps verb / elapsed / queued. The activity segment is deleted.
 
 | File | Change |
 |------|--------|
-| `src/acp/harness-action-hud.ts` | **New.** Pure `ActionHudKind` mapping, `deriveLiveAction()`, `renderActionHud()`, `patchActionHud()`. |
+| `src/acp/harness-action-hud.ts` | Pure `ActionHudKind` mapping, `deriveLiveAction()`, `deriveRailLiveActions()`, `renderActionHud()`, `syncActionHudSlot()`. |
 | `src/acp/harness-action-hud.test.ts` | **New.** Kind mapping, derive, omit-when-thought, render signature. |
 | `src/acp/acp-harness-view.ts` | New `actionSlotEl`; `renderLaneAction()`; drop activity from `composerStatusChip`; 1 s tick patches the HUD. |
 | `src/acp/lane-peek.ts` | Peek `tool` row replaced by the same HUD. |
@@ -114,13 +114,13 @@ interface LiveAction {
 .acp-harness__lane-rail          320px
   [data-slot="pins"]
   [data-slot="plan"]
-  [data-slot="action"]           NEW — compact, active lane only
+  [data-slot="action"]           NEW — one compact HUD per busy lane
   [data-slot="peek"]             109 card; busy peeked lane embeds the same HUD
   [data-slot="thought"]
   [data-slot="queue"]
 ```
 
-Show the action slot when `deriveLiveAction(activeLane)` is non-null **and not** (`kind === 'thinking'` AND the thought slot is already showing this lane's live thought). Hide otherwise. Independent of peek visibility / `Esc` dismiss. No new keybinding.
+Show the action slot when `deriveRailLiveActions(lanes)` is non-empty. A lane is listed when `deriveLiveAction(lane)` is non-null **and not** (`kind === 'thinking'` AND the thought slot is already showing that lane's live thought) **and not** (the 109 peek card is visible and already embedding that lane's HUD). Hide the slot when the list is empty. Independent of peek `Esc` dismiss. No new keybinding. Clicking a non-active card activates that lane.
 
 ### UI
 
@@ -132,10 +132,12 @@ Show the action slot when `deriveLiveAction(activeLane)` is non-null **and not**
 ```
 
 - 320px, hard corners (0), 1px full border in the kind accent (no left rail).
-- Left well: 28×28, `contain: strict`, one `<svg><use href="#krypton-action-{kind}"/></svg>` plus a CSS overlay that is the animation.
+- Left well: 28×28, no border and no fill, `contain: strict`, one `<svg><use href="#krypton-action-{kind}"/></svg>` plus a CSS overlay that is the animation. The glyph sits on the card; the well is only a clip for the instrument.
 - Kind label: 11px, weight 600, tracked uppercase, kind accent.
+- When the harness has more than one lane, a dim tracked lane name sits on the same row as the kind (`EXECUTE · Claude-2`). Single-lane harnesses stay unlabeled.
 - Subject: one ellipsized line; omitted for thinking/writing.
 - `role="status"`, `aria-live="polite"`. `title` carries the untruncated path.
+- Slot `max-height: min(240px, 42%)`; extra cards scroll.
 
 Peek card: if `snapshot.activeTool` and status is `busy`, render the HUD in place of `renderLanePeekRow('tool', …)`. Same component, `data-owner="peek"`.
 
@@ -162,11 +164,11 @@ All infinite motion uses DESIGN.md tokens (`--krypton-motion-data-stream` 1.8s l
 
 ```
 1. tool_call / thought_chunk / message_chunk → field write on lane.activity (unchanged)
-2. 1 s composer tick + existing render paths call renderLaneAction()
-3. deriveLiveAction(active) → null? hide slot
-4. same sig? patchActionHud (kind label + subject only)
-5. new sig? replaceChildren(renderActionHud) — entrance plays
-6. finishTurn / error → activity null → slot hides
+2. 1 s composer tick + existing render paths + background `scheduleLaneRender` call renderLaneAction()
+3. deriveRailLiveActions(lanes) → empty? hide slot
+4. same lane+sig? patchActionHud (kind label + subject + name only)
+5. new lane or new sig? remount that card — entrance plays
+6. finishTurn / error → activity null → that card drops; slot hides when none remain
 ```
 
 No new timer. No per-chunk DOM work.
@@ -177,14 +179,16 @@ No new timer. No per-chunk DOM work.
 
 ## Edge Cases
 
-- **Single lane, no 109 peek** — action slot still shows. This is the common Grok-only case.
-- **Peek showing idle peer** — action slot still shows the active lane's edit. Matches the screenshot.
-- **Peek showing a busy peer** — action slot = active; peek card HUD = peeked. Two instruments, two lanes, labelled by the peek header.
+- **Single lane, no 109 peek** — action slot still shows, unlabeled. This is the common Grok-only case.
+- **Several lanes in the same tab** — one labeled card per busy lane, harness order. An idle peer is omitted. Click a foreign card to activate that lane.
+- **Peek showing idle peer** — action slot still lists every busy lane (usually the active one).
+- **Peek showing a busy peer** — peek card HUD = peeked; action stack lists the other busy lanes. Dismissing peek returns that peer to the stack.
 - **Thinking + thought slot on the same lane** — action HUD omitted.
 - **Writing + thought slot** — HUD stays (`writing`); thought is a different signal.
 - **Multiple in-flight tools** — oldest pending/in_progress, same as peek today.
 - **Live Assist** — untouched (spec 209).
 - **Zen / view-split / narrow rail** — slot uses the existing `max-width: calc(100% - 24px)` rail rule; subject ellipsizes.
+- **Long / multiline command title** — Grok often puts the whole `cd …; actionlint …` line in `title` with `kind: other` and no `rawInput.command` yet. Kind stays the short verb (`execute`); subject is that command collapsed to one line and CSS-ellipsized. The untruncated command stays on the tooltip. Never dump the command into the uppercase kind label — that wraps inside the 72px slot.
 - **Reduced motion** — static well + label + subject.
 
 ## Open Questions

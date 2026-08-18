@@ -26,7 +26,7 @@ Introduce a single **rail overlay container** that owns the top-right area of ea
 ├─ .acp-harness__lane-composer                (unchanged)
 └─ .acp-harness__lane-rail                    (NEW — position: absolute, top-right, flex column)
     ├─ [data-slot="plan"]    → this.planEl reparented in
-    ├─ [data-slot="action"]  → spec 231 live-action HUD (active lane)
+    ├─ [data-slot="action"]  → spec 231 live-action HUD (one card per busy lane)
     ├─ [data-slot="peek"]    → peek element reparented in
     ├─ [data-slot="thought"] → spec 216 thought card (same 320px column)
     └─ [data-slot="..."]     → future feature slots

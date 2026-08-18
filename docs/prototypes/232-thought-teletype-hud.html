@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>232 — Thought Teletype HUD</title>
+<style>
+  :root {
+    --bg: #060a12;
+    --ink: #b0c4d8;
+    --ink-dim: rgba(176, 196, 216, 0.62);
+    --ink-faint: rgba(176, 196, 216, 0.38);
+    --cyan: #00ccff;
+    --mono: "Mononoki", "JetBrains Mono", ui-monospace, monospace;
+  }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background:
+      radial-gradient(circle at 18% 0%, rgba(0, 204, 255, 0.06), transparent 42%),
+      var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  body { padding: 28px 32px 48px; box-sizing: border-box; }
+  h1 {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .lede { color: var(--ink-dim); max-width: 72ch; margin: 0 0 18px; line-height: 1.45; }
+  button {
+    font: inherit;
+    color: var(--cyan);
+    background: transparent;
+    border: 1px solid rgba(0, 204, 255, 0.35);
+    padding: 5px 11px;
+    cursor: pointer;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 320px));
+    gap: 28px;
+    margin-top: 18px;
+  }
+  .stage h2 {
+    margin: 0 0 6px;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  .workspace {
+    width: 320px;
+    padding: 16px;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(0, 204, 255, 0.07), transparent 55%),
+      #060a12;
+    border: 1px solid rgba(0, 204, 255, 0.18);
+  }
+  .thought {
+    padding: 8px 12px 7px;
+    background: linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
+    border: 1px solid rgba(0, 204, 255, 0.22);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+  .head {
+    display: flex;
+    gap: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(0, 204, 255, 0.12);
+    margin-bottom: 3px;
+  }
+  .name { flex: 1; color: var(--cyan); }
+  .label {
+    color: var(--ink-faint);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .body {
+    min-height: calc(1.55em * 6);
+    max-height: calc(1.55em * 10);
+    overflow: hidden;
+    font-size: 11.2px;
+    line-height: 1.55;
+    color: rgba(176, 196, 216, 0.42);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .fresh { color: rgba(0, 204, 255, 0.85); }
+  .caret {
+    display: inline-block;
+    width: 7px;
+    height: 1.05em;
+    margin-left: 1px;
+    background: var(--cyan);
+    box-shadow: 0 0 8px rgba(0, 204, 255, 0.55);
+    vertical-align: -2px;
+    animation: caret 1.05s steps(2) infinite;
+  }
+  .thought[data-phase="seal"] .caret { display: none; }
+  @keyframes caret { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .caret { display: none; animation: none; }
+  }
+</style>
+</head>
+<body>
+  <h1>232 — Thought Teletype HUD</h1>
+  <p class="lede">
+    Live thought is a catch-up teleprinter: newest glyphs brighter, block caret,
+    full 1px border. No scan wipe, no corner brackets. Sealed thought snaps to
+    ghost GFM. Replay to compare against the old dump.
+  </p>
+  <button type="button" id="replay">Replay</button>
+  <div class="grid">
+    <section class="stage">
+      <h2>Before (216 dump)</h2>
+      <div class="workspace">
+        <aside class="thought" data-kind="now" data-phase="veil">
+          <div class="head"><span class="name">Claude-2</span><span class="label">thinking</span></div>
+          <div class="body"></div>
+        </aside>
+      </div>
+    </section>
+    <section class="stage">
+      <h2>After (232 teletype)</h2>
+      <div class="workspace">
+        <aside class="thought" data-kind="tele" data-phase="veil">
+          <div class="head"><span class="name">Claude-2</span><span class="label">thinking</span></div>
+          <div class="body"></div>
+        </aside>
+      </div>
+    </section>
+  </div>
+  <script>
+  (function () {
+    var TEXT = [
+      "The peek card is the wrong home for live action.",
+      "The composer already carries verb and elapsed.",
+      "A sibling rail slot is the only placement that still shows on a single-lane harness.",
+      "Thought stays ghost so the transcript stays first."
+    ].join("\n");
+    var FRESH = 10;
+    var timers = [];
+    function later(fn, ms) { var id = setTimeout(fn, ms); timers.push(id); return id; }
+    function every(fn, ms) { var id = setInterval(fn, ms); timers.push(id); return id; }
+    function clearAll() { timers.forEach(function (id) { clearTimeout(id); clearInterval(id); }); timers = []; }
+    function esc(s) {
+      return s.replace(/[&<>"']/g, function (c) {
+        return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+      });
+    }
+    function setPhase(card, phase, label) {
+      card.dataset.phase = phase;
+      card.querySelector(".label").textContent = label;
+    }
+    function replay() {
+      clearAll();
+      var now = document.querySelector('[data-kind="now"]');
+      var tele = document.querySelector('[data-kind="tele"]');
+      var nowBody = now.querySelector(".body");
+      var teleBody = tele.querySelector(".body");
+      setPhase(now, "veil", "thinking");
+      setPhase(tele, "veil", "thinking");
+      nowBody.textContent = "thinking···";
+      teleBody.textContent = "thinking···";
+      later(function () {
+        setPhase(now, "delta", "thinking");
+        setPhase(tele, "delta", "thinking");
+        var iNow = 0, iTele = 0;
+        var t1 = every(function () {
+          iNow = Math.min(TEXT.length, iNow + 7);
+          nowBody.textContent = TEXT.slice(0, iNow);
+          if (iNow >= TEXT.length) { clearInterval(t1); setPhase(now, "seal", "thought"); }
+        }, 80);
+        var t2 = every(function () {
+          iTele += 1;
+          var locked = TEXT.slice(0, Math.max(0, iTele - FRESH));
+          var fresh = TEXT.slice(Math.max(0, iTele - FRESH), iTele);
+          teleBody.innerHTML = esc(locked) + (fresh ? '<span class="fresh">' + esc(fresh) + "</span>" : "") + '<span class="caret"></span>';
+          if (iTele >= TEXT.length) {
+            clearInterval(t2);
+            setPhase(tele, "seal", "thought");
+            teleBody.textContent = TEXT;
+          }
+        }, 22);
+      }, 1200);
+    }
+    document.getElementById("replay").addEventListener("click", replay);
+    replay();
+  })();
+  </script>
+</body>
+</html>

@@ -380,12 +380,16 @@ import {
   shouldPreemptPeekDismissal,
 } from './lane-peek';
 import {
-  deriveLiveAction,
+  deriveRailLiveActions,
   liveActionFromPeekTool,
   patchActionHud,
   renderActionHud,
-  shouldOmitActionHud,
+  syncActionHudSlot,
 } from './harness-action-hud';
+import {
+  thoughtTeletypeCatchUpPending,
+  tickThoughtTeletype,
+} from './harness-thought-teletype';
 export {
   PEER_PREEMPT_MAX_PRIORITY,
   buildComposerPeerStrip,
@@ -395,6 +399,7 @@ export {
   pinPeekThoughtToLatest,
   resolveLaneThoughtSnapshot,
   schedulePeekThoughtPin,
+  thoughtBodyRenderKind,
   deriveLanePairHeat,
   deriveRailPeerHint,
   isDirectPeerPeekReasonKey,
@@ -1037,6 +1042,7 @@ export class AcpHarnessView implements ContentView {
   private scrollRaf = false;
   private renderRaf = false;
   private streamingBodyRaf = false;
+  private thoughtTeletypeRaf = 0;
   // Spec 114: coalesces scroll-event storms into one anchor capture per
   // frame. Set on scroll; re-reads live state inside the RAF callback so
   // a lane switch or programmatic scroll between event and frame cannot
@@ -4038,6 +4044,7 @@ export class AcpHarnessView implements ContentView {
     this.orchestratorLaneBusUnsub?.();
     this.orchestratorLaneBusUnsub = null;
     this.stopComposerTick();
+    this.stopThoughtTeletypeTick();
     this.stopMetricsTick();
     this.stopSpinnerTicker();
     this.referenceGitDisposed = true;
@@ -5635,6 +5642,14 @@ export class AcpHarnessView implements ContentView {
     this.actionSlotEl.className = 'acp-harness__lane-rail__slot acp-harness__lane-rail__slot--compact';
     this.actionSlotEl.dataset.slot = 'action';
     this.actionSlotEl.hidden = true;
+    this.actionSlotEl.addEventListener('click', (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const hud = target.closest<HTMLElement>('.acp-harness__action-hud');
+      const laneId = hud?.dataset.laneId;
+      if (!laneId || laneId === this.activeLaneId) return;
+      this.activateLane(laneId);
+    });
     this.laneRailEl.appendChild(this.actionSlotEl);
     this.peekSlotEl = document.createElement('div');
     this.peekSlotEl.className = 'acp-harness__lane-rail__slot';
@@ -10459,6 +10474,7 @@ export class AcpHarnessView implements ContentView {
   private scheduleLaneRender(lane: HarnessLane): void {
     if (lane.id !== this.activeLaneId) {
       this.refreshMetricsRender();
+      this.renderLaneAction();
       return;
     }
     if (this.renderRaf) return;
@@ -10482,6 +10498,7 @@ export class AcpHarnessView implements ContentView {
     if (lane.id !== this.activeLaneId) {
       this.refreshMetricsRender();
       this.patchPeekThoughtIfLane(lane);
+      this.renderLaneAction();
       return;
     }
     if (this.streamingBodyRaf) return;
@@ -10822,31 +10839,32 @@ export class AcpHarnessView implements ContentView {
 
   private renderLaneAction(): void {
     const slot = this.actionSlotEl;
-    const lane = this.activeLane();
-    if (!lane) {
-      slot.replaceChildren();
-      slot.hidden = true;
-      return;
-    }
-    const action = deriveLiveAction(lane);
-    const thought = resolveLaneThoughtSnapshot(this.lanePeekSnapshots(), this.showingPeekLaneId());
-    const omit = shouldOmitActionHud(action, {
-      activeLaneId: lane.id,
+    if (!slot || !this.peekSlotEl) return;
+    const snapshots = this.lanePeekSnapshots();
+    const peekId = this.showingPeekLaneId();
+    const thought = resolveLaneThoughtSnapshot(snapshots, peekId);
+    const peekSnap = peekId ? snapshots.find((row) => row.laneId === peekId) ?? null : null;
+    const peekHudLaneId = peekSnap?.activeTool && peekSnap.status === 'busy' ? peekId : null;
+    const rows = deriveRailLiveActions({
+      lanes: this.lanes
+        .filter((lane) => lane.status !== 'stopped')
+        .map((lane) => ({
+          id: lane.id,
+          displayName: lane.displayName,
+          active: lane.id === this.activeLaneId,
+          activity: lane.activity,
+          toolCalls: lane.toolCalls,
+        })),
       thoughtLaneId: thought?.laneId ?? null,
       thoughtLive: isLivePeekThought(thought?.thought),
+      peekHudLaneId,
     });
-    if (!action || omit) {
+    if (rows.length === 0) {
       slot.replaceChildren();
       slot.hidden = true;
       return;
     }
-    const existing = slot.querySelector<HTMLElement>('.acp-harness__action-hud');
-    if (existing && existing.dataset.sig === action.sig) {
-      patchActionHud(existing, action);
-      slot.hidden = false;
-      return;
-    }
-    slot.replaceChildren(renderActionHud(action, 'rail'));
+    syncActionHudSlot(slot, rows, this.lanes.length > 1);
     slot.hidden = false;
   }
 
@@ -10865,12 +10883,14 @@ export class AcpHarnessView implements ContentView {
     if (!snapshot) {
       slot.replaceChildren();
       slot.hidden = true;
+      this.stopThoughtTeletypeTick();
       return;
     }
     const existing = slot.querySelector<HTMLElement>('.acp-harness__lane-thought');
     if (existing && existing.dataset.laneId === snapshot.laneId) {
       patchLaneThoughtCard(existing, snapshot, this.projectDir);
       slot.hidden = false;
+      this.syncThoughtTeletypeTick();
       return;
     }
     const next = renderLaneThought(snapshot, this.projectDir);
@@ -10878,6 +10898,37 @@ export class AcpHarnessView implements ContentView {
     slot.hidden = false;
     const body = next.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
     if (body) schedulePeekThoughtPin(body);
+    this.syncThoughtTeletypeTick();
+  }
+
+  private syncThoughtTeletypeTick(): void {
+    const body = this.thoughtSlotEl.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
+    const card = this.thoughtSlotEl.querySelector<HTMLElement>('.acp-harness__lane-thought');
+    if (card?.dataset.phase === 'delta' && body && thoughtTeletypeCatchUpPending(body)) {
+      this.armThoughtTeletypeTick();
+    } else {
+      this.stopThoughtTeletypeTick();
+    }
+  }
+
+  private armThoughtTeletypeTick(): void {
+    if (this.thoughtTeletypeRaf) return;
+    this.thoughtTeletypeRaf = requestAnimationFrame(() => {
+      this.thoughtTeletypeRaf = 0;
+      const body = this.thoughtSlotEl.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
+      const card = this.thoughtSlotEl.querySelector<HTMLElement>('.acp-harness__lane-thought');
+      if (!body || card?.dataset.phase !== 'delta') return;
+      if (tickThoughtTeletype(body)) {
+        schedulePeekThoughtPin(body);
+        this.armThoughtTeletypeTick();
+      }
+    });
+  }
+
+  private stopThoughtTeletypeTick(): void {
+    if (!this.thoughtTeletypeRaf) return;
+    cancelAnimationFrame(this.thoughtTeletypeRaf);
+    this.thoughtTeletypeRaf = 0;
   }
 
   private isLanePeekHeatUiAvailable(): boolean {
@@ -11849,6 +11900,7 @@ export class AcpHarnessView implements ContentView {
     } else if (!shouldTick) {
       this.stopComposerTick();
     }
+    this.renderLaneAction();
   }
 
   private stopComposerTick(): void {
