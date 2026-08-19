@@ -698,8 +698,8 @@ PUBLISH
     h. Grok question card (spec 229): `_x.ai/ask_user_question` /
        `x.ai/ask_user_question` parks a oneshot in `ask_pending` (empty
        `questions` → `-32602`). The frontend renders an inline transcript
-       card; `1–9`/`Enter` replies `{ type: "accepted", answers, partial_answers: null }`,
-       `x` replies `{ type: "skip_interview" }`. Permission modes do not
+       card; `1–9`/`Enter` replies `{ outcome: "accepted", answers, partial_answers: null }`,
+       `x` replies `{ outcome: "skip_interview" }`. Permission modes do not
        auto-answer. A second request skip-interviews the previous oneshot.
        Disconnect / cancel / dispose also skip so Grok does not hang.
 19. tool_call.content[].diff rendering (Spec 89):

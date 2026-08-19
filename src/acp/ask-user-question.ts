@@ -18,9 +18,12 @@ export interface AskUserAnswer {
   selected_labels: string[];
 }
 
+// Grok 1.0.5 `AskUserQuestionExtResponse` is internally tagged on `outcome`,
+// not serde's default `type`. Sending `type` fails with
+// `missing field 'outcome'`.
 export type AskUserDecision =
-  | { type: 'accepted'; answers: AskUserAnswer[]; partial_answers: null }
-  | { type: 'skip_interview' };
+  | { outcome: 'accepted'; answers: AskUserAnswer[]; partial_answers: null }
+  | { outcome: 'skip_interview' };
 
 export interface AskUserCardState {
   questionIndex: number;
@@ -98,7 +101,7 @@ export function createAskUserCardState(questions: AskUserQuestion[]): AskUserCar
 }
 
 export function skipInterviewDecision(): AskUserDecision {
-  return { type: 'skip_interview' };
+  return { outcome: 'skip_interview' };
 }
 
 export function acceptedDecision(
@@ -106,7 +109,7 @@ export function acceptedDecision(
   selected: string[][],
 ): AskUserDecision {
   return {
-    type: 'accepted',
+    outcome: 'accepted',
     answers: questions.map((question, i) => ({
       question: question.question,
       selected_labels: selected[i] ?? [],

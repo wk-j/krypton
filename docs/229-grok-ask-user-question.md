@@ -1,6 +1,6 @@
 # Grok `ask_user_question` ACP Client Method — Implementation Spec
 
-> Status: Approved (code landed; live reply-shape verification still open)
+> Status: Approved (code landed; reply tag verified as `outcome` against grok 1.0.5 / `5115b46bc909`)
 > Date: 2026-08-17
 > Milestone: M-ACP — Harness convergence
 > Builds on: `docs/135-acp-grok-lane.md` (`_x.ai/exit_plan_mode`), `docs/69-acp-agent-support.md` (permission oneshot)
@@ -16,7 +16,7 @@ Handle the method the same way as `session/request_permission`: park a oneshot, 
 ## Research
 
 - **Same gap as plan-mode exit.** Spec 135 added `_x.ai/exit_plan_mode` because the TUI approval surface is absent over ACP. `ask_user_question` is the sibling: Grok TUI opens a question card (`Opened question view from ext_method`). Without a handler the tool dies instead of falling back (Grok 1.0.4 strings include a "fallback path", but ACP treats method-not-found as a hard error: `Failed to reach the client for user question: Method not found: _x.ai/ask_user_question`).
-- **Wire (grok 1.0.4 / `d846eb93d94d`).** Method names sit next to each other as `x.ai/ask_user_question` / `x.ai/exit_plan_mode`. The error string uses the `_x.ai/` prefix — handle both, matching spec 135. `AskUserQuestionExtRequest` has 4 fields. Tool input is `AskUserQuestionInput { questions[] }`; each question has `question`, `options[{ label, description, preview? }]`, optional `multiSelect`. Response is internally tagged `AskUserQuestionExtResponse`: `Accepted { answers, partial_answers }`, `ChatAboutThis`, `SkipInterview`. TUI skip copy: `User declined to answer the questions. Continue with the task using your best judgment`. TUI state includes `selected_labels` and `build_accepted_response`.
+- **Wire (grok 1.0.5 / `5115b46bc909`).** Method names sit next to each other as `x.ai/ask_user_question` / `x.ai/exit_plan_mode`. The error string uses the `_x.ai/` prefix — handle both, matching spec 135. `AskUserQuestionExtRequest` has 4 fields. Tool input is `AskUserQuestionInput { questions[] }`; each question has `question`, `options[{ label, description, preview? }]`, optional `multiSelect`. Response is internally tagged `AskUserQuestionExtResponse` on **`outcome`** (not serde's default `type`): `Accepted { answers, partial_answers }`, `ChatAboutThis`, `SkipInterview`. Sending `{ "type": "accepted", ... }` fails with `Client returned an invalid response to user question: missing field 'outcome'`. TUI skip copy: `User declined to answer the questions. Continue with the task using your best judgment`. TUI state includes `selected_labels` and `build_accepted_response`.
 - **Timeout is Grok's.** `[toolset.ask_user_question] timeout_secs` (default 1800) lives in Grok config. If Grok times out it continues without answers. Krypton does not add a second timer.
 - **Existing park pattern.** `perm_pending` / `fs_write_pending` + `acp_permission_response` / `acp_fs_write_response`. Disconnect already clears those maps (oneshots drop). A new `ask_pending` map belongs there.
 - **Key collision.** Transcript focus `1–9` switches lanes. Permission uses `a`/`r` so it can sit *after* that. Question options use `1–9`, so question keys must run *before* `handleTranscriptKey`.
@@ -63,8 +63,8 @@ interface AskUserQuestion {
   multiSelect?: boolean;
 }
 type AskUserDecision =
-  | { type: 'accepted'; answers: AskUserAnswer[]; partial_answers: null }
-  | { type: 'skip_interview' };
+  | { outcome: 'accepted'; answers: AskUserAnswer[]; partial_answers: null }
+  | { outcome: 'skip_interview' };
 interface AskUserAnswer { question: string; selected_labels: string[] }
 ```
 
@@ -84,14 +84,16 @@ pub async fn acp_ask_user_response(
 
 Inbound params (lenient): `questions` required (array). `sessionId` / `toolCallId` optional (log + `tool_call_update` title). Extra fields ignored.
 
-Reply JSON (first attempt, grok 1.0.4 internally tagged enum):
+Reply JSON (verified against grok 1.0.5 internally tagged on `outcome`, same pattern as `exit_plan_mode`):
 
 ```json
-{ "type": "accepted", "answers": [{ "question": "…", "selected_labels": ["OS browser loopback"] }], "partial_answers": null }
-{ "type": "skip_interview" }
+{ "outcome": "accepted", "answers": [{ "question": "…", "selected_labels": ["OS browser loopback"] }], "partial_answers": null }
+{ "outcome": "skip_interview" }
 ```
 
-**Verification gate (blocks "Implemented"):** live Grok lane, trigger `ask_user_question`, pick an option, confirm the tool completes (not `Client returned an invalid response to user question`). If 1.0.4 rejects the tag, try externally tagged `{ "Accepted": { "answers", "partial_answers" } }` then flattened `{ "answers", "partial_answers" }`. Write the shape that works into this spec and into `docs/135`.
+Rust remaps a leftover `{ "type": "…" }` to `outcome` at the JSON-RPC reply so a stale frontend cannot reproduce the `missing field 'outcome'` tool failure.
+
+**Verification gate (blocks "Implemented"):** live Grok lane, trigger `ask_user_question`, pick an option, confirm the tool completes (not `Client returned an invalid response to user question`). Tag name is settled; remaining live check is that `answers` / `selected_labels` deserialize.
 
 ### Data flow
 
@@ -156,7 +158,7 @@ None. Grok's `[toolset.ask_user_question]` timeout stays in `~/.grok/config.toml
 
 ## Open Questions
 
-None. Response-tag variants are a verification gate, not a product fork.
+None. Reply tag is `outcome` (grok 1.0.5). Remaining live check is `answers` / `selected_labels` only.
 
 ## Out of Scope
 

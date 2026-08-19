@@ -91,6 +91,11 @@ describe('applyAskUserKey', () => {
       type: 'submit',
       decision: acceptedDecision(sample, [['OS browser']]),
     });
+    expect(acceptedDecision(sample, [['OS browser']])).toEqual({
+      outcome: 'accepted',
+      answers: [{ question: 'Where should it live?', selected_labels: ['OS browser'] }],
+      partial_answers: null,
+    });
   });
 
   it('advances to the next question on Enter, then submits', () => {
@@ -107,7 +112,7 @@ describe('applyAskUserKey', () => {
   it('skips the whole interview on x', () => {
     const result = applyAskUserKey(sample, createAskUserCardState(sample), 'x');
     expect(result.action).toEqual({ type: 'skip' });
-    expect(skipInterviewDecision()).toEqual({ type: 'skip_interview' });
+    expect(skipInterviewDecision()).toEqual({ outcome: 'skip_interview' });
   });
 
   it('accepts Other free-text after z', () => {

@@ -17,6 +17,7 @@ import {
   parseAskUserQuestions,
   skipInterviewDecision,
   type AskUserCardState,
+  type AskUserDecision,
   type AskUserQuestion,
 } from './ask-user-question';
 import { renderDiffPreview as sharedRenderDiffPreview, countDiff as sharedCountDiff } from './diff-render';
@@ -857,16 +858,15 @@ export class AcpView implements ContentView {
   }
 
   private async resolveAskUser(
-    decision: { type: string },
+    decision: AskUserDecision,
     label: string,
   ): Promise<void> {
     const block = this.askUserBlock;
     if (!block) return;
     this.askUserBlock = null;
     block.el.classList.add('acp-view__ask--resolved');
-    const detail = decision.type === 'accepted' && 'answers' in decision
-      ? (decision as { answers: Array<{ selected_labels: string[] }> })
-        .answers.flatMap((a) => a.selected_labels).join(', ')
+    const detail = decision.outcome === 'accepted'
+      ? decision.answers.flatMap((a) => a.selected_labels).join(', ')
       : label;
     block.el.innerHTML = `<div class="acp-view__ask-title">⏵ ${esc(detail || label)}</div>`;
     if (this.client) {

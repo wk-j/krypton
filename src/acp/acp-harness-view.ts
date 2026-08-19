@@ -7974,7 +7974,7 @@ export class AcpHarnessView implements ContentView {
   ): Promise<void> {
     const ask = lane.pendingQuestions.shift();
     if (!ask || !lane.client) return;
-    const labels = decision.type === 'accepted'
+    const labels = decision.outcome === 'accepted'
       ? decision.answers.flatMap((answer) => answer.selected_labels)
       : [];
     if (ask.transcriptItem?.question) {

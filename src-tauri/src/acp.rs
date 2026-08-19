@@ -847,6 +847,27 @@ fn emit_fs_activity(
     client.emit_event(app, payload);
 }
 
+/// Grok 1.0.5 `AskUserQuestionExtResponse` is internally tagged on `outcome`
+/// (`accepted` | `skip_interview` | `chat_about_this`), not serde's default `type`.
+/// Sending `type` fails with `missing field 'outcome'`.
+fn grok_ask_user_ext_response(decision: Value) -> Value {
+    let Value::Object(mut map) = decision else {
+        return decision;
+    };
+    if !map.contains_key("outcome") {
+        if let Some(tag) = map.remove("type") {
+            map.insert("outcome".to_string(), tag);
+        }
+    } else {
+        map.remove("type");
+    }
+    Value::Object(map)
+}
+
+fn grok_ask_user_skip() -> Value {
+    json!({ "outcome": "skip_interview" })
+}
+
 /// Normalize Grok's ask_user_question params into `{ question, options, multiSelect }`.
 fn extract_ask_questions(params: &Value) -> Vec<Value> {
     let raw = params.get("questions").or_else(|| {
@@ -1129,7 +1150,7 @@ async fn handle_inbound_request(
                 let mut pending = client.ask_pending.lock().await;
                 // Grok TUI replaces the active question by cancelling the previous.
                 for (_, old) in pending.drain() {
-                    let _ = old.send(json!({ "type": "skip_interview" }));
+                    let _ = old.send(grok_ask_user_skip());
                 }
                 pending.insert(request_id, tx);
             }
@@ -1148,8 +1169,8 @@ async fn handle_inbound_request(
                 }),
             );
             let decision = match rx.await {
-                Ok(value) => value,
-                Err(_) => json!({ "type": "skip_interview" }),
+                Ok(value) => grok_ask_user_ext_response(value),
+                Err(_) => grok_ask_user_skip(),
             };
             let _ = client.reply(id, Ok(decision)).await;
         }
@@ -1984,7 +2005,7 @@ pub async fn acp_cancel(session: u64, registry: State<'_, Arc<AcpRegistry>>) -> 
     {
         let mut asks = client.ask_pending.lock().await;
         for (_, tx) in asks.drain() {
-            let _ = tx.send(json!({ "type": "skip_interview" }));
+            let _ = tx.send(grok_ask_user_skip());
         }
     }
     let acp_session_id = match client.acp_session_id.read().ok().and_then(|g| g.clone()) {
@@ -2029,7 +2050,7 @@ pub async fn acp_ask_user_response(
         .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
     let mut pending = client.ask_pending.lock().await;
     if let Some(tx) = pending.remove(&request_id) {
-        let _ = tx.send(decision);
+        let _ = tx.send(grok_ask_user_ext_response(decision));
     }
     Ok(())
 }
@@ -2683,10 +2704,46 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
 mod tests {
     use super::{
         advertise_read_text_file, binary_read_error, disconnect_detail, effective_spawn_model,
-        fs_path_in_scope, grok_session_dir_for_cwd, is_under_grok_session_dir, percent_encode_path,
-        sniff_binary_kind, startup_hint, FsAccess,
+        fs_path_in_scope, grok_ask_user_ext_response, grok_ask_user_skip, grok_session_dir_for_cwd,
+        is_under_grok_session_dir, percent_encode_path, sniff_binary_kind, startup_hint, FsAccess,
     };
+    use serde_json::json;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn grok_ask_user_ext_response_retags_type_to_outcome() {
+        let accepted = grok_ask_user_ext_response(json!({
+            "type": "accepted",
+            "answers": [{ "question": "Q", "selected_labels": ["A"] }],
+            "partial_answers": null
+        }));
+        assert_eq!(
+            accepted,
+            json!({
+                "outcome": "accepted",
+                "answers": [{ "question": "Q", "selected_labels": ["A"] }],
+                "partial_answers": null
+            })
+        );
+        assert_eq!(
+            grok_ask_user_ext_response(json!({ "type": "skip_interview" })),
+            json!({ "outcome": "skip_interview" })
+        );
+        assert_eq!(
+            grok_ask_user_ext_response(json!({
+                "outcome": "accepted",
+                "type": "accepted",
+                "answers": [],
+                "partial_answers": null
+            })),
+            json!({
+                "outcome": "accepted",
+                "answers": [],
+                "partial_answers": null
+            })
+        );
+        assert_eq!(grok_ask_user_skip(), json!({ "outcome": "skip_interview" }));
+    }
 
     #[test]
     fn percent_encode_path_matches_grok_session_dir_encoding() {
