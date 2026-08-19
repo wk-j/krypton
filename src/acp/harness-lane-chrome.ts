@@ -106,12 +106,14 @@ export function renderLaneHead(
   const orchestratorChip = isOrchestrator
     ? `<span class="acp-harness__lane-orchestrator" title="orchestrator seat (#orchestrator)">◆ orch</span>`
     : '';
-  const chipGroup = orchestratorChip + modelChip + modeChip + mcpChip + sandboxChip + pollyBypassChip + saltyBypassChip + metricsChip;
-  const chips = chipGroup
-    ? `<span class="acp-harness__lane-chips">${chipGroup}</span>`
-    : '';
+  // Inbox rides inside the chips span (grid column 4). As a loose head-grid
+  // sibling it has no `grid-column` and stretches across the 1fr activity track.
   const inboxChip = inboxDepth > 0
     ? `<span class="acp-harness__lane-inbox" title="${inboxDepth} pending peer message${inboxDepth === 1 ? '' : 's'}">${harnessIcon('inbox', 'acp-harness__icon--dot')}${inboxDepth}</span>`
+    : '';
+  const chipGroup = inboxChip + orchestratorChip + modelChip + modeChip + mcpChip + sandboxChip + pollyBypassChip + saltyBypassChip + metricsChip;
+  const chips = chipGroup
+    ? `<span class="acp-harness__lane-chips">${chipGroup}</span>`
     : '';
   // spec 215: the backend logo rides inside the name span (no head-grid column
   // change) and inherits the name's color, so it dims with the collapsed name.
@@ -124,7 +126,6 @@ export function renderLaneHead(
       renderLaneSymbol(lane.status) +
       `<span class="acp-harness__lane-name">${logo}${esc(lane.displayName)}</span>` +
       `<span class="acp-harness__lane-status">${esc(statusText)}</span>` +
-      inboxChip +
       chips +
       `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>`
     );
@@ -142,7 +143,6 @@ export function renderLaneHead(
     renderLaneSymbol(lane.status) +
     `<span class="acp-harness__lane-name">${logo}${esc(lane.displayName)}</span>` +
     `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
-    inboxChip +
     chips +
     `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>` +
     cancelHint

@@ -618,13 +618,17 @@
   color: #b8a6ff;
 }
 
+/* Compact mail badge. Lives inside `.acp-harness__lane-chips` (see
+   renderLaneHead). `width: max-content` + `justify-self: start` keep it
+   from stretching if it ever becomes a head-grid sibling again. */
 .acp-harness__lane-inbox {
   flex: 0 0 auto;
   align-self: center;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin-left: 0.5em;
+  width: max-content;
+  justify-self: start;
   padding: 1px 6px;
   border-radius: 3px;
   background: rgba(184, 166, 255, 0.18);

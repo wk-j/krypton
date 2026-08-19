@@ -41,3 +41,31 @@ describe('renderLaneHead — spec 215 lane identity', () => {
     expect(html).toContain('A&lt;b&gt;-1');
   });
 });
+
+describe('renderLaneHead — lane-mail inbox chip', () => {
+  it('nests the inbox chip inside the chips group so it cannot stretch as a grid sibling', () => {
+    const html = renderLaneHead(makeLane({ status: 'busy' }), true, null, null, 1, []);
+    expect(html).toContain('class="acp-harness__lane-inbox"');
+    expect(html).toContain('href="#krypton-icon-inbox"');
+    expect(html).toContain('1 pending peer message');
+    expect(html).toMatch(
+      /class="acp-harness__lane-chips"><span class="acp-harness__lane-inbox"/,
+    );
+    expect(html).not.toMatch(
+      /acp-harness__lane-status[\s\S]*acp-harness__lane-inbox[\s\S]*acp-harness__lane-chips/,
+    );
+  });
+
+  it('omits the inbox chip when nothing is queued', () => {
+    const html = renderLaneHead(makeLane(), true, null, null, 0, []);
+    expect(html).not.toContain('acp-harness__lane-inbox');
+  });
+
+  it('pluralizes the queued-mail tooltip', () => {
+    const html = renderLaneHead(makeLane(), false, null, null, 3, []);
+    expect(html).toContain('3 pending peer messages');
+    expect(html).toMatch(
+      /class="acp-harness__lane-chips"><span class="acp-harness__lane-inbox"/,
+    );
+  });
+});
