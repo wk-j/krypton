@@ -28,6 +28,11 @@ so square children do not poke through the 4px curve.
 - Windows already read `--krypton-border-radius`; overlays and most views
   hardcoded 0–3px, so a theme-only change would have rounded shells and left
   the HUD mixed.
+- A first pass that only rewrote existing `0–3px` `border-radius` values left
+  every control that had never declared a radius square. The follow-up pass
+  tokens those too: rail cards, composer, tabs, chips, badges, question and
+  provider-error cards, mention/slash palettes, review-board panels, telegram
+  cards, and agent-view inner controls. The agent *window frame* stays `0px`.
 - 4px is the bevel that still reads as hardware. 8–12px started to look like
   Warp / Ghostty. Circles at 50% are indicators, not containers.
 - Tab chamfers (clip-path, per-role) stay. They are a silhouette signal, not a
@@ -50,7 +55,7 @@ Keyboard-first HUD, glow still carries focus.
 |------|--------|
 | `src-tauri/src/theme.rs` | `ChromeBorder` default radius 4 |
 | `src-tauri/themes/*.toml` | `chrome.border.radius = 4` |
-| `src/styles/*.css` | Hardcoded 0–3px → `var(--krypton-border-radius, 4px)` |
+| `src/styles/*.css` | Hardcoded 0–3px *and* radius-less bordered controls → `var(--krypton-border-radius, 4px)` |
 | `DESIGN.md` | 1.2.0 — 4px default, forbidden list updated |
 | `docs/10-theme-specification.md` | Default 4 |
 
@@ -67,6 +72,9 @@ bevels.
 - 6px status squares stay square. 4px on a 6px box would read as a disc.
 - Cursor-trail teardrop shape is not a container.
 - Loopback artifact pages stay on DESIGN.binance.md radii.
+- Markdown `th`/`td` stay square so collapsed table borders do not double-bevel.
+- Stacked picker chrome (head / list / empty) uses split top/bottom radii on
+  the end pieces; the middle directive list stays square so the seam joins.
 
 ## Out of Scope
 

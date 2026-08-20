@@ -456,6 +456,7 @@
 .krypton-prompt-dialog__chip-switch {
   background: transparent;
   border: 1px solid rgba(199, 125, 255, 0.3);
+  border-radius: var(--krypton-border-radius, 4px);
   color: var(--krypton-prompt-accent, #c77dff);
   font-family: inherit;
   font-size: var(--krypton-chrome-font-size, 11px);
@@ -589,6 +590,7 @@
   overflow-y: auto;
   background: rgba(8, 6, 14, 0.98);
   border: 1px solid rgba(199, 125, 255, 0.4);
+  border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   display: none;
   scrollbar-width: thin;

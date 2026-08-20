@@ -513,6 +513,7 @@
   margin: 4px 0;
   padding: 6px 8px;
   border: 1px solid rgba(255, 215, 109, 0.28);
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(255, 215, 109, 0.06);
 }
 .acp-view__ask--resolved {
@@ -552,6 +553,7 @@
   padding: 4px 0;
   margin: 0 12px;
   border: 1px solid rgba(120, 200, 160, 0.2);
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(8, 12, 22, 0.96);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.5),

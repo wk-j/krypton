@@ -176,12 +176,14 @@
   color: var(--krypton-focused-accent, #0cf);
   background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.08);
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  border-radius: var(--krypton-border-radius, 4px);
   padding: 0 2px;
 }
 
 .krypton-overview__markdown pre {
   background: rgba(var(--krypton-bg-rgb, 6, 10, 18), 0.6);
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  border-radius: var(--krypton-border-radius, 4px);
   padding: 10px 12px;
   margin: 0.7em 0;
   overflow-x: auto;
@@ -199,6 +201,7 @@
   margin: 0.8em 0;
   padding: 0.5em 0.9em;
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.2);
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.05);
   color: rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.75);
 }

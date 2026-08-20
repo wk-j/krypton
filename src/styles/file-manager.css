@@ -260,6 +260,7 @@
   margin: 0 0 1.5em;
   padding: 12px 14px;
   border: 1px solid var(--krypton-focused-accent);
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(var(--krypton-accent-rgb), 0.04);
   color: var(--krypton-fg);
 }

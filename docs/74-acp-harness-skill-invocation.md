@@ -143,7 +143,7 @@ Dropdown is a fixed-position element anchored just above the composer, accent-co
 /<name>           <description, dimmed, ellipsized>
 ```
 
-Selected row gets the lane accent border + slight inverse fill. Mirror the cyberpunk aesthetic — sharp geometry, no border-radius, single-pixel glows, no `backdrop-filter: blur()`.
+Selected row gets the lane accent border + slight inverse fill. Mirror the cyberpunk aesthetic — 4px container bevel (`var(--krypton-border-radius, 4px)`), single-pixel glows, no `backdrop-filter: blur()`.
 
 Empty state: `no skills match — Esc to dismiss`.
 

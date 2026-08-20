@@ -871,6 +871,7 @@
   background:
     linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
   border: 1px solid rgba(0, 204, 255, 0.28);
+  border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.95em;
@@ -989,6 +990,7 @@
   padding: 8px 10px;
   background: linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
   border: 1px solid color-mix(in srgb, var(--acp-action-accent) 42%, transparent);
+  border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 0 18px color-mix(in srgb, var(--acp-action-accent) 10%, transparent);
   color: rgba(216, 232, 216, 0.92);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
@@ -1316,6 +1318,7 @@
   background:
     linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
   border: 1px solid rgba(0, 204, 255, 0.22);
+  border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.95em;
@@ -1567,6 +1570,8 @@
   background: rgba(0, 0, 0, 0.35);
   position: relative;
   min-width: 48px;
+  border-radius: var(--krypton-border-radius, 4px);
+  overflow: hidden;
 }
 
 .acp-harness__lane-peek-heat-fill {
@@ -1956,6 +1961,7 @@
   overflow: hidden;
   background: rgba(216, 232, 216, 0.08);
   border: 1px solid rgba(216, 232, 216, 0.1);
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 .acp-harness__tool-stat-bar::before,
@@ -2067,6 +2073,7 @@
   min-width: 2.6ch;
   padding: 0 4px;
   border: 1px solid currentColor;
+  border-radius: var(--krypton-border-radius, 4px);
   color: rgba(216, 232, 216, 0.58);
   font-size: 0.78em;
   line-height: 1.35;
@@ -2942,6 +2949,7 @@
 .acp-harness__tab {
   flex: 0 0 auto;
   border: 0;
+  border-radius: var(--krypton-border-radius, 4px);
   background: transparent;
   color: rgba(216, 232, 216, 0.68);
   font: inherit;
@@ -2958,6 +2966,7 @@
 }
 
 .acp-harness__composer {
+  border-radius: var(--krypton-border-radius, 4px);
   min-height: 42px;
   padding: 6px 10px 8px;
   background: linear-gradient(
@@ -3117,6 +3126,7 @@
   line-height: 1.55;
   background:
     linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
+  border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
@@ -3544,6 +3554,7 @@
   gap: 4px;
   padding: 4px 6px;
   border: 1px solid rgba(255, 209, 102, 0.28);
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(255, 209, 102, 0.06);
 }
 
@@ -3602,6 +3613,7 @@
   align-items: baseline;
   padding: 1px 4px;
   border: 1px solid transparent;
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 .acp-harness__question-option--focus {
@@ -4127,6 +4139,7 @@
   gap: 4px;
   padding: 8px 10px;
   border: 1px solid rgba(255, 209, 102, 0.34);
+  border-radius: var(--krypton-border-radius, 4px);
   background:
     linear-gradient(90deg, rgba(255, 209, 102, 0.09), rgba(109, 208, 255, 0.035)),
     rgba(10, 16, 24, 0.9);
@@ -4188,6 +4201,7 @@
 
 .acp-harness__provider-error-chip {
   border: 1px solid rgba(216, 232, 216, 0.16);
+  border-radius: var(--krypton-border-radius, 4px);
   color: rgba(216, 232, 216, 0.58);
   padding: 1px 6px;
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
@@ -4224,6 +4238,7 @@
   max-height: 180px;
   overflow: auto;
   border: 1px solid rgba(216, 232, 216, 0.1);
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(0, 0, 0, 0.24);
   color: rgba(216, 232, 216, 0.78);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
@@ -4452,6 +4467,7 @@
   background:
     linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
   border: 1px solid rgba(0, 204, 255, 0.28);
+  border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.95em;
@@ -4674,6 +4690,7 @@
 }
 
 .acp-harness__directive-head {
+  border-radius: var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px) 0 0;
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -4852,6 +4869,7 @@
 }
 
 .acp-harness__model-head {
+  border-radius: var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px) 0 0;
   display: flex;
   justify-content: space-between;
   gap: 10px;
