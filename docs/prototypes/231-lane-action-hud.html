@@ -99,10 +99,9 @@
     align-items: center;
     padding: 8px 10px;
     background: linear-gradient(180deg, rgba(8, 14, 22, 0.94), rgba(4, 8, 13, 0.94));
-    border: 1px solid color-mix(in srgb, var(--hud-accent) 42%, transparent);
-    box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.4) inset,
-      0 0 18px color-mix(in srgb, var(--hud-accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--hud-accent) 28%, transparent);
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     animation: deploy 180ms var(--ease-in) both;
   }
   .hud[data-kind="edit"]     { --hud-accent: var(--amber); }

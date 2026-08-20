@@ -7,22 +7,42 @@
 import type { AcpBackendDescriptor } from './types';
 
 export const BACKEND_LABELS: Record<string, string> = {
-  codex: 'Codex',
   claude: 'Claude',
+  codex: 'Codex',
+  grok: 'Grok',
   opencode: 'OpenCode',
   'pi-acp': 'Pi',
   droid: 'Droid',
   cursor: 'Cursor',
   junie: 'Junie',
   omp: 'OMP',
-  grok: 'Grok',
   copilot: 'Copilot',
   mimo: 'MiMo',
   cline: 'Cline',
 };
 
+/** Preferred add-lane picker order. Remaining installed backends follow by id. */
+export const HARNESS_BACKEND_ORDER: readonly string[] = [
+  'claude',
+  'codex',
+  'grok',
+  'opencode',
+  'pi-acp',
+];
+
 export function harnessBackends(backends: AcpBackendDescriptor[]): AcpBackendDescriptor[] {
-  return backends.filter((backend) => backend.id !== 'gemini');
+  const rank = (id: string): number => {
+    const index = HARNESS_BACKEND_ORDER.indexOf(id);
+    return index === -1 ? HARNESS_BACKEND_ORDER.length : index;
+  };
+  return backends
+    .filter((backend) => backend.id !== 'gemini')
+    .slice()
+    .sort((a, b) => {
+      const byPreferred = rank(a.id) - rank(b.id);
+      if (byPreferred !== 0) return byPreferred;
+      return a.id.localeCompare(b.id);
+    });
 }
 
 export function backendLabel(backendId: string): string {

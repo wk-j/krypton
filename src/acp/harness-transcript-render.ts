@@ -23,6 +23,7 @@ import type {
 import { optionHotkey, type QuestionPayload } from './ask-user-question';
 import { backendLogoId } from './harness-lane-identity';
 import { transcriptLabel } from './harness-lane-chrome';
+import { collapseThoughtBlankLines } from './harness-format';
 import {
   renderArtifactCardBody,
   renderReviewCardBody,
@@ -247,14 +248,16 @@ export function renderTranscriptItem(
         installThoughtVeil(body);
       } else {
         body.classList.add('acp-harness__msg-body--stream-plain');
-        body.appendChild(document.createTextNode(item.text));
+        const text = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
+        body.appendChild(document.createTextNode(text));
         item.streamPlainLength = item.text.length;
       }
     } else {
+      const text = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
       body.dataset.pretext = 'true';
-      body.dataset.rawText = item.text;
+      body.dataset.rawText = text;
       body.dataset.rowId = item.id;
-      body.textContent = item.text;
+      body.textContent = text;
     }
   } else {
     body.textContent = item.text;

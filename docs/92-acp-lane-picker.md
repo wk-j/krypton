@@ -45,7 +45,7 @@ for (const spec of DEFAULT_HARNESS_SPAWN) {
 
 **Per-lane teardown precedent.** `dispose()` (line 419-437) loops every lane and calls `lane.client.dispose()`. `restartLane` (line 1098) and `newLaneSession` (line 1119) already wire the dispose-then-respawn dance per lane. Removing a lane cleanly = `client.dispose()` + filter out of `lanes[]` + recompute `activeLaneId` + render.
 
-**Available backends.** `AcpClient.listBackends()` returns `AcpBackendDescriptor[]` with `id` and friendly name. The picker uses this list verbatim (no hard-coded `DEFAULT_HARNESS_SPAWN`).
+**Available backends.** `AcpClient.listBackends()` returns `AcpBackendDescriptor[]` with `id` and friendly name. The picker still has no default-spawn roster (`DEFAULT_HARNESS_SPAWN` is gone). `harnessBackends()` then filters Gemini and pins Claude, Codex, Grok, OpenCode, Pi first; remaining installed backends follow by id.
 
 **Lane index continuity.** Today `createLane` is called with `index++` from the spawn loop. We'll move that counter to a class field `private nextLaneIndex = 1` so `addLane()` can keep numbering monotonically across the session — even after lanes are removed. (Display name `Claude-1` is then never re-used in the same session, avoiding confusion in memory/transcripts.)
 

@@ -29,6 +29,10 @@ export type ActionHudKind =
 
 export type ActionHudOwner = 'rail' | 'peek';
 
+/** Empty live-action frames keep the last HUD this long so thinking/writing
+ *  interleave does not hide+remount the card (entrance flicker). */
+export const ACTION_HUD_HIDE_MS = 2000;
+
 export interface LiveAction {
   kind: ActionHudKind;
   title: string;

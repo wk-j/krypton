@@ -131,7 +131,7 @@ Show the action slot when `deriveRailLiveActions(lanes)` is non-empty. A lane is
 └──────────────────────────────────────────┘
 ```
 
-- 320px, hard corners (0), 1px full border in the kind accent (no left rail).
+- 320px, 4px radius, 1px full border in the kind accent at the same 28% mix as peek/plan (no glow, no left rail). Kind color lives on the glyph and label.
 - Left well: 28×28, no border and no fill, `contain: strict`, one `<svg><use href="#krypton-action-{kind}"/></svg>` plus a CSS overlay that is the animation. The glyph sits on the card; the well is only a clip for the instrument.
 - Kind label: 11px, weight 600, tracked uppercase, kind accent.
 - When the harness has more than one lane, a dim tracked lane name sits on the same row as the kind (`EXECUTE · Claude-2`). Single-lane harnesses stay unlabeled.
@@ -139,7 +139,7 @@ Show the action slot when `deriveRailLiveActions(lanes)` is non-empty. A lane is
 - `role="status"`, `aria-live="polite"`. `title` carries the untruncated path.
 - Slot `max-height: min(240px, 42%)`; extra cards scroll.
 
-Peek card: if `snapshot.activeTool` and status is `busy`, render the HUD in place of `renderLanePeekRow('tool', …)`. Same component, `data-owner="peek"`.
+Peek card: if `snapshot.activeTool` and status is `busy`, render the HUD in place of `renderLanePeekRow('tool', …)`. Same component, `data-owner="peek"`. When that HUD is present, skip the peek **activity** event row (`recent-activity` / `lane-shell`) — `▸ execute Terminal` is the same signal. Peer, permission, error, and inbox event rows stay.
 
 ### Per-kind instruments
 
@@ -165,13 +165,13 @@ All infinite motion uses DESIGN.md tokens (`--krypton-motion-data-stream` 1.8s l
 ```
 1. tool_call / thought_chunk / message_chunk → field write on lane.activity (unchanged)
 2. 1 s composer tick + existing render paths + background `scheduleLaneRender` call renderLaneAction()
-3. deriveRailLiveActions(lanes) → empty? hide slot
-4. same lane+sig? patchActionHud (kind label + subject + name only)
+3. deriveRailLiveActions(lanes) → empty? arm a 2s hide (`ACTION_HUD_HIDE_MS`); keep the last HUD until it fires
+4. live rows return before the delay? cancel hide; same lane+sig patches (no remount)
 5. new lane or new sig? remount that card — entrance plays
-6. finishTurn / error → activity null → that card drops; slot hides when none remain
+6. finishTurn / error → activity null → after the hide delay, that card drops; slot hides when none remain
 ```
 
-No new timer. No per-chunk DOM work.
+Show is immediate. Hide is delayed 2s so thinking/writing interleave does not play `acp-action-deploy` on every gap. The hide timer is cancelled on dispose. No per-chunk DOM work.
 
 ### Composer
 
@@ -185,6 +185,7 @@ No new timer. No per-chunk DOM work.
 - **Peek showing a busy peer** — peek card HUD = peeked; action stack lists the other busy lanes. Dismissing peek returns that peer to the stack.
 - **Thinking + thought slot on the same lane** — action HUD omitted.
 - **Writing + thought slot** — HUD stays (`writing`); thought is a different signal.
+- **Thinking/writing interleave** — thinking is omitted when the thought slot is live, so derive goes empty between write chunks. Hide waits 2s (`ACTION_HUD_HIDE_MS`) so the writing HUD does not drop and remount. A real idle longer than that still hides.
 - **Multiple in-flight tools** — oldest pending/in_progress, same as peek today.
 - **Live Assist** — untouched (spec 209).
 - **Zen / view-split / narrow rail** — slot uses the existing `max-width: calc(100% - 24px)` rail rule; subject ellipsizes.

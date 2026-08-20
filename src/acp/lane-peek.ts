@@ -24,6 +24,7 @@ import type {
 } from './harness-view-types';
 import {
   basename,
+  collapseThoughtBlankLines,
   esc,
   formatCoarseAge,
   formatCount,
@@ -314,6 +315,24 @@ export function lanePeekPriorityClass(candidate: LanePeekCandidate): 'high' | 'w
   return 'info';
 }
 
+/** Peek embeds the spec 231 HUD when the peeked lane has a live tool. */
+export function peekEmbedsActionHud(snapshot: LanePeekSnapshot | null | undefined): boolean {
+  return snapshot != null && snapshot.status === 'busy' && snapshot.activeTool != null;
+}
+
+/**
+ * The activity event row (`▸ execute Terminal`) is the same signal as the
+ * live-action HUD. Peer / permission / error / inbox rows are different
+ * signals and stay.
+ */
+export function peekEventRowDuplicatesHud(
+  candidate: LanePeekCandidate,
+  snapshot: LanePeekSnapshot | null | undefined,
+): boolean {
+  if (!peekEmbedsActionHud(snapshot)) return false;
+  return candidate.reasonKey === 'recent-activity' || candidate.reasonKey === 'lane-shell';
+}
+
 export function renderLanePeekEventRow(candidate: LanePeekCandidate): string {
   const payload = candidate.summary.payload;
   let text = candidate.reasonLabel;
@@ -418,8 +437,10 @@ export function renderLanePeek(
       `<span class="acp-harness__lane-peek-name">${esc(candidate.displayName)}</span>` +
       `<span class="acp-harness__lane-peek-status">${esc(statusText)}</span>` +
       (age ? `<span class="acp-harness__lane-peek-age">${esc(age)}</span>` : '') +
-    `</header>` +
-    renderLanePeekEventRow(candidate);
+    `</header>`;
+  if (!peekEventRowDuplicatesHud(candidate, snapshot)) {
+    html += renderLanePeekEventRow(candidate);
+  }
 
   if (snapshot?.plan) html += renderLanePeekPlanRow(snapshot.plan);
 
@@ -973,7 +994,7 @@ export function syncPeekThoughtBody(
     return false;
   }
   if (kind === 'teletype' && thought) {
-    const pending = applyThoughtTeletype(body, thought.text);
+    const pending = applyThoughtTeletype(body, collapseThoughtBlankLines(thought.text));
     schedulePeekThoughtPin(body);
     return pending;
   }

@@ -69,9 +69,16 @@ import {
   transcriptRenderSignature,
 } from './harness-transcript-render';
 import { peekThoughtMarkdownHtml } from './harness-markdown';
+import { collapseThoughtBlankLines } from './harness-format';
+import { peekEmbedsActionHud, peekEventRowDuplicatesHud } from './lane-peek';
 
 import type { PermissionOption, ToolCall } from './types';
-import type { HarnessLane, HarnessTranscriptItem, MessageResource } from './harness-view-types';
+import type {
+  HarnessLane,
+  HarnessTranscriptItem,
+  LanePeekCandidate,
+  MessageResource,
+} from './harness-view-types';
 
 function permissionFor(toolCall: Partial<ToolCall>, options: PermissionOption[] = []): { toolCall: ToolCall; options: PermissionOption[] } {
   return {
@@ -98,6 +105,7 @@ function laneSnapshot(partial: Partial<LanePeekSnapshot> & { laneId: string }): 
     latestMeaningful: partial.latestMeaningful ?? null,
     error: partial.error ?? null,
     thought: partial.thought ?? null,
+    activeTool: partial.activeTool ?? null,
   };
 }
 
@@ -898,6 +906,12 @@ describe('ACP peer activity UI (spec 118)', () => {
     expect(thoughtBodyRenderKind({ phase: 'seal', text: 'done' })).toBe('markdown');
   });
 
+  it('thought display drops blank lines so they do not eat the clamp', () => {
+    expect(collapseThoughtBlankLines('alpha\n\n\nbeta\n')).toBe('alpha\nbeta');
+    expect(collapseThoughtBlankLines('\n\nfirst\r\n\r\nsecond\n')).toBe('first\nsecond');
+    expect(collapseThoughtBlankLines('keep  indent')).toBe('keep  indent');
+  });
+
   it('deriveThoughtForPeek uses a veil for empty live thought', () => {
     const now = 10_000;
     const lane = {
@@ -1054,6 +1068,69 @@ describe('ACP peer activity UI (spec 118)', () => {
   });
 });
 
+describe('peek action HUD vs activity event row', () => {
+  const busyTool = laneSnapshot({
+    laneId: 'claude',
+    displayName: 'Claude-1',
+    status: 'busy',
+    activeTool: { name: 'execute', subject: 'Terminal', startedAt: 1 },
+  });
+
+  function candidate(reasonKey: string, payload: LanePeekCandidate['summary']['payload']): LanePeekCandidate {
+    return {
+      laneId: 'claude',
+      displayName: 'Claude-1',
+      priority: 80,
+      direct: false,
+      reasonKey,
+      reasonLabel: reasonKey,
+      at: 1,
+      visualIndex: 1,
+      summary: { status: 'busy', headline: 'busy', detail: null, payload },
+    };
+  }
+
+  it('embeds the HUD on a busy peeked lane with an active tool', () => {
+    expect(peekEmbedsActionHud(busyTool)).toBe(true);
+    expect(peekEmbedsActionHud(laneSnapshot({ laneId: 'claude', status: 'idle' }))).toBe(false);
+  });
+
+  it('drops the activity event row that restates the HUD', () => {
+    expect(peekEventRowDuplicatesHud(
+      candidate('recent-activity', { kind: 'activity', label: 'execute Terminal', ageLabel: '1m+' }),
+      busyTool,
+    )).toBe(true);
+    expect(peekEventRowDuplicatesHud(
+      candidate('lane-shell', { kind: 'activity', label: 'shell command running', ageLabel: 'now' }),
+      busyTool,
+    )).toBe(true);
+  });
+
+  it('keeps peer, permission, error, and inbox event rows beside the HUD', () => {
+    expect(peekEventRowDuplicatesHud(
+      candidate('inbound-peer', { kind: 'peer', direction: 'in', peerDisplayName: 'Grok-1', ageLabel: 'now' }),
+      busyTool,
+    )).toBe(false);
+    expect(peekEventRowDuplicatesHud(
+      candidate('lane-permission', {
+        kind: 'permission',
+        toolName: 'bash',
+        subject: 'rm',
+        decision: 'pending',
+      }),
+      busyTool,
+    )).toBe(false);
+    expect(peekEventRowDuplicatesHud(
+      candidate('lane-error', { kind: 'error', message: 'failed' }),
+      busyTool,
+    )).toBe(false);
+    expect(peekEventRowDuplicatesHud(
+      candidate('lane-inbox', { kind: 'activity', label: 'inbox 2', ageLabel: 'now' }),
+      busyTool,
+    )).toBe(false);
+  });
+});
+
 function heatLane(partial: Partial<LanePeekHeatLaneInput> & Pick<LanePeekHeatLaneInput, 'id'>): LanePeekHeatLaneInput {
   return {
     displayName: partial.displayName ?? partial.id,
@@ -1198,6 +1275,29 @@ describe('harnessBackends', () => {
 
     expect(harnessBackends(backends).map((backend) => backend.id)).toEqual(['claude', 'codex']);
     expect(backends.map((backend) => backend.id)).toEqual(['claude', 'gemini', 'codex']);
+  });
+
+  it('pins Claude, Codex, Grok, OpenCode, Pi first, then remaining backends by id', () => {
+    const backends = [
+      { id: 'cline', display_name: 'Cline', command: 'cline' },
+      { id: 'droid', display_name: 'Droid', command: 'droid' },
+      { id: 'pi-acp', display_name: 'Pi', command: 'pi-acp' },
+      { id: 'gemini', display_name: 'Gemini', command: 'gemini' },
+      { id: 'opencode', display_name: 'OpenCode', command: 'opencode' },
+      { id: 'grok', display_name: 'Grok', command: 'grok' },
+      { id: 'codex', display_name: 'Codex', command: 'codex-acp' },
+      { id: 'claude', display_name: 'Claude', command: 'npx' },
+    ];
+
+    expect(harnessBackends(backends).map((backend) => backend.id)).toEqual([
+      'claude',
+      'codex',
+      'grok',
+      'opencode',
+      'pi-acp',
+      'cline',
+      'droid',
+    ]);
   });
 });
 

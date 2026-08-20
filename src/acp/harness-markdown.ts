@@ -13,6 +13,7 @@ import * as smd from 'streaming-markdown';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
+import { collapseThoughtBlankLines } from './harness-format';
 
 export const md = new Marked(
   markedHighlight({
@@ -312,6 +313,7 @@ export function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscri
     installThoughtVeil(body);
     return;
   }
+  const display = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
   if (!body.classList.contains('acp-harness__msg-body--stream-plain')) {
     body.classList.remove('acp-harness__msg-body--markdown');
     body.classList.remove('acp-harness__msg-body--thought-veil');
@@ -319,7 +321,7 @@ export function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscri
     delete body.dataset.rawText;
     delete body.dataset.rowId;
     body.classList.add('acp-harness__msg-body--stream-plain');
-    const seed = document.createTextNode(item.text);
+    const seed = document.createTextNode(display);
     body.replaceChildren(seed);
     item.streamPlainLength = item.text.length;
     if (item.kind === 'thought') body.scrollTop = body.scrollHeight;
@@ -332,6 +334,14 @@ export function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscri
     item.streamPlainLength = 0;
   }
   const plain = textNode as Text;
+  if (item.kind === 'thought') {
+    // Collapsed display is not a prefix of item.text, so appendData would
+    // re-insert the dropped blanks. Rewrite the node from the collapsed form.
+    plain.data = display;
+    item.streamPlainLength = item.text.length;
+    body.scrollTop = body.scrollHeight;
+    return;
+  }
   const len = item.streamPlainLength ?? 0;
   if (item.text.length > len) {
     plain.appendData(item.text.slice(len));
@@ -340,7 +350,4 @@ export function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscri
     plain.data = item.text;
     item.streamPlainLength = item.text.length;
   }
-  // Thought rows render in a fixed-height clamped window; keep the latest
-  // reasoning line pinned to the bottom so live thinking stays visible.
-  if (item.kind === 'thought') body.scrollTop = body.scrollHeight;
 }

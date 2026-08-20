@@ -30,6 +30,17 @@ export function truncateInline(value: string, max: number): string {
   return `${normalized.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
 }
 
+/** Thought rows are clamped to ~4 lines. Codex `\n\n` section breaks (and
+ *  leading/trailing blanks) would otherwise paint empty pretext rows and eat
+ *  that budget. Display-only — stored `item.text` is unchanged. */
+export function collapseThoughtBlankLines(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .join('\n');
+}
+
 export function abbreviatePath(path: string): string {
   const home = getHomeLikePrefix();
   const p = home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;

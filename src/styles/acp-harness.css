@@ -995,9 +995,9 @@
   width: 100%;
   padding: 8px 10px;
   background: var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
-  border: 1px solid color-mix(in srgb, var(--acp-action-accent) 42%, transparent);
+  border: 1px solid color-mix(in srgb, var(--acp-action-accent) 28%, transparent);
   border-radius: var(--krypton-border-radius, 4px);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--acp-action-accent) 10%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   animation: acp-action-deploy 180ms var(--krypton-motion-entrance) both;

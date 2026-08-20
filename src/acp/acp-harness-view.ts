@@ -374,12 +374,14 @@ import {
   latestMeaningfulForPeek,
   latestPermissionForPeek,
   isLivePeekThought,
+  peekEventRowDuplicatesHud,
   renderLanePeek,
   renderRailPeerSpans,
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
 } from './lane-peek';
 import {
+  ACTION_HUD_HIDE_MS,
   deriveRailLiveActions,
   liveActionFromPeekTool,
   patchActionHud,
@@ -960,6 +962,7 @@ export class AcpHarnessView implements ContentView {
   private referenceGitRefreshGeneration = 0;
   private referenceGitDisposed = false;
   private composerTickTimer: number | null = null;
+  private actionHudHideTimer: number | null = null;
   private toolTickTimer: number | null = null;
   private metricsBySession = new Map<number, AcpLaneMetrics>();
   private metricsTimer: number | null = null;
@@ -4044,6 +4047,7 @@ export class AcpHarnessView implements ContentView {
     this.orchestratorLaneBusUnsub?.();
     this.orchestratorLaneBusUnsub = null;
     this.stopComposerTick();
+    this.cancelActionHudHide();
     this.stopThoughtTeletypeTick();
     this.stopMetricsTick();
     this.stopSpinnerTicker();
@@ -10810,12 +10814,19 @@ export class AcpHarnessView implements ContentView {
       this.mountLanePeekHeat(heatRoot, candidate, activeLane, peekLane, now);
     }
     if (!sameCard) slot.replaceChildren(card);
-    this.syncPeekActionHud(card, snapshot);
+    this.syncPeekActionHud(card, snapshot, candidate);
     slot.hidden = false;
   }
 
   /** spec 231 — keep the peeked lane's HUD current without remounting the card. */
-  private syncPeekActionHud(card: HTMLElement, snapshot: LanePeekSnapshot): void {
+  private syncPeekActionHud(
+    card: HTMLElement,
+    snapshot: LanePeekSnapshot,
+    candidate: LanePeekCandidate,
+  ): void {
+    if (peekEventRowDuplicatesHud(candidate, snapshot)) {
+      card.querySelector('.acp-harness__lane-peek-event')?.remove();
+    }
     const existing = card.querySelector<HTMLElement>('.acp-harness__action-hud');
     const action = snapshot.activeTool && snapshot.status === 'busy'
       ? liveActionFromPeekTool(snapshot.activeTool)
@@ -10832,7 +10843,9 @@ export class AcpHarnessView implements ContentView {
     if (existing) existing.replaceWith(next);
     else {
       const event = card.querySelector('.acp-harness__lane-peek-event');
+      const head = card.querySelector('.acp-harness__lane-peek-head');
       if (event) event.after(next);
+      else if (head) head.after(next);
       else card.insertBefore(next, card.firstChild);
     }
   }
@@ -10860,12 +10873,28 @@ export class AcpHarnessView implements ContentView {
       peekHudLaneId,
     });
     if (rows.length === 0) {
-      slot.replaceChildren();
-      slot.hidden = true;
+      this.scheduleActionHudHide();
       return;
     }
+    this.cancelActionHudHide();
     syncActionHudSlot(slot, rows, this.lanes.length > 1);
     slot.hidden = false;
+  }
+
+  private scheduleActionHudHide(): void {
+    if (this.actionHudHideTimer !== null) return;
+    if (this.actionSlotEl.hidden) return;
+    this.actionHudHideTimer = window.setTimeout(() => {
+      this.actionHudHideTimer = null;
+      this.actionSlotEl.replaceChildren();
+      this.actionSlotEl.hidden = true;
+    }, ACTION_HUD_HIDE_MS);
+  }
+
+  private cancelActionHudHide(): void {
+    if (this.actionHudHideTimer === null) return;
+    window.clearTimeout(this.actionHudHideTimer);
+    this.actionHudHideTimer = null;
   }
 
   private showingPeekLaneId(): string | null {
@@ -13525,11 +13554,14 @@ export class AcpHarnessView implements ContentView {
             item.pretextLines = lineTexts;
           }
         }
+        const paintLines = item?.kind === 'thought'
+          ? lineTexts.filter((t) => t.replace(/\u00a0/g, '').trim() !== '')
+          : lineTexts;
         row.textContent = '';
-        for (let i = 0; i < lineTexts.length; i++) {
+        for (let i = 0; i < paintLines.length; i++) {
           const lineEl = document.createElement('div');
           lineEl.className = 'acp-harness__pretext-line';
-          lineEl.textContent = lineTexts[i];
+          lineEl.textContent = paintLines[i];
           row.appendChild(lineEl);
         }
       } catch {

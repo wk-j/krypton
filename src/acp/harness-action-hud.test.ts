@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ToolCall } from './types';
 import {
+  ACTION_HUD_HIDE_MS,
   actionHudKindFromLabel,
   actionHudMarkup,
   deriveLiveAction,
@@ -199,6 +200,12 @@ describe('shouldOmitActionHud', () => {
       thoughtLaneId: null,
       thoughtLive: false,
     })).toBe(true);
+  });
+});
+
+describe('ACTION_HUD_HIDE_MS', () => {
+  it('holds empty frames past the 180ms entrance remount', () => {
+    expect(ACTION_HUD_HIDE_MS).toBe(2000);
   });
 });
 

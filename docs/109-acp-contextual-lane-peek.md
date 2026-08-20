@@ -183,7 +183,7 @@ Placement:
 - It must not cover the composer, permission banner, or lane header.
 - It reserves no permanent vertical transcript space (the rail is an overlay, not a reserved column).
 - It must not compete with #104 titlebar HUD; the peek lives inside ACP content, while #104 HUD lives in native window chrome/titlebar.
-- Spec 231: live tool/think/write signals are a **sibling** rail slot (`[data-slot="action"]`) stacked immediately above this card — one labeled HUD per busy lane, not a peek payload. When the peeked lane itself is busy, this card embeds the same action HUD in place of the old flat `tool` row, and that lane is omitted from the rail stack so it is not painted twice.
+- Spec 231: live tool/think/write signals are a **sibling** rail slot (`[data-slot="action"]`) stacked immediately above this card — one labeled HUD per busy lane, not a peek payload. When the peeked lane itself is busy, this card embeds the same action HUD in place of the old flat `tool` row, and that lane is omitted from the rail stack so it is not painted twice. The HUD also replaces the peek **activity** event row (`recent-activity` / `lane-shell`); do not stack `▸ execute Terminal` above `EXECUTE Terminal`. Peer, permission, error, and inbox event rows still render above the HUD.
 
 Shape:
 
