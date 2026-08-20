@@ -43,7 +43,7 @@ stats row prints for the active lane is visible whenever the composer is.
 | Element | Also rendered at | Verdict |
 |---|---|---|
 | lane name (`Claude-2 …`) | lane head name `harness-lane-chrome.ts:143`; input line `acp-harness-view.ts:11280` (directly below); window footer lane strip (spec 218) | **4× duplicate → delete** |
-| `· Ctrl+C cancel` | lane head cancel hint `harness-lane-chrome.ts:136-140` (superset: also covers `needs_permission` / `awaiting_peer` / pending shell) | **duplicate → delete** |
+| `· Ctrl+C cancel` | originally the lane head cancel hint; that chip was later removed. Cancel is `Ctrl+C` / `#cancel` (workspace footer `#cancel running`, `?` help). Hung-lane escalation is a transcript system row (spec 199) | **duplicate → delete** (do not restore on the composer or the lane head) |
 | `· N tok` | lane stats `in N out N` `harness-lane-chrome.ts:483` | **duplicate → delete** |
 | `polly-bypass` chip | lane stats `polly-bypass` `harness-lane-chrome.ts:496` | **duplicate → delete** |
 | project cwd (`~/Source/llm-wiki`) | lane stats `basename(projectDir)` `harness-lane-chrome.ts:464`; window footer project badge (spec 219); workspace footer `workspace-footer.ts:812` | **3× duplicate → delete** |

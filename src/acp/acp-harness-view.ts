@@ -11855,10 +11855,11 @@ export class AcpHarnessView implements ContentView {
 
   /** spec 221: the busy state is the only one with internal structure worth
    *  splitting; every other state is one message and stays whole. The busy run
-   *  no longer carries the lane name, the output-token count, or the
-   *  `Ctrl+C cancel` hint — the lane head prints the name and the cancel hint
-   *  for the active lane in every layout, the input line one row below repeats
-   *  the name, and the lane stats row already shows `in N out N`. */
+   *  no longer carries the lane name, the output-token count, or a
+   *  `Ctrl+C cancel` hint — the lane head prints the name, the input line one
+   *  row below repeats it, and the lane stats row already shows `in N out N`.
+   *  Cancel is Ctrl+C / #cancel (workspace footer `#cancel running`); there is
+   *  no lane-head chip. */
   private composerStatusChip(lane: HarnessLane): MetaSegment[] {
     if (this.openHintMode) return textSegments('open reference: press label · Esc cancel');
     if (this.focus === 'transcript') return textSegments('command mode: 1-9 lanes · ^M memory · f open reference · r refresh Git · ? help · i/Esc input');

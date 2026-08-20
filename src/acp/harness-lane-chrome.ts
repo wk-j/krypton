@@ -120,32 +120,15 @@ export function renderLaneHead(
   const logo =
     `<svg class="acp-harness__icon" aria-hidden="true">` +
     `<use href="#${backendLogoId(lane.backendId)}"/></svg>`;
-  if (!active) {
-    const statusText = lane.status === 'needs_permission' ? 'perm' : statusLabel(lane.status);
-    return (
-      renderLaneSymbol(lane.status) +
-      `<span class="acp-harness__lane-name">${logo}${esc(lane.displayName)}</span>` +
-      `<span class="acp-harness__lane-status">${esc(statusText)}</span>` +
-      chips +
-      `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>`
-    );
-  }
-  // spec 199 (issue #13): once a cancel goes unacknowledged the same key becomes
-  // the force-restart gesture — surface it here, since the transcript row that
-  // announced it scrolls away. A pending shell cancel still wins in the key
-  // handler, so it keeps the plain hint.
-  const cancelHint = lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer' || lane.pendingShellId
-    ? lane.cancelUnacked && !lane.pendingShellId
-      ? `<span class="acp-harness__lane-cancel-hint acp-harness__lane-cancel-hint--force" title="cancel unacknowledged - ⌃C force-restarts this lane and resumes the session">⌃C force restart</span>`
-      : `<span class="acp-harness__lane-cancel-hint">⌃C cancel</span>`
-    : '';
+  const statusText = !active && lane.status === 'needs_permission'
+    ? 'perm'
+    : statusLabel(lane.status);
   return (
     renderLaneSymbol(lane.status) +
     `<span class="acp-harness__lane-name">${logo}${esc(lane.displayName)}</span>` +
-    `<span class="acp-harness__lane-status">${esc(statusLabel(lane.status))}</span>` +
+    `<span class="acp-harness__lane-status">${esc(statusText)}</span>` +
     chips +
-    `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>` +
-    cancelHint
+    `<span class="acp-harness__lane-activity">${esc(laneActivity(lane, pendingPeers))}</span>`
   );
 }
 

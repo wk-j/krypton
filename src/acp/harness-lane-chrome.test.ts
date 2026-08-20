@@ -69,3 +69,25 @@ describe('renderLaneHead — lane-mail inbox chip', () => {
     );
   });
 });
+
+describe('renderLaneHead — no cancel chip', () => {
+  it('does not paint a ⌃C cancel hint on a busy active head', () => {
+    const html = renderLaneHead(makeLane({ status: 'busy' }), true, null, null, 0, []);
+    expect(html).not.toContain('acp-harness__lane-cancel-hint');
+    expect(html).not.toContain('⌃C cancel');
+    expect(html).not.toContain('force restart');
+  });
+
+  it('does not paint a force-restart hint when cancel is unacknowledged', () => {
+    const html = renderLaneHead(
+      makeLane({ status: 'busy', cancelUnacked: true }),
+      true,
+      null,
+      null,
+      0,
+      [],
+    );
+    expect(html).not.toContain('acp-harness__lane-cancel-hint');
+    expect(html).not.toContain('force restart');
+  });
+});

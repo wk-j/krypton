@@ -105,7 +105,7 @@
 .acp-harness__lane-head {
   height: 28px;
   display: grid;
-  grid-template-columns: 2ch max-content max-content max-content minmax(0, 1fr) auto;
+  grid-template-columns: 2ch max-content max-content max-content minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   padding: 0 10px;
@@ -541,29 +541,6 @@
 
 .acp-harness__metrics-meter--rss .acp-harness__metrics-meter-fill {
   background: rgba(216, 232, 216, 0.42);
-}
-
-.acp-harness__lane-cancel-hint {
-  grid-column: 6;
-  flex: 0 0 auto;
-  justify-self: start;
-  margin-left: 0.6em;
-  padding: 0 6px;
-  border: 1px solid rgba(255, 209, 102, 0.45);
-  border-radius: var(--krypton-border-radius, 4px);
-  color: #ffd166;
-  font-size: 0.7em;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-/* spec 199 (issue #13): the lane ignored session/cancel past the escalation
- * window — ⌃C now force-restarts it. Alert color + tint, chrome stays flat. */
-.acp-harness__lane-cancel-hint--force {
-  border-color: rgba(255, 120, 120, 0.55);
-  background: rgba(255, 120, 120, 0.12);
-  color: var(--acp-accent-danger, #ff7878);
 }
 
 .acp-harness__lane--busy .acp-harness__lane-head,

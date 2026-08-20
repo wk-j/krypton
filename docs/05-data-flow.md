@@ -336,10 +336,11 @@
 12. Hash commands are handled locally by the harness before prompt dispatch:
     a. #cancel sends acp_cancel for the active lane. If the turn is still
        busy/needs_permission 10s later (spec 199, issue #13: the agent CLI hung
-       and never signalled turn-end), the lane is flagged and the header shows
-       "⌃C force restart"; the next Ctrl+C / #cancel kills the lane's process
-       group and respawns it resuming the same agent session, so the hung lane is
-       recoverable without killing a PID from an external terminal.
+       and never signalled turn-end), the lane is flagged and a transcript
+       system row offers "Ctrl+C again to force-restart"; the next Ctrl+C /
+       #cancel kills the lane's process group and respawns it resuming the same
+       agent session, so the hung lane is recoverable without killing a PID from
+       an external terminal. There is no lane-head cancel chip.
     b. #restart respawns an error/stopped active lane without clearing transcript.
     c. #new awaits disposal of the active lane client, clears lane UI state,
        increments a spawn epoch, and spawns the same backend in the same cwd.

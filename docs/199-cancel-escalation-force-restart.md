@@ -73,18 +73,17 @@ lose it; the CLI hung. No Rust changes.
 
 **Krypton delta** — same repeat-gesture escalation as VS Code but fully
 keyboard-driven (`Ctrl+C` again, no dialog), with an explicit timed window like
-docker's grace period. The hung state is surfaced in the lane header rather
-than a modal. No market equivalent handles the "turn finished but turn-end
-never signalled" case specifically; this design treats it as generic
+docker's grace period. The hung state is a transcript system row rather than a
+modal or a lane-head chip. No market equivalent handles the "turn finished but
+turn-end never signalled" case specifically; this design treats it as generic
 cancel-unresponsiveness.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
-| `src/acp/acp-harness-view.ts` | Escalation state on `HarnessLane`, `cancelLane` escalation logic, `restartLane(force)`, `spawnLane(resumeSessionId)` resume path, `setLaneStatus` clearing, stale-completion guard in `sendUserPrompt`, lane-header hint, timer cleanup in `destroy()` |
+| `src/acp/acp-harness-view.ts` | Escalation state on `HarnessLane`, `cancelLane` escalation logic, `restartLane(force)`, `spawnLane(resumeSessionId)` resume path, `setLaneStatus` clearing, stale-completion guard in `sendUserPrompt`, timer cleanup in `destroy()` |
 | `src/acp/acp-harness-view.test.ts` | Escalation state-machine tests |
-| `src/styles/*.css` (harness styles) | `--force` modifier for the cancel hint |
 | `docs/PROGRESS.md` | Milestone entry |
 
 ## Design
@@ -165,16 +164,15 @@ gating is unchanged.
 
 ### UI Changes
 
-- Lane header hint (`acp-harness__lane-cancel-hint`, `renderLaneHead`): when
-  `lane.cancelUnacked`, text becomes `⌃C force restart` with a
-  `acp-harness__lane-cancel-hint--force` modifier (alert color from the existing
-  `--acp-accent-danger` token plus a background tint — chrome stays flat). The
-  header is the durable signal; the transcript row that announced the escalation
-  scrolls away. Gated on `!lane.pendingShellId`, because a pending shell cancel
-  still takes the key — that case keeps the plain `⌃C cancel` hint so the hint
-  never promises an action the key won't perform.
-- Transcript system rows narrate both the escalation offer and the force
-  restart; no new DOM surfaces, no modal.
+- No lane-head cancel chip. Busy, permission, peer-wait, and hung-cancel
+  states used to paint `⌃C cancel` / `⌃C force restart` in the head's last
+  grid column; that control sat isolated from the rail HUD and restated a
+  keybinding the workspace footer (`#cancel running`) and `?` help already
+  carry. `Ctrl+C` / `#cancel` are unchanged.
+- Transcript system rows are the durable hung-lane signal: they narrate both
+  the escalation offer and the force restart. No new DOM surfaces, no modal.
+  A pending shell cancel still takes the key first, so a force-restart is
+  never offered while `pendingShellId` is set.
 
 ## Edge Cases
 
