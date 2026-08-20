@@ -12,7 +12,7 @@ import { CommandPalette } from './command-palette';
 import { PromptDialog } from './prompt-dialog';
 import { QuickFileSearch } from './quick-file-search';
 import { QuickOverview } from './quick-overview';
-import { loadConfig } from './config';
+import { loadConfig, type KryptonConfig } from './config';
 import { FrontendThemeEngine } from './theme';
 import { createGitDashboard } from './dashboards/git';
 import { createOpenCodeDashboard } from './dashboards/opencode';
@@ -72,6 +72,10 @@ async function main(): Promise<void> {
 
   // Connect theme engine to compositor (updates terminals on theme change)
   compositor.setThemeEngine(themeEngine);
+
+  void listen<KryptonConfig>('config-changed', (event) => {
+    compositor.applyHotReload(event.payload);
+  });
 
   // ViewBus — pub/sub channel for cross-view state and intents.
   // Attached *before* applyConfig so the bus catches the first focus/relayout

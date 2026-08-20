@@ -30,7 +30,7 @@ The obvious implementation — `windowEl.style.setProperty('--krypton-window-acc
 
 ### Second pitfall — self-referential slot 1
 
-`laneAccent()` slot 1 returns the literal string `var(--krypton-window-accent, #0cf)` (`acp-harness-view.ts:9636`). Feeding that back into `--krypton-window-accent` is a self-reference → the custom property becomes invalid at computed-value time. The CSS palette rules therefore use the **concrete** color for that slot (`#00ccff` / `0, 204, 255`, the window default cyan), never the var.
+`laneAccent()` slot 1 returns the literal string `var(--krypton-window-accent, #0cf)` (`acp-harness-view.ts:9636`). Feeding that back into `--krypton-window-accent` is a self-reference → the custom property becomes invalid at computed-value time. The CSS palette therefore must not use `--krypton-window-accent` as its own value. Slot 1 instead inherits the **active color theme** via `--krypton-focused-accent` / `--krypton-accent-rgb` (set on `:root` by the theme engine, so not self-referential), with `#00ccff` / `0, 204, 255` as fallback.
 
 ## Research
 
@@ -62,11 +62,11 @@ Editors that color-code the active context in chrome: VS Code's `workbench.color
 
 ### The slot palette (concrete values)
 
-Mirrors `laneAccent()` (`acp-harness-view.ts:9634`), slot 1 resolved to concrete cyan:
+Mirrors `laneAccent()` (`acp-harness-view.ts:9634`). Slot 1 follows the color theme:
 
 | slot | hex | rgb |
 |------|-----|-----|
-| 1 | `#00ccff` | `0, 204, 255` |
+| 1 | `var(--krypton-focused-accent, #00ccff)` | `var(--krypton-accent-rgb, 0, 204, 255)` |
 | 2 | `#8effb0` | `142, 255, 176` |
 | 3 | `#ffd166` | `255, 209, 102` |
 | 4 | `#c77dff` | `199, 125, 255` |
@@ -76,6 +76,8 @@ Mirrors `laneAccent()` (`acp-harness-view.ts:9634`), slot 1 resolved to concrete
 | 8 | `#b18cff` | `177, 140, 255` |
 | 9 | `#4dd0ff` | `77, 208, 255` |
 | 10 | `#5ce6a8` | `92, 230, 168` |
+
+On light scheme (`html[data-theme-scheme="light"]`) these slot hex values stay the identity for border, glow, and status dot. Chrome **text** (tabs, title, usage, footer labels) mixes each slot toward `--krypton-fg` so gold/mint on frost stay readable. The palette table above is not forked. See `src/styles/theme-scheme.css`.
 
 ## Cascade resolution (O1 — resolved via `!important` layering)
 

@@ -645,6 +645,14 @@ export class Compositor {
     console.log('[Krypton] Config reloaded via command palette');
   }
 
+  /** Apply a config payload from the backend `config-changed` hot-reload event. */
+  applyHotReload(config: KryptonConfig): void {
+    this.applyConfig(config);
+    for (const cb of this.onConfigReloadCallbacks) {
+      cb(config);
+    }
+  }
+
   /** Register a callback to be invoked after config reload with the fresh config. */
   onConfigReload(cb: (config: KryptonConfig) => void): void {
     this.onConfigReloadCallbacks.push(cb);
@@ -1740,6 +1748,16 @@ export class Compositor {
       this.qtTerminal.terminal.options.theme = xtermTheme;
     }
 
+    // Index-0 windows and Quick Terminal wear the theme accent; other
+    // windows keep their distinguishing palette colors.
+    const primary = this.paletteColor(0);
+    for (const [id, win] of this.windows) {
+      if ((this.windowColorIndex.get(id) ?? 0) === 0) {
+        this.applyAccentColor(win.element, primary);
+      }
+    }
+    if (this.qtElement) this.applyAccentColor(this.qtElement, primary);
+
     // Refresh oscilloscope band accents (per-lane color may have changed)
     for (const [, win] of this.windows) win.headerScope?.refreshColor();
     this.qtHeaderScope?.refreshColor();
@@ -1985,19 +2003,28 @@ export class Compositor {
     }
   }
 
+  /** Palette entry, with index 0 taken from the active color theme. */
+  private paletteColor(index: number): AccentColor {
+    if (index === 0) {
+      const accent = this.themeEngine?.primaryAccent();
+      if (accent) return { name: 'theme', hex: accent.hex, rgb: accent.rgb };
+    }
+    return ACCENT_PALETTE[index] ?? ACCENT_PALETTE[0];
+  }
+
   /** Allocate the next available accent color from the palette */
   private allocateAccentColor(windowId: WindowId): AccentColor {
     for (let i = 0; i < ACCENT_PALETTE.length; i++) {
       if (!this.usedColorIndices.has(i)) {
         this.usedColorIndices.add(i);
         this.windowColorIndex.set(windowId, i);
-        return ACCENT_PALETTE[i];
+        return this.paletteColor(i);
       }
     }
     // All colors in use — wrap around using window count as tiebreaker
     const idx = this.windowColorIndex.size % ACCENT_PALETTE.length;
     this.windowColorIndex.set(windowId, idx);
-    return ACCENT_PALETTE[idx];
+    return this.paletteColor(idx);
   }
 
   /** Free a window's accent color so it can be reused */
@@ -5395,8 +5422,8 @@ export class Compositor {
     el.id = 'quick-terminal';
     el.className = 'krypton-window krypton-quick-terminal';
 
-    // Quick Terminal always uses cyan (first palette color)
-    this.applyAccentColor(el, ACCENT_PALETTE[0]);
+    // Quick Terminal uses the theme's primary accent (palette index 0)
+    this.applyAccentColor(el, this.paletteColor(0));
 
     const chrome = document.createElement('div');
     chrome.className = 'krypton-window__chrome';

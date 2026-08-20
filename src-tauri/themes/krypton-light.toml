@@ -1,0 +1,148 @@
+# Krypton Light — Built-in Theme
+#
+# Light variant of Krypton Dark: dark slate ink on cool frost, cyan chrome
+# darkened so it stays a readable mark rather than a neon wash. Surfaces are
+# layered (rail / paper canvas / overlays) — not one frost slab. Designed
+# for light wallpapers; backdrop alpha still lets the desktop show through.
+
+[meta]
+display_name = "Krypton Light"
+author = "Krypton"
+version = "1.1.0"
+description = "Light variant: slate ink on cool frost, cyan chrome, layered surfaces"
+license = "MIT"
+
+[colors]
+foreground = "#1c2c3c"
+background = "rgba(248, 251, 253, 0.92)"
+cursor = "#006688"
+selection = "rgba(0, 110, 150, 0.28)"
+
+# ANSI: dark body colors so 16-color output stays readable on white.
+# `white` / `bright_white` are mid-to-dark slates, not paper white —
+# a true #ffffff fg would vanish against the frosted background.
+black = "#1c2c3c"
+red = "#c42b4a"
+green = "#0b7d6a"
+yellow = "#9a6b00"
+blue = "#1a62c4"
+magenta = "#7a38b8"
+cyan = "#007799"
+white = "#5a6a7a"
+bright_black = "#6a7a8a"
+bright_red = "#e04060"
+bright_green = "#0d9a84"
+bright_yellow = "#b88600"
+bright_blue = "#2b7ae6"
+bright_magenta = "#9648d4"
+bright_cyan = "#0090b0"
+bright_white = "#102030"
+
+[chrome]
+style = "cyberpunk"
+
+[chrome.border]
+width = 1
+color = "rgba(0, 90, 120, 0.42)"
+radius = 4
+
+[chrome.shadow]
+color = "rgba(0, 70, 100, 0.12)"
+blur = 15
+spread = 0
+offset_x = 0
+offset_y = 0
+
+[chrome.backdrop]
+color = "rgba(230, 239, 246, 0.90)"
+blur = 12
+
+[chrome.titlebar]
+height = 28
+background = "transparent"
+text_color = "#3a5568"
+font_size = 11
+font_weight = 600
+letter_spacing = 0.08
+text_transform = "uppercase"
+alignment = "left"
+
+[chrome.status_dot]
+size = 6
+color = "#007799"
+shape = "square"
+
+[chrome.header_accent]
+enabled = true
+height = 6
+color = "rgba(0, 102, 136, 0.32)"
+margin_horizontal = 20
+
+[chrome.corner_accents]
+enabled = true
+size = 14
+thickness = 2
+color = "rgba(0, 102, 136, 0.55)"
+
+[chrome.tabs]
+height = 28
+background = "transparent"
+active_color = "#006688"
+inactive_color = "#3a5568"
+font_size = 11
+
+[focused]
+border_color = "rgba(0, 102, 136, 0.78)"
+shadow_color = "rgba(0, 102, 136, 0.18)"
+shadow_blur = 20
+titlebar_text_color = "#006688"
+status_dot_color = "#006688"
+header_accent_color = "rgba(0, 102, 136, 0.48)"
+corner_accent_color = "#007799"
+corner_accent_glow = "rgba(0, 102, 136, 0.28)"
+label_color = "#006688"
+
+[workspace]
+background = "transparent"
+blur = 0
+
+[ui.command_palette]
+background = "rgba(255, 255, 255, 0.94)"
+border = "rgba(0, 119, 153, 0.40)"
+text_color = "#1c2c3c"
+highlight_color = "#007799"
+input_background = "transparent"
+input_text_color = "#1c2c3c"
+backdrop_blur = 16
+
+[ui.search]
+background = "rgba(255, 255, 255, 0.94)"
+text_color = "#1c2c3c"
+match_color = "#9a6b00"
+border = "rgba(0, 119, 153, 0.40)"
+
+[ui.mode_indicator]
+background = "rgba(0, 119, 153, 0.12)"
+text_color = "#007799"
+font_size = 11
+position = "bottom-center"
+
+[ui.which_key]
+background = "rgba(255, 255, 255, 0.94)"
+border = "rgba(0, 119, 153, 0.40)"
+title_color = "#006688"
+key_color = "#006688"
+label_color = "#3a5568"
+separator_color = "rgba(0, 90, 120, 0.22)"
+backdrop_blur = 16
+
+[ui.quick_terminal]
+backdrop_blur = 20
+background = "rgba(232, 240, 246, 0.94)"
+shadow_color = "rgba(0, 70, 100, 0.12)"
+shadow_blur = 30
+
+[ui.hints]
+background = "#007799"
+foreground = "#ffffff"
+matched_foreground = "#003344"

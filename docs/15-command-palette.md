@@ -146,7 +146,7 @@ Add missing mappings (4 new):
 ## Out of Scope
 
 - Workspace switching actions (workspaces not yet implemented)
-- Theme switching actions (list_themes exists but theme picker UI is separate)
 - Custom user-defined palette commands
 - Recently-used action sorting
-- Config reload / open config file actions (can be added later)
+
+Color theme switching is in-scope: each built-in and custom theme is a **Color Theme** action (`Color Theme: Legacy Radiance (active)`). Sound packs remain a separate **Sound Theme** category. **Reload Config** re-reads `krypton.toml` and reapplies theme + config.

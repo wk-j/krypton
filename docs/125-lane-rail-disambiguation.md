@@ -238,7 +238,7 @@ Hues are picked to be distinguishable on the Krypton Dark background and to roug
 - **Directive title is exactly the backend label.** `trimBackendPrefix("Claude", "claude")` requires the trailing space and so does **not** strip; render shows the title as-is ("Claude"). Falling back to `directive.id` happens only when title is empty. (Earlier draft incorrectly claimed this would strip — corrected in this revision.)
 - **Pending directive change.** See *Pending-change visual treatment* above. The new tag carries the `--clearing` class for pending clears; the existing hint span still carries the "next send" / "clear next send" text. `acp-harness-view.ts:4483-4492` logic for selecting `metaDirective` is unchanged.
 - **Turn-scoped directive override (`turnDirectiveOverride`).** The new tag mirrors `peer_list` semantics: it reflects `activeDirectiveId` only, not one-shot next-turn overrides. `effectiveDirective()` still consults the override for prompt injection (`acp-harness-view.ts:2209-2214`); the rail intentionally does not preview overrides because they vanish after one prompt and would otherwise create a flash-of-incorrect-tag. Document this so no one expects override previews from the new chip.
-- **Theme contrast.** Tag chips use `border: 1px solid currentColor` with `background: rgba(0,0,0,0.2)`; on light themes the background can be flipped via `[data-theme="light"]` overrides. Out of scope for v1 (Krypton ships dark-only at the moment).
+- **Theme contrast.** Tag chips use `border: 1px solid currentColor` with `background: rgba(0,0,0,0.2)` on dark. Light scheme (`html[data-theme-scheme="light"]`) flips the chip fill to a 6% ink wash and substitutes darkened backend/role inks of the same hue so Codex `#d7e7f0` and pastel role chips stay readable on frost. See `src/styles/theme-scheme.css`.
 
 ## Test Plan
 
@@ -268,7 +268,7 @@ Hues are picked to be distinguishable on the Krypton Dark background and to roug
 
 - Bringing in real, licensed brand assets for the nine backends. v1 uses the placeholder inline SVG monograms from the prototype.
 - Animation on logo or tag (hover, swap, status change). The rail must stay glanceable; animation defeats that.
-- Light theme support — Krypton ships dark-only today; light theme can layer overrides on the new CSS variables later.
+- Light theme support — `html[data-theme-scheme="light"]` now supplies darkened backend/role inks and an ink-wash chip fill (`src/styles/theme-scheme.css`). Further per-backend licensed marks remain out of scope.
 - Re-exposing `directive.icon` on the rail. The picker continues to show it. Users who want a personal mark in the rail can revisit later if there is demand.
 - Surfacing role/backend signals in any other view (transcript, composer chip, mention picker). Restricted to the lane rail in v1.
 

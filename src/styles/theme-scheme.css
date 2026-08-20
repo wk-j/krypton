@@ -1,0 +1,369 @@
+/* ═══════════════════════════════════════════════════════════════
+   LIGHT SCHEME
+   Neon-on-void recipes (0.15–0.45 accent alpha, glow type, frost-on-frost
+   panels) fail on a light field. Classify via html[data-theme-scheme],
+   set by the theme engine from chrome-backdrop luminance.
+
+   Contract:
+   - Text rides ink mixed with the lane/window accent, never raw neon.
+   - Rail / canvas / overlays are distinct luminance steps.
+   - Identity chips (backend / role) use darkened inks of the same hue.
+   - No L-shaped corner ticks. Full 1px border or nothing.
+   ═══════════════════════════════════════════════════════════════ */
+
+html[data-theme-scheme='light'] {
+  --krypton-ink: var(--krypton-fg, #1c2c3c);
+}
+
+/* Mixes must live on the window (or a descendant), not on html — otherwise
+   `var(--krypton-window-accent)` resolves to the theme fallback and every
+   tab/title ignores the active-lane slot from spec 142. */
+
+/* ── Window chrome: tabs, title, usage ── */
+
+html[data-theme-scheme='light'] .krypton-tab__title {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 28%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-tab--active .krypton-tab__title {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+  font-weight: 600;
+}
+
+html[data-theme-scheme='light'] .krypton-tab__index {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 18%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-tab--active .krypton-tab__index {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title,
+html[data-theme-scheme='light'] .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__index {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-tab__dot {
+  background: color-mix(in srgb, var(--krypton-window-accent, #007799) 45%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-window__label,
+html[data-theme-scheme='light'] .krypton-window__label-tail {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+  opacity: 0.78;
+  text-shadow: none;
+}
+
+html[data-theme-scheme='light'] .krypton-window--focused .krypton-window__label,
+html[data-theme-scheme='light'] .krypton-window--focused .krypton-window__label-tail {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 62%, var(--krypton-ink));
+  opacity: 1;
+}
+
+html[data-theme-scheme='light'] .krypton-window__pty-status {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 28%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-window__usage-provider {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 28%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-window__usage-provider + .krypton-window__usage-provider::before,
+html[data-theme-scheme='light'] .krypton-window__usage-quota + .krypton-window__usage-quota::before {
+  color: color-mix(in srgb, var(--krypton-ink) 35%, transparent);
+}
+
+html[data-theme-scheme='light'] .krypton-window__usage-name {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-window__usage-quota {
+  color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+}
+
+html[data-theme-scheme='light'] .krypton-window__lane-more {
+  color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+}
+
+html[data-theme-scheme='light'] .krypton-window__project {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 72%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-window__footer {
+  border-top: 1px solid color-mix(in srgb, var(--krypton-ink) 10%, transparent);
+  background: color-mix(in srgb, var(--krypton-ink) 5%, var(--krypton-backdrop-color, #e6eff6));
+}
+
+html[data-theme-scheme='light'] .krypton-window--pinned .krypton-window__label-group::after {
+  text-shadow: none;
+}
+
+html[data-theme-scheme='light'] .krypton-window__lane {
+  color: color-mix(in srgb, var(--krypton-lane-accent, var(--krypton-window-accent, #007799)) 40%, var(--krypton-ink));
+  opacity: 1;
+}
+
+html[data-theme-scheme='light'] .krypton-window__lane--active {
+  background: color-mix(in srgb, var(--krypton-lane-accent, #007799) 16%, transparent);
+}
+
+/* ── Workspace footer: was a hardcoded navy slab ── */
+
+html[data-theme-scheme='light'] .krypton-workspace-footer {
+  background: color-mix(in srgb, var(--krypton-ink) 8%, var(--krypton-backdrop-color, #e6eff6));
+  color: var(--krypton-ink);
+  border-top: 1px solid color-mix(in srgb, var(--krypton-ink) 12%, transparent);
+}
+
+html[data-theme-scheme='light'] .krypton-workspace-footer__segment {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 40%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-workspace-footer__segment--p0 {
+  color: var(--krypton-ink);
+}
+
+html[data-theme-scheme='light'] .krypton-workspace-footer__segment--p2 {
+  color: color-mix(in srgb, var(--krypton-ink) 68%, transparent);
+}
+
+html[data-theme-scheme='light'] .krypton-workspace-footer__segment--p3 {
+  color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+}
+
+html[data-theme-scheme='light'] .krypton-workspace-footer__segment--git {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 55%, var(--krypton-ink));
+  text-shadow: none;
+}
+
+html[data-theme-scheme='light'] .krypton-workspace-footer__segment--reviews,
+html[data-theme-scheme='light'] .krypton-workspace-footer__segment--priority,
+html[data-theme-scheme='light'] .krypton-workspace-footer__segment--link {
+  color: color-mix(in srgb, var(--krypton-ink) 62%, transparent);
+}
+
+html[data-theme-scheme='light'] .krypton-workspace-footer__reviews-glyph,
+html[data-theme-scheme='light'] .krypton-workspace-footer__priority-glyph,
+html[data-theme-scheme='light'] .krypton-workspace-footer__link-glyph {
+  color: color-mix(in srgb, var(--krypton-ink) 55%, transparent);
+}
+
+html[data-theme-scheme='light'] .krypton-workspace-footer__center > .krypton-workspace-footer__segment:not(:first-child)::before {
+  color: color-mix(in srgb, var(--krypton-ink) 32%, transparent);
+}
+
+/* ── ACP harness: surfaces, rail, type, leftover pale-on-pale ── */
+
+html[data-theme-scheme='light'] .acp-harness {
+  --krypton-backend-claude:   #b45a38;
+  --krypton-backend-codex:    #2c6280;
+  --krypton-backend-opencode: #8a4aa8;
+  --krypton-backend-pi:       #1a8a78;
+  --krypton-backend-droid:    #a07838;
+  --krypton-backend-cursor:   #5a5a5a;
+  --krypton-backend-junie:    #a04080;
+  --krypton-backend-omp:      #8a7820;
+  --krypton-backend-grok:     #1a8a5c;
+  --krypton-backend-copilot:  #3a62c4;
+  --krypton-backend-mimo:     #c45a28;
+  --krypton-backend-cline:    #1a8a80;
+
+  --krypton-role-analysis: #2a7aa0;
+  --krypton-role-review:   #8a7820;
+  --krypton-role-impl:     #2a8a58;
+  --krypton-role-plan:     #7a38b0;
+  --krypton-role-explore:  #b05a38;
+  --krypton-role-hash-1:   #a04080;
+  --krypton-role-hash-2:   #3a62b0;
+  --krypton-role-hash-3:   #a07838;
+
+  --agent-accent: var(--agent-green, #0b7d6a);
+  --agent-user: var(--agent-cyan, #007799);
+  --agent-error: var(--agent-red, #c42b4a);
+}
+
+html[data-theme-scheme='light'] .acp-harness__dashboard {
+  background:
+    radial-gradient(circle at 12px 12px, rgba(var(--krypton-accent-rgb, 0, 119, 153), 0.07) 1px, transparent 1px);
+  background-size: 10px 10px;
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail {
+  background: var(--agent-surface-rail, rgba(212, 222, 229, 0.92));
+  border-right: 1px solid color-mix(in srgb, var(--krypton-ink) 14%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-entry {
+  color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-meta {
+  color: color-mix(in srgb, var(--krypton-ink) 62%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-meta__title {
+  color: color-mix(in srgb, var(--krypton-ink) 80%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-meta__hint,
+html[data-theme-scheme='light'] .acp-harness__rail-metric,
+html[data-theme-scheme='light'] .acp-harness__rail-metric--ctx {
+  color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-name {
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #007799)) 42%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-entry--active {
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #007799)) 45%, var(--krypton-ink));
+  background: color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #007799)) 16%, var(--agent-surface-rail, transparent));
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-entry--directive {
+  color: color-mix(in srgb, #7a38b0 35%, var(--krypton-ink));
+  background: color-mix(in srgb, #7a38b0 10%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-entry--directive.acp-harness__rail-entry--active {
+  background: color-mix(in srgb, #7a38b0 16%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-logo {
+  color: color-mix(in srgb, var(--krypton-ink) 70%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-dot {
+  background: color-mix(in srgb, var(--krypton-ink) 55%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-tag {
+  background: color-mix(in srgb, var(--krypton-ink) 6%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission {
+  background: rgba(154, 107, 0, 0.12);
+  color: #8a5a00;
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission .acp-harness__rail-meta__hint {
+  color: #8a5a00;
+}
+
+html[data-theme-scheme='light'] .acp-harness__rail-entry--busy .acp-harness__rail-dot,
+html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
+  box-shadow: none;
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane--collapsed {
+  background: color-mix(in srgb, var(--acp-lane-accent, #007799) 14%, var(--agent-surface-rail, rgba(212, 222, 229, 0.92)));
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane--active {
+  background: var(--agent-surface-canvas, rgba(255, 255, 255, 0.78));
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane--active > .acp-harness__lane-head,
+html[data-theme-scheme='light'] .acp-harness__lane--active > .acp-harness__lane-stats {
+  background: color-mix(in srgb, var(--acp-lane-accent, #007799) 18%, var(--agent-surface-high, rgba(255, 255, 255, 0.92)));
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane-head {
+  color: color-mix(in srgb, var(--krypton-ink) 82%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane-symbol {
+  color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane-name,
+html[data-theme-scheme='light'] .acp-harness__lane--active .acp-harness__lane-name {
+  color: color-mix(in srgb, var(--acp-lane-accent, #007799) 48%, var(--krypton-ink));
+  text-shadow: none;
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane--collapsed .acp-harness__lane-name {
+  color: color-mix(in srgb, var(--acp-lane-accent, #007799) 38%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane-status,
+html[data-theme-scheme='light'] .acp-harness__lane-activity,
+html[data-theme-scheme='light'] .acp-harness__lane-metrics-cpu,
+html[data-theme-scheme='light'] .acp-harness__lane-metrics-rss {
+  color: color-mix(in srgb, var(--krypton-ink) 68%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane-model {
+  background: color-mix(in srgb, var(--krypton-ink) 8%, transparent);
+  color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane-model--warn {
+  background: rgba(154, 107, 0, 0.14);
+  color: #8a5a00;
+}
+
+html[data-theme-scheme='light'] .acp-harness__lane-mcp--off {
+  color: color-mix(in srgb, var(--krypton-ink) 48%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__msg-label {
+  color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__msg-body {
+  color: var(--krypton-ink);
+}
+
+html[data-theme-scheme='light'] .acp-harness__msg--thought .acp-harness__msg-body {
+  color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__msg--assistant .acp-harness__msg-label {
+  color: color-mix(in srgb, var(--acp-lane-accent, #007799) 48%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .acp-harness__msg--user .acp-harness__msg-label,
+html[data-theme-scheme='light'] .acp-harness__msg--user .acp-harness__msg-body {
+  color: var(--agent-user, #007799);
+}
+
+html[data-theme-scheme='light'] .acp-harness__msg--shell.acp-harness__msg--failed .acp-harness__msg-body {
+  color: var(--agent-error, #c42b4a);
+}
+
+html[data-theme-scheme='light'] .acp-harness__msg-attachment {
+  color: var(--agent-user, #007799);
+  background: color-mix(in srgb, var(--agent-user, #007799) 8%, transparent);
+  border-color: color-mix(in srgb, var(--agent-user, #007799) 28%, transparent);
+  text-shadow: none;
+}
+
+html[data-theme-scheme='light'] .acp-harness__transcript-empty {
+  color: color-mix(in srgb, var(--krypton-ink) 52%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__composer-meta {
+  color: color-mix(in srgb, var(--krypton-ink) 62%, transparent);
+}
+
+html[data-theme-scheme='light'] .acp-harness__composer--permission .acp-harness__composer-meta {
+  color: #8a5a00;
+}
+
+html[data-theme-scheme='light'] .acp-harness__slash-palette-row--selected {
+  color: var(--krypton-ink);
+}
+
+html[data-theme-scheme='light'] .acp-harness__goal-bar,
+html[data-theme-scheme='light'] .acp-harness__ticket-bar {
+  box-shadow: 0 4px 14px rgba(28, 44, 60, 0.08);
+}
+
+html[data-theme-scheme='light'] .acp-harness__metrics-pop {
+  box-shadow: 0 2px 8px rgba(28, 44, 60, 0.12), 0 8px 24px rgba(28, 44, 60, 0.08);
+}
+
+html[data-theme-scheme='light'] .acp-harness__artifact-redaction-meta {
+  color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+}

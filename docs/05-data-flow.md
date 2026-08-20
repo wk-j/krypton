@@ -821,7 +821,7 @@ Later
 ```
 1. Krypton process starts
 2. Config Manager loads krypton.toml (including keybindings, themes) into Arc<RwLock<KryptonConfig>>
-3. Theme Engine initializes — embeds built-in themes (krypton-dark, legacy-radiance)
+3. Theme Engine initializes — embeds built-in themes (krypton-dark, krypton-light, legacy-radiance)
 4. Tauri creates fullscreen, borderless, transparent native shell
 5. Filesystem watcher starts on ~/.config/krypton/ (notify crate, 300ms debounce)
 6. Frontend: FrontendThemeEngine calls invoke("get_theme") — backend resolves theme.name, applies [theme.colors] overrides
@@ -835,18 +835,18 @@ Later
 ### Theme Hot-Reload (user edits a .toml file)
 
 ```
-1. notify crate detects .toml file change in ~/.config/krypton/
+1. notify crate detects krypton.toml or themes/*.toml change (not sessions/ or memory)
 2. 300ms debounce timer elapses
-3. Backend: reload_and_emit() re-parses krypton.toml, resolves theme by name
+3. Backend: reload_from_disk() re-parses krypton.toml, resolves theme by name
 4. Backend: applies [theme.colors] overrides on top of resolved FullTheme
 5. Backend: updates Arc<RwLock<KryptonConfig>> with new config
 6. Backend: emits "theme-changed" Tauri event (payload: FullTheme)
 7. Backend: emits "config-changed" Tauri event (payload: KryptonConfig)
 8. Frontend: FrontendThemeEngine receives "theme-changed" event
-9. Frontend: sets all --krypton-* CSS custom properties (instant CSS cascade)
-10. Frontend: notifies compositor which updates terminal.options.theme on all open terminals
+9. Frontend: sets --krypton-*, --agent-*, --vault-* CSS custom properties and `html[data-theme-scheme]` from backdrop luminance
+10. Frontend: notifies compositor which updates terminal.options.theme and index-0 window accent
 11. Frontend: compositor re-applies shader settings to all active panes (if [shader] changed)
-12. Result: window chrome + terminal colors + shader effects update instantly without restart
+12. Result: chrome + terminals + harness/agent/vault colors + shader effects update without restart
 ```
 
 ### Workspace Switch (e.g., user presses CmdOrCtrl+2)

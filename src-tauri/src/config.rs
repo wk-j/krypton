@@ -839,3 +839,141 @@ pub fn load_config() -> KryptonConfig {
         }
     }
 }
+
+/// Restrict a theme id to lowercase `[a-z0-9_-]`.
+pub fn sanitize_theme_name(name: &str) -> String {
+    name.chars()
+        .flat_map(|c| c.to_lowercase())
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect()
+}
+
+/// Rewrite only `[theme].name` in a krypton.toml body. Comments and other
+/// sections are preserved. Does not touch `[theme.colors]`.
+pub fn patch_theme_name(contents: &str, name: &str) -> String {
+    let name = sanitize_theme_name(name);
+    let assignment = format!("name = \"{name}\"");
+    if let Some((sec_start, sec_end)) = theme_section_range(contents) {
+        let section = &contents[sec_start..sec_end];
+        if let Some((rel_start, rel_end)) = name_assignment_range(section) {
+            let abs_start = sec_start + rel_start;
+            let abs_end = sec_start + rel_end;
+            return format!(
+                "{}{}{}",
+                &contents[..abs_start],
+                assignment,
+                &contents[abs_end..]
+            );
+        }
+        let insert_at = contents[sec_start..]
+            .find('\n')
+            .map(|i| sec_start + i + 1)
+            .unwrap_or(sec_end);
+        return format!(
+            "{}{}\n{}",
+            &contents[..insert_at],
+            assignment,
+            &contents[insert_at..]
+        );
+    }
+    let mut out = contents.to_string();
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str("\n[theme]\n");
+    out.push_str(&assignment);
+    out.push('\n');
+    out
+}
+
+/// Persist `theme.name` in the user's krypton.toml. Never creates the file.
+pub fn persist_theme_name(name: &str) -> Result<(), String> {
+    let path = config_path().ok_or_else(|| "Could not determine config directory".to_string())?;
+    if !path.exists() {
+        return Err(format!(
+            "Config file not found at {}; theme applied in memory only",
+            path.display()
+        ));
+    }
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read config at {}: {e}", path.display()))?;
+    let patched = patch_theme_name(&contents, name);
+    fs::write(&path, patched)
+        .map_err(|e| format!("Failed to write config at {}: {e}", path.display()))
+}
+
+fn theme_section_range(contents: &str) -> Option<(usize, usize)> {
+    let header = "[theme]";
+    let mut search = 0;
+    while let Some(idx) = contents[search..].find(header) {
+        let start = search + idx;
+        let after = start + header.len();
+        let at_line = start == 0 || contents.as_bytes().get(start - 1) == Some(&b'\n');
+        let next = contents.as_bytes().get(after).copied();
+        let exact = matches!(next, None | Some(b'\n' | b'\r' | b' ' | b'\t' | b'#'));
+        if at_line && exact {
+            let rest = &contents[after..];
+            let end = rest
+                .find("\n[")
+                .map(|i| after + i)
+                .unwrap_or(contents.len());
+            return Some((start, end));
+        }
+        search = after;
+    }
+    None
+}
+
+fn name_assignment_range(section: &str) -> Option<(usize, usize)> {
+    let mut offset = 0;
+    for line in section.split_inclusive('\n') {
+        let body_len = line.trim_end_matches(['\n', '\r']).len();
+        let trimmed = line.trim();
+        if !trimmed.starts_with('#') {
+            if let Some(eq) = trimmed.find('=') {
+                if trimmed[..eq].trim() == "name" {
+                    return Some((offset, offset + body_len));
+                }
+            }
+        }
+        offset += line.len();
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn patch_replaces_existing_theme_name() {
+        let src = "[theme]\nname = \"krypton-dark\"\n\n[theme.colors]\nforeground = \"#fff\"\n";
+        let out = patch_theme_name(src, "legacy-radiance");
+        assert!(out.contains("name = \"legacy-radiance\""));
+        assert!(out.contains("[theme.colors]"));
+        assert!(out.contains("foreground = \"#fff\""));
+        assert!(!out.contains("krypton-dark"));
+    }
+
+    #[test]
+    fn patch_does_not_touch_theme_colors_header() {
+        let src = "[theme.colors]\nred = \"#f00\"\n";
+        let out = patch_theme_name(src, "nord");
+        assert!(out.contains("[theme]\nname = \"nord\""));
+        assert!(out.contains("[theme.colors]"));
+    }
+
+    #[test]
+    fn patch_inserts_name_when_section_exists() {
+        let src = "[theme]\n\n[font]\nsize = 13\n";
+        let out = patch_theme_name(src, "ocean");
+        assert!(out.contains("[theme]\nname = \"ocean\"\n"));
+        assert!(out.contains("[font]"));
+    }
+
+    #[test]
+    fn sanitize_drops_path_chars() {
+        assert_eq!(sanitize_theme_name("Foo/Bar.toml"), "foobartoml");
+        assert_eq!(sanitize_theme_name("Legacy-Radiance"), "legacy-radiance");
+    }
+}

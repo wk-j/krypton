@@ -2,6 +2,7 @@ pub mod acp;
 pub mod acp_harness_config;
 mod commands;
 mod config;
+mod config_watch;
 pub mod control;
 pub mod git;
 pub mod hook_server;
@@ -155,6 +156,7 @@ pub fn run() {
             commands::get_config,
             commands::get_theme,
             commands::list_themes,
+            commands::set_theme,
             commands::reload_config,
             commands::open_url,
             commands::get_foreground_process,
@@ -482,6 +484,12 @@ pub fn run() {
             std::thread::spawn(move || {
                 start_process_poller(poller_handle, poller_config, poller_pty);
             });
+
+            config_watch::start(
+                app.handle().clone(),
+                krypton_config.clone(),
+                theme_engine.clone(),
+            );
 
             Ok(())
         })

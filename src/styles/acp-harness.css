@@ -10,10 +10,16 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  color: var(--agent-text, #d8e8d8);
+  color: var(--agent-text, var(--krypton-fg, #d8e8d8));
   /* Transparent root — let the host window backdrop (--krypton-backdrop-color)
    * and the workspace behind it show through, matching terminal windows. */
   background: transparent;
+  /* Harness CSS was authored against krypton-dark phosphor. These aliases
+   * retarget that paint at the active color theme so light/custom themes
+   * don't leave dark-navy slabs on frost. */
+  --agent-accent: var(--agent-green, #8effb0);
+  --agent-user: var(--agent-cyan, #6dd0ff);
+  --agent-error: var(--agent-red, #ff6d8a);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: var(--krypton-font-size, 13px);
   outline: none;
@@ -45,8 +51,8 @@
 
   /* Transcript message-body accents. Carried as a background tint (no
    * side-stripe) so the accent is themeable and the chrome stays flat. */
-  --acp-accent-shell:      #ffd166;
-  --acp-accent-shell-fail: #ff6b8b;
+  --acp-accent-shell:      var(--agent-gold, #ffd166);
+  --acp-accent-shell-fail: var(--agent-error, #ff6b8b);
   --acp-accent-quote:      #d6b8ff;
   --acp-accent-danger:     #ff7878;
 }
@@ -63,9 +69,9 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  /* Top cyan wash dropped — flat dashboard. Dot-grid texture kept. */
+  /* Top wash dropped — flat dashboard. Dot-grid texture follows the theme accent. */
   background:
-    radial-gradient(circle at 12px 12px, rgba(0, 204, 255, 0.018) 1px, transparent 1px);
+    radial-gradient(circle at 12px 12px, rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.018) 1px, transparent 1px);
   background-size: 10px 10px;
 }
 
@@ -80,7 +86,7 @@
    part ways by their own tints. */
 .acp-harness__lane--collapsed {
   flex: 0 0 28px;
-  background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 6%, rgba(6, 10, 18, 0.55));
+  background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 6%, var(--agent-surface-mid, rgba(6, 10, 18, 0.55)));
 }
 
 /* spec 215: the active lane announces itself at its head band (below), not
@@ -91,7 +97,7 @@
   min-height: 120px;
   display: flex;
   flex-direction: column;
-  background: rgba(6, 10, 18, 0.48);
+  background: var(--agent-surface-mid, rgba(6, 10, 18, 0.48));
 }
 
 /* spec 215: the band covers the head AND its stats row — one two-line header
@@ -99,7 +105,7 @@
    transcript below, matching the borderless collapsed rows. */
 .acp-harness__lane--active > .acp-harness__lane-head,
 .acp-harness__lane--active > .acp-harness__lane-stats {
-  background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 13%, rgba(6, 10, 18, 0.6));
+  background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 13%, var(--agent-surface-high, rgba(6, 10, 18, 0.6)));
 }
 
 .acp-harness__lane-head {
@@ -109,7 +115,7 @@
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  color: rgba(216, 232, 216, 0.72);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
   white-space: nowrap;
   overflow: hidden;
   letter-spacing: 0.02em;
@@ -117,7 +123,7 @@
 
 .acp-harness__lane-symbol {
   grid-column: 1;
-  color: rgba(216, 232, 216, 0.48);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
 }
 
 /* Lane-bar telemetry icons (SVG icon pass) — sized to the text cell, recolour
@@ -137,7 +143,7 @@
 }
 
 .acp-harness__icon--accent {
-  color: var(--acp-lane-accent, #8effb0);
+  color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
 }
 
 /* Status-glyph tints. busy renders the JS spinner glyph (tinted to the lane
@@ -145,7 +151,7 @@
    purple via a `.acp-harness__lane--awaiting_peer` rule. Only permission + error
    need a tint. */
 .acp-harness__lane-symbol--needs_permission {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__lane-symbol--error,
@@ -156,7 +162,7 @@
 .acp-harness__lane-name {
   grid-column: 2;
   max-width: 20ch; /* spec 215: +2ch for the inline backend logo */
-  color: var(--acp-lane-accent, rgba(216, 232, 216, 0.86));
+  color: var(--acp-lane-accent, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   font-weight: normal;
   font-size: 0.92em;
   letter-spacing: 0.02em;
@@ -175,7 +181,7 @@
 /* spec 215: hue-preserving dim — collapsed names keep the lane hue mixed
    toward the base text color instead of being replaced by gray. */
 .acp-harness__lane--collapsed .acp-harness__lane-name {
-  color: color-mix(in srgb, var(--acp-lane-accent, #0cf) 70%, rgba(216, 232, 216, 0.55));
+  color: color-mix(in srgb, var(--acp-lane-accent, #0cf) 70%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
 }
 
 .acp-harness__lane--active .acp-harness__lane-name {
@@ -186,7 +192,7 @@
   grid-column: 3;
   justify-self: start;
   padding: 0;
-  color: rgba(216, 232, 216, 0.62);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
   font-size: 0.74em;
   letter-spacing: 0.06em;
   text-decoration: none;
@@ -213,8 +219,8 @@
   text-overflow: ellipsis;
   padding: 1px 6px;
   border-radius: var(--krypton-border-radius, 4px);
-  background: rgba(216, 232, 216, 0.06);
-  color: rgba(216, 232, 216, 0.68);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
   font-size: 0.72em;
   letter-spacing: 0.04em;
   text-shadow: none;
@@ -258,7 +264,7 @@
 
 .acp-harness__lane-activity {
   grid-column: 5;
-  color: rgba(216, 232, 216, 0.48);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
   font-size: 0.82em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -269,7 +275,7 @@
   justify-self: start;
   padding: 1px 6px;
   border-radius: var(--krypton-border-radius, 4px);
-  background: rgba(216, 232, 216, 0.06);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
   font-size: 0.72em;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -277,11 +283,11 @@
 
 /* MCP connected: the ✓ reads "ok" in the lane's own accent, not flat gray. */
 .acp-harness__lane-mcp--on {
-  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 60%, #d8e8d8);
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 60%, var(--krypton-fg, #d8e8d8));
 }
 
 .acp-harness__lane-mcp--off {
-  color: rgba(216, 232, 216, 0.36);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
 }
 
 .acp-harness__lane-metrics {
@@ -291,7 +297,7 @@
   gap: 5px;
   padding: 1px 6px;
   border-radius: var(--krypton-border-radius, 4px);
-  background: rgba(216, 232, 216, 0.06);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
   font-size: 0.72em;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -301,18 +307,18 @@
 
 .acp-harness__lane-metrics-cpu,
 .acp-harness__lane-metrics-rss {
-  color: rgba(216, 232, 216, 0.62);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
 }
 
 .acp-harness__lane-metrics--idle .acp-harness__lane-metrics-cpu {
-  color: rgba(0, 204, 255, 0.62);
+  color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.62);
 }
 
 .acp-harness__lane-metrics--warm {
-  background: rgba(0, 204, 255, 0.12);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
 }
 .acp-harness__lane-metrics--warm .acp-harness__lane-metrics-cpu {
-  color: rgba(0, 204, 255, 0.95);
+  color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.95);
 }
 
 .acp-harness__lane-metrics--hot {
@@ -341,14 +347,14 @@
   overflow: auto;
   z-index: 8;
   padding: 14px 16px 16px;
-  background: rgba(8, 14, 18, 0.96);
-  border: 1px solid rgba(0, 204, 255, 0.32);
+  background: var(--agent-surface-solid, rgba(8, 14, 18, 0.96));
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
   border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5),
               0 8px 32px rgba(0, 0, 0, 0.3),
-              0 0 30px rgba(0, 200, 255, 0.08),
+              0 0 30px rgba(var(--krypton-accent-rgb, 0, 200, 255), 0.08),
               inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  color: rgba(216, 232, 216, 0.82);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
   font-size: 0.78em;
   letter-spacing: 0.02em;
 }
@@ -360,7 +366,7 @@
   gap: 16px;
   margin-bottom: 10px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(0, 204, 255, 0.18);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
 }
 
 .acp-harness__metrics-title {
@@ -371,7 +377,7 @@
 }
 
 .acp-harness__metrics-hint {
-  color: rgba(216, 232, 216, 0.46);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
   font-size: 0.86em;
 }
 
@@ -389,7 +395,7 @@
 }
 
 .acp-harness__metrics-lane-name {
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   letter-spacing: 0.04em;
 }
 
@@ -399,7 +405,7 @@
   justify-content: flex-end;
   gap: 5px;
   font-variant-numeric: tabular-nums;
-  color: rgba(0, 204, 255, 0.88);
+  color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.88);
 }
 
 .acp-harness__metrics-total {
@@ -407,32 +413,32 @@
   align-items: center;
   min-height: 16px;
   padding: 0 5px;
-  border: 1px solid rgba(0, 204, 255, 0.2);
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.2);
   border-radius: var(--krypton-border-radius, 4px);
-  color: rgba(216, 232, 216, 0.7);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7);
   font-size: 0.86em;
   line-height: 1.3;
   white-space: nowrap;
 }
 
 .acp-harness__metrics-total--cpu {
-  color: rgba(0, 204, 255, 0.9);
+  color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.9);
 }
 
 .acp-harness__metrics-total--dim {
-  border-color: rgba(216, 232, 216, 0.12);
-  color: rgba(216, 232, 216, 0.4);
+  border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
 }
 
 .acp-harness__metrics-lane-totals--dim {
-  color: rgba(216, 232, 216, 0.4);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
 }
 
 .acp-harness__metrics-tree-block {
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.94em;
   line-height: 1.35;
-  border-top: 1px solid rgba(216, 232, 216, 0.08);
+  border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
 }
 
 .acp-harness__metrics-row {
@@ -441,20 +447,20 @@
   gap: 8px;
   align-items: center;
   min-height: 24px;
-  border-bottom: 1px solid rgba(216, 232, 216, 0.045);
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.045);
   font-variant-numeric: tabular-nums;
 }
 
 .acp-harness__metrics-row--header {
   min-height: 20px;
-  color: rgba(216, 232, 216, 0.36);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
   font-size: 0.82em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .acp-harness__metrics-row--root {
-  background: rgba(0, 204, 255, 0.035);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.035);
 }
 
 .acp-harness__metrics-process {
@@ -468,7 +474,7 @@
   /* Process names are short ("node", "claude") — never let them truncate;
      the detail label absorbs all the shrinking instead. */
   flex: 0 0 auto;
-  color: rgba(216, 232, 216, 0.86);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86);
   white-space: nowrap;
 }
 
@@ -481,22 +487,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(0, 204, 255, 0.6);
+  color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.6);
   letter-spacing: 0.01em;
 }
 
 .acp-harness__metrics-tree {
   flex: 0 0 auto;
-  color: rgba(216, 232, 216, 0.32);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
   white-space: pre;
 }
 
 .acp-harness__metrics-role {
   flex: 0 0 auto;
   padding: 0 4px;
-  border: 1px solid rgba(216, 232, 216, 0.14);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
   border-radius: var(--krypton-border-radius, 4px);
-  color: rgba(216, 232, 216, 0.46);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
   font-size: 0.76em;
   line-height: 1.3;
   letter-spacing: 0.06em;
@@ -508,7 +514,7 @@
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .acp-harness__metrics-meter {
@@ -517,7 +523,7 @@
   gap: 5px;
   align-items: center;
   min-width: 0;
-  color: rgba(0, 204, 255, 0.78);
+  color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.78);
 }
 
 .acp-harness__metrics-meter-value {
@@ -529,30 +535,30 @@
   position: relative;
   height: 2px;
   overflow: hidden;
-  background: rgba(216, 232, 216, 0.1);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
 }
 
 .acp-harness__metrics-meter-fill {
   position: absolute;
   inset: 0 auto 0 0;
   min-width: 1px;
-  background: rgba(0, 204, 255, 0.72);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.72);
 }
 
 .acp-harness__metrics-meter--rss .acp-harness__metrics-meter-fill {
-  background: rgba(216, 232, 216, 0.42);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .acp-harness__lane--busy .acp-harness__lane-head,
 .acp-harness__tab--busy {
   color: var(--krypton-window-accent, #0cf);
   text-decoration: none;
-  text-shadow: 0 0 8px rgba(0, 204, 255, 0.24);
+  text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.24);
 }
 
 .acp-harness__lane--needs_permission .acp-harness__lane-head,
 .acp-harness__tab--needs_permission {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
   text-decoration: none;
   text-shadow: 0 0 8px rgba(255, 209, 102, 0.34);
 }
@@ -567,7 +573,7 @@
 /* spec 215: on a permission row the whole band goes gold, name included —
    the alert outranks lane identity (matches the approved prototype). */
 .acp-harness__lane--needs_permission.acp-harness__lane--collapsed .acp-harness__lane-name {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__lane--needs_permission .acp-harness__lane-status {
@@ -579,7 +585,7 @@
 
 .acp-harness__lane--error .acp-harness__lane-head,
 .acp-harness__tab--error {
-  color: #ff6b8b;
+  color: var(--agent-error, #ff6b8b);
   text-decoration: none;
 }
 
@@ -630,7 +636,7 @@
 }
 
 .acp-harness__msg-body--lane-mail {
-  color: rgba(216, 232, 216, 0.76);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.76);
   padding: 2px 6px;
   background: rgba(184, 166, 255, 0.035);
 }
@@ -658,7 +664,7 @@
   width: 12px;
   height: 12px;
   margin-right: 4px;
-  color: rgba(216, 232, 216, 0.55);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
   vertical-align: middle;
   flex-shrink: 0;
 }
@@ -685,7 +691,7 @@
 .acp-harness__lane-mail-text {
   display: block;
   white-space: pre-wrap;
-  color: rgba(216, 232, 216, 0.88);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
 }
 
 .acp-harness__msg--harness-event .acp-harness__msg-label {
@@ -701,7 +707,7 @@
 .acp-harness__lane-mail-provenance {
   font-size: 0.78em;
   font-style: italic;
-  color: rgba(216, 232, 216, 0.45);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
   margin-bottom: 4px;
   letter-spacing: 0.02em;
 }
@@ -791,10 +797,10 @@
   padding: 7px 11px;
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.92em;
-  background: rgba(6, 12, 20, 0.92);
+  background: var(--agent-surface-solid, rgba(6, 12, 20, 0.92));
   border: 1px solid color-mix(in srgb, var(--acp-queue-accent) 38%, transparent);
   border-radius: var(--krypton-border-radius, 4px);
-  color: rgba(216, 232, 216, 0.9);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
   overflow: hidden;
 }
 
@@ -823,7 +829,7 @@
   flex-shrink: 0;
   width: 20px;
   text-align: right;
-  color: rgba(216, 232, 216, 0.4);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
   font-size: 0.82em;
 }
 
@@ -849,17 +855,17 @@
 }
 
 .acp-harness__lane-queue-hint {
-  color: rgba(216, 232, 216, 0.4);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
   font-size: 0.74em;
 }
 
 /* held behind lane mail / paused on error — dim, nothing draining right now */
 .acp-harness__lane-queue--held .acp-harness__lane-queue-body,
 .acp-harness__lane-queue--held .acp-harness__lane-queue-n {
-  color: rgba(216, 232, 216, 0.34);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34);
 }
 .acp-harness__lane-queue--held .acp-harness__lane-queue-head {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 .acp-harness__lane-peek {
@@ -869,26 +875,26 @@
   gap: 3px;
   padding: 8px 12px 7px;
   background:
-    linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
-  border: 1px solid rgba(0, 204, 255, 0.28);
+    var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.28);
   border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.95em;
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   pointer-events: auto;
 }
 
 .acp-harness__lane-peek[data-priority="high"] { --acp-peek-accent: #ff8b8b; }
 .acp-harness__lane-peek[data-priority="warn"] { --acp-peek-accent: #ffd27a; }
-.acp-harness__lane-peek[data-priority="info"] { --acp-peek-accent: #8effb0; }
+.acp-harness__lane-peek[data-priority="info"] { --acp-peek-accent: var(--agent-accent, #8effb0); }
 
 .acp-harness__lane-peek-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(0, 204, 255, 0.12);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
   margin-bottom: 3px;
 }
 
@@ -902,14 +908,14 @@
 }
 
 .acp-harness__lane-peek-status {
-  color: var(--acp-peek-accent, #8effb0);
+  color: var(--acp-peek-accent, var(--agent-accent, #8effb0));
   font-size: 0.78em;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .acp-harness__lane-peek-age {
-  color: rgba(216, 232, 216, 0.38);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
   font-size: 0.82em;
   margin-left: auto;
 }
@@ -919,7 +925,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   padding: 2px 0;
-  color: var(--acp-peek-accent, #8effb0);
+  color: var(--acp-peek-accent, var(--agent-accent, #8effb0));
   align-items: baseline;
 }
 .acp-harness__lane-peek-event-text {
@@ -927,9 +933,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.acp-harness__lane-peek-event-text b { font-weight: normal; color: rgba(216, 232, 216, 0.92); }
+.acp-harness__lane-peek-event-text b { font-weight: normal; color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92); }
 .acp-harness__lane-peek-event-meta {
-  color: rgba(216, 232, 216, 0.38);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
   font-size: 0.85em;
   white-space: nowrap;
 }
@@ -943,7 +949,7 @@
   min-width: 0;
 }
 .acp-harness__lane-peek-prefix {
-  color: rgba(216, 232, 216, 0.38);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
   font-size: 0.85em;
 }
 .acp-harness__lane-peek-value {
@@ -951,7 +957,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
 }
 .acp-harness__lane-peek-value b { color: #ffd27a; font-weight: normal; }
 
@@ -963,7 +969,7 @@
   min-width: 0;
 }
 .acp-harness__lane-peek-plan-count {
-  color: #8effb0;
+  color: var(--agent-accent, #8effb0);
   font-variant-numeric: tabular-nums;
   font-size: 0.85em;
 }
@@ -988,11 +994,11 @@
   align-items: center;
   width: 100%;
   padding: 8px 10px;
-  background: linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
+  background: var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
   border: 1px solid color-mix(in srgb, var(--acp-action-accent) 42%, transparent);
   border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 0 18px color-mix(in srgb, var(--acp-action-accent) 10%, transparent);
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   animation: acp-action-deploy 180ms var(--krypton-motion-entrance) both;
 }
@@ -1076,7 +1082,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
 }
 
 .acp-harness__action-hud[data-kind="delete"] .acp-harness__action-subject {
@@ -1316,13 +1322,13 @@
   min-height: 0;
   padding: 8px 12px 7px;
   background:
-    linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
-  border: 1px solid rgba(0, 204, 255, 0.22);
+    var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.22);
   border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.95em;
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   pointer-events: auto;
 }
 
@@ -1331,7 +1337,7 @@
   align-items: baseline;
   gap: 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(0, 204, 255, 0.12);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
   margin-bottom: 3px;
   flex: 0 0 auto;
 }
@@ -1346,7 +1352,7 @@
 }
 
 .acp-harness__lane-thought-label {
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-size: 0.78em;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1362,13 +1368,13 @@
   min-height: 0;
   font-size: 0.86em;
   line-height: 1.55;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--thought-veil {
-  color: rgba(216, 232, 216, 0.38);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--thought-teletype {
@@ -1397,7 +1403,7 @@
 /* spec 216 — same GFM as sealed assistant, kept ghost so thought stays secondary. */
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown {
   white-space: normal;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown h1,
@@ -1406,7 +1412,7 @@
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown h4,
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown h5,
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown h6 {
-  color: rgba(216, 232, 216, 0.58);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58);
   font-size: 1em;
   border: none;
   padding: 0;
@@ -1420,16 +1426,16 @@
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown strong {
-  color: rgba(216, 232, 216, 0.62);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown em {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown code {
-  color: rgba(216, 232, 216, 0.55);
-  background: rgba(216, 232, 216, 0.06);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown pre {
@@ -1439,12 +1445,12 @@
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown a {
-  color: rgba(216, 232, 216, 0.55);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown ul > li::before,
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown ol > li::before {
-  color: rgba(216, 232, 216, 0.38);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
 }
 
 .acp-harness__lane-thought-body.acp-harness__msg-body--markdown img {
@@ -1469,13 +1475,13 @@
   gap: 4px 8px;
   margin-top: 5px;
   padding-top: 5px;
-  border-top: 1px solid rgba(216, 232, 216, 0.08);
+  border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
   font-size: 0.78em;
-  color: rgba(216, 232, 216, 0.38);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
   letter-spacing: 0.03em;
 }
 .acp-harness__lane-peek-chip b {
-  color: rgba(216, 232, 216, 0.6);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
   font-weight: normal;
 }
 .acp-harness__lane-peek-chip--hot b {
@@ -1504,14 +1510,14 @@
 .acp-harness__lane-peek-heat-prefix {
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: rgba(216, 232, 216, 0.4);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
   font-weight: 600;
 }
 
 .acp-harness__lane-peek-heat-cmd {
   font: inherit;
   letter-spacing: 0.04em;
-  color: var(--acp-peek-accent, #8effb0);
+  color: var(--acp-peek-accent, var(--agent-accent, #8effb0));
   background: transparent;
   border: none;
   border-bottom: 1px dashed rgba(142, 255, 176, 0.35);
@@ -1546,7 +1552,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(216, 232, 216, 0.38);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
   margin-bottom: 2px;
 }
 
@@ -1602,13 +1608,13 @@
   font-size: 0.95em;
   font-weight: 600;
   min-width: 2ch;
-  color: rgba(216, 232, 216, 0.75);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.75);
 }
 
 .acp-harness__lane-peek-heat-delta {
   flex: 1 1 100%;
   font-size: 0.82em;
-  color: rgba(216, 232, 216, 0.45);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1644,12 +1650,12 @@
 .acp-harness__lane-peek-heat-table th,
 .acp-harness__lane-peek-heat-table td {
   padding: 3px 6px 3px 0;
-  border-bottom: 1px solid rgba(216, 232, 216, 0.06);
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
   text-align: left;
 }
 
 .acp-harness__lane-peek-heat-table tr:first-child th {
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1673,7 +1679,7 @@
 
 .acp-harness__lane-stats span {
   padding: 0;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-size: 0.78em;
   letter-spacing: 0.02em;
   text-decoration: none;
@@ -1684,7 +1690,7 @@
 
 .acp-harness__lane-stats span:not(:last-child)::after {
   content: '·';
-  color: rgba(216, 232, 216, 0.25);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25);
 }
 
 .acp-harness__msg {
@@ -1697,7 +1703,7 @@
 }
 
 .acp-harness__msg-label {
-  color: rgba(216, 232, 216, 0.36);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
   letter-spacing: 0.08em;
   font-size: 0.64em;
   line-height: 1.45;
@@ -1711,7 +1717,7 @@
   min-width: 0;
   white-space: pre-wrap;
   line-height: 1.36;
-  color: rgba(216, 232, 216, 0.8);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
   overflow-wrap: anywhere;
 }
 
@@ -1751,12 +1757,12 @@
 }
 
 .acp-harness__msg--shell .acp-harness__msg-label {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__msg--shell .acp-harness__msg-body {
   white-space: pre-wrap;
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   background: color-mix(in srgb, var(--acp-accent-shell) 7%, transparent);
   padding: 4px 8px;
   border-radius: var(--krypton-border-radius, 4px);
@@ -1786,8 +1792,8 @@
 }
 
 .acp-harness__msg--hidden-indicator .acp-harness__msg-body {
-  color: rgba(216, 232, 216, 0.6);
-  border-left: 1px dashed rgba(216, 232, 216, 0.25);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+  border-left: 1px dashed rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25);
   padding-left: 8px;
 }
 
@@ -1811,19 +1817,19 @@
   display: inline-block;
   width: 1.4ch;
   text-align: center;
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 .acp-harness__tool-glyph--completed {
-  color: #8effb0;
+  color: var(--agent-accent, #8effb0);
 }
 
 .acp-harness__tool-glyph--failed {
-  color: #ff6b8b;
+  color: var(--agent-error, #ff6b8b);
 }
 
 .acp-harness__tool-glyph--in_progress {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__tool-kind {
@@ -1832,8 +1838,8 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.78em;
-  color: rgba(216, 232, 216, 0.6);
-  border: 1px solid rgba(216, 232, 216, 0.18);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
   border-radius: var(--krypton-border-radius, 4px);
   padding: 0 5px;
 }
@@ -1841,22 +1847,22 @@
 .acp-harness__tool-subject {
   flex: 1 1 auto;
   min-width: 0;
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   font-family: var(--agent-font, monospace);
   word-break: break-all;
 }
 
 .acp-harness__tool-result {
   letter-spacing: 0.04em;
-  color: rgba(216, 232, 216, 0.55);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
 }
 
 .acp-harness__tool-result--completed {
-  color: #8effb0;
+  color: var(--agent-accent, #8effb0);
 }
 
 .acp-harness__tool-result--failed {
-  color: #ff6b8b;
+  color: var(--agent-error, #ff6b8b);
 }
 
 /* `flex: none` + `nowrap` are load-bearing, not decoration: the head sits inside
@@ -1869,13 +1875,13 @@
   white-space: nowrap;
   font-size: 0.78em;
   letter-spacing: 0.04em;
-  color: rgba(216, 232, 216, 0.45);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
   font-variant-numeric: tabular-nums;
   margin-left: auto;
 }
 
 .acp-harness__tool-timer--in_progress {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__tool-timer--failed {
@@ -1888,7 +1894,7 @@
   gap: 4px;
   margin-left: calc(1.4ch + 8px);
   padding: 3px 0 3px 8px;
-  border-left: 2px solid rgba(216, 232, 216, 0.12);
+  border-left: 2px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
 }
 
 .acp-harness__tool-section {
@@ -1901,10 +1907,10 @@
   font-size: 0.7em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--acp-tool-section-color, rgba(216, 232, 216, 0.48)) 72%, rgba(216, 232, 216, 0.42));
+  color: color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48)) 72%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   text-shadow:
-    0 0 6px color-mix(in srgb, var(--acp-tool-section-color, rgba(216, 232, 216, 0.48)) 24%, transparent),
-    0 0 12px color-mix(in srgb, var(--acp-tool-section-color, rgba(216, 232, 216, 0.48)) 10%, transparent);
+    0 0 6px color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48)) 24%, transparent),
+    0 0 12px color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48)) 10%, transparent);
 }
 
 .acp-harness__tool-section-text {
@@ -1912,7 +1918,7 @@
   font-family: var(--agent-font, monospace);
   font-size: 0.92em;
   line-height: 1.4;
-  color: color-mix(in srgb, var(--acp-tool-section-color, rgba(216, 232, 216, 0.86)) 82%, rgba(216, 232, 216, 0.86));
+  color: color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86)) 82%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   text-shadow: 0 0 6px color-mix(in srgb, var(--acp-tool-section-color, rgba(109, 208, 255, 0.78)) 14%, transparent);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1950,7 +1956,7 @@
 
 .acp-harness__tool-stat-count {
   justify-self: end;
-  color: rgba(216, 232, 216, 0.52);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.52);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1959,8 +1965,8 @@
   display: block;
   height: 0.55em;
   overflow: hidden;
-  background: rgba(216, 232, 216, 0.08);
-  border: 1px solid rgba(216, 232, 216, 0.1);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
   border-radius: var(--krypton-border-radius, 4px);
 }
 
@@ -1989,7 +1995,7 @@
 }
 
 .acp-harness__tool-rich-more {
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-size: 0.88em;
 }
 
@@ -2025,7 +2031,7 @@
 
 .acp-harness__tool-diff-mark {
   justify-self: end;
-  color: rgba(216, 232, 216, 0.32);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
   font-size: 0.78em;
   font-weight: 700;
 }
@@ -2033,9 +2039,9 @@
 .acp-harness__tool-diff-text {
   min-width: 0;
   overflow: hidden;
-  color: rgba(216, 232, 216, 0.7);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7);
   text-overflow: ellipsis;
-  text-shadow: 0 0 6px rgba(216, 232, 216, 0.08);
+  text-shadow: 0 0 6px rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
   white-space: pre;
 }
 
@@ -2060,7 +2066,7 @@
 }
 
 .acp-harness__tool-diff-line--meta .acp-harness__tool-diff-text {
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .acp-harness__tool-status-row {
@@ -2074,7 +2080,7 @@
   padding: 0 4px;
   border: 1px solid currentColor;
   border-radius: var(--krypton-border-radius, 4px);
-  color: rgba(216, 232, 216, 0.58);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58);
   font-size: 0.78em;
   line-height: 1.35;
   text-align: center;
@@ -2095,19 +2101,19 @@
 }
 
 .acp-harness__tool-section--summary {
-  --acp-tool-section-color: #8effb0;
+  --acp-tool-section-color: var(--agent-accent, #8effb0);
 }
 
 .acp-harness__tool-section--output {
-  --acp-tool-section-color: #6dd0ff;
+  --acp-tool-section-color: var(--agent-user, #6dd0ff);
 }
 
 .acp-harness__tool-section--error {
-  --acp-tool-section-color: #ff6b8b;
+  --acp-tool-section-color: var(--agent-error, #ff6b8b);
 }
 
 .acp-harness__tool-section--diff {
-  --acp-tool-section-color: #ffd166;
+  --acp-tool-section-color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__tool-section--terminal {
@@ -2119,7 +2125,7 @@
 }
 
 .acp-harness__tool-section--default {
-  --acp-tool-section-color: var(--acp-lane-accent, #8effb0);
+  --acp-tool-section-color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
 }
 
 .acp-harness__pretext-line {
@@ -2129,14 +2135,14 @@
 
 .acp-harness__msg-body--markdown {
   white-space: normal;
-  color: #eaf3ea;
+  color: var(--agent-text, #eaf3ea);
   contain: layout style;
 }
 
 /* Spec 114 rev 4: append-only plain text while streaming; markdown once at seal. */
 .acp-harness__msg-body--stream-plain {
   white-space: pre-wrap;
-  color: #eaf3ea;
+  color: var(--agent-text, #eaf3ea);
 }
 
 .acp-harness__msg-body--markdown > :first-child {
@@ -2166,14 +2172,14 @@
 
 .acp-harness__msg-body--markdown h1 {
   font-size: 1.35em;
-  color: #b9f5ff;
+  color: var(--agent-cyan, #b9f5ff);
   border-bottom: 1px solid rgba(109, 208, 255, 0.35);
   padding-bottom: 0.15em;
 }
 
 .acp-harness__msg-body--markdown h2 {
   font-size: 1.18em;
-  color: #6dd0ff;
+  color: var(--agent-user, #6dd0ff);
 }
 
 .acp-harness__msg-body--markdown h3 {
@@ -2183,7 +2189,7 @@
 
 .acp-harness__msg-body--markdown h4 {
   font-size: 1em;
-  color: #c4ffd6;
+  color: var(--agent-accent, #c4ffd6);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -2270,8 +2276,8 @@
 }
 
 .acp-harness__msg-body--markdown a:hover {
-  color: #b9f5ff;
-  text-decoration-color: #b9f5ff;
+  color: var(--agent-cyan, #b9f5ff);
+  text-decoration-color: var(--agent-cyan, #b9f5ff);
 }
 
 .acp-harness__msg-body--markdown blockquote {
@@ -2526,12 +2532,12 @@
 }
 
 .acp-harness__msg--user {
-  border-left-color: rgba(0, 204, 255, 0.42);
+  border-left-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.42);
   background: transparent;
 }
 
 .acp-harness__msg--assistant {
-  border-left-color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 10%, transparent);
+  border-left-color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 10%, transparent);
 }
 
 .acp-harness__msg--provider_error {
@@ -2546,7 +2552,7 @@
   /* Dimmer than normal body (0.8) to read as low-signal, but high enough to
      stay legible — no italic, no mask fade (those compounded into an
      unreadable wash). The clamp alone keeps a long dump from dominating. */
-  color: rgba(216, 232, 216, 0.68);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
   /* Thinking is low-signal detail — cap it to a few lines so a long
      reasoning dump doesn't dominate the transcript. The effort meter on the
      label tells the reader how much is hidden below the clamp. */
@@ -2588,12 +2594,12 @@
 }
 
 .acp-harness__thought-effort-glyph {
-  color: rgba(216, 232, 216, 0.8);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
   letter-spacing: 1px;
 }
 
 .acp-harness__thought-effort-tier {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 /* Veiled thinking: some providers (Claude Code on current Opus models) stream
@@ -2605,7 +2611,7 @@
   display: inline-flex;
   align-items: baseline;
   gap: 1px;
-  color: rgba(216, 232, 216, 0.45);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
 }
 
 .acp-harness__thought-veil-word {
@@ -2650,11 +2656,11 @@
 }
 
 .acp-harness__msg--failed .acp-harness__msg-body {
-  color: #ff6b8b;
+  color: var(--agent-error, #ff6b8b);
 }
 
 .acp-harness__msg--permission .acp-harness__msg-body {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 /* Spec 120 pattern — flat perm body, no nested card container. No horizontal
@@ -2671,12 +2677,12 @@
    row's status glyph. */
 .acp-harness__msg-body.acp-harness__perm[data-decision='auto_allowed'] .acp-harness__perm-glyph,
 .acp-harness__msg-body.acp-harness__perm[data-decision='accepted'] .acp-harness__perm-glyph {
-  color: #8effb0;
+  color: var(--agent-accent, #8effb0);
 }
 
 .acp-harness__msg-body.acp-harness__perm[data-decision='rejected'] .acp-harness__perm-glyph,
 .acp-harness__msg-body.acp-harness__perm[data-decision='failed'] .acp-harness__perm-glyph {
-  color: #ff6b8b;
+  color: var(--agent-error, #ff6b8b);
 }
 
 /* Mirrors .acp-harness__tool-head so permission and tool rows share the same
@@ -2695,7 +2701,7 @@
   display: inline-block;
   width: 1.4ch;
   text-align: center;
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 /* Mirrors .acp-harness__tool-kind — a compact neutral tag, not a coloured pill. */
@@ -2705,15 +2711,15 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.78em;
-  color: rgba(216, 232, 216, 0.6);
-  border: 1px solid rgba(216, 232, 216, 0.18);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
   border-radius: var(--krypton-border-radius, 4px);
   padding: 0 5px;
 }
 
 .acp-harness__perm-tool {
   flex: none;
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
   text-shadow: 0 0 8px rgba(255, 209, 102, 0.24);
 }
 
@@ -2725,17 +2731,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   font-family: var(--agent-font, monospace);
 }
 
 .acp-harness__perm-suffix {
-  color: rgba(216, 232, 216, 0.55);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
 }
 
 .acp-harness__perm-reason,
 .acp-harness__perm-preview {
-  color: rgba(216, 232, 216, 0.62);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
   font-size: 0.86em;
   line-height: 1.25;
 }
@@ -2758,7 +2764,7 @@
 
 .acp-harness__transcript-empty {
   margin: auto;
-  color: rgba(216, 232, 216, 0.38);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
   letter-spacing: 0.04em;
 }
 
@@ -2768,7 +2774,7 @@
   z-index: 2;
   display: flex;
   flex-direction: column;
-  background: rgba(4, 8, 13, 0.96);
+  background: var(--agent-surface-solid, rgba(4, 8, 13, 0.96));
 }
 
 .acp-harness__memory-overlay[hidden] {
@@ -2783,8 +2789,8 @@
   flex-direction: column;
   background:
     repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.02) 2px, rgba(0, 0, 0, 0.02) 4px),
-    rgba(4, 8, 13, 0.98);
-  box-shadow: inset 0 1px 0 rgba(0, 204, 255, 0.08);
+    var(--agent-surface-solid, rgba(4, 8, 13, 0.98));
+  box-shadow: inset 0 1px 0 rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.08);
 }
 
 .acp-harness__help-overlay[hidden] {
@@ -2801,12 +2807,12 @@
   letter-spacing: 0.08em;
   text-transform: none;
   text-decoration: none;
-  text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
-  border-bottom: 1px solid rgba(0, 204, 255, 0.12);
+  text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
 }
 
 .acp-harness__help-head span:last-child {
-  color: rgba(216, 232, 216, 0.48);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
   font-size: 0.86em;
   text-shadow: none;
 }
@@ -2822,8 +2828,8 @@
 }
 
 .acp-harness__help-section {
-  background: rgba(0, 204, 255, 0.022);
-  border-left: 1px solid rgba(0, 204, 255, 0.14);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.022);
+  border-left: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.14);
   padding: 7px 9px;
 }
 
@@ -2854,12 +2860,12 @@
 
 .acp-harness__help-section dd {
   margin: 0;
-  color: rgba(216, 232, 216, 0.72);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
 }
 
 .acp-harness__help-section p {
   margin: 0;
-  color: rgba(216, 232, 216, 0.72);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
   line-height: 1.35;
 }
 
@@ -2884,7 +2890,7 @@
   grid-template-columns: 12ch minmax(0, 1fr) 7ch;
   gap: 8px;
   padding: 4px 0;
-  color: rgba(216, 232, 216, 0.78);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
   cursor: pointer;
 }
 
@@ -2901,16 +2907,16 @@
 }
 
 .acp-harness__memory-row--pinned .acp-harness__memory-id {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__memory-source,
 .acp-harness__memory-kind {
-  color: rgba(216, 232, 216, 0.48);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
 }
 
 .acp-harness__memory-source {
-  color: var(--acp-memory-accent, rgba(216, 232, 216, 0.7));
+  color: var(--acp-memory-accent, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7));
 }
 
 .acp-harness__memory-text {
@@ -2922,7 +2928,7 @@
 .acp-harness__memory-detail {
   grid-column: 1 / -1;
   padding: 4px 0 6px calc(12ch + 8px);
-  color: rgba(216, 232, 216, 0.62);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
   line-height: 1.35;
   white-space: pre-wrap;
 }
@@ -2930,13 +2936,13 @@
 .acp-harness__memory-empty,
 .acp-harness__empty {
   padding: 16px;
-  color: rgba(216, 232, 216, 0.46);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
 }
 
 .acp-harness__command-center {
   position: relative;
   flex: 0 0 auto;
-  background: rgba(2, 5, 10, 0.96);
+  background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
 }
 
 .acp-harness__tab-strip {
@@ -2951,7 +2957,7 @@
   border: 0;
   border-radius: var(--krypton-border-radius, 4px);
   background: transparent;
-  color: rgba(216, 232, 216, 0.68);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
   font: inherit;
   padding: 3px 7px;
   cursor: pointer;
@@ -2959,7 +2965,7 @@
 
 .acp-harness__tab--active {
   color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
-  background: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 7%, transparent);
+  background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 7%, transparent);
   box-shadow: inset 0 -1px 0 var(--acp-lane-accent, rgba(142, 255, 176, 0.68));
   text-decoration: none;
   text-shadow: none;
@@ -2971,8 +2977,8 @@
   padding: 6px 10px 8px;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--acp-lane-accent, #8effb0) 5%, rgba(2, 5, 10, 0.96)),
-    rgba(2, 5, 10, 0.96) 46%
+    color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 5%, var(--agent-surface-solid, rgba(2, 5, 10, 0.96))),
+    var(--agent-surface-solid, rgba(2, 5, 10, 0.96)) 46%
   );
 }
 
@@ -2982,7 +2988,7 @@
   gap: 12px;
   min-height: 32px;
   padding-block: 5px;
-  background: color-mix(in srgb, var(--acp-lane-accent, #ffd166) 8%, transparent);
+  background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-gold, #ffd166)) 8%, transparent);
 }
 
 .acp-harness__composer--permission .acp-harness__composer-meta {
@@ -3026,16 +3032,16 @@
   gap: 6px;
   max-width: min(260px, 100%);
   padding: 3px 5px 3px 3px;
-  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, #8effb0) 36%, transparent);
+  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 36%, transparent);
   border-radius: var(--krypton-border-radius, 4px);
-  background: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 7%, transparent);
+  background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 7%, transparent);
 }
 
 .acp-harness__staged-thumb {
   width: 36px;
   height: 28px;
   object-fit: cover;
-  border: 1px solid rgba(216, 232, 216, 0.16);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
   border-radius: var(--krypton-border-radius, 4px);
   opacity: 0.9;
 }
@@ -3046,7 +3052,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(216, 232, 216, 0.72);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
   font-size: 0.78em;
 }
 
@@ -3055,10 +3061,10 @@
   width: 18px;
   height: 18px;
   padding: 0;
-  border: 1px solid rgba(216, 232, 216, 0.18);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
   border-radius: var(--krypton-border-radius, 4px);
-  background: rgba(2, 5, 10, 0.42);
-  color: rgba(216, 232, 216, 0.68);
+  background: var(--agent-surface-mid, rgba(2, 5, 10, 0.42));
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
   font: inherit;
   line-height: 16px;
   cursor: pointer;
@@ -3066,7 +3072,7 @@
 
 .acp-harness__staged-remove:hover,
 .acp-harness__staged-remove:focus-visible {
-  color: #ff6b8b;
+  color: var(--agent-error, #ff6b8b);
   border-color: rgba(255, 107, 139, 0.45);
   outline: none;
 }
@@ -3074,7 +3080,7 @@
 .acp-harness__staging-hint {
   font-size: 0.72em;
   letter-spacing: 0.06em;
-  color: rgba(216, 232, 216, 0.45);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
   text-transform: uppercase;
 }
 .acp-harness--drag-over {
@@ -3094,7 +3100,7 @@
   gap: 0;
   min-height: 16px;
   overflow: hidden;
-  color: rgba(216, 232, 216, 0.46);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
   font-size: 0.72em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3125,14 +3131,14 @@
   /* Wrapped Thai text carries stacked vowel/tone marks; keep enough leading. */
   line-height: 1.55;
   background:
-    linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
+    var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
   border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 /* spec 148: the goal bar carries the active lane's accent… */
 .acp-harness__goal-bar {
-  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, #8effb0) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 28%, transparent);
 }
 
 /* spec 194: …while the ticket bar is harness-scoped (same whichever lane is
@@ -3147,18 +3153,18 @@
   text-transform: uppercase;
   letter-spacing: 0.10em;
   font-size: 0.86em;
-  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 55%, #d8e8d8);
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 55%, var(--krypton-fg, #d8e8d8));
 }
 
 .acp-harness__ticket-label {
-  color: color-mix(in srgb, #ffb000 55%, #d8e8d8);
+  color: color-mix(in srgb, #ffb000 55%, var(--krypton-fg, #d8e8d8));
 }
 
 .acp-harness__goal-text,
 .acp-harness__ticket-body {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: rgba(216, 232, 216, 0.95);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
 }
 
 .acp-harness__ticket-key {
@@ -3169,7 +3175,7 @@
 .acp-harness__ticket-rev {
   float: right;
   margin-left: 8px;
-  color: rgba(216, 232, 216, 0.40);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.40);
 }
 
 /* spec 194: `#ticket` picker — its own modal dialog (mirrors the triage/review
@@ -3182,7 +3188,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 8, 13, 0.78);
+  background: var(--agent-surface-high, rgba(4, 8, 13, 0.78));
 }
 
 .acp-harness__ticket-overlay[hidden] {
@@ -3195,7 +3201,7 @@
   width: clamp(480px, 58vw, 820px);
   max-width: calc(100% - 24px);
   max-height: 72vh;
-  background: rgba(8, 14, 18, 0.98);
+  background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
   border: 1px solid rgba(255, 176, 0, 0.32);
   border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
@@ -3218,7 +3224,7 @@
 }
 
 .acp-ticket__sub {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   font-size: 0.8em;
   letter-spacing: 0.04em;
   text-transform: none;
@@ -3227,11 +3233,11 @@
 .acp-ticket__filter {
   padding: 6px 14px;
   border-bottom: 1px solid rgba(255, 176, 0, 0.14);
-  color: rgba(216, 232, 216, 0.88);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
 }
 
 .acp-ticket__filter-hint {
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-style: italic;
 }
 
@@ -3250,7 +3256,7 @@
   border: 0;
   border-radius: var(--krypton-border-radius, 4px);
   background: transparent;
-  color: rgba(216, 232, 216, 0.78);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
   font: inherit;
   line-height: inherit;
   text-align: left;
@@ -3288,20 +3294,20 @@
 
 .acp-ticket__labels {
   flex: 0 0 auto;
-  color: rgba(216, 232, 216, 0.46);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
   font-style: italic;
 }
 
 .acp-ticket__age {
   flex: 0 0 auto;
   margin-left: auto;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .acp-ticket__empty {
   padding: 20px 14px;
   text-align: center;
-  color: rgba(216, 232, 216, 0.55);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
 }
 
 .acp-ticket__actions {
@@ -3322,7 +3328,7 @@
   border: 1px solid rgba(255, 176, 0, 0.26);
   border-radius: var(--krypton-border-radius, 4px);
   background: transparent;
-  color: rgba(216, 232, 216, 0.82);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
   font: inherit;
   line-height: 1;
   cursor: default;
@@ -3348,7 +3354,7 @@
 
 .acp-ticket__action:disabled {
   border-color: rgba(255, 176, 0, 0.08);
-  color: rgba(216, 232, 216, 0.25);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25);
   cursor: not-allowed;
 }
 
@@ -3371,7 +3377,7 @@
   flex-wrap: wrap;
   padding: 6px 14px;
   border-top: 1px solid rgba(255, 176, 0, 0.14);
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-size: 0.86em;
   letter-spacing: 0.04em;
 }
@@ -3392,7 +3398,7 @@
 .acp-harness__project-status::before {
   content: '·';
   margin: 0 8px;
-  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 38%, transparent);
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 38%, transparent);
   text-shadow: none;
 }
 
@@ -3406,12 +3412,12 @@
   display: inline-flex;
   align-items: center;
   overflow: hidden;
-  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 42%, #d8e8d8);
-  text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 26%, transparent);
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 42%, var(--krypton-fg, #d8e8d8));
+  text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 26%, transparent);
 }
 
 .acp-harness__memory-chip--running {
-  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 78%, rgba(216, 232, 216, 0.86));
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 78%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
 }
 
 /* spec 221 — status-line segments. */
@@ -3435,7 +3441,7 @@
 .acp-harness__meta-seg + .acp-harness__meta-seg::before {
   content: '·';
   margin: 0 8px;
-  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 38%, transparent);
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 38%, transparent);
   text-shadow: none;
 }
 
@@ -3478,7 +3484,7 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: none;
-  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 32%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 32%, transparent);
 }
 
 .acp-harness__prompt {
@@ -3487,7 +3493,7 @@
   width: 1ch;
   text-align: center;
   color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
-  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 40%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 40%, transparent);
 }
 
 /* Braille spinner glyph — frames are advanced by a single JS interval (see
@@ -3505,15 +3511,15 @@
   min-width: 0;
   flex: 1 1 auto;
   white-space: pre-wrap;
-  color: rgba(216, 232, 216, 0.95);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
 }
 
 .acp-harness__composer--command .acp-harness__input {
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .acp-harness__composer--command .acp-harness__prompt {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__composer--command .acp-harness__caret {
@@ -3528,7 +3534,7 @@
   flex: 0 0 auto;
   margin-left: auto;
   align-self: center;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-size: 0.65em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3536,13 +3542,13 @@
 
 .acp-harness__caret {
   color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
-  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 45%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 45%, transparent);
   animation: acp-harness-caret 1s step-end infinite;
 }
 
 .acp-harness__permission-options {
   flex: 0 0 auto;
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
   font-size: 0.92em;
   letter-spacing: 0.06em;
   line-height: 1.2;
@@ -3573,9 +3579,9 @@
   text-align: center;
 }
 
-.acp-harness__question-glyph--accepted { color: #8effb0; }
+.acp-harness__question-glyph--accepted { color: var(--agent-accent, #8effb0); }
 .acp-harness__question-glyph--skipped,
-.acp-harness__question-glyph--failed { color: #ff6b8b; }
+.acp-harness__question-glyph--failed { color: var(--agent-error, #ff6b8b); }
 
 .acp-harness__question-decision {
   flex: none;
@@ -3583,8 +3589,8 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.78em;
-  color: rgba(216, 232, 216, 0.6);
-  border: 1px solid rgba(216, 232, 216, 0.18);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
   border-radius: var(--krypton-border-radius, 4px);
   padding: 0 5px;
 }
@@ -3592,12 +3598,12 @@
 .acp-harness__question-subject {
   flex: 1 1 auto;
   min-width: 0;
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
 }
 
 .acp-harness__question-pos {
   flex: none;
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   font-size: 0.82em;
 }
 
@@ -3622,22 +3628,22 @@
 }
 
 .acp-harness__question-option--on .acp-harness__question-label {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__question-key {
   flex: none;
   width: 1.6ch;
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
   font-weight: 700;
 }
 
 .acp-harness__question-label {
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
 }
 
 .acp-harness__question-desc {
-  color: rgba(216, 232, 216, 0.55);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
   font-size: 0.86em;
 }
 
@@ -3687,11 +3693,11 @@
 @keyframes acp-harness-busy-pulse {
   0%, 100% {
     opacity: 0.62;
-    text-shadow: 0 0 6px rgba(0, 204, 255, 0.18);
+    text-shadow: 0 0 6px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
   }
   50% {
     opacity: 1;
-    text-shadow: 0 0 12px rgba(0, 204, 255, 0.55), 0 0 20px rgba(0, 204, 255, 0.18);
+    text-shadow: 0 0 12px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.55), 0 0 20px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
   }
 }
 
@@ -3764,7 +3770,7 @@
   gap: 2px;
   padding: 8px 0;
   border-right: none;
-  background: rgba(2, 5, 10, 0.18);
+  background: var(--agent-ghost, rgba(2, 5, 10, 0.18));
   overflow-y: auto;
   min-height: 0;
 }
@@ -3788,7 +3794,7 @@
   column-gap: 8px;
   row-gap: 2px;
   padding: 6px 12px;
-  color: rgba(216, 232, 216, 0.6);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
   letter-spacing: 0.04em;
 }
 
@@ -3810,7 +3816,7 @@
   gap: 6px;
   min-width: 0;
   font-size: 0.76em;
-  color: rgba(216, 232, 216, 0.46);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
   letter-spacing: 0.04em;
   white-space: nowrap;
   overflow: hidden;
@@ -3823,7 +3829,7 @@
   justify-self: center;
   width: 14px;
   height: 14px;
-  color: rgba(216, 232, 216, 0.55);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
   flex-shrink: 0;
 }
 
@@ -3889,7 +3895,7 @@
 
 .acp-harness__rail-meta__hint {
   flex: 0 0 auto;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .acp-harness__rail-entry--directive {
@@ -3902,12 +3908,12 @@
 }
 
 .acp-harness__rail-entry--pending {
-  background: color-mix(in srgb, #ffd166 5%, transparent);
+  background: color-mix(in srgb, var(--agent-gold, #ffd166) 5%, transparent);
 }
 
 .acp-harness__rail-entry--pending .acp-harness__rail-meta__title,
 .acp-harness__rail-entry--pending .acp-harness__rail-meta__hint {
-  color: #ffd166;
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__rail-peers {
@@ -3924,7 +3930,7 @@
   flex: 0 0 auto;
   font-size: 0.74em;
   font-variant-numeric: tabular-nums;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   letter-spacing: 0.02em;
 }
 
@@ -3936,14 +3942,14 @@
 .acp-harness__rail-metric--ctx {
   min-width: 4ch;
   text-align: right;
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 /* No left accent rail — the active entry announces itself by a stronger
    full-width tint + text color (flat single surface, matches the lane bands). */
 .acp-harness__rail-entry--active {
-  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 55%, rgba(216, 232, 216, 0.78));
-  background: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 11%, transparent);
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 55%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
+  background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 11%, transparent);
 }
 
 .acp-harness__rail-dot {
@@ -3953,12 +3959,12 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(216, 232, 216, 0.42);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .acp-harness__rail-entry--busy .acp-harness__rail-dot {
   background: var(--krypton-window-accent, #0cf);
-  box-shadow: 0 0 6px rgba(0, 204, 255, 0.6);
+  box-shadow: 0 0 6px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.6);
 }
 
 /* spec 118 — zen rail peer activity (rail is zen-only today; scope under
@@ -3994,7 +4000,7 @@
 }
 
 .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
-  background: #ffd166;
+  background: var(--agent-gold, #ffd166);
   box-shadow: 0 0 8px rgba(255, 209, 102, 0.72);
 }
 
@@ -4009,7 +4015,7 @@
 }
 
 .acp-harness__rail-entry--error .acp-harness__rail-dot {
-  background: #ff6b8b;
+  background: var(--agent-error, #ff6b8b);
 }
 
 .acp-harness--zen .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot,
@@ -4043,7 +4049,7 @@
   gap: 1px;
   margin-bottom: 6px;
   padding: 4px 0;
-  background: color-mix(in srgb, var(--krypton-bg-elev, #0c1018) 92%, black);
+  background: var(--krypton-bg-elev, var(--agent-surface-solid, #0c1018));
   border: 1px solid color-mix(in oklab, #c77dff 30%, transparent);
   border-radius: var(--krypton-border-radius, 4px);
   font-size: 0.78em;
@@ -4051,7 +4057,7 @@
 
 .acp-harness__slash-palette-meta {
   padding: 2px 8px;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-size: 0.78em;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -4062,7 +4068,7 @@
   align-items: baseline;
   gap: 10px;
   padding: 2px 8px;
-  color: rgba(216, 232, 216, 0.78);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
 }
 
 .acp-harness__slash-palette-row--selected {
@@ -4078,7 +4084,7 @@
 
 .acp-harness__slash-palette-hint {
   flex: 0 0 auto;
-  color: rgba(216, 232, 216, 0.46);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
   font-style: italic;
 }
 
@@ -4087,7 +4093,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(216, 232, 216, 0.6);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
   max-width: 60ch;
 }
 
@@ -4098,7 +4104,7 @@
   gap: 8px;
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.85em;
-  color: rgba(216, 232, 216, 0.62);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
 }
 
 .acp-harness__fs-activity--err {
@@ -4113,7 +4119,7 @@
   flex: 0 0 auto;
   width: 6ch;
   display: inline-block;
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 .acp-harness__fs-activity--err .acp-harness__fs-activity-verb {
@@ -4144,7 +4150,7 @@
     linear-gradient(90deg, rgba(255, 209, 102, 0.09), rgba(109, 208, 255, 0.035)),
     rgba(10, 16, 24, 0.9);
   box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.06);
-  color: rgba(216, 232, 216, 0.84);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
   font-size: 0.9em;
   white-space: normal;
 }
@@ -4188,7 +4194,7 @@
 }
 
 .acp-harness__provider-error-hint {
-  color: rgba(216, 232, 216, 0.72);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
   line-height: 1.36;
 }
 
@@ -4200,9 +4206,9 @@
 }
 
 .acp-harness__provider-error-chip {
-  border: 1px solid rgba(216, 232, 216, 0.16);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
   border-radius: var(--krypton-border-radius, 4px);
-  color: rgba(216, 232, 216, 0.58);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58);
   padding: 1px 6px;
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.72em;
@@ -4218,7 +4224,7 @@
 
 .acp-harness__provider-error-details {
   margin-top: 4px;
-  color: rgba(216, 232, 216, 0.58);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58);
 }
 
 .acp-harness__provider-error-details summary {
@@ -4237,10 +4243,10 @@
   padding: 8px;
   max-height: 180px;
   overflow: auto;
-  border: 1px solid rgba(216, 232, 216, 0.1);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
   border-radius: var(--krypton-border-radius, 4px);
   background: rgba(0, 0, 0, 0.24);
-  color: rgba(216, 232, 216, 0.78);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.82em;
   line-height: 1.42;
@@ -4254,7 +4260,7 @@
   gap: 1px;
   margin-bottom: 6px;
   padding: 4px 0;
-  background: color-mix(in srgb, var(--krypton-bg-elev, #0c1018) 92%, black);
+  background: var(--krypton-bg-elev, var(--agent-surface-solid, #0c1018));
   border: 1px solid color-mix(in oklab, #c77dff 30%, transparent);
   border-radius: var(--krypton-border-radius, 4px);
   font-size: 0.78em;
@@ -4262,7 +4268,7 @@
 
 .acp-harness__slash-palette-meta {
   padding: 2px 8px;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-size: 0.78em;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -4273,7 +4279,7 @@
   align-items: baseline;
   gap: 10px;
   padding: 2px 8px;
-  color: rgba(216, 232, 216, 0.78);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
 }
 
 .acp-harness__slash-palette-row--selected {
@@ -4289,7 +4295,7 @@
 
 .acp-harness__slash-palette-hint {
   flex: 0 0 auto;
-  color: rgba(216, 232, 216, 0.46);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
   font-style: italic;
 }
 
@@ -4298,7 +4304,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(216, 232, 216, 0.6);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
   max-width: 60ch;
 }
 
@@ -4309,7 +4315,7 @@
   gap: 8px;
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.85em;
-  color: rgba(216, 232, 216, 0.62);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
 }
 
 .acp-harness__fs-activity--err {
@@ -4324,7 +4330,7 @@
   flex: 0 0 auto;
   width: 6ch;
   display: inline-block;
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 .acp-harness__fs-activity--err .acp-harness__fs-activity-verb {
@@ -4352,7 +4358,7 @@
   margin-top: 6px;
 }
 .acp-harness__tool-diff {
-  border: 1px solid rgba(216, 232, 216, 0.08);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
   border-radius: var(--krypton-border-radius, 4px);
   padding: 4px 0;
   background: rgba(0, 0, 0, 0.18);
@@ -4363,8 +4369,8 @@
   padding: 2px 8px 4px;
   font-family: var(--agent-font, monospace);
   font-size: 0.92em;
-  color: rgba(216, 232, 216, 0.5);
-  border-bottom: 1px solid rgba(216, 232, 216, 0.06);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
   margin-bottom: 4px;
 }
 .acp-harness__tool-body--diff {
@@ -4383,7 +4389,7 @@
   overflow-wrap: anywhere;
 }
 .acp-harness__diff-line--add {
-  color: #8effb0;
+  color: var(--agent-accent, #8effb0);
   background: rgba(142, 255, 176, 0.05);
 }
 .acp-harness__diff-line--del {
@@ -4392,11 +4398,11 @@
 }
 .acp-harness__diff-line--ctx { opacity: 0.55; }
 .acp-harness__diff-line--hunk {
-  color: rgba(216, 232, 216, 0.38);
-  background: rgba(216, 232, 216, 0.03);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.03);
 }
 .acp-harness__diff-num {
-  color: rgba(216, 232, 216, 0.28);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
   text-align: right;
   user-select: none;
 }
@@ -4410,14 +4416,14 @@
 .acp-harness__tool-meta {
   padding: 4px 8px;
   font-size: 0.92em;
-  color: rgba(216, 232, 216, 0.45);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
   font-style: italic;
 }
 .acp-harness__tool-more {
   display: block;
   padding: 4px 8px;
   font-size: 0.88em;
-  color: rgba(216, 232, 216, 0.4);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
   font-style: italic;
 }
 
@@ -4433,13 +4439,13 @@
   gap: 8px;
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.85em;
-  color: rgba(216, 232, 216, 0.85);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.85);
 }
 .acp-harness__fs-review-verb {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 .acp-harness__fs-review-path {
-  color: rgba(216, 232, 216, 0.85);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.85);
 }
 .acp-harness__fs-review-actions {
   display: flex;
@@ -4448,7 +4454,7 @@
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.82em;
 }
-.acp-harness__fs-review-action--accept { color: #8effb0; }
+.acp-harness__fs-review-action--accept { color: var(--agent-accent, #8effb0); }
 .acp-harness__fs-review-action--reject { color: #ff8b8b; }
 .acp-harness__fs-review-action--accept-all { color: rgba(142, 255, 176, 0.55); }
 .acp-harness__fs-review--resolved { opacity: 0.6; }
@@ -4456,7 +4462,7 @@
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.82em;
 }
-.acp-harness__fs-review-resolved--accepted { color: #8effb0; }
+.acp-harness__fs-review-resolved--accepted { color: var(--agent-accent, #8effb0); }
 .acp-harness__fs-review-resolved--rejected { color: #ff8b8b; }
 
 .acp-harness__plan {
@@ -4465,13 +4471,13 @@
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(180deg, rgba(8, 14, 22, 0.94) 0%, rgba(4, 8, 13, 0.94) 100%);
-  border: 1px solid rgba(0, 204, 255, 0.28);
+    var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.28);
   border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.95em;
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   pointer-events: auto;
 }
 
@@ -4482,29 +4488,29 @@
   display: flex;
   align-items: baseline;
   padding: 9px 13px 8px;
-  border-bottom: 1px solid rgba(216, 232, 216, 0.08);
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
   font-size: 0.92em;
 }
 
 .acp-harness__plan-title {
-  color: rgba(216, 232, 216, 0.7);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7);
   letter-spacing: 0.08em;
 }
 
 .acp-harness__plan-count {
   margin-left: auto;
-  color: rgba(216, 232, 216, 0.45);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
   font-variant-numeric: tabular-nums;
 }
 .acp-harness__plan-count b {
-  color: rgba(216, 232, 216, 0.85);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.85);
   font-weight: 600;
 }
 
 .acp-harness__plan-progress {
   flex: 0 0 auto;
   height: 2px;
-  background: rgba(216, 232, 216, 0.08);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
 }
 .acp-harness__plan-progress-fill {
   display: block;
@@ -4536,7 +4542,7 @@
 }
 
 .acp-harness__plan-entry-text {
-  color: rgba(216, 232, 216, 0.92);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
 }
 
 .acp-harness__plan-priority {
@@ -4547,10 +4553,10 @@
 }
 
 .acp-harness__plan-entry--pending .acp-harness__plan-entry-mark {
-  color: rgba(216, 232, 216, 0.28);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
 }
 .acp-harness__plan-entry--pending .acp-harness__plan-entry-text {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 .acp-harness__plan-entry--in_progress .acp-harness__plan-entry-mark {
@@ -4564,7 +4570,7 @@
   color: rgba(142, 255, 176, 0.55);
 }
 .acp-harness__plan-entry--completed .acp-harness__plan-entry-text {
-  color: rgba(216, 232, 216, 0.4);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
 }
 
 /* ── Lane picker overlay ─────────────────────────────────── */
@@ -4576,7 +4582,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 8, 13, 0.72);
+  background: var(--agent-surface-high, rgba(4, 8, 13, 0.72));
 }
 
 .acp-harness__picker[hidden] {
@@ -4587,8 +4593,8 @@
 .acp-harness__picker > ul,
 .acp-harness__picker > .acp-harness__picker-empty {
   width: clamp(320px, 38vw, 480px);
-  background: rgba(8, 14, 18, 0.98);
-  border: 1px solid rgba(0, 204, 255, 0.32);
+  background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
 }
 
@@ -4599,13 +4605,13 @@
   padding: 7px 12px;
   color: var(--krypton-window-accent, #0cf);
   letter-spacing: 0.08em;
-  border-bottom: 1px solid rgba(0, 204, 255, 0.18);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
   border-radius: var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px) 0 0;
-  text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+  text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
 }
 
 .acp-harness__picker-head span:last-child {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   font-size: 0.84em;
   text-shadow: none;
   letter-spacing: 0.04em;
@@ -4626,15 +4632,15 @@
   align-items: baseline;
   gap: 10px;
   padding: 6px 14px;
-  color: rgba(216, 232, 216, 0.82);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
   cursor: default;
   border-left: 2px solid transparent;
 }
 
 .acp-harness__picker-row--active {
-  background: rgba(0, 204, 255, 0.1);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.1);
   border-left-color: var(--krypton-window-accent, #0cf);
-  color: rgba(216, 232, 216, 0.98);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
 }
 
 .acp-harness__picker-label {
@@ -4644,7 +4650,7 @@
 
 .acp-harness__picker-id {
   flex: 1 1 auto;
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-size: 0.84em;
 }
 
@@ -4657,7 +4663,7 @@
 
 .acp-harness__picker-empty {
   padding: 14px 16px;
-  color: rgba(216, 232, 216, 0.6);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
   border-top: none;
   border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
 }
@@ -4673,7 +4679,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 8, 13, 0.74);
+  background: var(--agent-surface-high, rgba(4, 8, 13, 0.74));
 }
 
 .acp-harness__directive-picker[hidden] {
@@ -4684,8 +4690,8 @@
 .acp-harness__directive-list,
 .acp-harness__directive-preview {
   width: clamp(480px, 62vw, 860px);
-  background: rgba(8, 14, 18, 0.98);
-  border: 1px solid rgba(0, 204, 255, 0.32);
+  background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
   border-bottom: none;
 }
 
@@ -4697,11 +4703,11 @@
   padding: 7px 12px;
   color: var(--krypton-window-accent, #0cf);
   letter-spacing: 0.08em;
-  text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+  text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
 }
 
 .acp-harness__directive-head span:last-child {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   font-size: 0.84em;
   text-shadow: none;
   letter-spacing: 0.04em;
@@ -4720,19 +4726,19 @@
   align-items: baseline;
   gap: 8px;
   padding: 4px 14px;
-  color: rgba(216, 232, 216, 0.84);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
   cursor: default;
 }
 
 .acp-harness__directive-row--active {
-  background: rgba(0, 204, 255, 0.12);
-  outline: 1px solid rgba(0, 204, 255, 0.5);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+  outline: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
   outline-offset: -1px;
-  color: rgba(216, 232, 216, 0.98);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
 }
 
 .acp-harness__directive-row--disabled {
-  color: rgba(216, 232, 216, 0.4);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
 }
 
 .acp-harness__directive-icon {
@@ -4755,11 +4761,11 @@
   white-space: nowrap;
   letter-spacing: 0.03em;
   font-weight: 600;
-  color: rgba(216, 232, 216, 0.9);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
 }
 
 .acp-harness__directive-row--active .acp-harness__directive-title {
-  color: rgba(216, 232, 216, 0.98);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
 }
 
 .acp-harness__directive-assigned {
@@ -4786,7 +4792,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   font-size: 0.85em;
 }
 
@@ -4796,12 +4802,12 @@
 .acp-harness__directive-preview {
   position: relative;
   padding: 0;
-  border-bottom: 1px solid rgba(0, 204, 255, 0.32);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
   border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
   height: 22vh;
   overflow-y: auto;
   white-space: pre-wrap;
-  color: rgba(216, 232, 216, 0.72);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
   font-size: 0.86em;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
 }
@@ -4813,15 +4819,15 @@
   justify-content: space-between;
   gap: 10px;
   padding: 6px 14px 5px;
-  border-bottom: 1px solid rgba(0, 204, 255, 0.14);
-  background: rgba(8, 14, 18, 0.98);
-  color: rgba(0, 204, 255, 0.7);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.14);
+  background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
+  color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.7);
   font-size: 0.92em;
   letter-spacing: 0.05em;
 }
 
 .acp-harness__directive-preview-scope {
-  color: rgba(216, 232, 216, 0.4);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4840,7 +4846,7 @@
   height: 26px;
   margin-top: -26px;
   pointer-events: none;
-  background: linear-gradient(to top, rgba(8, 14, 18, 0.98), rgba(8, 14, 18, 0));
+  background: linear-gradient(to top, var(--agent-surface-solid, rgba(8, 14, 18, 0.98)), transparent);
 }
 
 /* ── Model picker (spec 127) ──────────────────────────────── */
@@ -4853,7 +4859,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 8, 13, 0.74);
+  background: var(--agent-surface-high, rgba(4, 8, 13, 0.74));
 }
 
 .acp-harness__model-picker[hidden] {
@@ -4863,8 +4869,8 @@
 .acp-harness__model-head,
 .acp-harness__model-list {
   width: clamp(360px, 46vw, 580px);
-  background: rgba(8, 14, 18, 0.98);
-  border: 1px solid rgba(0, 204, 255, 0.32);
+  background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
   border-bottom: none;
 }
 
@@ -4876,11 +4882,11 @@
   padding: 7px 12px;
   color: var(--krypton-window-accent, #0cf);
   letter-spacing: 0.08em;
-  text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+  text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
 }
 
 .acp-harness__model-head span:last-child {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   font-size: 0.84em;
   text-shadow: none;
   letter-spacing: 0.04em;
@@ -4892,7 +4898,7 @@
   padding: 6px 0;
   max-height: 52vh;
   overflow-y: auto;
-  border-bottom: 1px solid rgba(0, 204, 255, 0.32);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
   border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
 }
@@ -4902,15 +4908,15 @@
   flex-direction: column;
   gap: 2px;
   padding: 7px 14px;
-  color: rgba(216, 232, 216, 0.84);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
   cursor: default;
 }
 
 .acp-harness__model-row--active {
-  background: rgba(0, 204, 255, 0.12);
-  outline: 1px solid rgba(0, 204, 255, 0.5);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+  outline: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
   outline-offset: -1px;
-  color: rgba(216, 232, 216, 0.98);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
 }
 
 .acp-harness__model-name {
@@ -4921,18 +4927,18 @@
 
 .acp-harness__model-current {
   color: var(--krypton-window-accent, #0cf);
-  text-shadow: 0 0 8px rgba(0, 204, 255, 0.2);
+  text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.2);
 }
 
 .acp-harness__model-desc {
-  color: rgba(216, 232, 216, 0.62);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
   font-size: 0.85em;
 }
 
 /* ── Composer directive chip ──────────────────────────────── */
 
 .acp-harness__directive-chip {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   letter-spacing: 0.04em;
   cursor: pointer;
 }
@@ -4946,8 +4952,8 @@
 }
 
 .acp-harness__directive-chip__triage {
-  color: color-mix(in srgb, var(--acp-lane-accent, #8effb0) 58%, #d8e8d8);
-  text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, #8effb0) 24%, transparent);
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 58%, var(--krypton-fg, #d8e8d8));
+  text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 24%, transparent);
 }
 
 /* ── Directive approval diff card ─────────────────────────── */
@@ -4955,7 +4961,7 @@
 .acp-harness__directive-diff {
   margin: 4px 0 0;
   padding: 6px 8px;
-  background: rgba(4, 8, 13, 0.5);
+  background: var(--agent-surface-mid, rgba(4, 8, 13, 0.5));
   font-size: 0.84em;
   white-space: pre-wrap;
   overflow-x: auto;
@@ -4970,7 +4976,7 @@
 }
 
 .acp-harness__directive-diff-ctx {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
 
 /* ── Session picker overlay ───────────────────────────────── */
@@ -4983,7 +4989,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 8, 13, 0.74);
+  background: var(--agent-surface-high, rgba(4, 8, 13, 0.74));
 }
 
 .acp-harness__session-picker[hidden] {
@@ -4995,7 +5001,7 @@
 .acp-harness__session-picker > .acp-harness__session-empty,
 .acp-harness__session-picker > .acp-harness__session-error {
   width: clamp(420px, 48vw, 680px);
-  background: rgba(8, 14, 18, 0.98);
+  background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
   border: 1px solid rgba(142, 255, 176, 0.28);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   flex: 0 0 auto;
@@ -5020,7 +5026,7 @@
 }
 
 .acp-harness__session-head span:last-child {
-  color: rgba(216, 232, 216, 0.5);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   font-size: 0.84em;
   text-shadow: none;
   letter-spacing: 0.04em;
@@ -5043,7 +5049,7 @@
   gap: 10px;
   align-items: baseline;
   padding: 6px 14px;
-  color: rgba(216, 232, 216, 0.82);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
   cursor: default;
   border-left: 2px solid transparent;
 }
@@ -5051,11 +5057,11 @@
 .acp-harness__session-row--active {
   background: rgba(142, 255, 176, 0.09);
   border-left-color: var(--agent-accent, #8effb0);
-  color: rgba(216, 232, 216, 0.98);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
 }
 
 .acp-harness__session-row--disabled {
-  color: rgba(216, 232, 216, 0.42);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
 .acp-harness__session-title,
@@ -5071,7 +5077,7 @@
 }
 
 .acp-harness__session-meta {
-  color: rgba(216, 232, 216, 0.46);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
   font-size: 0.84em;
 }
 
@@ -5085,7 +5091,7 @@
 .acp-harness__session-empty,
 .acp-harness__session-error {
   padding: 14px 16px;
-  color: rgba(216, 232, 216, 0.62);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
   border-top: none;
   border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
 }

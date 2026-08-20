@@ -4,11 +4,12 @@ use crate::hook_server::HookServer;
 use crate::pty::PtyManager;
 use crate::ssh::SshManager;
 use crate::theme::{FullTheme, ThemeEngine};
+use crate::util::emit::EmitExt;
 use crate::util::fs_err::IoErrExt;
 use crate::util::lock::{lock_read, lock_write};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 static SHELL_PIDS: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
 
@@ -85,9 +86,7 @@ pub fn get_theme(
     theme_engine: State<'_, Arc<ThemeEngine>>,
 ) -> Result<FullTheme, String> {
     let cfg = lock_read(&config, "Config")?;
-    let mut theme = theme_engine.resolve(&cfg.theme.name)?;
-    theme_engine.apply_config_overrides(&mut theme, &cfg.theme.colors);
-    Ok(theme)
+    theme_engine.resolve_for_config(&cfg)
 }
 
 /// List all available theme names (built-in + custom).
@@ -96,32 +95,48 @@ pub fn list_themes(theme_engine: State<'_, Arc<ThemeEngine>>) -> Vec<String> {
     theme_engine.list_names()
 }
 
-/// Reload config from disk. Updates the shared config state and applies
-/// sound config on the Rust side. The frontend is responsible for calling
-/// `get_config` / `get_theme` after this to pick up the new values.
+/// Reload config from disk. Updates the shared config state, applies sound
+/// config, and emits `theme-changed` / `config-changed`.
 #[tauri::command]
 pub fn reload_config(
     app_handle: AppHandle,
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    theme_engine: State<'_, Arc<ThemeEngine>>,
 ) -> Result<(), String> {
-    // On parse/read error: keep the current in-memory config, surface the
-    // error to the UI, and never touch the user's file.
-    let new_config = crate::config::load_config_result()?;
+    crate::config_watch::reload_from_disk(&app_handle, &config, &theme_engine)
+}
 
-    // Apply sound config to Rust engine directly
-    let sound_state = app_handle.state::<crate::sound::SoundEngineState>();
-    if let Ok(mut engine) = sound_state.lock() {
-        engine.apply_config(new_config.sound.clone());
+/// Switch the active color theme. Resolves first so unknown names fail
+/// without writing. Persists `theme.name` in krypton.toml when the file exists.
+#[tauri::command]
+pub fn set_theme(
+    app_handle: AppHandle,
+    name: String,
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    theme_engine: State<'_, Arc<ThemeEngine>>,
+) -> Result<FullTheme, String> {
+    let normalized = crate::config::sanitize_theme_name(&name);
+    if normalized.is_empty() {
+        return Err("Theme name is empty".to_string());
     }
+    let mut theme = theme_engine.resolve(&normalized)?;
+    theme.name = normalized.clone();
 
-    // Update the shared config
-    {
+    let snapshot = {
         let mut cfg = lock_write(&config, "Config")?;
-        *cfg = new_config;
+        cfg.theme.name = normalized.clone();
+        theme_engine.apply_config_overrides(&mut theme, &cfg.theme.colors);
+        cfg.clone()
+    };
+
+    if let Err(e) = crate::config::persist_theme_name(&normalized) {
+        log::warn!("Failed to persist theme name: {e}");
     }
 
-    log::info!("Config reloaded from disk");
-    Ok(())
+    app_handle.emit_or_log("theme-changed", theme.clone());
+    app_handle.emit_or_log("config-changed", snapshot);
+    log::info!("Color theme set to {normalized}");
+    Ok(theme)
 }
 
 /// Open a URL or file path using the system default handler.

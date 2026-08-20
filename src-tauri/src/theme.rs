@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 // ─── Built-in theme TOML files (embedded at compile time) ─────────
 const BUILTIN_KRYPTON_DARK: &str = include_str!("../themes/krypton-dark.toml");
+const BUILTIN_KRYPTON_LIGHT: &str = include_str!("../themes/krypton-light.toml");
 const BUILTIN_LEGACY_RADIANCE: &str = include_str!("../themes/legacy-radiance.toml");
 
 // ─── Full Theme Data ──────────────────────────────────────────────
@@ -18,6 +19,9 @@ const BUILTIN_LEGACY_RADIANCE: &str = include_str!("../themes/legacy-radiance.to
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FullTheme {
+    /// File/id name (`legacy-radiance`). Set after resolve; not read from TOML.
+    #[serde(skip_deserializing)]
+    pub name: String,
     pub meta: ThemeMeta,
     pub colors: ThemeColors,
     pub chrome: ChromeConfig,
@@ -512,6 +516,13 @@ impl ThemeEngine {
             Err(e) => log::error!("Failed to parse built-in krypton-dark theme: {e}"),
         }
 
+        match toml::from_str::<FullTheme>(BUILTIN_KRYPTON_LIGHT) {
+            Ok(theme) => {
+                builtins.insert("krypton-light".to_string(), theme);
+            }
+            Err(e) => log::error!("Failed to parse built-in krypton-light theme: {e}"),
+        }
+
         match toml::from_str::<FullTheme>(BUILTIN_LEGACY_RADIANCE) {
             Ok(theme) => {
                 builtins.insert("legacy-radiance".to_string(), theme);
@@ -547,6 +558,17 @@ impl ThemeEngine {
             "Theme '{name}' not found. Available built-in themes: {}",
             self.list_names().join(", ")
         ))
+    }
+
+    /// Resolve `config.theme.name` and apply `[theme.colors]` overrides.
+    pub fn resolve_for_config(
+        &self,
+        config: &crate::config::KryptonConfig,
+    ) -> Result<FullTheme, String> {
+        let mut theme = self.resolve(&config.theme.name)?;
+        theme.name = config.theme.name.to_lowercase();
+        self.apply_config_overrides(&mut theme, &config.theme.colors);
+        Ok(theme)
     }
 
     /// List all available theme names (built-in + custom).
@@ -641,6 +663,46 @@ impl ThemeEngine {
 }
 
 /// Get the custom themes directory: ~/.config/krypton/themes/
-fn custom_themes_dir() -> Option<PathBuf> {
+pub(crate) fn custom_themes_dir() -> Option<PathBuf> {
     crate::config::config_dir().map(|d| d.join("themes"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_legacy_radiance_green() {
+        let engine = ThemeEngine::new();
+        let theme = engine.resolve("legacy-radiance").expect("builtin");
+        assert_eq!(theme.colors.green.to_lowercase(), "#00c840");
+        assert_eq!(theme.focused.corner_accent_color.to_lowercase(), "#00c840");
+    }
+
+    #[test]
+    fn resolves_krypton_dark() {
+        let engine = ThemeEngine::new();
+        let theme = engine.resolve("krypton-dark").expect("builtin");
+        assert_eq!(theme.colors.cyan.to_lowercase(), "#0cf");
+    }
+
+    #[test]
+    fn resolves_krypton_light() {
+        // Parse the bundled file directly — `resolve()` prefers
+        // ~/.config/krypton/themes/krypton-light.toml when present.
+        let theme: FullTheme =
+            toml::from_str(BUILTIN_KRYPTON_LIGHT).expect("bundled krypton-light");
+        assert_eq!(theme.meta.display_name, "Krypton Light");
+        assert_eq!(theme.colors.foreground, "#1c2c3c");
+        assert_eq!(theme.focused.corner_accent_color, "#007799");
+        assert_eq!(theme.chrome.titlebar.text_color, "#3a5568");
+        assert!(theme.colors.background.contains("248, 251, 253"));
+        assert!(theme.chrome.backdrop.color.contains("230, 239, 246"));
+    }
+
+    #[test]
+    fn unknown_theme_errors() {
+        let engine = ThemeEngine::new();
+        assert!(engine.resolve("does-not-exist").is_err());
+    }
 }

@@ -90,6 +90,10 @@ export class CommandPalette {
   /** Cached ACP backend list (refreshed when palette opens) */
   private acpBackends: Array<{ id: string; display_name: string }> = [];
 
+  /** Cached color themes (refreshed when palette opens) */
+  private colorThemes: string[] = [];
+  private activeColorTheme = '';
+
   constructor(compositor: Compositor) {
     this.compositor = compositor;
 
@@ -203,6 +207,8 @@ export class CommandPalette {
       .catch((e) => {
         console.warn('[CommandPalette] acp_list_backends failed:', e);
       });
+
+    void this.refreshColorThemes();
 
     // Focus the input after a microtask to ensure DOM is rendered
     requestAnimationFrame(() => {
@@ -1059,6 +1065,21 @@ export class CommandPalette {
       });
     }
 
+    // Dynamic: color theme switching
+    for (const themeName of this.colorThemes) {
+      const isCurrent = themeName === this.activeColorTheme;
+      this.actions.push({
+        id: `theme.color.${themeName}`,
+        label: `Color Theme: ${themeLabel(themeName)}${isCurrent ? ' (active)' : ''}`,
+        category: 'Color Theme',
+        execute: () => {
+          void invoke('set_theme', { name: themeName }).catch((e) => {
+            console.error('[CommandPalette] set_theme failed:', e);
+          });
+        },
+      });
+    }
+
     // Dynamic: sound theme switching
     const soundEngine = c.soundEngine;
     const currentPack = soundEngine.getCurrentPack();
@@ -1073,4 +1094,34 @@ export class CommandPalette {
       });
     }
   }
+
+  private async refreshColorThemes(): Promise<void> {
+    try {
+      const [names, cfg] = await Promise.all([
+        invoke<string[]>('list_themes'),
+        invoke<{ theme?: { name?: string } }>('get_config'),
+      ]);
+      const active = (cfg.theme?.name ?? '').toLowerCase();
+      const same =
+        names.length === this.colorThemes.length &&
+        names.every((n, i) => n === this.colorThemes[i]) &&
+        active === this.activeColorTheme;
+      this.colorThemes = names;
+      this.activeColorTheme = active;
+      if (!same && this.visible) {
+        this.rebuildActions();
+        this.filter();
+      }
+    } catch (e) {
+      console.warn('[CommandPalette] list_themes failed:', e);
+    }
+  }
+}
+
+function themeLabel(name: string): string {
+  return name
+    .split(/[-_]/g)
+    .filter((w) => w.length > 0)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }

@@ -424,29 +424,32 @@ The actual window positioning and animation is **frontend-driven** (CSS/JS), not
 
 The Theme Engine lives in Rust (`theme::ThemeEngine`) and manages theme loading:
 
-- Embeds built-in themes at compile time via `include_str!` (krypton-dark, legacy-radiance)
+- Embeds built-in themes at compile time via `include_str!` (krypton-dark, krypton-light, legacy-radiance)
 - Scans `~/.config/krypton/themes/*.toml` for custom theme files
 - Resolves themes by name (custom themes take precedence over built-in)
 - Applies `[theme.colors]` config overrides on top of the resolved theme
-- Serves full theme data (`FullTheme` struct — meta, colors, chrome, focused, workspace, ui) to the frontend via `invoke("get_theme")`
+- Serves full theme data (`FullTheme` struct — name, meta, colors, chrome, focused, workspace, ui) to the frontend via `invoke("get_theme")`
 - Lists available themes via `invoke("list_themes")`
+- Switches the active theme via `invoke("set_theme")` (resolves, persists `theme.name`, emits events)
 - Supports `invoke("reload_config")` for manual reload
-- **Tauri commands**: `get_theme`, `list_themes`, `reload_config`
-- **Tauri events**: `theme-changed`, `config-changed` (emitted on hot-reload)
+- **Tauri commands**: `get_theme`, `list_themes`, `set_theme`, `reload_config`
+- **Tauri events**: `theme-changed`, `config-changed` (emitted on hot-reload and `set_theme`)
 
 ### Theme Engine (Frontend — `src/theme.ts`)
 
 The Frontend Theme Engine (`FrontendThemeEngine`) receives theme data and applies it:
 
-- Sets 50+ `--krypton-*` CSS custom properties on `document.documentElement`
+- Sets `--krypton-*`, `--agent-*`, and `--vault-*` CSS custom properties on `document.documentElement` so terminals, chrome, ACP Harness, Agent, and Vault follow the active color theme. Harness paint uses those tokens (ink, surfaces, accent RGB); `--agent-surface-solid` comes from the chrome backdrop, not ANSI black.
+- Classifies the theme as `light` or `dark` from chrome-backdrop luminance and sets `html[data-theme-scheme]`. Light themes get a cooler rail vs paper canvas (so zen sidebar and transcript don't collapse into one frost slab) and `styles/theme-scheme.css` rewrites neon-on-void chrome (0.15–0.45 accent alpha, glow type) as ink mixed with the accent.
+- Parses `#rgb`, `#rrggbb`, `rgb()`, and `rgba()` (3-digit hex like `#0cf` must not collapse to `0, 0, 0`)
 - Builds xterm.js theme objects from theme colors for terminal instances
-- Listens for `theme-changed` Tauri event from backend (hot-reload)
-- Notifies the compositor to update all existing terminal instances on theme change
+- Listens for `theme-changed` Tauri event from backend (hot-reload and command-palette switch)
+- Notifies the compositor to update all existing terminal instances and the index-0 window accent on theme change
 - `styles.css` uses `var(--krypton-*)` throughout so theme changes cascade instantly
 
-### Config Hot-Reload (Backend — `src-tauri/src/lib.rs`)
+### Config Hot-Reload (Backend — `src-tauri/src/config_watch.rs`)
 
-- `notify` crate watches `~/.config/krypton/` recursively for `.toml` file changes
+- `notify` crate watches `~/.config/krypton/` (non-recursive) and `~/.config/krypton/themes/` for `krypton.toml` and `themes/*.toml` changes. It does **not** recurse into `sessions/`, `runtime/`, or `acp-harness-memory/`
 - 300ms debounce prevents rapid-fire reloads
 - On change: re-parses config, resolves theme, emits `theme-changed` and `config-changed` events
 - Config stored as `Arc<RwLock<KryptonConfig>>` for safe concurrent access

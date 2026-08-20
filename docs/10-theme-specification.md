@@ -467,7 +467,7 @@ Krypton ships with four built-in themes:
 | Name | Description |
 |------|-------------|
 | `krypton-dark` | Default cyberpunk dark theme with cyan accents on transparent black |
-| `krypton-light` | Light variant with dark text on frosted white |
+| `krypton-light` | Light variant of Krypton Dark: slate ink on cool frost, cyan chrome, layered rail/canvas surfaces |
 | `solarized` | Ethan Schoonover's Solarized Dark adapted for Krypton chrome |
 | `legacy-radiance` | CRT phosphor emission on void black — three frequencies (P1 green, cobalt blue, ionized cyan) |
 
@@ -694,9 +694,24 @@ The theme engine validates theme files on load. Invalid themes are rejected with
 
 ## Hot Reload
 
-When Krypton detects changes to a theme file (via filesystem watcher), the theme is re-parsed and applied immediately without restart. The apply latency target is < 100ms.
+When Krypton detects changes to `krypton.toml` or `~/.config/krypton/themes/*.toml` (filesystem watcher, 300ms debounce), the theme is re-parsed and applied immediately without restart.
 
 Changes to `krypton.toml` inline `[theme.colors]` overrides also trigger hot reload.
+
+The command palette lists every built-in and custom theme under **Color Theme**. Picking one calls `set_theme`, which writes `theme.name` and emits `theme-changed` so the UI updates without a restart.
+
+At apply time the frontend also derives `--agent-*` and `--vault-*` from the color theme (accent, foreground, ANSI, chrome). Agent, ACP Harness, and Vault keep their own layout language (amber phosphor / NASA / etc.) but their colors follow the active theme, so switching `krypton-dark` → `legacy-radiance` is visible on those surfaces too.
+
+Harness interiors consume those tokens (`--agent-text`, `--agent-surface-*`, `--krypton-fg-rgb`, `--krypton-accent-rgb`) rather than hardcoded krypton-dark navy/phosphor, so `krypton-light` keeps dark slate ink on frost instead of painting black slabs and `#eaf3ea` body text over a pale titlebar. `--agent-surface-solid` is paper at high alpha on light themes (never ANSI `colors.black` — light themes use a dark black for terminal output).
+
+Light vs dark is not inverted paint. The frontend computes relative luminance of `chrome.backdrop` and sets `html[data-theme-scheme="light"|"dark"]` plus `--krypton-scheme`. Light scheme:
+
+- **Surfaces separate by luminance.** `--agent-surface-rail` is a cooler, ink-tinted panel; `--agent-surface-canvas` is paper-white. The zen lane rail and the transcript no longer share one frost.
+- **Chrome text is ink, not neon-at-0.25.** Tabs, titlebar, usage, and footer labels mix the window/lane accent toward `--krypton-fg` (`src/styles/theme-scheme.css`). Raw `#ffd166` / `#8effb0` on frost fails WCAG; the mix keeps the hue and the contrast.
+- **Identity chips darken.** Backend and role palettes (spec 125) swap to ink-weight variants of the same hues so Codex `#d7e7f0` does not vanish on white.
+- **No glow type.** `text-shadow` blooms that read as phosphor on navy become mud on frost and are dropped.
+
+Dark scheme keeps the existing neon-on-void recipe unchanged. Custom light themes (backdrop luminance ≥ 0.45) get the same scheme without opting in by name.
 
 ---
 
@@ -706,6 +721,9 @@ Internally, the theme engine maps theme values to CSS custom properties prefixed
 
 ```
 --krypton-fg, --krypton-bg, --krypton-cursor, --krypton-selection
+--krypton-scheme                  # "light" or "dark" (from chrome-backdrop luminance)
+--krypton-fg-dim
+--agent-surface-rail, --agent-surface-canvas
 --krypton-ansi-0 through --krypton-ansi-15
 --krypton-border-color, --krypton-border-width, --krypton-border-radius
 --krypton-shadow-color, --krypton-shadow-blur
