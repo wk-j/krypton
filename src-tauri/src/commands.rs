@@ -96,14 +96,34 @@ pub fn list_themes(theme_engine: State<'_, Arc<ThemeEngine>>) -> Vec<String> {
 }
 
 /// Reload config from disk. Updates the shared config state, applies sound
-/// config, and emits `theme-changed` / `config-changed`.
+/// config, and emits `theme-changed` / `config-changed`. Invoked only by the
+/// command palette — there is no filesystem watcher.
 #[tauri::command]
 pub fn reload_config(
     app_handle: AppHandle,
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
     theme_engine: State<'_, Arc<ThemeEngine>>,
+    sound: State<'_, crate::sound::SoundEngineState>,
 ) -> Result<(), String> {
-    crate::config_watch::reload_from_disk(&app_handle, &config, &theme_engine)
+    let new_config = crate::config::load_config_result()?;
+
+    if let Ok(mut engine) = sound.lock() {
+        engine.apply_config(new_config.sound.clone());
+    }
+
+    let theme_result = theme_engine.resolve_for_config(&new_config);
+    {
+        let mut cfg = lock_write(&config, "Config")?;
+        *cfg = new_config.clone();
+    }
+
+    match theme_result {
+        Ok(theme) => app_handle.emit_or_log("theme-changed", theme),
+        Err(e) => log::error!("Theme resolve after config reload failed: {e}"),
+    }
+    app_handle.emit_or_log("config-changed", new_config);
+    log::info!("Config reloaded from disk");
+    Ok(())
 }
 
 /// Switch the active color theme. Resolves first so unknown names fail

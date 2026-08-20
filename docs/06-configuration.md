@@ -43,7 +43,7 @@ name = "krypton-dark"        # built-in or custom theme name
 # same name in ~/.config/krypton/themes/ shadows the bundled copy.
 # Custom themes: place .toml files in ~/.config/krypton/themes/
 # e.g., ~/.config/krypton/themes/my-custom.toml -> name = "my-custom"
-# Switching: command palette → "Color Theme: …", or edit this file (hot-reloaded).
+# Switching: command palette → "Color Theme: …". File edits apply on Reload Config or the next launch.
 # See docs/10-theme-specification.md for the full theme file format.
 
 # Inline overrides (applied on top of the named theme):
@@ -493,7 +493,7 @@ name = "custom-fixed"
 | `[terminal]` | `cursor_style` | string | `"block"` | `block`, `underline`, or `bar` |
 | `[terminal]` | `cursor_blink` | bool | `true` | Enable cursor blinking |
 | `[terminal]` | `cursor_trail` | bool | `true` | Rainbow flame trail following the mouse and text cursor |
-| `[theme]` | `name` | string | `"krypton-dark"` | Built-in or custom theme name (see [Theme Specification](./10-theme-specification.md)). Command palette **Color Theme** actions call `set_theme` and persist this key. File edits hot-reload. |
+| `[theme]` | `name` | string | `"krypton-dark"` | Built-in or custom theme name (see [Theme Specification](./10-theme-specification.md)). Command palette **Color Theme** actions call `set_theme` and persist this key. File edits apply on **Reload Config** or the next launch. |
 | `[theme.colors]` | *(various)* | string | — | Hex color overrides (applied on top of named theme) |
 | `[keybindings]` | `leader` | string | `"Ctrl+Space"` | Leader key to enter compositor mode |
 | `[keybindings]` | `command_palette` | string | `"CmdOrCtrl+Shift+P"` | Open command palette |
@@ -963,7 +963,7 @@ fn flush_config(path: &PathBuf, config: &KryptonConfig) {
 }
 ```
 
-The flush runs on every startup and on every hot-reload, ensuring the file always reflects the complete schema. It compares serialized content against the existing file and only writes if they differ, preventing watcher re-trigger loops.
+The flush runs on startup so the file reflects the complete schema. It compares serialized content against the existing file and only writes if they differ.
 
 ### Caveats
 

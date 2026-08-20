@@ -202,7 +202,7 @@ WAV files are bundled as Tauri resources (declared in `tauri.conf.json` under `b
 
 When the user switches packs (via command palette or config change):
 
-1. Frontend calls `invoke('sound_load_pack', { pack })` or config hot-reload triggers `apply_config()`
+1. Frontend calls `invoke('sound_load_pack', { pack })` or **Reload Config** triggers `apply_config()`
 2. `SoundEngine` sends `AudioMsg::LoadPack { pack_dir }` to the audio thread
 3. Audio thread clears buffer cache, reads new WAV files
 4. Sounds already playing on existing Sinks finish normally; new sounds use new buffers
@@ -292,7 +292,7 @@ The command palette dynamically lists all available packs under the "Sound Theme
 | File | Role |
 |------|------|
 | `src-tauri/src/sound.rs` | Rust sound engine: audio thread, WAV buffer cache, playback via rodio, event mapping, overlap/throttle/cooldown, Tauri commands |
-| `src-tauri/src/lib.rs` | Sound engine initialization, command registration, hot-reload integration |
+| `src-tauri/src/lib.rs` | Sound engine initialization, command registration |
 | `src-tauri/src/config.rs` | Rust `SoundConfig` struct with defaults |
 | `src/sound.ts` | Thin IPC wrapper: `play()` / `playKeypress()` call Tauri commands |
 | `src/compositor.ts` | Triggers sounds for window/tab/pane/layout actions, keypress sounds, terminal bell |

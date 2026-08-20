@@ -24,7 +24,6 @@ tauri = { version = "2.11.2", features = ["protocol-asset", "macos-private-api",
 tauri-plugin-log = "2"
 portable-pty = "0.8"
 toml = "0.8"
-notify = "6.1"
 dirs = "6"
 open = "5"
 libc = "0.2"

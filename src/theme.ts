@@ -532,7 +532,7 @@ export class FrontendThemeEngine {
     return theme;
   }
 
-  /** Listen for backend `theme-changed` (hot-reload and palette switch). */
+  /** Listen for backend `theme-changed` (palette switch and reload_config). */
   private startListening(): void {
     if (this.listening) return;
     this.listening = true;

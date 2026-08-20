@@ -40,7 +40,7 @@ cargo test -- --nocapture  # Show stdout/stderr in test output
 
 The app has two halves that communicate over Tauri IPC:
 
-**Rust backend** (`src-tauri/src/`) — manages PTY sessions (spawn, read, write, resize) via `portable-pty`, loads TOML config from `~/.config/krypton/krypton.toml`, resolves themes (built-in + custom from `~/.config/krypton/themes/*.toml`), and watches the config directory for hot-reload (300ms debounce via `notify` crate). State is shared through `Arc<RwLock<_>>` managed by Tauri.
+**Rust backend** (`src-tauri/src/`) — manages PTY sessions (spawn, read, write, resize) via `portable-pty`, loads TOML config from `~/.config/krypton/krypton.toml`, and resolves themes (built-in + custom from `~/.config/krypton/themes/*.toml`). Config is read at startup; palette **Color Theme** (`set_theme`) and **Reload Config** apply without a restart. There is no filesystem watcher. State is shared through `Arc<RwLock<_>>` managed by Tauri.
 
 **TypeScript frontend** (`src/`) — renders terminal windows using xterm.js inside custom cyberpunk chrome. The major subsystems are:
 
@@ -56,7 +56,7 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
 ### IPC Pattern
 
 - **Commands** (request/response): `spawn_pty`, `write_to_pty`, `resize_pty`, `get_config`, `get_theme`, `list_themes`, `reload_config`, `open_url`, `get_pty_cwd`
-- **Events** (streaming): `pty-output` (terminal data), `theme-changed`, `config-changed` (hot-reload), `pty-progress`, `process-changed`
+- **Events** (streaming): `pty-output` (terminal data), `theme-changed`, `config-changed` (`set_theme` / `reload_config`), `pty-progress`, `process-changed`
 - All Rust commands return `Result<T, String>` for IPC serialization. Register in `lib.rs` via `.invoke_handler(tauri::generate_handler![...])`.
 - Frontend uses `invoke()` for commands, `listen()` for events (from `@tauri-apps/api/core`).
 
@@ -66,7 +66,7 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
 - Built-in themes: `krypton-dark`, `krypton-light`, `legacy-radiance`
 - Custom themes: `~/.config/krypton/themes/*.toml`
 - Theme colors applied as `--krypton-*` CSS custom properties on `document.documentElement`
-- Hot-reloaded via filesystem watcher — edit a `.toml` file and changes appear instantly
+- Palette **Color Theme** calls `set_theme` (no restart). File edits apply on **Reload Config** or the next launch — no filesystem watcher.
 
 ## Architecture Constraints
 

@@ -692,13 +692,11 @@ The theme engine validates theme files on load. Invalid themes are rejected with
 
 ---
 
-## Hot Reload
+## Applying a theme
 
-When Krypton detects changes to `krypton.toml` or `~/.config/krypton/themes/*.toml` (filesystem watcher, 300ms debounce), the theme is re-parsed and applied immediately without restart.
+There is no filesystem watcher on `krypton.toml` or `themes/*.toml`. File edits apply on command-palette **Reload Config** or the next launch.
 
-Changes to `krypton.toml` inline `[theme.colors]` overrides also trigger hot reload.
-
-The command palette lists every built-in and custom theme under **Color Theme**. Picking one calls `set_theme`, which writes `theme.name` and emits `theme-changed` so the UI updates without a restart.
+The command palette lists every built-in and custom theme under **Color Theme**. Picking one calls `set_theme`, which writes `theme.name` and emits `theme-changed` so the UI updates without a restart. Inline `[theme.colors]` overrides are re-applied on **Reload Config**.
 
 At apply time the frontend also derives `--agent-*` and `--vault-*` from the color theme (accent, foreground, ANSI, chrome). Agent, ACP Harness, and Vault keep their own layout language (amber phosphor / NASA / etc.) but their colors follow the active theme, so switching `krypton-dark` → `legacy-radiance` is visible on those surfaces too.
 

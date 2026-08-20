@@ -29,7 +29,7 @@
 |  +---------------+ +------------+ +-----------+ +--------------------+  |
 |  | Workspace     | | Session    | | PTY       | | Config             |  |
 |  | Manager       | | Pool       | | Manager   | | Manager            |  |
-|  | (workspace    | | (window-to-| | (portable | | (TOML, hot-reload) |  |
+|  | (workspace    | | (window-to-| | (portable | | (TOML)             |  |
 |  |  definitions, | |  session   | |  -pty)    | |                    |  |
 |  |  switching,   | |  mapping)  | |           | |                    |  |
 |  |  presets)     | |            | |           | |                    |  |
@@ -126,7 +126,6 @@ The webview's `<html>` and `<body>` have `background: transparent`. Windows are 
 | `dirs` | Cross-platform home directory resolution for config path | Implemented |
 | `log` / `tauri-plugin-log` | Logging framework | Implemented |
 | `vte` | VT escape sequence parser (backend validation/processing) | Planned |
-| `notify` | Filesystem watcher for config/theme hot-reload | Implemented |
 | `open` | Open URLs/files with system default handler (hint mode) | Implemented |
 | `libc` | Unix FFI for `tcgetpgrp()` (foreground process detection) | Implemented |
 | `unicode-width` | Character width calculation for CJK / emoji | Planned |
@@ -431,9 +430,9 @@ The Theme Engine lives in Rust (`theme::ThemeEngine`) and manages theme loading:
 - Serves full theme data (`FullTheme` struct — name, meta, colors, chrome, focused, workspace, ui) to the frontend via `invoke("get_theme")`
 - Lists available themes via `invoke("list_themes")`
 - Switches the active theme via `invoke("set_theme")` (resolves, persists `theme.name`, emits events)
-- Supports `invoke("reload_config")` for manual reload
+- Supports `invoke("reload_config")` for an explicit re-read of `krypton.toml` (command palette **Reload Config**). There is no filesystem watcher.
 - **Tauri commands**: `get_theme`, `list_themes`, `set_theme`, `reload_config`
-- **Tauri events**: `theme-changed`, `config-changed` (emitted on hot-reload and `set_theme`)
+- **Tauri events**: `theme-changed`, `config-changed` (emitted on `set_theme` and `reload_config`)
 
 ### Theme Engine (Frontend — `src/theme.ts`)
 
@@ -443,16 +442,16 @@ The Frontend Theme Engine (`FrontendThemeEngine`) receives theme data and applie
 - Classifies the theme as `light` or `dark` from chrome-backdrop luminance and sets `html[data-theme-scheme]`. Light themes get a cooler rail vs paper canvas (so zen sidebar and transcript don't collapse into one frost slab) and `styles/theme-scheme.css` rewrites neon-on-void chrome (0.15–0.45 accent alpha, glow type) as ink mixed with the accent.
 - Parses `#rgb`, `#rrggbb`, `rgb()`, and `rgba()` (3-digit hex like `#0cf` must not collapse to `0, 0, 0`)
 - Builds xterm.js theme objects from theme colors for terminal instances
-- Listens for `theme-changed` Tauri event from backend (hot-reload and command-palette switch)
+- Listens for `theme-changed` Tauri event from backend (command-palette switch and `reload_config`)
 - Notifies the compositor to update all existing terminal instances and the index-0 window accent on theme change
 - `styles.css` uses `var(--krypton-*)` throughout so theme changes cascade instantly
 
-### Config Hot-Reload (Backend — `src-tauri/src/config_watch.rs`)
+### Config load (Backend — `src-tauri/src/config.rs`, `commands.rs`)
 
-- `notify` crate watches `~/.config/krypton/` (non-recursive) and `~/.config/krypton/themes/` for `krypton.toml` and `themes/*.toml` changes. It does **not** recurse into `sessions/`, `runtime/`, or `acp-harness-memory/`
-- 300ms debounce prevents rapid-fire reloads
-- On change: re-parses config, resolves theme, emits `theme-changed` and `config-changed` events
-- Config stored as `Arc<RwLock<KryptonConfig>>` for safe concurrent access
+- Config is read from `krypton.toml` at startup into `Arc<RwLock<KryptonConfig>>`
+- Palette **Color Theme** calls `set_theme` (persists `theme.name`, emits `theme-changed` / `config-changed`)
+- Palette **Reload Config** calls `reload_config` (re-reads the file, applies sound, emits the same events)
+- Editing the file on disk does **not** auto-apply. There is no `notify` watcher on `~/.config/krypton/`
 
 ## 5.6 Input Router & Mode System (Frontend)
 
@@ -618,7 +617,7 @@ OS audio output (via cpal/CoreAudio)
 - **Overlap management** — same constants as the previous frontend implementation: `MAX_CONCURRENT=8` (excess dropped), `KEYPRESS_THROTTLE_MS=25`, `EVENT_COOLDOWN_MS=50`. Enforced in the `SoundEngine` (Tauri command side) before sending to the audio thread.
 - **Fire-and-forget IPC** — frontend `invoke()` calls don't await completion. The Tauri command acquires the mutex, checks throttle/cooldown, sends a channel message, and returns immediately. Actual audio playback is asynchronous on the audio thread.
 - **Graceful degradation** — if no audio device is available, `OutputStream::try_default()` fails on the audio thread, which drains the channel and exits. All `play()` calls become silent no-ops.
-- **Hot-reload** — on `config-changed`, `lib.rs::reload_and_emit()` calls `engine.apply_config()` directly on the Rust side. If the pack changed, a `LoadPack` message is sent to the audio thread.
+- **Reload Config** — `reload_config` calls `engine.apply_config()` on the Rust side. If the pack changed, a `LoadPack` message is sent to the audio thread.
 
 ### macOS Backdrop-Filter Freeze (Platform Gotcha)
 

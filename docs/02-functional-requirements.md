@@ -122,7 +122,7 @@
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-CFG-001 | The system shall read configuration from a TOML file at a platform-appropriate path (e.g., `~/.config/krypton/krypton.toml`). | Must |
-| FR-CFG-002 | The system shall support hot-reloading of configuration changes without restart. | Should |
+| FR-CFG-002 | Palette **Color Theme** (`set_theme`) and **Reload Config** apply without restart. Editing `krypton.toml` on disk does not auto-apply (no filesystem watcher). | Should |
 | FR-CFG-003 | The system shall support theming: foreground, background, cursor, selection, and ANSI color palette (16 colors). | Must |
 | FR-CFG-004 | The system shall ship with at least 3 built-in color themes. | Should |
 | FR-CFG-005 | The system shall support environment variable overrides in the config. | Could |
@@ -398,7 +398,7 @@ Each keyboard type provides a **press** (key-down) and **release** (key-up) soun
 | FR-SFX-028 | The system shall support a `sound.keyboard_type` setting to select the keyboard sound profile. Default: `"cherry-mx-brown"`. Set to `"none"` to disable keypress sounds. | Should |
 | FR-SFX-029 | The system shall support a `sound.keyboard_volume` setting (0.0–1.0) to independently control keypress sound volume. Default: `1.0`. Multiplied with master volume. | Should |
 | FR-SFX-025 | The system shall support custom sound packs defined as TOML files in `~/.config/krypton/sounds/`. Each file defines a set of patches keyed by event name. | Could |
-| FR-SFX-026 | Sound configuration changes shall take effect immediately via hot-reload (no restart required). | Should |
+| FR-SFX-026 | Sound configuration changes take effect via **Reload Config** or `sound_load_pack` / `sound_apply_config` (no restart required). File edits do not auto-apply. | Should |
 | FR-SFX-027 | The sound engine shall respect the system audio output device and volume. | Must |
 
 ### 3.14.5 Sound Engine Constraints

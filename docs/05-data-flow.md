@@ -823,30 +823,26 @@ Later
 2. Config Manager loads krypton.toml (including keybindings, themes) into Arc<RwLock<KryptonConfig>>
 3. Theme Engine initializes — embeds built-in themes (krypton-dark, krypton-light, legacy-radiance)
 4. Tauri creates fullscreen, borderless, transparent native shell
-5. Filesystem watcher starts on ~/.config/krypton/ (notify crate, 300ms debounce)
-6. Frontend: FrontendThemeEngine calls invoke("get_theme") — backend resolves theme.name, applies [theme.colors] overrides
-7. Frontend sets 50+ --krypton-* CSS custom properties on document.documentElement
-8. Frontend loads config via invoke("get_config"), applies to compositor
-9. Compositor creates first terminal window with themed xterm.js instance
-10. Input Router initializes in Normal mode, first window focused
-11. User sees themed windows on transparent desktop, keyboard-ready
+5. Frontend: FrontendThemeEngine calls invoke("get_theme") — backend resolves theme.name, applies [theme.colors] overrides
+6. Frontend sets 50+ --krypton-* CSS custom properties on document.documentElement
+7. Frontend loads config via invoke("get_config"), applies to compositor
+8. Compositor creates first terminal window with themed xterm.js instance
+9. Input Router initializes in Normal mode, first window focused
+10. User sees themed windows on transparent desktop, keyboard-ready
 ```
 
-### Theme Hot-Reload (user edits a .toml file)
+### Theme / config apply (palette Color Theme or Reload Config)
+
+There is no filesystem watcher. Editing `krypton.toml` or `themes/*.toml` on disk does nothing until **Reload Config** or the next launch. Palette **Color Theme** calls `set_theme` without re-reading the rest of the file.
 
 ```
-1. notify crate detects krypton.toml or themes/*.toml change (not sessions/ or memory)
-2. 300ms debounce timer elapses
-3. Backend: reload_from_disk() re-parses krypton.toml, resolves theme by name
-4. Backend: applies [theme.colors] overrides on top of resolved FullTheme
-5. Backend: updates Arc<RwLock<KryptonConfig>> with new config
-6. Backend: emits "theme-changed" Tauri event (payload: FullTheme)
-7. Backend: emits "config-changed" Tauri event (payload: KryptonConfig)
-8. Frontend: FrontendThemeEngine receives "theme-changed" event
-9. Frontend: sets --krypton-*, --agent-*, --vault-* CSS custom properties and `html[data-theme-scheme]` from backdrop luminance
-10. Frontend: notifies compositor which updates terminal.options.theme and index-0 window accent
-11. Frontend: compositor re-applies shader settings to all active panes (if [shader] changed)
-12. Result: chrome + terminals + harness/agent/vault colors + shader effects update without restart
+1. User picks Color Theme (set_theme) or Reload Config (reload_config)
+2. Backend: set_theme persists theme.name; reload_config re-parses krypton.toml and applies sound
+3. Backend: resolves FullTheme, updates Arc<RwLock<KryptonConfig>>
+4. Backend: emits "theme-changed" (FullTheme) and "config-changed" (KryptonConfig)
+5. Frontend: FrontendThemeEngine applies --krypton-*, --agent-*, --vault-* and `html[data-theme-scheme]`
+6. Frontend: compositor updates terminal.options.theme, index-0 window accent, and shaders if [shader] changed
+7. Result: chrome + terminals + harness/agent/vault colors update without restart
 ```
 
 ### Workspace Switch (e.g., user presses CmdOrCtrl+2)

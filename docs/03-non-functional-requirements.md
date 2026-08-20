@@ -61,7 +61,7 @@ measurement work for old chat history on every chunk. See
 | NFR-PERF-013 | Window resize/move response (keyboard-driven) | < 16 ms per step |
 | NFR-PERF-014 | Command palette open-to-ready time | < 50 ms |
 | NFR-PERF-015 | Transparent workspace compositing overhead vs. opaque | < 5% additional GPU usage |
-| NFR-PERF-016 | Theme switch (hot-reload) apply time | < 100 ms |
+| NFR-PERF-016 | Theme switch (`set_theme`) apply time | < 100 ms |
 
 ## 4.7 Sound Engine Performance
 
