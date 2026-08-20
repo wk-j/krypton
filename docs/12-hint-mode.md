@@ -91,7 +91,7 @@ Label styling:
 - Background: `var(--krypton-hint-bg)` (default: amber/gold `#f4bf75`)
 - Text: `var(--krypton-hint-fg)` (default: dark `#181818`)
 - Font: monospace, bold, small (10px)
-- Border-radius: 2px
+- Border-radius: 4px (`--krypton-border-radius`)
 - Z-index: 9000 (above terminal content, below which-key)
 
 As the user types, matched characters in the label get a "matched" style (dimmer) and non-matching hints get `opacity: 0.2`.

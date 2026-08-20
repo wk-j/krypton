@@ -150,14 +150,14 @@ Controls the decorative frame around each terminal window.
 [chrome.border]
 width = 1                          # Border width in pixels
 color = "rgba(0, 200, 255, 0.3)"   # Border color (unfocused)
-radius = 0                         # Border radius in pixels
+radius = 4                         # Border radius in pixels
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `width` | int | `1` | Border width (px) |
 | `color` | color | `"rgba(0, 200, 255, 0.3)"` | Border color for unfocused windows |
-| `radius` | int | `0` | Border corner radius (px). `0` = sharp corners. |
+| `radius` | int | `4` | Border corner radius (px). Default is the 4px manufactured bevel on every Krypton Dark container. Maps to `--krypton-border-radius`. |
 
 #### `[chrome.shadow]`
 
@@ -575,7 +575,7 @@ style = "cyberpunk"
 [chrome.border]
 width = 1
 color = "rgba(255, 68, 204, 0.3)"
-radius = 0
+radius = 4
 
 [chrome.shadow]
 color = "rgba(255, 68, 204, 0.07)"

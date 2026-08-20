@@ -72,7 +72,7 @@
   width: 120px;
   height: 3px;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
-  border-radius: 1.5px;
+  border-radius: var(--krypton-border-radius, 4px);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -80,7 +80,7 @@
 .krypton-mini-player__progress-fill {
   height: 100%;
   background: var(--krypton-cyan, #00d4ff);
-  border-radius: 1.5px;
+  border-radius: var(--krypton-border-radius, 4px);
   transition: width 0.5s linear;
 }
 
@@ -144,7 +144,7 @@
   font-size: var(--krypton-chrome-font-size, 11px);
   padding: 4px 8px;
   outline: none;
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 .krypton-music-dashboard__dir-input:focus {
@@ -188,7 +188,7 @@
 
 .krypton-music-dashboard__track-list::-webkit-scrollbar-thumb {
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 .krypton-music-dashboard__empty {
@@ -352,7 +352,7 @@
   flex: 1;
   height: 4px;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   overflow: hidden;
   position: relative;
 }
@@ -360,7 +360,7 @@
 .krypton-music-dashboard__np-progress-fill {
   height: 100%;
   background: var(--krypton-cyan, #00d4ff);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   transition: width 0.5s linear;
   box-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
   position: relative;
@@ -374,7 +374,7 @@
   width: 2px;
   height: 8px;
   background: var(--krypton-cyan, #00d4ff);
-  border-radius: 1px;
+  border-radius: var(--krypton-border-radius, 4px);
   box-shadow: 0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
 }
 
@@ -396,14 +396,14 @@
   flex: 1;
   height: 3px;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
-  border-radius: 1.5px;
+  border-radius: var(--krypton-border-radius, 4px);
   overflow: hidden;
 }
 
 .krypton-music-dashboard__np-volume-fill {
   height: 100%;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-  border-radius: 1.5px;
+  border-radius: var(--krypton-border-radius, 4px);
   transition: width 0.15s ease;
 }
 
@@ -417,7 +417,7 @@
 .krypton-music-dashboard__np-badge {
   font-size: var(--krypton-chrome-font-size, 11px);
   padding: 2px 8px;
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   letter-spacing: 0.05em;
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);

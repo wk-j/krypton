@@ -14,7 +14,7 @@ Krypton is a keyboard-driven terminal emulator that behaves like a single invisi
 
 ## Brand Personality
 
-Cyberpunk, precise, fast. Neon-on-blue-black with hard geometry and monospace typography. Futurist but restrained: the aesthetic sharpens focus rather than performing spectacle. Three words: precise, fast, neon.
+Cyberpunk, precise, fast. Neon-on-blue-black with a uniform 4px bevel and monospace typography. Futurist but restrained: the aesthetic sharpens focus rather than performing spectacle. Three words: precise, fast, neon.
 
 ## Anti-references
 

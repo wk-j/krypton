@@ -38,7 +38,7 @@
   padding: 12px 14px;
   background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.05);
   border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.28);
-  border-radius: var(--krypton-border-radius, 0px);
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 .krypton-usage__head {
@@ -117,7 +117,7 @@
   flex: 1;
   height: 8px;
   background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   overflow: hidden;
 }
 
@@ -185,7 +185,7 @@
 
 .krypton-usage__skeleton {
   height: 8px;
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   background: linear-gradient(
     90deg,
     rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08) 25%,

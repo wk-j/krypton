@@ -1,7 +1,7 @@
 ---
 name: Krypton Dark
-version: 1.1.0
-description: Cyberpunk sci-fi terminal aesthetic — cyan neon on transparent blue-black, hard geometry, monospace typography, multi-layer glows
+version: 1.2.0
+description: Cyberpunk sci-fi terminal aesthetic — cyan neon on transparent blue-black, 4px bevel geometry, monospace typography, multi-layer glows
 colors:
   primary: "#0cf"
   foreground: "#b0c4d8"
@@ -58,8 +58,9 @@ typography:
   numeric:
     fontVariant: "tabular-nums"   # mandatory for gauges, timers, counters
 rounded:
-  none: "0px"        # default — hard geometry
-  subtle: "2px"      # toast cards, badges only
+  none: "0px"        # sibling aesthetics only (agent frame, vault diamond)
+  container: "4px"   # default — every Krypton Dark rectangular container
+  subtle: "4px"      # alias of container; toasts and badges use the same bevel
 spacing:
   hairline: "1px"
   xs: "4px"
@@ -111,7 +112,7 @@ scrollbar:
   trackBackground: "transparent"
   thumbBackground: "primary @ inactive (0.15)"
   thumbHoverBackground: "primary @ hover (0.4)"
-  thumbBorderRadius: "0px"
+  thumbBorderRadius: "4px"
 cursor:
   terminal: "block"             # xterm.js cursor style
   text: "text"
@@ -140,7 +141,7 @@ overlay:
   toast:
     width: "320px"
     background: "rgba(6, 10, 18, 0.9)"
-    rounded: "subtle"
+    rounded: "container"
     slideFrom: "right"
 gauge:
   trackHeight: "4px"
@@ -189,7 +190,7 @@ accessibility:
 forbidden:
   - "backdrop-filter: blur()"    # causes WKWebView freeze on macOS
   - "fully opaque backgrounds"   # break the transparency hierarchy
-  - "rounded corners > 2px"      # violates hard geometry
+  - "radius other than 4px on rectangular containers"  # one bevel; 50% stays circles
   - "single-layer shadow"        # glows must be tight + bloom
   - "hard-coded hex in components" # all colors flow through CSS variables
   - "dashed or dotted outlines"   # focus must be solid + glow
@@ -203,7 +204,7 @@ Krypton is a keyboard-driven terminal emulator dressed as a piece of fictional c
 
 The aesthetic is built on three tensions:
 
-1. **Hard geometry vs. soft light** — sharp 0px corners and 1px borders are softened only by multi-layer glows that bleed into the surrounding void.
+1. **Bevel geometry vs. soft light** — a uniform 4px manufactured bevel and 1px borders are softened only by multi-layer glows that bleed into the surrounding void.
 2. **Transparency vs. legibility** — backgrounds are never fully opaque (they sit between 40% and 92%), so the underlying desktop bleeds through, but text remains crisp via heavy contrast and selective glow.
 3. **Stillness vs. life** — most of the UI is motionless. The few elements that animate (active tabs, status dots, progress gauges) breathe on slow 1–3s cycles. Motion is reserved for *state*, never decoration.
 
@@ -241,7 +242,7 @@ Monospace everywhere. The terminal nature of the product is the brand — propor
 
 ## Geometry
 
-**0px corner radius is the default.** Hard angles are non-negotiable for windows, panels, palettes, dialogs. A 2px radius is permitted only on toast cards and small badges where the curve reads as a manufactured bevel rather than a soft pillow.
+**4px corner radius is the default** on every rectangular Krypton Dark container: windows, panels, palettes, dialogs, toasts, chips, buttons, inputs, tabs. The curve is a manufactured bevel, not a pillow. True circles (`50%`) stay circles (status discs, remove buttons). Do not mix 0/2/3/8/12px on the same surface. Sibling aesthetics (NASA Vault, Amber Agent) keep their own geometry.
 
 **Angled clip-paths** appear on active tabs (chamfered top corners), giving an industrial "machined" silhouette. Diagonals also appear in tab separators (12° rotation) — a subtle "this is not a spreadsheet" cue.
 
@@ -297,7 +298,7 @@ Scrollbars must be visible but quiet. Terminal-style: thin, square, only the thu
 
 - 8px wide on the vertical axis, 8px tall on the horizontal.
 - Track is fully transparent (the underlying surface shows through).
-- Thumb is `primary @ inactive (0.15)` with no border or radius. On hover, step up to `hover (0.4)`.
+- Thumb is `primary @ inactive (0.15)` with the container 4px radius. On hover, step up to `hover (0.4)`.
 - No buttons, no corners, no smooth scrolling beyond the OS default.
 - Use the WebKit pseudo-elements (`::-webkit-scrollbar-*`) — there are no other engines to support.
 
@@ -454,9 +455,10 @@ Each sibling `DESIGN.<name>.md` must:
 2. Declare a single root scoping selector (e.g. `.krypton-vault`) and confine *all* styles to descendants of that selector. The selector is part of the contract — global styles bleeding out of a sibling aesthetic is a bug.
 3. Bump its own `version` independently. The base `DESIGN.md` version does not gate siblings.
 
-What must *not* happen is partial drift inside Krypton Dark surfaces: a rounded corner here, an opaque modal there, a single-layer shadow somewhere else. That reads as bugs, not style.
+What must *not* happen is partial drift inside Krypton Dark surfaces: a 12px card next to a 4px window, an opaque modal, a single-layer shadow. That reads as bugs, not style.
 
 ## Changelog
 
+- **1.2.0** — Default container radius is 4px (`--krypton-border-radius` / `chrome.border.radius`). One bevel on every Krypton Dark rectangular container. Circles stay `50%`. NASA Vault and Amber Agent frames keep their sibling geometry.
 - **1.1.0** — Added focus, form, scrollbar, cursor, zIndex, overlay, gauge, edgeGlow, accessibility, and CSS-variable-mapping specs. Added link color, tabular-nums policy, reduced-motion policy, sibling DESIGN contract, window anatomy diagram, hi-DPI hairline rule.
 - **1.0.0** — Initial Krypton Dark spec: colors, typography, geometry, glows, textures, motion, transparency hierarchy, platform constraints.

@@ -162,7 +162,7 @@
   );
   border: 1px solid rgba(var(--card-accent), 0.12);
   border-left: 3px solid rgba(var(--card-accent), 0.6);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   color: #e8d5b0;
@@ -227,7 +227,7 @@
   align-items: center;
   justify-content: center;
   border: 2px solid rgba(var(--card-accent), 0.3);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   font-size: var(--krypton-font-size);
   color: rgba(var(--card-accent), 0.8);
   background: rgba(var(--card-accent), 0.04);
@@ -657,7 +657,7 @@
   width: 6px;
   height: 10px;
   flex-shrink: 0;
-  border-radius: 1px;
+  border-radius: var(--krypton-border-radius, 4px);
   opacity: 1;
   transition: opacity 1s linear, transform 0.3s ease;
   box-shadow: 0 0 6px currentColor;

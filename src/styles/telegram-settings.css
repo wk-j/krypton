@@ -155,7 +155,7 @@
   height: 34px;
   box-sizing: border-box;
   border: 1px solid #2a3a43;
-  border-radius: 0;
+  border-radius: var(--krypton-border-radius, 4px);
   padding: 0 10px;
   color: #d7e0e7;
   background: #060b0e;
@@ -176,7 +176,7 @@
 .krypton-telegram__button {
   min-height: 34px;
   border: 1px solid #30414a;
-  border-radius: 0;
+  border-radius: var(--krypton-border-radius, 4px);
   padding: 0 11px;
   color: #9dafb8;
   background: #10191e;

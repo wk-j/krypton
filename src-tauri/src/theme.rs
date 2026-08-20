@@ -304,7 +304,7 @@ impl Default for ChromeBorder {
         Self {
             width: 1,
             color: "rgba(0, 200, 255, 0.3)".to_string(),
-            radius: 0,
+            radius: 4,
         }
     }
 }

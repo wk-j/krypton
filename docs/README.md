@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (214)
+## Specs (215)
 
 | # | Spec |
 |---|------|
@@ -236,6 +236,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 230 | [Xenon Review Source Excerpts](./230-xenon-review-excerpts.md) |
 | 231 | [Lane Peek Action HUD](./231-lane-peek-action-hud.md) |
 | 232 | [Thought Teletype HUD](./232-thought-teletype-hud.md) |
+| 233 | [4px Container Radius](./233-four-pixel-container-radius.md) |
 
 ## ADRs (20)
 

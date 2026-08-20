@@ -95,7 +95,7 @@
 }
 
 .krypton-diff__content .d2h-file-wrapper {
-  border-radius: 0;
+  border-radius: var(--krypton-border-radius, 4px);
   margin-bottom: 0;
 }
 
@@ -159,7 +159,7 @@
   z-index: 5;
   background: var(--krypton-background, #0b0e14);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
-  border-radius: 4px;
+  border-radius: var(--krypton-border-radius, 4px);
   overflow: hidden;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
 }
@@ -303,7 +303,7 @@
   letter-spacing: 0.5px;
   color: var(--krypton-window-accent, #00ccff);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
-  border-radius: 3px;
+  border-radius: var(--krypton-border-radius, 4px);
   vertical-align: middle;
 }
 
@@ -341,7 +341,7 @@
   letter-spacing: 0.5px;
   color: var(--krypton-window-accent, #00ccff);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
-  border-radius: 3px;
+  border-radius: var(--krypton-border-radius, 4px);
   vertical-align: middle;
 }
 
@@ -405,7 +405,7 @@
   white-space: nowrap;
   text-align: center;
   padding: 1px 8px;
-  border-radius: 3px;
+  border-radius: var(--krypton-border-radius, 4px);
   font-size: 10px;
   letter-spacing: 0.5px;
   border: 1px solid transparent;
@@ -501,7 +501,7 @@
   color: var(--krypton-foreground, #c0c5ce);
   background: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.06);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.3);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   outline: none;
 }
 .krypton-diff__composer-input:focus {
@@ -525,7 +525,7 @@
   z-index: 6;
   background: var(--krypton-background, #0b0e14);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
-  border-radius: 4px;
+  border-radius: var(--krypton-border-radius, 4px);
   overflow: hidden;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
 }
@@ -626,7 +626,7 @@
   z-index: 7;
   background: var(--krypton-background, #0b0e14);
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
-  border-radius: 4px;
+  border-radius: var(--krypton-border-radius, 4px);
   overflow: hidden;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
 }

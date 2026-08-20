@@ -84,7 +84,7 @@
   color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
   padding: 1px 6px;
   border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 .krypton-extension-bar__content {
@@ -175,7 +175,7 @@
   position: relative;
   height: 6px;
   background: rgba(255, 255, 255, 0.06);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   overflow: hidden;
 }
 
@@ -184,7 +184,7 @@
   top: 0;
   left: 0;
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
   transition: width 0.5s ease, background 0.5s ease;
 }

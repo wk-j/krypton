@@ -60,7 +60,7 @@ textarea {
   /* No drawn frame. The native window is transparent; this wash lets the
      desktop show through, and AppKit's window shadow is the only edge. */
   border: 0;
-  border-radius: 0;
+  border-radius: var(--krypton-border-radius, 4px);
   background:
     repeating-linear-gradient(
       to bottom,
@@ -440,7 +440,7 @@ textarea {
 
 .live-assist__message-body--markdown code {
   padding: 0.05em 0.4ch;
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(139, 195, 74, 0.12);
   color: var(--live-assist-green);
   font-family: var(--live-assist-font);
@@ -451,7 +451,7 @@ textarea {
   padding: 8px 10px;
   overflow-x: auto;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(0, 0, 0, 0.28);
   line-height: 1.4;
   white-space: pre;
@@ -479,7 +479,7 @@ textarea {
 .live-assist__message-body--markdown blockquote {
   margin: 0.2em 0;
   padding: 4px 8px;
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   background: rgba(224, 145, 192, 0.1);
   color: #f0d0e4;
   font-style: italic;
@@ -630,7 +630,7 @@ textarea {
   padding: 8px 0;
   border: 0;
   border-bottom: 1px solid transparent;
-  border-radius: 0;
+  border-radius: var(--krypton-border-radius, 4px);
   background: transparent;
   color: var(--live-assist-text);
   caret-color: var(--live-assist-amber);
@@ -713,7 +713,7 @@ textarea {
   box-sizing: border-box;
   padding: 8px 10px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--krypton-border-radius, 4px);
   background: var(--live-assist-surface-raised);
   color: var(--live-assist-amber-bright);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);

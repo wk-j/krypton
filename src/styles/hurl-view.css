@@ -68,7 +68,7 @@
   font-size: var(--krypton-chrome-font-size, 11px);
   padding: 4px 8px;
   outline: none;
-  border-radius: 1px;
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 .krypton-hurl__filter-input:focus {
@@ -91,7 +91,7 @@
 
 .krypton-hurl__tree::-webkit-scrollbar-thumb {
   background: rgba(var(--hurl-primary-rgb), 0.15);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 .krypton-hurl__tree-row {
@@ -224,7 +224,7 @@
 
 .krypton-hurl__viewport::-webkit-scrollbar-thumb {
   background: rgba(var(--hurl-primary-rgb), 0.2);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 .krypton-hurl__source,
@@ -293,7 +293,7 @@
 
 .krypton-hurl__exit {
   padding: 2px 8px;
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   font-weight: 700;
   letter-spacing: 0.2em;
   border: 1px solid transparent;
@@ -334,7 +334,7 @@
   letter-spacing: 0.12em;
   padding: 2px 6px;
   border: 1px solid var(--hurl-border);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
 }
 
 /* ─── Env picker ─── */
@@ -348,7 +348,7 @@
   max-width: 70%;
   background: var(--hurl-panel);
   border: 1px solid var(--hurl-border-active);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   padding: 10px 0 8px;
   z-index: 100;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -402,7 +402,7 @@
   max-height: 80%;
   background: var(--hurl-panel);
   border: 1px solid var(--hurl-border-active);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   padding: 12px 0 8px;
   z-index: 110;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);

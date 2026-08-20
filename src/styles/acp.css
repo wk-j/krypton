@@ -734,7 +734,7 @@
   max-width: 88px;
   object-fit: cover;
   border: 1px solid rgba(142, 255, 176, 0.4);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   opacity: 0.9;
 }
 .acp-view__staging-hint {
@@ -756,7 +756,7 @@
   max-width: 88px;
   object-fit: cover;
   border: 1px solid rgba(142, 255, 176, 0.3);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   opacity: 0.85;
 }
 

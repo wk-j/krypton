@@ -1611,7 +1611,7 @@
   max-width: 96px;
   object-fit: cover;
   border: 1px solid rgba(var(--agent-primary-rgb), 0.4);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   opacity: 0.9;
 }
 
@@ -1635,7 +1635,7 @@
   max-width: 96px;
   object-fit: cover;
   border: 1px solid rgba(var(--agent-primary-rgb), 0.3);
-  border-radius: 2px;
+  border-radius: var(--krypton-border-radius, 4px);
   opacity: 0.85;
 }
 
