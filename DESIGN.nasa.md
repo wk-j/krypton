@@ -64,6 +64,7 @@ forbidden:
   - "border-radius > 3px"
   - "animation keyframes — state-based glows only"
   - "smooth diffuse shadows — all shadows are explicit, measured rgba"
+  - "L-shaped corner brackets — two-side HUD ticks; full 1px panel border or nothing"
 ---
 
 ## Overview
@@ -97,6 +98,7 @@ Slightly softer than Krypton Dark:
 - Window frame: `3px` corner radius — a hint of bevel.
 - Inputs/panels: `2px`.
 - Minor elements: `1px`.
+- No L-shaped corner brackets on sidebar, main, or any panel. Two-side HUD ticks (`border-top` + `border-left` 10px arms) are banned. Full 1px panel border or nothing.
 
 ## Glows
 

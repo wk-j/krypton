@@ -195,7 +195,7 @@ The vault window CSS is **fully self-contained** in `vault-view.css`, scoped und
 |---------|-------|
 | Background | `rgba(6, 10, 20, 0.65)` deep navy |
 | Primary color | `#4fc3f7` sky blue |
-| Borders | 1px solid, 2px border-radius, corner bracket decorations |
+| Borders | 1px solid, 2px border-radius. No L-shaped corner brackets. |
 | Sidebar header | `Orbitron` or monospace, uppercase, 0.2em letter-spacing |
 | Content typography | Monospace for code, readable sans-serif for prose |
 | Scanlines | Horizontal CRT lines at 0.08 opacity over content |
@@ -285,7 +285,7 @@ No new config required for MVP — vault path is provided when opening.
 
 ### Phase 7: Retro-futurism styling
 - [ ] Apply NASA Mission Control palette to `.krypton-vault`
-- [ ] Corner bracket decorations on sidebar and content panels
+- [x] No L-shaped corner brackets on sidebar or content panels (banned; full 1px border only)
 - [ ] CRT scanline overlay on content area
 - [ ] Status bar with fixed-width data readouts
 - [ ] Phosphor glow on active elements

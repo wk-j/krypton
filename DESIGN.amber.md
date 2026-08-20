@@ -78,6 +78,7 @@ forbidden:
   - "rounded corners on window frame"
   - "sans-serif typography"
   - "diffuse shadows without explicit rgba + measured blur"
+  - "L-shaped corner brackets — two-side HUD ticks; full 1px border or nothing"
 ---
 
 ## Overview

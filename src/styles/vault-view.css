@@ -201,20 +201,6 @@
   position: relative;
 }
 
-/* Corner bracket — top-left */
-.krypton-vault__sidebar::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 10px;
-  height: 10px;
-  border-top: 1px solid var(--vault-primary);
-  border-left: 1px solid var(--vault-primary);
-  pointer-events: none;
-  z-index: 2;
-}
-
 .krypton-vault__sidebar-header {
   padding: 10px 12px 8px;
   border-bottom: 1px solid var(--vault-border);
@@ -457,20 +443,6 @@
   flex-direction: column;
   min-width: 0;
   position: relative;
-}
-
-/* Corner bracket — top-right */
-.krypton-vault__main::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 10px;
-  height: 10px;
-  border-top: 1px solid var(--vault-primary);
-  border-right: 1px solid var(--vault-primary);
-  pointer-events: none;
-  z-index: 2;
 }
 
 /* ─── Breadcrumb ─── */

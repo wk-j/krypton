@@ -262,7 +262,7 @@ style = "oscilloscope"              # "oscilloscope" (live trace) | "ticks" (sta
 
 #### `[chrome.corner_accents]`
 
-Decorative L-shaped glowing accents at each window corner.
+**Not rendered.** Theme tokens still parse (`enabled` / `size` / `thickness` / `color`) and map to unused `--krypton-corner-*` CSS variables. Window L-brackets were removed; do not reintroduce them on windows, vault, agent, harness, or toasts. `DESIGN.md` forbids L-shaped corner ornament on every surface.
 
 ```toml
 [chrome.corner_accents]

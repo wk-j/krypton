@@ -53,6 +53,7 @@ forbidden:
   - "a second accent hue — yellow is the only accent; green/red are semantic only"
   - "uppercasing file paths, filenames, or user-typed strings"
   - "backdrop-filter / blur (these are browser pages but the house rule holds)"
+  - "L-shaped corner brackets — two-side HUD ticks; full 1px border or nothing"
 ---
 
 ## Overview

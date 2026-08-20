@@ -12,7 +12,7 @@ Krypton has no way to view a web page inside the app. URLs in vault notes, termi
 
 ## Solution
 
-Add a `webview` content type alongside the existing `terminal | diff | markdown | agent | acp | acp_harness | context | file_manager | vault | hurl | pencil` set, implemented as a new `WebviewContentView` that hosts a Tauri v2 child `Webview` (the `add_child` API, behind the `unstable` feature flag). The child webview is positioned to match the pane's content rect, with Krypton's cyberpunk chrome rendered in DOM *around* it (titlebar, corner accents, glow). An injected bridge script forwards leader chords (`Cmd+P`, `Cmd+1..9`, `Cmd+W`) back to the host so the compositor stays reachable while the webview has focus. Webviews are hidden whenever their pane is not visible (other workspace, other tab, command palette / dashboard / hint overlays open) — required because native child views always render above DOM on macOS.
+Add a `webview` content type alongside the existing `terminal | diff | markdown | agent | acp | acp_harness | context | file_manager | vault | hurl | pencil` set, implemented as a new `WebviewContentView` that hosts a Tauri v2 child `Webview` (the `add_child` API, behind the `unstable` feature flag). The child webview is positioned to match the pane's content rect, with Krypton's cyberpunk chrome rendered in DOM *around* it (titlebar, glow; no L-shaped corner brackets). An injected bridge script forwards leader chords (`Cmd+P`, `Cmd+1..9`, `Cmd+W`) back to the host so the compositor stays reachable while the webview has focus. Webviews are hidden whenever their pane is not visible (other workspace, other tab, command palette / dashboard / hint overlays open) — required because native child views always render above DOM on macOS.
 
 ## Research
 
@@ -266,7 +266,7 @@ New DOM under each webview pane:
     .krypton-webview-loading-bar  ← thin animated bar above host while loading
 ```
 
-The chrome occupies the top ~28px of the pane content area; `.krypton-webview-host` fills the remaining rect and is what we measure with `ResizeObserver`. Cyberpunk styling matches existing panes (per `DESIGN.md`): corner accents on the outer pane, neon green/cyan border per theme accent, scanline overlay omitted inside the host area (no DOM there).
+The chrome occupies the top ~28px of the pane content area; `.krypton-webview-host` fills the remaining rect and is what we measure with `ResizeObserver`. Cyberpunk styling matches existing panes (per `DESIGN.md`): neon green/cyan border per theme accent, no L-shaped corner brackets, scanline overlay omitted inside the host area (no DOM there).
 
 ### Configuration
 

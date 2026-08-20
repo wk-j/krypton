@@ -78,6 +78,7 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
 6. **No frontend frameworks.** Vanilla TypeScript with direct DOM manipulation
 7. **CSS layout:** `position: absolute` + `transform: translate()` for window positioning (avoids layout thrashing)
 8. **Performance:** Keypress-to-render < 16ms, animations at 60 FPS, idle CPU < 1%
+9. **No L-shaped corner brackets.** Two-side HUD ticks (`border-top`+`border-left` 10px arms, `┌┐└┘` chrome) are banned on every surface: windows, vault, agent, harness, toasts, overlays. Full 1px border or nothing. Window chrome already dropped them; do not reintroduce.
 
 ## Platform Gotchas
 

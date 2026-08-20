@@ -1,6 +1,6 @@
 ---
 name: Krypton Dark
-version: 1.2.0
+version: 1.2.1
 description: Cyberpunk sci-fi terminal aesthetic — cyan neon on transparent blue-black, 4px bevel geometry, monospace typography, multi-layer glows
 colors:
   primary: "#0cf"
@@ -196,6 +196,7 @@ forbidden:
   - "dashed or dotted outlines"   # focus must be solid + glow
   - "proportional (non-mono) fonts"
   - "any animation longer than entrance under prefers-reduced-motion"
+  - "L-shaped corner brackets"   # two-side HUD ticks (border-top+border-left 10px ornaments, ┌┐└┘ chrome). Full 1px border or nothing. Banned on every surface including vault/agent/harness/toasts.
 ---
 
 ## Overview
@@ -246,7 +247,7 @@ Monospace everywhere. The terminal nature of the product is the brand — propor
 
 **Angled clip-paths** appear on active tabs (chamfered top corners), giving an industrial "machined" silhouette. Diagonals also appear in tab separators (12° rotation) — a subtle "this is not a spreadsheet" cue.
 
-Windows carry no corner ornament. The chrome is the 1px accent-tinted border plus the multi-layer outer glow — the whole frame reads as a single luminous edge rather than discrete brackets.
+No surface carries L-shaped corner ornament — not windows, not vault, not agent, not harness, not toasts. Two-side HUD ticks (`border-top` + `border-left` 10px arms, `┌┐└┘` glyphs) are banned. The chrome is the 1px accent-tinted border plus the multi-layer outer glow — the whole frame reads as a single luminous edge rather than discrete brackets.
 
 ### Window Anatomy
 
@@ -459,6 +460,7 @@ What must *not* happen is partial drift inside Krypton Dark surfaces: a 12px car
 
 ## Changelog
 
+- **1.2.1** — L-shaped corner brackets are forbidden on every surface (windows, vault, agent, harness, toasts). Full 1px border or nothing.
 - **1.2.0** — Default container radius is 4px (`--krypton-border-radius` / `chrome.border.radius`). One bevel on every Krypton Dark rectangular container. Circles stay `50%`. NASA Vault and Amber Agent frames keep their sibling geometry.
 - **1.1.0** — Added focus, form, scrollbar, cursor, zIndex, overlay, gauge, edgeGlow, accessibility, and CSS-variable-mapping specs. Added link color, tabular-nums policy, reduced-motion policy, sibling DESIGN contract, window anatomy diagram, hi-DPI hairline rule.
 - **1.0.0** — Initial Krypton Dark spec: colors, typography, geometry, glows, textures, motion, transparency hierarchy, platform constraints.
