@@ -311,6 +311,10 @@ function wellFx(kind: ActionHudKind): string {
   }
 }
 
+export function actionHudWellMarkup(kind: ActionHudKind): string {
+  return actionHudIcon(kind) + wellFx(kind);
+}
+
 export function actionHudMarkup(action: LiveAction, paint: ActionHudPaint = 'rail'): string {
   const { owner, laneId, laneName } = normalizePaint(paint);
   const tip = action.detail ?? action.subject ?? action.title;
@@ -326,8 +330,7 @@ export function actionHudMarkup(action: LiveAction, paint: ActionHudPaint = 'rai
   return (
     `<div class="acp-harness__action-hud" data-kind="${esc(action.kind)}" data-sig="${esc(action.sig)}" data-owner="${owner}"${laneAttr}${labeledAttr} role="status" aria-live="polite" title="${esc(tip)}">` +
       `<div class="acp-harness__action-well" aria-hidden="true">` +
-        actionHudIcon(action.kind) +
-        wellFx(action.kind) +
+        actionHudWellMarkup(action.kind) +
       `</div>` +
       `<div class="acp-harness__action-copy">` +
         kindBlock +
@@ -335,6 +338,16 @@ export function actionHudMarkup(action: LiveAction, paint: ActionHudPaint = 'rai
       `</div>` +
     `</div>`
   );
+}
+
+/** Remount only when labeled chrome (the lane-name row) appears or disappears.
+ *  Kind and subject updates patch in place so `acp-action-deploy` does not
+ *  replay — a new execute/edit must not flicker the card. */
+export function actionHudMustRemount(
+  el: { dataset: { labeled?: string } },
+  labeled: boolean,
+): boolean {
+  return (el.dataset.labeled ?? '') !== (labeled ? '1' : '');
 }
 
 export function renderActionHud(action: LiveAction, paint: ActionHudPaint = 'rail'): HTMLElement {
@@ -348,9 +361,14 @@ export function renderActionHud(action: LiveAction, paint: ActionHudPaint = 'rai
 }
 
 export function patchActionHud(root: HTMLElement, action: LiveAction, laneName?: string | null): void {
+  const kindChanged = root.dataset.kind !== action.kind;
   root.dataset.kind = action.kind;
   root.dataset.sig = action.sig;
   root.title = action.detail ?? action.subject ?? action.title;
+  if (kindChanged) {
+    const well = root.querySelector('.acp-harness__action-well');
+    if (well) well.innerHTML = actionHudWellMarkup(action.kind);
+  }
   const kindEl = root.querySelector('.acp-harness__action-kind');
   if (kindEl) kindEl.textContent = action.title;
   const copy = root.querySelector('.acp-harness__action-copy');
@@ -370,7 +388,8 @@ export function patchActionHud(root: HTMLElement, action: LiveAction, laneName?:
   if (nameEl && laneName != null) nameEl.textContent = laneName;
 }
 
-/** Reconcile the rail stack by lane id. Same lane+sig → patch (animation stays). */
+/** Reconcile the rail stack by lane id. Same lane → patch (card stays, well
+ *  swaps only on kind change). Remount only for labeled-chrome mismatch. */
 export function syncActionHudSlot(
   slot: HTMLElement,
   rows: RailLiveAction[],
@@ -388,12 +407,10 @@ export function syncActionHudSlot(
       byId.set(child.dataset.laneId, child);
     }
   }
-  const wantLabeled = labeled ? '1' : '';
   rows.forEach((row, index) => {
     const name = labeled ? row.displayName : null;
     let el = byId.get(row.laneId) ?? null;
-    const labeledMismatch = (el?.dataset.labeled ?? '') !== wantLabeled;
-    if (el && (el.dataset.sig !== row.action.sig || labeledMismatch)) {
+    if (el && actionHudMustRemount(el, labeled)) {
       const next = renderActionHud(row.action, { owner: 'rail', laneId: row.laneId, laneName: name });
       el.replaceWith(next);
       el = next;

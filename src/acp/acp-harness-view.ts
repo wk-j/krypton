@@ -10818,7 +10818,8 @@ export class AcpHarnessView implements ContentView {
     slot.hidden = false;
   }
 
-  /** spec 231 — keep the peeked lane's HUD current without remounting the card. */
+  /** spec 231 — keep the peeked lane's HUD current without remounting the card
+   *  (sig/kind changes patch in place so the entrance animation does not replay). */
   private syncPeekActionHud(
     card: HTMLElement,
     snapshot: LanePeekSnapshot,
@@ -10835,19 +10836,16 @@ export class AcpHarnessView implements ContentView {
       existing?.remove();
       return;
     }
-    if (existing && existing.dataset.sig === action.sig) {
+    if (existing) {
       patchActionHud(existing, action);
       return;
     }
     const next = renderActionHud(action, 'peek');
-    if (existing) existing.replaceWith(next);
-    else {
-      const event = card.querySelector('.acp-harness__lane-peek-event');
-      const head = card.querySelector('.acp-harness__lane-peek-head');
-      if (event) event.after(next);
-      else if (head) head.after(next);
-      else card.insertBefore(next, card.firstChild);
-    }
+    const event = card.querySelector('.acp-harness__lane-peek-event');
+    const head = card.querySelector('.acp-harness__lane-peek-head');
+    if (event) event.after(next);
+    else if (head) head.after(next);
+    else card.insertBefore(next, card.firstChild);
   }
 
   private renderLaneAction(): void {

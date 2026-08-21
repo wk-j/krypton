@@ -8,6 +8,8 @@ import {
   ACTION_HUD_HIDE_MS,
   actionHudKindFromLabel,
   actionHudMarkup,
+  actionHudMustRemount,
+  actionHudWellMarkup,
   deriveLiveAction,
   deriveRailLiveActions,
   liveActionFromPeekTool,
@@ -350,8 +352,30 @@ describe('actionHudMarkup', () => {
 });
 
 describe('liveActionSig', () => {
-  it('changes when the subject changes so the card remounts', () => {
+  it('changes when the subject changes so the HUD can detect a new action', () => {
     expect(liveActionSig('edit', 'edit', 'a.ts')).not.toBe(liveActionSig('edit', 'edit', 'b.ts'));
+  });
+});
+
+describe('actionHudMustRemount', () => {
+  it('stays mounted across a new execute / kind so the entrance does not replay', () => {
+    const el = { dataset: { labeled: '1' } };
+    expect(actionHudMustRemount(el, true)).toBe(false);
+    expect(actionHudMustRemount({ dataset: {} }, false)).toBe(false);
+  });
+
+  it('remounts only when labeled chrome appears or disappears', () => {
+    expect(actionHudMustRemount({ dataset: {} }, true)).toBe(true);
+    expect(actionHudMustRemount({ dataset: { labeled: '1' } }, false)).toBe(true);
+  });
+});
+
+describe('actionHudWellMarkup', () => {
+  it('swaps the instrument per kind', () => {
+    expect(actionHudWellMarkup('execute')).toContain('acp-harness__action-hex');
+    expect(actionHudWellMarkup('execute')).toContain('href="#krypton-action-execute"');
+    expect(actionHudWellMarkup('edit')).toContain('acp-harness__action-fx-head');
+    expect(actionHudWellMarkup('edit')).not.toContain('acp-harness__action-hex');
   });
 });
 

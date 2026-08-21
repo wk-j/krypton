@@ -80,7 +80,7 @@ interface LiveAction {
   kind: ActionHudKind;
   title: string;          // "edit" / "read" / tool title fallback
   subject: string | null; // basename or abbreviated path
-  sig: string;            // `${kind}|${title}|${subject}` — remount key
+  sig: string;            // `${kind}|${title}|${subject}` — identity; patched in place, not a remount key
 }
 ```
 
@@ -143,7 +143,7 @@ Peek card: if `snapshot.activeTool` and status is `busy`, render the HUD in plac
 
 ### Per-kind instruments
 
-All infinite motion uses DESIGN.md tokens (`--krypton-motion-data-stream` 1.8s linear, `--krypton-motion-radar-ping` 2.5s, `--krypton-motion-ambient` 1.2s, `--krypton-motion-breathing` 3s). Transform and opacity only. Kind change remounts so the 180ms `entrance` (scale 0.96 → 1, hardware-deploy curve) retriggers. Same `sig` → `patchActionHud` (text only, animation stays up).
+All infinite motion uses DESIGN.md tokens (`--krypton-motion-data-stream` 1.8s linear, `--krypton-motion-radar-ping` 2.5s, `--krypton-motion-ambient` 1.2s, `--krypton-motion-breathing` 3s). Transform and opacity only. Same lane → `patchActionHud` (text always; well innerHTML only when `kind` changes) so the 180ms `acp-action-deploy` entrance does not replay when a different execute/edit starts. Remount only when labeled chrome (the lane-name row) appears or disappears.
 
 | Kind | Accent | Well |
 |------|--------|------|
@@ -166,8 +166,8 @@ All infinite motion uses DESIGN.md tokens (`--krypton-motion-data-stream` 1.8s l
 1. tool_call / thought_chunk / message_chunk → field write on lane.activity (unchanged)
 2. 1 s composer tick + existing render paths + background `scheduleLaneRender` call renderLaneAction()
 3. deriveRailLiveActions(lanes) → empty? arm a 2s hide (`ACTION_HUD_HIDE_MS`); keep the last HUD until it fires
-4. live rows return before the delay? cancel hide; same lane+sig patches (no remount)
-5. new lane or new sig? remount that card — entrance plays
+4. live rows return before the delay? cancel hide; same lane patches (no remount — new sig/kind included)
+5. new lane, or labeled-chrome mismatch? remount that card — entrance plays
 6. finishTurn / error → activity null → after the hide delay, that card drops; slot hides when none remain
 ```
 
