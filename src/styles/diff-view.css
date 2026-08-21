@@ -122,6 +122,27 @@
   color: inherit;
 }
 
+/* Drop diff2html's opaque GitHub-dark slab (`#0d1117`) so the compositor
+   window backdrop — and the desktop behind it — show through, matching
+   terminals and the harness. Selector beats the later JS-imported
+   `diff2html.min.css` (0,1,0). Sticky line-number cells keep
+   `--d2h-dark-bg-color` so horizontally scrolled code does not bleed
+   under the gutter. Add/delete row tints are already rgba.
+   No backdrop-filter: blur() (macOS WKWebView freeze). */
+.krypton-diff .d2h-dark-color-scheme {
+  background-color: transparent;
+}
+
+.krypton-diff .d2h-dark-color-scheme .hljs {
+  background-color: transparent;
+}
+
+/* Light scheme still forces `d2h-dark-color-scheme` (light syntax). A
+   transparent frost field would make that text vanish; keep the slab. */
+html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
+  background-color: var(--d2h-dark-bg-color, #0d1117);
+}
+
 /* Fix line numbers: absolute positioning breaks vertical scrolling.
    Use sticky so they stay left-anchored on horizontal scroll but
    move normally with vertical scroll. */

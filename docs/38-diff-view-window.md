@@ -7,6 +7,7 @@
 > **Implementation notes (post-spec):**
 > - The shipped renderer is **`diff2html`** (+ highlight.js), not `@pierre/diffs` as designed below — the design's `FileDiff`/`processPatch` details are historical.
 > - Spec 155 (`docs/155-live-working-diff.md`) made the window **live**: it re-collects the working diff at lane quiet points (ADR-0008), supports manual refresh (`r`), includes untracked files via the `collect_working_diff` Tauri command, and preserves file + scroll position across refreshes.
+> - The diff2html dark-scheme wrapper is **transparent** so the compositor window backdrop (and desktop) show through, matching terminals and the harness. `[visual] opacity` / `chrome.backdrop` therefore reach the code surface. Sticky line-number gutters keep diff2html's opaque fill so horizontally scrolled code does not bleed under the numbers. Light scheme (`html[data-theme-scheme=light]`) keeps the GitHub-dark slab because the renderer is still `d2h-dark-color-scheme` (light syntax on frost would vanish). Overlays (file list, comments, help, composer, priority panel) stay elevated/opaque. No `backdrop-filter`.
 
 ## Problem
 
