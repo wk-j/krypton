@@ -116,7 +116,9 @@ Internals: `Float32Array` ring buffer of signed samples (length ≈ cssWidth/2);
 1. Backend PTY reader emits `pty-output` [sid, bytes].
 2. compositor `pty-output` handler resolves sid → windowId via sessionMap (existing).
 3. NEW: win.headerScope?.pump(bytes.length)  (QT branch: qtHeaderScope?.pump(...)).
-4. pump() bumps energy = min(1, energy + len/SCALE) and starts rAF if it was stopped.
+4. pump() bumps energy = min(1, energy + max(len/SCALE, MIN_KICK)) and starts rAF if it was stopped.
+   MIN_KICK exists so token-sized text pumps (harness/agent, spec 189) actually deflect
+   the 6px band; PTY bursts of hundreds of bytes still scale with `len/SCALE`.
 5. Each frame: energy *= DECAY; push one signed sample (energy × smooth-noise) into the
    ring buffer; clear canvas; stroke the buffer as a polyline (glow on the live edge).
 6. When energy < ε AND max|buffer| < ε: draw one flat frame, cancelAnimationFrame, STOP.

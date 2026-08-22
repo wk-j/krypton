@@ -20,8 +20,23 @@ const DECAY = 0.9;
  *  few hundred bytes) produces a visible deflection on the ~6px band, not just
  *  multi-kilobyte bursts. */
 const BYTES_SCALE = 512;
-/** Below this, energy and buffer are treated as silence and the loop stops. */
-const EPS = 0.02;
+/** Silence floor. A token-sized text delta (1–8 chars) is `n/BYTES_SCALE` ≪ this,
+ *  which is why harness streaming used to look dead: the loop started, saw
+ *  energy below EPS, and drew the idle hairline. */
+export const HEADER_SCOPE_EPS = 0.02;
+const EPS = HEADER_SCOPE_EPS;
+/** Floor applied to every non-zero pump so model-token chunks (and single
+ *  keystrokes) actually deflect the 6px trace. Large PTY bursts still scale
+ *  with `bytes / BYTES_SCALE` and cap at 1. */
+export const HEADER_SCOPE_MIN_KICK = 0.4;
+
+/** Next energy after a throughput sample. Exported so tests can pin the
+ *  token-chunk visibility contract without a canvas. */
+export function headerScopeEnergyBump(energy: number, bytes: number): number {
+  if (!(bytes > 0)) return energy;
+  return Math.min(1, energy + Math.max(bytes / BYTES_SCALE, HEADER_SCOPE_MIN_KICK));
+}
+
 /** Safety net: force-stop if the loop is somehow still running long after the
  *  last pump (mirrors the claude-hooks idle watchdog). Normal decay stops it
  *  far sooner; this only catches a stuck loop. */
@@ -89,7 +104,7 @@ export class HeaderScope implements BackgroundAnimation {
   pump(bytes: number): void {
     this.lastPump = performance.now();
     if (this.reduceMotion.matches) return;
-    this.energy = Math.min(1, this.energy + bytes / BYTES_SCALE);
+    this.energy = headerScopeEnergyBump(this.energy, bytes);
     this.start();
   }
 

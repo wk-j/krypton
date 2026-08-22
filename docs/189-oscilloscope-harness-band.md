@@ -134,7 +134,9 @@ active/foregrounded lane — is deferred (see Open Questions → resolved).
    - Harness: onLaneEvent chunk → appendStreaming(lane, kind, text) → item.text += text (acp-harness-view.ts:10080)
    - ACP:     onAcpEvent 'message_chunk'/'thought_chunk' → raw += e.text              (acp-view.ts:873/882)
 2. NEW: view calls this.onOutputPump?.(deltaText.length).
-3. onOutputPump → scope.pump(n): energy += n/SCALE, (re)start rAF if stopped.
+3. onOutputPump → scope.pump(n): energy += max(n/SCALE, MIN_KICK≈0.4), (re)start rAF if stopped.
+   Token-sized deltas (1–8 chars) are far below SCALE=512; without the floor the loop
+   treated them as silence and the harness band never moved. See `headerScopeEnergyBump`.
 4. Same rAF loop as terminal: decay, push sample, draw, idle-stop at ε. 0 CPU when idle.
 ```
 
@@ -167,6 +169,8 @@ None new. Reuses `theme.chrome.header_accent.{enabled,style}` from spec 188 — 
   close path (add the `dispose()` call alongside the store).
 - **Theme / lane-accent change** → `refreshColor()` on `theme-changed`, mirroring terminal.
 - **`onOutputPump` unset** (e.g. view created without chrome, tests) → optional-chained, no-op.
+- **Token-sized text deltas** → each non-zero pump applies `HEADER_SCOPE_MIN_KICK` so a
+  streaming lane deflects the 6px band; PTY bursts still scale with byte count.
 
 ## Open Questions
 
