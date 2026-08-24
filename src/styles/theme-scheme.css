@@ -114,27 +114,6 @@ html[data-theme-scheme='light'] .krypton-workspace-footer {
   color: var(--krypton-ink);
 }
 
-html[data-theme-scheme='light'] .krypton-workspace-footer__segment {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 40%, var(--krypton-ink));
-}
-
-html[data-theme-scheme='light'] .krypton-workspace-footer__segment--p0 {
-  color: var(--krypton-ink);
-}
-
-html[data-theme-scheme='light'] .krypton-workspace-footer__segment--p2 {
-  color: color-mix(in srgb, var(--krypton-ink) 68%, transparent);
-}
-
-html[data-theme-scheme='light'] .krypton-workspace-footer__segment--p3 {
-  color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
-}
-
-html[data-theme-scheme='light'] .krypton-workspace-footer__segment--git {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 55%, var(--krypton-ink));
-  text-shadow: none;
-}
-
 html[data-theme-scheme='light'] .krypton-workspace-footer__segment--reviews,
 html[data-theme-scheme='light'] .krypton-workspace-footer__segment--priority,
 html[data-theme-scheme='light'] .krypton-workspace-footer__segment--link {

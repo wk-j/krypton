@@ -16,7 +16,7 @@
   padding: 0 12px;
   overflow: hidden;
   background: transparent;
-  color: var(--krypton-foreground, #c0c8d4);
+  color: var(--krypton-fg, #b0c4d8);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   /* DESIGN.md § Numerics: HUD digits (counts, io, %, clock) must not jitter as
@@ -60,7 +60,7 @@
 .krypton-workspace-footer__center > .krypton-workspace-footer__segment:not(:first-child)::before {
   content: '·';
   margin: 0 8px;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.38);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.28);
 }
 
 .krypton-workspace-footer__right {
@@ -79,7 +79,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.62);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.72);
 }
 
 /* `hidden` must win over segments that set their own `display` (--attention,
@@ -91,7 +91,7 @@
 }
 
 .krypton-workspace-footer__segment--p0 {
-  color: var(--krypton-foreground, #c0c8d4);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88);
 }
 
 .krypton-workspace-footer__segment--mode {
@@ -101,7 +101,7 @@
   align-items: center;
   padding: 0 7px;
   border: 0;
-  color: var(--krypton-cyan, #00d4ff);
+  color: var(--krypton-window-accent, var(--krypton-accent, #0cf));
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -112,37 +112,40 @@
   padding: 0;
   border: 0;
   background: transparent;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88);
 }
 
 .krypton-workspace-footer__segment--role {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.72);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88);
 }
 
-/* Priority ladder — telemetry recedes as it gets less actionable so the eye
-   lands on the working dir and git ref first. Tiers ride the accent opacity
-   scale (DESIGN.md § The Opacity Scale): cwd legible, p2 secondary, p3 ambient. */
+/* Priority ladder — telemetry recedes as it gets less actionable. Tiers ride
+   phosphor opacity (spec 236): cwd P1, p2 secondary, p3 ambient. Hue is kind,
+   not priority — cyan is not the default type color. */
 .krypton-workspace-footer__segment--project {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.82);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.72);
 }
 
 .krypton-workspace-footer__segment--p2 {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52);
 }
 
 .krypton-workspace-footer__segment--p3 {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
+}
+
+.krypton-workspace-footer__segment--throughput {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
 }
 
 .krypton-workspace-footer__segment--music-flags {
   color: var(--krypton-yellow, #ffcc00);
 }
 
-/* git ref — accent-bright with a soft single-layer glow so the branch reads as
-   the deck's anchor readout. Matches the composer-meta branch chip
-   (acp-harness.css) for one consistent git voice across the harness. */
+/* git ref — success phosphor so a branch is a repo state, not more cyan.
+   Dirty stays the warning-tier dot. Matches composer-meta branch (spec 236). */
 .krypton-workspace-footer__segment--git {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.92);
-  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.22);
+  color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
 }
 
 /* Telemetry icons — monoline SVGs sized to the text cell and baseline-tuned so
@@ -354,7 +357,16 @@
 }
 
 .krypton-workspace-footer__hint {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.48);
+}
+
+.krypton-workspace-footer__hint kbd {
+  border: 1px solid rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.22);
+  border-radius: var(--krypton-border-radius, 8px);
+  padding: 0 4px;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.78);
+  font-family: inherit;
+  font-size: inherit;
 }
 
 .krypton-workspace-footer[data-density="compact"] .krypton-workspace-footer__segment--detail {
@@ -370,22 +382,22 @@
 }
 
 .krypton-workspace-footer__segment--music-icon {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.82);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52);
   flex: 0 0 auto;
 }
 
 .krypton-workspace-footer__segment--music-track {
   flex: 1 1 auto;
-  color: var(--krypton-foreground, #c0c8d4);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88);
 }
 
 .krypton-workspace-footer__segment--music-info {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52);
 }
 
 .krypton-workspace-footer__segment--music-time {
   flex: 0 0 auto;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.72);
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52);
   font-variant-numeric: tabular-nums;
 }
 
@@ -398,7 +410,7 @@
 
 .krypton-workspace-footer__music-progress-fill {
   height: 100%;
-  background: var(--krypton-cyan, #00d4ff);
+  background: var(--krypton-window-accent, var(--krypton-accent, #0cf));
 }
 
 .krypton-mini-player__viz {

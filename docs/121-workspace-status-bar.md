@@ -226,6 +226,8 @@ CSS constraints:
 - The footer remains `pointer-events: none` in v1; no click targets are introduced.
 - Segment classes carry priority modifiers such as `.krypton-workspace-footer__segment--p0` through `--p3` so CSS can hide lower-priority content at breakpoints without JS measuring text.
 
+Kind color (spec 236): default type is phosphor (`--krypton-fg-rgb`) at the priority opacity ladder (P0 0.88, P1 0.72, P2 0.52, P3 0.40). Hue is kind, not priority: cyan only for non-normal mode and live throughput; git is `--krypton-success-rgb`; dirty stays the warning dot; hint keys wrap in `<kbd>`. Composer-meta branch uses the same git green.
+
 ### Motion
 
 The footer should feel alive, but motion must remain telemetry-like and never change layout.

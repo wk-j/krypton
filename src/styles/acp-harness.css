@@ -3557,8 +3557,7 @@
 
 .acp-harness__project-branch {
   flex: 0 0 auto;
-  color: rgba(109, 208, 255, 0.92);
-  text-shadow: 0 0 6px rgba(109, 208, 255, 0.22);
+  color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
 }
 
 /* The last width-gated readout. On a third-width window the branch yields to the

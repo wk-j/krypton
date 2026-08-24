@@ -208,6 +208,42 @@ function plural(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
 
+/** Spec 236: leading token of a ` · `-separated hint part that is a key. */
+const HINT_KEY_RE =
+  /^(?:Leader|Esc|arrows|h\/j\/k\/l|#\w+|\?|Cmd(?:\+[A-Za-z]+)+|[a-z])$/;
+
+export interface HintChip {
+  key: string | null;
+  rest: string;
+}
+
+/** Split a footer hint into key chips + trailing labels. Parts with no
+ *  leading key stay `{ key: null, rest: part }`. */
+export function parseHint(text: string): HintChip[] {
+  return text.split(' · ').map((part) => {
+    const trimmed = part.trim();
+    const space = trimmed.indexOf(' ');
+    const first = space === -1 ? trimmed : trimmed.slice(0, space);
+    if (!HINT_KEY_RE.test(first)) return { key: null, rest: part };
+    return { key: first, rest: space === -1 ? '' : trimmed.slice(space + 1) };
+  });
+}
+
+export function fillHint(el: HTMLElement, text: string): void {
+  el.replaceChildren();
+  parseHint(text).forEach((chip, i) => {
+    if (i > 0) el.append(document.createTextNode(' · '));
+    if (!chip.key) {
+      el.append(document.createTextNode(chip.rest));
+      return;
+    }
+    const kbd = document.createElement('kbd');
+    kbd.textContent = chip.key;
+    el.append(kbd);
+    if (chip.rest) el.append(document.createTextNode(` ${chip.rest}`));
+  });
+}
+
 export class WorkspaceFooter {
   private readonly workspace: HTMLElement;
   private readonly compositor: Compositor;
@@ -569,7 +605,9 @@ export class WorkspaceFooter {
   }
 
   private renderRight(summary: FocusSummary): void {
-    this.hintEl.textContent = this.hintFor(summary);
+    const hint = this.hintFor(summary);
+    this.hintEl.setAttribute('aria-label', hint);
+    fillHint(this.hintEl, hint);
     this.renderLink();
     this.renderPriority();
     this.renderReviews();
@@ -802,9 +840,6 @@ export class WorkspaceFooter {
     return node;
   }
 
-  /** spec: git readout — a branch glyph + ref at accent-bright; the dirty state
-   * becomes a warning-tier dot (not a `*` glued to the name) so "uncommitted"
-   * reads as a signal. One consistent git voice with the composer-meta chip. */
   /** Build the single canonical working-directory segment for the workspace
    *  footer. This is the ONE place the workspace renders the focused pane's cwd
    *  (the left title strips path tokens so it never duplicates this). Returns
@@ -871,7 +906,7 @@ export class WorkspaceFooter {
   private throughputSegment(): HTMLElement | null {
     if (this.busState.throughput <= 0) return null;
     const rate = formatBytesPerSec(this.busState.throughput);
-    const el = this.segment(rate, 'p3');
+    const el = this.segment(rate, 'p3 throughput');
     el.prepend(this.icon('io'));
     el.title = `throughput ${rate}`;
     el.setAttribute('aria-label', el.title);
