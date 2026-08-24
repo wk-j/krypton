@@ -324,6 +324,7 @@ export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
   head.appendChild(glyph);
   const kind = document.createElement('span');
   kind.className = 'acp-harness__tool-kind';
+  kind.dataset.kind = toolChipKind(tool.kind);
   kind.textContent = tool.kind;
   head.appendChild(kind);
   if (tool.subject) {
@@ -489,8 +490,13 @@ export function renderToolOutput(tool: ToolPayload): HTMLElement {
   const output = document.createElement('div');
   output.className = 'acp-harness__tool-output';
   for (const section of tool.sections) {
-    const rich = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
-    output.appendChild(rich ?? renderPlainToolSection(section));
+    const git = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
+    if (git) {
+      output.appendChild(git);
+      continue;
+    }
+    const grep = isGrepLikeOutput(tool, section) ? renderGrepSection(tool, section) : null;
+    output.appendChild(grep ?? renderPlainToolSection(section));
   }
   return output;
 }
@@ -557,7 +563,7 @@ export function renderGitDiffStat(rows: Array<{ path: string; changes: number; p
     const item = document.createElement('div');
     item.className = 'acp-harness__tool-stat-row';
     const path = document.createElement('span');
-    path.className = 'acp-harness__tool-stat-path';
+    path.className = 'acp-harness__tool-stat-path acp-harness__tok-path';
     path.textContent = row.path;
     const count = document.createElement('span');
     count.className = 'acp-harness__tool-stat-count';
@@ -586,7 +592,7 @@ export function renderUnifiedGitDiff(text: string): HTMLElement {
   for (const line of lines) {
     if (line.startsWith('diff --git ')) {
       const file = document.createElement('div');
-      file.className = 'acp-harness__tool-diff-file';
+      file.className = 'acp-harness__tool-diff-file acp-harness__tok-path';
       file.textContent = gitDiffFileLabel(line);
       block.appendChild(file);
       continue;
@@ -661,7 +667,7 @@ export function renderGitStatusShort(rows: Array<{ index: string; worktree: stri
     badge.className = `acp-harness__tool-status-badge acp-harness__tool-status-badge--${gitStatusTone(row.index, row.worktree)}`;
     badge.textContent = `${row.index}${row.worktree}`.trim() || 'M';
     const path = document.createElement('span');
-    path.className = 'acp-harness__tool-status-path';
+    path.className = 'acp-harness__tool-status-path acp-harness__tok-path';
     path.textContent = row.path;
     item.append(badge, path);
     block.appendChild(item);
@@ -679,10 +685,219 @@ export function gitStatusTone(index: string, worktree: string): string {
 export function toolSectionTone(label: string): string {
   const normalized = label.toLowerCase();
   if (normalized === 'stderr' || normalized === 'error' || normalized === 'message') return 'error';
-  if (normalized === 'stdout' || normalized === 'output' || normalized === 'text') return 'output';
+  if (
+    normalized === 'stdout' ||
+    normalized === 'output' ||
+    normalized === 'text' ||
+    normalized === 'content'
+  ) {
+    return 'output';
+  }
   if (normalized === 'summary') return 'summary';
   if (normalized === 'diff') return 'diff';
   if (normalized === 'terminal') return 'terminal';
-  if (normalized === 'content') return 'content';
   return 'default';
+}
+
+/** Chip `data-kind` for spec 235 / 231 HUD accents. Local map so this file
+ *  does not import the HUD module (HUD already imports us). */
+export function toolChipKind(kind: string): string {
+  const k = kind.trim().toLowerCase();
+  if (!k) return 'other';
+  if (k === 'edit' || k === 'write' || k === 'create' || k === 'modify' || k === 'patch') return 'edit';
+  if (k === 'read' || k === 'open' || k === 'cat') return 'read';
+  if (k === 'search' || k === 'grep' || k === 'rg' || k === 'find') return 'search';
+  if (
+    k === 'execute' ||
+    k === 'bash' ||
+    k === 'shell' ||
+    k === 'run' ||
+    k === 'exec' ||
+    k === 'command'
+  ) {
+    return 'execute';
+  }
+  if (k === 'delete') return 'delete';
+  if (k === 'move' || k === 'rename') return 'move';
+  if (k === 'fetch' || k === 'http' || k === 'web') return 'fetch';
+  return 'other';
+}
+
+const GREP_CMD = /\b(rg|grep|ag|ack)\b/;
+const GREP_SECTION = /^(stdout|output|content|text)$/i;
+
+export function isGrepCommand(text: string): boolean {
+  return GREP_CMD.test(text);
+}
+
+export function isGrepLikeOutput(
+  tool: Pick<ToolPayload, 'kind' | 'command' | 'subject'>,
+  section: { label: string },
+): boolean {
+  if (!GREP_SECTION.test(section.label)) return false;
+  if (toolChipKind(tool.kind) === 'search') return true;
+  return isGrepCommand(tool.command) || isGrepCommand(tool.subject);
+}
+
+/** Quoted `-e` or first quoted arg after rg/grep/ag/ack. Empty when unquoted. */
+export function extractGrepQuery(command: string): string {
+  if (!command) return '';
+  const eFlag = command.match(/(?:^|\s)-e\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  if (eFlag) return (eFlag[1] ?? eFlag[2] ?? eFlag[3] ?? '').trim();
+  const flags = '(?:\\s+--?[A-Za-z0-9][A-Za-z0-9-]*)*';
+  const dbl = command.match(new RegExp(`\\b(?:rg|grep|ag|ack)\\b${flags}\\s+"([^"]+)"`));
+  if (dbl?.[1]) return dbl[1].trim();
+  const sgl = command.match(new RegExp(`\\b(?:rg|grep|ag|ack)\\b${flags}\\s+'([^']+)'`));
+  if (sgl?.[1]) return sgl[1].trim();
+  return '';
+}
+
+/** Literal needles from a quoted grep pattern. Splits grep `\\|` / `|` OR. */
+export function grepHitNeedles(query: string): string[] {
+  if (!query) return [];
+  const parts = query.split(/\\\||\|/).map((part) => part.trim()).filter((part) => part.length >= 2);
+  return parts;
+}
+
+export interface GrepRow {
+  path: string | null;
+  line: string;
+  text: string;
+  context: boolean;
+}
+
+function looksLikeGrepPath(value: string): boolean {
+  if (!value || value.length > 240) return false;
+  if (/\s/.test(value)) return false;
+  if (/^(error|warning|note|fatal|info)$/i.test(value)) return false;
+  return /[./\\]/.test(value);
+}
+
+export function parseGrepLine(line: string): GrepRow | null {
+  let match = line.match(/^(.+?):(\d+):(\d+):(.*)$/);
+  if (match && looksLikeGrepPath(match[1] ?? '')) {
+    return {
+      path: match[1] ?? '',
+      line: `${match[2]}:${match[3]}`,
+      text: match[4] ?? '',
+      context: false,
+    };
+  }
+  match = line.match(/^(.+?):(\d+):(.*)$/);
+  if (match && looksLikeGrepPath(match[1] ?? '')) {
+    return {
+      path: match[1] ?? '',
+      line: match[2] ?? '',
+      text: match[3] ?? '',
+      context: false,
+    };
+  }
+  match = line.match(/^(.+?)-(\d+)-(.*)$/);
+  if (match && looksLikeGrepPath(match[1] ?? '')) {
+    return {
+      path: match[1] ?? '',
+      line: match[2] ?? '',
+      text: match[3] ?? '',
+      context: true,
+    };
+  }
+  match = line.match(/^(\d+):(.*)$/);
+  if (match) {
+    return { path: null, line: match[1] ?? '', text: match[2] ?? '', context: false };
+  }
+  match = line.match(/^(\d+)-(.*)$/);
+  if (match) {
+    return { path: null, line: match[1] ?? '', text: match[2] ?? '', context: true };
+  }
+  return null;
+}
+
+/** Majority of non-empty lines must parse, else null (plain `<pre>`). */
+export function parseGrepDump(text: string): GrepRow[] | null {
+  const lines = text.split('\n').filter((line) => line.length > 0);
+  if (lines.length === 0) return null;
+  const rows: GrepRow[] = [];
+  for (const line of lines) {
+    const row = parseGrepLine(line);
+    if (row) rows.push(row);
+  }
+  if (rows.length * 2 <= lines.length) return null;
+  return rows;
+}
+
+function appendHighlighted(parent: HTMLElement, text: string, needles: string[]): void {
+  if (!text) return;
+  if (needles.length === 0) {
+    parent.appendChild(document.createTextNode(text));
+    return;
+  }
+  let rest = text;
+  while (rest.length > 0) {
+    let bestAt = -1;
+    let bestNeedle = '';
+    for (const needle of needles) {
+      const at = rest.indexOf(needle);
+      if (at < 0) continue;
+      if (bestAt < 0 || at < bestAt || (at === bestAt && needle.length > bestNeedle.length)) {
+        bestAt = at;
+        bestNeedle = needle;
+      }
+    }
+    if (bestAt < 0) {
+      parent.appendChild(document.createTextNode(rest));
+      return;
+    }
+    if (bestAt > 0) parent.appendChild(document.createTextNode(rest.slice(0, bestAt)));
+    const hit = document.createElement('span');
+    hit.className = 'acp-harness__tok-hit';
+    hit.textContent = bestNeedle;
+    parent.appendChild(hit);
+    rest = rest.slice(bestAt + bestNeedle.length);
+  }
+}
+
+function tok(kind: string, value: string): HTMLElement {
+  const el = document.createElement('span');
+  el.className = `acp-harness__tok-${kind}`;
+  el.textContent = value;
+  return el;
+}
+
+export function renderGrepSection(
+  tool: Pick<ToolPayload, 'command' | 'subject'>,
+  section: { label: string; text: string },
+): HTMLElement | null {
+  const rows = parseGrepDump(section.text);
+  if (!rows) return null;
+  const needles = grepHitNeedles(extractGrepQuery(tool.command) || extractGrepQuery(tool.subject));
+  const block = document.createElement('div');
+  block.className = 'acp-harness__tool-section acp-harness__tool-section--output';
+  const label = document.createElement('div');
+  label.className = 'acp-harness__tool-section-label';
+  label.textContent = section.label;
+  block.appendChild(label);
+  const rich = document.createElement('div');
+  rich.className = 'acp-harness__tool-rich acp-harness__tool-rich--grep';
+  for (const row of rows) {
+    const line = document.createElement('div');
+    const shape = row.path ? 'path' : 'lineno';
+    line.className = `acp-harness__grep-row acp-harness__grep-row--${shape}${row.context ? ' acp-harness__grep-row--ctx' : ''}`;
+    if (row.path) {
+      line.appendChild(tok('path', row.path));
+      line.appendChild(tok('sep', ':'));
+    }
+    line.appendChild(tok('line', row.line));
+    line.appendChild(tok('sep', row.path ? ':' : row.context ? '-' : ':'));
+    const text = document.createElement('span');
+    text.className = row.context ? 'acp-harness__tok-text acp-harness__tok-ctx' : 'acp-harness__tok-text';
+    if (row.context || needles.length === 0) {
+      text.textContent = row.text;
+    } else {
+      appendHighlighted(text, row.text, needles);
+    }
+    line.appendChild(text);
+    rich.appendChild(line);
+  }
+  block.appendChild(rich);
+  return block;
 }

@@ -44,7 +44,7 @@
   justify-content: center;
   cursor: pointer;
   padding: 0;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   transition: color 0.1s ease, border-color 0.1s ease;
 }
 
@@ -64,7 +64,7 @@
   padding: 2px 8px;
   height: 20px;
   outline: none;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   letter-spacing: 0.02em;
 }
 
@@ -136,6 +136,6 @@
   color: var(--krypton-danger, #ff6b6b);
   font-size: 11px;
   border: 1px dashed var(--krypton-danger, #ff6b6b);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(40, 0, 0, 0.3);
 }

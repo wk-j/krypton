@@ -59,7 +59,7 @@ function theme(overrides: {
     },
     chrome: {
       style: 'cyberpunk',
-      border: { width: 1, color: 'rgba(0, 200, 255, 0.3)', radius: 4 },
+      border: { width: 1, color: 'rgba(0, 200, 255, 0.3)', radius: 8 },
       shadow: { color: 'rgba(0, 200, 255, 0.07)', blur: 15, spread: 0, offset_x: 0, offset_y: 0 },
       backdrop: { color: 'rgba(6, 10, 18, 0.5)', blur: 12 },
       titlebar: {
@@ -189,6 +189,7 @@ describe('themeCssProperties', () => {
     expect(props['--krypton-accent-rgb']).toBe('0, 204, 255');
     expect(props['--agent-primary-rgb']).toBe('0, 204, 255');
     expect(props['--agent-primary']).toBe('#0cf');
+    expect(props['--krypton-border-radius']).toBe('8px');
   });
 
   it('drives agent and vault tokens from legacy-radiance green', () => {

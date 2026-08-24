@@ -15,7 +15,7 @@
   flex-direction: column;
   background: var(--krypton-backdrop-color, rgba(6, 10, 18, 0.5));
   border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   overflow: visible;
   box-shadow: 0 0 var(--krypton-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
   /* backdrop-filter removed: on macOS, blur() in a transparent WKWebView causes
@@ -129,7 +129,7 @@
   height: var(--krypton-titlebar-height, 28px);
   padding: 0 12px;
   background: var(--krypton-titlebar-bg, transparent);
-  border-radius: var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px) 0 0;
+  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
   -webkit-user-select: none;
   user-select: none;
   position: relative;
@@ -251,7 +251,7 @@
 /* ─── Window footer AI subscription usage (spec 153) ─── */
 
 .krypton-window__footer {
-  border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
+  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
   container-type: inline-size;
   /* spec 219: magnification of the project badge's drop cap. Declared here so
      the factor is tunable in one place — the right value depends on the rail
@@ -471,7 +471,7 @@
 .krypton-window__lane--active {
   opacity: 1;
   padding: 0 5px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: color-mix(in srgb, var(--krypton-lane-accent, #00c8ff) 12%, transparent);
   letter-spacing: 0.02em;
 }
@@ -654,7 +654,7 @@
   user-select: none;
   position: relative;
   overflow: hidden;
-  border-radius: var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px) 0 0;
+  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
   transition: color 0.15s ease;
 }
 

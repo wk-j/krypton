@@ -131,7 +131,7 @@ Show the action slot when `deriveRailLiveActions(lanes)` is non-empty. A lane is
 └──────────────────────────────────────────┘
 ```
 
-- 320px, 4px radius, 1px full border in the kind accent at the same 28% mix as peek/plan (no glow, no left rail). Kind color lives on the glyph and label.
+- 320px, 8px radius (`--krypton-border-radius`), 1px full border in the kind accent at the same 28% mix as peek/plan (no glow, no left rail). Kind color lives on the glyph and label.
 - Left well: 28×28, no border and no fill, `contain: strict`, one `<svg><use href="#krypton-action-{kind}"/></svg>` plus a CSS overlay that is the animation. The glyph sits on the card; the well is only a clip for the instrument.
 - Kind label: 11px, weight 600, tracked uppercase, kind accent.
 - When the harness has more than one lane, a dim tracked lane name sits on the same row as the kind (`EXECUTE · Claude-2`). Single-lane harnesses stay unlabeled.
@@ -150,7 +150,7 @@ All infinite motion uses DESIGN.md tokens (`--krypton-motion-data-stream` 1.8s l
 | `edit` | `--krypton-warning` | Horizontal write-head: 2px caret sweeps the well L→R, trailing fade. Laser etcher. |
 | `read` | `--krypton-accent` | Three 1px scanlines wipe T→B (read head). |
 | `search` | `--krypton-success` | Reticle `+` with a radar ping ring. |
-| `execute` | `--krypton-accent` | Hex nibble (`A7`/`3C`/…) cycling behind a prompt chevron. |
+| `execute` | `--krypton-accent` | Prompt chevron with a blinking TTY block cursor. |
 | `delete` | `--krypton-danger` | Subject gets a strikethrough that pulses; well is an X that breathes. |
 | `move` | `--krypton-special` | Three chevrons translate L→R inside a clip. |
 | `fetch` | `--krypton-info` | Two incoming dashes enter from the right. |

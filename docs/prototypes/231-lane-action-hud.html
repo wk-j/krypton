@@ -201,13 +201,15 @@
     animation: ping var(--motion-ping);
   }
 
-  /* execute — hex flicker */
-  .hud[data-kind="execute"] .hex {
-    position: absolute; inset: 0;
-    display: grid; place-items: center;
-    font-size: 8px; letter-spacing: 0.08em;
-    color: color-mix(in srgb, var(--cyan) 70%, white);
-    animation: hex var(--motion-ambient);
+  /* execute — blinking TTY caret beside a solid prompt */
+  .hud[data-kind="execute"] svg { z-index: 1; left: 4px; }
+  .hud[data-kind="execute"] .pty {
+    position: absolute;
+    left: 14px; top: 9px;
+    width: 5px; height: 10px;
+    pointer-events: none;
+    background: var(--cyan);
+    animation: caret 1.05s steps(2) infinite;
   }
 
   /* move — chevrons */
@@ -279,10 +281,6 @@
     0%   { transform: scale(0.35); opacity: 0.85; }
     100% { transform: scale(1.15); opacity: 0; }
   }
-  @keyframes hex {
-    0%, 100% { opacity: 0.45; }
-    50%      { opacity: 1; }
-  }
   @keyframes chev {
     0%   { transform: translateX(-12px); }
     100% { transform: translateX(12px); }
@@ -337,7 +335,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .hud, .well, .head, .trail, .scan, .ping, .hex, .chev, .pkt, .bar, .caret, .subject::after {
+    .hud, .well, .head, .trail, .scan, .ping, .pty, .chev, .pkt, .bar, .caret, .subject::after {
       animation: none !important;
     }
   }
@@ -403,9 +401,9 @@
     <div class="hud" data-kind="execute">
       <div class="well" aria-hidden="true">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-          <path d="M4 5 L7 8 L4 11"/><path d="M8.5 11 H12"/>
+          <path d="M4 5 L7 8 L4 11"/>
         </svg>
-        <i class="hex">A7</i>
+        <i class="pty"></i>
       </div>
       <div class="copy">
         <div class="kind-row"><div class="kind">execute</div><div class="lane-name">Grok-1</div></div>
@@ -441,8 +439,8 @@ const kinds = [
     '<circle cx="7" cy="7" r="3.4"/><path d="M9.6 9.6 L13 13"/>',
     '<i class="ping"></i>'],
   ['execute', 'execute', 'cargo test harness-action-hud',
-    '<path d="M4 5 L7 8 L4 11"/><path d="M8.5 11 H12"/>',
-    '<i class="hex">A7</i>'],
+    '<path d="M4 5 L7 8 L4 11"/>',
+    '<i class="pty"></i>'],
   ['delete', 'delete', 'tmp/scratch.rs',
     '<path d="M4 4 L12 12 M12 4 L4 12"/>',
     ''],
@@ -464,8 +462,6 @@ const kinds = [
 ];
 
 const root = document.getElementById('kinds');
-const hex = ['A7', '3C', 'F1', '09', 'BE', '64'];
-let hexI = 0;
 for (const [kind, title, subject, icon, extra] of kinds) {
   const el = document.createElement('div');
   el.className = 'hud';
@@ -480,10 +476,6 @@ for (const [kind, title, subject, icon, extra] of kinds) {
     `</div>`;
   root.appendChild(el);
 }
-setInterval(() => {
-  hexI = (hexI + 1) % hex.length;
-  for (const n of document.querySelectorAll('.hex')) n.textContent = hex[hexI];
-}, 450);
 </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 # 4px Container Radius — Implementation Spec
 
-> Status: Implemented
+> Status: Superseded by [234](./234-eight-pixel-container-radius.md)
 > Date: 2026-08-20
 > Milestone: visual chrome
 
@@ -72,7 +72,8 @@ bevels.
 - 6px status squares stay square. 4px on a 6px box would read as a disc.
 - Cursor-trail teardrop shape is not a container.
 - Loopback artifact pages stay on DESIGN.binance.md radii.
-- Markdown `th`/`td` stay square so collapsed table borders do not double-bevel.
+- Markdown `th`/`td` stay square so internal grid lines do not double-bevel.
+  The `table` element is the rounded container (`border-collapse: separate`).
 - Stacked picker chrome (head / list / empty) uses split top/bottom radii on
   the end pieces; the middle directive list stays square so the seam joins.
 

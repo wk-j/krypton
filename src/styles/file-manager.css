@@ -168,7 +168,7 @@
   color: var(--krypton-focused-accent);
   background: rgba(var(--krypton-accent-rgb), 0.08);
   border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 0 2px;
 }
 
@@ -176,7 +176,7 @@
   background: rgba(var(--krypton-bg-rgb), 0.6);
   border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
   border-left: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 12px;
   overflow-x: auto;
   margin: 0.8em 0;
@@ -221,16 +221,46 @@
 }
 
 .krypton-file-manager__preview-markdown table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
   margin: 0.8em 0;
+  border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .krypton-file-manager__preview-markdown th,
 .krypton-file-manager__preview-markdown td {
-  border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+  border: 0;
+  border-right: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
   padding: 6px 12px;
   text-align: left;
+}
+
+.krypton-file-manager__preview-markdown th:last-child,
+.krypton-file-manager__preview-markdown td:last-child {
+  border-right: none;
+}
+
+.krypton-file-manager__preview-markdown table > :last-child > tr:last-child > * {
+  border-bottom: none;
+}
+
+.krypton-file-manager__preview-markdown table > :first-child > tr:first-child > :first-child {
+  border-top-left-radius: var(--krypton-border-radius, 8px);
+}
+
+.krypton-file-manager__preview-markdown table > :first-child > tr:first-child > :last-child {
+  border-top-right-radius: var(--krypton-border-radius, 8px);
+}
+
+.krypton-file-manager__preview-markdown table > :last-child > tr:last-child > :first-child {
+  border-bottom-left-radius: var(--krypton-border-radius, 8px);
+}
+
+.krypton-file-manager__preview-markdown table > :last-child > tr:last-child > :last-child {
+  border-bottom-right-radius: var(--krypton-border-radius, 8px);
 }
 
 .krypton-file-manager__preview-markdown th {
@@ -260,7 +290,7 @@
   margin: 0 0 1.5em;
   padding: 12px 14px;
   border: 1px solid var(--krypton-focused-accent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(var(--krypton-accent-rgb), 0.04);
   color: var(--krypton-fg);
 }
@@ -337,7 +367,7 @@
   font-size: 0.82em;
   padding: 1px 8px;
   border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-hover));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(var(--krypton-accent-rgb), 0.06);
   color: var(--krypton-focused-accent);
   white-space: nowrap;
@@ -489,7 +519,7 @@
   height: 4px;
   margin: 0 8px;
   background: rgba(var(--krypton-accent-rgb), var(--krypton-opacity-ghost));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   overflow: hidden;
   align-self: center;
   display: flex;
@@ -501,7 +531,7 @@
 .krypton-file-manager__age-fill {
   height: 100%;
   background: rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 0 6px rgba(var(--krypton-accent-rgb), 0.6);
 }
 
@@ -738,7 +768,7 @@
   padding: 6px 8px;
   background: rgba(var(--krypton-accent-rgb), 0.04);
   border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   max-height: 14em;
   overflow-y: auto;
 }
@@ -761,14 +791,14 @@
   font-size: var(--krypton-font-size);
   background: rgba(var(--krypton-accent-rgb), 0.08);
   border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 0 2px;
   color: var(--krypton-focused-accent);
 }
 .krypton-file-manager-ai__response pre {
   background: rgba(var(--krypton-bg-rgb), 0.6);
   border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 6px 8px;
   margin: 0.4em 0;
   overflow-x: auto;
@@ -841,7 +871,7 @@
 
 .krypton-file-manager ::-webkit-scrollbar-thumb {
   background: rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .krypton-file-manager ::-webkit-scrollbar-thumb:hover {

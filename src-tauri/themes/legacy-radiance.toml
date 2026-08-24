@@ -65,7 +65,7 @@ style = "cyberpunk"
 [chrome.border]
 width = 1
 color = "rgba(0, 200, 72, 0.2)"
-radius = 4
+radius = 8
 
 [chrome.shadow]
 color = "rgba(0, 200, 72, 0.05)"

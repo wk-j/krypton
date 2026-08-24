@@ -110,9 +110,8 @@ html[data-theme-scheme='light'] .krypton-window__lane--active {
 /* ── Workspace footer: was a hardcoded navy slab ── */
 
 html[data-theme-scheme='light'] .krypton-workspace-footer {
-  background: color-mix(in srgb, var(--krypton-ink) 8%, var(--krypton-backdrop-color, #e6eff6));
+  background: transparent;
   color: var(--krypton-ink);
-  border-top: 1px solid color-mix(in srgb, var(--krypton-ink) 12%, transparent);
 }
 
 html[data-theme-scheme='light'] .krypton-workspace-footer__segment {

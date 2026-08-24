@@ -179,7 +179,7 @@ Placement:
 
 - The peek lives inside the **lane rail overlay** (`.acp-harness__lane-rail` — see `docs/111-harness-right-rail.md`), anchored top-right of the active lane and stacked below the plan slot.
 - The rail container handles positioning (`position: absolute`, no `backdrop-filter`); the peek itself is a normal flex-flow child of its rail slot.
-- Peek chrome (and the sibling thought / plan / goal / ticket / action-HUD cards) uses `--krypton-border-radius` (4px bevel). The first 4px sweep missed these because they never declared a radius.
+- Peek chrome (and the sibling thought / plan / goal / ticket / action-HUD cards) uses `--krypton-border-radius` (8px bevel). An earlier 4px sweep missed these because they never declared a radius.
 - It must not cover the composer, permission banner, or lane header.
 - It reserves no permanent vertical transcript space (the rail is an overlay, not a reserved column).
 - It must not compete with #104 titlebar HUD; the peek lives inside ACP content, while #104 HUD lives in native window chrome/titlebar.

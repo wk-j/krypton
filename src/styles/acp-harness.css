@@ -218,7 +218,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   padding: 1px 6px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
   font-size: 0.72em;
@@ -237,7 +237,7 @@
 .acp-harness__lane-mode {
   justify-self: start;
   padding: 1px 6px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: color-mix(in oklab, #c77dff 16%, transparent);
   color: color-mix(in oklab, #c77dff 78%, white 22%);
   font-size: 0.72em;
@@ -253,7 +253,7 @@
   flex: 0 0 auto;
   justify-self: start;
   padding: 1px 6px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(255, 170, 102, 0.16);
   color: rgba(255, 200, 150, 0.92);
   font-size: 0.72em;
@@ -274,7 +274,7 @@
   flex: 0 0 auto;
   justify-self: start;
   padding: 1px 6px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
   font-size: 0.72em;
   letter-spacing: 0.04em;
@@ -296,7 +296,7 @@
   display: inline-flex;
   gap: 5px;
   padding: 1px 6px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
   font-size: 0.72em;
   letter-spacing: 0.04em;
@@ -349,7 +349,7 @@
   padding: 14px 16px 16px;
   background: var(--agent-surface-solid, rgba(8, 14, 18, 0.96));
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5),
               0 8px 32px rgba(0, 0, 0, 0.3),
               0 0 30px rgba(var(--krypton-accent-rgb, 0, 200, 255), 0.08),
@@ -414,7 +414,7 @@
   min-height: 16px;
   padding: 0 5px;
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.2);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7);
   font-size: 0.86em;
   line-height: 1.3;
@@ -501,7 +501,7 @@
   flex: 0 0 auto;
   padding: 0 4px;
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
   font-size: 0.76em;
   line-height: 1.3;
@@ -613,7 +613,7 @@
   width: max-content;
   justify-self: start;
   padding: 1px 6px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(184, 166, 255, 0.18);
   color: #cabfff;
   font-size: 0.7em;
@@ -799,7 +799,7 @@
   font-size: 0.92em;
   background: var(--agent-surface-solid, rgba(6, 12, 20, 0.92));
   border: 1px solid color-mix(in srgb, var(--acp-queue-accent) 38%, transparent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
   overflow: hidden;
 }
@@ -850,7 +850,7 @@
   font-size: 0.72em;
   color: var(--acp-queue-accent);
   border: 1px solid color-mix(in srgb, var(--acp-queue-accent) 40%, transparent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 0 4px;
 }
 
@@ -877,7 +877,7 @@
   background:
     var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.28);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.95em;
@@ -996,7 +996,7 @@
   padding: 8px 10px;
   background: var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
   border: 1px solid color-mix(in srgb, var(--acp-action-accent) 28%, transparent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
@@ -1120,6 +1120,12 @@
   display: block;
 }
 
+.acp-harness__action-hud[data-kind="execute"] .acp-harness__action-icon {
+  z-index: 1;
+  left: 4px;
+  right: auto;
+}
+
 .acp-harness__action-hud[data-kind="edit"] .acp-harness__action-fx-head {
   position: absolute;
   top: 4px;
@@ -1159,30 +1165,16 @@
   animation: acp-action-ping var(--krypton-motion-radar-ping);
 }
 
-.acp-harness__action-hex {
+.acp-harness__action-fx-pty {
   position: absolute;
-  inset: 0;
+  left: 14px;
+  top: 9px;
+  width: 5px;
+  height: 10px;
   pointer-events: none;
+  background: var(--acp-action-accent);
+  animation: acp-action-caret 1.05s steps(2) infinite;
 }
-
-.acp-harness__action-hex b {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 8px;
-  letter-spacing: 0.08em;
-  font-weight: 600;
-  opacity: 0;
-  animation: acp-action-hex 5.4s linear infinite;
-}
-
-.acp-harness__action-hex b:nth-child(1) { animation-delay: 0s; }
-.acp-harness__action-hex b:nth-child(2) { animation-delay: 0.9s; }
-.acp-harness__action-hex b:nth-child(3) { animation-delay: 1.8s; }
-.acp-harness__action-hex b:nth-child(4) { animation-delay: 2.7s; }
-.acp-harness__action-hex b:nth-child(5) { animation-delay: 3.6s; }
-.acp-harness__action-hex b:nth-child(6) { animation-delay: 4.5s; }
 
 .acp-harness__action-hud[data-kind="move"] .acp-harness__action-fx-chev {
   position: absolute;
@@ -1274,10 +1266,6 @@
   from { transform: scale(0.35); opacity: 0.85; }
   to { transform: scale(1.15); opacity: 0; }
 }
-@keyframes acp-action-hex {
-  0%, 16.6% { opacity: 1; }
-  16.7%, 100% { opacity: 0; }
-}
 @keyframes acp-action-chev {
   from { transform: translateX(-12px); }
   to { transform: translateX(12px); }
@@ -1324,7 +1312,7 @@
   background:
     var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.22);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.95em;
@@ -1576,7 +1564,7 @@
   background: rgba(0, 0, 0, 0.35);
   position: relative;
   min-width: 48px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   overflow: hidden;
 }
 
@@ -1732,7 +1720,7 @@
   margin-top: 4px;
   padding: 1px 6px;
   border: 1px solid rgba(109, 208, 255, 0.26);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   color: rgba(109, 208, 255, 0.78);
   background: rgba(109, 208, 255, 0.045);
   font-size: 0.78em;
@@ -1765,7 +1753,7 @@
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   background: color-mix(in srgb, var(--acp-accent-shell) 7%, transparent);
   padding: 4px 8px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__msg--shell.acp-harness__msg--failed .acp-harness__msg-body {
@@ -1840,8 +1828,35 @@
   font-size: 0.78em;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 0 5px;
+}
+
+/* spec 235 — chip text+border only, HUD accents. Unknown kinds stay gray. */
+.acp-harness__tool-kind[data-kind="edit"] {
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  border-color: color-mix(in srgb, rgb(var(--krypton-warning-rgb, 232, 197, 71)) 40%, transparent);
+}
+.acp-harness__tool-kind[data-kind="read"],
+.acp-harness__tool-kind[data-kind="execute"] {
+  color: var(--krypton-accent, #00ccff);
+  border-color: color-mix(in srgb, var(--krypton-accent, #00ccff) 40%, transparent);
+}
+.acp-harness__tool-kind[data-kind="search"] {
+  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+  border-color: color-mix(in srgb, rgb(var(--krypton-success-rgb, 57, 255, 127)) 40%, transparent);
+}
+.acp-harness__tool-kind[data-kind="delete"] {
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  border-color: color-mix(in srgb, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 40%, transparent);
+}
+.acp-harness__tool-kind[data-kind="move"] {
+  color: rgb(var(--krypton-special-rgb, 199, 125, 255));
+  border-color: color-mix(in srgb, rgb(var(--krypton-special-rgb, 199, 125, 255)) 40%, transparent);
+}
+.acp-harness__tool-kind[data-kind="fetch"] {
+  color: rgb(var(--krypton-info-rgb, 74, 158, 255));
+  border-color: color-mix(in srgb, rgb(var(--krypton-info-rgb, 74, 158, 255)) 40%, transparent);
 }
 
 .acp-harness__tool-subject {
@@ -1893,8 +1908,7 @@
   flex-direction: column;
   gap: 4px;
   margin-left: calc(1.4ch + 8px);
-  padding: 3px 0 3px 8px;
-  border-left: 2px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
+  padding: 3px 0;
 }
 
 .acp-harness__tool-section {
@@ -1919,7 +1933,7 @@
   font-size: 0.92em;
   line-height: 1.4;
   color: color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86)) 82%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
-  text-shadow: 0 0 6px color-mix(in srgb, var(--acp-tool-section-color, rgba(109, 208, 255, 0.78)) 14%, transparent);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--acp-tool-section-color, transparent) 14%, transparent);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1930,6 +1944,56 @@
   max-width: 96ch;
   font-family: var(--agent-font, monospace);
   font-size: 0.92em;
+}
+
+/* spec 235 — grep/rg structure tokens. Path is warning gold, not cyan. */
+.acp-harness__tok-path {
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acp-harness__tok-line {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  font-variant-numeric: tabular-nums;
+}
+.acp-harness__tok-sep {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
+}
+.acp-harness__tok-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+}
+.acp-harness__tok-hit {
+  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+}
+.acp-harness__tok-ctx,
+.acp-harness__grep-row--ctx .acp-harness__tok-text {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+}
+.acp-harness__grep-row--ctx .acp-harness__tok-path {
+  opacity: 0.72;
+}
+
+.acp-harness__grep-row {
+  display: grid;
+  gap: 0 6px;
+  align-items: baseline;
+  min-width: 0;
+  min-height: 1.35em;
+  font-size: 0.92em;
+  line-height: 1.4;
+}
+.acp-harness__grep-row--path {
+  grid-template-columns: minmax(8ch, 32ch) auto auto auto minmax(0, 1fr);
+}
+.acp-harness__grep-row--lineno {
+  grid-template-columns: auto auto minmax(0, 1fr);
 }
 
 .acp-harness__tool-stat-row,
@@ -1951,7 +2015,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(109, 208, 255, 0.88);
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
 .acp-harness__tool-stat-count {
@@ -1967,7 +2031,7 @@
   overflow: hidden;
   background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__tool-stat-bar::before,
@@ -2005,14 +2069,14 @@
 
 .acp-harness__tool-diff-file {
   margin-top: 4px;
-  color: rgba(109, 208, 255, 0.9);
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
   font-size: 0.84em;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   text-shadow:
-    0 0 6px rgba(109, 208, 255, 0.2),
-    0 0 12px rgba(109, 208, 255, 0.08);
+    0 0 6px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.2),
+    0 0 12px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.08);
   white-space: nowrap;
 }
 
@@ -2079,7 +2143,7 @@
   min-width: 2.6ch;
   padding: 0 4px;
   border: 1px solid currentColor;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58);
   font-size: 0.78em;
   line-height: 1.35;
@@ -2105,7 +2169,13 @@
 }
 
 .acp-harness__tool-section--output {
-  --acp-tool-section-color: var(--agent-user, #6dd0ff);
+  --acp-tool-section-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+}
+
+.acp-harness__tool-section--output .acp-harness__tool-section-text,
+.acp-harness__tool-section--content .acp-harness__tool-section-text {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+  text-shadow: none;
 }
 
 .acp-harness__tool-section--error {
@@ -2121,7 +2191,7 @@
 }
 
 .acp-harness__tool-section--content {
-  --acp-tool-section-color: #b8e0ff;
+  --acp-tool-section-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
 }
 
 .acp-harness__tool-section--default {
@@ -2249,7 +2319,7 @@
   color: var(--agent-accent, #8effb0);
   background: rgba(142, 255, 176, 0.1);
   padding: 0.05em 0.4ch;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   font-family: var(--agent-font, monospace);
 }
 
@@ -2259,7 +2329,7 @@
   line-height: 1.28;
   overflow-x: auto;
   background: rgba(0, 0, 0, 0.46);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__msg-body--markdown pre code {
@@ -2284,7 +2354,7 @@
   margin: 0.12em 0;
   padding: 4px 8px;
   background: color-mix(in srgb, var(--acp-accent-quote) 9%, transparent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   color: #e6dcff;
   font-style: italic;
 }
@@ -2304,7 +2374,10 @@
 }
 
 .acp-harness__msg-body--markdown table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  border-radius: var(--krypton-border-radius, 8px);
   margin: 0.5em 0;
   font-size: 0.95em;
 }
@@ -2312,12 +2385,39 @@
 .acp-harness__msg-body--markdown th,
 .acp-harness__msg-body--markdown td {
   padding: 4px 8px;
-  border: 1px solid rgba(109, 208, 255, 0.25);
+  border: 0;
+  border-right: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
   text-align: left;
 }
 
+.acp-harness__msg-body--markdown th:last-child,
+.acp-harness__msg-body--markdown td:last-child {
+  border-right: none;
+}
+
+.acp-harness__msg-body--markdown table > :last-child > tr:last-child > * {
+  border-bottom: none;
+}
+
+.acp-harness__msg-body--markdown table > :first-child > tr:first-child > :first-child {
+  border-top-left-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg-body--markdown table > :first-child > tr:first-child > :last-child {
+  border-top-right-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg-body--markdown table > :last-child > tr:last-child > :first-child {
+  border-bottom-left-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg-body--markdown table > :last-child > tr:last-child > :last-child {
+  border-bottom-right-radius: var(--krypton-border-radius, 8px);
+}
+
 .acp-harness__msg-body--markdown th {
-  background: rgba(109, 208, 255, 0.12);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
   color: var(--agent-user, #6dd0ff);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -2332,7 +2432,7 @@
   height: auto;
   margin: 0.5em 0;
   border: 1px solid rgba(109, 208, 255, 0.25);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 /* Deterministic references extracted from a sealed assistant message (spec 206). */
@@ -2372,7 +2472,7 @@
   color: inherit;
   background: rgba(109, 208, 255, 0.035);
   border: 0;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   cursor: pointer;
 }
 
@@ -2394,7 +2494,7 @@
   font-weight: 800;
   color: #071013;
   background: var(--agent-user, #6dd0ff);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__resource-kind {
@@ -2452,7 +2552,7 @@
   font-weight: 800;
   color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
   border: 1px solid currentColor;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__resource-git-status[data-status='A'] {
@@ -2519,7 +2619,7 @@
   letter-spacing: 0.04em;
   color: var(--agent-error, #ff6d8a);
   border: 1px dashed rgba(255, 109, 138, 0.5);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__msg--user .acp-harness__msg-label,
@@ -2713,7 +2813,7 @@
   font-size: 0.78em;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 0 5px;
 }
 
@@ -2955,7 +3055,7 @@
 .acp-harness__tab {
   flex: 0 0 auto;
   border: 0;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: transparent;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
   font: inherit;
@@ -2972,7 +3072,7 @@
 }
 
 .acp-harness__composer {
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   min-height: 42px;
   padding: 6px 10px 8px;
   background: linear-gradient(
@@ -3033,7 +3133,7 @@
   max-width: min(260px, 100%);
   padding: 3px 5px 3px 3px;
   border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 36%, transparent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 7%, transparent);
 }
 
@@ -3042,7 +3142,7 @@
   height: 28px;
   object-fit: cover;
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   opacity: 0.9;
 }
 
@@ -3062,7 +3162,7 @@
   height: 18px;
   padding: 0;
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: var(--agent-surface-mid, rgba(2, 5, 10, 0.42));
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
   font: inherit;
@@ -3132,7 +3232,7 @@
   line-height: 1.55;
   background:
     var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
@@ -3203,7 +3303,7 @@
   max-height: 72vh;
   background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
   border: 1px solid rgba(255, 176, 0, 0.32);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   overflow: hidden;
   font-size: 0.82em;
@@ -3254,7 +3354,7 @@
   width: 100%;
   padding: 5px 14px;
   border: 0;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: transparent;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
   font: inherit;
@@ -3326,7 +3426,7 @@
   min-height: 28px;
   padding: 5px 9px;
   border: 1px solid rgba(255, 176, 0, 0.26);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: transparent;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
   font: inherit;
@@ -3560,7 +3660,7 @@
   gap: 4px;
   padding: 4px 6px;
   border: 1px solid rgba(255, 209, 102, 0.28);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(255, 209, 102, 0.06);
 }
 
@@ -3591,7 +3691,7 @@
   font-size: 0.78em;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 0 5px;
 }
 
@@ -3619,7 +3719,7 @@
   align-items: baseline;
   padding: 1px 4px;
   border: 1px solid transparent;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__question-option--focus {
@@ -3861,7 +3961,7 @@
   white-space: nowrap;
   padding: 1px 5px;
   border: 1px solid currentColor;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(0, 0, 0, 0.2);
   font-size: 0.92em;
   line-height: 1.1;
@@ -3995,7 +4095,7 @@
 .acp-harness__rail-peer--inbox {
   padding: 0 3px;
   border: 1px solid rgba(184, 166, 255, 0.45);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   font-size: 0.68em;
 }
 
@@ -4051,7 +4151,7 @@
   padding: 4px 0;
   background: var(--krypton-bg-elev, var(--agent-surface-solid, #0c1018));
   border: 1px solid color-mix(in oklab, #c77dff 30%, transparent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   font-size: 0.78em;
 }
 
@@ -4145,7 +4245,7 @@
   gap: 4px;
   padding: 8px 10px;
   border: 1px solid rgba(255, 209, 102, 0.34);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background:
     linear-gradient(90deg, rgba(255, 209, 102, 0.09), rgba(109, 208, 255, 0.035)),
     rgba(10, 16, 24, 0.9);
@@ -4207,7 +4307,7 @@
 
 .acp-harness__provider-error-chip {
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58);
   padding: 1px 6px;
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
@@ -4244,7 +4344,7 @@
   max-height: 180px;
   overflow: auto;
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(0, 0, 0, 0.24);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
@@ -4262,7 +4362,7 @@
   padding: 4px 0;
   background: var(--krypton-bg-elev, var(--agent-surface-solid, #0c1018));
   border: 1px solid color-mix(in oklab, #c77dff 30%, transparent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   font-size: 0.78em;
 }
 
@@ -4359,7 +4459,7 @@
 }
 .acp-harness__tool-diff {
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 4px 0;
   background: rgba(0, 0, 0, 0.18);
   overflow: hidden;
@@ -4473,7 +4573,7 @@
   background:
     var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.28);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
   font-size: 0.95em;
@@ -4606,7 +4706,7 @@
   color: var(--krypton-window-accent, #0cf);
   letter-spacing: 0.08em;
   border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
-  border-radius: var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px) 0 0;
+  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
   text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
 }
 
@@ -4622,7 +4722,7 @@
   margin: 0;
   padding: 6px 0;
   border-top: none;
-  border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
+  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
   max-height: 50vh;
   overflow-y: auto;
 }
@@ -4665,7 +4765,7 @@
   padding: 14px 16px;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
   border-top: none;
-  border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
+  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
 }
 
 /* ── Directive picker overlay (spec 124) ──────────────────────
@@ -4696,7 +4796,7 @@
 }
 
 .acp-harness__directive-head {
-  border-radius: var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px) 0 0;
+  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -4803,7 +4903,7 @@
   position: relative;
   padding: 0;
   border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
-  border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
+  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
   height: 22vh;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -4875,7 +4975,7 @@
 }
 
 .acp-harness__model-head {
-  border-radius: var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px) 0 0;
+  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -4899,7 +4999,7 @@
   max-height: 52vh;
   overflow-y: auto;
   border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
-  border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
+  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
 }
 
@@ -5021,7 +5121,7 @@
   color: var(--agent-accent, #8effb0);
   letter-spacing: 0.08em;
   border-bottom: 1px solid rgba(142, 255, 176, 0.14);
-  border-radius: var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px) 0 0;
+  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
   text-shadow: 0 0 8px rgba(142, 255, 176, 0.16);
 }
 
@@ -5038,7 +5138,7 @@
   margin: 0;
   padding: 6px 0;
   border-top: none;
-  border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
+  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
   max-height: 56vh;
   overflow-y: auto;
 }
@@ -5093,7 +5193,7 @@
   padding: 14px 16px;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
   border-top: none;
-  border-radius: 0 0 var(--krypton-border-radius, 4px) var(--krypton-border-radius, 4px);
+  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__session-error {
@@ -5112,7 +5212,7 @@
   gap: 4px;
   padding: 6px 8px;
   background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 8%, transparent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__msg--artifact-unavailable .acp-harness__msg-body {
@@ -5138,7 +5238,7 @@
   font-weight: bold;
   color: #0a0e12;
   background: var(--krypton-window-accent, #0cf);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__artifact-glyph {
@@ -5169,7 +5269,7 @@
   margin-top: 4px;
   padding: 4px 6px;
   background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 6%, transparent);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__artifact-redaction-note {

@@ -289,11 +289,7 @@ function wellFx(kind: ActionHudKind): string {
     case 'search':
       return '<i class="acp-harness__action-fx-ping"></i>';
     case 'execute':
-      return (
-        '<span class="acp-harness__action-hex" aria-hidden="true">' +
-        '<b>A7</b><b>3C</b><b>F1</b><b>09</b><b>BE</b><b>64</b>' +
-        '</span>'
-      );
+      return '<i class="acp-harness__action-fx-pty"></i>';
     case 'move':
       return '<i class="acp-harness__action-fx-chev"></i>';
     case 'fetch':

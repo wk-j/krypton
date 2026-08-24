@@ -372,10 +372,11 @@ describe('actionHudMustRemount', () => {
 
 describe('actionHudWellMarkup', () => {
   it('swaps the instrument per kind', () => {
-    expect(actionHudWellMarkup('execute')).toContain('acp-harness__action-hex');
+    expect(actionHudWellMarkup('execute')).toContain('acp-harness__action-fx-pty');
     expect(actionHudWellMarkup('execute')).toContain('href="#krypton-action-execute"');
+    expect(actionHudWellMarkup('execute')).not.toContain('acp-harness__action-hex');
     expect(actionHudWellMarkup('edit')).toContain('acp-harness__action-fx-head');
-    expect(actionHudWellMarkup('edit')).not.toContain('acp-harness__action-hex');
+    expect(actionHudWellMarkup('edit')).not.toContain('acp-harness__action-fx-pty');
   });
 });
 
@@ -404,5 +405,7 @@ describe('action HUD CSS', () => {
     expect(css).toMatch(/\.acp-harness__action-copy\s*\{[\s\S]*?min-width:\s*0/);
     expect(css).toMatch(/\[data-slot="action"\]\s*\{[\s\S]*?max-height:\s*min\(240px/);
     expect(css).toMatch(/\.acp-harness__action-lane\s*\{/);
+    expect(css).toMatch(/\.acp-harness__action-fx-pty\s*\{[\s\S]*?animation:\s*acp-action-caret/);
+    expect(css).not.toMatch(/\.acp-harness__action-hex\b/);
   });
 });

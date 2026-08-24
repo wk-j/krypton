@@ -420,7 +420,7 @@
   padding: 0.15em 0.45em;
   background: rgba(var(--agent-cyan-rgb), 0.06);
   border: 1px solid rgba(var(--agent-cyan-rgb), 0.15);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   color: var(--agent-cyan);
   text-shadow: 0 0 6px rgba(var(--agent-cyan-rgb), 0.2);
 }
@@ -430,7 +430,7 @@
   padding: 10px 14px;
   background: var(--agent-surface-mid);
   border: 1px solid rgba(var(--agent-primary-rgb), 0.12);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(var(--agent-primary-rgb), 0.2) transparent;
@@ -621,7 +621,7 @@
   color: rgba(var(--agent-green-rgb), 0.95);
   background: rgba(var(--agent-green-rgb), 0.08);
   border: 1px solid rgba(var(--agent-green-rgb), 0.3);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   text-shadow: 0 0 6px rgba(var(--agent-green-rgb), 0.3);
 }
 
@@ -763,14 +763,14 @@
   color: var(--agent-gold);
   background: rgba(255, 213, 79, 0.1);
   border: 1px solid rgba(255, 213, 79, 0.35);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .agent-view__msg-review-risk--high {
   color: var(--agent-red);
   background: rgba(var(--agent-red-rgb), 0.1);
   border: 1px solid rgba(var(--agent-red-rgb), 0.5);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.25);
 }
 
@@ -821,7 +821,7 @@
 
 .agent-view__check-actions-button {
   border: 1px solid rgba(var(--agent-primary-rgb), 0.28);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(var(--agent-primary-rgb), 0.055);
   color: var(--agent-primary);
   font-family: var(--agent-font);
@@ -951,7 +951,7 @@
   color: var(--agent-red);
   padding: 8px 12px;
   border: 1px solid rgba(var(--agent-red-rgb), 0.5);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: rgba(var(--agent-red-rgb), 0.04);
   font-size: var(--krypton-font-size);
   white-space: pre-wrap;
@@ -1014,7 +1014,7 @@
   color: var(--agent-red);
   background: rgba(var(--agent-red-rgb), 0.1);
   border: 1px solid rgba(var(--agent-red-rgb), 0.5);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.3);
 }
 
@@ -1072,7 +1072,7 @@
   text-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.4);
   background: rgba(var(--agent-primary-rgb), 0.06);
   border: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   animation: timer-pulse 1.5s ease-in-out infinite;
 }
 
@@ -1201,7 +1201,7 @@
   padding: 4px 0;
   margin: 0 16px;
   border: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: var(--agent-surface-solid);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.5),
@@ -1254,7 +1254,7 @@
   padding: 4px 0;
   margin: 0 16px;
   border: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: var(--agent-surface-solid);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.5),
@@ -1622,7 +1622,7 @@
   max-width: 96px;
   object-fit: cover;
   border: 1px solid rgba(var(--agent-primary-rgb), 0.4);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   opacity: 0.9;
 }
 
@@ -1646,7 +1646,7 @@
   max-width: 96px;
   object-fit: cover;
   border: 1px solid rgba(var(--agent-primary-rgb), 0.3);
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   opacity: 0.85;
 }
 

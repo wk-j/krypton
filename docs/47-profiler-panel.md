@@ -220,7 +220,7 @@ Width: `320px`. Height: auto. Position: fixed top-right with `8px` margin.
   color: var(--krypton-foreground);
   background: var(--krypton-background);
   border: 1px solid var(--krypton-border);
-  border-radius: 4px;
+  border-radius: var(--krypton-border-radius, 8px);
   padding: 8px 12px;
   overflow: hidden;
 }

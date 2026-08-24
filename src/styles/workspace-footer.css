@@ -15,7 +15,7 @@
   min-width: 0;
   padding: 0 12px;
   overflow: hidden;
-  background: rgba(6, 10, 18, 0.9);
+  background: transparent;
   color: var(--krypton-foreground, #c0c8d4);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
@@ -220,7 +220,7 @@
   padding: 0 7px;
   overflow: visible;
   text-overflow: clip;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   border: 1px solid;
   letter-spacing: 0.04em;
   transition: color 160ms, border-color 160ms, background 160ms;
@@ -344,7 +344,7 @@
 .krypton-workspace-footer__attention-pips i {
   width: 3px;
   height: 9px;
-  border-radius: var(--krypton-border-radius, 4px);
+  border-radius: var(--krypton-border-radius, 8px);
   background: currentColor;
   opacity: 0.85;
 }

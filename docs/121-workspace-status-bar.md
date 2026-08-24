@@ -217,6 +217,7 @@ CSS constraints:
 
 - Reuse the existing footer footprint: `position: fixed; left: 0; right: 0; bottom: 0; height: 28px;`.
 - Does not reserve layout space; it overlays the transparent workspace and uses `pointer-events: none`.
+- Background is `transparent` (same as window titlebar / footer chrome). No overlay-tier slab.
 - No `backdrop-filter`.
 - Uses BEM classes and existing theme variables.
 - Text is single-line with priority hiding, `min-width: 0`, and `text-overflow: ellipsis`.
