@@ -65,6 +65,8 @@ CSS fallback is `8px` so a missing theme still bevels.
   markdown `th`/`td` stay square (the `table` is the 8px container);
   stacked picker chrome uses split
   top/bottom radii.
+- Harness composer and the host window while that tab is showing stay `0px`
+  (command line, not a card). See spec 233 edge cases.
 - 8px-wide scrollbar thumbs become fully rounded ends. That is the same
   token, not a second radius.
 

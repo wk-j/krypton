@@ -3045,6 +3045,21 @@
   background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
 }
 
+/* Prompt is a command line, not an 8px container card (agent / acp-view
+   input-rows are already 0px). Square the host window while this tab is
+   showing so the 1px frame around the prompt is not a rounded capsule. */
+.krypton-window:has(.krypton-tab-wrapper:not(.krypton-tab-wrapper--hidden) .acp-harness),
+.krypton-window[data-content-type='acp_harness'] {
+  border-radius: 0;
+}
+
+.krypton-window:has(.krypton-tab-wrapper:not(.krypton-tab-wrapper--hidden) .acp-harness) .krypton-window__titlebar,
+.krypton-window:has(.krypton-tab-wrapper:not(.krypton-tab-wrapper--hidden) .acp-harness) .krypton-window__footer,
+.krypton-window[data-content-type='acp_harness'] .krypton-window__titlebar,
+.krypton-window[data-content-type='acp_harness'] .krypton-window__footer {
+  border-radius: 0;
+}
+
 .acp-harness__tab-strip {
   display: flex;
   gap: 2px;
@@ -3072,7 +3087,7 @@
 }
 
 .acp-harness__composer {
-  border-radius: var(--krypton-border-radius, 8px);
+  border-radius: 0;
   min-height: 42px;
   padding: 6px 10px 8px;
   background: linear-gradient(

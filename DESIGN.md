@@ -58,7 +58,7 @@ typography:
   numeric:
     fontVariant: "tabular-nums"   # mandatory for gauges, timers, counters
 rounded:
-  none: "0px"        # sibling aesthetics only (agent frame, vault diamond)
+  none: "0px"        # sibling aesthetics only (agent frame, vault diamond, harness composer + host window while that tab is showing)
   container: "8px"   # default — every Krypton Dark rectangular container
   subtle: "8px"      # alias of container; toasts and badges use the same bevel
 spacing:
@@ -190,7 +190,7 @@ accessibility:
 forbidden:
   - "backdrop-filter: blur()"    # causes WKWebView freeze on macOS
   - "fully opaque backgrounds"   # break the transparency hierarchy
-  - "radius other than 8px on rectangular containers"  # one bevel; 50% stays circles
+  - "radius other than 8px on rectangular containers"  # one bevel; 50% stays circles; 0px only for sibling aesthetics (agent frame, vault diamond, harness prompt)
   - "single-layer shadow"        # glows must be tight + bloom
   - "hard-coded hex in components" # all colors flow through CSS variables
   - "dashed or dotted outlines"   # focus must be solid + glow

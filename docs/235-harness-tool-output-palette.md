@@ -93,6 +93,8 @@ path-line-text          → context line (rg `-B`/`-A`); path dimmer, no hit
 
 If `extractGrepQuery(command)` finds a quoted pattern, wrap occurrences in `tok-hit` (success). No query → no hit span. Paths / line numbers / separators are always tokens when the shape matches.
 
+Grok's native grep/search tool wraps the dump in `<workspace_result …>…</workspace_result>` and groups hits as a path header followed by `line:text` rows (plus a `Found N matching lines` / `No matches found` preamble). The renderer strips that envelope before the majority check; path headers attach to the following rows. A miss paints `No matches found`, not the XML tags.
+
 Token colors (themeable, no raw hex in the renderer):
 
 | Token | Token path |

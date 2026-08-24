@@ -489,7 +489,8 @@ export function renderReviewCardBody(body: HTMLElement, card: ReviewCardPayload)
 export function renderToolOutput(tool: ToolPayload): HTMLElement {
   const output = document.createElement('div');
   output.className = 'acp-harness__tool-output';
-  for (const section of tool.sections) {
+  for (const raw of tool.sections) {
+    const section = { ...raw, text: unwrapWorkspaceResultDump(raw.text) };
     const git = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
     if (git) {
       output.appendChild(git);
@@ -812,16 +813,50 @@ export function parseGrepLine(line: string): GrepRow | null {
   return null;
 }
 
-/** Majority of non-empty lines must parse, else null (plain `<pre>`). */
+const WORKSPACE_RESULT_RE =
+  /^<workspace_result\b[^>]*>\s*([\s\S]*?)\s*<\/workspace_result>\s*$/i;
+const GREP_FOUND_RE = /^Found \d+ matching lines?$/i;
+const GREP_NONE_RE = /^No matches found$/i;
+
+/** Grok's grep/search tool wraps hits in a `<workspace_result>` envelope.
+ *  Strip it so the inner dump can use the rg-shaped parser (or a clean
+ *  "No matches found" pre) instead of painting the XML tags. */
+export function unwrapWorkspaceResultDump(text: string): string {
+  const trimmed = text.trim();
+  const match = trimmed.match(WORKSPACE_RESULT_RE);
+  if (!match) return text;
+  return (match[1] ?? '').trim();
+}
+
+function isGrepPathHeader(line: string): boolean {
+  return looksLikeGrepPath(line) && !/:\d+/.test(line);
+}
+
+/** Majority of considered lines must parse, else null (plain `<pre>`).
+ *  Host preamble (XML envelope, "Found N", path-only headers) is skipped so
+ *  Grok's grouped dump (`path` then `line:text`) still qualifies. */
 export function parseGrepDump(text: string): GrepRow[] | null {
-  const lines = text.split('\n').filter((line) => line.length > 0);
+  const lines = unwrapWorkspaceResultDump(text)
+    .split('\n')
+    .map((line) => line.replace(/\s+$/, ''))
+    .filter((line) => line.length > 0);
   if (lines.length === 0) return null;
   const rows: GrepRow[] = [];
+  let currentPath: string | null = null;
+  let considered = 0;
   for (const line of lines) {
+    if (GREP_FOUND_RE.test(line) || GREP_NONE_RE.test(line)) continue;
+    if (isGrepPathHeader(line)) {
+      currentPath = line;
+      continue;
+    }
+    considered += 1;
     const row = parseGrepLine(line);
-    if (row) rows.push(row);
+    if (!row) continue;
+    if (!row.path && currentPath) row.path = currentPath;
+    rows.push(row);
   }
-  if (rows.length * 2 <= lines.length) return null;
+  if (considered === 0 || rows.length * 2 <= considered) return null;
   return rows;
 }
 

@@ -12,6 +12,7 @@ import {
   renderToolOutput,
   toolChipKind,
   toolSectionTone,
+  unwrapWorkspaceResultDump,
 } from './harness-tool-render';
 
 interface FakeEl {
@@ -169,6 +170,47 @@ describe('parseGrepLine / parseGrepDump', () => {
     expect(parseGrepDump('cargo test\nrunning 3 tests\nsrc/a.ts:1: hit')).toBeNull();
     expect(parseGrepDump('40: hit\n128: other')).toHaveLength(2);
   });
+
+  it('unwraps Grok workspace_result XML and grouped path headers', () => {
+    const xml =
+      '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
+      'Found 2 matching lines\n' +
+      '/Users/wk/Source/krypton/src/acp/client.ts\n' +
+      '267:          case \'agent_thought_chunk\':\n' +
+      '270:          case \'tool_call\':\n' +
+      '</workspace_result>';
+    const rows = parseGrepDump(xml);
+    expect(rows).toEqual([
+      {
+        path: '/Users/wk/Source/krypton/src/acp/client.ts',
+        line: '267',
+        text: "          case 'agent_thought_chunk':",
+        context: false,
+      },
+      {
+        path: '/Users/wk/Source/krypton/src/acp/client.ts',
+        line: '270',
+        text: "          case 'tool_call':",
+        context: false,
+      },
+    ]);
+  });
+});
+
+describe('unwrapWorkspaceResultDump', () => {
+  it('strips the Grok search envelope and leaves a clean no-match line', () => {
+    expect(
+      unwrapWorkspaceResultDump(
+        '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
+          'No matches found\n' +
+          '</workspace_result>',
+      ),
+    ).toBe('No matches found');
+  });
+
+  it('leaves non-XML dumps alone', () => {
+    expect(unwrapWorkspaceResultDump('src/a.ts:1: hit')).toBe('src/a.ts:1: hit');
+  });
 });
 
 describe('isGrepLikeOutput', () => {
@@ -210,6 +252,26 @@ describe('renderToolBody / renderToolOutput (spec 235)', () => {
     expect(classes).toContain('acp-harness__tok-line');
     expect(classes).toContain('acp-harness__tok-hit');
     expect(classes).not.toContain('acp-harness__tool-section-text');
+  });
+
+  it('does not paint Grok workspace_result XML on a search miss', () => {
+    const out = withDom(() => {
+      return renderToolOutput(payload({
+        kind: 'search',
+        command: '',
+        subject: 'border-radius',
+        sections: [{
+          label: 'stdout',
+          text:
+            '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
+            'No matches found\n' +
+            '</workspace_result>',
+        }],
+      })) as unknown as FakeEl;
+    });
+    const pre = findClass(out, 'acp-harness__tool-section-text');
+    expect(pre?.textContent).toBe('No matches found');
+    expect(pre?.textContent).not.toContain('workspace_result');
   });
 
   it('falls back to a plain pre when the dump is not grep-shaped', () => {

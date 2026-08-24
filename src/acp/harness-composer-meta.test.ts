@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -91,5 +94,17 @@ describe('renderStatusSegments', () => {
 
   it('renders nothing for no segments', () => {
     expect(renderStatusSegments([])).toBe('');
+  });
+});
+
+describe('composer prompt geometry', () => {
+  it('keeps the prompt command-line square, not an 8px card', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+      'utf8',
+    );
+    const block = css.match(/\.acp-harness__composer\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(block).toMatch(/border-radius:\s*0/);
+    expect(block).not.toMatch(/--krypton-border-radius/);
   });
 });

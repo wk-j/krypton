@@ -76,6 +76,10 @@ bevels.
   The `table` element is the rounded container (`border-collapse: separate`).
 - Stacked picker chrome (head / list / empty) uses split top/bottom radii on
   the end pieces; the middle directive list stays square so the seam joins.
+- The ACP Harness composer is a command line, not a container card: `.acp-harness__composer`
+  stays `border-radius: 0` (same as `.agent-view__input-row` / `.acp-view__input-row`).
+  While the harness tab is showing, the host window / titlebar / footer are also
+  `0px` so the 1px frame around the prompt is not an 8px capsule.
 
 ## Out of Scope
 
