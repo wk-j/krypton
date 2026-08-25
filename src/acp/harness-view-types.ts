@@ -214,6 +214,8 @@ export interface ToolPayload {
   subject: string;
   command: string;
   result: string;
+  /** Structured / peeled shell exit. Null when the card is not a command dump. */
+  exitCode?: number | null;
   sections: Array<{ label: string; text: string }>;
   diffs: Array<{ path: string; oldText: string; newText: string }>;
   startedAt?: number;

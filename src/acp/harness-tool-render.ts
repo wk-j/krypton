@@ -142,14 +142,53 @@ export function permissionCommandIsHighRisk(
   return isExecuteLikeToolCall(call);
 }
 
-export function extractToolExit(rawOutput: unknown): string {
-  if (typeof rawOutput !== 'object' || !rawOutput) return '';
+export function extractToolExitCode(rawOutput: unknown): number | null {
+  if (typeof rawOutput !== 'object' || !rawOutput) return null;
   const record = rawOutput as Record<string, unknown>;
   for (const key of ['exitCode', 'exit_code', 'code']) {
     const value = record[key];
-    if (typeof value === 'number') return value === 0 ? '' : `exit ${value}`;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
   }
-  return '';
+  return null;
+}
+
+export function extractToolExit(rawOutput: unknown): string {
+  const code = extractToolExitCode(rawOutput);
+  if (code === null || code === 0) return '';
+  return `exit ${code}`;
+}
+
+const EXIT_PREFIX_RE = /^exit:\s*(-?\d+)[ \t]*(?:\r?\n|$)/i;
+
+/** Grok Bash `output_for_prompt` (and siblings) prefix the dump with `exit: N`. */
+export function peelExitPrefix(text: string): { code: number; rest: string } | null {
+  const match = text.match(EXIT_PREFIX_RE);
+  if (!match) return null;
+  const code = Number(match[1]);
+  if (!Number.isFinite(code)) return null;
+  return { code, rest: text.slice(match[0].length) };
+}
+
+function peelSectionExit(
+  sections: Array<{ label: string; text: string }>,
+  known: number | null,
+): { exitCode: number | null; sections: Array<{ label: string; text: string }> } {
+  let exitCode = known;
+  const out: Array<{ label: string; text: string }> = [];
+  for (const section of sections) {
+    if (!/^(stdout|output)$/i.test(section.label)) {
+      out.push(section);
+      continue;
+    }
+    const peeled = peelExitPrefix(section.text);
+    if (!peeled) {
+      out.push(section);
+      continue;
+    }
+    if (exitCode === null) exitCode = peeled.code;
+    out.push({ label: section.label, text: peeled.rest });
+  }
+  return { exitCode, sections: out };
 }
 
 export function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: string }> {
@@ -408,12 +447,17 @@ export function buildToolPayload(
   const path = extractModifiedPath(call);
   const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
   const subject = command || path || cleanToolTitle(call.title, kind) || '';
-  const exit = extractToolExit(call.rawOutput);
-  const result = exit || (status === 'failed' ? 'failed' : '');
   const raw = rawOutputSections(call.rawOutput);
-  const sections = raw.length > 0 ? raw : contentOutputSections(call.content);
+  const peeled = peelSectionExit(
+    raw.length > 0 ? raw : contentOutputSections(call.content),
+    extractToolExitCode(call.rawOutput),
+  );
+  const exitCode = peeled.exitCode;
+  const result = (exitCode !== null && exitCode !== 0)
+    ? `exit ${exitCode}`
+    : (status === 'failed' ? 'failed' : '');
   const sectionLineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
-  const trimmed = sections
+  const trimmed = peeled.sections
     .map((s) => ({
       label: s.label,
       text: boundedOutputLines(normalizeToolDump(s.text, kind), sectionLineLimit),
@@ -421,7 +465,19 @@ export function buildToolPayload(
     .filter((s) => s.text)
     .slice(0, 4);
   const diffs = extractToolDiffs(call.content);
-  return { glyph: statusGlyph(status), status, kind, subject, command, result, sections: trimmed, diffs, startedAt, endedAt };
+  return {
+    glyph: statusGlyph(status),
+    status,
+    kind,
+    subject,
+    command,
+    result,
+    exitCode,
+    sections: trimmed,
+    diffs,
+    startedAt,
+    endedAt,
+  };
 }
 
 export function isTerminalToolStatus(status: string): boolean {
@@ -493,7 +549,7 @@ export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
     body.appendChild(renderArtifactRedaction(tool.artifactRedaction));
     return;
   }
-  if (tool.sections.length > 0) {
+  if (tool.sections.length > 0 || shouldRenderExecuteExit(tool)) {
     body.appendChild(renderToolOutput(tool));
   }
   if (tool.diffs.length > 0) {
@@ -623,11 +679,45 @@ export function renderReviewCardBody(body: HTMLElement, card: ReviewCardPayload)
   body.appendChild(action);
 }
 
+export function shouldRenderExecuteExit(tool: Pick<ToolPayload, 'kind' | 'exitCode'>): boolean {
+  return tool.exitCode != null && toolChipKind(tool.kind) === 'execute';
+}
+
+export function renderToolExit(code: number): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'acp-harness__tool-exit';
+  row.dataset.status = code === 0 ? 'ok' : 'fail';
+  const label = document.createElement('span');
+  label.className = 'acp-harness__tool-exit-label';
+  label.textContent = 'exit';
+  const badge = document.createElement('span');
+  badge.className = 'acp-harness__tool-exit-code';
+  badge.textContent = String(code);
+  row.appendChild(label);
+  row.appendChild(badge);
+  return row;
+}
+
 export function renderToolOutput(tool: ToolPayload): HTMLElement {
   const output = document.createElement('div');
   output.className = 'acp-harness__tool-output';
+  let exitCode = tool.exitCode ?? null;
+  const painted: Array<{ label: string; text: string }> = [];
   for (const raw of tool.sections) {
-    const section = { ...raw, text: normalizeToolDump(raw.text, tool.kind) };
+    let text = normalizeToolDump(raw.text, tool.kind);
+    if (/^(stdout|output)$/i.test(raw.label)) {
+      const peeled = peelExitPrefix(text);
+      if (peeled) {
+        if (exitCode === null) exitCode = peeled.code;
+        text = peeled.rest;
+      }
+    }
+    if (text.trim()) painted.push({ label: raw.label, text });
+  }
+  if (exitCode !== null && toolChipKind(tool.kind) === 'execute') {
+    output.appendChild(renderToolExit(exitCode));
+  }
+  for (const section of painted) {
     const git = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
     if (git) {
       output.appendChild(git);

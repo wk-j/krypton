@@ -194,6 +194,30 @@
   .next .hunk { color: rgba(214, 184, 255, 0.82); }
   .diff-line { display: grid; grid-template-columns: 3.2ch minmax(0, 1fr); gap: 6px; font-size: 0.92em; line-height: 1.35; }
   .mark { justify-self: end; color: var(--ink-ghost); font-size: 0.78em; font-weight: 700; }
+  .exit {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .exit-label {
+    font-size: 0.7em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .exit-code {
+    min-width: 2.6ch;
+    padding: 0 5px;
+    border: 1px solid currentColor;
+    border-radius: var(--radius);
+    font-size: 0.78em;
+    font-weight: 700;
+    line-height: 1.35;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .exit.ok .exit-code { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+  .exit.fail .exit-code { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
 </style>
 </head>
 <body>
@@ -352,9 +376,25 @@ return "-";</pre>
           <span class="timer">1.2s</span>
         </div>
         <div class="out">
+          <div class="exit fail"><span class="exit-label">exit</span><span class="exit-code">1</span></div>
           <div class="label error">stderr</div>
           <pre class="pre error">error[E0308]: mismatched types
    --> src/acp/harness-tool-render.ts:501:3</pre>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="head">
+          <span class="glyph">✓</span>
+          <span class="kind" data-kind="execute">execute</span>
+          <span class="subject">git commit -m "feat(palette): Ctrl+N/P"</span>
+          <span class="timer">80ms</span>
+        </div>
+        <div class="out">
+          <div class="exit ok"><span class="exit-label">exit</span><span class="exit-code">0</span></div>
+          <div class="label output">output</div>
+          <pre class="pre output">[master 599d8d8] feat(palette): navigate results with Ctrl+N/P
+ 3 files changed, 20 insertions(+), 5 deletions(-)</pre>
         </div>
       </div>
 

@@ -5,12 +5,15 @@ import {
   GROK_RAW_OUTPUT_TYPES,
   buildToolPayload,
   extractGrepQuery,
+  extractToolExit,
+  extractToolExitCode,
   formatGrokFileMatches,
   grepHitNeedles,
   grokRawOutputSections,
   isGrepLikeOutput,
   parseGrepDump,
   parseGrepLine,
+  peelExitPrefix,
   renderGrepSection,
   renderToolBody,
   renderToolOutput,
@@ -27,6 +30,7 @@ interface FakeEl {
   dataset: Record<string, string>;
   children: FakeEl[];
   appendChild(child: FakeEl): FakeEl;
+  append(...children: FakeEl[]): FakeEl;
 }
 
 function makeFakeEl(tag: string): FakeEl {
@@ -39,6 +43,10 @@ function makeFakeEl(tag: string): FakeEl {
     appendChild(child: FakeEl): FakeEl {
       this.children.push(child);
       return child;
+    },
+    append(...children: FakeEl[]): FakeEl {
+      this.children.push(...children);
+      return this;
     },
   };
 }
@@ -392,6 +400,125 @@ describe('renderToolBody / renderToolOutput (spec 235)', () => {
     const ctx = findClass(section, 'acp-harness__grep-row--ctx');
     expect(ctx).toBeTruthy();
     expect(collectClasses(ctx!).join(' ')).not.toContain('acp-harness__tok-hit');
+  });
+});
+
+describe('peelExitPrefix / extractToolExitCode', () => {
+  it('peels a Grok Bash exit prefix', () => {
+    expect(peelExitPrefix('exit: 0\n[master abc] msg')).toEqual({
+      code: 0,
+      rest: '[master abc] msg',
+    });
+    expect(peelExitPrefix('exit: 1\n')).toEqual({ code: 1, rest: '' });
+    expect(peelExitPrefix('exit: 0')).toEqual({ code: 0, rest: '' });
+    expect(peelExitPrefix('src/a.ts:1: hit')).toBeNull();
+  });
+
+  it('reads structured exit_code and hides zero on the head result', () => {
+    expect(extractToolExitCode({ exit_code: 0 })).toBe(0);
+    expect(extractToolExitCode({ exit_code: 1 })).toBe(1);
+    expect(extractToolExitCode({ output: 'x' })).toBeNull();
+    expect(extractToolExit({ exit_code: 0 })).toBe('');
+    expect(extractToolExit({ exit_code: 2 })).toBe('exit 2');
+  });
+});
+
+describe('execute exit badge (spec 235)', () => {
+  it('paints a success chip and strips the dump prefix', () => {
+    const out = withDom(() => {
+      return renderToolOutput(payload({
+        kind: 'execute',
+        command: 'git commit -m x',
+        subject: 'git commit -m x',
+        sections: [{
+          label: 'output',
+          text:
+            'exit: 0\n[master 599d8d8] feat(palette): navigate results with Ctrl+N/P\n' +
+            ' 3 files changed, 20 insertions(+), 5 deletions(-)',
+        }],
+      })) as unknown as FakeEl;
+    });
+    const chip = findClass(out, 'acp-harness__tool-exit');
+    expect(chip?.dataset.status).toBe('ok');
+    expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('0');
+    expect(findClass(out, 'acp-harness__tool-exit-label')?.textContent).toBe('exit');
+    const pre = findClass(out, 'acp-harness__tool-section-text');
+    expect(pre?.textContent).toContain('[master 599d8d8]');
+    expect(pre?.textContent).not.toContain('exit: 0');
+  });
+
+  it('paints a fail chip for non-zero', () => {
+    const out = withDom(() => {
+      return renderToolOutput(payload({
+        kind: 'execute',
+        command: 'tsc --noEmit',
+        exitCode: 1,
+        sections: [{ label: 'output', text: 'error TS2322: Type string is not assignable' }],
+      })) as unknown as FakeEl;
+    });
+    expect(findClass(out, 'acp-harness__tool-exit')?.dataset.status).toBe('fail');
+    expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('1');
+    expect(findClass(out, 'acp-harness__tool-section-text')?.textContent).toContain('error TS2322');
+  });
+
+  it('does not chip a search dump that happens to carry exit_code', () => {
+    const out = withDom(() => {
+      return renderToolOutput(payload({
+        kind: 'search',
+        exitCode: 1,
+        sections: [{ label: 'stdout', text: 'No matches found' }],
+      })) as unknown as FakeEl;
+    });
+    expect(findClass(out, 'acp-harness__tool-exit')).toBeUndefined();
+  });
+
+  it('peels exit before git-status so porcelain still goes rich', () => {
+    const out = withDom(() => {
+      return renderToolOutput(payload({
+        kind: 'execute',
+        command: 'git status --short',
+        subject: 'git status --short',
+        sections: [{ label: 'output', text: 'exit: 0\nM  src/a.ts\n?? b.ts' }],
+      })) as unknown as FakeEl;
+    });
+    expect(collectClasses(out).join(' ')).toContain('acp-harness__tool-rich--gitstatus');
+    expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('0');
+    expect(JSON.stringify(out)).not.toContain('exit: 0');
+  });
+
+  it('buildToolPayload peels Grok Bash output_for_prompt before the line cap', () => {
+    const tool = buildToolPayload({
+      toolCallId: 'b1',
+      title: 'git commit',
+      kind: 'execute',
+      rawInput: { command: 'git commit -m x' },
+      rawOutput: {
+        type: 'Bash',
+        exit_code: 0,
+        output_for_prompt:
+          'exit: 0\n[master 599d8d8] feat(palette): navigate results with Ctrl+N/P\n' +
+          ' 3 files changed, 20 insertions(+), 5 deletions(-)\n',
+      },
+    }, 'completed');
+    expect(tool.exitCode).toBe(0);
+    expect(tool.result).toBe('');
+    expect(tool.sections[0]?.text).toContain('[master 599d8d8]');
+    expect(tool.sections[0]?.text).not.toContain('exit: 0');
+  });
+
+  it('still paints a chip when the dump is only the exit line', () => {
+    const el = withDom(() => {
+      const body = makeFakeEl('div');
+      renderToolBody(body as unknown as HTMLElement, payload({
+        kind: 'execute',
+        command: 'false',
+        exitCode: 1,
+        sections: [],
+      }));
+      return body;
+    });
+    expect(findClass(el, 'acp-harness__tool-exit-code')?.textContent).toBe('1');
+    expect(findClass(el, 'acp-harness__tool-exit')?.dataset.status).toBe('fail');
   });
 });
 

@@ -1911,6 +1911,44 @@
   padding: 3px 0;
 }
 
+/* spec 235 — Grok `exit: N` prefix becomes a kind-chip badge, not dump text. */
+.acp-harness__tool-exit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.acp-harness__tool-exit-label {
+  font-size: 0.7em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+}
+
+.acp-harness__tool-exit-code {
+  flex: none;
+  min-width: 2.6ch;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: var(--krypton-border-radius, 8px);
+  font-size: 0.78em;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.acp-harness__tool-exit[data-status="ok"] .acp-harness__tool-exit-code {
+  color: var(--agent-accent, #8effb0);
+  border-color: color-mix(in srgb, var(--agent-accent, #8effb0) 40%, transparent);
+}
+
+.acp-harness__tool-exit[data-status="fail"] .acp-harness__tool-exit-code {
+  color: var(--agent-error, #ff6b8b);
+  border-color: color-mix(in srgb, var(--agent-error, #ff6b8b) 40%, transparent);
+}
+
 .acp-harness__tool-section {
   display: flex;
   flex-direction: column;

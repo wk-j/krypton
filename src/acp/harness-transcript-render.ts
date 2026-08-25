@@ -278,6 +278,7 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
       item.tool.subject,
       item.tool.command,
       item.tool.result,
+      item.tool.exitCode == null ? '' : String(item.tool.exitCode),
       item.tool.sections.map((section) => `${section.label}:${section.text}`).join('\u001f'),
       item.tool.diffs.map((diff) => `${diff.path}:${diff.oldText}:${diff.newText}`).join('\u001f'),
     ].join('\u001e')
