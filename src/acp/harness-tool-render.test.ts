@@ -2,14 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import type { ToolPayload } from './harness-view-types';
 import {
+  GROK_RAW_OUTPUT_TYPES,
+  buildToolPayload,
   extractGrepQuery,
+  formatGrokFileMatches,
   grepHitNeedles,
+  grokRawOutputSections,
   isGrepLikeOutput,
   parseGrepDump,
   parseGrepLine,
   renderGrepSection,
   renderToolBody,
   renderToolOutput,
+  stripGrokReadLineAnchors,
   toolChipKind,
   toolSectionTone,
   unwrapWorkspaceResultDump,
@@ -195,6 +200,31 @@ describe('parseGrepLine / parseGrepDump', () => {
       },
     ]);
   });
+
+  it('skips Grok "Found at least N matching lines" and a truncated envelope', () => {
+    const xml =
+      '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
+      'Found at least 67 matching lines\n' +
+      '/Users/wk/Source/krypton/src/perspective-fix.ts\n' +
+      '146:        ctrlKey: me.ctrlKey,\n' +
+      '/Users/wk/Source/krypton/src/quick-overview.ts\n' +
+      '158:    if (action && !e.metaKey && !e.ctrlKey) {';
+    const rows = parseGrepDump(xml);
+    expect(rows).toEqual([
+      {
+        path: '/Users/wk/Source/krypton/src/perspective-fix.ts',
+        line: '146',
+        text: '        ctrlKey: me.ctrlKey,',
+        context: false,
+      },
+      {
+        path: '/Users/wk/Source/krypton/src/quick-overview.ts',
+        line: '158',
+        text: '    if (action && !e.metaKey && !e.ctrlKey) {',
+        context: false,
+      },
+    ]);
+  });
 });
 
 describe('unwrapWorkspaceResultDump', () => {
@@ -210,6 +240,31 @@ describe('unwrapWorkspaceResultDump', () => {
 
   it('leaves non-XML dumps alone', () => {
     expect(unwrapWorkspaceResultDump('src/a.ts:1: hit')).toBe('src/a.ts:1: hit');
+  });
+
+  it('strips the open tag when the line cap dropped the close tag', () => {
+    expect(
+      unwrapWorkspaceResultDump(
+        '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
+          'Found at least 67 matching lines\n' +
+          '/Users/wk/Source/krypton/src/a.ts\n' +
+          '10:  hit',
+      ),
+    ).toBe('Found at least 67 matching lines\n/Users/wk/Source/krypton/src/a.ts\n10:  hit');
+  });
+});
+
+describe('stripGrokReadLineAnchors', () => {
+  it('drops first-and-every-10th-line N→ prefixes', () => {
+    expect(stripGrokReadLineAnchors('1→---\nname: karpathy-guidelines\n10→license: MIT')).toBe(
+      '---\nname: karpathy-guidelines\nlicense: MIT',
+    );
+  });
+
+  it('leaves ordinary file text alone', () => {
+    expect(stripGrokReadLineAnchors('export function foo() {\n  return 1;\n}')).toBe(
+      'export function foo() {\n  return 1;\n}',
+    );
   });
 });
 
@@ -274,6 +329,47 @@ describe('renderToolBody / renderToolOutput (spec 235)', () => {
     expect(pre?.textContent).not.toContain('workspace_result');
   });
 
+  it('does not paint a truncated Grok search envelope', () => {
+    const out = withDom(() => {
+      return renderToolOutput(payload({
+        kind: 'search',
+        command: '',
+        subject: 'ctrlKey',
+        sections: [{
+          label: 'stdout',
+          text:
+            '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
+            'Found at least 67 matching lines\n' +
+            '/Users/wk/Source/krypton/src/perspective-fix.ts\n' +
+            '146:        ctrlKey: me.ctrlKey,\n' +
+            '/Users/wk/Source/krypton/src/quick-overview.ts\n' +
+            '158:    if (action && !e.metaKey && !e.ctrlKey) {',
+        }],
+      })) as unknown as FakeEl;
+    });
+    const classes = collectClasses(out).join(' ');
+    expect(classes).toContain('acp-harness__tool-rich--grep');
+    expect(classes).not.toContain('acp-harness__tool-section-text');
+    expect(JSON.stringify(out)).not.toContain('workspace_result');
+  });
+
+  it('does not paint Grok read_file N→ line anchors', () => {
+    const out = withDom(() => {
+      return renderToolOutput(payload({
+        kind: 'read',
+        command: '',
+        subject: 'SKILL.md',
+        sections: [{
+          label: 'content',
+          text: '1→---\nname: karpathy-guidelines\n10→license: MIT',
+        }],
+      })) as unknown as FakeEl;
+    });
+    const pre = findClass(out, 'acp-harness__tool-section-text');
+    expect(pre?.textContent).toBe('---\nname: karpathy-guidelines\nlicense: MIT');
+    expect(pre?.textContent).not.toContain('→');
+  });
+
   it('falls back to a plain pre when the dump is not grep-shaped', () => {
     const out = withDom(() => {
       return renderToolOutput(payload({
@@ -296,5 +392,200 @@ describe('renderToolBody / renderToolOutput (spec 235)', () => {
     const ctx = findClass(section, 'acp-harness__grep-row--ctx');
     expect(ctx).toBeTruthy();
     expect(collectClasses(ctx!).join(' ')).not.toContain('acp-harness__tok-hit');
+  });
+});
+
+describe('buildToolPayload Grok dumps', () => {
+  it('unwraps search XML before the 6-line cap so the close tag is not required', () => {
+    const lines = Array.from({ length: 20 }, (_, i) => `/Users/wk/Source/krypton/src/f${i}.ts\n${i}:  hit`);
+    const tool = buildToolPayload({
+      toolCallId: 't1',
+      title: 'SEARCH',
+      kind: 'search',
+      rawOutput: {
+        stdout:
+          '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
+          'Found at least 67 matching lines\n' +
+          lines.join('\n') +
+          '\n</workspace_result>',
+      },
+    }, 'completed');
+    expect(tool.sections[0]?.text).not.toContain('workspace_result');
+    expect(tool.sections[0]?.text).toContain('src/f0.ts');
+    expect(tool.sections[0]?.text.split('\n').length).toBeLessThanOrEqual(6);
+  });
+
+  it('strips read_file line anchors before paint', () => {
+    const tool = buildToolPayload({
+      toolCallId: 't2',
+      title: 'READ',
+      kind: 'read',
+      content: [{
+        type: 'content',
+        content: { type: 'text', text: '1→---\nname: karpathy-guidelines' },
+      }],
+    }, 'completed');
+    expect(tool.sections[0]?.text).toBe('---\nname: karpathy-guidelines');
+  });
+});
+
+describe('grokRawOutputSections — every rawOutput.type', () => {
+  const xml = '<workspace_result workspace_path="/Users/wk/Source/krypton">\nNo matches found\n</workspace_result>';
+  const xmlBytes = Array.from(new TextEncoder().encode(xml));
+
+  it('returns null for unknown types so the generic walker still runs', () => {
+    expect(grokRawOutputSections({ type: 'BrandNewGrokTool', stdout: 'x' })).toBeNull();
+    expect(grokRawOutputSections({ output: 'plain' })).toBeNull();
+  });
+
+  it('handles every recorded Grok type without falling through', () => {
+    for (const type of GROK_RAW_OUTPUT_TYPES) {
+      expect(grokRawOutputSections({ type }), `unhandled Grok type ${type}`).not.toBeNull();
+    }
+  });
+
+  it('ReadFile strips via FileContent and FileNotFound, never ImageContent bytes', () => {
+    expect(grokRawOutputSections({
+      type: 'ReadFile',
+      FileContent: { content: '1→---\nname: skill' },
+    })).toEqual([{ label: 'content', text: '1→---\nname: skill' }]);
+    expect(grokRawOutputSections({
+      type: 'ReadFile',
+      FileNotFound: 'Error: missing.md does not exist.',
+    })).toEqual([{ label: 'message', text: 'Error: missing.md does not exist.' }]);
+    expect(grokRawOutputSections({
+      type: 'ReadFile',
+      ImageContent: { data: 'iVBORw0KGgoAAAANSUhEUg==' },
+    })).toEqual([]);
+  });
+
+  it('GrepSearch prefers file_matches over XML stdout', () => {
+    const hits = grokRawOutputSections({
+      type: 'GrepSearch',
+      stdout: xmlBytes,
+      stderr: [],
+      exit_code: 0,
+      match_count: 1,
+      file_matches: [{
+        path: '/Users/wk/Source/krypton/src/a.ts',
+        matches: [{ line_number: 146, content: '        ctrlKey: me.ctrlKey,' }],
+      }],
+    });
+    expect(hits).toEqual([{
+      label: 'stdout',
+      text: '/Users/wk/Source/krypton/src/a.ts\n146:        ctrlKey: me.ctrlKey,',
+    }]);
+    expect(hits?.[0]?.text).not.toContain('workspace_result');
+  });
+
+  it('GrepSearch empty matches decodes XML stdout for unwrap', () => {
+    expect(grokRawOutputSections({
+      type: 'GrepSearch',
+      stdout: xmlBytes,
+      stderr: [],
+      exit_code: 1,
+      match_count: 0,
+      file_matches: [],
+    })).toEqual([{ label: 'stdout', text: xml }]);
+  });
+
+  it('ListDir / WebFetch read Content.content', () => {
+    expect(grokRawOutputSections({
+      type: 'ListDir',
+      Content: { content: '- /docs/\n  - 15-command-palette.md' },
+    })).toEqual([{ label: 'content', text: '- /docs/\n  - 15-command-palette.md' }]);
+    expect(grokRawOutputSections({
+      type: 'WebFetch',
+      Content: { url: 'https://example.com', content: '# Title\nbody' },
+    })).toEqual([{ label: 'content', text: '# Title\nbody' }]);
+  });
+
+  it('Bash prefers output_for_prompt over byte output', () => {
+    expect(grokRawOutputSections({
+      type: 'Bash',
+      output: [62, 32, 116, 115, 99],
+      output_for_prompt: 'exit: 0\n\n> tsc --noEmit\n',
+    })).toEqual([{ label: 'output', text: 'exit: 0\n\n> tsc --noEmit\n' }]);
+  });
+
+  it('MCP paints OkayOutput and Error, SearchReplace defers to the diff', () => {
+    expect(grokRawOutputSections({
+      type: 'MCP',
+      output: { OkayOutput: '{ "recorded": true }' },
+    })).toEqual([{ label: 'output', text: '{ "recorded": true }' }]);
+    expect(grokRawOutputSections({
+      type: 'MCP',
+      is_error: true,
+      output: { Error: 'ranges[0].file must be a non-empty string' },
+    })).toEqual([{ label: 'error', text: 'ranges[0].file must be a non-empty string' }]);
+    expect(grokRawOutputSections({ type: 'SearchReplace', EditsApplied: { old_string: 'a', new_string: 'b' } })).toEqual([]);
+  });
+
+  it('covers Todo, Text, KillTask, ImageGen, TaskOutput, BackgroundTaskStarted, SearchTool', () => {
+    expect(grokRawOutputSections({
+      type: 'Todo',
+      TodosUpdated: { summary_for_prompt: '- [in_progress] write tests' },
+    })?.[0]?.text).toContain('write tests');
+    expect(grokRawOutputSections({
+      type: 'Text',
+      text: 'Subagent started in background.',
+    })?.[0]?.text).toBe('Subagent started in background.');
+    expect(grokRawOutputSections({
+      type: 'KillTask',
+      Result: { message: 'Task was terminated successfully' },
+    })?.[0]?.text).toBe('Task was terminated successfully');
+    expect(grokRawOutputSections({
+      type: 'ImageGen',
+      path: '/tmp/images/1.jpg',
+    })?.[0]?.text).toBe('/tmp/images/1.jpg');
+    expect(grokRawOutputSections({
+      type: 'TaskOutput',
+      Result: { output: 'cargo test ok' },
+    })?.[0]?.text).toBe('cargo test ok');
+    expect(grokRawOutputSections({
+      type: 'BackgroundTaskStarted',
+      summary: 'moved to background',
+    })?.[0]?.text).toBe('moved to background');
+    expect(grokRawOutputSections({
+      type: 'SearchTool',
+      content: '{ "results": [] }',
+    })?.[0]?.text).toBe('{ "results": [] }');
+  });
+
+  it('buildToolPayload paints structured grep without XML and strips read anchors', () => {
+    const grep = buildToolPayload({
+      toolCallId: 'g1',
+      title: 'grep',
+      kind: 'search',
+      rawOutput: {
+        type: 'GrepSearch',
+        stdout: xmlBytes,
+        file_matches: [{
+          path: '/Users/wk/Source/krypton/src/a.ts',
+          matches: [{ line_number: 10, content: 'hit' }],
+        }],
+      },
+    }, 'completed');
+    expect(grep.sections[0]?.text).toContain('src/a.ts');
+    expect(grep.sections[0]?.text).toContain('10:hit');
+    expect(grep.sections[0]?.text).not.toContain('workspace_result');
+
+    const read = buildToolPayload({
+      toolCallId: 'r1',
+      title: 'READ',
+      kind: 'read',
+      rawOutput: {
+        type: 'ReadFile',
+        FileContent: { content: '1→---\nname: skill' },
+      },
+    }, 'completed');
+    expect(read.sections[0]?.text).toBe('---\nname: skill');
+  });
+});
+
+describe('formatGrokFileMatches', () => {
+  it('returns empty for missing or empty arrays', () => {
+    expect(formatGrokFileMatches(undefined)).toBe('');
+    expect(formatGrokFileMatches([])).toBe('');
   });
 });

@@ -153,6 +153,8 @@ export function extractToolExit(rawOutput: unknown): string {
 }
 
 export function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: string }> {
+  const grok = grokRawOutputSections(rawOutput);
+  if (grok) return grok;
   const decodedRoot = decodeByteArray(rawOutput);
   if (decodedRoot !== null) return decodedRoot ? [{ label: 'output', text: decodedRoot }] : [];
   if (typeof rawOutput === 'object' && rawOutput) {
@@ -218,6 +220,138 @@ export function decodeByteArray(value: unknown): string | null {
   return decoded;
 }
 
+/** Grok `rawOutput.type` variants seen on the ACP wire (107 krypton sessions).
+ *  Unknown types fall through to the generic key walker. */
+export const GROK_RAW_OUTPUT_TYPES = [
+  'ReadFile',
+  'GrepSearch',
+  'SearchReplace',
+  'Bash',
+  'MCP',
+  'ListDir',
+  'SearchTool',
+  'Todo',
+  'TaskOutput',
+  'WebFetch',
+  'BackgroundTaskStarted',
+  'Text',
+  'KillTask',
+  'ImageGen',
+] as const;
+
+type ToolDumpSection = { label: string; text: string };
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function dumpSection(label: string, text: string): ToolDumpSection[] {
+  return text.trim() ? [{ label, text }] : [];
+}
+
+function nestedContent(value: unknown): string {
+  const rec = asRecord(value);
+  if (rec && typeof rec.content === 'string') return rec.content;
+  return stringifyToolValue(value);
+}
+
+/** Format Grok `GrepSearch.file_matches` as path-header + `line:text` rows. */
+export function formatGrokFileMatches(value: unknown): string {
+  if (!Array.isArray(value) || value.length === 0) return '';
+  const lines: string[] = [];
+  for (const file of value) {
+    const rec = asRecord(file);
+    if (!rec) continue;
+    const path = typeof rec.path === 'string' ? rec.path : '';
+    if (!path || !Array.isArray(rec.matches)) continue;
+    lines.push(path);
+    for (const match of rec.matches) {
+      const row = asRecord(match);
+      if (!row) continue;
+      const n = row.line_number;
+      const text = typeof row.content === 'string' ? row.content : '';
+      if (typeof n === 'number') lines.push(`${n}:${text}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function mcpDumpText(output: unknown): string {
+  const rec = asRecord(output);
+  if (!rec) return stringifyToolValue(output);
+  if (typeof rec.OkayOutput === 'string') return rec.OkayOutput;
+  if (typeof rec.Error === 'string') return rec.Error;
+  return stringifyToolValue(output);
+}
+
+/**
+ * Pull the human-readable dump out of Grok's typed `rawOutput`.
+ * Returns `[]` when the type is known but the card should use ACP `content`
+ * (e.g. SearchReplace diffs). Returns `null` for unknown shapes so the
+ * generic walker still runs.
+ */
+export function grokRawOutputSections(rawOutput: unknown): ToolDumpSection[] | null {
+  const rec = asRecord(rawOutput);
+  const type = rec && typeof rec.type === 'string' ? rec.type : '';
+  if (!rec || !type) return null;
+  switch (type) {
+    case 'ReadFile': {
+      if (typeof rec.FileNotFound === 'string') return dumpSection('message', rec.FileNotFound);
+      const body = nestedContent(rec.FileContent);
+      if (body) return dumpSection('content', body);
+      return [];
+    }
+    case 'GrepSearch': {
+      const hits = formatGrokFileMatches(rec.file_matches);
+      if (hits) return dumpSection('stdout', hits);
+      const stdout = stringifyToolValue(rec.stdout);
+      return dumpSection('stdout', stdout);
+    }
+    case 'ListDir':
+    case 'WebFetch':
+      return dumpSection('content', nestedContent(rec.Content));
+    case 'Bash': {
+      const prompt = typeof rec.output_for_prompt === 'string' ? rec.output_for_prompt : '';
+      return dumpSection('output', prompt.trim() ? prompt : stringifyToolValue(rec.output));
+    }
+    case 'MCP': {
+      const text = mcpDumpText(rec.output);
+      return dumpSection(rec.is_error ? 'error' : 'output', text);
+    }
+    case 'SearchTool':
+      return dumpSection('content', stringifyToolValue(rec.content));
+    case 'Todo': {
+      const todos = asRecord(rec.TodosUpdated);
+      const summary = todos && typeof todos.summary_for_prompt === 'string' ? todos.summary_for_prompt : '';
+      return dumpSection('output', summary);
+    }
+    case 'SearchReplace':
+      return [];
+    case 'BackgroundTaskStarted': {
+      const summary = typeof rec.summary === 'string' ? rec.summary : '';
+      return dumpSection('output', summary);
+    }
+    case 'TaskOutput': {
+      const result = asRecord(rec.Result);
+      return dumpSection('output', result ? stringifyToolValue(result.output) : '');
+    }
+    case 'Text':
+      return dumpSection('output', typeof rec.text === 'string' ? rec.text : stringifyToolValue(rec.text));
+    case 'KillTask': {
+      const result = asRecord(rec.Result);
+      const message = result && typeof result.message === 'string' ? result.message : '';
+      return dumpSection('output', message);
+    }
+    case 'ImageGen': {
+      const path = typeof rec.path === 'string' ? rec.path : '';
+      return dumpSection('output', path);
+    }
+    default:
+      return null;
+  }
+}
+
 export function stringifyToolValue(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
@@ -280,7 +414,10 @@ export function buildToolPayload(
   const sections = raw.length > 0 ? raw : contentOutputSections(call.content);
   const sectionLineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
   const trimmed = sections
-    .map((s) => ({ label: s.label, text: boundedOutputLines(s.text, sectionLineLimit) }))
+    .map((s) => ({
+      label: s.label,
+      text: boundedOutputLines(normalizeToolDump(s.text, kind), sectionLineLimit),
+    }))
     .filter((s) => s.text)
     .slice(0, 4);
   const diffs = extractToolDiffs(call.content);
@@ -490,7 +627,7 @@ export function renderToolOutput(tool: ToolPayload): HTMLElement {
   const output = document.createElement('div');
   output.className = 'acp-harness__tool-output';
   for (const raw of tool.sections) {
-    const section = { ...raw, text: unwrapWorkspaceResultDump(raw.text) };
+    const section = { ...raw, text: normalizeToolDump(raw.text, tool.kind) };
     const git = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
     if (git) {
       output.appendChild(git);
@@ -813,19 +950,40 @@ export function parseGrepLine(line: string): GrepRow | null {
   return null;
 }
 
-const WORKSPACE_RESULT_RE =
-  /^<workspace_result\b[^>]*>\s*([\s\S]*?)\s*<\/workspace_result>\s*$/i;
-const GREP_FOUND_RE = /^Found \d+ matching lines?$/i;
+const WORKSPACE_OPEN_RE = /^<workspace_result\b[^>]*>\s*/i;
+const WORKSPACE_CLOSE_RE = /\s*<\/workspace_result>\s*$/i;
+const GREP_FOUND_RE = /^Found(?: at least)? \d+ matching lines?$/i;
 const GREP_NONE_RE = /^No matches found$/i;
 
 /** Grok's grep/search tool wraps hits in a `<workspace_result>` envelope.
- *  Strip it so the inner dump can use the rg-shaped parser (or a clean
- *  "No matches found" pre) instead of painting the XML tags. */
+ *  Strip the open tag even when the line cap dropped the close tag, so a
+ *  truncated dump does not paint XML. */
 export function unwrapWorkspaceResultDump(text: string): string {
   const trimmed = text.trim();
-  const match = trimmed.match(WORKSPACE_RESULT_RE);
-  if (!match) return text;
-  return (match[1] ?? '').trim();
+  if (!WORKSPACE_OPEN_RE.test(trimmed)) return text;
+  return trimmed.replace(WORKSPACE_OPEN_RE, '').replace(WORKSPACE_CLOSE_RE, '').trim();
+}
+
+/** Drop Grok `read_file` line-number anchors (`1→`, `10→`, …). Display only. */
+export function stripGrokReadLineAnchors(text: string): string {
+  return text.replace(/^\d+→/gm, '');
+}
+
+/** True when the dump starts with a Grok `read_file` line anchor (`1→`, `238→`). */
+export function looksLikeGrokReadAnchors(text: string): boolean {
+  const first = text.split('\n', 1)[0] ?? '';
+  return /^\d+→/.test(first);
+}
+
+/** Protocol wrappers Grok puts around tool dumps, before the line cap.
+ *  Shape-based: XML unwrap always; N→ strip when kind is read *or* the dump
+ *  itself starts with an anchor (kind can be missing on a tool_call_update). */
+export function normalizeToolDump(text: string, kind: string): string {
+  let out = unwrapWorkspaceResultDump(text);
+  if (toolChipKind(kind) === 'read' || looksLikeGrokReadAnchors(out)) {
+    out = stripGrokReadLineAnchors(out);
+  }
+  return out;
 }
 
 function isGrepPathHeader(line: string): boolean {

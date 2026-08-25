@@ -93,7 +93,25 @@ path-line-text          → context line (rg `-B`/`-A`); path dimmer, no hit
 
 If `extractGrepQuery(command)` finds a quoted pattern, wrap occurrences in `tok-hit` (success). No query → no hit span. Paths / line numbers / separators are always tokens when the shape matches.
 
-Grok's native grep/search tool wraps the dump in `<workspace_result …>…</workspace_result>` and groups hits as a path header followed by `line:text` rows (plus a `Found N matching lines` / `No matches found` preamble). The renderer strips that envelope before the majority check; path headers attach to the following rows. A miss paints `No matches found`, not the XML tags.
+Grok's ACP `rawOutput` is a **typed variant** (`rawOutput.type`), not a generic stdout blob. `grokRawOutputSections` switches on that tag and pulls the human-readable field. Unknown types return `null` and fall through to the generic `summary/stdout/stderr/output/content/text/message` walker. Protocol wrappers are stripped by **shape**, not inferred kind: `<workspace_result>` even when the 6-line cap dropped the close tag, and `N→` read-file anchors when the dump starts with one (kind can be missing on a `tool_call_update`).
+
+| `rawOutput.type` | Dump field | Notes |
+|------------------|------------|-------|
+| `ReadFile` | `FileContent.content` / `FileNotFound` | Strip `N→`. Skip `ImageContent` bytes. |
+| `GrepSearch` | `file_matches` → path + `line:text` | Fallback: decode `stdout` bytes, unwrap XML. |
+| `ListDir` / `WebFetch` | `Content.content` | |
+| `Bash` | `output_for_prompt`, else decoded `output` | |
+| `MCP` | `output.OkayOutput` / `output.Error` | `is_error` → error tone. |
+| `SearchTool` | `content` | |
+| `Todo` | `TodosUpdated.summary_for_prompt` | |
+| `SearchReplace` | _(none)_ | Diff lives in ACP `content`. |
+| `BackgroundTaskStarted` | `summary` | |
+| `TaskOutput` | `Result.output` | |
+| `Text` | `text` | |
+| `KillTask` | `Result.message` | |
+| `ImageGen` | `path` | |
+
+Coverage lock: `GROK_RAW_OUTPUT_TYPES` + one fixture per type in `harness-tool-render.test.ts`. Re-scan `~/.grok/sessions/**/updates.jsonl` `rawOutput.type` when Grok adds a variant.
 
 Token colors (themeable, no raw hex in the renderer):
 
@@ -123,6 +141,7 @@ Each span is filled with `textContent`. No `innerHTML` of the dump.
 ## Edge Cases
 
 - Mixed dumps (3 grep lines + a banner) that fail the majority-match rule stay a plain `<pre>` in foreground. No half-highlighted block.
+- Search dumps are capped at 6 lines **after** stripping the Grok envelope, so a missing `</workspace_result>` (the close tag fell off the cap) still unwraps.
 - ANSI is still stripped in `boundedOutputLines` before parse.
 - Line cap unchanged (execute 12, grep-as-search 6, git-diff 80).
 - Concise mode still hides `__tool-output` entirely.
