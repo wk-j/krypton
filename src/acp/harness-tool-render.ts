@@ -714,28 +714,53 @@ export function renderToolOutput(tool: ToolPayload): HTMLElement {
     }
     if (text.trim()) painted.push({ label: raw.label, text });
   }
-  if (exitCode !== null && toolChipKind(tool.kind) === 'execute') {
-    output.appendChild(renderToolExit(exitCode));
-  }
+  const showExit = exitCode !== null && toolChipKind(tool.kind) === 'execute';
+  let pendingExit: number | null = showExit ? exitCode : null;
+  const takeExit = (): number | null => {
+    const code = pendingExit;
+    pendingExit = null;
+    return code;
+  };
   for (const section of painted) {
     const git = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
     if (git) {
+      if (pendingExit !== null) {
+        output.appendChild(renderToolExit(pendingExit));
+        pendingExit = null;
+      }
       output.appendChild(git);
       continue;
     }
-    const grep = isGrepLikeOutput(tool, section) ? renderGrepSection(tool, section) : null;
-    output.appendChild(grep ?? renderPlainToolSection(section));
+    const grep = isGrepLikeOutput(tool, section)
+      ? renderGrepSection(tool, section, pendingExit)
+      : null;
+    if (grep) {
+      pendingExit = null;
+      output.appendChild(grep);
+      continue;
+    }
+    output.appendChild(renderPlainToolSection(section, takeExit()));
   }
+  if (pendingExit !== null) output.appendChild(renderToolExit(pendingExit));
   return output;
 }
 
-export function renderPlainToolSection(section: { label: string; text: string }): HTMLElement {
+function appendExecuteExit(label: HTMLElement, exitCode: number | null): void {
+  if (exitCode === null) return;
+  label.appendChild(renderToolExit(exitCode));
+}
+
+export function renderPlainToolSection(
+  section: { label: string; text: string },
+  exitCode: number | null = null,
+): HTMLElement {
   const block = document.createElement('div');
   const tone = toolSectionTone(section.label);
   block.className = `acp-harness__tool-section acp-harness__tool-section--${tone}`;
   const label = document.createElement('div');
   label.className = 'acp-harness__tool-section-label';
   label.textContent = section.label;
+  appendExecuteExit(label, exitCode);
   const pre = document.createElement('pre');
   pre.className = 'acp-harness__tool-section-text';
   pre.textContent = section.text;
@@ -1149,6 +1174,7 @@ function tok(kind: string, value: string): HTMLElement {
 export function renderGrepSection(
   tool: Pick<ToolPayload, 'command' | 'subject'>,
   section: { label: string; text: string },
+  exitCode: number | null = null,
 ): HTMLElement | null {
   const rows = parseGrepDump(section.text);
   if (!rows) return null;
@@ -1158,6 +1184,7 @@ export function renderGrepSection(
   const label = document.createElement('div');
   label.className = 'acp-harness__tool-section-label';
   label.textContent = section.label;
+  appendExecuteExit(label, exitCode);
   block.appendChild(label);
   const rich = document.createElement('div');
   rich.className = 'acp-harness__tool-rich acp-harness__tool-rich--grep';

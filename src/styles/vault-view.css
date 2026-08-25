@@ -23,6 +23,7 @@
   --vault-font-data: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   --vault-font-body: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   --vault-scanline: rgba(0, 0, 0, 0.06);
+  --vault-radius: var(--krypton-border-radius, 8px);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -35,7 +36,7 @@
 .krypton-window[data-content-type="vault"] {
   background: var(--vault-panel) !important;
   border: 1px solid var(--vault-border) !important;
-  border-radius: 3px !important;
+  border-radius: var(--vault-radius) !important;
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.6),
     0 0 1px rgba(var(--vault-primary-rgb), 0.15) !important;
@@ -53,6 +54,7 @@
 .krypton-window[data-content-type="vault"] .krypton-window__titlebar {
   background: rgba(6, 10, 20, 0.9) !important;
   border-bottom: 1px solid var(--vault-border) !important;
+  border-radius: var(--vault-radius) var(--vault-radius) 0 0;
 }
 
 .krypton-window[data-content-type="vault"] .krypton-window__label {
@@ -118,7 +120,7 @@
 .krypton-window[data-content-type="vault"] .krypton-tab {
   font-family: var(--vault-font-data) !important;
   letter-spacing: 0.1em !important;
-  border-radius: 0 !important;
+  border-radius: var(--vault-radius) var(--vault-radius) 0 0 !important;
   clip-path: none !important;
 }
 
@@ -151,6 +153,7 @@
 
 .krypton-window[data-content-type="vault"] .krypton-window__footer {
   background: transparent !important;
+  border-radius: 0 0 var(--vault-radius) var(--vault-radius);
 }
 
 
@@ -233,6 +236,7 @@
   cursor: pointer;
   padding: 2px 4px;
   border: 1px solid transparent;
+  border-radius: var(--vault-radius);
   transition: color 0.15s, border-color 0.15s;
 }
 
@@ -258,7 +262,7 @@
   font-size: var(--krypton-chrome-font-size, 11px);
   padding: 4px 8px;
   outline: none;
-  border-radius: 1px;
+  border-radius: var(--vault-radius);
 }
 
 .krypton-vault__filter-input:focus {
@@ -317,7 +321,7 @@
   width: 36px;
   height: 3px;
   background: rgba(var(--vault-primary-rgb), 0.08);
-  border-radius: 1px;
+  border-radius: var(--vault-radius);
   overflow: hidden;
   display: flex;
   justify-content: flex-end;
@@ -325,7 +329,7 @@
 
 .krypton-vault__age-fill {
   height: 100%;
-  border-radius: 1px;
+  border-radius: var(--vault-radius);
 }
 
 .krypton-vault__sidebar-item--selected .krypton-vault__age-fill {
@@ -355,7 +359,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   padding: 1px 4px;
-  border-radius: 2px;
+  border-radius: var(--vault-radius);
   /* Neutral default so any `type` (including ones without a dedicated rule)
      still renders a consistent decorator badge. */
   color: var(--vault-text);
@@ -480,7 +484,7 @@
 
 .krypton-vault__content::-webkit-scrollbar-thumb {
   background: rgba(var(--vault-primary-rgb), 0.15);
-  border-radius: 2px;
+  border-radius: var(--vault-radius);
 }
 
 .krypton-vault__content::-webkit-scrollbar-thumb:hover {
@@ -494,7 +498,7 @@
   padding: 10px 14px;
   background: rgba(var(--vault-primary-rgb), 0.03);
   border: 1px solid var(--vault-border);
-  border-radius: 2px;
+  border-radius: var(--vault-radius);
   font-family: var(--vault-font-data);
   font-size: var(--krypton-chrome-font-size, 11px);
 }
@@ -572,7 +576,7 @@
   font-family: var(--vault-font-data);
   background: rgba(255, 213, 79, 0.08);
   padding: 1px 5px;
-  border-radius: 2px;
+  border-radius: var(--vault-radius);
   font-size: var(--krypton-font-size);
   color: var(--vault-orange);
 }
@@ -580,7 +584,7 @@
 .krypton-vault__article pre {
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid var(--vault-border);
-  border-radius: 2px;
+  border-radius: var(--vault-radius);
   padding: 12px 16px;
   overflow-x: auto;
   margin: 1em 0;
@@ -712,7 +716,7 @@
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   padding: 1px 4px;
-  border-radius: 2px;
+  border-radius: var(--vault-radius);
   z-index: 10;
   pointer-events: none;
   text-transform: uppercase;
@@ -757,7 +761,7 @@
 
 .krypton-vault__sidebar-list::-webkit-scrollbar-thumb {
   background: rgba(var(--vault-primary-rgb), 0.12);
-  border-radius: 2px;
+  border-radius: var(--vault-radius);
 }
 
 /* ─── Vignette (atmospheric depth) ─── */
@@ -779,7 +783,7 @@
 
 .krypton-vault__image {
   max-width: 100%;
-  border-radius: 2px;
+  border-radius: var(--vault-radius);
   border: 1px solid var(--vault-border);
   margin: 0.5em 0;
 }
@@ -804,7 +808,8 @@
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.6),
     0 0 16px rgba(var(--vault-primary-rgb), 0.12);
-  border-radius: 3px;
+  border-radius: var(--vault-radius);
+  overflow: hidden;
   padding: 12px 0 8px;
   color: var(--vault-text);
   font-family: var(--vault-font-data);

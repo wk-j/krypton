@@ -108,3 +108,27 @@ describe('composer prompt geometry', () => {
     expect(block).not.toMatch(/--krypton-border-radius/);
   });
 });
+
+describe('lane picker chrome', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+    'utf8',
+  );
+
+  it('stacks the overlay as a column and paints one 8px panel', () => {
+    const overlay = css.match(/\.acp-harness__picker\s*\{[^}]*\}/)?.[0] ?? '';
+    const panel = css.match(/\.acp-harness__picker-panel\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(overlay).toMatch(/flex-direction:\s*column/);
+    expect(panel).toMatch(/border-radius:\s*var\(--krypton-border-radius/);
+    expect(panel).toMatch(/overflow:\s*hidden/);
+  });
+
+  it('does not round or stroke the header and list as separate capsules', () => {
+    const head = css.match(/\.acp-harness__picker-head\s*\{[^}]*\}/)?.[0] ?? '';
+    const list = css.match(/\.acp-harness__picker-list\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(head).not.toMatch(/border-radius/);
+    expect(list).not.toMatch(/border-radius/);
+    expect(head).not.toMatch(/^\s*border:/m);
+    expect(list).not.toMatch(/^\s*border:/m);
+  });
+});

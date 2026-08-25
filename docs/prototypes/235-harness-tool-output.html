@@ -175,15 +175,18 @@
 
   .row {
     display: grid;
-    grid-template-columns: minmax(0, auto) auto auto minmax(0, 1fr);
+    grid-template-columns: minmax(8ch, 32ch) max-content minmax(4ch, max-content) max-content minmax(0, 1fr);
     gap: 0 6px;
     align-items: baseline;
     min-width: 0;
     font-size: 0.92em;
     line-height: 1.4;
   }
+  .row.lineno {
+    grid-template-columns: minmax(4ch, max-content) max-content minmax(0, 1fr);
+  }
   .tok-path { color: var(--amber); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tok-line { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .tok-line { color: var(--ink-faint); font-variant-numeric: tabular-nums; text-align: end; justify-self: end; }
   .tok-sep { color: var(--ink-ghost); }
   .tok-text { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tok-hit { color: var(--green); }
@@ -328,11 +331,11 @@ return "-";</pre>
         </div>
         <div class="out">
           <div class="label output">output</div>
-          <div class="row"><span class="tok-line">40</span><span class="tok-sep">:</span><span></span><span class="tok-text">  * Search documents in Alfresco using AFTS or CMIS query.</span></div>
-          <div class="row"><span class="tok-line">128</span><span class="tok-sep">:</span><span></span><span class="tok-text">      String disposition = attachment ? "attachment" : "inline";</span></div>
-          <div class="row"><span class="tok-line">140</span><span class="tok-sep">:</span><span></span><span class="tok-text">          disposition + "; filename=\"" + encodedFileName + "\"")</span></div>
-          <div class="row"><span class="tok-line">275</span><span class="tok-sep">:</span><span></span><span class="tok-text">      .language(query.getLanguage() != null ? query.getLanguage() : "afts")</span></div>
-          <div class="row"><span class="tok-line">315</span><span class="tok-sep">:</span><span></span><span class="tok-text">  * Encode filename for Content-Disposition header.</span></div>
+          <div class="row lineno"><span class="tok-line">40</span><span class="tok-sep">:</span><span class="tok-text">  * Search documents in Alfresco using AFTS or CMIS query.</span></div>
+          <div class="row lineno"><span class="tok-line">75</span><span class="tok-sep">:</span><span class="tok-text">      .andExpect(jsonPath("$[0].sequence").value(1))</span></div>
+          <div class="row lineno"><span class="tok-line">128</span><span class="tok-sep">:</span><span class="tok-text">      String disposition = attachment ? "attachment" : "inline";</span></div>
+          <div class="row lineno"><span class="tok-line">140</span><span class="tok-sep">:</span><span class="tok-text">          disposition + "; filename=\"" + encodedFileName + "\"")</span></div>
+          <div class="row lineno"><span class="tok-line">275</span><span class="tok-sep">:</span><span class="tok-text">      .language(query.getLanguage() != null ? query.getLanguage() : "afts")</span></div>
         </div>
       </div>
 
@@ -345,9 +348,11 @@ return "-";</pre>
         </div>
         <div class="out">
           <div class="label output">output</div>
-          <div class="row"><span class="tok-path">SearchService.java</span><span class="tok-sep">:</span><span class="tok-line">60</span><span class="tok-text"><span class="tok-sep">:</span>public class <span class="tok-hit">SearchService</span> {</span></div>
-          <div class="row"><span class="tok-path">SearchService.java</span><span class="tok-sep">:</span><span class="tok-line">87</span><span class="tok-text"><span class="tok-sep">:</span>  public SearchResultDTO <span class="tok-hit">searchStorage</span>(...)</span></div>
-          <div class="row"><span class="tok-path">SearchService.java</span><span class="tok-sep">:</span><span class="tok-line">462</span><span class="tok-text"><span class="tok-sep">:</span>  // - CL: cl_no (from tr_scan_parent)</span></div>
+          <div class="row"><span class="tok-path">hurl/mock-core/README.md</span><span class="tok-sep">:</span><span class="tok-line">29</span><span class="tok-text">- `DELETE /admin/insuredoc/upload-history` — empties the record…</span></div>
+          <div class="row"><span class="tok-path">hurl/mock-core/README.md</span><span class="tok-sep">:</span><span class="tok-line">33</span><span class="tok-text"><span class="tok-hit">sequence</span>: 1` is `sequence: 4`. Omitting `--jobs 1` is the sing…</span></div>
+          <div class="row"><span class="tok-path">hurl/mock-core/insuredocUpload/history.hurl</span><span class="tok-sep">:</span><span class="tok-line">18</span><span class="tok-text"># Start clean so <span class="tok-hit">sequence</span> numbers and scenarios are predictable.</span></div>
+          <div class="row"><span class="tok-path">hurl/mock-core/insuredocUpload/history.hurl</span><span class="tok-sep">:</span><span class="tok-line">47</span><span class="tok-text">jsonpath "$[0].<span class="tok-hit">sequence</span>" == 1</span></div>
+          <div class="row"><span class="tok-path">hurl/mock-core/insuredocUpload/history.hurl</span><span class="tok-sep">:</span><span class="tok-line">114</span><span class="tok-text">jsonpath "$[0].<span class="tok-hit">sequence</span>" == 1</span></div>
         </div>
       </div>
 

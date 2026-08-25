@@ -1911,11 +1911,12 @@
   padding: 3px 0;
 }
 
-/* spec 235 — Grok `exit: N` prefix becomes a kind-chip badge, not dump text. */
+/* spec 235 — Grok `exit: N` prefix becomes a quiet readout, not dump text.
+   Rides the first OUTPUT/TERMINAL label when one exists. */
 .acp-harness__tool-exit {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
 }
 
 .acp-harness__tool-exit-label {
@@ -1927,26 +1928,20 @@
 
 .acp-harness__tool-exit-code {
   flex: none;
-  min-width: 2.6ch;
-  padding: 0 5px;
-  border: 1px solid currentColor;
-  border-radius: var(--krypton-border-radius, 8px);
   font-size: 0.78em;
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1.35;
-  text-align: center;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
-.acp-harness__tool-exit[data-status="ok"] .acp-harness__tool-exit-code {
-  color: var(--agent-accent, #8effb0);
-  border-color: color-mix(in srgb, var(--agent-accent, #8effb0) 40%, transparent);
+.acp-harness__tool-exit[data-status="fail"] .acp-harness__tool-exit-label {
+  color: color-mix(in srgb, var(--agent-error, #ff6b8b) 62%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
 }
 
 .acp-harness__tool-exit[data-status="fail"] .acp-harness__tool-exit-code {
   color: var(--agent-error, #ff6b8b);
-  border-color: color-mix(in srgb, var(--agent-error, #ff6b8b) 40%, transparent);
 }
 
 .acp-harness__tool-section {
@@ -1956,6 +1951,9 @@
 }
 
 .acp-harness__tool-section-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 0.7em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1963,6 +1961,17 @@
   text-shadow:
     0 0 6px color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48)) 24%, transparent),
     0 0 12px color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48)) 10%, transparent);
+}
+
+.acp-harness__tool-section-label .acp-harness__tool-exit {
+  flex: none;
+}
+
+.acp-harness__tool-section-label .acp-harness__tool-exit-label,
+.acp-harness__tool-section-label .acp-harness__tool-exit-code {
+  font-size: 1em;
+  letter-spacing: inherit;
+  text-shadow: none;
 }
 
 .acp-harness__tool-section-text {
@@ -1995,6 +2004,8 @@
 .acp-harness__tok-line {
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   font-variant-numeric: tabular-nums;
+  text-align: end;
+  justify-self: end;
 }
 .acp-harness__tok-sep {
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
@@ -2027,11 +2038,12 @@
   font-size: 0.92em;
   line-height: 1.4;
 }
+/* Line is a ≥4ch right-aligned gutter so 75 and 160 share a column. */
 .acp-harness__grep-row--path {
-  grid-template-columns: minmax(8ch, 32ch) auto auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(8ch, 32ch) max-content minmax(4ch, max-content) max-content minmax(0, 1fr);
 }
 .acp-harness__grep-row--lineno {
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(4ch, max-content) max-content minmax(0, 1fr);
 }
 
 .acp-harness__tool-stat-row,
@@ -4725,13 +4737,17 @@
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
 }
 
-/* ── Lane picker overlay ─────────────────────────────────── */
+/* ── Lane picker overlay ───────────────────────────────────
+   One 8px panel (same chrome as the command palette). Header and list
+   are not independently bordered — that used to sit them side-by-side
+   as two capsules, with the 1px stroke reading as wire. */
 
 .acp-harness__picker {
   position: absolute;
   inset: 0;
   z-index: 4;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   background: var(--agent-surface-high, rgba(4, 8, 13, 0.72));
@@ -4741,24 +4757,29 @@
   display: none;
 }
 
-.acp-harness__picker > header,
-.acp-harness__picker > ul,
-.acp-harness__picker > .acp-harness__picker-empty {
+.acp-harness__picker-panel {
+  display: flex;
+  flex-direction: column;
   width: clamp(320px, 38vw, 480px);
+  max-height: min(70vh, 100%);
   background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  border-radius: var(--krypton-border-radius, 8px);
+  box-shadow:
+    0 0 30px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
 }
 
 .acp-harness__picker-head {
   display: flex;
   justify-content: space-between;
   gap: 10px;
+  flex: 0 0 auto;
   padding: 7px 12px;
   color: var(--krypton-window-accent, #0cf);
   letter-spacing: 0.08em;
   border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
-  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
   text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
 }
 
@@ -4773,8 +4794,6 @@
   list-style: none;
   margin: 0;
   padding: 6px 0;
-  border-top: none;
-  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
   max-height: 50vh;
   overflow-y: auto;
 }
@@ -4786,12 +4805,12 @@
   padding: 6px 14px;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
   cursor: default;
-  border-left: 2px solid transparent;
 }
 
 .acp-harness__picker-row--active {
-  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.1);
-  border-left-color: var(--krypton-window-accent, #0cf);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+  outline: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
+  outline-offset: -1px;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
 }
 
@@ -4816,8 +4835,6 @@
 .acp-harness__picker-empty {
   padding: 14px 16px;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
-  border-top: none;
-  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
 }
 
 /* ── Directive picker overlay (spec 124) ──────────────────────

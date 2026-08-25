@@ -16,7 +16,7 @@ Keep chrome cyan. Stop using cyan as the dump body color.
 
 1. **Kind chip** reuses the spec 231 HUD accent (chip text + 1px border only, not a filled pill).
 2. **Section body** is foreground phosphor. Labels keep semantic color (error red, summary green, diff gold). `output` / `stdout` / `content` / `text` drop the cyan mapping.
-3. **Recognized dumps** get the same cheap structure git already has: path, line number, separator, text. Grep/rg (and execute wrapping them) split `path:line:text` and `line:text`. Execute dumps that start with `exit: N` (Grok Bash `output_for_prompt`) peel that line and paint a kind-chip **exit badge** — success for 0, danger for non-zero — instead of leaving `exit: 0` as dump text. Unknown output stays a plain `<pre>`.
+3. **Recognized dumps** get the same cheap structure git already has: path, line number, separator, text. Grep/rg (and execute wrapping them) split `path:line:text` and `line:text`. Execute dumps that start with `exit: N` (Grok Bash `output_for_prompt`) peel that line and paint a quiet **exit readout** on the first OUTPUT/TERMINAL label — muted tabular number for 0, danger color for non-zero, no kind-chip frame — instead of leaving `exit: 0` as dump text. Unknown output stays a plain `<pre>`.
 4. **Drop the 2px left rail.** Indent stays (`margin-left: calc(1.4ch + 8px)`). No inner card, no background glow.
 
 No highlight.js. No language grammar. Line-oriented regex only, same budget as `parseGitDiffStat`.
@@ -118,7 +118,7 @@ Token colors (themeable, no raw hex in the renderer):
 | Token | Token path |
 |-------|------------|
 | `tok-path` | `--krypton-warning` |
-| `tok-line` | `--krypton-fg` @ 0.42, `tabular-nums` |
+| `tok-line` | `--krypton-fg` @ 0.42, `tabular-nums`, right-aligned in a ≥4ch gutter |
 | `tok-sep` | `--krypton-fg` @ 0.28 |
 | `tok-text` | `--krypton-fg` |
 | `tok-hit` | `--krypton-success` |
@@ -128,17 +128,20 @@ Git-stat paths and unidiff `diff --git` headers switch from cyan to `tok-path` (
 
 Each span is filled with `textContent`. No `innerHTML` of the dump.
 
+Grep rows are a five-column grid (path · sep · line · sep · text). The line track is `minmax(4ch, max-content)`, `tabular-nums`, right-aligned, so `75` and `160` form a gutter (same trick as git-stat's 5ch count column). Line-only dumps (`grep -n` with no path) use the three-column `--lineno` template and the same gutter.
+
 ### Exit status
 
 Grok Bash wraps every dump as `exit: N\n<body>` and also sends `rawOutput.exit_code`. Structured `exit_code` wins; the prefix is stripped **before** the 12-line cap so it does not steal a content line. Execute cards paint:
 
 ```
-.acp-harness__tool-exit[data-status=ok|fail]
-  span.tool-exit-label   → "exit" (same type as OUTPUT)
-  span.tool-exit-code    → tabular-nums, kind-chip geometry (text + 1px border, 8px radius)
+.acp-harness__tool-section-label   → "output" | "terminal" | …
+  .acp-harness__tool-exit[data-status=ok|fail]
+    span.tool-exit-label   → "exit"
+    span.tool-exit-code    → tabular-nums, no border, no weight jump
 ```
 
-0 → `--agent-accent`. Non-zero → `--agent-error`. Search/read never get the chip (`grep` miss is exit 1). A dump that is only `exit: 1` still shows the badge. Concise mode still hides the whole output group.
+Rides the first labeled section (`output` / `stdout` / `terminal` / grep) so `TERMINAL` and `exit 0` share one line. Git-rich dumps have no section label, so the readout stays a row above the files. A dump that is only `exit: 1` still shows that row. 0 → muted foreground. Non-zero → `--agent-error` on the number. Search/read never get the readout (`grep` miss is exit 1). Concise mode still hides the whole output group.
 
 ### Chrome
 

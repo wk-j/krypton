@@ -11274,9 +11274,9 @@ export class AcpHarnessView implements ContentView {
           `</li>`;
       })
       .join('');
-    const empty = total === 0
+    const body = total === 0
       ? '<div class="acp-harness__picker-empty">no ACP backends installed</div>'
-      : '';
+      : `<ul class="acp-harness__picker-list">${rows}</ul>`;
     // spec 163: when the picker was opened by Shift+Enter from the directive
     // picker, surface which directive the spawned lane will carry.
     const pendingDirective = this.pendingSpawnDirectiveId
@@ -11286,11 +11286,13 @@ export class AcpHarnessView implements ContentView {
       ? `// add lane · directive: ${esc(pendingDirective.title || pendingDirective.id)}`
       : '// add lane';
     this.pickerEl.innerHTML =
+      `<div class="acp-harness__picker-panel">` +
       `<header class="acp-harness__picker-head">` +
       `<span>${headLabel}</span>` +
       `<span>j/k move · enter spawn · esc cancel</span>` +
       `</header>` +
-      `<ul class="acp-harness__picker-list">${rows}</ul>${empty}`;
+      `${body}` +
+      `</div>`;
   }
 
   private renderDirectivePicker(): void {

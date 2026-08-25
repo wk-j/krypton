@@ -74,8 +74,12 @@ bevels.
 - Loopback artifact pages stay on DESIGN.binance.md radii.
 - Markdown `th`/`td` stay square so internal grid lines do not double-bevel.
   The `table` element is the rounded container (`border-collapse: separate`).
-- Stacked picker chrome (head / list / empty) uses split top/bottom radii on
-  the end pieces; the middle directive list stays square so the seam joins.
+- The lane picker is one `.acp-harness__picker-panel` (`border-radius:
+  var(--krypton-border-radius)`, overflow hidden) so header and list share
+  one 8px frame. Independently bordered siblings sat side-by-side as two
+  capsules; the 1px stroke on each curve read as wire.
+  Session / directive / model pickers still use split top/bottom radii on the
+  end pieces; the middle directive list stays square so the seam joins.
 - The ACP Harness composer is a command line, not a container card: `.acp-harness__composer`
   stays `border-radius: 0` (same as `.agent-view__input-row` / `.acp-view__input-row`).
   While the harness tab is showing, the host window / titlebar / footer are also

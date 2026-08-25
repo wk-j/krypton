@@ -47,10 +47,8 @@ typography:
     weight: 700
     letterSpacing: "0.1em"
 rounded:
-  none: "0px"
-  hairline: "1px"
-  subtle: "2px"
-  panel: "3px"
+  none: "0px"        # diamond status dots only
+  container: "8px"   # same token as Krypton Dark (`--krypton-border-radius`)
 spacing:
   hairline: "1px"
   xs: "4px"
@@ -61,7 +59,7 @@ chrome:
   borderWidth: "1px"
 forbidden:
   - "warm amber tones in primary palette"
-  - "border-radius > 3px"
+  - "mixed 0/2/3px container radii — use --krypton-border-radius"
   - "animation keyframes — state-based glows only"
   - "smooth diffuse shadows — all shadows are explicit, measured rgba"
   - "L-shaped corner brackets — two-side HUD ticks; full 1px panel border or nothing"
@@ -93,11 +91,10 @@ H1 size is `1.714×` body, H2 `1.357×`, H3 `1.143×` — a *gentle* type scale,
 
 ## Geometry
 
-Slightly softer than Krypton Dark:
+Same manufactured bevel as Krypton Dark:
 
-- Window frame: `3px` corner radius — a hint of bevel.
-- Inputs/panels: `2px`.
-- Minor elements: `1px`.
+- Window frame, panels, inputs, chips, picker: `var(--krypton-border-radius, 8px)` via `--vault-radius`.
+- Diamond status dots stay `0px` rotated 4px squares — they are indicators, not containers.
 - No L-shaped corner brackets on sidebar, main, or any panel. Two-side HUD ticks (`border-top` + `border-left` 10px arms) are banned. Full 1px panel border or nothing.
 
 ## Glows

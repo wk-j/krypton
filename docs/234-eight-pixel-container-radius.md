@@ -15,8 +15,9 @@ The Krypton Dark bevel was 4px (`--krypton-border-radius` /
 
 Bump the existing token default from `4` to `8`. CSS fallbacks match
 (`var(--krypton-border-radius, 8px)`). One bevel on every Krypton Dark
-rectangular container. True circles stay `50%`. NASA Vault, Amber Agent
-frames, Binance loopback pages, and tab clip-path chamfers are unchanged.
+rectangular container. True circles stay `50%`. NASA Vault uses the same
+token (`--vault-radius`); diamond status dots stay 0. Amber Agent frames,
+Binance loopback pages, and tab clip-path chamfers are unchanged.
 
 ## Research
 
@@ -49,7 +50,8 @@ rounding. 8px is the manufactured bevel; glow still carries focus.
 | `src-tauri/src/theme.rs` | `ChromeBorder` default radius 8 |
 | `src-tauri/themes/*.toml` | `chrome.border.radius = 8` |
 | `src/styles/*.css` | Fallback `4px` → `8px` on `--krypton-border-radius` |
-| `DESIGN.md` | 1.2.2 — 8px default, forbidden list updated |
+| `src/styles/vault-view.css` | `--vault-radius` aliases the 8px token; diamond dots stay 0 |
+| `DESIGN.md` | 1.2.3 — vault uses the token; 1.2.2 was the 8px default |
 | `PRODUCT.md` | Brand personality 8px bevel |
 | `docs/10-theme-specification.md` | Default 8 |
 
@@ -64,16 +66,20 @@ CSS fallback is `8px` so a missing theme still bevels.
   6px status squares stay square; cursor-trail teardrop is not a container;
   markdown `th`/`td` stay square (the `table` is the 8px container);
   stacked picker chrome uses split
-  top/bottom radii.
+  top/bottom radii (lane picker is one `.acp-harness__picker-panel` with the
+  container radius).
 - Harness composer and the host window while that tab is showing stay `0px`
   (command line, not a card). See spec 233 edge cases.
+- NASA Vault windows, frontmatter, picker, inputs, chips, and thumbs use
+  `--vault-radius` → `--krypton-border-radius`. The rotated 4px status diamond
+  stays `border-radius: 0`.
 - 8px-wide scrollbar thumbs become fully rounded ends. That is the same
   token, not a second radius.
 
 ## Out of Scope
 
-Changing NASA Vault or Amber Agent window frames. Changing Binance
-loopback pages. Removing tab chamfers.
+Changing Amber Agent window frames. Changing Binance loopback pages.
+Removing tab chamfers.
 
 ## Resources
 

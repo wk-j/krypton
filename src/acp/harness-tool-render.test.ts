@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import type { ToolPayload } from './harness-view-types';
@@ -442,6 +445,9 @@ describe('execute exit badge (spec 235)', () => {
     expect(chip?.dataset.status).toBe('ok');
     expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('0');
     expect(findClass(out, 'acp-harness__tool-exit-label')?.textContent).toBe('exit');
+    const label = findClass(out, 'acp-harness__tool-section-label');
+    expect(findClass(label!, 'acp-harness__tool-exit')).toBe(chip);
+    expect(out.children[0]?.className).not.toBe('acp-harness__tool-exit');
     const pre = findClass(out, 'acp-harness__tool-section-text');
     expect(pre?.textContent).toContain('[master 599d8d8]');
     expect(pre?.textContent).not.toContain('exit: 0');
@@ -456,8 +462,10 @@ describe('execute exit badge (spec 235)', () => {
         sections: [{ label: 'output', text: 'error TS2322: Type string is not assignable' }],
       })) as unknown as FakeEl;
     });
-    expect(findClass(out, 'acp-harness__tool-exit')?.dataset.status).toBe('fail');
+    const fail = findClass(out, 'acp-harness__tool-exit');
+    expect(fail?.dataset.status).toBe('fail');
     expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('1');
+    expect(findClass(findClass(out, 'acp-harness__tool-section-label')!, 'acp-harness__tool-exit')).toBe(fail);
     expect(findClass(out, 'acp-harness__tool-section-text')?.textContent).toContain('error TS2322');
   });
 
@@ -483,6 +491,7 @@ describe('execute exit badge (spec 235)', () => {
     });
     expect(collectClasses(out).join(' ')).toContain('acp-harness__tool-rich--gitstatus');
     expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('0');
+    expect(out.children[0]?.className).toBe('acp-harness__tool-exit');
     expect(JSON.stringify(out)).not.toContain('exit: 0');
   });
 
@@ -519,6 +528,42 @@ describe('execute exit badge (spec 235)', () => {
     });
     expect(findClass(el, 'acp-harness__tool-exit-code')?.textContent).toBe('1');
     expect(findClass(el, 'acp-harness__tool-exit')?.dataset.status).toBe('fail');
+  });
+
+  it('does not frame the number as a kind chip; fail keeps error color', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+      'utf8',
+    );
+    const code = css.match(/\.acp-harness__tool-exit-code\s*\{[^}]*\}/)?.[0] ?? '';
+    const fail = css.match(
+      /\.acp-harness__tool-exit\[data-status="fail"\] \.acp-harness__tool-exit-code\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    const sectionLabel = css.match(/\.acp-harness__tool-section-label\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(code).not.toMatch(/border:/);
+    expect(code).not.toMatch(/font-weight:\s*700/);
+    expect(code).toMatch(/font-variant-numeric:\s*tabular-nums/);
+    expect(code).not.toMatch(/--agent-accent/);
+    expect(fail).toMatch(/--agent-error/);
+    expect(sectionLabel).toMatch(/display:\s*flex/);
+  });
+});
+
+describe('grep line gutter (spec 235)', () => {
+  it('right-aligns line numbers in a shared ≥4ch column', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+      'utf8',
+    );
+    const line = css.match(/\.acp-harness__tok-line\s*\{[^}]*\}/)?.[0] ?? '';
+    const pathRow = css.match(/\.acp-harness__grep-row--path\s*\{[^}]*\}/)?.[0] ?? '';
+    const linenoRow = css.match(/\.acp-harness__grep-row--lineno\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(line).toMatch(/font-variant-numeric:\s*tabular-nums/);
+    expect(line).toMatch(/text-align:\s*end/);
+    expect(line).toMatch(/justify-self:\s*end/);
+    expect(pathRow).toMatch(/minmax\(8ch,\s*32ch\)/);
+    expect(pathRow).toMatch(/minmax\(4ch,\s*max-content\)/);
+    expect(linenoRow).toMatch(/minmax\(4ch,\s*max-content\)/);
   });
 });
 
