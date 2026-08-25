@@ -242,6 +242,21 @@ export class CommandPalette {
   handleKey(e: KeyboardEvent): boolean {
     if (!this.visible) return false;
 
+    // Ctrl+N / Ctrl+P — readline-style next/prev (same as quick-file-search
+    // and other pickers). Palette mode owns these so they do not lane-switch.
+    if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      if (e.key === 'n' || e.key === 'N' || e.code === 'KeyN') {
+        e.preventDefault();
+        this.selectNext();
+        return true;
+      }
+      if (e.key === 'p' || e.key === 'P' || e.code === 'KeyP') {
+        e.preventDefault();
+        this.selectPrev();
+        return true;
+      }
+    }
+
     switch (e.key) {
       case 'Escape':
         this.close();

@@ -10,7 +10,7 @@ Users must memorize keybindings to perform actions. There is no discoverable, se
 
 ## Solution
 
-Add a fuzzy-searchable command palette overlay activated by `Cmd+Shift+P`. It lists every action in Krypton with its keybinding. The user types to filter, uses arrow keys to navigate, and presses Enter to execute. A new `src/command-palette.ts` module owns the UI and action registry. The input router gains a `CommandPalette` mode.
+Add a fuzzy-searchable command palette overlay activated by `Cmd+Shift+P`. It lists every action in Krypton with its keybinding. The user types to filter, uses arrow keys or Ctrl+N/P to navigate, and presses Enter to execute. A new `src/command-palette.ts` module owns the UI and action registry. The input router gains a `CommandPalette` mode.
 
 ## Affected Files
 
@@ -69,7 +69,7 @@ Implementation: for each action, check if query characters appear in order (subs
 3. CommandPalette shows overlay, focuses <input>, sets mode to CommandPalette
 4. SoundEngine plays 'command_palette.open'
 5. User types → input event fires → filter actions → update result list
-6. User presses ArrowUp/ArrowDown → navigate selection
+6. User presses ArrowUp/ArrowDown or Ctrl+P/Ctrl+N → navigate selection
 7. User presses Enter → execute selected action
 8. CommandPalette hides overlay, plays 'command_palette.execute'
 9. InputRouter returns to Normal mode
@@ -81,7 +81,7 @@ Implementation: for each action, check if query characters appear in order (subs
 | Key | Context | Action |
 |-----|---------|--------|
 | `Cmd+Shift+P` | Global (any mode) | Open/close command palette |
-| `ArrowUp` / `ArrowDown` | CommandPalette mode | Navigate result list |
+| `ArrowUp` / `ArrowDown`, `Ctrl+P` / `Ctrl+N` | CommandPalette mode | Navigate result list |
 | `Enter` | CommandPalette mode | Execute selected action |
 | `Escape` | CommandPalette mode | Close palette |
 

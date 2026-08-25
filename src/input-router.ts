@@ -685,7 +685,7 @@ export class InputRouter {
       }
 
       // Command Palette mode: let typing flow to the <input>, only
-      // intercept navigation keys (ArrowUp/Down, Enter, Tab, Escape).
+      // intercept navigation keys (ArrowUp/Down, Ctrl+N/P, Enter, Tab, Escape).
       if (this.mode === Mode.CommandPalette) {
         this.handleCommandPaletteKey(e);
         return;
@@ -1241,7 +1241,7 @@ export class InputRouter {
 
   // ─── Command Palette Mode ──────────────────────────────────────
   // The palette has its own <input> that receives typing events.
-  // We only intercept navigation keys (ArrowUp/Down, Enter, Tab).
+  // We only intercept navigation keys (ArrowUp/Down, Ctrl+N/P, Enter, Tab).
   // All other keys pass through to the input element.
 
   private handleCommandPaletteKey(e: KeyboardEvent): void {
