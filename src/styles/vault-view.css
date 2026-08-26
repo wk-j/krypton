@@ -628,19 +628,50 @@
 }
 
 /* ─── Tables ─── */
+/* collapse ignores radius; separate + corner-cell radii clip header/row fills */
 
 .krypton-vault__table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   margin: 1em 0;
   font-family: var(--vault-font-data);
   font-size: var(--krypton-font-size);
+  border: 1px solid var(--vault-border);
+  border-radius: var(--vault-radius);
 }
 
 .krypton-vault__table th,
 .krypton-vault__table td {
   padding: 8px 12px;
-  border: 1px solid var(--vault-border);
+  border: 0;
+  border-right: 1px solid var(--vault-border);
+  border-bottom: 1px solid var(--vault-border);
+}
+
+.krypton-vault__table th:last-child,
+.krypton-vault__table td:last-child {
+  border-right: none;
+}
+
+.krypton-vault__table > :last-child > tr:last-child > * {
+  border-bottom: none;
+}
+
+.krypton-vault__table > :first-child > tr:first-child > :first-child {
+  border-top-left-radius: var(--vault-radius);
+}
+
+.krypton-vault__table > :first-child > tr:first-child > :last-child {
+  border-top-right-radius: var(--vault-radius);
+}
+
+.krypton-vault__table > :last-child > tr:last-child > :first-child {
+  border-bottom-left-radius: var(--vault-radius);
+}
+
+.krypton-vault__table > :last-child > tr:last-child > :last-child {
+  border-bottom-right-radius: var(--vault-radius);
 }
 
 .krypton-vault__table th {

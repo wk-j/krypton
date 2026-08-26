@@ -93,7 +93,7 @@ H1 size is `1.714×` body, H2 `1.357×`, H3 `1.143×` — a *gentle* type scale,
 
 Same manufactured bevel as Krypton Dark:
 
-- Window frame, panels, inputs, chips, picker: `var(--krypton-border-radius, 8px)` via `--vault-radius`.
+- Window frame, panels, inputs, chips, picker, markdown tables: `var(--krypton-border-radius, 8px)` via `--vault-radius`. Table `th`/`td` stay square so grid lines do not double-bevel.
 - Diamond status dots stay `0px` rotated 4px squares — they are indicators, not containers.
 - No L-shaped corner brackets on sidebar, main, or any panel. Two-side HUD ticks (`border-top` + `border-left` 10px arms) are banned. Full 1px panel border or nothing.
 

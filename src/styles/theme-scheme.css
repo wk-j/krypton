@@ -86,7 +86,11 @@ html[data-theme-scheme='light'] .krypton-window__lane-more {
 }
 
 html[data-theme-scheme='light'] .krypton-window__project {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 72%, var(--krypton-ink));
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+}
+
+html[data-theme-scheme='light'] .krypton-window__project-initials {
+  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 88%, var(--krypton-ink));
 }
 
 html[data-theme-scheme='light'] .krypton-window__footer {

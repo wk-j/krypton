@@ -100,6 +100,11 @@
     transparent 3px
   );
   flex-shrink: 0;
+  /* Participate in chrome's stacking so the canvas compositor layer cannot
+     paint over the zoomed session mark that hangs into this band. */
+  position: relative;
+  z-index: 0;
+  pointer-events: none;
 }
 
 /* Oscilloscope variant — a <canvas> drawn by HeaderScope (fed by PTY
@@ -119,6 +124,12 @@
 .krypton-window__chrome {
   flex-shrink: 0;
   overflow: visible;
+  /* Flex item of `.krypton-window`. Titlebar `z-index` alone is trapped in
+     this item's layer, so the zoomed session mark (which hangs out of the
+     titlebar) painted *under* the later content/pane sibling. Lifting the
+     whole head puts the overflow above the pane. Spec 226. */
+  position: relative;
+  z-index: 2;
 }
 
 .krypton-window__titlebar {
@@ -133,7 +144,9 @@
   -webkit-user-select: none;
   user-select: none;
   position: relative;
-  z-index: 2;
+  /* Above the header-accent canvas inside chrome. Chrome's own z-index is
+     what beats the pane; this one only orders titlebar vs the band. */
+  z-index: 1;
   /* Visible so the magnified tail can sit on the rail; the ack wipe is
      clipped by its own 100% box, not by this overflow. */
   overflow: visible;
@@ -202,14 +215,21 @@
 /* spec 226: session identity (`01`) on the titlebar's right edge.
    Quiet 11px on every tile; 2.9× only on the focused window — same
    factor as the footer lane logo. `font-size` (not a transform) so the
-   box carries its painted width. Focused tail is top-aligned so the
-   extra ~4px hangs into the header accent, not out of the window. */
+   box carries its painted width. The end cluster is locked to the
+   titlebar's 28px so the zoomed type cannot grow it and get vertically
+   centered (that leaked the same extra *above* the window frame).
+   Focused tail is top-aligned: extra height hangs into the header
+   accent / pane, never out the top of the window. Chrome `z-index: 2`
+   is what keeps that hang above the pane (see `.krypton-window__chrome`). */
 .krypton-window__titlebar-end {
   display: flex;
   align-items: center;
   gap: 10px;
   flex: none;
   min-width: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: visible;
 }
 
 .krypton-window__label-tail {
@@ -253,18 +273,12 @@
 .krypton-window__footer {
   border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
   container-type: inline-size;
-  /* spec 219: magnification of the project badge's drop cap. Declared here so
-     the factor is tunable in one place — the right value depends on the rail
-     height, which is themeable via `--krypton-footer-height`. Same default as
-     `--krypton-lane-zoom`; note that a glyph's ink fills less of its em box
-     than the lane logo's artwork fills its viewBox, so equal numbers do not
-     mean equal ink height. */
+  /* spec 219: two-letter glance mark. Same factor as `--krypton-lane-zoom` so
+     the pair and the lane logo share one ink height. Width is always two
+     glyphs, so a long name cannot blow the rail. */
   --krypton-window-project-zoom: 2.9;
-  /* spec 220: magnification of the diff stat's counts. Its own variable rather
-     than a reuse of the project zoom above, because the three magnified marks
-     on this rail scale from different ink (a glyph pair, digits, an SVG) and a
-     theme retuning the rail will want them independent — the shared 2.9 default
-     is what makes them agree today. */
+  /* spec 220: magnification of the diff stat's counts. Same 2.9 as the lane
+     logo and the project pair — one oversized phrase at the rail's right end. */
   --krypton-window-diff-zoom: 2.9;
   /* spec 218: the lane chip's height, and with it the inset of the strip's own
      text line from the rail floor. Declared on the footer because spec 219's
@@ -291,7 +305,8 @@
    "reserve 1.9 × my text width", so a transformed head would sit on top of the
    quotas. Scaling type instead gives the element its true painted width, and the
    quotas beside it are already the compressible half of the rail (spec 153).
-   Flat: no border box, no underline, no left rail, no glow. */
+   Flat: no border box, no underline, no left rail, no glow. The pair is neon
+   accent at two sizes. The tail stays 11px. */
 
 .krypton-window__project {
   /* Trails the rail, just inside the lane strip (`order: 2`). `order` rather
@@ -305,8 +320,11 @@
   flex: none;
   display: inline-flex;
   /* One baseline through both halves, so the tail reads as the same word as the
-     drop cap rather than as a separate label. */
+     drop cap rather than as a separate label. `gap` keeps the 11px tail out of
+     the last magnified glyph (letter-spacing on the pair is trailing and used
+     to slide the tail under `KR`). */
   align-items: baseline;
+  gap: 4px;
   /* Pinning the box's floor sends every overflowing pixel upward, over the pane
      — never down through the window's bottom edge. Same escape route the lane
      logo uses.
@@ -336,7 +354,8 @@
   white-space: nowrap;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+  /* Tail colour. The two-letter head is neon; this stays quiet. */
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
 }
 
 .krypton-window__project-initials {
@@ -344,13 +363,18 @@
   font-size: calc(
     var(--krypton-chrome-font-size, 11px) * var(--krypton-window-project-zoom, 2.9)
   );
-  letter-spacing: -0.02em;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: rgb(var(--krypton-window-accent-rgb, 0, 200, 255));
 }
 
 .krypton-window__project-rest {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 500;
+  letter-spacing: 0.04em;
 }
 
 /* ─── Window footer diff stat (spec 220) ───

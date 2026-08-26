@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { nextTitleLabel, splitTitleLabel } from './window-title-label';
@@ -44,5 +47,29 @@ describe('nextTitleLabel', () => {
       rest: '~/S/KRYPTON',
       tail: '',
     });
+  });
+});
+
+describe('session mark chrome', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'styles/window.css'),
+    'utf8',
+  );
+  const chrome = css.match(/\.krypton-window__chrome\s*\{[^}]*\}/)?.[0] ?? '';
+  const accent = css.match(/\.krypton-window__header-accent\s*\{[^}]*\}/)?.[0] ?? '';
+  const end = css.match(/\.krypton-window__titlebar-end\s*\{[^}]*\}/)?.[0] ?? '';
+  const focused = css.match(
+    /\.krypton-window--focused \.krypton-window__label-tail\s*\{[^}]*\}/,
+  )?.[0] ?? '';
+
+  it('pins the zoomed mark to the titlebar so extra hangs down, not out the frame', () => {
+    expect(end).toMatch(/height:\s*100%/);
+    expect(end).toMatch(/min-height:\s*0/);
+    expect(focused).toMatch(/align-self:\s*flex-start/);
+  });
+
+  it('paints the hanging mark above the pane and the header-accent canvas', () => {
+    expect(chrome).toMatch(/z-index:\s*2/);
+    expect(accent).toMatch(/z-index:\s*0/);
   });
 });

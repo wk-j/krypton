@@ -195,7 +195,7 @@ The vault window CSS is **fully self-contained** in `vault-view.css`, scoped und
 |---------|-------|
 | Background | `rgba(6, 10, 20, 0.65)` deep navy |
 | Primary color | `#4fc3f7` sky blue |
-| Borders | 1px solid, `var(--krypton-border-radius, 8px)` via `--vault-radius`. No L-shaped corner brackets. Diamond status dots stay square. |
+| Borders | 1px solid, `var(--krypton-border-radius, 8px)` via `--vault-radius`. No L-shaped corner brackets. Diamond status dots stay square. Markdown tables are 8px containers (`border-collapse: separate`); `th`/`td` stay square. |
 | Sidebar header | `Orbitron` or monospace, uppercase, 0.2em letter-spacing |
 | Content typography | Monospace for code, readable sans-serif for prose |
 | Scanlines | Horizontal CRT lines at 0.08 opacity over content |

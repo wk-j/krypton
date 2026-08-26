@@ -107,6 +107,19 @@ describe('composer prompt geometry', () => {
     expect(block).toMatch(/border-radius:\s*0/);
     expect(block).not.toMatch(/--krypton-border-radius/);
   });
+
+  it('does not square the host window chrome while the harness tab is showing', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+      'utf8',
+    );
+    expect(css).not.toMatch(
+      /\.krypton-window\[data-content-type=['"]acp_harness['"]\]\s*\{[^}]*border-radius:\s*0/,
+    );
+    expect(css).not.toMatch(
+      /\.krypton-window:has\([^)]*acp-harness\)[^{]*\{[^}]*border-radius:\s*0/,
+    );
+  });
 });
 
 describe('lane picker chrome', () => {

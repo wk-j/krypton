@@ -19,8 +19,10 @@ despite occupying prime chrome real estate directly under the window label.
 
 Replace the static tick band on **terminal-hosting windows** with a live **oscilloscope
 trace** rendered on a per-window `<canvas>`: a continuous waveform, scrolling right→left,
-glowing at the live edge, whose amplitude is driven by the window's real PTY output
-throughput (bytes/sec). The band becomes a signal — you *see* the terminal working. It is
+whose amplitude is driven by the window's real PTY output throughput (bytes/sec). Idle
+hairline and live trace share one stroke alpha — activity is motion, not a brighter
+band (energy-driven α + live-edge glow flashed the header on every pump). The band
+becomes a signal — you *see* the terminal working. It is
 GPU-cheap and, critically, its animation loop **stops when the window goes idle**, so idle
 CPU stays at 0% per the architecture budget. Under `prefers-reduced-motion` it renders a
 single static hairline and never animates.
@@ -120,7 +122,8 @@ Internals: `Float32Array` ring buffer of signed samples (length ≈ cssWidth/2);
    MIN_KICK exists so token-sized text pumps (harness/agent, spec 189) actually deflect
    the 6px band; PTY bursts of hundreds of bytes still scale with `len/SCALE`.
 5. Each frame: energy *= DECAY; push one signed sample (energy × smooth-noise) into the
-   ring buffer; clear canvas; stroke the buffer as a polyline (glow on the live edge).
+   ring buffer; clear canvas; stroke the buffer as a polyline at the same alpha as
+   the idle hairline (`HEADER_SCOPE_TRACE_ALPHA`). No live-edge glow.
 6. When energy < ε AND max|buffer| < ε: draw one flat frame, cancelAnimationFrame, STOP.
    → an idle window's scope consumes 0 CPU.
 ```
@@ -132,9 +135,10 @@ Internals: `Float32Array` ring buffer of signed samples (length ≈ cssWidth/2);
 - CSS: `--scope { display:block; width:calc(100% - 2×margin); height:var(--krypton-header-accent-height); }`
   (canvas is DPR-scaled internally). The base `.krypton-window__header-accent` div rule is
   retained unchanged for content-view/dashboard.
-- Trace color: `rgba(var(--krypton-window-accent-rgb), α)` with α rising with energy; live
-  edge gets `shadowBlur` glow. Focused vs unfocused can differ in base alpha (reuse
-  `--krypton-focused-header-accent` intent) — minor, optional.
+- Trace color: `rgba(var(--krypton-window-accent-rgb), HEADER_SCOPE_TRACE_ALPHA)` for
+  both the idle hairline and the live polyline. Amplitude carries activity; α does
+  not. Focused vs unfocused can differ in base alpha (reuse
+  `--krypton-focused-header-accent` intent) — minor, optional, currently unused.
 - Reduced-motion: a single static faint hairline (ghost-hairline look), no rAF.
 
 ### Configuration

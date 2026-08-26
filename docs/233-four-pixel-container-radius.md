@@ -82,8 +82,9 @@ bevels.
   end pieces; the middle directive list stays square so the seam joins.
 - The ACP Harness composer is a command line, not a container card: `.acp-harness__composer`
   stays `border-radius: 0` (same as `.agent-view__input-row` / `.acp-view__input-row`).
-  While the harness tab is showing, the host window / titlebar / footer are also
-  `0px` so the 1px frame around the prompt is not an 8px capsule.
+  The host window / titlebar / footer keep the container radius — a later pass
+  that squared them with the prompt removed the bevel from the main window
+  without changing the prompt (it sits in the pane, above the footer).
 
 ## Out of Scope
 

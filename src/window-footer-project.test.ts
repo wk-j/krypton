@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { INITIALS_LEN, PROJECT_LABEL_MAX, projectBadge } from './window-footer-project';
@@ -85,5 +88,39 @@ describe('projectBadge', () => {
 
   it('accepts a bare name with no separator', () => {
     expect(projectBadge('krypton')).toMatchObject({ label: 'krypton', title: 'krypton' });
+  });
+});
+
+describe('project badge chrome', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'styles/window.css'),
+    'utf8',
+  );
+  const badge = css.match(/\.krypton-window__project\s*\{[^}]*\}/)?.[0] ?? '';
+  const initials = css.match(/\.krypton-window__project-initials\s*\{[^}]*\}/)?.[0] ?? '';
+  const rest = css.match(/\.krypton-window__project-rest\s*\{[^}]*\}/)?.[0] ?? '';
+
+  it('magnifies only the two-letter head', () => {
+    expect(css).toMatch(/--krypton-window-project-zoom:\s*2\.9/);
+    expect(initials).toMatch(/--krypton-window-project-zoom/);
+    expect(initials).toMatch(/text-transform:\s*uppercase/);
+    expect(initials).not.toMatch(/text-shadow/);
+    expect(rest).not.toMatch(/font-size/);
+    expect(rest).not.toMatch(/project-zoom/);
+    expect(rest).not.toMatch(/text-shadow/);
+    expect(badge).toMatch(/gap:\s*4px/);
+    expect(initials).not.toMatch(/letter-spacing:\s*-/);
+  });
+
+  it('does not glow the two-letter mark on the light scheme either', () => {
+    const light = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'styles/theme-scheme.css'),
+      'utf8',
+    );
+    const lightInitials =
+      light.match(
+        /html\[data-theme-scheme='light'\] \.krypton-window__project-initials\s*\{[^}]*\}/,
+      )?.[0] ?? '';
+    expect(lightInitials).not.toMatch(/text-shadow/);
   });
 });

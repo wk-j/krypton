@@ -1,6 +1,6 @@
 ---
 name: Krypton Dark
-version: 1.2.3
+version: 1.2.4
 description: Cyberpunk sci-fi terminal aesthetic — cyan neon on transparent blue-black, 8px bevel geometry, monospace typography, multi-layer glows
 colors:
   primary: "#0cf"
@@ -58,7 +58,7 @@ typography:
   numeric:
     fontVariant: "tabular-nums"   # mandatory for gauges, timers, counters
 rounded:
-  none: "0px"        # sibling aesthetics only (agent frame, vault diamond dots, harness composer + host window while that tab is showing)
+  none: "0px"        # sibling aesthetics only (agent frame, vault diamond dots, harness composer)
   container: "8px"   # default — every Krypton Dark rectangular container
   subtle: "8px"      # alias of container; toasts and badges use the same bevel
 spacing:
@@ -243,7 +243,7 @@ Monospace everywhere. The terminal nature of the product is the brand — propor
 
 ## Geometry
 
-**8px corner radius is the default** on every rectangular Krypton Dark container: windows, panels, palettes, dialogs, toasts, chips, buttons, inputs, tabs. The curve is a manufactured bevel, not a pillow. True circles (`50%`) stay circles (status discs, remove buttons). Do not mix 0/2/3/4/12px on the same surface. NASA Vault uses the same 8px token (diamond status dots stay 0). Amber Agent frames stay 0px.
+**8px corner radius is the default** on every rectangular Krypton Dark container: windows, panels, palettes, dialogs, toasts, chips, buttons, inputs, tabs. The curve is a manufactured bevel, not a pillow. True circles (`50%`) stay circles (status discs, remove buttons). Do not mix 0/2/3/4/12px on the same surface. NASA Vault uses the same 8px token (diamond status dots stay 0). Amber Agent frames stay 0px. The ACP harness composer stays 0px (command line, not a card); its host window uses the 8px token.
 
 **Angled clip-paths** appear on active tabs (chamfered top corners), giving an industrial "machined" silhouette. Diagonals also appear in tab separators (12° rotation) — a subtle "this is not a spreadsheet" cue.
 
@@ -460,6 +460,7 @@ What must *not* happen is partial drift inside Krypton Dark surfaces: a 12px car
 
 ## Changelog
 
+- **1.2.4** — ACP harness host window uses the 8px token again. Only the composer stays 0px.
 - **1.2.3** — NASA Vault containers use the 8px token (`--vault-radius` → `--krypton-border-radius`). Diamond status dots stay 0. Amber Agent frames stay 0px.
 - **1.2.2** — Default container radius is 8px (`--krypton-border-radius` / `chrome.border.radius`). Same token as 1.2.0, larger bevel. Circles stay `50%`. NASA Vault and Amber Agent frames keep their sibling geometry.
 - **1.2.1** — L-shaped corner brackets are forbidden on every surface (windows, vault, agent, harness, toasts). Full 1px border or nothing.

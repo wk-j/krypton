@@ -17,11 +17,10 @@ know what it is.
 ## Solution
 
 Render the focused view's **project name** into the window's own status bar, with its **first two
-characters magnified** — a drop cap — using the same zoom factor as the lane strip's active-lane
-logo, so a window announces its project at scanning distance without being read letter by letter
-while the rest of the name stays readable at the rail's own size. Magnifying only the head also
-bounds the cost: the glance target is a fixed width whether the project is `pi-mono` or
-`tli-api-specification`. It **trails the rail**, immediately left of the dock-zoomed lane logo, so
+characters magnified** — a drop cap — at the **same 2.9× as the lane strip's active-lane logo**,
+in neon accent, so a window announces its project at scanning distance. The rest
+of the name stays 11px. Magnifying only the head also bounds the cost: the glance target is a fixed
+width whether the project is `pi-mono` or `tli-api-specification`. It **trails the rail**, immediately left of the dock-zoomed lane logo, so
 "which project" and "which lane" form one glance target at the rail's right end rather than two at
 opposite corners; it is derived from the focused pane's
 `getWorkingDirectory()` — the same focused-pane contract the quotas (spec 153) and the lane
@@ -189,14 +188,14 @@ with the repo's `+added -removed` between the name and the logo, magnified to ma
 
 | Concern | Rule | Why |
 |---------|------|-----|
-| Size | `font-size: calc(var(--krypton-chrome-font-size, 11px) * var(--krypton-window-project-zoom, 2.9))` **on the initials only** | Same factor as `--krypton-lane-zoom`, but applied to type rather than to a transform, so the element's own box is its painted width and the quotas beside it can never be overlapped. Confining it to two characters keeps the magnified width constant across projects. |
+| Size | `font-size: calc(var(--krypton-chrome-font-size, 11px) * var(--krypton-window-project-zoom, 2.9))` **on the initials only** | Same factor as `--krypton-lane-zoom`, so the pair and the lane logo share one ink height. Applied to type rather than a transform, so the box is the painted width. Two characters keeps the magnified width constant across projects. |
 | Two halves, one word | `display: inline-flex` + `align-items: baseline` | The drop cap and the tail sit on one baseline, so they read as a single word rather than as a label plus a value. |
 | Direction | `align-self: flex-end` + `line-height: 1` | The rail's height is fixed, so anchoring the box's floor sends every overflowing pixel *upward*, over the pane — never down through the window's bottom edge. Same escape route spec 218 uses. |
 | Painting the escape | `position: relative` | Escaping upward is not enough on its own: `.krypton-pane` is `position: relative`, so it paints in the positioned phase, *after* the footer's ordinary inline text, and its opaque view background sliced the drop cap flat at the rail's top edge (measured in a WKWebView repro). Positioning the badge moves it into the same paint phase, where tree order — footer after pane — puts it on top. Spec 218's lane logo never showed this because its `transform` already promotes it the same way. |
 | Which floor | `margin-bottom: calc((var(--krypton-footer-height, 28px) - var(--krypton-lane-chip-height, 18px)) / 2)` | The floor is the **lane chip's**, not the rail's. A floor-pinned box is positioned by its bottom edge, and the drop cap's box carries its own descent below the baseline: pinned to the rail floor the word's baseline landed 6px up while the rail's other type sits at 11–14px, so the whole word — descenders included — hung below the chip beside it. The chip's inset lifts the shared baseline onto the strip's text line (measured: drop cap, tail and lane name all at 11px), so badge and strip read as one line of rail type. Derived from the two heights rather than tuned, so a themed rail keeps it. |
 | Placement | `order: 1` (lane strip moves to `order: 2`), `flex: none` | Trails the rail, immediately left of the lane strip, so project and active lane are one glance target instead of two at opposite corners. `flex: none` makes the quotas the compressible half, as spec 153 already intends. |
 | Right-pinning | `margin-left: auto` on the badge; the strip's own auto margin becomes `margin-left: 10px` via `.krypton-window__footer:has(.krypton-window__project)` | Exactly one rail item may claim the free space — two auto margins split it and would leave the badge floating mid-rail. The leftmost of `notif → badge → strip` pushes; the rest trail it. The `:has()` is because the badge is absent whenever the focused pane has no project, and the strip must then take its auto margin back. |
-| Colour | `color: rgba(var(--krypton-window-accent-rgb), 0.7)` | The window's own accent, which `allocateAccentColor` already guarantees is unique among open windows — so name and hue agree, and the badge matches the chrome it sits in. |
+| Colour | Initials: neon accent, `text-transform: uppercase`. Tail: `rgba(accent, 0.45)`, 11px. | Same window accent, unique among open windows. The pair is a callsign; the tail is confirmation at rail size so a long name does not compete. |
 | Motion | none | The footer's standing no-motion rule. A project does not change under a window the way an active lane does, so there is nothing for a pop to announce. |
 | Overflow | `max-width: 45%`, `overflow: hidden`, `text-overflow: ellipsis` on the tail, `white-space: nowrap` | A narrow window clips the tail rather than pushing the quotas off the rail — and the drop cap, which is the actual glance target, is `flex: none` and survives the squeeze. |
 

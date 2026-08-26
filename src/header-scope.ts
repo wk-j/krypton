@@ -43,6 +43,10 @@ export function headerScopeEnergyBump(energy: number, bytes: number): number {
 const WATCHDOG_MS = 5000;
 /** Fallback accent when the CSS custom property is not yet resolvable. */
 const DEFAULT_ACCENT = '0, 200, 255';
+/** Shared stroke alpha for the idle hairline and the live trace. Energy used
+ *  to raise α and add a live-edge glow; that flashed the whole header on
+ *  every pump (harness tokens especially). Activity is amplitude only. */
+export const HEADER_SCOPE_TRACE_ALPHA = 0.28;
 
 export class HeaderScope implements BackgroundAnimation {
   private readonly canvas: HTMLCanvasElement;
@@ -199,9 +203,7 @@ export class HeaderScope implements BackgroundAnimation {
     ctx.clearRect(0, 0, w, h);
     ctx.lineWidth = Math.max(1, this.dpr);
     ctx.lineJoin = 'round';
-    ctx.shadowBlur = 6 * this.dpr;
-    ctx.shadowColor = `rgba(${this.accent}, 0.9)`;
-    ctx.strokeStyle = `rgba(${this.accent}, ${(0.6 + Math.min(0.4, this.energy)).toFixed(3)})`;
+    ctx.strokeStyle = `rgba(${this.accent}, ${HEADER_SCOPE_TRACE_ALPHA})`;
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
       const x = (i / (n - 1)) * w;
@@ -209,7 +211,6 @@ export class HeaderScope implements BackgroundAnimation {
       i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     }
     ctx.stroke();
-    ctx.shadowBlur = 0;
   }
 
   /** Idle / reduced-motion rendering: a single faint flat hairline. */
@@ -218,9 +219,8 @@ export class HeaderScope implements BackgroundAnimation {
     const { ctx, w, h } = this;
     const mid = h / 2;
     ctx.clearRect(0, 0, w, h);
-    ctx.shadowBlur = 0;
     ctx.lineWidth = Math.max(1, this.dpr);
-    ctx.strokeStyle = `rgba(${this.accent}, 0.28)`;
+    ctx.strokeStyle = `rgba(${this.accent}, ${HEADER_SCOPE_TRACE_ALPHA})`;
     ctx.beginPath();
     ctx.moveTo(0, mid);
     ctx.lineTo(w, mid);

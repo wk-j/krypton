@@ -64,15 +64,17 @@ CSS fallback is `8px` so a missing theme still bevels.
 
 - Same load-bearing rules as 233: `overflow: visible` on `.krypton-window`;
   6px status squares stay square; cursor-trail teardrop is not a container;
-  markdown `th`/`td` stay square (the `table` is the 8px container);
+  markdown `th`/`td` stay square (the `table` is the 8px container,
+  including vault `.krypton-vault__table` with `border-collapse: separate`);
   stacked picker chrome uses split
   top/bottom radii (lane picker is one `.acp-harness__picker-panel` with the
   container radius).
-- Harness composer and the host window while that tab is showing stay `0px`
-  (command line, not a card). See spec 233 edge cases.
-- NASA Vault windows, frontmatter, picker, inputs, chips, and thumbs use
-  `--vault-radius` → `--krypton-border-radius`. The rotated 4px status diamond
-  stays `border-radius: 0`.
+- Harness composer stays `0px` (command line, not a card). The host window,
+  titlebar, and footer keep the 8px token — squaring them with the prompt
+  made the main window lose its bevel. See spec 233 edge cases.
+- NASA Vault windows, frontmatter, picker, inputs, chips, thumbs, and
+  markdown tables use `--vault-radius` → `--krypton-border-radius`. The
+  rotated 4px status diamond stays `border-radius: 0`.
 - 8px-wide scrollbar thumbs become fully rounded ends. That is the same
   token, not a second radius.
 

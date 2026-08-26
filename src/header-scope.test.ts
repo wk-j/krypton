@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   HEADER_SCOPE_EPS,
   HEADER_SCOPE_MIN_KICK,
+  HEADER_SCOPE_TRACE_ALPHA,
   headerScopeEnergyBump,
 } from './header-scope';
 
@@ -31,5 +32,11 @@ describe('headerScopeEnergyBump', () => {
     const once = headerScopeEnergyBump(0, 8);
     const twice = headerScopeEnergyBump(once, 8);
     expect(twice).toBeCloseTo(Math.min(1, HEADER_SCOPE_MIN_KICK * 2), 5);
+  });
+});
+
+describe('HEADER_SCOPE_TRACE_ALPHA', () => {
+  it('locks one stroke alpha so idle and live traces cannot flash', () => {
+    expect(HEADER_SCOPE_TRACE_ALPHA).toBe(0.28);
   });
 });
