@@ -124,12 +124,17 @@ The page never sees a filesystem root. `listing` is the only enumeration.
 **Sidebar state.** The web client reads and writes the same
 `HurlSidebarState` file as `HurlContentView` (spec 65):
 `<app_cache_dir>/hurl/state/<sha256(cwd)>.json`. `expanded` is the set of
-open folder relPaths — a folder not in the list is collapsed. The page
-loads `/listing` first (no paint), then `/state`, then renders. No state
-file uses the in-app first-run default (each file's parent dir open).
-Click, `h`, and `l` persist on the same 300ms debounce. A first paint
-must not default missing folders to open — that was clobbering collapses
-saved by either surface.
+open folder relPaths — a folder not in the list is collapsed. Expanding
+a folder writes it **and** its ancestors (`hurl/temp` also writes `hurl`)
+so a nested open path is still visible after reload. A reload applies
+`expanded` as-is and does **not** reopen ancestors of `selected_rel_path`
+— that was undoing a collapse of the folder that holds the current file.
+If that file is hidden, the cursor lands on the collapsed ancestor.
+The page loads `/listing` first (no paint), then `/state`, then renders.
+No state file starts with every folder collapsed except the path to the
+landing file. Click, `h`, `l`, and `Enter` on a folder persist immediately;
+other changes stay on the 300ms debounce, flushed on `pagehide` /
+`beforeunload`. A first paint must not default missing folders to open.
 
 ### Data flow
 
@@ -138,7 +143,8 @@ saved by either surface.
 2. invoke get_hurl_web_url({ cwd }) → capability URL
 3. open_url(url) — user-triggered, never auto-open
 4. Browser GET /hurl/{token} → page; GET /listing then GET /state
-   (apply `expanded` before the first tree paint; missing folder = collapsed)
+   (apply `expanded` as-is; missing folder = collapsed, including
+   ancestors of the selected file; cursor lands on that ancestor)
 5. j/k select a file → GET /source + GET /cache (show last run if any)
 6. Enter/r → POST /run; EventSource /events/{runId} appends chunks
 7. finished → render Pretty/Raw/Headers; PUT cache via existing hurl_save_cache
@@ -163,23 +169,33 @@ Browser page (when not typing in the filter):
 | `E` | Cycle env file (none → each `*.env`) |
 | `/` | Focus filter |
 | `Escape` | Clear filter |
+| `.` | Reload listing + selected source. Reveals new files (opens their folders). One new file is selected; several only announce a count |
 | `y` | Copy Pretty (or Raw if Pretty empty) |
+| `c` | Copy as curl, with `{{vars}}` from the selected `*.env` (spec 237) |
+| `H` | Copy `hurl [--variables-file env] file` for the selected env (spec 237) |
+| `[` / `]` | Shrink / grow the file list |
+| `-` / `=` | Shrink / grow the source pane |
+| Drag splitters | Resize file list (vertical) or source (horizontal). Double-click or focused splitter `Home` resets |
 
-`Leader q` is unchanged (in-app). No new compositor chord.
+`Leader q` is unchanged (in-app). No new compositor chord. Split sizes persist in `localStorage` (`krypton-hurl-splits`) on this origin; they are not part of `HurlSidebarState`. Below 860px the file-list splitter becomes a row handle and uses a separate stored height (default 180px) so a desktop width is not reused as a stacked height.
 
 ### UI
 
 Single Binance-dark page (`src/acp/artifact-hurl.html`), same tokens as `artifact-termctrl.html`. One bordered workspace, not nested cards. The page is an app shell (`html/body` at `100%` height, `body`/`main` column flex): `.workspace` fills the remaining viewport so the file tree, source, and response scroll *inside* their panes. Do not use `min-height` alone on `.workspace` — without a definite height, CSS grid `fr` rows grow with content and a repo with hundreds of `.hurl` files stretches the page tens of thousands of pixels.
 
 ```
-header.topbar     brand "Hurl" · cwd basename · env <select> · v/VV chips · Run
-div.workspace     (one card)
-  aside.roster    filter + folder tree (FILES) / last-20 runs (HISTORY)
+header.topbar     brand "Hurl" · cwd basename · env <select> · v/VV chips · curl · hurl · Run
+div.workspace     (one card; CSS vars --roster / --source)
+  aside.roster    filter + folder tree (FILES) / last-20 runs (HISTORY) + reload chip
+  .split.split-x  drag / [ ]  (8px hit, 1px hairline)
   section.main
     pre.source    highlightHurl port
+    .split.split-y  drag / - =  (source vs response)
     div.response  tabs Pretty | Raw | Headers + viewport
 footer.status     EXIT · duration · bytes · env name · ring-free tabular nums
 ```
+
+Default split is 280px file list and 40% source (the previous 2fr/3fr ratio). File list clamps 160–640px (and never eats the last 280px of the workspace); source clamps 18–72%. Hover/focus/drag tints the hairline `--accent`. No nested cards, no left rails.
 
 **Pretty:** split `hurl --include` into stacked exchanges (status line, header table, body). If body parses as JSON, pretty-print in a `<pre>`; otherwise escaped text. Status `2xx` uses `--add`, other uses `--del`. **Raw:** ANSI→HTML (port `hurl-ansi.ts`). **Headers:** name/value table only.
 

@@ -35,10 +35,12 @@ have no tail.
   scale(2.9)` (fixed 1em square); project badge uses scaled `font-size` because
   text has no CSS expression for "reserve 1.9 × my width". The session mark is
   text, so it uses `font-size`.
-- `.krypton-window__titlebar` was `overflow: hidden` for the ack wipe. The wipe
-  is a `::after` already sized to the titlebar box, so the clip can move off
-  the titlebar itself; `overflow: visible` lets the extra hang into the
-  header-accent band and, at a large chrome size, the pane.
+- `.krypton-window__titlebar` was `overflow: hidden` for the ack wipe, and
+  `progress.css` (loaded after `window.css`) re-asserted `overflow: hidden`
+  for the OSC 9;4 scanline. That clipped the 2.9× digits to the 28px rail.
+  The titlebar is now `overflow-x: clip; overflow-y: visible` so the sweep
+  stays in the rail horizontally while the mark hangs into the header-accent
+  band and, at a large chrome size, the pane.
 - `.krypton-window__titlebar-end` is `height: 100%` + `min-height: 0`. Without
   that lock the zoomed tail grew the cluster, the titlebar's `align-items:
   center` split the extra above *and* below the rail, and the digits poked
@@ -49,7 +51,9 @@ have no tail.
   the later content/pane sibling (and the header-accent `<canvas>` compositor
   layer could slice the digits). `.krypton-window__chrome` is `z-index: 2` so
   the whole head — overflow included — paints above the pane; the titlebar is
-  `z-index: 1` inside that, above the band's `z-index: 0`.
+  `z-index: 1` inside that; the band is `z-index: -1`; the mark itself is a
+  positioned compositor layer (`z-index: 2` + `translateZ(0)`) so the canvas
+  cannot cover the hanging ink.
 - Last-two-characters of the live title — rejected after seeing cwd paths:
   `KRYPTON` → `ON` on every tile.
 - First two characters, left-aligned (spec 219). Rejected: default titles are
@@ -74,7 +78,8 @@ titlebar's right edge, zoomed only while that window is focused.
 | `src/window-title-label.ts` | `session_NN` split; OSC titles keep the current mark |
 | `src/window-title-label.test.ts` | Session split, path titles, mark persistence |
 | `src/compositor.ts` | Titlebar-end cluster; all title writes go through `paintWindowLabel` |
-| `src/styles/window.css` | Quiet unfocused mark; 2.9× on `.krypton-window--focused`; chrome `z-index: 2` so the hang paints above the pane |
+| `src/styles/window.css` | Quiet unfocused mark; 2.9× on `.krypton-window--focused`; chrome `z-index: 2`; titlebar `overflow-x: clip` / `overflow-y: visible`; mark layer above the header-accent canvas |
+| `src/styles/progress.css` | Must not set `overflow: hidden` on the titlebar (clips the mark) |
 | `src/styles/agent.css` / `vault-view.css` | Sibling aesthetics keep their palette on the tail |
 | `docs/04-architecture.md` | Titlebar DOM |
 | `DESIGN.md` | Window anatomy |
@@ -111,10 +116,11 @@ title replace the left-hand label without erasing the mark already on the tile.
 ```
 
 - `.krypton-window__chrome` — `z-index: 2` so overflow paints above the pane
-- `.krypton-window__header-accent` — `z-index: 0` so the canvas cannot cover the mark
+- `.krypton-window__titlebar` — `overflow-x: clip; overflow-y: visible` (not `hidden`)
+- `.krypton-window__header-accent` — `z-index: -1` so the canvas sits behind the hanging mark
 - `.krypton-window__titlebar-end` — flex cluster, right side; `height: 100%` so the zoomed tail cannot grow it
-- `.krypton-window__label-tail` — 11px, 0.45 opacity when unfocused
-- `.krypton-window--focused .krypton-window__label-tail` — 2.9×, full accent, `align-self: flex-start` so extra hangs down into the window
+- `.krypton-window__label-tail` — 11px, 0.45 opacity when unfocused; positioned layer
+- `.krypton-window--focused .krypton-window__label-tail` — 2.9×, full accent, `align-self: flex-start` so extra hangs down into the window; `translateZ(0)` so the canvas cannot cover it
 - Titles that are not `session_NN` never produce a tail of their own
 
 ## Edge Cases

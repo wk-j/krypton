@@ -229,9 +229,10 @@ The tree's expand/collapse state and last-selected file are persisted so that cl
   - view `dispose()` flushes any pending debounce synchronously
 - **Load flow**:
   1. Constructor receives cwd, fires `hurl_load_sidebar_state(cwd)` in parallel with `list_hurl_files`.
-  2. Once both resolve, apply `expanded` to the synthesized tree, then set `selectedIndex` to the row matching `selectedRelPath`.
+  2. Once both resolve, apply `expanded` as-is (a folder not in the list is collapsed). Do **not** add ancestors of `selectedRelPath` — that reopened a folder the user had collapsed around the current file, then the first-paint save wrote the reopen to disk. If the selected file is hidden, put `selectedIndex` on the first collapsed ancestor (`collapsedCover`).
   3. If the persisted selected file no longer exists (deleted, renamed), fall back to the first file in the tree and log once.
-  4. If no state file exists, default to: root-level dirs collapsed, first file selected, source view, verbose off.
+  4. If no state file exists, default to: only the ancestors of the first file open, that file selected, source view, verbose off. Persist that first-run set.
+  5. Expanding a folder (`l`, `Enter`) writes the folder **and** its ancestors; collapsing writes the folder closed immediately and leaves descendant flags in place so re-opening restores child state. A reload never hydrates ancestors of leftover descendant flags.
 - **Filter interaction**: `filterText` is intentionally **not** persisted — filters are transient. The persisted `selectedRelPath` is the last file selected outside a filter; entering a filter does not overwrite it until the user commits (presses Enter on a match).
 - **Cache clear**: `hurl_clear_cache(None)` also wipes the `state/` subdir; `hurl_clear_cache(Some(path))` only clears the output cache for that file, not sidebar state.
 

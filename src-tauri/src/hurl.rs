@@ -70,12 +70,21 @@ pub struct HurlCachedRun {
 pub struct HurlSidebarState {
     pub version: u32,
     pub cwd: String,
+    #[serde(default)]
     pub expanded: Vec<String>,
+    #[serde(default)]
     pub selected_rel_path: Option<String>,
+    #[serde(default)]
     pub view_mode: String,
+    #[serde(default)]
     pub verbose: bool,
+    #[serde(default)]
     pub very_verbose: bool,
+    #[serde(default)]
     pub active_env_file: Option<String>,
+    #[serde(default)]
+    pub resolved_view: bool,
+    #[serde(default)]
     pub updated_at: u64,
 }
 
@@ -948,5 +957,35 @@ mod tests {
         assert!(sessions.get(&a.token).is_some());
         assert!(sessions.get("deadbeefdeadbeefdeadbeefdeadbeef").is_none());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sidebar_state_deserializes_without_optional_fields() {
+        let json = r#"{"version":1,"cwd":"/tmp","expanded":["hurl/temp"]}"#;
+        let s: HurlSidebarState = serde_json::from_str(json).unwrap();
+        assert_eq!(s.expanded, vec!["hurl/temp".to_string()]);
+        assert!(s.selected_rel_path.is_none());
+        assert!(!s.resolved_view);
+        assert!(s.active_env_file.is_none());
+    }
+
+    #[test]
+    fn sidebar_state_round_trips_expanded_ancestors() {
+        let state = HurlSidebarState {
+            version: 1,
+            cwd: "/tmp/api".into(),
+            expanded: vec!["hurl".into(), "hurl/temp".into()],
+            selected_rel_path: Some("hurl/temp/foo.hurl".into()),
+            view_mode: "pretty".into(),
+            verbose: false,
+            very_verbose: false,
+            active_env_file: None,
+            resolved_view: false,
+            updated_at: 1,
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let back: HurlSidebarState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.expanded, state.expanded);
+        assert_eq!(back.selected_rel_path, state.selected_rel_path);
     }
 }

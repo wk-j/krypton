@@ -1909,6 +1909,8 @@
   gap: 4px;
   margin-left: calc(1.4ch + 8px);
   padding: 3px 0;
+  /* Bypass the 0.88em tool-card shrink so dump body matches conversation. */
+  font-size: var(--krypton-font-size, 13px);
 }
 
 /* spec 235 — Grok `exit: N` prefix becomes a quiet readout, not dump text.
@@ -1977,7 +1979,7 @@
 .acp-harness__tool-section-text {
   margin: 0;
   font-family: var(--agent-font, monospace);
-  font-size: 0.92em;
+  font-size: inherit;
   line-height: 1.4;
   color: color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86)) 82%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   text-shadow: 0 0 6px color-mix(in srgb, var(--acp-tool-section-color, transparent) 14%, transparent);
@@ -1990,7 +1992,7 @@
   gap: 3px;
   max-width: 96ch;
   font-family: var(--agent-font, monospace);
-  font-size: 0.92em;
+  font-size: inherit;
 }
 
 /* spec 235 — grep/rg structure tokens. Path is warning gold, not cyan. */
@@ -2035,7 +2037,6 @@
   align-items: baseline;
   min-width: 0;
   min-height: 1.35em;
-  font-size: 0.92em;
   line-height: 1.4;
 }
 /* Line is a ≥4ch right-aligned gutter so 75 and 160 share a column. */
@@ -4509,6 +4510,7 @@
   flex-direction: column;
   gap: 6px;
   margin-top: 6px;
+  font-size: var(--krypton-font-size, 13px);
 }
 .acp-harness__tool-diff {
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
@@ -4528,7 +4530,7 @@
 }
 .acp-harness__tool-body--diff {
   font-family: var(--agent-font, monospace);
-  font-size: 0.92em;
+  font-size: inherit;
   line-height: 1.4;
 }
 .acp-harness__diff-line {

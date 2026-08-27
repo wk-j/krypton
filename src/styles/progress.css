@@ -150,10 +150,11 @@
 }
 
 /* ── Titlebar scanline sweep (secondary cue) ── */
-.krypton-window__titlebar {
-  position: relative;
-  overflow: hidden;
-}
+/* Do not set overflow on `.krypton-window__titlebar` here. window.css owns
+   `overflow-x: clip; overflow-y: visible` so the zoomed session mark can
+   hang into the header band. `overflow: hidden` in this later file was
+   clipping those digits off. The sweep is `inset: 0` + translateX; clip
+   on X already contains it. */
 
 .krypton-window__titlebar--progress::after {
   content: '';

@@ -7,6 +7,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { ContentView, PaneContentType } from './types';
 import { ansiToHtml } from './hurl-ansi';
 import { highlightHurl } from './hurl-highlight';
+import { collapsedCover, revealDir, revealFile } from './hurl-tree';
 
 function escapeHtmlText(s: string): string {
   return s
@@ -258,22 +259,24 @@ export class HurlContentView implements ContentView {
         this.veryVerbose = state.very_verbose;
         this.activeEnvFile = state.active_env_file;
         this.resolvedView = state.resolved_view ?? false;
-      } else {
-        for (const f of this.files) {
-          const segs = f.rel_path.split('/');
-          segs.pop();
-          if (segs.length > 0) this.expanded.add(segs.join('/'));
-        }
       }
+
+      const selectedRel =
+        state?.selected_rel_path ?? this.files[0]?.rel_path ?? null;
+      // First run only: open the landing file's path. Restoring a saved
+      // selection must NOT reopen a folder the user collapsed.
+      if (selectedRel && !state) revealFile(this.expanded, selectedRel);
 
       this.rebuildVisible();
 
-      if (state?.selected_rel_path) {
-        const idx = this.visible.findIndex((v) => v.node.relPath === state.selected_rel_path);
+      if (selectedRel) {
+        const target = collapsedCover(this.expanded, selectedRel) ?? selectedRel;
+        const idx = this.visible.findIndex((v) => v.node.relPath === target);
         if (idx >= 0) this.selectedIndex = idx;
       }
 
       this.renderTree();
+      if (!state) this.saveStateDebounced();
       this.renderToolbar();
       this.updateStatusBar();
 
@@ -859,6 +862,8 @@ export class HurlContentView implements ContentView {
           this.expanded.delete(row.node.relPath);
           this.rebuildVisible();
           this.renderTree();
+          void this.flushState();
+          return true;
         }
         this.saveStateDebounced();
         return true;
@@ -866,9 +871,11 @@ export class HurlContentView implements ContentView {
       case 'l': {
         const row = this.visible[this.selectedIndex];
         if (row?.node.kind === 'dir' && !this.expanded.has(row.node.relPath)) {
-          this.expanded.add(row.node.relPath);
+          revealDir(this.expanded, row.node.relPath);
           this.rebuildVisible();
           this.renderTree();
+          void this.flushState();
+          return true;
         }
         this.saveStateDebounced();
         return true;
@@ -1000,11 +1007,11 @@ export class HurlContentView implements ContentView {
       if (this.expanded.has(row.node.relPath)) {
         this.expanded.delete(row.node.relPath);
       } else {
-        this.expanded.add(row.node.relPath);
+        revealDir(this.expanded, row.node.relPath);
       }
       this.rebuildVisible();
       this.renderTree();
-      this.saveStateDebounced();
+      void this.flushState();
     } else {
       void this.runSelected();
     }

@@ -49,7 +49,7 @@
       border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
       background: var(--code-bg); font: 12px var(--mono);
     }
-    .env:focus, .chip:focus-visible, .run:focus-visible, .tab:focus-visible, .row:focus-visible, .filter:focus {
+    .env:focus, .chip:focus-visible, .run:focus-visible, .tab:focus-visible, .row:focus-visible, .filter:focus, .split:focus-visible {
       outline: 2px solid var(--accent); outline-offset: 1px;
     }
     .chip {
@@ -57,6 +57,8 @@
       background: transparent; color: var(--muted); font: 600 11px var(--mono);
     }
     .chip[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: rgba(252, 213, 53, .08); }
+    .chip:disabled { opacity: .55; cursor: default; }
+    .roster-tools { display: flex; align-items: center; gap: 8px; }
     .run {
       border: 0; border-radius: 6px; padding: 6px 14px;
       background: var(--accent); color: var(--bg); font: 600 12px var(--mono);
@@ -87,11 +89,29 @@
     /* Definite height is required: `fr` rows and the file tree only scroll
        when the workspace is bounded. min-height alone lets 800+ files grow the page. */
     .workspace {
-      display: grid; flex: 1 1 auto; grid-template-columns: 280px minmax(0, 1fr);
+      --roster: 280px;
+      display: grid; flex: 1 1 auto; grid-template-columns: var(--roster) 8px minmax(0, 1fr);
       min-height: 0; overflow: hidden; border: 1px solid var(--border);
       border-radius: 10px; background: var(--card);
     }
-    .roster { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-right: 1px solid var(--border); }
+    .roster { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+    .split {
+      position: relative; z-index: 2; padding: 0; border: 0;
+      background: transparent; touch-action: none;
+    }
+    .split::before {
+      content: ""; position: absolute; background: var(--border);
+    }
+    .split-x { cursor: col-resize; }
+    .split-y { cursor: row-resize; }
+    .split-x::before { top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%); }
+    .split-y::before { left: 0; right: 0; top: 50%; height: 1px; transform: translateY(-50%); }
+    .split:hover::before,
+    .split:focus-visible::before,
+    body.is-resizing-x .split-x::before,
+    body.is-resizing-y .split-y::before { background: var(--accent); }
+    body.is-resizing-x, body.is-resizing-x * { cursor: col-resize !important; user-select: none !important; }
+    body.is-resizing-y, body.is-resizing-y * { cursor: row-resize !important; user-select: none !important; }
     .roster-head { flex: 0 0 auto; padding: 12px; border-bottom: 1px solid var(--border); }
     .roster-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
     .roster-title h1 { margin: 0; font-size: 13px; }
@@ -119,9 +139,12 @@
     .row-dir { color: var(--fg); font-weight: 600; }
     .chev { width: 10px; color: var(--muted); font: 10px var(--mono); }
     .row-meta { margin-left: auto; color: var(--muted); font: 10px var(--mono); font-variant-numeric: tabular-nums; }
-    .main { display: grid; min-width: 0; min-height: 0; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); }
+    .main {
+      --source: 40%;
+      display: grid; min-width: 0; min-height: 0;
+      grid-template-rows: minmax(72px, var(--source)) 8px minmax(72px, 1fr);
+    }
     .pane { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
-    .pane + .pane { border-top: 1px solid var(--border); }
     .pane-head {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       min-height: 42px; padding: 8px 12px; border-bottom: 1px solid var(--border);
@@ -160,8 +183,17 @@
     @media (prefers-reduced-motion: reduce) { .dot.run { animation: none; } }
     @media (max-width: 860px) {
       .stats { grid-template-columns: 1fr 1fr; }
-      .workspace { grid-template-columns: 1fr; grid-template-rows: minmax(140px, 34%) minmax(0, 1fr); }
-      .roster { border-right: 0; border-bottom: 1px solid var(--border); }
+      .workspace {
+        --roster: 180px;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: var(--roster) 8px minmax(0, 1fr);
+      }
+      .split-x { cursor: row-resize; }
+      .split-x::before {
+        top: 50%; bottom: auto; left: 0; right: 0; width: auto; height: 1px;
+        transform: translateY(-50%);
+      }
+      #source-pane .pane-head > span.crumb { display: none; }
     }
   </style>
 </head>
@@ -180,6 +212,8 @@
       </select>
       <button class="chip" id="verbose" type="button" aria-pressed="false" title="Toggle --verbose">v</button>
       <button class="chip" id="very" type="button" aria-pressed="false" title="Toggle --very-verbose">VV</button>
+      <button class="chip" id="curl" type="button" title="Copy as curl (c)">curl</button>
+      <button class="chip" id="hurl-cli" type="button" title="Copy hurl command (H)">hurl</button>
       <button class="run" id="run" type="button">Run</button>
     </div>
   </header>
@@ -194,7 +228,13 @@
     <section class="workspace">
       <aside class="roster" aria-label="Hurl files">
         <div class="roster-head">
-          <div class="roster-title"><h1 id="roster-title">Files</h1><span class="count" id="file-count">0</span></div>
+          <div class="roster-title">
+            <h1 id="roster-title">Files</h1>
+            <div class="roster-tools">
+              <span class="count" id="file-count">0</span>
+              <button class="chip" id="reload" type="button" title="Reload listing and source">reload</button>
+            </div>
+          </div>
           <div class="tabs" role="tablist">
             <button class="tab" id="tab-files" type="button" role="tab" aria-selected="true">Files</button>
             <button class="tab" id="tab-hist" type="button" role="tab" aria-selected="false">History</button>
@@ -203,7 +243,20 @@
         </div>
         <div class="tree" id="tree" role="tree"></div>
       </aside>
-      <div class="main">
+      <div
+        class="split split-x"
+        id="split-roster"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize file list"
+        aria-controls="tree"
+        aria-valuemin="160"
+        aria-valuemax="640"
+        aria-valuenow="280"
+        tabindex="0"
+        title="Drag to resize file list. Double-click resets. [ ] keys."
+      ></div>
+      <div class="main" id="main">
         <section class="pane" id="source-pane">
           <div class="pane-head">
             <div>
@@ -214,6 +267,19 @@
           </div>
           <pre class="source" id="source"></pre>
         </section>
+        <div
+          class="split split-y"
+          id="split-source"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize source"
+          aria-controls="source-pane"
+          aria-valuemin="18"
+          aria-valuemax="72"
+          aria-valuenow="40"
+          tabindex="0"
+          title="Drag to resize source. Double-click resets. - = keys."
+        ></div>
         <section class="pane" id="response-pane">
           <div class="pane-head">
             <strong>Response</strong>
@@ -229,19 +295,351 @@
     </section>
     <p class="keys">
       <span><kbd>j</kbd><kbd>k</kbd> move</span>
-      <span><kbd>Enter</kbd><kbd>r</kbd> run</span>
+      <span><kbd>h</kbd><kbd>l</kbd><kbd>Enter</kbd> fold</span>
+      <span><kbd>r</kbd> run</span>
       <span><kbd>x</kbd> cancel</span>
       <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> pretty / raw / headers</span>
       <span><kbd>v</kbd> verbose</span>
       <span><kbd>E</kbd> env</span>
       <span><kbd>/</kbd> filter</span>
-      <span><kbd>.</kbd> refresh</span>
+      <span><kbd>.</kbd> reload</span>
+      <span><kbd>[</kbd><kbd>]</kbd> files</span>
+      <span><kbd>-</kbd><kbd>=</kbd> source</span>
       <span><kbd>y</kbd> copy body</span>
+      <span><kbd>c</kbd> curl</span>
+      <span><kbd>H</kbd> hurl</span>
     </p>
   </main>
   <script>
   (function () {
     var NL = String.fromCharCode(10);
+    // Keep in sync with src/hurl-curl.ts (spec 237).
+    var CURL_METHODS = { GET:1, POST:1, PUT:1, DELETE:1, PATCH:1, HEAD:1, OPTIONS:1, CONNECT:1, TRACE:1, LINK:1, UNLINK:1 };
+    var SECTION_ALIAS = { QueryStringParams: "Query", FormParams: "Form", MultipartFormData: "Multipart" };
+    var BOOL_FLAGS = { insecure: "-k", location: "-L", compressed: "--compressed", http2: "--http2", http3: "--http3", ipv4: "-4", ipv6: "-6", "path-as-is": "--path-as-is" };
+    var VALUE_FLAGS = { proxy: "-x", user: "-u", "unix-socket": "--unix-socket", "max-time": "--max-time", "connect-timeout": "--connect-timeout", cacert: "--cacert", cert: "--cert", key: "--key" };
+
+    function shQuote(s) {
+      return "'" + String(s).replace(/'/g, "'\\''") + "'";
+    }
+    function joinFileDir(dir, file) {
+      if (!dir) return file;
+      if (file.charAt(0) === "/" || /^[A-Za-z]:[\\/]/.test(file)) return file;
+      var sep = dir.indexOf("\\") >= 0 && dir.indexOf("/") < 0 ? "\\" : "/";
+      return dir.replace(/[\\/]+$/, "") + sep + file.replace(/^[\\/]+/, "");
+    }
+    function newUuid() {
+      var bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      var hex = Array.prototype.map.call(bytes, function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+      return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-" + hex.slice(12, 16) + "-" + hex.slice(16, 20) + "-" + hex.slice(20);
+    }
+    function substitute(text, vars, unresolved) {
+      return String(text).replace(/\{\{([^}]*)\}\}/g, function (match, inner) {
+        var name = inner.replace(/^\s+|\s+$/g, "");
+        if (!name) return match;
+        if (Object.prototype.hasOwnProperty.call(vars, name)) return vars[name];
+        if (name === "newUuid") return newUuid();
+        if (name === "newDate") return new Date().toISOString();
+        if (unresolved.indexOf(name) < 0) unresolved.push(name);
+        return match;
+      });
+    }
+    function matchMethod(line) {
+      var m = line.match(/^([A-Z]+)\s+(\S.*)$/);
+      if (!m || !CURL_METHODS[m[1]]) return null;
+      return { method: m[1], url: m[2].replace(/^\s+|\s+$/g, "") };
+    }
+    function isHttpResponse(line) {
+      return /^HTTP(?:\/[0-9.]+)?\s+[0-9]{3}/.test(line);
+    }
+    function sectionName(line) {
+      var m = line.match(/^\[([A-Za-z]+)\]\s*$/);
+      if (!m) return null;
+      return SECTION_ALIAS[m[1]] || m[1];
+    }
+    function splitKv(line) {
+      var c = line.indexOf(":");
+      if (c < 0) return null;
+      var name = line.slice(0, c).replace(/^\s+|\s+$/g, "");
+      if (!name) return null;
+      return { name: name, value: line.slice(c + 1).replace(/^\s+|\s+$/g, "") };
+    }
+    function emptyEntry(method, url) {
+      return { method: method, url: url, headers: [], query: [], form: [], multipart: [], cookies: [], basicAuth: null, options: {}, variables: {}, body: null };
+    }
+    function collectJson(lines, start) {
+      var text = lines.slice(start).join(NL);
+      var i = 0;
+      while (i < text.length && text.charAt(i) !== "{") i++;
+      var depth = 0, inStr = false, escape = false;
+      for (var j = i; j < text.length; j++) {
+        if (!inStr && text.charAt(j) === "{" && text.charAt(j + 1) === "{") {
+          var endVar = text.indexOf("}}", j + 2);
+          j = endVar < 0 ? text.length - 1 : endVar + 1;
+          continue;
+        }
+        var ch = text.charAt(j);
+        if (inStr) {
+          if (escape) escape = false;
+          else if (ch === "\\") escape = true;
+          else if (ch === '"') inStr = false;
+        } else if (ch === '"') inStr = true;
+        else if (ch === "{") depth++;
+        else if (ch === "}") {
+          depth--;
+          if (depth === 0) {
+            return { text: text.slice(i, j + 1), end: start + text.slice(0, j + 1).split(NL).length };
+          }
+        }
+      }
+      return { text: text.slice(i), end: lines.length };
+    }
+    function collectUntilSemi(lines, start, prefix) {
+      var acc = lines[start].replace(/^\s+|\s+$/g, "").slice(prefix.length);
+      var k = start;
+      while (acc.indexOf(";") < 0 && k + 1 < lines.length) {
+        k++;
+        acc += lines[k].replace(/^\s+|\s+$/g, "");
+      }
+      var semi = acc.indexOf(";");
+      return { payload: semi >= 0 ? acc.slice(0, semi) : acc, end: k + 1 };
+    }
+    function parseMultipartValue(value) {
+      var m = value.match(/^file,([^;]+);(?:\s*.*)?$/);
+      if (m) return { name: "", filename: m[1].replace(/^\s+|\s+$/g, "") };
+      return { name: "", value: value };
+    }
+    function consumeBody(lines, i, trimmed, entry) {
+      if (trimmed.slice(0, 3) === "```") {
+        var lang = trimmed.slice(3).replace(/^\s+|\s+$/g, "");
+        var kind = lang === "raw" ? "raw" : lang === "json" ? "json" : "text";
+        entry.body = { kind: kind, value: "" };
+        return { i: i + 1, mode: "multiline" };
+      }
+      if (trimmed.charAt(0) === "`" && trimmed.charAt(trimmed.length - 1) === "`" && trimmed.length >= 2) {
+        entry.body = { kind: "text", value: trimmed.slice(1, -1) };
+        return { i: i + 1, mode: "skip" };
+      }
+      if (trimmed.charAt(0) === "{" && trimmed.slice(0, 2) !== "{{") {
+        var json = collectJson(lines, i);
+        entry.body = { kind: "json", value: json.text };
+        return { i: json.end, mode: "skip" };
+      }
+      if (trimmed.slice(0, 5) === "<?xml" || /^<[A-Za-z/]/.test(trimmed)) {
+        var xml = [];
+        var k = i;
+        while (k < lines.length) {
+          var t = lines[k].replace(/^\s+|\s+$/g, "");
+          if (matchMethod(t) || isHttpResponse(t) || sectionName(t)) break;
+          xml.push(lines[k]);
+          k++;
+        }
+        entry.body = { kind: "text", value: xml.join(NL) };
+        return { i: k, mode: "skip" };
+      }
+      if (trimmed.slice(0, 5) === "file,") {
+        var fileGot = collectUntilSemi(lines, i, "file,");
+        entry.body = { kind: "file", value: "", filename: fileGot.payload.replace(/^\s+|\s+$/g, "") };
+        return { i: fileGot.end, mode: "skip" };
+      }
+      if (trimmed.slice(0, 7) === "base64,") {
+        var b64 = collectUntilSemi(lines, i, "base64,");
+        entry.body = { kind: "base64", value: b64.payload };
+        return { i: b64.end, mode: "skip" };
+      }
+      if (trimmed.slice(0, 4) === "hex,") {
+        var hx = collectUntilSemi(lines, i, "hex,");
+        entry.body = { kind: "hex", value: hx.payload };
+        return { i: hx.end, mode: "skip" };
+      }
+      return null;
+    }
+    function parseEntries(source) {
+      var lines = String(source).split(/\r?\n/);
+      var entries = [];
+      var i = 0;
+      while (i < lines.length) {
+        var m = matchMethod(lines[i].replace(/^\s+|\s+$/g, ""));
+        if (!m) { i++; continue; }
+        var entry = emptyEntry(m.method, m.url);
+        i++;
+        var mode = "head";
+        while (i < lines.length) {
+          if (matchMethod(lines[i].replace(/^\s+|\s+$/g, ""))) break;
+          var raw = lines[i];
+          var trimmed = raw.replace(/^\s+|\s+$/g, "");
+          if (mode === "multiline") {
+            if (trimmed === "```") {
+              if (entry.body && entry.body.value && entry.body.value.slice(-1) !== NL) entry.body.value += NL;
+              mode = "skip";
+              i++;
+              continue;
+            }
+            if (entry.body) entry.body.value += (entry.body.value ? NL : "") + raw;
+            i++;
+            continue;
+          }
+          if (!trimmed || trimmed.charAt(0) === "#") { i++; continue; }
+          if (isHttpResponse(trimmed)) { mode = "skip"; i++; continue; }
+          var sec = sectionName(trimmed);
+          if (sec) {
+            mode = (sec === "Asserts" || sec === "Captures" || sec === "Filters" || sec === "skip") ? "skip" : sec;
+            i++;
+            continue;
+          }
+          if (mode === "skip") { i++; continue; }
+          var body = consumeBody(lines, i, trimmed, entry);
+          if (body) { i = body.i; mode = body.mode; continue; }
+          if (mode === "head") {
+            var header = splitKv(trimmed);
+            if (header) entry.headers.push(header);
+            i++;
+            continue;
+          }
+          var kv = splitKv(trimmed);
+          if (!kv) { i++; continue; }
+          if (mode === "Query") entry.query.push(kv);
+          else if (mode === "Form") entry.form.push(kv);
+          else if (mode === "Cookies") entry.cookies.push(kv);
+          else if (mode === "BasicAuth") entry.basicAuth = { user: kv.name, pass: kv.value };
+          else if (mode === "Multipart") {
+            var field = parseMultipartValue(kv.value);
+            field.name = kv.name;
+            entry.multipart.push(field);
+          } else if (mode === "Options") {
+            if (kv.name === "variable") {
+              var eq = kv.value.indexOf("=");
+              if (eq > 0) entry.variables[kv.value.slice(0, eq).replace(/^\s+|\s+$/g, "")] = kv.value.slice(eq + 1).replace(/^\s+|\s+$/g, "");
+            } else entry.options[kv.name] = kv.value;
+          }
+          i++;
+        }
+        entries.push(entry);
+      }
+      return entries;
+    }
+    function optionTruthy(value) {
+      var v = String(value).replace(/^\s+|\s+$/g, "").toLowerCase();
+      return v === "true" || v === "yes" || v === "on";
+    }
+    function appendQuery(url, pairs) {
+      if (!pairs.length) return url;
+      var hash = url.indexOf("#");
+      var base = hash >= 0 ? url.slice(0, hash) : url;
+      var frag = hash >= 0 ? url.slice(hash) : "";
+      var q = pairs.map(function (p) { return encodeURIComponent(p.name) + "=" + encodeURIComponent(p.value); }).join("&");
+      return base + (base.indexOf("?") >= 0 ? "&" : "?") + q + frag;
+    }
+    function decodeBase64(s) {
+      var compact = String(s).replace(/\s+/g, "");
+      if (!compact) return new Uint8Array();
+      try {
+        var bin = atob(compact);
+        var out = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out;
+      } catch (err) { return null; }
+    }
+    function decodeHex(s) {
+      var compact = String(s).replace(/\s+/g, "");
+      if (compact.length % 2 !== 0 || /[^0-9a-fA-F]/.test(compact)) return null;
+      var out = new Uint8Array(compact.length / 2);
+      for (var i = 0; i < out.length; i++) out[i] = parseInt(compact.slice(i * 2, i * 2 + 2), 16);
+      return out;
+    }
+    function bytesToUtf8(bytes) {
+      try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+      catch (err) { return null; }
+    }
+    function emitBody(body, args, fileDir, sub, unresolved, hasContentType) {
+      if (body.kind === "file" && body.filename) {
+        args.push("--data-binary", "@" + shQuote(joinFileDir(fileDir, sub(body.filename))));
+        return;
+      }
+      if (body.kind === "base64" || body.kind === "hex") {
+        var bytes = body.kind === "base64" ? decodeBase64(body.value) : decodeHex(body.value);
+        var decoded = bytes ? bytesToUtf8(bytes) : null;
+        if (decoded == null) {
+          var tag = body.kind === "base64" ? "body:base64" : "body:hex";
+          if (unresolved.indexOf(tag) < 0) unresolved.push(tag);
+          return;
+        }
+        args.push("--data-binary", shQuote(decoded));
+        return;
+      }
+      var text = body.kind === "raw" ? body.value : sub(body.value);
+      if (body.kind === "json" && !hasContentType) args.push("-H", shQuote("Content-Type: application/json"));
+      args.push("--data-binary", shQuote(text));
+    }
+    function buildCurl(req, vars, fileDir, unresolved) {
+      var local = {};
+      var k;
+      for (k in vars) if (Object.prototype.hasOwnProperty.call(vars, k)) local[k] = vars[k];
+      for (k in req.variables) if (Object.prototype.hasOwnProperty.call(req.variables, k)) local[k] = req.variables[k];
+      function sub(s) { return substitute(s, local, unresolved); }
+      var query = req.query.map(function (q) { return { name: sub(q.name), value: sub(q.value) }; });
+      var url = appendQuery(sub(req.url), query);
+      var args = ["curl"];
+      Object.keys(BOOL_FLAGS).forEach(function (name) {
+        if (optionTruthy(req.options[name] || "")) args.push(BOOL_FLAGS[name]);
+      });
+      Object.keys(VALUE_FLAGS).forEach(function (name) {
+        if (name === "user") return;
+        if (req.options[name]) args.push(VALUE_FLAGS[name], shQuote(sub(req.options[name])));
+      });
+      var user = req.options.user ? sub(req.options.user) : (req.basicAuth ? sub(req.basicAuth.user) + ":" + sub(req.basicAuth.pass) : "");
+      if (user) args.push("-u", shQuote(user));
+      var hasPayload = !!(req.body || req.form.length || req.multipart.length);
+      if (req.method !== "GET" || hasPayload) args.push("-X", shQuote(req.method));
+      var hasContentType = false;
+      req.headers.forEach(function (h) {
+        var name = sub(h.name);
+        var value = sub(h.value);
+        if (name.toLowerCase() === "content-type") hasContentType = true;
+        args.push("-H", shQuote(name + ": " + value));
+      });
+      if (req.cookies.length) {
+        args.push("-H", shQuote("Cookie: " + req.cookies.map(function (c) { return sub(c.name) + "=" + sub(c.value); }).join("; ")));
+      }
+      if (req.body) emitBody(req.body, args, fileDir, sub, unresolved, hasContentType);
+      else if (req.multipart.length) {
+        req.multipart.forEach(function (f) {
+          if (f.filename) args.push("--form", shQuote(sub(f.name) + "=@" + joinFileDir(fileDir, sub(f.filename))));
+          else args.push("--form", shQuote(sub(f.name) + "=" + sub(f.value || "")));
+        });
+      } else if (req.form.length) {
+        req.form.forEach(function (f) {
+          args.push("--data-urlencode", shQuote(sub(f.name) + "=" + sub(f.value)));
+        });
+      }
+      args.push(shQuote(url));
+      return args.join(" ");
+    }
+    function hurlToCurl(source, vars, opts) {
+      var unresolved = [];
+      var entries = parseEntries(source);
+      var runningVars = {};
+      var k;
+      for (k in vars) if (Object.prototype.hasOwnProperty.call(vars, k)) runningVars[k] = vars[k];
+      var curls = [];
+      entries.forEach(function (entry) {
+        for (k in entry.variables) if (Object.prototype.hasOwnProperty.call(entry.variables, k)) runningVars[k] = entry.variables[k];
+        curls.push(buildCurl(entry, runningVars, opts && opts.fileDir, unresolved));
+      });
+      return { curl: curls.join(NL + NL), unresolved: unresolved, requestCount: entries.length };
+    }
+    function hurlCliCommand(filePath, variablesFile, flags) {
+      var args = ["hurl"];
+      if (flags && flags.veryVerbose) args.push("--very-verbose");
+      else if (flags && flags.verbose) args.push("--verbose");
+      if (variablesFile) args.push("--variables-file", shQuote(variablesFile));
+      args.push(shQuote(filePath));
+      return args.join(" ");
+    }
+
     var parts = location.pathname.split("/").filter(Boolean);
     var token = parts[1] || "";
     var api = "/hurl/api/" + token;
@@ -250,6 +648,9 @@
     var envVars = {};
     var expanded = {};
     var selected = null;
+    var treeRows = [];
+    var cursorIndex = 0;
+    var resolvedView = false;
     var sourceText = "";
     var stdout = "";
     var stderr = "";
@@ -263,6 +664,11 @@
     var history = [];
     var available = true;
     var persistTimer = null;
+    var bannerTimer = null;
+    var reloading = false;
+    var stateReady = false;
+    var restoreHadState = false;
+    var restoreCursor = null;
     var focusPane = "source";
     var cwdPath = "";
 
@@ -272,16 +678,159 @@
     var filterEl = document.getElementById("filter");
     var envEl = document.getElementById("env");
     var runEl = document.getElementById("run");
+    var curlEl = document.getElementById("curl");
+    var hurlCliEl = document.getElementById("hurl-cli");
     var bannerEl = document.getElementById("banner");
+    var workspaceEl = document.querySelector(".workspace");
+    var mainEl = document.getElementById("main");
+    var splitRoster = document.getElementById("split-roster");
+    var splitSource = document.getElementById("split-source");
+    var SPLIT_KEY = "krypton-hurl-splits";
+    var ROSTER_DEFAULT = 280;
+    var ROSTER_H_DEFAULT = 180;
+    var SOURCE_DEFAULT = 0.4;
+    var rosterPx = ROSTER_DEFAULT;
+    var rosterH = ROSTER_H_DEFAULT;
+    var sourceRatio = SOURCE_DEFAULT;
+    var NARROW = window.matchMedia("(max-width: 860px)");
 
     function esc(s) {
       return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
     function showBanner(text, ok) {
+      if (bannerTimer) { clearTimeout(bannerTimer); bannerTimer = null; }
       if (!text) { bannerEl.className = "banner hidden"; bannerEl.textContent = ""; return; }
       bannerEl.className = ok ? "banner ok" : "banner";
       bannerEl.textContent = text;
+      if (ok) {
+        bannerTimer = setTimeout(function () { showBanner(""); }, 2500);
+      }
+    }
+
+    function isNarrow() { return NARROW.matches; }
+
+    function clampRoster(px) {
+      var box = workspaceEl.getBoundingClientRect();
+      var maxW = Math.max(180, (box.width || 960) - 280);
+      return Math.round(Math.max(160, Math.min(Math.min(640, maxW), px)));
+    }
+
+    function clampRosterH(px) {
+      var box = workspaceEl.getBoundingClientRect();
+      var maxH = Math.max(120, (box.height || 480) - 260);
+      return Math.round(Math.max(120, Math.min(maxH, px)));
+    }
+
+    function clampSource(ratio) {
+      return Math.max(0.18, Math.min(0.72, ratio));
+    }
+
+    function displayedRoster() {
+      return isNarrow() ? clampRosterH(rosterH) : clampRoster(rosterPx);
+    }
+
+    function applySplits() {
+      var roster = displayedRoster();
+      var source = clampSource(sourceRatio);
+      workspaceEl.style.setProperty("--roster", roster + "px");
+      mainEl.style.setProperty("--source", (source * 100) + "%");
+      splitRoster.setAttribute("aria-valuenow", String(roster));
+      splitRoster.setAttribute("aria-orientation", isNarrow() ? "horizontal" : "vertical");
+      splitSource.setAttribute("aria-valuenow", String(Math.round(source * 100)));
+    }
+
+    function persistSplits() {
+      try {
+        localStorage.setItem(SPLIT_KEY, JSON.stringify({
+          rosterPx: rosterPx,
+          rosterH: rosterH,
+          sourceRatio: sourceRatio
+        }));
+      } catch (err) {}
+    }
+
+    function restoreSplits() {
+      try {
+        var raw = localStorage.getItem(SPLIT_KEY);
+        if (!raw) return;
+        var saved = JSON.parse(raw);
+        if (typeof saved.rosterPx === "number" && isFinite(saved.rosterPx)) rosterPx = saved.rosterPx;
+        if (typeof saved.rosterH === "number" && isFinite(saved.rosterH)) rosterH = saved.rosterH;
+        if (typeof saved.sourceRatio === "number" && isFinite(saved.sourceRatio)) sourceRatio = saved.sourceRatio;
+      } catch (err) {}
+    }
+
+    function bindDrag(el, kind) {
+      el.addEventListener("pointerdown", function (e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        el.focus();
+        el.setPointerCapture(e.pointerId);
+        var axisY = kind === "source" || (kind === "roster" && isNarrow());
+        var startPos = axisY ? e.clientY : e.clientX;
+        var startRoster = displayedRoster();
+        var startSource = clampSource(sourceRatio);
+        if (kind === "roster" && isNarrow()) rosterH = startRoster;
+        else if (kind === "roster") rosterPx = startRoster;
+        sourceRatio = startSource;
+        var mainBox = mainEl.getBoundingClientRect();
+        document.body.classList.add(axisY ? "is-resizing-y" : "is-resizing-x");
+        function move(ev) {
+          var pos = axisY ? ev.clientY : ev.clientX;
+          var delta = pos - startPos;
+          if (kind === "roster") {
+            if (isNarrow()) rosterH = startRoster + delta;
+            else rosterPx = startRoster + delta;
+          } else {
+            sourceRatio = startSource + (mainBox.height ? delta / mainBox.height : 0);
+          }
+          applySplits();
+        }
+        function up() {
+          document.body.classList.remove("is-resizing-x", "is-resizing-y");
+          el.removeEventListener("pointermove", move);
+          el.removeEventListener("pointerup", up);
+          el.removeEventListener("pointercancel", up);
+          persistSplits();
+        }
+        el.addEventListener("pointermove", move);
+        el.addEventListener("pointerup", up);
+        el.addEventListener("pointercancel", up);
+      });
+      el.addEventListener("dblclick", function () {
+        if (kind === "roster") {
+          if (isNarrow()) rosterH = ROSTER_H_DEFAULT;
+          else rosterPx = ROSTER_DEFAULT;
+        } else sourceRatio = SOURCE_DEFAULT;
+        applySplits();
+        persistSplits();
+      });
+      el.addEventListener("keydown", function (e) {
+        var used = false;
+        if (kind === "roster") {
+          var step = (e.key === "ArrowLeft" || e.key === "ArrowUp") ? -24
+            : (e.key === "ArrowRight" || e.key === "ArrowDown") ? 24 : 0;
+          if (step) {
+            if (isNarrow()) rosterH += step;
+            else rosterPx += step;
+            used = true;
+          }
+        } else if (e.key === "ArrowUp") { sourceRatio -= 0.05; used = true; }
+        else if (e.key === "ArrowDown") { sourceRatio += 0.05; used = true; }
+        if (e.key === "Home") {
+          if (kind === "roster") {
+            if (isNarrow()) rosterH = ROSTER_H_DEFAULT;
+            else rosterPx = ROSTER_DEFAULT;
+          } else sourceRatio = SOURCE_DEFAULT;
+          used = true;
+        }
+        if (!used) return;
+        e.preventDefault();
+        e.stopPropagation();
+        applySplits();
+        persistSplits();
+      });
     }
 
     function highlight(src) {
@@ -391,8 +940,9 @@
       return root;
     }
 
-    function renderTree() {
+    function renderTree(preferRel) {
       treeEl.innerHTML = "";
+      treeRows = [];
       if (mode === "hist") {
         if (!history.length) {
           treeEl.innerHTML = '<div class="empty">No runs this session.</div>';
@@ -401,11 +951,13 @@
             var b = document.createElement("button");
             b.type = "button";
             b.className = "row";
+            b.setAttribute("role", "treeitem");
             b.setAttribute("aria-selected", h.path === selected ? "true" : "false");
             b.dataset.path = h.path;
             b.innerHTML = '<i class="dot ' + (h.exit === 0 ? "ok" : "bad") + '"></i><span class="row-name">' +
               esc(h.path) + '</span><span class="row-meta">' + h.ms + "ms</span>";
             treeEl.appendChild(b);
+            treeRows.push({ kind: "file", path: h.path, rel: h.path, el: b });
           });
         }
         document.getElementById("file-count").textContent = history.length + " runs";
@@ -429,25 +981,56 @@
       }
       document.getElementById("file-count").textContent = vis.length + " files";
       document.getElementById("roster-title").textContent = "Files";
+      syncCursor(preferRel);
     }
 
     function folderOpen(rel) {
       return !!expanded[rel];
     }
 
+    function revealFile(rel) {
+      var segs = (rel || "").split("/");
+      segs.pop();
+      var acc = [];
+      for (var i = 0; i < segs.length; i++) {
+        if (!segs[i]) continue;
+        acc.push(segs[i]);
+        expanded[acc.join("/")] = true;
+      }
+    }
+
+    function revealDir(rel) {
+      var segs = (rel || "").split("/").filter(Boolean);
+      var acc = [];
+      for (var i = 0; i < segs.length; i++) {
+        acc.push(segs[i]);
+        expanded[acc.join("/")] = true;
+      }
+    }
+
     function setFolderOpen(rel, open) {
-      if (open) expanded[rel] = true;
+      if (open) revealDir(rel);
       else delete expanded[rel];
     }
 
-    /** Same first-run default as HurlContentView: open each file's parent dir. */
+    /** First collapsed ancestor of a file. Null = the file is visible. */
+    function collapsedCover(rel) {
+      var segs = (rel || "").split("/");
+      segs.pop();
+      var acc = [];
+      for (var i = 0; i < segs.length; i++) {
+        if (!segs[i]) continue;
+        acc.push(segs[i]);
+        var dir = acc.join("/");
+        if (!expanded[dir]) return dir;
+      }
+      return null;
+    }
+
+    /** First-run: only the path to the landing file is open. */
     function applyDefaultExpanded() {
       expanded = {};
-      files.forEach(function (f) {
-        var segs = (f.rel_path || "").split("/");
-        segs.pop();
-        if (segs.length > 0) expanded[segs.join("/")] = true;
-      });
+      if (files[0] && files[0].rel_path) revealFile(files[0].rel_path);
     }
 
     function renderNode(node, rel, depth) {
@@ -458,10 +1041,13 @@
         var b = document.createElement("button");
         b.type = "button";
         b.className = "row";
+        b.setAttribute("role", "treeitem");
+        b.setAttribute("aria-expanded", open ? "true" : "false");
         b.dataset.dir = childRel;
         b.style.paddingLeft = (8 + depth * 14) + "px";
         b.innerHTML = '<span class="chev">' + (open ? "▾" : "▸") + '</span><span class="row-name row-dir">' + esc(name) + "</span>";
         treeEl.appendChild(b);
+        treeRows.push({ kind: "dir", rel: childRel, el: b });
         if (open) renderNode(node.children[name], childRel, depth + 1);
       });
       node.files.sort(function (a, b) { return (a.name || "").localeCompare(b.name || ""); })
@@ -472,13 +1058,47 @@
       var b = document.createElement("button");
       b.type = "button";
       b.className = "row";
+      b.setAttribute("role", "treeitem");
       b.setAttribute("aria-selected", f.path === selected ? "true" : "false");
       b.dataset.path = f.path;
       b.style.paddingLeft = (8 + depth * 14) + "px";
       var last = history.find(function (h) { return h.path === f.path; });
       var dot = last ? '<i class="dot ' + (last.exit === 0 ? "ok" : "bad") + '"></i>' : '<i class="dot"></i>';
       b.innerHTML = dot + '<span class="row-name">' + esc(f.name) + "</span>";
+      treeRows.push({ kind: "file", path: f.path, rel: f.rel_path, el: b });
       return b;
+    }
+
+    function syncCursor(preferRel) {
+      if (!treeRows.length) { cursorIndex = 0; return; }
+      var i = -1;
+      if (preferRel) {
+        for (var r = 0; r < treeRows.length; r++) {
+          if (treeRows[r].rel === preferRel) { i = r; break; }
+        }
+      }
+      if (i < 0) {
+        for (var s = 0; s < treeRows.length; s++) {
+          if (treeRows[s].kind === "file" && treeRows[s].path === selected) { i = s; break; }
+        }
+      }
+      if (i < 0) i = Math.max(0, Math.min(cursorIndex, treeRows.length - 1));
+      cursorIndex = i;
+      markCursor();
+    }
+
+    function markCursor() {
+      treeRows.forEach(function (row, idx) {
+        row.el.setAttribute("aria-selected", idx === cursorIndex ? "true" : "false");
+      });
+      var cur = treeRows[cursorIndex];
+      if (cur && cur.el && cur.el.scrollIntoView) {
+        cur.el.scrollIntoView({ block: "nearest" });
+      }
+    }
+
+    function cursorRow() {
+      return treeRows[cursorIndex] || null;
     }
 
     function renderSource() {
@@ -557,11 +1177,73 @@
 
     function setRunEnabled() {
       runEl.disabled = !available || !selected;
+      curlEl.disabled = !selected;
+      hurlCliEl.disabled = !selected;
+    }
+
+    function listingRel(path, list) {
+      var f = list.find(function (x) { return x.path === path; });
+      return f && f.rel_path ? f.rel_path : path;
+    }
+
+    async function copyCurl() {
+      if (!selected || !sourceText) {
+        showBanner("Select a .hurl file");
+        return;
+      }
+      var slash = Math.max(selected.lastIndexOf("/"), selected.lastIndexOf("\\"));
+      var fileDir = slash >= 0 ? selected.slice(0, slash) : "";
+      var result = hurlToCurl(sourceText, envVars, { fileDir: fileDir });
+      if (!result.curl) {
+        showBanner("Select a .hurl file");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(result.curl);
+      } catch (err) {
+        showBanner("Copy failed");
+        return;
+      }
+      var opt = envEl.options[envEl.selectedIndex];
+      var msg = opt && opt.value
+        ? "Copied curl · env: " + opt.text.replace(/^env: /, "")
+        : "Copied curl · (none)";
+      if (result.unresolved.length) {
+        msg += " · " + result.unresolved.length + " unresolved: " + result.unresolved.join(", ");
+      }
+      showBanner(msg, true);
+    }
+
+    async function copyHurlCli() {
+      if (!selected) {
+        showBanner("Select a .hurl file");
+        return;
+      }
+      var fileRel = listingRel(selected, files);
+      var envRel = envEl.value ? listingRel(envEl.value, envFiles) : "";
+      var cmd = hurlCliCommand(fileRel, envRel || null, {
+        verbose: document.getElementById("verbose").getAttribute("aria-pressed") === "true",
+        veryVerbose: document.getElementById("very").getAttribute("aria-pressed") === "true"
+      });
+      try {
+        await navigator.clipboard.writeText(cmd);
+      } catch (err) {
+        showBanner("Copy failed");
+        return;
+      }
+      var opt = envEl.options[envEl.selectedIndex];
+      var msg = opt && opt.value
+        ? "Copied hurl · env: " + opt.text.replace(/^env: /, "")
+        : "Copied hurl · (none)";
+      showBanner(msg, true);
     }
 
     async function loadListing(skipRender) {
       var res = await fetch(api + "/listing");
-      if (res.status === 404) { showBanner("Unknown or expired Hurl session. Re-open from Krypton."); return; }
+      if (res.status === 404) {
+        showBanner("Unknown or expired Hurl session. Re-open from Krypton.");
+        return false;
+      }
       var data = await res.json();
       available = !!data.available;
       cwdPath = data.cwd || "";
@@ -584,6 +1266,67 @@
       else showBanner("");
       if (!skipRender) renderTree();
       setRunEnabled();
+      return true;
+    }
+
+    async function reloadSource(path) {
+      if (!path) return;
+      var srcRes = await fetch(api + "/source?path=" + encodeURIComponent(path));
+      if (srcRes.status === 415) {
+        sourceEl.textContent = "binary or invalid UTF-8";
+        sourceText = "";
+        return;
+      }
+      if (!srcRes.ok) return;
+      var src = await srcRes.json();
+      sourceText = src.source || "";
+      renderSource();
+    }
+
+    async function reloadFiles() {
+      if (reloading) return;
+      reloading = true;
+      var btn = document.getElementById("reload");
+      if (btn) btn.disabled = true;
+      try {
+        var prev = {};
+        files.forEach(function (f) { prev[f.path] = true; });
+        var keep = selected;
+        if (!(await loadListing(true))) return;
+        var added = files.filter(function (f) { return !prev[f.path]; });
+        added.forEach(function (f) { if (f.rel_path) revealFile(f.rel_path); });
+        if (added.length) flushPersist();
+        if (added.length && mode !== "files") {
+          mode = "files";
+          document.getElementById("tab-files").setAttribute("aria-selected", "true");
+          document.getElementById("tab-hist").setAttribute("aria-selected", "false");
+        }
+        if (added.length === 1 && !running) {
+          showBanner("New file: " + (added[0].rel_path || added[0].name), true);
+          await selectFile(added[0].path);
+          return;
+        }
+        if (added.length > 1) {
+          showBanner(added.length + " new .hurl files", true);
+        }
+        var still = keep && files.some(function (f) { return f.path === keep; });
+        if (!still) {
+          if (files[0] && !running) await selectFile(files[0].path);
+          else {
+            selected = null;
+            renderTree();
+            setRunEnabled();
+          }
+          return;
+        }
+        renderTree();
+        if (!running) await reloadSource(keep);
+      } catch (err) {
+        showBanner(String(err));
+      } finally {
+        reloading = false;
+        if (btn) btn.disabled = false;
+      }
     }
 
     async function loadEnv() {
@@ -598,7 +1341,9 @@
 
     async function selectFile(path) {
       selected = path;
-      document.getElementById("crumb").textContent = (files.find(function (f) { return f.path === path; }) || { rel_path: path }).rel_path || path;
+      var file = files.find(function (f) { return f.path === path; });
+      var rel = file ? file.rel_path : path;
+      document.getElementById("crumb").textContent = rel || path;
       renderTree();
       sourceText = "";
       stdout = "";
@@ -711,15 +1456,18 @@
     }
 
     function schedulePersist() {
+      if (!stateReady) return;
       if (persistTimer) clearTimeout(persistTimer);
       persistTimer = setTimeout(persist, 300);
     }
 
     function persist() {
+      if (!stateReady || !cwdPath) return;
       var file = files.find(function (f) { return f.path === selected; });
       fetch(api + "/state", {
         method: "PUT",
         headers: { "content-type": "application/json" },
+        keepalive: true,
         body: JSON.stringify({
           version: 1,
           cwd: cwdPath,
@@ -729,9 +1477,15 @@
           verbose: document.getElementById("verbose").getAttribute("aria-pressed") === "true",
           very_verbose: document.getElementById("very").getAttribute("aria-pressed") === "true",
           active_env_file: envEl.value || null,
+          resolved_view: resolvedView,
           updated_at: Date.now()
         })
       }).catch(function () {});
+    }
+
+    function flushPersist() {
+      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+      persist();
     }
 
     async function restoreState() {
@@ -741,8 +1495,10 @@
         applyDefaultExpanded();
         return;
       }
+      restoreHadState = true;
       expanded = {};
       (st.expanded || []).forEach(function (k) { expanded[k] = true; });
+      resolvedView = !!st.resolved_view;
       if (st.verbose) document.getElementById("verbose").setAttribute("aria-pressed", "true");
       if (st.very_verbose) document.getElementById("very").setAttribute("aria-pressed", "true");
       if (st.view_mode === "raw" || st.view_mode === "headers" || st.view_mode === "pretty") {
@@ -754,8 +1510,13 @@
       if (st.active_env_file) envEl.value = st.active_env_file;
       await loadEnv();
       if (st.selected_rel_path) {
-        var match = files.find(function (f) { return f.rel_path === st.selected_rel_path; });
-        if (match) await selectFile(match.path);
+        var cover = collapsedCover(st.selected_rel_path);
+        if (cover) {
+          restoreCursor = cover;
+        } else {
+          var match = files.find(function (f) { return f.rel_path === st.selected_rel_path; });
+          if (match) await selectFile(match.path);
+        }
       }
     }
 
@@ -764,8 +1525,8 @@
       if (!row) return;
       if (row.dataset.dir) {
         setFolderOpen(row.dataset.dir, !folderOpen(row.dataset.dir));
-        renderTree();
-        schedulePersist();
+        renderTree(row.dataset.dir);
+        flushPersist();
         return;
       }
       if (row.dataset.path) selectFile(row.dataset.path);
@@ -793,9 +1554,12 @@
         schedulePersist();
       });
     });
-    filterEl.addEventListener("input", renderTree);
+    filterEl.addEventListener("input", function () { renderTree(); });
     envEl.addEventListener("change", loadEnv);
     runEl.addEventListener("click", function () { runSelected(); });
+    curlEl.addEventListener("click", function () { copyCurl(); });
+    hurlCliEl.addEventListener("click", function () { copyHurlCli(); });
+    document.getElementById("reload").addEventListener("click", function () { reloadFiles(); });
     document.getElementById("verbose").addEventListener("click", function () {
       var on = this.getAttribute("aria-pressed") !== "true";
       this.setAttribute("aria-pressed", on ? "true" : "false");
@@ -810,31 +1574,53 @@
     });
 
     document.addEventListener("keydown", function (e) {
-      var typing = e.target === filterEl || e.target === envEl;
-      if (e.key === "/" && !typing) { e.preventDefault(); filterEl.focus(); return; }
-      if (e.key === "Escape" && typing) { filterEl.value = ""; filterEl.blur(); renderTree(); return; }
-      if (e.key === "." && !typing) { e.preventDefault(); loadListing(); return; }
-      if (typing) return;
-      var list = mode === "hist" ? history.map(function (h) { return h.path; }) : visibleFiles().map(function (f) { return f.path; });
-      var i = list.indexOf(selected);
-      if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); if (i < list.length - 1) selectFile(list[i + 1]); }
-      else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); if (i > 0) selectFile(list[i - 1] || list[0]); }
-      else if (e.key === "h") {
-        var file = files.find(function (f) { return f.path === selected; });
-        if (file && file.rel_path && file.rel_path.indexOf("/") >= 0) {
-          var dir = file.rel_path.split("/").slice(0, -1).join("/");
-          setFolderOpen(dir, false);
-          renderTree();
-          schedulePersist();
+      var inFilter = e.target === filterEl;
+      if (e.key === "/" && !inFilter) { e.preventDefault(); filterEl.focus(); return; }
+      if (e.key === "Escape" && inFilter) { filterEl.value = ""; filterEl.blur(); renderTree(); return; }
+      if (e.key === "." && !inFilter) { e.preventDefault(); reloadFiles(); return; }
+      if (inFilter) return;
+      if (e.key === "j" || e.key === "ArrowDown" || e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!treeRows.length) return;
+        var delta = (e.key === "j" || e.key === "ArrowDown") ? 1 : -1;
+        cursorIndex = Math.max(0, Math.min(treeRows.length - 1, cursorIndex + delta));
+        var moved = cursorRow();
+        markCursor();
+        if (moved && moved.kind === "file" && moved.path !== selected) selectFile(moved.path);
+        else schedulePersist();
+      } else if (e.key === "h") {
+        var row = cursorRow();
+        if (!row) return;
+        if (row.kind === "dir" && folderOpen(row.rel)) {
+          setFolderOpen(row.rel, false);
+          renderTree(row.rel);
+          flushPersist();
+        } else {
+          var parent = row.rel && row.rel.indexOf("/") >= 0 ? row.rel.split("/").slice(0, -1).join("/") : "";
+          if (parent) {
+            setFolderOpen(parent, false);
+            renderTree(parent);
+            flushPersist();
+          }
         }
       } else if (e.key === "l") {
-        var firstDir = treeEl.querySelector("[data-dir]");
-        if (firstDir && !folderOpen(firstDir.dataset.dir)) {
-          setFolderOpen(firstDir.dataset.dir, true);
-          renderTree();
-          schedulePersist();
+        var openRow = cursorRow();
+        if (openRow && openRow.kind === "dir" && !folderOpen(openRow.rel)) {
+          setFolderOpen(openRow.rel, true);
+          renderTree(openRow.rel);
+          flushPersist();
         }
-      } else if (e.key === "Enter" || e.key === "r") { e.preventDefault(); runSelected(); }
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        var enterRow = cursorRow();
+        if (enterRow && enterRow.kind === "dir") {
+          setFolderOpen(enterRow.rel, !folderOpen(enterRow.rel));
+          renderTree(enterRow.rel);
+          flushPersist();
+        } else {
+          runSelected();
+        }
+      } else if (e.key === "r") { e.preventDefault(); runSelected(); }
       else if (e.key === "x") { e.preventDefault(); cancelRun(); }
       else if (e.key === "1") { view = "pretty"; document.querySelectorAll("#response-pane .tab").forEach(function (b) { b.setAttribute("aria-selected", b.getAttribute("data-view") === "pretty" ? "true" : "false"); }); renderResponse(); }
       else if (e.key === "2") { view = "raw"; document.querySelectorAll("#response-pane .tab").forEach(function (b) { b.setAttribute("aria-selected", b.getAttribute("data-view") === "raw" ? "true" : "false"); }); renderResponse(); }
@@ -847,15 +1633,59 @@
       else if (e.key === "E") {
         envEl.selectedIndex = (envEl.selectedIndex + 1) % envEl.options.length;
         envEl.dispatchEvent(new Event("change"));
+      } else if (e.key === "c") {
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        e.preventDefault();
+        copyCurl();
+      } else if (e.key === "H") {
+        e.preventDefault();
+        copyHurlCli();
       } else if (e.key === "y") {
         var text = view === "raw" ? stripAnsi(combined()) : prettyBody(parseExchanges(stdout)[0] ? parseExchanges(stdout)[0].body : combined());
         if (navigator.clipboard) navigator.clipboard.writeText(text);
+      } else if (e.key === "[" || e.code === "BracketLeft") {
+        e.preventDefault();
+        if (isNarrow()) rosterH -= 24;
+        else rosterPx -= 24;
+        applySplits();
+        persistSplits();
+      } else if (e.key === "]" || e.code === "BracketRight") {
+        e.preventDefault();
+        if (isNarrow()) rosterH += 24;
+        else rosterPx += 24;
+        applySplits();
+        persistSplits();
+      } else if (e.key === "-" || e.key === "_" || e.code === "Minus") {
+        e.preventDefault();
+        sourceRatio -= 0.05;
+        applySplits();
+        persistSplits();
+      } else if (e.key === "=" || e.key === "+" || e.code === "Equal") {
+        e.preventDefault();
+        sourceRatio += 0.05;
+        applySplits();
+        persistSplits();
       }
     });
 
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "hidden") flushPersist();
+    });
+    window.addEventListener("pagehide", flushPersist);
+    window.addEventListener("beforeunload", flushPersist);
+
+    restoreSplits();
+    applySplits();
+    bindDrag(splitRoster, "roster");
+    bindDrag(splitSource, "source");
+    NARROW.addEventListener("change", applySplits);
+    window.addEventListener("resize", applySplits);
+
     loadListing(true).then(restoreState).then(function () {
-      renderTree();
-      if (!selected && files[0]) selectFile(files[0].path);
+      renderTree(restoreCursor);
+      stateReady = true;
+      applySplits();
+      if (!restoreHadState && !selected && files[0]) selectFile(files[0].path);
     }).catch(function (e) {
       showBanner(String(e));
     });

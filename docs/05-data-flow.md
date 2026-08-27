@@ -1111,9 +1111,15 @@ the local Telegram Settings view accepts it.
 3. `open_url` launches the OS browser. A bad token is a non-reflective 404.
 4. The page loads `/listing`, then `/state` from the same
    `<app_cache_dir>/hurl/state/<sha256(cwd)>.json` file as the in-app
-   client, applies the open-folder set (missing = collapsed), then
-   `/source` and `/cache` for the selected file. `j`/`k` change selection;
-   `/` filters. Folder click / `h` / `l` PUT that file on a 300ms debounce.
+   client, applies the open-folder set as-is (missing = collapsed,
+   including ancestors of the selected file — a collapse around the
+   current file must survive refresh). If that file is hidden, the
+   cursor lands on the collapsed ancestor. Then `/source` and `/cache`
+   for a visible file. `j`/`k` walk **visible** rows (folders included);
+   `/` filters. Folder click / `h` / `l` / `Enter` PUT immediately;
+   other changes stay on a 300ms debounce, flushed on `pagehide`.
+   File-list and source split sizes stay in the page's `localStorage`
+   (`krypton-hurl-splits`); they are not written to that state file.
 5. Enter / `r` POSTs `/run`. The hook server cancels any in-flight run for
    that session, spawns `hurl --color --pretty --include` via `hurl.rs`, and
    returns `{ runId }`. The page opens `EventSource` on `/events/{runId}`.
@@ -1122,4 +1128,10 @@ the local Telegram Settings view accepts it.
    on-disk cache the in-app client uses and emits `finished` with stdout/stderr.
 7. Pretty / Raw / Headers re-render from that snapshot. Path confinement
    rejects any `path` or `variablesFile` outside the session cwd.
-8. See `docs/227-hurl-web-client.md`.
+8. `c` / the **curl** chip converts the selected `.hurl` source to POSIX curl
+   in the page (no request is sent). `{{variables}}` are filled from the
+   currently selected `*.env` map already loaded via `GET /env`. `H` / the
+   **hurl** chip copies `hurl [--verbose] [--variables-file <env>] <file>`
+   using listing relative paths (run from the session cwd). See
+   `docs/237-hurl-copy-curl.md`.
+9. See `docs/227-hurl-web-client.md`.

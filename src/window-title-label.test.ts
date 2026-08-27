@@ -55,9 +55,15 @@ describe('session mark chrome', () => {
     join(dirname(fileURLToPath(import.meta.url)), 'styles/window.css'),
     'utf8',
   );
+  const progressCss = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'styles/progress.css'),
+    'utf8',
+  );
   const chrome = css.match(/\.krypton-window__chrome\s*\{[^}]*\}/)?.[0] ?? '';
   const accent = css.match(/\.krypton-window__header-accent\s*\{[^}]*\}/)?.[0] ?? '';
+  const titlebar = css.match(/\.krypton-window__titlebar\s*\{[^}]*\}/)?.[0] ?? '';
   const end = css.match(/\.krypton-window__titlebar-end\s*\{[^}]*\}/)?.[0] ?? '';
+  const tail = css.match(/\.krypton-window__label-tail\s*\{[^}]*\}/)?.[0] ?? '';
   const focused = css.match(
     /\.krypton-window--focused \.krypton-window__label-tail\s*\{[^}]*\}/,
   )?.[0] ?? '';
@@ -68,8 +74,18 @@ describe('session mark chrome', () => {
     expect(focused).toMatch(/align-self:\s*flex-start/);
   });
 
+  it('lets the mark hang out of the titlebar instead of clipping it', () => {
+    expect(titlebar).toMatch(/overflow-y:\s*visible/);
+    expect(titlebar).not.toMatch(/^\s*overflow:\s*hidden\s*;/m);
+    expect(progressCss).not.toMatch(
+      /\.krypton-window__titlebar\s*\{[^}]*overflow:\s*hidden\s*;/,
+    );
+  });
+
   it('paints the hanging mark above the pane and the header-accent canvas', () => {
     expect(chrome).toMatch(/z-index:\s*2/);
-    expect(accent).toMatch(/z-index:\s*0/);
+    expect(accent).toMatch(/z-index:\s*-1/);
+    expect(tail).toMatch(/z-index:\s*2/);
+    expect(focused).toMatch(/translateZ\(0\)/);
   });
 });

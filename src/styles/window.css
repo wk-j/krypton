@@ -100,10 +100,11 @@
     transparent 3px
   );
   flex-shrink: 0;
-  /* Participate in chrome's stacking so the canvas compositor layer cannot
-     paint over the zoomed session mark that hangs into this band. */
+  /* Behind the titlebar inside chrome's stacking context so the zoomed
+     session mark that hangs into this band paints over the <canvas>.
+     z-index: 0 still lost to the canvas compositor layer. */
   position: relative;
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
 }
 
@@ -147,9 +148,12 @@
   /* Above the header-accent canvas inside chrome. Chrome's own z-index is
      what beats the pane; this one only orders titlebar vs the band. */
   z-index: 1;
-  /* Visible so the magnified tail can sit on the rail; the ack wipe is
-     clipped by its own 100% box, not by this overflow. */
-  overflow: visible;
+  /* Clip the ack/progress sweep horizontally. `clip` (not `hidden`) keeps
+     overflow-y visible — mixing `hidden` with `visible` computes both axes
+     to `auto` and slices the zoomed session mark. progress.css used to set
+     `overflow: hidden` after this file and hid the digits entirely. */
+  overflow-x: clip;
+  overflow-y: visible;
   /* Same default as `--krypton-lane-zoom` on the footer strip (spec 218). */
   --krypton-title-tail-zoom: 2.9;
 }
@@ -220,7 +224,8 @@
    centered (that leaked the same extra *above* the window frame).
    Focused tail is top-aligned: extra height hangs into the header
    accent / pane, never out the top of the window. Chrome `z-index: 2`
-   is what keeps that hang above the pane (see `.krypton-window__chrome`). */
+   keeps the hang above the pane; the tail's own layer (z-index +
+   translateZ) keeps it above the header-accent <canvas>. */
 .krypton-window__titlebar-end {
   display: flex;
   align-items: center;
@@ -244,6 +249,12 @@
   text-transform: uppercase;
   color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
   opacity: 0.45;
+  /* Same reason the project badge is positioned (spec 219): in-flow type
+     loses the paint phase to later positioned siblings (header-accent
+     <canvas>, pane). */
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .krypton-window--focused .krypton-window__label-tail {
@@ -253,6 +264,9 @@
   );
   letter-spacing: -0.02em;
   opacity: 1;
+  /* Promote a compositor layer so the header-accent <canvas> cannot cover
+     the hanging digits — the lane logo wins for the same reason. */
+  transform: translateZ(0);
 }
 
 .krypton-window__label-tail[hidden] {

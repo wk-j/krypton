@@ -549,6 +549,30 @@ describe('execute exit badge (spec 235)', () => {
   });
 });
 
+describe('tool dump font size', () => {
+  it('matches conversation --krypton-font-size; nested dump bodies do not shrink again', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+      'utf8',
+    );
+    const output = css.match(/\.acp-harness__tool-output\s*\{[^}]*\}/)?.[0] ?? '';
+    const diffs = css.match(/\.acp-harness__tool-diffs\s*\{[^}]*\}/)?.[0] ?? '';
+    const sectionText = css.match(/\.acp-harness__tool-section-text\s*\{[^}]*\}/)?.[0] ?? '';
+    const rich = css.match(/\.acp-harness__tool-rich\s*\{[^}]*\}/)?.[0] ?? '';
+    const grepRow = css.match(/\.acp-harness__grep-row\s*\{[^}]*\}/)?.[0] ?? '';
+    const diffBody = css.match(/\.acp-harness__tool-body--diff\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(output).toMatch(/font-size:\s*var\(--krypton-font-size,\s*13px\)/);
+    expect(diffs).toMatch(/font-size:\s*var\(--krypton-font-size,\s*13px\)/);
+    expect(sectionText).toMatch(/font-size:\s*inherit/);
+    expect(sectionText).not.toMatch(/0\.92em/);
+    expect(rich).toMatch(/font-size:\s*inherit/);
+    expect(rich).not.toMatch(/0\.92em/);
+    expect(grepRow).not.toMatch(/font-size:/);
+    expect(diffBody).toMatch(/font-size:\s*inherit/);
+    expect(diffBody).not.toMatch(/0\.92em/);
+  });
+});
+
 describe('grep line gutter (spec 235)', () => {
   it('right-aligns line numbers in a shared ≥4ch column', () => {
     const css = readFileSync(

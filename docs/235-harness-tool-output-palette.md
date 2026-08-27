@@ -150,8 +150,11 @@ Rides the first labeled section (`output` / `stdout` / `terminal` / grep) so `TE
   margin-left: calc(1.4ch + 8px);
   padding: 3px 0 3px 0;   /* no 8px + 2px rail */
   border-left: none;
+  font-size: var(--krypton-font-size, 13px);  /* same as conversation */
 }
 ```
+
+Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, `OUTPUT`/`exit` labels, and timers stay chrome-scale (`0.7em` / `0.78em`). The tool-card `0.88em` shrink does not apply to the payload.
 
 ## Edge Cases
 
