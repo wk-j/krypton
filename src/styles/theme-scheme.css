@@ -337,8 +337,7 @@ html[data-theme-scheme='light'] .acp-harness__slash-palette-row--selected {
   color: var(--krypton-ink);
 }
 
-html[data-theme-scheme='light'] .acp-harness__goal-bar,
-html[data-theme-scheme='light'] .acp-harness__ticket-bar {
+html[data-theme-scheme='light'] .acp-harness__goal-bar {
   box-shadow: 0 4px 14px rgba(28, 44, 60, 0.08);
 }
 

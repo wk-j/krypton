@@ -82,7 +82,7 @@
   contain: layout paint;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
   background: var(--agent-surface-solid, rgba(7, 12, 17, 0.98));
-  border: 1px solid rgba(255, 176, 0, 0.34);
+  border: 0;
   border-radius: 0;
   font-size: 0.82em;
   line-height: 1.5;
@@ -95,35 +95,48 @@
 .acp-harness--ticket-collapsed .acp-harness__ticket-dock {
   width: 46px;
   overflow: hidden;
+  line-height: 1;
 }
 
 .acp-ticket-dock__collapsed {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
   width: 100%;
   height: 100%;
-  padding: 12px 0;
+  padding: 14px 0;
   border: 0;
   background: transparent;
   color: #ffd880;
   font: inherit;
-  letter-spacing: 0.12em;
+  line-height: 1;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: default;
 }
 
-.acp-ticket-dock__vertical {
+/* One vertical column: status then title. nowrap + ellipsis so a long title
+   clips against the window height instead of wrapping into extra columns
+   inside the 46px rail (vertical-rl wrap axis is horizontal). */
+.acp-ticket-dock__spine {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  max-height: 18em;
-  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1;
+}
+
+.acp-ticket-dock__vertical {
+  color: #ffd880;
 }
 
 .acp-ticket-dock__status {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
+  margin-inline-end: 1.2em;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
   font-size: 0.72em;
   letter-spacing: 0.12em;
@@ -294,30 +307,6 @@
   font-style: normal;
 }
 
-.acp-ticket-dock__actions {
-  position: sticky;
-  bottom: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-top: auto;
-  padding: 10px 14px;
-  background: var(--agent-surface-solid, rgba(7, 12, 17, 0.98));
-  border-top: 1px solid rgba(255, 176, 0, 0.22);
-}
-
-.acp-ticket-dock__actions button {
-  min-height: 30px;
-  padding: 5px 7px;
-  border: 1px solid rgba(255, 176, 0, 0.28);
-  border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(255, 176, 0, 0.04);
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
-  font: inherit;
-  cursor: default;
-}
-
-.acp-ticket-dock__actions button:hover:not(:disabled),
 .acp-ticket-dock__head button:hover,
 .acp-ticket-dock__collapsed:hover {
   border-color: rgba(255, 216, 128, 0.66);
@@ -325,11 +314,6 @@
   color: #ffd880;
 }
 
-.acp-ticket-dock__actions button:disabled {
-  opacity: 0.34;
-}
-
-.acp-ticket-dock__actions button:focus-visible,
 .acp-ticket-dock__head button:focus-visible,
 .acp-ticket-dock__collapsed:focus-visible {
   outline: 1px solid #ffd880;
@@ -2089,15 +2073,26 @@
 .acp-harness__tool-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   line-height: 1.4;
   font-size: var(--krypton-font-size, 13px);
 }
 
+/* Fixed cell: in-flight braille spinner and terminal ✓/✗ must occupy the
+   same box. The old pending `·` was a different strut than ✓ and jumped the
+   EXECUTE chip + command on every status change. */
 .acp-harness__tool-glyph {
-  display: inline-block;
+  display: inline-flex;
+  flex: 0 0 1.4ch;
+  align-items: center;
+  justify-content: center;
   width: 1.4ch;
+  min-width: 1.4ch;
+  height: 1em;
+  min-height: 1em;
+  overflow: hidden;
+  line-height: 1;
   text-align: center;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
@@ -2110,6 +2105,7 @@
   color: var(--agent-error, #ff6b8b);
 }
 
+.acp-harness__tool-glyph--pending,
 .acp-harness__tool-glyph--in_progress {
   color: var(--agent-gold, #ffd166);
 }
@@ -3135,16 +3131,24 @@
 .acp-harness__perm-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   line-height: 1.3;
   font-size: var(--krypton-font-size, 13px);
 }
 
-/* Mirrors .acp-harness__tool-glyph (1.4ch fixed cell). */
+/* Mirrors .acp-harness__tool-glyph (1.4ch × 1em fixed cell). */
 .acp-harness__perm-glyph {
-  display: inline-block;
+  display: inline-flex;
+  flex: 0 0 1.4ch;
+  align-items: center;
+  justify-content: center;
   width: 1.4ch;
+  min-width: 1.4ch;
+  height: 1em;
+  min-height: 1em;
+  overflow: hidden;
+  line-height: 1;
   text-align: center;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
 }
@@ -3555,24 +3559,21 @@
   text-transform: uppercase;
 }
 
-/* spec 148/194: ticket + goal pins — top lane-rail slot, same surface cluster
-   as the peek (moved out of the composer). Fixed height, never crushed by the
-   plan/peek slots below. */
+/* spec 148: goal pin — top lane-rail slot, same surface cluster as the peek
+   (moved out of the composer). Fixed height, never crushed by the plan/peek
+   slots below. Spec 238 retired the sibling ticket bar; the docked Ticket
+   Panel is the on-screen ticket chrome. */
 .acp-harness__lane-rail__slot[data-slot="pins"] {
   flex-shrink: 0;
   max-height: none;
-  /* Ticket + goal are separately-tinted surfaces; give them a visible seam. */
-  gap: 6px;
 }
 
-/* spec 148/194: goal + ticket bars share one inline flow so wrapped titles and
-   goals return to the card's left content edge instead of carrying a hanging
-   indent. The meta marker floats at the top-right; placing it first in the DOM
-   lets only the first line reserve its width. Same panel chrome as the lane
-   peek / plan slots (gradient backdrop, 1px border, shadow); quiet, never
+/* spec 148: inline flow so wrapped goals return to the card's left content
+   edge instead of carrying a hanging indent. The age marker floats at the
+   top-right; placing it first in the DOM lets only the first line reserve
+   its width. Same panel chrome as the lane peek / plan slots; quiet, never
    animated, never ellipsised. */
-.acp-harness__goal-bar,
-.acp-harness__ticket-bar {
+.acp-harness__goal-bar {
   display: flow-root;
   padding: 6px 12px;
   font-size: 0.78em;
@@ -3583,21 +3584,10 @@
     var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
   border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
-/* spec 148: the goal bar carries the active lane's accent… */
-.acp-harness__goal-bar {
   border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 28%, transparent);
 }
 
-/* spec 194: …while the ticket bar is harness-scoped (same whichever lane is
-   active), so it keeps a fixed amber accent instead. */
-.acp-harness__ticket-bar {
-  border: 1px solid rgba(255, 176, 0, 0.28);
-}
-
-.acp-harness__goal-label,
-.acp-harness__ticket-label {
+.acp-harness__goal-label {
   margin-right: 8px;
   text-transform: uppercase;
   letter-spacing: 0.10em;
@@ -3605,23 +3595,13 @@
   color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 55%, var(--krypton-fg, #d8e8d8));
 }
 
-.acp-harness__ticket-label {
-  color: color-mix(in srgb, #ffb000 55%, var(--krypton-fg, #d8e8d8));
-}
-
-.acp-harness__goal-text,
-.acp-harness__ticket-body {
+.acp-harness__goal-text {
   min-width: 0;
   overflow-wrap: anywhere;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
 }
 
-.acp-harness__ticket-key {
-  color: #ffd880;
-}
-
-.acp-harness__goal-age,
-.acp-harness__ticket-rev {
+.acp-harness__goal-age {
   float: right;
   margin-left: 8px;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.40);
@@ -3629,7 +3609,7 @@
 
 /* spec 194: `#ticket` picker — its own modal dialog (mirrors the triage/review
    overlay shell, see review-priority.css). Amber-tinted chrome to match the
-   ticket bar; flat rows on one surface, no nested boxes, no left accent rails. */
+   Ticket Panel; flat rows on one surface, no nested boxes, no left accent rails. */
 .acp-harness__ticket-overlay {
   position: absolute;
   inset: 0;

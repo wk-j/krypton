@@ -196,7 +196,7 @@ GitHub reference ให้หยุดพร้อมข้อความ เ�
 
 1. `#ticket new <title>` เรียก `acp_create_ticket_bundle`
 2. Rust สร้าง directory, `ticket.json`, `ticket.md` และ `resources/` แบบ fail-safe
-3. Frontend บันทึก pointer, render bar และส่ง compact pin ใน prompt ถัดไป
+3. Frontend บันทึก pointer, เปิด Ticket Panel และส่ง compact pin ใน prompt ถัดไป
 
 ### นำ GitHub issue มาเป็น reference
 
@@ -249,20 +249,25 @@ Picker เดิมยังเป็น flat amber modal: section `LOCAL` โ�
 Analyze, Post comment, Fix here ใช้ได้เฉพาะเมื่อมี GitHub reference
 
 Ticket Panel เป็น split pane ชิดขอบขวาของ harness แยกจาก lane rail — ส่วนของหน้าต่างหลัก
-ไม่ใช่ nested card ที่ลอยใน pane:
+ไม่ใช่ nested card ที่ลอยใน pane แถบ `acp-harness__ticket-bar` ใน pin slot ของ spec 194
+เลิกใช้แล้ว Ticket Panel คือ chrome เดียวบนจอ (picker ยังเป็น modal ตามเดิม):
 
 - แสดงเมื่อมี active ticket; ขยายอัตโนมัติในครั้งแรก แต่ไม่ฝืนเปิดอีกหลังผู้ใช้ collapse
 - กว้าง 352px เมื่อขยายและ 46px เมื่อ collapse; `border-radius: 0`; dashboard หลีกเท่ากับความกว้าง
-  ของ panel (ไม่มี gutter 12px ซ้อน) rail แสดง title กับ status แบบแนวตั้ง ไม่แสดง body/footer
+  ของ panel (ไม่มี gutter 12px ซ้อน) collapsed rail เป็น spine คอลัมน์เดียว (`writing-mode: vertical-rl`,
+  `white-space: nowrap`) แสดง status แล้วตามด้วย title ตัดด้วย ellipsis ตามความสูงหน้าต่าง
+  ห้าม wrap เป็นหลายคอลัมน์ในราง 46px และไม่ตัด title ใน JS; ไม่แสดง body/footer
 - header แสดง title, local status, GitHub state และ worker แยกกัน; body แสดง context excerpt,
   managed resources, derived analysis และ progress summary
-- actions หลักคือ Start work, Open context, Open analysis, Refresh และ Collapse; ทุก action มี command
-  หรือ keyboard path, focus-visible state, `aria-expanded` และข้อความสถานะที่ไม่พึ่งสีอย่างเดียว
+- Ticket Panel เป็น read surface ไม่มี action button footer — Start work / open / analysis /
+  refresh ใช้ `#ticket work`, `#ticket open`, `#analyses` และ `#ticket refresh` เท่านั้น
+  Collapse คือปุ่ม `›` ใน header กับ `#ticket panel` และ Escape; `aria-expanded` และ
+  ข้อความสถานะไม่พึ่งสีอย่างเดียว
 - Lane Peek ยังอยู่ใน `.acp-harness__lane-rail` ของพื้นที่ lane ที่เหลือ; inset 12px เป็นของตัว rail
   เอง และขยับตามตอน panel collapse
 - เมื่อ harness แคบกว่า 960px panel เริ่มแบบ collapsed; ถ้าผู้ใช้ขยายให้ overlay ด้านขวาและซ่อน Lane Peek
   ชั่วคราว เมื่อ collapse ให้คืนสถานะ Peek เดิม
-- คง flat surface, 1px full border, amber tokens และไม่ใช้ nested card, side-stripe, L-shaped bracket หรือ `backdrop-filter`
+- คง flat surface ชิดขอบหน้าต่างโดยไม่มี outer box border, amber tokens และไม่ใช้ nested card, side-stripe, L-shaped bracket หรือ `backdrop-filter`
 
 ## Resource Safety
 
@@ -291,7 +296,7 @@ Ticket Panel เป็น split pane ชิดขอบขวาของ harnes
 - **metadata เสีย:** ข้าม bundle นั้นใน picker, log path กับ parse error และไม่ลบไฟล์
 - **resource หายจาก disk:** scan รอบถัดไปลด count โดยไม่เขียน entry ค้างใน metadata
 - **active bundle ถูกลบภายนอก:** clear pointer ใน memory, flash warning และไม่สร้าง bundle ใหม่เอง
-- **analysis bundle ยังไม่มี:** แสดง `No analysis yet`; Open analysis disabled แต่ Analyze ยังใช้ได้
+- **analysis bundle ยังไม่มี:** แสดง `No analysis yet`; Analyze จาก picker ยังใช้ได้
 - **worker lane หายหรือ restart:** clear binding และแสดง `Unassigned`; คง status กับ summary ล่าสุด
 - **issueKey ซ้ำ:** เลือก bundle ที่ `updatedAt` ใหม่ที่สุดและเตือน duplicate เพื่อไม่ merge context อัตโนมัติ
 - **หลาย harness ที่ cwd เดียวกัน:** แชร์ bundle list แต่ active state แยกตาม frontend instance

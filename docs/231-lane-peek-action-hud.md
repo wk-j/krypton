@@ -164,7 +164,7 @@ All infinite motion uses DESIGN.md tokens (`--krypton-motion-data-stream` 1.8s l
 
 ```
 1. tool_call / thought_chunk / message_chunk → field write on lane.activity (unchanged)
-2. 1 s composer tick + existing render paths + background `scheduleLaneRender` call renderLaneAction()
+2. 1 s composer tick + `scheduleLaneRender` + tool-event `scheduleToolRender` (spec 114 body-only RAF) call `renderLaneAction()`. Tool ticks patch the HUD in place; they do not remount the peek card.
 3. deriveRailLiveActions(lanes) → empty? arm a 2s hide (`ACTION_HUD_HIDE_MS`); keep the last HUD until it fires
 4. live rows return before the delay? cancel hide; same lane patches (no remount — new sig/kind included)
 5. new lane, or labeled-chrome mismatch? remount that card — entrance plays

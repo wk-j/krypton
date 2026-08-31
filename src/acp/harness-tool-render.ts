@@ -15,11 +15,22 @@ import {
   truncateInline,
 } from './harness-format';
 
+// First frame of SPINNER_FRAMES in harness-lane-chrome.ts. In-flight tool
+// rows seed this braille cell (never the empty `·` / missing `⟳`) so the
+// reserved glyph box keeps the same metrics until ✓/✗ replace it. The JS
+// ticker overwrites the glyph on the next tick.
+const TOOL_SPINNER_SEED = '⠋';
+
 function statusGlyph(status: string): string {
   if (status === 'completed') return '✓';
-  if (status === 'failed') return '✗';
-  if (status === 'in_progress') return '⟳';
-  return '·';
+  if (status === 'failed' || status === 'canceled') return '✗';
+  return TOOL_SPINNER_SEED;
+}
+
+function keepNonEmptyList<T>(next: T[] | undefined, previous: T[] | undefined): T[] | undefined {
+  if (next === undefined) return previous;
+  if (next.length === 0 && previous && previous.length > 0) return previous;
+  return next;
 }
 
 export function mergeToolCall(
@@ -31,7 +42,7 @@ export function mergeToolCall(
     ...next,
     title: next.title ?? previous?.title,
     kind: next.kind ?? previous?.kind,
-    content: next.content ?? previous?.content,
+    content: keepNonEmptyList(next.content, previous?.content),
     locations: next.locations ?? previous?.locations,
     rawInput: next.rawInput ?? previous?.rawInput,
     rawOutput: next.rawOutput ?? previous?.rawOutput,
@@ -512,8 +523,11 @@ export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
   const head = document.createElement('div');
   head.className = 'acp-harness__tool-head';
   const glyph = document.createElement('span');
-  glyph.className = `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status}`;
-  glyph.textContent = tool.glyph;
+  const spinning = !isTerminalToolStatus(tool.status);
+  glyph.className = spinning
+    ? `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status} acp-harness__spinner`
+    : `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status}`;
+  glyph.textContent = spinning ? TOOL_SPINNER_SEED : tool.glyph;
   head.appendChild(glyph);
   const kind = document.createElement('span');
   kind.className = 'acp-harness__tool-kind';

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { ToolPayload } from './harness-view-types';
 import {
   GROK_RAW_OUTPUT_TYPES,
+  mergeToolCall,
   buildToolPayload,
   extractGrepQuery,
   extractToolExit,
@@ -288,7 +289,60 @@ describe('isGrepLikeOutput', () => {
   });
 });
 
+describe('mergeToolCall', () => {
+  it('keeps previous content when an update sends an empty list', () => {
+    const previous = {
+      toolCallId: 't1',
+      content: [{ type: 'content' as const, content: { type: 'text' as const, text: 'hello' } }],
+    };
+    const merged = mergeToolCall(previous, {
+      toolCallId: 't1',
+      status: 'in_progress',
+      content: [],
+    });
+    expect(merged.content).toEqual(previous.content);
+  });
+
+  it('takes new content when the update has blocks', () => {
+    const previous = {
+      toolCallId: 't1',
+      content: [{ type: 'content' as const, content: { type: 'text' as const, text: 'old' } }],
+    };
+    const next = [{ type: 'content' as const, content: { type: 'text' as const, text: 'new' } }];
+    expect(mergeToolCall(previous, { toolCallId: 't1', content: next }).content).toEqual(next);
+  });
+});
+
 describe('renderToolBody / renderToolOutput (spec 235)', () => {
+  it('paints a reserved spinner cell for pending and in_progress, never an empty ·', () => {
+    for (const status of ['pending', 'in_progress']) {
+      const body = withDom(() => {
+        const el = makeFakeEl('div');
+        renderToolBody(el as unknown as HTMLElement, payload({
+          status,
+          glyph: '·',
+        }));
+        return el;
+      });
+      const glyph = findClass(body, 'acp-harness__tool-glyph');
+      const classes = glyph?.className.split(/\s+/) ?? [];
+      expect(classes).toContain('acp-harness__spinner');
+      expect(classes).toContain(`acp-harness__tool-glyph--${status}`);
+      expect(glyph?.textContent).toBe('⠋');
+    }
+  });
+
+  it('drops the spinner class on a completed glyph', () => {
+    const body = withDom(() => {
+      const el = makeFakeEl('div');
+      renderToolBody(el as unknown as HTMLElement, payload({ status: 'completed', glyph: '✓' }));
+      return el;
+    });
+    const glyph = findClass(body, 'acp-harness__tool-glyph');
+    expect(glyph?.className.split(/\s+/)).not.toContain('acp-harness__spinner');
+    expect(glyph?.textContent).toBe('✓');
+  });
+
   it('stamps data-kind on the chip from the HUD map', () => {
     const body = withDom(() => {
       const el = makeFakeEl('div');
@@ -493,6 +547,14 @@ describe('execute exit badge (spec 235)', () => {
     expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('0');
     expect(out.children[0]?.className).toBe('acp-harness__tool-exit');
     expect(JSON.stringify(out)).not.toContain('exit: 0');
+  });
+
+  it('buildToolPayload seeds a braille spinner for in-flight statuses, never · or ⟳', () => {
+    const call = { toolCallId: 'g1', title: 'execute', rawInput: { command: 'ls' } };
+    expect(buildToolPayload(call, 'pending').glyph).toBe('⠋');
+    expect(buildToolPayload(call, 'in_progress').glyph).toBe('⠋');
+    expect(buildToolPayload(call, 'completed').glyph).toBe('✓');
+    expect(buildToolPayload(call, 'failed').glyph).toBe('✗');
   });
 
   it('buildToolPayload peels Grok Bash output_for_prompt before the line cap', () => {

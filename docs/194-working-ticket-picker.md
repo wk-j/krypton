@@ -81,7 +81,7 @@ across heterogeneous agents (Claude/Codex/Cursor lanes) — that part is novel.
 | `src/acp/hash-commands.ts` | `#ticket` entry in `HASH_COMMANDS` (args: `[<url \| owner/repo#123> \| refresh \| clear]`) |
 | `src-tauri/src/hook_server.rs` | `acp_save_active_ticket` / `acp_load_active_ticket` + `get_active_ticket_path` (mirrors issue-bindings pair, `*.active-ticket.json`) |
 | `src-tauri/src/lib.rs` | Register the two commands |
-| `src/styles/acp-harness.css` | Picker modal-dialog styles (`.acp-harness__ticket-overlay` shell + `.acp-ticket__*` panel, mirroring the triage/review overlay shells); ticket-bar styles (implementation note: landed here, not `agent.css` — the goal-bar styles it mirrors live in this file) |
+| `src/styles/acp-harness.css` | Picker modal-dialog styles (`.acp-harness__ticket-overlay` shell + `.acp-ticket__*` panel, mirroring the triage/review overlay shells). The pin-slot ticket bar landed here in v1; spec 238 retired it in favor of the docked Ticket Panel. |
 | `docs/PROGRESS.md`, `docs/185…` manifest | Index entry; `#ticket` appears in the command manifest automatically via `HASH_COMMANDS` |
 
 ## Design
@@ -165,10 +165,10 @@ surrounding prompt's subject.
 
 ### UI Changes
 
-- Ticket bar: persistent `⬡ ticket owner/repo#123 <title> rN` bar while a ticket is set
-  (BEM: `acp-harness__ticket-bar`), rendered with the goal bar in the lane rail's top
-  **pin slot** (`data-slot="pins"`, same surface cluster as the lane peek — moved out of
-  the composer; `renderPinSlot()`); no per-lane badges, no sync-state UI in v1.
+- Ticket chrome: the spec-194 pin-slot ticket bar (`acp-harness__ticket-bar`) is
+  retired. [Spec 238](./238-local-ticket-bundles.md) shows the active ticket only
+  in the docked Ticket Panel (right split pane / collapsed 46px handle). The lane
+  rail pin slot still holds the spec-148 goal bar when a goal is set.
 - Picker: standalone modal dialog (`.acp-harness__ticket-overlay` backdrop +
   `.acp-ticket__panel`) centered over the harness, amber-tinted to match the ticket
   bar; keeps the slash-palette keyboard grammar (↑↓/⌃n⌃p, Enter, Esc, live filter).

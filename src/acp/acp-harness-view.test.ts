@@ -11,6 +11,7 @@ import {
   buildComposerPeerStrip,
   buildLanePeekCandidates,
   deriveThoughtForPeek,
+  shouldPaintThoughtTranscriptRow,
   thoughtBodyRenderKind,
   laneThoughtHasContent,
   pinPeekThoughtToLatest,
@@ -148,6 +149,60 @@ describe('assistant reference Git state', () => {
     const clean = transcriptRenderSignature(item, false);
     file.git = { status: '?', added: 8, removed: 0, countKind: 'lines' };
     expect(transcriptRenderSignature(item, false)).not.toBe(clean);
+  });
+
+  it('does not rebuild a tool row when status stays in-flight (pending → in_progress)', () => {
+    const tool = {
+      glyph: '⠋',
+      status: 'pending',
+      kind: 'execute',
+      subject: 'dotnet test',
+      command: 'dotnet test',
+      result: '',
+      sections: [] as Array<{ label: string; text: string }>,
+      diffs: [] as Array<{ path: string; oldText: string; newText: string }>,
+    };
+    const item: HarnessTranscriptItem = {
+      id: 't1',
+      kind: 'tool',
+      text: '⠋ execute dotnet test',
+      status: 'pending',
+      tool,
+    };
+    const pending = transcriptRenderSignature(item, false);
+    item.status = 'in_progress';
+    tool.status = 'in_progress';
+    expect(transcriptRenderSignature(item, false)).toBe(pending);
+    item.status = 'completed';
+    tool.status = 'completed';
+    tool.glyph = '✓';
+    item.text = '✓ execute dotnet test';
+    expect(transcriptRenderSignature(item, false)).not.toBe(pending);
+  });
+
+  it('does not paint empty thought rows and delays thought-slot hide', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    expect(viewSrc).toMatch(/shouldPaintThoughtTranscriptRow/);
+    expect(viewSrc).toMatch(/thought-veil:/);
+    expect(viewSrc).toMatch(/scheduleThoughtSlotHide/);
+    expect(viewSrc).toMatch(/ACTION_HUD_HIDE_MS/);
+    expect(viewSrc).not.toMatch(/if \(!snapshot\) \{\s*slot\.replaceChildren\(\);\s*slot\.hidden = true;/);
+  });
+
+  it('paints tool status on the transcript body path, not a full lane render (spec 114)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const toolCall = viewSrc.match(/case 'tool_call':[\s\S]*?\n        break;/);
+    const toolUpdate = viewSrc.match(/case 'tool_call_update':[\s\S]*?\n        break;/);
+    expect(toolCall?.[0]).toMatch(/scheduleToolRender/);
+    expect(toolCall?.[0]).toMatch(/needsRender = false/);
+    expect(toolUpdate?.[0]).toMatch(/scheduleToolRender/);
+    expect(toolUpdate?.[0]).toMatch(/needsRender = false/);
+    expect(viewSrc).toMatch(/private scheduleToolRender\(/);
+    expect(viewSrc).toMatch(/this\.scheduleStreamingBodyOnly\(lane\)/);
+    expect(viewSrc).not.toMatch(/current\.replaceWith\(next\)/);
+    expect(viewSrc).toMatch(/current\.replaceChildren\(\.\.\.Array\.from\(next\.childNodes\)\)/);
   });
 
   it('formats accessible line, binary, and unavailable summaries', () => {
@@ -1030,6 +1085,20 @@ describe('ACP peer activity UI (spec 118)', () => {
     expect(deriveThoughtForPeek(lane, now)).toEqual({ phase: 'veil', text: '' });
   });
 
+  it('deriveThoughtForPeek veils live thought that has no transcript row yet', () => {
+    const lane = {
+      currentThoughtId: 'thought-veil:g1',
+      transcript: [],
+    } as unknown as HarnessLane;
+    expect(deriveThoughtForPeek(lane)).toEqual({ phase: 'veil', text: '' });
+  });
+
+  it('does not paint a transcript row for empty live thought', () => {
+    expect(shouldPaintThoughtTranscriptRow(false, '')).toBe(false);
+    expect(shouldPaintThoughtTranscriptRow(false, 'thinking about it')).toBe(true);
+    expect(shouldPaintThoughtTranscriptRow(true, '')).toBe(true);
+  });
+
   it('deriveThoughtForPeek returns the last sealed thought', () => {
     const now = 120_000;
     const lane = {
@@ -1142,6 +1211,23 @@ describe('ACP peer activity UI (spec 118)', () => {
       laneSnapshot({ laneId: 'grok', active: true, thought: { phase: 'delta', text: 'me' } }),
       laneSnapshot({ laneId: 'claude', visualIndex: 1, thought: { phase: 'delta', text: 'other' } }),
     ], 'claude')?.laneId).toBe('claude');
+  });
+
+  it('does not paint a pin-slot ticket bar next to the Ticket Panel (spec 238)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
+    expect(viewSrc).not.toMatch(/acp-harness__ticket-bar/);
+    expect(viewSrc).not.toMatch(/renderTicketBar/);
+    expect(css).not.toMatch(/\.acp-harness__ticket-bar\s*\{/);
+    expect(viewSrc).toMatch(/acp-harness__ticket-dock/);
+    expect(viewSrc).not.toMatch(/Start work/);
+    expect(viewSrc).not.toMatch(/acp-ticket-dock__actions/);
+    expect(css).not.toMatch(/\.acp-ticket-dock__actions\s*\{/);
+    expect(viewSrc).toMatch(/acp-ticket-dock__spine/);
+    expect(viewSrc).not.toMatch(/titleChars\.length > 28/);
+    expect(css).toMatch(/\.acp-ticket-dock__spine\s*\{[^}]*white-space:\s*nowrap/);
+    expect(css).toMatch(/\.acp-ticket-dock__spine\s*\{[^}]*text-overflow:\s*ellipsis/);
   });
 
   it('thought lives in its own rail slot, not inside peek', () => {

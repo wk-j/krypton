@@ -1,10 +1,11 @@
 # 114. ACP Harness Streaming Performance Audit & Fixes
 
-> Status: Implemented (rev 4 — append-only stream body + body-only RAF; Claude-1 flicker review)
+> Status: Implemented (rev 5 — tool events share the body-only RAF; no chrome rebuild on status ticks)
 > Date: 2026-05-22
 > Milestone: ACP harness — performance hardening
 > Builds on: Spec 94 (render batching + caching), Spec 103 (tail-window rendering)
 > Amended (assistant kind only) by: Spec 117 — assistant rows now use optimistic streaming-markdown rendering instead of plain-until-seal. Thought / user rows still follow §1 of this spec.
+> Amended (rev 5) by: tool_call / tool_call_update and sealStreaming use `scheduleStreamingBodyOnly` instead of `scheduleLaneRender`. Existing transcript rows patch in place (`replaceChildren`); pending and in_progress share one signature so an in-flight status tick does not remount the row.
 
 ## Problem
 
@@ -160,16 +161,44 @@ removal loop (`:2901-2903`) are unaffected — the row id is still added to
 - Find the assistant item by id and clear its `markdownSource` (set to
   `undefined` or null) so the next non-streaming render path is
   guaranteed to reparse. Do not touch `streamPlainSource`.
-- Call `scheduleLaneRender(lane)` at the end of `sealStreaming` to
-  guarantee the final markdown render. Normal `stop` events already
-  schedule a render (`:1836`) and resume/load already calls `render()`
-  after seal (`:2446`), but seal directly schedules its own to be safe.
+- Call `scheduleStreamingBodyOnly(lane)` at the end of `sealStreaming` to
+  guarantee the final markdown render without rebuilding lane chrome.
+  Callers that need composer/head (permission, stop, error) still
+  `scheduleLaneRender` via `needsRender`. Resume/load already calls
+  `render()` after seal.
 
 **Background-lane caveat (pre-existing, documented not fixed).**
-`scheduleLaneRender` no-ops for non-active lanes (`:2753-2755`). If a
-sealed assistant lives on a background lane, the final markdown render
-runs lazily when the user activates that lane. Acceptable for V1; not
-introduced by this spec.
+`scheduleStreamingBodyOnly` (and `scheduleLaneRender`) skip the
+transcript pass for non-active lanes. If a sealed assistant lives on a
+background lane, the final markdown render runs lazily when the user
+activates that lane. Acceptable for V1; not introduced by this spec.
+
+### 1b. Tool status ticks stay on the body-only path (rev 5)
+
+`tool_call` / `tool_call_update` used to leave `needsRender = true`, so
+every MCP pending → in_progress → output → completed tick ran
+`scheduleLaneRender` → `renderActiveLane`. That rebuilds lane head,
+composer, peek card, plan, pin, and queue via `innerHTML` even when only
+one tool glyph changed. The transcript then looked like the whole screen
+flickered.
+
+Rev 5:
+
+- Those two events set `needsRender = false` and call `scheduleToolRender`,
+  which sets a HUD flag and reuses `scheduleStreamingBodyOnly`.
+- The coalesced RAF paints `renderActiveTranscript` and, when the HUD flag
+  is set, `renderLaneAction` plus an in-place peek HUD patch. It does
+  **not** rebuild composer, lane head, peek card, plan, pin, or queue.
+- `renderActiveTranscript` keeps the existing `.acp-harness__msg` node on
+  a signature mismatch (`className` + `replaceChildren`). `replaceWith`
+  remounted the TOOL label and jumped the list.
+- `transcriptRenderSignature` collapses pending and in_progress to one
+  `active` token, so a status-only in-flight tick is a no-op. Terminal
+  status, output, diffs, and command/title changes still patch the row.
+- Empty live `thought_chunk`s do not insert a transcript row. The rail
+  veil owns that state; inserting then dropping the row on `tool_call`
+  was jumping the list. The thought slot hide is delayed (`ACTION_HUD_HIDE_MS`)
+  so the card does not collapse on the same frame as the next tool.
 
 **Fallback styling** — `src/styles/acp-harness.css`:
 

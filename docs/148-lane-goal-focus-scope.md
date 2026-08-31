@@ -203,7 +203,8 @@ lane's next normal turn.
 
 A static, single-line bar rendered in the lane rail's top **pin slot**
 (`data-slot="pins"`, the same surface cluster as the lane peek; `renderPinSlot()`),
-below the spec-194 ticket bar when both are set, only when `lane.goal` is set.
+only when `lane.goal` is set. The spec-194 ticket bar that used to sit above it
+is retired; the active ticket lives in the spec-238 Ticket Panel.
 (Originally shipped above `.acp-harness__composer-meta`; moved to the rail so the
 composer stays a pure input surface.)
 

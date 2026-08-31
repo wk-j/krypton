@@ -903,6 +903,15 @@ export function derivePlanForPeek(lane: HarnessLane): LanePeekSnapshot['plan'] {
 
 export type LanePeekThought = NonNullable<LanePeekSnapshot['thought']>;
 
+/** Empty live thought stays in the rail veil. Painting a transcript row
+ *  for it means the next tool_call drops that row and the list jumps. */
+export function shouldPaintThoughtTranscriptRow(
+  existingThought: boolean,
+  incomingText: string,
+): boolean {
+  return existingThought || incomingText.length > 0;
+}
+
 export function deriveThoughtForPeek(lane: HarnessLane, _now?: number): LanePeekThought | null {
   if (lane.currentThoughtId) {
     const live = lane.transcript.find((entry) => entry.id === lane.currentThoughtId);
@@ -912,6 +921,9 @@ export function deriveThoughtForPeek(lane: HarnessLane, _now?: number): LanePeek
         text: live.text,
       };
     }
+    // Live thinking with no transcript row yet (empty deltas reserved a
+    // veil id). Keep the rail veil; do not fall through to a sealed row.
+    return { phase: 'veil', text: '' };
   }
   for (let i = lane.transcript.length - 1; i >= 0; i--) {
     const item = lane.transcript[i];

@@ -457,8 +457,9 @@ acceptable and documented.
 
 - **First chunk creates the row.** Handled by `renderTranscriptItem`
   initialising parser + writing initial text.
-- **Lane re-activation mid-stream.** Background lanes don't RAF
-  (`scheduleLaneRender` no-ops, Spec 114 caveat). When the lane becomes
+- **Lane re-activation mid-stream.** Background lanes don't RAF the
+  transcript (`scheduleStreamingBodyOnly` / `scheduleLaneRender` skip it,
+  Spec 114 caveat). When the lane becomes
   active, the next render rebuilds the row via the non-streaming path —
   but the row may still be streaming (currentAssistantId === item.id).
   Fast-path will fire and create a fresh parser bound to the new body

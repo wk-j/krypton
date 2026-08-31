@@ -42,9 +42,11 @@ and `docs/231-lane-peek-action-hud.md`.
   (streaming state), `usage` (merged into `lane.usage`, line 3893).
 - Tool objects are already cached in `lane.toolCalls`; `formatCount()` already
   formats token counts for the metrics panel (line 10565); `truncate()` exists.
-- Streaming chunk handlers deliberately skip full re-renders (`needsRender = false`)
-  for performance — the activity setter must follow suit: **field writes only**, let
-  the 1 s tick paint. No per-chunk DOM work.
+- Streaming chunk handlers and `tool_call` / `tool_call_update` skip full
+  re-renders (`needsRender = false`; spec 114 body-only RAF) — the activity
+  setter must follow suit: **field writes only**, let the 1 s tick paint the
+  composer chip. Tool events still patch the transcript row and action HUD.
+  No per-chunk chrome rebuild.
 - Alternative considered: rotating flavor verbs (Claude Code style "Reticulating
   splines…"). Ruled out — pure decoration; the user chose real signal over whimsy.
 - Alternative considered: completion sound. **Explicitly rejected by user.**

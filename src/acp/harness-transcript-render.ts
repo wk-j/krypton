@@ -25,6 +25,7 @@ import { backendLogoId } from './harness-lane-identity';
 import { transcriptLabel } from './harness-lane-chrome';
 import { collapseThoughtBlankLines } from './harness-format';
 import {
+  isTerminalToolStatus,
   renderArtifactCardBody,
   renderReviewCardBody,
   renderToolBody,
@@ -270,10 +271,18 @@ export function renderTranscriptItem(
   return el;
 }
 
+/** Pending and in_progress share one reserved spinner cell. Collapsing them
+ *  in the signature skips a full row replace on the in-flight tick, which is
+ *  what made the empty `·` glyph jump the transcript. */
+function toolStatusSignature(status: string): string {
+  if (!status) return '';
+  return isTerminalToolStatus(status) ? status : 'active';
+}
+
 export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boolean): string {
   const tool = item.tool
     ? [
-      item.tool.status,
+      toolStatusSignature(item.tool.status),
       item.tool.kind,
       item.tool.subject,
       item.tool.command,
@@ -348,7 +357,7 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
     .join('\u001f');
   return [
     item.kind,
-    item.status ?? '',
+    item.kind === 'tool' ? toolStatusSignature(item.status ?? '') : (item.status ?? ''),
     item.text,
     item.imageCount ?? '',
     streaming ? '1' : '0',

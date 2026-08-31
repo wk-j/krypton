@@ -371,6 +371,7 @@ import {
   deriveRailPeerHint,
   deriveRecentFilesForPeek,
   deriveThoughtForPeek,
+  shouldPaintThoughtTranscriptRow,
   patchLaneThoughtCard,
   renderLaneThought,
   resolveLaneThoughtSnapshot,
@@ -404,6 +405,7 @@ export {
   buildComposerPeerStrip,
   buildLanePeekCandidates,
   deriveThoughtForPeek,
+  shouldPaintThoughtTranscriptRow,
   laneThoughtHasContent,
   pinPeekThoughtToLatest,
   resolveLaneThoughtSnapshot,
@@ -1019,6 +1021,7 @@ export class AcpHarnessView implements ContentView {
   private referenceGitDisposed = false;
   private composerTickTimer: number | null = null;
   private actionHudHideTimer: number | null = null;
+  private thoughtHideTimer: number | null = null;
   private toolTickTimer: number | null = null;
   private metricsBySession = new Map<number, AcpLaneMetrics>();
   private metricsTimer: number | null = null;
@@ -1114,6 +1117,9 @@ export class AcpHarnessView implements ContentView {
   private scrollRaf = false;
   private renderRaf = false;
   private streamingBodyRaf = false;
+  /** Set before scheduleStreamingBodyOnly so a coalesced text-chunk RAF also
+   *  patches the action / peek HUD after a tool delta. */
+  private pendingToolHud = false;
   private thoughtTeletypeRaf = 0;
   // Spec 114: coalesces scroll-event storms into one anchor capture per
   // frame. Set on scroll; re-reads live state inside the RAF callback so
@@ -3993,14 +3999,14 @@ export class AcpHarnessView implements ContentView {
     const expanded = !this.ticketPanelCollapsed;
     this.ticketDockEl.setAttribute('aria-expanded', String(expanded));
     if (!expanded) {
-      const titleChars = [...ticket.title];
-      const shortTitle = titleChars.length > 28 ? `${titleChars.slice(0, 27).join('')}…` : ticket.title;
       const statusLabel = ticket.status.replaceAll('_', ' ');
       this.ticketDockEl.innerHTML =
         `<button class="acp-ticket-dock__collapsed" type="button" data-ticket-dock-action="toggle" ` +
         `aria-label="Expand ticket ${esc(ticket.title)} (${esc(statusLabel)})" aria-expanded="false">` +
+        `<span class="acp-ticket-dock__spine">` +
         `<span class="acp-ticket-dock__status acp-ticket-dock__status--${ticket.status}">${esc(statusLabel)}</span>` +
-        `<span class="acp-ticket-dock__vertical">${esc(shortTitle)}</span>` +
+        `<span class="acp-ticket-dock__vertical">${esc(ticket.title)}</span>` +
+        `</span>` +
         `</button>`;
       return;
     }
@@ -4044,39 +4050,18 @@ export class AcpHarnessView implements ContentView {
       `<section><h3>Resources <span>${ticket.resourceCount}</span></h3>` +
       `<ul>${resources}${moreResources}</ul></section>` +
       `<section><h3>Analysis</h3><p>${esc(analysis)}</p></section>` +
-      `<section><h3>Latest progress</h3>${progress}</section>` +
-      `<footer class="acp-ticket-dock__actions">` +
-      `<button type="button" data-ticket-dock-action="work">Start work</button>` +
-      `<button type="button" data-ticket-dock-action="context">Open context</button>` +
-      `<button type="button" data-ticket-dock-action="analysis"${ticket.analysis ? '' : ' disabled'}>Open analysis</button>` +
-      `<button type="button" data-ticket-dock-action="refresh">Refresh</button>` +
-      `</footer>`;
+      `<section><h3>Latest progress</h3>${progress}</section>`;
   }
 
   private async handleTicketDockClick(event: MouseEvent): Promise<void> {
     if (!(event.target instanceof Element)) return;
     const button = event.target.closest<HTMLButtonElement>('[data-ticket-dock-action]');
     if (!button || !this.ticketDockEl.contains(button) || button.disabled) return;
-    const action = button.dataset.ticketDockAction;
-    if (action === 'toggle') {
-      this.ticketPanelCollapsed = !this.ticketPanelCollapsed;
-      this.ticketPanelSeen = true;
-      if (this.ticketPanelCollapsed) this.render();
-      else await this.reloadActiveTicket(false);
-    } else if (action === 'work') {
-      const lane = this.activeLane();
-      const reason = ticketWorkActionDisabledReason(lane
-        ? { displayName: lane.displayName, status: lane.status, hasClient: lane.client !== null }
-        : null);
-      if (!lane || reason) this.flashChip(reason ?? 'no active lane');
-      else if (await this.bindActiveTicket(lane)) this.render();
-    } else if (action === 'context') {
-      await this.openActiveTicketContext();
-    } else if (action === 'analysis') {
-      await this.openActiveTicketAnalysis();
-    } else if (action === 'refresh') {
-      await this.reloadActiveTicket(true);
-    }
+    if (button.dataset.ticketDockAction !== 'toggle') return;
+    this.ticketPanelCollapsed = !this.ticketPanelCollapsed;
+    this.ticketPanelSeen = true;
+    if (this.ticketPanelCollapsed) this.render();
+    else await this.reloadActiveTicket(false);
   }
 
   /** spec 191: inline verb-injection palette. Cursor-aware — fires when the user types
@@ -4252,6 +4237,7 @@ export class AcpHarnessView implements ContentView {
     this.orchestratorLaneBusUnsub = null;
     this.stopComposerTick();
     this.cancelActionHudHide();
+    this.cancelThoughtSlotHide();
     this.stopThoughtTeletypeTick();
     this.stopMetricsTick();
     this.stopSpinnerTicker();
@@ -7952,12 +7938,16 @@ export class AcpHarnessView implements ContentView {
         this.sealStreaming(lane);
         this.renderTool(lane, event.call);
         this.noteToolActivity(lane, event.call.toolCallId);
+        this.scheduleToolRender(lane);
+        needsRender = false;
         break;
       case 'tool_call_update':
         this.renderTool(lane, event.update);
         this.noteToolActivity(lane, event.update.toolCallId);
         this.observeFileTouch(lane, event.update);
         if (isMemoryTool(event.update)) void this.refreshMemory();
+        this.scheduleToolRender(lane);
+        needsRender = false;
         break;
       case 'plan':
         this.sealStreaming(lane);
@@ -11184,14 +11174,19 @@ export class AcpHarnessView implements ContentView {
       || lane.currentUserId !== null;
   }
 
-  // Spec 114 rev 4: text chunks update only the transcript body (+ one
-  // sticky scroll write). Lane chrome, composer, peek, and plan are not
-  // rebuilt on every streaming chunk.
+  // Spec 114 rev 4/5: text chunks and tool deltas update the transcript
+  // body (+ one sticky scroll write). Lane chrome, composer, peek card,
+  // and plan are not rebuilt. Tool events also patch the action HUD.
   private scheduleStreamingBodyOnly(lane: HarnessLane): void {
     if (lane.id !== this.activeLaneId) {
       this.refreshMetricsRender();
       this.patchPeekThoughtIfLane(lane);
       this.renderLaneAction();
+      this.flushPendingToolHud(lane);
+      return;
+    }
+    if (this.renderRaf) {
+      this.pendingToolHud = false;
       return;
     }
     if (this.streamingBodyRaf) return;
@@ -11199,14 +11194,60 @@ export class AcpHarnessView implements ContentView {
     requestAnimationFrame(() => {
       this.streamingBodyRaf = false;
       if (lane.id !== this.activeLaneId) return;
+      if (this.renderRaf) {
+        this.pendingToolHud = false;
+        return;
+      }
       this.renderActiveTranscript(lane);
       this.patchPeekThoughtIfLane(lane);
+      this.flushPendingToolHud(lane);
       if (this.isLaneStreaming(lane)) {
         this.applyStickyScroll();
       } else {
         this.scheduleStickyScroll();
       }
     });
+  }
+
+  /** spec 114: tool rows live on the body-only RAF. Chrome (composer, lane
+   *  head, plan, pin) stays put — rebuilding it on every MCP status tick
+   *  is what made the transcript look like it flickered. */
+  private scheduleToolRender(lane: HarnessLane): void {
+    this.pendingToolHud = true;
+    this.scheduleStreamingBodyOnly(lane);
+  }
+
+  private flushPendingToolHud(lane: HarnessLane): void {
+    if (!this.pendingToolHud) return;
+    this.pendingToolHud = false;
+    this.renderLaneAction();
+    this.syncPeekToolHud(lane);
+  }
+
+  /** Patch the already-visible peek HUD for this lane. Do not remount the
+   *  peek card or heat ring — those rebuilds flash the rail on every tool. */
+  private syncPeekToolHud(lane: HarnessLane): void {
+    if (!this.peekSlotEl || this.peekSlotEl.hidden) return;
+    const card = this.peekSlotEl.querySelector<HTMLElement>('.acp-harness__lane-peek');
+    if (!card || card.dataset.laneId !== lane.id) return;
+    const snapshots = this.lanePeekSnapshots();
+    const snapshot = snapshots.find((row) => row.laneId === lane.id);
+    if (!snapshot) return;
+    const candidate = this.bestLanePeekCandidate({ snapshots });
+    if (candidate?.laneId === lane.id) {
+      this.syncPeekActionHud(card, snapshot, candidate);
+      return;
+    }
+    const existing = card.querySelector<HTMLElement>('.acp-harness__action-hud');
+    const action = snapshot.activeTool && snapshot.status === 'busy'
+      ? liveActionFromPeekTool(snapshot.activeTool)
+      : null;
+    if (!action) {
+      existing?.remove();
+      return;
+    }
+    if (existing) patchActionHud(existing, action);
+    else card.insertBefore(renderActionHud(action, 'peek'), card.firstChild);
   }
 
   private patchPeekThoughtIfLane(lane: HarnessLane): void {
@@ -11439,15 +11480,14 @@ export class AcpHarnessView implements ContentView {
         } else {
           const next = renderTranscriptItem(item, false, streaming, lane, this.projectDir);
           if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
-          if (streaming) {
-            current.className = next.className;
-            current.dataset.renderSignature = signature;
-            current.replaceChildren(...Array.from(next.childNodes));
-            previous = current;
-          } else {
-            current.replaceWith(next);
-            previous = next;
-          }
+          // Keep the existing row node. replaceWith on every tool status /
+          // output tick remounted the TOOL label and jumped the list.
+          const entering = current.classList.contains('acp-harness__msg--enter');
+          current.className = next.className;
+          if (entering) current.classList.add('acp-harness__msg--enter');
+          current.dataset.renderSignature = signature;
+          current.replaceChildren(...Array.from(next.childNodes));
+          previous = current;
         }
       } else {
         const next = renderTranscriptItem(item, isNew, streaming, lane, this.projectDir);
@@ -11597,11 +11637,10 @@ export class AcpHarnessView implements ContentView {
     const slot = this.thoughtSlotEl;
     const snapshot = this.resolveThoughtTarget();
     if (!snapshot) {
-      slot.replaceChildren();
-      slot.hidden = true;
-      this.stopThoughtTeletypeTick();
+      this.scheduleThoughtSlotHide();
       return;
     }
+    this.cancelThoughtSlotHide();
     const existing = slot.querySelector<HTMLElement>('.acp-harness__lane-thought');
     if (existing && existing.dataset.laneId === snapshot.laneId) {
       patchLaneThoughtCard(existing, snapshot, this.projectDir);
@@ -11615,6 +11654,23 @@ export class AcpHarnessView implements ContentView {
     const body = next.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
     if (body) schedulePeekThoughtPin(body);
     this.syncThoughtTeletypeTick();
+  }
+
+  private scheduleThoughtSlotHide(): void {
+    if (this.thoughtHideTimer !== null) return;
+    if (this.thoughtSlotEl.hidden) return;
+    this.thoughtHideTimer = window.setTimeout(() => {
+      this.thoughtHideTimer = null;
+      this.thoughtSlotEl.replaceChildren();
+      this.thoughtSlotEl.hidden = true;
+      this.stopThoughtTeletypeTick();
+    }, ACTION_HUD_HIDE_MS);
+  }
+
+  private cancelThoughtSlotHide(): void {
+    if (this.thoughtHideTimer === null) return;
+    window.clearTimeout(this.thoughtHideTimer);
+    this.thoughtHideTimer = null;
   }
 
   private syncThoughtTeletypeTick(): void {
@@ -12497,13 +12553,14 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-harness__help-hint">? help</span></div>`;
   }
 
-  /** spec 148/194: ticket + goal pins in the lane rail's top slot (same surface
-   *  cluster as the lane peek — moved out of the composer). Rendered on
-   *  lane/state changes only, never per keystroke; hidden when neither is set. */
+  /** spec 148: goal pin in the lane rail's top slot (same surface cluster as
+   *  the lane peek — moved out of the composer). Spec 238's Ticket Panel is
+   *  the on-screen ticket chrome; this slot no longer paints a second ticket
+   *  card. Rendered on lane/state changes only, never per keystroke. */
   private renderPinSlot(): void {
     const lane = this.activeLane();
     if (lane) this.pinSlotEl.style.setProperty('--acp-lane-accent', lane.accent);
-    const html = this.renderTicketBar() + (lane ? this.renderGoalBar(lane) : '');
+    const html = lane ? this.renderGoalBar(lane) : '';
     this.pinSlotEl.innerHTML = html;
     this.pinSlotEl.hidden = html === '';
   }
@@ -12521,24 +12578,6 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-harness__goal-age">${esc(age)}</span>` +
       `<span class="acp-harness__goal-label">◎ goal</span>` +
       `<span class="acp-harness__goal-text">${esc(lane.goal.text)}</span>` +
-      `</div>`
-    );
-  }
-
-  /** spec 194: harness-scoped working-ticket bar, sibling of the goal bar in the
-   *  rail pin slot. Shown while a ticket is set regardless of the active lane —
-   *  the ticket is shared. Quiet, never blinks (same budget as the goal bar). */
-  private renderTicketBar(): string {
-    const t = this.activeTicket;
-    if (!t) return '';
-    return (
-      `<div class="acp-harness__ticket-bar">` +
-      `<span class="acp-harness__ticket-rev">r${t.contextRevision} · ${esc(t.status)}</span>` +
-      `<span class="acp-harness__ticket-label">⬡ ticket</span>` +
-      `<span class="acp-harness__ticket-body">` +
-      `<span class="acp-harness__ticket-key">${esc(t.id)}</span>` +
-      ` <span class="acp-harness__ticket-title">${esc(t.title)}</span>` +
-      `</span>` +
       `</div>`
     );
   }
@@ -13139,6 +13178,12 @@ export class AcpHarnessView implements ContentView {
         ? lane.currentAssistantId
         : lane.currentThoughtId;
     let item = currentId ? lane.transcript.find((entry) => entry.id === currentId) : null;
+    if (kind === 'thought' && !shouldPaintThoughtTranscriptRow(!!item, text)) {
+      // Empty live thought: rail veil only. A transcript row here is
+      // dropped on the next tool_call and the list jumps up.
+      if (!lane.currentThoughtId) lane.currentThoughtId = `thought-veil:${lane.id}`;
+      return;
+    }
     if (!item) {
       item = this.appendTranscript(lane, kind, '');
       if (kind === 'user') lane.currentUserId = item.id;
@@ -13229,10 +13274,10 @@ export class AcpHarnessView implements ContentView {
         item.streamingMarkdownWritten = undefined;
       }
     }
-    // Guarantee a final render even on terminal paths that don't append
-    // a follow-up item (no-ops on non-active lanes — pre-existing).
-    this.scheduleLaneRender(lane);
-    this.patchPeekThoughtIfLane(lane);
+    // Spec 114 rev 5: sealing is a transcript-row signature change, not a
+    // chrome change. Callers that need composer/head (permission, stop,
+    // error) still scheduleLaneRender via needsRender.
+    this.scheduleStreamingBodyOnly(lane);
   }
 
   /**

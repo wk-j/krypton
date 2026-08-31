@@ -726,19 +726,23 @@ PUBLISH
        repaints from the active lane's stored plan.
     e. `p` in transcript focus toggles lane.planCollapsed. #restart, #new,
        and #new! null lane.plan and reset planCollapsed.
-21. Harness event render batching (Spec 94):
+21. Harness event render batching (Spec 94 / 114):
     a. ACP event handlers mutate lane state synchronously, but expensive
-       transcript/dashboard refreshes call scheduleRender() instead of render().
-    b. scheduleRender() keeps one pending requestAnimationFrame callback, so
-       multiple message_chunk, thought_chunk, tool_call_update, and similar
-       events arriving in one frame coalesce into one full render pass.
+       transcript/dashboard refreshes call scheduleLaneRender() instead of render().
+    b. scheduleLaneRender() keeps one pending requestAnimationFrame callback so
+       multiple chrome-changing events in one frame coalesce into one active-lane
+       pass. message_chunk / thought_chunk / tool_call / tool_call_update do **not**
+       take this path.
     c. available_commands does not rebuild the transcript; it updates the active
        composer so slash-command palette state can change immediately.
     d. mode_update does not rebuild the transcript; it refreshes lane heads via
        the existing lightweight header refresh path.
-    e. Full renders still rebuild the active lane DOM, but assistant rows reuse
-       cached markdown HTML and pretext rows reuse cached line layouts until
-       their source text or layout metrics change.
+    e. Full lane renders still rebuild chrome (head, composer, peek, plan), but
+       the active transcript body is preserved and rows are patched by signature.
+    f. tool_call / tool_call_update (spec 114 rev 5) use scheduleStreamingBodyOnly
+       with a HUD flag: they patch the tool row and the action/peek HUD, and they
+       do not innerHTML the composer or lane head. Pending and in_progress share
+       one transcript signature so a status-only tick does not remount the row.
 ```
 ## Resize Mode Flow (e.g., Leader then r)
 
