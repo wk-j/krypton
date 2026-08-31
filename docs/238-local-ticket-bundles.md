@@ -268,6 +268,7 @@ Ticket Panel เป็น split pane ชิดขอบขวาของ harnes
 - เมื่อ harness แคบกว่า 960px panel เริ่มแบบ collapsed; ถ้าผู้ใช้ขยายให้ overlay ด้านขวาและซ่อน Lane Peek
   ชั่วคราว เมื่อ collapse ให้คืนสถานะ Peek เดิม
 - คง flat surface ชิดขอบหน้าต่างโดยไม่มี outer box border, amber tokens และไม่ใช้ nested card, side-stripe, L-shaped bracket หรือ `backdrop-filter`
+- พื้นหลังโปร่งใสเหมือน harness root / dashboard — ไม่ทาสี `--agent-surface-solid` ทับ window backdrop
 
 ## Resource Safety
 

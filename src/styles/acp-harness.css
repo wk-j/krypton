@@ -81,7 +81,9 @@
   overflow-y: auto;
   contain: layout paint;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
-  background: var(--agent-surface-solid, rgba(7, 12, 17, 0.98));
+  /* Same as the harness root: a solid slab hid the host window backdrop
+     that the dashboard and lane body already show through. */
+  background: transparent;
   border: 0;
   border-radius: 0;
   font-size: 0.82em;

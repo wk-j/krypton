@@ -1221,6 +1221,7 @@ describe('ACP peer activity UI (spec 118)', () => {
     expect(viewSrc).not.toMatch(/renderTicketBar/);
     expect(css).not.toMatch(/\.acp-harness__ticket-bar\s*\{/);
     expect(viewSrc).toMatch(/acp-harness__ticket-dock/);
+    expect(css).toMatch(/\.acp-harness__ticket-dock\s*\{[^}]*background:\s*transparent/);
     expect(viewSrc).not.toMatch(/Start work/);
     expect(viewSrc).not.toMatch(/acp-ticket-dock__actions/);
     expect(css).not.toMatch(/\.acp-ticket-dock__actions\s*\{/);
