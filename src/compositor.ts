@@ -3956,6 +3956,7 @@ export class Compositor {
       // spec 211: the compositor owns tab creation, so the harness hands a review
       // card's bundle back here rather than opening a window itself.
       (options) => void this.openReviewBoard(options),
+      (path) => this.openMarkdownView(path),
     );
 
     // Replace the launching terminal tab: open the harness as a content tab in

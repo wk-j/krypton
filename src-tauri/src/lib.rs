@@ -21,6 +21,7 @@ pub mod ssh;
 pub mod telegram;
 pub mod termctrl_monitor;
 pub mod theme;
+pub mod ticket_bundle;
 pub mod usage;
 pub mod usage_log;
 pub mod util;
@@ -217,6 +218,14 @@ pub fn run() {
             hook_server::acp_save_active_ticket,
             hook_server::acp_load_active_ticket,
             hook_server::acp_store_command_manifest,
+            ticket_bundle::acp_list_ticket_bundles,
+            ticket_bundle::acp_create_ticket_bundle,
+            ticket_bundle::acp_load_ticket_bundle,
+            ticket_bundle::acp_append_ticket_note,
+            ticket_bundle::acp_add_ticket_resource,
+            ticket_bundle::acp_update_ticket_status,
+            ticket_bundle::acp_update_ticket_github,
+            ticket_bundle::acp_set_ticket_worker,
             commands::save_temp_image,
             commands::capture_screen,
             commands::get_env_var,

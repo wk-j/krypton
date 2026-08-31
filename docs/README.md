@@ -241,6 +241,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 235 | [Harness Tool Output Palette](./235-harness-tool-output-palette.md) |
 | 236 | [Workspace Footer Kind Palette](./236-workspace-footer-kind-palette.md) |
 | 237 | [Hurl Web Client — Copy as curl](./237-hurl-copy-curl.md) |
+| 238 | [Local Ticket Bundles](./238-local-ticket-bundles.md) |
 
 ## ADRs (20)
 

@@ -371,14 +371,17 @@
        persists the bearer token; the packed .tldraw archive and appOwned files
        are never written — only app-declared editable script files are, and the
        app's watcher embeds them; tldraw Offline remains the sole document owner.
-    h. #ticket opens the working-ticket dialog. Filtering and ↑↓/⌃n⌃p update one
-       selected issue. Enter sets only the shared ActiveWorkTicket. The visible
-       Analyze / Post comment / Fix here buttons (or Cmd/Ctrl+1/2/3) first verify
-       that the active lane has a live client and is idle/awaiting_peer, then set
-       the selected issue as the working ticket, close the dialog, and call the
-       existing runGithubIssuePromptVerb path with the row URL. A busy or stopped
-       lane leaves the dialog and existing ticket unchanged. The lane's normal
-       prompt, permission, issue_progress, and auto-bind flow owns all work.
+    h. #ticket is local-first (spec 238). With no arguments it renders
+       `.krypton/tickets/` immediately, then adds unlinked GitHub issues when
+       `gh issue list` completes. Creating or selecting a ticket persists only a
+       version-2 active pointer; Rust owns `ticket.json`, `ticket.md`, resource
+       copy/validation, and the derived `.krypton/analyses/<owner>/<repo>/<id>/`
+       summary. `#ticket work`, Analyze, and Fix here bind the active ticket to
+       the visible active lane and set local status to `in_progress`; Post
+       comment does not rebind. Only that runtime-bound lane may call
+       `ticket_progress`. A GitHub-linked work prompt reports `issue_progress`
+       separately, so the browser extension remains GitHub-status-only while
+       the docked Ticket Panel shows local status and resources.
 
 ```
 PUSH (lane → harness), at end of an editing turn:

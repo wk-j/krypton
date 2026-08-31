@@ -93,6 +93,7 @@ describe('buildCommandManifest', () => {
     expect(byName.get('termctrl')?.category).toBe('surface');
     expect(byName.get('dispatch-github-issue')?.badges).not.toContain('hidden');
     expect(byName.get('dispatch-github-issue')?.alias).toBeUndefined();
+    expect(HASH_COMMANDS.find((c) => c.name === 'ticket')?.args).toContain('owner/repo#123');
   });
 
   it('carries the real prompt template on every prompt-backed command', () => {

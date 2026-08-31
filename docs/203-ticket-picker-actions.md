@@ -4,6 +4,9 @@
 > Date: 2026-07-25
 > Milestone: ACP Harness - working-ticket workflow
 
+> Current behavior: [spec 238](./238-local-ticket-bundles.md) ยังคง action ชุดนี้ไว้
+> แต่ทุก action จะ activate local ticket ก่อน และ Analyze/Fix จะ bind worker ผ่าน runtime ticket state
+
 ## Problem
 
 The `#ticket` dialog can select and set a shared working ticket, but the user must

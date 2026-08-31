@@ -832,11 +832,13 @@ disk next to the per-harness memory file). The `issueKey`-addressed reads
 (`github.issue-status / list-issues / unlink-issue`) fan out across harnesses in
 `control-bridge`. Read-only overlay only — no write-back to GitHub.
 
-The harness working-ticket dialog (docs 194/203) keeps selection and work
-execution on the same keyboard-first surface. `Enter` only sets the shared
-`ActiveWorkTicket`; `Cmd/Ctrl+1/2/3` or the dialog buttons start Analyze, Post
-comment, or Fix here in the visible active lane. These actions call the existing
-spec-191 `runGithubIssuePromptVerb()` path with the selected row URL, so prompts,
-permissions, `issue_progress`, and single-owner auto-binding remain unchanged.
-The dialog never writes to GitHub itself and never spawns a lane; Fix here is
-deliberately distinct from `#dispatch-github-issue`.
+The harness ticket surface is project-local-first (doc 238). Rust module
+`ticket_bundle.rs` confines every bundle to `.krypton/tickets/<ticket-id>/`,
+writes atomic `ticket.json`, keeps long context in `ticket.md`, and copies only
+bounded regular files into `resources/` with executable bits removed. GitHub is
+an optional reference; analysis stays in the existing `.krypton/analyses/`
+bundle and is derived at read time. `AcpHarnessView` owns the active version-2
+pointer and renders a 352px/46px docked Ticket Panel beside Lane Peek. HookServer
+owns only the runtime ticket-worker binding and validates `ticket_progress`
+before writing local status. GitHub-facing `issue_progress` remains independent,
+so the browser extension contract is unchanged.

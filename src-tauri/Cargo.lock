@@ -127,6 +127,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "chrono",
  "comrak",
  "dirs 6.0.0",
  "fff-search",

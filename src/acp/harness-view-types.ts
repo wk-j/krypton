@@ -680,14 +680,80 @@ export interface ActiveWorkTicket {
   revision: number; // bumped on every set/refresh of the same issue
 }
 
-/** spec 194: one row in the `#ticket` picker (from `gh issue list`). */
-export interface TicketPickerRow {
+/** spec 238: project-local ticket workflow state. GitHub remains optional. */
+export type LocalTicketStatus = 'todo' | 'in_progress' | 'blocked' | 'done';
+
+export interface GithubTicketReference {
+  issueKey: string;
+  issueUrl: string;
+  repo: string;
   number: number;
   title: string;
+  state?: 'open' | 'closed';
+  labels?: string[];
+  fetchedAt: number;
+  sourceUpdatedAt?: string;
+}
+
+export interface TicketAnalysisSummary {
+  relativePath: string;
+  markdownCount: number;
+  attachmentCount: number;
+  updatedAt: number;
+}
+
+export interface TicketResource {
+  name: string;
+  relativePath: string;
+  sizeBytes: number;
+  modifiedAt: number;
+}
+
+export interface LocalTicketSummary {
+  schemaVersion: 1;
+  id: string;
+  title: string;
+  status: LocalTicketStatus;
+  createdAt: number;
+  updatedAt: number;
+  contextRevision: number;
+  lastProgressSummary?: string;
+  lastProgressAt?: number;
+  github?: GithubTicketReference;
+  relativePath: string;
+  contextExcerpt?: string;
+  resourceCount: number;
+  analysis?: TicketAnalysisSummary;
+}
+
+export interface LocalTicketDetail extends LocalTicketSummary {
+  contextMarkdown: string;
+  resources: TicketResource[];
+}
+
+export interface ActiveTicketPointer {
+  schemaVersion: 2;
+  ticketId: string;
+  activatedAt: number;
+}
+
+export interface TicketWorkerBinding {
+  ticketId: string;
+  laneId: string;
+  laneDisplayName: string;
+  assignedAt: number;
+}
+
+/** spec 194/238: one row in the `#ticket` picker. */
+export interface TicketPickerRow {
+  kind: 'local' | 'github' | 'unavailable';
+  ticketId?: string;
+  number?: number;
+  title: string;
   labels: string[];
-  state: 'open' | 'closed';
+  state: 'open' | 'closed' | LocalTicketStatus;
   updatedAt?: string;
-  url: string;
+  url?: string;
 }
 
 /** spec 178: the snapshot any surface pulls for one issue — the persisted binding

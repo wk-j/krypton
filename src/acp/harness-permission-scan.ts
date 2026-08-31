@@ -31,11 +31,10 @@ const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resol
 // reports diff reading-order hints at end-of-turn; a permission prompt there
 // would interrupt the turn boundary for a purely-advisory signal.
 const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome', 'mark_review_priority']);
-// spec 178: issue_progress is default-on built-in harness-bus tooling — the lane
-// reports github issue-fixing progress to refresh the live status card. It must
-// auto-allow like the others; a permission prompt on every progress report would
-// defeat the live-overlay story (and the report is advisory, never destructive).
-const HARNESS_ISSUE_TOOL_NAMES = new Set(['issue_progress']);
+// specs 178/238: progress tools are default-on built-in harness-bus tooling.
+// `ticket_progress` may update only the local ticket already bound to the calling
+// lane; backend validation rejects other lanes and ticket ids before writing.
+const HARNESS_ISSUE_TOOL_NAMES = new Set(['issue_progress', 'ticket_progress']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
   ...HARNESS_PEER_TOOL_NAMES,
@@ -132,7 +131,7 @@ export function harnessToolNameFromString(value: string | undefined): string | n
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|issue_progress|ticket_progress)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 

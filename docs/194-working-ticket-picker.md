@@ -4,6 +4,9 @@
 > Date: 2026-07-15
 > Milestone: ACP Harness — GitHub issue toolset (follows specs 178/190/191/192)
 
+> Current behavior: [spec 238](./238-local-ticket-bundles.md) ขยาย picker นี้เป็น
+> local-first ticket bundle ส่วน `ActiveWorkTicket` ด้านล่างเป็น persistence model เดิมที่ใช้สำหรับ migration เท่านั้น
+
 ## Problem
 
 The harness can dispatch an issue fix to one lane (spec 178) and lanes can self-bind via

@@ -60,6 +60,10 @@ import {
   seatPromptDisabledReason,
   ticketPickerActionForKey,
   ticketWorkActionDisabledReason,
+  PointerPersistGate,
+  githubIssueRefRequiredMessage,
+  ticketMarkdownPath,
+  isSameTicketPicker,
   DISPATCH_PURPOSES,
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
@@ -295,6 +299,7 @@ describe('ticket picker direct actions', () => {
 
   it('sets the selected ticket before routing a work verb into the active lane', async () => {
     const row = {
+      kind: 'github' as const,
       number: 203,
       title: 'Ticket actions',
       labels: ['acp'],
@@ -304,13 +309,22 @@ describe('ticket picker direct actions', () => {
     const lane = { displayName: 'Codex-1', status: 'idle', client: {} };
     const setRefs: unknown[] = [];
     const routed: unknown[] = [];
+    const ticket = {
+      id: '2026-08-31-ticket-actions',
+      github: {
+        issueUrl: row.url,
+      },
+    };
     const target = {
       ticketPicker: { rows: [row], filter: '', index: 0 },
       ticketPickerMatches: () => [row],
       parseIssueRef: () => ({ repo: 'wk-j/krypton', number: 203, url: row.url }),
       activeLane: () => lane,
       renderTicketOverlayEl: () => {},
-      setActiveTicket: (ref: unknown) => setRefs.push(ref),
+      setActiveTicket: async (ref: unknown) => {
+        setRefs.push(ref);
+        return ticket;
+      },
       runGithubIssuePromptVerb: async (...args: unknown[]) => {
         routed.push(args);
       },
@@ -326,6 +340,7 @@ describe('ticket picker direct actions', () => {
 
   it('keeps the dialog and ticket unchanged when the active lane is busy', async () => {
     const row = {
+      kind: 'github' as const,
       number: 203,
       title: 'Ticket actions',
       labels: ['acp'],
@@ -351,9 +366,103 @@ describe('ticket picker direct actions', () => {
     expect(setRefs).toEqual([]);
     expect(flashes).toEqual(['Codex-1 is busy']);
   });
+
+  it('opens ticket.md through the markdown viewer callback, not Helix', async () => {
+    const opened: string[] = [];
+    const helix: string[] = [];
+    const flashes: string[] = [];
+    const openActiveTicketContext = (
+      AcpHarnessView.prototype as unknown as {
+        openActiveTicketContext(): Promise<void>;
+      }
+    ).openActiveTicketContext;
+    const target = {
+      activeTicket: { relativePath: '.krypton/tickets/2026-08-31-auth-timeout/' },
+      projectDir: '/proj',
+      openMarkdownViewCb: async (path: string) => {
+        opened.push(path);
+      },
+      openFileReferenceCb: async (path: string) => {
+        helix.push(path);
+        return true;
+      },
+      flashChip: (message: string) => flashes.push(message),
+    };
+
+    await openActiveTicketContext.call(target);
+
+    expect(opened).toEqual(['/proj/.krypton/tickets/2026-08-31-auth-timeout/ticket.md']);
+    expect(helix).toEqual([]);
+    expect(flashes[0]).toContain('ticket.md');
+  });
+});
+
+describe('local ticket pointer and GitHub-ref helpers', () => {
+  it('treats a later persist generation as superseding an earlier write', () => {
+    const gate = new PointerPersistGate();
+    const first = gate.begin();
+    const second = gate.begin();
+    expect(gate.isCurrent(first)).toBe(false);
+    expect(gate.isCurrent(second)).toBe(true);
+  });
+
+  it('asks for #ticket link when a local-only ticket is already active', () => {
+    expect(githubIssueRefRequiredMessage('analyze-github-issue', { github: undefined }))
+      .toBe('active ticket has no GitHub reference; use #ticket link <ref>');
+    expect(githubIssueRefRequiredMessage('#fix-github-issue', null))
+      .toBe('usage: #fix-github-issue <issue url | owner/repo#123> (or set one with #ticket)');
+  });
+
+  it('joins ticket.md to the project directory', () => {
+    expect(ticketMarkdownPath('/proj', '.krypton/tickets/2026-08-31-auth-timeout/'))
+      .toBe('/proj/.krypton/tickets/2026-08-31-auth-timeout/ticket.md');
+  });
+
+  it('appends GitHub picker rows only onto the picker that started the fetch', () => {
+    const started = { rows: [] };
+    const reopened = { rows: [] };
+    expect(isSameTicketPicker(started, started)).toBe(true);
+    expect(isSameTicketPicker(started, reopened)).toBe(false);
+    expect(isSameTicketPicker(started, null)).toBe(false);
+  });
+
+  it('clears the runtime worker for a restarted lane', async () => {
+    const workerSets: unknown[] = [];
+    const clearTicketWorkerForLane = (
+      AcpHarnessView.prototype as unknown as {
+        clearTicketWorkerForLane(laneId: string): Promise<void>;
+      }
+    ).clearTicketWorkerForLane;
+    const target = {
+      ticketWorker: {
+        laneId: 'lane-1',
+        ticketId: '2026-08-31-auth-timeout',
+        laneDisplayName: 'Codex-1',
+        assignedAt: 1,
+      },
+      setTicketWorker: async (binding: unknown) => {
+        workerSets.push(binding);
+      },
+    };
+
+    await clearTicketWorkerForLane.call(target, 'lane-1');
+
+    expect(target.ticketWorker).toBeNull();
+    expect(workerSets).toEqual([null]);
+  });
 });
 
 describe('ACP harness auto-allow permission detection', () => {
+  it('auto-allows the built-in local ticket progress tool', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__krypton_harness_memory__ticket_progress',
+      rawInput: {
+        toolName: 'mcp__krypton_harness_memory__ticket_progress',
+        arguments: { ticket_id: '2026-08-31-auth-timeout', status: 'in_progress' },
+      },
+    }))).toBe('ticket_progress');
+  });
+
   it('accepts Codex-style namespaced built-in memory tool names', () => {
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'mcp__krypton_harness_memory__handoff_set',
@@ -2573,6 +2682,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       dropVeiledThoughtRow: () => {},
       cancelPendingArtifactsForLane: () => {},
       cancelPendingReviewsForLane: () => {},
+      clearTicketWorkerForLane: async () => {},
       clearCancelEscalation: clear,
       spawnLane: async (_l: EscLane, resumeSessionId?: string | null) => {
         resumed.push(resumeSessionId);

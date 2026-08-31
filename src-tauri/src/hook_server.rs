@@ -220,6 +220,9 @@ pub struct HookServer {
     termctrl_monitor: TermctrlMonitor,
     /// Spec 227: capability tokens bound to a cwd for the Hurl web client.
     hurl_sessions: Arc<HurlWebSessions>,
+    /// Spec 238: runtime-only local-ticket worker, keyed by harness id.
+    /// The binding deliberately disappears when the harness or app closes.
+    ticket_workers: std::sync::Mutex<HashMap<String, crate::ticket_bundle::TicketWorkerBinding>>,
 }
 
 /// Spec 149: registry record for an artifact feedback token. Maps the
@@ -277,6 +280,7 @@ impl Default for HookServer {
             command_manifest: std::sync::Mutex::new(None),
             termctrl_monitor: TermctrlMonitor::new(),
             hurl_sessions: Arc::new(HurlWebSessions::default()),
+            ticket_workers: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }
@@ -301,7 +305,47 @@ impl HookServer {
             command_manifest: std::sync::Mutex::new(None),
             termctrl_monitor: TermctrlMonitor::new(),
             hurl_sessions: Arc::new(HurlWebSessions::default()),
+            ticket_workers: std::sync::Mutex::new(HashMap::new()),
         }
+    }
+
+    pub(crate) fn project_dir_for_harness(&self, harness_id: &str) -> Option<PathBuf> {
+        self.memories
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(harness_id)
+            .and_then(|store| store.project_dir.as_ref())
+            .map(PathBuf::from)
+    }
+
+    pub(crate) fn set_ticket_worker(
+        &self,
+        harness_id: &str,
+        binding: Option<crate::ticket_bundle::TicketWorkerBinding>,
+    ) {
+        let mut workers = self
+            .ticket_workers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        match binding {
+            Some(binding) => {
+                workers.insert(harness_id.to_string(), binding);
+            }
+            None => {
+                workers.remove(harness_id);
+            }
+        }
+    }
+
+    pub(crate) fn ticket_worker(
+        &self,
+        harness_id: &str,
+    ) -> Option<crate::ticket_bundle::TicketWorkerBinding> {
+        self.ticket_workers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(harness_id)
+            .cloned()
     }
 
     /// Legacy setter for whether a lane is triage-equipped.
@@ -621,7 +665,7 @@ impl HookServer {
         };
 
         let persisted = json!({
-            "version": 1,
+            "version": 2,
             "harnessId": harness_id,
             "savedAt": now_ms(),
             "ticket": ticket,
@@ -736,6 +780,10 @@ impl HookServer {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         triage.remove(harness_id);
+        self.ticket_workers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(harness_id);
     }
 
     // ─── Artifact store (spec 133) ──────────────────────────────────────────
@@ -2787,7 +2835,7 @@ fn tool_category(name: &str) -> &'static str {
         // other path-handoff surfaces rather than with the `review_outcome`
         // bookkeeping tools it shares a name prefix with.
         "review_new" | "review_register" | "review_cancel" => "artifacts",
-        "issue_progress" => "issues",
+        "issue_progress" | "ticket_progress" => "issues",
         _ => "other", // forward-compat: an unmapped tool still renders
     }
 }
@@ -3501,6 +3549,7 @@ async fn handle_bus_tool_call(
         "review_register" => review_tool_register(state, harness_id, lane_label, arguments),
         "review_cancel" => review_tool_cancel(state, harness_id, lane_label, arguments),
         "issue_progress" => issue_progress(state, harness_id, lane_label, arguments).await,
+        "ticket_progress" => ticket_progress(state, harness_id, lane_label, arguments),
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -4177,6 +4226,81 @@ async fn issue_progress(
             Err("issue_progress: frontend reply timed out".to_string())
         }
     }
+}
+
+/// Only the runtime-bound worker may write local ticket status.
+fn ticket_progress(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let ticket_id = required_string(&arguments, "ticket_id")?;
+    let ticket_id = ticket_id.trim();
+    if ticket_id.is_empty() {
+        return Err("ticket_id is required".to_string());
+    }
+    let status = required_string(&arguments, "status")?;
+    let status = parse_ticket_progress_status(status.trim())?;
+    let summary = arguments
+        .get("summary")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+
+    let binding = state.hook_server.ticket_worker(harness_id);
+    validate_ticket_progress_binding(binding.as_ref(), ticket_id, from_lane)?;
+    let project_dir = state
+        .hook_server
+        .project_dir_for_harness(harness_id)
+        .ok_or_else(|| format!("no project directory is registered for harness {harness_id}"))?;
+    let detail = crate::ticket_bundle::update_ticket_status_for_project(
+        &project_dir,
+        ticket_id,
+        status,
+        summary,
+    )?;
+    state.app_handle.emit_or_log(
+        "acp-ticket-progress",
+        json!({
+            "harnessId": harness_id,
+            "ticketId": ticket_id,
+            "ticket": detail,
+        }),
+    );
+    Ok(json!({ "ok": true, "ticketId": ticket_id }))
+}
+
+fn parse_ticket_progress_status(
+    status: &str,
+) -> Result<crate::ticket_bundle::LocalTicketStatus, String> {
+    match status {
+        "in_progress" => Ok(crate::ticket_bundle::LocalTicketStatus::InProgress),
+        "blocked" => Ok(crate::ticket_bundle::LocalTicketStatus::Blocked),
+        "done" => Ok(crate::ticket_bundle::LocalTicketStatus::Done),
+        _ => Err("status must be one of in_progress | blocked | done".to_string()),
+    }
+}
+
+fn validate_ticket_progress_binding(
+    binding: Option<&crate::ticket_bundle::TicketWorkerBinding>,
+    ticket_id: &str,
+    from_lane: &str,
+) -> Result<(), String> {
+    let binding = binding.ok_or_else(|| "this harness has no ticket worker binding".to_string())?;
+    if binding.ticket_id != ticket_id {
+        return Err(format!(
+            "ticket {ticket_id} is not assigned to this harness worker"
+        ));
+    }
+    if binding.lane_display_name != from_lane {
+        return Err(format!(
+            "ticket {ticket_id} is assigned to {}, not {from_lane}",
+            binding.lane_display_name
+        ));
+    }
+    Ok(())
 }
 
 /// Parse a count field that distinguishes *absent* (Ok(None) → caller defaults)
@@ -5007,6 +5131,19 @@ fn attention_tool_descriptors() -> Vec<Value> {
                     "pr_url": { "type": "string", "description": "Optional URL of the pull request you opened for this issue." }
                 },
                 "required": ["issue_key", "phase"]
+            }
+        }),
+        json!({
+            "name": "ticket_progress",
+            "description": "Report progress on the project-local ticket assigned to this lane. Call it when local work starts, becomes blocked, or finishes. Only the lane currently bound by the user can update the ticket.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticket_id": { "type": "string", "description": "Local ticket id copied verbatim from the active ticket pin." },
+                    "status": { "enum": ["in_progress", "blocked", "done"], "description": "Current local ticket status." },
+                    "summary": { "type": "string", "maxLength": 500, "description": "Optional concise progress summary shown in the Ticket Panel." }
+                },
+                "required": ["ticket_id", "status"]
             }
         }),
     ]
@@ -8007,6 +8144,37 @@ pub fn start(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ticket_progress_rejects_unbound_wrong_lane_and_stale_ticket() {
+        let binding = crate::ticket_bundle::TicketWorkerBinding {
+            ticket_id: "2026-08-31-auth-timeout".to_string(),
+            lane_id: "lane-1".to_string(),
+            lane_display_name: "Codex-4".to_string(),
+            assigned_at: now_ms(),
+        };
+        assert!(validate_ticket_progress_binding(None, &binding.ticket_id, "Codex-4").is_err());
+        assert!(
+            validate_ticket_progress_binding(Some(&binding), "other-ticket", "Codex-4").is_err()
+        );
+        assert!(
+            validate_ticket_progress_binding(Some(&binding), &binding.ticket_id, "Grok-2").is_err()
+        );
+        assert!(
+            validate_ticket_progress_binding(Some(&binding), &binding.ticket_id, "Codex-4").is_ok()
+        );
+    }
+
+    #[test]
+    fn ticket_progress_status_excludes_user_only_todo() {
+        assert!(matches!(
+            parse_ticket_progress_status("in_progress"),
+            Ok(crate::ticket_bundle::LocalTicketStatus::InProgress)
+        ));
+        assert!(parse_ticket_progress_status("todo").is_err());
+        assert!(parse_ticket_progress_status("review").is_err());
+    }
+
     // spec 146: review_outcome count parsing accepts ints, integer-valued
     // floats, and numeric strings; absent → None; present-but-invalid → Err
     // (never silently coerced to 0, which would record a falsely-clean round).
@@ -10695,3 +10863,4 @@ recommended: 2
         assert!(description.contains("becomes the bundle's directory name"));
     }
 }
+

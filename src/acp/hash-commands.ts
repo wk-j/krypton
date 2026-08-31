@@ -46,6 +46,10 @@ export interface HashCommand {
   description: string;
 }
 
+/** spec 238: `#ticket` still accepts a GitHub ref as well as the local subcommands. */
+export const TICKET_COMMAND_ARGS =
+  '[new | note | add | status | work | panel | open | path | link | unlink | refresh | clear | <issue url | owner/repo#123>]';
+
 /** Built-in `#` commands, in the order they should appear in the palette. */
 export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'new', args: '', description: 'start a fresh session (keep memory)' },
@@ -106,8 +110,8 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   },
   {
     name: 'ticket',
-    args: '[<issue url | owner/repo#123> | refresh | clear]',
-    description: 'set the shared working ticket for all lanes (picker when no args)',
+    args: TICKET_COMMAND_ARGS,
+    description: 'manage the shared project-local ticket bundle (picker when no args)',
   },
   {
     name: 'dispatch-github-issue',
@@ -190,11 +194,17 @@ const PLACEHOLDER_ORCHESTRATOR = { displayName: '<lane>', laneId: '<lane-id>', b
 
 /** spec 194: placeholder ticket for the manifest's `#ticket` pin template. */
 const PLACEHOLDER_TICKET = {
-  issueKey: '<owner/repo#123>',
-  repo: '<owner/repo>',
-  number: '<number>',
+  id: '<ticket-id>',
   title: '<title>',
-  revision: 1,
+  status: 'todo' as const,
+  relativePath: '.krypton/tickets/<ticket-id>/',
+  contextRevision: 1,
+  resourceCount: 0,
+  github: {
+    issueKey: '<owner/repo#123>',
+    repo: '<owner/repo>',
+    number: '<number>',
+  },
 };
 
 /** Exported ONLY for the drift-guard test, which asserts this map's key set
