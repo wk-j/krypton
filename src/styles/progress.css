@@ -151,10 +151,9 @@
 
 /* ── Titlebar scanline sweep (secondary cue) ── */
 /* Do not set overflow on `.krypton-window__titlebar` here. window.css owns
-   `overflow-x: clip; overflow-y: visible` so the zoomed session mark can
-   hang into the header band. `overflow: hidden` in this later file was
-   clipping those digits off. The sweep is `inset: 0` + translateX; clip
-   on X already contains it. */
+   `overflow: hidden` so the session mark stays in the 28px rail (spec 226)
+   and the OSC 9;4 sweep stays in the rail. The sweep is `inset: 0` +
+   translateX. */
 
 .krypton-window__titlebar--progress::after {
   content: '';

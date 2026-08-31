@@ -59,33 +59,38 @@ describe('session mark chrome', () => {
     join(dirname(fileURLToPath(import.meta.url)), 'styles/progress.css'),
     'utf8',
   );
-  const chrome = css.match(/\.krypton-window__chrome\s*\{[^}]*\}/)?.[0] ?? '';
   const accent = css.match(/\.krypton-window__header-accent\s*\{[^}]*\}/)?.[0] ?? '';
   const titlebar = css.match(/\.krypton-window__titlebar\s*\{[^}]*\}/)?.[0] ?? '';
   const end = css.match(/\.krypton-window__titlebar-end\s*\{[^}]*\}/)?.[0] ?? '';
-  const tail = css.match(/\.krypton-window__label-tail\s*\{[^}]*\}/)?.[0] ?? '';
   const focused = css.match(
     /\.krypton-window--focused \.krypton-window__label-tail\s*\{[^}]*\}/,
   )?.[0] ?? '';
 
-  it('pins the zoomed mark to the titlebar so extra hangs down, not out the frame', () => {
+  it('keeps the focused mark inside the titlebar rail', () => {
     expect(end).toMatch(/height:\s*100%/);
     expect(end).toMatch(/min-height:\s*0/);
-    expect(focused).toMatch(/align-self:\s*flex-start/);
+    expect(end).toMatch(/overflow:\s*hidden/);
+    expect(titlebar).toMatch(/overflow:\s*hidden/);
+    expect(focused).toMatch(/min\(/);
+    expect(focused).toMatch(/--krypton-titlebar-height/);
+    expect(focused).not.toMatch(/align-self:\s*flex-start/);
   });
 
-  it('lets the mark hang out of the titlebar instead of clipping it', () => {
-    expect(titlebar).toMatch(/overflow-y:\s*visible/);
-    expect(titlebar).not.toMatch(/^\s*overflow:\s*hidden\s*;/m);
+  it('does not hang the mark into the oscilloscope band', () => {
+    expect(css).not.toMatch(/--krypton-header-accent-margin-end/);
+    expect(css).not.toMatch(
+      /\.krypton-window--focused:has\(\.krypton-window__label-tail/,
+    );
+    expect(accent).toMatch(/margin:\s*0 var\(--krypton-header-accent-margin/);
+    const scope = css.match(
+      /\.krypton-window__header-accent--scope\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    expect(scope).toMatch(/2 \* var\(--krypton-header-accent-margin/);
+  });
+
+  it('does not let progress.css re-assert titlebar overflow', () => {
     expect(progressCss).not.toMatch(
       /\.krypton-window__titlebar\s*\{[^}]*overflow:\s*hidden\s*;/,
     );
-  });
-
-  it('paints the hanging mark above the pane and the header-accent canvas', () => {
-    expect(chrome).toMatch(/z-index:\s*2/);
-    expect(accent).toMatch(/z-index:\s*-1/);
-    expect(tail).toMatch(/z-index:\s*2/);
-    expect(focused).toMatch(/translateZ\(0\)/);
   });
 });

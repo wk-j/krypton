@@ -253,7 +253,7 @@ No surface carries L-shaped corner ornament — not windows, not vault, not agen
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ ▌ TITLE · 28px · status dot 6px              tail 2.9× │  ← session NN, focused only
+│ ▌ TITLE · 28px · status dot 6px         session NN     │  ← ID fills the rail when focused
 ├──────────────────────────────────────────────────────────┤
 │ ░░░ edge glow ░░░ (5em tall, fades into pane)            │
 │                                                          │

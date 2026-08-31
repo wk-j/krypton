@@ -100,11 +100,6 @@
     transparent 3px
   );
   flex-shrink: 0;
-  /* Behind the titlebar inside chrome's stacking context so the zoomed
-     session mark that hangs into this band paints over the <canvas>.
-     z-index: 0 still lost to the canvas compositor layer. */
-  position: relative;
-  z-index: -1;
   pointer-events: none;
 }
 
@@ -124,11 +119,7 @@
 /* ─── Chrome — title bar ─── */
 .krypton-window__chrome {
   flex-shrink: 0;
-  overflow: visible;
-  /* Flex item of `.krypton-window`. Titlebar `z-index` alone is trapped in
-     this item's layer, so the zoomed session mark (which hangs out of the
-     titlebar) painted *under* the later content/pane sibling. Lifting the
-     whole head puts the overflow above the pane. Spec 226. */
+  overflow: hidden;
   position: relative;
   z-index: 2;
 }
@@ -145,16 +136,13 @@
   -webkit-user-select: none;
   user-select: none;
   position: relative;
-  /* Above the header-accent canvas inside chrome. Chrome's own z-index is
-     what beats the pane; this one only orders titlebar vs the band. */
   z-index: 1;
-  /* Clip the ack/progress sweep horizontally. `clip` (not `hidden`) keeps
-     overflow-y visible — mixing `hidden` with `visible` computes both axes
-     to `auto` and slices the zoomed session mark. progress.css used to set
-     `overflow: hidden` after this file and hid the digits entirely. */
-  overflow-x: clip;
-  overflow-y: visible;
-  /* Same default as `--krypton-lane-zoom` on the footer strip (spec 218). */
+  /* Clip the ack/progress sweep. The session mark stays in this rail
+     (spec 226) — it does not hang into the oscilloscope. */
+  overflow: hidden;
+  /* Same default as `--krypton-lane-zoom` on the footer strip (spec 218).
+     Capped to titlebar height on the focused rule so the digits cannot
+     leave the top of the window. */
   --krypton-title-tail-zoom: 2.9;
 }
 
@@ -217,15 +205,11 @@
 }
 
 /* spec 226: session identity (`01`) on the titlebar's right edge.
-   Quiet 11px on every tile; 2.9× only on the focused window — same
-   factor as the footer lane logo. `font-size` (not a transform) so the
+   Quiet 11px on every tile; zoomed only on the focused window, capped
+   to the 28px rail so the ID stays at the top of the window and never
+   collides with the oscilloscope. `font-size` (not a transform) so the
    box carries its painted width. The end cluster is locked to the
-   titlebar's 28px so the zoomed type cannot grow it and get vertically
-   centered (that leaked the same extra *above* the window frame).
-   Focused tail is top-aligned: extra height hangs into the header
-   accent / pane, never out the top of the window. Chrome `z-index: 2`
-   keeps the hang above the pane; the tail's own layer (z-index +
-   translateZ) keeps it above the header-accent <canvas>. */
+   titlebar height so the type cannot grow the rail. */
 .krypton-window__titlebar-end {
   display: flex;
   align-items: center;
@@ -234,7 +218,7 @@
   min-width: 0;
   height: 100%;
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .krypton-window__label-tail {
@@ -249,24 +233,16 @@
   text-transform: uppercase;
   color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
   opacity: 0.45;
-  /* Same reason the project badge is positioned (spec 219): in-flow type
-     loses the paint phase to later positioned siblings (header-accent
-     <canvas>, pane). */
-  position: relative;
-  z-index: 2;
   pointer-events: none;
 }
 
 .krypton-window--focused .krypton-window__label-tail {
-  align-self: flex-start;
-  font-size: calc(
-    var(--krypton-chrome-font-size, 11px) * var(--krypton-title-tail-zoom, 2.9)
+  font-size: min(
+    calc(var(--krypton-chrome-font-size, 11px) * var(--krypton-title-tail-zoom, 2.9)),
+    var(--krypton-titlebar-height, 28px)
   );
   letter-spacing: -0.02em;
   opacity: 1;
-  /* Promote a compositor layer so the header-accent <canvas> cannot cover
-     the hanging digits — the lane logo wins for the same reason. */
-  transform: translateZ(0);
 }
 
 .krypton-window__label-tail[hidden] {

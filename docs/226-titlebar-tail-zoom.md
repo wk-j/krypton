@@ -22,9 +22,10 @@ slice of the current title. The left-hand label carries the live title (cwd
 path, SSH host, content name) in full. The mark stays put when OSC 0/2 replaces
 the title.
 
-Only the **focused** window zooms the mark to 2.9× (same dock zoom as the
-footer lane logo, spec 218). Unfocused tiles keep a quiet 11px `01` so the
-digits stay scannable without four giant glyphs competing.
+Only the **focused** window zooms the mark, capped to the titlebar
+(`min(11px × 2.9, 28px)` = the 28px rail). The ID stays at the top of the
+window; it does not hang into the oscilloscope. Unfocused tiles keep a quiet
+11px `01` so the digits stay scannable without four giant glyphs competing.
 
 Windows with no session identity (agent, vault, Quick Terminal, content views)
 have no tail.
@@ -35,25 +36,16 @@ have no tail.
   scale(2.9)` (fixed 1em square); project badge uses scaled `font-size` because
   text has no CSS expression for "reserve 1.9 × my width". The session mark is
   text, so it uses `font-size`.
-- `.krypton-window__titlebar` was `overflow: hidden` for the ack wipe, and
-  `progress.css` (loaded after `window.css`) re-asserted `overflow: hidden`
-  for the OSC 9;4 scanline. That clipped the 2.9× digits to the 28px rail.
-  The titlebar is now `overflow-x: clip; overflow-y: visible` so the sweep
-  stays in the rail horizontally while the mark hangs into the header-accent
-  band and, at a large chrome size, the pane.
-- `.krypton-window__titlebar-end` is `height: 100%` + `min-height: 0`. Without
-  that lock the zoomed tail grew the cluster, the titlebar's `align-items:
-  center` split the extra above *and* below the rail, and the digits poked
-  out the top of the window. Top-align the tail (`align-self: flex-start`) so
-  every overflowing pixel drops into the window, never out the frame.
-- Titlebar is *before* the pane in DOM. `z-index` on the titlebar alone is
-  trapped in the chrome flex item's layer, so the hang still painted *under*
-  the later content/pane sibling (and the header-accent `<canvas>` compositor
-  layer could slice the digits). `.krypton-window__chrome` is `z-index: 2` so
-  the whole head — overflow included — paints above the pane; the titlebar is
-  `z-index: 1` inside that; the band is `z-index: -1`; the mark itself is a
-  positioned compositor layer (`z-index: 2` + `translateZ(0)`) so the canvas
-  cannot cover the hanging ink.
+- `.krypton-window__titlebar` is `overflow: hidden` for the ack wipe and the
+  OSC 9;4 scanline. The focused mark is capped to `--krypton-titlebar-height`
+  (`min(11px × 2.9, 28px)` = 28px) so it fills the rail and does not hang
+  into the oscilloscope. Hanging it down was the footer-logo move (spec 218);
+  here it put a 1px hairline through the counters of `0` and then a hole in
+  the band to dodge that hairline. The ID belongs at the top of the window.
+- `.krypton-window__titlebar-end` is `height: 100%` + `min-height: 0` +
+  `overflow: hidden`. Without that lock a font-size larger than 11px grows
+  the cluster and the titlebar's `align-items: center` splits the extra
+  above *and* below the rail, poking digits out the top of the window.
 - Last-two-characters of the live title — rejected after seeing cwd paths:
   `KRYPTON` → `ON` on every tile.
 - First two characters, left-aligned (spec 219). Rejected: default titles are
@@ -69,7 +61,7 @@ have no tail.
 | tmux `window-status-current-format` | Restyle the current window name | Same "make the current id louder" idea |
 
 **Krypton delta** — the glance mark is the session number, pinned to the
-titlebar's right edge, zoomed only while that window is focused.
+titlebar's right edge, filling that 28px rail only while the window is focused.
 
 ## Affected Files
 
@@ -78,8 +70,8 @@ titlebar's right edge, zoomed only while that window is focused.
 | `src/window-title-label.ts` | `session_NN` split; OSC titles keep the current mark |
 | `src/window-title-label.test.ts` | Session split, path titles, mark persistence |
 | `src/compositor.ts` | Titlebar-end cluster; all title writes go through `paintWindowLabel` |
-| `src/styles/window.css` | Quiet unfocused mark; 2.9× on `.krypton-window--focused`; chrome `z-index: 2`; titlebar `overflow-x: clip` / `overflow-y: visible`; mark layer above the header-accent canvas |
-| `src/styles/progress.css` | Must not set `overflow: hidden` on the titlebar (clips the mark) |
+| `src/styles/window.css` | Quiet unfocused mark; focused mark `min(11px × 2.9, titlebar height)` so it stays in the 28px rail; titlebar `overflow: hidden`; oscilloscope margins stay symmetric |
+| `src/styles/progress.css` | Must not set overflow on the titlebar (window.css owns it) |
 | `src/styles/agent.css` / `vault-view.css` | Sibling aesthetics keep their palette on the tail |
 | `docs/04-architecture.md` | Titlebar DOM |
 | `DESIGN.md` | Window anatomy |
@@ -115,12 +107,12 @@ title replace the left-hand label without erasing the mark already on the tile.
                               └ titlebar-end ─┘
 ```
 
-- `.krypton-window__chrome` — `z-index: 2` so overflow paints above the pane
-- `.krypton-window__titlebar` — `overflow-x: clip; overflow-y: visible` (not `hidden`)
-- `.krypton-window__header-accent` — `z-index: -1` so the canvas sits behind the hanging mark
-- `.krypton-window__titlebar-end` — flex cluster, right side; `height: 100%` so the zoomed tail cannot grow it
-- `.krypton-window__label-tail` — 11px, 0.45 opacity when unfocused; positioned layer
-- `.krypton-window--focused .krypton-window__label-tail` — 2.9×, full accent, `align-self: flex-start` so extra hangs down into the window; `translateZ(0)` so the canvas cannot cover it
+- `.krypton-window__chrome` — `z-index: 2`; `overflow: hidden` (the mark does not leave the head)
+- `.krypton-window__titlebar` — `overflow: hidden`; 28px rail
+- `.krypton-window__header-accent` — independent of the mark; symmetric 20px start/end margin
+- `.krypton-window__titlebar-end` — flex cluster, right side; `height: 100%` so zoomed type cannot grow it
+- `.krypton-window__label-tail` — 11px, 0.45 opacity when unfocused
+- `.krypton-window--focused .krypton-window__label-tail` — `min(11px × 2.9, 28px)`, full accent, still in the titlebar
 - Titles that are not `session_NN` never produce a tail of their own
 
 ## Edge Cases

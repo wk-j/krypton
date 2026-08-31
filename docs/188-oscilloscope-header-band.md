@@ -133,8 +133,10 @@ Internals: `Float32Array` ring buffer of signed samples (length ≈ cssWidth/2);
 - Terminal / quick-terminal header-accent element becomes
   `<canvas class="krypton-window__header-accent krypton-window__header-accent--scope">`.
 - CSS: `--scope { display:block; width:calc(100% - 2×margin); height:var(--krypton-header-accent-height); }`
-  (canvas is DPR-scaled internally). The base `.krypton-window__header-accent` div rule is
-  retained unchanged for content-view/dashboard.
+  (canvas is DPR-scaled internally). The session mark lives in the titlebar
+  (spec 226) so the hairline is independent of it and uses the same start/end
+  margin. The base `.krypton-window__header-accent` div rule is retained for
+  the ticks fallback / dashboard.
 - Trace color: `rgba(var(--krypton-window-accent-rgb), HEADER_SCOPE_TRACE_ALPHA)` for
   both the idle hairline and the live polyline. Amplitude carries activity; α does
   not. Focused vs unfocused can differ in base alpha (reuse
