@@ -635,6 +635,30 @@ export function referenceGitResponseIsCurrent(
 
 const STICK_THRESHOLD_PX = 32;
 
+// Spec 114 rev 7: while a lane streams, the transcript glides to the growing
+// bottom instead of teleporting. Each frame the follower closes this fraction
+// of the remaining distance (~60ms time constant at 60fps) and parks once
+// within the snap distance; the next chunk re-nudges it.
+const SMOOTH_FOLLOW_LERP = 0.25;
+const SMOOTH_FOLLOW_SNAP_PX = 0.5;
+
+/** One frame of the streaming smooth-follow chase. Pure so the convergence
+ *  contract (monotonic approach, ≥1px floor so it cannot stall, exact snap —
+ *  including when content shrank and the browser clamped scrollTop) is
+ *  testable without RAF. */
+export function smoothFollowStep(
+  scrollTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+): { scrollTop: number; done: boolean } {
+  const target = Math.max(0, scrollHeight - clientHeight);
+  const delta = target - scrollTop;
+  if (delta <= SMOOTH_FOLLOW_SNAP_PX) return { scrollTop: target, done: true };
+  const next = scrollTop + Math.max(1, delta * SMOOTH_FOLLOW_LERP);
+  if (target - next <= SMOOTH_FOLLOW_SNAP_PX) return { scrollTop: target, done: true };
+  return { scrollTop: next, done: false };
+}
+
 const METRICS_POLL_MS = 2000;
 const REFERENCE_GIT_REFRESH_MS = 150;
 
@@ -1130,6 +1154,10 @@ export class AcpHarnessView implements ContentView {
   // a lane switch or programmatic scroll between event and frame cannot
   // write a stale anchor.
   private scrollHandlerRaf = false;
+  // Spec 114 rev 7: RAF id of the streaming smooth-follow loop; 0 when parked.
+  // The loop re-reads live state every frame, so lane switches and unsticks
+  // terminate it without explicit bookkeeping at every call site.
+  private smoothFollowRaf = 0;
   private suppressScrollListener = false;
   private suppressScrollToken = 0;
   private transcriptResizeObserver: ResizeObserver | null = null;
@@ -3609,6 +3637,7 @@ export class AcpHarnessView implements ContentView {
       if (body) {
         e.preventDefault();
         body.scrollBy({ top: e.key === 'J' ? 60 : -60, behavior: 'instant' });
+        this.noteUserScroll(body, e.key === 'J' ? 'down' : 'up');
         return true;
       }
     }
@@ -4242,6 +4271,7 @@ export class AcpHarnessView implements ContentView {
     this.stopComposerTick();
     this.cancelActionHudHide();
     this.cancelThoughtSlotHide();
+    this.cancelSmoothFollow();
     this.stopThoughtTeletypeTick();
     this.stopMetricsTick();
     this.stopSpinnerTicker();
@@ -5715,6 +5745,17 @@ export class AcpHarnessView implements ContentView {
         }
       },
       true,
+    );
+    // Wheel targets the innermost element under the pointer (unlike scroll,
+    // which targets the scroller itself), hence closest() not classList.
+    this.dashboardEl.addEventListener(
+      'wheel',
+      (e: WheelEvent) => {
+        if (e.target instanceof HTMLElement && e.target.closest('.acp-harness__lane-body')) {
+          this.onTranscriptWheel(e);
+        }
+      },
+      { capture: true, passive: true },
     );
     body.appendChild(this.dashboardEl);
 
@@ -13647,10 +13688,11 @@ export class AcpHarnessView implements ContentView {
       void this.refreshReferenceGitState(true);
       return true;
     }
-    if (e.key === 'j') { e.preventDefault(); body.scrollBy({ top: 24, behavior: 'instant' }); return true; }
-    if (e.key === 'k') { e.preventDefault(); body.scrollBy({ top: -24, behavior: 'instant' }); return true; }
+    if (e.key === 'j') { e.preventDefault(); body.scrollBy({ top: 24, behavior: 'instant' }); this.noteUserScroll(body, 'down'); return true; }
+    if (e.key === 'k') { e.preventDefault(); body.scrollBy({ top: -24, behavior: 'instant' }); this.noteUserScroll(body, 'up'); return true; }
     if (e.key === 'g') {
       e.preventDefault();
+      this.cancelSmoothFollow();
       body.scrollTop = 0;
       const lane = this.activeLane();
       if (lane) { lane.stickToBottom = false; lane.savedScrollTop = 0; }
@@ -13674,8 +13716,8 @@ export class AcpHarnessView implements ContentView {
       }
     }
     if (e.key === 'Escape' || e.key === 'i') { e.preventDefault(); this.focus = 'text'; this.render(); return true; }
-    if ((e.key === 'd' && e.ctrlKey) || e.key === 'PageDown') { e.preventDefault(); body.scrollBy({ top: body.clientHeight * 0.5, behavior: 'instant' }); return true; }
-    if ((e.key === 'u' && e.ctrlKey) || e.key === 'PageUp') { e.preventDefault(); body.scrollBy({ top: -body.clientHeight * 0.5, behavior: 'instant' }); return true; }
+    if ((e.key === 'd' && e.ctrlKey) || e.key === 'PageDown') { e.preventDefault(); body.scrollBy({ top: body.clientHeight * 0.5, behavior: 'instant' }); this.noteUserScroll(body, 'down'); return true; }
+    if ((e.key === 'u' && e.ctrlKey) || e.key === 'PageUp') { e.preventDefault(); body.scrollBy({ top: -body.clientHeight * 0.5, behavior: 'instant' }); this.noteUserScroll(body, 'up'); return true; }
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       return true;
@@ -14151,15 +14193,89 @@ export class AcpHarnessView implements ContentView {
     if (!lane) return;
     const body = this.activeTranscriptBody();
     if (!body) return;
-    const token = this.beginProgrammaticScroll();
     if (lane.stickToBottom) {
+      // Streaming growth glides via the follower. An already-running glide
+      // also finishes smoothly when the turn ends (the final reparse would
+      // otherwise teleport it). Everything else — lane switch, resize,
+      // G key on an idle lane — still pins instantly.
+      if (this.isLaneStreaming(lane) || this.smoothFollowRaf !== 0) {
+        this.nudgeSmoothFollow();
+        return;
+      }
+      const token = this.beginProgrammaticScroll();
       body.scrollTop = body.scrollHeight;
-    } else if (body.scrollTop === 0 && lane.savedScrollTop > 0) {
+      this.releaseProgrammaticScroll(token);
+      return;
+    }
+    const token = this.beginProgrammaticScroll();
+    if (body.scrollTop === 0 && lane.savedScrollTop > 0) {
       body.scrollTop = lane.savedScrollTop;
     } else {
       lane.savedScrollTop = body.scrollTop;
     }
     this.releaseProgrammaticScroll(token);
+  }
+
+  // Spec 114 rev 7: per-frame exponential chase toward the growing bottom.
+  // Runs only while behind — it parks once caught up and the next chunk
+  // re-nudges — so idle streaming frames cost nothing. Each frame writes
+  // under programmatic-scroll suppression; successive begins bump the token,
+  // so suppression holds continuously across the glide and lifts two RAFs
+  // after the last write, same contract as the instant pin.
+  private nudgeSmoothFollow(): void {
+    if (this.smoothFollowRaf !== 0) return;
+    const step = (): void => {
+      this.smoothFollowRaf = 0;
+      const lane = this.activeLane();
+      const body = this.activeTranscriptBody();
+      if (!lane || !body || !lane.stickToBottom) return;
+      const next = smoothFollowStep(body.scrollTop, body.scrollHeight, body.clientHeight);
+      const token = this.beginProgrammaticScroll();
+      body.scrollTop = next.scrollTop;
+      this.releaseProgrammaticScroll(token);
+      if (!next.done) this.smoothFollowRaf = requestAnimationFrame(step);
+    };
+    this.smoothFollowRaf = requestAnimationFrame(step);
+  }
+
+  private cancelSmoothFollow(): void {
+    if (this.smoothFollowRaf === 0) return;
+    cancelAnimationFrame(this.smoothFollowRaf);
+    this.smoothFollowRaf = 0;
+  }
+
+  /** Keyboard scrolls mutate scrollTop synchronously; record stickiness in
+   *  the same frame instead of relying on the scroll event, which the
+   *  follower's suppression window eats mid-stream. Direction disambiguates
+   *  intent while the follower is behind the true bottom: only an upward
+   *  scroll may unstick, and a downward scroll may only (re)stick — pressing
+   *  j during a glide must not read as "leave the bottom". */
+  private noteUserScroll(body: HTMLElement, direction: 'up' | 'down'): void {
+    const lane = this.activeLane();
+    if (!lane) return;
+    const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
+    const atBottom = distance <= STICK_THRESHOLD_PX;
+    if (direction === 'up') {
+      this.cancelSmoothFollow();
+      lane.stickToBottom = atBottom;
+    } else if (atBottom) {
+      lane.stickToBottom = true;
+    }
+    lane.savedScrollTop = body.scrollTop;
+    lane.savedScrollAnchor = lane.stickToBottom ? null : this.captureTranscriptScrollAnchor(body);
+  }
+
+  /** An upward wheel is unforgeable user intent to leave the bottom. Kill the
+   *  follower and lift programmatic-scroll suppression (bumping the token
+   *  invalidates in-flight releases) so the ensuing native scroll events reach
+   *  onTranscriptScroll and unstick through the normal path. Downward wheel
+   *  needs nothing: suppression is only held while the follower runs, and the
+   *  follower only runs while stuck. */
+  private onTranscriptWheel(e: WheelEvent): void {
+    if (e.deltaY >= 0) return;
+    this.cancelSmoothFollow();
+    this.suppressScrollToken++;
+    this.suppressScrollListener = false;
   }
 
   private activeTranscriptBody(): HTMLElement | null {

@@ -1,12 +1,13 @@
 # 114. ACP Harness Streaming Performance Audit & Fixes
 
-> Status: Implemented (rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
+> Status: Implemented (rev 7 — streaming smooth-follow scroll; rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
 > Date: 2026-05-22
 > Milestone: ACP harness — performance hardening
 > Builds on: Spec 94 (render batching + caching), Spec 103 (tail-window rendering)
 > Amended (assistant kind only) by: Spec 117 — assistant rows now use optimistic streaming-markdown rendering instead of plain-until-seal. Thought / user rows still follow §1 of this spec until seal, then stamp the sealed signature in place.
 > Amended (rev 5) by: tool_call / tool_call_update and sealStreaming use `scheduleStreamingBodyOnly` instead of `scheduleLaneRender`. Existing transcript rows patch in place (`replaceChildren`); pending and in_progress share one signature so an in-flight status tick does not remount the row.
 > Amended (rev 6) by: `stop` sets `needsRender = false` and patches lane chrome + composer (`patchLaneTurnChrome`) instead of `renderActiveLane`. `refreshMcpStats` calls `refreshMetricsRender` instead of `this.render()`. Thought/user seal stamps the wrapper signature like assistant. `layoutPretextRows` skips rows whose DOM already matches the line cache. In-flight tools beat thinking on the action HUD so a Read scan does not restart on empty thought chunks.
+> Amended (rev 7) by: streaming smooth-follow scroll (§5) — while a lane streams, sticky scroll glides to the bottom with a per-frame exponential chase instead of teleporting; keyboard/wheel user-intent detection replaces the scroll-event heuristic while the glide holds suppression.
 
 ## Problem
 
@@ -312,6 +313,55 @@ win does not justify the risk; ship only the lane-body rule. Revisit
 only if profiling shows cross-row layout invalidation as a real cost.
 
 Effect: isolates paint of the scroll container from adjacent lane chrome.
+
+### 5. Streaming smooth-follow scroll (rev 7)
+
+While a lane streams, sticky-scroll pinning (`scrollTop = scrollHeight`)
+teleports the transcript at every chunk boundary. Rev 7 replaces the pin
+with a per-frame exponential chase **only while streaming**; every other
+sticky path (lane switch, resize, full rebuild, `G` on an idle lane)
+still pins instantly.
+
+- `smoothFollowStep(scrollTop, scrollHeight, clientHeight)` — exported
+  pure step: closes `SMOOTH_FOLLOW_LERP` (0.25, ~60 ms time constant at
+  60 fps) of the remaining distance per frame, with a 1 px floor so it
+  cannot stall, and snaps exactly once within `SMOOTH_FOLLOW_SNAP_PX`
+  (0.5) — including when content shrank and the browser clamped
+  `scrollTop`.
+- `nudgeSmoothFollow()` — RAF loop around the step. Parks when caught up
+  (the next chunk re-nudges), so idle streaming frames cost nothing. Every
+  frame re-reads live state (`activeLane`, `activeTranscriptBody`,
+  `stickToBottom`), so lane switches and unsticks terminate it without
+  call-site bookkeeping. Each frame writes under
+  `beginProgrammaticScroll`/`releaseProgrammaticScroll`; successive begins
+  bump the token, so suppression holds continuously across the glide and
+  lifts two RAFs after the last write — same contract as the instant pin.
+- `applyStickyScroll()` routes the `stickToBottom` branch to the follower
+  when `isLaneStreaming(lane)` **or** a glide is already in flight (so
+  the turn-end triple-pin lets an unfinished glide finish smoothly
+  instead of teleporting past the final reparse).
+- **User-intent detection.** With suppression held for the whole glide,
+  the scroll-event heuristic can no longer see user scrolls mid-stream:
+  - Keyboard scroll keys (`j`/`k`, `Ctrl+d`/`u`, `PageUp`/`Down`,
+    `Ctrl+Shift+J`/`K`) record stickiness synchronously via
+    `noteUserScroll(body, direction)` right after their instant
+    `scrollBy`. Direction disambiguates intent while the follower is
+    behind the true bottom: only an **upward** scroll may unstick
+    (recomputed from `STICK_THRESHOLD_PX`), and a **downward** scroll may
+    only (re)stick — pressing `j` during a glide must not read as "leave
+    the bottom". `g` cancels the follower and unsticks as before.
+  - An **upward wheel** is unforgeable user input: `onTranscriptWheel`
+    cancels the follower and lifts suppression (bumping the token
+    invalidates in-flight releases) so the ensuing native scroll events
+    reach `onTranscriptScroll` and unstick through the normal path.
+    Downward wheel needs nothing — suppression is only held while the
+    follower runs, and the follower only runs while stuck.
+- `dispose()` cancels the follower RAF.
+
+Effect: the transcript glides at chunk boundaries instead of jumping, and
+the glide also absorbs the seal-reparse height jump. Perf cost is one
+`scrollHeight` read + one `scrollTop` write per frame, only while behind
+the bottom.
 
 ## Implementation order
 

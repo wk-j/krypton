@@ -15,6 +15,7 @@ import {
   thoughtBodyRenderKind,
   laneThoughtHasContent,
   pinPeekThoughtToLatest,
+  smoothFollowStep,
   resolveLaneThoughtSnapshot,
   schedulePeekThoughtPin,
   deriveLanePairHeat,
@@ -1182,6 +1183,50 @@ describe('ACP peer activity UI (spec 118)', () => {
     const body = { scrollTop: 12, scrollHeight: 320 };
     pinPeekThoughtToLatest(body as unknown as HTMLElement);
     expect(body.scrollTop).toBe(320);
+  });
+
+  describe('smoothFollowStep (spec 114 rev 7)', () => {
+    it('converges monotonically to the bottom and reports done exactly once', () => {
+      let scrollTop = 0;
+      let done = false;
+      let frames = 0;
+      const positions: number[] = [];
+      while (!done && frames < 200) {
+        const next = smoothFollowStep(scrollTop, 5_000, 600);
+        expect(next.scrollTop).toBeGreaterThan(scrollTop);
+        scrollTop = next.scrollTop;
+        done = next.done;
+        positions.push(scrollTop);
+        frames++;
+      }
+      expect(done).toBe(true);
+      expect(scrollTop).toBe(4_400);
+      // Exponential chase: big strides first, tapering — never a teleport.
+      expect(positions[0]).toBe(1_100);
+      expect(frames).toBeLessThan(60);
+    });
+
+    it('keeps a 1px minimum stride so tiny remainders cannot stall', () => {
+      const next = smoothFollowStep(4_396, 5_000, 600);
+      expect(next.scrollTop).toBe(4_397);
+      expect(next.done).toBe(false);
+    });
+
+    it('snaps exactly when within the snap distance', () => {
+      const next = smoothFollowStep(4_399.6, 5_000, 600);
+      expect(next.scrollTop).toBe(4_400);
+      expect(next.done).toBe(true);
+    });
+
+    it('parks immediately when content shrank past the browser clamp', () => {
+      const next = smoothFollowStep(900, 1_200, 600);
+      expect(next).toEqual({ scrollTop: 600, done: true });
+    });
+
+    it('clamps the target at zero for content shorter than the viewport', () => {
+      const next = smoothFollowStep(0, 300, 600);
+      expect(next).toEqual({ scrollTop: 0, done: true });
+    });
   });
 
   it('schedulePeekThoughtPin pins now and again after layout', () => {
