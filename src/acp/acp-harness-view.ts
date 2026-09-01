@@ -301,6 +301,8 @@ import {
   isMemoryTool,
   isTerminalToolStatus,
   mergeToolCall,
+  patchStreamingToolBody,
+  setToolSpinnerGlyph,
 } from './harness-tool-render';
 export {
   boundedOutputLines,
@@ -7960,6 +7962,11 @@ export class AcpHarnessView implements ContentView {
       case 'plan':
         this.sealStreaming(lane);
         this.renderPlan(lane, event.entries);
+        // Spec 114 rev 9: renderPlan patches the plan panel in place and
+        // sealStreaming schedules the body-only pass — the extra full lane
+        // render per plan tick (every TodoWrite update) flashed the lane
+        // mid-turn. Inactive lanes keep the cheap metrics-refresh path.
+        if (lane.id === this.activeLaneId) needsRender = false;
         break;
       case 'permission_request':
         this.sealStreaming(lane);
@@ -7975,6 +7982,13 @@ export class AcpHarnessView implements ContentView {
         // a `usage_update` notification carries the context level and would
         // otherwise be mistaken for a completed turn's spend.
         if (isTurnUsage(event.usage)) lane.lastTurnUsage = event.usage;
+        // Spec 114 rev 9: usage arrives once per API round-trip mid-turn (an
+        // agentic turn with N tool calls emits N+), and a full lane render per
+        // event flashed the whole lane while tools ran. Usage only surfaces on
+        // the lane head/stats, the zen rail, and the peek card — patch those.
+        this.renderActiveLaneChrome(lane);
+        this.renderLanePeek();
+        needsRender = false;
         break;
       case 'available_commands':
         lane.availableCommands = event.commands;
@@ -8006,6 +8020,11 @@ export class AcpHarnessView implements ContentView {
       }
       case 'fs_activity':
         this.appendFsActivity(lane, event.method, event.path, event.ok, event.error);
+        // Spec 114 rev 8: fs touches arrive per file mid-turn; the new row
+        // renders on the body-only pass. A full lane render per touch rebuilt
+        // chrome/peek/plan/composer and flashed the lane while tools ran.
+        this.scheduleStreamingBodyOnly(lane);
+        needsRender = false;
         break;
       case 'fs_write_pending':
         this.appendFsWriteReview(lane, event.requestId, event.path, event.oldText, event.newText);
@@ -11409,6 +11428,13 @@ export class AcpHarnessView implements ContentView {
       const isIndicator = item.id === HIDDEN_INDICATOR_ID;
       if (current) {
         if (current.dataset.renderSignature === signature) {
+          // Spec 114 rev 8: an in-flight tool keeps a stable structural
+          // signature while its output streams (section text is excluded) —
+          // patch the output block in place instead of rebuilding the row.
+          if (item.kind === 'tool' && item.tool && !isTerminalToolStatus(item.tool.status)) {
+            const toolBody = current.querySelector<HTMLElement>('.acp-harness__msg-body');
+            if (toolBody) patchStreamingToolBody(toolBody, item.tool);
+          }
           previous = current;
         } else {
           const next = renderTranscriptItem(item, false, streaming, lane, this.projectDir);
@@ -12593,6 +12619,9 @@ export class AcpHarnessView implements ContentView {
   private tickSpinner(): void {
     this.spinnerFrame = (this.spinnerFrame + 1) % SPINNER_FRAMES.length;
     const glyph = SPINNER_FRAMES[this.spinnerFrame];
+    // Keep the tool-row seed on the live frame so a structural rebuild
+    // mid-stream doesn't snap the glyph back to frame 0 (spec 114 rev 8).
+    setToolSpinnerGlyph(glyph);
     const spinners = this.element.querySelectorAll<HTMLElement>('.acp-harness__spinner');
     for (const el of spinners) el.textContent = glyph;
   }

@@ -17,6 +17,7 @@ import {
   isGrepLikeOutput,
   parseGrepDump,
   parseGrepLine,
+  patchStreamingToolBody,
   peelExitPrefix,
   renderGrepSection,
   renderToolBody,
@@ -33,26 +34,67 @@ interface FakeEl {
   textContent: string;
   dataset: Record<string, string>;
   children: FakeEl[];
+  parent: FakeEl | null;
   appendChild(child: FakeEl): FakeEl;
   append(...children: FakeEl[]): FakeEl;
+  insertBefore(child: FakeEl, ref: FakeEl | null): FakeEl;
+  querySelector(selector: string): FakeEl | null;
+  replaceWith(next: FakeEl): void;
+  remove(): void;
 }
 
 function makeFakeEl(tag: string): FakeEl {
-  return {
+  const el: FakeEl = {
     tagName: tag,
     className: '',
     textContent: '',
     dataset: {},
     children: [],
+    parent: null,
     appendChild(child: FakeEl): FakeEl {
+      child.parent = this;
       this.children.push(child);
       return child;
     },
     append(...children: FakeEl[]): FakeEl {
+      for (const child of children) child.parent = this;
       this.children.push(...children);
       return this;
     },
+    insertBefore(child: FakeEl, ref: FakeEl | null): FakeEl {
+      child.parent = this;
+      const at = ref ? this.children.indexOf(ref) : -1;
+      if (at === -1) this.children.push(child);
+      else this.children.splice(at, 0, child);
+      return child;
+    },
+    // Supports the two shapes patchStreamingToolBody uses: ':scope > .cls'
+    // (direct child) and '.cls' (descendant).
+    querySelector(selector: string): FakeEl | null {
+      const cls = selector.replace(':scope > ', '').replace(/^\./, '');
+      if (selector.startsWith(':scope > ')) {
+        return this.children.find((c) => c.className.split(/\s+/).includes(cls)) ?? null;
+      }
+      return findClass(this, cls) ?? null;
+    },
+    replaceWith(next: FakeEl): void {
+      if (!this.parent) return;
+      const at = this.parent.children.indexOf(this);
+      if (at === -1) return;
+      next.parent = this.parent;
+      this.parent.children[at] = next;
+      this.parent = null;
+    },
+    remove(): void {
+      if (!this.parent) return;
+      const at = this.parent.children.indexOf(this);
+      if (at !== -1) this.parent.children.splice(at, 1);
+      this.parent = null;
+    },
   };
+  // Back-reference must not show up in JSON.stringify (existing dump asserts).
+  Object.defineProperty(el, 'parent', { value: null, writable: true, enumerable: false });
+  return el;
 }
 
 function withDom<T>(fn: () => T): T {
@@ -845,5 +887,67 @@ describe('formatGrokFileMatches', () => {
   it('returns empty for missing or empty arrays', () => {
     expect(formatGrokFileMatches(undefined)).toBe('');
     expect(formatGrokFileMatches([])).toBe('');
+  });
+});
+
+describe('patchStreamingToolBody (spec 114 rev 8)', () => {
+  const streamPayload = (text: string): ToolPayload => payload({
+    glyph: '⠋',
+    status: 'in_progress',
+    subject: 'npm test',
+    command: 'npm test',
+    sections: [{ label: 'stdout', text }],
+  });
+
+  it('swaps only the output block; head keeps its DOM nodes', () => {
+    withDom(() => {
+      const body = makeFakeEl('div');
+      renderToolBody(body as unknown as HTMLElement, streamPayload('line 1'));
+      const head = findClass(body, 'acp-harness__tool-head');
+      const firstOutput = findClass(body, 'acp-harness__tool-output');
+      expect(head).toBeDefined();
+      expect(firstOutput).toBeDefined();
+
+      patchStreamingToolBody(body as unknown as HTMLElement, streamPayload('line 1\nline 2'));
+      expect(findClass(body, 'acp-harness__tool-head')).toBe(head);
+      expect(findClass(body, 'acp-harness__tool-output')).not.toBe(firstOutput);
+      expect(findClass(body, 'acp-harness__tool-section-text')?.textContent).toContain('line 2');
+    });
+  });
+
+  it('dedupes on unchanged section text', () => {
+    withDom(() => {
+      const body = makeFakeEl('div');
+      renderToolBody(body as unknown as HTMLElement, streamPayload('same'));
+      patchStreamingToolBody(body as unknown as HTMLElement, streamPayload('same'));
+      const output = findClass(body, 'acp-harness__tool-output');
+      patchStreamingToolBody(body as unknown as HTMLElement, streamPayload('same'));
+      expect(findClass(body, 'acp-harness__tool-output')).toBe(output);
+    });
+  });
+
+  it('appends the output block when the first section arrives late', () => {
+    withDom(() => {
+      const body = makeFakeEl('div');
+      renderToolBody(body as unknown as HTMLElement, payload({ glyph: '⠋', status: 'in_progress', sections: [] }));
+      expect(findClass(body, 'acp-harness__tool-output')).toBeUndefined();
+      patchStreamingToolBody(body as unknown as HTMLElement, streamPayload('first chunk'));
+      expect(findClass(body, 'acp-harness__tool-section-text')?.textContent).toBe('first chunk');
+    });
+  });
+
+  it('never touches an artifact-redacted body', () => {
+    withDom(() => {
+      const body = makeFakeEl('div');
+      const redacted = payload({
+        glyph: '⠋',
+        status: 'in_progress',
+        artifactRedaction: { tail: 'a.html', size: 10, hash: 'x', pending: true },
+      });
+      renderToolBody(body as unknown as HTMLElement, redacted);
+      const snapshot = body.children.slice();
+      patchStreamingToolBody(body as unknown as HTMLElement, { ...redacted, sections: [{ label: 'stdout', text: 'html' }] });
+      expect(body.children).toEqual(snapshot);
+    });
   });
 });

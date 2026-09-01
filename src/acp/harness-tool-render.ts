@@ -21,6 +21,16 @@ import {
 // ticker overwrites the glyph on the next tick.
 const TOOL_SPINNER_SEED = '⠋';
 
+// The view's spinner ticker publishes its current frame here so a rebuilt
+// in-flight glyph seeds at the live frame instead of snapping back to frame 0
+// on every structural row rebuild (visible as a stuck/jittering spinner while
+// a tool streams output).
+let liveSpinnerGlyph = TOOL_SPINNER_SEED;
+
+export function setToolSpinnerGlyph(glyph: string): void {
+  liveSpinnerGlyph = glyph;
+}
+
 function statusGlyph(status: string): string {
   if (status === 'completed') return '✓';
   if (status === 'failed' || status === 'canceled') return '✗';
@@ -527,7 +537,7 @@ export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
   glyph.className = spinning
     ? `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status} acp-harness__spinner`
     : `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status}`;
-  glyph.textContent = spinning ? TOOL_SPINNER_SEED : tool.glyph;
+  glyph.textContent = spinning ? liveSpinnerGlyph : tool.glyph;
   head.appendChild(glyph);
   const kind = document.createElement('span');
   kind.className = 'acp-harness__tool-kind';
@@ -585,6 +595,34 @@ export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
     }
     body.appendChild(wrap);
   }
+}
+
+/** Spec 114 rev 8: in-place output refresh for a tool row whose structural
+ *  render signature is unchanged — an in-flight tool streaming more section
+ *  text. Only the output block is swapped; the head (spinner glyph, kind chip,
+ *  subject, timer) and diff previews keep their DOM nodes, so per-chunk
+ *  updates stop remounting the whole row. Deduped on the section text so a
+ *  visible-but-untouched row costs one string compare per pass. */
+export function patchStreamingToolBody(body: HTMLElement, tool: ToolPayload): void {
+  if (tool.artifactRedaction) return;
+  const mutable = tool.sections
+    .map((section) => `${section.label}\u001f${section.text}`)
+    .join('\u001e');
+  if (body.dataset.toolStreamSig === mutable) return;
+  body.dataset.toolStreamSig = mutable;
+  const existing = body.querySelector<HTMLElement>(':scope > .acp-harness__tool-output');
+  if (tool.sections.length === 0 && !shouldRenderExecuteExit(tool)) {
+    existing?.remove();
+    return;
+  }
+  const next = renderToolOutput(tool);
+  if (existing) {
+    existing.replaceWith(next);
+    return;
+  }
+  const diffs = body.querySelector<HTMLElement>(':scope > .acp-harness__tool-diffs');
+  if (diffs) body.insertBefore(next, diffs);
+  else body.appendChild(next);
 }
 
 export function formatArtifactBytes(size: number | null): string {

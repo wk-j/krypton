@@ -1,6 +1,6 @@
 # 114. ACP Harness Streaming Performance Audit & Fixes
 
-> Status: Implemented (rev 7 — streaming smooth-follow scroll; rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
+> Status: Implemented (rev 9 — usage and plan events stay off the full lane rebuild; rev 8 — streaming tool output patches the output block in place; rev 7 — streaming smooth-follow scroll; rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
 > Date: 2026-05-22
 > Milestone: ACP harness — performance hardening
 > Builds on: Spec 94 (render batching + caching), Spec 103 (tail-window rendering)
@@ -8,6 +8,8 @@
 > Amended (rev 5) by: tool_call / tool_call_update and sealStreaming use `scheduleStreamingBodyOnly` instead of `scheduleLaneRender`. Existing transcript rows patch in place (`replaceChildren`); pending and in_progress share one signature so an in-flight status tick does not remount the row.
 > Amended (rev 6) by: `stop` sets `needsRender = false` and patches lane chrome + composer (`patchLaneTurnChrome`) instead of `renderActiveLane`. `refreshMcpStats` calls `refreshMetricsRender` instead of `this.render()`. Thought/user seal stamps the wrapper signature like assistant. `layoutPretextRows` skips rows whose DOM already matches the line cache. In-flight tools beat thinking on the action HUD so a Read scan does not restart on empty thought chunks.
 > Amended (rev 7) by: streaming smooth-follow scroll (§5) — while a lane streams, sticky scroll glides to the bottom with a per-frame exponential chase instead of teleporting; keyboard/wheel user-intent detection replaces the scroll-event heuristic while the glide holds suppression.
+> Amended (rev 8) by: streaming tool output (§6) — an in-flight tool's section text stays out of `transcriptRenderSignature`; the body-only pass swaps just the `.acp-harness__tool-output` block (`patchStreamingToolBody`) instead of `replaceChildren` on the whole row. Spinner glyph seeds the live ticker frame. `fs_activity` moves to the body-only path.
+> Amended (rev 9) by: `usage` and `plan` events (§7) — `usage` arrives once per API round-trip mid-turn (an agentic turn with N tool calls emits N+ of them, plus context-level `usage_update` notifications) and took the full `renderActiveLane` path, flashing the whole lane while tools ran. It now patches its actual surfaces in place (`renderActiveLaneChrome` for the lane head/stats/zen rail, `renderLanePeek` for the peek card) and sets `needsRender = false`. `plan` on the active lane likewise skips the full render — `renderPlan` already patches the plan panel and `sealStreaming` schedules the body-only pass.
 
 ## Problem
 
@@ -362,6 +364,71 @@ Effect: the transcript glides at chunk boundaries instead of jumping, and
 the glide also absorbs the seal-reparse height jump. Perf cost is one
 `scrollHeight` read + one `scrollTop` write per frame, only while behind
 the bottom.
+
+### 6. Streaming tool output patches in place (rev 8)
+
+Rev 5 moved tool events onto the body-only pass, but
+`transcriptRenderSignature` still embedded every section's full text (and
+`boundedOutputLines` keeps a scrolling 12-line tail for execute tools), so
+**every output chunk changed the signature** and took the `replaceChildren`
+branch: the whole row — spinner glyph, kind chip, subject, timer, output
+sections, diff previews — was torn down and rebuilt per coalesced RAF. The
+spinner node reseeded at frame 0 each time (visibly stuck/jittering under a
+fast chunk stream), and the head + diff remounts were the residual
+transcript flicker.
+
+Rev 8:
+
+- While a tool is in flight (`!isTerminalToolStatus`), the signature keeps
+  section **labels/count** but drops section text. Structure changes
+  (new stderr section, subject/title update, exit code, diffs, terminal
+  status) still change the signature and rebuild the row once; text growth
+  does not.
+- On a signature match, `renderActiveTranscript` calls
+  `patchStreamingToolBody` (`harness-tool-render.ts`), which swaps only the
+  `.acp-harness__tool-output` element and leaves the head and diff previews
+  alone. It dedupes on the concatenated section text
+  (`dataset.toolStreamSig`), so a visible-but-untouched tool row costs one
+  string compare per pass.
+- The terminal transition re-includes section text in the signature, so the
+  final state still gets one full rebuild through the existing path.
+- `tickSpinner` publishes its current frame to the render module
+  (`setToolSpinnerGlyph`); a structurally rebuilt in-flight glyph now seeds
+  at the live frame instead of snapping back to `⠋`.
+- `fs_activity` sets `needsRender = false` and rides
+  `scheduleStreamingBodyOnly` like tool events. It arrives once per file
+  touch mid-turn; the full `renderActiveLane` per touch was rebuilding
+  chrome/peek/plan/composer while tools ran.
+
+Effect: a streaming execute tool repaints only its own output block, at
+most once per coalesced RAF and only when its text actually changed.
+
+### 7. usage and plan stay off the full lane rebuild (rev 9)
+
+After rev 8 the residual mid-turn flicker was not a transcript row at all:
+`case 'usage'` left `needsRender = true`, so every usage event scheduled
+`renderActiveLane` — a full lane remount (chrome, peek, thought slot, HUD,
+plan, composer, every transcript row's DOM recreated). Usage fires once per
+API round-trip, so an agentic turn with dozens of tool calls flashed the
+lane dozens of times. `case 'plan'` had the same shape: one full render per
+TodoWrite tick, even though `renderPlan` had already patched the plan panel
+in place.
+
+Rev 9:
+
+- `usage` merges as before, then patches the only surfaces that display it:
+  `renderActiveLaneChrome` (lane head, stats strip, zen rail) and
+  `renderLanePeek` (peek card). `needsRender = false`.
+- `plan` on the active lane sets `needsRender = false` — the panel patch in
+  `renderPlan` plus the body-only seal from `sealStreaming` already cover
+  everything the event changes. Inactive lanes keep the existing cheap
+  metrics-refresh path in `scheduleLaneRender`.
+
+Effect: during a streaming turn, no event on the hot path (`message_chunk`,
+`thought_chunk`, `tool_call`, `tool_call_update`, `fs_activity`, `usage`,
+`plan`, `stop`) triggers a full lane rebuild; the remaining
+`renderActiveLane` triggers are genuine layout changes (permission cards,
+questions, errors, mode/lane switches).
 
 ## Implementation order
 

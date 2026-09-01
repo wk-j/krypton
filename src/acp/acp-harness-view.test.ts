@@ -181,6 +181,68 @@ describe('assistant reference Git state', () => {
     expect(transcriptRenderSignature(item, false)).not.toBe(pending);
   });
 
+  it('keeps an in-flight tool signature stable while section text streams (spec 114 rev 8)', () => {
+    const tool = {
+      glyph: '⠋',
+      status: 'in_progress',
+      kind: 'execute',
+      subject: 'npm test',
+      command: 'npm test',
+      result: '',
+      sections: [{ label: 'stdout', text: 'line 1' }],
+      diffs: [] as Array<{ path: string; oldText: string; newText: string }>,
+    };
+    const item: HarnessTranscriptItem = {
+      id: 't2',
+      kind: 'tool',
+      text: '⠋ execute npm test',
+      status: 'in_progress',
+      tool,
+    };
+    const streamingSig = transcriptRenderSignature(item, false);
+    tool.sections = [{ label: 'stdout', text: 'line 1\nline 2\nline 3' }];
+    expect(transcriptRenderSignature(item, false)).toBe(streamingSig);
+    // Structure changes still rebuild: a new stderr section…
+    tool.sections = [
+      { label: 'stdout', text: 'line 1\nline 2\nline 3' },
+      { label: 'stderr', text: 'boom' },
+    ];
+    expect(transcriptRenderSignature(item, false)).not.toBe(streamingSig);
+    // …and the terminal transition re-includes the section text.
+    tool.sections = [{ label: 'stdout', text: 'line 1\nline 2\nline 3' }];
+    tool.status = 'completed';
+    expect(transcriptRenderSignature(item, false)).not.toBe(streamingSig);
+  });
+
+  it('patches streaming tool output in place and keeps fs_activity on the body-only pass (spec 114 rev 8)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    // The signature-equal branch patches the in-flight tool output block.
+    expect(viewSrc).toMatch(
+      /renderSignature === signature[\s\S]{0,600}patchStreamingToolBody/,
+    );
+    // The spinner ticker publishes its live frame for rebuilt glyph seeds.
+    expect(viewSrc).toMatch(/setToolSpinnerGlyph\(glyph\)/);
+    // fs_activity must not take the full renderActiveLane path per file touch.
+    expect(viewSrc).toMatch(
+      /case 'fs_activity':[\s\S]{0,600}?scheduleStreamingBodyOnly\(lane\);[\s\S]{0,200}?needsRender = false;[\s\S]{0,40}?break;/,
+    );
+  });
+
+  it('keeps usage and plan events off the full lane rebuild (spec 114 rev 9)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    // usage fires per API round-trip mid-turn; it must patch chrome in place,
+    // never schedule renderActiveLane.
+    expect(viewSrc).toMatch(
+      /case 'usage':[\s\S]{0,900}?renderActiveLaneChrome\(lane\);[\s\S]{0,120}?renderLanePeek\(\);[\s\S]{0,60}?needsRender = false;[\s\S]{0,40}?break;/,
+    );
+    // plan on the active lane is already patched by renderPlan; no full render.
+    expect(viewSrc).toMatch(
+      /case 'plan':[\s\S]{0,700}?renderPlan\(lane, event\.entries\);[\s\S]{0,500}?if \(lane\.id === this\.activeLaneId\) needsRender = false;[\s\S]{0,40}?break;/,
+    );
+  });
+
   it('does not paint empty thought rows and delays thought-slot hide', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');

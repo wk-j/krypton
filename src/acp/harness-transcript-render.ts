@@ -313,6 +313,14 @@ function toolStatusSignature(status: string): string {
 }
 
 export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boolean): string {
+  // Spec 114 rev 8: while a tool is in flight its section TEXT stays out of
+  // the signature (labels/count stay in). Streaming output otherwise changed
+  // the signature on every chunk, and the replaceChildren rebuild remounted
+  // the whole row — spinner snapped to frame 0, head and diff previews
+  // flashed. The body-only pass patches the output block in place instead
+  // (patchStreamingToolBody); the terminal transition re-includes the text
+  // for one final full rebuild.
+  const toolInFlight = item.tool ? !isTerminalToolStatus(item.tool.status) : false;
   const tool = item.tool
     ? [
       toolStatusSignature(item.tool.status),
@@ -321,7 +329,9 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
       item.tool.command,
       item.tool.result,
       item.tool.exitCode == null ? '' : String(item.tool.exitCode),
-      item.tool.sections.map((section) => `${section.label}:${section.text}`).join('\u001f'),
+      toolInFlight
+        ? item.tool.sections.map((section) => section.label).join('\u001f')
+        : item.tool.sections.map((section) => `${section.label}:${section.text}`).join('\u001f'),
       item.tool.diffs.map((diff) => `${diff.path}:${diff.oldText}:${diff.newText}`).join('\u001f'),
     ].join('\u001e')
     : '';
