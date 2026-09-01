@@ -1,6 +1,6 @@
 # 114. ACP Harness Streaming Performance Audit & Fixes
 
-> Status: Implemented (rev 9 — usage and plan events stay off the full lane rebuild; rev 8 — streaming tool output patches the output block in place; rev 7 — streaming smooth-follow scroll; rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
+> Status: Implemented (rev 10 — scroll stickiness measured at event dispatch, committed in the RAF; rev 9 — usage and plan events stay off the full lane rebuild; rev 8 — streaming tool output patches the output block in place; rev 7 — streaming smooth-follow scroll; rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
 > Date: 2026-05-22
 > Milestone: ACP harness — performance hardening
 > Builds on: Spec 94 (render batching + caching), Spec 103 (tail-window rendering)
@@ -9,6 +9,7 @@
 > Amended (rev 6) by: `stop` sets `needsRender = false` and patches lane chrome + composer (`patchLaneTurnChrome`) instead of `renderActiveLane`. `refreshMcpStats` calls `refreshMetricsRender` instead of `this.render()`. Thought/user seal stamps the wrapper signature like assistant. `layoutPretextRows` skips rows whose DOM already matches the line cache. In-flight tools beat thinking on the action HUD so a Read scan does not restart on empty thought chunks.
 > Amended (rev 7) by: streaming smooth-follow scroll (§5) — while a lane streams, sticky scroll glides to the bottom with a per-frame exponential chase instead of teleporting; keyboard/wheel user-intent detection replaces the scroll-event heuristic while the glide holds suppression.
 > Amended (rev 8) by: streaming tool output (§6) — an in-flight tool's section text stays out of `transcriptRenderSignature`; the body-only pass swaps just the `.acp-harness__tool-output` block (`patchStreamingToolBody`) instead of `replaceChildren` on the whole row. Spinner glyph seeds the live ticker frame. `fs_activity` moves to the body-only path.
+> Amended (rev 10) by: `onTranscriptScroll` (§2) — stickiness is **measured at event dispatch, committed in the RAF**. The "go look later" model re-read `scrollHeight` inside the RAF; an unsuppressed scroll event (keyboard `scrollBy`, browser clamp after content shrank) dispatching just before a streaming chunk grew the body would then measure the *post-growth* distance, flip `stickToBottom` off, and kill autoscroll for the rest of the stream. The handler now snapshots `{laneId, scrollTop, distance, suppressScrollToken}` at dispatch; the RAF commits the frame's last sample and drops it when suppression, the token, or the active lane changed in between. `noteUserScroll` additionally swallows its `scrollBy`'s own async scroll event with a begin/release pair (intent is already recorded synchronously; the echo could otherwise re-measure after growth).
 > Amended (rev 9) by: `usage` and `plan` events (§7) — `usage` arrives once per API round-trip mid-turn (an agentic turn with N tool calls emits N+ of them, plus context-level `usage_update` notifications) and took the full `renderActiveLane` path, flashing the whole lane while tools ran. It now patches its actual surfaces in place (`renderActiveLaneChrome` for the lane head/stats/zen rail, `renderLanePeek` for the peek card) and sets `needsRender = false`. `plan` on the active lane likewise skips the full render — `renderPlan` already patches the plan panel and `sealStreaming` schedules the body-only pass.
 
 ## Problem
@@ -259,16 +260,31 @@ Decouples streaming row render cost from message length.
 
 - Add a `scrollHandlerRaf: boolean` flag on the view.
 - On scroll, if `scrollHandlerRaf` is true, return. Otherwise set it,
-  `requestAnimationFrame()` the existing body, clear the flag in the RAF
+  `requestAnimationFrame()` the commit, clear the flag in the RAF
   callback.
-- **Re-read live state inside the RAF callback** — `activeLane()`,
-  `activeTranscriptBody()`, and `suppressScrollListener` can all change
-  between the scroll event firing and the frame deadline. Without this,
-  the throttled handler may write `savedScrollAnchor` to a stale lane or
-  fight a programmatic scroll. Treat the scroll event as a "go look later"
-  signal, not as a snapshot.
+- **(rev 10) Measure at dispatch, commit in the RAF.** The original rev
+  re-read `scrollHeight`/`scrollTop` inside the RAF ("go look later"),
+  but an unsuppressed scroll event — keyboard `scrollBy`, or the
+  browser's clamp after content shrank — dispatches *between* frames: by
+  the frame deadline a streaming chunk may have grown the body, so the
+  live reading exceeds `STICK_THRESHOLD_PX` and `stickToBottom` flips off
+  even though the user never left the bottom, killing autoscroll for the
+  rest of the stream. The handler now snapshots
+  `{laneId, scrollTop, distance, suppressScrollToken}` at dispatch time
+  (the event target *is* the lane body, so no query). The RAF commits the
+  frame's **last** sample, and drops it when suppression is active, the
+  token was bumped by a programmatic scroll, or the active lane changed —
+  the same staleness cases the live re-read protected against.
+  `savedScrollAnchor` is still captured from live DOM at commit time.
+- **(rev 10)** `noteUserScroll` swallows its `scrollBy`'s own async scroll
+  event with a `beginProgrammaticScroll`/`releaseProgrammaticScroll` pair:
+  keyboard intent is already recorded synchronously, and the echo event
+  could otherwise dispatch after growth and re-measure. A wheel-up still
+  lifts this suppression early (§5).
 
-Effect: collapses scroll-event storms into one anchor capture per frame.
+Effect: collapses scroll-event storms into one anchor capture per frame,
+and stickiness decisions can no longer be contaminated by content growth
+that happened after the scroll.
 
 ### 3. Cache `activeToolCount` on lane state
 

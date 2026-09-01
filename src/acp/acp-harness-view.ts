@@ -1151,10 +1151,16 @@ export class AcpHarnessView implements ContentView {
   private pendingToolHud = false;
   private thoughtTeletypeRaf = 0;
   // Spec 114: coalesces scroll-event storms into one anchor capture per
-  // frame. Set on scroll; re-reads live state inside the RAF callback so
-  // a lane switch or programmatic scroll between event and frame cannot
-  // write a stale anchor.
+  // frame. Measurements are taken at dispatch time (see onTranscriptScroll);
+  // the RAF only commits the last sample of the frame, and drops it when a
+  // lane switch or programmatic scroll intervened.
   private scrollHandlerRaf = false;
+  private pendingScrollSample: {
+    laneId: string;
+    scrollTop: number;
+    distance: number;
+    token: number;
+  } | null = null;
   // Spec 114 rev 7: RAF id of the streaming smooth-follow loop; 0 when parked.
   // The loop re-reads live state every frame, so lane switches and unsticks
   // terminate it without explicit bookkeeping at every call site.
@@ -5748,7 +5754,7 @@ export class AcpHarnessView implements ContentView {
       'scroll',
       (e: Event) => {
         if (e.target instanceof HTMLElement && e.target.classList.contains('acp-harness__lane-body')) {
-          this.onTranscriptScroll();
+          this.onTranscriptScroll(e.target);
         }
       },
       true,
@@ -14185,6 +14191,11 @@ export class AcpHarnessView implements ContentView {
     }
     lane.savedScrollTop = body.scrollTop;
     lane.savedScrollAnchor = lane.stickToBottom ? null : this.captureTranscriptScrollAnchor(body);
+    // Stickiness is now recorded; the scrollBy's own async scroll event is
+    // redundant, and if it dispatches after a streaming chunk grows the
+    // body it would re-measure and unstick. Swallow it like a programmatic
+    // scroll (same 2-RAF window; a wheel-up still lifts this early).
+    this.releaseProgrammaticScroll(this.beginProgrammaticScroll());
   }
 
   /** An upward wheel is unforgeable user intent to leave the bottom. Kill the
@@ -14284,26 +14295,40 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  private onTranscriptScroll(): void {
+  private onTranscriptScroll(body: HTMLElement): void {
     // Drop the event at dispatch time when a programmatic scroll is in
-    // flight. Without this, the RAF callback below reads scrollHeight/
-    // scrollTop AFTER a streaming chunk has grown scrollHeight but
-    // BEFORE applyStickyScroll re-pins to the new bottom — distance
-    // exceeds STICK_THRESHOLD_PX and stickToBottom flips to false even
-    // though the user never scrolled.
+    // flight.
     if (this.suppressScrollListener) return;
+    const lane = this.activeLane();
+    if (!lane) return;
+    // Measure at dispatch, not inside the RAF. Unsuppressed scroll events
+    // (keyboard scrollBy, browser clamp after content shrank) dispatch
+    // between frames; by the time the RAF runs, a streaming chunk may have
+    // grown scrollHeight, so a live reading exceeds STICK_THRESHOLD_PX and
+    // stickToBottom flips to false even though the user never left the
+    // bottom — killing autoscroll for the rest of the stream. The RAF still
+    // coalesces storms (last sample of the frame wins) and drops the sample
+    // when a programmatic scroll or lane switch intervened.
+    this.pendingScrollSample = {
+      laneId: lane.id,
+      scrollTop: body.scrollTop,
+      distance: body.scrollHeight - body.scrollTop - body.clientHeight,
+      token: this.suppressScrollToken,
+    };
     if (this.scrollHandlerRaf) return;
     this.scrollHandlerRaf = true;
     requestAnimationFrame(() => {
       this.scrollHandlerRaf = false;
-      if (this.suppressScrollListener) return;
-      const lane = this.activeLane();
-      const body = this.activeTranscriptBody();
-      if (!lane || !body) return;
-      const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
-      lane.stickToBottom = distance <= STICK_THRESHOLD_PX;
-      lane.savedScrollTop = body.scrollTop;
-      lane.savedScrollAnchor = lane.stickToBottom ? null : this.captureTranscriptScrollAnchor(body);
+      const sample = this.pendingScrollSample;
+      this.pendingScrollSample = null;
+      if (!sample) return;
+      if (this.suppressScrollListener || sample.token !== this.suppressScrollToken) return;
+      const live = this.activeLane();
+      const liveBody = this.activeTranscriptBody();
+      if (!live || !liveBody || live.id !== sample.laneId) return;
+      live.stickToBottom = sample.distance <= STICK_THRESHOLD_PX;
+      live.savedScrollTop = sample.scrollTop;
+      live.savedScrollAnchor = live.stickToBottom ? null : this.captureTranscriptScrollAnchor(liveBody);
     });
   }
 
