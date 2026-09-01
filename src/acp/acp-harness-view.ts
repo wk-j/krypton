@@ -267,6 +267,7 @@ import {
   md,
   rerenderAssistantMarkdownWithMarked,
   resolveLocalImageSrcs,
+  sealStreamingTextBody,
   updateStreamingAssistantMarkdownBody,
   updateStreamingTextBody,
 } from './harness-markdown';
@@ -391,6 +392,7 @@ import {
 import {
   ACTION_HUD_HIDE_MS,
   deriveRailLiveActions,
+  hasOmittedRailLiveAction,
   liveActionFromPeekTool,
   patchActionHud,
   renderActionHud,
@@ -421,8 +423,10 @@ export type { DeriveRailPeerHintInput, RailPeerHint } from './lane-peek';
 import {
   applyCoordinatorProvenanceToItem,
   appendMessageResourceRail,
+  paintPretextLines,
   renderTranscriptItem,
   scanMessageResourceBody,
+  syncThoughtEffortMeter,
   transcriptRenderSignature,
 } from './harness-transcript-render';
 export {
@@ -7508,13 +7512,13 @@ export class AcpHarnessView implements ContentView {
       )) return;
       console.warn('[acp-harness] reference Git state unavailable:', error);
       const changedLanes = applyReferenceGitChanges(references, []);
-      for (const lane of changedLanes) this.scheduleLaneRender(lane);
+      for (const lane of changedLanes) this.patchLaneTurnChrome(lane);
       if (manual) this.flashChip('reference status unavailable');
       return;
     }
 
     const changedLanes = applyReferenceGitChanges(references, changes);
-    for (const lane of changedLanes) this.scheduleLaneRender(lane);
+    for (const lane of changedLanes) this.patchLaneTurnChrome(lane);
     if (manual) this.flashChip('reference status refreshed');
   }
 
@@ -7526,7 +7530,7 @@ export class AcpHarnessView implements ContentView {
       });
       this.mcpStatsByLane.clear();
       for (const entry of stats) this.mcpStatsByLane.set(entry.laneLabel, entry);
-      this.render();
+      this.refreshMetricsRender();
     } catch {
       // ignore — stats are diagnostic only
     }
@@ -8009,6 +8013,10 @@ export class AcpHarnessView implements ContentView {
       case 'stop':
         this.finishTurn(lane, event.stopReason, event.reason);
         void this.refreshMemory();
+        // Chrome+composer patch inside finishTurn; transcript seal is body-only.
+        // A full renderActiveLane here remounted peek/thought/HUD/plan/pin/queue
+        // and flashed the whole lane at turn end.
+        needsRender = false;
         break;
       case 'error':
         // Seal any in-flight streaming row first so its --streaming class and
@@ -8507,6 +8515,7 @@ export class AcpHarnessView implements ContentView {
     if (stopReason !== 'end_turn' && stopReason !== 'cancelled') {
       this.appendTranscript(lane, 'system', `turn ended: ${stopReason}`);
     }
+    this.patchLaneTurnChrome(lane);
     if (lane.draft.trim() && lane.queuedPrompts.length === 0) {
       this.flashChip('lane idle - Enter to send');
     }
@@ -11338,7 +11347,8 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
-    laneEl.className = `acp-harness__lane acp-harness__lane--active acp-harness__lane--${lane.status}`;
+    const active = lane.id === this.activeLaneId;
+    laneEl.className = `acp-harness__lane ${active ? 'acp-harness__lane--active' : 'acp-harness__lane--collapsed'} acp-harness__lane--${lane.status}`;
     laneEl.style.setProperty('--acp-lane-accent', lane.accent);
     const head = laneEl.querySelector<HTMLElement>('.acp-harness__lane-head');
     if (head) {
@@ -11346,7 +11356,7 @@ export class AcpHarnessView implements ContentView {
       const laneMetrics = laneSession !== null ? this.metricsBySession.get(laneSession) ?? null : null;
       head.innerHTML = renderLaneHead(
         lane,
-        true,
+        active,
         this.mcpStatsByLane.get(lane.displayName) ?? null,
         laneMetrics,
         this.coordinator.inboxDepth(lane.id),
@@ -11356,7 +11366,13 @@ export class AcpHarnessView implements ContentView {
     }
     const stats = laneEl.querySelector<HTMLElement>('.acp-harness__lane-stats');
     if (stats) stats.innerHTML = renderLaneStats(lane, this.projectDir);
-    if (this.zenMode) this.refreshZenRail();
+    if (active && this.zenMode) this.refreshZenRail();
+  }
+
+  /** Busy→idle (and git-reference) chrome without remounting peek/thought/HUD/plan. */
+  private patchLaneTurnChrome(lane: HarnessLane): void {
+    this.renderActiveLaneChrome(lane);
+    if (lane.id === this.activeLaneId) this.renderComposer();
   }
 
   private expandTranscriptWindow(lane: HarnessLane): void {
@@ -11585,7 +11601,7 @@ export class AcpHarnessView implements ContentView {
     const thought = resolveLaneThoughtSnapshot(snapshots, peekId);
     const peekSnap = peekId ? snapshots.find((row) => row.laneId === peekId) ?? null : null;
     const peekHudLaneId = peekSnap?.activeTool && peekSnap.status === 'busy' ? peekId : null;
-    const rows = deriveRailLiveActions({
+    const railInput = {
       lanes: this.lanes
         .filter((lane) => lane.status !== 'stopped')
         .map((lane) => ({
@@ -11598,8 +11614,13 @@ export class AcpHarnessView implements ContentView {
       thoughtLaneId: thought?.laneId ?? null,
       thoughtLive: isLivePeekThought(thought?.thought),
       peekHudLaneId,
-    });
+    };
+    const rows = deriveRailLiveActions(railInput);
     if (rows.length === 0) {
+      if (hasOmittedRailLiveAction(railInput)) {
+        this.cancelActionHudHide();
+        return;
+      }
       this.scheduleActionHudHide();
       return;
     }
@@ -13246,8 +13267,11 @@ export class AcpHarnessView implements ContentView {
   private sealStreaming(lane: HarnessLane): void {
     this.dropVeiledThoughtRow(lane);
     // Spec 114: capture the assistant id BEFORE nulling so we can find the
-    // row that was just streaming.
+    // row that was just streaming. Thought/user need the same capture so
+    // their wrappers can be signature-stabilised (assistant already was).
     const assistantId = lane.currentAssistantId;
+    const thoughtId = lane.currentThoughtId;
+    const userId = lane.currentUserId;
     lane.currentUserId = null;
     lane.currentAssistantId = null;
     lane.currentAssistantMessageId = null;
@@ -13261,6 +13285,8 @@ export class AcpHarnessView implements ContentView {
           lane.streamingMarkdownParser = null;
           lane.streamingMarkdownBody = null;
           lane.streamingMarkdownItemId = null;
+          this.sealStreamingTextRow(lane, thoughtId);
+          this.sealStreamingTextRow(lane, userId);
           this.scheduleLaneRender(lane);
           return;
         }
@@ -13274,10 +13300,38 @@ export class AcpHarnessView implements ContentView {
         item.streamingMarkdownWritten = undefined;
       }
     }
-    // Spec 114 rev 5: sealing is a transcript-row signature change, not a
-    // chrome change. Callers that need composer/head (permission, stop,
-    // error) still scheduleLaneRender via needsRender.
+    this.sealStreamingTextRow(lane, thoughtId);
+    this.sealStreamingTextRow(lane, userId);
+    // Spec 114: sealing is a transcript-row signature change, not a chrome
+    // change. Permission/error still scheduleLaneRender; stop patches chrome
+    // in place via patchLaneTurnChrome.
     this.scheduleStreamingBodyOnly(lane);
+  }
+
+  /** Stamp a sealed thought/user wrapper so the next body-only pass is a
+   *  no-op. Without this the `'stream'` signature mismatches and
+   *  replaceChildren remounts the row (and pretext restamps every sibling). */
+  private sealStreamingTextRow(lane: HarnessLane, id: string | null): void {
+    if (!id || id.startsWith('thought-veil:')) return;
+    const item = lane.transcript.find((entry) => entry.id === id);
+    if (!item || (item.kind !== 'thought' && item.kind !== 'user')) return;
+    if (item.kind === 'user' && item.imageCount && item.imageCount > 0) return;
+    if (lane.id !== this.activeLaneId) return;
+    const root = this.activeTranscriptBody();
+    if (!root) return;
+    const wrapper = root.querySelector<HTMLElement>(
+      `.acp-harness__msg[data-msg-id="${CSS.escape(id)}"]`,
+    );
+    if (!wrapper) return;
+    const body = wrapper.querySelector<HTMLElement>('.acp-harness__msg-body');
+    if (!body) return;
+    sealStreamingTextBody(body, item);
+    wrapper.classList.remove('acp-harness__msg--streaming');
+    if (item.kind === 'thought') {
+      const label = wrapper.querySelector<HTMLElement>('.acp-harness__msg-label');
+      if (label) syncThoughtEffortMeter(label, item.text.length);
+    }
+    wrapper.dataset.renderSignature = transcriptRenderSignature(item, false);
   }
 
   /**
@@ -14289,13 +14343,7 @@ export class AcpHarnessView implements ContentView {
         const paintLines = item?.kind === 'thought'
           ? lineTexts.filter((t) => t.replace(/\u00a0/g, '').trim() !== '')
           : lineTexts;
-        row.textContent = '';
-        for (let i = 0; i < paintLines.length; i++) {
-          const lineEl = document.createElement('div');
-          lineEl.className = 'acp-harness__pretext-line';
-          lineEl.textContent = paintLines[i];
-          row.appendChild(lineEl);
-        }
+        paintPretextLines(row, paintLines);
       } catch {
         row.textContent = raw;
       }

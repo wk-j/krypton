@@ -165,8 +165,8 @@ All infinite motion uses DESIGN.md tokens (`--krypton-motion-data-stream` 1.8s l
 ```
 1. tool_call / thought_chunk / message_chunk → field write on lane.activity (unchanged)
 2. 1 s composer tick + `scheduleLaneRender` + tool-event `scheduleToolRender` (spec 114 body-only RAF) call `renderLaneAction()`. Tool ticks patch the HUD in place; they do not remount the peek card.
-3. deriveRailLiveActions(lanes) → empty? arm a 2s hide (`ACTION_HUD_HIDE_MS`); keep the last HUD until it fires
-4. live rows return before the delay? cancel hide; same lane patches (no remount — new sig/kind included)
+3. deriveRailLiveActions(lanes) → empty **and no omitted thinking HUD**? arm a 2s hide (`ACTION_HUD_HIDE_MS`); keep the last HUD until it fires. Empty **because thinking is omitted** (thought slot already live for that lane) cancels the timer and leaves the last tool card in place — do not remount, do not replay `acp-action-deploy` / scan.
+4. live rows return before the delay? cancel hide; same lane patches (no remount — new sig/kind included). In-flight tools beat `activity: thinking`, so a Read that is still pending does not swap to the thinking well on an empty thought chunk.
 5. new lane, or labeled-chrome mismatch? remount that card — entrance plays
 6. finishTurn / error → activity null → after the hide delay, that card drops; slot hides when none remain
 ```
@@ -183,9 +183,9 @@ Show is immediate. Hide is delayed 2s so thinking/writing interleave does not pl
 - **Several lanes in the same tab** — one labeled card per busy lane, harness order. An idle peer is omitted. Click a foreign card to activate that lane.
 - **Peek showing idle peer** — action slot still lists every busy lane (usually the active one).
 - **Peek showing a busy peer** — peek card HUD = peeked; action stack lists the other busy lanes. Dismissing peek returns that peer to the stack.
-- **Thinking + thought slot on the same lane** — action HUD omitted.
+- **Thinking + thought slot on the same lane** — thinking HUD omitted; if a tool is still in flight the tool card stays (tools beat thinking). If there is no in-flight tool, the last tool card is kept (hide timer does not run).
 - **Writing + thought slot** — HUD stays (`writing`); thought is a different signal.
-- **Thinking/writing interleave** — thinking is omitted when the thought slot is live, so derive goes empty between write chunks. Hide waits 2s (`ACTION_HUD_HIDE_MS`) so the writing HUD does not drop and remount. A real idle longer than that still hides.
+- **Thinking/writing interleave** — thinking is omitted when the thought slot is live. Hide waits 2s (`ACTION_HUD_HIDE_MS`) only for a true idle (no action at all). An omitted-thinking empty stack does not hide, so a long Claude think after a Read does not remount the card.
 - **Multiple in-flight tools** — oldest pending/in_progress, same as peek today.
 - **Live Assist** — untouched (spec 209).
 - **Zen / view-split / narrow rail** — slot uses the existing `max-width: calc(100% - 24px)` rail rule; subject ellipsizes.

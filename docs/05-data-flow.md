@@ -743,6 +743,12 @@ PUBLISH
        with a HUD flag: they patch the tool row and the action/peek HUD, and they
        do not innerHTML the composer or lane head. Pending and in_progress share
        one transcript signature so a status-only tick does not remount the row.
+    g. stop (spec 114 rev 6) does not scheduleLaneRender. finishTurn patches
+       lane chrome + composer (`patchLaneTurnChrome`) and seals the transcript
+       body-only. refreshMcpStats updates heads via refreshMetricsRender and
+       never calls render() (full dashboard rebuild). Thought/user seal stamps
+       the wrapper signature like assistant so the body-only pass does not
+       replaceChildren those rows.
 ```
 ## Resize Mode Flow (e.g., Leader then r)
 

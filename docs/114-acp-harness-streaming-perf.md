@@ -1,11 +1,12 @@
 # 114. ACP Harness Streaming Performance Audit & Fixes
 
-> Status: Implemented (rev 5 — tool events share the body-only RAF; no chrome rebuild on status ticks)
+> Status: Implemented (rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
 > Date: 2026-05-22
 > Milestone: ACP harness — performance hardening
 > Builds on: Spec 94 (render batching + caching), Spec 103 (tail-window rendering)
-> Amended (assistant kind only) by: Spec 117 — assistant rows now use optimistic streaming-markdown rendering instead of plain-until-seal. Thought / user rows still follow §1 of this spec.
+> Amended (assistant kind only) by: Spec 117 — assistant rows now use optimistic streaming-markdown rendering instead of plain-until-seal. Thought / user rows still follow §1 of this spec until seal, then stamp the sealed signature in place.
 > Amended (rev 5) by: tool_call / tool_call_update and sealStreaming use `scheduleStreamingBodyOnly` instead of `scheduleLaneRender`. Existing transcript rows patch in place (`replaceChildren`); pending and in_progress share one signature so an in-flight status tick does not remount the row.
+> Amended (rev 6) by: `stop` sets `needsRender = false` and patches lane chrome + composer (`patchLaneTurnChrome`) instead of `renderActiveLane`. `refreshMcpStats` calls `refreshMetricsRender` instead of `this.render()`. Thought/user seal stamps the wrapper signature like assistant. `layoutPretextRows` skips rows whose DOM already matches the line cache. In-flight tools beat thinking on the action HUD so a Read scan does not restart on empty thought chunks.
 
 ## Problem
 
@@ -163,9 +164,13 @@ removal loop (`:2901-2903`) are unaffected — the row id is still added to
   guaranteed to reparse. Do not touch `streamPlainSource`.
 - Call `scheduleStreamingBodyOnly(lane)` at the end of `sealStreaming` to
   guarantee the final markdown render without rebuilding lane chrome.
-  Callers that need composer/head (permission, stop, error) still
-  `scheduleLaneRender` via `needsRender`. Resume/load already calls
-  `render()` after seal.
+  Thought and user rows get the same in-place seal as assistant
+  (`sealStreamingTextRow` stamps `dataset.renderSignature` to the sealed
+  value) so the following body-only pass is a no-op instead of
+  `replaceChildren`. Callers that need composer/head (permission, error)
+  still `scheduleLaneRender` via `needsRender`. `stop` patches chrome in
+  place (`patchLaneTurnChrome`) and does not take that path. Resume/load
+  already calls `render()` after seal.
 
 **Background-lane caveat (pre-existing, documented not fixed).**
 `scheduleStreamingBodyOnly` (and `scheduleLaneRender`) skip the
@@ -199,6 +204,27 @@ Rev 5:
   veil owns that state; inserting then dropping the row on `tool_call`
   was jumping the list. The thought slot hide is delayed (`ACTION_HUD_HIDE_MS`)
   so the card does not collapse on the same frame as the next tool.
+
+### 1c. Turn-end and MCP stats stay off the full dashboard (rev 6)
+
+`stop` used to leave `needsRender = true`, so `finishTurn` → `scheduleLaneRender`
+→ `renderActiveLane` rewrote head, stats, composer, peek, thought, HUD, plan,
+pin, and queue in one frame. Combined with `refreshMcpStats()` calling
+`this.render()` on every `acp-harness-mcp-touched` (handoff / attention /
+peer / artifact at the end of a turn), the whole dashboard flashed when the
+lane went idle.
+
+Rev 6:
+
+- `stop` sets `needsRender = false`. `finishTurn` calls `patchLaneTurnChrome`
+  (lane class busy→idle, head, stats, composer) after the body-only seal.
+- `refreshMcpStats` updates heads via `refreshMetricsRender` and does not
+  rebuild the dashboard.
+- `layoutPretextRows` skips a row whose `.acp-harness__pretext-line` children
+  already match the cached line texts.
+- Action HUD: in-flight tools beat `activity: thinking`; an omitted thinking
+  HUD (thought slot already live) does not start the 2s hide timer, so the
+  last Read card stays instead of remounting with `acp-action-deploy` + scan.
 
 **Fallback styling** — `src/styles/acp-harness.css`:
 

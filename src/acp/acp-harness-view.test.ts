@@ -205,6 +205,20 @@ describe('assistant reference Git state', () => {
     expect(viewSrc).toMatch(/current\.replaceChildren\(\.\.\.Array\.from\(next\.childNodes\)\)/);
   });
 
+  it('does not full-render the dashboard on stop or MCP stats (turn-end flicker)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const stop = viewSrc.match(/case 'stop':[\s\S]*?\n        break;/);
+    expect(stop?.[0]).toMatch(/needsRender = false/);
+    expect(stop?.[0]).not.toMatch(/scheduleLaneRender/);
+    expect(viewSrc).toMatch(/private patchLaneTurnChrome\(/);
+    expect(viewSrc).toMatch(/this\.sealStreamingTextRow\(/);
+    expect(viewSrc).toMatch(/hasOmittedRailLiveAction/);
+    const mcp = viewSrc.match(/private async refreshMcpStats\(\)[\s\S]*?\n  \}/);
+    expect(mcp?.[0]).toMatch(/this\.refreshMetricsRender\(\)/);
+    expect(mcp?.[0]).not.toMatch(/this\.render\(\)/);
+  });
+
   it('formats accessible line, binary, and unavailable summaries', () => {
     expect(referenceGitAccessibleSummary({
       status: 'M', added: 1, removed: 2, countKind: 'lines',

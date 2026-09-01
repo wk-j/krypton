@@ -237,13 +237,16 @@ export function liveActionFromPeekTool(tool: { name: string; subject: string | n
 }
 
 export function deriveLiveAction(lane: LiveActionSource): LiveAction | null {
-  const act = lane.activity;
-  if (act?.kind === 'thinking') return makeLiveAction('thinking', 'thinking', null, 'thinking');
-  if (act?.kind === 'writing') return makeLiveAction('writing', 'writing', null, 'writing');
+  // In-flight tools win thinking/writing. Claude interleaves empty thought
+  // chunks with Read/Bash; preferring thinking swapped the well and restarted
+  // the scan on every gap.
   for (const call of iterateToolCalls(lane.toolCalls)) {
     if (call.status !== 'in_progress' && call.status !== 'pending') continue;
     return liveActionFromToolCall(call);
   }
+  const act = lane.activity;
+  if (act?.kind === 'thinking') return makeLiveAction('thinking', 'thinking', null, 'thinking');
+  if (act?.kind === 'writing') return makeLiveAction('writing', 'writing', null, 'writing');
   if (act?.kind === 'tool' && act.label.trim()) return liveActionFromToolLabel(act.label);
   return null;
 }
@@ -257,6 +260,30 @@ export function shouldOmitActionHud(
   return opts.thoughtLive && opts.thoughtLaneId === opts.laneId;
 }
 
+function omitOpts(input: DeriveRailLiveActionsInput, laneId: string): {
+  laneId: string;
+  thoughtLaneId: string | null;
+  thoughtLive: boolean;
+} {
+  return {
+    laneId,
+    thoughtLaneId: input.thoughtLaneId,
+    thoughtLive: input.thoughtLive,
+  };
+}
+
+/** True when a lane has a live action that the rail stack will not paint
+ *  (thinking omitted because the thought slot already owns that lane). The
+ *  hide timer must not fire in this case — the last Read/edit card stays. */
+export function hasOmittedRailLiveAction(input: DeriveRailLiveActionsInput): boolean {
+  for (const lane of input.lanes) {
+    if (input.peekHudLaneId && lane.id === input.peekHudLaneId) continue;
+    const action = deriveLiveAction(lane);
+    if (action && shouldOmitActionHud(action, omitOpts(input, lane.id))) return true;
+  }
+  return false;
+}
+
 /** Every live lane action for the rail stack. Peek-embedded HUD is skipped
  *  so a busy peeked peer is not painted twice. Order follows `lanes`. */
 export function deriveRailLiveActions(input: DeriveRailLiveActionsInput): RailLiveAction[] {
@@ -264,11 +291,7 @@ export function deriveRailLiveActions(input: DeriveRailLiveActionsInput): RailLi
   for (const lane of input.lanes) {
     if (input.peekHudLaneId && lane.id === input.peekHudLaneId) continue;
     const action = deriveLiveAction(lane);
-    if (shouldOmitActionHud(action, {
-      laneId: lane.id,
-      thoughtLaneId: input.thoughtLaneId,
-      thoughtLive: input.thoughtLive,
-    })) continue;
+    if (shouldOmitActionHud(action, omitOpts(input, lane.id))) continue;
     if (!action) continue;
     out.push({
       laneId: lane.id,

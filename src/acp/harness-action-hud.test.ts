@@ -12,6 +12,7 @@ import {
   actionHudWellMarkup,
   deriveLiveAction,
   deriveRailLiveActions,
+  hasOmittedRailLiveAction,
   liveActionFromPeekTool,
   liveActionFromToolCall,
   liveActionFromToolLabel,
@@ -56,20 +57,28 @@ describe('actionHudKindFromLabel', () => {
 });
 
 describe('deriveLiveAction', () => {
-  it('prefers thinking over an in-flight tool', () => {
+  it('prefers an in-flight tool over thinking so a Read scan does not restart', () => {
     const action = deriveLiveAction({
       activity: { kind: 'thinking', label: '' },
-      toolCalls: [call({ kind: 'edit', title: 'Edit src/a.ts' })],
+      toolCalls: [call({ kind: 'read', title: 'Read src/a.ts' })],
     });
-    expect(action).toMatchObject({ kind: 'thinking', title: 'thinking', subject: null });
+    expect(action?.kind).toBe('read');
   });
 
-  it('prefers writing over an in-flight tool', () => {
+  it('prefers an in-flight tool over writing', () => {
     const action = deriveLiveAction({
       activity: { kind: 'writing', label: '' },
       toolCalls: [call({ kind: 'read', title: 'Read foo' })],
     });
-    expect(action?.kind).toBe('writing');
+    expect(action?.kind).toBe('read');
+  });
+
+  it('falls back to thinking when no tool is in flight', () => {
+    const action = deriveLiveAction({
+      activity: { kind: 'thinking', label: '' },
+      toolCalls: [call({ status: 'completed', kind: 'read', title: 'Read src/a.ts' })],
+    });
+    expect(action).toMatchObject({ kind: 'thinking', title: 'thinking', subject: null });
   });
 
   it('picks the oldest pending/in_progress tool and abbreviates its path', () => {
@@ -290,6 +299,28 @@ describe('deriveRailLiveActions', () => {
       thoughtLive: false,
       peekHudLaneId: null,
     })).toEqual([]);
+  });
+
+  it('flags omitted thinking so the hide timer does not clear the last tool card', () => {
+    const input = {
+      lanes: [lane({
+        id: 'grok',
+        active: true,
+        activity: { kind: 'thinking' as const, label: '' },
+        toolCalls: [],
+      })],
+      thoughtLaneId: 'grok',
+      thoughtLive: true,
+      peekHudLaneId: null,
+    };
+    expect(deriveRailLiveActions(input)).toEqual([]);
+    expect(hasOmittedRailLiveAction(input)).toBe(true);
+    expect(hasOmittedRailLiveAction({
+      lanes: [lane({ id: 'idle', activity: null, toolCalls: [] })],
+      thoughtLaneId: null,
+      thoughtLive: false,
+      peekHudLaneId: null,
+    })).toBe(false);
   });
 });
 

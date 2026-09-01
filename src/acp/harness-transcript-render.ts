@@ -97,6 +97,39 @@ export function buildThoughtEffortMeter(len: number): HTMLElement {
   return meter;
 }
 
+/** Patch the thought-label meter without remounting the row. */
+export function syncThoughtEffortMeter(label: HTMLElement, textLen: number): void {
+  label.querySelector('.acp-harness__thought-effort')?.remove();
+  if (textLen > 0) label.appendChild(buildThoughtEffortMeter(textLen));
+}
+
+const PRETEXT_LINE_CLASS = 'acp-harness__pretext-line';
+
+/** True when the row already paints `lines` — skip the textContent wipe. */
+export function pretextRowMatchesLines(
+  row: { children: ArrayLike<{ className: string; textContent: string | null }> },
+  lines: string[],
+): boolean {
+  if (row.children.length !== lines.length) return false;
+  for (let i = 0; i < lines.length; i++) {
+    const child = row.children[i];
+    if (child.className !== PRETEXT_LINE_CLASS) return false;
+    if (child.textContent !== lines[i]) return false;
+  }
+  return true;
+}
+
+export function paintPretextLines(row: HTMLElement, lines: string[]): void {
+  if (pretextRowMatchesLines(row, lines)) return;
+  row.textContent = '';
+  for (const text of lines) {
+    const lineEl = document.createElement('div');
+    lineEl.className = PRETEXT_LINE_CLASS;
+    lineEl.textContent = text;
+    row.appendChild(lineEl);
+  }
+}
+
 export function renderTranscriptItem(
   item: HarnessTranscriptItem,
   isNew: boolean,

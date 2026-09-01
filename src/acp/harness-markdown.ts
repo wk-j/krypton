@@ -351,3 +351,21 @@ export function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscri
     item.streamPlainLength = item.text.length;
   }
 }
+
+/** Convert a sealed thought/user body to the pretext-ready dataset in place.
+ *  The wrapper node stays; `layoutPretextRows` splits lines on the next RAF.
+ *  Matching the assistant seal, the caller then stamps the sealed signature
+ *  so the following transcript pass is a no-op instead of replaceChildren. */
+export function sealStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem): void {
+  const text = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
+  body.classList.remove(
+    'acp-harness__msg-body--stream-plain',
+    'acp-harness__msg-body--thought-veil',
+    'acp-harness__msg-body--markdown',
+  );
+  body.dataset.pretext = 'true';
+  body.dataset.rawText = text;
+  body.dataset.rowId = item.id;
+  body.textContent = text;
+  item.streamPlainLength = undefined;
+}
