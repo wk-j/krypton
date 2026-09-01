@@ -44,7 +44,8 @@ const ARTIFACT_HEAD_BYTES: usize = 4096;
 pub enum JournalKind {
     /// Lane opened, `#new`, or a resumed session.
     Session,
-    /// `#goal set` / `#goal clear`.
+    /// Historical only — written by the removed lane-goal feature (spec 148).
+    /// Kept so journal files from before the removal still deserialize.
     Goal,
     /// `handoff_set` — the lane's own summary of where it stands.
     Handoff,

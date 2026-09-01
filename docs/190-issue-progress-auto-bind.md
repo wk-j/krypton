@@ -4,6 +4,10 @@
 > Date: 2026-07-06
 > Milestone: M — ACP Harness / GitHub issue-fixing (extends spec 178)
 
+> **Update (2026-09-01):** the lane-goal feature (spec 148) was removed. Auto-bind
+> still creates/enriches the `IssueBinding` and publishes issue status, but no
+> longer sets a lane goal chip — every goal-chip reference below is historical.
+
 ## Problem
 
 `issue_progress` only succeeds when an issue↔lane **binding already exists**, and a

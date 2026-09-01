@@ -4,6 +4,11 @@
 > Date: 2026-06-27
 > Milestone: M9 — Harness loopback & web control
 
+> **Update (2026-09-01):** the lane-goal feature (spec 148) was removed —
+> dispatch/auto-bind no longer set a goal chip and the `lane.goal` control op is
+> gone. Goal references below are historical; the Active Ticket panel (spec 238)
+> is the surface that shows what a lane is working on.
+
 > **Update (spec 191):** the original issue-dispatch verb was renamed
 > `#dispatch-github-issue` (a control-op that dispatches the fix to a *fresh* lane);
 > the old `#fix-issue` alias has been removed. Spec 191 adds a composable

@@ -151,7 +151,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 145 | [Simplify `#review` — Agent-Orchestrated Multi-Reviewer (Diff or Design Doc)](./145-harness-design-review-panel.md) |
 | 146 | [Review Quality Matrix](./146-review-quality-matrix.md) |
 | 147 | [Persistent Permission Mode (incl. full Bypass)](./147-persistent-permission-mode.md) |
-| 148 | [Lane Goal — Focus Scope](./148-lane-goal-focus-scope.md) |
+| 148 | [Lane Goal — Focus Scope](./148-lane-goal-focus-scope.md) (removed 2026-09-01 — duplicated the Active Ticket panel) |
 | 149 | [Artifact Inline Feedback](./149-artifact-inline-feedback.md) |
 | 150 | [Copilot Lane (GitHub Copilot CLI Native ACP)](./150-acp-copilot-lane.md) |
 | 151 | [Subscription Credit Usage View](./151-subscription-usage-view.md) |

@@ -15,18 +15,6 @@ export const HANDOFF_WRITE_PROMPT =
   'Never write secrets, tokens, or credentials (this document is not redacted). ' +
   'Overwrite your existing document, don\'t accrete; keep detail under 8000 characters.';
 
-// spec 148: seed turn sent after `#goal <text>` clears + respawns the lane. The goal
-// text is embedded directly — it does NOT rely on the per-turn context packet — so this
-// first turn carries the goal even though it is sent as a plain programmatic prompt.
-// Subsequent turns of THIS lane re-state the goal via renderPromptMemoryPacket; other
-// lanes' turns are never touched (the goal is confined to the lane that set it).
-export function goalSeedPrompt(text: string): string {
-  return (
-    `Your focus for this session: ${text.replace(/\s+/g, ' ').trim()}. ` +
-    'Begin working on it now and stay scoped to it; if something pulls you off it, say so before continuing.'
-  );
-}
-
 export function handoffResumePrompt(displayName: string): string {
   // JSON.stringify quotes + escapes — a backend-derived display name containing a
   // double-quote can't break the handoff_get { lane: "…" } example (Codex-1 review).

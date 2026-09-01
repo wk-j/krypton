@@ -12,7 +12,7 @@ composer palette (`src/acp/hash-commands.ts`) shows only a one-line hint per
 command, three commands (`#docs`, `#console`, `#dispatch-github-issue`) are dispatch-only
 and invisible in the palette, and — the part the palette can never show — ten
 commands inject a **system prompt** into the lane that the user cannot read
-anywhere today (`#goal set`, `#handoff`, `#resume`, `#wiki`, `#recall`,
+anywhere today (`#handoff`, `#resume`, `#wiki`, `#recall`,
 `#directive`, `#review`, `#polly`, `#debby`, `#dispatch-github-issue`).
 
 ## Solution
@@ -46,7 +46,7 @@ prompt-backed command. Keyboard: `↑/↓` or `j/k` navigate, `/` focuses search
   register — the manifest is compile-time data, identical for every harness,
   so the store is a single global slot, not per-harness.
 - **Prompt sources (all already pure/exported unless noted):**
-  `goalSeedPrompt(text)`, `HANDOFF_WRITE_PROMPT`,
+  `HANDOFF_WRITE_PROMPT`,
   `handoffResumePrompt(lane)`, `wikiIngestPrompt(hint)`,
   `wikiRecallPrompt(question)`, `directivePrompt(configPath, intent)` — all in
   `acp-harness-view.ts`; `reviewRequestPrompt` (`review.ts`),

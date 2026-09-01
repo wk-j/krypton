@@ -7,6 +7,11 @@
 > Current behavior: [spec 238](./238-local-ticket-bundles.md) ขยาย picker นี้เป็น
 > local-first ticket bundle ส่วน `ActiveWorkTicket` ด้านล่างเป็น persistence model เดิมที่ใช้สำหรับ migration เท่านั้น
 
+> **Update (2026-09-01):** the lane-goal feature (spec 148) was removed. The
+> ticket pin now inserts directly after the packet's identity line (no goal line
+> exists), and the rail pin slot is gone — the docked Ticket Panel is the only
+> ticket chrome. Goal references below are historical.
+
 ## Problem
 
 The harness can dispatch an issue fix to one lane (spec 178) and lanes can self-bind via

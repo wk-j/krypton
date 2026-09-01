@@ -203,13 +203,10 @@ otherwise indistinguishable from a normal one. The fix has two parts:
   permission pause is the same turn) and cleared by `setLaneStatus` only on a true turn
   end (idle / awaiting_peer / error / stopped / starting). The same mechanism names the
   other async custom commands (`#wiki` → `saving to wiki`, `#recall` → `recalling wiki`,
-  `#handoff` → `writing handoff`, `#resume` → `resuming`, `#goal` seed → `setting goal`),
+  `#handoff` → `writing handoff`, `#resume` → `resuming`),
   and drained **peer** turns read `handling peer` (so a reviewer lane mid-`#review` is
-  legible too). `composerStatusChip` also gives a `starting…` cue during a `#goal`/`#new`
-  respawn (the session-init window). `#goal`'s seed is itself reserve-aware: if drained
-  peer mail claims the freshly respawned session, the goal is still set (it rides
-  subsequent turns via `insertGoalLine`) and the seed is deferred with a transcript note
-  rather than silently dropped.
+  legible too). `composerStatusChip` also gives a `starting…` cue during a `#new`
+  respawn (the session-init window).
 
 ## Edge Cases
 

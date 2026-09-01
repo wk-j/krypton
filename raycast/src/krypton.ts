@@ -183,7 +183,6 @@ export interface LaneRow {
   modelName: string | null;
   queueDepth: number;
   pendingPermissions: number;
-  goal: string | null;
   permissionMode: PermissionMode;
 }
 

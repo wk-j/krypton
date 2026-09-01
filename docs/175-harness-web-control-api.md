@@ -68,7 +68,7 @@ named as "deferred" in doc 154 — it is the planned next step, not a new axis.
   harness, then calls `entry.control(op, params)` →
   `acp-harness-view.ts:handleControlOperation()` (~line 1605). Current ops:
   `harness.list/create`, `lane.list/spawn/send/cancel/close/restart/new/model/
-  directive/goal/permission_mode/transcript`, `permission.list/resolve`,
+  directive/permission_mode/transcript`, `permission.list/resolve`,
   `memory.list/get/clear`, `peer.list`, `diff.review-targets/priority/send`.
 - **Existing event sink.** `acp-harness-view.ts` (~line 4746) already has a
   central switch over normalized harness events (`message_chunk`,
@@ -155,7 +155,7 @@ export function publishControlEvent(e: {
   values (below).
 - **New operations** (handled in `handleControlOperation`):
   `attention.list`, `attention.resolve`, `artifact.list`, `lane.status`
-  (rich per-lane snapshot: id/backend/session/model/goal/permissionMode/directive/
+  (rich per-lane snapshot: id/backend/session/model/permissionMode/directive/
   status/queue/activity), `lane.commands` (available slash commands),
   `lane.metrics`, `lane.models` (available + current model), `directive.list`,
   `review.outcomes` (review quality matrix rows), and the previously-handled

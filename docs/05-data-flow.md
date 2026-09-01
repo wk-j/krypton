@@ -525,7 +525,7 @@ all day at existing round-trips; compose runs only when a note is asked for.
 ```
 CAPTURE
 1. A lane calls attention_flag / attention_resolve / review_outcome /
-   issue_progress / artifact_register, or the user runs #goal or #daily note.
+   issue_progress / artifact_register, or the user runs #daily note.
 2. The existing handler in AcpHarnessView replies on the bus FIRST (the 2.5 s
    timeout is unchanged), then calls recordJournal(laneLabel, kind, summary).
 3. recordJournal resolves the lane for backend/model and hands off to

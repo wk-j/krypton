@@ -106,7 +106,7 @@ lane,” but that framing misses the real safety and state problems:
 - `src/acp/control-bridge.ts` resolves a harness/lane and routes the operation to
   the owning `AcpHarnessView`.
 - `src/acp/acp-harness-view.ts` remains the state authority for lane lifecycle,
-  transcript, prompt queue, permissions, memory, directives, goals, attention,
+  transcript, prompt queue, permissions, memory, directives, attention,
   artifacts, review data, and issue bindings.
 - `src/acp/control-publish.ts` already serializes frontend-published live events
   and `ControlServer` fans them out to SSE subscribers.
@@ -472,7 +472,7 @@ control syntax.
 | Command | Behavior |
 | --- | --- |
 | `/start`, `/help` | Show admission-safe help and current authorization state |
-| `/status` | Show bot health, selected lane, session, status, queue depth, model, goal, and explicit `TELEGRAM BYPASS` warning |
+| `/status` | Show bot health, selected lane, session, status, queue depth, model, and explicit `TELEGRAM BYPASS` warning |
 | `/harnesses` | `harness.list` |
 | `/harness_new <absolute-cwd>` | `harness.create` |
 | `/lanes` | `lane.list` with inline target picker |
@@ -485,7 +485,6 @@ control syntax.
 | `/close` | `lane.close`; successful close clears the chat target |
 | `/model [id]` | List or set `lane.model` |
 | `/directive [id\|clear]` | List or set `lane.directive` |
-| `/goal [text\|clear]` | Read/set/clear `lane.goal` |
 | `/mode [normal\|acceptEdits\|bypass]` | Read/set the lane's persistent permission mode; separate from Telegram turn bypass |
 | `/transcript [count]` | Pull a bounded recent `lane.transcript` snapshot |
 | `/permissions` | List pending permissions from other-origin turns and provide accept/reject buttons |

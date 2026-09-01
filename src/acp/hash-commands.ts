@@ -19,7 +19,6 @@ import {
   dailyBriefPrompt,
   directivePrompt,
   fixGithubIssuePrompt,
-  goalSeedPrompt,
   handleGithubIssuePrompt,
   handoffResumePrompt,
   issueFixPrompt,
@@ -54,7 +53,6 @@ export const TICKET_COMMAND_ARGS =
 export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'new', args: '', description: 'start a fresh session (keep memory)' },
   { name: 'new!', args: '', description: 'start a fresh session, clear memory' },
-  { name: 'goal', args: '[set <text> | clear]', description: 'set/clear the lane focus goal' },
   { name: 'cancel', args: '', description: 'stop the current turn or peer conversation' },
   { name: 'restart', args: '', description: 'restart the lane backend process' },
   { name: 'mem', args: '[clear]', description: 'memory commands (clear lane memory)' },
@@ -214,7 +212,6 @@ export function commandMeta(): Record<string, CommandMeta> {
   return {
     new: { category: 'session', badges: [] },
     'new!': { category: 'session', badges: [] },
-    goal: { category: 'session', badges: [], prompt: goalSeedPrompt('<text>') },
     ticket: { category: 'session', badges: [], prompt: renderActiveTicketPin(PLACEHOLDER_TICKET) },
     cancel: { category: 'session', badges: [] },
     restart: { category: 'session', badges: [] },

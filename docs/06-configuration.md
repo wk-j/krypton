@@ -308,7 +308,7 @@ retain_days = 90
 # The section keeps the name `daily_note` so an existing config still loads.
 
 [daily_note]
-# Master switch for journal capture (goal, attention, review, artifact, ticket,
+# Master switch for journal capture (attention, review, artifact, ticket,
 # and your own `#daily note` lines). Off still lets a day be written from usage,
 # git, reviews, and artifacts — it just has no prose timeline behind it.
 enabled = true

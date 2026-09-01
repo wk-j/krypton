@@ -5,7 +5,12 @@
 > Milestone: M-ACP — Harness Multi-Agent
 > Decision record: `docs/adr/0011-orchestrator-privileged-lane-and-acting-console.md`
 > Terms: see `CONTEXT.md` → **Orchestrator**, **Orchestrator console**, **Dispatch**
-> Related: `docs/164-polly-orchestration.md`, `docs/166-polly-live-plan.md`, `docs/168-harness-lane-monitor.md`, `docs/106-inter-lane-messaging.md`, `docs/111-harness-right-rail.md`, `docs/148-lane-goal-focus-scope.md`
+> Related: `docs/164-polly-orchestration.md`, `docs/166-polly-live-plan.md`, `docs/168-harness-lane-monitor.md`, `docs/106-inter-lane-messaging.md`, `docs/111-harness-right-rail.md`, `docs/148-lane-goal-focus-scope.md` (removed)
+
+> **Update (2026-09-01):** the lane-goal feature (spec 148) was removed — lane
+> cards no longer show a goal line. The design decision below ("a dispatch is a
+> plain `peer_send`, never a Goal-set") predates the removal and still holds:
+> dispatch never clears a worker's session.
 
 ## Problem
 

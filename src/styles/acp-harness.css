@@ -3561,54 +3561,6 @@
   text-transform: uppercase;
 }
 
-/* spec 148: goal pin — top lane-rail slot, same surface cluster as the peek
-   (moved out of the composer). Fixed height, never crushed by the plan/peek
-   slots below. Spec 238 retired the sibling ticket bar; the docked Ticket
-   Panel is the on-screen ticket chrome. */
-.acp-harness__lane-rail__slot[data-slot="pins"] {
-  flex-shrink: 0;
-  max-height: none;
-}
-
-/* spec 148: inline flow so wrapped goals return to the card's left content
-   edge instead of carrying a hanging indent. The age marker floats at the
-   top-right; placing it first in the DOM lets only the first line reserve
-   its width. Same panel chrome as the lane peek / plan slots; quiet, never
-   animated, never ellipsised. */
-.acp-harness__goal-bar {
-  display: flow-root;
-  padding: 6px 12px;
-  font-size: 0.78em;
-  letter-spacing: 0.02em;
-  /* Wrapped Thai text carries stacked vowel/tone marks; keep enough leading. */
-  line-height: 1.55;
-  background:
-    var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
-  border-radius: var(--krypton-border-radius, 8px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 28%, transparent);
-}
-
-.acp-harness__goal-label {
-  margin-right: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.10em;
-  font-size: 0.86em;
-  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 55%, var(--krypton-fg, #d8e8d8));
-}
-
-.acp-harness__goal-text {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
-}
-
-.acp-harness__goal-age {
-  float: right;
-  margin-left: 8px;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.40);
-}
-
 /* spec 194: `#ticket` picker — its own modal dialog (mirrors the triage/review
    overlay shell, see review-priority.css). Amber-tinted chrome to match the
    Ticket Panel; flat rows on one surface, no nested boxes, no left accent rails. */

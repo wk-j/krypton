@@ -949,17 +949,6 @@ impl TelegramService {
                 )
                 .await;
             }
-            Some("goal") => {
-                self.target_operation(
-                    app,
-                    api,
-                    chat_id,
-                    "lane.goal",
-                    json!({"text": if rest == "clear" { Value::Null } else { Value::String(rest.to_string()) }}),
-                    caller,
-                )
-                .await;
-            }
             Some("ctl") => {
                 self.handle_ctl(app, api, chat_id, rest, caller).await;
             }

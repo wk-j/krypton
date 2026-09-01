@@ -10863,4 +10863,3 @@ recommended: 2
         assert!(description.contains("becomes the bundle's directory name"));
     }
 }
-

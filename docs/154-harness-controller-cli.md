@@ -51,8 +51,6 @@ kryptonctl acp new Codex-1 [--clear-memory] --yes
 kryptonctl acp model Codex-1 <model-id>
 kryptonctl acp directive Codex-1 <directive-id>
 kryptonctl acp directive Codex-1 --clear
-kryptonctl acp goal Codex-1 <text>
-kryptonctl acp goal Codex-1 --clear
 kryptonctl acp permission-mode Codex-1 normal|acceptEdits|bypass
 
 kryptonctl acp send Codex-1 "implement it" [--wait]
@@ -115,7 +113,7 @@ When Krypton is not running, commands fail. Automatic GUI launch is deferred.
 
 ## State Ownership And Round-Trips
 
-The frontend remains authoritative for harnesses, lanes, prompt queues, transcripts, pending permissions, permission modes, sessions, directives, goals, models, and lifecycle transitions.
+The frontend remains authoritative for harnesses, lanes, prompt queues, transcripts, pending permissions, permission modes, sessions, directives, models, and lifecycle transitions.
 
 ```text
 kryptonctl

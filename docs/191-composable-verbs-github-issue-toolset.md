@@ -42,7 +42,7 @@ has no text to substitute and cannot be a token.
 | `#tag-github-issue <url> [labels…]` | prompt | Apply labels via `gh issue edit … --add-label …` |
 | `#post-github-comment <url>` | prompt | Draft and post a comment via `gh issue comment …` (writes immediately — see §Risk) |
 | `#fix-github-issue <url>` | prompt | Fix the issue's bug **in the current lane** (injectable) |
-| `#dispatch-github-issue <url>` | control-op | Existing spec-178 dispatch (spawn/target a fresh lane, set goal, send fix prompt). **Not injectable.** |
+| `#dispatch-github-issue <url>` | control-op | Existing spec-178 dispatch (spawn/target a fresh lane, send fix prompt). **Not injectable.** |
 
 Plus one composed verb demonstrating (A) over (B):
 
@@ -64,7 +64,7 @@ which the verb prompts instruct the lane to call.
   the *real* injected prompt templates). A drift-guard test asserts `commandMeta`
   keys equal the manifest name set.
 - **Prompt builders.** `src/acp/harness-prompts.ts` holds pure builders
-  (`wikiIngestPrompt`, `issueFixPrompt`, `goalSeedPrompt`, …) — exported so the
+  (`wikiIngestPrompt`, `issueFixPrompt`, …) — exported so the
   manifest renders the same text the dispatch injects. New verbs add builders
   here.
 - **Dispatch + send.** `AcpHarnessView.runHashCommand` (`acp-harness-view.ts:7992`)

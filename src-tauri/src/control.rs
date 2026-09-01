@@ -43,7 +43,6 @@ pub const ADVERTISED_OPERATIONS: &[&str] = &[
     "lane.new",
     "lane.model",
     "lane.directive",
-    "lane.goal",
     "lane.permission_mode",
     "lane.send",
     "lane.cancel",

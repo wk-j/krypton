@@ -98,7 +98,7 @@ describe('buildCommandManifest', () => {
 
   it('carries the real prompt template on every prompt-backed command', () => {
     const promptBacked = [
-      'goal', 'handoff', 'resume', 'wiki', 'recall',
+      'handoff', 'resume', 'wiki', 'recall',
       'directive', 'draw', 'review', 'polly', 'debby', 'dispatch-github-issue',
       'analyze-github-issue', 'fix-github-issue', 'tag-github-issue',
       'post-github-comment', 'handle-github-issue',
@@ -107,7 +107,6 @@ describe('buildCommandManifest', () => {
       const prompt = byName.get(name)?.prompt ?? '';
       expect(prompt.length, `#${name} prompt is empty`).toBeGreaterThan(40);
     }
-    expect(byName.get('goal')?.prompt).toContain('<text>');
     expect(byName.get('resume')?.prompt).toContain('"<lane>"');
     expect(byName.get('polly')?.prompt).toContain('<task>');
     expect(byName.get('debby')?.prompt).toContain('<question>');

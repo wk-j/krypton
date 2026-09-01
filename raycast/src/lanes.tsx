@@ -103,7 +103,6 @@ function LaneItem({ lane, revalidate }: { lane: LaneRow; revalidate: () => void 
       key={lane.laneId}
       icon={statusIcon(lane.status)}
       title={lane.displayName}
-      subtitle={lane.goal ?? undefined}
       accessories={accessories}
       actions={
         <ActionPanel>

@@ -625,18 +625,6 @@ export interface HarnessLane {
   cancelUnacked: boolean;
   /** spec 199: pending escalation timer handle; null when disarmed. */
   cancelEscalationTimer: number | null;
-  /** spec 148: active focus-scope goal, or undefined. Session-only harness-lane
-   *  runtime state confined to THIS lane: it rides this lane's own turns via
-   *  renderPromptMemoryPacket (never other lanes' / programmatic turns) and survives
-   *  `#new`; dropped only on `#goal clear`, a replacing `#goal`, or lane close. */
-  goal?: LaneGoal;
-}
-
-/** spec 148: a per-lane focus-scope goal — the current task the lane is anchored
- *  to. Not a completion condition (no evaluator, no auto-continue); just scope. */
-export interface LaneGoal {
-  text: string;
-  setAt: number;
 }
 
 /** spec 178: GitHub issue-fixing. A binding between a GitHub issue and the lane

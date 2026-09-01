@@ -20,7 +20,7 @@ A day of work in Krypton leaves plenty of evidence on disk — per-turn usage ro
 
 Two halves, deliberately separated.
 
-1. **Capture** — an append-only `.krypton/journal/<YYYY-MM-DD>.jsonl`. The harness already routes every event worth recording (handoff written, attention flagged, review synthesized, artifact registered, goal set, ticket bound); the journal tees them to disk with a timestamp. Backend-agnostic by construction — it works for Grok, Codex, and Cursor lanes, which have no transcript on Krypton's side of the wire.
+1. **Capture** — an append-only `.krypton/journal/<YYYY-MM-DD>.jsonl`. The harness already routes every event worth recording (handoff written, attention flagged, review synthesized, artifact registered, ticket bound); the journal tees them to disk with a timestamp. Backend-agnostic by construction — it works for Grok, Codex, and Cursor lanes, which have no transcript on Krypton's side of the wire.
 2. **Compose** — `daily_note_build(cwd, date)` joins that journal with the stores that already exist (`usage_log::read_day`, `git log`, `.krypton/reviews/`, `.krypton/artifacts/`) into a `DayDigest`, and a pure TS renderer turns it into markdown at `.krypton/journal/<date>.md`, opened in the existing Markdown Viewer.
 
 **The renderer is deterministic — no LLM, no inference.** Every line traces to a record. Narrative is a separate, explicit act: `#daily brief` feeds the rendered note back to the lane as a prompt. That keeps "what happened" (a record you can trust) apart from "what it meant" (a guess you asked for).
@@ -93,7 +93,7 @@ pub struct JournalEvent {
 #[serde(rename_all = "snake_case")]
 pub enum JournalKind {
     Session,    // lane opened / #new / resume
-    Goal,       // #goal set|clear
+    Goal,       // historical only — writer removed with the lane-goal feature (spec 148)
     Handoff,    // handoff_set
     Attention,  // attention_flag / attention_resolve
     Review,     // review_outcome
@@ -146,7 +146,7 @@ No new IPC events — the note is pull-only.
 
 ```
 Capture (throughout the day)
-1. Harness handles handoff_set / attention_flag / review_outcome / artifact_register / #goal / #ticket
+1. Harness handles handoff_set / attention_flag / review_outcome / artifact_register / #ticket
 2. Existing handler additionally calls journalAppend({ kind, lane, summary, meta })
 3. journal.rs appends one line to .krypton/journal/<today>.jsonl
 

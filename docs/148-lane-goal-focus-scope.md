@@ -1,6 +1,14 @@
 # Lane Goal — Focus Scope — Implementation Spec
 
-> Status: Implemented
+> Status: **Removed** (2026-09-01). The goal chip duplicated the Active Ticket
+> panel (spec 238): every real goal was "Fix #NNN: <issue title>", which the
+> ticket dock already shows with richer state. Removed end-to-end: `#goal`
+> command, `LaneGoal` state, `goalSeedPrompt`, `insertGoalLine` packet pin,
+> rail goal bar + pin slot, orchestrator-console goal line, `lane.goal`
+> control op (kryptonctl `goal`, Telegram `/goal`, Raycast subtitle), and the
+> issue-dispatch/auto-bind goal-chip writes. The `goal` journal kind remains
+> read-only so pre-removal journal files still parse. Everything below is
+> historical.
 > Date: 2026-06-07
 > Milestone: ACP Harness — focus & scoping
 > Implementation: `#goal` command + `lane.goal` state in

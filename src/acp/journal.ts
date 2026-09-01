@@ -10,7 +10,10 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-/** Mirrors `journal::JournalKind` in Rust. */
+/** Mirrors `journal::JournalKind` in Rust.
+ *  `goal` has no writer since the lane-goal feature (spec 148) was removed;
+ *  it stays in the union so journal files written before the removal still
+ *  parse and render. */
 export type JournalKind =
   | 'session'
   | 'goal'

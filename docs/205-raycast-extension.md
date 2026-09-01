@@ -200,7 +200,7 @@ the user re-invokes the action against the fresh lane list.
 
 Status rendering: `idle` green dot, `busy` amber, `needs_permission` red
 exclamation, `awaiting_peer` blue, `starting`/`stopped` gray, `error` red.
-Accessories: model name, queue depth, goal (truncated).
+Accessories: model name, queue depth.
 
 ### Configuration (Raycast preferences, not TOML)
 

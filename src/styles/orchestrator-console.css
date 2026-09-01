@@ -228,12 +228,6 @@
   color: #ffcf70;
 }
 
-.acp-orchestrator__goal {
-  color: rgba(216, 232, 216, 0.6);
-  font-size: 0.76em;
-  letter-spacing: 0.02em;
-}
-
 /* spec 184 — global pending-permission queue. A fleet-wide band above the body,
    one row per awaiting lane, so the operator answers from a single place without
    selecting each card. Flat tinted surface, no left rail. */

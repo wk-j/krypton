@@ -110,7 +110,6 @@ import {
   dailyBriefPrompt,
   directivePrompt,
   fixGithubIssuePrompt,
-  goalSeedPrompt,
   handleGithubIssuePrompt,
   handoffResumePrompt,
   issueFixPrompt,
@@ -488,7 +487,7 @@ const LANE_PEEK_HEAT_SAMPLE_MIN_MS = 900;
 const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
-// spec 139/148: the #handoff / #resume / #goal one-shot prompts now live in
+// spec 139: the #handoff / #resume one-shot prompts now live in
 // harness-prompts.ts (spec 185) alongside the other built-in command prompts.
 
 function controlError(code: string, message: string): Error {
@@ -794,8 +793,8 @@ export function nextDispatchPurpose(current: DispatchPurpose): DispatchPurpose {
 }
 
 /** spec 180: the dispatch message body. A dispatch is a plain `peer_send` (it
- *  carries a purpose-tagged task), NOT a Goal-set — so the body is just the
- *  bracketed purpose + task, never a directive/goal envelope. */
+ *  carries a purpose-tagged task) — so the body is just the bracketed
+ *  purpose + task, never a directive envelope. */
 export function orchestratorDispatchBody(purpose: DispatchPurpose, text: string): string {
   return `[${purpose}] ${text.trim()}`;
 }
@@ -1138,7 +1137,6 @@ export class AcpHarnessView implements ContentView {
   private peekSlotEl!: HTMLElement;
   private actionSlotEl!: HTMLElement;
   private thoughtSlotEl!: HTMLElement;
-  private pinSlotEl!: HTMLElement;
   private queueSlotEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private pretextRaf = false;
@@ -1550,7 +1548,6 @@ export class AcpHarnessView implements ContentView {
           currentModelId: l.currentModelId,
           queueDepth: l.queuedPrompts.length,
           pendingPermissions: l.pendingPermissions.length,
-          goal: l.goal ?? null,
           permissionMode: l.permissionMode,
           directive: directive
             ? { id: directive.id, title: directive.title, task: directive.task }
@@ -1760,14 +1757,6 @@ export class AcpHarnessView implements ContentView {
         this.assignDirectiveToLane(lane, directiveId);
         return { lane: lane.displayName, directiveId };
       }
-      case 'lane.goal': {
-        const text = params.text === null ? 'clear' : requiredString(params, 'text');
-        if (params.text !== null && lane.status !== 'idle') {
-          throw controlError('lane_not_idle', `${lane.displayName} is ${lane.status}`);
-        }
-        await this.runGoalCommand(lane, `#goal ${text}`);
-        return { lane: lane.displayName, goal: lane.goal ?? null };
-      }
       case 'lane.permission_mode': {
         const mode = requiredString(params, 'mode');
         if (mode !== 'normal' && mode !== 'acceptEdits' && mode !== 'bypass') {
@@ -1828,7 +1817,6 @@ export class AcpHarnessView implements ContentView {
       modelName: lane.modelName,
       queueDepth: lane.queuedPrompts.length,
       pendingPermissions: lane.pendingPermissions.length,
-      goal: lane.goal ?? null,
       permissionMode: lane.permissionMode,
       active: lane.id === this.activeLaneId,
     }));
@@ -2459,7 +2447,6 @@ export class AcpHarnessView implements ContentView {
       if (event.payload.ticketId !== this.activeTicket?.id) return;
       this.activeTicket = event.payload.ticket;
       this.renderTicketDock();
-      this.renderPinSlot();
     });
 
     // spec 146: the authoring lane self-reports a #review summary at synthesis
@@ -5256,7 +5243,6 @@ export class AcpHarnessView implements ContentView {
         if (high > 0) tags.push(`<span class="acp-orchestrator__tag">diff ${high}</span>`);
         if (l.pendingPermissions.length > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--perm">⚠ perm</span>`);
         if (l.pendingQuestions.length > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--perm">? ask</span>`);
-        const goal = l.goal ? `<div class="acp-orchestrator__goal">${esc(truncate(l.goal.text, 72))}</div>` : '';
         const model = l.modelName ? ` · ${esc(l.modelName)}` : '';
         return (
           `<div class="${cls}" data-orch-lane="${esc(l.id)}">` +
@@ -5266,7 +5252,6 @@ export class AcpHarnessView implements ContentView {
           `</div>` +
           `<div class="acp-orchestrator__card-meta">${esc(backendLabel(l.backendId))}${model}</div>` +
           (tags.length ? `<div class="acp-orchestrator__tags">${tags.join('')}</div>` : '') +
-          goal +
           `</div>`
         );
       })
@@ -5664,8 +5649,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   /** spec 180: a dispatch is an ordinary `peer_send` from the orchestrator seat to
-   *  the selected lane (inbox drop, drained on the target's own idle turn). It is
-   *  NOT a Goal-set — the worker keeps its session and context. */
+   *  the selected lane (inbox drop, drained on the target's own idle turn) —
+   *  the worker keeps its session and context. */
   private dispatchFromConsole(purpose: DispatchPurpose, text: string): void {
     const seat = this.orchestratorLane();
     const target = this.orchestratorSelectedLane();
@@ -5878,13 +5863,6 @@ export class AcpHarnessView implements ContentView {
 
     this.laneRailEl = document.createElement('div');
     this.laneRailEl.className = 'acp-harness__lane-rail';
-    // spec 148/194: ticket + goal pins — top rail slot, same surface cluster as
-    // the lane peek (moved out of the composer).
-    this.pinSlotEl = document.createElement('div');
-    this.pinSlotEl.className = 'acp-harness__lane-rail__slot';
-    this.pinSlotEl.dataset.slot = 'pins';
-    this.pinSlotEl.hidden = true;
-    this.laneRailEl.appendChild(this.pinSlotEl);
     this.planSlotEl = document.createElement('div');
     this.planSlotEl.className = 'acp-harness__lane-rail__slot';
     this.planSlotEl.dataset.slot = 'plan';
@@ -7269,12 +7247,11 @@ export class AcpHarnessView implements ContentView {
     return false;
   }
 
-  /** spec 194: insert the working-ticket pin right after the goal line (or the
-   *  identity line when no goal) — same head-placement rationale as spec 148:
+  /** spec 194: insert the working-ticket pin right after the identity line —
    *  shared scope must not be buried under the tool-discoverability blocks. */
-  private insertTicketPin(lines: string[], lane: HarnessLane): void {
+  private insertTicketPin(lines: string[], _lane: HarnessLane): void {
     if (!this.activeTicket) return;
-    lines.splice(lane.goal ? 2 : 1, 0, renderActiveTicketPin(this.activeTicket));
+    lines.splice(1, 0, renderActiveTicketPin(this.activeTicket));
   }
 
   /** spec 190: self-register a binding for a lane reporting progress on an issue it
@@ -7289,7 +7266,6 @@ export class AcpHarnessView implements ContentView {
     // key/value match dispatchIssue and every status/browser surface (which expect it).
     const canonicalKey = `${ref.repo}#${ref.number}`;
     const now = Date.now();
-    const placeholderGoal = `Fix #${ref.number}`;
     const binding: IssueBinding = {
       issueKey: canonicalKey,
       issueUrl: ref.url,
@@ -7303,18 +7279,13 @@ export class AcpHarnessView implements ContentView {
       updatedAt: now,
     };
     this.issueBindings.set(canonicalKey, binding);
-    // Don't clobber a user/agent-set goal — only surface the issue if there's none.
-    if (!lane.goal) lane.goal = { text: placeholderGoal, setAt: now };
     this.persistIssueBindings();
     this.publishIssueStatus(binding);
-    // Background enrich: fetch the title, then re-publish + refine the goal chip.
+    // Background enrich: fetch the title, then re-publish.
     void this.fetchIssueMeta(ref.repo, ref.number).then((meta) => {
       const t = meta?.title?.trim();
       if (!t || this.issueBindings.get(canonicalKey) !== binding) return;
       binding.title = t;
-      if (lane.goal && lane.goal.text === placeholderGoal) {
-        lane.goal = { text: `Fix #${ref.number}: ${t}`.slice(0, 200), setAt: binding.dispatchedAt };
-      }
       this.persistIssueBindings();
       this.publishIssueStatus(binding);
       this.render();
@@ -7388,9 +7359,6 @@ export class AcpHarnessView implements ContentView {
       updatedAt: now,
     };
     this.issueBindings.set(args.issueKey, binding);
-    // The lane badge rides the existing goal chip (spec 148) — set it directly so
-    // a freshly-spawned lane shows the issue without a session respawn.
-    lane.goal = { text: `Fix #${args.number}: ${title}`.slice(0, 200), setAt: now };
     this.persistIssueBindings();
     this.publishIssueStatus(binding);
     const prompt = args.prompt?.trim() || issueFixPrompt(binding, body);
@@ -8405,22 +8373,6 @@ export class AcpHarnessView implements ContentView {
     return packet ? `${packet}\n\n${block}` : block;
   }
 
-  /** spec 148: insert the active-goal pin near the HEAD of a context packet (right
-   *  after the identity line at index 0), not the tail. Called from BOTH return paths
-   *  of renderPromptMemoryPacket so a lane without harness memory still carries its
-   *  goal. Head placement keeps the goal prominent instead of buried under the
-   *  memory/attention/artifact blocks, where it was treated as background and often
-   *  ignored. Internal whitespace is collapsed to keep it a single line. */
-  private insertGoalLine(lines: string[], lane: HarnessLane): void {
-    const text = lane.goal?.text.replace(/\s+/g, ' ').trim();
-    if (!text) return;
-    lines.splice(
-      1,
-      0,
-      `Active goal: ${text}. Stay scoped to this; if a turn pulls you off it, say so before continuing.`,
-    );
-  }
-
   private insertTelegramProvenance(lines: string[], lane: HarnessLane): void {
     const caller = lane.activeTelegramTurn;
     if (!caller) return;
@@ -8438,7 +8390,6 @@ export class AcpHarnessView implements ContentView {
     const lines: string[] = [`You are lane ${self}. Lanes: ${roster}.`];
     if (!this.harnessMemoryId || !this.harnessMemoryPort) {
       lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
-      this.insertGoalLine(lines, lane);
       this.insertTelegramProvenance(lines, lane);
       this.insertTicketPin(lines, lane);
       return lines.join('\n');
@@ -8489,7 +8440,6 @@ export class AcpHarnessView implements ContentView {
     lines.push(
       'HTML artifacts: when the user asks for a visual or interactive view (side-by-side, diagram, annotated diff, dashboard), call artifact_new { title }. It returns a path to a file that ALREADY EXISTS — a styled scaffold (Binance dark theme + light/auto toggle); EDIT it with your normal edit tool (do not recreate it with Write) to replace the placeholder inside <main data-artifact-content>, then artifact_register { id }; the user opens it in their browser. Opt-in only — keep ordinary prose, plans, and answers in your turn text. Style rule: never color-code blocks with left accent borders (border-left rails) — use a full border, background tint, or heading color; the scaffold strips left-only borders at runtime.',
     );
-    this.insertGoalLine(lines, lane);
     this.insertTelegramProvenance(lines, lane);
     this.insertTicketPin(lines, lane);
     return lines.join('\n');
@@ -10329,8 +10279,8 @@ export class AcpHarnessView implements ContentView {
 
   /** Reset a lane to a fresh ACP session. Returns true once the lane has been
    *  disposed and successfully respawned; false if it bailed (wrong status,
-   *  memory-clear failure) or the respawn errored — so callers like `#goal`
-   *  (spec 148) can abort their follow-up rather than act on a dead session. */
+   *  memory-clear failure) or the respawn errored — so callers can abort
+   *  their follow-up rather than act on a dead session. */
   private async newLaneSession(
     lane: HarnessLane,
     options: { clearMemory: boolean },
@@ -10407,72 +10357,9 @@ export class AcpHarnessView implements ContentView {
     this.updateComposerTick();
     this.render();
     await this.spawnLane(lane);
-    // spec 148: false when spawn/initialize failed (lane left in 'error'), so #goal
-    // doesn't claim success or seed a turn that can't start (Codex-1 W1).
+    // False when spawn/initialize failed (lane left in 'error'), so callers
+    // don't claim success or seed a turn that can't start (Codex-1 W1).
     return lane.status !== 'error';
-  }
-
-  /** spec 148: `#goal <text>` sets a focus scope — it clears the lane like `#new`
-   *  (fresh session, memory kept) and seeds the first turn; `#goal` shows the
-   *  current goal; `#goal clear` (aliases stop/off/none/reset) removes the scope
-   *  without touching the session. */
-  private async runGoalCommand(lane: HarnessLane, text: string): Promise<void> {
-    this.setDraft(lane, '', 0);
-    const arg = text.trim().slice('#goal'.length).trim();
-    const CLEAR_ALIASES = new Set(['clear', 'stop', 'off', 'none', 'reset']);
-    if (!arg) {
-      this.flashChip(
-        lane.goal
-          ? `goal: ${truncate(lane.goal.text, 56)} · ${formatAge(Date.now() - lane.goal.setAt)}`
-          : 'no active goal · #goal <text> to set',
-      );
-      return;
-    }
-    if (CLEAR_ALIASES.has(arg.toLowerCase())) {
-      if (!lane.goal) {
-        this.flashChip('no active goal');
-        return;
-      }
-      lane.goal = undefined;
-      this.flashChip('goal cleared');
-      this.recordJournal(lane.displayName, 'goal', 'goal cleared', { action: 'clear' });
-      this.render();
-      return;
-    }
-    // Setting clears the session via newLaneSession, which only accepts `idle`.
-    if (lane.status !== 'idle') {
-      this.flashChip('lane busy - #cancel first');
-      return;
-    }
-    // Respawn FIRST, then publish the goal (Codex-1 B1): if the goal were set before
-    // the respawn's awaits, a peer message arriving in that window could start an
-    // old-session turn carrying the new goal, then be disposed mid-turn. Publishing
-    // after a confirmed respawn closes that window.
-    const ok = await this.newLaneSession(lane, { clearMemory: false });
-    if (!ok) return; // respawn bailed or errored — leave the lane goal-free
-    // The goal is set regardless of what follows: it rides this lane's subsequent
-    // turns via insertGoalLine, so it takes effect even when the immediate seed is
-    // deferred below.
-    lane.goal = { text: arg, setAt: Date.now() };
-    this.flashChip(`goal set · ${truncate(arg, 56)}`);
-    // spec 223: a goal is the closest thing the harness has to "what I sat down
-    // to do", so it anchors the note's timeline.
-    this.recordJournal(lane.displayName, 'goal', arg, { action: 'set' });
-    this.render();
-    // newLaneSession does NOT guarantee an idle lane on return (Codex-1 B3):
-    // spawnLane's idle transition synchronously drains any queued peer mail, which
-    // can flip the fresh session to busy before we reach here. Seed only when the
-    // lane is actually idle; otherwise the goal already applies to the next turn, so
-    // record the deferral rather than letting enqueueSystemPrompt silently no-op.
-    if (lane.status !== 'idle') {
-      this.appendTranscript(lane, 'system', 'goal set; first turn deferred — lane is handling other work');
-      this.render();
-      return;
-    }
-    // Kick the first turn on the goal. Self-contained seed (the goal text is embedded),
-    // sent only to THIS lane — it does not touch the shared inter-lane drain path, so a
-    // cancelled-peer tombstone is never cleared and other lanes are untouched (human redirect).
-    await this.enqueueSystemPrompt(lane, goalSeedPrompt(arg), undefined, 'setting goal');
   }
 
   private async clearActiveLaneMemory(lane: HarnessLane, showSuccess = true): Promise<void> {
@@ -10498,10 +10385,6 @@ export class AcpHarnessView implements ContentView {
     if (parts[0] === '#new!') {
       this.setDraft(lane, '', 0);
       await this.newLaneSession(lane, { clearMemory: true });
-      return;
-    }
-    if (parts[0] === '#goal') {
-      await this.runGoalCommand(lane, text);
       return;
     }
     // spec 194: shared working ticket — picker (no args), direct ref, refresh, clear.
@@ -10867,7 +10750,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     // spec 178: dispatch a GitHub issue fix to a FRESH lane (control-op — spawns a
-    // lane, sets its goal, clears its session). Metadata via local `gh`; URL-only
+    // lane, clears its session). Metadata via local `gh`; URL-only
     // fallback when gh is absent. This is NOT the #fix-github-issue prompt-verb.
     if (parts[0] === '#dispatch-github-issue') {
       this.setDraft(lane, '', 0);
@@ -11196,7 +11079,6 @@ export class AcpHarnessView implements ContentView {
     // Deduped on a serialized key, so the per-frame call is a string compare.
     this.notifyLaneMarksChanged();
     this.renderActiveLaneQueue();
-    this.renderPinSlot();
     this.renderComposer();
     // Collapse/restore the orchestrator console around whichever modal render()
     // just opened or closed (lane/session/directive/model picker, help, memory).
@@ -11327,7 +11209,6 @@ export class AcpHarnessView implements ContentView {
     this.renderLaneAction();
     this.renderPlanPanel(lane);
     this.renderActiveLaneQueue();
-    this.renderPinSlot();
     this.renderComposer();
     this.scheduleStickyScroll();
   }
@@ -12615,35 +12496,6 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-harness__help-hint">? help</span></div>`;
   }
 
-  /** spec 148: goal pin in the lane rail's top slot (same surface cluster as
-   *  the lane peek — moved out of the composer). Spec 238's Ticket Panel is
-   *  the on-screen ticket chrome; this slot no longer paints a second ticket
-   *  card. Rendered on lane/state changes only, never per keystroke. */
-  private renderPinSlot(): void {
-    const lane = this.activeLane();
-    if (lane) this.pinSlotEl.style.setProperty('--acp-lane-accent', lane.accent);
-    const html = lane ? this.renderGoalBar(lane) : '';
-    this.pinSlotEl.innerHTML = html;
-    this.pinSlotEl.hidden = html === '';
-  }
-
-  /** spec 148: static goal-bar in the rail pin slot, shown only when the
-   *  active lane has a focus-scope goal. Quiet depth indicator — never blinks. The
-   *  age is a snapshot refreshed on each render, deliberately NOT driven by a live
-   *  1s ticker (an idle lane with a goal must not keep the rail re-rendering —
-   *  idle CPU budget). Minutes-granularity makes the staleness invisible in practice. */
-  private renderGoalBar(lane: HarnessLane): string {
-    if (!lane.goal) return '';
-    const age = formatAge(Date.now() - lane.goal.setAt);
-    return (
-      `<div class="acp-harness__goal-bar">` +
-      `<span class="acp-harness__goal-age">${esc(age)}</span>` +
-      `<span class="acp-harness__goal-label">◎ goal</span>` +
-      `<span class="acp-harness__goal-text">${esc(lane.goal.text)}</span>` +
-      `</div>`
-    );
-  }
-
   /** Composer directive chip: clickable, opens the picker. Keyboard users use
    * `Cmd+P → /`. Shows the pending (deferred) directive when the lane is busy. */
   private renderDirectiveChip(lane: HarnessLane): string {
@@ -12691,7 +12543,7 @@ export class AcpHarnessView implements ContentView {
       });
     }
     if (lane.status === 'starting') {
-      // Session is (re)initializing — the slowest sub-window of #goal/#new/#new!.
+      // Session is (re)initializing — the slowest sub-window of #new/#new!.
       // Cue it rather than falling through to the generic memory readout (Claude-2).
       return textSegments(`${lane.displayName} starting…`);
     }
@@ -13007,8 +12859,6 @@ export class AcpHarnessView implements ContentView {
             <dt>#cancel</dt><dd>Cancel active lane, same as Ctrl+C</dd>
             <dt>#new</dt><dd>Start fresh active lane, keep memory</dd>
             <dt>#new!</dt><dd>Start fresh active lane and clear its memory</dd>
-            <dt>#goal &lt;text&gt;</dt><dd>Set a focus scope: clears the lane (keeps memory) and anchors it to this task</dd>
-            <dt>#goal</dt><dd>Show the active goal · #goal clear removes it</dd>
             <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
             <dt>#polly &lt;task&gt;</dt><dd>Polly orchestration from this lane — auto-spawns two other Cursor/Claude/Codex workers (orchestrator covers its own backend when in pool)</dd>
             <dt>#debby &lt;question&gt;</dt><dd>Debby brainstorming from this lane — auto-spawns Claude and Codex heads as plain responders</dd>
