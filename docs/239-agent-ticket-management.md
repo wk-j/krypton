@@ -1,6 +1,6 @@
 # Agent Ticket Management — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-09-01
 > Milestone: ACP Harness — local working context
 
@@ -16,10 +16,15 @@ Spec 238 ให้ lane เขียน active ticket ได้แค่ช่�
 เพิ่ม MCP tool ฝั่ง hook server อีก 3 ตัว — `ticket_note`, `ticket_add_resource`,
 `ticket_link` — ให้ lane จัดการ active ticket ได้ครบระหว่างทำงาน โดย reuse ฟังก์ชัน
 `*_for_project` ใน `ticket_bundle.rs` เดิมทั้งหมด (path validation, symlink guard,
-atomic write) และเพิ่ม **auto-claim**: เมื่อยังไม่มี worker binding การเขียนครั้งแรก
-ของ lane จะผูก lane นั้นเป็น worker โดยอัตโนมัติ — pattern เดียวกับ auto-bind ของ
-`issue_progress` (spec 190) ทุกการเขียน emit event เดิม `acp-ticket-progress`
-ให้ Ticket Panel refresh ทันที
+atomic write) สิทธิ์เขียนแยกสองชั้น (ผู้ใช้เลือก option B):
+
+- **append-only เปิดทุก lane:** `ticket_note` และ `ticket_add_resource` — การ append
+  ไม่ชนกัน หลาย lane ช่วยกันทิ้ง findings ลงตั๋วเดียวกันได้ ขอแค่ ticket ตรงกับ active pointer
+- **ค่าเดี่ยวเป็นของ worker:** `ticket_progress` และ `ticket_link` — คง gate เดิม
+  พร้อม **auto-claim**: เมื่อยังไม่มี worker binding การเขียนสำเร็จครั้งแรกจะผูก lane
+  นั้นเป็น worker อัตโนมัติ (pattern auto-bind ของ `issue_progress`, spec 190)
+
+ทุกการเขียน emit event เดิม `acp-ticket-progress` ให้ Ticket Panel refresh ทันที
 
 ## Research
 
@@ -74,13 +79,13 @@ atomic write) และเพิ่ม **auto-claim**: เมื่อยัง�
 ### MCP Tools
 
 ```jsonc
-// ใหม่ทั้งสามตัว — ticket_id copy verbatim จาก pin เหมือน ticket_progress
+// เปิดทุก lane (ตรวจแค่ว่าเป็น active ticket) — append-only
 ticket_note         { ticket_id: string, markdown: string }        // append ลง ticket.md, ≤ 2000 Unicode chars/call
 ticket_add_resource { ticket_id: string, path: string }            // copy regular file → resources/
-ticket_link         { ticket_id: string, issue_key: string }       // set/replace GitHub reference
 
-// เดิม ไม่เปลี่ยน schema แต่ได้ auto-claim
-ticket_progress     { ticket_id, status: in_progress|blocked|done, summary? }
+// worker-gated + auto-claim — ค่าเดี่ยว
+ticket_link         { ticket_id: string, issue_key: string }       // set/replace GitHub reference
+ticket_progress     { ticket_id, status: in_progress|blocked|done, summary? }  // เดิม ไม่เปลี่ยน schema
 ```
 
 - `ticket_note` reuse ตรรกะ append เดิม: ขึ้นย่อหน้าใหม่, bump `contextRevision`
@@ -92,7 +97,10 @@ ticket_progress     { ticket_id, status: in_progress|blocked|done, summary? }
 
 ### Worker Binding: validate-or-claim
 
-ทุก write tool ใช้ `resolve_ticket_write_binding(state, harness_id, ticket_id, from_lane)`:
+`ticket_note` / `ticket_add_resource` ตรวจแค่ว่า `ticket_id` ตรงกับ active pointer
+(อ่านจาก `*.active-ticket.json`) — ไม่แตะ binding ไม่ claim
+
+`ticket_progress` / `ticket_link` ใช้ `resolve_ticket_write_binding(state, harness_id, ticket_id, from_lane)`:
 
 1. มี binding และ `lane_display_name == from_lane` และ ticket ตรง → ผ่าน
 2. มี binding เป็น lane อื่น → reject เหมือนเดิม (consulted lane อ่านได้แต่เขียนไม่ได้)
@@ -108,7 +116,9 @@ frontend reconcile เป็น lane id จริงทันทีที่ร�
 
 ```
 1. Lane เรียก ticket_note { ticket_id, markdown }
-2. hook server: resolve_ticket_write_binding → (claim ถ้ายังว่าง + emit acp-ticket-worker)
+2. hook server ตรวจ ticket_id ตรงกับ active pointer (open tools)
+   — หรือ resolve_ticket_write_binding สำหรับ ticket_progress/ticket_link
+   (claim ถ้ายังว่าง + emit acp-ticket-worker)
 3. ticket_bundle::append_ticket_note_for_project เขียนไฟล์ + bump revision
 4. hook server emit acp-ticket-progress { harnessId, ticketId, ticket: detail }
 5. frontend listener เดิมแทนที่ activeTicket → renderTicketDock()
@@ -123,7 +133,7 @@ frontend reconcile เป็น lane id จริงทันทีที่ร�
 แทนบรรทัด `Only the bound worker reports ticket_progress for …` ด้วย:
 
 ```text
-Manage this ticket with ticket_progress, ticket_note, ticket_add_resource, ticket_link — your first successful write claims the worker binding if it is unassigned.
+Any lane may ticket_note / ticket_add_resource this ticket; ticket_progress and ticket_link are worker tools — the first successful call claims the binding if unassigned.
 ```
 
 เพดาน pin ขยับ 700 → 780 Unicode characters (บรรทัดใหม่ยาวกว่าเดิม ~100 ตัว
@@ -140,8 +150,9 @@ Manage this ticket with ticket_progress, ticket_note, ticket_add_resource, ticke
 
 - **ไม่มี active pointer หรือ ticket_id ไม่ใช่ active ticket:** reject
   `ticket <id> is not the active ticket; ask the user to activate it` — ไม่ claim ข้าม ticket
-- **binding เป็นของ lane อื่น:** reject ข้อความเดิม ไม่มี takeover ฝั่ง Rust
+- **binding เป็นของ lane อื่น (progress/link):** reject ข้อความเดิม ไม่มี takeover ฝั่ง Rust
   (lane หาย/restart แล้ว frontend เคลียร์ binding อยู่แล้ว → เขียนครั้งถัดไป claim ใหม่ได้)
+  ส่วน note/resource จาก lane อื่นยังเขียนได้เสมอ — append-only ไม่แตะสถานะ
 - **restart:** binding หาย แต่ active pointer อยู่ → worker เดิมเขียนต่อได้ทันทีผ่าน auto-claim
 - **note ยาวเกิน 2000 chars:** reject พร้อมบอกเพดาน ให้แบ่งเรียกหลายครั้ง
 - **resource path ผิด / symlink / เกิน 25 MiB / project read-only:** error เดิมจาก
@@ -153,10 +164,22 @@ Manage this ticket with ticket_progress, ticket_note, ticket_add_resource, ticke
 - **event มาแต่ panel ปิด/ticket อื่น active:** listener เดิม filter ด้วย harnessId +
   activeTicket.id อยู่แล้ว ไม่มี state ค้าง
 
+## Verification
+
+- `npm run check`, `npm test -- --run` (1,043 tests / 63 files) และ `npm run build` ผ่าน
+- `cargo fmt -- --check`, `cargo clippy --lib -- -D warnings` และ `cargo test --lib`
+  ผ่าน 340 tests รวม note append/revision, github link/unlink, issue-ref parsing
+  (key + URL + reject forms) และ atomic first-writer-wins claim
+- Frontend tests ครอบ pin wording ใหม่, auto-allow ของ 3 tools ใหม่ และ
+  `handleTicketWorkerClaim` (reconcile lane id จริง, ignore ticket ที่ไม่ active,
+  placeholder เมื่อไม่พบ lane)
+
 ## Open Questions
 
-ไม่มี — ตัดสินใจแล้วว่า auto-claim ใช้ pattern spec 190, unlink/clear ยังเป็นของผู้ใช้,
-และ status `todo` ยังตั้งจาก agent ไม่ได้ (การถอยงานกลับ backlog เป็นการตัดสินใจของคน)
+ไม่มี — ผู้ใช้เลือกโมเดลสิทธิ์แบบแยกชั้น (B): note/resource เปิดทุก lane,
+status/link เป็นของ worker พร้อม auto-claim ตาม pattern spec 190; unlink/clear
+ยังเป็นของผู้ใช้ และ status `todo` ยังตั้งจาก agent ไม่ได้ (การถอยงานกลับ backlog
+เป็นการตัดสินใจของคน)
 
 ## Out of Scope
 

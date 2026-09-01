@@ -3,6 +3,8 @@
 > Status: Implemented
 > Date: 2026-08-30
 > Milestone: ACP Harness — local working context
+> Amended by: spec 239 — agent-side ticket writes (`ticket_note` / `ticket_add_resource`
+> เปิดทุก lane; `ticket_progress` / `ticket_link` เป็น worker tools พร้อม first-write claim)
 
 ## Problem
 

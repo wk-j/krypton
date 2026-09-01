@@ -839,6 +839,12 @@ bounded regular files into `resources/` with executable bits removed. GitHub is
 an optional reference; analysis stays in the existing `.krypton/analyses/`
 bundle and is derived at read time. `AcpHarnessView` owns the active version-2
 pointer and renders a 352px/46px docked Ticket Panel beside Lane Peek. HookServer
-owns only the runtime ticket-worker binding and validates `ticket_progress`
-before writing local status. GitHub-facing `issue_progress` remains independent,
+owns only the runtime ticket-worker binding. Lanes manage the active ticket
+directly over MCP (doc 239): append-only `ticket_note` / `ticket_add_resource`
+are open to every lane, while single-valued `ticket_progress` / `ticket_link`
+are worker tools — a held binding is enforced, and an unassigned active ticket
+is claimed atomically by the first successful writer (`acp-ticket-worker`
+notifies the frontend, which reconciles the real lane id). Every agent write
+re-emits `acp-ticket-progress` so the Ticket Panel refreshes without a
+filesystem watcher. GitHub-facing `issue_progress` remains independent,
 so the browser extension contract is unchanged.

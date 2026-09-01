@@ -582,6 +582,58 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
     expect(target.ticketWorker).toBeNull();
     expect(workerSets).toEqual([null]);
   });
+
+  // spec 239: an agent-side claim arrives with the display name as placeholder
+  // lane id; the view resolves the real lane id and pushes it back to Rust.
+  it('reconciles an agent worker claim to the real lane id', () => {
+    const workerSets: unknown[] = [];
+    const journal: string[] = [];
+    const handleTicketWorkerClaim = (
+      AcpHarnessView.prototype as unknown as {
+        handleTicketWorkerClaim(env: { ticketId: string; laneDisplayName: string }): void;
+      }
+    ).handleTicketWorkerClaim;
+    const target = {
+      activeTicket: { id: '2026-08-31-auth-timeout' },
+      lanes: [{ id: 'lane-7', displayName: 'Claude-1' }],
+      ticketWorker: null as unknown,
+      setTicketWorker: async (binding: unknown) => {
+        workerSets.push(binding);
+      },
+      recordJournal: (_lane: string, _kind: string, summary: string) => {
+        journal.push(summary);
+      },
+      renderTicketDock: () => {},
+    };
+
+    handleTicketWorkerClaim.call(target, {
+      ticketId: '2026-08-31-auth-timeout',
+      laneDisplayName: 'Claude-1',
+    });
+    expect(target.ticketWorker).toMatchObject({
+      ticketId: '2026-08-31-auth-timeout',
+      laneId: 'lane-7',
+      laneDisplayName: 'Claude-1',
+    });
+    expect(workerSets).toHaveLength(1);
+    expect(journal).toEqual(['claimed 2026-08-31-auth-timeout']);
+
+    // A claim for a non-active ticket is ignored.
+    handleTicketWorkerClaim.call(target, {
+      ticketId: 'other-ticket',
+      laneDisplayName: 'Claude-1',
+    });
+    expect(workerSets).toHaveLength(1);
+
+    // An unknown display name keeps the placeholder and skips reconciliation.
+    target.activeTicket = { id: 'other-ticket' };
+    handleTicketWorkerClaim.call(target, {
+      ticketId: 'other-ticket',
+      laneDisplayName: 'Grok-9',
+    });
+    expect(target.ticketWorker).toMatchObject({ laneId: 'Grok-9' });
+    expect(workerSets).toHaveLength(1);
+  });
 });
 
 describe('ACP harness auto-allow permission detection', () => {
@@ -593,6 +645,22 @@ describe('ACP harness auto-allow permission detection', () => {
         arguments: { ticket_id: '2026-08-31-auth-timeout', status: 'in_progress' },
       },
     }))).toBe('ticket_progress');
+  });
+
+  it('auto-allows the spec-239 agent ticket tools', () => {
+    for (const [tool, args] of [
+      ['ticket_note', { ticket_id: 't-1', markdown: 'Found the leak.' }],
+      ['ticket_add_resource', { ticket_id: 't-1', path: 'notes/trace.txt' }],
+      ['ticket_link', { ticket_id: 't-1', issue_key: 'wk-j/krypton#5' }],
+    ] as const) {
+      expect(harnessAutoAllowToolName(permissionFor({
+        title: `mcp__krypton_harness_memory__${tool}`,
+        rawInput: {
+          toolName: `mcp__krypton_harness_memory__${tool}`,
+          arguments: args,
+        },
+      }))).toBe(tool);
+    }
   });
 
   it('accepts Codex-style namespaced built-in memory tool names', () => {

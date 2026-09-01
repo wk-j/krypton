@@ -945,6 +945,7 @@ export class AcpHarnessView implements ContentView {
   private ticketPicker: { rows: TicketPickerRow[]; filter: string; index: number } | null = null;
   private issueReportUnlisten: UnlistenFn | null = null;
   private ticketProgressUnlisten: UnlistenFn | null = null;
+  private ticketWorkerUnlisten: UnlistenFn | null = null;
   /** spec 146: review quality matrix — summary-only #review history per lane. */
   private reviewQualityStore = new ReviewQualityStore(this.laneBus);
   private reviewMatrixOverlayOpen = false;
@@ -2447,8 +2448,28 @@ export class AcpHarnessView implements ContentView {
     }>('acp-ticket-progress', (event) => {
       if (event.payload.harnessId !== this.harnessMemoryId) return;
       if (event.payload.ticketId !== this.activeTicket?.id) return;
+      // spec 239: ticket_link stores a minimal snapshot; a changed issue key
+      // means an agent-side link, so fetch the real title/state/labels via gh.
+      const previousIssueKey = this.activeTicket.github?.issueKey;
       this.activeTicket = event.payload.ticket;
       this.renderTicketDock();
+      const github = event.payload.ticket.github;
+      if (github && github.issueKey !== previousIssueKey) {
+        void this.enrichActiveTicket(event.payload.ticketId, github);
+      }
+    });
+
+    // spec 239: a worker tool call on an unassigned active ticket claims the
+    // binding hook-server-side with the lane display name as a placeholder id.
+    // Mirror it locally and reconcile the real lane id so lane-removal cleanup
+    // (clearTicketWorkerForLane) keeps matching.
+    this.ticketWorkerUnlisten = await listen<{
+      harnessId: string;
+      ticketId: string;
+      laneDisplayName: string;
+    }>('acp-ticket-worker', (event) => {
+      if (event.payload.harnessId !== this.harnessMemoryId) return;
+      this.handleTicketWorkerClaim(event.payload);
     });
 
     // spec 146: the authoring lane self-reports a #review summary at synthesis
@@ -4302,6 +4323,10 @@ export class AcpHarnessView implements ContentView {
     if (this.ticketProgressUnlisten) {
       this.ticketProgressUnlisten();
       this.ticketProgressUnlisten = null;
+    }
+    if (this.ticketWorkerUnlisten) {
+      this.ticketWorkerUnlisten();
+      this.ticketWorkerUnlisten = null;
     }
     if (this.reviewOutcomeUnlisten) {
       this.reviewOutcomeUnlisten();
@@ -6352,6 +6377,29 @@ export class AcpHarnessView implements ContentView {
     if (this.ticketWorker?.laneId !== laneId) return;
     this.ticketWorker = null;
     await this.setTicketWorker(null);
+  }
+
+  /**
+   * spec 239: a worker tool call on the unassigned active ticket claimed the
+   * binding hook-server-side, with the lane display name standing in for the
+   * lane id. Mirror the binding locally and reconcile the real lane id back to
+   * the hook server so lane-removal cleanup (clearTicketWorkerForLane) matches.
+   */
+  private handleTicketWorkerClaim(env: { ticketId: string; laneDisplayName: string }): void {
+    if (env.ticketId !== this.activeTicket?.id) return;
+    const lane = this.lanes.find((l) => l.displayName === env.laneDisplayName);
+    const binding: TicketWorkerBinding = {
+      ticketId: env.ticketId,
+      laneId: lane?.id ?? env.laneDisplayName,
+      laneDisplayName: env.laneDisplayName,
+      assignedAt: Date.now(),
+    };
+    this.ticketWorker = binding;
+    if (lane) void this.setTicketWorker(binding);
+    this.recordJournal(env.laneDisplayName, 'ticket', `claimed ${env.ticketId}`, {
+      ticketId: env.ticketId,
+    });
+    this.renderTicketDock();
   }
 
   private async bindActiveTicket(lane: HarnessLane): Promise<boolean> {

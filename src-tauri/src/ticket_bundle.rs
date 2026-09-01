@@ -288,7 +288,10 @@ fn scan_analysis(
     })
 }
 
-fn load_bundle(project_dir: &Path, ticket_id: &str) -> Result<Option<TicketBundleDetail>, String> {
+pub(crate) fn load_bundle(
+    project_dir: &Path,
+    ticket_id: &str,
+) -> Result<Option<TicketBundleDetail>, String> {
     let dir = bundle_dir(project_dir, ticket_id)?;
     if !dir.exists() {
         return Ok(None);
@@ -489,19 +492,16 @@ pub fn acp_load_ticket_bundle(
     load_bundle(&project_dir(&hook_server, &harness_id)?, &ticket_id)
 }
 
-#[tauri::command]
-pub fn acp_append_ticket_note(
-    harness_id: String,
-    ticket_id: String,
-    markdown: String,
-    hook_server: tauri::State<'_, Arc<HookServer>>,
+pub(crate) fn append_ticket_note_for_project(
+    project_dir: &Path,
+    ticket_id: &str,
+    markdown: &str,
 ) -> Result<TicketBundleDetail, String> {
     let markdown = markdown.trim();
     if markdown.is_empty() {
         return Err("ticket note is required".to_string());
     }
-    let project_dir = project_dir(&hook_server, &harness_id)?;
-    let dir = bundle_dir(&project_dir, &ticket_id)?;
+    let dir = bundle_dir(project_dir, ticket_id)?;
     let mut metadata = read_metadata(&dir)?;
     let mut file = OpenOptions::new()
         .append(true)
@@ -512,8 +512,21 @@ pub fn acp_append_ticket_note(
     metadata.context_revision = metadata.context_revision.saturating_add(1);
     metadata.updated_at = now_ms();
     atomic_write_json(&dir.join("ticket.json"), &metadata)?;
-    load_bundle(&project_dir, &ticket_id)?
-        .ok_or_else(|| "ticket disappeared after note".to_string())
+    load_bundle(project_dir, ticket_id)?.ok_or_else(|| "ticket disappeared after note".to_string())
+}
+
+#[tauri::command]
+pub fn acp_append_ticket_note(
+    harness_id: String,
+    ticket_id: String,
+    markdown: String,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<TicketBundleDetail, String> {
+    append_ticket_note_for_project(
+        &project_dir(&hook_server, &harness_id)?,
+        &ticket_id,
+        &markdown,
+    )
 }
 
 fn safe_resource_name(source: &Path) -> Result<String, String> {
@@ -690,15 +703,12 @@ pub fn acp_update_ticket_status(
     )
 }
 
-#[tauri::command]
-pub fn acp_update_ticket_github(
-    harness_id: String,
-    ticket_id: String,
+pub(crate) fn update_ticket_github_for_project(
+    project_dir: &Path,
+    ticket_id: &str,
     github: Option<GithubTicketReference>,
-    hook_server: tauri::State<'_, Arc<HookServer>>,
 ) -> Result<TicketBundleDetail, String> {
-    let project_dir = project_dir(&hook_server, &harness_id)?;
-    let dir = bundle_dir(&project_dir, &ticket_id)?;
+    let dir = bundle_dir(project_dir, ticket_id)?;
     let mut metadata = read_metadata(&dir)?;
     let placeholder_title = metadata
         .github
@@ -715,8 +725,18 @@ pub fn acp_update_ticket_github(
     metadata.github = github;
     metadata.updated_at = now_ms();
     atomic_write_json(&dir.join("ticket.json"), &metadata)?;
-    load_bundle(&project_dir, &ticket_id)?
+    load_bundle(project_dir, ticket_id)?
         .ok_or_else(|| "ticket disappeared after GitHub update".to_string())
+}
+
+#[tauri::command]
+pub fn acp_update_ticket_github(
+    harness_id: String,
+    ticket_id: String,
+    github: Option<GithubTicketReference>,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<TicketBundleDetail, String> {
+    update_ticket_github_for_project(&project_dir(&hook_server, &harness_id)?, &ticket_id, github)
 }
 
 #[tauri::command]
@@ -941,6 +961,55 @@ mod tests {
         assert_eq!(bundle.resources[0].name, "trace.txt");
         let copied = ticket_root(&project).join(&id).join("resources/trace.txt");
         assert_eq!(fs::read_to_string(copied).expect("read copy"), "copied");
+        fs::remove_dir_all(project).expect("remove temp project");
+    }
+
+    #[test]
+    fn note_appends_and_bumps_revision() {
+        let project = temp_project("note");
+        let id = seed_bundle(&project, "Note me");
+        let bundle = append_ticket_note_for_project(&project, &id, "  Found the leak.  ")
+            .expect("append note");
+        assert_eq!(bundle.summary.metadata.context_revision, 2);
+        let context = fs::read_to_string(ticket_root(&project).join(&id).join("ticket.md"))
+            .expect("read context");
+        assert!(context.ends_with("\nFound the leak.\n"), "{context}");
+        let error =
+            append_ticket_note_for_project(&project, &id, "   ").expect_err("empty note rejected");
+        assert!(error.contains("required"), "{error}");
+        fs::remove_dir_all(project).expect("remove temp project");
+    }
+
+    #[test]
+    fn github_update_writes_reference_and_keeps_title() {
+        let project = temp_project("github");
+        let id = seed_bundle(&project, "Local title");
+        let reference = GithubTicketReference {
+            issue_key: "acme/demo#7".to_string(),
+            issue_url: "https://github.com/acme/demo/issues/7".to_string(),
+            repo: "acme/demo".to_string(),
+            number: 7,
+            title: "Remote title".to_string(),
+            state: None,
+            labels: None,
+            fetched_at: now_ms(),
+            source_updated_at: None,
+        };
+        let bundle =
+            update_ticket_github_for_project(&project, &id, Some(reference)).expect("link github");
+        assert_eq!(
+            bundle
+                .summary
+                .metadata
+                .github
+                .as_ref()
+                .map(|github| github.issue_key.as_str()),
+            Some("acme/demo#7")
+        );
+        // A real local title is not overwritten by the linked issue title.
+        assert_eq!(bundle.summary.metadata.title, "Local title");
+        let bundle = update_ticket_github_for_project(&project, &id, None).expect("unlink github");
+        assert!(bundle.summary.metadata.github.is_none());
         fs::remove_dir_all(project).expect("remove temp project");
     }
 

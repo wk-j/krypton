@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (218)
+## Specs (219)
 
 | # | Spec |
 |---|------|
@@ -242,6 +242,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 236 | [Workspace Footer Kind Palette](./236-workspace-footer-kind-palette.md) |
 | 237 | [Hurl Web Client — Copy as curl](./237-hurl-copy-curl.md) |
 | 238 | [Local Ticket Bundles](./238-local-ticket-bundles.md) |
+| 239 | [Agent Ticket Management](./239-agent-ticket-management.md) |
 
 ## ADRs (20)
 

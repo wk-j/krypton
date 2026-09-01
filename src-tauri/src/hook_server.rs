@@ -348,6 +348,25 @@ impl HookServer {
             .cloned()
     }
 
+    /// Spec 239: atomically claim the ticket worker slot for a lane. Returns the
+    /// existing binding untouched when one is already held (check-then-set under
+    /// one lock, so two lanes racing an unassigned ticket cannot both claim it).
+    pub(crate) fn claim_ticket_worker(
+        &self,
+        harness_id: &str,
+        binding: crate::ticket_bundle::TicketWorkerBinding,
+    ) -> Result<(), crate::ticket_bundle::TicketWorkerBinding> {
+        let mut workers = self
+            .ticket_workers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(existing) = workers.get(harness_id) {
+            return Err(existing.clone());
+        }
+        workers.insert(harness_id.to_string(), binding);
+        Ok(())
+    }
+
     /// Legacy setter for whether a lane is triage-equipped.
     pub fn set_lane_triage_equipped(&self, harness_id: &str, lane_label: &str, equipped: bool) {
         let mut map = self
@@ -2835,7 +2854,11 @@ fn tool_category(name: &str) -> &'static str {
         // other path-handoff surfaces rather than with the `review_outcome`
         // bookkeeping tools it shares a name prefix with.
         "review_new" | "review_register" | "review_cancel" => "artifacts",
-        "issue_progress" | "ticket_progress" => "issues",
+        "issue_progress"
+        | "ticket_progress"
+        | "ticket_note"
+        | "ticket_add_resource"
+        | "ticket_link" => "issues",
         _ => "other", // forward-compat: an unmapped tool still renders
     }
 }
@@ -3550,6 +3573,9 @@ async fn handle_bus_tool_call(
         "review_cancel" => review_tool_cancel(state, harness_id, lane_label, arguments),
         "issue_progress" => issue_progress(state, harness_id, lane_label, arguments).await,
         "ticket_progress" => ticket_progress(state, harness_id, lane_label, arguments),
+        "ticket_note" => ticket_note(state, harness_id, lane_label, arguments),
+        "ticket_add_resource" => ticket_add_resource(state, harness_id, lane_label, arguments),
+        "ticket_link" => ticket_link(state, harness_id, lane_label, arguments),
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -4228,18 +4254,113 @@ async fn issue_progress(
     }
 }
 
-/// Only the runtime-bound worker may write local ticket status.
+/// Spec 239: shared plumbing for the agent-side ticket write tools.
+///
+/// Every write targets only the harness's *active* ticket; the persisted
+/// pointer (`*.active-ticket.json`) is the authority the hook server can read
+/// without a frontend round-trip.
+fn active_ticket_id(state: &HookServerState, harness_id: &str) -> Option<String> {
+    let pointer = state.hook_server.load_active_ticket(harness_id).ok()?;
+    pointer
+        .get("ticketId")
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string)
+}
+
+fn ensure_active_ticket(
+    state: &HookServerState,
+    harness_id: &str,
+    ticket_id: &str,
+) -> Result<(), String> {
+    match active_ticket_id(state, harness_id) {
+        Some(active) if active == ticket_id => Ok(()),
+        _ => Err(format!(
+            "ticket {ticket_id} is not the active ticket; ask the user to activate it"
+        )),
+    }
+}
+
+fn ticket_project_dir(state: &HookServerState, harness_id: &str) -> Result<PathBuf, String> {
+    state
+        .hook_server
+        .project_dir_for_harness(harness_id)
+        .ok_or_else(|| format!("no project directory is registered for harness {harness_id}"))
+}
+
+fn emit_ticket_update(
+    state: &HookServerState,
+    harness_id: &str,
+    ticket_id: &str,
+    detail: &crate::ticket_bundle::TicketBundleDetail,
+) {
+    state.app_handle.emit_or_log(
+        "acp-ticket-progress",
+        json!({
+            "harnessId": harness_id,
+            "ticketId": ticket_id,
+            "ticket": detail,
+        }),
+    );
+}
+
+/// Spec 239: validate-or-claim for the single-valued ticket writes
+/// (`ticket_progress`, `ticket_link`). A held binding must match the caller
+/// (consulted lanes stay read-only); an unassigned active ticket is claimed by
+/// the first successful writer — the spec-190 auto-bind pattern. The claimed
+/// `lane_id` is the display name: Rust validation only ever compares
+/// `lane_display_name`, and the frontend reconciles the real lane id when it
+/// receives `acp-ticket-worker`.
+fn resolve_ticket_write_binding(
+    state: &HookServerState,
+    harness_id: &str,
+    ticket_id: &str,
+    from_lane: &str,
+) -> Result<(), String> {
+    if let Some(binding) = state.hook_server.ticket_worker(harness_id) {
+        return validate_ticket_progress_binding(Some(&binding), ticket_id, from_lane);
+    }
+    ensure_active_ticket(state, harness_id, ticket_id)?;
+    let binding = crate::ticket_bundle::TicketWorkerBinding {
+        ticket_id: ticket_id.to_string(),
+        lane_id: from_lane.to_string(),
+        lane_display_name: from_lane.to_string(),
+        assigned_at: now_ms(),
+    };
+    match state.hook_server.claim_ticket_worker(harness_id, binding) {
+        Ok(()) => {
+            state.app_handle.emit_or_log(
+                "acp-ticket-worker",
+                json!({
+                    "harnessId": harness_id,
+                    "ticketId": ticket_id,
+                    "laneDisplayName": from_lane,
+                }),
+            );
+            Ok(())
+        }
+        // Lost the race: revalidate against whoever claimed first.
+        Err(existing) => validate_ticket_progress_binding(Some(&existing), ticket_id, from_lane),
+    }
+}
+
+fn required_ticket_id(arguments: &Value) -> Result<String, String> {
+    let ticket_id = required_string(arguments, "ticket_id")?;
+    let ticket_id = ticket_id.trim().to_string();
+    if ticket_id.is_empty() {
+        return Err("ticket_id is required".to_string());
+    }
+    Ok(ticket_id)
+}
+
+/// Only the runtime-bound worker (or the lane that just claimed the unassigned
+/// slot) may write local ticket status.
 fn ticket_progress(
     state: &HookServerState,
     harness_id: &str,
     from_lane: &str,
     arguments: Value,
 ) -> Result<Value, String> {
-    let ticket_id = required_string(&arguments, "ticket_id")?;
-    let ticket_id = ticket_id.trim();
-    if ticket_id.is_empty() {
-        return Err("ticket_id is required".to_string());
-    }
+    let ticket_id = required_ticket_id(&arguments)?;
     let status = required_string(&arguments, "status")?;
     let status = parse_ticket_progress_status(status.trim())?;
     let summary = arguments
@@ -4249,27 +4370,157 @@ fn ticket_progress(
         .filter(|value| !value.is_empty())
         .map(ToString::to_string);
 
-    let binding = state.hook_server.ticket_worker(harness_id);
-    validate_ticket_progress_binding(binding.as_ref(), ticket_id, from_lane)?;
-    let project_dir = state
-        .hook_server
-        .project_dir_for_harness(harness_id)
-        .ok_or_else(|| format!("no project directory is registered for harness {harness_id}"))?;
+    resolve_ticket_write_binding(state, harness_id, &ticket_id, from_lane)?;
+    let project_dir = ticket_project_dir(state, harness_id)?;
     let detail = crate::ticket_bundle::update_ticket_status_for_project(
         &project_dir,
-        ticket_id,
+        &ticket_id,
         status,
         summary,
     )?;
-    state.app_handle.emit_or_log(
-        "acp-ticket-progress",
-        json!({
-            "harnessId": harness_id,
-            "ticketId": ticket_id,
-            "ticket": detail,
-        }),
-    );
+    emit_ticket_update(state, harness_id, &ticket_id, &detail);
     Ok(json!({ "ok": true, "ticketId": ticket_id }))
+}
+
+const TICKET_NOTE_MAX_CHARS: usize = 2_000;
+
+/// Spec 239: append-only context note. Open to every lane — appends cannot
+/// clobber each other and consulted lanes dropping findings into the shared
+/// bundle is the point. Active ticket only.
+fn ticket_note(
+    state: &HookServerState,
+    harness_id: &str,
+    _from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let ticket_id = required_ticket_id(&arguments)?;
+    let markdown = required_string(&arguments, "markdown")?;
+    let markdown = markdown.trim();
+    if markdown.is_empty() {
+        return Err("markdown is required".to_string());
+    }
+    if markdown.chars().count() > TICKET_NOTE_MAX_CHARS {
+        return Err(format!(
+            "markdown must be at most {TICKET_NOTE_MAX_CHARS} Unicode characters; split longer notes across calls"
+        ));
+    }
+    ensure_active_ticket(state, harness_id, &ticket_id)?;
+    let project_dir = ticket_project_dir(state, harness_id)?;
+    let detail =
+        crate::ticket_bundle::append_ticket_note_for_project(&project_dir, &ticket_id, markdown)?;
+    emit_ticket_update(state, harness_id, &ticket_id, &detail);
+    Ok(json!({
+        "ok": true,
+        "ticketId": ticket_id,
+        "contextRevision": detail.summary.metadata.context_revision,
+    }))
+}
+
+/// Spec 239: copy one project file into the ticket's `resources/`. Open to
+/// every lane (append-only, never overwrites); all spec-238 guards apply —
+/// regular file only, symlinks rejected, 25 MiB cap, inert copy.
+fn ticket_add_resource(
+    state: &HookServerState,
+    harness_id: &str,
+    _from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let ticket_id = required_ticket_id(&arguments)?;
+    let path = required_string(&arguments, "path")?;
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("path is required".to_string());
+    }
+    ensure_active_ticket(state, harness_id, &ticket_id)?;
+    let project_dir = ticket_project_dir(state, harness_id)?;
+    let detail =
+        crate::ticket_bundle::add_ticket_resource_for_project(&project_dir, &ticket_id, path)?;
+    emit_ticket_update(state, harness_id, &ticket_id, &detail);
+    Ok(json!({
+        "ok": true,
+        "ticketId": ticket_id,
+        "resourceCount": detail.summary.resource_count,
+    }))
+}
+
+/// Spec 239: set/replace the ticket's GitHub reference. Worker-gated like
+/// ticket_progress (single-valued write). The hook server stores a minimal
+/// snapshot — the frontend refreshes title/state/labels via `gh` when the
+/// update event lands. Unlink stays a user command (`#ticket unlink`).
+fn ticket_link(
+    state: &HookServerState,
+    harness_id: &str,
+    from_lane: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let ticket_id = required_ticket_id(&arguments)?;
+    let issue_key = required_string(&arguments, "issue_key")?;
+    let (repo, number) = parse_github_issue_ref(issue_key.trim())?;
+    resolve_ticket_write_binding(state, harness_id, &ticket_id, from_lane)?;
+    let project_dir = ticket_project_dir(state, harness_id)?;
+    let title = crate::ticket_bundle::load_bundle(&project_dir, &ticket_id)?
+        .map(|bundle| bundle.summary.metadata.title)
+        .unwrap_or_else(|| format!("{repo}#{number}"));
+    let reference = crate::ticket_bundle::GithubTicketReference {
+        issue_key: format!("{repo}#{number}"),
+        issue_url: format!("https://github.com/{repo}/issues/{number}"),
+        repo: repo.clone(),
+        number,
+        title,
+        state: None,
+        labels: None,
+        fetched_at: now_ms(),
+        source_updated_at: None,
+    };
+    let detail = crate::ticket_bundle::update_ticket_github_for_project(
+        &project_dir,
+        &ticket_id,
+        Some(reference),
+    )?;
+    emit_ticket_update(state, harness_id, &ticket_id, &detail);
+    Ok(json!({ "ok": true, "ticketId": ticket_id, "issueKey": format!("{repo}#{number}") }))
+}
+
+/// Accepts `owner/repo#123` or a GitHub issue URL; returns (`owner/repo`, number).
+fn parse_github_issue_ref(raw: &str) -> Result<(String, u64), String> {
+    const ERR: &str = "issue_key must be owner/repo#123 or a GitHub issue URL";
+    let parse_parts = |owner: &str, repo: &str, number: &str| -> Result<(String, u64), String> {
+        let valid_segment = |segment: &str| {
+            !segment.is_empty()
+                && segment
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        };
+        if !valid_segment(owner) || !valid_segment(repo) {
+            return Err(ERR.to_string());
+        }
+        let number: u64 = number.parse().map_err(|_| ERR.to_string())?;
+        if number == 0 {
+            return Err(ERR.to_string());
+        }
+        Ok((format!("{owner}/{repo}"), number))
+    };
+    if let Some(rest) = raw
+        .strip_prefix("https://github.com/")
+        .or_else(|| raw.strip_prefix("http://github.com/"))
+    {
+        let mut parts = rest.trim_end_matches('/').split('/');
+        return match (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) {
+            (Some(owner), Some(repo), Some("issues"), Some(number), None) => {
+                parse_parts(owner, repo, number)
+            }
+            _ => Err(ERR.to_string()),
+        };
+    }
+    let (repo_part, number) = raw.split_once('#').ok_or_else(|| ERR.to_string())?;
+    let (owner, repo) = repo_part.split_once('/').ok_or_else(|| ERR.to_string())?;
+    parse_parts(owner, repo, number)
 }
 
 fn parse_ticket_progress_status(
@@ -5135,7 +5386,7 @@ fn attention_tool_descriptors() -> Vec<Value> {
         }),
         json!({
             "name": "ticket_progress",
-            "description": "Report progress on the project-local ticket assigned to this lane. Call it when local work starts, becomes blocked, or finishes. Only the lane currently bound by the user can update the ticket.",
+            "description": "Report progress on the active project-local ticket. Call it when local work starts, becomes blocked, or finishes. Worker tool: if a worker lane is bound, only that lane may call it; if the active ticket is unassigned, your first successful call claims the worker binding.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -5144,6 +5395,42 @@ fn attention_tool_descriptors() -> Vec<Value> {
                     "summary": { "type": "string", "maxLength": 500, "description": "Optional concise progress summary shown in the Ticket Panel." }
                 },
                 "required": ["ticket_id", "status"]
+            }
+        }),
+        json!({
+            "name": "ticket_note",
+            "description": "Append a Markdown note to the active project-local ticket's context (ticket.md) — findings, decisions, repro steps worth keeping with the ticket. Append-only and open to every lane; it never claims the worker binding. Keep each note concise (max 2000 characters); call again for more.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticket_id": { "type": "string", "description": "Local ticket id copied verbatim from the active ticket pin." },
+                    "markdown": { "type": "string", "maxLength": 2000, "description": "Markdown appended verbatim as a new paragraph of ticket.md." }
+                },
+                "required": ["ticket_id", "markdown"]
+            }
+        }),
+        json!({
+            "name": "ticket_add_resource",
+            "description": "Copy one file into the active project-local ticket's resources/ folder — a log, screenshot, or other evidence the ticket should keep. Open to every lane; never claims the worker binding. Regular files only (no directories or symlinks), 25 MiB cap, names deduped instead of overwritten.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticket_id": { "type": "string", "description": "Local ticket id copied verbatim from the active ticket pin." },
+                    "path": { "type": "string", "description": "Source file path, absolute or relative to the project root." }
+                },
+                "required": ["ticket_id", "path"]
+            }
+        }),
+        json!({
+            "name": "ticket_link",
+            "description": "Set or replace the active project-local ticket's GitHub issue reference. Worker tool like ticket_progress: a bound worker owns it, an unassigned ticket is claimed by the first successful call. Krypton refreshes the issue snapshot in the background; unlinking stays a user command.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticket_id": { "type": "string", "description": "Local ticket id copied verbatim from the active ticket pin." },
+                    "issue_key": { "type": "string", "description": "GitHub issue as owner/repo#123 or the issue URL." }
+                },
+                "required": ["ticket_id", "issue_key"]
             }
         }),
     ]
@@ -8163,6 +8450,55 @@ mod tests {
         assert!(
             validate_ticket_progress_binding(Some(&binding), &binding.ticket_id, "Codex-4").is_ok()
         );
+    }
+
+    // spec 239: owner/repo#123 and issue URLs parse; junk, zero, and non-issue
+    // URLs are rejected.
+    #[test]
+    fn github_issue_ref_parses_key_and_url_forms() {
+        assert_eq!(
+            parse_github_issue_ref("wk-j/krypton#5"),
+            Ok(("wk-j/krypton".to_string(), 5))
+        );
+        assert_eq!(
+            parse_github_issue_ref("https://github.com/acme/demo/issues/42"),
+            Ok(("acme/demo".to_string(), 42))
+        );
+        for bad in [
+            "krypton#5",
+            "acme/demo#0",
+            "acme/demo#x",
+            "acme/../demo#3",
+            "https://github.com/acme/demo/pull/42",
+            "https://github.com/acme/demo/issues/42/comments",
+            "",
+        ] {
+            assert!(parse_github_issue_ref(bad).is_err(), "{bad}");
+        }
+    }
+
+    // spec 239: the worker slot is claimed atomically — the second claimant gets
+    // the first one's binding back, and set_ticket_worker(None) frees the slot.
+    #[test]
+    fn ticket_worker_claim_is_first_writer_wins() {
+        let server = HookServer::new();
+        let binding = |lane: &str| crate::ticket_bundle::TicketWorkerBinding {
+            ticket_id: "2026-08-31-auth-timeout".to_string(),
+            lane_id: lane.to_string(),
+            lane_display_name: lane.to_string(),
+            assigned_at: now_ms(),
+        };
+        assert!(server
+            .claim_ticket_worker("h1", binding("Claude-1"))
+            .is_ok());
+        let existing = server
+            .claim_ticket_worker("h1", binding("Grok-1"))
+            .expect_err("slot already held");
+        assert_eq!(existing.lane_display_name, "Claude-1");
+        // A different harness has its own slot.
+        assert!(server.claim_ticket_worker("h2", binding("Grok-1")).is_ok());
+        server.set_ticket_worker("h1", None);
+        assert!(server.claim_ticket_worker("h1", binding("Grok-1")).is_ok());
     }
 
     #[test]

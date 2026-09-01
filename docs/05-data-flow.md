@@ -378,8 +378,14 @@
        copy/validation, and the derived `.krypton/analyses/<owner>/<repo>/<id>/`
        summary. `#ticket work`, Analyze, and Fix here bind the active ticket to
        the visible active lane and set local status to `in_progress`; Post
-       comment does not rebind. Only that runtime-bound lane may call
-       `ticket_progress`. A GitHub-linked work prompt reports `issue_progress`
+       comment does not rebind. Lanes also write the active ticket directly
+       (spec 239): any lane may append via `ticket_note` / `ticket_add_resource`;
+       `ticket_progress` / `ticket_link` require the runtime-bound worker, and
+       when the active ticket is unassigned the first successful call claims the
+       binding (hook server emits `acp-ticket-worker`; the view reconciles the
+       real lane id). Each write emits `acp-ticket-progress` with the fresh
+       bundle detail, and an agent-set GitHub link triggers the existing `gh`
+       snapshot enrichment. A GitHub-linked work prompt reports `issue_progress`
        separately, so the browser extension remains GitHub-status-only while
        the docked Ticket Panel shows local status and resources.
 
