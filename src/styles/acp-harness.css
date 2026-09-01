@@ -60,7 +60,7 @@
 
 /* spec 238: the active ticket is a flush split pane of the harness window,
    not a nested 8px card. Dashboard yields exactly the panel width; Lane Peek
-   keeps its own 12px rail inset. Compact state is a 46px status handle. */
+   keeps its own 12px rail inset. Compact state is a 46px expand handle. */
 .acp-harness--ticket-active .acp-harness__dashboard {
   margin-right: 352px;
 }
@@ -86,7 +86,7 @@
   background: transparent;
   border: 0;
   border-radius: 0;
-  font-size: 0.82em;
+  font-size: 1em;
   line-height: 1.5;
 }
 
@@ -106,49 +106,14 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  padding: 14px 0;
+  padding: 0;
   border: 0;
   background: transparent;
   color: #ffd880;
   font: inherit;
   line-height: 1;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   cursor: default;
 }
-
-/* One vertical column: status then title. nowrap + ellipsis so a long title
-   clips against the window height instead of wrapping into extra columns
-   inside the 46px rail (vertical-rl wrap axis is horizontal). */
-.acp-ticket-dock__spine {
-  display: block;
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: 100%;
-  overflow: hidden;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  line-height: 1;
-}
-
-.acp-ticket-dock__vertical {
-  color: #ffd880;
-}
-
-.acp-ticket-dock__status {
-  margin-inline-end: 1.2em;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
-  font-size: 0.72em;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.acp-ticket-dock__status--todo { color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5); }
-.acp-ticket-dock__status--in_progress { color: #ffb000; }
-.acp-ticket-dock__status--blocked { color: #ff6d8a; }
-.acp-ticket-dock__status--done { color: #8effb0; }
 
 .acp-ticket-dock__head {
   display: flex;
@@ -168,14 +133,14 @@
   overflow-wrap: anywhere;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.96);
   font: inherit;
-  font-size: 1.14em;
+  font-size: 1em;
   font-weight: 650;
   line-height: 1.35;
 }
 
 .acp-ticket-dock__eyebrow {
   color: #ffb000;
-  font-size: 0.78em;
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
@@ -189,7 +154,7 @@
   background: rgba(255, 176, 0, 0.05);
   color: #ffd880;
   font: inherit;
-  font-size: 1.5em;
+  font-size: 1em;
   line-height: 1;
   cursor: default;
 }
@@ -268,7 +233,7 @@
   margin: 0 0 5px;
   color: #ffcb5b;
   font: inherit;
-  font-size: 0.82em;
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -1325,7 +1290,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -1340,7 +1305,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 42%;
-  font-size: 10px;
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1595,7 +1560,7 @@
   border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
-  font-size: 0.95em;
+  font-size: 1em;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   pointer-events: auto;
 }
@@ -1621,7 +1586,7 @@
 
 .acp-harness__lane-thought-label {
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
-  font-size: 0.78em;
+  font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1634,7 +1599,7 @@
   overflow-anchor: none; /* appending text must not pin the first line */
   overscroll-behavior: contain;
   min-height: 0;
-  font-size: 0.86em;
+  font-size: 1em;
   line-height: 1.55;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
   white-space: pre-wrap;
@@ -4871,7 +4836,7 @@
   border-radius: var(--krypton-border-radius, 8px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: var(--agent-font, var(--krypton-font-family, monospace));
-  font-size: 0.95em;
+  font-size: 1em;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
   pointer-events: auto;
 }

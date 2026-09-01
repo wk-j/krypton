@@ -254,11 +254,13 @@ Ticket Panel เป็น split pane ชิดขอบขวาของ harnes
 
 - แสดงเมื่อมี active ticket; ขยายอัตโนมัติในครั้งแรก แต่ไม่ฝืนเปิดอีกหลังผู้ใช้ collapse
 - กว้าง 352px เมื่อขยายและ 46px เมื่อ collapse; `border-radius: 0`; dashboard หลีกเท่ากับความกว้าง
-  ของ panel (ไม่มี gutter 12px ซ้อน) collapsed rail เป็น spine คอลัมน์เดียว (`writing-mode: vertical-rl`,
-  `white-space: nowrap`) แสดง status แล้วตามด้วย title ตัดด้วย ellipsis ตามความสูงหน้าต่าง
-  ห้าม wrap เป็นหลายคอลัมน์ในราง 46px และไม่ตัด title ใน JS; ไม่แสดง body/footer
+  ของ panel (ไม่มี gutter 12px ซ้อน) collapsed rail เป็นปุ่ม handle กว้าง 46px ไม่แสดง status
+  หรือ title (ตัวหนังสือแนวตั้งอ่านไม่ได้และไม่มีประโยชน์) เหลือแค่ chevron `‹` เป็น
+  expand affordance; ชื่อตั๋วอยู่ใน `aria-label` เท่านั้น; ไม่แสดง body/footer
 - header แสดง title, local status, GitHub state และ worker แยกกัน; body แสดง context excerpt,
   managed resources, derived analysis และ progress summary
+  uppercase labels (`ACTIVE TICKET`, `CONTEXT`, …) ใช้ `--krypton-chrome-font-size` (11px)
+  ให้สมดุลกับ window chrome ไม่ใช้ body `1em`
 - Ticket Panel เป็น read surface ไม่มี action button footer — Start work / open / analysis /
   refresh ใช้ `#ticket work`, `#ticket open`, `#analyses` และ `#ticket refresh` เท่านั้น
   Collapse คือปุ่ม `›` ใน header กับ `#ticket panel` และ Escape; `aria-expanded` และ

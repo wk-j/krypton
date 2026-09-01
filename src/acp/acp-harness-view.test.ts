@@ -1284,10 +1284,17 @@ describe('ACP peer activity UI (spec 118)', () => {
     expect(viewSrc).not.toMatch(/Start work/);
     expect(viewSrc).not.toMatch(/acp-ticket-dock__actions/);
     expect(css).not.toMatch(/\.acp-ticket-dock__actions\s*\{/);
-    expect(viewSrc).toMatch(/acp-ticket-dock__spine/);
+    expect(viewSrc).not.toMatch(/acp-ticket-dock__spine/);
+    expect(viewSrc).not.toMatch(/acp-ticket-dock__vertical/);
     expect(viewSrc).not.toMatch(/titleChars\.length > 28/);
-    expect(css).toMatch(/\.acp-ticket-dock__spine\s*\{[^}]*white-space:\s*nowrap/);
-    expect(css).toMatch(/\.acp-ticket-dock__spine\s*\{[^}]*text-overflow:\s*ellipsis/);
+    expect(css).not.toMatch(/\.acp-ticket-dock__spine\s*\{/);
+    expect(css).not.toMatch(/writing-mode:\s*vertical-rl/);
+    expect(css).toMatch(
+      /\.acp-ticket-dock__eyebrow\s*\{[^}]*font-size:\s*var\(--krypton-chrome-font-size/,
+    );
+    expect(css).toMatch(
+      /\.acp-harness__ticket-dock section h3\s*\{[^}]*font-size:\s*var\(--krypton-chrome-font-size/,
+    );
   });
 
   it('thought lives in its own rail slot, not inside peek', () => {

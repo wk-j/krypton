@@ -4022,12 +4022,7 @@ export class AcpHarnessView implements ContentView {
       const statusLabel = ticket.status.replaceAll('_', ' ');
       this.ticketDockEl.innerHTML =
         `<button class="acp-ticket-dock__collapsed" type="button" data-ticket-dock-action="toggle" ` +
-        `aria-label="Expand ticket ${esc(ticket.title)} (${esc(statusLabel)})" aria-expanded="false">` +
-        `<span class="acp-ticket-dock__spine">` +
-        `<span class="acp-ticket-dock__status acp-ticket-dock__status--${ticket.status}">${esc(statusLabel)}</span>` +
-        `<span class="acp-ticket-dock__vertical">${esc(ticket.title)}</span>` +
-        `</span>` +
-        `</button>`;
+        `aria-label="Expand ticket ${esc(ticket.title)} (${esc(statusLabel)})" aria-expanded="false">‹</button>`;
       return;
     }
     const github = ticket.github

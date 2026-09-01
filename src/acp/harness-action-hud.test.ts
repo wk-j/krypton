@@ -432,6 +432,9 @@ describe('action HUD CSS', () => {
       'utf8',
     );
     expect(css).toMatch(/\.acp-harness__action-kind\s*\{[\s\S]*?white-space:\s*nowrap/);
+    expect(css).toMatch(
+      /\.acp-harness__action-kind\s*\{[\s\S]*?font-size:\s*var\(--krypton-chrome-font-size/,
+    );
     expect(css).toMatch(/\.acp-harness__action-subject\s*\{[\s\S]*?white-space:\s*nowrap/);
     expect(css).toMatch(/\.acp-harness__action-copy\s*\{[\s\S]*?min-width:\s*0/);
     expect(css).toMatch(/\[data-slot="action"\]\s*\{[\s\S]*?max-height:\s*min\(240px/);

@@ -133,7 +133,7 @@ Show the action slot when `deriveRailLiveActions(lanes)` is non-empty. A lane is
 
 - 320px, 8px radius (`--krypton-border-radius`), 1px full border in the kind accent at the same 28% mix as peek/plan (no glow, no left rail). Kind color lives on the glyph and label.
 - Left well: 28×28, no border and no fill, `contain: strict`, one `<svg><use href="#krypton-action-{kind}"/></svg>` plus a CSS overlay that is the animation. The glyph sits on the card; the well is only a clip for the instrument.
-- Kind label: 11px, weight 600, tracked uppercase, kind accent.
+- Kind label: `--krypton-chrome-font-size` (11px), weight 600, tracked uppercase, kind accent. ห้าม `1em` — label ต้องเล็กกว่า subject / window body
 - When the harness has more than one lane, a dim tracked lane name sits on the same row as the kind (`EXECUTE · Claude-2`). Single-lane harnesses stay unlabeled.
 - Subject: one ellipsized line; omitted for thinking/writing.
 - `role="status"`, `aria-live="polite"`. `title` carries the untruncated path.
