@@ -96,8 +96,35 @@ describe('deriveLiveAction', () => {
     });
     expect(action?.kind).toBe('edit');
     expect(action?.title).toBe('edit');
-    expect(action?.subject).toContain('OnlineService.java');
+    expect(action?.subject).toBe('tli-api/…/OnlineService.java');
     expect(action?.detail).toContain('OnlineService.java');
+  });
+
+  it('keeps the basename when the parent folder is a long ticket slug', () => {
+    const action = deriveLiveAction({
+      activity: null,
+      toolCalls: [call({
+        kind: 'edit',
+        title: 'Edit review.md',
+        locations: [{
+          path: '/Users/wk/Source/krypton/docs/analysis/krypton/1/2026-09-02-1183-security-401-403-log-attribution-review/review.md',
+        }],
+      })],
+    });
+    expect(action?.subject).toBe('Source/…/review.md');
+    expect(action?.subject).not.toContain('2026-09-02');
+    expect(action?.detail).toContain('review.md');
+  });
+
+  it('abbreviates a project-relative ticket path to docs/…/basename', () => {
+    const action = liveActionFromToolCall(call({
+      kind: 'edit',
+      title: 'Edit review.md',
+      locations: [{
+        path: 'docs/analysis/krypton/1/2026-09-02-1183-security-401-403-log-attribution-review/review.md',
+      }],
+    }));
+    expect(action.subject).toBe('docs/…/review.md');
   });
 
   it('skips completed tools and falls back to the lingering activity label', () => {
@@ -361,6 +388,7 @@ describe('actionHudMarkup', () => {
     expect(html).toContain('role="status"');
     expect(html).toContain('acp-harness__action-kind');
     expect(html).toContain('src/acp/types.ts');
+    expect(html).toMatch(/acp-harness__action-subject"><span>src\/acp\/types\.ts<\/span>/);
     expect(html).toContain('href="#krypton-action-edit"');
     expect(html).toContain('acp-harness__action-fx-head');
     expect(html).not.toContain('border-left');
@@ -431,6 +459,8 @@ describe('actionHudWellMarkup', () => {
     expect(actionHudWellMarkup('execute')).not.toContain('acp-harness__action-hex');
     expect(actionHudWellMarkup('edit')).toContain('acp-harness__action-fx-head');
     expect(actionHudWellMarkup('edit')).not.toContain('acp-harness__action-fx-pty');
+    expect(actionHudWellMarkup('edit')).toContain('viewBox="0 0 16 16"');
+    expect(actionHudWellMarkup('edit')).toContain('width="16"');
   });
 });
 
@@ -459,7 +489,10 @@ describe('action HUD CSS', () => {
       /\.acp-harness__action-kind\s*\{[\s\S]*?font-size:\s*var\(--krypton-chrome-font-size/,
     );
     expect(css).toMatch(/\.acp-harness__action-subject\s*\{[\s\S]*?white-space:\s*nowrap/);
+    expect(css).toMatch(/\.acp-harness__action-subject\s*\{[\s\S]*?direction:\s*rtl/);
     expect(css).toMatch(/\.acp-harness__action-copy\s*\{[\s\S]*?min-width:\s*0/);
+    expect(css).toMatch(/\.acp-harness__action-hud\s*\{[\s\S]*?flex-direction:\s*row/);
+    expect(css).toMatch(/\.acp-harness__action-well\s*\{[\s\S]*?flex:\s*0 0 28px/);
     expect(css).toMatch(/\[data-slot="action"\]\s*\{[\s\S]*?max-height:\s*min\(240px/);
     expect(css).toMatch(/\.acp-harness__action-lane\s*\{/);
     expect(css).toMatch(/\.acp-harness__action-fx-pty\s*\{[\s\S]*?animation:\s*acp-action-caret/);

@@ -1225,7 +1225,9 @@
   white-space: nowrap;
 }
 
-/* spec 231 — live-action HUD. Kind is the instrument; motion is liveness. */
+/* spec 231 — live-action HUD. Kind is the instrument; motion is liveness.
+   Flex row, not grid: the rail slot is a column flex container, and a default
+   SVG (300×150) as a grid item used to blow the well and stack the copy. */
 .acp-harness__action-hud {
   --acp-action-accent: var(--acp-lane-accent, var(--krypton-accent, #00ccff));
   --krypton-motion-breathing: 3s ease-in-out infinite;
@@ -1233,11 +1235,13 @@
   --krypton-motion-data-stream: 1.8s linear infinite;
   --krypton-motion-radar-ping: 2.5s ease-in-out infinite;
   --krypton-motion-entrance: cubic-bezier(0.22, 0.61, 0.36, 1);
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 10px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: 10px;
   width: 100%;
+  min-width: 0;
   padding: 8px 10px;
   background: var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
   border: 1px solid color-mix(in srgb, var(--acp-action-accent) 28%, transparent);
@@ -1275,6 +1279,7 @@
 }
 
 .acp-harness__action-copy {
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
 }
@@ -1327,7 +1332,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  direction: rtl;
+  text-align: left;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+}
+
+.acp-harness__action-subject > span {
+  direction: ltr;
+  unicode-bidi: isolate;
 }
 
 .acp-harness__action-hud[data-kind="delete"] .acp-harness__action-subject {
@@ -1348,12 +1360,15 @@
 
 .acp-harness__action-well {
   position: relative;
+  flex: 0 0 28px;
   width: 28px;
+  min-width: 28px;
+  max-width: 28px;
   height: 28px;
   border: 0;
   background: transparent;
   overflow: hidden;
-  contain: strict;
+  contain: paint;
   color: var(--acp-action-accent);
 }
 
@@ -1363,6 +1378,12 @@
   width: 16px;
   height: 16px;
   display: block;
+  overflow: visible;
+}
+
+.acp-harness__action-well > i {
+  position: absolute;
+  pointer-events: none;
 }
 
 .acp-harness__action-hud[data-kind="execute"] .acp-harness__action-icon {
@@ -2959,28 +2980,14 @@
 .acp-harness__msg--thought .acp-harness__msg-body {
   /* Dimmer than normal body (0.8) to read as low-signal, but high enough to
      stay legible — no italic, no mask fade (those compounded into an
-     unreadable wash). The clamp alone keeps a long dump from dominating. */
+     unreadable wash). The transcript owns scrolling, so the thought itself
+     expands to show the complete message without a nested scroll region. */
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
-  /* Thinking is low-signal detail — cap it to a few lines so a long
-     reasoning dump doesn't dominate the transcript. The effort meter on the
-     label tells the reader how much is hidden below the clamp. */
-  max-height: 5.6em; /* ~4 lines at line-height 1.36 */
-  overflow: hidden;
-}
-
-/* Streaming: a rolling window pinned (via scrollTop in JS) to the latest line
-   so live reasoning stays visible without growing. */
-.acp-harness__msg--thought.acp-harness__msg--streaming .acp-harness__msg-body {
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.acp-harness__msg--thought.acp-harness__msg--streaming .acp-harness__msg-body::-webkit-scrollbar {
-  display: none;
 }
 
 /* Effort meter: a mono glyph gauge under the thought label, filled by
-   reasoning length. Restores the "how much is hidden" signal lost to the clamp.
+   reasoning length. It stays as a quick depth cue even though the full thought
+   is visible.
    The label column is a fixed 7.5ch gutter (sized for the word "thought"), so
    the meter STACKS below the label — never inline — to avoid overflowing it. */
 .acp-harness__msg-label--thought {

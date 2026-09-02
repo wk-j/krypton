@@ -1215,7 +1215,7 @@ describe('ACP peer activity UI (spec 118)', () => {
     expect(thoughtBodyRenderKind({ phase: 'seal', text: 'done' })).toBe('markdown');
   });
 
-  it('thought display drops blank lines so they do not eat the clamp', () => {
+  it('thought display drops repeated blank lines without dropping message text', () => {
     expect(collapseThoughtBlankLines('alpha\n\n\nbeta\n')).toBe('alpha\nbeta');
     expect(collapseThoughtBlankLines('\n\nfirst\r\n\r\nsecond\n')).toBe('first\nsecond');
     expect(collapseThoughtBlankLines('keep  indent')).toBe('keep  indent');
@@ -1436,6 +1436,18 @@ describe('ACP peer activity UI (spec 118)', () => {
     expect(css).toMatch(/\.acp-harness__lane-rail\s*\{[\s\S]{0,200}width:\s*320px/);
     expect(css).not.toMatch(/\[data-slot="thought"\][\s\S]{0,120}width:\s*640px/);
     expect(css).not.toMatch(/\[data-slot="peek"\][\s\S]{0,120}width:\s*640px/);
+  });
+
+  it('shows the full transcript thought without an inner scroll region', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
+    const thoughtBodyRule = css.match(
+      /\.acp-harness__msg--thought \.acp-harness__msg-body\s*\{([^}]*)\}/,
+    );
+    expect(thoughtBodyRule?.[1]).not.toMatch(/max-height|overflow/);
+    expect(css).not.toMatch(
+      /\.acp-harness__msg--thought\.acp-harness__msg--streaming \.acp-harness__msg-body\s*\{/,
+    );
   });
 
   it('buildComposerPeerStrip emits strip for pending peer with cancel hint', () => {

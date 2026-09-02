@@ -133,12 +133,17 @@ function oneLine(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-/** Tail-2 path for the subject line. Avoids `abbreviatePath` so unit tests do
- *  not need a `location` global (that helper reads `location.pathname`). */
+/** Head/…/basename so the filename survives CSS ellipsis. Avoids
+ *  `abbreviatePath` (that helper reads `location.pathname`). Last-2 kept a
+ *  40-char ticket folder as the visible prefix and let the basename clip. */
 function hudPath(path: string): string {
   const parts = path.replace(/\\/g, '/').split('/').filter(Boolean);
-  if (parts.length <= 3) return path;
-  return `…/${parts.slice(-2).join('/')}`;
+  if (parts.length === 0) return path;
+  if ((parts[0] === 'Users' || parts[0] === 'home') && parts.length > 4) {
+    parts.splice(0, 2);
+  }
+  if (parts.length <= 3) return parts.join('/');
+  return `${parts[0]}/…/${parts[parts.length - 1]}`;
 }
 
 /** Command / sentence for the subject. Never run `hudPath` on a shell line —
@@ -348,7 +353,7 @@ export function actionHudMarkup(action: LiveAction, paint: ActionHudPaint = 'rai
   const { owner, laneId, laneName } = normalizePaint(paint);
   const tip = action.detail ?? action.subject ?? action.title;
   const subject = action.subject
-    ? `<div class="acp-harness__action-subject">${esc(action.subject)}</div>`
+    ? `<div class="acp-harness__action-subject"><span>${esc(action.subject)}</span></div>`
     : '';
   const kind = `<div class="acp-harness__action-kind">${esc(action.title)}</div>`;
   const kindBlock = laneName
@@ -409,7 +414,12 @@ export function patchActionHud(root: HTMLElement, action: LiveAction, laneName?:
       subjectEl.className = 'acp-harness__action-subject';
       copy.appendChild(subjectEl);
     }
-    subjectEl.textContent = action.subject;
+    let span = subjectEl.querySelector('span');
+    if (!span) {
+      span = document.createElement('span');
+      subjectEl.replaceChildren(span);
+    }
+    span.textContent = action.subject;
   } else if (subjectEl) {
     subjectEl.remove();
   }

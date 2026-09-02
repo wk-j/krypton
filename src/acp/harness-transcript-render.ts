@@ -54,10 +54,9 @@ export function applyCoordinatorProvenanceToItem(lane: HarnessLane, item: Harnes
   lane.coordinatorDrainProvenanceUsed = true;
 }
 
-// Thought effort meter (length-derived). Thinking is dimmed and clamped to a
-// few lines, so a glyph meter on the label restores the lost signal: how much
-// reasoning is hidden below the fold. Length ≈ effort — log-scaled between a
-// floor (~one short line) and a ceiling (~a long deliberation), bucketed to 5.
+// Thought effort meter (length-derived). The full thought remains visible; the
+// glyph meter is a quick depth cue. Length ≈ effort — log-scaled between a floor
+// (~one short line) and a ceiling (~a long deliberation), bucketed to 5.
 const THOUGHT_EFFORT_MIN_CHARS = 40;
 const THOUGHT_EFFORT_MAX_CHARS = 4000;
 

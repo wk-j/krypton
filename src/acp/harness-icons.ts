@@ -148,5 +148,5 @@ export function harnessIcon(id: string, cls = ''): string {
 
 /** spec 231 — action-well glyph. `kind` is an ActionHudKind string. */
 export function actionHudIcon(kind: string): string {
-  return `<svg class="acp-harness__action-icon" aria-hidden="true"><use href="#krypton-action-${kind}"/></svg>`;
+  return `<svg class="acp-harness__action-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><use href="#krypton-action-${kind}"/></svg>`;
 }

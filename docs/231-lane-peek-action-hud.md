@@ -1,8 +1,9 @@
 # Lane Peek Action HUD — Implementation Spec
 
-> Status: Implemented (rev 2 — rail cards are gated on lane status; a tool call the adapter never closed no longer pins the card after the turn ends)
+> Status: Implemented (rev 3 — subject keeps the basename; well is a locked 28px flex column)
 > Date: 2026-08-18
 > Amended (rev 2, 2026-09-02): `RailLiveActionLane.live` — `renderLaneAction()` passes `status === 'busy' || status === 'needs_permission'`; `deriveRailLiveActions` / `hasOmittedRailLiveAction` skip a lane with `live: false` before reading its tool map. Observed: Claude's background `Bash` (`run_in_background`) leaves an `execute` tool call titled `Terminal` in `in_progress` after the turn (the adapter never sends the terminal update), so the `EXECUTE / Terminal` card stayed on the rail through idle. Lane status is authoritative for the rail; the transcript row and `toolCalls` are untouched.
+> Amended (rev 3, 2026-09-02): `hudPath` was last-2, so a 40-char ticket folder became the visible prefix and CSS `ellipsis` ate the filename (`…/2026-09-02-1183-security-401-403-l…` instead of `docs/…/review.md`). Subject is now `head/…/basename` with start-ellipsis. The well is `flex: 0 0 28px` (`contain: paint`, SVG has an intrinsic 16px size) so a default 300×150 `<svg>` cannot blow the card and stack the copy under the pencil.
 > Milestone: ACP Harness polish
 > Related: `docs/109-acp-contextual-lane-peek.md`, `docs/111-harness-right-rail.md`, `docs/156-lane-activity-ticker.md`, `docs/216-workspace-thought-field.md`, `docs/221-harness-status-line-density.md`
 
@@ -80,7 +81,7 @@ type ActionHudKind =
 interface LiveAction {
   kind: ActionHudKind;
   title: string;          // "edit" / "read" / tool title fallback
-  subject: string | null; // basename or abbreviated path
+  subject: string | null; // `head/…/basename` so the file stays visible
   sig: string;            // `${kind}|${title}|${subject}` — identity; patched in place, not a remount key
 }
 ```
@@ -133,10 +134,10 @@ Show the action slot when `deriveRailLiveActions(lanes)` is non-empty. A lane is
 ```
 
 - 320px, 8px radius (`--krypton-border-radius`), 1px full border in the kind accent at the same 28% mix as peek/plan (no glow, no left rail). Kind color lives on the glyph and label.
-- Left well: 28×28, no border and no fill, `contain: strict`, one `<svg><use href="#krypton-action-{kind}"/></svg>` plus a CSS overlay that is the animation. The glyph sits on the card; the well is only a clip for the instrument.
+- Left well: 28×28 (`flex: 0 0 28px`), no border and no fill, `contain: paint`, one `<svg viewBox="0 0 16 16" width="16" height="16"><use href="#krypton-action-{kind}"/></svg>` plus a CSS overlay that is the animation. The glyph sits on the card; the well is only a clip for the instrument. The card is `display: flex; flex-direction: row` so a default-sized SVG cannot blow the well and stack the copy.
 - Kind label: `--krypton-chrome-font-size` (11px), weight 600, tracked uppercase, kind accent. ห้าม `1em` — label ต้องเล็กกว่า subject / window body
 - When the harness has more than one lane, a dim tracked lane name sits on the same row as the kind (`EXECUTE · Claude-2`). Single-lane harnesses stay unlabeled.
-- Subject: one ellipsized line; omitted for thinking/writing.
+- Subject: one line, `head/…/basename` (home prefix stripped). CSS ellipsizes the **start** (`direction: rtl` on the box, inner `span` stays LTR) so a long ticket folder cannot hide the file. Omitted for thinking/writing. `title` still holds the untruncated path.
 - `role="status"`, `aria-live="polite"`. `title` carries the untruncated path.
 - Slot `max-height: min(240px, 42%)`; extra cards scroll.
 
@@ -190,8 +191,9 @@ Show is immediate. Hide is delayed 2s so thinking/writing interleave does not pl
 - **Multiple in-flight tools** — oldest pending/in_progress, same as peek today.
 - **Tool call left open after the turn (rev 2)** — e.g. Claude's background `Bash` creates a terminal the adapter never reports as completed, so `toolCalls` keeps an `in_progress` `execute` titled `Terminal`. The rail reads lane status first: once the turn ends the lane is not live, no row is derived, the 2s hide runs and the card drops. Only the rail stack is gated; the peek HUD already required `status === 'busy'`.
 - **Live Assist** — untouched (spec 209).
-- **Zen / view-split / narrow rail** — slot uses the existing `max-width: calc(100% - 24px)` rail rule; subject ellipsizes.
-- **Long / multiline command title** — Grok often puts the whole `cd …; actionlint …` line in `title` with `kind: other` and no `rawInput.command` yet. Kind stays the short verb (`execute`); subject is that command collapsed to one line and CSS-ellipsized. The untruncated command stays on the tooltip. Never dump the command into the uppercase kind label — that wraps inside the 72px slot.
+- **Zen / view-split / narrow rail** — slot uses the existing `max-width: calc(100% - 24px)` rail rule; subject ellipsizes from the start so the basename stays.
+- **Long ticket-folder path** — `…/2026-09-02-1183-security-401-403-log-attribution-review/review.md` used to CSS-ellipsis from the end and hide `review.md`. Subject is now `head/…/basename` (home prefix stripped); the box ellipsizes the start.
+- **Long / multiline command title** — Grok often puts the whole `cd …; actionlint …` line in `title` with `kind: other` and no `rawInput.command` yet. Kind stays the short verb (`execute`); subject is that command collapsed to one line and CSS-ellipsized from the start. The untruncated command stays on the tooltip. Never dump the command into the uppercase kind label — that wraps inside the 72px slot.
 - **Reduced motion** — static well + label + subject.
 
 ## Open Questions
