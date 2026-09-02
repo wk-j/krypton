@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -85,5 +88,26 @@ describe('laneStripLabel', () => {
 
   it('reports an empty roster', () => {
     expect(laneStripLabel([], 0)).toBe('no harness lanes');
+  });
+});
+
+describe('window footer lane logo chrome', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const compositor = readFileSync(join(here, 'compositor.ts'), 'utf8');
+  const css = readFileSync(join(here, 'styles/window.css'), 'utf8');
+
+  it('gives the backend logo an explicit square SVG viewport', () => {
+    expect(compositor).toContain("logo.setAttribute('viewBox', '0 0 16 16')");
+    expect(compositor).toContain("logo.setAttribute('width', '16')");
+    expect(compositor).toContain("logo.setAttribute('height', '16')");
+  });
+
+  it('keeps the magnified active logo static when footer nodes rebuild', () => {
+    const activeLogoRule = css.match(
+      /\.krypton-window__lane--active \.krypton-window__lane-logo\s*\{([^}]*)\}/,
+    );
+    expect(activeLogoRule?.[1]).toContain('transform: scale');
+    expect(activeLogoRule?.[1]).not.toContain('animation:');
+    expect(css).not.toContain('@keyframes krypton-lane-dock-pop');
   });
 });

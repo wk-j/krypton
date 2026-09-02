@@ -1431,10 +1431,10 @@ export class Compositor {
    * global highlight. Only the active mark renders a name, which makes the state
    * readable in grayscale — lane accents repeat past 13 lanes, so hue cannot be
    * load-bearing. Flat like the rest of the rail: no border box, no underline.
-   * The active mark's logo also carries a macOS-Dock-style zoom (CSS only), and
-   * because the repaint key below includes `active`, a lane switch rebuilds
-   * these nodes and the fresh one replays the pop keyframe — status churn does
-   * not. Hidden entirely when the focused pane has no lanes.
+   * The active mark's logo also carries a static macOS-Dock-style zoom (CSS
+   * only). It never animates when the mark is rebuilt, so composer typing and
+   * other chrome refreshes cannot shake the content window. Hidden entirely
+   * when the focused pane has no lanes.
    */
   private renderWindowLaneStrip(win: KryptonWindow, lanes: readonly HarnessLaneMark[]): void {
     const footer = win.element.querySelector<HTMLElement>('.krypton-window__footer');
@@ -1481,6 +1481,9 @@ export class Compositor {
     el.style.setProperty('--krypton-lane-accent', mark.accent);
     const logo = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     logo.setAttribute('class', 'krypton-window__lane-logo');
+    logo.setAttribute('viewBox', '0 0 16 16');
+    logo.setAttribute('width', '16');
+    logo.setAttribute('height', '16');
     logo.setAttribute('aria-hidden', 'true');
     const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
     use.setAttribute('href', `#${backendLogoId(mark.backendId)}`);

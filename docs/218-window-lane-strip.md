@@ -1,7 +1,8 @@
 # Window Status Bar Lane Strip — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented (rev 2 — explicit 16×16 logo viewport; static magnification)
 > Date: 2026-08-14
+> Amended (rev 2, 2026-09-02): the active logo no longer runs a scale/overshoot keyframe when its footer node is rebuilt. Composer typing and other chrome refreshes can therefore never replay motion against the content window. The outer `<svg>` now declares `viewBox="0 0 16 16"` plus `width`/`height` so backend symbols render from a stable square viewport instead of relying on SVG defaults.
 > Milestone: M9 — harness observability
 
 ## Problem
@@ -210,12 +211,12 @@ badge, so the pushing arrangement below is unchanged.)
        aria-label="harness lanes: Claude-1 (active), Grok-1">
     <span class="krypton-window__lane krypton-window__lane--active"
           style="--krypton-lane-accent: #8effb0" title="Claude-1 · claude · active lane">
-      <svg class="krypton-window__lane-logo"><use href="#krypton-logo-claude"/></svg>
+      <svg class="krypton-window__lane-logo" viewBox="0 0 16 16" width="16" height="16"><use href="#krypton-logo-claude"/></svg>
       <span class="krypton-window__lane-name">Claude-1</span>
     </span>
     <span class="krypton-window__lane" style="--krypton-lane-accent: #5ce6a8"
           title="Grok-1 · grok">
-      <svg class="krypton-window__lane-logo"><use href="#krypton-logo-grok"/></svg>
+      <svg class="krypton-window__lane-logo" viewBox="0 0 16 16" width="16" height="16"><use href="#krypton-logo-grok"/></svg>
     </span>
   </div>
 </div>
@@ -268,8 +269,8 @@ Mechanics, all in `src/styles/window.css`:
 | Growth | `transform: scale(var(--krypton-lane-zoom, 2.9))` | A transform never reflows the rail, so quotas and notification do not shift when the active lane changes. |
 | Direction | `align-self: flex-end` + `transform-origin: bottom center` | Puts the glyph on the chip's floor and sends every pixel of growth *upward*, over the pane — never down through the window's bottom edge. |
 | Room | `margin-inline: 10px` | A transform is invisible to layout; this is what reserves the ≈10px of horizontal overgrowth per side so the glyph cannot land on its neighbour. |
-| Motion | `@keyframes krypton-lane-dock-pop`, 220ms, 8% overshoot | The strip's repaint key includes which lane is active, so a lane switch rebuilds the marks and a fresh node plays the pop once. Status churn does not change the key, so it never fires on its own. A CSS transition could not work here — it has no old node to interpolate from. |
-| Reduced motion | `@media (prefers-reduced-motion: reduce) { animation: none }` | Keeps the static magnification, drops the pop. |
+| Motion | None | Magnification is a standing identity cue. A rebuilt footer node paints directly at its final scale, so typing or chrome refreshes cannot replay motion or shake the window. |
+| SVG viewport | `viewBox="0 0 16 16" width="16" height="16"` | Keeps every backend symbol in a stable square coordinate system before CSS applies the `1em` box and static scale. |
 
 At the default 28px footer and 11px chrome font this renders a glyph about as tall as the rail
 itself, whose ink clears the rail's top edge by ~6px (measured). `--krypton-lane-zoom` is

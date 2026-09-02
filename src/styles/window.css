@@ -423,8 +423,8 @@
    Pinned to the rail's right edge, past the notification control.
    The active lane is the only one that renders a name: every lane has a hue and
    the palette repeats past 13 lanes, so colour alone cannot carry the state.
-   Flat — no border box, no underline, no left rail. The one piece of motion is
-   the active mark's dock-style zoom below. */
+   Flat — no border box, no underline, no left rail. The active mark's
+   dock-style zoom is static so footer refreshes never shake the window. */
 
 .krypton-window__lane-strip {
   display: flex;
@@ -517,29 +517,6 @@
   transform: scale(var(--krypton-lane-zoom, 2.9));
   /* ≈ half the horizontal overgrowth at the default zoom. */
   margin-inline: 10px;
-  animation: krypton-lane-dock-pop 220ms cubic-bezier(0, 0, 0.2, 1);
-}
-
-/* Replays on every lane switch: the strip's repaint key includes which lane is
-   active, so switching rebuilds the marks and a fresh node runs this once.
-   Status churn does not change the key, so the pop never fires on its own. */
-@keyframes krypton-lane-dock-pop {
-  from {
-    transform: scale(1);
-  }
-  65% {
-    /* Slight overshoot — the Dock's magnification settles rather than snaps. */
-    transform: scale(calc(var(--krypton-lane-zoom, 2.9) * 1.08));
-  }
-  to {
-    transform: scale(var(--krypton-lane-zoom, 2.9));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .krypton-window__lane--active .krypton-window__lane-logo {
-    animation: none;
-  }
 }
 
 .krypton-window__lane-name {
