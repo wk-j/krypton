@@ -1,6 +1,6 @@
 # 114. ACP Harness Streaming Performance Audit & Fixes
 
-> Status: Implemented (rev 10 — scroll stickiness measured at event dispatch, committed in the RAF; rev 9 — usage and plan events stay off the full lane rebuild; rev 8 — streaming tool output patches the output block in place; rev 7 — streaming smooth-follow scroll; rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
+> Status: Implemented (rev 13 — a scroll-sourced sticky-drift heal pins synchronously, before paint; rev 12 — sticky-drift heal: a stuck lane short of the bottom is re-pinned; rev 11 — keyboard scroll up always unsticks; rev 10 — scroll stickiness measured at event dispatch, committed in the RAF; rev 9 — usage and plan events stay off the full lane rebuild; rev 8 — streaming tool output patches the output block in place; rev 7 — streaming smooth-follow scroll; rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
 > Date: 2026-05-22
 > Milestone: ACP harness — performance hardening
 > Builds on: Spec 94 (render batching + caching), Spec 103 (tail-window rendering)
@@ -10,6 +10,9 @@
 > Amended (rev 7) by: streaming smooth-follow scroll (§5) — while a lane streams, sticky scroll glides to the bottom with a per-frame exponential chase instead of teleporting; keyboard/wheel user-intent detection replaces the scroll-event heuristic while the glide holds suppression.
 > Amended (rev 8) by: streaming tool output (§6) — an in-flight tool's section text stays out of `transcriptRenderSignature`; the body-only pass swaps just the `.acp-harness__tool-output` block (`patchStreamingToolBody`) instead of `replaceChildren` on the whole row. Spinner glyph seeds the live ticker frame. `fs_activity` moves to the body-only path.
 > Amended (rev 10) by: `onTranscriptScroll` (§2) — stickiness is **measured at event dispatch, committed in the RAF**. The "go look later" model re-read `scrollHeight` inside the RAF; an unsuppressed scroll event (keyboard `scrollBy`, browser clamp after content shrank) dispatching just before a streaming chunk grew the body would then measure the *post-growth* distance, flip `stickToBottom` off, and kill autoscroll for the rest of the stream. The handler now snapshots `{laneId, scrollTop, distance, suppressScrollToken}` at dispatch; the RAF commits the frame's last sample and drops it when suppression, the token, or the active lane changed in between. `noteUserScroll` additionally swallows its `scrollBy`'s own async scroll event with a begin/release pair (intent is already recorded synchronously; the echo could otherwise re-measure after growth).
+> Amended (rev 11) by: three scroll fixes. (a) `noteUserScroll` (§5) — a keyboard scroll **up** always unsticks. Recomputing from `STICK_THRESHOLD_PX` (32px) meant one `k` (24px) still read as "at bottom", so any following sticky pass (streamed chunk, or the full `render()` on the `i`/`Escape` focus switch to the composer) pulled the transcript back to the bottom. (b) `onTranscriptScroll` (§2) — an unstuck lane may only **re-stick when the sample moved down** toward the bottom; a stray unsuppressed event landing within the threshold without downward motion (WebKit clamp after the streaming tool row shrank, a `scrollBy` echo escaping the 2-RAF release under load) used to flip `stickToBottom` back on 24px from the bottom and undo (a). (c) the glide gate (§5) — `applyStickyScroll`/`scheduleStreamingBodyOnly`/`scheduleStickyScroll` now gate on `isLaneLive` (busy status OR open text row), not `isLaneStreaming` alone: every `tool_call` seals the text row, so tool-dominated turns (Claude) teleport-pinned on every streaming tool-output delta while text-heavy turns (Grok) glided.
+> Amended (rev 13) by: synchronous heal on the scroll path (§2). Frame-by-frame analysis of a user recording (2026-09-02, 20 fps, lane busy in zen mode, user typing in the composer) showed the transcript jumping 14 CSS px down on every character inserted and then gliding back over ~150 ms — a visible oscillation on each keystroke. The jump is the rev 12 drift (same 14 px, idempotent: keystrokes landing on an already-drifted lane changed nothing); the glide back was the rev 12 heal itself, which answered the drift's scroll event with `scheduleStickyScroll()` — a RAF in the *next* frame that then started the rev 7 glide, so the displaced position painted for two frames before the chase. Keystrokes that landed inside the 2-RAF programmatic-scroll suppression window (right after a glide finished) had their scroll event swallowed, and the lane sat drifted until the next 2 s poll heal — which is why some keystrokes shook and others did not. The writer is still unidentified; it fires on composer keystrokes (not on the 1 s composer tick, whose `renderComposer()` is the only work a keystroke does), fires a scroll event, and is independent of composer geometry (the composer did not move in any frame). Fix: `healStickyScroll('scroll')` pins synchronously inside the scroll handler's RAF, which runs in the same rendering update as the scroll event and before paint, so the displaced frame never reaches the screen. The `'metrics'` source keeps the glide. Dev builds additionally wrap the `scrollTop` setter (`installLaneBodyScrollTracer`) to stack-trace any JS writer that leaves a lane body short of its bottom. Root cause is tracked in [#17](https://github.com/wk-j/krypton/issues/17), which stays open until the writer is identified and removed.
+> Amended (rev 12) by: sticky-drift heal (§2). Frame captures of the live app (2026-09-02) showed the pinned transcript sitting exactly 14 CSS px above the bottom — content and box unchanged, scrollbar thumb 2 device px higher — from the moment a tool finished and the model went quiet until the next transcript event, up to 21 s. During that silence Claude emits empty thought deltas that only drive the rail veil (`thought-veil:` id, no row), so no sticky pass ran. The writer of the 14 px is still unidentified. `healStickyScroll(source)` makes the outcome independent of it: when the active lane is stuck, no glide is chasing, no upward wheel landed in the last `STICKY_DRIFT_WHEEL_GRACE_MS` (600 ms), and `scrollHeight − scrollTop − clientHeight` is in `(STICKY_DRIFT_EPSILON_PX, STICK_THRESHOLD_PX]` = (1, 32] px, it calls `scheduleStickyScroll()`. Two triggers: the `onTranscriptScroll` commit (an unsuppressed event that left a stuck lane short) and the existing 2 s metrics poll (one `scrollHeight` read, no new timer). Keyboard scrolls are unaffected: intent is recorded synchronously and an upward key always unsticks (rev 11), so the heal never sees a stuck lane after `k`. Dev builds (`SPEC114_DEV`) `console.warn` + `console.trace` on every heal to locate the writer.
 > Amended (rev 9) by: `usage` and `plan` events (§7) — `usage` arrives once per API round-trip mid-turn (an agentic turn with N tool calls emits N+ of them, plus context-level `usage_update` notifications) and took the full `renderActiveLane` path, flashing the whole lane while tools ran. It now patches its actual surfaces in place (`renderActiveLaneChrome` for the lane head/stats/zen rail, `renderLanePeek` for the peek card) and sets `needsRender = false`. `plan` on the active lane likewise skips the full render — `renderPlan` already patches the plan panel and `sealStreaming` schedules the body-only pass.
 
 ## Problem
@@ -276,6 +279,37 @@ Decouples streaming row render cost from message length.
   token was bumped by a programmatic scroll, or the active lane changed —
   the same staleness cases the live re-read protected against.
   `savedScrollAnchor` is still captured from live DOM at commit time.
+- **(rev 11) Re-stick requires downward motion.** When the lane is already
+  unstuck, the commit sets `stickToBottom = true` only if the sample is
+  within `STICK_THRESHOLD_PX` **and** `sample.scrollTop` exceeds the last
+  recorded `savedScrollTop`. All keyboard scrolls record intent
+  synchronously in `noteUserScroll`, so an unsuppressed scroll event with
+  no downward motion is noise — a WebKit clamp after the streaming tool
+  row shrank/rebuilt, or a `scrollBy` echo dispatching after the 2-RAF
+  suppression release under load. One `k` parks the viewport 24px < 32px
+  from the bottom, exactly where such noise used to re-stick the lane and
+  the next pin yanked it down again. A real wheel-down still re-sticks:
+  its samples move `scrollTop` toward the bottom. Sticking → unsticking
+  is unchanged (distance beyond the threshold).
+- **(rev 12) Sticky-drift heal.** Right after the commit, if the lane is
+  still stuck and `sample.distance > STICKY_DRIFT_EPSILON_PX` (1 px), the
+  handler calls `healStickyScroll('scroll')`, which re-measures live and
+  schedules a pin when the distance is in (1, 32] px, no glide is in flight
+  and no upward wheel landed within 600 ms. The same check runs from
+  `pollMetrics` every 2 s (`'metrics'`) for drift that produced no scroll
+  event at all. Sticking → unsticking (distance beyond the threshold) and
+  the rev 11 re-stick rule are unchanged; the heal only acts on lanes that
+  already believe they are at the bottom.
+- **(rev 13) Scroll-sourced heal is synchronous.** `healStickyScroll('scroll')`
+  writes `scrollTop = scrollHeight` immediately (under programmatic-scroll
+  suppression) instead of calling `scheduleStickyScroll()`. The scroll event
+  that reports the drift dispatches in the rendering update's scroll steps,
+  and the handler's RAF runs in that same update before style/layout/paint,
+  so a pin there is invisible; a scheduled pass ran one frame later and then
+  glided, which painted the displaced position and turned a per-keystroke
+  14 px drift into a per-keystroke oscillation. `healStickyScroll('metrics')`
+  (the 2 s poll) still schedules the glide — its drift has already been on
+  screen for up to 2 s, and a gentle catch-up reads better than a snap.
 - **(rev 10)** `noteUserScroll` swallows its `scrollBy`'s own async scroll
   event with a `beginProgrammaticScroll`/`releaseProgrammaticScroll` pair:
   keyboard intent is already recorded synchronously, and the echo event
@@ -355,19 +389,37 @@ still pins instantly.
   bump the token, so suppression holds continuously across the glide and
   lifts two RAFs after the last write — same contract as the instant pin.
 - `applyStickyScroll()` routes the `stickToBottom` branch to the follower
-  when `isLaneStreaming(lane)` **or** a glide is already in flight (so
+  when the lane is **live** **or** a glide is already in flight (so
   the turn-end triple-pin lets an unfinished glide finish smoothly
   instead of teleporting past the final reparse).
+  - **(rev 11)** "Live" is `isLaneLive(lane)` — busy status OR an open
+    text row (`isLaneStreaming`) — not `isLaneStreaming` alone. Every
+    `tool_call` seals the open text row, so in a tool-dominated turn
+    (Claude) `isLaneStreaming` is false for most of the turn even though
+    streaming tool output keeps growing the transcript: every tool delta
+    took the instant-pin path and the lane visibly teleported, while a
+    text-heavy lane (Grok) glided. `scheduleStreamingBodyOnly`'s
+    apply-vs-schedule fork and `scheduleStickyScroll`'s single-pass check
+    use the same predicate. Lane switch and the full-rebuild pin are
+    outside this gate and stay instant.
 - **User-intent detection.** With suppression held for the whole glide,
   the scroll-event heuristic can no longer see user scrolls mid-stream:
   - Keyboard scroll keys (`j`/`k`, `Ctrl+d`/`u`, `PageUp`/`Down`,
     `Ctrl+Shift+J`/`K`) record stickiness synchronously via
     `noteUserScroll(body, direction)` right after their instant
     `scrollBy`. Direction disambiguates intent while the follower is
-    behind the true bottom: only an **upward** scroll may unstick
-    (recomputed from `STICK_THRESHOLD_PX`), and a **downward** scroll may
-    only (re)stick — pressing `j` during a glide must not read as "leave
-    the bottom". `g` cancels the follower and unsticks as before.
+    behind the true bottom: an **upward** scroll always unsticks, and a
+    **downward** scroll may only (re)stick (within `STICK_THRESHOLD_PX`)
+    — pressing `j` during a glide must not read as "leave the bottom".
+    `g` cancels the follower and unsticks as before.
+    - **(rev 11)** The upward branch originally recomputed stickiness
+      from `STICK_THRESHOLD_PX`, but a single `k` moves 24px < 32px, so
+      one line up still counted as "at bottom" and the next sticky pass
+      — every streamed chunk, or the full `render()` on the `i`/`Escape`
+      focus switch back to the composer — yanked the transcript to the
+      bottom. One deliberate keyboard scroll up now always leaves the
+      bottom; the threshold applies only to (re)sticking on the way
+      down.
   - An **upward wheel** is unforgeable user input: `onTranscriptWheel`
     cancels the follower and lifts suppression (bumping the token
     invalidates in-flight releases) so the ensuing native scroll events

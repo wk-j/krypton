@@ -635,6 +635,13 @@ export function referenceGitResponseIsCurrent(
 }
 
 const STICK_THRESHOLD_PX = 32;
+// Spec 114 rev 12: a stuck lane more than this short of the bottom (and still
+// inside STICK_THRESHOLD_PX) is drift and gets re-pinned. Sub-pixel scroll
+// positions land within 0.5px of the target legitimately.
+const STICKY_DRIFT_EPSILON_PX = 1;
+// An upward wheel this recent means the user is leaving the bottom on purpose;
+// do not snap them back while their gesture is still in flight.
+const STICKY_DRIFT_WHEEL_GRACE_MS = 600;
 
 // Spec 114 rev 7: while a lane streams, the transcript glides to the growing
 // bottom instead of teleporting. Each frame the follower closes this fraction
@@ -692,6 +699,38 @@ const HIDDEN_INDICATOR_ID = '__hidden_indicator__';
 const SPEC114_DEV = Boolean(
   (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV,
 );
+
+// Spec 114 rev 13 (dev only): the 14 px sticky drift is written by something
+// that fires on composer keystrokes while a lane is busy, and a scroll event
+// cannot name its writer — the write happened in an earlier task. Wrap the
+// `scrollTop` setter so any JS writer that lands a lane body short of its
+// bottom leaves a stack in the console. A WebKit-internal clamp (no JS write)
+// shows up as a scroll event with no preceding trace, which is also useful.
+let laneBodyScrollTracerInstalled = false;
+function installLaneBodyScrollTracer(): void {
+  if (laneBodyScrollTracerInstalled) return;
+  laneBodyScrollTracerInstalled = true;
+  const desc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
+  if (!desc || typeof desc.set !== 'function' || typeof desc.get !== 'function') return;
+  const nativeSet = desc.set;
+  const nativeGet = desc.get;
+  Object.defineProperty(Element.prototype, 'scrollTop', {
+    configurable: true,
+    enumerable: desc.enumerable,
+    get(this: Element) {
+      return nativeGet.call(this) as number;
+    },
+    set(this: Element, value: number) {
+      nativeSet.call(this, value);
+      if (!(this instanceof HTMLElement) || !this.classList.contains('acp-harness__lane-body')) return;
+      const distance = this.scrollHeight - (nativeGet.call(this) as number) - this.clientHeight;
+      if (distance > STICKY_DRIFT_EPSILON_PX && distance <= STICK_THRESHOLD_PX) {
+        console.warn(`[spec114] lane body scrollTop=${value} leaves ${distance.toFixed(1)}px to the bottom`);
+        console.trace('[spec114] scrollTop writer');
+      }
+    },
+  });
+}
 
 // Immutable defaults shared across all lanes. Mutable containers (arrays,
 // Maps, Sets) MUST NOT live here — createLane() instantiates fresh ones
@@ -1167,6 +1206,9 @@ export class AcpHarnessView implements ContentView {
   private smoothFollowRaf = 0;
   private suppressScrollListener = false;
   private suppressScrollToken = 0;
+  /** Spec 114 rev 12: last upward wheel on the transcript (performance.now()).
+   *  The sticky-drift heal must not fight a user who is starting to wheel up. */
+  private lastUserWheelUpAt = 0;
   private transcriptResizeObserver: ResizeObserver | null = null;
   private observedTranscriptBody: HTMLElement | null = null;
   private observedTranscriptRows = new Set<HTMLElement>();
@@ -1192,6 +1234,7 @@ export class AcpHarnessView implements ContentView {
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
+    if (SPEC114_DEV) installLaneBodyScrollTracer();
     this.coordinator = new InterLaneCoordinator(this.laneBus, this.buildLaneHost());
     // spec 149: artifact feedback drains on the lane's next idle, like peer mail,
     // but through its own queue (human→lane review, not lane↔lane mail).
@@ -11174,6 +11217,16 @@ export class AcpHarnessView implements ContentView {
       || lane.currentUserId !== null;
   }
 
+  /** Spec 114 rev 11: the smooth-follow glide must cover tool-dominated
+   *  turns. Every tool_call seals the open text row, so isLaneStreaming is
+   *  false while a tool runs — yet streaming tool output keeps growing the
+   *  transcript. Gating the glide on open text rows made agentic lanes
+   *  (Claude) teleport-pin on every tool delta while text-heavy lanes
+   *  glided. Busy status spans the whole turn, tool gaps included. */
+  private isLaneLive(lane: HarnessLane): boolean {
+    return lane.status === 'busy' || this.isLaneStreaming(lane);
+  }
+
   // Spec 114 rev 4/5: text chunks and tool deltas update the transcript
   // body (+ one sticky scroll write). Lane chrome, composer, peek card,
   // and plan are not rebuilt. Tool events also patch the action HUD.
@@ -11201,7 +11254,7 @@ export class AcpHarnessView implements ContentView {
       this.renderActiveTranscript(lane);
       this.patchPeekThoughtIfLane(lane);
       this.flushPendingToolHud(lane);
-      if (this.isLaneStreaming(lane)) {
+      if (this.isLaneLive(lane)) {
         this.applyStickyScroll();
       } else {
         this.scheduleStickyScroll();
@@ -12746,6 +12799,9 @@ export class AcpHarnessView implements ContentView {
     // Lightweight refresh — only redraw chips and the breakdown panel,
     // not the whole transcript (which would thrash on every tick).
     this.refreshMetricsRender();
+    // Spec 114 rev 12: piggyback the sticky-drift watchdog on the existing 2 s
+    // cadence — one scrollHeight read, no extra timer, no-op when pinned.
+    this.healStickyScroll('metrics');
     // spec 169 (option A-hybrid): nudge the telemetry publisher so the dashboard's
     // CPU sparkline gets a fresh sample at the metrics cadence — but ONLY while a
     // lane is active, so an idle harness still makes zero periodic publishes and
@@ -14115,7 +14171,7 @@ export class AcpHarnessView implements ContentView {
     if (this.scrollRaf) return;
     this.scrollRaf = true;
     const lane = this.activeLane();
-    const singlePass = lane !== null && this.isLaneStreaming(lane);
+    const singlePass = lane !== null && this.isLaneLive(lane);
     requestAnimationFrame(() => {
       this.scrollRaf = false;
       this.applyStickyScroll();
@@ -14133,11 +14189,14 @@ export class AcpHarnessView implements ContentView {
     const body = this.activeTranscriptBody();
     if (!body) return;
     if (lane.stickToBottom) {
-      // Streaming growth glides via the follower. An already-running glide
-      // also finishes smoothly when the turn ends (the final reparse would
-      // otherwise teleport it). Everything else — lane switch, resize,
-      // G key on an idle lane — still pins instantly.
-      if (this.isLaneStreaming(lane) || this.smoothFollowRaf !== 0) {
+      // Growth during a live turn — text chunks AND streaming tool output
+      // (rev 11: tool_call seals the text row, so the busy-status gate, not
+      // isLaneStreaming, is what keeps tool deltas gliding) — rides the
+      // follower. An already-running glide also finishes smoothly when the
+      // turn ends (the final reparse would otherwise teleport it).
+      // Everything else — lane switch, resize, G key on an idle lane —
+      // still pins instantly.
+      if (this.isLaneLive(lane) || this.smoothFollowRaf !== 0) {
         this.nudgeSmoothFollow();
         return;
       }
@@ -14192,13 +14251,17 @@ export class AcpHarnessView implements ContentView {
   private noteUserScroll(body: HTMLElement, direction: 'up' | 'down'): void {
     const lane = this.activeLane();
     if (!lane) return;
-    const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
-    const atBottom = distance <= STICK_THRESHOLD_PX;
     if (direction === 'up') {
+      // A deliberate keyboard scroll up always leaves the bottom. Measuring
+      // against STICK_THRESHOLD_PX here made a single k (24px < 32px) read
+      // as "still at bottom", so the next sticky pass — every streamed
+      // chunk, or the full render on i/Escape focus switch — yanked the
+      // transcript back down.
       this.cancelSmoothFollow();
-      lane.stickToBottom = atBottom;
-    } else if (atBottom) {
-      lane.stickToBottom = true;
+      lane.stickToBottom = false;
+    } else {
+      const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
+      if (distance <= STICK_THRESHOLD_PX) lane.stickToBottom = true;
     }
     lane.savedScrollTop = body.scrollTop;
     lane.savedScrollAnchor = lane.stickToBottom ? null : this.captureTranscriptScrollAnchor(body);
@@ -14217,6 +14280,7 @@ export class AcpHarnessView implements ContentView {
    *  follower only runs while stuck. */
   private onTranscriptWheel(e: WheelEvent): void {
     if (e.deltaY >= 0) return;
+    this.lastUserWheelUpAt = performance.now();
     this.cancelSmoothFollow();
     this.suppressScrollToken++;
     this.suppressScrollListener = false;
@@ -14337,10 +14401,65 @@ export class AcpHarnessView implements ContentView {
       const live = this.activeLane();
       const liveBody = this.activeTranscriptBody();
       if (!live || !liveBody || live.id !== sample.laneId) return;
-      live.stickToBottom = sample.distance <= STICK_THRESHOLD_PX;
+      const atBottom = sample.distance <= STICK_THRESHOLD_PX;
+      // Rev 11: an unstuck lane may only re-stick when the sample moved DOWN
+      // toward the bottom. All keyboard scrolls record intent synchronously
+      // in noteUserScroll, so a scroll event that escapes the suppression
+      // window without downward motion is noise — a WebKit clamp after the
+      // streaming tool row shrank, or a scrollBy echo landing after the
+      // 2-RAF release under load. One k leaves the viewport 24px < 32px from
+      // the bottom, exactly where such an event used to flip stickToBottom
+      // back on and the next pin yanked the transcript down again.
+      if (live.stickToBottom) live.stickToBottom = atBottom;
+      else if (atBottom && sample.scrollTop > live.savedScrollTop) live.stickToBottom = true;
       live.savedScrollTop = sample.scrollTop;
       live.savedScrollAnchor = live.stickToBottom ? null : this.captureTranscriptScrollAnchor(liveBody);
+      // Rev 12: stuck means stuck. An unsuppressed event that leaves a stuck
+      // lane short of the bottom (but inside the threshold) is drift, not
+      // intent — keyboard intent is recorded synchronously and its echo is
+      // suppressed; an upward wheel is excluded by lastUserWheelUpAt.
+      if (live.stickToBottom && sample.distance > STICKY_DRIFT_EPSILON_PX) this.healStickyScroll('scroll');
     });
+  }
+
+  /** Spec 114 rev 12: re-pin a stuck lane that is measurably short of the
+   *  bottom. Observed in frame captures: after a tool finished and the model
+   *  went quiet (empty thought deltas → rail veil only, no transcript event),
+   *  the transcript sat 14 CSS px above the bottom for the rest of the silence
+   *  with no pass left to correct it. The writer is still unidentified (dev
+   *  builds trace it here); the heal makes the outcome independent of it.
+   *  Skipped while the user is wheeling up (they are leaving the bottom) and
+   *  while a glide is already chasing.
+   *
+   *  Rev 13: the 14 px displacement also lands on every composer keystroke
+   *  while a lane is busy (frame captures, 2026-09-02). Its scroll event
+   *  reaches this handler inside the same rendering update, BEFORE paint —
+   *  but rev 12 answered with `scheduleStickyScroll()`, i.e. a RAF in the
+   *  next frame that then started a multi-frame glide. The displaced
+   *  position painted for two frames and the glide back made it a visible
+   *  14 px oscillation on every keystroke. A scroll-sourced heal now pins
+   *  synchronously, so the displaced frame never paints. The 2 s poll keeps
+   *  the glide: drift it finds has already been on screen for up to 2 s, and
+   *  a gentle catch-up reads better there than a snap. */
+  private healStickyScroll(source: 'scroll' | 'metrics'): void {
+    const lane = this.activeLane();
+    const body = this.activeTranscriptBody();
+    if (!lane || !body || !lane.stickToBottom) return;
+    if (this.smoothFollowRaf !== 0) return;
+    if (performance.now() - this.lastUserWheelUpAt < STICKY_DRIFT_WHEEL_GRACE_MS) return;
+    const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
+    if (distance <= STICKY_DRIFT_EPSILON_PX || distance > STICK_THRESHOLD_PX) return;
+    if (SPEC114_DEV) {
+      console.warn(`[spec114] sticky drift ${distance.toFixed(1)}px (${source}); re-pinning`);
+      console.trace('[spec114] sticky drift origin');
+    }
+    if (source === 'scroll') {
+      const token = this.beginProgrammaticScroll();
+      body.scrollTop = body.scrollHeight;
+      this.releaseProgrammaticScroll(token);
+      return;
+    }
+    this.scheduleStickyScroll();
   }
 
   private beginProgrammaticScroll(): number {
